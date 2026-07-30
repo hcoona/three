@@ -13,32 +13,69 @@ public sealed class AdapterEntrypointDescriptor
         AdapterArgumentMatchMode argumentMatchMode = AdapterArgumentMatchMode.Any,
         bool stripMatchedArguments = true,
         string? description = null,
-        AdapterProtocol protocol = AdapterProtocol.Unspecified)
+        AdapterProtocol protocol = AdapterProtocol.Unspecified
+    )
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        if (!Enum.IsDefined(mode))
+        {
+            throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unknown invocation mode.");
+        }
 
-        ReadOnlyCollection<string> copiedExecutableNames = CopyNames(
-            executableNames,
-            nameof(executableNames));
-        ReadOnlyCollection<string> copiedArgumentTokens = CopyNames(
-            argumentTokens,
-            nameof(argumentTokens));
-        ValidateMode(mode, nameof(mode));
-        ValidateArgumentMatchMode(argumentMatchMode, nameof(argumentMatchMode));
-        ValidateProtocol(protocol, nameof(protocol));
+        if (!Enum.IsDefined(argumentMatchMode))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(argumentMatchMode),
+                argumentMatchMode,
+                "Unknown argument match mode."
+            );
+        }
+
+        if (!Enum.IsDefined(protocol))
+        {
+            throw new ArgumentOutOfRangeException(nameof(protocol), protocol, "Unknown protocol.");
+        }
+
+        if (mode == AdapterInvocationMode.HumanCommand && protocol != AdapterProtocol.Unspecified)
+        {
+            throw new ArgumentException(
+                "Human command entry points cannot declare a protocol.",
+                nameof(protocol)
+            );
+        }
+
+        ExecutableNames = CopyValues(executableNames, nameof(executableNames));
+        ArgumentTokens = CopyValues(argumentTokens, nameof(argumentTokens));
+        if (argumentMatchMode == AdapterArgumentMatchMode.Any && ArgumentTokens.Count != 0)
+        {
+            throw new ArgumentException(
+                "Argument tokens require Prefix or Exact matching.",
+                nameof(argumentTokens)
+            );
+        }
+
+        if (argumentMatchMode != AdapterArgumentMatchMode.Any && ArgumentTokens.Count == 0)
+        {
+            throw new ArgumentException(
+                "Prefix and Exact matching require argument tokens.",
+                nameof(argumentTokens)
+            );
+        }
+
+        if (ExecutableNames.Count == 0 && argumentMatchMode == AdapterArgumentMatchMode.Any)
+        {
+            throw new ArgumentException(
+                "Entry points must constrain the executable or arguments.",
+                nameof(executableNames)
+            );
+        }
 
         Name = name;
         Mode = mode;
         Protocol = protocol;
-        ExecutableNames = copiedExecutableNames;
-        ArgumentTokens = copiedArgumentTokens;
         ArgumentMatchMode = argumentMatchMode;
         StripMatchedArguments = stripMatchedArguments;
         Description = string.IsNullOrWhiteSpace(description) ? null : description;
-
-        ValidateProtocolConfiguration(nameof(protocol));
-        ValidateArgumentMatchConfiguration();
-        ValidateBoundaryConfiguration(nameof(executableNames));
     }
 
     public string Name { get; }
@@ -61,73 +98,41 @@ public sealed class AdapterEntrypointDescriptor
         string? executableName,
         IReadOnlyList<string> arguments,
         out IReadOnlyList<string> matchedArguments,
-        out IReadOnlyList<string> payloadArguments,
-        bool useWindowsExecutableSemantics = false)
+        out IReadOnlyList<string> payloadArguments
+    )
     {
         ArgumentNullException.ThrowIfNull(arguments);
 
-        if (!MatchesExecutable(executableName, useWindowsExecutableSemantics))
+        if (!MatchesExecutable(executableName))
         {
             matchedArguments = ReadOnlyCollection<string>.Empty;
             payloadArguments = ReadOnlyCollection<string>.Empty;
             return false;
         }
 
-        if (!TryMatchArguments(arguments, out matchedArguments, out payloadArguments))
+        bool argumentsMatch = ArgumentMatchMode switch
         {
-            matchedArguments = ReadOnlyCollection<string>.Empty;
-            payloadArguments = ReadOnlyCollection<string>.Empty;
-            return false;
-        }
-
-        return true;
-    }
-
-    internal bool HasExecutableConstraint => ExecutableNames.Count != 0;
-
-    internal bool IsExecutableOnlyBoundary =>
-        ArgumentMatchMode == AdapterArgumentMatchMode.Any &&
-        ArgumentTokens.Count == 0;
-
-    internal bool MatchesExecutableBoundary(
-        string? executableName,
-        bool useWindowsExecutableSemantics = false)
-    {
-        return MatchesExecutable(executableName, useWindowsExecutableSemantics);
-    }
-
-    internal bool MatchesArgumentBoundary(IReadOnlyList<string> arguments)
-    {
-        ArgumentNullException.ThrowIfNull(arguments);
-
-        if (ArgumentTokens.Count == 0)
-        {
-            return false;
-        }
-
-        return TryMatchArguments(arguments, out _, out _);
-    }
-
-    internal bool HasConfusableProtocolArgumentBoundary(IReadOnlyList<string> arguments)
-    {
-        ArgumentNullException.ThrowIfNull(arguments);
-
-        if (arguments.Count == 0 ||
-            ArgumentTokens.Count == 0)
-        {
-            return false;
-        }
-
-        return ArgumentMatchMode switch
-        {
-            AdapterArgumentMatchMode.Prefix => arguments.Count < ArgumentTokens.Count &&
-                                               HasLeadingArgumentTokenMatch(arguments),
-            AdapterArgumentMatchMode.Exact => arguments.Count != ArgumentTokens.Count &&
-                                              HasLeadingArgumentTokenMatch(arguments),
-            AdapterArgumentMatchMode.ContainsAll =>
-                HasPartialContainsAllArgumentTokenMatch(arguments),
+            AdapterArgumentMatchMode.Any => true,
+            AdapterArgumentMatchMode.Prefix => StartsWith(arguments, ArgumentTokens),
+            AdapterArgumentMatchMode.Exact => SequenceEqual(arguments, ArgumentTokens),
             _ => false,
         };
+        if (!argumentsMatch)
+        {
+            matchedArguments = ReadOnlyCollection<string>.Empty;
+            payloadArguments = ReadOnlyCollection<string>.Empty;
+            return false;
+        }
+
+        matchedArguments =
+            ArgumentMatchMode == AdapterArgumentMatchMode.Any
+                ? ReadOnlyCollection<string>.Empty
+                : ArgumentTokens;
+        payloadArguments =
+            StripMatchedArguments && ArgumentMatchMode != AdapterArgumentMatchMode.Any
+                ? ToReadOnly(arguments.Skip(ArgumentTokens.Count))
+                : arguments;
+        return true;
     }
 
     internal AdapterProtocol ResolveProtocol(AdapterProtocol descriptorProtocol)
@@ -137,405 +142,88 @@ public sealed class AdapterEntrypointDescriptor
             return AdapterProtocol.Unspecified;
         }
 
-        return Protocol != AdapterProtocol.Unspecified
-            ? Protocol
-            : descriptorProtocol;
+        return Protocol == AdapterProtocol.Unspecified ? descriptorProtocol : Protocol;
     }
 
-    private static void ValidateMode(AdapterInvocationMode mode, string paramName)
-    {
-        if (!Enum.IsDefined(mode))
-        {
-            throw new ArgumentOutOfRangeException(
-                paramName,
-                mode,
-                "Unknown adapter invocation mode.");
-        }
-    }
-
-    private static void ValidateArgumentMatchMode(
-        AdapterArgumentMatchMode argumentMatchMode,
-        string paramName)
-    {
-        if (!Enum.IsDefined(argumentMatchMode))
-        {
-            throw new ArgumentOutOfRangeException(
-                paramName,
-                argumentMatchMode,
-                "Unknown adapter argument match mode.");
-        }
-    }
-
-    private static void ValidateProtocol(AdapterProtocol protocol, string paramName)
-    {
-        if (!Enum.IsDefined(protocol))
-        {
-            throw new ArgumentOutOfRangeException(
-                paramName,
-                protocol,
-                "Unknown adapter protocol.");
-        }
-    }
-
-    private void ValidateProtocolConfiguration(string paramName)
-    {
-        if (Mode == AdapterInvocationMode.HumanCommand &&
-            Protocol != AdapterProtocol.Unspecified)
-        {
-            throw new ArgumentException(
-                "Human command entry points must not declare a concrete adapter protocol.",
-                paramName);
-        }
-    }
-
-    private void ValidateArgumentMatchConfiguration()
-    {
-        if (ArgumentMatchMode == AdapterArgumentMatchMode.Any)
-        {
-            if (ArgumentTokens.Count != 0)
-            {
-                throw new ArgumentException(
-                    "Argument tokens are supported only when the argument match mode " +
-                    "requires them.",
-                    nameof(ArgumentTokens));
-            }
-
-            return;
-        }
-
-        if (ArgumentTokens.Count == 0)
-        {
-            throw new ArgumentException(
-                "Argument match modes other than Any require at least one argument token.",
-                nameof(ArgumentTokens));
-        }
-    }
-
-    private void ValidateBoundaryConfiguration(string paramName)
-    {
-        if (ExecutableNames.Count == 0 &&
-            ArgumentMatchMode == AdapterArgumentMatchMode.Any &&
-            ArgumentTokens.Count == 0)
-        {
-            throw new ArgumentException(
-                "Adapter entry points must constrain executable names or argument tokens; " +
-                "fully unconstrained entry points are not allowed.",
-                paramName);
-        }
-    }
-
-    private bool MatchesExecutable(
-        string? executableName,
-        bool useWindowsExecutableSemantics)
+    private bool MatchesExecutable(string? executableName)
     {
         if (ExecutableNames.Count == 0)
         {
             return true;
         }
 
-        if (string.IsNullOrEmpty(executableName))
+        if (string.IsNullOrWhiteSpace(executableName))
         {
             return false;
         }
 
-        foreach (string expectedExecutableName in ExecutableNames)
-        {
-            if (ExecutableNamesMatch(
-                    expectedExecutableName,
-                    executableName,
-                    useWindowsExecutableSemantics))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static bool ExecutableNamesMatch(
-        string expectedExecutableName,
-        string actualExecutableName,
-        bool useWindowsExecutableSemantics)
-    {
-        StringComparison comparison = useWindowsExecutableSemantics
+        StringComparison comparison = OperatingSystem.IsWindows()
             ? StringComparison.OrdinalIgnoreCase
             : StringComparison.Ordinal;
-
-        if (string.Equals(expectedExecutableName, actualExecutableName, comparison))
-        {
-            return true;
-        }
-
-        if (!useWindowsExecutableSemantics)
-        {
-            return false;
-        }
-
-        return string.Equals(
-            NormalizeExecutableName(expectedExecutableName, useWindowsExecutableSemantics),
-            NormalizeExecutableName(actualExecutableName, useWindowsExecutableSemantics),
-            comparison);
+        string normalizedActual = NormalizeExecutableName(executableName);
+        return ExecutableNames.Any(expected =>
+            string.Equals(NormalizeExecutableName(expected), normalizedActual, comparison)
+        );
     }
 
-    private static bool HasWindowsExeSuffix(
-        string executableName,
-        bool useWindowsExecutableSemantics)
+    private static string NormalizeExecutableName(string executableName)
     {
-        return executableName.EndsWith(
-            ".exe",
-            useWindowsExecutableSemantics
-                ? StringComparison.OrdinalIgnoreCase
-                : StringComparison.Ordinal);
-    }
-
-    internal static string NormalizeExecutableName(
-        string executableName,
-        bool useWindowsExecutableSemantics)
-    {
-        return useWindowsExecutableSemantics &&
-               HasWindowsExeSuffix(executableName, useWindowsExecutableSemantics)
+        return executableName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
             ? executableName[..^4]
             : executableName;
     }
 
-    internal HashSet<string>? GetMatchedExecutableNameSet(
-        string? executableName,
-        bool useWindowsExecutableSemantics)
+    private static bool StartsWith(IReadOnlyList<string> arguments, IReadOnlyList<string> expected)
     {
-        if (!HasExecutableConstraint)
+        if (arguments.Count < expected.Count)
         {
-            return null;
-        }
-
-        ArgumentException.ThrowIfNullOrEmpty(executableName);
-
-        StringComparer comparer = useWindowsExecutableSemantics
-            ? StringComparer.OrdinalIgnoreCase
-            : StringComparer.Ordinal;
-        var matchedExecutableNames = new HashSet<string>(comparer);
-        foreach (string expectedExecutableName in ExecutableNames)
-        {
-            if (ExecutableNamesMatch(
-                    expectedExecutableName,
-                    executableName,
-                    useWindowsExecutableSemantics))
-            {
-                matchedExecutableNames.Add(NormalizeExecutableName(
-                    expectedExecutableName,
-                    useWindowsExecutableSemantics));
-            }
-        }
-
-        return matchedExecutableNames;
-    }
-
-    private bool TryMatchArguments(
-        IReadOnlyList<string> arguments,
-        out IReadOnlyList<string> matchedArguments,
-        out IReadOnlyList<string> payloadArguments)
-    {
-        switch (ArgumentMatchMode)
-        {
-            case AdapterArgumentMatchMode.Any:
-                matchedArguments = ReadOnlyCollection<string>.Empty;
-                payloadArguments = arguments;
-                return true;
-
-            case AdapterArgumentMatchMode.Prefix:
-                return TryMatchPrefix(arguments, out matchedArguments, out payloadArguments);
-
-            case AdapterArgumentMatchMode.Exact:
-                return TryMatchExact(arguments, out matchedArguments, out payloadArguments);
-
-            case AdapterArgumentMatchMode.ContainsAll:
-                return TryMatchContainsAll(arguments, out matchedArguments, out payloadArguments);
-
-            default:
-                throw new InvalidOperationException("Unknown adapter argument match mode.");
-        }
-    }
-
-    private bool TryMatchPrefix(
-        IReadOnlyList<string> arguments,
-        out IReadOnlyList<string> matchedArguments,
-        out IReadOnlyList<string> payloadArguments)
-    {
-        if (arguments.Count < ArgumentTokens.Count)
-        {
-            matchedArguments = ReadOnlyCollection<string>.Empty;
-            payloadArguments = ReadOnlyCollection<string>.Empty;
             return false;
         }
 
-        for (var index = 0; index < ArgumentTokens.Count; index++)
+        for (int index = 0; index < expected.Count; index++)
         {
-            if (!string.Equals(arguments[index], ArgumentTokens[index], StringComparison.Ordinal))
+            if (!string.Equals(arguments[index], expected[index], StringComparison.Ordinal))
             {
-                matchedArguments = ReadOnlyCollection<string>.Empty;
-                payloadArguments = ReadOnlyCollection<string>.Empty;
                 return false;
             }
         }
 
-        matchedArguments = ArgumentTokens;
-        payloadArguments = StripMatchedArguments
-            ? ToReadOnly(arguments.Skip(ArgumentTokens.Count))
-            : arguments;
         return true;
     }
 
-    private bool TryMatchExact(
+    private static bool SequenceEqual(
         IReadOnlyList<string> arguments,
-        out IReadOnlyList<string> matchedArguments,
-        out IReadOnlyList<string> payloadArguments)
+        IReadOnlyList<string> expected
+    )
     {
-        if (arguments.Count != ArgumentTokens.Count)
-        {
-            matchedArguments = ReadOnlyCollection<string>.Empty;
-            payloadArguments = ReadOnlyCollection<string>.Empty;
-            return false;
-        }
-
-        for (var index = 0; index < ArgumentTokens.Count; index++)
-        {
-            if (!string.Equals(arguments[index], ArgumentTokens[index], StringComparison.Ordinal))
-            {
-                matchedArguments = ReadOnlyCollection<string>.Empty;
-                payloadArguments = ReadOnlyCollection<string>.Empty;
-                return false;
-            }
-        }
-
-        matchedArguments = ArgumentTokens;
-        payloadArguments = StripMatchedArguments
-            ? ReadOnlyCollection<string>.Empty
-            : arguments;
-        return true;
+        return arguments.Count == expected.Count && StartsWith(arguments, expected);
     }
 
-    private bool TryMatchContainsAll(
-        IReadOnlyList<string> arguments,
-        out IReadOnlyList<string> matchedArguments,
-        out IReadOnlyList<string> payloadArguments)
-    {
-        var matchedIndexes = new HashSet<int>();
-        foreach (string token in ArgumentTokens)
-        {
-            var found = false;
-            for (var index = 0; index < arguments.Count; index++)
-            {
-                if (matchedIndexes.Contains(index) ||
-                    !string.Equals(arguments[index], token, StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                matchedIndexes.Add(index);
-                found = true;
-                break;
-            }
-
-            if (!found)
-            {
-                matchedArguments = ReadOnlyCollection<string>.Empty;
-                payloadArguments = ReadOnlyCollection<string>.Empty;
-                return false;
-            }
-        }
-
-        matchedArguments = ArgumentTokens;
-        if (!StripMatchedArguments)
-        {
-            payloadArguments = arguments;
-            return true;
-        }
-
-        var payload = new List<string>(Math.Max(0, arguments.Count - matchedIndexes.Count));
-        for (var index = 0; index < arguments.Count; index++)
-        {
-            if (!matchedIndexes.Contains(index))
-            {
-                payload.Add(arguments[index]);
-            }
-        }
-
-        payloadArguments = ToReadOnly(payload);
-        return true;
-    }
-
-    private static ReadOnlyCollection<string> CopyNames(
+    private static ReadOnlyCollection<string> CopyValues(
         IEnumerable<string>? values,
-        string paramName)
+        string parameterName
+    )
     {
         if (values is null)
         {
             return ReadOnlyCollection<string>.Empty;
         }
 
-        var copiedValues = values.ToArray();
-        if (Array.Exists(copiedValues, static value => string.IsNullOrWhiteSpace(value)))
+        string[] copied = values.ToArray();
+        if (copied.Any(string.IsNullOrWhiteSpace))
         {
             throw new ArgumentException(
-                "Adapter entry point names and argument tokens must not contain null or " +
-                "whitespace values.",
-                paramName);
+                "Entry point values must not be null or whitespace.",
+                parameterName
+            );
         }
 
-        return Array.AsReadOnly(copiedValues);
+        return Array.AsReadOnly(copied);
     }
 
     private static ReadOnlyCollection<string> ToReadOnly(IEnumerable<string> values)
     {
-        var copiedValues = values.ToArray();
-        return copiedValues.Length == 0
-            ? ReadOnlyCollection<string>.Empty
-            : Array.AsReadOnly(copiedValues);
-    }
-
-    private bool HasPartialContainsAllArgumentTokenMatch(IReadOnlyList<string> arguments)
-    {
-        Dictionary<string, int> availableTokenCounts = CountTokens(arguments);
-        Dictionary<string, int> requiredTokenCounts = CountTokens(ArgumentTokens);
-        var matchedTokenCount = 0;
-
-        foreach (KeyValuePair<string, int> requiredTokenCount in requiredTokenCounts)
-        {
-            if (!availableTokenCounts.TryGetValue(requiredTokenCount.Key, out int availableCount))
-            {
-                continue;
-            }
-
-            matchedTokenCount += Math.Min(availableCount, requiredTokenCount.Value);
-        }
-
-        return matchedTokenCount != 0 &&
-               matchedTokenCount < ArgumentTokens.Count;
-    }
-
-    private static Dictionary<string, int> CountTokens(IReadOnlyList<string> tokens)
-    {
-        var tokenCounts = new Dictionary<string, int>(StringComparer.Ordinal);
-        foreach (string token in tokens)
-        {
-            tokenCounts[token] = tokenCounts.TryGetValue(token, out int count)
-                ? count + 1
-                : 1;
-        }
-
-        return tokenCounts;
-    }
-
-    private bool HasLeadingArgumentTokenMatch(IReadOnlyList<string> arguments)
-    {
-        int compareCount = Math.Min(arguments.Count, ArgumentTokens.Count);
-        for (var index = 0; index < compareCount; index++)
-        {
-            if (!string.Equals(arguments[index], ArgumentTokens[index], StringComparison.Ordinal))
-            {
-                return false;
-            }
-        }
-
-        return compareCount != 0;
+        string[] copied = values.ToArray();
+        return copied.Length == 0 ? ReadOnlyCollection<string>.Empty : Array.AsReadOnly(copied);
     }
 }

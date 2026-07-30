@@ -119,63 +119,6 @@ public sealed class SystemProcessRunnerTests
     }
 
     [Fact]
-    public async Task RunAsyncWithExplicitOnlyEnvironmentClearsInheritedVariables()
-    {
-        var runner = new SystemProcessRunner();
-        var inheritedVariableName =
-            "AZUREAUTH_PROCESS_HELPER_INHERITED_" + Guid.NewGuid().ToString("N");
-        var approvedVariableName =
-            "AZUREAUTH_PROCESS_HELPER_APPROVED_" + Guid.NewGuid().ToString("N");
-        var originalValue = Environment.GetEnvironmentVariable(inheritedVariableName);
-        Environment.SetEnvironmentVariable(inheritedVariableName, "inherited");
-
-        try
-        {
-            var startSpec = HelperStartSpec(
-                "read-env-list",
-                arguments: [inheritedVariableName, approvedVariableName],
-                environment: new Dictionary<string, string?>
-                {
-                    [approvedVariableName] = "approved",
-                },
-                environmentMode: ProcessEnvironmentMode.ExplicitOnly
-            );
-
-            var result = await runner.RunAsync(startSpec, TestContext.Current.CancellationToken);
-
-            Assert.True(result.Succeeded);
-            var output = DecodeLines(result.StandardOutput);
-            Assert.Equal(string.Empty, output["env0"]);
-            Assert.Equal("approved", output["env1"]);
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable(inheritedVariableName, originalValue);
-        }
-    }
-
-    [Fact]
-    public async Task RunAsyncWithInvalidEnvironmentModeThrowsWithoutLaunchingProcess()
-    {
-        var markerFile = Path.Combine(
-            CreateTestDirectory("invalid environment mode"),
-            "launched.txt"
-        );
-        var runner = new SystemProcessRunner();
-        var startSpec = HelperStartSpec(
-            "write-marker",
-            arguments: [markerFile],
-            environmentMode: (ProcessEnvironmentMode)42
-        );
-
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
-            runner.RunAsync(startSpec, TestContext.Current.CancellationToken)
-        );
-
-        Assert.False(File.Exists(markerFile));
-    }
-
-    [Fact]
     public async Task RunAsyncClosesStandardInputWhenStandardInputIsNull()
     {
         var runner = new SystemProcessRunner();
@@ -199,11 +142,8 @@ public sealed class SystemProcessRunnerTests
             new ProcessStartSpec(
                 TestAppHostPath(),
                 [ProcessTestApp.HelperSwitch, ProcessTestApp.HelperNonceSwitch, helperNonce],
-                environment: ProcessTestApp.CreateHelperEnvironment(
-                    helperNonce,
-                    environmentMode: ProcessEnvironmentMode.ExplicitOnly
-                ),
-                environmentMode: ProcessEnvironmentMode.ExplicitOnly),
+                environment: ProcessTestApp.CreateHelperEnvironment(helperNonce)
+            ),
             TestContext.Current.CancellationToken
         );
 
@@ -228,20 +168,15 @@ public sealed class SystemProcessRunnerTests
                     helperNonce,
                     "unknown-command",
                 ],
-                environment: ProcessTestApp.CreateHelperEnvironment(
-                    helperNonce,
-                    environmentMode: ProcessEnvironmentMode.ExplicitOnly
-                ),
-                environmentMode: ProcessEnvironmentMode.ExplicitOnly),
+                environment: ProcessTestApp.CreateHelperEnvironment(helperNonce)
+            ),
             TestContext.Current.CancellationToken
         );
 
         Assert.False(result.Succeeded);
         Assert.Equal(ConfigurationErrorExitCode, result.ExitCode);
         Assert.Equal(string.Empty, result.StandardOutput);
-        AssertExactNormalizedStderr(
-            result,
-            "Unknown process helper command 'unknown-command'.\n");
+        AssertExactNormalizedStderr(result, "Unknown process helper command 'unknown-command'.\n");
     }
 
     [Fact]
@@ -268,33 +203,6 @@ public sealed class SystemProcessRunnerTests
     }
 
     [Fact]
-    public async Task RunAsyncKillsProcessTreeAndRethrowsWhenPostStartWriteFails()
-    {
-        if (OperatingSystem.IsWindows() || !File.Exists("/bin/sh"))
-        {
-            return;
-        }
-
-        var pidFile = Path.Combine(CreateTestDirectory("process tree failure"), "child.pid");
-        var runner = new SystemProcessRunner();
-        var runTask = runner.RunAsync(
-            new ProcessStartSpec(
-                "/bin/sh",
-                ["-c", $"sleep 30 & echo $! > {ShellQuote(pidFile)}; exec 0<&-; sleep 30"],
-                standardInput: new string('x', 1024 * 1024)
-            ),
-            TestContext.Current.CancellationToken
-        );
-        var childProcessId = await WaitForProcessIdAsync(
-            pidFile,
-            TestContext.Current.CancellationToken
-        );
-
-        await Assert.ThrowsAnyAsync<IOException>(() => runTask);
-        await AssertProcessExitsAsync(childProcessId, TestContext.Current.CancellationToken);
-    }
-
-    [Fact]
     public async Task RunAsyncReturnsTimedOutStatusAndKillsProcessTreeWhenTimeoutExpires()
     {
         if (OperatingSystem.IsWindows() || !File.Exists("/bin/sh"))
@@ -312,7 +220,10 @@ public sealed class SystemProcessRunnerTests
             ),
             TestContext.Current.CancellationToken
         );
-        int childProcessId = await WaitForProcessIdAsync(pidFile, TestContext.Current.CancellationToken);
+        int childProcessId = await WaitForProcessIdAsync(
+            pidFile,
+            TestContext.Current.CancellationToken
+        );
 
         ProcessResult result = await runTask;
 
@@ -350,34 +261,6 @@ public sealed class SystemProcessRunnerTests
     }
 
     [Fact]
-    public async Task RunAsyncReturnsWithinBoundWhenExitedRootLeavesInheritedPipeOpen()
-    {
-        if (OperatingSystem.IsWindows() || !File.Exists("/bin/sh"))
-        {
-            return;
-        }
-
-        var runner = new SystemProcessRunner();
-        var stopwatch = Stopwatch.StartNew();
-
-        ProcessResult result = await runner.RunAsync(
-            new ProcessStartSpec(
-                "/bin/sh",
-                ["-c", "sleep 4 &"],
-                timeout: TimeSpan.FromMilliseconds(150)
-            ),
-            TestContext.Current.CancellationToken
-        );
-
-        stopwatch.Stop();
-        Assert.Equal(ProcessExecutionStatus.TimedOut, result.Status);
-        Assert.True(
-            stopwatch.Elapsed < TimeSpan.FromSeconds(3),
-            $"Runner took {stopwatch.Elapsed}."
-        );
-    }
-
-    [Fact]
     public async Task RunAsyncReturnsOutputTooLargeForBoundedStdoutCapture()
     {
         if (OperatingSystem.IsWindows() || !File.Exists("/bin/sh"))
@@ -394,9 +277,7 @@ public sealed class SystemProcessRunnerTests
                 outputCaptureOptions: new ProcessOutputCaptureOptions
                 {
                     StandardOutputByteLimit = 32,
-                    StandardOutputCharacterLimit = 32,
                     StandardErrorByteLimit = 32,
-                    StandardErrorCharacterLimit = 32,
                 }
             ),
             TestContext.Current.CancellationToken
@@ -459,73 +340,18 @@ public sealed class SystemProcessRunnerTests
     }
 
     [Fact]
-    public async Task RunAsyncPreStartValidationFailureDoesNotLaunchHelperProcess()
-    {
-        var markerFile = Path.Combine(CreateTestDirectory("pre start validation"), "launched.txt");
-        var runner = new SystemProcessRunner();
-        var expectedException = new UnauthorizedAccessException("integrity check failed");
-
-        var exception = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
-            runner.RunAsync(
-                HelperStartSpec(
-                    "write-marker",
-                    arguments: [markerFile],
-                    preStartValidation: _ => ValueTask.FromException(expectedException)
-                ),
-                TestContext.Current.CancellationToken
-            )
-        );
-
-        Assert.Same(expectedException, exception);
-        Assert.False(File.Exists(markerFile));
-    }
-
-    [Fact]
-    public async Task RunAsyncWithCancellationAfterPreStartValidationThrows()
-    {
-        var markerFile = Path.Combine(
-            CreateTestDirectory("post validation canceled process"),
-            "launched.txt"
-        );
-        var runner = new SystemProcessRunner();
-        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
-            TestContext.Current.CancellationToken
-        );
-
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            runner.RunAsync(
-                HelperStartSpec(
-                    "write-marker",
-                    arguments: [markerFile],
-                    preStartValidation: _ =>
-                    {
-                        cancellation.Cancel();
-                        return ValueTask.CompletedTask;
-                    }
-                ),
-                cancellation.Token
-            )
-        );
-
-        Assert.False(File.Exists(markerFile));
-    }
-
-    [Fact]
-    public void ProcessStartSpecRejectsUnboundedTimeoutAndCaptureLimits()
+    public void ProcessStartSpecRejectsInvalidTimeoutAndCaptureLimits()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() =>
-            new ProcessStartSpec("tool", timeout: TimeSpan.MaxValue)
+            new ProcessStartSpec("tool", timeout: TimeSpan.Zero)
         );
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             new ProcessStartSpec(
                 "tool",
                 outputCaptureOptions: new ProcessOutputCaptureOptions
                 {
-                    StandardOutputByteLimit =
-                        ProcessOutputCaptureOptions.MaximumStreamLimit + 1,
-                    StandardOutputCharacterLimit = 1,
+                    StandardOutputByteLimit = 0,
                     StandardErrorByteLimit = 1,
-                    StandardErrorCharacterLimit = 1,
                 }
             )
         );
@@ -536,9 +362,7 @@ public sealed class SystemProcessRunnerTests
         string? workingDirectory = null,
         IReadOnlyList<string>? arguments = null,
         IReadOnlyDictionary<string, string?>? environment = null,
-        string? standardInput = null,
-        ProcessEnvironmentMode environmentMode = ProcessEnvironmentMode.Inherit,
-        Func<CancellationToken, ValueTask>? preStartValidation = null
+        string? standardInput = null
     )
     {
         var helperNonce = ProcessTestApp.CreateHelperNonce();
@@ -548,10 +372,8 @@ public sealed class SystemProcessRunnerTests
             ProcessTestApp.AppHostPath(),
             allArguments,
             workingDirectory,
-            ProcessTestApp.CreateHelperEnvironment(helperNonce, environment, environmentMode),
-            standardInput,
-            environmentMode,
-            preStartValidation
+            ProcessTestApp.CreateHelperEnvironment(helperNonce, environment),
+            standardInput
         );
     }
 

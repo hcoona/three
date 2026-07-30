@@ -1,6 +1,4 @@
-using System.Collections;
 using System.Reflection;
-using Hcoona.AzureAuth.CredProvider.Platform.Processes;
 
 namespace Hcoona.AzureAuth.CredProvider.Platform.Tests;
 
@@ -15,9 +13,11 @@ internal static class ProcessTestApp
     internal static string AppHostPath()
     {
         string assemblyPath = Assembly.GetExecutingAssembly().Location;
-        string directory = Path.GetDirectoryName(assemblyPath)
+        string directory =
+            Path.GetDirectoryName(assemblyPath)
             ?? throw new InvalidOperationException(
-                $"Test assembly path '{assemblyPath}' does not have a parent directory.");
+                $"Test assembly path '{assemblyPath}' does not have a parent directory."
+            );
         string fileName = Path.GetFileNameWithoutExtension(assemblyPath);
 
         if (OperatingSystem.IsWindows())
@@ -30,7 +30,8 @@ internal static class ProcessTestApp
         {
             throw new FileNotFoundException(
                 $"Sibling test apphost '{appHostPath}' was not found for '{assemblyPath}'.",
-                appHostPath);
+                appHostPath
+            );
         }
 
         return appHostPath;
@@ -68,33 +69,12 @@ internal static class ProcessTestApp
 
     internal static Dictionary<string, string?> CreateHelperEnvironment(
         string helperNonce,
-        IReadOnlyDictionary<string, string?>? environment = null,
-        ProcessEnvironmentMode environmentMode = ProcessEnvironmentMode.Inherit
-    )
-    {
-        return CreateHelperEnvironment(
-            helperNonce,
-            environment,
-            environmentMode,
-            inheritedEnvironment: null,
-            useWindowsEnvironmentVariableSemantics: OperatingSystem.IsWindows()
-        );
-    }
-
-    internal static Dictionary<string, string?> CreateHelperEnvironment(
-        string helperNonce,
-        IReadOnlyDictionary<string, string?>? environment,
-        ProcessEnvironmentMode environmentMode,
-        IReadOnlyDictionary<string, string?>? inheritedEnvironment,
-        bool useWindowsEnvironmentVariableSemantics
+        IReadOnlyDictionary<string, string?>? environment = null
     )
     {
         ArgumentException.ThrowIfNullOrEmpty(helperNonce);
 
-        var variableNameComparer = GetEnvironmentVariableNameComparer(
-            useWindowsEnvironmentVariableSemantics
-        );
-        var allEnvironment = new Dictionary<string, string?>(variableNameComparer)
+        var allEnvironment = new Dictionary<string, string?>
         {
             [HelperEnabledVariable] = HelperEnabledValue,
             [HelperNonceVariable] = helperNonce,
@@ -106,15 +86,6 @@ internal static class ProcessTestApp
             {
                 allEnvironment.Add(variable.Key, variable.Value);
             }
-        }
-
-        if (environmentMode == ProcessEnvironmentMode.ExplicitOnly)
-        {
-            PreserveDotnetHostBootstrapEnvironment(
-                allEnvironment,
-                inheritedEnvironment,
-                useWindowsEnvironmentVariableSemantics
-            );
         }
 
         return allEnvironment;
@@ -161,95 +132,5 @@ internal static class ProcessTestApp
     internal static string NormalizeNewlines(string value)
     {
         return value.Replace("\r\n", "\n", StringComparison.Ordinal);
-    }
-
-    private static void PreserveDotnetHostBootstrapEnvironment(
-        Dictionary<string, string?> environment,
-        IReadOnlyDictionary<string, string?>? inheritedEnvironment,
-        bool useWindowsEnvironmentVariableSemantics
-    )
-    {
-        var variableNameComparison = GetEnvironmentVariableNameComparison(
-            useWindowsEnvironmentVariableSemantics
-        );
-
-        if (inheritedEnvironment is not null)
-        {
-            foreach (var variable in inheritedEnvironment)
-            {
-                PreserveDotnetHostBootstrapVariable(
-                    environment,
-                    variable.Key,
-                    variable.Value,
-                    variableNameComparison
-                );
-            }
-
-            return;
-        }
-
-        foreach (DictionaryEntry variable in Environment.GetEnvironmentVariables())
-        {
-            if (
-                variable.Key is not string name
-                || variable.Value is not string value
-            )
-            {
-                continue;
-            }
-
-            PreserveDotnetHostBootstrapVariable(
-                environment,
-                name,
-                value,
-                variableNameComparison
-            );
-        }
-    }
-
-    private static void PreserveDotnetHostBootstrapVariable(
-        Dictionary<string, string?> environment,
-        string name,
-        string? value,
-        StringComparison variableNameComparison
-    )
-    {
-        if (
-            value is null
-            || environment.ContainsKey(name)
-            || !IsDotnetHostBootstrapVariable(name, variableNameComparison)
-        )
-        {
-            return;
-        }
-
-        environment.Add(name, value);
-    }
-
-    private static bool IsDotnetHostBootstrapVariable(
-        string name,
-        StringComparison variableNameComparison
-    )
-    {
-        return string.Equals(name, "DOTNET_MULTILEVEL_LOOKUP", variableNameComparison)
-            || name.StartsWith("DOTNET_ROOT", variableNameComparison);
-    }
-
-    private static StringComparer GetEnvironmentVariableNameComparer(
-        bool useWindowsEnvironmentVariableSemantics
-    )
-    {
-        return useWindowsEnvironmentVariableSemantics
-            ? StringComparer.OrdinalIgnoreCase
-            : StringComparer.Ordinal;
-    }
-
-    private static StringComparison GetEnvironmentVariableNameComparison(
-        bool useWindowsEnvironmentVariableSemantics
-    )
-    {
-        return useWindowsEnvironmentVariableSemantics
-            ? StringComparison.OrdinalIgnoreCase
-            : StringComparison.Ordinal;
     }
 }

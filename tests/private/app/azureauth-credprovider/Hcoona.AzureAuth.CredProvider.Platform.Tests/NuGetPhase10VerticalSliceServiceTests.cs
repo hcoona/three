@@ -16,10 +16,11 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
         NuGetPhase10VerticalSliceService service = CreateService(fileSystem);
 
         NuGetPhase10ConfigureDryRunResult result = await service.DryRunConfigureAsync(
-            TestContext.Current.CancellationToken);
+            TestContext.Current.CancellationToken
+        );
 
         Assert.True(result.Validation.IsValid);
-        Assert.Equal(ConfigurationPlanState.Planned, result.PlanResult.State);
+        Assert.Equal(ConfigurationPlanOperation.DryRun, result.PlanResult.Operation);
         ConfigurationPlannedChange change = Assert.Single(result.PlanResult.Changes);
         Assert.Equal(ConfigurationChangeOperation.Set, change.Operation);
         Assert.Equal(ConfigurationTargetKind.NuGetPluginLayout, change.TargetKind);
@@ -38,16 +39,19 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
         fileSystem.AtomicWriteAllText(service.Paths.PluginEntrypointPath, "fake-assembly");
 
         NuGetPhase10ConfigureResult configureResult = await service.ConfigureAsync(
-            TestContext.Current.CancellationToken);
+            TestContext.Current.CancellationToken
+        );
         NuGetPhase10DoctorResult doctorResult = await service.DoctorAsync(
-            TestContext.Current.CancellationToken);
+            TestContext.Current.CancellationToken
+        );
 
-        Assert.Equal(ConfigurationPlanState.Applied, configureResult.PlanResult.State);
+        Assert.NotEqual(ConfigurationPlanOperation.DryRun, configureResult.PlanResult.Operation);
         Assert.True(configureResult.PluginLayoutMarkerPresent);
         Assert.True(configureResult.OwnershipManifestPresent);
         Assert.Equal(
             NuGetPhase10VerticalSliceService.MarkerValue,
-            fileSystem.ReadAllText(service.Paths.PluginLayoutMarkerPath));
+            fileSystem.ReadAllText(service.Paths.PluginLayoutMarkerPath)
+        );
         Assert.True(fileSystem.FileExists(service.Paths.OwnershipManifestPath));
         Assert.True(doctorResult.ConfigurationPlanValid);
         Assert.True(doctorResult.PluginLayoutMarkerPresent);
@@ -60,7 +64,7 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
     }
 
     [Fact]
-    public async Task UnconfigureRemovesManifestAndLeavesEmptyLayoutMarker()
+    public async Task UnconfigureRemovesManifestAndLayoutMarker()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Host);
         NuGetPhase10VerticalSliceService service = CreateService(fileSystem);
@@ -68,14 +72,14 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
         await service.ConfigureAsync(TestContext.Current.CancellationToken);
 
         NuGetPhase10UnconfigureResult result = await service.UnconfigureAsync(
-            TestContext.Current.CancellationToken);
+            TestContext.Current.CancellationToken
+        );
 
         Assert.True(result.HadOwnedConfiguration);
-        Assert.Equal(ConfigurationPlanState.Applied, result.PlanResult?.State);
+        Assert.NotEqual(ConfigurationPlanOperation.DryRun, result.PlanResult?.Operation);
         Assert.False(result.PluginLayoutMarkerPresent);
         Assert.False(result.OwnershipManifestPresent);
-        Assert.True(fileSystem.FileExists(service.Paths.PluginLayoutMarkerPath));
-        Assert.Equal(string.Empty, fileSystem.ReadAllText(service.Paths.PluginLayoutMarkerPath));
+        Assert.False(fileSystem.FileExists(service.Paths.PluginLayoutMarkerPath));
         Assert.False(fileSystem.FileExists(service.Paths.OwnershipManifestPath));
     }
 
@@ -85,17 +89,17 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Host);
         NuGetPhase10VerticalSliceService service = CreateService(
             fileSystem,
-            name => string.Equals(
-                name,
-                "NUGET_NETCORE_PLUGIN_PATHS",
-                StringComparison.Ordinal)
-                ? "/tmp/plugin.dll"
-                : null);
+            name =>
+                string.Equals(name, "NUGET_NETCORE_PLUGIN_PATHS", StringComparison.Ordinal)
+                    ? "/tmp/plugin.dll"
+                    : null
+        );
         fileSystem.AtomicWriteAllText(service.Paths.PluginEntrypointPath, "fake-assembly");
         await service.ConfigureAsync(TestContext.Current.CancellationToken);
 
         NuGetPhase10DoctorResult result = await service.DoctorAsync(
-            TestContext.Current.CancellationToken);
+            TestContext.Current.CancellationToken
+        );
 
         Assert.False(result.OptionalEnvironmentOverridesAbsent);
         Assert.True(result.PluginLayoutMarkerPresent);
@@ -110,7 +114,8 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
         await service.ConfigureAsync(TestContext.Current.CancellationToken);
 
         NuGetPhase10DoctorResult result = await service.DoctorAsync(
-            TestContext.Current.CancellationToken);
+            TestContext.Current.CancellationToken
+        );
 
         Assert.True(result.PluginLayoutMarkerPresent);
         Assert.True(result.OwnershipManifestPresent);
@@ -125,10 +130,12 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
         NuGetPhase10VerticalSliceService service = CreateService(fileSystem);
         fileSystem.AtomicWriteAllText(
             service.Paths.PluginLayoutMarkerPath,
-            NuGetPhase10VerticalSliceService.MarkerValue);
+            NuGetPhase10VerticalSliceService.MarkerValue
+        );
 
         await Assert.ThrowsAsync<NuGetPhase10UnrecognizedStateException>(async () =>
-            await service.ConfigureAsync(TestContext.Current.CancellationToken));
+            await service.ConfigureAsync(TestContext.Current.CancellationToken)
+        );
     }
 
     [Fact]
@@ -139,7 +146,8 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
         fileSystem.AtomicWriteAllText(service.Paths.OwnershipManifestPath, "{");
 
         await Assert.ThrowsAsync<NuGetPhase10UnrecognizedStateException>(async () =>
-            await service.ConfigureAsync(TestContext.Current.CancellationToken));
+            await service.ConfigureAsync(TestContext.Current.CancellationToken)
+        );
     }
 
     private static NuGetPhase10VerticalSliceService CreateService(
@@ -152,5 +160,6 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
                 StateDirectoryPath = "/state/azureauth-credprovider/phase10",
                 FileSystem = fileSystem,
                 EnvironmentVariableReader = environmentVariableReader,
-            });
+            }
+        );
 }

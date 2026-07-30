@@ -825,7 +825,6 @@ public sealed record CredentialRequest : IJsonOnDeserialized
     }
 }
 
-[JsonConverter(typeof(CredentialRequestV2DirectJsonConverter))]
 public sealed record CredentialRequestV2 : IJsonOnDeserialized
 {
     [JsonRequired]
@@ -1552,28 +1551,10 @@ public sealed record ConfigurationChangePlan : IJsonOnDeserialized
     public required string PlanId { get; init; }
 
     [JsonRequired]
-    public required string ChangeSetId { get; init; }
-
-    [JsonRequired]
     public required string OwnerProductId { get; init; }
 
     [JsonRequired]
     public required ConfigurationScope Scope { get; init; }
-
-    [JsonRequired]
-    public ConfigurationAtomicityPolicy AtomicityPolicy { get; init; } =
-        ConfigurationAtomicityPolicy.AtomicChangeSetRequired;
-
-    [JsonRequired]
-    public ConfigurationRollbackPolicy RollbackPolicy { get; init; } =
-        ConfigurationRollbackPolicy.Required;
-
-    [JsonRequired]
-    public ConfigurationPlanState State { get; init; } = ConfigurationPlanState.Planned;
-
-    [JsonRequired]
-    public ConfigurationManifestCommitPolicy ManifestCommitPolicy { get; init; } =
-        ConfigurationManifestCommitPolicy.CommitAfterDurableChanges;
 
     [JsonRequired]
     public required ConfigurationManifestMetadata Manifest { get; init; }
@@ -1598,17 +1579,10 @@ public static class ConfigurationChangePlanPolicy
 {
     public static ConfigurationChangePlan Create(
         string planId,
-        string changeSetId,
         string ownerProductId,
         ConfigurationScope scope,
         ConfigurationManifestMetadata manifest,
         IReadOnlyList<ConfigurationChange>? changes = null,
-        ConfigurationAtomicityPolicy atomicityPolicy =
-            ConfigurationAtomicityPolicy.AtomicChangeSetRequired,
-        ConfigurationRollbackPolicy rollbackPolicy = ConfigurationRollbackPolicy.Required,
-        ConfigurationPlanState state = ConfigurationPlanState.Planned,
-        ConfigurationManifestCommitPolicy manifestCommitPolicy =
-            ConfigurationManifestCommitPolicy.CommitAfterDurableChanges,
         ConfigurationTemporaryContainer? temporaryContainer = null,
         ConfigurationDeclarationPreservation declarationPreservation =
             ConfigurationDeclarationPreservation.NotApplicable,
@@ -1622,13 +1596,8 @@ public static class ConfigurationChangePlanPolicy
         var plan = new ConfigurationChangePlan
         {
             PlanId = planId,
-            ChangeSetId = changeSetId,
             OwnerProductId = ownerProductId,
             Scope = scope,
-            AtomicityPolicy = atomicityPolicy,
-            RollbackPolicy = rollbackPolicy,
-            State = state,
-            ManifestCommitPolicy = manifestCommitPolicy,
             Manifest = manifest,
             TemporaryContainer = temporaryContainer,
             DeclarationPreservation = declarationPreservation,
@@ -1670,9 +1639,7 @@ public static class ConfigurationChangePlanPolicy
         }
 
         if (
-            string.IsNullOrWhiteSpace(plan.PlanId)
-            || string.IsNullOrWhiteSpace(plan.ChangeSetId)
-            || string.IsNullOrWhiteSpace(plan.OwnerProductId)
+            string.IsNullOrWhiteSpace(plan.PlanId) || string.IsNullOrWhiteSpace(plan.OwnerProductId)
         )
         {
             return "Protocol violation: configuration change plan identifiers are required.";
@@ -1771,14 +1738,6 @@ public static class ConfigurationChangePlanPolicy
                 or ConfigurationScope.ExplicitPath
                 or ConfigurationScope.CiTemporary
                 or ConfigurationScope.Global
-        && plan.AtomicityPolicy is ConfigurationAtomicityPolicy.AtomicChangeSetRequired
-        && plan.RollbackPolicy is ConfigurationRollbackPolicy.Required
-        && plan.State
-            is ConfigurationPlanState.Planned
-                or ConfigurationPlanState.Applied
-                or ConfigurationPlanState.RolledBack
-                or ConfigurationPlanState.Failed
-        && plan.ManifestCommitPolicy is ConfigurationManifestCommitPolicy.CommitAfterDurableChanges
         && plan.DeclarationPreservation
             is ConfigurationDeclarationPreservation.NotApplicable
                 or ConfigurationDeclarationPreservation.AuthOnlyWhenDeclarationsRemainVisible
@@ -1799,18 +1758,6 @@ public static class ConfigurationChangePlanPolicy
             {
                 return "Protocol violation: CI temporary configuration plans require a valid "
                     + "product-owned temporary container.";
-            }
-
-            if (!plan.TemporaryContainer.DeleteContainerOnRollback)
-            {
-                return "Protocol violation: CI temporary configuration plans require temporary "
-                    + "container cleanup on rollback.";
-            }
-
-            if (!plan.TemporaryContainer.DeleteContainerOnRemoval)
-            {
-                return "Protocol violation: CI temporary configuration plans require temporary "
-                    + "container cleanup on removal.";
             }
 
             if (
@@ -1888,9 +1835,7 @@ public static class ConfigurationChangePlanPolicy
             ConfigurationTemporaryContainerKind.TemporaryHome =>
                 GetTemporaryHomeActivationEnvironmentViolation(
                     container,
-                    plan.Changes.Any(change =>
-                        change.TargetKind == ConfigurationTargetKind.Yarnrc
-                    )
+                    plan.Changes.Any(change => change.TargetKind == ConfigurationTargetKind.Yarnrc)
                 ),
             _ => container.ActivationEnvironment is null
                 ? null
@@ -2083,10 +2028,7 @@ public static class ConfigurationChangePlanPolicy
             || clearVariables.Count != expectedClearVariableCount
             || !ContainsVariable(clearVariables, "HOMEDRIVE")
             || !ContainsVariable(clearVariables, "HOMEPATH")
-            || (
-                isYarnConfiguration
-                && !ContainsVariable(clearVariables, "YARN_RC_FILENAME")
-            )
+            || (isYarnConfiguration && !ContainsVariable(clearVariables, "YARN_RC_FILENAME"))
         )
         {
             return isYarnConfiguration
@@ -2112,10 +2054,7 @@ public static class ConfigurationChangePlanPolicy
             setVariables.Count != 1
             || !HasVariableValue(setVariables, "HOME", productOwnedPath)
             || clearVariables.Count != expectedClearVariableCount
-            || (
-                isYarnConfiguration
-                && !ContainsVariable(clearVariables, "YARN_RC_FILENAME")
-            )
+            || (isYarnConfiguration && !ContainsVariable(clearVariables, "YARN_RC_FILENAME"))
         )
         {
             return isYarnConfiguration
@@ -2213,20 +2152,6 @@ public static class ConfigurationChangePlanPolicy
             {
                 return npmrcViolation;
             }
-        }
-
-        if (
-            (
-                change.Operation
-                is ConfigurationChangeOperation.Update
-                    or ConfigurationChangeOperation.Refresh
-                    or ConfigurationChangeOperation.Remove
-                    or ConfigurationChangeOperation.RemoveAdapter
-            ) && string.IsNullOrWhiteSpace(change.PreviousOwnedEntryMetadata)
-        )
-        {
-            return "Protocol violation: update, refresh, remove, and remove-adapter changes "
-                + "require previous owned-entry metadata.";
         }
 
         return null;
@@ -2327,9 +2252,7 @@ public static class ConfigurationChangePlanPolicy
             _ => null,
         };
 
-    private static string? GetNpmrcSecretAuthTokenSelectorViolation(
-        ConfigurationChangePlan plan
-    )
+    private static string? GetNpmrcSecretAuthTokenSelectorViolation(ConfigurationChangePlan plan)
     {
         ConfigurationChange[] npmrcSecretAuthTokenChanges = plan
             .Changes.Where(change =>
@@ -2517,7 +2440,8 @@ public static class ConfigurationChangePlanPolicy
             ConfigurationTemporaryContainerKind.NpmrcFile => targetKind
                 == ConfigurationTargetKind.Npmrc,
             ConfigurationTemporaryContainerKind.TemporaryHome => targetKind
-                is ConfigurationTargetKind.Yarnrc or ConfigurationTargetKind.CiTemporaryFile,
+                is ConfigurationTargetKind.Yarnrc
+                    or ConfigurationTargetKind.CiTemporaryFile,
             _ => false,
         };
 
@@ -2533,9 +2457,9 @@ public static class ConfigurationChangePlanPolicy
                 container.ProductOwnedPath
             ),
             ConfigurationTemporaryContainerKind.TemporaryHome => ConfigurationPathsEqual(
-                    targetPath,
-                    CombineConfigurationPath(container.ProductOwnedPath, ".yarnrc.yml")
-                )
+                targetPath,
+                CombineConfigurationPath(container.ProductOwnedPath, ".yarnrc.yml")
+            )
                 || (
                     targetKind == ConfigurationTargetKind.CiTemporaryFile
                     && IsConfigurationPathUnderDirectory(container.ProductOwnedPath, targetPath)
@@ -2778,10 +2702,10 @@ public sealed record ConfigurationManifestMetadata
 
     [JsonRequired]
     public required string EntrySelector { get; init; }
+
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public CanonicalResourceIdentity? ResourceIdentity { get; init; }
     public string? ProductVersion { get; init; }
-    public string? PreviousOwnedEntryHash { get; init; }
     public IReadOnlyDictionary<string, string> SafeMetadata { get; init; } = ContractMetadata.Empty;
 }
 
@@ -2793,8 +2717,6 @@ public sealed record ConfigurationTemporaryContainer
     [JsonRequired]
     public required string ProductOwnedPath { get; init; }
     public ConfigurationActivationEnvironment? ActivationEnvironment { get; init; }
-    public bool DeleteContainerOnRollback { get; init; } = true;
-    public bool DeleteContainerOnRemoval { get; init; } = true;
 }
 
 public sealed record ConfigurationActivationEnvironment
@@ -2825,14 +2747,13 @@ public sealed record ConfigurationChange
     public string? Value { get; init; }
     public required bool RequiresOwnershipRecord { get; init; }
     public bool IsSecretValue { get; init; }
-    public string? PreviousOwnedEntryMetadata { get; init; }
     public bool PreserveDeclarationsAndComments { get; init; } = true;
 
     public override string ToString() =>
         string.Format(
             CultureInfo.InvariantCulture,
             "{0} {{ {1} = {2}, {3} = {4}, {5} = {6}, {7} = {8}, {9} = {10}, "
-                + "{11} = {12}, {13} = {14}, {15} = {16}, {17} = {18} }}",
+                + "{11} = {12}, {13} = {14}, {15} = {16} }}",
             nameof(ConfigurationChange),
             nameof(Operation),
             Operation,
@@ -2851,8 +2772,6 @@ public sealed record ConfigurationChange
             RequiresOwnershipRecord,
             nameof(IsSecretValue),
             IsSecretValue,
-            nameof(PreviousOwnedEntryMetadata),
-            PreviousOwnedEntryMetadata,
             nameof(PreserveDeclarationsAndComments),
             PreserveDeclarationsAndComments
         );
@@ -3527,449 +3446,6 @@ public sealed record KeyringHelperResponse : IJsonOnDeserialized, IJsonOnSeriali
     }
 }
 
-public sealed record KeyringHelperIntegrityContract : IJsonOnDeserialized
-{
-    [JsonRequired]
-    public int ContractMajor { get; init; } = ContractVersions.KeyringHelperMajor;
-    public required string ProductId { get; init; }
-    public required string AbsoluteHelperPath { get; init; }
-    public required string Sha256 { get; init; }
-
-    [JsonRequired]
-    public KeyringHelperIntegrityPlatform Platform { get; init; } =
-        KeyringHelperIntegrityPlatform.Unspecified;
-
-    [JsonRequired]
-    public KeyringOwnerValidationRequirement OwnerValidation { get; init; } =
-        KeyringOwnerValidationRequirement.Required;
-
-    [JsonRequired]
-    public KeyringSymlinkPolicy SymlinkPolicy { get; init; } = KeyringSymlinkPolicy.RejectSymlinks;
-
-    [JsonRequired]
-    public KeyringDigestPolicy DigestPolicy { get; init; } = KeyringDigestPolicy.Sha256Required;
-
-    void IJsonOnDeserialized.OnDeserialized()
-    {
-        if (ContractMajor != ContractVersions.KeyringHelperMajor)
-        {
-            throw new ArgumentException(
-                "Protocol violation: keyring helper integrity contract major must be 2.",
-                nameof(ContractMajor)
-            );
-        }
-    }
-}
-
-public static class KeyringHelperIntegrityPolicy
-{
-    /// <summary>
-    /// Validates helper integrity contract policy for the current trusted runtime platform.
-    /// This does not inspect the filesystem and is not sufficient before helper execution.
-    /// </summary>
-    public static void EnsureContractPolicyValid(KeyringHelperIntegrityContract contract)
-    {
-        ArgumentNullException.ThrowIfNull(contract);
-
-        EnsureContractPolicyValid(contract, GetTrustedRuntimePlatform());
-    }
-
-    /// <summary>
-    /// Validates helper integrity contract policy for a trusted runtime platform.
-    /// This does not inspect the filesystem and is not sufficient before helper execution.
-    /// </summary>
-    public static void EnsureContractPolicyValid(
-        KeyringHelperIntegrityContract contract,
-        KeyringHelperIntegrityPlatform trustedRuntimePlatform
-    )
-    {
-        ArgumentNullException.ThrowIfNull(contract);
-
-        string? violation = GetContractPolicyViolation(contract, trustedRuntimePlatform);
-        if (violation is not null)
-        {
-            throw new ArgumentException(violation, nameof(contract));
-        }
-    }
-
-    /// <summary>
-    /// Performs structural-only validation of the self-declared helper integrity metadata.
-    /// Path syntax is checked with the declared platform's rules.
-    /// This is not sufficient before helper execution because it does not inspect the
-    /// filesystem or bind the policy to a trusted runtime platform.
-    /// </summary>
-    public static void EnsureStructurallyValid(KeyringHelperIntegrityContract contract)
-    {
-        ArgumentNullException.ThrowIfNull(contract);
-
-        string? violation = GetStructuralViolation(contract);
-        if (violation is not null)
-        {
-            throw new ArgumentException(violation, nameof(contract));
-        }
-    }
-
-    public static void EnsureContractPolicyValidForCurrentRuntime(
-        KeyringHelperIntegrityContract contract
-    )
-    {
-        ArgumentNullException.ThrowIfNull(contract);
-
-        EnsureContractPolicyValid(contract);
-    }
-
-    /// <summary>
-    /// Returns whether helper integrity contract policy is valid for the current trusted runtime
-    /// platform. This does not inspect the filesystem and is not sufficient before helper
-    /// execution.
-    /// </summary>
-    public static bool IsContractPolicyValid(KeyringHelperIntegrityContract contract)
-    {
-        ArgumentNullException.ThrowIfNull(contract);
-        return IsContractPolicyValid(contract, GetTrustedRuntimePlatform());
-    }
-
-    /// <summary>
-    /// Returns whether helper integrity contract policy is valid for a trusted runtime platform.
-    /// This does not inspect the filesystem and is not sufficient before helper execution.
-    /// </summary>
-    public static bool IsContractPolicyValid(
-        KeyringHelperIntegrityContract contract,
-        KeyringHelperIntegrityPlatform trustedRuntimePlatform
-    )
-    {
-        ArgumentNullException.ThrowIfNull(contract);
-        return GetContractPolicyViolation(contract, trustedRuntimePlatform) is null;
-    }
-
-    /// <summary>
-    /// Returns whether the self-declared helper integrity metadata is structurally valid.
-    /// Path syntax is checked with the declared platform's rules.
-    /// This is not sufficient before helper execution because it does not inspect the
-    /// filesystem or bind the policy to a trusted runtime platform.
-    /// </summary>
-    public static bool IsStructurallyValid(KeyringHelperIntegrityContract contract)
-    {
-        ArgumentNullException.ThrowIfNull(contract);
-        return GetStructuralViolation(contract) is null;
-    }
-
-    public static bool IsContractPolicyValidForCurrentRuntime(
-        KeyringHelperIntegrityContract contract
-    )
-    {
-        ArgumentNullException.ThrowIfNull(contract);
-
-        return IsContractPolicyValid(contract);
-    }
-
-    /// <summary>
-    /// Gets the helper integrity contract policy violation for the current trusted runtime
-    /// platform.
-    /// This does not inspect the filesystem and is not sufficient before helper execution.
-    /// </summary>
-    public static string? GetContractPolicyViolation(KeyringHelperIntegrityContract contract)
-    {
-        ArgumentNullException.ThrowIfNull(contract);
-
-        return GetContractPolicyViolation(contract, GetTrustedRuntimePlatform());
-    }
-
-    /// <summary>
-    /// Gets the structural-only validation violation for self-declared helper integrity metadata.
-    /// Path syntax is checked with the declared platform's rules.
-    /// This is not sufficient before helper execution because it does not inspect the
-    /// filesystem or bind the policy to a trusted runtime platform.
-    /// </summary>
-    public static string? GetStructuralViolation(KeyringHelperIntegrityContract contract)
-    {
-        ArgumentNullException.ThrowIfNull(contract);
-
-        if (contract.ContractMajor != ContractVersions.KeyringHelperMajor)
-        {
-            return "Protocol violation: keyring helper integrity contract major must be 2.";
-        }
-
-        if (string.IsNullOrWhiteSpace(contract.ProductId))
-        {
-            return "Protocol violation: keyring helper integrity product ID is required.";
-        }
-
-        if (string.IsNullOrWhiteSpace(contract.AbsoluteHelperPath))
-        {
-            return "Protocol violation: keyring helper path must be absolute.";
-        }
-
-        string? pathViolation = GetAbsoluteHelperPathSyntaxViolation(
-            contract.AbsoluteHelperPath,
-            contract.Platform
-        );
-        if (pathViolation is not null)
-        {
-            return pathViolation;
-        }
-
-        if (!IsSha256Hex(contract.Sha256))
-        {
-            return "Protocol violation: keyring helper SHA-256 digest is required.";
-        }
-
-        return contract.Platform switch
-        {
-            KeyringHelperIntegrityPlatform.Linux when IsStrongLinuxPolicy(contract) => null,
-            KeyringHelperIntegrityPlatform.Windows
-            or KeyringHelperIntegrityPlatform.MacOs when IsWeakWindowsMacOsPolicy(contract) => null,
-            KeyringHelperIntegrityPlatform.Linux =>
-                "Protocol violation: Linux keyring helper integrity policy must be the explicit "
-                    + "strong policy.",
-            KeyringHelperIntegrityPlatform.Windows or KeyringHelperIntegrityPlatform.MacOs =>
-                "Protocol violation: Windows/macOS keyring helper integrity policy must be the "
-                    + "explicit weak policy.",
-            _ => "Protocol violation: keyring helper integrity platform must be explicit and "
-                + "supported.",
-        };
-    }
-
-    public static string? GetContractPolicyViolation(
-        KeyringHelperIntegrityContract contract,
-        KeyringHelperIntegrityPlatform trustedRuntimePlatform
-    )
-    {
-        ArgumentNullException.ThrowIfNull(contract);
-
-        string? structuralViolation = GetStructuralViolation(contract);
-        if (structuralViolation is not null)
-        {
-            return structuralViolation;
-        }
-
-        if (!IsSupportedPlatform(trustedRuntimePlatform))
-        {
-            return "Protocol violation: trusted runtime platform must be Windows, macOS, or Linux.";
-        }
-
-        if (contract.Platform != trustedRuntimePlatform)
-        {
-            return "Protocol violation: keyring helper integrity platform must match the trusted "
-                + "runtime platform.";
-        }
-
-        return GetAbsoluteHelperPathSyntaxViolation(
-            contract.AbsoluteHelperPath,
-            trustedRuntimePlatform
-        );
-    }
-
-    public static KeyringHelperIntegrityPlatform GetTrustedRuntimePlatform()
-    {
-        if (OperatingSystem.IsLinux())
-        {
-            return KeyringHelperIntegrityPlatform.Linux;
-        }
-
-        if (OperatingSystem.IsWindows())
-        {
-            return KeyringHelperIntegrityPlatform.Windows;
-        }
-
-        if (OperatingSystem.IsMacOS())
-        {
-            return KeyringHelperIntegrityPlatform.MacOs;
-        }
-
-        return KeyringHelperIntegrityPlatform.Unspecified;
-    }
-
-    private static bool IsStrongLinuxPolicy(KeyringHelperIntegrityContract contract) =>
-        contract.OwnerValidation == KeyringOwnerValidationRequirement.Required
-        && contract.SymlinkPolicy == KeyringSymlinkPolicy.RejectSymlinks
-        && contract.DigestPolicy == KeyringDigestPolicy.Sha256Required;
-
-    private static bool IsWeakWindowsMacOsPolicy(KeyringHelperIntegrityContract contract) =>
-        contract.OwnerValidation == KeyringOwnerValidationRequirement.DeferredNotAvailable
-        && contract.SymlinkPolicy == KeyringSymlinkPolicy.BestEffortRejectSymlinks
-        && contract.DigestPolicy == KeyringDigestPolicy.Sha256RequiredWeakPath;
-
-    private static bool IsSupportedPlatform(KeyringHelperIntegrityPlatform platform) =>
-        platform
-            is KeyringHelperIntegrityPlatform.Linux
-                or KeyringHelperIntegrityPlatform.Windows
-                or KeyringHelperIntegrityPlatform.MacOs;
-
-    private static string? GetAbsoluteHelperPathSyntaxViolation(
-        string absoluteHelperPath,
-        KeyringHelperIntegrityPlatform platform
-    )
-    {
-        if (!IsSupportedPlatform(platform))
-        {
-            return null;
-        }
-
-        bool isAbsolute =
-            platform == KeyringHelperIntegrityPlatform.Windows
-                ? IsWindowsFullyQualifiedPath(absoluteHelperPath)
-                : IsPosixAbsolutePath(absoluteHelperPath);
-        if (!isAbsolute)
-        {
-            return "Protocol violation: keyring helper path must be absolute for the declared or "
-                + "trusted platform.";
-        }
-
-        bool containsUnsafeComponent =
-            platform == KeyringHelperIntegrityPlatform.Windows
-                ? WindowsPathContainsUnsafeDirectoryComponent(absoluteHelperPath)
-                : PosixPathContainsCurrentOrParentDirectoryComponent(absoluteHelperPath);
-        return containsUnsafeComponent
-            ? "Protocol violation: keyring helper path must not contain '.' or '..' path "
-                + "components "
-                + "or Windows path components with trailing spaces or periods."
-            : null;
-    }
-
-    private static bool IsPosixAbsolutePath(string path) => path.Length > 0 && path[0] == '/';
-
-    private static bool PosixPathContainsCurrentOrParentDirectoryComponent(string path) =>
-        PathContainsCurrentOrParentDirectoryComponent(path, IsPosixDirectorySeparator);
-
-    private static bool IsWindowsFullyQualifiedPath(string path) =>
-        IsWindowsDriveFullyQualifiedPath(path) || IsWindowsUncFullyQualifiedPath(path);
-
-    private static bool WindowsPathContainsUnsafeDirectoryComponent(string path) =>
-        PathContainsDirectoryComponent(
-            path,
-            IsWindowsDirectorySeparator,
-            IsUnsafeWindowsPathComponent
-        );
-
-    private static bool PathContainsCurrentOrParentDirectoryComponent(
-        string path,
-        Func<char, bool> isDirectorySeparator
-    ) =>
-        PathContainsDirectoryComponent(
-            path,
-            isDirectorySeparator,
-            IsCurrentOrParentDirectoryComponent
-        );
-
-    private static bool PathContainsDirectoryComponent(
-        string path,
-        Func<char, bool> isDirectorySeparator,
-        Func<string, int, int, bool> isUnsafeComponent
-    )
-    {
-        var componentStart = 0;
-        for (var index = 0; index <= path.Length; index++)
-        {
-            if (index < path.Length && !isDirectorySeparator(path[index]))
-            {
-                continue;
-            }
-
-            var componentLength = index - componentStart;
-            if (isUnsafeComponent(path, componentStart, componentLength))
-            {
-                return true;
-            }
-
-            componentStart = index + 1;
-        }
-
-        return false;
-    }
-
-    private static bool IsUnsafeWindowsPathComponent(
-        string path,
-        int componentStart,
-        int componentLength
-    )
-    {
-        if (componentLength == 0)
-        {
-            return false;
-        }
-
-        if (IsCurrentOrParentDirectoryComponent(path, componentStart, componentLength))
-        {
-            return true;
-        }
-
-        char lastCharacter = path[componentStart + componentLength - 1];
-        return lastCharacter is ' ' or '.';
-    }
-
-    private static bool IsCurrentOrParentDirectoryComponent(
-        string path,
-        int componentStart,
-        int componentLength
-    ) =>
-        componentLength == 1 && path[componentStart] == '.'
-        || componentLength == 2 && path[componentStart] == '.' && path[componentStart + 1] == '.';
-
-    private static bool IsWindowsDriveFullyQualifiedPath(string path) =>
-        path.Length >= 3
-        && IsAsciiLetter(path[0])
-        && path[1] == ':'
-        && IsWindowsDirectorySeparator(path[2]);
-
-    private static bool IsWindowsUncFullyQualifiedPath(string path)
-    {
-        if (path.Length < 5 || !IsWindowsDirectorySeparator(path[0]) || path[0] != path[1])
-        {
-            return false;
-        }
-
-        int serverStart = 2;
-        int serverEnd = IndexOfWindowsDirectorySeparator(path, serverStart);
-        if (serverEnd <= serverStart)
-        {
-            return false;
-        }
-
-        int shareStart = serverEnd + 1;
-        int shareEnd = IndexOfWindowsDirectorySeparator(path, shareStart);
-        return shareEnd > shareStart || shareEnd < 0 && shareStart < path.Length;
-    }
-
-    private static int IndexOfWindowsDirectorySeparator(string path, int startIndex)
-    {
-        for (int index = startIndex; index < path.Length; index++)
-        {
-            if (IsWindowsDirectorySeparator(path[index]))
-            {
-                return index;
-            }
-        }
-
-        return -1;
-    }
-
-    private static bool IsAsciiLetter(char value) =>
-        value is >= 'A' and <= 'Z' or >= 'a' and <= 'z';
-
-    private static bool IsPosixDirectorySeparator(char value) => value == '/';
-
-    private static bool IsWindowsDirectorySeparator(char value) => value is '\\' or '/';
-
-    private static bool IsSha256Hex(string? value)
-    {
-        if (value is null || value.Length != 64)
-        {
-            return false;
-        }
-
-        foreach (char c in value)
-        {
-            if (!char.IsAsciiHexDigit(c))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-}
-
 public static class KeyringHelperV2
 {
     public const string CommandName = "python-keyring";
@@ -4609,7 +4085,8 @@ public static class CredentialRequestV2Policy
 
         return request.AcquisitionMode switch
         {
-            AcquisitionMode.Unspecified => null,
+            AcquisitionMode.Unspecified =>
+                "Protocol violation: credential request v2 must specify an acquisition mode.",
             AcquisitionMode.SilentOnly => GetSilentOnlyViolation(request),
             AcquisitionMode.InteractionAllowed => GetInteractionAllowedViolation(request),
             _ => "Protocol violation: credential request v2 contains an unsupported "
@@ -4624,17 +4101,52 @@ public static class CredentialRequestV2Policy
             return "Protocol violation: SilentOnly requires interactivePolicy never.";
         }
 
-        if (request.CiContext is { ExplicitCiMode: true })
+        if (
+            request.IdentityFlow == IdentityFlow.AzurePipelinesSystemAccessToken
+            || request.CiContext is { ExplicitCiMode: true }
+        )
         {
-            return "Protocol violation: SilentOnly is not valid for explicit CI mode.";
-        }
-
-        if (request.IdentityFlow == IdentityFlow.AzurePipelinesSystemAccessToken)
-        {
-            return "Protocol violation: SilentOnly is not valid for opaque CI tokens.";
+            return IsValidAzurePipelinesOpaqueTokenRequest(request)
+                ? null
+                : "Protocol violation: SilentOnly Azure Pipelines opaque-token requests must "
+                    + "satisfy the explicit CI policy.";
         }
 
         return null;
+    }
+
+    private static bool IsValidAzurePipelinesOpaqueTokenRequest(CredentialRequestV2 request)
+    {
+        CiContext? ciContext = request.CiContext;
+        return IdentityFlowPolicy.IsAcceptedMvpRequest(ToV1Projection(request))
+            && request.Operation == CredentialOperation.Get
+            && request.IdentityFlow == IdentityFlow.AzurePipelinesSystemAccessToken
+            && request.InteractivePolicy == InteractivePolicy.Never
+            && request.CachePolicy == CachePolicyMode.NonPersistentCi
+            && request.AccountHint is null
+            && request.TenantHint is null
+            && ciContext
+                is {
+                    ExplicitCiMode: true,
+                    HasAzurePipelinesSystemAccessToken: true,
+                    AllowsPersistentWrites: false,
+                }
+            && string.Equals(
+                ciContext.Provider,
+                CiProviderNames.AzurePipelines,
+                StringComparison.Ordinal
+            )
+            && (request.Ecosystem, request.CredentialKind, request.RequestedAudience)
+                is
+                    (CredentialEcosystem.Git, CredentialKind.BearerToken, TokenAudience.AzureDevOps)
+                    or
+                    (
+                        CredentialEcosystem.Npm
+                            or CredentialEcosystem.Pnpm
+                            or CredentialEcosystem.Yarn,
+                        CredentialKind.NpmAuthToken,
+                        TokenAudience.AzureArtifacts
+                    );
     }
 
     private static string? GetInteractionAllowedViolation(CredentialRequestV2 request)
@@ -4693,376 +4205,6 @@ internal static class ServiceIdentityContract
         && !value.Any(char.IsControl)
         && string.Equals(value, value.Trim(), StringComparison.Ordinal)
         && string.Equals(value, value.ToLowerInvariant(), StringComparison.Ordinal);
-}
-
-/// <summary>
-/// Compatibility helpers for frozen contract-evolution rules.
-/// Additive-field checks are intentionally credential-request-root aware because the v1 and v2
-/// credential roots have different same-major unknown-member behavior, and same-major v1 additions
-/// must fail closed on collisions with frozen wire-member names or unsafe normative fields.
-/// </summary>
-public static class ContractCompatibility
-{
-    private const string AddOptionalFieldChangeKind = "add-optional-field";
-
-    private static readonly HashSet<string> CredentialRequestV1WireNames = new(
-        StringComparer.OrdinalIgnoreCase
-    )
-    {
-        "contractMajor",
-        "ecosystem",
-        "operation",
-        "resource",
-        "serviceIdentity",
-        "accountHint",
-        "tenantHint",
-        "requestedAudience",
-        "credentialKind",
-        "identityFlow",
-        "interactivePolicy",
-        "cachePolicy",
-        "ciContext",
-        "extensionData",
-    };
-
-    private static readonly string CredentialRequestV2AcquisitionModeWireName =
-        JsonNamingPolicy.CamelCase.ConvertName(nameof(CredentialRequestV2.AcquisitionMode));
-
-    public static bool IsSupportedMajor(int actualMajor, int supportedMajor) =>
-        actualMajor == supportedMajor;
-
-    /// <summary>
-    /// Determines additive-field compatibility for the frozen credential request roots by major.
-    /// This overload recognizes only credential request major <c>1</c>
-    /// (<see cref="CredentialRequest" /> / <see cref="ContractVersions.CredentialContractId" />)
-    /// and credential request major <c>2</c>
-    /// (<see cref="CredentialRequestV2" /> /
-    /// <see cref="ContractVersions.CredentialContractV2Id" />).
-    /// Unknown majors fail closed.
-    /// </summary>
-    public static bool AllowsAdditiveField(int actualMajor, int supportedMajor, string fieldName)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(fieldName);
-
-        return TryResolveCredentialContractId(actualMajor, out string actualContractId)
-            && TryResolveCredentialContractId(supportedMajor, out string supportedContractId)
-            && AllowsAdditiveField(
-                actualContractId,
-                actualMajor,
-                supportedContractId,
-                supportedMajor,
-                fieldName,
-                olderConsumersCanIgnoreSafely: true
-            );
-    }
-
-    /// <summary>
-    /// Determines additive-field compatibility for the frozen credential request roots by major.
-    /// <paramref name="olderConsumersCanIgnoreSafely" /> may authorize genuinely ignorable
-    /// same-major optional fields for the v1 root, but it cannot re-allow collisions with the
-    /// frozen v1 wire members, known unsafe normative fields such as
-    /// <c>acquisitionMode</c>, or field names that are not auditable ASCII identifiers
-    /// (ASCII letters and digits with a letter first). Unknown majors fail closed.
-    /// </summary>
-    public static bool AllowsAdditiveField(
-        int actualMajor,
-        int supportedMajor,
-        string fieldName,
-        bool olderConsumersCanIgnoreSafely
-    )
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(fieldName);
-
-        return TryResolveCredentialContractId(actualMajor, out string actualContractId)
-            && TryResolveCredentialContractId(supportedMajor, out string supportedContractId)
-            && AllowsAdditiveField(
-                actualContractId,
-                actualMajor,
-                supportedContractId,
-                supportedMajor,
-                fieldName,
-                olderConsumersCanIgnoreSafely
-            );
-    }
-
-    /// <summary>
-    /// Determines additive-field compatibility for explicit frozen credential request roots.
-    /// Only <see cref="ContractVersions.CredentialContractId" /> major
-    /// <see cref="ContractVersions.CredentialContractMajor" /> and
-    /// <see cref="ContractVersions.CredentialContractV2Id" /> major
-    /// <see cref="ContractVersions.CredentialContractV2Major" /> are recognized.
-    /// Unknown roots or majors fail closed.
-    /// </summary>
-    public static bool AllowsAdditiveField(
-        string actualContractId,
-        int actualMajor,
-        string supportedContractId,
-        int supportedMajor,
-        string fieldName
-    ) =>
-        AllowsAdditiveField(
-            actualContractId,
-            actualMajor,
-            supportedContractId,
-            supportedMajor,
-            fieldName,
-            olderConsumersCanIgnoreSafely: true
-        );
-
-    /// <summary>
-    /// Determines additive-field compatibility for explicit frozen credential request roots.
-    /// Genuinely ignorable same-major optional fields are allowed only for the v1
-    /// <see cref="CredentialRequest" /> root. The strict v2
-    /// <see cref="CredentialRequestV2" /> JSON contract rejects all same-major additive fields,
-    /// and ASCII-case-normalized collisions with frozen v1 wire members, known unsafe
-    /// normative fields, or non-auditable field names fail closed even when
-    /// <paramref name="olderConsumersCanIgnoreSafely" /> is <see langword="true" />.
-    /// Unknown roots or majors fail closed.
-    /// </summary>
-    public static bool AllowsAdditiveField(
-        string actualContractId,
-        int actualMajor,
-        string supportedContractId,
-        int supportedMajor,
-        string fieldName,
-        bool olderConsumersCanIgnoreSafely
-    )
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(actualContractId);
-        ArgumentException.ThrowIfNullOrWhiteSpace(supportedContractId);
-        ArgumentException.ThrowIfNullOrWhiteSpace(fieldName);
-
-        if (GetAdditiveFieldNameDisposition(fieldName) is not AdditiveFieldNameDisposition.Safe)
-        {
-            return false;
-        }
-
-        if (!olderConsumersCanIgnoreSafely)
-        {
-            return false;
-        }
-
-        return TryResolveCredentialContractRoot(
-                actualContractId,
-                actualMajor,
-                out CredentialContractRoot actualRoot
-            )
-            && TryResolveCredentialContractRoot(
-                supportedContractId,
-                supportedMajor,
-                out CredentialContractRoot supportedRoot
-            )
-            && actualRoot == supportedRoot
-            && actualRoot == CredentialContractRoot.CredentialRequestV1;
-    }
-
-    /// <summary>
-    /// Determines whether a frozen contract change requires a new major version.
-    /// For <c>add-optional-field</c>, callers must supply the explicit credential
-    /// contract roots, majors, and field name so the decision can align with
-    /// <see cref="AllowsAdditiveField(string, int, string, int, string, bool)" />.
-    /// The context-free <see cref="RequiresMajorVersionChange(string)" /> overload
-    /// fails closed for <c>add-optional-field</c>.
-    /// </summary>
-    public static bool RequiresMajorVersionChange(
-        string changeKind,
-        string actualContractId,
-        int actualMajor,
-        string supportedContractId,
-        int supportedMajor,
-        string fieldName,
-        bool olderConsumersCanIgnoreSafely = true
-    )
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(changeKind);
-
-        return string.Equals(changeKind, AddOptionalFieldChangeKind, StringComparison.Ordinal)
-            ? !AllowsAdditiveField(
-                actualContractId,
-                actualMajor,
-                supportedContractId,
-                supportedMajor,
-                fieldName,
-                olderConsumersCanIgnoreSafely
-            )
-            : RequiresMajorVersionChange(changeKind);
-    }
-
-    public static bool RequiresMajorVersionChange(string changeKind)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(changeKind);
-        return changeKind switch
-        {
-            "remove-field"
-            or "rename-field"
-            or "change-field-type"
-            or "change-field-requiredness"
-            or "change-field-meaning"
-            or "change-meaning"
-            or "change-enum-representation"
-            or "change-protocol-stdout"
-            or "change-required-stdout"
-            or "change-protocol-stderr"
-            or "change-required-stderr"
-            or "change-protocol-exit-code"
-            or "change-exit-code"
-            or "weaken-security-policy"
-            or "weaken-cache-partitioning"
-            or "allow-plaintext-secret-diagnostics"
-            or "add-silent-pat-fallback"
-            or "make-integrity-check-optional" => true,
-            AddOptionalFieldChangeKind => true,
-            _ => true,
-        };
-    }
-
-    public static bool RequiresMajorVersionChange(ContractBreakingChangeKind changeKind) =>
-        changeKind switch
-        {
-            ContractBreakingChangeKind.Unspecified
-            or ContractBreakingChangeKind.RemoveField
-            or ContractBreakingChangeKind.RenameField
-            or ContractBreakingChangeKind.ChangeFieldType
-            or ContractBreakingChangeKind.ChangeFieldRequiredness
-            or ContractBreakingChangeKind.ChangeFieldMeaning
-            or ContractBreakingChangeKind.ChangeEnumRepresentation
-            or ContractBreakingChangeKind.ChangeProtocolStdout
-            or ContractBreakingChangeKind.ChangeProtocolStderr
-            or ContractBreakingChangeKind.ChangeProtocolExitCode
-            or ContractBreakingChangeKind.WeakenSecurityPolicy
-            or ContractBreakingChangeKind.WeakenCachePartitioning
-            or ContractBreakingChangeKind.AllowPlaintextSecretDiagnostics
-            or ContractBreakingChangeKind.AddSilentPatFallback
-            or ContractBreakingChangeKind.MakeIntegrityCheckOptional => true,
-            _ => true,
-        };
-
-    private static AdditiveFieldNameDisposition GetAdditiveFieldNameDisposition(string fieldName)
-    {
-        if (!TryNormalizeFieldNameForCollisionDetection(fieldName, out string? normalizedFieldName))
-        {
-            return AdditiveFieldNameDisposition.Rejected;
-        }
-
-        if (
-            IsFrozenCredentialRequestV1WireNameCollision(normalizedFieldName)
-            || IsKnownSameMajorUnsafeAdditiveField(normalizedFieldName)
-        )
-        {
-            return AdditiveFieldNameDisposition.Unsafe;
-        }
-
-        return AdditiveFieldNameDisposition.Safe;
-    }
-
-    private static bool IsFrozenCredentialRequestV1WireNameCollision(string normalizedFieldName) =>
-        CredentialRequestV1WireNames.Contains(normalizedFieldName);
-
-    private static bool IsKnownSameMajorUnsafeAdditiveField(string normalizedFieldName) =>
-        string.Equals(
-            normalizedFieldName,
-            nameof(CredentialRequestV2.AcquisitionMode),
-            StringComparison.OrdinalIgnoreCase
-        )
-        || string.Equals(
-            normalizedFieldName,
-            CredentialRequestV2AcquisitionModeWireName,
-            StringComparison.OrdinalIgnoreCase
-        );
-
-    private static bool TryNormalizeFieldNameForCollisionDetection(
-        string value,
-        [NotNullWhen(true)] out string? normalizedValue
-    )
-    {
-        var builder = new StringBuilder(value.Length);
-        for (int i = 0; i < value.Length; i++)
-        {
-            char character = value[i];
-            if (
-                (i == 0 && !IsAsciiLetter(character))
-                || (i > 0 && !IsAsciiLetter(character) && !char.IsAsciiDigit(character))
-            )
-            {
-                normalizedValue = null;
-                return false;
-            }
-
-            builder.Append(char.ToLowerInvariant(character));
-        }
-
-        normalizedValue = builder.ToString();
-        return true;
-    }
-
-    private static bool IsAsciiLetter(char character) =>
-        (character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z');
-
-    private static bool TryResolveCredentialContractId(int major, out string contractId)
-    {
-        switch (major)
-        {
-            case ContractVersions.CredentialContractMajor:
-                contractId = ContractVersions.CredentialContractId;
-                return true;
-            case ContractVersions.CredentialContractV2Major:
-                contractId = ContractVersions.CredentialContractV2Id;
-                return true;
-            default:
-                contractId = string.Empty;
-                return false;
-        }
-    }
-
-    private static bool TryResolveCredentialContractRoot(
-        string contractId,
-        int major,
-        out CredentialContractRoot root
-    )
-    {
-        if (
-            major == ContractVersions.CredentialContractMajor
-            && string.Equals(
-                contractId,
-                ContractVersions.CredentialContractId,
-                StringComparison.Ordinal
-            )
-        )
-        {
-            root = CredentialContractRoot.CredentialRequestV1;
-            return true;
-        }
-
-        if (
-            major == ContractVersions.CredentialContractV2Major
-            && string.Equals(
-                contractId,
-                ContractVersions.CredentialContractV2Id,
-                StringComparison.Ordinal
-            )
-        )
-        {
-            root = CredentialContractRoot.CredentialRequestV2;
-            return true;
-        }
-
-        root = CredentialContractRoot.Unknown;
-        return false;
-    }
-
-    private enum AdditiveFieldNameDisposition
-    {
-        Safe,
-        Unsafe,
-        Rejected,
-    }
-
-    private enum CredentialContractRoot
-    {
-        Unknown,
-        CredentialRequestV1,
-        CredentialRequestV2,
-    }
 }
 
 public static class ContractMetadata

@@ -29,9 +29,10 @@ explicit CI context, provider exactly `AzurePipelines`, declared token input,
 and `AllowsPersistentWrites=false`. The resource, audience, and credential kind
 must satisfy the frozen v1 contract.
 
-V2 accepts only `AcquisitionMode.Unspecified`, the frozen v1-compatible meaning
-for opaque provided input. `SilentOnly` is not a provided-input mode and
-`InteractionAllowed` is forbidden in CI. Missing or blank input is
+V1 has no acquisition-mode field. V2 requires explicit
+`AcquisitionMode.SilentOnly` for opaque provided input;
+`AcquisitionMode.Unspecified` and `InteractionAllowed` are invalid in CI.
+Missing or blank input is
 `CredentialUnavailable`; it never falls back to interaction, PAT, AzureAuth, or
 another identity provider.
 

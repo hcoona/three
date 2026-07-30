@@ -57,8 +57,8 @@ Host tools own:
 9. Preserve host-tool protocol boundaries: protocol adapters must write only protocol-valid content to stdout.
 10. Provide configuration commands that can install, verify, and remove each ecosystem integration.
 11. Support non-interactive CI operation without persisting secrets by default.
-12. Use direct MSAL-based identity acquisition as the current path; AzureAuth (`microsoft-authentication-cli`) is a deferred optional helper/backend candidate if revisited later and is not a required runtime substrate for Phase 4D MVP.
-13. Treat the Phase 1A identity-flow matrix as frozen for Phase 4D MVP: accept interactive browser, device code, narrow explicit PAT compatibility, and Azure Pipelines system access token; defer service principal, managed identity, and workload identity federation.
+12. Use AzureAuth (`microsoft-authentication-cli`) 0.9.5 as the current Windows and WSL identity path; keep Direct MSAL unimplemented behind the same provider abstraction.
+13. Support interactive browser acquisition and explicit Azure Pipelines system access tokens; keep device code, PAT compatibility, service principal, managed identity, and workload identity federation unavailable or deferred until implemented.
 14. Provide a `doctor` command that validates Git helper configuration through Git's own discovery behavior, NuGet plugin discovery, Python keyring availability, npm registry configuration, credential cache health, and common CI misconfigurations.
 
 ## Non-Functional Requirements
@@ -100,7 +100,7 @@ Host tools own:
 1. Provide a Python keyring backend package for tools that import Python keyring directly.
 2. Provide a `keyring` command-compatible shim for tools that use subprocess keyring mode.
 3. Support pip, twine, and uv without requiring credentials in source-controlled project files.
-4. Keep trusted credential logic outside arbitrary project virtual environments where practical by using a thin backend that invokes a product-owned helper by absolute path and validates helper ownership and integrity before invocation.
+4. Keep trusted credential logic outside arbitrary project virtual environments where practical by using a thin backend that invokes the installed product helper by a configured absolute path after ordinary existence and executable checks.
 5. Support Azure Artifacts Python simple-index and upload endpoints in both organization-scoped and project-scoped forms.
 6. Provide supported bootstrap paths that make the Python keyring backend discoverable in the exact Python environment running pip or twine, including virtual environments, pipx-managed tools, and isolated CI environments.
 
@@ -128,7 +128,7 @@ Host tools own:
 
 1. Whether the shared credential core should be a library, a local broker process, or a single executable invoked by adapters.
 2. How to package deferred netfx support if NuGet.exe/MSBuild/Visual Studio compatibility is added after the Phase 4D MVP netcore-only scope.
-3. Which cross-platform integrity verification mechanism (for example signature and hash policy) should be required for the configured absolute Python helper path.
+3. Which signing or trusted-publishing mechanisms should be required for Python release artifacts and installers.
 4. Whether npm compatibility aliases should be provided in addition to the primary npm credential refresh command.
 
 ## Acceptance Criteria for the Design Phase

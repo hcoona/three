@@ -56,8 +56,9 @@ first-class long-term platform goal in `requirements.md`,
 
 - Phase 2 contract freeze may proceed if contracts distinguish supported,
   unsupported, skipped, and deferred doctor results.
-- Phase 5B installer and discovery scaffolding may proceed for fake artifacts,
-  but it must not lock a Git for Windows or GUI-client installation mode for MVP.
+- Phase 5B may define placement conventions and side-effect-free discovery
+  probes, but it must not materialize fake artifacts or lock a Git for Windows
+  or GUI-client installation mode for MVP.
 - Phase 8 vertical-slice work may exercise only local shell Git discovery.
 - Phase 9 Git adapter implementation may proceed for protocol parsing,
   stdout discipline, `get`, `store`, `erase`, `useHttpPath`, and local shell

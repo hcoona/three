@@ -1,807 +1,225 @@
 using System.IO.Enumeration;
-using System.Security.Cryptography;
 using System.Text;
 using Hcoona.AzureAuth.CredProvider.Platform.FileSystem;
 
 namespace Hcoona.AzureAuth.CredProvider.Platform.Tests.TestDoubles;
 
-public sealed class InMemoryFileSystem
-    : IFileSystem,
-        IFileSystemMutationLock,
-        IFileSystemReparsePointSafety,
-        IFileSystemNoFollowEnumeration,
-        IFileSystemFileLength,
-        IFakeAdapterScaffoldMaterializationFileSystem
+public sealed class InMemoryFileSystem : IFileSystem, IFileSystemMutationLock
 {
-    private const UnixFileMode OwnerOnlyFileMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
-    private const UnixFileMode OwnerOnlyDirectoryMode =
-        UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
-
-    private readonly InMemoryPathSemantics _pathSemantics;
-    private readonly StringComparer _pathComparer;
-    private readonly string _rootPath;
-    private readonly Dictionary<string, byte[]> _files;
-    private readonly Dictionary<string, FileSystemEntryIdentity> _identities;
-    private readonly Dictionary<string, UnixFileMode> _unixFileModes;
-    private readonly Dictionary<string, string> _symbolicLinks;
-    private readonly HashSet<string> _reparsePoints;
-    private readonly Dictionary<string, FileSystemOwner> _owners;
-    private readonly HashSet<string> _directories;
-    private readonly Queue<Exception> _failures = [];
-    private readonly HashSet<string> _heldMutationLocks;
-    private long _nextIdentity = 1;
+    private static readonly Encoding Utf8NoBom = new UTF8Encoding(
+        encoderShouldEmitUTF8Identifier: false,
+        throwOnInvalidBytes: true
+    );
+    private readonly Dictionary<string, byte[]> files;
+    private readonly HashSet<string> directories;
+    private readonly HashSet<string> heldLocks;
+    private readonly InMemoryPathSemantics pathSemantics;
+    private readonly StringComparer pathComparer;
+    private readonly Dictionary<string, UnixFileMode> unixFileModes;
+    private readonly Queue<Exception> failures = [];
+    private readonly string rootPath;
 
     public InMemoryFileSystem(InMemoryPathSemantics pathSemantics = InMemoryPathSemantics.Host)
     {
-        _pathSemantics = pathSemantics;
-        _pathComparer =
+        this.pathSemantics = pathSemantics;
+        pathComparer =
             pathSemantics == InMemoryPathSemantics.Windows
                 ? StringComparer.OrdinalIgnoreCase
                 : StringComparer.Ordinal;
-        _files = new Dictionary<string, byte[]>(_pathComparer);
-        _identities = new Dictionary<string, FileSystemEntryIdentity>(_pathComparer);
-        _unixFileModes = new Dictionary<string, UnixFileMode>(_pathComparer);
-        _symbolicLinks = new Dictionary<string, string>(_pathComparer);
-        _reparsePoints = new HashSet<string>(_pathComparer);
-        _owners = new Dictionary<string, FileSystemOwner>(_pathComparer);
-        _directories = new HashSet<string>(_pathComparer);
-        _heldMutationLocks = new HashSet<string>(_pathComparer);
-        _rootPath =
-            pathSemantics == InMemoryPathSemantics.Posix
-                ? "/"
-                : pathSemantics == InMemoryPathSemantics.Windows
-                    ? @"C:\"
-                    : NormalizeHostFullPath(Directory.GetCurrentDirectory());
-        _directories.Add(_rootPath);
-        _identities[_rootPath] = CreateIdentity();
-        _owners[_rootPath] = CurrentOwner;
+        files = new Dictionary<string, byte[]>(pathComparer);
+        directories = new HashSet<string>(pathComparer);
+        heldLocks = new HashSet<string>(pathComparer);
+        unixFileModes = new Dictionary<string, UnixFileMode>(pathComparer);
+        rootPath =
+            pathSemantics == InMemoryPathSemantics.Posix ? "/"
+            : pathSemantics == InMemoryPathSemantics.Windows ? @"C:\"
+            : Path.GetPathRoot(Path.GetFullPath("."))!;
+        directories.Add(rootPath);
     }
 
     public List<FileSystemCall> Calls { get; } = [];
 
-    public bool SupportsConditionalFileMutations { get; set; } = true;
-
     public UnixFileMode? DefaultCreateDirectoryMode { get; set; }
 
     public IReadOnlyDictionary<string, string> Files =>
-        _files.ToDictionary(
-            pair => pair.Key,
-            pair => Encoding.UTF8.GetString(pair.Value),
-            _pathComparer
-        );
+        files.ToDictionary(pair => pair.Key, pair => Utf8NoBom.GetString(pair.Value), pathComparer);
 
-    public IReadOnlySet<string> Directories => _directories;
-
-    public FileSystemOwner CurrentOwner { get; set; } = new("fake:current");
-
-    public Action<FileSystemCall, InMemoryFileSystem>? AfterRecord { get; set; }
+    public IReadOnlySet<string> Directories => directories;
 
     public void FailNextCall(Exception exception)
     {
         ArgumentNullException.ThrowIfNull(exception);
-
-        _failures.Enqueue(exception);
-    }
-
-    public void AddSymbolicLink(string linkPath, string targetPath)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(targetPath);
-
-        var normalizedLinkPath = NormalizePath(linkPath);
-        Record(nameof(AddSymbolicLink), normalizedLinkPath, NormalizePath(targetPath));
-        ThrowIfFailureQueued();
-        var resolvedLinkPath = ResolveSymbolicLinkPath(
-            normalizedLinkPath,
-            followFinalComponent: false
-        );
-        EnsureParentDirectoryExists(resolvedLinkPath);
-        if (
-            _files.ContainsKey(resolvedLinkPath)
-            || _directories.Contains(resolvedLinkPath)
-            || _symbolicLinks.ContainsKey(resolvedLinkPath)
-            || _reparsePoints.Contains(resolvedLinkPath)
-        )
-        {
-            throw new IOException(
-                $"Cannot create in-memory symbolic link '{resolvedLinkPath}' because an entry "
-                    + "already exists at that path."
-            );
-        }
-
-        _symbolicLinks[resolvedLinkPath] = NormalizePath(targetPath);
-        _reparsePoints.Add(resolvedLinkPath);
-        _identities[resolvedLinkPath] = CreateIdentity();
-        _owners.TryAdd(resolvedLinkPath, CurrentOwner);
-    }
-
-    public void MarkAsNonSymbolicReparsePoint(string path)
-    {
-        var normalizedPath = NormalizePath(path);
-        Record(nameof(MarkAsNonSymbolicReparsePoint), normalizedPath);
-        ThrowIfFailureQueued();
-        var resolvedPath = ResolveSymbolicLinkPath(normalizedPath, followFinalComponent: false);
-        EnsureFileOrDirectoryExists(resolvedPath);
-        if (_symbolicLinks.ContainsKey(resolvedPath))
-        {
-            throw new IOException(
-                $"Cannot mark in-memory symbolic link '{resolvedPath}' as a non-symbolic "
-                    + "reparse point."
-            );
-        }
-
-        _reparsePoints.Add(resolvedPath);
-    }
-
-    public void SetOwner(string path, FileSystemOwner owner)
-    {
-        ArgumentNullException.ThrowIfNull(owner);
-
-        var normalizedPath = NormalizePath(path);
-        Record(nameof(SetOwner), normalizedPath, owner.Id);
-        ThrowIfFailureQueued();
-        var resolvedPath = ResolveSymbolicLinkPath(normalizedPath, followFinalComponent: false);
-        EnsureFileOrDirectoryExists(resolvedPath);
-
-        _owners[resolvedPath] = owner;
+        failures.Enqueue(exception);
     }
 
     public bool FileExists(string path)
     {
-        var normalizedPath = NormalizePath(path);
+        string normalizedPath = NormalizePath(path);
         Record(nameof(FileExists), normalizedPath);
-        ThrowIfFailureQueued();
-
-        return _files.ContainsKey(ResolveSymbolicLinkPath(normalizedPath));
+        return files.ContainsKey(normalizedPath);
     }
 
     public bool DirectoryExists(string path)
     {
-        var normalizedPath = NormalizePath(path);
+        string normalizedPath = NormalizePath(path);
         Record(nameof(DirectoryExists), normalizedPath);
-        ThrowIfFailureQueued();
-
-        return _directories.Contains(ResolveSymbolicLinkPath(normalizedPath));
+        return directories.Contains(normalizedPath);
     }
 
     public string GetFullPath(string path)
     {
-        var normalizedPath = NormalizePath(path);
+        string normalizedPath = NormalizePath(path);
         Record(nameof(GetFullPath), normalizedPath);
-        ThrowIfFailureQueued();
-
         return normalizedPath;
     }
 
     public bool IsPathFullyQualified(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
-
-        var isFullyQualified =
-            _pathSemantics == InMemoryPathSemantics.Posix
-                ? path[0] == '/'
-                : _pathSemantics == InMemoryPathSemantics.Windows
-                    ? IsWindowsPathFullyQualified(path)
-                    : Path.IsPathFullyQualified(path);
-        Record(nameof(IsPathFullyQualified), NormalizePath(path), isFullyQualified.ToString());
-        ThrowIfFailureQueued();
-
-        return isFullyQualified;
-    }
-
-    public bool IsSymbolicLink(string path)
-    {
-        var normalizedPath = NormalizePath(path);
-        Record(nameof(IsSymbolicLink), normalizedPath);
-        ThrowIfFailureQueued();
-
-        var resolvedPath = ResolveSymbolicLinkPath(normalizedPath, followFinalComponent: false);
-        EnsureFileOrDirectoryExists(resolvedPath);
-        return _symbolicLinks.ContainsKey(resolvedPath);
-    }
-
-    bool IFileSystemReparsePointSafety.IsReparsePoint(string path)
-    {
-        var normalizedPath = NormalizePath(path);
-        Record(nameof(IFileSystemReparsePointSafety.IsReparsePoint), normalizedPath);
-        ThrowIfFailureQueued();
-
-        var resolvedPath = ResolveSymbolicLinkPath(normalizedPath, followFinalComponent: false);
-        EnsureFileOrDirectoryExists(resolvedPath);
-        return _reparsePoints.Contains(resolvedPath) || _symbolicLinks.ContainsKey(resolvedPath);
-    }
-
-    public byte[] ComputeSha256Hash(string path)
-    {
-        var normalizedPath = NormalizePath(path);
-        Record(nameof(ComputeSha256Hash), normalizedPath);
-        ThrowIfFailureQueued();
-
-        var resolvedPath = ResolveSymbolicLinkPath(normalizedPath);
-        return _files.TryGetValue(resolvedPath, out var contents)
-            ? SHA256.HashData(contents)
-            : throw new FileNotFoundException("The in-memory file does not exist.", normalizedPath);
-    }
-
-    public FileIntegritySnapshot CaptureFileIntegritySnapshot(string path)
-    {
-        ThrowIfPathContainsCurrentOrParentDirectoryComponent(path);
-        var normalizedPath = NormalizePath(path);
-        Record(nameof(CaptureFileIntegritySnapshot), normalizedPath);
-        ThrowIfFailureQueued();
-
-        return CaptureFileIntegritySnapshotWithoutRecording(normalizedPath);
-    }
-
-    public FileIntegritySnapshot CaptureFileIntegritySnapshotWithoutTrustedParents(string path)
-    {
-        ThrowIfPathContainsCurrentOrParentDirectoryComponent(path);
-        var normalizedPath = NormalizePath(path);
-        Record(nameof(CaptureFileIntegritySnapshotWithoutTrustedParents), normalizedPath);
-        ThrowIfFailureQueued();
-
-        return CaptureFileIntegritySnapshotWithoutTrustedParentsWithoutRecording(normalizedPath);
-    }
-
-    public bool FileMatchesIntegritySnapshot(string path, FileIntegritySnapshot snapshot)
-    {
-        ArgumentNullException.ThrowIfNull(snapshot);
-
-        if (PathContainsCurrentOrParentDirectoryComponent(path))
-        {
-            return false;
-        }
-
-        var normalizedPath = NormalizePath(path);
-        Record(nameof(FileMatchesIntegritySnapshot), normalizedPath, snapshot.Identity.Value);
-        ThrowIfFailureQueued();
-
-        try
-        {
-            var currentSnapshot = CaptureFileIntegritySnapshotWithoutRecording(normalizedPath);
-            return PathEquals(currentSnapshot.FullPath, snapshot.FullPath)
-                && currentSnapshot.Identity == snapshot.Identity
-                && currentSnapshot.Owner == snapshot.Owner
-                && currentSnapshot.UnixFileMode == snapshot.UnixFileMode
-                && TrustedParentDirectoriesMatchSnapshot(
-                    currentSnapshot.TrustedParentDirectories,
-                    snapshot.TrustedParentDirectories
-                )
-                && currentSnapshot.Sha256Hash.SequenceEqual(snapshot.Sha256Hash);
-        }
-        catch (IOException)
-        {
-            return false;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return false;
-        }
-    }
-
-    public IReadOnlyList<TrustedDirectorySnapshot> CaptureTrustedParentDirectorySnapshots(
-        string path
-    )
-    {
-        ThrowIfPathContainsCurrentOrParentDirectoryComponent(path);
-        var normalizedPath = NormalizePath(path);
-        Record(nameof(CaptureTrustedParentDirectorySnapshots), normalizedPath);
-        ThrowIfFailureQueued();
-
-        return CaptureTrustedParentDirectorySnapshotsWithoutRecording(normalizedPath);
-    }
-
-    public FileSystemOwner GetCurrentOwner()
-    {
-        Record(nameof(GetCurrentOwner), _rootPath);
-        ThrowIfFailureQueued();
-
-        return CurrentOwner;
-    }
-
-    public FileSystemOwner GetOwner(string path)
-    {
-        var normalizedPath = NormalizePath(path);
-        Record(nameof(GetOwner), normalizedPath);
-        ThrowIfFailureQueued();
-        var resolvedPath = ResolveSymbolicLinkPath(normalizedPath);
-        EnsureFileOrDirectoryExists(resolvedPath);
-
-        return _owners.TryGetValue(resolvedPath, out var owner) ? owner : CurrentOwner;
+        bool result =
+            pathSemantics == InMemoryPathSemantics.Posix ? path.StartsWith('/')
+            : pathSemantics == InMemoryPathSemantics.Windows
+                ? path.Length >= 3
+                    && char.IsAsciiLetter(path[0])
+                    && path[1] == ':'
+                    && IsSeparator(path[2])
+            : Path.IsPathFullyQualified(path);
+        Record(nameof(IsPathFullyQualified), path, result.ToString());
+        return result;
     }
 
     public string ReadAllText(string path, Encoding? encoding = null)
     {
-        var normalizedPath = NormalizePath(path);
+        string normalizedPath = NormalizePath(path);
         Record(nameof(ReadAllText), normalizedPath);
-        ThrowIfFailureQueued();
-
-        var resolvedPath = ResolveSymbolicLinkPath(normalizedPath);
-        return _files.TryGetValue(resolvedPath, out var contents)
-            ? (encoding ?? Encoding.UTF8).GetString(contents)
-            : throw new FileNotFoundException("The in-memory file does not exist.", normalizedPath);
+        return (encoding ?? Utf8NoBom).GetString(GetFile(normalizedPath));
     }
 
     public byte[] ReadAllBytes(string path)
     {
-        var normalizedPath = NormalizePath(path);
+        string normalizedPath = NormalizePath(path);
         Record(nameof(ReadAllBytes), normalizedPath);
-        ThrowIfFailureQueued();
-
-        var resolvedPath = ResolveSymbolicLinkPath(normalizedPath);
-        return _files.TryGetValue(resolvedPath, out var contents)
-            ? contents.ToArray()
-            : throw new FileNotFoundException("The in-memory file does not exist.", normalizedPath);
+        return GetFile(normalizedPath).ToArray();
     }
 
     public long GetFileLength(string path)
     {
-        var normalizedPath = NormalizePath(path);
+        string normalizedPath = NormalizePath(path);
         Record(nameof(GetFileLength), normalizedPath);
-        ThrowIfFailureQueued();
-
-        var resolvedPath = ResolveSymbolicLinkPath(normalizedPath, followFinalComponent: false);
-        if (_symbolicLinks.ContainsKey(resolvedPath) || _reparsePoints.Contains(resolvedPath))
-        {
-            throw new IOException(
-                $"Cannot get the length of in-memory file '{normalizedPath}' because it is "
-                    + "a symbolic link or reparse point."
-            );
-        }
-
-        if (_directories.Contains(resolvedPath))
-        {
-            throw new IOException(
-                $"Cannot get the length of in-memory file '{normalizedPath}' because it is "
-                    + "not a regular file."
-            );
-        }
-
-        return _files.TryGetValue(resolvedPath, out var contents)
-            ? contents.Length
-            : throw new FileNotFoundException("The in-memory file does not exist.", normalizedPath);
+        return GetFile(normalizedPath).LongLength;
     }
 
     public void WriteAllText(string path, string contents, Encoding? encoding = null)
     {
         ArgumentNullException.ThrowIfNull(contents);
-
-        var normalizedPath = NormalizePath(path);
+        string normalizedPath = NormalizePath(path);
         Record(nameof(WriteAllText), normalizedPath, contents);
-        ThrowIfFailureQueued();
-        var resolvedPath = ResolveSymbolicLinkPath(normalizedPath);
-        EnsureParentDirectoryExists(resolvedPath);
-        ThrowIfDirectoryExists(resolvedPath);
-
-        _files[resolvedPath] = (encoding ?? Encoding.UTF8).GetBytes(contents);
-        _identities.TryAdd(resolvedPath, CreateIdentity());
-        _unixFileModes.TryAdd(resolvedPath, OwnerOnlyFileMode);
-        _owners.TryAdd(resolvedPath, CurrentOwner);
+        EnsureParentDirectoryExists(normalizedPath);
+        ThrowIfDirectory(normalizedPath);
+        files[normalizedPath] = (encoding ?? Utf8NoBom).GetBytes(contents);
+        unixFileModes.TryAdd(
+            normalizedPath,
+            UnixFileMode.UserRead
+                | UnixFileMode.UserWrite
+                | UnixFileMode.GroupRead
+                | UnixFileMode.OtherRead
+        );
     }
 
     public void AtomicWriteAllText(
         string path,
         string contents,
         Encoding? encoding = null,
-        AtomicWriteOptions options = AtomicWriteOptions.None,
-        FileMutationExpectation? expectation = null
+        AtomicWriteOptions options = AtomicWriteOptions.None
     )
     {
         ArgumentNullException.ThrowIfNull(contents);
-
-        var normalizedPath = NormalizePath(path);
+        string normalizedPath = NormalizePath(path);
         Record(nameof(AtomicWriteAllText), normalizedPath, contents);
-        AtomicWriteAllBytesCore(
-            normalizedPath,
-            (encoding ?? Encoding.UTF8).GetBytes(contents),
-            options,
-            expectation
-        );
-    }
-
-    public FileIntegritySnapshot AtomicWriteAllTextAndCaptureSnapshotNoFollow(
-        string path,
-        string contents,
-        Encoding? encoding = null,
-        AtomicWriteOptions options = AtomicWriteOptions.None,
-        FileMutationExpectation? expectation = null
-    )
-    {
-        ArgumentNullException.ThrowIfNull(contents);
-
-        var normalizedPath = NormalizePath(path);
-        Record(nameof(AtomicWriteAllText), normalizedPath, contents);
-        byte[] encodedContents = (encoding ?? Encoding.UTF8).GetBytes(contents);
-        AtomicWriteAllBytesCore(
-            normalizedPath,
-            encodedContents,
-            options,
-            expectation
-        );
-        FileSystemEntryIdentity writtenFileIdentity = _identities[normalizedPath];
-        FileSystemOwner writtenFileOwner = _owners.TryGetValue(
-            normalizedPath,
-            out FileSystemOwner? fileOwner
-        )
-            ? fileOwner
-            : CurrentOwner;
-        UnixFileMode writtenFileMode = GetUnixFileModeWithoutRecording(normalizedPath);
-        FileIntegritySnapshot writtenSnapshot = CreateNoFollowFileIntegritySnapshot(
-            normalizedPath,
-            writtenFileIdentity,
-            writtenFileOwner,
-            writtenFileMode,
-            encodedContents
-        );
-        try
-        {
-            Record(nameof(AtomicWriteAllTextAndCaptureSnapshotNoFollow), normalizedPath, contents);
-            ThrowIfFailureQueued();
-        }
-        catch
-        {
-            TryDeleteFileIfMatchesNoFollowSnapshotWithoutRecording(normalizedPath, writtenSnapshot);
-            throw;
-        }
-
-        return writtenSnapshot;
+        AtomicWrite(normalizedPath, (encoding ?? Utf8NoBom).GetBytes(contents), options);
     }
 
     public void AtomicWriteAllBytes(
         string path,
         byte[] contents,
-        AtomicWriteOptions options = AtomicWriteOptions.None,
-        FileMutationExpectation? expectation = null
+        AtomicWriteOptions options = AtomicWriteOptions.None
     )
     {
         ArgumentNullException.ThrowIfNull(contents);
-
-        var normalizedPath = NormalizePath(path);
-        Record(nameof(AtomicWriteAllBytes), normalizedPath, Convert.ToHexString(contents));
-        AtomicWriteAllBytesCore(normalizedPath, contents, options, expectation);
-    }
-
-    private void AtomicWriteAllBytesCore(
-        string normalizedPath,
-        byte[] contents,
-        AtomicWriteOptions options,
-        FileMutationExpectation? expectation
-    )
-    {
-        ThrowIfFailureQueued();
-        ValidateParentDirectoryChainHasNoSymbolicLinks(normalizedPath);
-        ValidateMutationExpectation(normalizedPath, expectation);
-        var replacementPath = ResolveSymbolicLinkPath(normalizedPath, followFinalComponent: false);
-        var createdDirectoryMode =
-            (options & AtomicWriteOptions.RestrictUnixFileModeToOwnerOnly) != 0
-                ? OwnerOnlyDirectoryMode
-                : (UnixFileMode?)null;
-        AddDirectoryWithParents(GetParentPath(replacementPath), createdDirectoryMode);
-        ThrowIfDirectoryExists(replacementPath);
-
-        ValidateMutationExpectation(normalizedPath, expectation);
-
-        if (_symbolicLinks.ContainsKey(replacementPath) || _reparsePoints.Contains(replacementPath))
-        {
-            throw new IOException(
-                $"The atomic write destination '{normalizedPath}' must not be a symbolic link or "
-                    + "reparse point."
-            );
-        }
-
-        var targetExists = _files.ContainsKey(replacementPath);
-        var mode =
-            (options & AtomicWriteOptions.RestrictUnixFileModeToOwnerOnly) != 0 || !targetExists
-                ? OwnerOnlyFileMode
-                : GetUnixFileModeWithoutRecording(replacementPath);
-
-        _files[replacementPath] = contents.ToArray();
-        _identities[replacementPath] = CreateIdentity();
-        _unixFileModes[replacementPath] = mode;
-        _owners.TryAdd(replacementPath, CurrentOwner);
+        string normalizedPath = NormalizePath(path);
+        Record(nameof(AtomicWriteAllBytes), normalizedPath);
+        AtomicWrite(normalizedPath, contents, options);
     }
 
     public UnixFileMode GetUnixFileMode(string path)
     {
-        var normalizedPath = NormalizePath(path);
+        string normalizedPath = NormalizePath(path);
         Record(nameof(GetUnixFileMode), normalizedPath);
-        ThrowIfFailureQueued();
-        var resolvedPath = ResolveSymbolicLinkPath(normalizedPath);
-        EnsureFileOrDirectoryExists(resolvedPath);
-
-        return GetUnixFileModeWithoutRecording(resolvedPath);
+        EnsureEntryExists(normalizedPath);
+        return unixFileModes.TryGetValue(normalizedPath, out UnixFileMode mode) ? mode : default;
     }
 
     public void SetUnixFileMode(string path, UnixFileMode mode)
     {
-        var normalizedPath = NormalizePath(path);
+        string normalizedPath = NormalizePath(path);
         Record(nameof(SetUnixFileMode), normalizedPath, mode.ToString());
-        ThrowIfFailureQueued();
-        var resolvedPath = ResolveSymbolicLinkPath(normalizedPath);
-        EnsureFileOrDirectoryExists(resolvedPath);
-
-        _unixFileModes[resolvedPath] = mode;
-    }
-
-    public void SetUnixFileModeNoFollow(string path, UnixFileMode mode)
-    {
-        var normalizedPath = NormalizePath(path);
-        Record(nameof(SetUnixFileModeNoFollow), normalizedPath, mode.ToString());
-        ThrowIfFailureQueued();
-        ValidateNoFollowMutationPath(normalizedPath);
-        EnsureFileOrDirectoryExists(normalizedPath);
-
-        _unixFileModes[normalizedPath] = mode;
+        EnsureEntryExists(normalizedPath);
+        unixFileModes[normalizedPath] = mode;
     }
 
     public void CreateDirectory(string path)
     {
-        var normalizedPath = NormalizePath(path);
+        string normalizedPath = NormalizePath(path);
         Record(nameof(CreateDirectory), normalizedPath);
-        ThrowIfFailureQueued();
-        var resolvedPath = ResolveSymbolicLinkPath(normalizedPath);
-
-        AddDirectoryWithParents(resolvedPath);
-        _owners.TryAdd(resolvedPath, CurrentOwner);
-    }
-
-    public void CreateDirectoryNoFollow(string path)
-    {
-        var normalizedPath = NormalizePath(path);
-        Record(nameof(CreateDirectoryNoFollow), normalizedPath);
-        ThrowIfFailureQueued();
-        ValidateNoFollowMutationPath(normalizedPath);
-
         AddDirectoryWithParents(normalizedPath);
-        _owners.TryAdd(normalizedPath, CurrentOwner);
     }
 
-    public void DeleteFileIfMatchesSnapshotNoFollow(string path, FileIntegritySnapshot snapshot)
+    public void DeleteFile(string path)
     {
-        ArgumentNullException.ThrowIfNull(snapshot);
-        ThrowIfPathContainsCurrentOrParentDirectoryComponent(path);
-
-        var normalizedPath = NormalizePath(path);
+        string normalizedPath = NormalizePath(path);
         Record(nameof(DeleteFile), normalizedPath);
-        ThrowIfFailureQueued();
-        ValidateNoFollowMutationPath(normalizedPath);
-
-        FileIntegritySnapshot currentSnapshot =
-            CaptureFileIntegritySnapshotNoFollowWithoutRecording(normalizedPath);
-        if (!FileIntegritySnapshotsMatch(currentSnapshot, snapshot))
-        {
-            throw new InvalidOperationException(
-                "Configuration conflict: mutation target snapshot does not match."
-            );
-        }
-
-        DeleteFileWithoutRecording(normalizedPath);
-    }
-
-    public void DeleteFile(string path, FileMutationExpectation? expectation = null)
-    {
-        var normalizedPath = NormalizePath(path);
-        Record(nameof(DeleteFile), normalizedPath);
-        ThrowIfFailureQueued();
-        ValidateParentDirectoryChainHasNoSymbolicLinks(normalizedPath);
-        ValidateMutationExpectation(normalizedPath, expectation);
-        var resolvedPath = ResolveSymbolicLinkPath(normalizedPath, followFinalComponent: false);
-        if (_symbolicLinks.ContainsKey(resolvedPath) || _reparsePoints.Contains(resolvedPath))
-        {
-            throw new IOException(
-                $"The delete target '{normalizedPath}' must not be a symbolic link "
-                + "or reparse point."
-            );
-        }
-
-        if (_directories.Contains(resolvedPath))
-        {
-            throw new IOException(
-                $"Cannot delete in-memory file '{normalizedPath}' because a directory "
-                + "exists at that path."
-            );
-        }
-
-        DeleteFileWithoutRecording(resolvedPath);
-    }
-
-    IDisposable IFileSystemMutationLock.AcquireMutationLock(
-        string directory,
-        bool createDirectory
-    )
-    {
-        var normalizedPath = NormalizePath(directory);
-        Record(nameof(IFileSystemMutationLock.AcquireMutationLock), normalizedPath);
-        ThrowIfFailureQueued();
-        ValidateParentDirectoryChainHasNoSymbolicLinks(normalizedPath);
-        var resolvedPath = ResolveSymbolicLinkPath(normalizedPath, followFinalComponent: false);
-        if (_symbolicLinks.ContainsKey(resolvedPath) || _reparsePoints.Contains(resolvedPath))
-        {
-            throw new IOException(
-                "The in-memory mutation lock directory must not be a symbolic link or "
-                    + "reparse point."
-            );
-        }
-
-        if (createDirectory)
-        {
-            AddDirectoryWithParents(resolvedPath, OwnerOnlyDirectoryMode);
-        }
-
-        EnsureDirectoryExists(resolvedPath);
-        if (!_heldMutationLocks.Add(resolvedPath))
-        {
-            throw new IOException("The in-memory mutation lock is already held.");
-        }
-
-        return new InMemoryMutationLock(this, resolvedPath);
-    }
-
-    private void ValidateMutationExpectation(
-        string normalizedPath,
-        FileMutationExpectation? expectation
-    )
-    {
-        if (expectation is null)
-        {
-            return;
-        }
-
-        var resolvedPath = ResolveSymbolicLinkPath(normalizedPath, followFinalComponent: false);
-        if (_symbolicLinks.ContainsKey(resolvedPath) || _reparsePoints.Contains(resolvedPath))
-        {
-            throw new InvalidOperationException(
-                "Configuration conflict: mutation target must not be a symbolic link or "
-                    + "reparse point."
-            );
-        }
-
-        bool exists = _files.TryGetValue(resolvedPath, out var contents);
-        bool directoryExists = _directories.Contains(resolvedPath);
-        if (!expectation.Exists)
-        {
-            if (exists || directoryExists)
-            {
-                throw new InvalidOperationException(
-                    "Configuration conflict: expected mutation target to be absent."
-                );
-            }
-
-            return;
-        }
-
-        if (!exists)
-        {
-            throw new InvalidOperationException(
-                "Configuration conflict: expected mutation target to exist."
-            );
-        }
-
-        if (string.IsNullOrWhiteSpace(expectation.Sha256Hash))
-        {
-            throw new InvalidOperationException(
-                "Configuration conflict: mutation target before-state hash is required."
-            );
-        }
-
-        string actualHash = Convert.ToHexString(SHA256.HashData(contents!)).ToLowerInvariant();
-        if (!string.Equals(expectation.Sha256Hash, actualHash, StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException(
-                "Configuration conflict: mutation target before-state hash does not match."
-            );
-        }
-    }
-
-    private void ValidateParentDirectoryChainHasNoSymbolicLinks(string normalizedPath)
-    {
-        var parentPath = GetParentPath(normalizedPath);
-        while (!string.IsNullOrEmpty(parentPath))
-        {
-            if (_symbolicLinks.ContainsKey(parentPath) || _reparsePoints.Contains(parentPath))
-            {
-                throw new NotSupportedException(
-                    "Conditional file mutations reject symbolic-link or reparse-point directories "
-                        + "in target parent paths."
-                );
-            }
-
-            if (IsRootPath(parentPath))
-            {
-                return;
-            }
-
-            parentPath = GetParentPath(parentPath);
-        }
-    }
-
-    private void ValidateNoFollowMutationPath(string normalizedPath)
-    {
-        ValidateParentDirectoryChainHasNoSymbolicLinks(normalizedPath);
-        if (_symbolicLinks.ContainsKey(normalizedPath) || _reparsePoints.Contains(normalizedPath))
-        {
-            throw new NotSupportedException(
-                "Fake adapter scaffold materialization rejects symbolic-link or reparse-point "
-                    + "placement paths."
-            );
-        }
+        ThrowIfDirectory(normalizedPath);
+        files.Remove(normalizedPath);
+        unixFileModes.Remove(normalizedPath);
     }
 
     public void DeleteDirectory(string path, bool recursive = false)
     {
-        var normalizedPath = NormalizePath(path);
+        string normalizedPath = NormalizePath(path);
         Record(nameof(DeleteDirectory), normalizedPath, recursive.ToString());
-        ThrowIfFailureQueued();
-        var resolvedPath = ResolveSymbolicLinkPath(normalizedPath, followFinalComponent: false);
-
-        if (
-            _symbolicLinks.TryGetValue(resolvedPath, out var targetPath)
-            && _directories.Contains(ResolveSymbolicLinkPath(targetPath))
-        )
-        {
-            _identities.Remove(resolvedPath);
-            _unixFileModes.Remove(resolvedPath);
-            _reparsePoints.Remove(resolvedPath);
-            _symbolicLinks.Remove(resolvedPath);
-            _owners.Remove(resolvedPath);
-            return;
-        }
-
-        if (!_directories.Contains(resolvedPath))
+        if (!directories.Contains(normalizedPath))
         {
             throw new DirectoryNotFoundException(normalizedPath);
         }
 
-        var nestedDirectories = _directories
-            .Where(directory => IsChildPath(resolvedPath, directory))
+        string prefix = AppendSeparator(normalizedPath);
+        string[] nestedFiles = files
+            .Keys.Where(path => path.StartsWith(prefix, Comparison))
             .ToArray();
-        var nestedFiles = _files.Keys.Where(file => IsChildPath(resolvedPath, file)).ToArray();
-        var nestedLinks = _symbolicLinks
-            .Keys.Where(link => IsChildPath(resolvedPath, link))
+        string[] nestedDirectories = directories
+            .Where(path =>
+                !pathComparer.Equals(path, normalizedPath) && path.StartsWith(prefix, Comparison)
+            )
             .ToArray();
-
-        if (
-            !recursive
-            && (nestedDirectories.Length > 0 || nestedFiles.Length > 0 || nestedLinks.Length > 0)
-        )
+        if (!recursive && (nestedFiles.Length != 0 || nestedDirectories.Length != 0))
         {
-            throw new IOException("The in-memory directory is not empty.");
+            throw new IOException($"Directory '{normalizedPath}' is not empty.");
         }
 
-        foreach (var file in nestedFiles)
+        foreach (string file in nestedFiles)
         {
-            _files.Remove(file);
-            _identities.Remove(file);
-            _unixFileModes.Remove(file);
-            _reparsePoints.Remove(file);
-            _symbolicLinks.Remove(file);
-            _owners.Remove(file);
+            files.Remove(file);
+            unixFileModes.Remove(file);
         }
 
-        foreach (var link in nestedLinks)
+        foreach (string directory in nestedDirectories)
         {
-            _identities.Remove(link);
-            _unixFileModes.Remove(link);
-            _reparsePoints.Remove(link);
-            _symbolicLinks.Remove(link);
-            _owners.Remove(link);
+            directories.Remove(directory);
+            unixFileModes.Remove(directory);
         }
 
-        foreach (var directory in nestedDirectories)
-        {
-            _directories.Remove(directory);
-            _identities.Remove(directory);
-            _unixFileModes.Remove(directory);
-            _reparsePoints.Remove(directory);
-            _symbolicLinks.Remove(directory);
-            _owners.Remove(directory);
-        }
-
-        _directories.Remove(resolvedPath);
-        _identities.Remove(resolvedPath);
-        _unixFileModes.Remove(resolvedPath);
-        _reparsePoints.Remove(resolvedPath);
-        _symbolicLinks.Remove(resolvedPath);
-        _owners.Remove(resolvedPath);
+        directories.Remove(normalizedPath);
+        unixFileModes.Remove(normalizedPath);
     }
 
     public IEnumerable<string> EnumerateFiles(
@@ -810,27 +228,14 @@ public sealed class InMemoryFileSystem
         SearchOption searchOption = SearchOption.TopDirectoryOnly
     )
     {
-        var normalizedPath = NormalizePath(path);
+        string normalizedPath = NormalizePath(path);
         Record(nameof(EnumerateFiles), normalizedPath, searchPattern);
-        ThrowIfFailureQueued();
-        var resolvedDirectoryPath = ResolveSymbolicLinkPath(normalizedPath);
-        EnsureDirectoryExists(resolvedDirectoryPath);
-
-        var files = _files
-            .Keys.Concat(
-                _symbolicLinks
-                    .Where(link => _files.ContainsKey(ResolveSymbolicLinkPath(link.Key)))
-                    .Select(link => link.Key)
-            )
-            .Where(file =>
-                IsInEnumerationScope(resolvedDirectoryPath, file, searchOption)
-                && MatchesSearchPattern(file, searchPattern)
-            )
-            .Select(file => ProjectResolvedPath(normalizedPath, resolvedDirectoryPath, file))
-            .Order(StringComparer.Ordinal)
+        EnsureDirectoryExists(normalizedPath);
+        return files
+            .Keys.Where(candidate => IsIncluded(candidate, normalizedPath, searchOption))
+            .Where(candidate => Matches(searchPattern, GetFileName(candidate)))
+            .OrderBy(static candidate => candidate, pathComparer)
             .ToArray();
-
-        return files;
     }
 
     public IEnumerable<string> EnumerateDirectories(
@@ -839,965 +244,251 @@ public sealed class InMemoryFileSystem
         SearchOption searchOption = SearchOption.TopDirectoryOnly
     )
     {
-        var normalizedPath = NormalizePath(path);
+        string normalizedPath = NormalizePath(path);
         Record(nameof(EnumerateDirectories), normalizedPath, searchPattern);
-        ThrowIfFailureQueued();
-        var resolvedDirectoryPath = ResolveSymbolicLinkPath(normalizedPath);
-        EnsureDirectoryExists(resolvedDirectoryPath);
-
-        var directories = _directories
-            .Where(directory => !PathEquals(directory, _rootPath))
-            .Concat(
-                _symbolicLinks
-                    .Where(link => _directories.Contains(ResolveSymbolicLinkPath(link.Key)))
-                    .Select(link => link.Key)
-            )
-            .Where(directory =>
-                IsInEnumerationScope(resolvedDirectoryPath, directory, searchOption)
-                && MatchesSearchPattern(directory, searchPattern)
-            )
-            .Select(directory =>
-                ProjectResolvedPath(normalizedPath, resolvedDirectoryPath, directory)
-            )
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-
-        return directories;
-    }
-
-    IEnumerable<string> IFileSystemNoFollowEnumeration.EnumerateFileSystemEntriesNoFollow(
-        string path,
-        string searchPattern,
-        SearchOption searchOption
-    )
-    {
-        var normalizedPath = NormalizePath(path);
-        Record(
-            nameof(IFileSystemNoFollowEnumeration.EnumerateFileSystemEntriesNoFollow),
-            normalizedPath,
-            searchPattern
-        );
-        ThrowIfFailureQueued();
-        var resolvedDirectoryPath = ResolveSymbolicLinkPath(normalizedPath);
-        EnsureDirectoryExists(resolvedDirectoryPath);
-
-        return _files
-            .Keys.Concat(
-                _directories.Where(directory => !PathEquals(directory, _rootPath))
-            )
-            .Concat(_symbolicLinks.Keys)
-            .Distinct(_pathComparer)
-            .Where(entry =>
-                IsInEnumerationScope(resolvedDirectoryPath, entry, searchOption)
-                && !HasNoFollowEnumerationBoundaryAncestor(resolvedDirectoryPath, entry)
-                && MatchesSearchPattern(entry, searchPattern)
-            )
-            .Select(entry => ProjectResolvedPath(normalizedPath, resolvedDirectoryPath, entry))
-            .Order(StringComparer.Ordinal)
+        EnsureDirectoryExists(normalizedPath);
+        return directories
+            .Where(candidate => !pathComparer.Equals(candidate, normalizedPath))
+            .Where(candidate => IsIncluded(candidate, normalizedPath, searchOption))
+            .Where(candidate => Matches(searchPattern, GetFileName(candidate)))
+            .OrderBy(static candidate => candidate, pathComparer)
             .ToArray();
     }
 
-    private bool HasNoFollowEnumerationBoundaryAncestor(string rootPath, string entryPath)
+    IDisposable IFileSystemMutationLock.AcquireMutationLock(string directory)
     {
-        string parentPath = GetParentPath(entryPath);
-        while (
-            parentPath.Length > 0
-            && !PathEquals(parentPath, rootPath)
-        )
+        string normalizedPath = NormalizePath(directory);
+        Record(nameof(IFileSystemMutationLock.AcquireMutationLock), normalizedPath);
+        AddDirectoryWithParents(normalizedPath);
+        if (!heldLocks.Add(normalizedPath))
         {
-            if (_symbolicLinks.ContainsKey(parentPath) || _reparsePoints.Contains(parentPath))
-            {
-                return true;
-            }
-
-            parentPath = GetParentPath(parentPath);
+            throw new IOException($"The mutation lock '{normalizedPath}' is already held.");
         }
 
-        return false;
+        return new ActionDisposable(() => heldLocks.Remove(normalizedPath));
     }
 
-    private string NormalizePath(string path)
+    private StringComparison Comparison =>
+        pathSemantics == InMemoryPathSemantics.Windows
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+
+    private void AtomicWrite(string path, byte[] contents, AtomicWriteOptions options)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(path);
-
-        return _pathSemantics == InMemoryPathSemantics.Posix
-            ? NormalizePosixPath(path)
-            : _pathSemantics == InMemoryPathSemantics.Windows
-                ? NormalizeWindowsPath(path)
-                : NormalizeHostFullPath(Path.GetFullPath(path));
-    }
-
-    private void ThrowIfPathContainsCurrentOrParentDirectoryComponent(string path)
-    {
-        if (PathContainsCurrentOrParentDirectoryComponent(path))
+        AddDirectoryWithParents(GetParentPath(path));
+        ThrowIfDirectory(path);
+        files[path] = contents.ToArray();
+        if ((options & AtomicWriteOptions.RestrictUnixFileModeToOwnerOnly) != 0)
         {
-            throw new IOException(
-                $"The helper integrity path '{path}' must not contain '.' or '..' path components "
-                    + "or Windows path components with trailing spaces or periods."
-            );
-        }
-    }
-
-    private bool PathContainsCurrentOrParentDirectoryComponent(string path)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(path);
-
-        var componentStart = 0;
-        for (var index = 0; index <= path.Length; index++)
-        {
-            if (index < path.Length && !IsDirectorySeparator(path[index]))
-            {
-                continue;
-            }
-
-            var componentLength = index - componentStart;
-            if (IsUnsafePathComponent(path, componentStart, componentLength))
-            {
-                return true;
-            }
-
-            componentStart = index + 1;
-        }
-
-        return false;
-    }
-
-    private bool IsUnsafePathComponent(string path, int componentStart, int componentLength)
-    {
-        if (componentLength == 0)
-        {
-            return false;
-        }
-
-        if (IsCurrentOrParentDirectoryComponent(path, componentStart, componentLength))
-        {
-            return true;
-        }
-
-        if (
-            _pathSemantics == InMemoryPathSemantics.Posix
-            || (_pathSemantics == InMemoryPathSemantics.Host && !OperatingSystem.IsWindows())
-        )
-        {
-            return false;
-        }
-
-        char lastCharacter = path[componentStart + componentLength - 1];
-        return lastCharacter is ' ' or '.';
-    }
-
-    private static bool IsCurrentOrParentDirectoryComponent(
-        string path,
-        int componentStart,
-        int componentLength
-    )
-    {
-        return componentLength == 1 && path[componentStart] == '.'
-            || componentLength == 2
-                && path[componentStart] == '.'
-                && path[componentStart + 1] == '.';
-    }
-
-    private static string NormalizeHostFullPath(string path)
-    {
-        var trimmedPath = Path.TrimEndingDirectorySeparator(path);
-        if (trimmedPath.Length == 0)
-        {
-            trimmedPath = Path.GetPathRoot(path) ?? path;
-        }
-
-        return trimmedPath;
-    }
-
-    private static string NormalizePosixPath(string path)
-    {
-        var segments = new List<string>();
-        foreach (var segment in path.Split('/'))
-        {
-            if (segment.Length == 0 || segment == ".")
-            {
-                continue;
-            }
-
-            if (segment == "..")
-            {
-                if (segments.Count > 0)
-                {
-                    segments.RemoveAt(segments.Count - 1);
-                }
-
-                continue;
-            }
-
-            segments.Add(segment);
-        }
-
-        return segments.Count == 0 ? "/" : "/" + string.Join('/', segments);
-    }
-
-    private string NormalizeWindowsPath(string path)
-    {
-        string canonicalPath = path.Replace('/', '\\');
-        if (HasUnsupportedWindowsNonDriveRoot(canonicalPath))
-        {
-            throw new NotSupportedException(
-                "In-memory Windows path semantics support only drive-qualified paths and reject "
-                    + "UNC or other unsupported non-drive-qualified roots."
-            );
-        }
-
-        if (HasUnsupportedWindowsDriveRelativeRoot(canonicalPath))
-        {
-            throw new NotSupportedException(
-                "In-memory Windows path semantics support only fully qualified drive-rooted "
-                    + "absolute paths and reject drive-relative or bare-drive roots."
-            );
-        }
-
-        string root;
-        string remainder;
-        if (TryGetWindowsDrivePath(canonicalPath, out char driveLetter, out int rootLength))
-        {
-            root = NormalizeWindowsRoot(driveLetter);
-            remainder =
-                canonicalPath.Length > rootLength
-                    ? canonicalPath[rootLength..]
-                    : string.Empty;
+            unixFileModes[path] = UnixFileMode.UserRead | UnixFileMode.UserWrite;
         }
         else
         {
-            root = _rootPath;
-            remainder =
-                canonicalPath.Length > 0 && canonicalPath[0] == '\\'
-                    ? canonicalPath.TrimStart('\\')
-                    : canonicalPath;
-        }
-
-        var segments = new List<string>();
-        foreach (var segment in remainder.Split('\\'))
-        {
-            if (segment.Length == 0 || segment == ".")
-            {
-                continue;
-            }
-
-            if (segment == "..")
-            {
-                if (segments.Count > 0)
-                {
-                    segments.RemoveAt(segments.Count - 1);
-                }
-
-                continue;
-            }
-
-            segments.Add(segment);
-        }
-
-        return segments.Count == 0 ? root : root + string.Join('\\', segments);
-    }
-
-    private bool PathEquals(string left, string right)
-    {
-        return string.Equals(left, right, GetPathComparison());
-    }
-
-    private bool PathStartsWith(string path, string prefix)
-    {
-        return path.StartsWith(prefix, GetPathComparison());
-    }
-
-    private StringComparison GetPathComparison()
-    {
-        return _pathSemantics == InMemoryPathSemantics.Windows
-            ? StringComparison.OrdinalIgnoreCase
-            : StringComparison.Ordinal;
-    }
-
-    private bool TrustedParentDirectoriesMatchSnapshot(
-        IReadOnlyList<TrustedDirectorySnapshot> currentDirectories,
-        IReadOnlyList<TrustedDirectorySnapshot> expectedDirectories
-    )
-    {
-        if (currentDirectories.Count != expectedDirectories.Count)
-        {
-            return false;
-        }
-
-        for (var index = 0; index < currentDirectories.Count; index++)
-        {
-            var currentDirectory = currentDirectories[index];
-            var expectedDirectory = expectedDirectories[index];
-            if (
-                !PathEquals(currentDirectory.FullPath, expectedDirectory.FullPath)
-                || currentDirectory.Identity != expectedDirectory.Identity
-                || currentDirectory.Owner != expectedDirectory.Owner
-                || currentDirectory.UnixFileMode != expectedDirectory.UnixFileMode
-            )
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private bool FileIntegritySnapshotsMatch(
-        FileIntegritySnapshot currentSnapshot,
-        FileIntegritySnapshot expectedSnapshot
-    )
-    {
-        return PathEquals(currentSnapshot.FullPath, expectedSnapshot.FullPath)
-            && currentSnapshot.Identity == expectedSnapshot.Identity
-            && currentSnapshot.Owner == expectedSnapshot.Owner
-            && currentSnapshot.UnixFileMode == expectedSnapshot.UnixFileMode
-            && TrustedParentDirectoriesMatchSnapshot(
-                currentSnapshot.TrustedParentDirectories,
-                expectedSnapshot.TrustedParentDirectories
-            )
-            && currentSnapshot.Sha256Hash.SequenceEqual(expectedSnapshot.Sha256Hash);
-    }
-
-    private static bool IsWindowsPathFullyQualified(string path)
-    {
-        return TryGetWindowsDriveRoot(path, out _);
-    }
-
-    private static bool TryGetWindowsDriveRoot(string path, out string root)
-    {
-        string canonicalPath = path.Replace('/', '\\');
-        if (
-            canonicalPath.Length >= 3
-            && IsWindowsDriveLetter(canonicalPath[0])
-            && canonicalPath[1] == ':'
-            && canonicalPath[2] == '\\'
-        )
-        {
-            root = NormalizeWindowsRoot(canonicalPath[0]);
-            return true;
-        }
-
-        root = string.Empty;
-        return false;
-    }
-
-    private static bool TryGetWindowsDrivePath(
-        string path,
-        out char driveLetter,
-        out int rootLength
-    )
-    {
-        if (path.Length >= 2 && IsWindowsDriveLetter(path[0]) && path[1] == ':')
-        {
-            driveLetter = char.ToUpperInvariant(path[0]);
-            rootLength = path.Length >= 3 && path[2] == '\\' ? 3 : 2;
-            return true;
-        }
-
-        driveLetter = default;
-        rootLength = 0;
-        return false;
-    }
-
-    private static string NormalizeWindowsRoot(char driveLetter)
-    {
-        return string.Concat(char.ToUpperInvariant(driveLetter), ":\\");
-    }
-
-    private static bool HasUnsupportedWindowsNonDriveRoot(string canonicalPath) =>
-        canonicalPath.Length > 0 && canonicalPath[0] == '\\';
-
-    private static bool HasUnsupportedWindowsDriveRelativeRoot(string canonicalPath) =>
-        canonicalPath.Length >= 2
-        && IsWindowsDriveLetter(canonicalPath[0])
-        && canonicalPath[1] == ':'
-        && (canonicalPath.Length == 2 || canonicalPath[2] != '\\');
-
-    private static bool IsWindowsDriveLetter(char value)
-    {
-        return value is >= 'A' and <= 'Z' or >= 'a' and <= 'z';
-    }
-
-    private string GetParentPath(string path)
-    {
-        if (_pathSemantics == InMemoryPathSemantics.Posix)
-        {
-            if (path == "/")
-            {
-                return string.Empty;
-            }
-
-            var separatorIndex = path.LastIndexOf('/');
-            return separatorIndex <= 0 ? "/" : path[..separatorIndex];
-        }
-
-        if (_pathSemantics == InMemoryPathSemantics.Windows)
-        {
-            if (TryGetWindowsDriveRoot(path, out string root))
-            {
-                if (PathEquals(path, root))
-                {
-                    return string.Empty;
-                }
-
-                int separatorIndex = path.LastIndexOf('\\');
-                return separatorIndex <= 2 ? root : path[..separatorIndex];
-            }
-
-            return _rootPath;
-        }
-
-        var parentPath = Path.GetDirectoryName(path);
-        return string.IsNullOrEmpty(parentPath) ? string.Empty : NormalizeHostFullPath(parentPath);
-    }
-
-    private bool IsChildPath(string parentPath, string candidate)
-    {
-        return parentPath.Length == 0
-                ? candidate.Length > 0
-                    && !PathEquals(candidate, parentPath)
-            : IsRootPath(parentPath)
-                ? candidate.Length > parentPath.Length
-                    && PathStartsWith(candidate, parentPath)
-            : PathStartsWith(candidate, parentPath + GetDirectorySeparator());
-    }
-
-    private bool IsRootPath(string path)
-    {
-        if (_pathSemantics == InMemoryPathSemantics.Posix)
-        {
-            return path == "/";
-        }
-
-        if (_pathSemantics == InMemoryPathSemantics.Windows)
-        {
-            return TryGetWindowsDriveRoot(path, out string root) && PathEquals(path, root);
-        }
-
-        var rootPath = Path.GetPathRoot(path);
-        return !string.IsNullOrEmpty(rootPath)
-            && string.Equals(path, NormalizeHostFullPath(rootPath), StringComparison.Ordinal);
-    }
-
-    private bool IsInScope(string directoryPath, string candidate, SearchOption searchOption)
-    {
-        if (!IsChildPath(directoryPath, candidate))
-        {
-            return false;
-        }
-
-        return searchOption == SearchOption.AllDirectories
-            || PathEquals(GetParentPath(candidate), directoryPath);
-    }
-
-    private bool MatchesSearchPattern(string path, string searchPattern)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(searchPattern);
-
-        return FileSystemName.MatchesSimpleExpression(
-            searchPattern,
-            GetFileName(path),
-            ignoreCase: _pathSemantics == InMemoryPathSemantics.Windows
-        );
-    }
-
-    private bool IsInEnumerationScope(
-        string resolvedDirectoryPath,
-        string candidatePath,
-        SearchOption searchOption
-    )
-    {
-        return IsInScope(resolvedDirectoryPath, candidatePath, searchOption);
-    }
-
-    private string ResolveSymbolicLinkPath(string path, bool followFinalComponent = true)
-    {
-        var visitedPaths = new HashSet<string>(_pathComparer);
-        var currentPath = path;
-
-        while (
-            TryFindSymbolicLinkComponent(
-                currentPath,
-                followFinalComponent,
-                out var linkPath,
-                out var targetPath
-            )
-        )
-        {
-            if (!visitedPaths.Add(linkPath))
-            {
-                throw new IOException("A symbolic link cycle was detected.");
-            }
-
-            currentPath = CombineResolvedPath(targetPath, currentPath[linkPath.Length..]);
-        }
-
-        return currentPath;
-    }
-
-    private bool TryFindSymbolicLinkComponent(
-        string path,
-        bool followFinalComponent,
-        out string linkPath,
-        out string targetPath
-    )
-    {
-        foreach (var candidate in _symbolicLinks.Keys.OrderBy(candidate => candidate.Length))
-        {
-            if (!followFinalComponent && PathEquals(candidate, path))
-            {
-                continue;
-            }
-
-            if (PathEquals(candidate, path) || IsChildPath(candidate, path))
-            {
-                linkPath = candidate;
-                targetPath = _symbolicLinks[candidate];
-                return true;
-            }
-        }
-
-        linkPath = string.Empty;
-        targetPath = string.Empty;
-        return false;
-    }
-
-    private string CombineResolvedPath(string targetPath, string suffix)
-    {
-        if (suffix.Length == 0)
-        {
-            return targetPath;
-        }
-
-        return _pathSemantics == InMemoryPathSemantics.Posix
-            ? NormalizePosixPath(targetPath + suffix)
-            : _pathSemantics == InMemoryPathSemantics.Windows
-                ? NormalizeWindowsPath(targetPath + suffix)
-                : NormalizeHostFullPath(Path.GetFullPath(targetPath + suffix));
-    }
-
-    private string ProjectResolvedPath(
-        string requestedDirectoryPath,
-        string resolvedDirectoryPath,
-        string originalCandidatePath
-    )
-    {
-        if (PathEquals(requestedDirectoryPath, resolvedDirectoryPath))
-        {
-            return originalCandidatePath;
-        }
-
-        if (!IsChildPath(resolvedDirectoryPath, originalCandidatePath))
-        {
-            return originalCandidatePath;
-        }
-
-        return requestedDirectoryPath + originalCandidatePath[resolvedDirectoryPath.Length..];
-    }
-
-    private bool IsRootDirectory(string path)
-    {
-        return PathEquals(path, _rootPath);
-    }
-
-    private UnixFileMode GetUnixFileModeWithoutRecording(string normalizedPath)
-    {
-        return _unixFileModes.TryGetValue(normalizedPath, out var mode) ? mode : 0;
-    }
-
-    private FileIntegritySnapshot CaptureFileIntegritySnapshotWithoutRecording(
-        string normalizedPath
-    ) => CaptureFileIntegritySnapshotCoreWithoutRecording(
-        normalizedPath,
-        captureTrustedParentDirectories: true
-    );
-
-    private FileIntegritySnapshot CaptureFileIntegritySnapshotWithoutTrustedParentsWithoutRecording(
-        string normalizedPath
-    ) => CaptureFileIntegritySnapshotCoreWithoutRecording(
-        normalizedPath,
-        captureTrustedParentDirectories: false
-    );
-
-    private FileIntegritySnapshot CaptureFileIntegritySnapshotNoFollowWithoutRecording(
-        string normalizedPath
-    )
-    {
-        ValidateNoFollowMutationPath(normalizedPath);
-        if (_directories.Contains(normalizedPath))
-        {
-            throw new IOException(
-                $"Cannot capture an in-memory no-follow file snapshot for '{normalizedPath}' "
-                    + "because it is not a regular file."
-            );
-        }
-
-        if (!_files.TryGetValue(normalizedPath, out var contents))
-        {
-            throw new FileNotFoundException("The in-memory file does not exist.", normalizedPath);
-        }
-
-        var owner =
-            _owners.TryGetValue(normalizedPath, out var fileOwner)
-                ? fileOwner
-                : CurrentOwner;
-        return CreateNoFollowFileIntegritySnapshot(
-            normalizedPath,
-            _identities[normalizedPath],
-            owner,
-            GetUnixFileModeWithoutRecording(normalizedPath),
-            contents
-        );
-    }
-
-    private static FileIntegritySnapshot CreateNoFollowFileIntegritySnapshot(
-        string normalizedPath,
-        FileSystemEntryIdentity identity,
-        FileSystemOwner owner,
-        UnixFileMode unixFileMode,
-        byte[] contents
-    ) =>
-        new(normalizedPath, identity, owner, unixFileMode, SHA256.HashData(contents), []);
-
-    private FileIntegritySnapshot CaptureFileIntegritySnapshotCoreWithoutRecording(
-        string normalizedPath,
-        bool captureTrustedParentDirectories
-    )
-    {
-        ThrowIfSymbolicLinkParentComponent(normalizedPath);
-        var resolvedPath = ResolveSymbolicLinkPath(normalizedPath, followFinalComponent: false);
-        if (_symbolicLinks.ContainsKey(resolvedPath) || _reparsePoints.Contains(resolvedPath))
-        {
-            throw new IOException(
-                "Cannot capture an integrity snapshot for a symbolic link or reparse point."
-            );
-        }
-
-        if (!_files.TryGetValue(resolvedPath, out var contents))
-        {
-            throw new FileNotFoundException("The in-memory file does not exist.", normalizedPath);
-        }
-
-        var owner = _owners.TryGetValue(resolvedPath, out var fileOwner) ? fileOwner : CurrentOwner;
-        ThrowIfUntrustedOwner(normalizedPath, owner, "helper file");
-        var unixFileMode = GetUnixFileModeWithoutRecording(resolvedPath);
-        ThrowIfUnsafeHelperUnixFileMode(normalizedPath, unixFileMode, owner == CurrentOwner);
-        return new FileIntegritySnapshot(
-            normalizedPath,
-            _identities[resolvedPath],
-            owner,
-            unixFileMode,
-            SHA256.HashData(contents),
-            captureTrustedParentDirectories
-                ? CaptureTrustedParentDirectorySnapshotsWithoutRecording(resolvedPath)
-                : []
-        );
-    }
-
-    private List<TrustedDirectorySnapshot> CaptureTrustedParentDirectorySnapshotsWithoutRecording(
-        string resolvedPath
-    )
-    {
-        ThrowIfSymbolicLinkParentComponent(resolvedPath);
-        var snapshots = new List<TrustedDirectorySnapshot>();
-        var parentPath = GetParentPath(resolvedPath);
-        while (parentPath.Length > 0)
-        {
-            EnsureDirectoryExists(parentPath);
-            var owner = _owners.TryGetValue(parentPath, out var directoryOwner)
-                ? directoryOwner
-                : CurrentOwner;
-            ThrowIfUntrustedOwner(parentPath, owner, "trusted parent directory");
-            var unixFileMode = GetUnixFileModeWithoutRecording(parentPath);
-            ThrowIfUnsafeTrustedParentDirectoryUnixFileMode(parentPath, unixFileMode);
-            snapshots.Add(
-                new TrustedDirectorySnapshot(
-                    parentPath,
-                    _identities[parentPath],
-                    owner,
-                    unixFileMode
-                )
-            );
-
-            if (IsRootDirectory(parentPath))
-            {
-                break;
-            }
-
-            parentPath = GetParentPath(parentPath);
-        }
-
-        return snapshots;
-    }
-
-    private void ThrowIfSymbolicLinkParentComponent(string normalizedPath)
-    {
-        var parentPath = GetParentPath(normalizedPath);
-        while (parentPath.Length > 0)
-        {
-            if (_symbolicLinks.ContainsKey(parentPath) || _reparsePoints.Contains(parentPath))
-            {
-                throw new IOException(
-                    "Helper parent directories must not be symbolic links or reparse points."
-                );
-            }
-
-            if (IsRootDirectory(parentPath))
-            {
-                return;
-            }
-
-            parentPath = GetParentPath(parentPath);
-        }
-    }
-
-    private static void ThrowIfUnsafeHelperUnixFileMode(
-        string path,
-        UnixFileMode mode,
-        bool isCurrentUserOwned
-    )
-    {
-        const UnixFileMode unsafeWriteBits = UnixFileMode.GroupWrite | UnixFileMode.OtherWrite;
-        const UnixFileMode executableBits =
-            UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute;
-        if ((mode & unsafeWriteBits) != 0)
-        {
-            throw new UnauthorizedAccessException(
-                $"The helper file '{path}' must not be writable by group or other users."
-            );
-        }
-
-        if (isCurrentUserOwned && (mode & UnixFileMode.UserExecute) == 0)
-        {
-            throw new UnauthorizedAccessException(
-                "The current-user-owned helper file "
-                    + $"'{path}' must have the user executable bit set."
-            );
-        }
-
-        if ((mode & executableBits) == 0)
-        {
-            throw new UnauthorizedAccessException(
-                $"The helper file '{path}' must have an executable bit set."
+            unixFileModes.TryAdd(
+                path,
+                UnixFileMode.UserRead
+                    | UnixFileMode.UserWrite
+                    | UnixFileMode.GroupRead
+                    | UnixFileMode.OtherRead
             );
         }
     }
 
-    private void ThrowIfUntrustedOwner(string path, FileSystemOwner owner, string entryKind)
+    private void AddDirectoryWithParents(string path)
     {
-        if (owner != CurrentOwner && owner.Id != "fake:root" && owner.Id != "fake:system")
+        if (files.ContainsKey(path))
         {
-            throw new UnauthorizedAccessException(
-                $"The {entryKind} '{path}' must be owned by a trusted owner."
-            );
-        }
-    }
-
-    private static void ThrowIfUnsafeTrustedParentDirectoryUnixFileMode(
-        string path,
-        UnixFileMode mode
-    )
-    {
-        const UnixFileMode unsafeWriteBits = UnixFileMode.GroupWrite | UnixFileMode.OtherWrite;
-        if ((mode & unsafeWriteBits) != 0)
-        {
-            throw new UnauthorizedAccessException(
-                "The helper parent directory "
-                    + $"'{path}' must not be writable by group or other users."
-            );
-        }
-    }
-
-    private FileSystemEntryIdentity CreateIdentity()
-    {
-        return new FileSystemEntryIdentity($"memory:{_nextIdentity++}");
-    }
-
-    private bool IsDirectorySeparator(char value)
-    {
-        return _pathSemantics == InMemoryPathSemantics.Posix
-            ? value == '/'
-            : _pathSemantics == InMemoryPathSemantics.Windows
-                ? value is '\\' or '/'
-                : value == Path.DirectorySeparatorChar || value == Path.AltDirectorySeparatorChar;
-    }
-
-    private char GetDirectorySeparator()
-    {
-        return _pathSemantics == InMemoryPathSemantics.Posix
-            ? '/'
-            : _pathSemantics == InMemoryPathSemantics.Windows
-                ? '\\'
-                : Path.DirectorySeparatorChar;
-    }
-
-    private string GetFileName(string path)
-    {
-        if (_pathSemantics == InMemoryPathSemantics.Posix)
-        {
-            var separatorIndex = path.LastIndexOf('/');
-            return separatorIndex < 0 ? path : path[(separatorIndex + 1)..];
+            throw new IOException($"A file already exists at '{path}'.");
         }
 
-        if (_pathSemantics == InMemoryPathSemantics.Windows)
-        {
-            int separatorIndex = path.LastIndexOf('\\');
-            return separatorIndex < 0 ? path : path[(separatorIndex + 1)..];
-        }
-
-        return Path.GetFileName(path);
-    }
-
-    private void Record(string operation, string path, string? value = null)
-    {
-        var call = new FileSystemCall(operation, path, value);
-        Calls.Add(call);
-        AfterRecord?.Invoke(call, this);
-    }
-
-    private void ThrowIfFailureQueued()
-    {
-        if (_failures.Count > 0)
-        {
-            throw _failures.Dequeue();
-        }
-    }
-
-    private void DeleteFileWithoutRecording(string path)
-    {
-        _files.Remove(path);
-        _identities.Remove(path);
-        _unixFileModes.Remove(path);
-        _owners.Remove(path);
-    }
-
-    private bool TryDeleteFileIfMatchesNoFollowSnapshotWithoutRecording(
-        string normalizedPath,
-        FileIntegritySnapshot expectedSnapshot
-    )
-    {
-        try
-        {
-            FileIntegritySnapshot currentSnapshot =
-                CaptureFileIntegritySnapshotNoFollowWithoutRecording(normalizedPath);
-            if (!FileIntegritySnapshotsMatch(currentSnapshot, expectedSnapshot))
-            {
-                return false;
-            }
-        }
-        catch (IOException)
-        {
-            return false;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return false;
-        }
-        catch (NotSupportedException)
-        {
-            return false;
-        }
-
-        DeleteFileWithoutRecording(normalizedPath);
-        return true;
-    }
-
-    private void EnsureParentDirectoryExists(string path)
-    {
-        EnsureDirectoryExists(GetParentPath(path));
-    }
-
-    private void EnsureDirectoryExists(string path)
-    {
-        if (IsRootDirectory(path))
+        if (directories.Contains(path))
         {
             return;
         }
 
-        if (!_directories.Contains(path))
+        string parent = GetParentPath(path);
+        if (!pathComparer.Equals(parent, path))
+        {
+            AddDirectoryWithParents(parent);
+        }
+
+        directories.Add(path);
+        unixFileModes[path] =
+            DefaultCreateDirectoryMode
+            ?? (
+                UnixFileMode.UserRead
+                | UnixFileMode.UserWrite
+                | UnixFileMode.UserExecute
+                | UnixFileMode.GroupRead
+                | UnixFileMode.GroupExecute
+                | UnixFileMode.OtherRead
+                | UnixFileMode.OtherExecute
+            );
+    }
+
+    private void EnsureParentDirectoryExists(string path) =>
+        EnsureDirectoryExists(GetParentPath(path));
+
+    private void EnsureDirectoryExists(string path)
+    {
+        if (!directories.Contains(path))
         {
             throw new DirectoryNotFoundException(path);
         }
     }
 
-    private void EnsureFileOrDirectoryExists(string path)
+    private void EnsureEntryExists(string path)
     {
-        if (
-            !_files.ContainsKey(path)
-            && !_directories.Contains(path)
-            && !_symbolicLinks.ContainsKey(path)
+        if (!files.ContainsKey(path) && !directories.Contains(path))
+        {
+            throw new FileNotFoundException("The in-memory path does not exist.", path);
+        }
+    }
+
+    private byte[] GetFile(string path)
+    {
+        if (directories.Contains(path))
+        {
+            throw new UnauthorizedAccessException($"'{path}' is a directory.");
+        }
+
+        return files.TryGetValue(path, out byte[]? contents)
+            ? contents
+            : throw new FileNotFoundException("The in-memory file does not exist.", path);
+    }
+
+    private void ThrowIfDirectory(string path)
+    {
+        if (directories.Contains(path))
+        {
+            throw new UnauthorizedAccessException($"'{path}' is a directory.");
+        }
+    }
+
+    private bool IsIncluded(string candidate, string parent, SearchOption searchOption)
+    {
+        string prefix = AppendSeparator(parent);
+        if (!candidate.StartsWith(prefix, Comparison))
+        {
+            return false;
+        }
+
+        string relative = candidate[prefix.Length..];
+        return searchOption == SearchOption.AllDirectories || !relative.Any(IsSeparator);
+    }
+
+    private bool Matches(string pattern, string name) =>
+        FileSystemName.MatchesSimpleExpression(
+            pattern,
+            name,
+            ignoreCase: pathSemantics == InMemoryPathSemantics.Windows
+        );
+
+    private string NormalizePath(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        if (pathSemantics == InMemoryPathSemantics.Host)
+        {
+            return Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+        }
+
+        char separator = pathSemantics == InMemoryPathSemantics.Windows ? '\\' : '/';
+        string replaced = path.Replace('\\', separator).Replace('/', separator);
+        string prefix;
+        string remainder;
+        if (pathSemantics == InMemoryPathSemantics.Windows)
+        {
+            bool rooted =
+                replaced.Length >= 3
+                && char.IsAsciiLetter(replaced[0])
+                && replaced[1] == ':'
+                && replaced[2] == separator;
+            prefix = rooted ? char.ToUpperInvariant(replaced[0]) + @":\" : rootPath;
+            remainder = rooted ? replaced[3..] : replaced;
+        }
+        else
+        {
+            prefix = "/";
+            remainder = replaced.TrimStart(separator);
+        }
+
+        var components = new List<string>();
+        foreach (
+            string component in remainder.Split(separator, StringSplitOptions.RemoveEmptyEntries)
         )
         {
-            throw new FileNotFoundException(
-                "The in-memory file system entry does not exist.",
-                path
-            );
-        }
-    }
-
-    private void ThrowIfDirectoryExists(string path)
-    {
-        if (_directories.Contains(path))
-        {
-            throw new IOException(
-                $"Cannot create in-memory file '{path}' because a directory exists at that path."
-            );
-        }
-    }
-
-    private void AddDirectoryWithParents(string path, UnixFileMode? createdDirectoryMode = null)
-    {
-        if (path.Length == 0 || IsRootDirectory(path))
-        {
-            return;
-        }
-
-        if (_files.ContainsKey(path) || _symbolicLinks.ContainsKey(path))
-        {
-            throw new IOException(
-                $"Cannot create in-memory directory '{path}' because a file or symbolic link "
-                    + "exists at that path."
-            );
-        }
-
-        AddDirectoryWithParents(GetParentPath(path), createdDirectoryMode);
-        if (_directories.Add(path))
-        {
-            _identities.TryAdd(path, CreateIdentity());
-            _owners.TryAdd(path, CurrentOwner);
-            if ((createdDirectoryMode ?? DefaultCreateDirectoryMode) is { } mode)
+            if (component == ".")
             {
-                _unixFileModes[path] = mode;
-            }
-        }
-    }
-
-    private void ReleaseMutationLock(string resolvedPath)
-    {
-        _heldMutationLocks.Remove(resolvedPath);
-    }
-
-    private sealed class InMemoryMutationLock : IDisposable
-    {
-        private readonly InMemoryFileSystem _fileSystem;
-        private readonly string _resolvedPath;
-        private bool _disposed;
-
-        public InMemoryMutationLock(InMemoryFileSystem fileSystem, string resolvedPath)
-        {
-            _fileSystem = fileSystem;
-            _resolvedPath = resolvedPath;
-        }
-
-        public void Dispose()
-        {
-            if (_disposed)
-            {
-                return;
+                continue;
             }
 
-            _fileSystem.ReleaseMutationLock(_resolvedPath);
-            _disposed = true;
+            if (component == "..")
+            {
+                if (components.Count > 0)
+                {
+                    components.RemoveAt(components.Count - 1);
+                }
+                continue;
+            }
+
+            components.Add(component);
         }
+
+        return components.Count == 0 ? prefix : prefix + string.Join(separator, components);
+    }
+
+    private string GetParentPath(string path)
+    {
+        int separatorIndex = path.LastIndexOfAny(['/', '\\']);
+        if (separatorIndex <= 0)
+        {
+            return rootPath;
+        }
+
+        if (pathSemantics == InMemoryPathSemantics.Windows && separatorIndex == 2)
+        {
+            return path[..3];
+        }
+
+        return path[..separatorIndex];
+    }
+
+    private static string GetFileName(string path)
+    {
+        int separatorIndex = path.LastIndexOfAny(['/', '\\']);
+        return separatorIndex < 0 ? path : path[(separatorIndex + 1)..];
+    }
+
+    private static bool IsSeparator(char character) => character is '/' or '\\';
+
+    private string AppendSeparator(string path)
+    {
+        if (path.EndsWith('/') || path.EndsWith('\\'))
+        {
+            return path;
+        }
+
+        char separator =
+            pathSemantics == InMemoryPathSemantics.Windows ? '\\'
+            : pathSemantics == InMemoryPathSemantics.Posix ? '/'
+            : Path.DirectorySeparatorChar;
+        return path + separator;
+    }
+
+    private void Record(string operation, string path, string? value = null)
+    {
+        if (failures.TryDequeue(out Exception? exception))
+        {
+            throw exception;
+        }
+
+        Calls.Add(new FileSystemCall(operation, path, value));
+    }
+
+    private sealed class ActionDisposable(Action dispose) : IDisposable
+    {
+        private Action? dispose = dispose;
+
+        public void Dispose() => Interlocked.Exchange(ref dispose, null)?.Invoke();
     }
 }

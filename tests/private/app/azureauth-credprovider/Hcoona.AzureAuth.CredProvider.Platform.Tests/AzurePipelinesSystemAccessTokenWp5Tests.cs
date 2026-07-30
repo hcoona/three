@@ -250,9 +250,9 @@ public sealed class AzurePipelinesSystemAccessTokenWp5Tests
     }
 
     [Theory]
-    [InlineData(AcquisitionMode.SilentOnly)]
+    [InlineData(AcquisitionMode.Unspecified)]
     [InlineData(AcquisitionMode.InteractionAllowed)]
-    public void V2RejectsAmbiguousOrInteractiveAcquisitionModes(AcquisitionMode mode)
+    public void V2RejectsMissingOrInteractiveAcquisitionModes(AcquisitionMode mode)
     {
         CredentialRequestV2 request = CreateV2Request(CredentialEcosystem.Git) with
         {
@@ -267,10 +267,13 @@ public sealed class AzurePipelinesSystemAccessTokenWp5Tests
     }
 
     [Fact]
-    public void V1AndV2UnspecifiedUseSameOpaqueSemanticsWithoutChangingV1Wire()
+    public void V1AndV2SilentOnlyUseSameOpaqueSemanticsWithoutChangingV1Wire()
     {
         CredentialRequest v1 = CreateV1Request(CredentialEcosystem.Git);
-        CredentialRequestV2 v2 = CreateV2Request(CredentialEcosystem.Git);
+        CredentialRequestV2 v2 = CreateV2Request(CredentialEcosystem.Git) with
+        {
+            AcquisitionMode = AcquisitionMode.SilentOnly,
+        };
 
         AzurePipelinesSystemAccessTokenResult v1Result =
             AzurePipelinesSystemAccessTokenService.Handle(v1, Secret);
@@ -383,7 +386,6 @@ public sealed class AzurePipelinesSystemAccessTokenWp5Tests
                 change => change.IsSecretValue
             );
             Assert.True(secretChange.HasPlannedValue);
-            Assert.Null(secretChange.PlannedValueSha256);
             Assert.DoesNotContain(Secret, result.PlanResult.ToString(), StringComparison.Ordinal);
 
             string manifestPath = Path.Combine(

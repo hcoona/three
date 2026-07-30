@@ -55,10 +55,7 @@ public sealed class RegistryCredentialExpiryPolicy
         }
 
         DateTimeOffset now = timeProvider.GetUtcNow();
-        if (
-            RegistryCredentialLifecycleMetadataCodec.GetViolation(metadata) is not null
-            || metadata.IssuedAt > now.AddMinutes(2)
-        )
+        if (RegistryCredentialLifecycleMetadataCodec.GetViolation(metadata) is not null)
         {
             return RegistryCredentialLifecycleState.Invalid;
         }
@@ -67,7 +64,7 @@ public sealed class RegistryCredentialExpiryPolicy
         {
             return scope == ConfigurationScope.CiTemporary
                 ? RegistryCredentialLifecycleState.Fresh
-                : RegistryCredentialLifecycleState.Invalid;
+                : RegistryCredentialLifecycleState.RefreshRecommended;
         }
 
         if (now >= expiresAt)
@@ -87,17 +84,14 @@ public sealed class RegistryCredentialExpiryPolicy
     {
         DateTimeOffset issuedAt = Truncate(timeProvider.GetUtcNow());
         DateTimeOffset? expiry = expiresAt is null ? null : Truncate(expiresAt.Value);
-        if (scope != ConfigurationScope.CiTemporary && expiry is null)
-        {
-            throw new InvalidOperationException("User registry credentials require an expiry.");
-        }
 
         RegistryCredentialLifecycleMetadata metadata = new()
         {
             IssuedAt = issuedAt,
             ExpiresAt = expiry,
-            RefreshBefore =
-                expiry is null ? null : Max(issuedAt, expiry.Value - options.RefreshLeadTime),
+            RefreshBefore = expiry is null
+                ? null
+                : Max(issuedAt, expiry.Value - options.RefreshLeadTime),
         };
         if (RegistryCredentialLifecycleMetadataCodec.GetViolation(metadata) is { } violation)
         {
@@ -122,9 +116,6 @@ public static class RegistryCredentialLifecycleMetadataCodec
     private const string ExpiresAtKey = Prefix + "expiresAtUtc";
     private const string RefreshBeforeKey = Prefix + "refreshBeforeUtc";
     private const string TimestampFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'";
-
-    private static readonly HashSet<string> KnownKeys =
-        [SchemaKey, IssuedAtKey, ExpiresAtKey, RefreshBeforeKey];
 
     public static IReadOnlyDictionary<string, string> Write(
         IReadOnlyDictionary<string, string> existing,
@@ -163,7 +154,6 @@ public static class RegistryCredentialLifecycleMetadataCodec
         if (
             values is null
             || !values.Keys.Any(IsLifecycleKey)
-            || values.Keys.Any(key => IsLifecycleKey(key) && !KnownKeys.Contains(key))
             || !TryGet(values, SchemaKey, out string schema)
             || schema != "1"
             || !TryGet(values, IssuedAtKey, out string issuedAtText)

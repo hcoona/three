@@ -75,9 +75,7 @@ public enum InteractivePolicy
 public enum AcquisitionMode
 {
     /// <summary>
-    /// Explicit v2 bridge value that preserves v1 acquisition semantics:
-    /// acquisition remains governed entirely by IdentityFlow and InteractivePolicy.
-    /// V1 itself does not carry an AcquisitionMode field.
+    /// Absent acquisition mode. V1 does not carry this field; v2 requests reject it.
     /// </summary>
     Unspecified = 0,
 
@@ -87,9 +85,10 @@ public enum AcquisitionMode
     /// authentication that requires human attention or network interaction
     /// beyond a cache or broker lookup.
     /// A cache miss will map to InteractionRequired rather than falling back.
-    /// Valid only for operation Get with InteractivePolicy Never and no explicit
-    /// CI or opaque-token context. Current providers fail closed until a
-    /// source-proved cache or broker lookup path exists.
+    /// Valid only for operation Get with InteractivePolicy Never. It is also
+    /// required for explicit Azure Pipelines opaque-token requests.
+    /// Interactive AzureAuth acquisition fails closed because AzureAuth 0.9.5
+    /// does not expose a cache-only command mode.
     /// </summary>
     SilentOnly = 1,
 
@@ -205,33 +204,6 @@ public enum ConfigurationScope
     Global = 5,
 }
 
-public enum ConfigurationAtomicityPolicy
-{
-    Unspecified = 0,
-    AtomicChangeSetRequired = 1,
-}
-
-public enum ConfigurationRollbackPolicy
-{
-    Unspecified = 0,
-    Required = 1,
-}
-
-public enum ConfigurationPlanState
-{
-    Unspecified = 0,
-    Planned = 1,
-    Applied = 2,
-    RolledBack = 3,
-    Failed = 4,
-}
-
-public enum ConfigurationManifestCommitPolicy
-{
-    Unspecified = 0,
-    CommitAfterDurableChanges = 1,
-}
-
 public enum ConfigurationDeclarationPreservation
 {
     Unspecified = 0,
@@ -275,52 +247,4 @@ public enum KeyringHelperMode
     Unspecified = 0,
     Password = 1,
     Credentials = 2,
-}
-
-public enum KeyringHelperIntegrityPlatform
-{
-    Unspecified = 0,
-    Linux = 1,
-    Windows = 2,
-    MacOs = 3,
-}
-
-public enum KeyringOwnerValidationRequirement
-{
-    Unspecified = 0,
-    Required = 1,
-    DeferredNotAvailable = 2,
-}
-
-public enum KeyringSymlinkPolicy
-{
-    Unspecified = 0,
-    RejectSymlinks = 1,
-    BestEffortRejectSymlinks = 2,
-}
-
-public enum KeyringDigestPolicy
-{
-    Unspecified = 0,
-    Sha256Required = 1,
-    Sha256RequiredWeakPath = 2,
-}
-
-public enum ContractBreakingChangeKind
-{
-    Unspecified = 0,
-    RemoveField = 1,
-    RenameField = 2,
-    ChangeFieldType = 3,
-    ChangeFieldRequiredness = 4,
-    ChangeFieldMeaning = 5,
-    ChangeEnumRepresentation = 6,
-    ChangeProtocolStdout = 7,
-    ChangeProtocolStderr = 8,
-    ChangeProtocolExitCode = 9,
-    WeakenSecurityPolicy = 10,
-    WeakenCachePartitioning = 11,
-    AllowPlaintextSecretDiagnostics = 12,
-    AddSilentPatFallback = 13,
-    MakeIntegrityCheckOptional = 14,
 }

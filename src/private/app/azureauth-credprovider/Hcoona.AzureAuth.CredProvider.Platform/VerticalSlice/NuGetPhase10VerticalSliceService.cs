@@ -2,8 +2,8 @@ using System.Security.Cryptography;
 using System.Text;
 using Hcoona.AzureAuth.CredProvider.Contracts;
 using Hcoona.AzureAuth.CredProvider.Platform.AdapterHost;
-using Hcoona.AzureAuth.CredProvider.Platform.Configuration;
 using Hcoona.AzureAuth.CredProvider.Platform.Composition;
+using Hcoona.AzureAuth.CredProvider.Platform.Configuration;
 using Hcoona.AzureAuth.CredProvider.Platform.FileSystem;
 using Newtonsoft.Json.Linq;
 using NuGet.Common;
@@ -111,31 +111,32 @@ public sealed class NuGetPhase10VerticalSliceService
     private const string ProductVersion = "phase10";
     private const string ManifestId = "phase10-nuget-plugin-layout";
     private const string ConfigurePlanId = "phase10-nuget-configure-plan";
-    private const string ConfigureChangeSetId = "phase10-nuget-configure-changeset";
     private const string EntrySelector = "nuget.plugin-layout";
     private const string PhysicalTargetKey = "physical-target";
     private const string NuGetPluginPathsEnvironmentVariable = "NUGET_PLUGIN_PATHS";
     private const string NuGetNetCorePluginPathsEnvironmentVariable = "NUGET_NETCORE_PLUGIN_PATHS";
 
     private static readonly Uri OrganizationScopedSource = new(
-        "https://pkgs.dev.azure.com/org/_packaging/feed/nuget/v3/index.json");
+        "https://pkgs.dev.azure.com/org/_packaging/feed/nuget/v3/index.json"
+    );
     private static readonly Uri ProjectScopedSource = new(
-        "https://dev.azure.com/org/project/_packaging/feed/nuget/v3/index.json");
+        "https://dev.azure.com/org/project/_packaging/feed/nuget/v3/index.json"
+    );
     private static readonly Uri LegacySource = new(
-        "https://org.pkgs.visualstudio.com/_packaging/feed/nuget/v3/index.json");
+        "https://org.pkgs.visualstudio.com/_packaging/feed/nuget/v3/index.json"
+    );
     private readonly Func<string, string?> environmentVariableReader;
     private readonly IFileSystem fileSystem;
     private readonly NuGetPhase10VerticalSliceResolvedPaths paths;
     private readonly Lazy<BoundedCredentialAcquisitionAdapter>? credentialAcquisition;
 
     public NuGetPhase10VerticalSliceService(NuGetPhase10VerticalSliceOptions? options = null)
-        : this(options, configurationOnly: false)
-    {
-    }
+        : this(options, configurationOnly: false) { }
 
     private NuGetPhase10VerticalSliceService(
         NuGetPhase10VerticalSliceOptions? options,
-        bool configurationOnly)
+        bool configurationOnly
+    )
     {
         options ??= new NuGetPhase10VerticalSliceOptions();
         fileSystem = options.FileSystem ?? new SystemFileSystem();
@@ -145,18 +146,21 @@ public sealed class NuGetPhase10VerticalSliceService
         if (!configurationOnly)
         {
             credentialAcquisition = new Lazy<BoundedCredentialAcquisitionAdapter>(
-                () => options.CredentialAcquisition
+                () =>
+                    options.CredentialAcquisition
                     ?? new BoundedCredentialAcquisitionAdapter(
-                        CredentialProviderCompositionRoot.CreateProduction().AcquisitionService),
-                LazyThreadSafetyMode.ExecutionAndPublication);
+                        CredentialProviderCompositionRoot.CreateProduction().AcquisitionService
+                    ),
+                LazyThreadSafetyMode.ExecutionAndPublication
+            );
         }
     }
 
     public NuGetPhase10VerticalSliceResolvedPaths Paths => paths;
 
     public static NuGetPhase10VerticalSliceService CreateConfigurationOnly(
-        NuGetPhase10VerticalSliceOptions? options = null) =>
-        new(options, configurationOnly: true);
+        NuGetPhase10VerticalSliceOptions? options = null
+    ) => new(options, configurationOnly: true);
 
     public async ValueTask<NuGetPhase10ConfigureDryRunResult> DryRunConfigureAsync(
         CancellationToken cancellationToken = default
@@ -174,12 +178,12 @@ public sealed class NuGetPhase10VerticalSliceService
         {
             planResult = await manager.DryRunAsync(plan, cancellationToken);
         }
-        catch (Exception exception)
-            when (IsExpectedStateCheckFailure(exception))
+        catch (Exception exception) when (IsExpectedStateCheckFailure(exception))
         {
             throw new NuGetPhase10UnrecognizedStateException(
                 "The Phase 10 NuGet plugin layout state is not recognized.",
-                exception);
+                exception
+            );
         }
 
         return new NuGetPhase10ConfigureDryRunResult
@@ -201,15 +205,14 @@ public sealed class NuGetPhase10VerticalSliceService
         ConfigurationPlanResult planResult;
         try
         {
-            planResult = await CreateManager()
-                .ApplyAsync(CreateConfigurePlan(), cancellationToken);
+            planResult = await CreateManager().ApplyAsync(CreateConfigurePlan(), cancellationToken);
         }
-        catch (Exception exception)
-            when (IsExpectedStateCheckFailure(exception))
+        catch (Exception exception) when (IsExpectedStateCheckFailure(exception))
         {
             throw new NuGetPhase10UnrecognizedStateException(
                 "The Phase 10 NuGet plugin layout state is not recognized.",
-                exception);
+                exception
+            );
         }
 
         NuGetPhase10OwnedState ownedState = await InspectOwnedStateAsync(cancellationToken);
@@ -228,11 +231,7 @@ public sealed class NuGetPhase10VerticalSliceService
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (
-            !TryLoadExpectedOwnershipManifest(
-                out ConfigurationOwnershipManifest? manifest,
-                out string? manifestJson)
-        )
+        if (!TryLoadExpectedOwnershipManifest(out ConfigurationOwnershipManifest? manifest))
         {
             ThrowIfUnrecognizedOwnershipManifestExists();
             ThrowIfMissingManifestLeavesProductOwnedNuGetPluginLayoutState();
@@ -251,16 +250,14 @@ public sealed class NuGetPhase10VerticalSliceService
         try
         {
             planResult = await CreateManager()
-                .RemoveAsync(
-                    CreateUnconfigurePlan(manifest, manifestJson),
-                    cancellationToken);
+                .RemoveAsync(CreateUnconfigurePlan(manifest), cancellationToken);
         }
-        catch (Exception exception)
-            when (IsExpectedStateCheckFailure(exception))
+        catch (Exception exception) when (IsExpectedStateCheckFailure(exception))
         {
             throw new NuGetPhase10UnrecognizedStateException(
                 "The Phase 10 NuGet plugin layout state is not recognized.",
-                exception);
+                exception
+            );
         }
 
         NuGetPhase10OwnedState ownedState = await InspectOwnedStateAsync(cancellationToken);
@@ -280,11 +277,7 @@ public sealed class NuGetPhase10VerticalSliceService
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (
-            !TryLoadExpectedOwnershipManifest(
-                out ConfigurationOwnershipManifest? manifest,
-                out string? manifestJson)
-        )
+        if (!TryLoadExpectedOwnershipManifest(out ConfigurationOwnershipManifest? manifest))
         {
             ThrowIfUnrecognizedOwnershipManifestExists();
             ThrowIfMissingManifestLeavesProductOwnedNuGetPluginLayoutState();
@@ -293,15 +286,14 @@ public sealed class NuGetPhase10VerticalSliceService
 
         try
         {
-            await CreateManager()
-                .DryRunAsync(CreateUnconfigurePlan(manifest, manifestJson), cancellationToken);
+            await CreateManager().DryRunAsync(CreateUnconfigurePlan(manifest), cancellationToken);
         }
-        catch (Exception exception)
-            when (IsExpectedStateCheckFailure(exception))
+        catch (Exception exception) when (IsExpectedStateCheckFailure(exception))
         {
             throw new NuGetPhase10UnrecognizedStateException(
                 "The Phase 10 NuGet plugin layout state is not recognized.",
-                exception);
+                exception
+            );
         }
     }
 
@@ -314,8 +306,8 @@ public sealed class NuGetPhase10VerticalSliceService
         NuGetPhase10OwnedState ownedState = await InspectOwnedStateAsync(cancellationToken);
         bool configurationPlanValid = await TryValidateConfigurationPlanAsync(cancellationToken);
         bool netCorePluginEntrypointPresent = TryPluginEntrypointExists();
-        bool pluginModeEntrypointResolvable = netCorePluginEntrypointPresent
-            && TryResolvePluginModeEntrypoint();
+        bool pluginModeEntrypointResolvable =
+            netCorePluginEntrypointPresent && TryResolvePluginModeEntrypoint();
 
         return new NuGetPhase10DoctorResult
         {
@@ -336,19 +328,13 @@ public sealed class NuGetPhase10VerticalSliceService
         new(
             fileSystem,
             paths.OwnershipManifestPath,
-            new ConfigurationPhysicalTargetWriterDispatcher(fileSystem));
+            new ConfigurationPhysicalTargetWriterDispatcher(fileSystem)
+        );
 
     private ConfigurationChangePlan CreateConfigurePlan()
     {
-        string? previousOwnedEntryHash = null;
-        if (TryLoadExpectedOwnershipManifest(out _, out string? manifestJson))
-        {
-            previousOwnedEntryHash = ComputeSha256Metadata(manifestJson);
-        }
-
         return ConfigurationChangePlanPolicy.Create(
             ConfigurePlanId,
-            ConfigureChangeSetId,
             ProductId,
             ConfigurationScope.User,
             new ConfigurationManifestMetadata
@@ -357,22 +343,14 @@ public sealed class NuGetPhase10VerticalSliceService
                 OwnerProductId = ProductId,
                 EntrySelector = EntrySelector,
                 ProductVersion = ProductVersion,
-                PreviousOwnedEntryHash = previousOwnedEntryHash,
             },
-            [
-                CreateNuGetPluginLayoutChange(
-                    ConfigurationChangeOperation.Set,
-                    MarkerValue),
-            ]);
+            [CreateNuGetPluginLayoutChange(ConfigurationChangeOperation.Set, MarkerValue)]
+        );
     }
 
-    private ConfigurationChangePlan CreateUnconfigurePlan(
-        ConfigurationOwnershipManifest manifest,
-        string manifestJson
-    )
+    private ConfigurationChangePlan CreateUnconfigurePlan(ConfigurationOwnershipManifest manifest)
     {
         ArgumentNullException.ThrowIfNull(manifest);
-        ArgumentException.ThrowIfNullOrWhiteSpace(manifestJson);
 
         ConfigurationChange[] changes = manifest
             .Entries.Where(IsManagedManifestEntry)
@@ -382,12 +360,12 @@ public sealed class NuGetPhase10VerticalSliceService
         if (changes.Length == 0)
         {
             throw new InvalidOperationException(
-                "Owned NuGet plugin layout manifest does not contain removable entries.");
+                "Owned NuGet plugin layout manifest does not contain removable entries."
+            );
         }
 
         return ConfigurationChangePlanPolicy.Create(
             "phase10-nuget-unconfigure-plan",
-            "phase10-nuget-unconfigure-changeset",
             ProductId,
             manifest.Scope,
             new ConfigurationManifestMetadata
@@ -397,16 +375,15 @@ public sealed class NuGetPhase10VerticalSliceService
                 EntrySelector = manifest.EntrySelector,
                 ResourceIdentity = manifest.ResourceIdentity,
                 ProductVersion = manifest.ProductVersion,
-                PreviousOwnedEntryHash = ComputeSha256Metadata(manifestJson),
                 SafeMetadata = manifest.SafeMetadata,
             },
-            changes);
+            changes
+        );
     }
 
     private ConfigurationChange CreateNuGetPluginLayoutChange(
         ConfigurationChangeOperation operation,
-        string? value,
-        string? previousOwnedEntryMetadata = null
+        string? value
     ) =>
         new()
         {
@@ -417,7 +394,6 @@ public sealed class NuGetPhase10VerticalSliceService
             Value = value,
             RequiresOwnershipRecord = true,
             PreserveDeclarationsAndComments = true,
-            PreviousOwnedEntryMetadata = previousOwnedEntryMetadata,
         };
 
     private ConfigurationChange CreateNuGetPluginLayoutRemoveChange(
@@ -426,21 +402,16 @@ public sealed class NuGetPhase10VerticalSliceService
     {
         ArgumentNullException.ThrowIfNull(entry);
 
-        return CreateNuGetPluginLayoutChange(
-            ConfigurationChangeOperation.Remove,
-            value: null,
-            previousOwnedEntryMetadata: entry.PlannedValueSha256 ?? ComputeSha256(MarkerValue));
+        return CreateNuGetPluginLayoutChange(ConfigurationChangeOperation.Remove, value: null);
     }
 
     private void ThrowIfUnrecognizedOwnershipManifestExists()
     {
-        if (
-            OwnershipManifestPathExists()
-            && !TryLoadExpectedOwnershipManifest(out _, out _)
-        )
+        if (OwnershipManifestPathExists() && !TryLoadExpectedOwnershipManifest(out _))
         {
             throw new NuGetPhase10UnrecognizedStateException(
-                "The Phase 10 NuGet ownership manifest is not recognized.");
+                "The Phase 10 NuGet ownership manifest is not recognized."
+            );
         }
     }
 
@@ -452,7 +423,8 @@ public sealed class NuGetPhase10VerticalSliceService
         }
 
         throw new NuGetPhase10UnrecognizedStateException(
-            "The Phase 10 NuGet plugin layout state is not recognized.");
+            "The Phase 10 NuGet plugin layout state is not recognized."
+        );
     }
 
     private bool OwnershipManifestPathExists()
@@ -462,8 +434,7 @@ public sealed class NuGetPhase10VerticalSliceService
             return fileSystem.FileExists(paths.OwnershipManifestPath)
                 || fileSystem.DirectoryExists(paths.OwnershipManifestPath);
         }
-        catch (Exception exception)
-            when (IsExpectedStateCheckFailure(exception))
+        catch (Exception exception) when (IsExpectedStateCheckFailure(exception))
         {
             return true;
         }
@@ -481,35 +452,35 @@ public sealed class NuGetPhase10VerticalSliceService
             if (fileSystem.DirectoryExists(paths.PluginLayoutMarkerPath))
             {
                 throw new NuGetPhase10UnrecognizedStateException(
-                    "The Phase 10 NuGet plugin layout state is not recognized.");
+                    "The Phase 10 NuGet plugin layout state is not recognized."
+                );
             }
 
             return string.Equals(
                 fileSystem.ReadAllText(paths.PluginLayoutMarkerPath),
                 MarkerValue,
-                StringComparison.Ordinal);
+                StringComparison.Ordinal
+            );
         }
         catch (NuGetPhase10UnrecognizedStateException)
         {
             throw;
         }
-        catch (Exception exception)
-            when (IsExpectedStateCheckFailure(exception))
+        catch (Exception exception) when (IsExpectedStateCheckFailure(exception))
         {
             throw new NuGetPhase10UnrecognizedStateException(
                 "The Phase 10 NuGet plugin layout state is not recognized.",
-                exception);
+                exception
+            );
         }
     }
 
     private bool TryLoadExpectedOwnershipManifest(
         [System.Diagnostics.CodeAnalysis.NotNullWhen(true)]
-            out ConfigurationOwnershipManifest? manifest,
-        [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? manifestJson
+            out ConfigurationOwnershipManifest? manifest
     )
     {
         manifest = null;
-        manifestJson = null;
         try
         {
             if (!fileSystem.FileExists(paths.OwnershipManifestPath))
@@ -517,25 +488,23 @@ public sealed class NuGetPhase10VerticalSliceService
                 return false;
             }
 
-            manifestJson = fileSystem.ReadAllText(paths.OwnershipManifestPath);
-            manifest = ConfigurationOwnershipManifestSerializer.Deserialize(manifestJson);
+            manifest = ConfigurationOwnershipManifestSerializer.Deserialize(
+                fileSystem.ReadAllText(paths.OwnershipManifestPath)
+            );
             if (
                 !HasExpectedManifestMetadata(manifest)
                 || !HasExpectedManagedManifestEntries(manifest)
             )
             {
                 manifest = null;
-                manifestJson = null;
                 return false;
             }
 
             return true;
         }
-        catch (Exception exception)
-            when (IsExpectedStateCheckFailure(exception))
+        catch (Exception exception) when (IsExpectedStateCheckFailure(exception))
         {
             manifest = null;
-            manifestJson = null;
             return false;
         }
     }
@@ -549,48 +518,41 @@ public sealed class NuGetPhase10VerticalSliceService
         {
             return new NuGetPhase10OwnedState(
                 ProductOwnedNuGetPluginLayoutStateExists(),
-                OwnershipManifestPresent: false);
+                OwnershipManifestPresent: false
+            );
         }
 
         bool pluginLayoutMarkerPresent = false;
         try
         {
-            if (
-                TryLoadExpectedOwnershipManifest(
-                    out ConfigurationOwnershipManifest? manifest,
-                    out string? manifestJson)
-            )
+            if (TryLoadExpectedOwnershipManifest(out ConfigurationOwnershipManifest? manifest))
             {
                 pluginLayoutMarkerPresent = await CanDryRunOwnedNuGetRemovalAsync(
                     manifest,
-                    manifestJson,
-                    cancellationToken);
+                    cancellationToken
+                );
             }
             else
             {
                 pluginLayoutMarkerPresent = ProductOwnedNuGetPluginLayoutStateExists();
             }
         }
-        catch (Exception exception)
-            when (IsExpectedStateCheckFailure(exception))
+        catch (Exception exception) when (IsExpectedStateCheckFailure(exception))
         {
             pluginLayoutMarkerPresent = false;
         }
 
-        return new NuGetPhase10OwnedState(
-            pluginLayoutMarkerPresent,
-            ownershipManifestPresent);
+        return new NuGetPhase10OwnedState(pluginLayoutMarkerPresent, ownershipManifestPresent);
     }
 
     private async ValueTask<bool> CanDryRunOwnedNuGetRemovalAsync(
         ConfigurationOwnershipManifest manifest,
-        string manifestJson,
         CancellationToken cancellationToken
     )
     {
         ConfigurationPlanResult planResult = await CreateManager()
-            .DryRunAsync(CreateUnconfigurePlan(manifest, manifestJson), cancellationToken);
-        return planResult.State == ConfigurationPlanState.Planned;
+            .DryRunAsync(CreateUnconfigurePlan(manifest), cancellationToken);
+        return planResult.Operation == ConfigurationPlanOperation.DryRun;
     }
 
     private async ValueTask<bool> TryValidateConfigurationPlanAsync(
@@ -602,13 +564,10 @@ public sealed class NuGetPhase10VerticalSliceService
             ConfigurationChangePlan plan = CreateConfigurePlan();
             ConfigurationManager manager = CreateManager();
             ConfigurationPlanValidationResult validation = manager.ValidatePlan(plan);
-            ConfigurationPlanResult planResult = await manager.DryRunAsync(
-                plan,
-                cancellationToken);
-            return validation.IsValid && planResult.State == ConfigurationPlanState.Planned;
+            ConfigurationPlanResult planResult = await manager.DryRunAsync(plan, cancellationToken);
+            return validation.IsValid && planResult.Operation == ConfigurationPlanOperation.DryRun;
         }
-        catch (Exception exception)
-            when (IsExpectedStateCheckFailure(exception))
+        catch (Exception exception) when (IsExpectedStateCheckFailure(exception))
         {
             return false;
         }
@@ -621,8 +580,7 @@ public sealed class NuGetPhase10VerticalSliceService
             return fileSystem.FileExists(paths.PluginEntrypointPath)
                 && !fileSystem.DirectoryExists(paths.PluginEntrypointPath);
         }
-        catch (Exception exception)
-            when (IsExpectedStateCheckFailure(exception))
+        catch (Exception exception) when (IsExpectedStateCheckFailure(exception))
         {
             return false;
         }
@@ -631,11 +589,13 @@ public sealed class NuGetPhase10VerticalSliceService
     private bool TryResolvePluginModeEntrypoint()
     {
         string managedAssemblyInvocationName = Path.GetFileNameWithoutExtension(
-            paths.PluginEntrypointPath);
+            paths.PluginEntrypointPath
+        );
         bool resolved = NuGetPluginAdapter.TryResolveProtocolInvocation(
             managedAssemblyInvocationName,
             ["-Plugin"],
-            out AdapterInvocationContext? context);
+            out AdapterInvocationContext? context
+        );
         return resolved
             && context is not null
             && context.IsProtocolInvocation
@@ -645,7 +605,8 @@ public sealed class NuGetPhase10VerticalSliceService
     private BoundedCredentialAcquisitionAdapter GetCredentialAcquisition() =>
         credentialAcquisition?.Value
         ?? throw new InvalidOperationException(
-            "Credential acquisition is unavailable in a configuration-only service.");
+            "Credential acquisition is unavailable in a configuration-only service."
+        );
 
     private bool TryValidateAzureArtifactsSourceCanonicalization()
     {
@@ -658,8 +619,7 @@ public sealed class NuGetPhase10VerticalSliceService
                 && UnsupportedHostReturnsNotFound(adapter)
                 && WrongAzureArtifactsSuffixReturnsError(adapter);
         }
-        catch (Exception exception)
-            when (IsExpectedStateCheckFailure(exception))
+        catch (Exception exception) when (IsExpectedStateCheckFailure(exception))
         {
             return false;
         }
@@ -676,7 +636,9 @@ public sealed class NuGetPhase10VerticalSliceService
                         OrganizationScopedSource,
                         isRetry: false,
                         isNonInteractive: true,
-                        canShowDialog: false));
+                        canShowDialog: false
+                    )
+                );
 
             return response.ResponseCode == MessageResponseCode.Error
                 && response.Username is null
@@ -684,8 +646,7 @@ public sealed class NuGetPhase10VerticalSliceService
                 && response.Message is not null
                 && response.Message.Contains("interaction is blocked", StringComparison.Ordinal);
         }
-        catch (Exception exception)
-            when (IsExpectedStateCheckFailure(exception))
+        catch (Exception exception) when (IsExpectedStateCheckFailure(exception))
         {
             return false;
         }
@@ -698,7 +659,9 @@ public sealed class NuGetPhase10VerticalSliceService
                 source,
                 isRetry: false,
                 isNonInteractive: false,
-                canShowDialog: false));
+                canShowDialog: false
+            )
+        );
         return response.ResponseCode == MessageResponseCode.Success
             && string.Equals(response.Username, "AzureDevOps", StringComparison.Ordinal)
             && response.Password?.StartsWith("fake-secret-", StringComparison.Ordinal) == true
@@ -712,7 +675,9 @@ public sealed class NuGetPhase10VerticalSliceService
                 new Uri("https://api.nuget.org/v3/index.json"),
                 isRetry: false,
                 isNonInteractive: false,
-                canShowDialog: false));
+                canShowDialog: false
+            )
+        );
         return response.ResponseCode == MessageResponseCode.NotFound
             && response.Username is null
             && response.Password is null;
@@ -725,7 +690,9 @@ public sealed class NuGetPhase10VerticalSliceService
                 new Uri("https://pkgs.dev.azure.com/org/_packaging/feed/npm"),
                 isRetry: false,
                 isNonInteractive: false,
-                canShowDialog: false));
+                canShowDialog: false
+            )
+        );
         return response.ResponseCode == MessageResponseCode.Error
             && response.Username is null
             && response.Password is null;
@@ -734,41 +701,30 @@ public sealed class NuGetPhase10VerticalSliceService
     private bool OptionalEnvironmentOverridesAreAbsent()
     {
         return string.IsNullOrWhiteSpace(
-                environmentVariableReader(NuGetPluginPathsEnvironmentVariable))
+                environmentVariableReader(NuGetPluginPathsEnvironmentVariable)
+            )
             && string.IsNullOrWhiteSpace(
-                environmentVariableReader(NuGetNetCorePluginPathsEnvironmentVariable));
+                environmentVariableReader(NuGetNetCorePluginPathsEnvironmentVariable)
+            );
     }
 
     private static bool HasExpectedManifestMetadata(ConfigurationOwnershipManifest manifest) =>
         string.Equals(manifest.ManifestId, ManifestId, StringComparison.Ordinal)
-        && string.Equals(manifest.PlanId, ConfigurePlanId, StringComparison.Ordinal)
-        && string.Equals(manifest.ChangeSetId, ConfigureChangeSetId, StringComparison.Ordinal)
         && string.Equals(manifest.OwnerProductId, ProductId, StringComparison.Ordinal)
         && manifest.Scope == ConfigurationScope.User
         && string.Equals(manifest.EntrySelector, EntrySelector, StringComparison.Ordinal)
         && string.Equals(manifest.ProductVersion, ProductVersion, StringComparison.Ordinal)
         && manifest.ResourceIdentity is null
-        && !manifest.ContainsCredentialMaterial
         && manifest.SafeMetadata.Count == 0;
 
     private bool HasExpectedManagedManifestEntries(ConfigurationOwnershipManifest manifest) =>
-        manifest.Entries.Count == 1
-        && HasExpectedManagedManifestEntry(manifest.Entries[0]);
+        manifest.Entries.Count == 1 && HasExpectedManagedManifestEntry(manifest.Entries[0]);
 
     private bool HasExpectedManagedManifestEntry(ConfigurationOwnershipManifestEntry entry)
     {
         ArgumentNullException.ThrowIfNull(entry);
 
-        return MatchesManagedManifestEntry(entry)
-            && entry.Sequence == 1
-            && entry.Operation == ConfigurationChangeOperation.Set
-            && entry.PreserveDeclarationsAndComments
-            && entry.HasPlannedValue
-            && !entry.IsSecretValue
-            && string.Equals(
-                entry.PlannedValueSha256,
-                ComputeSha256(MarkerValue),
-                StringComparison.Ordinal);
+        return MatchesManagedManifestEntry(entry) && entry.Sequence == 1;
     }
 
     private bool IsManagedManifestEntry(ConfigurationOwnershipManifestEntry entry)
@@ -784,13 +740,13 @@ public sealed class NuGetPhase10VerticalSliceService
             && string.Equals(
                 NormalizeComparablePath(entry.TargetPathOrName),
                 NormalizeComparablePath(paths.PluginTargetRootPath),
-                GetPathComparison());
+                GetPathComparison()
+            );
     }
 
     private string NormalizeComparablePath(string path)
     {
-        return Path.TrimEndingDirectorySeparator(fileSystem.GetFullPath(path))
-            .Replace('\\', '/');
+        return Path.TrimEndingDirectorySeparator(fileSystem.GetFullPath(path)).Replace('\\', '/');
     }
 
     private static NuGetPhase10VerticalSliceResolvedPaths ResolvePaths(
@@ -799,17 +755,21 @@ public sealed class NuGetPhase10VerticalSliceService
     )
     {
         string stateDirectoryPath = fileSystem.GetFullPath(
-            options.StateDirectoryPath ?? GetDefaultStateDirectoryPath());
+            options.StateDirectoryPath ?? GetDefaultStateDirectoryPath()
+        );
         string ownershipManifestPath = fileSystem.GetFullPath(
             Path.Combine(
                 stateDirectoryPath,
                 "manifests",
-                "nuget-plugin-layout-ownership-manifest.json"));
+                "nuget-plugin-layout-ownership-manifest.json"
+            )
+        );
         string homeDirectory = GetCurrentUserProfileDirectory();
         if (string.IsNullOrWhiteSpace(homeDirectory))
         {
             throw new InvalidOperationException(
-                "The NuGet plugin target root could not be resolved.");
+                "The NuGet plugin target root could not be resolved."
+            );
         }
 
         ConfigurationTargetLayoutProjection projection =
@@ -818,12 +778,15 @@ public sealed class NuGetPhase10VerticalSliceService
                 {
                     Platform = GetCurrentLayoutPlatform(),
                     HomeDirectory = homeDirectory,
-                });
+                }
+            );
         string pluginTargetRootPath = fileSystem.GetFullPath(projection.TargetPath);
         string pluginEntrypointPath = fileSystem.GetFullPath(
-            Path.Combine(pluginTargetRootPath, "azureauth-credprovider.dll"));
+            Path.Combine(pluginTargetRootPath, "azureauth-credprovider.dll")
+        );
         string pluginLayoutMarkerPath = fileSystem.GetFullPath(
-            Path.Combine(pluginTargetRootPath, MarkerFileName));
+            Path.Combine(pluginTargetRootPath, MarkerFileName)
+        );
 
         return new NuGetPhase10VerticalSliceResolvedPaths
         {
@@ -844,7 +807,8 @@ public sealed class NuGetPhase10VerticalSliceService
         }
 
         string localApplicationData = Environment.GetFolderPath(
-            Environment.SpecialFolder.LocalApplicationData);
+            Environment.SpecialFolder.LocalApplicationData
+        );
         if (!string.IsNullOrWhiteSpace(localApplicationData))
         {
             return Path.Combine(localApplicationData, ProductId, "phase10");
@@ -889,33 +853,25 @@ public sealed class NuGetPhase10VerticalSliceService
     }
 
     private static ConfigurationLayoutPlatform GetCurrentLayoutPlatform() =>
-        OperatingSystem.IsWindows()
-            ? ConfigurationLayoutPlatform.Windows
-            : OperatingSystem.IsMacOS()
-                ? ConfigurationLayoutPlatform.MacOs
-                : ConfigurationLayoutPlatform.Linux;
+        OperatingSystem.IsWindows() ? ConfigurationLayoutPlatform.Windows
+        : OperatingSystem.IsMacOS() ? ConfigurationLayoutPlatform.MacOs
+        : ConfigurationLayoutPlatform.Linux;
 
     private static StringComparison GetPathComparison() =>
         OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
-    private static string ComputeSha256Metadata(string value) => "sha256:" + ComputeSha256(value);
-
-    private static string ComputeSha256(string value)
-    {
-        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(value));
-        return Convert.ToHexString(hash).ToLowerInvariant();
-    }
-
     private static bool IsExpectedStateCheckFailure(Exception exception) =>
-        exception is ArgumentException
-            or IOException
-            or InvalidOperationException
-            or NotSupportedException
-            or PlatformNotSupportedException
-            or System.Text.Json.JsonException
-            or UnauthorizedAccessException;
+        exception
+            is ArgumentException
+                or IOException
+                or InvalidOperationException
+                or NotSupportedException
+                or PlatformNotSupportedException
+                or System.Text.Json.JsonException
+                or UnauthorizedAccessException;
 }
 
 internal sealed record NuGetPhase10OwnedState(
     bool PluginLayoutMarkerPresent,
-    bool OwnershipManifestPresent);
+    bool OwnershipManifestPresent
+);

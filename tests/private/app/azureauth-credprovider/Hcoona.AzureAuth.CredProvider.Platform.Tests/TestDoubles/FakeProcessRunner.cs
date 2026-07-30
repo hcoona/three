@@ -43,15 +43,7 @@ public sealed class FakeProcessRunner : IProcessRunner
         ArgumentNullException.ThrowIfNull(startSpec);
         cancellationToken.ThrowIfCancellationRequested();
 
-        ValidateEnvironmentMode(startSpec.EnvironmentMode);
-
         StartSpecs.Add(startSpec);
-        if (startSpec.PreStartValidation is not null)
-        {
-            await startSpec.PreStartValidation(cancellationToken).ConfigureAwait(false);
-        }
-
-        cancellationToken.ThrowIfCancellationRequested();
 
         if (_handlers.Count == 0)
         {
@@ -59,21 +51,5 @@ public sealed class FakeProcessRunner : IProcessRunner
         }
 
         return await _handlers.Dequeue()(startSpec, cancellationToken).ConfigureAwait(false);
-    }
-
-    private static void ValidateEnvironmentMode(ProcessEnvironmentMode environmentMode)
-    {
-        if (
-            environmentMode
-            is not ProcessEnvironmentMode.Inherit
-                and not ProcessEnvironmentMode.ExplicitOnly
-        )
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(environmentMode),
-                environmentMode,
-                "Unsupported process environment mode."
-            );
-        }
     }
 }

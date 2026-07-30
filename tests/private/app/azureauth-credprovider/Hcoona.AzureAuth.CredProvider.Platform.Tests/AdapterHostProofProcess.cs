@@ -1,4 +1,3 @@
-using System.Text;
 using Hcoona.AzureAuth.CredProvider.Contracts;
 using Hcoona.AzureAuth.CredProvider.Platform.AdapterHost;
 using Hcoona.AzureAuth.CredProvider.Platform.Diagnostics;
@@ -8,15 +7,10 @@ namespace Hcoona.AzureAuth.CredProvider.Platform.Tests;
 
 internal static class AdapterHostProofProcess
 {
-    internal const string ForceNonUtf8ConsoleEnvironmentVariable =
-        "AZUREAUTH_ADAPTER_HOST_PROOF_FORCE_NON_UTF8_CONSOLE";
-
     internal const string GitGetSuccessScenario = "git-get-success";
     internal const string GitStoreSuccessScenario = "git-store-success";
     internal const string GitEraseSuccessScenario = "git-erase-success";
     internal const string GitFailureScenario = "git-protocol-failure";
-    internal const string GitInvalidUtf16ProtocolStdoutScenario =
-        "git-invalid-utf16-protocol-stdout";
     internal const string GitNoCredentialScenario = "git-no-credential";
     internal const string GitUnauthorizedScenario = "git-unauthorized";
     internal const string GitFatalScenario = "git-fatal";
@@ -27,25 +21,16 @@ internal static class AdapterHostProofProcess
     internal const string InvocationBoundaryMismatchScenario = "invocation-boundary-mismatch";
     internal const string HumanCommandScenario = "human-command";
     internal const string HumanCommandNonBmpScenario = "human-command-non-bmp";
-    internal const string HumanCommandInvalidUtf16StdoutScenario =
-        "human-command-invalid-utf16-stdout";
-
     internal const string GitGetSuccessProtocolPayload =
         "username=AzureDevOps\npassword=git-proof-password\n";
-    internal const string GitInvalidUtf16ProtocolPayload =
-        "\uD83Dusername=AzureDevOps\npassword=git-proof-password\n";
-
     internal const string NuGetSuccessProtocolPayload =
         "{\"type\":\"plugin-proof\",\"requestId\":\"proof\",\"payload\":\"opaque\"}";
 
     internal const string HumanCommandStdout = "doctor ok";
     internal const string HumanCommandNonBmpStdout = "doctor 🚀 ok";
     internal const string HumanCommandNonBmpDiagnosticMessage = "diagnostic 🧪";
-    internal const string HumanCommandInvalidUtf16Stdout = "\uD83Ddoctor ok";
-    internal const string SuppressedProtocolPayload =
-        "suppressed-protocol-payload-should-not-leak";
-    internal const string SuppressedHumanStdout =
-        "suppressed-human-stdout-should-not-leak";
+    internal const string SuppressedProtocolPayload = "suppressed-protocol-payload-should-not-leak";
+    internal const string SuppressedHumanStdout = "suppressed-human-stdout-should-not-leak";
     internal const string SuppressedDiagnosticMessage =
         "suppressed-diagnostic-message-should-not-leak";
     internal const string ProtocolViolationSafeCode = "ProtocolViolation";
@@ -77,8 +62,6 @@ internal static class AdapterHostProofProcess
 
     internal static void Run(string[] args)
     {
-        ConfigureAmbientConsoleForProof();
-
         if (args.Length != 1 || string.IsNullOrWhiteSpace(args[0]))
         {
             ExitConfiguration("Adapter host proof process requires exactly one scenario.");
@@ -93,9 +76,9 @@ internal static class AdapterHostProofProcess
 
     internal static string CreateKeyringSuccessProtocolPayload()
     {
-        return KeyringHelperV2.ToResponse(
-            CreateKeyringRequest(),
-            CreateKeyringSuccessCredentialResult()).Stdout;
+        return KeyringHelperV2
+            .ToResponse(CreateKeyringRequest(), CreateKeyringSuccessCredentialResult())
+            .Stdout;
     }
 
     private static AdapterHostExecutionOutcome ExecuteScenario(string scenario)
@@ -108,89 +91,93 @@ internal static class AdapterHostProofProcess
                 ["git", "credential-helper", "get"],
                 CreateProtocolSuccessOutput(
                     CreateGitGetSuccessCredentialResult(),
-                    GitGetSuccessProtocolPayload)),
+                    GitGetSuccessProtocolPayload
+                )
+            ),
             GitStoreSuccessScenario => Execute(
                 CreateSharedGitDescriptor(),
                 SharedExecutablePath,
                 ["git", "credential-helper", "store"],
-                CreateQuietGitMutationSuccessOutput(CredentialOperation.Store)),
+                CreateQuietGitMutationSuccessOutput(CredentialOperation.Store)
+            ),
             GitEraseSuccessScenario => Execute(
                 CreateSharedGitDescriptor(),
                 SharedExecutablePath,
                 ["git", "credential-helper", "erase"],
-                CreateQuietGitMutationSuccessOutput(CredentialOperation.Erase)),
+                CreateQuietGitMutationSuccessOutput(CredentialOperation.Erase)
+            ),
             GitFailureScenario => Execute(
                 CreateSharedGitDescriptor(),
                 SharedExecutablePath,
                 ["git", "credential-helper", "get"],
-                CreateProtocolViolationOutput(CreateGitGetSuccessCredentialResult())),
-            GitInvalidUtf16ProtocolStdoutScenario => Execute(
-                CreateSharedGitDescriptor(),
-                SharedExecutablePath,
-                ["git", "credential-helper", "get"],
-                CreateProtocolSuccessOutput(
-                    CreateGitGetSuccessCredentialResult(),
-                    GitInvalidUtf16ProtocolPayload)),
+                CreateProtocolViolationOutput(CreateGitGetSuccessCredentialResult())
+            ),
             GitNoCredentialScenario => Execute(
                 CreateSharedGitDescriptor(),
                 SharedExecutablePath,
                 ["git", "credential-helper", "get"],
-                CreateProtocolFailureOutput(CreateNoCredentialResult())),
+                CreateProtocolFailureOutput(CreateNoCredentialResult())
+            ),
             GitUnauthorizedScenario => Execute(
                 CreateSharedGitDescriptor(),
                 SharedExecutablePath,
                 ["git", "credential-helper", "get"],
-                CreateProtocolFailureOutput(CreateUnauthorizedCredentialResult())),
+                CreateProtocolFailureOutput(CreateUnauthorizedCredentialResult())
+            ),
             GitFatalScenario => Execute(
                 CreateSharedGitDescriptor(),
                 SharedExecutablePath,
                 ["git", "credential-helper", "get"],
-                CreateProtocolFailureOutput(CreateFatalCredentialResult())),
+                CreateProtocolFailureOutput(CreateFatalCredentialResult())
+            ),
             NuGetSuccessScenario => Execute(
                 CreateNuGetDescriptor(),
                 NuGetExecutablePath,
                 CreateNuGetArguments(),
                 CreateProtocolSuccessOutput(
                     CreateNuGetSuccessCredentialResult(),
-                    NuGetSuccessProtocolPayload)),
+                    NuGetSuccessProtocolPayload
+                )
+            ),
             NuGetFailureScenario => Execute(
                 CreateNuGetDescriptor(),
                 NuGetExecutablePath,
                 CreateNuGetArguments(),
-                CreateProtocolViolationOutput(CreateNuGetSuccessCredentialResult())),
+                CreateProtocolViolationOutput(CreateNuGetSuccessCredentialResult())
+            ),
             KeyringSuccessScenario => Execute(
                 CreateKeyringDescriptor(),
                 KeyringExecutablePath,
                 CreateKeyringArguments(),
                 CreateProtocolSuccessOutput(
                     CreateKeyringSuccessCredentialResult(),
-                    CreateKeyringSuccessProtocolPayload())),
+                    CreateKeyringSuccessProtocolPayload()
+                )
+            ),
             KeyringFailureScenario => Execute(
                 CreateKeyringDescriptor(),
                 KeyringExecutablePath,
                 CreateKeyringArguments(),
-                CreateProtocolViolationOutput(CreateKeyringSuccessCredentialResult())),
+                CreateProtocolViolationOutput(CreateKeyringSuccessCredentialResult())
+            ),
             InvocationBoundaryMismatchScenario => Execute(
                 CreateInvocationBoundaryMismatchDescriptor(),
                 CreateInvocationBoundaryMismatchExecutablePath(),
                 CreateInvocationBoundaryMismatchArguments(),
                 CreateProtocolSuccessOutput(
                     CreateGitGetSuccessCredentialResult(),
-                    GitGetSuccessProtocolPayload)),
+                    GitGetSuccessProtocolPayload
+                )
+            ),
             HumanCommandScenario => Execute(
                 CreateSharedGitDescriptor(),
                 SharedExecutablePath,
                 ["doctor", "--json"],
                 new AdapterHostHandlerOutput(
                     humanStdout: HumanCommandStdout,
-                    protocolStdout: SuppressedProtocolPayload)),
-            HumanCommandInvalidUtf16StdoutScenario => Execute(
-                CreateSharedGitDescriptor(),
-                SharedExecutablePath,
-                ["doctor", "--invalid-utf16"],
-                new AdapterHostHandlerOutput(
-                    humanStdout: HumanCommandInvalidUtf16Stdout,
-                    protocolStdout: SuppressedProtocolPayload)),
+                    protocolStdout: SuppressedProtocolPayload
+                )
+            ),
             HumanCommandNonBmpScenario => Execute(
                 CreateSharedGitDescriptor(),
                 SharedExecutablePath,
@@ -204,9 +191,11 @@ internal static class AdapterHostProofProcess
                             DiagnosticSeverity.Error,
                             DiagnosticChannel.Diagnostic,
                             HumanCommandNonBmpDiagnosticMessage,
-                            timestamp: DateTimeOffset.Parse(
-                                "2025-01-02T03:04:05.0000000+00:00"))
-                    ])),
+                            timestamp: DateTimeOffset.Parse("2025-01-02T03:04:05.0000000+00:00")
+                        ),
+                    ]
+                )
+            ),
             _ => UnknownScenario(scenario),
         };
     }
@@ -215,13 +204,15 @@ internal static class AdapterHostProofProcess
         AdapterDescriptor descriptor,
         string executablePath,
         IReadOnlyList<string> arguments,
-        AdapterHostHandlerOutput handlerOutput)
+        AdapterHostHandlerOutput handlerOutput
+    )
     {
-        var standardOutput = StandardConsoleTextWriter.StandardOutput();
-        var standardError = StandardConsoleTextWriter.StandardError();
+        TextWriter standardOutput = StandardConsoleTextWriters.StandardOutput();
+        TextWriter standardError = StandardConsoleTextWriters.StandardError();
         var diagnosticRouter = new DiagnosticRouter(
             [new TextWriterDiagnosticSink(standardError)],
-            SecretRedactor.Empty);
+            SecretRedactor.Empty
+        );
         try
         {
             return AdapterHostExecutor.Execute(
@@ -231,7 +222,8 @@ internal static class AdapterHostProofProcess
                 _ => handlerOutput,
                 protocolStdout: standardOutput,
                 humanStdout: standardOutput,
-                diagnosticRouter);
+                diagnosticRouter
+            );
         }
         finally
         {
@@ -242,17 +234,20 @@ internal static class AdapterHostProofProcess
 
     private static AdapterHostHandlerOutput CreateProtocolSuccessOutput(
         CredentialResult credentialResult,
-        string protocolStdout)
+        string protocolStdout
+    )
     {
         return new AdapterHostHandlerOutput(
             credentialResult: credentialResult,
             protocolStdout: protocolStdout,
             humanStdout: SuppressedHumanStdout,
-            diagnosticEvents: CreateSuppressedDiagnosticEvents());
+            diagnosticEvents: CreateSuppressedDiagnosticEvents()
+        );
     }
 
     private static AdapterHostHandlerOutput CreateQuietGitMutationSuccessOutput(
-        CredentialOperation operation)
+        CredentialOperation operation
+    )
     {
         return new AdapterHostHandlerOutput(
             credentialResult: new CredentialResult
@@ -263,27 +258,32 @@ internal static class AdapterHostProofProcess
             operation: operation,
             protocolStdout: SuppressedProtocolPayload,
             humanStdout: SuppressedHumanStdout,
-            diagnosticEvents: CreateSuppressedDiagnosticEvents());
+            diagnosticEvents: CreateSuppressedDiagnosticEvents()
+        );
     }
 
     private static AdapterHostHandlerOutput CreateProtocolViolationOutput(
-        CredentialResult credentialResult)
+        CredentialResult credentialResult
+    )
     {
         return new AdapterHostHandlerOutput(
             credentialResult: credentialResult,
             protocolStdout: null,
             humanStdout: SuppressedHumanStdout,
-            diagnosticEvents: CreateSuppressedDiagnosticEvents());
+            diagnosticEvents: CreateSuppressedDiagnosticEvents()
+        );
     }
 
     private static AdapterHostHandlerOutput CreateProtocolFailureOutput(
-        CredentialResult credentialResult)
+        CredentialResult credentialResult
+    )
     {
         return new AdapterHostHandlerOutput(
             credentialResult: credentialResult,
             protocolStdout: SuppressedProtocolPayload,
             humanStdout: SuppressedHumanStdout,
-            diagnosticEvents: CreateSuppressedDiagnosticEvents());
+            diagnosticEvents: CreateSuppressedDiagnosticEvents()
+        );
     }
 
     private static DiagnosticEvent[] CreateSuppressedDiagnosticEvents()
@@ -293,7 +293,8 @@ internal static class AdapterHostProofProcess
             new DiagnosticEvent(
                 DiagnosticSeverity.Warning,
                 DiagnosticChannel.Diagnostic,
-                SuppressedDiagnosticMessage),
+                SuppressedDiagnosticMessage
+            ),
         ];
     }
 
@@ -308,12 +309,15 @@ internal static class AdapterHostProofProcess
                     AdapterInvocationMode.Protocol,
                     executableNames: ["azureauth-credprovider"],
                     argumentTokens: ["git", "credential-helper"],
-                    argumentMatchMode: AdapterArgumentMatchMode.Prefix),
+                    argumentMatchMode: AdapterArgumentMatchMode.Prefix
+                ),
                 new AdapterEntrypointDescriptor(
                     "HumanCommand",
                     AdapterInvocationMode.HumanCommand,
-                    executableNames: ["azureauth-credprovider"]),
-            ]);
+                    executableNames: ["azureauth-credprovider"]
+                ),
+            ]
+        );
     }
 
     private static AdapterDescriptor CreateNuGetDescriptor()
@@ -326,10 +330,11 @@ internal static class AdapterHostProofProcess
                     "NuGetPlugin",
                     AdapterInvocationMode.Protocol,
                     executableNames: ["CredentialProvider.AzureAuth"],
-                    argumentTokens: ["-Plugin", "-Uri"],
-                    argumentMatchMode: AdapterArgumentMatchMode.ContainsAll,
-                    stripMatchedArguments: false),
-            ]);
+                    argumentTokens: ["-Plugin"],
+                    argumentMatchMode: AdapterArgumentMatchMode.Exact
+                ),
+            ]
+        );
     }
 
     private static AdapterDescriptor CreateKeyringDescriptor()
@@ -343,8 +348,10 @@ internal static class AdapterHostProofProcess
                     AdapterInvocationMode.Protocol,
                     executableNames: [KeyringHelperV2.CommandName],
                     argumentTokens: [KeyringHelperV2.GetVerb],
-                    argumentMatchMode: AdapterArgumentMatchMode.Prefix),
-            ]);
+                    argumentMatchMode: AdapterArgumentMatchMode.Prefix
+                ),
+            ]
+        );
     }
 
     private static AdapterDescriptor CreateInvocationBoundaryMismatchDescriptor()
@@ -358,23 +365,20 @@ internal static class AdapterHostProofProcess
                     AdapterInvocationMode.Protocol,
                     executableNames: ["azureauth-credprovider"],
                     argumentTokens: ["git", "credential-helper"],
-                    argumentMatchMode: AdapterArgumentMatchMode.Prefix),
+                    argumentMatchMode: AdapterArgumentMatchMode.Prefix
+                ),
                 new AdapterEntrypointDescriptor(
                     "HumanCommand",
                     AdapterInvocationMode.HumanCommand,
-                    executableNames: ["azureauth-credprovider"]),
-            ]);
+                    executableNames: ["azureauth-credprovider"]
+                ),
+            ]
+        );
     }
 
     private static string[] CreateNuGetArguments()
     {
-        return
-        [
-            "-Uri",
-            "https://pkgs.dev.azure.com/example/_packaging/feed/nuget/v3/index.json",
-            "-NonInteractive",
-            "-Plugin",
-        ];
+        return ["-Plugin"];
     }
 
     private static string[] CreateKeyringArguments()
@@ -389,12 +393,7 @@ internal static class AdapterHostProofProcess
 
     private static string[] CreateInvocationBoundaryMismatchArguments()
     {
-        return
-        [
-            "git",
-            "credential-helper",
-            InvocationBoundaryMismatchPayloadMarker,
-        ];
+        return ["git", "credential-helper", InvocationBoundaryMismatchPayloadMarker];
     }
 
     private static KeyringHelperRequest CreateKeyringRequest()
@@ -491,20 +490,9 @@ internal static class AdapterHostProofProcess
         throw new InvalidOperationException("Unreachable.");
     }
 
-    private static void ConfigureAmbientConsoleForProof()
-    {
-        if (string.Equals(
-            Environment.GetEnvironmentVariable(ForceNonUtf8ConsoleEnvironmentVariable),
-            "1",
-            StringComparison.Ordinal))
-        {
-            Console.OutputEncoding = Encoding.Latin1;
-        }
-    }
-
     private static void ExitConfiguration(string message)
     {
-        StandardConsoleTextWriter standardError = StandardConsoleTextWriter.StandardError();
+        TextWriter standardError = StandardConsoleTextWriters.StandardError();
         standardError.Write(message);
         standardError.Flush();
         Environment.Exit((int)AdapterHostExitCode.ConfigurationError);

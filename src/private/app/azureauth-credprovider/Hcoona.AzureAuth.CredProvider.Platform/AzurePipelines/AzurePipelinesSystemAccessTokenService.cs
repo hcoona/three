@@ -21,7 +21,8 @@ public sealed class AzurePipelinesSystemAccessToken
     public static bool TryCreate(
         string? value,
         out AzurePipelinesSystemAccessToken? token,
-        out string code)
+        out string code
+    )
     {
         token = null;
         if (string.IsNullOrWhiteSpace(value))
@@ -79,13 +80,12 @@ public sealed record AzurePipelinesSystemAccessTokenResult
 
         CredentialResultStatus status = Status switch
         {
-            AzurePipelinesSystemAccessTokenResultStatus.Success =>
-                CredentialResultStatus.Success,
+            AzurePipelinesSystemAccessTokenResultStatus.Success => CredentialResultStatus.Success,
             AzurePipelinesSystemAccessTokenResultStatus.CredentialUnavailable =>
                 CredentialResultStatus.CredentialUnavailable,
             AzurePipelinesSystemAccessTokenResultStatus.InvalidToken
-                or AzurePipelinesSystemAccessTokenResultStatus.InvalidRequest
-                or AzurePipelinesSystemAccessTokenResultStatus.Unsupported =>
+            or AzurePipelinesSystemAccessTokenResultStatus.InvalidRequest
+            or AzurePipelinesSystemAccessTokenResultStatus.Unsupported =>
                 CredentialResultStatus.ProtocolViolation,
             _ => CredentialResultStatus.Fatal,
         };
@@ -104,9 +104,10 @@ public sealed record AzurePipelinesSystemAccessTokenResult
                 ? null
                 : new CredentialError
                 {
-                    Kind = Status == AzurePipelinesSystemAccessTokenResultStatus.CredentialUnavailable
-                        ? CredentialErrorKind.CredentialUnavailable
-                        : CredentialErrorKind.ProtocolViolation,
+                    Kind =
+                        Status == AzurePipelinesSystemAccessTokenResultStatus.CredentialUnavailable
+                            ? CredentialErrorKind.CredentialUnavailable
+                            : CredentialErrorKind.ProtocolViolation,
                     Code = Code,
                     SafeMessage = SafeMessage,
                 },
@@ -132,14 +133,16 @@ public sealed record AzurePipelinesSystemAccessTokenResult
             nameof(Code),
             Code,
             nameof(SafeMessage),
-            SafeMessage);
+            SafeMessage
+        );
 }
 
 public static class AzurePipelinesSystemAccessTokenService
 {
     public static AzurePipelinesSystemAccessTokenResult Handle(
         CredentialRequest request,
-        string? providedToken)
+        string? providedToken
+    )
     {
         ArgumentNullException.ThrowIfNull(request);
         return HandleCore(request, AcquisitionMode.Unspecified, providedToken);
@@ -147,7 +150,8 @@ public static class AzurePipelinesSystemAccessTokenService
 
     public static AzurePipelinesSystemAccessTokenResult Handle(
         CredentialRequestV2 request,
-        string? providedToken)
+        string? providedToken
+    )
     {
         ArgumentNullException.ThrowIfNull(request);
         string? violation = CredentialRequestV2Policy.GetViolation(request);
@@ -157,7 +161,8 @@ public static class AzurePipelinesSystemAccessTokenService
                 request.Ecosystem,
                 AzurePipelinesSystemAccessTokenResultStatus.InvalidRequest,
                 "AzurePipelinesSystemAccessTokenRequestInvalid",
-                "The Azure Pipelines system access token request is invalid.");
+                "The Azure Pipelines system access token request is invalid."
+            );
         }
 
         return HandleCore(ToV1Projection(request), request.AcquisitionMode, providedToken);
@@ -166,9 +171,10 @@ public static class AzurePipelinesSystemAccessTokenService
     private static AzurePipelinesSystemAccessTokenResult HandleCore(
         CredentialRequest request,
         AcquisitionMode acquisitionMode,
-        string? providedToken)
+        string? providedToken
+    )
     {
-        CredentialMaterializationAction action = GetAction(request);
+        CredentialMaterializationAction action = GetAction(request, acquisitionMode);
         if (action == CredentialMaterializationAction.Disabled)
         {
             return Failure(
@@ -180,14 +186,19 @@ public static class AzurePipelinesSystemAccessTokenService
                     ? "AzurePipelinesSystemAccessTokenFormUnsupported"
                     : "AzurePipelinesSystemAccessTokenRequestInvalid",
                 IsRequiredCiRequestShape(request, acquisitionMode)
-                    ? "The requested credential form does not support an Azure Pipelines system access token."
-                    : "The Azure Pipelines system access token request is invalid.");
+                    ? "The requested credential form does not support an "
+                        + "Azure Pipelines system access token."
+                    : "The Azure Pipelines system access token request is invalid."
+            );
         }
 
-        if (!AzurePipelinesSystemAccessToken.TryCreate(
+        if (
+            !AzurePipelinesSystemAccessToken.TryCreate(
                 providedToken,
                 out AzurePipelinesSystemAccessToken? token,
-                out string tokenCode))
+                out string tokenCode
+            )
+        )
         {
             bool unavailable = tokenCode == "AzurePipelinesSystemAccessTokenUnavailable";
             return Failure(
@@ -198,7 +209,8 @@ public static class AzurePipelinesSystemAccessTokenService
                 tokenCode,
                 unavailable
                     ? "Azure Pipelines system access token is unavailable in the environment."
-                    : "The Azure Pipelines system access token is invalid.");
+                    : "The Azure Pipelines system access token is invalid."
+            );
         }
 
         return action switch
@@ -207,18 +219,24 @@ public static class AzurePipelinesSystemAccessTokenService
                 request.Ecosystem,
                 username: null,
                 password: null,
-                bearerToken: token!.Value),
+                bearerToken: token!.Value
+            ),
             _ => Failure(
                 request.Ecosystem,
                 AzurePipelinesSystemAccessTokenResultStatus.Unsupported,
                 "AzurePipelinesSystemAccessTokenFormUnsupported",
-                "The requested credential form does not support an Azure Pipelines system access token."),
+                "The requested credential form does not support an "
+                    + "Azure Pipelines system access token."
+            ),
         };
     }
 
-    private static CredentialMaterializationAction GetAction(CredentialRequest request)
+    private static CredentialMaterializationAction GetAction(
+        CredentialRequest request,
+        AcquisitionMode acquisitionMode
+    )
     {
-        if (!IsRequiredCiRequestShape(request, AcquisitionMode.Unspecified))
+        if (!IsRequiredCiRequestShape(request, acquisitionMode))
         {
             return CredentialMaterializationAction.Disabled;
         }
@@ -240,7 +258,8 @@ public static class AzurePipelinesSystemAccessTokenService
 
     private static bool IsRequiredCiRequestShape(
         CredentialRequest request,
-        AcquisitionMode acquisitionMode)
+        AcquisitionMode acquisitionMode
+    )
     {
         CiContext? ciContext = request.CiContext;
         return IdentityFlowPolicy.IsAcceptedMvpRequest(request)
@@ -248,26 +267,28 @@ public static class AzurePipelinesSystemAccessTokenService
             && request.IdentityFlow == IdentityFlow.AzurePipelinesSystemAccessToken
             && request.InteractivePolicy == InteractivePolicy.Never
             && request.CachePolicy == CachePolicyMode.NonPersistentCi
-            && acquisitionMode == AcquisitionMode.Unspecified
+            && acquisitionMode is AcquisitionMode.Unspecified or AcquisitionMode.SilentOnly
             && request.AccountHint is null
             && request.TenantHint is null
-            && ciContext is
-            {
-                ExplicitCiMode: true,
-                HasAzurePipelinesSystemAccessToken: true,
-                AllowsPersistentWrites: false,
-            }
+            && ciContext
+                is {
+                    ExplicitCiMode: true,
+                    HasAzurePipelinesSystemAccessToken: true,
+                    AllowsPersistentWrites: false,
+                }
             && string.Equals(
                 ciContext.Provider,
                 CiProviderNames.AzurePipelines,
-                StringComparison.Ordinal);
+                StringComparison.Ordinal
+            );
     }
 
     private static AzurePipelinesSystemAccessTokenResult Success(
         CredentialEcosystem ecosystem,
         string? username,
         string? password,
-        string? bearerToken) =>
+        string? bearerToken
+    ) =>
         new()
         {
             Status = AzurePipelinesSystemAccessTokenResultStatus.Success,
@@ -284,7 +305,8 @@ public static class AzurePipelinesSystemAccessTokenService
         CredentialEcosystem ecosystem,
         AzurePipelinesSystemAccessTokenResultStatus status,
         string code,
-        string safeMessage) =>
+        string safeMessage
+    ) =>
         new()
         {
             Status = status,

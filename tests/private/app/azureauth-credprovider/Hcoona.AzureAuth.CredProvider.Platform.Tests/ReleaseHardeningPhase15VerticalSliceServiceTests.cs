@@ -45,6 +45,14 @@ public sealed class ReleaseHardeningPhase15VerticalSliceServiceTests
         AssertDeferredReleaseEvidence(result, "remote-windows-first-platform-acceptance");
         AssertDeferredReleaseEvidence(result, "real-package-manager-invocation-paths");
         AssertDeferredReleaseEvidence(result, "final-installer-uninstaller-validation");
+
+        ReleaseHardeningPhase15Check installer = Assert.Single(
+            result.Checks,
+            static check => check.Area == "installer"
+        );
+        Assert.Equal(ReleaseHardeningPhase15CheckStatus.DeferredReleaseEvidence, installer.Status);
+        Assert.Equal("project-breakdown phase 15", installer.Evidence);
+        Assert.Contains("Final installer package", installer.Notes, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -64,20 +72,20 @@ public sealed class ReleaseHardeningPhase15VerticalSliceServiceTests
     }
 
     [Fact]
-    public void EvaluateIncludesOptionalAzureAuthWslBackendAsDeferredOptionalFeature()
+    public void EvaluateRequiresLiveAzureAuthWslReleaseEvidence()
     {
         ReleaseHardeningPhase15MatrixResult result =
             ReleaseHardeningPhase15VerticalSliceService.Evaluate();
 
         ReleaseHardeningPhase15Check check = Assert.Single(
             result.Checks,
-            static candidate => candidate.Id == "optional-azureauth-wsl-backend"
+            static candidate => candidate.Id == "azureauth-wsl-live-acceptance"
         );
         Assert.False(check.RequiredForMvp);
-        Assert.False(check.RequiredForFullRelease);
-        Assert.Equal(ReleaseHardeningPhase15CheckStatus.DeferredOptionalFeature, check.Status);
-        Assert.Contains("disabled", check.Notes, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("unshippable", check.Notes, StringComparison.OrdinalIgnoreCase);
+        Assert.True(check.RequiredForFullRelease);
+        Assert.Equal(ReleaseHardeningPhase15CheckStatus.DeferredReleaseEvidence, check.Status);
+        Assert.Contains("implemented", check.Notes, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("live", check.Notes, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -88,15 +96,17 @@ public sealed class ReleaseHardeningPhase15VerticalSliceServiceTests
 
         ReleaseHardeningPhase15Check opaqueCi = Assert.Single(
             result.Checks,
-            static candidate =>
-                candidate.Id == "opaque-azure-pipelines-system-access-token"
+            static candidate => candidate.Id == "opaque-azure-pipelines-system-access-token"
         );
         Assert.Equal(ReleaseHardeningPhase15CheckStatus.Pass, opaqueCi.Status);
         Assert.Contains("no cache", opaqueCi.Notes, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Git bearer", opaqueCi.Notes, StringComparison.Ordinal);
         Assert.Contains("npm/pnpm/Yarn", opaqueCi.Notes, StringComparison.Ordinal);
-        Assert.Contains("NuGet and Python mappings are disabled", opaqueCi.Notes,
-            StringComparison.Ordinal);
+        Assert.Contains(
+            "NuGet and Python mappings are disabled",
+            opaqueCi.Notes,
+            StringComparison.Ordinal
+        );
 
         ReleaseHardeningPhase15Check pat = Assert.Single(
             result.Checks,
@@ -117,10 +127,7 @@ public sealed class ReleaseHardeningPhase15VerticalSliceServiceTests
         Assert.False(result.FullReleaseEvidenceComplete);
     }
 
-    private static void AssertDeferredNonMvp(
-        ReleaseHardeningPhase15MatrixResult result,
-        string id
-    )
+    private static void AssertDeferredNonMvp(ReleaseHardeningPhase15MatrixResult result, string id)
     {
         ReleaseHardeningPhase15Check check = Assert.Single(
             result.Checks,
@@ -142,9 +149,6 @@ public sealed class ReleaseHardeningPhase15VerticalSliceServiceTests
         );
         Assert.False(check.RequiredForMvp);
         Assert.True(check.RequiredForFullRelease);
-        Assert.Equal(
-            ReleaseHardeningPhase15CheckStatus.DeferredReleaseEvidence,
-            check.Status
-        );
+        Assert.Equal(ReleaseHardeningPhase15CheckStatus.DeferredReleaseEvidence, check.Status);
     }
 }

@@ -5,13 +5,16 @@ public sealed record ReleaseHardeningPhase15MatrixResult
     public required IReadOnlyList<ReleaseHardeningPhase15Check> Checks { get; init; }
 
     public bool MvpLocalAcceptancePassed =>
-        Checks.Where(static check => check.RequiredForMvp)
+        Checks
+            .Where(static check => check.RequiredForMvp)
             .All(static check =>
                 check.Status == ReleaseHardeningPhase15CheckStatus.Pass
-                && !string.IsNullOrWhiteSpace(check.Evidence));
+                && !string.IsNullOrWhiteSpace(check.Evidence)
+            );
 
     public bool FullReleaseEvidenceComplete =>
-        Checks.Where(static check => check.RequiredForFullRelease)
+        Checks
+            .Where(static check => check.RequiredForFullRelease)
             .All(static check => check.Status == ReleaseHardeningPhase15CheckStatus.Pass);
 
     public bool BlockingFailuresPresent =>
@@ -59,7 +62,8 @@ public static class ReleaseHardeningPhase15VerticalSliceService
                     "CliApplicationTests; ConfigurationPhase14VerticalSliceServiceTests",
                     "Exercises Git, NuGet, Python, npm, pnpm, and Yarn local orchestration. "
                         + "Azure Pipelines coverage is deterministic plan/lifecycle evidence, "
-                        + "not live acceptance."),
+                        + "not live acceptance."
+                ),
                 Pass(
                     "headless-ci-temporary-configuration",
                     "ci",
@@ -68,7 +72,8 @@ public static class ReleaseHardeningPhase15VerticalSliceService
                         + "CleanupCiTemporaryRemovesAllOwnedPackageContainers",
                     "Validates WP5 opaque caller-provided token plans, secret markers, "
                         + "temporary package-manager state, and cleanup without claiming live "
-                        + "runner acceptance or production composition."),
+                        + "runner acceptance or production composition."
+                ),
                 Pass(
                     "opaque-azure-pipelines-system-access-token",
                     "identity",
@@ -77,7 +82,9 @@ public static class ReleaseHardeningPhase15VerticalSliceService
                         + "phase-wp5-azure-pipelines-system-access-token",
                     "Validates direct Git bearer and npm/pnpm/Yarn registry-token forms, "
                         + "job-scoped isolation, unknown expiry, no identity binding, no cache, "
-                        + "and secret-safe diagnostics. Direct NuGet and Python mappings are disabled."),
+                        + "and secret-safe diagnostics. "
+                        + "Direct NuGet and Python mappings are disabled."
+                ),
                 Pass(
                     "secret-redaction-audit",
                     "security",
@@ -85,29 +92,24 @@ public static class ReleaseHardeningPhase15VerticalSliceService
                     "SecretRedactorTests; CliApplicationTests; "
                         + "AzurePipelinesSystemAccessTokenWp5Tests",
                     "Covers redaction helpers, deferred PAT input, and opaque system-access-token "
-                        + "result, plan, manifest, and CLI paths."),
+                        + "result, plan, manifest, and CLI paths."
+                ),
                 Pass(
                     "persistent-derived-cache-claim-audit",
                     "security",
                     requiredForFullRelease: true,
                     "CredentialCoreServiceTests; CliApplicationTests",
                     "Confirms MVP output reports product-owned persistent derived credential "
-                        + "caching as disabled."),
+                        + "caching as disabled."
+                ),
                 Pass(
-                    "fake-adapter-installer-uninstaller-scaffold",
-                    "installer",
-                    requiredForFullRelease: true,
-                    "InstallerDiscoveryScaffoldTests."
-                        + "RemovePlacementsAfterMaterializeMakesAllArtifactsMissing",
-                    "Materializes, probes, removes, and re-probes fake adapter artifacts on "
-                        + "Windows, Linux, and macOS layouts."),
-                Pass(
-                    "file-locking-and-rollback-safety",
+                    "file-locking-and-targeted-removal-safety",
                     "filesystem",
                     requiredForFullRelease: true,
                     "SystemFileSystemTests; ConfigurationManagerTests",
-                    "Covers conditional mutations, lock escape rejection, rollback, and "
-                        + "manifest-integrity failure modes."),
+                    "Covers ownership-group locking, exact selector removal, unrelated "
+                        + "configuration preservation, and malformed manifest handling."
+                ),
                 Pass(
                     "local-path-with-spaces-process-execution",
                     "platform",
@@ -115,65 +117,75 @@ public static class ReleaseHardeningPhase15VerticalSliceService
                     "SystemProcessRunnerTests."
                         + "RunAsyncPassesArgumentsEnvironmentWorkingDirectoryAndStandardInput",
                     "Covers local process arguments, environment variables, working directory, "
-                        + "and stdin values containing spaces."),
+                        + "and stdin values containing spaces."
+                ),
                 Pass(
                     "configuration-scope-and-repository-write-audit",
                     "configuration",
                     requiredForFullRelease: true,
                     "ConfigurationManagerTests; ConfigurationPhase14VerticalSliceServiceTests",
                     "Keeps credential-bearing package-manager writes in user or CI temporary "
-                        + "configuration-manager-owned scopes."),
+                        + "configuration-manager-owned scopes."
+                ),
                 DeferredNonMvp(
                     "git-for-windows-helper-discovery",
                     "git",
                     "phase-1r-git-discovery-rescope",
                     "MVP support intentionally excludes Git for Windows helper discovery until "
-                        + "a superseding evidence record reintroduces it."),
+                        + "a superseding evidence record reintroduces it."
+                ),
                 DeferredNonMvp(
                     "gui-launched-git-discovery",
                     "git",
                     "phase-1r-git-discovery-rescope",
                     "MVP support intentionally excludes Visual Studio, VS Code, Git GUI, and "
-                        + "PATH-only GUI-launched discovery."),
+                        + "PATH-only GUI-launched discovery."
+                ),
                 DeferredNonMvp(
                     "windows-git-path-with-spaces",
                     "git",
                     "phase-1r-git-discovery-rescope",
                     "Windows Git helper paths with spaces remain outside MVP support and must "
-                        + "not be claimed as accepted."),
+                        + "not be claimed as accepted."
+                ),
                 DeferredReleaseEvidence(
                     "remote-windows-first-platform-acceptance",
                     "platform",
                     "phase-0-decisions",
                     "Remote Windows 11 and Windows Server acceptance evidence is still required "
-                        + "before full release readiness closes."),
+                        + "before full release readiness closes."
+                ),
                 DeferredReleaseEvidence(
                     "real-package-manager-invocation-paths",
                     "npm",
                     "phase-1.4-npm-yarn-config-evidence",
                     "Selected real npm, pnpm, and Yarn invocation-path evidence remains a "
-                        + "release evidence item beyond deterministic local fake coverage."),
+                        + "release evidence item beyond deterministic local fake coverage."
+                ),
                 DeferredReleaseEvidence(
                     "final-installer-uninstaller-validation",
                     "installer",
                     "project-breakdown phase 15",
-                    "The fake adapter scaffold is validated locally; final installer package "
-                        + "install/uninstall evidence must be recorded with release artifacts."),
+                    "Final installer package install/uninstall evidence must be recorded with "
+                        + "release artifacts."
+                ),
                 DeferredOptionalFeature(
                     "pat-compatibility-production-path",
                     "identity",
                     "phase-wp5-azure-pipelines-system-access-token",
                     "The frozen PAT enum and wire value remain compatible, but reusable production "
                         + "PAT acquisition and materialization are explicitly deferred with no "
-                        + "fallback, cache, or invented identity."),
-                DeferredOptionalFeature(
-                    "optional-azureauth-wsl-backend",
+                        + "fallback, cache, or invented identity."
+                ),
+                DeferredReleaseEvidence(
+                    "azureauth-wsl-live-acceptance",
                     "identity",
-                    "phase-v5a-wsl-azureauth-backend-governance",
-                    "Optional WSL-to-Windows AzureAuth.exe backend. Disabled and unshippable "
-                        + "until all v5a gates pass. Does not block MVP or direct-MSAL release "
-                        + "readiness. Not Windows-native Git/Visual Studio/NuGet.exe acceptance. "
-                        + "Current fake Phase 15 rows are not live evidence for this path."),
+                    "phase-wp3-azureauth-process-provider",
+                    "AzureAuth 0.9.5 discovery and interactive process acquisition are "
+                        + "implemented for Windows and WSL. Live WSL-to-Windows acceptance "
+                        + "remains required before release and does not establish Windows-native "
+                        + "Git, Visual Studio, or NuGet.exe acceptance."
+                ),
             ],
         };
     }

@@ -2023,11 +2023,7 @@ internal static class CliApplication
             $"composition-mode: {root.Mode}",
             $"provider: {root.ProviderConfig.Selection}",
             "interactive-readiness: "
-                + (
-                    readiness.Interactive.IsReady
-                        ? "interactive-ready"
-                        : "interactive-unavailable"
-                ),
+                + (readiness.Interactive.IsReady ? "interactive-ready" : "interactive-unavailable"),
             $"interactive-readiness-code: {readiness.Interactive.Code}",
         ];
         if (!readiness.Interactive.IsReady)
@@ -2169,7 +2165,7 @@ internal static class CliApplication
             $"scope: {GetScopeText(invocation.CiMode)}",
             "mutates-state: "
                 + (result.AppliedChangeCount > 0 || result.LifecycleStateMutated ? "yes" : "no"),
-            $"plan-state: {GetPlanStateText(result.PlanResult.State)}",
+            $"plan-operation: {GetPlanOperationText(result.PlanResult.Operation)}",
             $"{changeCountLabel}: {result.AppliedChangeCount}",
             "ownership-manifest: " + GetPresenceText(result.OwnershipManifestPresent),
             "credential-material: not-printed",
@@ -2178,11 +2174,11 @@ internal static class CliApplication
         bool temporaryContainerEmitted = AddTemporaryContainerOutput(
             lines,
             invocation,
-            result.PlanResult.Plan);
+            result.PlanResult.Plan
+        );
         if (
             !temporaryContainerEmitted
-            &&
-            invocation.Command is CliCommand.Configure or CliCommand.Refresh
+            && invocation.Command is CliCommand.Configure or CliCommand.Refresh
             && invocation.CiMode == CliCiMode.None
             && IsPackageRegistryEcosystem(invocation.Ecosystem!.Value)
         )
@@ -2199,7 +2195,8 @@ internal static class CliApplication
     private static bool AddTemporaryContainerOutput(
         List<string> lines,
         CliInvocation invocation,
-        ConfigurationDryRunPlan plan)
+        ConfigurationDryRunPlan plan
+    )
     {
         if (
             invocation.Command is not (CliCommand.Configure or CliCommand.Refresh)
@@ -2218,7 +2215,8 @@ internal static class CliApplication
                     ? "package-manager-argument: --config.userconfig="
                         + temporaryContainer.ProductOwnedPath
                     : "package-manager-argument: --userconfig "
-                        + temporaryContainer.ProductOwnedPath);
+                        + temporaryContainer.ProductOwnedPath
+            );
         }
 
         if (temporaryContainer.ActivationEnvironment is { } activation)
@@ -2226,7 +2224,9 @@ internal static class CliApplication
             foreach (
                 (string name, string value) in activation.SetVariables.OrderBy(
                     static pair => pair.Key,
-                    StringComparer.Ordinal))
+                    StringComparer.Ordinal
+                )
+            )
             {
                 lines.Add($"set-environment: {name}={value}");
             }
@@ -2300,9 +2300,8 @@ internal static class CliApplication
         ];
 
         foreach (
-            ConfigurationPhase14CleanupEcosystemResult ecosystemResult
-                in cleanupResult.Ecosystems.OrderBy(
-                static result => GetEcosystemText(result.Ecosystem)
+            var ecosystemResult in cleanupResult.Ecosystems.OrderBy(static result =>
+                GetEcosystemText(result.Ecosystem)
             )
         )
         {
@@ -2398,11 +2397,11 @@ internal static class CliApplication
         bool temporaryContainerEmitted = AddTemporaryContainerOutput(
             lines,
             invocation,
-            dryRunResult.PlanResult.Plan);
+            dryRunResult.PlanResult.Plan
+        );
         if (
             !temporaryContainerEmitted
-            &&
-            invocation.Command is CliCommand.Configure or CliCommand.Refresh
+            && invocation.Command is CliCommand.Configure or CliCommand.Refresh
             && invocation.CiMode == CliCiMode.None
             && IsPackageRegistryEcosystem(ecosystem)
         )
@@ -2523,7 +2522,7 @@ internal static class CliApplication
             $"ci-mode: {GetCiModeText(invocation.CiMode)}",
             $"scope: {GetScopeText(invocation.CiMode)}",
             "mutates-state: yes",
-            $"plan-state: {GetPlanStateText(configureResult.PlanResult.State)}",
+            $"plan-operation: {GetPlanOperationText(configureResult.PlanResult.Operation)}",
             $"applied-change-count: {configureResult.PlanResult.Changes.Count}",
             $"owned-git-entries: {GetPresenceText(configureResult.OwnedGitEntriesPresent)}",
             $"ownership-manifest: {GetPresenceText(configureResult.OwnershipManifestPresent)}",
@@ -2546,8 +2545,8 @@ internal static class CliApplication
             $"ci-mode: {GetCiModeText(invocation.CiMode)}",
             $"scope: {GetScopeText(invocation.CiMode)}",
             "mutates-state: yes",
-            "plan-state: "
-                + (planResult is null ? "not-needed" : GetPlanStateText(planResult.State)),
+            "plan-operation: "
+                + (planResult is null ? "not-needed" : GetPlanOperationText(planResult.Operation)),
             $"removed-change-count: {planResult?.Changes.Count ?? 0}",
             $"owned-git-entries: {GetPresenceText(unconfigureResult.OwnedGitEntriesPresent)}",
             $"ownership-manifest: {GetPresenceText(unconfigureResult.OwnershipManifestPresent)}",
@@ -2569,7 +2568,7 @@ internal static class CliApplication
             $"ci-mode: {GetCiModeText(invocation.CiMode)}",
             $"scope: {GetScopeText(invocation.CiMode)}",
             "mutates-state: yes",
-            $"plan-state: {GetPlanStateText(configureResult.PlanResult.State)}",
+            $"plan-operation: {GetPlanOperationText(configureResult.PlanResult.Operation)}",
             $"applied-change-count: {configureResult.PlanResult.Changes.Count}",
             "nuget-plugin-layout-marker: "
                 + GetPresenceText(configureResult.PluginLayoutMarkerPresent),
@@ -2593,8 +2592,8 @@ internal static class CliApplication
             $"ci-mode: {GetCiModeText(invocation.CiMode)}",
             $"scope: {GetScopeText(invocation.CiMode)}",
             "mutates-state: yes",
-            "plan-state: "
-                + (planResult is null ? "not-needed" : GetPlanStateText(planResult.State)),
+            "plan-operation: "
+                + (planResult is null ? "not-needed" : GetPlanOperationText(planResult.Operation)),
             $"removed-change-count: {planResult?.Changes.Count ?? 0}",
             "nuget-plugin-layout-marker: "
                 + GetPresenceText(unconfigureResult.PluginLayoutMarkerPresent),
@@ -2863,13 +2862,14 @@ internal static class CliApplication
             : new AuthPhase14VerticalSliceService(runtimeOptions?.AuthPhase14Options);
     }
 
-    private static ConfigurationPhase14VerticalSliceService
-        CreateConfigurationPhase14VerticalSliceService(
+    // editorconfig-checker-disable
+    private static ConfigurationPhase14VerticalSliceService CreateConfigurationPhase14VerticalSliceService(
         CliRuntimeOptions? runtimeOptions,
         CredentialEcosystem? registryEcosystem = null,
         Uri? registryUrl = null,
         bool requireCredentialProvider = true
     )
+    // editorconfig-checker-enable
     {
         ConfigurationPhase14VerticalSliceOptions? options =
             runtimeOptions?.ConfigurationPhase14Options;
@@ -3018,7 +3018,7 @@ internal static class CliApplication
                     || (
                         doctorResult.OwnershipManifestPresent
                         && doctorResult.OwnedTargetPresent
-                        && doctorResult.LifecycleState == RegistryCredentialLifecycleState.Fresh
+                        && IsAcceptableLifecycleState(doctorResult.LifecycleState)
                     )
                 );
         }
@@ -3031,7 +3031,7 @@ internal static class CliApplication
                     && doctorResult.OwnedTargetPresent
                     && (
                         !IsPackageRegistryEcosystem(doctorResult.Ecosystem)
-                        || doctorResult.LifecycleState == RegistryCredentialLifecycleState.Fresh
+                        || IsAcceptableLifecycleState(doctorResult.LifecycleState)
                     )
                 )
             );
@@ -3040,6 +3040,11 @@ internal static class CliApplication
     private static bool ConfigurationPhase14DoctorStateAbsent(
         ConfigurationPhase14EcosystemDoctorResult doctorResult
     ) => !doctorResult.OwnershipManifestPresent && !doctorResult.OwnedTargetPresent;
+
+    private static bool IsAcceptableLifecycleState(RegistryCredentialLifecycleState state) =>
+        state
+            is RegistryCredentialLifecycleState.Fresh
+                or RegistryCredentialLifecycleState.RefreshRecommended;
 
     private static bool IsConfigurationPhase14CleanupSuccess(
         ConfigurationPhase14CleanupResult cleanupResult
@@ -3117,6 +3122,7 @@ internal static class CliApplication
     )
     {
         return !IsConfigurationPhase14EcosystemDoctorSuccess(doctorResult)
+            || doctorResult.LifecycleState == RegistryCredentialLifecycleState.RefreshRecommended
             || (
                 doctorResult.Scope == ConfigurationPhase14Scope.User
                 && ConfigurationPhase14DoctorStateAbsent(doctorResult)
@@ -3188,9 +3194,9 @@ internal static class CliApplication
         };
     }
 
-    private static string GetPlanStateText(ConfigurationPlanState state)
+    private static string GetPlanOperationText(ConfigurationPlanOperation operation)
     {
-        return state.ToString().ToLowerInvariant();
+        return operation.ToString().ToLowerInvariant();
     }
 
     private static string GetValidityText(bool isValid) => isValid ? "valid" : "invalid";
@@ -3335,7 +3341,7 @@ internal static class CliApplication
     private static string EscapeNonPrintingCharacters(string value)
     {
         StringBuilder? builder = null;
-        for (var index = 0; index < value.Length;)
+        for (var index = 0; index < value.Length; )
         {
             UnicodeCategory category = CharUnicodeInfo.GetUnicodeCategory(value, index);
             bool isSurrogatePair =
@@ -3385,7 +3391,7 @@ internal static class CliApplication
     private static string GetDisplayedOptionName(string token)
     {
         string optionName = GetOptionName(token);
-        for (var index = 0; index < optionName.Length;)
+        for (var index = 0; index < optionName.Length; )
         {
             UnicodeCategory category = CharUnicodeInfo.GetUnicodeCategory(optionName, index);
             if (IsDisplayedOptionBoundary(optionName, index, category))

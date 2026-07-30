@@ -28,19 +28,17 @@ public sealed class GitCredentialHelperAdapter
     private readonly BoundedCredentialAcquisitionAdapter credentialAcquisition;
 
     public GitCredentialHelperAdapter()
-        : this(CredentialProviderCompositionRoot.CreateProduction().AcquisitionService)
-    { }
+        : this(CredentialProviderCompositionRoot.CreateProduction().AcquisitionService) { }
 
     public GitCredentialHelperAdapter(CredentialCoreService? credentialCore)
         : this(
             credentialCore is null
                 ? CredentialProviderCompositionRoot.CreateProduction().AcquisitionService
-                : new LegacyV1CredentialAcquisitionService(credentialCore))
-    { }
+                : new LegacyV1CredentialAcquisitionService(credentialCore)
+        ) { }
 
     public GitCredentialHelperAdapter(ICredentialAcquisitionService credentialAcquisition)
-        : this(new BoundedCredentialAcquisitionAdapter(credentialAcquisition))
-    { }
+        : this(new BoundedCredentialAcquisitionAdapter(credentialAcquisition)) { }
 
     public GitCredentialHelperAdapter(BoundedCredentialAcquisitionAdapter credentialAcquisition)
     {
@@ -53,13 +51,15 @@ public sealed class GitCredentialHelperAdapter
     public static bool TryResolveProtocolInvocation(
         string? executablePath,
         IEnumerable<string>? arguments,
-        out AdapterInvocationContext? context)
+        out AdapterInvocationContext? context
+    )
     {
         bool resolved = AdapterHostBootstrap.TryResolveInvocation(
             Descriptor,
             executablePath,
             arguments,
-            out context);
+            out context
+        );
         if (!resolved || context is null || !context.IsProtocolInvocation)
         {
             context = null;
@@ -75,7 +75,8 @@ public sealed class GitCredentialHelperAdapter
         TextReader protocolStdin,
         TextWriter protocolStdout,
         TextWriter humanStdout,
-        DiagnosticRouter diagnosticRouter)
+        DiagnosticRouter diagnosticRouter
+    )
     {
         ArgumentNullException.ThrowIfNull(protocolStdin);
         ArgumentNullException.ThrowIfNull(protocolStdout);
@@ -89,7 +90,8 @@ public sealed class GitCredentialHelperAdapter
             context => Handle(context, protocolStdin),
             protocolStdout,
             humanStdout,
-            diagnosticRouter);
+            diagnosticRouter
+        );
     }
 
     public static string? CreateProtocolStdout(CredentialResult credentialResult)
@@ -99,7 +101,8 @@ public sealed class GitCredentialHelperAdapter
         return AdapterHostResultMapper.TryMapGitCredentialHelperBasicMaterial(
             credentialResult,
             out string? username,
-            out string? password)
+            out string? password
+        )
             ? $"username={username}\npassword={password}\n"
             : null;
     }
@@ -111,25 +114,30 @@ public sealed class GitCredentialHelperAdapter
             AdapterInvocationMode.Protocol,
             executableNames: [ProductExecutableName],
             argumentTokens: ["git", "credential-helper"],
-            argumentMatchMode: AdapterArgumentMatchMode.Prefix);
+            argumentMatchMode: AdapterArgumentMatchMode.Prefix
+        );
         AdapterEntrypointDescriptor helperExecutableEntrypoint = new(
             "GitCredentialHelperExecutable",
             AdapterInvocationMode.Protocol,
-            executableNames: [HelperExecutableName]);
+            executableNames: [HelperExecutableName]
+        );
         AdapterEntrypointDescriptor humanEntrypoint = new(
             "HumanCommand",
             AdapterInvocationMode.HumanCommand,
-            executableNames: [ProductExecutableName]);
+            executableNames: [ProductExecutableName]
+        );
 
         return new AdapterDescriptor(
             "Git Credential Helper",
             AdapterProtocol.GitCredentialHelper,
-            [sharedCliEntrypoint, helperExecutableEntrypoint, humanEntrypoint]);
+            [sharedCliEntrypoint, helperExecutableEntrypoint, humanEntrypoint]
+        );
     }
 
     private AdapterHostHandlerOutput Handle(
         AdapterInvocationContext context,
-        TextReader protocolStdin)
+        TextReader protocolStdin
+    )
     {
         if (context.PayloadArguments.Count != 1)
         {
@@ -143,9 +151,7 @@ public sealed class GitCredentialHelperAdapter
         }
 
         if (
-            !TryReadCredentialRecord(
-                protocolStdin,
-                out IReadOnlyDictionary<string, string>? fields)
+            !TryReadCredentialRecord(protocolStdin, out IReadOnlyDictionary<string, string>? fields)
         )
         {
             return CreateProtocolViolationOutput(operation);
@@ -154,8 +160,9 @@ public sealed class GitCredentialHelperAdapter
         return operation switch
         {
             CredentialOperation.Get => HandleGet(fields),
-            CredentialOperation.Store or CredentialOperation.Erase
-                => CreateSuccessOutput(operation),
+            CredentialOperation.Store or CredentialOperation.Erase => CreateSuccessOutput(
+                operation
+            ),
             _ => CreateProtocolViolationOutput(operation),
         };
     }
@@ -176,17 +183,16 @@ public sealed class GitCredentialHelperAdapter
             return CreateProtocolViolationOutput(CredentialOperation.Get);
         }
 
-        CredentialRequestV2 request = CreateGetRequest(resourceParseResult.Resource, fields);
+        CredentialRequestV2 request = CreateGetRequest(resourceParseResult.Resource);
         CredentialResult result = credentialAcquisition.Acquire(request);
         return new AdapterHostHandlerOutput(
             credentialResult: result,
             operation: CredentialOperation.Get,
-            protocolStdout: CreateProtocolStdout(result));
+            protocolStdout: CreateProtocolStdout(result)
+        );
     }
 
-    private static bool TryParseOperation(
-        string payloadArgument,
-        out CredentialOperation operation)
+    private static bool TryParseOperation(string payloadArgument, out CredentialOperation operation)
     {
         operation = payloadArgument switch
         {
@@ -200,7 +206,8 @@ public sealed class GitCredentialHelperAdapter
 
     private static bool TryReadCredentialRecord(
         TextReader reader,
-        [NotNullWhen(true)] out IReadOnlyDictionary<string, string>? fields)
+        [NotNullWhen(true)] out IReadOnlyDictionary<string, string>? fields
+    )
     {
         var recognizedFields = new Dictionary<string, string>(StringComparer.Ordinal);
         var totalCharacters = 0;
@@ -248,7 +255,8 @@ public sealed class GitCredentialHelperAdapter
 
     private static bool TryReadCredentialField(
         string line,
-        IDictionary<string, string> recognizedFields)
+        IDictionary<string, string> recognizedFields
+    )
     {
         int separatorIndex = line.IndexOf('=');
         if (separatorIndex <= 0)
@@ -263,12 +271,12 @@ public sealed class GitCredentialHelperAdapter
             return false;
         }
 
-        return !RecognizedFields.Contains(key)
-            || recognizedFields.TryAdd(key, value);
+        return !RecognizedFields.Contains(key) || recognizedFields.TryAdd(key, value);
     }
 
     private static GitResourceParseResult TryCreateResource(
-        IReadOnlyDictionary<string, string> fields)
+        IReadOnlyDictionary<string, string> fields
+    )
     {
         if (
             !fields.TryGetValue("protocol", out string? protocol)
@@ -301,7 +309,8 @@ public sealed class GitCredentialHelperAdapter
             || !TryParseAzureReposGitResource(
                 serviceEndpoint.IdnHost,
                 segments,
-                out AzureReposGitResourceShape? shape)
+                out AzureReposGitResourceShape? shape
+            )
         )
         {
             return GitResourceParseResult.ProtocolViolation();
@@ -320,7 +329,9 @@ public sealed class GitCredentialHelperAdapter
                     shape.Organization,
                     serviceEndpoint,
                     shape.Project,
-                    repository: shape.Repository));
+                    repository: shape.Repository
+                )
+            );
         }
         catch (ArgumentException)
         {
@@ -332,12 +343,11 @@ public sealed class GitCredentialHelperAdapter
         string protocol,
         string host,
         string rawPath,
-        [NotNullWhen(true)] out Uri? serviceEndpoint)
+        [NotNullWhen(true)] out Uri? serviceEndpoint
+    )
     {
         serviceEndpoint = null;
-        string normalizedPath = rawPath.Length == 0
-            ? string.Empty
-            : "/" + rawPath.TrimStart('/');
+        string normalizedPath = rawPath.Length == 0 ? string.Empty : "/" + rawPath.TrimStart('/');
         string serviceEndpointText = string.Concat(protocol, "://", host, normalizedPath);
 
         return Uri.TryCreate(serviceEndpointText, UriKind.Absolute, out serviceEndpoint);
@@ -386,7 +396,8 @@ public sealed class GitCredentialHelperAdapter
     private static bool TryParseAzureReposGitResource(
         string host,
         string[] segments,
-        out AzureReposGitResourceShape? shape)
+        out AzureReposGitResourceShape? shape
+    )
     {
         if (string.Equals(host, "dev.azure.com", StringComparison.OrdinalIgnoreCase))
         {
@@ -405,8 +416,7 @@ public sealed class GitCredentialHelperAdapter
         return true;
     }
 
-    private static AzureReposGitResourceShape? ParseModernAzureReposGitResource(
-        string[] segments)
+    private static AzureReposGitResourceShape? ParseModernAzureReposGitResource(string[] segments)
     {
         if (segments.Length == 0)
         {
@@ -423,7 +433,8 @@ public sealed class GitCredentialHelperAdapter
             return new AzureReposGitResourceShape(
                 segments[0],
                 Project: segments[1],
-                Repository: segments[3]);
+                Repository: segments[3]
+            );
         }
 
         return null;
@@ -431,7 +442,8 @@ public sealed class GitCredentialHelperAdapter
 
     private static AzureReposGitResourceShape? ParseLegacyAzureReposGitResource(
         string organization,
-        string[] segments)
+        string[] segments
+    )
     {
         string[] resourceSegments =
             segments.Length > 0 && IsSegment(segments[0], "DefaultCollection")
@@ -440,10 +452,7 @@ public sealed class GitCredentialHelperAdapter
 
         if (resourceSegments.Length == 0)
         {
-            return new AzureReposGitResourceShape(
-                organization,
-                Project: null,
-                Repository: null);
+            return new AzureReposGitResourceShape(organization, Project: null, Repository: null);
         }
 
         if (resourceSegments.Length == 3 && IsSegment(resourceSegments[1], "_git"))
@@ -451,15 +460,14 @@ public sealed class GitCredentialHelperAdapter
             return new AzureReposGitResourceShape(
                 organization,
                 Project: resourceSegments[0],
-                Repository: resourceSegments[2]);
+                Repository: resourceSegments[2]
+            );
         }
 
         return null;
     }
 
-    private static CredentialRequestV2 CreateGetRequest(
-        CanonicalResourceIdentity resource,
-        IReadOnlyDictionary<string, string> fields)
+    private static CredentialRequestV2 CreateGetRequest(CanonicalResourceIdentity resource)
     {
         return new CredentialRequestV2
         {
@@ -467,21 +475,14 @@ public sealed class GitCredentialHelperAdapter
             Operation = CredentialOperation.Get,
             Resource = resource,
             ServiceIdentity = DefaultServiceIdentity,
-            AccountHint = fields.TryGetValue("username", out string? username)
-                && !string.IsNullOrWhiteSpace(username)
-                    ? username
-                    : null,
+            AccountHint = null,
             RequestedAudience = TokenAudience.AzureDevOps,
             CredentialKind = CredentialKind.BasicPassword,
             IdentityFlow = IdentityFlow.InteractiveBrowser,
             InteractivePolicy = InteractivePolicy.Never,
             AcquisitionMode = AcquisitionMode.SilentOnly,
             CachePolicy = CachePolicyMode.ProductPersistentCacheDisabled,
-            CiContext = new CiContext
-            {
-                ExplicitCiMode = false,
-                AllowsPersistentWrites = false,
-            },
+            CiContext = new CiContext { ExplicitCiMode = false, AllowsPersistentWrites = false },
         };
     }
 
@@ -493,7 +494,8 @@ public sealed class GitCredentialHelperAdapter
                 Status = CredentialResultStatus.Success,
                 DiagnosticsCorrelationId = CorrelationId.New().ToString(),
             },
-            operation: operation);
+            operation: operation
+        );
     }
 
     private static AdapterHostHandlerOutput CreateNoCredentialOutput(CredentialOperation operation)
@@ -510,11 +512,13 @@ public sealed class GitCredentialHelperAdapter
                     SafeMessage = "No credential is available for the requested Git host.",
                 },
             },
-            operation: operation);
+            operation: operation
+        );
     }
 
     private static AdapterHostHandlerOutput CreateProtocolViolationOutput(
-        CredentialOperation operation)
+        CredentialOperation operation
+    )
     {
         return new AdapterHostHandlerOutput(
             credentialResult: new CredentialResult
@@ -528,7 +532,8 @@ public sealed class GitCredentialHelperAdapter
                     SafeMessage = "Git credential helper input is invalid.",
                 },
             },
-            operation: operation);
+            operation: operation
+        );
     }
 
     private static bool ContainsControlCharacters(string value) => value.Any(char.IsControl);
@@ -570,11 +575,13 @@ public sealed class GitCredentialHelperAdapter
     private sealed record AzureReposGitResourceShape(
         string Organization,
         string? Project,
-        string? Repository);
+        string? Repository
+    );
 
     private sealed record GitResourceParseResult(
         GitResourceParseStatus Status,
-        CanonicalResourceIdentity? Resource)
+        CanonicalResourceIdentity? Resource
+    )
     {
         public static GitResourceParseResult Success(CanonicalResourceIdentity resource) =>
             new(GitResourceParseStatus.Success, resource);

@@ -1,8 +1,14 @@
 # Phase 1A MVP Identity-Flow Selection
 
-Status: **Accepted**
+Status: **Partially superseded historical decision**
 
 Date: **2026-06-06**
+
+The current implementation supports interactive browser acquisition through
+AzureAuth and explicit Azure Pipelines system access tokens. Device code and
+PAT compatibility remain unavailable or deferred despite their earlier
+selection below. Current behavior is documented by the WP3, WP5, and WP6
+records.
 
 Decision ID: **phase-1a-identity-flow-selection**
 

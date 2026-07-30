@@ -24,21 +24,21 @@ public sealed class CredentialCoreService
     private readonly ITokenExchange _tokenExchange;
 
     public CredentialCoreService()
-        : this(new DirectMsalIdentityProvider())
-    { }
+        : this(new DirectMsalIdentityProvider()) { }
 
     public CredentialCoreService(
         IIdentityProvider identityProvider,
         DiagnosticRouter? diagnosticRouter = null,
-        IDerivedCredentialCache? derivedCredentialCache = null)
-        : this(identityProvider, diagnosticRouter, derivedCredentialCache, tokenExchange: null)
-    { }
+        IDerivedCredentialCache? derivedCredentialCache = null
+    )
+        : this(identityProvider, diagnosticRouter, derivedCredentialCache, tokenExchange: null) { }
 
     internal CredentialCoreService(
         IIdentityProvider identityProvider,
         DiagnosticRouter? diagnosticRouter,
         IDerivedCredentialCache? derivedCredentialCache,
-        ITokenExchange? tokenExchange)
+        ITokenExchange? tokenExchange
+    )
     {
         ArgumentNullException.ThrowIfNull(identityProvider);
 
@@ -63,7 +63,8 @@ public sealed class CredentialCoreService
                 CredentialResultStatus.ProtocolViolation,
                 CredentialErrorKind.ProtocolViolation,
                 ProtocolViolationCode,
-                protocolViolation);
+                protocolViolation
+            );
         }
 
         if (request.IdentityFlow == IdentityFlow.AzurePipelinesSystemAccessToken)
@@ -74,7 +75,9 @@ public sealed class CredentialCoreService
                 CredentialResultStatus.CredentialUnavailable,
                 CredentialErrorKind.CredentialUnavailable,
                 OpaqueAzurePipelinesTokenCode,
-                "Azure Pipelines system access tokens require the dedicated opaque credential service.");
+                "Azure Pipelines system access tokens require the dedicated "
+                    + "opaque credential service."
+            );
         }
 
         if (request.IdentityFlow == IdentityFlow.PatCompatibility)
@@ -85,8 +88,10 @@ public sealed class CredentialCoreService
                 CredentialResultStatus.FlowDeferred,
                 CredentialErrorKind.FlowDeferred,
                 PatCompatibilityDeferredCode,
-                "PAT compatibility is deferred and has no production acquisition or materialization path.",
-                IdentityFlowState.Deferred);
+                "PAT compatibility is deferred and has no production acquisition "
+                    + "or materialization path.",
+                IdentityFlowState.Deferred
+            );
         }
 
         if (request.Operation != CredentialOperation.Get)
@@ -97,7 +102,8 @@ public sealed class CredentialCoreService
                 CredentialResultStatus.CredentialUnavailable,
                 CredentialErrorKind.CredentialUnavailable,
                 OperationNotSupportedCode,
-                "Credential core scaffold only supports get operations.");
+                "Credential core scaffold only supports get operations."
+            );
         }
 
         IdentityFlowState flowState = IdentityFlowPolicy.GetMvpState(request.IdentityFlow);
@@ -112,7 +118,8 @@ public sealed class CredentialCoreService
                     CredentialErrorKind.FlowDeferred,
                     "FlowDeferred",
                     "Requested identity flow is deferred by the MVP scaffold.",
-                    flowState),
+                    flowState
+                ),
                 IdentityFlowState.Disabled => CreateFailureResult(
                     request,
                     correlationId,
@@ -120,7 +127,8 @@ public sealed class CredentialCoreService
                     CredentialErrorKind.FlowDisabled,
                     "FlowDisabled",
                     GetCredentialCoreFallbackMessage("FlowDisabled"),
-                    flowState),
+                    flowState
+                ),
                 _ => CreateFailureResult(
                     request,
                     correlationId,
@@ -128,7 +136,8 @@ public sealed class CredentialCoreService
                     CredentialErrorKind.UnsupportedFlow,
                     "UnsupportedFlow",
                     GetCredentialCoreFallbackMessage("UnsupportedFlow"),
-                    flowState),
+                    flowState
+                ),
             };
         }
 
@@ -136,7 +145,8 @@ public sealed class CredentialCoreService
             TryGetPersistentCacheFailureResult(
                 request,
                 correlationId,
-                out CredentialResult? cacheFailureResult)
+                out CredentialResult? cacheFailureResult
+            )
         )
         {
             return cacheFailureResult;
@@ -154,7 +164,8 @@ public sealed class CredentialCoreService
                     "InteractionBlocked",
                     "Credential request requires interaction, but interaction is blocked by "
                         + "policy.",
-                    flowState);
+                    flowState
+                );
             }
 
             return CreateFailureResult(
@@ -164,7 +175,8 @@ public sealed class CredentialCoreService
                 CredentialErrorKind.FlowDisabled,
                 "FlowDisabled",
                 GetCredentialCoreFallbackMessage("FlowDisabled"),
-                flowState);
+                flowState
+            );
         }
 
         try
@@ -174,12 +186,10 @@ public sealed class CredentialCoreService
                 request.CredentialKind
             );
 
-            CacheKey cacheKey = CacheKeySchema.Create(
-                request,
-                identity.Account,
-                identity.Tenant);
+            CacheKey cacheKey = CacheKeySchema.Create(request, identity.Account, identity.Tenant);
             TokenExchangeResult exchangeResult = NormalizeTokenExchangeResult(
-                _tokenExchange.Exchange(request, identity, cacheKey));
+                _tokenExchange.Exchange(request, identity, cacheKey)
+            );
 
             if (exchangeResult.Status == TokenExchangeStatus.Unavailable)
             {
@@ -189,7 +199,8 @@ public sealed class CredentialCoreService
                     CredentialResultStatus.CredentialUnavailable,
                     CredentialErrorKind.CredentialUnavailable,
                     TokenExchangeUnavailableCode,
-                    "Credential token exchange is unavailable.");
+                    "Credential token exchange is unavailable."
+                );
             }
 
             if (exchangeResult.Status != TokenExchangeStatus.Success)
@@ -200,14 +211,17 @@ public sealed class CredentialCoreService
                     CredentialResultStatus.Fatal,
                     CredentialErrorKind.Fatal,
                     TokenExchangeFailedCode,
-                    "Credential token exchange failed.");
+                    "Credential token exchange failed."
+                );
             }
 
             TokenExchangeMaterial exchangeMaterial = NormalizeAndEnsureValid(
                 exchangeResult.Material
                     ?? throw new InvalidOperationException(
-                        "Token exchange returned incomplete credential output material."),
-                request.CredentialKind);
+                        "Token exchange returned incomplete credential output material."
+                    ),
+                request.CredentialKind
+            );
             CredentialResult result = CreateSuccessResult(
                 request,
                 correlationId,
@@ -227,7 +241,8 @@ public sealed class CredentialCoreService
                     ["ecosystem"] = request.Ecosystem.ToString(),
                     ["credentialKind"] = request.CredentialKind.ToString(),
                     ["identityFlow"] = request.IdentityFlow.ToString(),
-                });
+                }
+            );
 
             return result;
         }
@@ -239,7 +254,8 @@ public sealed class CredentialCoreService
                 CredentialResultStatus.CredentialUnavailable,
                 CredentialErrorKind.CredentialUnavailable,
                 exception.Code,
-                exception.SafeMessage);
+                exception.SafeMessage
+            );
         }
         catch (Exception)
         {
@@ -249,15 +265,16 @@ public sealed class CredentialCoreService
                 CredentialResultStatus.Fatal,
                 CredentialErrorKind.Fatal,
                 FatalCode,
-                "Credential core execution failed.");
+                "Credential core execution failed."
+            );
         }
     }
 
     private bool TryGetPersistentCacheFailureResult(
         CredentialRequest request,
         CorrelationId correlationId,
-        [NotNullWhen(true)]
-        out CredentialResult? result)
+        [NotNullWhen(true)] out CredentialResult? result
+    )
     {
         if (!RequiresPersistentDerivedCredentialCache(request))
         {
@@ -270,7 +287,8 @@ public sealed class CredentialCoreService
         try
         {
             availabilityStatus = NormalizeCacheAvailabilityStatus(
-                _derivedCredentialCache.GetPersistentAvailability(request));
+                _derivedCredentialCache.GetPersistentAvailability(request)
+            );
         }
         catch (Exception)
         {
@@ -292,7 +310,8 @@ public sealed class CredentialCoreService
         CorrelationId correlationId,
         IdentityMaterial identity,
         CacheKey cacheKey,
-        TokenExchangeMaterial exchangeMaterial)
+        TokenExchangeMaterial exchangeMaterial
+    )
     {
         _ = request;
 
@@ -313,13 +332,15 @@ public sealed class CredentialCoreService
     private CredentialResult CreateCacheUnavailableResult(
         CredentialRequest request,
         CorrelationId correlationId,
-        DerivedCredentialCacheAvailabilityStatus availabilityStatus)
+        DerivedCredentialCacheAvailabilityStatus availabilityStatus
+    )
     {
         const string safeMessage = "Persistent derived credential cache is unavailable.";
         Dictionary<string, string> safeDetails = CreateSafeDetails(
             request,
             CredentialResultStatus.CacheUnavailable,
-            flowState: null);
+            flowState: null
+        );
         safeDetails["cachePolicy"] = request.CachePolicy.ToString();
         safeDetails["cacheAvailability"] = availabilityStatus.ToString();
 
@@ -327,15 +348,12 @@ public sealed class CredentialCoreService
             CacheUnavailableCode,
             request,
             CredentialResultStatus.CacheUnavailable,
-            flowState: null);
+            flowState: null
+        );
         properties["cachePolicy"] = request.CachePolicy.ToString();
         properties["cacheAvailability"] = availabilityStatus.ToString();
 
-        WriteSafeDiagnostic(
-            DiagnosticSeverity.Warning,
-            correlationId,
-            safeMessage,
-            properties);
+        WriteSafeDiagnostic(DiagnosticSeverity.Warning, correlationId, safeMessage, properties);
 
         return new CredentialResult
         {
@@ -358,7 +376,8 @@ public sealed class CredentialCoreService
         CredentialErrorKind errorKind,
         string code,
         string safeMessage,
-        IdentityFlowState? flowState = null)
+        IdentityFlowState? flowState = null
+    )
     {
         Dictionary<string, string> safeDetails = CreateSafeDetails(request, status, flowState);
 
@@ -368,7 +387,8 @@ public sealed class CredentialCoreService
                 : DiagnosticSeverity.Warning,
             correlationId,
             safeMessage,
-            CreateDiagnosticProperties(code, request, status, flowState));
+            CreateDiagnosticProperties(code, request, status, flowState)
+        );
 
         return new CredentialResult
         {
@@ -388,61 +408,30 @@ public sealed class CredentialCoreService
         DiagnosticSeverity severity,
         CorrelationId correlationId,
         string message,
-        IReadOnlyDictionary<string, string?> properties)
+        IReadOnlyDictionary<string, string?> properties
+    )
     {
         if (_diagnosticRouter is null)
         {
             return;
         }
 
-        DiagnosticCommitTrackingScope? capturedCommitTrackingScope =
-            _diagnosticRouter.CaptureActiveCommitTrackingScope();
-        bool restoreCapturedCommitTrackingScope = false;
-
-        if (
-            capturedCommitTrackingScope is not null
-            && (
-                capturedCommitTrackingScope.OutputCommitted
-                || capturedCommitTrackingScope.SuppressesLateCredentialCoreRecovery
-                || capturedCommitTrackingScope
-                    .SuppressesDirectCredentialCoreSafeDiagnosticRoutes
-            )
-        )
-        {
-            return;
-        }
-
-        if (capturedCommitTrackingScope?.IsClosed == true)
-        {
-            _diagnosticRouter.PruneClosedActiveCommitTrackingScope();
-            restoreCapturedCommitTrackingScope = true;
-        }
-
         try
         {
-            try
-            {
-                _diagnosticRouter.Route(
-                    new DiagnosticEvent(
-                        severity,
-                        DiagnosticChannel.Diagnostic,
-                        message,
-                        correlationId,
-                        properties,
-                        isSafeDiagnosticEnvelope: true)
-                    {
-                        AllowCodeSpecificFallback = true,
-                        FallbackScope = SafeDiagnosticFallbackScope.CredentialCore,
-                    });
-            }
-            finally
-            {
-                if (restoreCapturedCommitTrackingScope)
+            _diagnosticRouter.Route(
+                new DiagnosticEvent(
+                    severity,
+                    DiagnosticChannel.Diagnostic,
+                    message,
+                    correlationId,
+                    properties,
+                    isSafeDiagnosticEnvelope: true
+                )
                 {
-                    _diagnosticRouter.RestoreCapturedActiveCommitTrackingScope(
-                        capturedCommitTrackingScope);
+                    AllowCodeSpecificFallback = true,
+                    FallbackScope = SafeDiagnosticFallbackScope.CredentialCore,
                 }
-            }
+            );
         }
         catch (Exception)
         {
@@ -453,7 +442,8 @@ public sealed class CredentialCoreService
     private static Dictionary<string, string> CreateSafeDetails(
         CredentialRequest request,
         CredentialResultStatus status,
-        IdentityFlowState? flowState)
+        IdentityFlowState? flowState
+    )
     {
         var safeDetails = new Dictionary<string, string>
         {
@@ -476,7 +466,8 @@ public sealed class CredentialCoreService
         string code,
         CredentialRequest request,
         CredentialResultStatus status,
-        IdentityFlowState? flowState)
+        IdentityFlowState? flowState
+    )
     {
         var properties = new Dictionary<string, string?>
         {
@@ -500,34 +491,46 @@ public sealed class CredentialCoreService
     {
         return SafeDiagnosticMessageFallback.GetDefaultMessage(
             SafeDiagnosticFallbackScope.CredentialCore,
-            code);
+            code
+        );
     }
 
     private static IdentityMaterial NormalizeAndEnsureValid(
         IdentityMaterial identity,
-        CredentialKind credentialKind)
+        CredentialKind credentialKind
+    )
     {
         ArgumentNullException.ThrowIfNull(identity);
 
-        if (string.IsNullOrWhiteSpace(identity.Account)
+        if (
+            string.IsNullOrWhiteSpace(identity.Account)
             || string.IsNullOrWhiteSpace(identity.Tenant)
             || (RequiresSecret(credentialKind) && string.IsNullOrWhiteSpace(identity.Secret))
-            || (RequiresAccessToken(credentialKind)
-                && string.IsNullOrWhiteSpace(identity.AccessToken))
-            || identity.ExpiresAt == default)
+            || (
+                RequiresAccessToken(credentialKind)
+                && string.IsNullOrWhiteSpace(identity.AccessToken)
+            )
+            || identity.ExpiresAt == default
+        )
         {
             throw new InvalidOperationException(
-                "Identity provider returned incomplete credential core material.");
+                "Identity provider returned incomplete credential core material."
+            );
         }
 
-        if (ContainsAdapterProtocolLineBreak(identity.Account)
+        if (
+            ContainsAdapterProtocolLineBreak(identity.Account)
             || ContainsAdapterProtocolLineBreak(identity.Tenant)
             || (RequiresSecret(credentialKind) && ContainsControlCharacters(identity.Secret))
-            || (RequiresAccessToken(credentialKind)
-                && ContainsControlCharacters(identity.AccessToken)))
+            || (
+                RequiresAccessToken(credentialKind)
+                && ContainsControlCharacters(identity.AccessToken)
+            )
+        )
         {
             throw new InvalidOperationException(
-                "Identity provider returned protocol-incompatible credential core material.");
+                "Identity provider returned protocol-incompatible credential core material."
+            );
         }
 
         return identity with
@@ -539,31 +542,41 @@ public sealed class CredentialCoreService
 
     private static TokenExchangeMaterial NormalizeAndEnsureValid(
         TokenExchangeMaterial material,
-        CredentialKind credentialKind)
+        CredentialKind credentialKind
+    )
     {
         ArgumentNullException.ThrowIfNull(material);
 
         bool requiresSecret = RequiresSecret(credentialKind);
         bool requiresAccessToken = RequiresAccessToken(credentialKind);
 
-        if ((requiresSecret
-                && (string.IsNullOrWhiteSpace(material.Username)
-                    || string.IsNullOrWhiteSpace(material.Password)))
+        if (
+            (
+                requiresSecret
+                && (
+                    string.IsNullOrWhiteSpace(material.Username)
+                    || string.IsNullOrWhiteSpace(material.Password)
+                )
+            )
             || (requiresAccessToken && string.IsNullOrWhiteSpace(material.BearerToken))
-            || (!requiresSecret
-                && (material.Username is not null || material.Password is not null))
-            || (!requiresAccessToken && material.BearerToken is not null))
+            || (!requiresSecret && (material.Username is not null || material.Password is not null))
+            || (!requiresAccessToken && material.BearerToken is not null)
+        )
         {
             throw new InvalidOperationException(
-                "Token exchange returned incomplete credential output material.");
+                "Token exchange returned incomplete credential output material."
+            );
         }
 
-        if (ContainsControlCharacters(material.Username)
+        if (
+            ContainsControlCharacters(material.Username)
             || ContainsControlCharacters(material.Password)
-            || ContainsControlCharacters(material.BearerToken))
+            || ContainsControlCharacters(material.BearerToken)
+        )
         {
             throw new InvalidOperationException(
-                "Token exchange returned protocol-incompatible credential output material.");
+                "Token exchange returned protocol-incompatible credential output material."
+            );
         }
 
         return material with
@@ -607,10 +620,12 @@ public sealed class CredentialCoreService
             request with
             {
                 CachePolicy = CachePolicyMode.ProductPersistentCacheDisabled,
-            });
+            }
+        );
 
     private static DerivedCredentialCacheAvailabilityStatus NormalizeCacheAvailabilityStatus(
-        DerivedCredentialCacheAvailability availability) =>
+        DerivedCredentialCacheAvailability availability
+    ) =>
         availability.Status switch
         {
             DerivedCredentialCacheAvailabilityStatus.Available =>
@@ -633,12 +648,13 @@ public sealed class CredentialCoreService
             request with
             {
                 InteractivePolicy = InteractivePolicy.HostToolAllows,
-            });
+            }
+        );
 
     internal static bool TryGetProtocolViolation(
         CredentialRequest request,
-        [NotNullWhen(true)]
-        out string? protocolViolation)
+        [NotNullWhen(true)] out string? protocolViolation
+    )
     {
         if (request.ContractMajor != ContractVersions.CredentialContractMajor)
         {
@@ -697,12 +713,13 @@ public sealed class CredentialCoreService
 
         if (!IsFlowCredentialShapeAllowed(request))
         {
-            protocolViolation = request.IdentityFlow == IdentityFlow.AzurePipelinesSystemAccessToken
+            protocolViolation =
+                request.IdentityFlow == IdentityFlow.AzurePipelinesSystemAccessToken
                 && request.Ecosystem == CredentialEcosystem.Git
-                ? "Protocol violation: Azure Pipelines system access token git requests must use "
-                    + "bearer-token credentials."
-                : "Protocol violation: PAT compatibility requests must pair the patCompatibility "
-                    + "flow and credential kind.";
+                    ? "Protocol violation: Azure Pipelines system access token "
+                        + "git requests must use bearer-token credentials."
+                    : "Protocol violation: PAT compatibility requests must pair "
+                        + "the patCompatibility flow and credential kind.";
             return true;
         }
 
@@ -722,8 +739,7 @@ public sealed class CredentialCoreService
     private static bool IsSpecifiedDefinedEnum<TEnum>(TEnum value)
         where TEnum : struct, Enum
     {
-        return Enum.IsDefined(value)
-            && !EqualityComparer<TEnum>.Default.Equals(value, default);
+        return Enum.IsDefined(value) && !EqualityComparer<TEnum>.Default.Equals(value, default);
     }
 
     private static bool IsResourceShapeAllowed(CredentialRequest request) =>
@@ -737,13 +753,16 @@ public sealed class CredentialCoreService
                         or CredentialKind.PatCompatibility
                 && CanonicalResourceIdentityPolicy.IsServiceEndpointCompatibleWithEcosystem(
                     request.Resource.ServiceEndpoint,
-                    request.Ecosystem),
+                    request.Ecosystem
+                ),
             CredentialEcosystem.NuGet => IsPackageResourceShapeAllowed(
                 request,
-                CredentialKind.NuGetPluginCredential),
+                CredentialKind.NuGetPluginCredential
+            ),
             CredentialEcosystem.Python => IsPackageResourceShapeAllowed(
                 request,
-                CredentialKind.BasicPassword),
+                CredentialKind.BasicPassword
+            ),
             CredentialEcosystem.Npm or CredentialEcosystem.Pnpm or CredentialEcosystem.Yarn =>
                 IsPackageResourceShapeAllowed(request, CredentialKind.NpmAuthToken),
             _ => false,
@@ -751,21 +770,29 @@ public sealed class CredentialCoreService
 
     private static bool IsPackageResourceShapeAllowed(
         CredentialRequest request,
-        CredentialKind expectedCredentialKind) =>
+        CredentialKind expectedCredentialKind
+    ) =>
         !string.IsNullOrWhiteSpace(request.Resource.Feed)
         && string.IsNullOrWhiteSpace(request.Resource.Repository)
         && request.RequestedAudience == TokenAudience.AzureArtifacts
         && request.CredentialKind == expectedCredentialKind
         && CanonicalResourceIdentityPolicy.IsServiceEndpointCompatibleWithEcosystem(
             request.Resource.ServiceEndpoint,
-            request.Ecosystem);
+            request.Ecosystem
+        );
 
     private static bool IsFlowCredentialShapeAllowed(CredentialRequest request) =>
-        (request.IdentityFlow != IdentityFlow.PatCompatibility
-            || request.CredentialKind == CredentialKind.PatCompatibility)
-        && (request.IdentityFlow == IdentityFlow.PatCompatibility
-            || request.CredentialKind != CredentialKind.PatCompatibility)
-        && (request.IdentityFlow != IdentityFlow.AzurePipelinesSystemAccessToken
+        (
+            request.IdentityFlow != IdentityFlow.PatCompatibility
+            || request.CredentialKind == CredentialKind.PatCompatibility
+        )
+        && (
+            request.IdentityFlow == IdentityFlow.PatCompatibility
+            || request.CredentialKind != CredentialKind.PatCompatibility
+        )
+        && (
+            request.IdentityFlow != IdentityFlow.AzurePipelinesSystemAccessToken
             || request.Ecosystem != CredentialEcosystem.Git
-            || request.CredentialKind == CredentialKind.BearerToken);
+            || request.CredentialKind == CredentialKind.BearerToken
+        );
 }

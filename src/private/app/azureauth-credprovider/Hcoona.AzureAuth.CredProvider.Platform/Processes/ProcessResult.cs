@@ -9,8 +9,7 @@ public sealed class ProcessResult
             hasExitCode: true,
             standardOutput,
             standardError
-        )
-    { }
+        ) { }
 
     private ProcessResult(
         ProcessExecutionStatus status,
@@ -46,31 +45,24 @@ public sealed class ProcessResult
         string standardOutput,
         string standardError,
         int? exitCode = null
-    ) =>
-        Create(ProcessExecutionStatus.TimedOut, standardOutput, standardError, exitCode);
-
-    public static ProcessResult Canceled(
-        string standardOutput,
-        string standardError,
-        int? exitCode = null
-    ) =>
-        Create(ProcessExecutionStatus.Canceled, standardOutput, standardError, exitCode);
+    ) => Create(ProcessExecutionStatus.TimedOut, standardOutput, standardError, exitCode);
 
     public static ProcessResult OutputTooLarge(
         string standardOutput,
         string standardError,
         int? exitCode = null
-    ) =>
-        Create(ProcessExecutionStatus.OutputTooLarge, standardOutput, standardError, exitCode);
+    ) => Create(ProcessExecutionStatus.OutputTooLarge, standardOutput, standardError, exitCode);
 
     public static ProcessResult InvalidOutput(
         string standardOutput,
         string standardError,
         int? exitCode = null
-    ) =>
-        Create(ProcessExecutionStatus.InvalidOutput, standardOutput, standardError, exitCode);
+    ) => Create(ProcessExecutionStatus.InvalidOutput, standardOutput, standardError, exitCode);
 
-    public static ProcessResult LaunchFailure(string standardOutput = "", string standardError = "") =>
+    public static ProcessResult LaunchFailure(
+        string standardOutput = "",
+        string standardError = ""
+    ) =>
         Create(ProcessExecutionStatus.LaunchFailure, standardOutput, standardError, exitCode: null);
 
     private static ProcessResult Create(
@@ -82,9 +74,9 @@ public sealed class ProcessResult
     {
         if (
             status
-                is ProcessExecutionStatus.Success
-                    or ProcessExecutionStatus.NonZeroExit
-                    or ProcessExecutionStatus.Unspecified
+            is ProcessExecutionStatus.Success
+                or ProcessExecutionStatus.NonZeroExit
+                or ProcessExecutionStatus.Unspecified
         )
         {
             throw new ArgumentException(

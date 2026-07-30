@@ -172,10 +172,7 @@ public sealed class PythonPhase11EnvironmentDiscoveryTests
         fileSystem.WriteAllText("/workspace/.venv/bin/python", "#!/bin/sh\n");
         CreateDirectory(fileSystem, "/workspace/.venv/lib/python3.11/site-packages/keyring");
         var environment = new EnvironmentVariables(
-            new Dictionary<string, string?>
-            {
-                ["HOME"] = "/home/alice",
-            }
+            new Dictionary<string, string?> { ["HOME"] = "/home/alice" }
         );
         var service = new PythonPhase11VerticalSliceService(
             new PythonPhase11VerticalSliceOptions
@@ -206,10 +203,7 @@ public sealed class PythonPhase11EnvironmentDiscoveryTests
     public async Task DoctorValidatesPythonSimpleAndUploadEndpointCanonicalization()
     {
         var environment = new EnvironmentVariables(
-            new Dictionary<string, string?>
-            {
-                ["HOME"] = "/home/alice",
-            }
+            new Dictionary<string, string?> { ["HOME"] = "/home/alice" }
         );
         var service = new PythonPhase11VerticalSliceService(
             new PythonPhase11VerticalSliceOptions
@@ -254,7 +248,6 @@ public sealed class PythonPhase11EnvironmentDiscoveryTests
                         or nameof(InMemoryFileSystem.CreateDirectory)
                         or nameof(InMemoryFileSystem.DeleteFile)
                         or nameof(InMemoryFileSystem.DeleteDirectory)
-                        or nameof(InMemoryFileSystem.AddSymbolicLink)
         );
     }
 

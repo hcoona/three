@@ -1,8 +1,15 @@
 # Phase V5-A: WSL AzureAuth Backend Governance
 
-Status: **Governance record only — no implementation, no evidence**
+Status: **Superseded historical governance record**
 
 Date: **2026-07-20**
+
+The implemented design is documented by
+`phase-wp2-artifact-trust-enrollment.md`,
+`phase-wp3-azureauth-process-provider.md`, and
+`phase-wp6-production-composition.md`. Those later records supersede this
+document's direct-MSAL direction and its statement that no AzureAuth runtime
+exists. This file remains only as decision history.
 
 Decision ID: **phase-v5a-wsl-azureauth-backend-governance**
 

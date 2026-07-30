@@ -17,19 +17,17 @@ public sealed class KeyringHelperAdapter
     private readonly BoundedCredentialAcquisitionAdapter credentialAcquisition;
 
     public KeyringHelperAdapter()
-        : this(CredentialProviderCompositionRoot.CreateProduction().AcquisitionService)
-    { }
+        : this(CredentialProviderCompositionRoot.CreateProduction().AcquisitionService) { }
 
     public KeyringHelperAdapter(CredentialCoreService? credentialCore)
         : this(
             credentialCore is null
                 ? CredentialProviderCompositionRoot.CreateProduction().AcquisitionService
-                : new LegacyV1CredentialAcquisitionService(credentialCore))
-    { }
+                : new LegacyV1CredentialAcquisitionService(credentialCore)
+        ) { }
 
     public KeyringHelperAdapter(ICredentialAcquisitionService credentialAcquisition)
-        : this(new BoundedCredentialAcquisitionAdapter(credentialAcquisition))
-    { }
+        : this(new BoundedCredentialAcquisitionAdapter(credentialAcquisition)) { }
 
     public KeyringHelperAdapter(BoundedCredentialAcquisitionAdapter credentialAcquisition)
     {
@@ -42,13 +40,15 @@ public sealed class KeyringHelperAdapter
     public static bool TryResolveProtocolInvocation(
         string? executablePath,
         IEnumerable<string>? arguments,
-        out AdapterInvocationContext? context)
+        out AdapterInvocationContext? context
+    )
     {
         bool resolved = AdapterHostBootstrap.TryResolveInvocation(
             Descriptor,
             executablePath,
             arguments,
-            out context);
+            out context
+        );
         if (!resolved || context is null || !context.IsProtocolInvocation)
         {
             context = null;
@@ -63,7 +63,8 @@ public sealed class KeyringHelperAdapter
         IEnumerable<string>? arguments,
         TextWriter protocolStdout,
         TextWriter humanStdout,
-        DiagnosticRouter diagnosticRouter)
+        DiagnosticRouter diagnosticRouter
+    )
     {
         ArgumentNullException.ThrowIfNull(protocolStdout);
         ArgumentNullException.ThrowIfNull(humanStdout);
@@ -76,7 +77,8 @@ public sealed class KeyringHelperAdapter
             Handle,
             protocolStdout,
             humanStdout,
-            diagnosticRouter);
+            diagnosticRouter
+        );
     }
 
     private static AdapterDescriptor CreateDescriptor()
@@ -86,31 +88,36 @@ public sealed class KeyringHelperAdapter
             AdapterInvocationMode.Protocol,
             executableNames: [ProductExecutableName],
             argumentTokens: [KeyringHelperV2.CommandName],
-            argumentMatchMode: AdapterArgumentMatchMode.Prefix);
+            argumentMatchMode: AdapterArgumentMatchMode.Prefix
+        );
         AdapterEntrypointDescriptor helperExecutableEntrypoint = new(
             "KeyringHelperExecutable",
             AdapterInvocationMode.Protocol,
-            executableNames: [KeyringHelperV2.CommandName]);
+            executableNames: [KeyringHelperV2.CommandName]
+        );
         AdapterEntrypointDescriptor helperExecutablePrefixedEntrypoint = new(
             "KeyringHelperExecutablePrefixed",
             AdapterInvocationMode.Protocol,
             executableNames: [KeyringHelperV2.CommandName],
             argumentTokens: [KeyringHelperV2.CommandName],
-            argumentMatchMode: AdapterArgumentMatchMode.Prefix);
+            argumentMatchMode: AdapterArgumentMatchMode.Prefix
+        );
         AdapterEntrypointDescriptor humanEntrypoint = new(
             "HumanCommand",
             AdapterInvocationMode.HumanCommand,
-            executableNames: [ProductExecutableName]);
+            executableNames: [ProductExecutableName]
+        );
 
         return new AdapterDescriptor(
             "Keyring Helper v2",
             AdapterProtocol.KeyringHelper,
             [
                 sharedCliEntrypoint,
-                helperExecutableEntrypoint,
                 helperExecutablePrefixedEntrypoint,
+                helperExecutableEntrypoint,
                 humanEntrypoint,
-            ]);
+            ]
+        );
     }
 
     private AdapterHostHandlerOutput Handle(AdapterInvocationContext context)
@@ -120,10 +127,10 @@ public sealed class KeyringHelperAdapter
             return CreateProtocolViolationOutput();
         }
 
-        PythonFeedResourceClassification resourceClassification =
-            ClassifyPythonFeedResource(
-                helperRequest.Service,
-                out CanonicalResourceIdentity? resource);
+        PythonFeedResourceClassification resourceClassification = ClassifyPythonFeedResource(
+            helperRequest.Service,
+            out CanonicalResourceIdentity? resource
+        );
         if (resourceClassification == PythonFeedResourceClassification.UnsupportedHost)
         {
             return CreateNoCredentialOutput();
@@ -131,7 +138,8 @@ public sealed class KeyringHelperAdapter
 
         if (
             resourceClassification != PythonFeedResourceClassification.Supported
-            || resource is null)
+            || resource is null
+        )
         {
             return CreateProtocolViolationOutput();
         }
@@ -140,17 +148,20 @@ public sealed class KeyringHelperAdapter
         CredentialResult credentialResult = credentialAcquisition.Acquire(credentialRequest);
         KeyringHelperResponse response = KeyringHelperV2.ToResponse(
             helperRequest,
-            credentialResult);
+            credentialResult
+        );
 
         return new AdapterHostHandlerOutput(
             credentialResult,
             CredentialOperation.Get,
-            protocolStdout: response.Stdout);
+            protocolStdout: response.Stdout
+        );
     }
 
     private static bool TryParseRequest(
         IReadOnlyList<string> arguments,
-        [NotNullWhen(true)] out KeyringHelperRequest? request)
+        [NotNullWhen(true)] out KeyringHelperRequest? request
+    )
     {
         request = null;
         if (arguments.Count is not 7 and not 9)
@@ -164,7 +175,9 @@ public sealed class KeyringHelperAdapter
             || !IsArgument(
                 arguments[2],
                 ContractVersions.KeyringHelperMajor.ToString(
-                    System.Globalization.CultureInfo.InvariantCulture))
+                    System.Globalization.CultureInfo.InvariantCulture
+                )
+            )
             || !IsArgument(arguments[3], "--service")
         )
         {
@@ -197,10 +210,7 @@ public sealed class KeyringHelperAdapter
             || !TryParseMode(arguments[modeOptionIndex + 1], out KeyringHelperMode mode)
             || string.IsNullOrWhiteSpace(arguments[4])
             || ContainsControlCharacters(arguments[4])
-            || !Uri.TryCreate(
-                arguments[4],
-                UriKind.RelativeOrAbsolute,
-                out Uri? service)
+            || !Uri.TryCreate(arguments[4], UriKind.RelativeOrAbsolute, out Uri? service)
         )
         {
             return false;
@@ -219,7 +229,8 @@ public sealed class KeyringHelperAdapter
 
     private static CredentialRequestV2 CreateCredentialRequest(
         KeyringHelperRequest helperRequest,
-        CanonicalResourceIdentity resource)
+        CanonicalResourceIdentity resource
+    )
     {
         return new CredentialRequestV2
         {
@@ -227,32 +238,26 @@ public sealed class KeyringHelperAdapter
             Operation = CredentialOperation.Get,
             Resource = resource,
             ServiceIdentity = DefaultServiceIdentity,
-            AccountHint = string.IsNullOrWhiteSpace(helperRequest.Username)
-                ? null
-                : helperRequest.Username.Trim(),
+            AccountHint = null,
             RequestedAudience = TokenAudience.AzureArtifacts,
             CredentialKind = CredentialKind.BasicPassword,
             IdentityFlow = IdentityFlow.InteractiveBrowser,
             InteractivePolicy = InteractivePolicy.Never,
             AcquisitionMode = AcquisitionMode.SilentOnly,
             CachePolicy = CachePolicyMode.ProductPersistentCacheDisabled,
-            CiContext = new CiContext
-            {
-                ExplicitCiMode = false,
-                AllowsPersistentWrites = false,
-            },
+            CiContext = new CiContext { ExplicitCiMode = false, AllowsPersistentWrites = false },
             ExtensionData = new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["python.keyring.mode"] = helperRequest.Mode == KeyringHelperMode.Credentials
-                    ? "creds"
-                    : "password",
+                ["python.keyring.mode"] =
+                    helperRequest.Mode == KeyringHelperMode.Credentials ? "creds" : "password",
             },
         };
     }
 
     private static PythonFeedResourceClassification ClassifyPythonFeedResource(
         Uri service,
-        [NotNullWhen(true)] out CanonicalResourceIdentity? resource)
+        [NotNullWhen(true)] out CanonicalResourceIdentity? resource
+    )
     {
         resource = null;
         if (!service.IsAbsoluteUri)
@@ -268,7 +273,8 @@ public sealed class KeyringHelperAdapter
 
         if (
             !IsValidAzureKeyringServiceSyntax(service)
-            || !TryGetPathSegments(service, out string[]? segments))
+            || !TryGetPathSegments(service, out string[]? segments)
+        )
         {
             return PythonFeedResourceClassification.Invalid;
         }
@@ -277,8 +283,8 @@ public sealed class KeyringHelperAdapter
             !TryParseAzureArtifactsPythonResource(
                 service.IdnHost,
                 segments,
-                out AzureArtifactsPythonResourceShape? shape)
-            || shape is null
+                out AzureArtifactsPythonResourceShape? shape
+            ) || shape is null
         )
         {
             return PythonFeedResourceClassification.Invalid;
@@ -291,7 +297,8 @@ public sealed class KeyringHelperAdapter
                 shape.Organization,
                 service,
                 shape.Project,
-                feed: shape.Feed);
+                feed: shape.Feed
+            );
             return PythonFeedResourceClassification.Supported;
         }
         catch (ArgumentException)
@@ -342,7 +349,8 @@ public sealed class KeyringHelperAdapter
     private static bool TryParseAzureArtifactsPythonResource(
         string host,
         string[] segments,
-        [NotNullWhen(true)] out AzureArtifactsPythonResourceShape? shape)
+        [NotNullWhen(true)] out AzureArtifactsPythonResourceShape? shape
+    )
     {
         if (
             string.Equals(host, "pkgs.dev.azure.com", StringComparison.OrdinalIgnoreCase)
@@ -375,7 +383,8 @@ public sealed class KeyringHelperAdapter
 
     private static AzureArtifactsPythonResourceShape? ParsePythonResourceSegments(
         string organization,
-        string[] resourceSegments)
+        string[] resourceSegments
+    )
     {
         if (
             resourceSegments.Length == 4
@@ -386,7 +395,8 @@ public sealed class KeyringHelperAdapter
             return new AzureArtifactsPythonResourceShape(
                 organization,
                 Project: null,
-                Feed: resourceSegments[1]);
+                Feed: resourceSegments[1]
+            );
         }
 
         if (
@@ -398,7 +408,8 @@ public sealed class KeyringHelperAdapter
             return new AzureArtifactsPythonResourceShape(
                 organization,
                 Project: resourceSegments[0],
-                Feed: resourceSegments[2]);
+                Feed: resourceSegments[2]
+            );
         }
 
         return null;
@@ -406,8 +417,10 @@ public sealed class KeyringHelperAdapter
 
     private static bool IsPythonFeedEndpointSuffix(string[] segments, int startIndex) =>
         IsSegment(segments[startIndex], "pypi")
-        && (IsSegment(segments[startIndex + 1], "simple")
-            || IsSegment(segments[startIndex + 1], "upload"));
+        && (
+            IsSegment(segments[startIndex + 1], "simple")
+            || IsSegment(segments[startIndex + 1], "upload")
+        );
 
     private static bool TryGetPathSegments(Uri uri, [NotNullWhen(true)] out string[]? segments)
     {
@@ -456,7 +469,8 @@ public sealed class KeyringHelperAdapter
 
     private static bool TryGetLegacyVisualStudioOrganization(
         string host,
-        [NotNullWhen(true)] out string? organization)
+        [NotNullWhen(true)] out string? organization
+    )
     {
         const string pkgsSuffix = ".pkgs.visualstudio.com";
         const string suffix = ".visualstudio.com";
@@ -512,7 +526,8 @@ public sealed class KeyringHelperAdapter
                     SafeMessage = "Keyring helper input is invalid.",
                 },
             },
-            operation: CredentialOperation.Get);
+            operation: CredentialOperation.Get
+        );
     }
 
     private static AdapterHostHandlerOutput CreateNoCredentialOutput()
@@ -529,7 +544,8 @@ public sealed class KeyringHelperAdapter
                     SafeMessage = "Keyring helper service host is unsupported.",
                 },
             },
-            operation: CredentialOperation.Get);
+            operation: CredentialOperation.Get
+        );
     }
 
     private static bool IsArgument(string value, string expected) =>
@@ -543,7 +559,8 @@ public sealed class KeyringHelperAdapter
     private sealed record AzureArtifactsPythonResourceShape(
         string Organization,
         string? Project,
-        string Feed);
+        string Feed
+    );
 
     private enum PythonFeedResourceClassification
     {

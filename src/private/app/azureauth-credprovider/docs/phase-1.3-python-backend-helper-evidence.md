@@ -12,13 +12,13 @@ Owner: **ADAPTER-PY**
 
 ## Gate Status and Decision
 
-| Field                      | Decision                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Gate status                | Passed for Phase 1.3 evidence gathering, with mandatory release-packaging constraints.                                                                                                                                                                                                                                                                                                                                   |
-| Decision                   | Use a thin Python keyring backend plus a `keyring` executable shim. The backend must delegate to a product-owned helper by absolute path and must verify ownership plus integrity before helper execution.                                                                                                                                                                                                               |
-| Evidence scope             | Upstream `artifacts-keyring` source confirms Python keyring backend registration and non-shell helper invocation. Disposable local probes confirm `keyring` package backend discovery, loading, selection, and API dispatch for a fake `keyring.backends` entry point, plus pre-execution helper validation, fixed absolute helper invocation after validation, and fail-closed behavior for local Linux negative cases. |
-| Implementation may proceed | Yes for Python adapter design and later implementation. Release packaging must not lock until the ownership, digest/provenance, and integrity validation follow-ups in this record are implemented and validated. Only signing or platform-specific packaging hardening may be deferred or waived through the appropriate governance path; any integrity-scope change requires explicit Phase 1R or Phase 16 approval.   |
-| Phase 1R routing           | Not entered. If later platform validation disproves helper discovery, ownership validation, or integrity enforcement, dependent Python packaging work must stop and enter Phase 1R.                                                                                                                                                                                                                                      |
+| Field                      | Decision                                                                                                                                                                                                                                                       |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Gate status                | Passed for Phase 1.3 evidence gathering.                                                                                                                                                                                                                       |
+| Decision                   | Use a thin Python keyring backend plus a `keyring` executable shim. The backend delegates to the helper by an absolute product-configured path and validates ordinary existence and executable requirements before invocation.                                 |
+| Evidence scope             | Upstream `artifacts-keyring` source confirms Python keyring backend registration and non-shell helper invocation. Disposable local probes confirm `keyring` package backend discovery, loading, selection, API dispatch, and fixed absolute helper invocation. |
+| Implementation may proceed | Yes for Python adapter design and later implementation. Release packaging records normal artifact digest and provenance evidence; runtime helper invocation relies on the installed product layout and standard OS/.NET filesystem guarantees.                 |
+| Phase 1R routing           | Not entered. If later platform validation disproves helper discovery or invocation, dependent Python packaging work must stop and enter Phase 1R.                                                                                                              |
 
 ## Upstream Snapshot
 
@@ -110,7 +110,10 @@ Upstream source and documentation inspected:
 
 A disposable local probe was created under
 `.copilot-scratch/phase-1.3-python-probe` and removed after execution. It did not
-modify product source. The probe exercised four gate concerns:
+modify product source. The probe explored a stronger owner/hash/symlink proof
+model, but that model was not adopted as a production contract. The accepted
+runtime scope is fixed absolute invocation plus ordinary existence and executable
+checks. The historical probe exercised four concerns:
 
 1. Python package metadata can expose a backend through the `keyring.backends`
    entry-point group and `EntryPoint.load()` can import the referenced backend
@@ -123,14 +126,12 @@ modify product source. The probe exercised four gate concerns:
    paths, symlink helper paths, missing owner-execute mode, wrong product ID, and
    digest mismatch.
 
-The prototype is intentionally Linux-scoped. Its positive case proves only the
-current-session UID and manifest-owner UID match checks. Negative cases prove the
-absolute-path, regular-file/non-symlink, owner-executable mode-bit, product-ID,
-and SHA-256 checks are enforced before invocation. UID-owner mismatch was not
-feasible without privileged operations in this local session, so it remains an
-unproven follow-up rather than a proven negative case. The prototype does not
-prove Windows ACL, Authenticode, macOS signing/notarization, package-install, or
-real credential behavior.
+The prototype is intentionally Linux-scoped and records only what that discarded
+stronger model did in the disposable probe. Same-user ownership races,
+symlink/TOCTOU adversaries, privileged attackers, hostile filesystems, and
+runtime digest enforcement are outside the supported product model. The probe
+does not define production behavior or prove Windows ACL, Authenticode, macOS
+signing/notarization, package-install, or real credential behavior.
 
 Reproduction commands, run from the repository root:
 
@@ -916,60 +917,16 @@ The helper path must come from product-owned configuration written by the
 configuration manager. The backend must not discover the helper through ambient
 `PATH` for import mode and must not construct shell command strings.
 
-## Helper Ownership Validation Decision
+## Helper Validation Decision
 
-Ownership validation is required and accepted as a release-packaging constraint.
-The upstream reference checks that the helper file exists but does not prove
-product ownership before execution. The product backend must fail closed unless
-all applicable checks pass:
+The backend uses an absolute helper path written by product configuration. Before
+invocation it checks that the path exists, is a regular file, and is executable
+where the platform exposes executable mode. It then invokes the helper through
+an argument list rather than a shell command.
 
-1. The configured helper path is absolute and matches the configuration-manager
-   manifest for the selected Python environment.
-2. The file is regular, exists, and is executable by the expected principal.
-3. The file owner, install root, and configuration manifest owner match the
-   product installation model for the platform.
-4. The path is not a symlink or reparse-point escape unless the installer records
-   and validates the resolved target.
-5. On Windows, the path is under the product install root or an approved per-user
-   install root and passes Authenticode signature validation when signing is
-   available.
-6. On Linux and macOS, the path is under the product install root or approved
-   per-user install root, has safe ownership and mode bits, and passes the
-   accepted digest or signature check.
-7. The product install root, helper file, manifest directory, and manifest file
-   must not be writable by principals outside the trusted product installation
-   model. A user-writable root or manifest is not accepted merely because the
-   helper digest matched once.
-
-## Integrity Decision
-
-A SHA-256 manifest check is the minimum accepted integrity control for the
-Python backend helper. Signing is required when approved signing infrastructure
-exists for the artifact type and platform.
-
-Accepted expectations:
-
-- Release artifacts record the helper file identity, version, platform, build
-  source, and SHA-256.
-- The backend validates the helper's digest against product-owned manifest data
-  before execution.
-- Digest validation must be paired with an install-root and manifest writability
-  check plus a symlink-resistant open/execute strategy, or an equivalent
-  platform-specific TOCTOU mitigation, so an attacker cannot replace the helper
-  between hashing and execution.
-- Windows helper binaries should use Authenticode signing when the release
-  signing path is available.
-- macOS helper binaries should use the accepted macOS signing and notarization
-  path when distributed as executable artifacts.
-- Python wheels or sdists must not download unverified helper payloads during
-  install or build for release packages.
-- If any artifact type cannot be signed by release time, Phase 16 must record a
-  signing waiver without waiving digest validation.
-
-This gate does not accept the inspected upstream `setup.py` download behavior as
-a release-packaging model because the inspected source downloads a provider
-archive from GitHub releases without a source-inspected digest or signature
-verification step.
+Release artifacts continue to record SHA-256 and provenance evidence. Those are
+build and release controls, not a runtime attempt to re-prove the installed
+filesystem, account, or operating system on every helper invocation.
 
 ## Environment Coverage Constraints
 
@@ -981,7 +938,7 @@ scenario. Coverage accepted by this gate:
 | Python keyring discovery  | Upstream `keyring.backends` registration plus local Python 3.14 probes: metadata `EntryPoint.load()` and direct `keyring` 25.7.0 backend load/selection/API dispatch for a fake backend. |
 | pip and twine import mode | Upstream README and backend shape support import-mode keyring usage; exact pip and twine tool-version execution remains later validation.                                                |
 | uv and pip subprocess     | Requires the separate `keyring` executable shim from design; upstream `artifacts-keyring` is not itself evidence that a global shim is present.                                          |
-| Windows                   | Upstream supports Windows wheels and executable naming, but this Linux session did not execute Windows path, ownership, signature, or PowerShell install flows.                          |
+| Windows                   | Upstream supports Windows wheels and executable naming, but this Linux session did not execute Windows path or PowerShell install flows.                                                 |
 | Linux                     | Source and local probe executed on Linux; release packages still need runtime-dependency and mode-bit validation.                                                                        |
 | macOS                     | Upstream documents macOS wheel constraints; this session did not execute macOS signing, notarization, or keyring import validation.                                                      |
 | CI                        | Non-interactive helper behavior is design-supported; release validation must prove fail-closed behavior with no persistent secrets by default.                                           |
@@ -996,52 +953,31 @@ Accepted mapping for implementation:
 | Public non-upload endpoint needs no credential       | Return no credential only after an explicit, timeout-bounded, redaction-safe policy decision. Avoid unbounded network checks in keyring backend startup. |
 | Malformed Azure Artifacts endpoint                   | Hard failure with redacted diagnostics.                                                                                                                  |
 | Missing helper path                                  | Hard failure.                                                                                                                                            |
-| Helper path not product-owned                        | Hard failure.                                                                                                                                            |
-| Helper digest or signature mismatch                  | Hard failure.                                                                                                                                            |
+| Helper path is not the configured absolute path      | Hard failure.                                                                                                                                            |
 | Helper protocol-version mismatch                     | Hard failure.                                                                                                                                            |
 | Helper exits non-zero or emits invalid response      | Hard failure with redacted diagnostics.                                                                                                                  |
 | No credential available for a supported private feed | Return keyring-compatible no credential only when the helper explicitly reports no credential; otherwise preserve hard failures.                         |
 
-This mapping differs intentionally from unsupported-host fallback. Security or
-integrity failures must not be hidden as no-credential misses because doing so
-could make package tools prompt unexpectedly, fall back to weaker credentials, or
-mask installation tampering.
+This mapping differs intentionally from unsupported-host fallback. Installation
+and protocol failures remain hard failures so package tools do not silently
+change behavior.
 
 ## Release-Packaging Follow-ups
 
 Before Python release packaging can lock, later phases must record or implement:
 
-1. Product-owned helper manifest format, including absolute path, resolved path,
-   artifact identity, version, platform, file owner expectation, install-root
-   identity and writability expectation, manifest owner/mode expectation, and
-   SHA-256.
-2. Non-writable product install-root, helper-file, manifest-directory, and
-   manifest-file validation for the target install models.
-3. A symlink-resistant open/execute design, such as validating and hashing an
-   already-open no-follow handle and executing that same validated object where
-   the platform supports it, or documenting an equivalent immutable-install-root
-   and post-validation replacement mitigation.
-4. Windows Authenticode validation behavior or a governance-approved signing
-   deferral or waiver that does not waive digest, provenance, or integrity
-   validation.
-5. macOS signing/notarization validation behavior or a governance-approved
-   signing deferral or waiver that does not waive digest, provenance, or
-   integrity validation.
-6. Linux ownership, symlink, executable-bit, writability, and digest validation
-   behavior.
-7. Wheel and sdist policy that forbids unverified remote helper downloads during
-   release install or build.
-8. Bootstrap procedures for active virtual environments, pipx-managed twine,
+1. The product-configured absolute helper path and package layout.
+2. Normal platform packaging/signing decisions and release artifact integrity
+   evidence.
+3. A wheel and sdist policy that does not download unverified remote helper
+   payloads during release install or build.
+4. Bootstrap procedures for active virtual environments, pipx-managed twine,
    tox/nox environments, isolated CI, and subprocess-mode `keyring` shim
    placement.
-9. `doctor` checks for backend importability, helper manifest match, install-root
-   and manifest writability, digest or signature status, selected tool mode, and
-   PATH order for the subprocess shim.
-10. Tests that prove protocol stdout contains only password or username/password
-    response data and that diagnostics are redacted and sent away from stdout.
-
-Any requested change to digest, provenance, or integrity validation scope
-requires explicit Phase 1R or Phase 16 approval before release readiness.
+5. `doctor` checks for backend importability, configured helper availability,
+   selected tool mode, and PATH order for the subprocess shim.
+6. Tests that prove protocol stdout contains only password or username/password
+   response data and that diagnostics are redacted and sent away from stdout.
 
 ## Validation and Checks
 
@@ -1063,7 +999,8 @@ version description: 213574f
 status --short: no output
 ```
 
-Disposable prototype validation:
+Disposable prototype validation (historical stronger-model evidence, not a
+production runtime contract):
 
 ```text
 Ambient Python keyring import check: ModuleNotFoundError, exit 1
@@ -1113,41 +1050,29 @@ Results: all three commands exited 0.
 ## Risks and Follow-ups
 
 - Windows and macOS behavior was source-inspected only. Platform-specific helper
-  ownership, signature, notarization, path-with-spaces, and virtual-environment
-  behavior require later validation.
+  path-with-spaces and virtual-environment behavior require later validation.
 - Upstream `artifacts-keyring` permits an environment variable to override the
   provider path. The product may expose an explicit diagnostic override, but the
-  default backend must use product-owned configuration and must not trust arbitrary
-  environment overrides without ownership and integrity checks.
+  default backend uses product configuration rather than an ambient override.
 - The upstream build path downloads helper artifacts during setup. This gate does
   not accept unverified downloads for release packaging.
 - Public-feed probing can introduce network latency and ambiguous failure modes.
   The product should avoid broad network probes in backend startup and should
   bound any validation requests tightly.
-- The local prototype proves local Linux fail-closed behavior for relative helper
-  paths, symlink helper paths, missing owner-execute mode, wrong product ID, and
-  digest mismatch. UID-owner mismatch was not feasible without privileged
-  operations in this session and remains follow-up validation. Windows ACL and
-  Authenticode validation and macOS code-signing validation remain implementation
-  work.
-- The local prototype hashes a helper path before executing the same path, but it
-  does not prove release-grade TOCTOU resistance. Release implementation must add
-  non-writable install-root and manifest checks plus symlink-resistant
-  open/execute behavior or an equivalent platform-specific mitigation before
-  packaging lock.
+- The local prototype exercised stronger helper-path and digest checks than the
+  product requires. Runtime implementation should use the configured absolute path,
+  basic file/executable checks, and normal platform process-launch behavior.
 - The `keyring` executable shim is required for uv and pip subprocess mode but was
   not implemented by this gate; it remains a later adapter artifact with separate
   PATH-order diagnostics.
 
 ## Affected Requirements and Designs
 
-- `requirements.md`: Python integration requirements 1 through 6 remain valid
-  with the ownership and integrity constraints recorded here.
+- `requirements.md`: Python integration requirements 1 through 6 remain valid.
 - `high-level-design.md`: Python backend and `keyring` shim shapes are
   evidence-supported for the scoped evidence above.
 - `mid-level-design.md`: `keyring-helper-v2`, fixed helper invocation, fail-closed
-  behavior, and stronger integrity expectations are accepted with the constraints
-  above.
+  protocol behavior, and ordinary configured-path validation are accepted.
 - `project-breakdown.md`: Phase 1.3 exit criterion is satisfied with a pass
   decision for evidence gathering, while release packaging lock remains dependent
   on the follow-ups in this record.

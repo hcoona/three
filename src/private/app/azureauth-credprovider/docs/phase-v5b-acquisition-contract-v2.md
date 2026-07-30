@@ -1,6 +1,6 @@
 # Phase V5-B: Versioned Acquisition Contract V2
 
-Status: **Contract surface defined — runtime scaffold only**
+Status: **Contract surface defined — runtime integration in progress**
 
 Date: **2026-07-20**
 
@@ -12,138 +12,73 @@ Owner: **ARCH**
 
 ## Scope
 
-This record introduces a separate public v2 credential request root for future
-acquisition-mode work. It does **not** change current provider execution,
-cache behavior, or the direct-MSAL MVP direction.
+This record introduces a separate public v2 credential request root for
+acquisition-mode work. The frozen v1 baseline in `phase-2-contract-freeze.md`
+remains authoritative and unchanged for all `contractMajor: 1` behavior.
 
-This record supersedes the acquisition-mode proposal only for the v2 contract
-surface. The frozen v1 baseline in `phase-2-contract-freeze.md` remains
-authoritative and unchanged for all `contractMajor: 1` behavior.
+## Contract roots
 
-## Why v2 instead of v1 additive change
-
-`AcquisitionMode` is a normative security-policy field. A same-major additive
-change on the public v1 request would allow a newer producer to emit a field
-that older v1 consumers silently ignore. That is not acceptable for this
-contract family. Therefore the acquisition-mode surface must live on a new root
-with `contractMajor: 2`.
-
-## Contract Roots
-
-### V1 root (unchanged)
+### V1 root
 
 - Public type: `CredentialRequest`
 - `contractMajor`: `1`
 - Contract ID: `azureauth-credprovider-credential-contract-v1`
 - No `acquisitionMode` field exists on the v1 wire shape.
-- Current `CredentialCoreService` and provider/cache scaffold continue to accept
-  only this v1 root in work-package-1.
 
-### V2 root (new scaffold)
+### V2 root
 
 - Public type: `CredentialRequestV2`
 - `contractMajor`: `2`
 - Contract ID: `azureauth-credprovider-credential-contract-v2`
-- Carries the same request fields as v1 plus a **required**
-  `acquisitionMode` field.
-- Keeps `accountHint` and `tenantHint` optional, but when present they must not
-  contain C0 or C1 control characters. The strict v2 facade rejects such values
-  on both serialize and deserialize. The frozen v1 root remains unchanged.
-- Uses only the dedicated strict public JSON facade
-  (`CredentialRequestV2Json.Serialize(...)` / `CredentialRequestV2Json.Deserialize(...)`).
-  Direct generic `System.Text.Json.JsonSerializer.Serialize(...)` /
-  `Deserialize<CredentialRequestV2>(...)` is intentionally unsupported and
-  throws. The source-generated serializer context is an internal implementation
-  detail.
-- Began as a contract surface and validation scaffold in work-package-1.
-  Production composition now routes explicit v2 acquisition requests without
-  changing the frozen v1 wire or runtime behavior.
+- Carries the v1 request fields plus required `acquisitionMode`.
+- Keeps `accountHint` and `tenantHint` optional and rejects control characters
+  when they are present.
+
+Both roots use ordinary source-generated `System.Text.Json` metadata through
+`ContractJson.CreateSerializerOptions()`. Enums write their existing camel-case
+string names and reject numeric values. Framework-compatible enum casing,
+unknown-property, and duplicate-property behavior is not replaced with a
+second JSON implementation. `CredentialRequestV2Json` remains a convenience
+facade that applies v2 semantic validation around the same serializer options.
 
 ## AcquisitionMode values
 
-- `Unspecified` (`unspecified`): Explicit bridge value preserving the full
-  frozen v1 request shape and operation surface, not only the MVP-accepted
-  subset. Interaction behavior still comes from `IdentityFlow` plus
-  `InteractivePolicy`, so states such as
-  `futurePersistentCacheRequested` and non-`get` operations remain
-  representable here even though current v1 runtime behavior still fail-closes
-  some of them.
-- `SilentOnly` (`silentOnly`): Categorically forbids active interaction.
-  It is valid only on `operation: get` with `InteractivePolicy.Never`, no
-  explicit CI context, no opaque Azure Pipelines system-access-token flow, and
-  an otherwise structurally valid frozen v1 shape/flow/cache state. It is a
-  valid acquisition request, but the current runtime has **no proven silent
-  source** and returns `SilentAcquisitionUnavailable` without interaction.
-- `InteractionAllowed` (`interactionAllowed`): Contract-compatible only for
-  explicit human `get` requests using browser/device-code flows when
-  `InteractivePolicy` is `HostToolAllows` or `UserAllowed`. No fallback is
-  introduced.
+- `Unspecified` (`unspecified`) is the enum default and is not a valid v2
+  acquisition request. A v2 caller must choose an explicit mode.
+- `SilentOnly` (`silentOnly`) forbids active identity acquisition. It is valid
+  for `operation: get` with `InteractivePolicy.Never`, including the explicit
+  Azure Pipelines policy where a separate service consumes a caller-provided
+  opaque `SYSTEM_ACCESSTOKEN`.
+- `InteractionAllowed` (`interactionAllowed`) permits explicit human-facing
+  browser or device-code flows when `InteractivePolicy` also permits them.
+
+Current WP5 and package-configuration Azure Pipelines paths construct v2
+requests with `SilentOnly` before consuming the caller-provided opaque token.
 
 ## Compatibility rules
 
-1. **V1 stays exact.** `CredentialRequest` remains the public v1 root with no
-   `acquisitionMode` member, no v1 JSON emission of that field, and no v1 core
-   routing changes. Protocol-valid frozen v1 states, including the full frozen
-   operation surface (`get`, `store`, `erase`, `refresh`, `configure`,
-   `doctor`), stay distinct from MVP acceptance.
-2. **V2 is opt-in by major.** A caller that wants acquisition-mode semantics
-   must use `CredentialRequestV2` with `contractMajor: 2`.
-3. **Older v1 consumers do not silently honor v2 policy.** A v2 payload is
-   separated by type and major version, so the current core rejects it rather
-   than treating `acquisitionMode` as an ignorable v1 extra field. Same-major
-   additive-field compatibility remains limited to genuinely ignorable optional
-   additions on the v1 root and must still reject any proposed name that is not
-   an auditable ASCII identifier (ASCII letters and digits with a letter
-   first), that collides after ASCII case normalization with the frozen v1 wire
-   members (`contractMajor`, `ecosystem`, `operation`, `resource`,
-   `serviceIdentity`, `accountHint`, `tenantHint`, `requestedAudience`,
-   `credentialKind`, `identityFlow`, `interactivePolicy`, `cachePolicy`,
-   `ciContext`, `extensionData`) and normative or security-policy fields such
-   as `acquisitionMode`. The context-free
-   `RequiresMajorVersionChange("add-optional-field")` check fails closed
-   because it cannot know the root or field name; callers must use explicit
-   root/major plus field-aware compatibility review.
-4. **Strict v2 JSON and additive-field policy.** Only
-   `CredentialRequestV2Json.Serialize(...)` and
-   `CredentialRequestV2Json.Deserialize(...)` are supported public JSON entry
-   points for the v2 root. Direct generic `System.Text.Json` on
-   `CredentialRequestV2` is intentionally unsupported and throws. This strict
-   path rejects unknown or misspelled properties, property-name case aliases,
-   duplicate properties, unknown enum values, numeric enum values, and wrong
-   or missing `contractMajor`. Because the v2 root rejects unknown members, it
-   also rejects all same-major additive fields.
-5. **Non-default modes are get-only.** `SilentOnly` and
-   `InteractionAllowed` are acquisition-specific modes and are rejected for
-   `store`, `erase`, `refresh`, `configure`, and `doctor`.
-6. **`SilentOnly` is valid but operationally unavailable.** Structurally valid
-   non-CI `get` requests are contract-valid when interaction is `never`.
-   Explicit CI and opaque system-access-token requests are rejected. Until a
-   source-proved silent cache/broker capability exists, runtime acquisition
-   fails closed as `SilentAcquisitionUnavailable` and never falls back to
-   interaction.
-7. **`InteractionAllowed` is narrow.** Only explicit human `get` requests using
-   `interactiveBrowser` or `deviceCode` with `hostToolAllows` or `userAllowed`
-   are contract-compatible. CI-mode and non-human flows are not. This check
-   does **not** collapse `cachePolicy` to the MVP-accepted subset; frozen typed
-   cache states such as `futurePersistentCacheRequested` remain representable
-   and may fail closed later when runtime wiring exists.
-8. **No fallback.** Neither `SilentOnly` nor `InteractionAllowed` creates an
-   implicit retry chain or silent downgrade.
-9. **Runtime routing stays fail closed.** Later production composition accepts
-   valid v2 requests, but `SilentOnly` remains unavailable until a proven
-   silent source is wired.
+1. V1 remains unchanged and does not gain `acquisitionMode`.
+2. V2 is opt-in by its separate type and major.
+3. A v2 request must specify `SilentOnly` or `InteractionAllowed`.
+4. Non-default acquisition modes are valid only for `get`.
+5. `InteractionAllowed` remains limited to explicit human browser or
+   device-code flows outside CI.
+6. `SilentOnly` never falls back to interaction.
+7. Contract evolution is reviewed as normal API/schema design. The runtime no
+   longer exposes a separate compatibility-oracle API for hypothetical field
+   changes.
 
-## What Is NOT Changed
+## What is not changed
 
-- No AzureAuth runtime or broker/cache silent path is added here.
-- No current provider claims a usable silent acquisition source.
-- No fallback from `SilentOnly` to interactive acquisition is introduced.
-- No silent cache or broker path is introduced.
-- The Phase 1.2 direct-MSAL decision remains authoritative.
+- No silent cache or broker source is introduced.
+- No fallback from silent to interactive acquisition is introduced.
+- No v1 wire or runtime behavior is changed.
+- No Azure Pipelines token-service behavior is changed in this package; its
+  integration package must adopt the explicit `SilentOnly` contract mode.
 
-## Referenced Documents
+## Referenced documents
 
-- `phase-2-contract-freeze.md` — v1 frozen baseline (authoritative for v1)
-- `phase-v5a-wsl-azureauth-backend-governance.md` — Optional AzureAuth governance
-- `phase-1a-identity-flow-selection.md` — Identity-flow matrix
-- `phase-1.2-azureauth-suitability.md` — Direct-MSAL decision
+- `phase-2-contract-freeze.md`
+- `phase-v5a-wsl-azureauth-backend-governance.md`
+- `phase-1a-identity-flow-selection.md`
+- `phase-1.2-azureauth-suitability.md`

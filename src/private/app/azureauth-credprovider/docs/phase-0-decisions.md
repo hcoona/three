@@ -141,7 +141,7 @@ Phase 1 gate classification is:
 | ------------------------------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1.1 NuGet evidence gate                           | Mandatory                                                 | Record pass/fail evidence for plugin launch, handshake, authentication message flow, and runtime packaging constraints. Failure enters Phase 1R.                                                                                                   |
 | 1.2 AzureAuth suitability gate                    | Optional substrate                                        | Select AzureAuth or direct MSAL. AzureAuth failure does not block shared-core work; continue through the identity-provider abstraction with direct MSAL unless PL and ID explicitly re-scope.                                                      |
-| 1.3 Python backend-helper evidence gate           | Mandatory before release packaging lock                   | Record pass/fail evidence for backend discovery, fixed helper invocation, ownership validation, and helper integrity expectations. Release packaging cannot lock until ownership and integrity expectations are accepted.                          |
+| 1.3 Python backend-helper evidence gate           | Mandatory before release packaging lock                   | Record pass/fail evidence for backend discovery, fixed helper invocation, installed layout, and release-packaging expectations. Release packaging cannot lock until those expectations are accepted.                                               |
 | 1.4 npm, pnpm, and Yarn configuration update gate | Mandatory for npm/pnpm writes and conditional Yarn writes | Record pass/fail evidence for config resolution and update behavior for user-level and CI temporary scopes. Phases 12 and 13B are blocked until this gate closes. Yarn write failure enters Phase 1R unless the requirement is explicitly changed. |
 | 1.5 Git GUI and PATH discovery gate               | Mandatory for supported Git installation modes            | Record pass/fail evidence for Git for Windows, PATH-sensitive shells, and at least one GUI-launched Git scenario. Failure enters Phase 1R or narrows supported installation modes through an explicit decision.                                    |
 | 1.6 Secure-cache behavior gate                    | Mandatory before persistent cache behavior locks          | Record pass/fail evidence for platform secure-store behavior, failure modes, and no-plaintext fallback policy on target platforms.                                                                                                                 |
@@ -167,7 +167,7 @@ This record does not close any gate that requires source inspection, protocol pr
 
 - NuGet plugin launch, handshake, authentication message flow, and runtime packaging constraints.
 - AzureAuth suitability versus direct MSAL.
-- Python backend-helper discovery, ownership validation, and helper integrity checks.
+- Python backend-helper discovery, fixed invocation, installed layout, and release packaging.
 - npm, pnpm, and Yarn configuration resolution and write behavior.
 - Git for Windows, GUI Git, and PATH-sensitive helper discovery.
 - Platform secure-store behavior and no-plaintext fallback policy.

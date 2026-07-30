@@ -24,15 +24,18 @@ public sealed class CacheBoundaryToStringTests
                 identity.Tenant,
                 ExpiresAt.ToString("O", CultureInfo.InvariantCulture)
             ),
-            text);
+            text
+        );
         Assert.DoesNotContain(
             Assert.IsType<string>(identity.Secret),
             text,
-            StringComparison.Ordinal);
+            StringComparison.Ordinal
+        );
         Assert.DoesNotContain(
             Assert.IsType<string>(identity.AccessToken),
             text,
-            StringComparison.Ordinal);
+            StringComparison.Ordinal
+        );
     }
 
     [Fact]
@@ -52,15 +55,18 @@ public sealed class CacheBoundaryToStringTests
                 identity.Tenant,
                 ExpiresAt.ToString("O", CultureInfo.InvariantCulture)
             ),
-            text);
+            text
+        );
         Assert.DoesNotContain(
             Assert.IsType<string>(identity.Secret),
             text,
-            StringComparison.Ordinal);
+            StringComparison.Ordinal
+        );
         Assert.DoesNotContain(
             Assert.IsType<string>(identity.AccessToken),
             text,
-            StringComparison.Ordinal);
+            StringComparison.Ordinal
+        );
     }
 
     [Fact]
@@ -78,15 +84,18 @@ public sealed class CacheBoundaryToStringTests
         Assert.Equal(
             "TokenExchangeMaterial { Username = AzureDevOps, Password = <redacted>, "
                 + "BearerToken = <redacted> }",
-            text);
+            text
+        );
         Assert.DoesNotContain(
             Assert.IsType<string>(material.Password),
             text,
-            StringComparison.Ordinal);
+            StringComparison.Ordinal
+        );
         Assert.DoesNotContain(
             Assert.IsType<string>(material.BearerToken),
             text,
-            StringComparison.Ordinal);
+            StringComparison.Ordinal
+        );
     }
 
     [Fact]
@@ -97,11 +106,9 @@ public sealed class CacheBoundaryToStringTests
         {
             AccountId = null,
             TenantId = "tenant-1",
-            DeploymentKey = "deployment-key",
             Token = secret,
             ExpiresAt = null,
             Provenance = AccessTokenAcquisitionProvenance.AzureAuthProcess,
-            ClaimValidation = AccessTokenClaimValidation.AzureDevOpsClaimConsistency,
         };
 
         string secretText = secret.ToString();
@@ -114,17 +121,15 @@ public sealed class CacheBoundaryToStringTests
         Assert.DoesNotContain(secret.Value, resultText, StringComparison.Ordinal);
         Assert.Equal(
             "AcquiredAccessToken { AccountId = <unknown>, TenantId = tenant-1, "
-                + "DeploymentKey = deployment-key, Token = <redacted>, IssuedAt = <unknown>, "
-                + "NotBefore = <unknown>, ExpiresAt = <unknown>, Provenance = AzureAuthProcess, "
-                + "ClaimValidation = AzureDevOpsClaimConsistency }",
-            tokenText);
+                + "Token = <redacted>, ExpiresAt = <unknown>, Provenance = AzureAuthProcess }",
+            tokenText
+        );
         Assert.Equal(
             "AcquiredAccessTokenResult { Status = Success, AccessToken = "
                 + "AcquiredAccessToken { AccountId = <unknown>, TenantId = tenant-1, "
-                + "DeploymentKey = deployment-key, Token = <redacted>, IssuedAt = <unknown>, "
-                + "NotBefore = <unknown>, ExpiresAt = <unknown>, Provenance = AzureAuthProcess, "
-                + "ClaimValidation = AzureDevOpsClaimConsistency } }",
-            resultText);
+                + "Token = <redacted>, ExpiresAt = <unknown>, Provenance = AzureAuthProcess } }",
+            resultText
+        );
     }
 
     private static IdentityMaterial CreateIdentityMaterial() =>

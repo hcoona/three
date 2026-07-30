@@ -5,7 +5,6 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Text.Json.Serialization.Metadata;
 using Hcoona.AzureAuth.CredProvider.Contracts;
 using Xunit;
 
@@ -409,7 +408,8 @@ public sealed class ContractFreezeTests
     [Theory]
     [MemberData(nameof(CacheKeyAccountAndTenantPartitionsWithControlCharacters))]
     public void CacheKeySchemaRejectsControlCharactersInsideAccountAndTenantPartitions(
-        CacheKey cacheKey)
+        CacheKey cacheKey
+    )
     {
         string violation = Assert.IsType<string>(CacheKeySchema.GetViolation(cacheKey));
 
@@ -569,7 +569,8 @@ public sealed class ContractFreezeTests
     [InlineData("default\u001B")]
     [InlineData("default\u009F")]
     public void ServiceIdentityRejectsControlCharactersBeforeCacheKeyCreation(
-        string serviceIdentity)
+        string serviceIdentity
+    )
     {
         CredentialRequest request = CreateRequest(
             IdentityFlow.InteractiveBrowser,
@@ -798,11 +799,12 @@ public sealed class ContractFreezeTests
 
     [Theory]
     [MemberData(nameof(CanonicalResourceIdentityFieldsWithControlCharacters))]
-    public void
-        CanonicalResourceIdentityRejectsControlCharactersInCanonicalFieldsBeforeEndpointComparison(
-            string fieldName,
-            CredentialRequest request
-        )
+    // editorconfig-checker-disable
+    public void CanonicalResourceIdentityRejectsControlCharactersInCanonicalFieldsBeforeEndpointComparison(
+        string fieldName,
+        CredentialRequest request
+    )
+    // editorconfig-checker-enable
     {
         string violation = Assert.IsType<string>(
             CanonicalResourceIdentityPolicy.GetViolation(request.Resource)
@@ -2674,7 +2676,6 @@ public sealed class ContractFreezeTests
         var plan = new ConfigurationChangePlan
         {
             PlanId = "plan-npm-configuration-success",
-            ChangeSetId = "changeset-npm-configuration-success",
             OwnerProductId = "azureauth-credprovider",
             Scope = ConfigurationScope.User,
             Manifest = CreateManifest("npm-configuration-success"),
@@ -2942,7 +2943,6 @@ public sealed class ContractFreezeTests
         var plan = new ConfigurationChangePlan
         {
             PlanId = "plan-npm-user-auth",
-            ChangeSetId = "changeset-npm-user-auth",
             OwnerProductId = "azureauth-credprovider",
             Scope = ConfigurationScope.User,
             Manifest = CreateManifest("npm-user-auth"),
@@ -2996,13 +2996,6 @@ public sealed class ContractFreezeTests
         Assert.All(plan.Changes, change => Assert.True(change.RequiresOwnershipRecord));
         Assert.True(plan.ContainsCredentialMaterial);
         Assert.All(plan.Changes, change => Assert.True(change.IsSecretValue));
-        Assert.Equal(ConfigurationAtomicityPolicy.AtomicChangeSetRequired, plan.AtomicityPolicy);
-        Assert.Equal(ConfigurationRollbackPolicy.Required, plan.RollbackPolicy);
-        Assert.Equal(ConfigurationPlanState.Planned, plan.State);
-        Assert.Equal(
-            ConfigurationManifestCommitPolicy.CommitAfterDurableChanges,
-            plan.ManifestCommitPolicy
-        );
         Assert.Equal("manifest-npm-user-auth", plan.Manifest.ManifestId);
         Assert.Contains(
             plan.Changes,
@@ -3036,7 +3029,6 @@ public sealed class ContractFreezeTests
         var plan = new ConfigurationChangePlan
         {
             PlanId = "plan-yarn-user-auth",
-            ChangeSetId = "changeset-yarn-user-auth",
             OwnerProductId = "azureauth-credprovider",
             Scope = ConfigurationScope.User,
             Manifest = CreateManifest("yarn-user-auth"),
@@ -3177,7 +3169,6 @@ public sealed class ContractFreezeTests
         var plan = new ConfigurationChangePlan
         {
             PlanId = "plan-ci-yarn-auth",
-            ChangeSetId = "changeset-ci-yarn-auth",
             OwnerProductId = "azureauth-credprovider",
             Scope = ConfigurationScope.CiTemporary,
             DeclarationPreservation =
@@ -3261,8 +3252,6 @@ public sealed class ContractFreezeTests
             @"C:\agent\_temp\azureauth-credprovider\yarn-home",
             plan.TemporaryContainer?.ProductOwnedPath
         );
-        Assert.True(plan.TemporaryContainer?.DeleteContainerOnRollback);
-        Assert.True(plan.TemporaryContainer?.DeleteContainerOnRemoval);
         Assert.All(
             plan.Changes,
             change =>
@@ -3443,7 +3432,6 @@ public sealed class ContractFreezeTests
         var plan = new ConfigurationChangePlan
         {
             PlanId = "plan-ci-npm-auth",
-            ChangeSetId = "changeset-ci-npm-auth",
             OwnerProductId = "azureauth-credprovider",
             Scope = ConfigurationScope.CiTemporary,
             DeclarationPreservation =
@@ -3463,13 +3451,9 @@ public sealed class ContractFreezeTests
             [
                 CreateConfigurationChange(ConfigurationChangeOperation.Create),
                 CreateConfigurationChange(ConfigurationChangeOperation.Update) with
-                {
-                    PreviousOwnedEntryMetadata = "owner=azureauth-credprovider;selector=npm",
-                },
+                { },
                 CreateConfigurationChange(ConfigurationChangeOperation.Refresh) with
-                {
-                    PreviousOwnedEntryMetadata = "owner=azureauth-credprovider;selector=npm",
-                },
+                { },
             ],
         };
 
@@ -3478,8 +3462,6 @@ public sealed class ContractFreezeTests
             ConfigurationDeclarationPreservation.CopyHiddenDeclarationsToTemporaryConfig,
             plan.DeclarationPreservation
         );
-        Assert.True(plan.TemporaryContainer?.DeleteContainerOnRollback);
-        Assert.True(plan.TemporaryContainer?.DeleteContainerOnRemoval);
         Assert.Equal("windows", plan.TemporaryContainer?.ActivationEnvironment?.Platform);
         Assert.Equal(
             @"C:\agent\_temp\azureauth-credprovider\.npmrc",
@@ -3498,15 +3480,11 @@ public sealed class ContractFreezeTests
         );
         Assert.Contains(
             plan.Changes,
-            change =>
-                change.Operation == ConfigurationChangeOperation.Update
-                && change.PreviousOwnedEntryMetadata is not null
+            change => change.Operation == ConfigurationChangeOperation.Update
         );
         Assert.Contains(
             plan.Changes,
-            change =>
-                change.Operation == ConfigurationChangeOperation.Refresh
-                && change.PreviousOwnedEntryMetadata is not null
+            change => change.Operation == ConfigurationChangeOperation.Refresh
         );
         Assert.All(plan.Changes, change => Assert.True(change.PreserveDeclarationsAndComments));
     }
@@ -3517,7 +3495,6 @@ public sealed class ContractFreezeTests
         var plan = new ConfigurationChangePlan
         {
             PlanId = "plan-global-yarn-auth",
-            ChangeSetId = "changeset-global-yarn-auth",
             OwnerProductId = "azureauth-credprovider",
             Scope = ConfigurationScope.Global,
             Manifest = CreateManifest("global-yarn-auth"),
@@ -3532,7 +3509,6 @@ public sealed class ContractFreezeTests
         var explicitPathRemovePlan = new ConfigurationChangePlan
         {
             PlanId = "plan-explicit-path-remove",
-            ChangeSetId = "changeset-explicit-path-remove",
             OwnerProductId = "azureauth-credprovider",
             Scope = ConfigurationScope.ExplicitPath,
             Manifest = CreateManifest("explicit-path-remove"),
@@ -3544,7 +3520,6 @@ public sealed class ContractFreezeTests
                     TargetPathOrName = @"C:\repo\.npmrc",
                     Value = null,
                     IsSecretValue = false,
-                    PreviousOwnedEntryMetadata = "owner=azureauth-credprovider;selector=npm",
                 },
             ],
         };
@@ -3580,7 +3555,6 @@ public sealed class ContractFreezeTests
         var plan = new ConfigurationChangePlan
         {
             PlanId = "plan-workspace-read-only-with-change",
-            ChangeSetId = "changeset-workspace-read-only-with-change",
             OwnerProductId = "azureauth-credprovider",
             Scope = ConfigurationScope.WorkspaceReadOnly,
             Manifest = CreateManifest("workspace-read-only-with-change"),
@@ -3600,7 +3574,6 @@ public sealed class ContractFreezeTests
         Assert.Throws<ArgumentException>(() =>
             ConfigurationChangePlanPolicy.Create(
                 "plan-workspace-read-only-factory",
-                "changeset-workspace-read-only-factory",
                 "azureauth-credprovider",
                 ConfigurationScope.WorkspaceReadOnly,
                 CreateManifest("workspace-read-only-factory"),
@@ -3619,7 +3592,6 @@ public sealed class ContractFreezeTests
 
         ConfigurationChangePlan derivedPlan = ConfigurationChangePlanPolicy.Create(
             "plan-secret-material-derived",
-            "changeset-secret-material-derived",
             "azureauth-credprovider",
             ConfigurationScope.User,
             CreateManifest("secret-material-derived"),
@@ -3640,7 +3612,6 @@ public sealed class ContractFreezeTests
         Assert.Throws<ArgumentException>(() =>
             ConfigurationChangePlanPolicy.Create(
                 "plan-secret-material-false",
-                "changeset-secret-material-false",
                 "azureauth-credprovider",
                 ConfigurationScope.User,
                 CreateManifest("secret-material-false"),
@@ -3661,7 +3632,6 @@ public sealed class ContractFreezeTests
         ArgumentException exception = Assert.Throws<ArgumentException>(() =>
             ConfigurationChangePlanPolicy.Create(
                 "plan-null-change-entry",
-                "changeset-null-change-entry",
                 "azureauth-credprovider",
                 ConfigurationScope.User,
                 CreateManifest("null-change-entry"),
@@ -3718,10 +3688,11 @@ public sealed class ContractFreezeTests
     [InlineData("_authToken")]
     [InlineData("//evil.example/org/_packaging/feed/npm/registry/:_authToken")]
     [InlineData("//pkgs.dev.azure.com/org/_packaging/feed/npm/:_authToken")]
-    public void
-        ConfigurationChangePlanPolicyRejectsNpmrcSecretAuthTokenKeysThatDoNotMatchCanonicalSelector(
+    // editorconfig-checker-disable
+    public void ConfigurationChangePlanPolicyRejectsNpmrcSecretAuthTokenKeysThatDoNotMatchCanonicalSelector(
         string key
     )
+    // editorconfig-checker-enable
     {
         const string canonicalSelector =
             "//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:_authToken";
@@ -3752,9 +3723,7 @@ public sealed class ContractFreezeTests
     [Theory]
     [InlineData("reg#istry")]
     [InlineData("reg;istry")]
-    public void ConfigurationChangePlanPolicyRejectsNpmrcKeysContainingCommentMarkers(
-        string key
-    )
+    public void ConfigurationChangePlanPolicyRejectsNpmrcKeysContainingCommentMarkers(string key)
     {
         ConfigurationChange change = CreateConfigurationChange(
             ConfigurationChangeOperation.Create
@@ -3764,10 +3733,7 @@ public sealed class ContractFreezeTests
             Value = "planned-value",
             IsSecretValue = false,
         };
-        ConfigurationChangePlan plan = CreateValidConfigurationPlan() with
-        {
-            Changes = [change],
-        };
+        ConfigurationChangePlan plan = CreateValidConfigurationPlan() with { Changes = [change] };
 
         Assert.False(ConfigurationChangePlanPolicy.IsValid(plan));
         Assert.Contains(
@@ -3791,10 +3757,7 @@ public sealed class ContractFreezeTests
             Value = "planned-value",
             IsSecretValue = false,
         };
-        ConfigurationChangePlan plan = CreateValidConfigurationPlan() with
-        {
-            Changes = [change],
-        };
+        ConfigurationChangePlan plan = CreateValidConfigurationPlan() with { Changes = [change] };
 
         Assert.False(ConfigurationChangePlanPolicy.IsValid(plan));
         Assert.Contains(
@@ -3818,10 +3781,7 @@ public sealed class ContractFreezeTests
             Value = value,
             IsSecretValue = false,
         };
-        ConfigurationChangePlan plan = CreateValidConfigurationPlan() with
-        {
-            Changes = [change],
-        };
+        ConfigurationChangePlan plan = CreateValidConfigurationPlan() with { Changes = [change] };
 
         Assert.False(ConfigurationChangePlanPolicy.IsValid(plan));
         Assert.Contains(
@@ -3835,10 +3795,9 @@ public sealed class ContractFreezeTests
     [Theory]
     [InlineData("//evil.example/org/_packaging/feed/npm/registry/:_authToken")]
     [InlineData("//pkgs.dev.azure.com/org/_packaging/feed/npm/:_authToken")]
-    public void
-        ConfigurationChangePlanPolicyRejectsCiTemporaryNpmrcSecretAuthTokenSelectorMismatch(
-            string key
-        )
+    public void ConfigurationChangePlanPolicyRejectsCiTemporaryNpmrcSecretAuthTokenSelectorMismatch(
+        string key
+    )
     {
         const string canonicalSelector =
             "//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:_authToken";
@@ -3873,8 +3832,9 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void
-        ConfigurationChangePlanPolicyAcceptsCiTemporaryNpmrcSecretAuthTokenCanonicalSelector()
+    // editorconfig-checker-disable
+    public void ConfigurationChangePlanPolicyAcceptsCiTemporaryNpmrcSecretAuthTokenCanonicalSelector()
+    // editorconfig-checker-enable
     {
         const string canonicalSelector =
             "//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:_authToken";
@@ -3951,7 +3911,8 @@ public sealed class ContractFreezeTests
         string key
     )
     {
-        bool requiresValue = operation
+        bool requiresValue =
+            operation
             is ConfigurationChangeOperation.Set
                 or ConfigurationChangeOperation.Create
                 or ConfigurationChangeOperation.Update
@@ -3963,13 +3924,6 @@ public sealed class ContractFreezeTests
             Key = key,
             Value = requiresValue ? "AzureDevOps:secret-token" : null,
             IsSecretValue = true,
-            PreviousOwnedEntryMetadata = operation
-                is ConfigurationChangeOperation.Update
-                    or ConfigurationChangeOperation.Refresh
-                    or ConfigurationChangeOperation.Remove
-                    or ConfigurationChangeOperation.RemoveAdapter
-                ? "owner=azureauth-credprovider;selector=yarn"
-                : null,
         };
         ConfigurationChangePlan plan = CreateValidConfigurationPlan() with
         {
@@ -4000,11 +3954,6 @@ public sealed class ContractFreezeTests
         {
             Value = null,
             IsSecretValue = false,
-            PreviousOwnedEntryMetadata = operation
-                is ConfigurationChangeOperation.Update
-                    or ConfigurationChangeOperation.Refresh
-                ? "owner=azureauth-credprovider;selector=npm"
-                : null,
         };
         ConfigurationChangePlan plan = CreateValidConfigurationPlan() with { Changes = [change] };
 
@@ -4026,26 +3975,21 @@ public sealed class ContractFreezeTests
         ) =>
             changeOperation switch
             {
-                ConfigurationChangeOperation.Remove => CreateConfigurationChange(changeOperation)
-                    with
+                ConfigurationChangeOperation.Remove => CreateConfigurationChange(
+                    changeOperation
+                ) with
                 {
                     Key = "registry",
                     Value = value,
                     IsSecretValue = false,
-                    PreviousOwnedEntryMetadata = "owner=azureauth-credprovider;selector=npm",
                 },
-                _ => CreateConfigurationChange(changeOperation)
-                    with
+                _ => CreateConfigurationChange(changeOperation) with
                 {
                     TargetKind = ConfigurationTargetKind.GitConfig,
                     TargetPathOrName = "user .gitconfig",
                     Key = "credential.helper",
                     Value = value,
                     IsSecretValue = false,
-                    PreviousOwnedEntryMetadata = changeOperation
-                            is ConfigurationChangeOperation.RemoveAdapter
-                            ? "owner=azureauth-credprovider;selector=git"
-                            : null,
                 },
             };
 
@@ -4078,26 +4022,21 @@ public sealed class ContractFreezeTests
         ) =>
             changeOperation switch
             {
-                ConfigurationChangeOperation.Remove => CreateConfigurationChange(changeOperation)
-                    with
+                ConfigurationChangeOperation.Remove => CreateConfigurationChange(
+                    changeOperation
+                ) with
                 {
                     Key = "registry",
                     Value = value,
                     IsSecretValue = false,
-                    PreviousOwnedEntryMetadata = "owner=azureauth-credprovider;selector=npm",
                 },
-                _ => CreateConfigurationChange(changeOperation)
-                    with
+                _ => CreateConfigurationChange(changeOperation) with
                 {
                     TargetKind = ConfigurationTargetKind.GitConfig,
                     TargetPathOrName = "user .gitconfig",
                     Key = "credential.helper",
                     Value = value,
                     IsSecretValue = false,
-                    PreviousOwnedEntryMetadata = changeOperation
-                            is ConfigurationChangeOperation.RemoveAdapter
-                            ? "owner=azureauth-credprovider;selector=git"
-                            : null,
                 },
             };
 
@@ -4125,9 +4064,6 @@ public sealed class ContractFreezeTests
         {
             Value = null,
             IsSecretValue = false,
-            PreviousOwnedEntryMetadata = operation == ConfigurationChangeOperation.RemoveAdapter
-                ? "owner=azureauth-credprovider;selector=npm"
-                : null,
         };
         ConfigurationChangePlan plan = CreateValidConfigurationPlan() with { Changes = [change] };
 
@@ -4274,29 +4210,12 @@ public sealed class ContractFreezeTests
     public void ConfigurationChangePlanPolicyRejectsFrozenPlanShapeViolations()
     {
         ConfigurationChangePlan valid = CreateValidConfigurationPlan();
-        ConfigurationChange updateWithoutMetadata = CreateConfigurationChange(
-            ConfigurationChangeOperation.Update
-        );
-        ConfigurationChange removeAdapterWithoutMetadata = CreateConfigurationChange(
-            ConfigurationChangeOperation.RemoveAdapter
-        ) with
-        {
-            TargetKind = ConfigurationTargetKind.NuGetPluginLayout,
-            TargetPathOrName = @"C:\Users\runneradmin\.nuget\plugins\azureauth-credprovider",
-            Key = "nuget-plugin-layout",
-            Value = null,
-            IsSecretValue = false,
-        };
 
         ConfigurationChangePlan[] invalidPlans =
         [
             valid with
             {
                 PlanId = "",
-            },
-            valid with
-            {
-                ChangeSetId = " ",
             },
             valid with
             {
@@ -4309,26 +4228,6 @@ public sealed class ContractFreezeTests
             valid with
             {
                 Scope = (ConfigurationScope)999,
-            },
-            valid with
-            {
-                AtomicityPolicy = ConfigurationAtomicityPolicy.Unspecified,
-            },
-            valid with
-            {
-                AtomicityPolicy = (ConfigurationAtomicityPolicy)999,
-            },
-            valid with
-            {
-                RollbackPolicy = ConfigurationRollbackPolicy.Unspecified,
-            },
-            valid with
-            {
-                State = ConfigurationPlanState.Unspecified,
-            },
-            valid with
-            {
-                ManifestCommitPolicy = ConfigurationManifestCommitPolicy.Unspecified,
             },
             valid with
             {
@@ -4433,29 +4332,6 @@ public sealed class ContractFreezeTests
                     },
                 ],
             },
-            valid with
-            {
-                Changes = [updateWithoutMetadata],
-            },
-            valid with
-            {
-                Changes = [CreateConfigurationChange(ConfigurationChangeOperation.Refresh)],
-            },
-            valid with
-            {
-                Changes =
-                [
-                    CreateConfigurationChange(ConfigurationChangeOperation.Remove) with
-                    {
-                        IsSecretValue = false,
-                        Value = null,
-                    },
-                ],
-            },
-            valid with
-            {
-                Changes = [removeAdapterWithoutMetadata],
-            },
         ];
 
         Assert.All(
@@ -4468,33 +4344,6 @@ public sealed class ContractFreezeTests
                 );
             }
         );
-    }
-
-    [Fact]
-    public void ConfigurationChangePlanPolicyRejectsRemoveAdapterWithoutPreviousOwnedEntryMetadata()
-    {
-        ConfigurationChange removeAdapterWithoutMetadata = CreateConfigurationChange(
-            ConfigurationChangeOperation.RemoveAdapter
-        ) with
-        {
-            TargetKind = ConfigurationTargetKind.NuGetPluginLayout,
-            TargetPathOrName = @"C:\Users\runneradmin\.nuget\plugins\azureauth-credprovider",
-            Key = "nuget-plugin-layout",
-            Value = null,
-            IsSecretValue = false,
-        };
-        ConfigurationChangePlan plan = CreateValidConfigurationPlan() with
-        {
-            Changes = [removeAdapterWithoutMetadata],
-        };
-
-        Assert.False(ConfigurationChangePlanPolicy.IsValid(plan));
-        Assert.Contains(
-            "remove-adapter",
-            ConfigurationChangePlanPolicy.GetViolation(plan),
-            StringComparison.OrdinalIgnoreCase
-        );
-        Assert.Throws<ArgumentException>(() => ConfigurationChangePlanPolicy.EnsureValid(plan));
     }
 
     [Fact]
@@ -4643,128 +4492,6 @@ public sealed class ContractFreezeTests
                     Scope = ConfigurationScope.User,
                 }
             )
-        );
-    }
-
-    [Fact]
-    public void ConfigurationChangePlanPolicyRejectsCiTemporaryContainersWithRollbackDisabled()
-    {
-        const string npmrcPath = @"C:\agent\_temp\azureauth-credprovider\.npmrc";
-        const string yarnHomePath = @"C:\agent\_temp\azureauth-credprovider\yarn-home";
-        ConfigurationChangePlan npmrcFilePlan = CreateValidConfigurationPlan() with
-        {
-            Scope = ConfigurationScope.CiTemporary,
-            DeclarationPreservation =
-                ConfigurationDeclarationPreservation.CopyHiddenDeclarationsToTemporaryConfig,
-            TemporaryContainer = CreateNpmrcFileContainer(npmrcPath) with
-            {
-                DeleteContainerOnRollback = false,
-            },
-            ContainsCredentialMaterial = true,
-            Changes =
-            [
-                CreateConfigurationChange(ConfigurationChangeOperation.Create) with
-                {
-                    TargetPathOrName = npmrcPath,
-                },
-            ],
-        };
-        ConfigurationChangePlan temporaryHomePlan = CreateValidConfigurationPlan() with
-        {
-            Scope = ConfigurationScope.CiTemporary,
-            DeclarationPreservation =
-                ConfigurationDeclarationPreservation.CompleteMergedTemporaryConfig,
-            TemporaryContainer = CreateTemporaryHomeContainer(yarnHomePath) with
-            {
-                DeleteContainerOnRollback = false,
-            },
-            Changes =
-            [
-                CreateYarnAlwaysAuthChange(
-                    "https://pkgs.dev.azure.com/org/_packaging/feed/npm"
-                ) with
-                {
-                    TargetPathOrName =
-                        @"C:\agent\_temp\azureauth-credprovider\yarn-home\.yarnrc.yml",
-                },
-            ],
-        };
-
-        Assert.All(
-            new[] { npmrcFilePlan, temporaryHomePlan },
-            plan =>
-            {
-                Assert.False(ConfigurationChangePlanPolicy.IsValid(plan));
-                Assert.Contains(
-                    "cleanup on rollback",
-                    ConfigurationChangePlanPolicy.GetViolation(plan),
-                    StringComparison.OrdinalIgnoreCase
-                );
-                Assert.Throws<ArgumentException>(() =>
-                    ConfigurationChangePlanPolicy.EnsureValid(plan)
-                );
-            }
-        );
-    }
-
-    [Fact]
-    public void ConfigurationChangePlanPolicyRejectsCiTemporaryContainersWithRemovalDisabled()
-    {
-        const string npmrcPath = @"C:\agent\_temp\azureauth-credprovider\.npmrc";
-        const string yarnHomePath = @"C:\agent\_temp\azureauth-credprovider\yarn-home";
-        ConfigurationChangePlan npmrcFilePlan = CreateValidConfigurationPlan() with
-        {
-            Scope = ConfigurationScope.CiTemporary,
-            DeclarationPreservation =
-                ConfigurationDeclarationPreservation.CopyHiddenDeclarationsToTemporaryConfig,
-            TemporaryContainer = CreateNpmrcFileContainer(npmrcPath) with
-            {
-                DeleteContainerOnRemoval = false,
-            },
-            ContainsCredentialMaterial = true,
-            Changes =
-            [
-                CreateConfigurationChange(ConfigurationChangeOperation.Create) with
-                {
-                    TargetPathOrName = npmrcPath,
-                },
-            ],
-        };
-        ConfigurationChangePlan temporaryHomePlan = CreateValidConfigurationPlan() with
-        {
-            Scope = ConfigurationScope.CiTemporary,
-            DeclarationPreservation =
-                ConfigurationDeclarationPreservation.CompleteMergedTemporaryConfig,
-            TemporaryContainer = CreateTemporaryHomeContainer(yarnHomePath) with
-            {
-                DeleteContainerOnRemoval = false,
-            },
-            Changes =
-            [
-                CreateYarnAlwaysAuthChange(
-                    "https://pkgs.dev.azure.com/org/_packaging/feed/npm"
-                ) with
-                {
-                    TargetPathOrName =
-                        @"C:\agent\_temp\azureauth-credprovider\yarn-home\.yarnrc.yml",
-                },
-            ],
-        };
-
-        Assert.All(
-            new[] { npmrcFilePlan, temporaryHomePlan },
-            plan =>
-            {
-                Assert.False(ConfigurationChangePlanPolicy.IsValid(plan));
-                Assert.Contains(
-                    "cleanup on removal",
-                    ConfigurationChangePlanPolicy.GetViolation(plan),
-                    StringComparison.OrdinalIgnoreCase
-                );
-                Assert.Throws<ArgumentException>(() =>
-                    ConfigurationChangePlanPolicy.EnsureValid(plan)
-                );
-            }
         );
     }
 
@@ -6112,7 +5839,6 @@ public sealed class ContractFreezeTests
             {
               "contractMajor": 1,
               "planId": "plan-json-workspace-read-only-with-change",
-              "changeSetId": "changeset-json-workspace-read-only-with-change",
               "ownerProductId": "azureauth-credprovider",
               "scope": "workspaceReadOnly",
               "manifest": {
@@ -6138,7 +5864,6 @@ public sealed class ContractFreezeTests
             {
               "contractMajor": 1,
               "planId": "plan-json-secret-without-material",
-              "changeSetId": "changeset-json-secret-without-material",
               "ownerProductId": "azureauth-credprovider",
               "scope": "user",
               "manifest": {
@@ -6207,16 +5932,6 @@ public sealed class ContractFreezeTests
                 validJson.Replace(
                     "\"planId\":\"plan-json-required\"",
                     "\"planId\":null",
-                    StringComparison.Ordinal
-                ),
-                options
-            )
-        );
-        Assert.ThrowsAny<Exception>(() =>
-            JsonSerializer.Deserialize<ConfigurationChangePlan>(
-                validJson.Replace(
-                    "\"changeSetId\":\"changeset-json-required\"",
-                    "\"changeSetId\":null",
                     StringComparison.Ordinal
                 ),
                 options
@@ -6692,8 +6407,7 @@ public sealed class ContractFreezeTests
     [InlineData("https://org.visualstudio.com/project/_packaging/feed/pypi/simple/")]
     [InlineData("https://org.visualstudio.com/DefaultCollection/_packaging/feed/pypi/simple/")]
     [InlineData(
-        "https://org.visualstudio.com/DefaultCollection/project/_packaging/feed/"
-            + "pypi/simple/"
+        "https://org.visualstudio.com/DefaultCollection/project/_packaging/feed/" + "pypi/simple/"
     )]
     public void KeyringHelperV2AcceptsOnlyAzureArtifactsPythonFeedServiceUris(string service)
     {
@@ -7312,618 +7026,6 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void KeyringIntegrityContractAcceptsStrongLinuxPolicy()
-    {
-        var integrity = new KeyringHelperIntegrityContract
-        {
-            ProductId = "azureauth-credprovider",
-            AbsoluteHelperPath = GetFullyQualifiedHelperPath(KeyringHelperIntegrityPlatform.Linux),
-            Sha256 = new string('a', 64),
-            Platform = KeyringHelperIntegrityPlatform.Linux,
-        };
-
-        Assert.Equal(ContractVersions.KeyringHelperMajor, integrity.ContractMajor);
-        Assert.Equal(KeyringOwnerValidationRequirement.Required, integrity.OwnerValidation);
-        Assert.Equal(KeyringSymlinkPolicy.RejectSymlinks, integrity.SymlinkPolicy);
-        Assert.Equal(KeyringDigestPolicy.Sha256Required, integrity.DigestPolicy);
-        Assert.DoesNotContain(
-            typeof(KeyringHelperIntegrityContract).GetProperties(),
-            property => property.PropertyType == typeof(bool)
-        );
-        Assert.StartsWith("/", integrity.AbsoluteHelperPath, StringComparison.Ordinal);
-        Assert.Equal(KeyringHelperIntegrityPlatform.Linux, integrity.Platform);
-        Assert.Equal(64, integrity.Sha256.Length);
-        Assert.True(KeyringHelperIntegrityPolicy.IsStructurallyValid(integrity));
-        KeyringHelperIntegrityPolicy.EnsureStructurallyValid(integrity);
-    }
-
-    [Theory]
-    [InlineData(KeyringHelperIntegrityPlatform.Windows)]
-    [InlineData(KeyringHelperIntegrityPlatform.MacOs)]
-    public void KeyringIntegrityContractAcceptsWeakWindowsMacOsPolicy(
-        KeyringHelperIntegrityPlatform platform
-    )
-    {
-        var integrity = new KeyringHelperIntegrityContract
-        {
-            ProductId = "azureauth-credprovider",
-            AbsoluteHelperPath = GetFullyQualifiedHelperPath(platform),
-            Sha256 = new string('a', 64),
-            Platform = platform,
-            OwnerValidation = KeyringOwnerValidationRequirement.DeferredNotAvailable,
-            SymlinkPolicy = KeyringSymlinkPolicy.BestEffortRejectSymlinks,
-            DigestPolicy = KeyringDigestPolicy.Sha256RequiredWeakPath,
-        };
-
-        Assert.True(KeyringHelperIntegrityPolicy.IsStructurallyValid(integrity));
-        KeyringHelperIntegrityPolicy.EnsureStructurallyValid(integrity);
-    }
-
-    [Theory]
-    [InlineData(
-        KeyringHelperIntegrityPlatform.Linux,
-        "/opt/azureauth-credprovider/keyring-helper",
-        true
-    )]
-    [InlineData(
-        KeyringHelperIntegrityPlatform.Linux,
-        "/opt/azureauth-credprovider/keyring-helper. ",
-        true
-    )]
-    [InlineData(KeyringHelperIntegrityPlatform.Linux, @"C:\Program Files\helper.exe", false)]
-    [InlineData(
-        KeyringHelperIntegrityPlatform.MacOs,
-        "/Applications/AzureAuth CredProvider/keyring-helper",
-        true
-    )]
-    [InlineData(
-        KeyringHelperIntegrityPlatform.MacOs,
-        "/Applications/AzureAuth CredProvider/keyring-helper. ",
-        true
-    )]
-    [InlineData(KeyringHelperIntegrityPlatform.MacOs, @"C:\Program Files\helper.exe", false)]
-    [InlineData(
-        KeyringHelperIntegrityPlatform.Windows,
-        @"C:\Program Files\AzureAuth CredProvider\keyring-helper.exe",
-        true
-    )]
-    [InlineData(KeyringHelperIntegrityPlatform.Windows, @"\\server\share\keyring-helper.exe", true)]
-    [InlineData(
-        KeyringHelperIntegrityPlatform.Windows,
-        "/opt/azureauth-credprovider/keyring-helper",
-        false
-    )]
-    [InlineData(KeyringHelperIntegrityPlatform.Windows, @"C:relative\keyring-helper.exe", false)]
-    [InlineData(KeyringHelperIntegrityPlatform.Windows, @"\rooted\keyring-helper.exe", false)]
-    public void KeyringIntegrityStructuralValidationUsesDeclaredPlatformPathRules(
-        KeyringHelperIntegrityPlatform platform,
-        string absoluteHelperPath,
-        bool expectedValid
-    )
-    {
-        var integrity = CreateStructurallyValidIntegrityContract(platform) with
-        {
-            AbsoluteHelperPath = absoluteHelperPath,
-        };
-
-        Assert.Equal(expectedValid, KeyringHelperIntegrityPolicy.IsStructurallyValid(integrity));
-        if (expectedValid)
-        {
-            KeyringHelperIntegrityPolicy.EnsureStructurallyValid(integrity);
-        }
-        else
-        {
-            var violation = KeyringHelperIntegrityPolicy.GetStructuralViolation(integrity);
-            Assert.Contains("path must be absolute", violation, StringComparison.Ordinal);
-            Assert.Throws<ArgumentException>(() =>
-                KeyringHelperIntegrityPolicy.EnsureStructurallyValid(integrity)
-            );
-        }
-    }
-
-    [Theory]
-    [InlineData(
-        KeyringHelperIntegrityPlatform.Linux,
-        "/opt/./azureauth-credprovider/keyring-helper"
-    )]
-    [InlineData(
-        KeyringHelperIntegrityPlatform.Linux,
-        "/opt/azureauth-credprovider/../keyring-helper"
-    )]
-    [InlineData(
-        KeyringHelperIntegrityPlatform.MacOs,
-        "/Applications/./AzureAuth CredProvider/keyring-helper"
-    )]
-    [InlineData(
-        KeyringHelperIntegrityPlatform.MacOs,
-        "/Applications/AzureAuth CredProvider/../keyring-helper"
-    )]
-    [InlineData(KeyringHelperIntegrityPlatform.Windows, @"C:\Program Files\.\keyring-helper.exe")]
-    [InlineData(KeyringHelperIntegrityPlatform.Windows, "C:/Program Files/./keyring-helper.exe")]
-    [InlineData(
-        KeyringHelperIntegrityPlatform.Windows,
-        @"C:\Program Files\AzureAuth CredProvider\..\keyring-helper.exe"
-    )]
-    [InlineData(
-        KeyringHelperIntegrityPlatform.Windows,
-        @"C:\Program Files\AzureAuth CredProvider\. \keyring-helper.exe"
-    )]
-    [InlineData(
-        KeyringHelperIntegrityPlatform.Windows,
-        @"C:\Program Files\AzureAuth CredProvider\.. \keyring-helper.exe"
-    )]
-    [InlineData(
-        KeyringHelperIntegrityPlatform.Windows,
-        @"C:\Program Files\AzureAuth CredProvider \keyring-helper.exe"
-    )]
-    [InlineData(
-        KeyringHelperIntegrityPlatform.Windows,
-        @"C:\Program Files.\AzureAuth CredProvider\keyring-helper.exe"
-    )]
-    [InlineData(
-        KeyringHelperIntegrityPlatform.Windows,
-        @"C:\Program Files\AzureAuth CredProvider\keyring-helper.exe. "
-    )]
-    [InlineData(KeyringHelperIntegrityPlatform.Windows, @"\\server\share\.\keyring-helper.exe")]
-    [InlineData(KeyringHelperIntegrityPlatform.Windows, "//server/share/./keyring-helper.exe")]
-    [InlineData(
-        KeyringHelperIntegrityPlatform.Windows,
-        @"\\server\share\folder\..\keyring-helper.exe"
-    )]
-    [InlineData(
-        KeyringHelperIntegrityPlatform.Windows,
-        "//server/share/folder/../keyring-helper.exe"
-    )]
-    [InlineData(KeyringHelperIntegrityPlatform.Windows, @"\\server\share\. \keyring-helper.exe")]
-    [InlineData(KeyringHelperIntegrityPlatform.Windows, @"\\server\share\.. \keyring-helper.exe")]
-    [InlineData(KeyringHelperIntegrityPlatform.Windows, @"\\server \share\keyring-helper.exe")]
-    [InlineData(KeyringHelperIntegrityPlatform.Windows, @"\\server\share.\keyring-helper.exe")]
-    [InlineData(KeyringHelperIntegrityPlatform.Windows, @"\\server\share\keyring-helper.exe. ")]
-    public void KeyringIntegrityStructuralValidationRejectsUnsafePathComponents(
-        KeyringHelperIntegrityPlatform platform,
-        string absoluteHelperPath
-    )
-    {
-        var integrity = CreateStructurallyValidIntegrityContract(platform) with
-        {
-            AbsoluteHelperPath = absoluteHelperPath,
-        };
-
-        Assert.False(KeyringHelperIntegrityPolicy.IsStructurallyValid(integrity));
-        var violation = KeyringHelperIntegrityPolicy.GetStructuralViolation(integrity);
-        Assert.Contains(
-            "must not contain '.' or '..' path components",
-            violation,
-            StringComparison.Ordinal
-        );
-        Assert.Throws<ArgumentException>(() =>
-            KeyringHelperIntegrityPolicy.EnsureStructurallyValid(integrity)
-        );
-    }
-
-    [Theory]
-    [InlineData(KeyringHelperIntegrityPlatform.Linux, @"C:\Program Files\helper.exe")]
-    [InlineData(KeyringHelperIntegrityPlatform.MacOs, @"C:\Program Files\helper.exe")]
-    [InlineData(
-        KeyringHelperIntegrityPlatform.Windows,
-        "/opt/azureauth-credprovider/keyring-helper"
-    )]
-    public void KeyringIntegrityContractPolicyValidationRejectsWrongTrustedPlatformPathSyntax(
-        KeyringHelperIntegrityPlatform trustedRuntimePlatform,
-        string absoluteHelperPath
-    )
-    {
-        var integrity = CreateStructurallyValidIntegrityContract(trustedRuntimePlatform) with
-        {
-            AbsoluteHelperPath = absoluteHelperPath,
-        };
-
-        Assert.False(
-            KeyringHelperIntegrityPolicy.IsContractPolicyValid(integrity, trustedRuntimePlatform)
-        );
-        var violation = KeyringHelperIntegrityPolicy.GetContractPolicyViolation(
-            integrity,
-            trustedRuntimePlatform
-        );
-        Assert.Contains("path must be absolute", violation, StringComparison.Ordinal);
-        Assert.Throws<ArgumentException>(() =>
-            KeyringHelperIntegrityPolicy.EnsureContractPolicyValid(
-                integrity,
-                trustedRuntimePlatform
-            )
-        );
-    }
-
-    [Theory]
-    [InlineData(KeyringHelperIntegrityPlatform.Linux)]
-    [InlineData(KeyringHelperIntegrityPlatform.Windows)]
-    [InlineData(KeyringHelperIntegrityPlatform.MacOs)]
-    public void KeyringIntegrityContractPolicyValidationAcceptsMatchingTrustedPlatform(
-        KeyringHelperIntegrityPlatform platform
-    )
-    {
-        var integrity = CreateStructurallyValidIntegrityContract(platform);
-
-        Assert.True(KeyringHelperIntegrityPolicy.IsStructurallyValid(integrity));
-        Assert.True(KeyringHelperIntegrityPolicy.IsContractPolicyValid(integrity, platform));
-        Assert.Null(KeyringHelperIntegrityPolicy.GetContractPolicyViolation(integrity, platform));
-        KeyringHelperIntegrityPolicy.EnsureContractPolicyValid(integrity, platform);
-    }
-
-    [Fact]
-    public void KeyringIntegrityContractPolicyValidationDoesNotInspectFilesystemSnapshot()
-    {
-        var integrity = CreateStructurallyValidIntegrityContract(
-            KeyringHelperIntegrityPlatform.Linux
-        ) with
-        {
-            AbsoluteHelperPath = "/definitely-not-installed/azureauth-credprovider/keyring-helper",
-        };
-
-        Assert.True(
-            KeyringHelperIntegrityPolicy.IsContractPolicyValid(
-                integrity,
-                KeyringHelperIntegrityPlatform.Linux
-            )
-        );
-    }
-
-    [Theory]
-    [InlineData(KeyringHelperIntegrityPlatform.Linux)]
-    [InlineData(KeyringHelperIntegrityPlatform.Windows)]
-    [InlineData(KeyringHelperIntegrityPlatform.MacOs)]
-    public void KeyringIntegrityDefaultContractPolicyValidationUsesTrustedCurrentRuntime(
-        KeyringHelperIntegrityPlatform declaredPlatform
-    )
-    {
-        KeyringHelperIntegrityPlatform trustedRuntimePlatform =
-            KeyringHelperIntegrityPolicy.GetTrustedRuntimePlatform();
-        var integrity = CreateStructurallyValidIntegrityContract(declaredPlatform);
-        bool expected = declaredPlatform == trustedRuntimePlatform;
-
-        Assert.True(KeyringHelperIntegrityPolicy.IsStructurallyValid(integrity));
-        Assert.Equal(expected, KeyringHelperIntegrityPolicy.IsContractPolicyValid(integrity));
-        Assert.Equal(
-            expected,
-            KeyringHelperIntegrityPolicy.GetContractPolicyViolation(integrity) is null
-        );
-        if (expected)
-        {
-            KeyringHelperIntegrityPolicy.EnsureContractPolicyValid(integrity);
-        }
-        else
-        {
-            Assert.Throws<ArgumentException>(() =>
-                KeyringHelperIntegrityPolicy.EnsureContractPolicyValid(integrity)
-            );
-        }
-    }
-
-    [Theory]
-    [InlineData(KeyringHelperIntegrityPlatform.Linux, KeyringHelperIntegrityPlatform.Windows)]
-    [InlineData(KeyringHelperIntegrityPlatform.Linux, KeyringHelperIntegrityPlatform.MacOs)]
-    [InlineData(KeyringHelperIntegrityPlatform.Windows, KeyringHelperIntegrityPlatform.Linux)]
-    [InlineData(KeyringHelperIntegrityPlatform.Windows, KeyringHelperIntegrityPlatform.MacOs)]
-    [InlineData(KeyringHelperIntegrityPlatform.MacOs, KeyringHelperIntegrityPlatform.Linux)]
-    [InlineData(KeyringHelperIntegrityPlatform.MacOs, KeyringHelperIntegrityPlatform.Windows)]
-    public void KeyringIntegrityContractPolicyValidationRejectsSelfDeclaredPlatformMismatch(
-        KeyringHelperIntegrityPlatform declaredPlatform,
-        KeyringHelperIntegrityPlatform trustedRuntimePlatform
-    )
-    {
-        var integrity = CreateStructurallyValidIntegrityContract(declaredPlatform);
-
-        Assert.True(KeyringHelperIntegrityPolicy.IsStructurallyValid(integrity));
-        Assert.False(
-            KeyringHelperIntegrityPolicy.IsContractPolicyValid(integrity, trustedRuntimePlatform)
-        );
-        var violation = KeyringHelperIntegrityPolicy.GetContractPolicyViolation(
-            integrity,
-            trustedRuntimePlatform
-        );
-        Assert.Contains("trusted runtime platform", violation, StringComparison.Ordinal);
-        Assert.Throws<ArgumentException>(() =>
-            KeyringHelperIntegrityPolicy.EnsureContractPolicyValid(
-                integrity,
-                trustedRuntimePlatform
-            )
-        );
-    }
-
-    [Theory]
-    [InlineData(KeyringHelperIntegrityPlatform.Unspecified)]
-    [InlineData((KeyringHelperIntegrityPlatform)999)]
-    public void KeyringIntegrityContractPolicyValidationRejectsUnsupportedTrustedPlatform(
-        KeyringHelperIntegrityPlatform trustedRuntimePlatform
-    )
-    {
-        var integrity = CreateStructurallyValidIntegrityContract(
-            KeyringHelperIntegrityPlatform.Linux
-        );
-
-        Assert.True(KeyringHelperIntegrityPolicy.IsStructurallyValid(integrity));
-        Assert.False(
-            KeyringHelperIntegrityPolicy.IsContractPolicyValid(integrity, trustedRuntimePlatform)
-        );
-        var violation = KeyringHelperIntegrityPolicy.GetContractPolicyViolation(
-            integrity,
-            trustedRuntimePlatform
-        );
-        Assert.Contains("trusted runtime platform", violation, StringComparison.Ordinal);
-        Assert.Throws<ArgumentException>(() =>
-            KeyringHelperIntegrityPolicy.EnsureContractPolicyValid(
-                integrity,
-                trustedRuntimePlatform
-            )
-        );
-    }
-
-    [Fact]
-    public void KeyringIntegrityCurrentContractPolicyValidationUsesTrustedRuntimePlatform()
-    {
-        KeyringHelperIntegrityPlatform trustedRuntimePlatform =
-            KeyringHelperIntegrityPolicy.GetTrustedRuntimePlatform();
-        if (trustedRuntimePlatform == KeyringHelperIntegrityPlatform.Unspecified)
-        {
-            var unsupportedRuntimeIntegrity = CreateStructurallyValidIntegrityContract(
-                KeyringHelperIntegrityPlatform.Linux
-            );
-            Assert.False(
-                KeyringHelperIntegrityPolicy.IsContractPolicyValidForCurrentRuntime(
-                    unsupportedRuntimeIntegrity
-                )
-            );
-            Assert.Throws<ArgumentException>(() =>
-                KeyringHelperIntegrityPolicy.EnsureContractPolicyValidForCurrentRuntime(
-                    unsupportedRuntimeIntegrity
-                )
-            );
-            return;
-        }
-
-        var integrity = CreateStructurallyValidIntegrityContract(trustedRuntimePlatform);
-
-        Assert.True(KeyringHelperIntegrityPolicy.IsContractPolicyValidForCurrentRuntime(integrity));
-        KeyringHelperIntegrityPolicy.EnsureContractPolicyValidForCurrentRuntime(integrity);
-    }
-
-    [Fact]
-    public void KeyringIntegrityContractRejectsMissingOrInvalidRequiredFields()
-    {
-        var options = ContractJson.CreateSerializerOptions();
-        var valid = new KeyringHelperIntegrityContract
-        {
-            ProductId = "azureauth-credprovider",
-            AbsoluteHelperPath = GetFullyQualifiedHelperPath(),
-            Sha256 = new string('a', 64),
-            Platform = KeyringHelperIntegrityPlatform.Linux,
-        };
-        KeyringHelperIntegrityContract[] invalidContracts =
-        [
-            valid with
-            {
-                ContractMajor = 0,
-            },
-            valid with
-            {
-                ContractMajor = 1,
-            },
-            valid with
-            {
-                ProductId = null!,
-            },
-            valid with
-            {
-                ProductId = string.Empty,
-            },
-            valid with
-            {
-                ProductId = "   ",
-            },
-            valid with
-            {
-                AbsoluteHelperPath = null!,
-            },
-            valid with
-            {
-                AbsoluteHelperPath = string.Empty,
-            },
-            valid with
-            {
-                AbsoluteHelperPath = "relative\\keyring-helper.exe",
-            },
-            valid with
-            {
-                Sha256 = null!,
-            },
-            valid with
-            {
-                Sha256 = string.Empty,
-            },
-            valid with
-            {
-                Sha256 = new string('a', 63),
-            },
-            valid with
-            {
-                Sha256 = new string('a', 65),
-            },
-            valid with
-            {
-                Sha256 = string.Concat(new string('a', 63), "z"),
-            },
-        ];
-
-        Assert.All(
-            invalidContracts,
-            integrity =>
-            {
-                Assert.False(KeyringHelperIntegrityPolicy.IsStructurallyValid(integrity));
-                Assert.Throws<ArgumentException>(() =>
-                    KeyringHelperIntegrityPolicy.EnsureStructurallyValid(integrity)
-                );
-            }
-        );
-        Assert.Throws<JsonException>(() =>
-            JsonSerializer.Deserialize<KeyringHelperIntegrityContract>(
-                CreateKeyringIntegrityJson(
-                    includeProductId: false,
-                    includeAbsoluteHelperPath: true,
-                    includeSha256: true
-                ),
-                options
-            )
-        );
-        Assert.Throws<JsonException>(() =>
-            JsonSerializer.Deserialize<KeyringHelperIntegrityContract>(
-                CreateKeyringIntegrityJson(
-                    includeProductId: true,
-                    includeAbsoluteHelperPath: false,
-                    includeSha256: true
-                ),
-                options
-            )
-        );
-        Assert.Throws<JsonException>(() =>
-            JsonSerializer.Deserialize<KeyringHelperIntegrityContract>(
-                CreateKeyringIntegrityJson(
-                    includeProductId: true,
-                    includeAbsoluteHelperPath: true,
-                    includeSha256: false
-                ),
-                options
-            )
-        );
-    }
-
-    [Theory]
-    [InlineData(nameof(KeyringHelperIntegrityContract.Platform), 0)]
-    [InlineData(nameof(KeyringHelperIntegrityContract.Platform), 999)]
-    [InlineData(nameof(KeyringHelperIntegrityContract.OwnerValidation), 0)]
-    [InlineData(nameof(KeyringHelperIntegrityContract.OwnerValidation), 999)]
-    [InlineData(nameof(KeyringHelperIntegrityContract.SymlinkPolicy), 0)]
-    [InlineData(nameof(KeyringHelperIntegrityContract.SymlinkPolicy), 999)]
-    [InlineData(nameof(KeyringHelperIntegrityContract.DigestPolicy), 0)]
-    [InlineData(nameof(KeyringHelperIntegrityContract.DigestPolicy), 999)]
-    public void KeyringIntegrityContractRejectsExplicitUnspecifiedOrUnknownPolicies(
-        string invalidPolicy,
-        int invalidValue
-    )
-    {
-        var integrity = new KeyringHelperIntegrityContract
-        {
-            ProductId = "azureauth-credprovider",
-            AbsoluteHelperPath = GetFullyQualifiedHelperPath(),
-            Sha256 = new string('a', 64),
-            Platform =
-                invalidPolicy == nameof(KeyringHelperIntegrityContract.Platform)
-                    ? (KeyringHelperIntegrityPlatform)invalidValue
-                    : KeyringHelperIntegrityPlatform.Linux,
-            OwnerValidation =
-                invalidPolicy == nameof(KeyringHelperIntegrityContract.OwnerValidation)
-                    ? (KeyringOwnerValidationRequirement)invalidValue
-                    : KeyringOwnerValidationRequirement.Required,
-            SymlinkPolicy =
-                invalidPolicy == nameof(KeyringHelperIntegrityContract.SymlinkPolicy)
-                    ? (KeyringSymlinkPolicy)invalidValue
-                    : KeyringSymlinkPolicy.RejectSymlinks,
-            DigestPolicy =
-                invalidPolicy == nameof(KeyringHelperIntegrityContract.DigestPolicy)
-                    ? (KeyringDigestPolicy)invalidValue
-                    : KeyringDigestPolicy.Sha256Required,
-        };
-
-        Assert.False(KeyringHelperIntegrityPolicy.IsStructurallyValid(integrity));
-        var exception = Assert.Throws<ArgumentException>(() =>
-            KeyringHelperIntegrityPolicy.EnsureStructurallyValid(integrity)
-        );
-        Assert.Contains(
-            "keyring helper integrity",
-            exception.Message,
-            StringComparison.OrdinalIgnoreCase
-        );
-    }
-
-    [Theory]
-    [InlineData(
-        KeyringHelperIntegrityPlatform.Linux,
-        KeyringOwnerValidationRequirement.Required,
-        KeyringSymlinkPolicy.RejectSymlinks,
-        KeyringDigestPolicy.Sha256RequiredWeakPath
-    )]
-    [InlineData(
-        KeyringHelperIntegrityPlatform.Linux,
-        KeyringOwnerValidationRequirement.Required,
-        KeyringSymlinkPolicy.BestEffortRejectSymlinks,
-        KeyringDigestPolicy.Sha256RequiredWeakPath
-    )]
-    [InlineData(
-        KeyringHelperIntegrityPlatform.Linux,
-        KeyringOwnerValidationRequirement.Required,
-        KeyringSymlinkPolicy.BestEffortRejectSymlinks,
-        KeyringDigestPolicy.Sha256Required
-    )]
-    [InlineData(
-        KeyringHelperIntegrityPlatform.Linux,
-        KeyringOwnerValidationRequirement.DeferredNotAvailable,
-        KeyringSymlinkPolicy.RejectSymlinks,
-        KeyringDigestPolicy.Sha256Required
-    )]
-    [InlineData(
-        KeyringHelperIntegrityPlatform.Linux,
-        KeyringOwnerValidationRequirement.DeferredNotAvailable,
-        KeyringSymlinkPolicy.RejectSymlinks,
-        KeyringDigestPolicy.Sha256RequiredWeakPath
-    )]
-    [InlineData(
-        KeyringHelperIntegrityPlatform.Linux,
-        KeyringOwnerValidationRequirement.DeferredNotAvailable,
-        KeyringSymlinkPolicy.BestEffortRejectSymlinks,
-        KeyringDigestPolicy.Sha256Required
-    )]
-    [InlineData(
-        KeyringHelperIntegrityPlatform.Linux,
-        KeyringOwnerValidationRequirement.DeferredNotAvailable,
-        KeyringSymlinkPolicy.BestEffortRejectSymlinks,
-        KeyringDigestPolicy.Sha256RequiredWeakPath
-    )]
-    [InlineData(
-        KeyringHelperIntegrityPlatform.Windows,
-        KeyringOwnerValidationRequirement.Required,
-        KeyringSymlinkPolicy.RejectSymlinks,
-        KeyringDigestPolicy.Sha256Required
-    )]
-    [InlineData(
-        KeyringHelperIntegrityPlatform.MacOs,
-        KeyringOwnerValidationRequirement.Required,
-        KeyringSymlinkPolicy.RejectSymlinks,
-        KeyringDigestPolicy.Sha256Required
-    )]
-    public void KeyringIntegrityContractRejectsMixedPlatformPolicies(
-        KeyringHelperIntegrityPlatform platform,
-        KeyringOwnerValidationRequirement ownerValidation,
-        KeyringSymlinkPolicy symlinkPolicy,
-        KeyringDigestPolicy digestPolicy
-    )
-    {
-        var integrity = new KeyringHelperIntegrityContract
-        {
-            ProductId = "azureauth-credprovider",
-            AbsoluteHelperPath = GetFullyQualifiedHelperPath(platform),
-            Sha256 = new string('a', 64),
-            Platform = platform,
-            OwnerValidation = ownerValidation,
-            SymlinkPolicy = symlinkPolicy,
-            DigestPolicy = digestPolicy,
-        };
-
-        Assert.False(KeyringHelperIntegrityPolicy.IsStructurallyValid(integrity));
-        Assert.Throws<ArgumentException>(() =>
-            KeyringHelperIntegrityPolicy.EnsureStructurallyValid(integrity)
-        );
-    }
-
-    [Fact]
     public void IdentityFlowPolicyRejectsSilentFallbacksAndPatCompatibilityByDefault()
     {
         var entraRequest = CreateRequest(
@@ -8427,309 +7529,6 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void CompatibilityAllowsSafeSameMajorAdditionsOnlyForCredentialRequestV1()
-    {
-        Assert.True(ContractCompatibility.IsSupportedMajor(1, 1));
-        AssertAdditiveFieldCompatibilityAcrossAllOverloads(
-            1,
-            1,
-            "newSafeDetail",
-            expectedWhenOlderConsumersCanIgnoreSafely: true
-        );
-        AssertAdditiveFieldCompatibilityAcrossAllOverloads(
-            2,
-            2,
-            "newSafeField",
-            expectedWhenOlderConsumersCanIgnoreSafely: false
-        );
-        Assert.False(ContractCompatibility.IsSupportedMajor(2, 1));
-        Assert.True(ContractCompatibility.RequiresMajorVersionChange("remove-field"));
-        Assert.True(ContractCompatibility.RequiresMajorVersionChange("weaken-security-policy"));
-        Assert.True(ContractCompatibility.RequiresMajorVersionChange("weaken-cache-partitioning"));
-        Assert.True(
-            ContractCompatibility.RequiresMajorVersionChange("allow-plaintext-secret-diagnostics")
-        );
-        Assert.True(ContractCompatibility.RequiresMajorVersionChange("add-silent-pat-fallback"));
-        Assert.True(
-            ContractCompatibility.RequiresMajorVersionChange("make-integrity-check-optional")
-        );
-        Assert.True(ContractCompatibility.RequiresMajorVersionChange("change-enum-representation"));
-        Assert.True(
-            ContractCompatibility.RequiresMajorVersionChange(
-                ContractBreakingChangeKind.ChangeProtocolExitCode
-            )
-        );
-        Assert.True(
-            ContractCompatibility.RequiresMajorVersionChange(
-                ContractBreakingChangeKind.MakeIntegrityCheckOptional
-            )
-        );
-        Assert.True(
-            ContractCompatibility.RequiresMajorVersionChange(
-                ContractBreakingChangeKind.AddSilentPatFallback
-            )
-        );
-        Assert.True(
-            ContractCompatibility.RequiresMajorVersionChange(
-                ContractBreakingChangeKind.AllowPlaintextSecretDiagnostics
-            )
-        );
-        Assert.True(ContractCompatibility.RequiresMajorVersionChange("add-optional-field"));
-        Assert.True(
-            ContractCompatibility.RequiresMajorVersionChange(ContractBreakingChangeKind.Unspecified)
-        );
-        Assert.True(
-            ContractCompatibility.RequiresMajorVersionChange((ContractBreakingChangeKind)(-1))
-        );
-        Assert.True(
-            ContractCompatibility.RequiresMajorVersionChange((ContractBreakingChangeKind)999)
-        );
-    }
-
-    [Theory]
-    [MemberData(nameof(SafeAuditableAsciiAdditiveFieldNames))]
-    public void CompatibilityAllowsSafeAuditableAsciiIdentifierShapes(string fieldName)
-    {
-        AssertAdditiveFieldCompatibilityAcrossAllOverloads(
-            1,
-            1,
-            fieldName,
-            expectedWhenOlderConsumersCanIgnoreSafely: true
-        );
-    }
-
-    [Theory]
-    [MemberData(nameof(CredentialRequestV1WireMemberNames))]
-    public void CompatibilityRejectsExistingCredentialRequestV1WireMemberNames(string fieldName)
-    {
-        AssertAdditiveFieldCompatibilityAcrossAllOverloads(
-            1,
-            1,
-            fieldName,
-            expectedWhenOlderConsumersCanIgnoreSafely: false
-        );
-    }
-
-    [Theory]
-    [MemberData(nameof(CredentialRequestV1PascalCaseFieldNames))]
-    public void CompatibilityRejectsCredentialRequestV1PascalCasePropertyNameAliases(
-        string fieldName
-    )
-    {
-        AssertAdditiveFieldCompatibilityAcrossAllOverloads(
-            1,
-            1,
-            fieldName,
-            expectedWhenOlderConsumersCanIgnoreSafely: false
-        );
-    }
-
-    [Theory]
-    [MemberData(nameof(CredentialRequestV1CaseAndWhitespaceAliases))]
-    public void CompatibilityRejectsCredentialRequestV1CaseAndWhitespaceAliases(string fieldName)
-    {
-        AssertAdditiveFieldCompatibilityAcrossAllOverloads(
-            1,
-            1,
-            fieldName,
-            expectedWhenOlderConsumersCanIgnoreSafely: false
-        );
-    }
-
-    [Theory]
-    [InlineData("acquisitionMode")]
-    [InlineData(nameof(CredentialRequestV2.AcquisitionMode))]
-    [InlineData(" ACQUISITIONMODE ")]
-    [InlineData("acquisition Mode")]
-    [InlineData("\tacquisition\tmode\r\n")]
-    public void CompatibilityRejectsAcquisitionModeAliasesAndCallerOverrideAttempts(
-        string fieldName
-    )
-    {
-        AssertAdditiveFieldCompatibilityAcrossAllOverloads(
-            1,
-            1,
-            fieldName,
-            expectedWhenOlderConsumersCanIgnoreSafely: false
-        );
-    }
-
-    [Theory]
-    [MemberData(nameof(RejectedAdditiveFieldNames))]
-    public void CompatibilityRejectsNonAuditableOrConfusableAdditiveFieldNames(string fieldName)
-    {
-        AssertAdditiveFieldCompatibilityAcrossAllOverloads(
-            1,
-            1,
-            fieldName,
-            expectedWhenOlderConsumersCanIgnoreSafely: false
-        );
-    }
-
-    [Fact]
-    public void CompatibilityFailsClosedForMismatchedOrUnknownCredentialRootsAndMajors()
-    {
-        const string safeFieldName = "newSafeField";
-
-        Assert.False(ContractCompatibility.AllowsAdditiveField(1, 2, safeFieldName));
-        Assert.True(
-            ContractCompatibility.RequiresMajorVersionChange(
-                "add-optional-field",
-                ContractVersions.CredentialContractId,
-                ContractVersions.CredentialContractMajor,
-                ContractVersions.CredentialContractV2Id,
-                ContractVersions.CredentialContractV2Major,
-                safeFieldName
-            )
-        );
-        Assert.False(ContractCompatibility.AllowsAdditiveField(999, 999, safeFieldName));
-        Assert.True(
-            ContractCompatibility.RequiresMajorVersionChange(
-                "add-optional-field",
-                "azureauth-credprovider-credential-contract-v999",
-                999,
-                "azureauth-credprovider-credential-contract-v999",
-                999,
-                safeFieldName
-            )
-        );
-        Assert.False(
-            ContractCompatibility.AllowsAdditiveField(
-                ContractVersions.CredentialContractId,
-                ContractVersions.CredentialContractMajor,
-                ContractVersions.CredentialContractV2Id,
-                ContractVersions.CredentialContractV2Major,
-                safeFieldName
-            )
-        );
-        Assert.True(
-            ContractCompatibility.RequiresMajorVersionChange(
-                "add-optional-field",
-                ContractVersions.CredentialContractId,
-                ContractVersions.CredentialContractMajor,
-                ContractVersions.CredentialContractV2Id,
-                ContractVersions.CredentialContractV2Major,
-                safeFieldName
-            )
-        );
-        Assert.False(
-            ContractCompatibility.AllowsAdditiveField(
-                "azureauth-credprovider-credential-contract-v999",
-                ContractVersions.CredentialContractMajor,
-                ContractVersions.CredentialContractId,
-                ContractVersions.CredentialContractMajor,
-                safeFieldName
-            )
-        );
-        Assert.True(
-            ContractCompatibility.RequiresMajorVersionChange(
-                "add-optional-field",
-                "azureauth-credprovider-credential-contract-v999",
-                ContractVersions.CredentialContractMajor,
-                ContractVersions.CredentialContractId,
-                ContractVersions.CredentialContractMajor,
-                safeFieldName
-            )
-        );
-        Assert.False(
-            ContractCompatibility.AllowsAdditiveField(
-                ContractVersions.CredentialContractId,
-                999,
-                ContractVersions.CredentialContractId,
-                ContractVersions.CredentialContractMajor,
-                safeFieldName
-            )
-        );
-        Assert.True(
-            ContractCompatibility.RequiresMajorVersionChange(
-                "add-optional-field",
-                ContractVersions.CredentialContractId,
-                999,
-                ContractVersions.CredentialContractId,
-                ContractVersions.CredentialContractMajor,
-                safeFieldName
-            )
-        );
-        Assert.False(
-            ContractCompatibility.AllowsAdditiveField(
-                ContractVersions.CredentialContractId,
-                ContractVersions.CredentialContractMajor,
-                "azureauth-credprovider-credential-contract-v999",
-                ContractVersions.CredentialContractMajor,
-                safeFieldName
-            )
-        );
-        Assert.True(
-            ContractCompatibility.RequiresMajorVersionChange(
-                "add-optional-field",
-                ContractVersions.CredentialContractId,
-                ContractVersions.CredentialContractMajor,
-                "azureauth-credprovider-credential-contract-v999",
-                ContractVersions.CredentialContractMajor,
-                safeFieldName
-            )
-        );
-        Assert.False(
-            ContractCompatibility.AllowsAdditiveField(
-                ContractVersions.CredentialContractId,
-                ContractVersions.CredentialContractMajor,
-                ContractVersions.CredentialContractId,
-                999,
-                safeFieldName
-            )
-        );
-        Assert.True(
-            ContractCompatibility.RequiresMajorVersionChange(
-                "add-optional-field",
-                ContractVersions.CredentialContractId,
-                ContractVersions.CredentialContractMajor,
-                ContractVersions.CredentialContractId,
-                999,
-                safeFieldName
-            )
-        );
-    }
-
-    [Theory]
-    [InlineData("remove-field")]
-    [InlineData("rename-field")]
-    [InlineData("change-field-type")]
-    [InlineData("change-field-requiredness")]
-    [InlineData("change-field-meaning")]
-    [InlineData("change-enum-representation")]
-    [InlineData("change-protocol-stdout")]
-    [InlineData("change-protocol-stderr")]
-    [InlineData("change-protocol-exit-code")]
-    [InlineData("weaken-security-policy")]
-    [InlineData("weaken-cache-partitioning")]
-    [InlineData("allow-plaintext-secret-diagnostics")]
-    [InlineData("add-silent-pat-fallback")]
-    [InlineData("make-integrity-check-optional")]
-    public void StringCompatibilityOverloadCoversFrozenBreakingChangeKinds(string changeKind)
-    {
-        Assert.True(ContractCompatibility.RequiresMajorVersionChange(changeKind));
-    }
-
-    [Fact]
-    public void StringCompatibilityOverloadFailsClosedForUnknownAndContextFreeAdditiveChanges()
-    {
-        Assert.True(
-            ContractCompatibility.RequiresMajorVersionChange("phase-two-round-six-unknown-change")
-        );
-        Assert.True(ContractCompatibility.RequiresMajorVersionChange("add-optional-field"));
-        Assert.False(
-            ContractCompatibility.RequiresMajorVersionChange(
-                "add-optional-field",
-                ContractVersions.CredentialContractId,
-                ContractVersions.CredentialContractMajor,
-                ContractVersions.CredentialContractId,
-                ContractVersions.CredentialContractMajor,
-                "newSafeField"
-            )
-        );
-    }
-
-    [Fact]
     public void ContractJsonPinsWireShapeAndStringEnumRepresentation()
     {
         var options = ContractJson.CreateSerializerOptions();
@@ -8777,7 +7576,7 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void ContractJsonRejectsEnumCasingAliases()
+    public void ContractJsonUsesFrameworkCaseInsensitiveEnumReading()
     {
         var options = ContractJson.CreateSerializerOptions();
         string pascalEcosystemJson = CreateCredentialRequestJson(
@@ -8803,17 +7602,23 @@ public sealed class ContractFreezeTests
         string upperConfigurationJson = CreateConfigurationPlanJson()
             .Replace("\"scope\":\"user\"", "\"scope\":\"USER\"", StringComparison.Ordinal);
 
-        Assert.Throws<JsonException>(() =>
-            JsonSerializer.Deserialize<CredentialRequest>(pascalEcosystemJson, options)
+        Assert.Equal(
+            CredentialEcosystem.Git,
+            JsonSerializer.Deserialize<CredentialRequest>(pascalEcosystemJson, options)?.Ecosystem
         );
-        Assert.Throws<JsonException>(() =>
-            JsonSerializer.Deserialize<CredentialResult>(upperStatusJson, options)
+        Assert.Equal(
+            CredentialResultStatus.Success,
+            JsonSerializer.Deserialize<CredentialResult>(upperStatusJson, options)?.Status
         );
-        Assert.Throws<JsonException>(() =>
-            JsonSerializer.Deserialize<AdapterHostResult>(pascalAdapterJson, options)
+        Assert.Equal(
+            AdapterProtocol.GitCredentialHelper,
+            JsonSerializer.Deserialize<AdapterHostResult>(pascalAdapterJson, options)?.Protocol
         );
-        Assert.Throws<JsonException>(() =>
-            JsonSerializer.Deserialize<ConfigurationChangePlan>(upperConfigurationJson, options)
+        Assert.Equal(
+            ConfigurationScope.User,
+            JsonSerializer
+                .Deserialize<ConfigurationChangePlan>(upperConfigurationJson, options)
+                ?.Scope
         );
     }
 
@@ -9328,27 +8133,6 @@ public sealed class ContractFreezeTests
         );
     }
 
-    [Theory]
-    [InlineData(0)]
-    [InlineData(1)]
-    [InlineData(999)]
-    public void KeyringHelperIntegrityContractDeserializationRejectsUnsupportedContractMajor(
-        int contractMajor
-    )
-    {
-        var options = ContractJson.CreateSerializerOptions();
-        string json = CreateKeyringIntegrityJson()
-            .Replace(
-                "\"contractMajor\": 2",
-                $"\"contractMajor\": {contractMajor}",
-                StringComparison.Ordinal
-            );
-
-        Assert.ThrowsAny<Exception>(() =>
-            JsonSerializer.Deserialize<KeyringHelperIntegrityContract>(json, options)
-        );
-    }
-
     [Fact]
     public void ContractJsonPinsConfigurationPlanEnumWireShapesAndNpmConfigurationProtocol()
     {
@@ -9356,7 +8140,6 @@ public sealed class ContractFreezeTests
         var plan = new ConfigurationChangePlan
         {
             PlanId = "plan-json-configuration-enums",
-            ChangeSetId = "changeset-json-configuration-enums",
             OwnerProductId = "azureauth-credprovider",
             Scope = ConfigurationScope.CiTemporary,
             DeclarationPreservation =
@@ -9375,7 +8158,6 @@ public sealed class ContractFreezeTests
                         @"C:\agent\_temp\azureauth-credprovider\yarn-home\.yarnrc.yml",
                     Value = null,
                     IsSecretValue = false,
-                    PreviousOwnedEntryMetadata = "owner=azureauth-credprovider;selector=yarn",
                 },
             ],
         };
@@ -9397,8 +8179,6 @@ public sealed class ContractFreezeTests
             StringComparison.Ordinal
         );
         Assert.Contains("\"kind\":\"temporaryHome\"", planJson, StringComparison.Ordinal);
-        Assert.Contains("\"deleteContainerOnRollback\":true", planJson, StringComparison.Ordinal);
-        Assert.Contains("\"deleteContainerOnRemoval\":true", planJson, StringComparison.Ordinal);
         Assert.Contains("\"activationEnvironment\"", planJson, StringComparison.Ordinal);
         Assert.Contains(
             "\"USERPROFILE\":\"C:\\\\agent\\\\_temp\\\\azureauth-credprovider\\\\yarn-home\"",
@@ -9435,11 +8215,6 @@ public sealed class ContractFreezeTests
                 .Deserialize<ConfigurationChangePlan>(planJson, options)
                 ?.TemporaryContainer?.Kind
         );
-        Assert.True(
-            JsonSerializer
-                .Deserialize<ConfigurationChangePlan>(planJson, options)
-                ?.TemporaryContainer?.DeleteContainerOnRemoval
-        );
         Assert.Equal(
             AdapterProtocol.NpmConfiguration,
             JsonSerializer.Deserialize<AdapterHostResult>(adapterJson, options)?.Protocol
@@ -9447,16 +8222,6 @@ public sealed class ContractFreezeTests
         Assert.Throws<JsonException>(() =>
             JsonSerializer.Deserialize<ConfigurationChangePlan>(
                 planJson.Replace("\"yarnrc\"", "6", StringComparison.Ordinal),
-                options
-            )
-        );
-        Assert.ThrowsAny<Exception>(() =>
-            JsonSerializer.Deserialize<ConfigurationChangePlan>(
-                planJson.Replace(
-                    "\"deleteContainerOnRemoval\":true",
-                    "\"deleteContainerOnRemoval\":false",
-                    StringComparison.Ordinal
-                ),
                 options
             )
         );
@@ -9492,7 +8257,6 @@ public sealed class ContractFreezeTests
         var plan = new ConfigurationChangePlan
         {
             PlanId = "plan-json-posix-activation-clear-required",
-            ChangeSetId = "changeset-json-posix-activation-clear-required",
             OwnerProductId = "azureauth-credprovider",
             Scope = ConfigurationScope.CiTemporary,
             DeclarationPreservation =
@@ -9770,42 +8534,6 @@ public sealed class ContractFreezeTests
         );
         VerifyEnumWireValues(
             options,
-            new Dictionary<ConfigurationAtomicityPolicy, string>
-            {
-                [ConfigurationAtomicityPolicy.Unspecified] = "unspecified",
-                [ConfigurationAtomicityPolicy.AtomicChangeSetRequired] = "atomicChangeSetRequired",
-            }
-        );
-        VerifyEnumWireValues(
-            options,
-            new Dictionary<ConfigurationRollbackPolicy, string>
-            {
-                [ConfigurationRollbackPolicy.Unspecified] = "unspecified",
-                [ConfigurationRollbackPolicy.Required] = "required",
-            }
-        );
-        VerifyEnumWireValues(
-            options,
-            new Dictionary<ConfigurationPlanState, string>
-            {
-                [ConfigurationPlanState.Unspecified] = "unspecified",
-                [ConfigurationPlanState.Planned] = "planned",
-                [ConfigurationPlanState.Applied] = "applied",
-                [ConfigurationPlanState.RolledBack] = "rolledBack",
-                [ConfigurationPlanState.Failed] = "failed",
-            }
-        );
-        VerifyEnumWireValues(
-            options,
-            new Dictionary<ConfigurationManifestCommitPolicy, string>
-            {
-                [ConfigurationManifestCommitPolicy.Unspecified] = "unspecified",
-                [ConfigurationManifestCommitPolicy.CommitAfterDurableChanges] =
-                    "commitAfterDurableChanges",
-            }
-        );
-        VerifyEnumWireValues(
-            options,
             new Dictionary<DoctorCheckStatus, string>
             {
                 [DoctorCheckStatus.Unspecified] = "unspecified",
@@ -9835,66 +8563,6 @@ public sealed class ContractFreezeTests
                 [KeyringHelperMode.Unspecified] = "unspecified",
                 [KeyringHelperMode.Password] = "password",
                 [KeyringHelperMode.Credentials] = "credentials",
-            }
-        );
-        VerifyEnumWireValues(
-            options,
-            new Dictionary<KeyringHelperIntegrityPlatform, string>
-            {
-                [KeyringHelperIntegrityPlatform.Unspecified] = "unspecified",
-                [KeyringHelperIntegrityPlatform.Linux] = "linux",
-                [KeyringHelperIntegrityPlatform.Windows] = "windows",
-                [KeyringHelperIntegrityPlatform.MacOs] = "macOs",
-            }
-        );
-        VerifyEnumWireValues(
-            options,
-            new Dictionary<KeyringOwnerValidationRequirement, string>
-            {
-                [KeyringOwnerValidationRequirement.Unspecified] = "unspecified",
-                [KeyringOwnerValidationRequirement.Required] = "required",
-                [KeyringOwnerValidationRequirement.DeferredNotAvailable] = "deferredNotAvailable",
-            }
-        );
-        VerifyEnumWireValues(
-            options,
-            new Dictionary<KeyringSymlinkPolicy, string>
-            {
-                [KeyringSymlinkPolicy.Unspecified] = "unspecified",
-                [KeyringSymlinkPolicy.RejectSymlinks] = "rejectSymlinks",
-                [KeyringSymlinkPolicy.BestEffortRejectSymlinks] = "bestEffortRejectSymlinks",
-            }
-        );
-        VerifyEnumWireValues(
-            options,
-            new Dictionary<KeyringDigestPolicy, string>
-            {
-                [KeyringDigestPolicy.Unspecified] = "unspecified",
-                [KeyringDigestPolicy.Sha256Required] = "sha256Required",
-                [KeyringDigestPolicy.Sha256RequiredWeakPath] = "sha256RequiredWeakPath",
-            }
-        );
-        VerifyEnumWireValues(
-            options,
-            new Dictionary<ContractBreakingChangeKind, string>
-            {
-                [ContractBreakingChangeKind.Unspecified] = "unspecified",
-                [ContractBreakingChangeKind.RemoveField] = "removeField",
-                [ContractBreakingChangeKind.RenameField] = "renameField",
-                [ContractBreakingChangeKind.ChangeFieldType] = "changeFieldType",
-                [ContractBreakingChangeKind.ChangeFieldRequiredness] = "changeFieldRequiredness",
-                [ContractBreakingChangeKind.ChangeFieldMeaning] = "changeFieldMeaning",
-                [ContractBreakingChangeKind.ChangeEnumRepresentation] = "changeEnumRepresentation",
-                [ContractBreakingChangeKind.ChangeProtocolStdout] = "changeProtocolStdout",
-                [ContractBreakingChangeKind.ChangeProtocolStderr] = "changeProtocolStderr",
-                [ContractBreakingChangeKind.ChangeProtocolExitCode] = "changeProtocolExitCode",
-                [ContractBreakingChangeKind.WeakenSecurityPolicy] = "weakenSecurityPolicy",
-                [ContractBreakingChangeKind.WeakenCachePartitioning] = "weakenCachePartitioning",
-                [ContractBreakingChangeKind.AllowPlaintextSecretDiagnostics] =
-                    "allowPlaintextSecretDiagnostics",
-                [ContractBreakingChangeKind.AddSilentPatFallback] = "addSilentPatFallback",
-                [ContractBreakingChangeKind.MakeIntegrityCheckOptional] =
-                    "makeIntegrityCheckOptional",
             }
         );
     }
@@ -9932,7 +8600,6 @@ public sealed class ContractFreezeTests
         string missingConfigurationVersion = """
             {
               "planId": "plan-missing-version",
-              "changeSetId": "changeset-missing-version",
               "ownerProductId": "azureauth-credprovider",
               "scope": "global",
               "manifest": {
@@ -9974,13 +8641,6 @@ public sealed class ContractFreezeTests
               "stderr": ""
             }
             """;
-        string missingKeyringIntegrityVersion = CreateKeyringIntegrityJson(
-            includeContractMajor: false,
-            includeOwnerValidation: true,
-            includeSymlinkPolicy: true,
-            includeDigestPolicy: true
-        );
-
         Assert.Throws<JsonException>(() =>
             JsonSerializer.Deserialize<CredentialRequest>(missingCredentialRequestVersion, options)
         );
@@ -10011,12 +8671,6 @@ public sealed class ContractFreezeTests
                 options
             )
         );
-        Assert.Throws<JsonException>(() =>
-            JsonSerializer.Deserialize<KeyringHelperIntegrityContract>(
-                missingKeyringIntegrityVersion,
-                options
-            )
-        );
     }
 
     [Fact]
@@ -10039,7 +8693,6 @@ public sealed class ContractFreezeTests
         var plan = new ConfigurationChangePlan
         {
             PlanId = "plan-json",
-            ChangeSetId = "changeset-json",
             OwnerProductId = "azureauth-credprovider",
             Scope = ConfigurationScope.Global,
             Manifest = CreateManifest("json") with
@@ -10048,13 +8701,7 @@ public sealed class ContractFreezeTests
                 ResourceIdentity = CreateNpmResourceIdentity(),
             },
             ContainsCredentialMaterial = true,
-            Changes =
-            [
-                CreateConfigurationChange(ConfigurationChangeOperation.Refresh) with
-                {
-                    PreviousOwnedEntryMetadata = "owner=azureauth-credprovider",
-                },
-            ],
+            Changes = [CreateConfigurationChange(ConfigurationChangeOperation.Refresh) with { }],
         };
         var check = new DoctorCheck
         {
@@ -10141,11 +8788,9 @@ public sealed class ContractFreezeTests
             new ConfigurationChangePlan
             {
                 PlanId = "plan-json-all-roots",
-                ChangeSetId = "changeset-json-all-roots",
                 OwnerProductId = "azureauth-credprovider",
                 Scope = ConfigurationScope.CiTemporary,
-                Manifest = CreateManifest("json-all-roots")
-                with
+                Manifest = CreateManifest("json-all-roots") with
                 {
                     EntrySelector =
                         "//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:_authToken",
@@ -10194,13 +8839,6 @@ public sealed class ContractFreezeTests
                 Stdout = string.Empty,
                 Stderr = string.Empty,
             },
-            new KeyringHelperIntegrityContract
-            {
-                ProductId = "azureauth-credprovider",
-                AbsoluteHelperPath = GetFullyQualifiedHelperPath(),
-                Sha256 = new string('a', 64),
-                Platform = KeyringHelperIntegrityPlatform.Linux,
-            },
             NpmCompatibleAuthSelectorPolicy.Create(
                 CanonicalResourceIdentity.Create(
                     "pkgs.dev.azure.com",
@@ -10235,71 +8873,6 @@ public sealed class ContractFreezeTests
                 + "|ZGVmYXVsdA==|dXNlckBleGFtcGxlLmNvbQ==|dGVuYW50LTE=|YXp1cmVkZXZvcHM=|YmFzaWNwYXN"
                 + "zd29yZA==",
             cacheKey.Value
-        );
-    }
-
-    [Fact]
-    public void ContractJsonRequiresKeyringIntegrityPolicyMetadata()
-    {
-        var options = ContractJson.CreateSerializerOptions();
-        string completeJson = CreateKeyringIntegrityJson(
-            includeContractMajor: true,
-            includeOwnerValidation: true,
-            includeSymlinkPolicy: true,
-            includeDigestPolicy: true
-        );
-
-        var integrity = JsonSerializer.Deserialize<KeyringHelperIntegrityContract>(
-            completeJson,
-            options
-        );
-
-        Assert.NotNull(integrity);
-        Assert.True(KeyringHelperIntegrityPolicy.IsStructurallyValid(integrity));
-        Assert.Throws<JsonException>(() =>
-            JsonSerializer.Deserialize<KeyringHelperIntegrityContract>(
-                CreateKeyringIntegrityJson(
-                    includeContractMajor: true,
-                    includePlatform: false,
-                    includeOwnerValidation: true,
-                    includeSymlinkPolicy: true,
-                    includeDigestPolicy: true
-                ),
-                options
-            )
-        );
-        Assert.Throws<JsonException>(() =>
-            JsonSerializer.Deserialize<KeyringHelperIntegrityContract>(
-                CreateKeyringIntegrityJson(
-                    includeContractMajor: true,
-                    includeOwnerValidation: false,
-                    includeSymlinkPolicy: true,
-                    includeDigestPolicy: true
-                ),
-                options
-            )
-        );
-        Assert.Throws<JsonException>(() =>
-            JsonSerializer.Deserialize<KeyringHelperIntegrityContract>(
-                CreateKeyringIntegrityJson(
-                    includeContractMajor: true,
-                    includeOwnerValidation: true,
-                    includeSymlinkPolicy: false,
-                    includeDigestPolicy: true
-                ),
-                options
-            )
-        );
-        Assert.Throws<JsonException>(() =>
-            JsonSerializer.Deserialize<KeyringHelperIntegrityContract>(
-                CreateKeyringIntegrityJson(
-                    includeContractMajor: true,
-                    includeOwnerValidation: true,
-                    includeSymlinkPolicy: true,
-                    includeDigestPolicy: false
-                ),
-                options
-            )
         );
     }
 
@@ -10466,15 +9039,6 @@ public sealed class ContractFreezeTests
             Assert.Equal(value, JsonSerializer.Deserialize<TEnum>(json, options));
             Assert.Throws<JsonException>(() =>
                 JsonSerializer.Deserialize<TEnum>(
-                    $"\"{CreatePascalCaseAlias(wireValue)}\"",
-                    options
-                )
-            );
-            Assert.Throws<JsonException>(() =>
-                JsonSerializer.Deserialize<TEnum>($"\"{wireValue.ToUpperInvariant()}\"", options)
-            );
-            Assert.Throws<JsonException>(() =>
-                JsonSerializer.Deserialize<TEnum>(
                     Convert
                         .ToInt32(value, CultureInfo.InvariantCulture)
                         .ToString(CultureInfo.InvariantCulture),
@@ -10486,12 +9050,6 @@ public sealed class ContractFreezeTests
         var undefined = (TEnum)Enum.ToObject(typeof(TEnum), 999);
         Assert.Throws<JsonException>(() => JsonSerializer.Serialize(undefined, options));
     }
-
-    private static string CreatePascalCaseAlias(string wireValue) =>
-        string.Concat(
-            char.ToUpperInvariant(wireValue[0]).ToString(CultureInfo.InvariantCulture),
-            wireValue[1..]
-        );
 
     private static ConfigurationManifestMetadata CreateManifest(string suffix) =>
         new()
@@ -10514,11 +9072,9 @@ public sealed class ContractFreezeTests
         new()
         {
             PlanId = "plan-valid-configuration",
-            ChangeSetId = "changeset-valid-configuration",
             OwnerProductId = "azureauth-credprovider",
             Scope = ConfigurationScope.User,
-            Manifest = CreateManifest("valid-configuration")
-            with
+            Manifest = CreateManifest("valid-configuration") with
             {
                 EntrySelector = "//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:_authToken",
                 ResourceIdentity = CreateNpmResourceIdentity(),
@@ -10620,11 +9176,7 @@ public sealed class ContractFreezeTests
 
     private static string CreateConfigurationPlanJson() =>
         "{\"contractMajor\":1,\"planId\":\"plan-json-required\","
-        + "\"changeSetId\":\"changeset-json-required\","
         + "\"ownerProductId\":\"azureauth-credprovider\",\"scope\":\"user\","
-        + "\"atomicityPolicy\":\"atomicChangeSetRequired\","
-        + "\"rollbackPolicy\":\"required\",\"state\":\"planned\","
-        + "\"manifestCommitPolicy\":\"commitAfterDurableChanges\","
         + "\"manifest\":{\"manifestId\":\"manifest-json-required\","
         + "\"ownerProductId\":\"azureauth-credprovider\","
         + "\"entrySelector\":\"json-required\",\"productVersion\":\"1.0.0\"},"
@@ -10821,11 +9373,7 @@ public sealed class ContractFreezeTests
             return new CacheKey { Value = string.Join('|', copy) };
         }
 
-        return
-        [
-            WithPart(8, "user\u0001@contoso.com"),
-            WithPart(9, "tenant\u0085one"),
-        ];
+        return [WithPart(8, "user\u0001@contoso.com"), WithPart(9, "tenant\u0085one")];
     }
 
     public static TheoryData<string, CredentialRequest> PaddedCanonicalResourceIdentityFields()
@@ -10879,8 +9427,10 @@ public sealed class ContractFreezeTests
         };
     }
 
-    public static TheoryData<string, CredentialRequest>
-        CanonicalResourceIdentityFieldsWithControlCharacters()
+    public static TheoryData<
+        string,
+        CredentialRequest
+    > CanonicalResourceIdentityFieldsWithControlCharacters()
     {
         CredentialRequest gitRequest = CreateRequest(
             IdentityFlow.InteractiveBrowser,
@@ -11036,75 +9586,6 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void CredentialRequestV2DirectJsonSerializeRejectsRequestsAcrossCommonOptions()
-    {
-        CredentialRequestV2[] requests =
-        [
-            CreateRequestV2(
-                IdentityFlow.DeviceCode,
-                CredentialKind.BasicPassword,
-                AcquisitionMode.InteractionAllowed
-            ),
-            CreateRequestV2(
-                IdentityFlow.DeviceCode,
-                CredentialKind.BasicPassword,
-                AcquisitionMode.SilentOnly,
-                interactivePolicy: InteractivePolicy.Never
-            ),
-        ];
-
-        foreach (CredentialRequestV2 request in requests)
-        {
-            foreach (JsonSerializerOptions options in CreateDirectCredentialRequestV2JsonOptions())
-            {
-                NotSupportedException ex = Assert.Throws<NotSupportedException>(() =>
-                    JsonSerializer.Serialize(request, options)
-                );
-                Assert.Contains(
-                    "CredentialRequestV2Json.Serialize",
-                    ex.Message,
-                    StringComparison.Ordinal
-                );
-                Assert.Contains(
-                    "CredentialRequestV2Json.Deserialize",
-                    ex.Message,
-                    StringComparison.Ordinal
-                );
-            }
-        }
-    }
-
-    [Fact]
-    public void CredentialRequestV2DirectJsonDeserializeRejectsPayloadsAcrossCommonOptions()
-    {
-        string[] payloads =
-        [
-            CreateCredentialRequestV2Json(),
-            CreateDirectCredentialRequestV2BypassJson(),
-        ];
-
-        foreach (string payload in payloads)
-        {
-            foreach (JsonSerializerOptions options in CreateDirectCredentialRequestV2JsonOptions())
-            {
-                NotSupportedException ex = Assert.Throws<NotSupportedException>(() =>
-                    JsonSerializer.Deserialize<CredentialRequestV2>(payload, options)
-                );
-                Assert.Contains(
-                    "CredentialRequestV2Json.Serialize",
-                    ex.Message,
-                    StringComparison.Ordinal
-                );
-                Assert.Contains(
-                    "CredentialRequestV2Json.Deserialize",
-                    ex.Message,
-                    StringComparison.Ordinal
-                );
-            }
-        }
-    }
-
-    [Fact]
     public void CredentialRequestV2JsonSerializeUsesExactStrictEnumWireValues()
     {
         CredentialRequestV2 request = CreateRequestV2(
@@ -11115,6 +9596,26 @@ public sealed class ContractFreezeTests
         string json = CredentialRequestV2Json.Serialize(request);
 
         Assert.Equal(CreateExpectedCredentialRequestV2Json(), json);
+    }
+
+    [Fact]
+    public void CredentialRequestV2UsesOrdinaryContractJsonSerialization()
+    {
+        CredentialRequestV2 request = CreateRequestV2(
+            IdentityFlow.DeviceCode,
+            CredentialKind.BasicPassword,
+            AcquisitionMode.InteractionAllowed
+        );
+        JsonSerializerOptions options = ContractJson.CreateSerializerOptions();
+
+        string json = JsonSerializer.Serialize(request, options);
+        CredentialRequestV2 roundTripped = Assert.IsType<CredentialRequestV2>(
+            JsonSerializer.Deserialize<CredentialRequestV2>(json, options)
+        );
+
+        Assert.Equal(CreateExpectedCredentialRequestV2Json(), json);
+        Assert.Equal(json, JsonSerializer.Serialize(roundTripped, options));
+        Assert.Null(CredentialRequestV2Policy.GetViolation(roundTripped));
     }
 
     [Theory]
@@ -11180,7 +9681,7 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void CredentialRequestV2UnspecifiedPreservesV1InteractionSemantics()
+    public void CredentialRequestV2PolicyRejectsUnspecifiedAcquisitionMode()
     {
         CredentialRequestV2 request = CreateRequestV2(
             IdentityFlow.InteractiveBrowser,
@@ -11189,12 +9690,16 @@ public sealed class ContractFreezeTests
             interactivePolicy: InteractivePolicy.Never
         );
 
-        Assert.True(CredentialRequestV2Policy.IsValid(request));
-        Assert.Null(CredentialRequestV2Policy.GetViolation(request));
+        Assert.False(CredentialRequestV2Policy.IsValid(request));
+        Assert.Contains(
+            "must specify an acquisition mode",
+            CredentialRequestV2Policy.GetViolation(request),
+            StringComparison.Ordinal
+        );
     }
 
     [Fact]
-    public void CredentialRequestV2UnspecifiedPreservesFrozenFuturePersistentCacheState()
+    public void CredentialRequestV2JsonRejectsUnspecifiedAcquisitionMode()
     {
         CredentialRequestV2 request = CreateRequestV2(
             IdentityFlow.DeviceCode,
@@ -11202,20 +9707,8 @@ public sealed class ContractFreezeTests
             AcquisitionMode.Unspecified,
             cachePolicy: CachePolicyMode.FuturePersistentCacheRequested
         );
-        string json = CredentialRequestV2Json.Serialize(request);
-        CredentialRequestV2 roundTripped = CredentialRequestV2Json.Deserialize(json);
 
-        Assert.True(CredentialRequestV2Policy.IsValid(request));
-        Assert.Null(CredentialRequestV2Policy.GetViolation(request));
-        Assert.Contains("\"acquisitionMode\":\"unspecified\"", json, StringComparison.Ordinal);
-        Assert.Contains(
-            "\"cachePolicy\":\"futurePersistentCacheRequested\"",
-            json,
-            StringComparison.Ordinal
-        );
-        Assert.Equal(AcquisitionMode.Unspecified, roundTripped.AcquisitionMode);
-        Assert.Equal(CachePolicyMode.FuturePersistentCacheRequested, roundTripped.CachePolicy);
-        Assert.Null(CredentialRequestV2Policy.GetViolation(roundTripped));
+        Assert.Throws<ArgumentException>(() => CredentialRequestV2Json.Serialize(request));
     }
 
     public static TheoryData<CachePolicyMode> InvalidInteractionAllowedCachePolicyCases =>
@@ -11338,60 +9831,6 @@ public sealed class ContractFreezeTests
         Assert.Contains("control characters", ex.Message, StringComparison.Ordinal);
     }
 
-    public static TheoryData<CredentialOperation> FrozenCredentialOperationCases =>
-        new()
-        {
-            { CredentialOperation.Get },
-            { CredentialOperation.Store },
-            { CredentialOperation.Erase },
-            { CredentialOperation.Refresh },
-            { CredentialOperation.Configure },
-            { CredentialOperation.Doctor },
-        };
-
-    [Theory]
-    [MemberData(nameof(FrozenCredentialOperationCases))]
-    public void CredentialRequestV2PolicyAllowsUnspecifiedAcrossFrozenV1OperationSurface(
-        CredentialOperation operation
-    )
-    {
-        CredentialRequestV2 request = CreateRequestV2(
-            IdentityFlow.DeviceCode,
-            CredentialKind.BasicPassword,
-            AcquisitionMode.Unspecified
-        ) with
-        {
-            Operation = operation,
-        };
-
-        Assert.True(CredentialRequestV2Policy.IsValid(request));
-        Assert.Null(CredentialRequestV2Policy.GetViolation(request));
-    }
-
-    [Theory]
-    [MemberData(nameof(FrozenCredentialOperationCases))]
-    public void CredentialRequestV2JsonRoundTripsUnspecifiedAcrossFrozenV1OperationSurface(
-        CredentialOperation operation
-    )
-    {
-        CredentialRequestV2 request = CreateRequestV2(
-            IdentityFlow.DeviceCode,
-            CredentialKind.BasicPassword,
-            AcquisitionMode.Unspecified
-        ) with
-        {
-            Operation = operation,
-        };
-        string json = CredentialRequestV2Json.Serialize(request);
-        CredentialRequestV2 roundTripped = CredentialRequestV2Json.Deserialize(json);
-
-        Assert.Equal(operation, roundTripped.Operation);
-        Assert.Equal(AcquisitionMode.Unspecified, roundTripped.AcquisitionMode);
-        Assert.Equal(json, CredentialRequestV2Json.Serialize(roundTripped));
-        Assert.True(CredentialRequestV2Policy.IsValid(roundTripped));
-        Assert.Null(CredentialRequestV2Policy.GetViolation(roundTripped));
-    }
-
     public static TheoryData<
         CredentialOperation,
         AcquisitionMode
@@ -11474,6 +9913,7 @@ public sealed class ContractFreezeTests
                     cachePolicy: CachePolicyMode.FuturePersistentCacheRequested
                 )
             },
+            { CreateAzurePipelinesSystemAccessTokenRequestV2(AcquisitionMode.SilentOnly) },
         };
 
     [Theory]
@@ -11511,7 +9951,8 @@ public sealed class ContractFreezeTests
                         AllowsPersistentWrites = false,
                     }
                 ),
-                "Protocol violation: SilentOnly is not valid for explicit CI mode."
+                "Protocol violation: SilentOnly Azure Pipelines opaque-token requests must "
+                    + "satisfy the explicit CI policy."
             },
             {
                 CreateAzurePipelinesSystemAccessTokenRequestV2(AcquisitionMode.SilentOnly) with
@@ -11522,7 +9963,8 @@ public sealed class ContractFreezeTests
                         AllowsPersistentWrites = false,
                     },
                 },
-                "Protocol violation: SilentOnly is not valid for opaque CI tokens."
+                "Protocol violation: SilentOnly Azure Pipelines opaque-token requests must "
+                    + "satisfy the explicit CI policy."
             },
             {
                 CreateRequestV2(
@@ -11532,7 +9974,8 @@ public sealed class ContractFreezeTests
                     interactivePolicy: InteractivePolicy.Never,
                     cachePolicy: (CachePolicyMode)999
                 ),
-                "Protocol violation: credential request v2 must preserve the frozen v1 request shape."
+                "Protocol violation: credential request v2 must preserve "
+                    + "the frozen v1 request shape."
             },
         };
 
@@ -11546,6 +9989,116 @@ public sealed class ContractFreezeTests
         Assert.False(CredentialRequestV2Policy.IsValid(request));
         Assert.Equal(expectedViolation, CredentialRequestV2Policy.GetViolation(request));
         Assert.Throws<ArgumentException>(() => CredentialRequestV2Policy.EnsureValid(request));
+    }
+
+    public static TheoryData<CredentialEcosystem> SupportedAzurePipelinesOpaqueTokenEcosystems =>
+        new()
+        {
+            CredentialEcosystem.Git,
+            CredentialEcosystem.Npm,
+            CredentialEcosystem.Pnpm,
+            CredentialEcosystem.Yarn,
+        };
+
+    [Theory]
+    [MemberData(nameof(SupportedAzurePipelinesOpaqueTokenEcosystems))]
+    public void CredentialRequestV2PolicyAllowsExplicitSilentOnlyAzurePipelinesOpaqueTokens(
+        CredentialEcosystem ecosystem
+    )
+    {
+        CredentialRequestV2 request = CreateAzurePipelinesSystemAccessTokenRequestV2(
+            AcquisitionMode.SilentOnly,
+            ecosystem
+        );
+
+        Assert.Null(CredentialRequestV2Policy.GetViolation(request));
+        string json = CredentialRequestV2Json.Serialize(request);
+        CredentialRequestV2 roundTripped = CredentialRequestV2Json.Deserialize(json);
+        Assert.Equal(AcquisitionMode.SilentOnly, roundTripped.AcquisitionMode);
+        Assert.Equal(ecosystem, roundTripped.Ecosystem);
+    }
+
+    [Theory]
+    [InlineData(AcquisitionMode.Unspecified)]
+    [InlineData(AcquisitionMode.InteractionAllowed)]
+    public void CredentialRequestV2PolicyRejectsOtherModesForAzurePipelinesOpaqueTokens(
+        AcquisitionMode acquisitionMode
+    )
+    {
+        CredentialRequestV2 request = CreateAzurePipelinesSystemAccessTokenRequestV2(
+            acquisitionMode
+        );
+
+        Assert.False(CredentialRequestV2Policy.IsValid(request));
+        Assert.Throws<ArgumentException>(() => CredentialRequestV2Policy.EnsureValid(request));
+    }
+
+    public static TheoryData<CredentialRequestV2> InvalidAzurePipelinesOpaqueTokenCases =>
+        new()
+        {
+            CreateAzurePipelinesSystemAccessTokenRequestV2(AcquisitionMode.SilentOnly) with
+            {
+                AccountHint = "user@example.com",
+            },
+            CreateAzurePipelinesSystemAccessTokenRequestV2(AcquisitionMode.SilentOnly) with
+            {
+                TenantHint = "tenant-1",
+            },
+            CreateAzurePipelinesSystemAccessTokenRequestV2(AcquisitionMode.SilentOnly) with
+            {
+                CachePolicy = CachePolicyMode.NoCache,
+            },
+            CreateAzurePipelinesSystemAccessTokenRequestV2(AcquisitionMode.SilentOnly) with
+            {
+                CiContext = new CiContext
+                {
+                    ExplicitCiMode = true,
+                    Provider = "Other",
+                    HasAzurePipelinesSystemAccessToken = true,
+                    AllowsPersistentWrites = false,
+                },
+            },
+            CreateAzurePipelinesSystemAccessTokenRequestV2(AcquisitionMode.SilentOnly) with
+            {
+                CiContext = new CiContext
+                {
+                    ExplicitCiMode = true,
+                    Provider = CiProviderNames.AzurePipelines,
+                    HasAzurePipelinesSystemAccessToken = false,
+                    AllowsPersistentWrites = false,
+                },
+            },
+            CreateAzurePipelinesSystemAccessTokenRequestV2(AcquisitionMode.SilentOnly) with
+            {
+                CiContext = new CiContext
+                {
+                    ExplicitCiMode = true,
+                    Provider = CiProviderNames.AzurePipelines,
+                    HasAzurePipelinesSystemAccessToken = true,
+                    AllowsPersistentWrites = true,
+                },
+            },
+            CreateAzurePipelinesSystemAccessTokenRequestV2(
+                AcquisitionMode.SilentOnly,
+                CredentialEcosystem.NuGet
+            ),
+            CreateAzurePipelinesSystemAccessTokenRequestV2(
+                AcquisitionMode.SilentOnly,
+                CredentialEcosystem.Python
+            ),
+        };
+
+    [Theory]
+    [MemberData(nameof(InvalidAzurePipelinesOpaqueTokenCases))]
+    public void CredentialRequestV2PolicyRejectsInvalidAzurePipelinesOpaqueTokenPolicy(
+        CredentialRequestV2 request
+    )
+    {
+        Assert.Equal(
+            "Protocol violation: SilentOnly Azure Pipelines opaque-token requests must "
+                + "satisfy the explicit CI policy.",
+            CredentialRequestV2Policy.GetViolation(request)
+        );
     }
 
     [Theory]
@@ -11847,54 +10400,30 @@ public sealed class ContractFreezeTests
         Assert.Throws<ArgumentNullException>(() => CredentialRequestV2Json.Deserialize(null!));
     }
 
-    [Theory]
-    [InlineData("\"AcquisitionMode\":\"interactionAllowed\"")]
-    [InlineData("\"unknownAcquisitionMode\":\"interactionAllowed\"")]
-    public void CredentialRequestV2JsonRejectsPropertyCaseAliasesAndUnknownNames(
-        string replacementProperty
-    )
+    [Fact]
+    public void CredentialRequestV2JsonUsesOrdinaryFrameworkPropertyHandling()
     {
         string json = CreateCredentialRequestV2Json()
             .Replace(
                 "\"acquisitionMode\":\"interactionAllowed\"",
-                replacementProperty,
+                "\"AcquisitionMode\":\"interactionAllowed\"",
                 StringComparison.Ordinal
-            );
-
-        Assert.Throws<JsonException>(() => CredentialRequestV2Json.Deserialize(json));
-    }
-
-    [Fact]
-    public void CredentialRequestV2JsonRejectsUnknownProperties()
-    {
-        string json = CreateCredentialRequestV2Json()
+            )
             .Replace(
                 "\"extensionData\":{}",
                 "\"extensionData\":{},\"futurePolicy\":true",
                 StringComparison.Ordinal
             );
 
-        Assert.Throws<JsonException>(() => CredentialRequestV2Json.Deserialize(json));
-    }
+        CredentialRequestV2 request = CredentialRequestV2Json.Deserialize(json);
 
-    [Fact]
-    public void CredentialRequestV2JsonRejectsDuplicateProperties()
-    {
-        string json = CreateCredentialRequestV2Json()
-            .Replace(
-                "\"extensionData\":{}",
-                "\"extensionData\":{},\"acquisitionMode\":\"unspecified\"",
-                StringComparison.Ordinal
-            );
-
-        Assert.Throws<JsonException>(() => CredentialRequestV2Json.Deserialize(json));
+        Assert.Equal(AcquisitionMode.InteractionAllowed, request.AcquisitionMode);
     }
 
     [Theory]
-    [InlineData("\"interactionAllowed\"", "\"InteractionAllowed\"")]
     [InlineData("\"interactionAllowed\"", "\"futureMode\"")]
     [InlineData("\"interactionAllowed\"", "1")]
-    public void CredentialRequestV2JsonRejectsEnumCaseAliasesUnknownValuesAndNumericValues(
+    public void CredentialRequestV2JsonRejectsUnknownAndNumericEnumValues(
         string currentValue,
         string replacementValue
     )
@@ -12015,11 +10544,20 @@ public sealed class ContractFreezeTests
         };
 
     private static CredentialRequestV2 CreateAzurePipelinesSystemAccessTokenRequestV2(
-        AcquisitionMode acquisitionMode
-    ) =>
-        CreateRequestV2(
+        AcquisitionMode acquisitionMode,
+        CredentialEcosystem ecosystem = CredentialEcosystem.Git
+    )
+    {
+        CredentialKind credentialKind = ecosystem switch
+        {
+            CredentialEcosystem.Git => CredentialKind.BearerToken,
+            CredentialEcosystem.NuGet => CredentialKind.NuGetPluginCredential,
+            CredentialEcosystem.Python => CredentialKind.BasicPassword,
+            _ => CredentialKind.NpmAuthToken,
+        };
+        CredentialRequestV2 request = CreateRequestV2(
             IdentityFlow.AzurePipelinesSystemAccessToken,
-            CredentialKind.BearerToken,
+            credentialKind,
             acquisitionMode,
             interactivePolicy: InteractivePolicy.Never,
             cachePolicy: CachePolicyMode.NonPersistentCi,
@@ -12031,6 +10569,19 @@ public sealed class ContractFreezeTests
                 AllowsPersistentWrites = false,
             }
         );
+        if (ecosystem == CredentialEcosystem.Git)
+        {
+            return request;
+        }
+
+        CredentialRequest packageRequest = CreatePackageRequest(ecosystem, credentialKind);
+        return request with
+        {
+            Ecosystem = ecosystem,
+            Resource = packageRequest.Resource,
+            RequestedAudience = packageRequest.RequestedAudience,
+        };
+    }
 
     private static string CreateCredentialRequestV2Json() =>
         CredentialRequestV2Json.Serialize(
@@ -12098,236 +10649,6 @@ public sealed class ContractFreezeTests
 
     private static string SerializeJsonStringLiteral(string value) =>
         $"\"{JsonEncodedText.Encode(value).ToString()}\"";
-
-    private static string CreateDirectCredentialRequestV2BypassJson() =>
-        ReplaceInCredentialRequestV2Json(
-            ("\"acquisitionMode\":\"interactionAllowed\"", "\"AcquisitionMode\":\"silentOnly\""),
-            ("\"extensionData\":{}", "\"extensionData\":{},\"futurePolicy\":true")
-        );
-
-    private static JsonSerializerOptions[] CreateDirectCredentialRequestV2JsonOptions() =>
-        [
-            CreateDirectCredentialRequestV2JsonOptions(defaults: null),
-            CreateDirectCredentialRequestV2JsonOptions(JsonSerializerDefaults.Web),
-            CreateDirectCredentialRequestV2JsonOptions(
-                defaults: null,
-                propertyNamingPolicy: JsonNamingPolicy.CamelCase,
-                propertyNameCaseInsensitive: true,
-                addCamelCaseEnumConverter: true
-            ),
-            ContractJson.CreateSerializerOptions(),
-        ];
-
-    private static JsonSerializerOptions CreateDirectCredentialRequestV2JsonOptions(
-        JsonSerializerDefaults? defaults,
-        JsonNamingPolicy? propertyNamingPolicy = null,
-        bool? propertyNameCaseInsensitive = null,
-        bool addCamelCaseEnumConverter = false
-    )
-    {
-        JsonSerializerOptions options = defaults is JsonSerializerDefaults serializerDefaults
-            ? new JsonSerializerOptions(serializerDefaults)
-            : new JsonSerializerOptions();
-        options.TypeInfoResolver = new DefaultJsonTypeInfoResolver();
-        options.PropertyNamingPolicy = propertyNamingPolicy;
-        if (propertyNameCaseInsensitive.HasValue)
-        {
-            options.PropertyNameCaseInsensitive = propertyNameCaseInsensitive.Value;
-        }
-
-        if (addCamelCaseEnumConverter)
-        {
-            options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
-        }
-
-        return options;
-    }
-
-    public static IEnumerable<object[]> CredentialRequestV1WireMemberNames =>
-        CredentialRequestV1FieldNamePairs.Select(static entry => new object[] { entry.WireName });
-
-    public static IEnumerable<object[]> CredentialRequestV1PascalCaseFieldNames =>
-        CredentialRequestV1FieldNamePairs.Select(static entry =>
-            new object[] { entry.PropertyName }
-        );
-
-    public static IEnumerable<object[]> CredentialRequestV1CaseAndWhitespaceAliases =>
-        CredentialRequestV1FieldNamePairs.SelectMany(static entry =>
-            new[]
-            {
-                new object[] { entry.WireName.ToUpperInvariant() },
-                new object[] { CreateWhitespaceAlias(entry.WireName) },
-            }
-        );
-
-    public static IEnumerable<object[]> SafeAuditableAsciiAdditiveFieldNames =>
-        [
-            new object[] { "newSafeField2" },
-            new object[] { "NewSafeField2" },
-            new object[] { "acquisitionMode2" },
-            new object[] { nameof(CredentialRequestV2.AcquisitionMode) + "2" },
-        ];
-
-    public static IEnumerable<object[]> RejectedAdditiveFieldNames =>
-        [
-            new object[] { "1newSafeField" },
-            new object[] { "new-safe-field" },
-            new object[] { "new_safe_field" },
-            new object[] { "newSafe Field" },
-            new object[] { "newSafeField\u0000" },
-            new object[] { "newSafe\u200BField" },
-            new object[] { "newSafe\uFEFFField" },
-            new object[] { "newSafe\u202EField" },
-            new object[] { "newSa\u0301feField" },
-            new object[] { "acqu\u0456sitionMode" },
-            new object[] { "acquisiti\u03BFnMode" },
-            new object[] { "newSafeField\uD800" },
-        ];
-
-    private static readonly (
-        string WireName,
-        string PropertyName
-    )[] CredentialRequestV1FieldNamePairs =
-    [
-        ("contractMajor", nameof(CredentialRequest.ContractMajor)),
-        ("ecosystem", nameof(CredentialRequest.Ecosystem)),
-        ("operation", nameof(CredentialRequest.Operation)),
-        ("resource", nameof(CredentialRequest.Resource)),
-        ("serviceIdentity", nameof(CredentialRequest.ServiceIdentity)),
-        ("accountHint", nameof(CredentialRequest.AccountHint)),
-        ("tenantHint", nameof(CredentialRequest.TenantHint)),
-        ("requestedAudience", nameof(CredentialRequest.RequestedAudience)),
-        ("credentialKind", nameof(CredentialRequest.CredentialKind)),
-        ("identityFlow", nameof(CredentialRequest.IdentityFlow)),
-        ("interactivePolicy", nameof(CredentialRequest.InteractivePolicy)),
-        ("cachePolicy", nameof(CredentialRequest.CachePolicy)),
-        ("ciContext", nameof(CredentialRequest.CiContext)),
-        ("extensionData", nameof(CredentialRequest.ExtensionData)),
-    ];
-
-    private static void AssertAdditiveFieldCompatibilityAcrossAllOverloads(
-        int actualMajor,
-        int supportedMajor,
-        string fieldName,
-        bool expectedWhenOlderConsumersCanIgnoreSafely
-    )
-    {
-        string actualContractId = ResolveKnownCredentialContractId(actualMajor);
-        string supportedContractId = ResolveKnownCredentialContractId(supportedMajor);
-
-        Assert.Equal(
-            expectedWhenOlderConsumersCanIgnoreSafely,
-            ContractCompatibility.AllowsAdditiveField(actualMajor, supportedMajor, fieldName)
-        );
-        Assert.Equal(
-            expectedWhenOlderConsumersCanIgnoreSafely,
-            ContractCompatibility.AllowsAdditiveField(
-                actualMajor,
-                supportedMajor,
-                fieldName,
-                olderConsumersCanIgnoreSafely: true
-            )
-        );
-        Assert.False(
-            ContractCompatibility.AllowsAdditiveField(
-                actualMajor,
-                supportedMajor,
-                fieldName,
-                olderConsumersCanIgnoreSafely: false
-            )
-        );
-        Assert.Equal(
-            expectedWhenOlderConsumersCanIgnoreSafely,
-            ContractCompatibility.AllowsAdditiveField(
-                actualContractId,
-                actualMajor,
-                supportedContractId,
-                supportedMajor,
-                fieldName
-            )
-        );
-        Assert.Equal(
-            expectedWhenOlderConsumersCanIgnoreSafely,
-            ContractCompatibility.AllowsAdditiveField(
-                actualContractId,
-                actualMajor,
-                supportedContractId,
-                supportedMajor,
-                fieldName,
-                olderConsumersCanIgnoreSafely: true
-            )
-        );
-        Assert.False(
-            ContractCompatibility.AllowsAdditiveField(
-                actualContractId,
-                actualMajor,
-                supportedContractId,
-                supportedMajor,
-                fieldName,
-                olderConsumersCanIgnoreSafely: false
-            )
-        );
-        Assert.Equal(
-            !expectedWhenOlderConsumersCanIgnoreSafely,
-            ContractCompatibility.RequiresMajorVersionChange(
-                "add-optional-field",
-                actualContractId,
-                actualMajor,
-                supportedContractId,
-                supportedMajor,
-                fieldName
-            )
-        );
-        Assert.Equal(
-            !expectedWhenOlderConsumersCanIgnoreSafely,
-            ContractCompatibility.RequiresMajorVersionChange(
-                "add-optional-field",
-                actualContractId,
-                actualMajor,
-                supportedContractId,
-                supportedMajor,
-                fieldName,
-                olderConsumersCanIgnoreSafely: true
-            )
-        );
-        Assert.True(
-            ContractCompatibility.RequiresMajorVersionChange(
-                "add-optional-field",
-                actualContractId,
-                actualMajor,
-                supportedContractId,
-                supportedMajor,
-                fieldName,
-                olderConsumersCanIgnoreSafely: false
-            )
-        );
-    }
-
-    private static string CreateWhitespaceAlias(string wireName)
-    {
-        var builder = new StringBuilder(wireName.Length + 4);
-        builder.Append('\t');
-        foreach (char character in wireName)
-        {
-            if (char.IsUpper(character))
-            {
-                builder.Append(' ');
-            }
-
-            builder.Append(character);
-        }
-
-        builder.Append("\r\n");
-        return builder.ToString();
-    }
-
-    private static string ResolveKnownCredentialContractId(int major) =>
-        major switch
-        {
-            ContractVersions.CredentialContractMajor => ContractVersions.CredentialContractId,
-            ContractVersions.CredentialContractV2Major => ContractVersions.CredentialContractV2Id,
-            _ => throw new ArgumentOutOfRangeException(nameof(major)),
-        };
 
     private static CredentialRequest CreateRequest(IdentityFlow flow, CredentialKind kind) =>
         new()
@@ -12490,103 +10811,6 @@ public sealed class ContractFreezeTests
             "},",
             "\"extensionData\":{}}"
         );
-
-    private static string GetFullyQualifiedHelperPath() =>
-        GetFullyQualifiedHelperPath(KeyringHelperIntegrityPlatform.Linux);
-
-    private static string GetFullyQualifiedHelperPath(KeyringHelperIntegrityPlatform platform) =>
-        platform switch
-        {
-            KeyringHelperIntegrityPlatform.Windows =>
-                @"C:\Program Files\AzureAuth CredProvider\keyring-helper.exe",
-            KeyringHelperIntegrityPlatform.MacOs =>
-                "/Applications/AzureAuth CredProvider/keyring-helper",
-            _ => "/opt/azureauth-credprovider/keyring-helper",
-        };
-
-    private static KeyringHelperIntegrityContract CreateStructurallyValidIntegrityContract(
-        KeyringHelperIntegrityPlatform platform
-    )
-    {
-        var integrity = new KeyringHelperIntegrityContract
-        {
-            ProductId = "azureauth-credprovider",
-            AbsoluteHelperPath = GetFullyQualifiedHelperPath(platform),
-            Sha256 = new string('a', 64),
-            Platform = platform,
-        };
-
-        return
-            platform
-                is KeyringHelperIntegrityPlatform.Windows
-                    or KeyringHelperIntegrityPlatform.MacOs
-            ? integrity with
-            {
-                OwnerValidation = KeyringOwnerValidationRequirement.DeferredNotAvailable,
-                SymlinkPolicy = KeyringSymlinkPolicy.BestEffortRejectSymlinks,
-                DigestPolicy = KeyringDigestPolicy.Sha256RequiredWeakPath,
-            }
-            : integrity;
-    }
-
-    private static string CreateKeyringIntegrityJson(
-        bool includeContractMajor = true,
-        bool includePlatform = true,
-        bool includeOwnerValidation = true,
-        bool includeSymlinkPolicy = true,
-        bool includeDigestPolicy = true,
-        bool includeProductId = true,
-        bool includeAbsoluteHelperPath = true,
-        bool includeSha256 = true
-    )
-    {
-        List<string> properties = [];
-
-        if (includeContractMajor)
-        {
-            properties.Add("\"contractMajor\": 2");
-        }
-
-        if (includeProductId)
-        {
-            properties.Add("\"productId\": \"azureauth-credprovider\"");
-        }
-
-        if (includeAbsoluteHelperPath)
-        {
-            string encodedHelperPath = JsonEncodedText
-                .Encode(GetFullyQualifiedHelperPath())
-                .ToString();
-            properties.Add($"\"absoluteHelperPath\": \"{encodedHelperPath}\"");
-        }
-
-        if (includeSha256)
-        {
-            properties.Add($"\"sha256\": \"{new string('a', 64)}\"");
-        }
-
-        if (includePlatform)
-        {
-            properties.Add("\"platform\": \"linux\"");
-        }
-
-        if (includeOwnerValidation)
-        {
-            properties.Add("\"ownerValidation\": \"required\"");
-        }
-
-        if (includeSymlinkPolicy)
-        {
-            properties.Add("\"symlinkPolicy\": \"rejectSymlinks\"");
-        }
-
-        if (includeDigestPolicy)
-        {
-            properties.Add("\"digestPolicy\": \"sha256Required\"");
-        }
-
-        return string.Concat("{", string.Join(",", properties), "}");
-    }
 
     private static CredentialErrorKind ToErrorKind(CredentialResultStatus status) =>
         status switch

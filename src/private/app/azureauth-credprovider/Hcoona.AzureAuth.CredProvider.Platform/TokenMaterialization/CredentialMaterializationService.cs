@@ -10,7 +10,8 @@ public sealed class CredentialMaterializationService
 
     public CredentialMaterializationService(
         ITokenExchange tokenExchange,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null
+    )
     {
         ArgumentNullException.ThrowIfNull(tokenExchange);
         _tokenExchange = tokenExchange;
@@ -20,7 +21,8 @@ public sealed class CredentialMaterializationService
     public async ValueTask<CredentialMaterializationResult> MaterializeAsync(
         CredentialRequestV2 request,
         AcquiredAccessToken sourceToken,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(sourceToken);
@@ -31,7 +33,8 @@ public sealed class CredentialMaterializationService
             return Failure(
                 CredentialMaterializationStatus.Disabled,
                 decision.Code,
-                "The requested credential form is disabled.");
+                "The requested credential form is disabled."
+            );
         }
 
         if (
@@ -39,40 +42,38 @@ public sealed class CredentialMaterializationService
             || request.Resource is null
             || !CanonicalResourceIdentityPolicy.IsServiceEndpointCompatibleWithEcosystem(
                 request.Resource.ServiceEndpoint,
-                request.Ecosystem)
+                request.Ecosystem
+            )
         )
         {
             return Failure(
                 CredentialMaterializationStatus.InvalidRequest,
                 "CredentialRequestInvalid",
-                "The credential request is invalid.");
+                "The credential request is invalid."
+            );
         }
 
         DateTimeOffset now = _timeProvider.GetUtcNow();
         if (
-            sourceToken.ClaimValidation
-                != AccessTokenClaimValidation.AzureDevOpsClaimConsistency
-            || sourceToken.Provenance == AccessTokenAcquisitionProvenance.Unspecified
+            sourceToken.Provenance == AccessTokenAcquisitionProvenance.Unspecified
             || string.IsNullOrWhiteSpace(sourceToken.TenantId)
             || string.IsNullOrEmpty(sourceToken.Token?.Value)
-            || sourceToken.IssuedAt is null
-            || sourceToken.NotBefore is null
-            || sourceToken.ExpiresAt is null
-            || sourceToken.NotBefore > now
-            || sourceToken.ExpiresAt <= now
+            || (sourceToken.ExpiresAt is not null && sourceToken.ExpiresAt <= now)
             || (
                 request.TenantHint is not null
                 && !string.Equals(
                     request.TenantHint,
                     sourceToken.TenantId,
-                    StringComparison.OrdinalIgnoreCase)
+                    StringComparison.OrdinalIgnoreCase
+                )
             )
         )
         {
             return Failure(
                 CredentialMaterializationStatus.InvalidToken,
                 "AcquiredTokenInvalid",
-                "The acquired access token is not currently usable.");
+                "The acquired access token is not currently usable."
+            );
         }
 
         return decision.Action switch
@@ -81,25 +82,33 @@ public sealed class CredentialMaterializationService
                 CredentialFormPolicy.DirectBasicUsername,
                 sourceToken.Token.Value,
                 bearerToken: null,
-                sourceToken.ExpiresAt.Value),
+                sourceToken.ExpiresAt
+            ),
             CredentialMaterializationAction.DirectBearer => Success(
                 username: null,
                 password: null,
                 sourceToken.Token.Value,
-                sourceToken.ExpiresAt.Value),
-            CredentialMaterializationAction.ExchangeNuGetSessionToken =>
-                await ExchangeAsync(request, sourceToken, cancellationToken).ConfigureAwait(false),
+                sourceToken.ExpiresAt
+            ),
+            CredentialMaterializationAction.ExchangeNuGetSessionToken => await ExchangeAsync(
+                    request,
+                    sourceToken,
+                    cancellationToken
+                )
+                .ConfigureAwait(false),
             _ => Failure(
                 CredentialMaterializationStatus.Unsupported,
                 "CredentialFormUnsupported",
-                "The requested credential form is unsupported."),
+                "The requested credential form is unsupported."
+            ),
         };
     }
 
     private async ValueTask<CredentialMaterializationResult> ExchangeAsync(
         CredentialRequestV2 request,
         AcquiredAccessToken sourceToken,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         AsyncTokenExchangeResult exchange = await _tokenExchange
             .ExchangeAsync(request, sourceToken, cancellationToken)
@@ -117,45 +126,47 @@ public sealed class CredentialMaterializationService
                 AsyncTokenExchangeStatus.Disabled => Failure(
                     CredentialMaterializationStatus.Disabled,
                     exchange.Code,
-                    "Token exchange is disabled."),
+                    "Token exchange is disabled."
+                ),
                 AsyncTokenExchangeStatus.Canceled => Failure(
                     CredentialMaterializationStatus.Canceled,
                     exchange.Code,
-                    "Token exchange was canceled."),
+                    "Token exchange was canceled."
+                ),
                 AsyncTokenExchangeStatus.TimedOut => Failure(
                     CredentialMaterializationStatus.TimedOut,
                     exchange.Code,
-                    "Token exchange timed out."),
+                    "Token exchange timed out."
+                ),
                 _ => Failure(
                     CredentialMaterializationStatus.ExchangeFailed,
                     exchange.Code,
-                    "Token exchange failed."),
+                    "Token exchange failed."
+                ),
             };
         }
 
-        DateTimeOffset expiry =
-            exchange.ExpiresAt.Value < sourceToken.ExpiresAt!.Value
-                ? exchange.ExpiresAt.Value
-                : sourceToken.ExpiresAt.Value;
         return Success(
             CredentialFormPolicy.NuGetSessionTokenUsername,
             exchange.Token.Value,
             bearerToken: null,
-            expiry);
+            exchange.ExpiresAt.Value
+        );
     }
 
     private static CredentialMaterializationResult Success(
         string? username,
         string? password,
         string? bearerToken,
-        DateTimeOffset expiresAt) =>
+        DateTimeOffset? expiresAt
+    ) =>
         new()
         {
             Status = CredentialMaterializationStatus.Success,
             Username = username,
             Password = password,
             BearerToken = bearerToken,
-            ExpiresAt = expiresAt.ToUniversalTime(),
+            ExpiresAt = expiresAt?.ToUniversalTime(),
             Code = "CredentialMaterialized",
             SafeMessage = "Credential materialization succeeded.",
         };
@@ -163,7 +174,8 @@ public sealed class CredentialMaterializationService
     private static CredentialMaterializationResult Failure(
         CredentialMaterializationStatus status,
         string code,
-        string safeMessage) =>
+        string safeMessage
+    ) =>
         new()
         {
             Status = status,

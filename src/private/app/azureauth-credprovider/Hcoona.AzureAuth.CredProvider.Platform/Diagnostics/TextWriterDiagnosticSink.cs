@@ -3,17 +3,17 @@ using System.Text;
 
 namespace Hcoona.AzureAuth.CredProvider.Platform.Diagnostics;
 
-public sealed class TextWriterDiagnosticSink : ICommitTrackingDiagnosticSink
+public sealed class TextWriterDiagnosticSink : IDiagnosticSink
 {
     private readonly DiagnosticChannel _channel;
     private readonly DiagnosticSeverity _minimumSeverity;
-    private readonly object _syncRoot;
     private readonly TextWriter _writer;
 
     public TextWriterDiagnosticSink(
         TextWriter writer,
         DiagnosticSeverity minimumSeverity = DiagnosticSeverity.Information,
-        DiagnosticChannel channel = DiagnosticChannel.Diagnostic)
+        DiagnosticChannel channel = DiagnosticChannel.Diagnostic
+    )
     {
         ArgumentNullException.ThrowIfNull(writer);
         if (channel == DiagnosticChannel.ProtocolStdout)
@@ -21,55 +21,25 @@ public sealed class TextWriterDiagnosticSink : ICommitTrackingDiagnosticSink
             throw new ArgumentOutOfRangeException(
                 nameof(channel),
                 channel,
-                "Protocol stdout must not be routed to diagnostic text sinks.");
+                "Protocol stdout cannot be used as a diagnostic sink."
+            );
         }
 
-        _writer = writer;
-        _syncRoot = TextWriterSynchronization.GetWriterSyncRoot(writer);
+        _writer = TextWriter.Synchronized(writer);
         _minimumSeverity = minimumSeverity;
         _channel = channel;
     }
 
     public void Write(DiagnosticEvent diagnosticEvent)
     {
-        _ = WriteCore(diagnosticEvent, trackCommit: false);
-    }
-
-    internal bool WriteWithCommitTracking(DiagnosticEvent diagnosticEvent)
-    {
-        return WriteCore(diagnosticEvent, trackCommit: true);
-    }
-
-    bool ICommitTrackingDiagnosticSink.WriteWithCommitTracking(DiagnosticEvent diagnosticEvent)
-    {
-        return WriteWithCommitTracking(diagnosticEvent);
-    }
-
-    private bool WriteCore(DiagnosticEvent diagnosticEvent, bool trackCommit)
-    {
         ArgumentNullException.ThrowIfNull(diagnosticEvent);
-
-        using (TextWriterSynchronization.AcquireWriteLock(_writer, _syncRoot))
+        if (diagnosticEvent.Channel != _channel || diagnosticEvent.Severity < _minimumSeverity)
         {
-            if (diagnosticEvent.Channel != _channel ||
-                diagnosticEvent.Severity < _minimumSeverity)
-            {
-                return false;
-            }
-
-            string line = FormatDiagnosticEvent(diagnosticEvent);
-            var outputCommitted = false;
-            try
-            {
-                WriteLine(line, ref outputCommitted, trackCommit);
-                TextWriterSynchronization.FlushUnderSharedLockIfNeeded(_writer);
-                return outputCommitted;
-            }
-            catch (Exception ex) when (trackCommit)
-            {
-                throw new DiagnosticWriteException(outputCommitted, ex);
-            }
+            return;
         }
+
+        _writer.WriteLine(FormatDiagnosticEvent(diagnosticEvent));
+        _writer.Flush();
     }
 
     private static string FormatDiagnosticEvent(DiagnosticEvent diagnosticEvent)
@@ -99,18 +69,5 @@ public sealed class TextWriterDiagnosticSink : ICommitTrackingDiagnosticSink
         }
 
         return builder.ToString();
-    }
-
-    private void WriteLine(string line, ref bool outputCommitted, bool trackCommit)
-    {
-        string newLine = _writer.NewLine;
-        // Keep the diagnostic line and the configured newline in one preflightable write so
-        // exact StreamWriter instances cannot buffer the line before an invalid newline fails.
-        string output = string.IsNullOrEmpty(newLine) ? line : string.Concat(line, newLine);
-        TextWriterUnicodeScalarWriter.Write(
-            _writer,
-            output,
-            ref outputCommitted,
-            trackCommit: trackCommit);
     }
 }

@@ -166,10 +166,11 @@ ecosystems:
 - Secret redaction.
 - Diagnostic event production.
 
-The core uses direct MSAL integration for the current product phase. AzureAuth
-(`microsoft-authentication-cli`) is deferred and may be reconsidered only as an
-optional helper/backend candidate behind the same identity provider abstraction
-if future requirements justify it.
+The core uses AzureAuth (`microsoft-authentication-cli`) 0.9.5 for the current
+Windows and WSL identity path. The provider is selected and bound explicitly,
+and the executable is derived from the official per-user installation layout.
+Direct MSAL remains unimplemented behind the same identity-provider
+abstraction.
 
 ### Core Submodules
 
@@ -287,40 +288,32 @@ but they are not the product's primary user interface.
 The configuration manager is the only module allowed to perform persistent
 configuration mutations. Adapters and installers produce declarative change
 plans; the configuration manager validates those plans, applies approved writes,
-records ownership, and owns rollback and removal metadata.
+and records exact selectors for later removal.
 
 Configuration commands must record product-owned writes in a manifest outside
 repository-local configuration unless an explicit project-scoped setup mode is
 selected. The manifest enables safe removal and diagnostics.
 
 ```text
-ConfiguredArtifact
-  id
-  ecosystem
-  targetScope
-  targetPathOrConfigKey
-  entryKind
+ConfigurationOwnershipManifest
+  manifestId
+  ownerProductId
+  scope
   entrySelector
-  operation
-  precedenceRank
-  canonicalBefore?
-  canonicalAfter
-  installedValueHash
-  rollbackAction
-  createdByVersion
-  createdAt
-  lastVerifiedAt?
+  resourceIdentity?
+  productVersion?
+  safeMetadata
+  entries:
+    - sequence
+      targetKind
+      targetPathOrName
+      key
 ```
 
-The manifest records locations and hashes of owned settings, not credentials.
-For privacy and security, values that may contain user names, tenant IDs, or
-organization names are recorded only when required for safe removal and are
-redacted in diagnostics.
-
-`canonicalBefore` and `canonicalAfter` are adapter-defined serializations of the
-specific config entry being changed, not dumps of entire user configuration
-files. Each ecosystem adapter must define its own canonical entry selector and
-precedence model before implementing `configure`:
+The manifest is an operational selector sidecar, not a tamper-proof history. It
+records only the target identity needed for precise cleanup and never stores
+credential values or value hashes. Each ecosystem adapter must define its own
+canonical entry selector and precedence model before implementing `configure`:
 
 | Ecosystem | Canonical entry selector                                                                                                     | Precedence model                                                                                                                                           |
 | --------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -330,12 +323,12 @@ precedence model before implementing `configure`:
 | npm/pnpm  | Config file scope, registry URL selector, and auth key selector.                                                             | npm-compatible layered config order for user, global, explicit path, and CI temporary configuration; workspace files are read through `WorkspaceReadOnly`. |
 | Yarn      | `.yarnrc.yml` path, `npmScopes` or `npmRegistries` selector, and auth field selector.                                        | Yarn Berry configuration resolution with Phase 1.4-approved user-level and CI-temporary change-plan targets; direct adapter writes remain disallowed.      |
 
-The default removal strategy is surgical deletion of product-owned entries. The
-product must not attempt whole-file rollback unless the entry was created in a
-product-owned temporary file. If a configure operation would require replacing a
-non-owned entry, it must stop with `ConfigConflict` unless the user explicitly
-selects a migration flow that records enough before-state to restore the
-previous entry.
+The default removal strategy is surgical deletion of product-owned entries.
+Each target mutation uses the normal lower-layer write behavior without
+cross-target recovery machinery. If a configure operation would replace a
+non-owned entry, it stops with
+`ConfigConflict`. Product-owned temporary containers are deleted during normal
+remove behavior.
 
 Persistent write paths must use this flow:
 
@@ -343,7 +336,8 @@ Persistent write paths must use this flow:
 2. The configuration manager evaluates scope, precedence, conflicts, and policy.
 3. Dry-run output is generated from the same plan that would be applied.
 4. The configuration manager applies the write.
-5. The configuration manager records the manifest entry before reporting success.
+5. The configuration manager updates the ownership sidecar after the target
+   write completes.
 
 Adapters must not directly write Git config, NuGet plugin registration state,
 Python backend configuration, PATH shim placement, npm config, Yarn config, or
@@ -361,7 +355,6 @@ ConfigurationChangePlan
   operation
   intendedCanonicalValue
   conflictPolicy
-  rollbackPolicy
   containsCredentialMaterial
   expiresAt?
 ```
@@ -379,13 +372,13 @@ Basic auth headers, npm tokens, NuGet API keys, or PAT values.
 
 ## Adapter Host Library
 
-The adapter host library is the shared adapter runtime. It prevents each adapter
-from reinventing mode detection, diagnostics routing, and error handling.
+The adapter host library is the shared adapter runtime. It provides explicit
+routing for the product's known entry-point shapes, diagnostics routing, and
+error handling.
 
 Responsibilities:
 
-- Detect protocol mode versus human command mode when a binary has multiple
-  entry points.
+- Match the small, explicit set of supported executable and argument shapes.
 - Initialize the credential core with adapter-appropriate policy.
 - Provide stdout and stderr discipline helpers.
 - Route diagnostic events away from protocol stdout.
@@ -394,6 +387,10 @@ Responsibilities:
 
 The adapter host library must not parse Git, NuGet, Python, or npm protocol
 payloads. Protocol parsing remains in ecosystem adapters.
+
+Routing relies on normal `Path` APIs and ordered exact or prefix argument
+matching. It does not implement a general constraint lattice or parse native
+object-manager path namespaces.
 
 ## Git Adapter Design
 
@@ -423,7 +420,7 @@ file. It must not invoke `git config --global` as its writer implementation.
 Target selection must match Git's official global target behavior: use
 `~/.gitconfig` if it exists, otherwise use the existing XDG Git config file,
 otherwise create/use `~/.gitconfig`. ConfigurationManager owns dry-run
-rendering, ownership metadata, conflict handling, rollback, and removal for
+rendering, ownership metadata, conflict handling, application, and removal for
 these Git writes. CLI documentation may show `git config --global` only as an
 illustrative equivalent for the resulting configuration, not as the mechanism
 used by the product CLI. AzureAuth is not the runtime component that writes Git
@@ -620,23 +617,19 @@ The backend-helper protocol is versioned. MVP uses `keyring-helper-v2`:
   [--mode password|creds]
 ```
 
-The backend invokes the helper with a stable, non-shell command form. Before
-invocation, the backend verifies that the configured helper path matches the
-configuration-manager manifest entry for the selected Python environment and
-that the file exists and is executable. Stronger integrity checks, such as
-signature or file-hash verification, are a required prototype gate before
-release packaging is locked.
+The backend invokes the helper with a stable, non-shell command form. Before invocation, the backend resolves the configured absolute helper path and
+checks ordinary existence and executable requirements. Release artifacts remain
+subject to the separate package signing, provenance, and integrity policy.
 
 Helper stdout is limited to the keyring response shape: password only for
 `password` mode and newline-separated username and password for `creds` mode.
 Diagnostics go only to stderr or the configured diagnostic sink.
 
-If the helper path is missing, not executable, not product-owned, or fails
-integrity checks, the backend must fail closed. Unsupported Azure Artifacts hosts
-return keyring no-credential behavior. Malformed endpoints, helper ownership
-failures, protocol-version mismatches, and helper execution failures return
-keyring-compatible hard failures with redacted diagnostics. Local brokers and
-embedded shared libraries are deferred implementation options until source
+If the configured helper path is missing or not executable, the backend fails
+closed. Unsupported Azure Artifacts hosts return keyring no-credential behavior.
+Malformed endpoints, protocol-version mismatches, and helper execution failures
+return keyring-compatible hard failures with redacted diagnostics. Local brokers
+and embedded shared libraries are deferred implementation options until source
 inspection or prototypes prove they improve reliability without weakening adapter
 isolation.
 
@@ -982,8 +975,8 @@ The implementation sequence reduces protocol risk early:
 1. Implement canonicalization and cache-key construction with unit tests.
 2. Implement the credential core abstraction with a fake identity provider and
    fake cache-policy/key model.
-3. Implement configuration-manager change plans, ownership manifests, dry-run,
-   and removal metadata.
+3. Implement configuration-manager change plans, selector ownership manifests,
+   dry-run, and precise removal.
 4. Implement Git adapter protocol parsing and stdout discipline without direct
    persistent configuration writes.
 5. Implement NuGet plugin proof of protocol launch and handshake using a fake

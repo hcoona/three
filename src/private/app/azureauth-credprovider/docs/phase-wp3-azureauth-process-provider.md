@@ -17,10 +17,8 @@ Implemented in WP3:
   `CancellationToken`
 - provider-neutral `AcquiredAccessToken` and `AcquiredAccessTokenResult`
 - `AzureAuthIdentityProvider`
-- bounded async `IProcessRunner` / `SystemProcessRunner` updates for
+- bounded async `IProcessRunner` / `SystemProcessRunner` execution for
   cancellation, timeout, launch-failure, invalid-output, and output-size status
-- AzureAuth launch options for bounded execution and allowlisted environment
-  construction; launch directories come only from trusted runtime inspection
 
 Still out of scope:
 
@@ -32,18 +30,19 @@ Still out of scope:
 
 ## Exact AzureAuth Invocation
 
-WP3 uses the pinned executable path from the trusted deployment config only. No
-PATH lookup or fallback is allowed.
+WP3 uses the absolute executable path produced by supported-version installation
+discovery. No PATH lookup or shell command construction is used.
 
 Exact argv:
 
 ```text
-AzureAuth.exe
+azureauth.exe
   aad
   --client 872cd9fa-d31f-45e0-9eab-6e460a02d1f1
   --tenant <bound-tenant-id>
   --scope 499b84ac-1321-427f-aa17-267ca6975798/.default
   --mode web
+  [--domain <best-effort bound account domain>]
   --output token
 ```
 
@@ -60,9 +59,14 @@ Notes:
 - `ado token` is intentionally not used here.
 - `--output token` is required; WP3 does not consume AzureAuth JSON output.
 - secrets are never placed in argv.
-- The pinned upstream `aad` options contain no exact-account enforcement switch. Production uses
-  best-effort account selection: request hints must match the binding, the tenant is passed
-  explicitly, and returned Azure DevOps JWT audience, tenant, and time claims are validated.
+- AzureAuth `0.9.5` source commit
+  `21258ff3a2cbb01d6891243114a55abe9ae3587e` supports repeated `--scope` and
+  `--mode`, plus `--domain` and bounded raw token output.
+- `--domain` is only best-effort cached-account filtering. It is derived from
+  the optional bound account when a usable suffix follows `@`.
+- `--output json` is not used because AzureAuth manually interpolates
+  user/display-name text and can produce malformed JSON.
+- `--mode web` tries `CachedAuth` first and then browser interaction.
 
 ## Request Matrix
 
@@ -77,71 +81,33 @@ Notes:
 
 `AzureAuthIdentityProvider` accepts only `CredentialRequestV2`.
 
-## Trust and Binding Prerequisites
+## Installation and Binding Prerequisites
 
-Before each launch, WP3:
+Before launch, production composition:
 
 1. validates `AzureAuthProviderConfig`
-2. calls `IAzureAuthArtifactTrustInspector` through `AzureAuthTrustPolicy`
-3. requires `Trusted` plus an exact current deployment-key match
-4. requires a `Bound` AzureAuth binding with the same provider and deployment
-5. rejects invalid or mismatched account or tenant hints before process launch
-6. takes the working directory and PATH entries only from the inspector's
-   runtime-only `TrustedWorkingDirectory` and snapshotted `TrustedPathEntries`
+2. discovers the current user's versioned AzureAuth `0.9.5` installation
+3. requires an ordinary file whose reported version is `0.9.5`
+4. requires a bound AzureAuth tenant and optional account preference
+5. rejects mismatched account or tenant request hints before process launch
 
-The inspector owns filesystem ownership and writability checks. WP3 validates
-only basic nonblank absolute Windows shapes for its attested launch context. The
-inspector contract still provides inspection evidence, not a retained launch
-lease. Production evaluates trust once per acquisition and reuses that result
-for launch; it does not claim to eliminate the remaining path-based TOCTOU
-window.
+Native Windows derives the installation from `LocalApplicationData`. WSL uses
+fixed Windows PowerShell only to read `LocalApplicationData` and file version,
+then maps the absolute `C:` path under `/mnt/c`. The integration trusts normal
+OS and framework abstractions; it does not implement hashes, Authenticode, ACL,
+owner, ancestor, reparse, stable-identity, or TOCTOU proofs.
 
-Default behavior remains fail closed:
+## Environment, Working Directory, and Stdio
 
-- `DeferredAzureAuthArtifactTrustInspector` => trust deferred => no launch
-- unsupported secure-store composition is still outside WP3 runtime composition
+`SystemProcessRunner` inherits the normal process environment. A
+`ProcessStartSpec` may override or remove individual variables; it does not
+clear or attest the complete environment. AzureAuth-specific environment
+selection belongs to the AzureAuth integration package.
 
-## Environment, Working Directory, and Stdio Isolation
-
-WP3 AzureAuth launches use `ProcessEnvironmentMode.ExplicitOnly`.
-
-Allowed child environment keys are only:
-
-- `SystemRoot`
-- `WINDIR`
-- `TEMP`
-- `TMP`
-- `LOCALAPPDATA`
-- `USERPROFILE`
-- `PATH` only when explicit path entries are configured
-- `OEAUTH_MSAL_DISABLE_CACHE=1` for `NoCache`,
-  `ProductPersistentCacheDisabled`, and `NonPersistentCi`
-
-Everything else is omitted, including representative secret, proxy, and loader
-variables such as `ADO_TOKEN`, `HTTP_PROXY`, `DOTNET_ROOT`, `NODE_OPTIONS`,
-`COMPLUS_*`, `COREHOST_*`, CLR/CoreCLR profiler controls,
-`DOTNET_STARTUP_HOOKS`, `LD_*`, `DYLD_*`, and `PYTHON*`.
-
-For WSL interoperability launches, the explicit Linux process environment
-carries the snapshotted `WSL_INTEROP` endpoint and bridges the launch controls
-selected by production: `SystemRoot`, `WINDIR`, the trusted `PATH`, fixed
-`PATHEXT`, and cache policy. Production discovery does not derive or require
-`TEMP`, `TMP`, `LOCALAPPDATA`, or `USERPROFILE`; the Windows process may receive
-the normal Windows-host values so browser and MSAL integration use the host
-user. The representative filtering above describes the Linux launcher process,
-not replacement of the complete environment that WSL creates for a Windows
-process. The PowerShell trust probe additionally bridges its target-path
-variable.
-
-Additional launch rules:
-
-- working directory and PATH are required to come from current trusted inspector
-  evidence rather than caller launch options
-- current-directory inheritance is forbidden
-- stdin is redirected, receives no bytes when input is `null`, and is then
-  explicitly closed; no ecosystem stdout/stderr forwarding occurs
-- child stdout and stderr are always captured, never forwarded to protocol
-  stdout
+The runner uses the supplied working directory without a separate launch-time
+attestation callback. Stdin is redirected, receives no bytes when input is
+`null`, and is then closed. Stdout and stderr are redirected and drained
+concurrently, never forwarded to an ecosystem protocol stream.
 
 ## Async Runner Bounds and Statuses
 
@@ -157,23 +123,16 @@ Captured process statuses:
 - invalid output encoding
 - launch failure
 
-The general runner defaults to a 15-minute timeout and 1 MiB per captured stream.
-It rejects timeouts above one hour and any per-stream byte or character limit
-above 16 MiB before process start. AzureAuth keeps its tighter 8 KiB stream
-defaults.
+The general runner defaults to a 15-minute timeout and a 1 MiB byte limit for
+each captured stream. Callers may select another positive timeout or byte
+limit. A byte limit also bounds decoded text, so a second character limit is
+not maintained.
 
-On timeout or output-limit breach, the runner attempts
-`Kill(entireProcessTree: true)`, then waits for process exit and output drains for
-at most two seconds before returning a product-controlled status. Caller
-cancellation performs the same bounded cleanup and then throws
-`OperationCanceledException`, preserving existing runner behavior; the
-AzureAuth provider catches and maps it to its canceled result.
-
-The runner continues monitoring until both process exit and output drains
-complete. This prevents an exited root with inherited pipes held by descendants
-from hanging indefinitely. The direct tree-kill attempt plus bounded cleanup is
-not full containment: trusted Windows runner/container composition must provide
-job-object or equivalent whole-tree containment when that guarantee is needed.
+On timeout, invalid UTF-8, or output-limit breach, the runner makes a best-effort
+`Kill(entireProcessTree: true)` call and waits for ordinary process exit. Caller
+cancellation performs the same cleanup and then throws
+`OperationCanceledException`. This is normal `Process` API behavior, not a
+containment or descendant-attestation guarantee.
 
 ## Raw Token Output Rules
 
@@ -184,30 +143,24 @@ validates the transport shape:
 - reject a bare CR
 - reject empty output
 - reject multiline output
-- reject leading or trailing whitespace around the token
-- reject control characters
+- reject whitespace or control characters within the token
 - reject oversized output through runner bounds
 
-WP4 subsequently requires strict Azure DevOps JWT claim-consistency validation
-before returning the acquired token and derives `iat`, `nbf`, and `exp`
-metadata. This is not local signature authentication; see
+WP4 may read only `exp` as untrusted functional expiry metadata. It does not use
+unsigned audience, tenant, issued-at, or not-before claims as security gates; see
 [`phase-wp4-token-materialization.md`](phase-wp4-token-materialization.md).
-The tenant and deployment key still come from constraints enforced for launch,
-not from JWT claims. AzureAuth cannot force exact account selection, so account
-identity remains unknown (`null`). Interactive production launch is allowed
-after trust, deployment, and binding prerequisites pass; the returned JWT's
-audience, tenant, and time claims remain validated. Ecosystem credential exchange
-remains outside the WP3 provider.
+The tenant comes from the binding and explicit `--tenant` argument. Account
+identity remains a best-effort preference.
 
-All currently accepted cache policies disable AzureAuth's upstream MSAL file
-cache with the explicit product-controlled value above. A
-`FuturePersistentCacheRequested` request fails closed until persistent-cache
-behavior is designed and attested. No ADO token or PAT environment fallback is
-used.
+The process inherits the ordinary host integration environment.
+`OEAUTH_MSAL_DISABLE_CACHE` is not set: host MSAL cache reuse is an intentional
+product behavior. AzureAuth has no cache-only CLI mode, so `SilentOnly` remains
+unavailable and never launches.
 
-## Stable Error Codes
+## Error Codes
 
-WP3 public result codes are stable product strings, including:
+Current AzureAuth preflight, discovery, and process results use product codes
+including:
 
 - `AzureAuthAcquisitionModeRequired`
 - `SilentAcquisitionUnavailable`
@@ -216,11 +169,11 @@ WP3 public result codes are stable product strings, including:
 - `AzureAuthDeviceCodeUnsupported`
 - `AzureAuthPersistentCacheUnsupported`
 - `AzureAuthProviderSelectionMismatch`
-- `AzureAuthTrustDeferred`
-- `AzureAuthTrustRejected`
+- `AzureAuthInstallationMissing`
+- `AzureAuthVersionMismatch`
+- `AzureAuthDiscoveryUnavailable`
 - `AzureAuthBindingRequired`
 - `AzureAuthBindingProviderMismatch`
-- `AzureAuthBindingDeploymentMismatch`
 - `AzureAuthBindingAccountMismatch`
 - `AzureAuthBindingTenantMismatch`
 - `AzureAuthProcessLaunchFailed`
@@ -230,7 +183,6 @@ WP3 public result codes are stable product strings, including:
 - `AzureAuthProcessOutputTooLarge`
 - `AzureAuthProcessOutputInvalid`
 - `AzureAuthTokenOutputInvalid`
-- `AzureAuthTokenClaimsInconsistent`
-- `AzureAuthProviderFailure`
+- `AzureAuthProcessFailed`
 
 Raw stderr and token content are never copied into these public errors.

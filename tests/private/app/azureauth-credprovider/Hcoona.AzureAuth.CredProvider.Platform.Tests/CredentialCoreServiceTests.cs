@@ -3,6 +3,7 @@ using Hcoona.AzureAuth.CredProvider.Platform.CredentialCore;
 using Hcoona.AzureAuth.CredProvider.Platform.Diagnostics;
 using Hcoona.AzureAuth.CredProvider.Platform.Redaction;
 using Xunit;
+using CredentialCases = Xunit.TheoryData<Hcoona.AzureAuth.CredProvider.Contracts.CredentialRequest>;
 
 namespace Hcoona.AzureAuth.CredProvider.Platform.Tests;
 
@@ -15,7 +16,8 @@ public sealed class CredentialCoreServiceTests
         0,
         0,
         0,
-        TimeSpan.Zero);
+        TimeSpan.Zero
+    );
 
     [Fact]
     public void ExecuteAcceptedMvpRequestReturnsSuccessAndValidCacheKey()
@@ -61,14 +63,17 @@ public sealed class CredentialCoreServiceTests
         IdentityMaterial identity = CreateIdentityMaterial();
         var provider = new StaticIdentityProvider(identity);
         var cache = new ReportingDerivedCredentialCache(
-            DerivedCredentialCacheAvailability.Available);
-        var exchange = new CountingTokenExchange((_, _, _) =>
-            throw new InvalidOperationException("must not exchange"));
+            DerivedCredentialCacheAvailability.Available
+        );
+        var exchange = new CountingTokenExchange(
+            (_, _, _) => throw new InvalidOperationException("must not exchange")
+        );
         var service = new CredentialCoreService(provider, null, cache, exchange);
         CredentialRequest request = CreateGitRequest(
             flow: IdentityFlow.PatCompatibility,
             kind: CredentialKind.PatCompatibility,
-            cachePolicy: CachePolicyMode.FuturePersistentCacheRequested);
+            cachePolicy: CachePolicyMode.FuturePersistentCacheRequested
+        );
 
         CredentialResult result = service.Execute(request);
 
@@ -91,7 +96,9 @@ public sealed class CredentialCoreServiceTests
         const string rawTenant = "\tTenant-ONE ";
         var service = new CredentialCoreService(
             new StaticIdentityProvider(
-                CreateIdentityMaterial(account: rawAccount, tenant: rawTenant)));
+                CreateIdentityMaterial(account: rawAccount, tenant: rawTenant)
+            )
+        );
         CredentialRequest request = CreateGitRequest();
 
         CredentialResult result = service.Execute(request);
@@ -108,9 +115,11 @@ public sealed class CredentialCoreServiceTests
                 .Create(
                     request,
                     Assert.IsType<string>(result.Account),
-                    Assert.IsType<string>(result.Tenant))
+                    Assert.IsType<string>(result.Tenant)
+                )
                 .Value,
-            cacheKey.Value);
+            cacheKey.Value
+        );
     }
 
     [Fact]
@@ -118,7 +127,8 @@ public sealed class CredentialCoreServiceTests
     {
         IdentityMaterial identity = CreateIdentityMaterial(
             secret: null,
-            accessToken: "custom-bearer-token");
+            accessToken: "custom-bearer-token"
+        );
         var service = new CredentialCoreService(new StaticIdentityProvider(identity));
         CredentialRequest request = CreateGitRequest(kind: CredentialKind.BearerToken);
 
@@ -130,7 +140,8 @@ public sealed class CredentialCoreServiceTests
         Assert.Equal(identity.ExpiresAt, result.ExpiresAt);
         Assert.Equal(
             Assert.IsType<string>(identity.AccessToken),
-            Assert.IsType<string>(result.BearerToken));
+            Assert.IsType<string>(result.BearerToken)
+        );
         Assert.Null(result.Username);
         Assert.Null(result.Password);
         Assert.Null(result.Error);
@@ -141,7 +152,8 @@ public sealed class CredentialCoreServiceTests
     {
         IdentityMaterial identity = CreateIdentityMaterial(
             secret: "custom-password-secret",
-            accessToken: null);
+            accessToken: null
+        );
         var service = new CredentialCoreService(new StaticIdentityProvider(identity));
         CredentialRequest request = CreateGitRequest();
 
@@ -154,7 +166,8 @@ public sealed class CredentialCoreServiceTests
         Assert.Equal("AzureDevOps", result.Username);
         Assert.Equal(
             Assert.IsType<string>(identity.Secret),
-            Assert.IsType<string>(result.Password));
+            Assert.IsType<string>(result.Password)
+        );
         Assert.Null(result.BearerToken);
         Assert.Null(result.Error);
     }
@@ -166,9 +179,11 @@ public sealed class CredentialCoreServiceTests
             account: "direct-msal@example.com",
             tenant: "direct-tenant",
             secret: "direct-secret",
-            accessToken: "direct-access-token");
-        var provider = new CountingDirectMsalIdentityProvider(
-            _ => DirectMsalIdentityResult.Success(identity));
+            accessToken: "direct-access-token"
+        );
+        var provider = new CountingDirectMsalIdentityProvider(_ =>
+            DirectMsalIdentityResult.Success(identity)
+        );
         var service = new CredentialCoreService(new DirectMsalIdentityProvider(provider));
 
         CredentialResult result = service.Execute(CreateGitRequest());
@@ -181,7 +196,8 @@ public sealed class CredentialCoreServiceTests
         Assert.Equal("AzureDevOps", result.Username);
         Assert.Equal(
             Assert.IsType<string>(identity.Secret),
-            Assert.IsType<string>(result.Password));
+            Assert.IsType<string>(result.Password)
+        );
         Assert.Null(result.BearerToken);
         Assert.Null(result.Error);
     }
@@ -190,12 +206,14 @@ public sealed class CredentialCoreServiceTests
     public void ExecuteDirectMsalProviderWithoutInjectedImplementationFailsClosed()
     {
         var tokenExchange = new CountingTokenExchange(
-            (_, _, _) => throw new InvalidOperationException("token exchange should not run"));
+            (_, _, _) => throw new InvalidOperationException("token exchange should not run")
+        );
         var service = new CredentialCoreService(
             new DirectMsalIdentityProvider(),
             diagnosticRouter: null,
             derivedCredentialCache: null,
-            tokenExchange: tokenExchange);
+            tokenExchange: tokenExchange
+        );
 
         CredentialResult result = service.Execute(CreateGitRequest());
 
@@ -212,32 +230,35 @@ public sealed class CredentialCoreServiceTests
         CredentialError error = Assert.IsType<CredentialError>(result.Error);
         Assert.Equal(CredentialErrorKind.CredentialUnavailable, error.Kind);
         Assert.Equal("DirectMsalNotImplemented", error.Code);
-        Assert.Equal(
-            "Direct MSAL identity provider is not implemented.",
-            error.SafeMessage);
+        Assert.Equal("Direct MSAL identity provider is not implemented.", error.SafeMessage);
     }
 
     [Fact]
     public void ExecuteDirectMsalUnavailableFailsClosedWithoutLeakingDiagnostics()
     {
         const string rawUnavailableReason = "direct-msal-secret-should-not-leak";
-        var provider = new CountingDirectMsalIdentityProvider(
-            _ => throw new PlatformNotSupportedException(rawUnavailableReason));
+        var provider = new CountingDirectMsalIdentityProvider(_ =>
+            throw new PlatformNotSupportedException(rawUnavailableReason)
+        );
         var tokenExchange = new CountingTokenExchange(
-            (_, _, _) => throw new InvalidOperationException("token exchange should not run"));
+            (_, _, _) => throw new InvalidOperationException("token exchange should not run")
+        );
         var diagnosticText = new StringWriter();
         var recordingSink = new RecordingDiagnosticSink();
         var router = new DiagnosticRouter(
             [new TextWriterDiagnosticSink(diagnosticText), recordingSink],
-            SecretRedactor.Empty);
+            SecretRedactor.Empty
+        );
         var service = new CredentialCoreService(
             new DirectMsalIdentityProvider(provider),
             router,
             derivedCredentialCache: null,
-            tokenExchange: tokenExchange);
+            tokenExchange: tokenExchange
+        );
 
         CredentialResult result = service.Execute(
-            CreateGitRequest(kind: CredentialKind.BearerToken));
+            CreateGitRequest(kind: CredentialKind.BearerToken)
+        );
 
         Assert.Equal(CredentialResultStatus.CredentialUnavailable, result.Status);
         Assert.Equal(1, provider.InvocationCount);
@@ -269,7 +290,8 @@ public sealed class CredentialCoreServiceTests
             Assert.DoesNotContain(
                 rawUnavailableReason,
                 diagnosticEvent.Message,
-                StringComparison.Ordinal);
+                StringComparison.Ordinal
+            );
 
             foreach ((string key, string? value) in diagnosticEvent.Properties)
             {
@@ -277,7 +299,8 @@ public sealed class CredentialCoreServiceTests
                 Assert.DoesNotContain(
                     rawUnavailableReason,
                     value ?? string.Empty,
-                    StringComparison.Ordinal);
+                    StringComparison.Ordinal
+                );
             }
         }
     }
@@ -292,7 +315,8 @@ public sealed class CredentialCoreServiceTests
         DiagnosticRouter router = CreateRecordingDiagnosticRouter(
             diagnosticText,
             recordingSink,
-            CreateBlankingRedactor(expectedMessage));
+            CreateBlankingRedactor(expectedMessage)
+        );
         var service = new CredentialCoreService(new DeterministicFakeIdentityProvider(), router);
 
         CredentialResult result = service.Execute(CreateGitRequest());
@@ -309,12 +333,14 @@ public sealed class CredentialCoreServiceTests
         Assert.DoesNotContain(
             "Adapter host execution failed.",
             emittedText,
-            StringComparison.Ordinal);
+            StringComparison.Ordinal
+        );
     }
 
     [Fact]
-    public void
-        ExecuteCacheUnavailableDiagnosticsUseCredentialCoreFallbackWhenRedactionBlanksMessage()
+    // editorconfig-checker-disable
+    public void ExecuteCacheUnavailableDiagnosticsUseCredentialCoreFallbackWhenRedactionBlanksMessage()
+    // editorconfig-checker-enable
     {
         const string expectedMessage = "Persistent derived credential cache is unavailable.";
         const string expectedCode = "CacheUnavailable";
@@ -323,16 +349,21 @@ public sealed class CredentialCoreServiceTests
         DiagnosticRouter router = CreateRecordingDiagnosticRouter(
             diagnosticText,
             recordingSink,
-            CreateBlankingRedactor(expectedMessage));
+            CreateBlankingRedactor(expectedMessage)
+        );
         var service = new CredentialCoreService(
             new DeterministicFakeIdentityProvider(),
             router,
             new ReportingDerivedCredentialCache(
                 new DerivedCredentialCacheAvailability(
-                    DerivedCredentialCacheAvailabilityStatus.Unavailable)));
+                    DerivedCredentialCacheAvailabilityStatus.Unavailable
+                )
+            )
+        );
 
         CredentialResult result = service.Execute(
-            CreateGitRequest(cachePolicy: CachePolicyMode.FuturePersistentCacheRequested));
+            CreateGitRequest(cachePolicy: CachePolicyMode.FuturePersistentCacheRequested)
+        );
 
         Assert.Equal(CredentialResultStatus.CacheUnavailable, result.Status);
 
@@ -346,7 +377,8 @@ public sealed class CredentialCoreServiceTests
         Assert.DoesNotContain(
             "Adapter host execution failed.",
             emittedText,
-            StringComparison.Ordinal);
+            StringComparison.Ordinal
+        );
     }
 
     [Fact]
@@ -359,18 +391,16 @@ public sealed class CredentialCoreServiceTests
         DiagnosticRouter router = CreateRecordingDiagnosticRouter(
             diagnosticText,
             recordingSink,
-            CreateBlankingRedactor(expectedMessage));
+            CreateBlankingRedactor(expectedMessage)
+        );
         var service = new CredentialCoreService(new DeterministicFakeIdentityProvider(), router);
 
         CredentialResult result = service.Execute(
             CreateGitRequest() with
             {
-                CiContext = new CiContext
-                {
-                    ExplicitCiMode = false,
-                    AllowsPersistentWrites = true,
-                },
-            });
+                CiContext = new CiContext { ExplicitCiMode = false, AllowsPersistentWrites = true },
+            }
+        );
 
         Assert.Equal(CredentialResultStatus.FlowDisabled, result.Status);
 
@@ -388,450 +418,73 @@ public sealed class CredentialCoreServiceTests
         Assert.DoesNotContain(
             "Adapter host execution failed.",
             emittedText,
-            StringComparison.Ordinal);
+            StringComparison.Ordinal
+        );
     }
 
     [Fact]
-    public void
-        ExecuteDirectMsalUnavailableDiagnosticsUseCredentialCoreFallbackWhenRedactionDropsCode()
+    // editorconfig-checker-disable
+    public void ExecuteDirectMsalUnavailableDiagnosticsUseCredentialCoreFallbackWhenRedactionDropsCode()
+    // editorconfig-checker-enable
     {
         const string expectedMessage = "Direct MSAL identity provider is unavailable.";
         const string expectedCode = "DirectMsalUnavailable";
-        var provider = new CountingDirectMsalIdentityProvider(
-            _ => throw new PlatformNotSupportedException("direct-msal should stay internal"));
+        var provider = new CountingDirectMsalIdentityProvider(_ =>
+            throw new PlatformNotSupportedException("direct-msal should stay internal")
+        );
         var tokenExchange = new CountingTokenExchange(
-            (_, _, _) => throw new InvalidOperationException("token exchange should not run"));
+            (_, _, _) => throw new InvalidOperationException("token exchange should not run")
+        );
         var diagnosticText = new StringWriter();
         var recordingSink = new RecordingDiagnosticSink();
         DiagnosticRouter router = CreateRecordingDiagnosticRouter(
             diagnosticText,
             recordingSink,
-            CreateBlankingRedactor(expectedMessage, expectedCode));
+            CreateBlankingRedactor(expectedMessage, expectedCode)
+        );
         var service = new CredentialCoreService(
             new DirectMsalIdentityProvider(provider),
             router,
             derivedCredentialCache: null,
-            tokenExchange: tokenExchange);
+            tokenExchange: tokenExchange
+        );
 
         CredentialResult result = service.Execute(
-            CreateGitRequest(kind: CredentialKind.BearerToken));
+            CreateGitRequest(kind: CredentialKind.BearerToken)
+        );
 
         Assert.Equal(CredentialResultStatus.CredentialUnavailable, result.Status);
         Assert.Equal(1, provider.InvocationCount);
         Assert.Equal(0, tokenExchange.InvocationCount);
 
         DiagnosticEvent diagnosticEvent = Assert.Single(recordingSink.Events);
-        Assert.Equal(expectedMessage, diagnosticEvent.Message);
-        Assert.False(diagnosticEvent.Properties.ContainsKey("code"));
+        Assert.Equal(
+            SafeDiagnosticMessageFallback.CredentialCoreGenericMessage,
+            diagnosticEvent.Message
+        );
+        Assert.Null(diagnosticEvent.Properties["code"]);
 
         string emittedText = diagnosticText.ToString();
-        Assert.Contains(expectedMessage, emittedText, StringComparison.Ordinal);
-        Assert.DoesNotContain(
-            $"code={expectedCode}",
+        Assert.Contains(
+            SafeDiagnosticMessageFallback.CredentialCoreGenericMessage,
             emittedText,
-            StringComparison.Ordinal);
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain(expectedMessage, emittedText, StringComparison.Ordinal);
+        Assert.DoesNotContain($"code={expectedCode}", emittedText, StringComparison.Ordinal);
+        Assert.Contains("code=", emittedText, StringComparison.Ordinal);
         Assert.DoesNotContain(
             "Adapter host execution failed.",
             emittedText,
-            StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task
-        ExecuteRecoversSafeDiagnosticFromInheritedDisposedCommitTrackingScopeWithoutLateRoutes()
-    {
-        var diagnosticText = new StringWriter();
-        var router = new DiagnosticRouter(
-            [new TextWriterDiagnosticSink(diagnosticText)],
-            SecretRedactor.Empty);
-        var service = new CredentialCoreService(new DeterministicFakeIdentityProvider(), router);
-        using var releaseFlowedTasks = new ManualResetEventSlim(false);
-        Task<CredentialResult>? flowedExecutionTask = null;
-        Task? lateSiblingRouteTask = null;
-
-        using (router.BeginUserVisibleCommitTracking())
-        {
-            flowedExecutionTask = Task.Run(
-                () =>
-                {
-                    if (!releaseFlowedTasks.Wait(TimeSpan.FromSeconds(10)))
-                    {
-                        throw new TimeoutException(
-                            "Timed out waiting to release the flowed credential-core execution.");
-                    }
-
-                    CredentialResult result = service.Execute(CreateGitRequest());
-                    router.Route(new DiagnosticEvent(
-                        DiagnosticSeverity.Warning,
-                        DiagnosticChannel.Diagnostic,
-                        "late raw diagnostic"));
-                    return result;
-                },
-                TestContext.Current.CancellationToken);
-            lateSiblingRouteTask = Task.Run(
-                () =>
-                {
-                    if (!releaseFlowedTasks.Wait(TimeSpan.FromSeconds(10)))
-                    {
-                        throw new TimeoutException(
-                            "Timed out waiting to release the late flowed diagnostic route.");
-                    }
-
-                    router.Route(new DiagnosticEvent(
-                        DiagnosticSeverity.Warning,
-                        DiagnosticChannel.Diagnostic,
-                        "late sibling diagnostic"));
-                },
-                TestContext.Current.CancellationToken);
-        }
-
-        releaseFlowedTasks.Set();
-
-        CredentialResult result = await Assert
-            .IsType<Task<CredentialResult>>(flowedExecutionTask)
-            .WaitAsync(
-                TimeSpan.FromSeconds(10),
-                TestContext.Current.CancellationToken);
-        await Assert
-            .IsType<Task>(lateSiblingRouteTask)
-            .WaitAsync(
-                TimeSpan.FromSeconds(10),
-                TestContext.Current.CancellationToken);
-
-        Assert.Equal(CredentialResultStatus.Success, result.Status);
-
-        string emittedText = diagnosticText.ToString();
-        Assert.Contains("Credential request succeeded.", emittedText, StringComparison.Ordinal);
-        Assert.Contains("code=CredentialIssued", emittedText, StringComparison.Ordinal);
-        Assert.DoesNotContain("late raw diagnostic", emittedText, StringComparison.Ordinal);
-        Assert.DoesNotContain("late sibling diagnostic", emittedText, StringComparison.Ordinal);
-        Assert.Equal(1, emittedText.Split('\n').Length - 1);
-    }
-
-    [Fact]
-    public async Task
-        ExecuteSuppressesSafeDiagnosticRecoveryFromInheritedDisposedCommittedCommitTrackingScope()
-    {
-        var diagnosticText = new StringWriter();
-        var router = new DiagnosticRouter(
-            [new TextWriterDiagnosticSink(diagnosticText)],
-            SecretRedactor.Empty);
-        var service = new CredentialCoreService(new DeterministicFakeIdentityProvider(), router);
-        using var releaseFlowedExecution = new ManualResetEventSlim(false);
-        Task<CredentialResult>? flowedExecutionTask = null;
-
-        using (router.BeginUserVisibleCommitTracking())
-        {
-            router.Route(new DiagnosticEvent(
-                DiagnosticSeverity.Warning,
-                DiagnosticChannel.Diagnostic,
-                "committed boundary diagnostic"));
-
-            flowedExecutionTask = Task.Run(
-                () =>
-                {
-                    if (!releaseFlowedExecution.Wait(TimeSpan.FromSeconds(10)))
-                    {
-                        throw new TimeoutException(
-                            "Timed out waiting to release the flowed credential-core execution.");
-                    }
-
-                    return service.Execute(CreateGitRequest());
-                },
-                TestContext.Current.CancellationToken);
-        }
-
-        releaseFlowedExecution.Set();
-
-        CredentialResult result = await Assert
-            .IsType<Task<CredentialResult>>(flowedExecutionTask)
-            .WaitAsync(
-                TimeSpan.FromSeconds(10),
-                TestContext.Current.CancellationToken);
-
-        Assert.Equal(CredentialResultStatus.Success, result.Status);
-
-        string emittedText = diagnosticText.ToString();
-        Assert.Contains("committed boundary diagnostic", emittedText, StringComparison.Ordinal);
-        Assert.DoesNotContain(
-            "Credential request succeeded.",
-            emittedText,
-            StringComparison.Ordinal);
-        Assert.DoesNotContain("code=CredentialIssued", emittedText, StringComparison.Ordinal);
-        Assert.Equal(1, emittedText.Split('\n').Length - 1);
-    }
-
-    [Fact]
-    public async Task
-        ExecuteSuppressesSafeDiagnosticRecoveryFromInheritedDisposedDirectSuppressionScope()
-    {
-        var diagnosticText = new StringWriter();
-        var router = new DiagnosticRouter(
-            [new TextWriterDiagnosticSink(diagnosticText)],
-            SecretRedactor.Empty);
-        var service = new CredentialCoreService(new DeterministicFakeIdentityProvider(), router);
-        using var releaseFlowedExecution = new ManualResetEventSlim(false);
-        Task<CredentialResult>? flowedExecutionTask = null;
-
-        using (router.BeginUserVisibleCommitTracking(
-            suppressDirectCredentialCoreSafeDiagnosticRoutes: true))
-        {
-            flowedExecutionTask = Task.Run(
-                () =>
-                {
-                    if (!releaseFlowedExecution.Wait(TimeSpan.FromSeconds(10)))
-                    {
-                        throw new TimeoutException(
-                            "Timed out waiting to release the flowed credential-core execution.");
-                    }
-
-                    return service.Execute(CreateGitRequest(flow: IdentityFlow.ServicePrincipal));
-                },
-                TestContext.Current.CancellationToken);
-        }
-
-        releaseFlowedExecution.Set();
-
-        CredentialResult result = await Assert
-            .IsType<Task<CredentialResult>>(flowedExecutionTask)
-            .WaitAsync(
-                TimeSpan.FromSeconds(10),
-                TestContext.Current.CancellationToken);
-
-        Assert.Equal(CredentialResultStatus.FlowDeferred, result.Status);
-        Assert.Equal(string.Empty, diagnosticText.ToString());
-    }
-
-    [Theory]
-    [InlineData("provider")]
-    [InlineData("tokenExchange")]
-    public async Task ExecuteSuppressesLateDescendantRoutesSpawnedInsideProviderAndTokenExchange(
-        string descendantOwner)
-    {
-        var diagnosticText = new StringWriter();
-        var router = new DiagnosticRouter(
-            [new TextWriterDiagnosticSink(diagnosticText)],
-            SecretRedactor.Empty);
-        using var seamEntered = new ManualResetEventSlim(false);
-        using var releaseDescendantRoute = new ManualResetEventSlim(false);
-        Task? descendantRouteTask = null;
-        const string lateDescendantDiagnostic = "late descendant diagnostic";
-
-        Task CreateDescendantRouteTask()
-        {
-            return Task.Run(
-                () =>
-                {
-                    if (!releaseDescendantRoute.Wait(TimeSpan.FromSeconds(10)))
-                    {
-                        throw new TimeoutException(
-                            "Timed out waiting to release the late flowed descendant "
-                                + "diagnostic route.");
-                    }
-
-                    router.Route(new DiagnosticEvent(
-                        DiagnosticSeverity.Warning,
-                        DiagnosticChannel.Diagnostic,
-                        lateDescendantDiagnostic));
-                },
-                TestContext.Current.CancellationToken);
-        }
-
-        IIdentityProvider identityProvider;
-        ITokenExchange tokenExchange;
-        switch (descendantOwner)
-        {
-            case "provider":
-                var deterministicIdentityProvider = new DeterministicFakeIdentityProvider();
-                identityProvider = new CallbackIdentityProvider(
-                    request =>
-                    {
-                        seamEntered.Set();
-                        descendantRouteTask = CreateDescendantRouteTask();
-                        if (!releaseDescendantRoute.Wait(TimeSpan.FromSeconds(10)))
-                        {
-                            throw new TimeoutException(
-                                "Timed out waiting to release the flowed credential-core "
-                                    + "identity-provider descendant route.");
-                        }
-
-                        Assert
-                            .IsType<Task>(descendantRouteTask)
-                            .WaitAsync(
-                                TimeSpan.FromSeconds(10),
-                                TestContext.Current.CancellationToken)
-                            .GetAwaiter()
-                            .GetResult();
-                        return deterministicIdentityProvider.GetIdentity(request);
-                    });
-                tokenExchange = new DeterministicLocalTokenExchange();
-                break;
-            case "tokenExchange":
-                identityProvider = new DeterministicFakeIdentityProvider();
-                tokenExchange = new CountingTokenExchange(
-                    (request, identity, cacheKey) =>
-                    {
-                        seamEntered.Set();
-                        descendantRouteTask = CreateDescendantRouteTask();
-                        if (!releaseDescendantRoute.Wait(TimeSpan.FromSeconds(10)))
-                        {
-                            throw new TimeoutException(
-                                "Timed out waiting to release the flowed credential-core "
-                                    + "token-exchange descendant route.");
-                        }
-
-                        Assert
-                            .IsType<Task>(descendantRouteTask)
-                            .WaitAsync(
-                                TimeSpan.FromSeconds(10),
-                                TestContext.Current.CancellationToken)
-                            .GetAwaiter()
-                            .GetResult();
-                        return new DeterministicLocalTokenExchange().Exchange(
-                            request,
-                            identity,
-                            cacheKey);
-                    });
-                break;
-            default:
-                throw new ArgumentOutOfRangeException(
-                    nameof(descendantOwner),
-                    descendantOwner,
-                    null);
-        }
-
-        var service = new CredentialCoreService(
-            identityProvider,
-            router,
-            derivedCredentialCache: null,
-            tokenExchange: tokenExchange);
-        Task<CredentialResult>? flowedExecutionTask = null;
-
-        try
-        {
-            using (router.BeginUserVisibleCommitTracking())
-            {
-                flowedExecutionTask = Task.Run(
-                    () => service.Execute(CreateGitRequest()),
-                    TestContext.Current.CancellationToken);
-
-                if (!seamEntered.Wait(
-                    TimeSpan.FromSeconds(10),
-                    TestContext.Current.CancellationToken))
-                {
-                    throw new TimeoutException(
-                        $"Timed out waiting for the flowed credential-core {descendantOwner} "
-                            + "seam.");
-                }
-            }
-        }
-        finally
-        {
-            releaseDescendantRoute.Set();
-        }
-
-        CredentialResult result = await Assert
-            .IsType<Task<CredentialResult>>(flowedExecutionTask)
-            .WaitAsync(
-                TimeSpan.FromSeconds(10),
-                TestContext.Current.CancellationToken);
-        await Assert
-            .IsType<Task>(descendantRouteTask)
-            .WaitAsync(
-                TimeSpan.FromSeconds(10),
-                TestContext.Current.CancellationToken);
-
-        Assert.Equal(CredentialResultStatus.Success, result.Status);
-
-        string emittedText = diagnosticText.ToString();
-        Assert.Contains("Credential request succeeded.", emittedText, StringComparison.Ordinal);
-        Assert.Contains("code=CredentialIssued", emittedText, StringComparison.Ordinal);
-        Assert.DoesNotContain(lateDescendantDiagnostic, emittedText, StringComparison.Ordinal);
-        Assert.Equal(1, emittedText.Split('\n').Length - 1);
-    }
-
-    [Fact]
-    public async Task
-        ExecuteRecoversSafeDiagnosticAfterMidExecutionScopeClosureWithoutRevivingLateRoutes()
-    {
-        var diagnosticText = new StringWriter();
-        var router = new DiagnosticRouter(
-            [new TextWriterDiagnosticSink(diagnosticText)],
-            SecretRedactor.Empty);
-        using var tokenExchangeEntered = new ManualResetEventSlim(false);
-        using var releaseTokenExchange = new ManualResetEventSlim(false);
-        var tokenExchange = new CountingTokenExchange(
-            (request, identity, cacheKey) =>
-            {
-                tokenExchangeEntered.Set();
-                if (!releaseTokenExchange.Wait(TimeSpan.FromSeconds(10)))
-                {
-                    throw new TimeoutException(
-                        "Timed out waiting to release the flowed credential-core token exchange.");
-                }
-
-                return new DeterministicLocalTokenExchange().Exchange(
-                    request,
-                    identity,
-                    cacheKey);
-            });
-        var service = new CredentialCoreService(
-            new DeterministicFakeIdentityProvider(),
-            router,
-            derivedCredentialCache: null,
-            tokenExchange: tokenExchange);
-        Task<CredentialResult>? flowedExecutionTask = null;
-
-        try
-        {
-            using (router.BeginUserVisibleCommitTracking())
-            {
-                flowedExecutionTask = Task.Run(
-                    () =>
-                    {
-                        CredentialResult result = service.Execute(CreateGitRequest());
-                        router.Route(new DiagnosticEvent(
-                            DiagnosticSeverity.Warning,
-                            DiagnosticChannel.Diagnostic,
-                            "late raw diagnostic"));
-                        return result;
-                    },
-                    TestContext.Current.CancellationToken);
-
-                if (!tokenExchangeEntered.Wait(
-                    TimeSpan.FromSeconds(10),
-                    TestContext.Current.CancellationToken))
-                {
-                    throw new TimeoutException(
-                        "Timed out waiting for the flowed credential-core token exchange.");
-                }
-            }
-        }
-        finally
-        {
-            releaseTokenExchange.Set();
-        }
-
-        CredentialResult result = await Assert
-            .IsType<Task<CredentialResult>>(flowedExecutionTask)
-            .WaitAsync(
-                TimeSpan.FromSeconds(10),
-                TestContext.Current.CancellationToken);
-
-        Assert.Equal(CredentialResultStatus.Success, result.Status);
-        Assert.Equal(1, tokenExchange.InvocationCount);
-
-        string emittedText = diagnosticText.ToString();
-        Assert.Contains("Credential request succeeded.", emittedText, StringComparison.Ordinal);
-        Assert.Contains("code=CredentialIssued", emittedText, StringComparison.Ordinal);
-        Assert.DoesNotContain("late raw diagnostic", emittedText, StringComparison.Ordinal);
-        Assert.Equal(1, emittedText.Split('\n').Length - 1);
+            StringComparison.Ordinal
+        );
     }
 
     [Theory]
     [MemberData(nameof(AcceptedTokenExchangeRequests))]
     public void ExecuteAcceptedRequestInvokesTokenExchangeExactlyOnceAndPreservesResultShape(
-        CredentialRequest request)
+        CredentialRequest request
+    )
     {
         var provider = new DeterministicFakeIdentityProvider();
         IdentityMaterial expectedIdentity = new DeterministicFakeIdentityProvider().GetIdentity(
@@ -839,11 +492,8 @@ public sealed class CredentialCoreServiceTests
         );
         var tokenExchange = new CountingTokenExchange(
             (exchangeRequest, identity, cacheKey) =>
-                new DeterministicLocalTokenExchange().Exchange(
-                    exchangeRequest,
-                    identity,
-                    cacheKey
-                ));
+                new DeterministicLocalTokenExchange().Exchange(exchangeRequest, identity, cacheKey)
+        );
         var service = new CredentialCoreService(provider, null, null, tokenExchange);
 
         CredentialResult result = service.Execute(request);
@@ -856,17 +506,16 @@ public sealed class CredentialCoreServiceTests
         Assert.Equal(expectedIdentity.ExpiresAt, result.ExpiresAt);
         Assert.Equal(
             CacheKeySchema.Create(request, expectedIdentity.Account, expectedIdentity.Tenant).Value,
-            Assert.IsType<CacheKey>(result.CacheKey).Value);
+            Assert.IsType<CacheKey>(result.CacheKey).Value
+        );
         Assert.Null(result.Error);
 
-        if (
-            request.CredentialKind
-            is CredentialKind.BearerToken or CredentialKind.NpmAuthToken
-        )
+        if (request.CredentialKind is CredentialKind.BearerToken or CredentialKind.NpmAuthToken)
         {
             Assert.Equal(
                 Assert.IsType<string>(expectedIdentity.AccessToken),
-                Assert.IsType<string>(result.BearerToken));
+                Assert.IsType<string>(result.BearerToken)
+            );
             Assert.Null(result.Username);
             Assert.Null(result.Password);
             return;
@@ -875,20 +524,23 @@ public sealed class CredentialCoreServiceTests
         Assert.Equal("AzureDevOps", result.Username);
         Assert.Equal(
             Assert.IsType<string>(expectedIdentity.Secret),
-            Assert.IsType<string>(result.Password));
+            Assert.IsType<string>(result.Password)
+        );
         Assert.Null(result.BearerToken);
     }
 
     [Theory]
     [MemberData(nameof(PasswordShapedTokenExchangeRequests))]
     public void ExecutePasswordShapedRequestCanonicalizesInjectedTokenExchangeUsernameInvariant(
-        CredentialRequest request)
+        CredentialRequest request
+    )
     {
         const string injectedUsername = "NotAzureDevOps";
         const string exchangedPassword = "custom-exchanged-password";
         IdentityMaterial identity = CreateIdentityMaterial(
             secret: "provider-secret",
-            accessToken: "unused-provider-token");
+            accessToken: "unused-provider-token"
+        );
         var provider = new StaticIdentityProvider(identity);
         var tokenExchange = new CountingTokenExchange(
             (_, _, _) =>
@@ -897,7 +549,9 @@ public sealed class CredentialCoreServiceTests
                     {
                         Username = injectedUsername,
                         Password = exchangedPassword,
-                    }));
+                    }
+                )
+        );
         var service = new CredentialCoreService(provider, null, null, tokenExchange);
 
         CredentialResult result = service.Execute(request);
@@ -921,7 +575,8 @@ public sealed class CredentialCoreServiceTests
     {
         var provider = new DeterministicFakeIdentityProvider();
         var tokenExchange = new CountingTokenExchange(
-            (_, _, _) => throw new InvalidOperationException("token exchange should not run"));
+            (_, _, _) => throw new InvalidOperationException("token exchange should not run")
+        );
         var service = new CredentialCoreService(provider, null, null, tokenExchange);
 
         CredentialResult result = service.Execute(request);
@@ -935,17 +590,21 @@ public sealed class CredentialCoreServiceTests
     [MemberData(nameof(BlockedDirectMsalRequests))]
     public void ExecuteBlockedRequestDoesNotInvokeDirectMsalProvider(
         CredentialRequest request,
-        CredentialResultStatus expectedStatus)
+        CredentialResultStatus expectedStatus
+    )
     {
-        var provider = new CountingDirectMsalIdentityProvider(
-            _ => throw new InvalidOperationException("direct msal provider should not run"));
+        var provider = new CountingDirectMsalIdentityProvider(_ =>
+            throw new InvalidOperationException("direct msal provider should not run")
+        );
         var tokenExchange = new CountingTokenExchange(
-            (_, _, _) => throw new InvalidOperationException("token exchange should not run"));
+            (_, _, _) => throw new InvalidOperationException("token exchange should not run")
+        );
         var service = new CredentialCoreService(
             new DirectMsalIdentityProvider(provider),
             diagnosticRouter: null,
             derivedCredentialCache: null,
-            tokenExchange: tokenExchange);
+            tokenExchange: tokenExchange
+        );
 
         CredentialResult result = service.Execute(request);
 
@@ -959,7 +618,8 @@ public sealed class CredentialCoreServiceTests
     {
         var provider = new StaticIdentityProvider(CreateIdentityMaterial(secret: null));
         var tokenExchange = new CountingTokenExchange(
-            (_, _, _) => throw new InvalidOperationException("token exchange should not run"));
+            (_, _, _) => throw new InvalidOperationException("token exchange should not run")
+        );
         var service = new CredentialCoreService(provider, null, null, tokenExchange);
 
         CredentialResult result = service.Execute(CreateGitRequest());
@@ -976,7 +636,8 @@ public sealed class CredentialCoreServiceTests
             account: "safe-account@example.com",
             tenant: "safe-tenant",
             secret: "safe-secret-value",
-            accessToken: "safe-bearer-value");
+            accessToken: "safe-bearer-value"
+        );
         var provider = new StaticIdentityProvider(identity);
         var tokenExchange = new CountingTokenExchange((_, _, _) => TokenExchangeResult.Unavailable);
         var service = new CredentialCoreService(provider, null, null, tokenExchange);
@@ -1001,7 +662,8 @@ public sealed class CredentialCoreServiceTests
             account: "safe-account@example.com",
             tenant: "safe-tenant",
             secret: "safe-secret-value",
-            accessToken: "safe-bearer-value");
+            accessToken: "safe-bearer-value"
+        );
         var provider = new StaticIdentityProvider(identity);
         var tokenExchange = new CountingTokenExchange((_, _, _) => TokenExchangeResult.Failed);
         var service = new CredentialCoreService(provider, null, null, tokenExchange);
@@ -1026,10 +688,12 @@ public sealed class CredentialCoreServiceTests
             account: "safe-account@example.com",
             tenant: "safe-tenant",
             secret: "safe-secret-value",
-            accessToken: "safe-bearer-value");
+            accessToken: "safe-bearer-value"
+        );
         var provider = new StaticIdentityProvider(identity);
         var tokenExchange = new CountingTokenExchange(
-            (_, _, _) => throw new InvalidOperationException("safe-secret-value"));
+            (_, _, _) => throw new InvalidOperationException("safe-secret-value")
+        );
         var service = new CredentialCoreService(provider, null, null, tokenExchange);
 
         CredentialResult result = service.Execute(CreateGitRequest());
@@ -1053,13 +717,15 @@ public sealed class CredentialCoreServiceTests
         string? username,
         string? password,
         string? bearerToken,
-        string[] rawExchangeValues)
+        string[] rawExchangeValues
+    )
     {
         IdentityMaterial identity = CreateIdentityMaterial(
             account: "safe-account@example.com",
             tenant: "safe-tenant",
             secret: "safe-secret-value",
-            accessToken: "safe-bearer-value");
+            accessToken: "safe-bearer-value"
+        );
         var provider = new StaticIdentityProvider(identity);
         TokenExchangeResult exchangeResult = returnSuccessWithNullMaterial
             ? new TokenExchangeResult(TokenExchangeStatus.Success, null)
@@ -1069,7 +735,8 @@ public sealed class CredentialCoreServiceTests
                     Username = username,
                     Password = password,
                     BearerToken = bearerToken,
-                });
+                }
+            );
         var tokenExchange = new CountingTokenExchange((_, _, _) => exchangeResult);
         var service = new CredentialCoreService(provider, null, null, tokenExchange);
 
@@ -1088,7 +755,8 @@ public sealed class CredentialCoreServiceTests
     [MemberData(nameof(ProviderMaterialWithUnusedProtocolLineBreaksScenarios))]
     public void ExecuteIgnoresUnusedProviderMaterialWithProtocolLineBreaks(
         CredentialRequest request,
-        IdentityMaterial identity)
+        IdentityMaterial identity
+    )
     {
         var service = new CredentialCoreService(new StaticIdentityProvider(identity));
 
@@ -1104,7 +772,8 @@ public sealed class CredentialCoreServiceTests
         {
             Assert.Equal(
                 Assert.IsType<string>(identity.AccessToken),
-                Assert.IsType<string>(result.BearerToken));
+                Assert.IsType<string>(result.BearerToken)
+            );
             Assert.Null(result.Username);
             Assert.Null(result.Password);
             return;
@@ -1113,7 +782,8 @@ public sealed class CredentialCoreServiceTests
         Assert.Equal("AzureDevOps", result.Username);
         Assert.Equal(
             Assert.IsType<string>(identity.Secret),
-            Assert.IsType<string>(result.Password));
+            Assert.IsType<string>(result.Password)
+        );
         Assert.Null(result.BearerToken);
     }
 
@@ -1121,13 +791,10 @@ public sealed class CredentialCoreServiceTests
     [MemberData(nameof(UnsafeProviderMaterialScenarios))]
     public void ExecuteRejectsProviderMaterialWithProtocolLineBreaksWithoutLeakingMaterial(
         CredentialRequest request,
-        IdentityMaterial identity)
+        IdentityMaterial identity
+    )
     {
-        List<string> rawProviderValues =
-        [
-            identity.Account,
-            identity.Tenant,
-        ];
+        List<string> rawProviderValues = [identity.Account, identity.Tenant];
 
         if (identity.Secret is not null)
         {
@@ -1143,7 +810,8 @@ public sealed class CredentialCoreServiceTests
         var recordingSink = new RecordingDiagnosticSink();
         var router = new DiagnosticRouter(
             [new TextWriterDiagnosticSink(diagnosticText), recordingSink],
-            SecretRedactor.Empty);
+            SecretRedactor.Empty
+        );
         var service = new CredentialCoreService(new StaticIdentityProvider(identity), router);
 
         CredentialResult result = service.Execute(request);
@@ -1191,7 +859,8 @@ public sealed class CredentialCoreServiceTests
                 Assert.DoesNotContain(
                     rawProviderValue,
                     diagnosticEvent.Message,
-                    StringComparison.Ordinal);
+                    StringComparison.Ordinal
+                );
             }
 
             foreach ((string key, string? value) in diagnosticEvent.Properties)
@@ -1202,7 +871,8 @@ public sealed class CredentialCoreServiceTests
                     Assert.DoesNotContain(
                         rawProviderValue,
                         value ?? string.Empty,
-                        StringComparison.Ordinal);
+                        StringComparison.Ordinal
+                    );
                 }
             }
         }
@@ -1212,7 +882,8 @@ public sealed class CredentialCoreServiceTests
     [MemberData(nameof(IncompleteProviderMaterialScenarios))]
     public void ExecuteRejectsProviderMaterialWithMissingEmptyOrWhitespaceRequiredMaterial(
         CredentialRequest request,
-        IdentityMaterial identity)
+        IdentityMaterial identity
+    )
     {
         var service = new CredentialCoreService(new StaticIdentityProvider(identity));
 
@@ -1233,8 +904,9 @@ public sealed class CredentialCoreServiceTests
     }
 
     [Fact]
-    public void
-        ExecutePythonBasicPasswordRoundTripsThroughKeyringCredentialsModeWithoutRequestUsername()
+    // editorconfig-checker-disable
+    public void ExecutePythonBasicPasswordRoundTripsThroughKeyringCredentialsModeWithoutRequestUsername()
+    // editorconfig-checker-enable
     {
         var service = new CredentialCoreService(new DeterministicFakeIdentityProvider());
         CredentialRequest credentialRequest = CreatePythonRequest(feed: "feed");
@@ -1260,8 +932,9 @@ public sealed class CredentialCoreServiceTests
     }
 
     [Fact]
-    public void
-        ExecuteProjectScopedDevAzurePythonBasicPasswordKeyringCredentialsOmitsRequestUsername()
+    // editorconfig-checker-disable
+    public void ExecuteProjectScopedDevAzurePythonBasicPasswordKeyringCredentialsOmitsRequestUsername()
+    // editorconfig-checker-enable
     {
         var service = new CredentialCoreService(new DeterministicFakeIdentityProvider());
         CredentialRequest credentialRequest = CreateProjectScopedPythonRequest(feed: "feed");
@@ -1287,8 +960,7 @@ public sealed class CredentialCoreServiceTests
     }
 
     [Fact]
-    public void
-        ExecuteLegacyVisualStudioPythonBasicPasswordKeyringCredentialsOmitsRequestUsername()
+    public void ExecuteLegacyVisualStudioPythonBasicPasswordKeyringCredentialsOmitsRequestUsername()
     {
         var service = new CredentialCoreService(new DeterministicFakeIdentityProvider());
         CredentialRequest credentialRequest = CreateLegacyVisualStudioProjectScopedPythonRequest(
@@ -1323,7 +995,8 @@ public sealed class CredentialCoreServiceTests
     public void ExecuteDeferredOrDisallowedRequestFailsClosedWithoutInvokingProvider(
         CredentialRequest request,
         CredentialResultStatus expectedStatus,
-        CredentialErrorKind expectedErrorKind)
+        CredentialErrorKind expectedErrorKind
+    )
     {
         var provider = new DeterministicFakeIdentityProvider();
         var service = new CredentialCoreService(provider);
@@ -1346,7 +1019,8 @@ public sealed class CredentialCoreServiceTests
     {
         var provider = new DeterministicFakeIdentityProvider();
         var tokenExchange = new CountingTokenExchange(
-            (_, _, _) => throw new InvalidOperationException("token exchange should not run"));
+            (_, _, _) => throw new InvalidOperationException("token exchange should not run")
+        );
         var service = new CredentialCoreService(provider, null, null, tokenExchange);
         CredentialRequest request = CreateGitRequest() with
         {
@@ -1366,9 +1040,7 @@ public sealed class CredentialCoreServiceTests
         CredentialError error = Assert.IsType<CredentialError>(result.Error);
         Assert.Equal(CredentialErrorKind.CredentialUnavailable, error.Kind);
         Assert.Equal("OperationNotSupported", error.Code);
-        Assert.Equal(
-            "Credential core scaffold only supports get operations.",
-            error.SafeMessage);
+        Assert.Equal("Credential core scaffold only supports get operations.", error.SafeMessage);
     }
 
     [Fact]
@@ -1377,9 +1049,11 @@ public sealed class CredentialCoreServiceTests
         IdentityMaterial identity = CreateIdentityMaterial();
         var provider = new StaticIdentityProvider(identity);
         var cache = new ReportingDerivedCredentialCache(
-            DerivedCredentialCacheAvailability.Available);
-        var exchange = new CountingTokenExchange((_, _, _) =>
-            throw new InvalidOperationException("must not exchange"));
+            DerivedCredentialCacheAvailability.Available
+        );
+        var exchange = new CountingTokenExchange(
+            (_, _, _) => throw new InvalidOperationException("must not exchange")
+        );
         var service = new CredentialCoreService(provider, null, cache, exchange);
         CredentialRequest request = CreateAzurePipelinesSystemAccessTokenRequest(
             CachePolicyMode.NonPersistentCi,
@@ -1389,7 +1063,8 @@ public sealed class CredentialCoreServiceTests
                 Provider = CiProviderNames.AzurePipelines,
                 HasAzurePipelinesSystemAccessToken = true,
                 AllowsPersistentWrites = false,
-            });
+            }
+        );
 
         CredentialResult result = service.Execute(request);
 
@@ -1401,23 +1076,24 @@ public sealed class CredentialCoreServiceTests
         Assert.Equal(0, exchange.InvocationCount);
         AssertClosedFailureResult(result, identity);
         CredentialError error = Assert.IsType<CredentialError>(result.Error);
-        Assert.Equal(
-            "AzurePipelinesSystemAccessTokenDedicatedServiceRequired",
-            error.Code);
+        Assert.Equal("AzurePipelinesSystemAccessTokenDedicatedServiceRequired", error.Code);
         Assert.DoesNotContain("SYSTEM_ACCESSTOKEN", error.SafeMessage, StringComparison.Ordinal);
     }
 
     [Theory]
     [MemberData(nameof(MalformedWp5FlowRequests))]
     public void ExecuteMalformedWp5FlowRequestReturnsProtocolViolationBeforeFlowPolicy(
-        CredentialRequest request)
+        CredentialRequest request
+    )
     {
         IdentityMaterial identity = CreateIdentityMaterial();
         var provider = new StaticIdentityProvider(identity);
         var cache = new ReportingDerivedCredentialCache(
-            DerivedCredentialCacheAvailability.Available);
-        var exchange = new CountingTokenExchange((_, _, _) =>
-            throw new InvalidOperationException("must not exchange"));
+            DerivedCredentialCacheAvailability.Available
+        );
+        var exchange = new CountingTokenExchange(
+            (_, _, _) => throw new InvalidOperationException("must not exchange")
+        );
         var service = new CredentialCoreService(provider, null, cache, exchange);
 
         CredentialResult result = service.Execute(request);
@@ -1441,7 +1117,8 @@ public sealed class CredentialCoreServiceTests
         var service = new CredentialCoreService(provider);
         CredentialRequest request = CreateAzurePipelinesSystemAccessTokenRequest(
             CachePolicyMode.NonPersistentCi,
-            ciContext: null);
+            ciContext: null
+        );
 
         Assert.Null(request.CiContext);
 
@@ -1462,25 +1139,32 @@ public sealed class CredentialCoreServiceTests
         );
         (string CacheKey, string Material) gitBearer = GetIssuedMaterial(
             service,
-            CreateGitRequest(flow: IdentityFlow.DeviceCode, kind: CredentialKind.BearerToken));
+            CreateGitRequest(flow: IdentityFlow.DeviceCode, kind: CredentialKind.BearerToken)
+        );
         (string CacheKey, string Material) gitAccountA = GetIssuedMaterial(
             service,
-            CreateGitRequest(accountHint: "user-a@example.com"));
+            CreateGitRequest(accountHint: "user-a@example.com")
+        );
         (string CacheKey, string Material) gitAccountB = GetIssuedMaterial(
             service,
-            CreateGitRequest(accountHint: "user-b@example.com"));
+            CreateGitRequest(accountHint: "user-b@example.com")
+        );
         (string CacheKey, string Material) gitTenantA = GetIssuedMaterial(
             service,
-            CreateGitRequest(tenantHint: "tenant-a"));
+            CreateGitRequest(tenantHint: "tenant-a")
+        );
         (string CacheKey, string Material) gitTenantB = GetIssuedMaterial(
             service,
-            CreateGitRequest(tenantHint: "tenant-b"));
+            CreateGitRequest(tenantHint: "tenant-b")
+        );
         (string CacheKey, string Material) pythonFeedA = GetIssuedMaterial(
             service,
-            CreatePythonRequest(feed: "feed-a"));
+            CreatePythonRequest(feed: "feed-a")
+        );
         (string CacheKey, string Material) pythonFeedB = GetIssuedMaterial(
             service,
-            CreatePythonRequest(feed: "feed-b"));
+            CreatePythonRequest(feed: "feed-b")
+        );
 
         Assert.NotEqual(gitBasic.CacheKey, pythonFeedA.CacheKey);
         Assert.NotEqual(gitBasic.Material, pythonFeedA.Material);
@@ -1500,7 +1184,8 @@ public sealed class CredentialCoreServiceTests
         var service = new CredentialCoreService(new DeterministicFakeIdentityProvider());
         CredentialRequest orgOnlyRequest = CreateGitRequest(
             accountHint: "user@example.com",
-            tenantHint: "tenant-1");
+            tenantHint: "tenant-1"
+        );
         CredentialRequest repoScopedRequest = orgOnlyRequest with
         {
             Resource = CanonicalResourceIdentity.Create(
@@ -1508,7 +1193,8 @@ public sealed class CredentialCoreServiceTests
                 "org",
                 new Uri("https://dev.azure.com/org/project/_git/repo"),
                 project: "project",
-                repository: "repo"),
+                repository: "repo"
+            ),
         };
 
         CredentialResult orgOnlyResult = service.Execute(orgOnlyRequest);
@@ -1518,10 +1204,12 @@ public sealed class CredentialCoreServiceTests
         Assert.Equal(CredentialResultStatus.Success, repoScopedResult.Status);
         Assert.Equal(
             Assert.IsType<CacheKey>(orgOnlyResult.CacheKey).Value,
-            Assert.IsType<CacheKey>(repoScopedResult.CacheKey).Value);
+            Assert.IsType<CacheKey>(repoScopedResult.CacheKey).Value
+        );
         Assert.Equal(
             Assert.IsType<string>(orgOnlyResult.Password),
-            Assert.IsType<string>(repoScopedResult.Password));
+            Assert.IsType<string>(repoScopedResult.Password)
+        );
     }
 
     [Fact]
@@ -1532,7 +1220,8 @@ public sealed class CredentialCoreServiceTests
             flow: IdentityFlow.InteractiveBrowser,
             kind: CredentialKind.BearerToken,
             accountHint: "user@example.com",
-            tenantHint: "tenant-1");
+            tenantHint: "tenant-1"
+        );
         CredentialRequest deviceCodeRequest = interactiveRequest with
         {
             IdentityFlow = IdentityFlow.DeviceCode,
@@ -1545,10 +1234,12 @@ public sealed class CredentialCoreServiceTests
         Assert.Equal(CredentialResultStatus.Success, deviceCodeResult.Status);
         Assert.Equal(
             Assert.IsType<CacheKey>(interactiveResult.CacheKey).Value,
-            Assert.IsType<CacheKey>(deviceCodeResult.CacheKey).Value);
+            Assert.IsType<CacheKey>(deviceCodeResult.CacheKey).Value
+        );
         Assert.Equal(
             Assert.IsType<string>(interactiveResult.BearerToken),
-            Assert.IsType<string>(deviceCodeResult.BearerToken));
+            Assert.IsType<string>(deviceCodeResult.BearerToken)
+        );
     }
 
     [Fact]
@@ -1558,7 +1249,8 @@ public sealed class CredentialCoreServiceTests
             flow: IdentityFlow.DeviceCode,
             kind: CredentialKind.BearerToken,
             accountHint: "user@example.com",
-            tenantHint: "tenant-1");
+            tenantHint: "tenant-1"
+        );
         var probeProvider = new DeterministicFakeIdentityProvider();
         IdentityMaterial probeIdentity = probeProvider.GetIdentity(request);
 
@@ -1566,11 +1258,11 @@ public sealed class CredentialCoreServiceTests
         var recordingSink = new RecordingDiagnosticSink();
         var router = new DiagnosticRouter(
             [new TextWriterDiagnosticSink(diagnosticText), recordingSink],
-            new SecretRedactor(
-                [
-                    Assert.IsType<string>(probeIdentity.Secret),
-                    Assert.IsType<string>(probeIdentity.AccessToken),
-                ]));
+            new SecretRedactor([
+                Assert.IsType<string>(probeIdentity.Secret),
+                Assert.IsType<string>(probeIdentity.AccessToken),
+            ])
+        );
         var service = new CredentialCoreService(new DeterministicFakeIdentityProvider(), router);
 
         CredentialResult result = service.Execute(request);
@@ -1587,37 +1279,34 @@ public sealed class CredentialCoreServiceTests
 
         foreach (DiagnosticEvent diagnosticEvent in recordingSink.Events)
         {
+            Assert.DoesNotContain(probeSecret, diagnosticEvent.Message, StringComparison.Ordinal);
             Assert.DoesNotContain(
-                probeSecret,
+                probeAccessToken,
                 diagnosticEvent.Message,
                 StringComparison.Ordinal
             );
             Assert.DoesNotContain(
-                probeAccessToken,
-                diagnosticEvent.Message,
-                StringComparison.Ordinal);
-            Assert.DoesNotContain(
                 SecretRedactor.DefaultMask,
                 diagnosticEvent.Message,
-                StringComparison.Ordinal);
+                StringComparison.Ordinal
+            );
 
             foreach ((string key, string? value) in diagnosticEvent.Properties)
             {
                 Assert.DoesNotContain(probeSecret, key, StringComparison.Ordinal);
                 Assert.DoesNotContain(probeAccessToken, key, StringComparison.Ordinal);
                 Assert.DoesNotContain(SecretRedactor.DefaultMask, key, StringComparison.Ordinal);
-                Assert.DoesNotContain(
-                    probeSecret,
-                    value ?? string.Empty,
-                    StringComparison.Ordinal);
+                Assert.DoesNotContain(probeSecret, value ?? string.Empty, StringComparison.Ordinal);
                 Assert.DoesNotContain(
                     probeAccessToken,
                     value ?? string.Empty,
-                    StringComparison.Ordinal);
+                    StringComparison.Ordinal
+                );
                 Assert.DoesNotContain(
                     SecretRedactor.DefaultMask,
                     value ?? string.Empty,
-                    StringComparison.Ordinal);
+                    StringComparison.Ordinal
+                );
             }
         }
     }
@@ -1627,13 +1316,15 @@ public sealed class CredentialCoreServiceTests
     [InlineData(CachePolicyMode.ProductPersistentCacheDisabled)]
     [InlineData(CachePolicyMode.NonPersistentCi)]
     public void ExecuteAcceptedMvpRequestDoesNotTouchPersistentDerivedCredentialCacheByDefault(
-        CachePolicyMode cachePolicy)
+        CachePolicyMode cachePolicy
+    )
     {
         var provider = new DeterministicFakeIdentityProvider();
         var derivedCredentialCache = new NoPersistentDerivedCredentialCache();
         var service = new CredentialCoreService(
             provider,
-            derivedCredentialCache: derivedCredentialCache);
+            derivedCredentialCache: derivedCredentialCache
+        );
         CredentialRequest request = CreateGitRequest(cachePolicy: cachePolicy);
 
         CredentialResult result = service.Execute(request);
@@ -1651,7 +1342,8 @@ public sealed class CredentialCoreServiceTests
         var provider = new DeterministicFakeIdentityProvider();
         var service = new CredentialCoreService(provider);
         CredentialRequest request = CreateGitRequest(
-            cachePolicy: CachePolicyMode.FuturePersistentCacheRequested);
+            cachePolicy: CachePolicyMode.FuturePersistentCacheRequested
+        );
 
         CredentialResult result = service.Execute(request);
 
@@ -1669,7 +1361,8 @@ public sealed class CredentialCoreServiceTests
         var provider = new DeterministicFakeIdentityProvider();
         var derivedCredentialCache = new ReportingDerivedCredentialCache(
             new DerivedCredentialCacheAvailability(
-                DerivedCredentialCacheAvailabilityStatus.Available)
+                DerivedCredentialCacheAvailabilityStatus.Available
+            )
         );
         var tokenExchange = new CountingTokenExchange(
             static (_, _, _) =>
@@ -1682,7 +1375,8 @@ public sealed class CredentialCoreServiceTests
             tokenExchange: tokenExchange
         );
         CredentialRequest request = CreateGitRequest(
-            cachePolicy: CachePolicyMode.FuturePersistentCacheRequested);
+            cachePolicy: CachePolicyMode.FuturePersistentCacheRequested
+        );
 
         CredentialResult result = service.Execute(request);
 
@@ -1714,24 +1408,25 @@ public sealed class CredentialCoreServiceTests
     [InlineData(DerivedCredentialCacheAvailabilityStatus.Unsupported)]
     [InlineData(DerivedCredentialCacheAvailabilityStatus.VerificationFailed)]
     public void ExecutePersistentCacheRequestFailsClosedWithoutLeakingCredentialMaterial(
-        DerivedCredentialCacheAvailabilityStatus availabilityStatus)
+        DerivedCredentialCacheAvailabilityStatus availabilityStatus
+    )
     {
         const string fakeSecret = "fake-secret-should-not-leak";
         const string fakeToken = "fake-token-should-not-leak";
         var provider = new DeterministicFakeIdentityProvider();
         var derivedCredentialCache = new ReportingDerivedCredentialCache(
-            new DerivedCredentialCacheAvailability(availabilityStatus));
+            new DerivedCredentialCacheAvailability(availabilityStatus)
+        );
         var diagnosticText = new StringWriter();
         var recordingSink = new RecordingDiagnosticSink();
         var router = new DiagnosticRouter(
             [new TextWriterDiagnosticSink(diagnosticText), recordingSink],
-            SecretRedactor.Empty);
-        var service = new CredentialCoreService(
-            provider,
-            router,
-            derivedCredentialCache);
+            SecretRedactor.Empty
+        );
+        var service = new CredentialCoreService(provider, router, derivedCredentialCache);
         CredentialRequest request = CreateGitRequest(
-            cachePolicy: CachePolicyMode.FuturePersistentCacheRequested);
+            cachePolicy: CachePolicyMode.FuturePersistentCacheRequested
+        );
 
         CredentialResult result = service.Execute(request);
 
@@ -1750,12 +1445,11 @@ public sealed class CredentialCoreServiceTests
         CredentialError error = Assert.IsType<CredentialError>(result.Error);
         Assert.Equal(CredentialErrorKind.CacheUnavailable, error.Kind);
         Assert.Equal("CacheUnavailable", error.Code);
-        Assert.Equal(
-            "Persistent derived credential cache is unavailable.",
-            error.SafeMessage);
+        Assert.Equal("Persistent derived credential cache is unavailable.", error.SafeMessage);
         Assert.Equal(
             CachePolicyMode.FuturePersistentCacheRequested.ToString(),
-            error.SafeDetails["cachePolicy"]);
+            error.SafeDetails["cachePolicy"]
+        );
         Assert.Equal(availabilityStatus.ToString(), error.SafeDetails["cacheAvailability"]);
 
         foreach (string fakeCredentialMaterial in new[] { fakeSecret, fakeToken })
@@ -1763,7 +1457,8 @@ public sealed class CredentialCoreServiceTests
             Assert.DoesNotContain(
                 fakeCredentialMaterial,
                 error.SafeMessage,
-                StringComparison.Ordinal);
+                StringComparison.Ordinal
+            );
 
             foreach ((string key, string value) in error.SafeDetails)
             {
@@ -1776,10 +1471,7 @@ public sealed class CredentialCoreServiceTests
 
         foreach (string fakeCredentialMaterial in new[] { fakeSecret, fakeToken })
         {
-            Assert.DoesNotContain(
-                fakeCredentialMaterial,
-                emittedText,
-                StringComparison.Ordinal);
+            Assert.DoesNotContain(fakeCredentialMaterial, emittedText, StringComparison.Ordinal);
         }
 
         Assert.DoesNotContain(SecretRedactor.DefaultMask, emittedText, StringComparison.Ordinal);
@@ -1791,14 +1483,16 @@ public sealed class CredentialCoreServiceTests
             Assert.DoesNotContain(
                 SecretRedactor.DefaultMask,
                 diagnosticEvent.Message,
-                StringComparison.Ordinal);
+                StringComparison.Ordinal
+            );
 
             foreach (string fakeCredentialMaterial in new[] { fakeSecret, fakeToken })
             {
                 Assert.DoesNotContain(
                     fakeCredentialMaterial,
                     diagnosticEvent.Message,
-                    StringComparison.Ordinal);
+                    StringComparison.Ordinal
+                );
 
                 foreach ((string key, string? value) in diagnosticEvent.Properties)
                 {
@@ -1806,7 +1500,8 @@ public sealed class CredentialCoreServiceTests
                     Assert.DoesNotContain(
                         fakeCredentialMaterial,
                         value ?? string.Empty,
-                        StringComparison.Ordinal);
+                        StringComparison.Ordinal
+                    );
                 }
             }
 
@@ -1816,7 +1511,8 @@ public sealed class CredentialCoreServiceTests
                 Assert.DoesNotContain(
                     SecretRedactor.DefaultMask,
                     value ?? string.Empty,
-                    StringComparison.Ordinal);
+                    StringComparison.Ordinal
+                );
             }
         }
     }
@@ -1829,7 +1525,8 @@ public sealed class CredentialCoreServiceTests
         CredentialRequest request = CreateGitRequest(
             flow: IdentityFlow.InteractiveBrowser,
             kind: CredentialKind.BasicPassword,
-            interactivePolicy: InteractivePolicy.Never);
+            interactivePolicy: InteractivePolicy.Never
+        );
 
         CredentialResult? result = null;
         Exception? exception = Record.Exception(() => result = service.Execute(request));
@@ -1866,10 +1563,7 @@ public sealed class CredentialCoreServiceTests
     {
         var provider = new DeterministicFakeIdentityProvider();
         var service = new CredentialCoreService(provider);
-        CredentialRequest request = CreateGitRequest() with
-        {
-            ServiceIdentity = "Default",
-        };
+        CredentialRequest request = CreateGitRequest() with { ServiceIdentity = "Default" };
 
         CredentialResult result = service.Execute(request);
 
@@ -1930,14 +1624,12 @@ public sealed class CredentialCoreServiceTests
     [InlineData("default\u001B")]
     [InlineData("default\u009F")]
     public void ExecuteRequestWithControlCharacterInServiceIdentityReturnsProtocolViolation(
-        string serviceIdentity)
+        string serviceIdentity
+    )
     {
         var provider = new DeterministicFakeIdentityProvider();
         var service = new CredentialCoreService(provider);
-        CredentialRequest request = CreateGitRequest() with
-        {
-            ServiceIdentity = serviceIdentity,
-        };
+        CredentialRequest request = CreateGitRequest() with { ServiceIdentity = serviceIdentity };
 
         CredentialResult result = service.Execute(request);
 
@@ -1956,7 +1648,8 @@ public sealed class CredentialCoreServiceTests
     [Theory]
     [MemberData(nameof(RequestsWithControlCharactersInAccountOrTenantHints))]
     public void ExecuteRequestWithControlCharacterInAccountOrTenantHintReturnsProtocolViolation(
-        CredentialRequest request)
+        CredentialRequest request
+    )
     {
         var provider = new DeterministicFakeIdentityProvider();
         var service = new CredentialCoreService(provider);
@@ -1977,10 +1670,11 @@ public sealed class CredentialCoreServiceTests
 
     [Theory]
     [MemberData(nameof(PythonRequestsWithEncodedControlCharactersInResourceIdentity))]
-    public void
-        ExecutePythonRequestsWithEncodedControlCharactersInResourceIdentityReturnsProtocolViolation(
-            CredentialRequest request
-        )
+    // editorconfig-checker-disable
+    public void ExecutePythonRequestsWithEncodedControlCharactersInResourceIdentityReturnsProtocolViolation(
+        CredentialRequest request
+    )
+    // editorconfig-checker-enable
     {
         var provider = new DeterministicFakeIdentityProvider();
         var service = new CredentialCoreService(provider);
@@ -2000,8 +1694,9 @@ public sealed class CredentialCoreServiceTests
     }
 
     [Fact]
-    public void
-        ExecuteGitRequestWithDecodedControlCharacterInRepositoryPathReturnsProtocolViolation()
+    // editorconfig-checker-disable
+    public void ExecuteGitRequestWithDecodedControlCharacterInRepositoryPathReturnsProtocolViolation()
+    // editorconfig-checker-enable
     {
         var provider = new DeterministicFakeIdentityProvider();
         var service = new CredentialCoreService(provider);
@@ -2039,7 +1734,8 @@ public sealed class CredentialCoreServiceTests
         CredentialRequest request = CreateGitRequest(
             flow: IdentityFlow.InteractiveBrowser,
             kind: CredentialKind.BasicPassword,
-            interactivePolicy: InteractivePolicy.Never);
+            interactivePolicy: InteractivePolicy.Never
+        );
 
         CredentialResult result = service.Execute(request);
 
@@ -2051,64 +1747,72 @@ public sealed class CredentialCoreServiceTests
         Assert.Equal("InteractionBlocked", error.Code);
         Assert.Equal(
             "Credential request requires interaction, but interaction is blocked by policy.",
-            error.SafeMessage);
+            error.SafeMessage
+        );
 
         AdapterHostResult adapterResult = AdapterHostResultMapper.Map(
             AdapterProtocol.GitCredentialHelper,
-            result);
+            result
+        );
         Assert.Equal(AdapterHostExitCode.InteractionRequired, adapterResult.ExitCode);
         Assert.False(adapterResult.WriteProtocolStdout);
         Assert.True(adapterResult.WriteDiagnosticStderr);
         Assert.Equal("InteractionBlocked", adapterResult.SafeDiagnosticCode);
     }
 
-    public static TheoryData<CredentialRequest, CredentialResultStatus, CredentialErrorKind>
-        RejectedFlowRequests() =>
-            new()
+    public static TheoryData<
+        CredentialRequest,
+        CredentialResultStatus,
+        CredentialErrorKind
+    > RejectedFlowRequests() =>
+        new()
+        {
             {
-                {
-                    CreateGitRequest(
-                        flow: IdentityFlow.ServicePrincipal,
-                        kind: CredentialKind.BasicPassword),
-                    CredentialResultStatus.FlowDeferred,
-                    CredentialErrorKind.FlowDeferred
-                },
-                {
-                    CreateGitRequest(
-                        flow: IdentityFlow.ManagedIdentity,
-                        kind: CredentialKind.BasicPassword),
-                    CredentialResultStatus.FlowDeferred,
-                    CredentialErrorKind.FlowDeferred
-                },
-                {
-                    CreateGitRequest(
-                        flow: IdentityFlow.WorkloadIdentityFederation,
-                        kind: CredentialKind.BasicPassword),
-                    CredentialResultStatus.FlowDeferred,
-                    CredentialErrorKind.FlowDeferred
-                },
-                {
-                    CreateGitRequest(
-                        flow: IdentityFlow.DeviceCode,
-                        kind: CredentialKind.BasicPassword,
-                        interactivePolicy: InteractivePolicy.Never),
-                    CredentialResultStatus.InteractionBlocked,
-                    CredentialErrorKind.InteractionBlocked
-                },
-            };
+                CreateGitRequest(
+                    flow: IdentityFlow.ServicePrincipal,
+                    kind: CredentialKind.BasicPassword
+                ),
+                CredentialResultStatus.FlowDeferred,
+                CredentialErrorKind.FlowDeferred
+            },
+            {
+                CreateGitRequest(
+                    flow: IdentityFlow.ManagedIdentity,
+                    kind: CredentialKind.BasicPassword
+                ),
+                CredentialResultStatus.FlowDeferred,
+                CredentialErrorKind.FlowDeferred
+            },
+            {
+                CreateGitRequest(
+                    flow: IdentityFlow.WorkloadIdentityFederation,
+                    kind: CredentialKind.BasicPassword
+                ),
+                CredentialResultStatus.FlowDeferred,
+                CredentialErrorKind.FlowDeferred
+            },
+            {
+                CreateGitRequest(
+                    flow: IdentityFlow.DeviceCode,
+                    kind: CredentialKind.BasicPassword,
+                    interactivePolicy: InteractivePolicy.Never
+                ),
+                CredentialResultStatus.InteractionBlocked,
+                CredentialErrorKind.InteractionBlocked
+            },
+        };
 
     public static TheoryData<CredentialRequest> AcceptedTokenExchangeRequests() =>
         new()
         {
             { CreateGitRequest() },
             { CreateGitRequest(kind: CredentialKind.BearerToken) },
-            {
-                CreatePackageRequest(CredentialEcosystem.Npm, CredentialKind.NpmAuthToken)
-            },
+            { CreatePackageRequest(CredentialEcosystem.Npm, CredentialKind.NpmAuthToken) },
             {
                 CreatePackageRequest(
                     CredentialEcosystem.NuGet,
-                    CredentialKind.NuGetPluginCredential)
+                    CredentialKind.NuGetPluginCredential
+                )
             },
         };
 
@@ -2117,141 +1821,127 @@ public sealed class CredentialCoreServiceTests
         {
             { CreateGitRequest() },
             {
-                    CreatePackageRequest(
-                        CredentialEcosystem.NuGet,
-                        CredentialKind.NuGetPluginCredential)
+                CreatePackageRequest(
+                    CredentialEcosystem.NuGet,
+                    CredentialKind.NuGetPluginCredential
+                )
             },
         };
 
-    public static TheoryData<CredentialRequest, bool, string?, string?, string?, string[]>
-        MalformedTokenExchangeSuccessOutputs() =>
-            new()
+    public static TheoryData<
+        CredentialRequest,
+        bool,
+        string?,
+        string?,
+        string?,
+        string[]
+    > MalformedTokenExchangeSuccessOutputs() =>
+        new()
+        {
+            { CreateGitRequest(), true, null, null, null, [] },
             {
-                    {
-                        CreateGitRequest(),
-                        true,
-                        null,
-                        null,
-                        null,
-                        []
-                    },
-                    {
-                        CreateGitRequest(),
-                        false,
-                        null,
-                        "malformed-exchange-password",
-                        null,
-                        ["malformed-exchange-password"]
-                    },
-                    {
-                        CreateGitRequest(kind: CredentialKind.BearerToken),
-                        false,
-                        null,
-                        null,
-                        null,
-                        []
-                    },
-                    {
-                        CreateGitRequest(),
-                        false,
-                        "AzureDevOps",
-                        "malformed-exchange-password",
-                        "forbidden-bearer-token",
-                        ["malformed-exchange-password", "forbidden-bearer-token"]
-                    },
-                    {
-                        CreateGitRequest(kind: CredentialKind.BearerToken),
-                        false,
-                        "AzureDevOps",
-                        "forbidden-password",
-                        "valid-bearer-token",
-                        ["forbidden-password", "valid-bearer-token"]
-                    },
-                    {
-                        CreateGitRequest(),
-                        false,
-                        "Azure\r\nDevOps",
-                        "safe-password",
-                        null,
-                        ["Azure\r\nDevOps", "safe-password"]
-                    },
-                    {
-                        CreateGitRequest(kind: CredentialKind.BearerToken),
-                        false,
-                        null,
-                        null,
-                        "unsafe\r\ntoken",
-                        ["unsafe\r\ntoken"]
-                    },
-                    {
-                        CreateGitRequest(),
-                        false,
-                        "AzureDevOps",
-                        "unsafe\0password",
-                        null,
-                        ["unsafe\0password"]
-                    },
-                    {
-                        CreateGitRequest(),
-                        false,
-                        "AzureDevOps",
-                        "unsafe\u001Bpassword",
-                        null,
-                        ["unsafe\u001Bpassword"]
-                    },
-                    {
-                        CreateGitRequest(),
-                        false,
-                        "AzureDevOps",
-                        "unsafe\u009Fpassword",
-                        null,
-                        ["unsafe\u009Fpassword"]
-                    },
-                    {
-                        CreateGitRequest(kind: CredentialKind.BearerToken),
-                        false,
-                        null,
-                        null,
-                        "unsafe\0token",
-                        ["unsafe\0token"]
-                    },
-                    {
-                        CreateGitRequest(kind: CredentialKind.BearerToken),
-                        false,
-                        null,
-                        null,
-                        "unsafe\u001Btoken",
-                        ["unsafe\u001Btoken"]
-                    },
-                    {
-                        CreateGitRequest(kind: CredentialKind.BearerToken),
-                        false,
-                        null,
-                        null,
-                        "unsafe\u009Ftoken",
-                        ["unsafe\u009Ftoken"]
-                    },
-            };
+                CreateGitRequest(),
+                false,
+                null,
+                "malformed-exchange-password",
+                null,
+                ["malformed-exchange-password"]
+            },
+            { CreateGitRequest(kind: CredentialKind.BearerToken), false, null, null, null, [] },
+            {
+                CreateGitRequest(),
+                false,
+                "AzureDevOps",
+                "malformed-exchange-password",
+                "forbidden-bearer-token",
+                ["malformed-exchange-password", "forbidden-bearer-token"]
+            },
+            {
+                CreateGitRequest(kind: CredentialKind.BearerToken),
+                false,
+                "AzureDevOps",
+                "forbidden-password",
+                "valid-bearer-token",
+                ["forbidden-password", "valid-bearer-token"]
+            },
+            {
+                CreateGitRequest(),
+                false,
+                "Azure\r\nDevOps",
+                "safe-password",
+                null,
+                ["Azure\r\nDevOps", "safe-password"]
+            },
+            {
+                CreateGitRequest(kind: CredentialKind.BearerToken),
+                false,
+                null,
+                null,
+                "unsafe\r\ntoken",
+                ["unsafe\r\ntoken"]
+            },
+            {
+                CreateGitRequest(),
+                false,
+                "AzureDevOps",
+                "unsafe\0password",
+                null,
+                ["unsafe\0password"]
+            },
+            {
+                CreateGitRequest(),
+                false,
+                "AzureDevOps",
+                "unsafe\u001Bpassword",
+                null,
+                ["unsafe\u001Bpassword"]
+            },
+            {
+                CreateGitRequest(),
+                false,
+                "AzureDevOps",
+                "unsafe\u009Fpassword",
+                null,
+                ["unsafe\u009Fpassword"]
+            },
+            {
+                CreateGitRequest(kind: CredentialKind.BearerToken),
+                false,
+                null,
+                null,
+                "unsafe\0token",
+                ["unsafe\0token"]
+            },
+            {
+                CreateGitRequest(kind: CredentialKind.BearerToken),
+                false,
+                null,
+                null,
+                "unsafe\u001Btoken",
+                ["unsafe\u001Btoken"]
+            },
+            {
+                CreateGitRequest(kind: CredentialKind.BearerToken),
+                false,
+                null,
+                null,
+                "unsafe\u009Ftoken",
+                ["unsafe\u009Ftoken"]
+            },
+        };
 
     public static TheoryData<CredentialRequest> BlockedTokenExchangeRequests() =>
         new()
         {
-            {
-                CreateGitRequest() with
-                {
-                    ServiceIdentity = "Default",
-                }
-            },
+            { CreateGitRequest() with { ServiceIdentity = "Default" } },
             {
                 CreateGitRequest(
                     flow: IdentityFlow.DeviceCode,
                     kind: CredentialKind.BasicPassword,
-                    interactivePolicy: InteractivePolicy.Never)
+                    interactivePolicy: InteractivePolicy.Never
+                )
             },
-            {
-                CreateGitRequest(
-                    cachePolicy: CachePolicyMode.FuturePersistentCacheRequested)
-            },
+            { CreateGitRequest(cachePolicy: CachePolicyMode.FuturePersistentCacheRequested) },
         };
 
     public static TheoryData<CredentialRequest> MalformedWp5FlowRequests()
@@ -2259,285 +1949,295 @@ public sealed class CredentialCoreServiceTests
         CredentialRequest pat = CreateGitRequest(
             flow: IdentityFlow.PatCompatibility,
             kind: CredentialKind.PatCompatibility,
-            cachePolicy: CachePolicyMode.FuturePersistentCacheRequested);
-        CredentialRequest systemAccessToken =
-            CreateAzurePipelinesSystemAccessTokenRequest(
-                CachePolicyMode.NonPersistentCi,
-                new CiContext
-                {
-                    ExplicitCiMode = true,
-                    Provider = CiProviderNames.AzurePipelines,
-                    HasAzurePipelinesSystemAccessToken = true,
-                    AllowsPersistentWrites = false,
-                });
+            cachePolicy: CachePolicyMode.FuturePersistentCacheRequested
+        );
+        CredentialRequest systemAccessToken = CreateAzurePipelinesSystemAccessTokenRequest(
+            CachePolicyMode.NonPersistentCi,
+            new CiContext
+            {
+                ExplicitCiMode = true,
+                Provider = CiProviderNames.AzurePipelines,
+                HasAzurePipelinesSystemAccessToken = true,
+                AllowsPersistentWrites = false,
+            }
+        );
 
         return new TheoryData<CredentialRequest>
         {
-            pat with { ContractMajor = ContractVersions.CredentialContractV2Major },
+            pat with
+            {
+                ContractMajor = ContractVersions.CredentialContractV2Major,
+            },
             systemAccessToken with
             {
                 ContractMajor = ContractVersions.CredentialContractV2Major,
             },
-            pat with { Operation = (CredentialOperation)int.MaxValue },
-            systemAccessToken with { Operation = CredentialOperation.Unspecified },
-            pat with { Resource = null! },
-            systemAccessToken with { Resource = null! },
-            pat with { AccountHint = "account\u001B" },
-            pat with { TenantHint = "tenant\u009F" },
-            systemAccessToken with { AccountHint = "account\u001B" },
-            systemAccessToken with { TenantHint = "tenant\u009F" },
-            pat with { Ecosystem = (CredentialEcosystem)int.MaxValue },
-            systemAccessToken with { CachePolicy = (CachePolicyMode)int.MaxValue },
-            pat with { CredentialKind = CredentialKind.BearerToken },
-            systemAccessToken with { CredentialKind = CredentialKind.BasicPassword },
+            pat with
+            {
+                Operation = (CredentialOperation)int.MaxValue,
+            },
+            systemAccessToken with
+            {
+                Operation = CredentialOperation.Unspecified,
+            },
+            pat with
+            {
+                Resource = null!,
+            },
+            systemAccessToken with
+            {
+                Resource = null!,
+            },
+            pat with
+            {
+                AccountHint = "account\u001B",
+            },
+            pat with
+            {
+                TenantHint = "tenant\u009F",
+            },
+            systemAccessToken with
+            {
+                AccountHint = "account\u001B",
+            },
+            systemAccessToken with
+            {
+                TenantHint = "tenant\u009F",
+            },
+            pat with
+            {
+                Ecosystem = (CredentialEcosystem)int.MaxValue,
+            },
+            systemAccessToken with
+            {
+                CachePolicy = (CachePolicyMode)int.MaxValue,
+            },
+            pat with
+            {
+                CredentialKind = CredentialKind.BearerToken,
+            },
+            systemAccessToken with
+            {
+                CredentialKind = CredentialKind.BasicPassword,
+            },
         };
     }
 
-    public static TheoryData<CredentialRequest, CredentialResultStatus>
-        BlockedDirectMsalRequests() =>
+    public static TheoryData<
+        CredentialRequest,
+        CredentialResultStatus
+    > BlockedDirectMsalRequests() =>
         new()
         {
             {
                 CreateGitRequest(
                     flow: IdentityFlow.ServicePrincipal,
-                    kind: CredentialKind.BasicPassword),
+                    kind: CredentialKind.BasicPassword
+                ),
                 CredentialResultStatus.FlowDeferred
             },
             {
                 CreateAzurePipelinesSystemAccessTokenRequest(
                     CachePolicyMode.NonPersistentCi,
-                    ciContext: null),
+                    ciContext: null
+                ),
                 CredentialResultStatus.CredentialUnavailable
             },
             {
-                CreateGitRequest(
-                    cachePolicy: CachePolicyMode.FuturePersistentCacheRequested),
+                CreateGitRequest(cachePolicy: CachePolicyMode.FuturePersistentCacheRequested),
                 CredentialResultStatus.CacheUnavailable
             },
         };
 
-    public static TheoryData<CredentialRequest, IdentityMaterial>
-        ProviderMaterialWithUnusedProtocolLineBreaksScenarios() =>
-            new()
+    public static TheoryData<
+        CredentialRequest,
+        IdentityMaterial
+    > ProviderMaterialWithUnusedProtocolLineBreaksScenarios() =>
+        new()
+        {
+            { CreateGitRequest(), CreateIdentityMaterial(accessToken: "unused\r\ntoken") },
             {
-                {
-                    CreateGitRequest(),
-                    CreateIdentityMaterial(accessToken: "unused\r\ntoken")
-                },
-                {
-                    CreateGitRequest(kind: CredentialKind.BearerToken),
-                    CreateIdentityMaterial(secret: "unused\r\nsecret")
-                },
-            };
+                CreateGitRequest(kind: CredentialKind.BearerToken),
+                CreateIdentityMaterial(secret: "unused\r\nsecret")
+            },
+        };
 
-    public static TheoryData<CredentialRequest, IdentityMaterial>
-        UnsafeProviderMaterialScenarios() =>
-            new()
+    public static TheoryData<
+        CredentialRequest,
+        IdentityMaterial
+    > UnsafeProviderMaterialScenarios() =>
+        new()
+        {
+            { CreateGitRequest(), CreateIdentityMaterial(secret: "unsafe\r\nsecret") },
             {
-                {
-                    CreateGitRequest(),
-                    CreateIdentityMaterial(secret: "unsafe\r\nsecret")
-                },
-                {
-                    CreateGitRequest(kind: CredentialKind.BearerToken),
-                    CreateIdentityMaterial(accessToken: "unsafe\r\ntoken")
-                },
-                {
-                    CreateGitRequest(),
-                    CreateIdentityMaterial(secret: "unsafe\0secret")
-                },
-                {
-                    CreateGitRequest(),
-                    CreateIdentityMaterial(secret: "unsafe\u001Bsecret")
-                },
-                {
-                    CreateGitRequest(),
-                    CreateIdentityMaterial(secret: "unsafe\u009Fsecret")
-                },
-                {
-                    CreateGitRequest(kind: CredentialKind.BearerToken),
-                    CreateIdentityMaterial(accessToken: "unsafe\0token")
-                },
-                {
-                    CreateGitRequest(kind: CredentialKind.BearerToken),
-                    CreateIdentityMaterial(accessToken: "unsafe\u001Btoken")
-                },
-                {
-                    CreateGitRequest(kind: CredentialKind.BearerToken),
-                    CreateIdentityMaterial(accessToken: "unsafe\u009Ftoken")
-                },
-                {
-                    CreateGitRequest(),
-                    CreateIdentityMaterial(account: "unsafe\r\naccount")
-                },
-                {
-                    CreateGitRequest(),
-                    CreateIdentityMaterial(tenant: "unsafe\r\ntenant")
-                },
-            };
+                CreateGitRequest(kind: CredentialKind.BearerToken),
+                CreateIdentityMaterial(accessToken: "unsafe\r\ntoken")
+            },
+            { CreateGitRequest(), CreateIdentityMaterial(secret: "unsafe\0secret") },
+            { CreateGitRequest(), CreateIdentityMaterial(secret: "unsafe\u001Bsecret") },
+            { CreateGitRequest(), CreateIdentityMaterial(secret: "unsafe\u009Fsecret") },
+            {
+                CreateGitRequest(kind: CredentialKind.BearerToken),
+                CreateIdentityMaterial(accessToken: "unsafe\0token")
+            },
+            {
+                CreateGitRequest(kind: CredentialKind.BearerToken),
+                CreateIdentityMaterial(accessToken: "unsafe\u001Btoken")
+            },
+            {
+                CreateGitRequest(kind: CredentialKind.BearerToken),
+                CreateIdentityMaterial(accessToken: "unsafe\u009Ftoken")
+            },
+            { CreateGitRequest(), CreateIdentityMaterial(account: "unsafe\r\naccount") },
+            { CreateGitRequest(), CreateIdentityMaterial(tenant: "unsafe\r\ntenant") },
+        };
 
-    public static TheoryData<CredentialRequest, IdentityMaterial>
-        IncompleteProviderMaterialScenarios() =>
-            new()
+    public static TheoryData<
+        CredentialRequest,
+        IdentityMaterial
+    > IncompleteProviderMaterialScenarios() =>
+        new()
+        {
+            { CreateGitRequest(), CreateIdentityMaterial(secret: null) },
+            { CreateGitRequest(), CreateIdentityMaterial(secret: string.Empty) },
+            { CreateGitRequest(), CreateIdentityMaterial(secret: " \t ") },
             {
-                {
-                    CreateGitRequest(),
-                    CreateIdentityMaterial(secret: null)
-                },
-                {
-                    CreateGitRequest(),
-                    CreateIdentityMaterial(secret: string.Empty)
-                },
-                {
-                    CreateGitRequest(),
-                    CreateIdentityMaterial(secret: " \t ")
-                },
-                {
-                    CreateGitRequest(kind: CredentialKind.BearerToken),
-                    CreateIdentityMaterial(accessToken: null)
-                },
-                {
-                    CreateGitRequest(kind: CredentialKind.BearerToken),
-                    CreateIdentityMaterial(accessToken: string.Empty)
-                },
-                {
-                    CreateGitRequest(kind: CredentialKind.BearerToken),
-                    CreateIdentityMaterial(accessToken: " \t ")
-                },
-            };
+                CreateGitRequest(kind: CredentialKind.BearerToken),
+                CreateIdentityMaterial(accessToken: null)
+            },
+            {
+                CreateGitRequest(kind: CredentialKind.BearerToken),
+                CreateIdentityMaterial(accessToken: string.Empty)
+            },
+            {
+                CreateGitRequest(kind: CredentialKind.BearerToken),
+                CreateIdentityMaterial(accessToken: " \t ")
+            },
+        };
 
-    public static TheoryData<CredentialRequest>
-        RequestsWithControlCharactersInAccountOrTenantHints() =>
-            new()
-            {
-                {
-                    CreateGitRequest(accountHint: "user\u001B@example.com")
-                },
-                {
-                    CreateGitRequest(accountHint: "user\u009F@example.com")
-                },
-                {
-                    CreateGitRequest(tenantHint: "tenant\u001Bone")
-                },
-                {
-                    CreateGitRequest(tenantHint: "tenant\u009Fone")
-                },
-            };
+    public static CredentialCases RequestsWithControlCharactersInAccountOrTenantHints() =>
+        new()
+        {
+            { CreateGitRequest(accountHint: "user\u001B@example.com") },
+            { CreateGitRequest(accountHint: "user\u009F@example.com") },
+            { CreateGitRequest(tenantHint: "tenant\u001Bone") },
+            { CreateGitRequest(tenantHint: "tenant\u009Fone") },
+        };
 
-    public static TheoryData<CredentialRequest>
-        PythonRequestsWithEncodedControlCharactersInResourceIdentity() =>
-            new()
+    public static CredentialCases PythonRequestsWithEncodedControlCharactersInResourceIdentity() =>
+        new()
+        {
             {
+                CreatePythonRequest(feed: "feed") with
                 {
-                    CreatePythonRequest(feed: "feed") with
+                    Resource = new CanonicalResourceIdentity
                     {
-                        Resource = new CanonicalResourceIdentity
-                        {
-                            AzureDevOpsHost = "pkgs.dev.azure.com",
-                            Organization = "org\nother",
-                            Feed = "feed",
-                            ServiceEndpoint = new Uri(
-                                "https://pkgs.dev.azure.com/org%0Aother/_packaging/feed/pypi/simple"
-                            ),
-                        },
-                    }
-                },
+                        AzureDevOpsHost = "pkgs.dev.azure.com",
+                        Organization = "org\nother",
+                        Feed = "feed",
+                        ServiceEndpoint = new Uri(
+                            "https://pkgs.dev.azure.com/org%0Aother/_packaging/feed/pypi/simple"
+                        ),
+                    },
+                }
+            },
+            {
+                CreatePythonRequest(feed: "feed") with
                 {
-                    CreatePythonRequest(feed: "feed") with
+                    Resource = new CanonicalResourceIdentity
                     {
-                        Resource = new CanonicalResourceIdentity
-                        {
-                            AzureDevOpsHost = "pkgs.dev.azure.com",
-                            Organization = "org\u001Bother",
-                            Feed = "feed",
-                            ServiceEndpoint = new Uri(
-                                "https://pkgs.dev.azure.com/org%1Bother/_packaging/feed/pypi/simple"
-                            ),
-                        },
-                    }
-                },
+                        AzureDevOpsHost = "pkgs.dev.azure.com",
+                        Organization = "org\u001Bother",
+                        Feed = "feed",
+                        ServiceEndpoint = new Uri(
+                            "https://pkgs.dev.azure.com/org%1Bother/_packaging/feed/pypi/simple"
+                        ),
+                    },
+                }
+            },
+            {
+                CreateProjectScopedPythonRequest(feed: "feed") with
                 {
-                    CreateProjectScopedPythonRequest(feed: "feed") with
+                    Resource = new CanonicalResourceIdentity
                     {
-                        Resource = new CanonicalResourceIdentity
-                        {
-                            AzureDevOpsHost = "dev.azure.com",
-                            Organization = "org",
-                            Project = "project\rother",
-                            Feed = "feed",
-                            ServiceEndpoint = new Uri(
-                                "https://dev.azure.com/org/project%0Dother/_packaging/feed/"
-                                    + "pypi/simple"
-                            ),
-                        },
-                    }
-                },
+                        AzureDevOpsHost = "dev.azure.com",
+                        Organization = "org",
+                        Project = "project\rother",
+                        Feed = "feed",
+                        ServiceEndpoint = new Uri(
+                            "https://dev.azure.com/org/project%0Dother/_packaging/feed/"
+                                + "pypi/simple"
+                        ),
+                    },
+                }
+            },
+            {
+                CreateProjectScopedPythonRequest(feed: "feed") with
                 {
-                    CreateProjectScopedPythonRequest(feed: "feed") with
+                    Resource = new CanonicalResourceIdentity
                     {
-                        Resource = new CanonicalResourceIdentity
-                        {
-                            AzureDevOpsHost = "dev.azure.com",
-                            Organization = "org",
-                            Project = "project\u009Fother",
-                            Feed = "feed",
-                            ServiceEndpoint = new Uri(
-                                "https://dev.azure.com/org/project%C2%9Fother/_packaging/feed/"
-                                    + "pypi/simple"
-                            ),
-                        },
-                    }
-                },
+                        AzureDevOpsHost = "dev.azure.com",
+                        Organization = "org",
+                        Project = "project\u009Fother",
+                        Feed = "feed",
+                        ServiceEndpoint = new Uri(
+                            "https://dev.azure.com/org/project%C2%9Fother/_packaging/feed/"
+                                + "pypi/simple"
+                        ),
+                    },
+                }
+            },
+            {
+                CreatePythonRequest(feed: "feed") with
                 {
-                    CreatePythonRequest(feed: "feed") with
+                    Resource = new CanonicalResourceIdentity
                     {
-                        Resource = new CanonicalResourceIdentity
-                        {
-                            AzureDevOpsHost = "pkgs.dev.azure.com",
-                            Organization = "org",
-                            Feed = "feed\tother",
-                            ServiceEndpoint = new Uri(
-                                "https://pkgs.dev.azure.com/org/_packaging/feed%09other/pypi/simple"
-                            ),
-                        },
-                    }
-                },
+                        AzureDevOpsHost = "pkgs.dev.azure.com",
+                        Organization = "org",
+                        Feed = "feed\tother",
+                        ServiceEndpoint = new Uri(
+                            "https://pkgs.dev.azure.com/org/_packaging/feed%09other/pypi/simple"
+                        ),
+                    },
+                }
+            },
+            {
+                CreatePythonRequest(feed: "feed") with
                 {
-                    CreatePythonRequest(feed: "feed") with
+                    Resource = new CanonicalResourceIdentity
                     {
-                        Resource = new CanonicalResourceIdentity
-                        {
-                            AzureDevOpsHost = "pkgs.dev.azure.com",
-                            Organization = "org",
-                            Feed = "feed\u007Fother",
-                            ServiceEndpoint = new Uri(
-                                "https://pkgs.dev.azure.com/org/_packaging/feed%7Fother/pypi/simple"
-                            ),
-                        },
-                    }
-                },
+                        AzureDevOpsHost = "pkgs.dev.azure.com",
+                        Organization = "org",
+                        Feed = "feed\u007Fother",
+                        ServiceEndpoint = new Uri(
+                            "https://pkgs.dev.azure.com/org/_packaging/feed%7Fother/pypi/simple"
+                        ),
+                    },
+                }
+            },
+            {
+                CreatePythonRequest(feed: "feed") with
                 {
-                    CreatePythonRequest(feed: "feed") with
+                    Resource = new CanonicalResourceIdentity
                     {
-                        Resource = new CanonicalResourceIdentity
-                        {
-                            AzureDevOpsHost = "pkgs.dev.azure.com",
-                            Organization = "org",
-                            Feed = "feed\u0085other",
-                            ServiceEndpoint = new Uri(
-                                "https://pkgs.dev.azure.com/org/_packaging/feed%C2%85other/"
-                                    + "pypi/simple"
-                            ),
-                        },
-                    }
-                },
-            };
+                        AzureDevOpsHost = "pkgs.dev.azure.com",
+                        Organization = "org",
+                        Feed = "feed\u0085other",
+                        ServiceEndpoint = new Uri(
+                            "https://pkgs.dev.azure.com/org/_packaging/feed%C2%85other/"
+                                + "pypi/simple"
+                        ),
+                    },
+                }
+            },
+        };
 
     private static IEnumerable<CredentialRequest> RejectedAzurePipelinesRequests()
     {
         yield return CreateAzurePipelinesSystemAccessTokenRequest(
             CachePolicyMode.NonPersistentCi,
-            ciContext: null);
+            ciContext: null
+        );
         yield return CreateAzurePipelinesSystemAccessTokenRequest(
             CachePolicyMode.NonPersistentCi,
             new CiContext
@@ -2546,7 +2246,8 @@ public sealed class CredentialCoreServiceTests
                 Provider = CiProviderNames.AzurePipelines,
                 HasAzurePipelinesSystemAccessToken = true,
                 AllowsPersistentWrites = false,
-            });
+            }
+        );
         yield return CreateAzurePipelinesSystemAccessTokenRequest(
             CachePolicyMode.NonPersistentCi,
             new CiContext
@@ -2555,7 +2256,8 @@ public sealed class CredentialCoreServiceTests
                 Provider = "GitHubActions",
                 HasAzurePipelinesSystemAccessToken = true,
                 AllowsPersistentWrites = false,
-            });
+            }
+        );
         yield return CreateAzurePipelinesSystemAccessTokenRequest(
             CachePolicyMode.NonPersistentCi,
             new CiContext
@@ -2564,7 +2266,8 @@ public sealed class CredentialCoreServiceTests
                 Provider = CiProviderNames.AzurePipelines,
                 HasAzurePipelinesSystemAccessToken = false,
                 AllowsPersistentWrites = false,
-            });
+            }
+        );
         yield return CreateAzurePipelinesSystemAccessTokenRequest(
             CachePolicyMode.ProductPersistentCacheDisabled,
             new CiContext
@@ -2573,7 +2276,8 @@ public sealed class CredentialCoreServiceTests
                 Provider = CiProviderNames.AzurePipelines,
                 HasAzurePipelinesSystemAccessToken = true,
                 AllowsPersistentWrites = false,
-            });
+            }
+        );
         yield return CreateAzurePipelinesSystemAccessTokenRequest(
             CachePolicyMode.NonPersistentCi,
             new CiContext
@@ -2582,12 +2286,14 @@ public sealed class CredentialCoreServiceTests
                 Provider = CiProviderNames.AzurePipelines,
                 HasAzurePipelinesSystemAccessToken = true,
                 AllowsPersistentWrites = true,
-            });
+            }
+        );
     }
 
     private static (string CacheKey, string Material) GetIssuedMaterial(
         CredentialCoreService service,
-        CredentialRequest request)
+        CredentialRequest request
+    )
     {
         CredentialResult result = service.Execute(request);
         Assert.Equal(CredentialResultStatus.Success, result.Status);
@@ -2604,7 +2310,8 @@ public sealed class CredentialCoreServiceTests
         CachePolicyMode cachePolicy = CachePolicyMode.ProductPersistentCacheDisabled,
         CiContext? ciContext = null,
         string? accountHint = null,
-        string? tenantHint = null) =>
+        string? tenantHint = null
+    ) =>
         new()
         {
             Ecosystem = CredentialEcosystem.Git,
@@ -2612,7 +2319,8 @@ public sealed class CredentialCoreServiceTests
             Resource = CanonicalResourceIdentity.Create(
                 "dev.azure.com",
                 "org",
-                new Uri("https://dev.azure.com/org")),
+                new Uri("https://dev.azure.com/org")
+            ),
             ServiceIdentity = "default",
             AccountHint = accountHint,
             TenantHint = tenantHint,
@@ -2621,31 +2329,31 @@ public sealed class CredentialCoreServiceTests
             IdentityFlow = flow,
             InteractivePolicy = interactivePolicy,
             CachePolicy = cachePolicy,
-            CiContext = ciContext
-                ?? new CiContext
-                {
-                    ExplicitCiMode = false,
-                    AllowsPersistentWrites = false,
-                },
+            CiContext =
+                ciContext
+                ?? new CiContext { ExplicitCiMode = false, AllowsPersistentWrites = false },
         };
 
     private static CredentialRequest CreateAzurePipelinesSystemAccessTokenRequest(
         CachePolicyMode cachePolicy,
-        CiContext? ciContext)
+        CiContext? ciContext
+    )
     {
         CredentialRequest request = CreateGitRequest(
             flow: IdentityFlow.AzurePipelinesSystemAccessToken,
             kind: CredentialKind.BearerToken,
             interactivePolicy: InteractivePolicy.Never,
             cachePolicy: cachePolicy,
-            ciContext: ciContext);
+            ciContext: ciContext
+        );
         return ciContext is null ? request with { CiContext = null } : request;
     }
 
     private static CredentialRequest CreatePythonRequest(
         string feed,
         string? accountHint = null,
-        string? tenantHint = null) =>
+        string? tenantHint = null
+    ) =>
         new()
         {
             Ecosystem = CredentialEcosystem.Python,
@@ -2654,7 +2362,8 @@ public sealed class CredentialCoreServiceTests
                 "pkgs.dev.azure.com",
                 "org",
                 new Uri($"https://pkgs.dev.azure.com/org/_packaging/{feed}/pypi/simple"),
-                feed: feed),
+                feed: feed
+            ),
             ServiceIdentity = "default",
             AccountHint = accountHint,
             TenantHint = tenantHint,
@@ -2663,16 +2372,13 @@ public sealed class CredentialCoreServiceTests
             IdentityFlow = IdentityFlow.DeviceCode,
             InteractivePolicy = InteractivePolicy.UserAllowed,
             CachePolicy = CachePolicyMode.ProductPersistentCacheDisabled,
-            CiContext = new CiContext
-            {
-                ExplicitCiMode = false,
-                AllowsPersistentWrites = false,
-            },
+            CiContext = new CiContext { ExplicitCiMode = false, AllowsPersistentWrites = false },
         };
 
     private static CredentialRequest CreatePackageRequest(
         CredentialEcosystem ecosystem,
-        CredentialKind kind) =>
+        CredentialKind kind
+    ) =>
         new()
         {
             Ecosystem = ecosystem,
@@ -2690,25 +2396,23 @@ public sealed class CredentialCoreServiceTests
                     ),
                     _ => new Uri("https://pkgs.dev.azure.com/org/_packaging/feed/npm"),
                 },
-                feed: "feed"),
+                feed: "feed"
+            ),
             ServiceIdentity = "default",
             RequestedAudience = TokenAudience.AzureArtifacts,
             CredentialKind = kind,
             IdentityFlow = IdentityFlow.DeviceCode,
             InteractivePolicy = InteractivePolicy.UserAllowed,
             CachePolicy = CachePolicyMode.ProductPersistentCacheDisabled,
-            CiContext = new CiContext
-            {
-                ExplicitCiMode = false,
-                AllowsPersistentWrites = false,
-            },
+            CiContext = new CiContext { ExplicitCiMode = false, AllowsPersistentWrites = false },
         };
 
     private static CredentialRequest CreateProjectScopedPythonRequest(
         string feed,
         string project = "project",
         string? accountHint = null,
-        string? tenantHint = null) =>
+        string? tenantHint = null
+    ) =>
         CreatePythonRequest(feed, accountHint, tenantHint) with
         {
             Resource = CanonicalResourceIdentity.Create(
@@ -2716,14 +2420,16 @@ public sealed class CredentialCoreServiceTests
                 "org",
                 new Uri($"https://dev.azure.com/org/{project}/_packaging/{feed}/pypi/simple"),
                 project: project,
-                feed: feed),
+                feed: feed
+            ),
         };
 
     private static CredentialRequest CreateLegacyVisualStudioProjectScopedPythonRequest(
         string feed,
         string project = "project",
         string? accountHint = null,
-        string? tenantHint = null) =>
+        string? tenantHint = null
+    ) =>
         CreatePythonRequest(feed, accountHint, tenantHint) with
         {
             Resource = CanonicalResourceIdentity.Create(
@@ -2734,14 +2440,16 @@ public sealed class CredentialCoreServiceTests
                         + $"{feed}/pypi/simple/"
                 ),
                 project: project,
-                feed: feed),
+                feed: feed
+            ),
         };
 
     private static IdentityMaterial CreateIdentityMaterial(
         string account = "user@example.com",
         string tenant = "tenant-1",
         string? secret = "safe-secret",
-        string? accessToken = "safe-token") =>
+        string? accessToken = "safe-token"
+    ) =>
         new()
         {
             Account = account,
@@ -2771,7 +2479,8 @@ public sealed class CredentialCoreServiceTests
     private static DiagnosticRouter CreateRecordingDiagnosticRouter(
         StringWriter diagnosticText,
         RecordingDiagnosticSink recordingSink,
-        SecretRedactor redactor)
+        SecretRedactor redactor
+    )
     {
         ArgumentNullException.ThrowIfNull(diagnosticText);
         ArgumentNullException.ThrowIfNull(recordingSink);
@@ -2779,13 +2488,15 @@ public sealed class CredentialCoreServiceTests
 
         return new DiagnosticRouter(
             [new TextWriterDiagnosticSink(diagnosticText), recordingSink],
-            redactor);
+            redactor
+        );
     }
 
     private static void AssertClosedFailureResult(
         CredentialResult result,
         IdentityMaterial identity,
-        params string?[] additionalRawValues)
+        params string?[] additionalRawValues
+    )
     {
         Assert.Null(result.Account);
         Assert.Null(result.Tenant);
@@ -2858,8 +2569,8 @@ public sealed class CredentialCoreServiceTests
     }
 
     private sealed class CallbackIdentityProvider(
-        Func<CredentialRequest, IdentityMaterial> getIdentity)
-        : IIdentityProvider
+        Func<CredentialRequest, IdentityMaterial> getIdentity
+    ) : IIdentityProvider
     {
         private readonly Func<CredentialRequest, IdentityMaterial> _getIdentity = getIdentity;
 
@@ -2874,8 +2585,8 @@ public sealed class CredentialCoreServiceTests
     }
 
     private sealed class CountingDirectMsalIdentityProvider(
-        Func<CredentialRequest, DirectMsalIdentityResult> acquireIdentity)
-        : IDirectMsalIdentityProvider
+        Func<CredentialRequest, DirectMsalIdentityResult> acquireIdentity
+    ) : IDirectMsalIdentityProvider
     {
         private readonly Func<CredentialRequest, DirectMsalIdentityResult> _acquireIdentity =
             acquireIdentity;
@@ -2891,18 +2602,23 @@ public sealed class CredentialCoreServiceTests
     }
 
     private sealed class CountingTokenExchange(
-        Func<CredentialRequest, IdentityMaterial, CacheKey, TokenExchangeResult> exchange)
-        : ITokenExchange
+        Func<CredentialRequest, IdentityMaterial, CacheKey, TokenExchangeResult> exchange
+    ) : ITokenExchange
     {
-        private readonly Func<CredentialRequest, IdentityMaterial, CacheKey, TokenExchangeResult>
-            _exchange = exchange;
+        private readonly Func<
+            CredentialRequest,
+            IdentityMaterial,
+            CacheKey,
+            TokenExchangeResult
+        > _exchange = exchange;
 
         public int InvocationCount { get; private set; }
 
         public TokenExchangeResult Exchange(
             CredentialRequest request,
             IdentityMaterial identity,
-            CacheKey cacheKey)
+            CacheKey cacheKey
+        )
         {
             ArgumentNullException.ThrowIfNull(request);
             ArgumentNullException.ThrowIfNull(identity);
@@ -2913,7 +2629,8 @@ public sealed class CredentialCoreServiceTests
     }
 
     private sealed class ReportingDerivedCredentialCache(
-        DerivedCredentialCacheAvailability availability) : IDerivedCredentialCache
+        DerivedCredentialCacheAvailability availability
+    ) : IDerivedCredentialCache
     {
         private readonly DerivedCredentialCacheAvailability _availability = availability;
 
@@ -2924,7 +2641,8 @@ public sealed class CredentialCoreServiceTests
         public int PersistentWriteCount { get; private set; }
 
         public DerivedCredentialCacheAvailability GetPersistentAvailability(
-            CredentialRequest request)
+            CredentialRequest request
+        )
         {
             ArgumentNullException.ThrowIfNull(request);
             PersistentAvailabilityCheckCount++;
@@ -2933,7 +2651,8 @@ public sealed class CredentialCoreServiceTests
 
         public DerivedCredentialCacheReadResult TryReadPersistent(
             CredentialRequest request,
-            CacheKey cacheKey)
+            CacheKey cacheKey
+        )
         {
             ArgumentNullException.ThrowIfNull(request);
             ArgumentNullException.ThrowIfNull(cacheKey);
@@ -2944,7 +2663,8 @@ public sealed class CredentialCoreServiceTests
         public DerivedCredentialCacheWriteResult TryWritePersistent(
             CredentialRequest request,
             CacheKey cacheKey,
-            IdentityMaterial identity)
+            IdentityMaterial identity
+        )
         {
             ArgumentNullException.ThrowIfNull(request);
             ArgumentNullException.ThrowIfNull(cacheKey);

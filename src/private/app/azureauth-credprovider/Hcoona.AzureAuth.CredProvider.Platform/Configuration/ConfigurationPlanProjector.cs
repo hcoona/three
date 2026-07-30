@@ -1,6 +1,3 @@
-using System.Globalization;
-using System.Security.Cryptography;
-using System.Text;
 using Hcoona.AzureAuth.CredProvider.Contracts;
 
 namespace Hcoona.AzureAuth.CredProvider.Platform.Configuration;
@@ -12,7 +9,6 @@ internal static class ConfigurationPlanProjector
     )
     {
         ArgumentNullException.ThrowIfNull(plan);
-
         return plan.Changes.Select(CreatePlannedOperation).ToArray();
     }
 
@@ -23,27 +19,19 @@ internal static class ConfigurationPlanProjector
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(plannedOperations);
-
         return new ConfigurationDryRunPlan
         {
             ContractMajor = plan.ContractMajor,
             PlanId = plan.PlanId,
-            ChangeSetId = plan.ChangeSetId,
             OwnerProductId = plan.OwnerProductId,
             Scope = plan.Scope,
-            AtomicityPolicy = plan.AtomicityPolicy,
-            RollbackPolicy = plan.RollbackPolicy,
-            State = plan.State,
-            ManifestCommitPolicy = plan.ManifestCommitPolicy,
             Manifest = plan.Manifest,
             TemporaryContainer = plan.TemporaryContainer,
             DeclarationPreservation = plan.DeclarationPreservation,
             ExpiresAt = plan.ExpiresAt,
             ContainsCredentialMaterial = plan.ContainsCredentialMaterial,
             ExtensionData = plan.ExtensionData,
-            Changes = plannedOperations
-                .Select(plannedOperation => plannedOperation.Change)
-                .ToArray(),
+            Changes = plannedOperations.Select(operation => operation.Change).ToArray(),
         };
     }
 
@@ -54,22 +42,17 @@ internal static class ConfigurationPlanProjector
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(plannedOperations);
-
         return new ConfigurationOwnershipManifest
         {
             ManifestId = plan.Manifest.ManifestId,
-            PlanId = plan.PlanId,
-            ChangeSetId = plan.ChangeSetId,
             OwnerProductId = plan.OwnerProductId,
             Scope = plan.Scope,
             EntrySelector = plan.Manifest.EntrySelector,
             ResourceIdentity = plan.Manifest.ResourceIdentity,
             ProductVersion = plan.Manifest.ProductVersion,
-            PreviousOwnedEntryHash = plan.Manifest.PreviousOwnedEntryHash,
-            ContainsCredentialMaterial = plan.ContainsCredentialMaterial,
             SafeMetadata = plan.Manifest.SafeMetadata,
             Entries = plannedOperations
-                .Select(plannedOperation => plannedOperation.OwnershipEntry)
+                .Select(operation => operation.OwnershipEntry)
                 .OfType<ConfigurationOwnershipManifestEntry>()
                 .ToArray(),
         };
@@ -85,26 +68,11 @@ internal static class ConfigurationPlanProjector
     )
     {
         int sequence = index + 1;
-        return new ConfigurationPlannedOperation
-        {
-            Sequence = sequence,
-            Change = CreatePlannedChange(change, sequence),
-            OwnershipEntry = change.RequiresOwnershipRecord
-                ? CreateOwnershipManifestEntry(change, sequence)
-                : null,
-        };
-    }
-
-    private static ConfigurationPlannedChange CreatePlannedChange(
-        ConfigurationChange change,
-        int sequence
-    )
-    {
-        bool hasPlannedValue = change.Value is not null;
-        bool isSecretValue = change.TargetKind == ConfigurationTargetKind.Npmrc
-            ? hasPlannedValue && change.IsSecretValue
-            : change.IsSecretValue;
-        return new ConfigurationPlannedChange
+        bool hasValue = change.Value is not null;
+        bool isSecret =
+            change.IsSecretValue
+            || ConfigurationChangePlanPolicy.IsIntrinsicallySecretNpmCompatibleAuthValue(change);
+        var plannedChange = new ConfigurationPlannedChange
         {
             Sequence = sequence,
             Operation = change.Operation,
@@ -113,73 +81,22 @@ internal static class ConfigurationPlanProjector
             Key = change.Key,
             RequiresOwnershipRecord = change.RequiresOwnershipRecord,
             PreserveDeclarationsAndComments = change.PreserveDeclarationsAndComments,
-            HasPlannedValue = hasPlannedValue,
-            IsSecretValue = isSecretValue,
-            PlannedValueSha256 = GetPlannedValueSha256(change, hasPlannedValue, isSecretValue),
-            PreviousOwnedEntryMetadata = change.PreviousOwnedEntryMetadata,
+            HasPlannedValue = hasValue,
+            IsSecretValue = isSecret,
         };
-    }
-
-    private static ConfigurationOwnershipManifestEntry CreateOwnershipManifestEntry(
-        ConfigurationChange change,
-        int sequence
-    )
-    {
-        bool hasPlannedValue = change.Value is not null;
-        bool isSecretValue = change.TargetKind == ConfigurationTargetKind.Npmrc
-            ? hasPlannedValue && change.IsSecretValue
-            : change.IsSecretValue;
-        return new ConfigurationOwnershipManifestEntry
+        return new ConfigurationPlannedOperation
         {
             Sequence = sequence,
-            Operation = change.Operation,
-            TargetKind = change.TargetKind,
-            TargetPathOrName = change.TargetPathOrName,
-            Key = change.Key,
-            PreserveDeclarationsAndComments = change.PreserveDeclarationsAndComments,
-            HasPlannedValue = hasPlannedValue,
-            IsSecretValue = isSecretValue,
-            PlannedValueSha256 = GetPlannedValueSha256(change, hasPlannedValue, isSecretValue),
-            PreviousOwnedEntryMetadata = change.PreviousOwnedEntryMetadata,
+            Change = plannedChange,
+            OwnershipEntry = change.RequiresOwnershipRecord
+                ? new ConfigurationOwnershipManifestEntry
+                {
+                    Sequence = sequence,
+                    TargetKind = change.TargetKind,
+                    TargetPathOrName = change.TargetPathOrName,
+                    Key = change.Key,
+                }
+                : null,
         };
-    }
-
-    private static string? GetPlannedValueSha256(
-        ConfigurationChange change,
-        bool hasPlannedValue,
-        bool isSecretValue
-    )
-    {
-        if (!hasPlannedValue || isSecretValue)
-        {
-            return null;
-        }
-
-        return ComputeSha256(GetPlannedValueForHash(change));
-    }
-
-    internal static string GetPlannedValueForHash(ConfigurationChange change)
-    {
-        if (
-            change.TargetKind == ConfigurationTargetKind.GitConfig
-            && GitConfigPhysicalTargetWriter.TryCanonicalizeSupportedConfigurationKey(
-                change.Key,
-                out string canonicalKey
-            )
-            && string.Equals(canonicalKey, "credential.helper", StringComparison.Ordinal)
-            && change.Value is not null
-        )
-        {
-            return GitConfigPhysicalTargetWriter.EscapeCredentialHelperPathForShell(change.Value);
-        }
-
-        return change.Value!;
-    }
-
-    private static string ComputeSha256(string value)
-    {
-        byte[] bytes = Encoding.UTF8.GetBytes(value);
-        byte[] hash = SHA256.HashData(bytes);
-        return Convert.ToHexString(hash).ToLower(CultureInfo.InvariantCulture);
     }
 }

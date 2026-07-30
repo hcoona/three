@@ -7,8 +7,6 @@ namespace Hcoona.AzureAuth.CredProvider.Platform.Processes;
 
 public sealed class SystemProcessRunner : IProcessRunner
 {
-    internal static readonly TimeSpan TerminationCleanupTimeout = TimeSpan.FromSeconds(2);
-
     private static readonly Encoding RedirectedStreamEncoding = new UTF8Encoding(
         encoderShouldEmitUTF8Identifier: false,
         throwOnInvalidBytes: true
@@ -20,18 +18,9 @@ public sealed class SystemProcessRunner : IProcessRunner
     )
     {
         ArgumentNullException.ThrowIfNull(startSpec);
-        startSpec.ValidateForRun();
-        cancellationToken.ThrowIfCancellationRequested();
-
-        if (startSpec.PreStartValidation is not null)
-        {
-            await startSpec.PreStartValidation(cancellationToken).ConfigureAwait(false);
-        }
-
         cancellationToken.ThrowIfCancellationRequested();
 
         using var process = new Process { StartInfo = CreateStartInfo(startSpec) };
-
         try
         {
             if (!process.Start())
@@ -43,204 +32,98 @@ public sealed class SystemProcessRunner : IProcessRunner
         {
             return ProcessResult.LaunchFailure();
         }
-        catch (FileNotFoundException)
-        {
-            return ProcessResult.LaunchFailure();
-        }
-        catch (DirectoryNotFoundException)
-        {
-            return ProcessResult.LaunchFailure();
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return ProcessResult.LaunchFailure();
-        }
-        catch (PlatformNotSupportedException)
-        {
-            return ProcessResult.LaunchFailure();
-        }
 
-        Task<ProcessOutputReadResult> standardOutputTask = ReadStreamAsync(
+        using var timeoutCancellation = new CancellationTokenSource(startSpec.Timeout);
+        using var executionCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            timeoutCancellation.Token
+        );
+        var standardOutput = new BoundedOutputCapture(
+            startSpec.OutputCaptureOptions.StandardOutputByteLimit
+        );
+        var standardError = new BoundedOutputCapture(
+            startSpec.OutputCaptureOptions.StandardErrorByteLimit
+        );
+
+        Task standardInputTask = WriteAndCloseStandardInputAsync(
+            process.StandardInput,
+            startSpec.StandardInput,
+            executionCancellation.Token
+        );
+        Task standardOutputTask = standardOutput.ReadAsync(
             process.StandardOutput.BaseStream,
-            startSpec.OutputCaptureOptions.StandardOutputByteLimit,
-            startSpec.OutputCaptureOptions.StandardOutputCharacterLimit
+            executionCancellation
         );
-        Task<ProcessOutputReadResult> standardErrorTask = ReadStreamAsync(
+        Task standardErrorTask = standardError.ReadAsync(
             process.StandardError.BaseStream,
-            startSpec.OutputCaptureOptions.StandardErrorByteLimit,
-            startSpec.OutputCaptureOptions.StandardErrorCharacterLimit
+            executionCancellation
         );
-
-        var cancellationSignal = new TaskCompletionSource(
-            TaskCreationOptions.RunContinuationsAsynchronously
+        Task waitForExitTask = process.WaitForExitAsync(executionCancellation.Token);
+        Task allTasks = Task.WhenAll(
+            standardInputTask,
+            standardOutputTask,
+            standardErrorTask,
+            waitForExitTask
         );
-        using CancellationTokenRegistration cancellationRegistration = cancellationToken.Register(
-            static state => ((TaskCompletionSource)state!).TrySetResult(),
-            cancellationSignal
-        );
-        using var timeoutTimerCancellation = new CancellationTokenSource();
-        Task timeoutTask = Task.Delay(
-            startSpec.Timeout!.Value,
-            timeoutTimerCancellation.Token
-        );
-        var cleanupCompleted = false;
-        Task? standardInputTask = null;
 
         try
         {
-            StreamWriter standardInput = process.StandardInput;
-            standardInputTask = Task.Run(
-                () =>
-                    WriteAndCloseStandardInputAsync(
-                        standardInput,
-                        startSpec.StandardInput,
-                        cancellationToken
-                    ),
-                CancellationToken.None
-            );
-            Task waitForExitTask = process.WaitForExitAsync(CancellationToken.None);
+            await allTasks.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            await KillAndWaitAsync(process).ConfigureAwait(false);
 
-            Task? standardInputMonitor = standardInputTask;
-            Task? exitMonitor = waitForExitTask;
-            Task<ProcessOutputReadResult>? standardOutputMonitor = standardOutputTask;
-            Task<ProcessOutputReadResult>? standardErrorMonitor = standardErrorTask;
-
-            while (
-                standardInputMonitor is not null
-                || exitMonitor is not null
-                || standardOutputMonitor is not null
-                || standardErrorMonitor is not null
-            )
+            if (standardOutput.TooLarge || standardError.TooLarge)
             {
-                var tasks = new List<Task>(6) { cancellationSignal.Task, timeoutTask };
-                if (standardInputMonitor is not null)
-                {
-                    tasks.Add(standardInputMonitor);
-                }
-
-                if (exitMonitor is not null)
-                {
-                    tasks.Add(exitMonitor);
-                }
-
-                if (standardOutputMonitor is not null)
-                {
-                    tasks.Add(standardOutputMonitor);
-                }
-
-                if (standardErrorMonitor is not null)
-                {
-                    tasks.Add(standardErrorMonitor);
-                }
-
-                Task completed = await Task.WhenAny(tasks).ConfigureAwait(false);
-                if (cancellationSignal.Task.IsCompleted)
-                {
-                    await TerminateStartedProcessAsync(
-                            process,
-                            standardInputTask,
-                            standardOutputTask,
-                            standardErrorTask
-                        )
-                        .ConfigureAwait(false);
-                    cleanupCompleted = true;
-                    throw new OperationCanceledException(cancellationToken);
-                }
-
-                if (timeoutTask.IsCompleted)
-                {
-                    cleanupCompleted = true;
-                    return await TerminateAndFinalizeAsync(
-                            process,
-                            standardInputTask,
-                            standardOutputTask,
-                            standardErrorTask,
-                            ProcessExecutionStatus.TimedOut
-                        )
-                        .ConfigureAwait(false);
-                }
-
-                if (completed == standardInputMonitor)
-                {
-                    await standardInputMonitor.ConfigureAwait(false);
-                    standardInputMonitor = null;
-                    continue;
-                }
-
-                if (completed == exitMonitor)
-                {
-                    await exitMonitor.ConfigureAwait(false);
-                    exitMonitor = null;
-                    continue;
-                }
-
-                if (completed == standardOutputMonitor)
-                {
-                    ProcessOutputReadResult outputResult =
-                        await standardOutputMonitor.ConfigureAwait(false);
-                    standardOutputMonitor = null;
-                    if (outputResult.Status != ProcessOutputReadStatus.Completed)
-                    {
-                        cleanupCompleted = true;
-                        return await TerminateAndFinalizeAsync(
-                                process,
-                                standardInputTask,
-                                standardOutputTask,
-                                standardErrorTask,
-                                MapReadStatus(outputResult.Status)
-                            )
-                            .ConfigureAwait(false);
-                    }
-
-                    continue;
-                }
-
-                if (completed == standardErrorMonitor)
-                {
-                    ProcessOutputReadResult errorResult =
-                        await standardErrorMonitor.ConfigureAwait(false);
-                    standardErrorMonitor = null;
-                    if (errorResult.Status != ProcessOutputReadStatus.Completed)
-                    {
-                        cleanupCompleted = true;
-                        return await TerminateAndFinalizeAsync(
-                                process,
-                                standardInputTask,
-                                standardOutputTask,
-                                standardErrorTask,
-                                MapReadStatus(errorResult.Status)
-                            )
-                            .ConfigureAwait(false);
-                    }
-                }
+                return ProcessResult.OutputTooLarge(
+                    standardOutput.Content,
+                    standardError.Content,
+                    TryGetExitCode(process)
+                );
             }
 
-            ProcessOutputReadResult standardOutput =
-                await standardOutputTask.ConfigureAwait(false);
-            ProcessOutputReadResult standardError = await standardErrorTask.ConfigureAwait(false);
-            cleanupCompleted = true;
-            return new ProcessResult(process.ExitCode, standardOutput.Content, standardError.Content);
+            if (standardOutput.InvalidUtf8 || standardError.InvalidUtf8)
+            {
+                return ProcessResult.InvalidOutput(
+                    standardOutput.Content,
+                    standardError.Content,
+                    TryGetExitCode(process)
+                );
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            return ProcessResult.TimedOut(
+                standardOutput.Content,
+                standardError.Content,
+                TryGetExitCode(process)
+            );
         }
         catch
         {
-            if (!cleanupCompleted)
-            {
-                await TerminateStartedProcessAsync(
-                        process,
-                        standardInputTask,
-                        standardOutputTask,
-                        standardErrorTask
-                    )
-                    .ConfigureAwait(false);
-            }
-
+            await KillAndWaitAsync(process).ConfigureAwait(false);
             throw;
         }
-        finally
+
+        if (standardOutput.TooLarge || standardError.TooLarge)
         {
-            timeoutTimerCancellation.Cancel();
-            await ObserveTaskExceptionAsync(timeoutTask).ConfigureAwait(false);
+            return ProcessResult.OutputTooLarge(
+                standardOutput.Content,
+                standardError.Content,
+                process.ExitCode
+            );
         }
+
+        if (standardOutput.InvalidUtf8 || standardError.InvalidUtf8)
+        {
+            return ProcessResult.InvalidOutput(
+                standardOutput.Content,
+                standardError.Content,
+                process.ExitCode
+            );
+        }
+
+        return new ProcessResult(process.ExitCode, standardOutput.Content, standardError.Content);
     }
 
     private static async Task WriteAndCloseStandardInputAsync(
@@ -285,129 +168,27 @@ public sealed class SystemProcessRunner : IProcessRunner
             startInfo.WorkingDirectory = startSpec.WorkingDirectory;
         }
 
-        ApplyEnvironmentMode(startInfo, startSpec.EnvironmentMode);
-
         foreach (string argument in startSpec.Arguments)
         {
             startInfo.ArgumentList.Add(argument);
         }
 
-        foreach (var variable in startSpec.Environment)
+        foreach ((string key, string? value) in startSpec.Environment)
         {
-            if (variable.Value is null)
+            if (value is null)
             {
-                startInfo.Environment.Remove(variable.Key);
+                startInfo.Environment.Remove(key);
             }
             else
             {
-                startInfo.Environment[variable.Key] = variable.Value;
+                startInfo.Environment[key] = value;
             }
         }
 
         return startInfo;
     }
 
-    private static void ApplyEnvironmentMode(
-        ProcessStartInfo startInfo,
-        ProcessEnvironmentMode environmentMode
-    )
-    {
-        switch (environmentMode)
-        {
-            case ProcessEnvironmentMode.Inherit:
-                break;
-            case ProcessEnvironmentMode.ExplicitOnly:
-                startInfo.Environment.Clear();
-                break;
-            default:
-                throw new ArgumentOutOfRangeException(
-                    nameof(environmentMode),
-                    environmentMode,
-                    "Unsupported process environment mode."
-                );
-        }
-    }
-
-    private static ProcessExecutionStatus MapReadStatus(ProcessOutputReadStatus status) =>
-        status switch
-        {
-            ProcessOutputReadStatus.TooLarge => ProcessExecutionStatus.OutputTooLarge,
-            ProcessOutputReadStatus.InvalidOutput => ProcessExecutionStatus.InvalidOutput,
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(status),
-                status,
-                "Unsupported read completion status."
-            ),
-        };
-
-    private static async Task<ProcessResult> TerminateAndFinalizeAsync(
-        Process process,
-        Task standardInputTask,
-        Task<ProcessOutputReadResult> standardOutputTask,
-        Task<ProcessOutputReadResult> standardErrorTask,
-        ProcessExecutionStatus terminationStatus
-    )
-    {
-        KillProcessTree(process);
-        await WaitForBoundedCleanupAsync(
-                process,
-                standardInputTask,
-                standardOutputTask,
-                standardErrorTask
-            )
-            .ConfigureAwait(false);
-        ProcessOutputReadResult standardOutput = GetCompletedReadResult(standardOutputTask);
-        ProcessOutputReadResult standardError = GetCompletedReadResult(standardErrorTask);
-        int? exitCode = TryGetExitCode(process);
-
-        return terminationStatus switch
-        {
-            ProcessExecutionStatus.Canceled => ProcessResult.Canceled(
-                standardOutput.Content,
-                standardError.Content,
-                exitCode
-            ),
-            ProcessExecutionStatus.TimedOut => ProcessResult.TimedOut(
-                standardOutput.Content,
-                standardError.Content,
-                exitCode
-            ),
-            ProcessExecutionStatus.OutputTooLarge => ProcessResult.OutputTooLarge(
-                standardOutput.Content,
-                standardError.Content,
-                exitCode
-            ),
-            ProcessExecutionStatus.InvalidOutput => ProcessResult.InvalidOutput(
-                standardOutput.Content,
-                standardError.Content,
-                exitCode
-            ),
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(terminationStatus),
-                terminationStatus,
-                "Unsupported termination status."
-            ),
-        };
-    }
-
-    private static async Task TerminateStartedProcessAsync(
-        Process process,
-        Task? standardInputTask,
-        Task<ProcessOutputReadResult> standardOutputTask,
-        Task<ProcessOutputReadResult> standardErrorTask
-    )
-    {
-        KillProcessTree(process);
-        await WaitForBoundedCleanupAsync(
-                process,
-                standardInputTask,
-                standardOutputTask,
-                standardErrorTask
-            )
-            .ConfigureAwait(false);
-    }
-
-    private static void KillProcessTree(Process process)
+    private static async Task KillAndWaitAsync(Process process)
     {
         try
         {
@@ -416,56 +197,13 @@ public sealed class SystemProcessRunner : IProcessRunner
         catch (InvalidOperationException) { }
         catch (NotSupportedException) { }
         catch (Win32Exception) { }
-    }
 
-    private static async Task WaitForBoundedCleanupAsync(
-        Process process,
-        Task? standardInputTask,
-        Task<ProcessOutputReadResult> standardOutputTask,
-        Task<ProcessOutputReadResult> standardErrorTask
-    )
-    {
-        Task exitTask = WaitForExitAfterTerminationAsync(process);
-        Task cleanupTask = Task.WhenAll(
-            ObserveTaskExceptionAsync(exitTask),
-            ObserveTaskExceptionAsync(standardInputTask ?? Task.CompletedTask),
-            ObserveTaskExceptionAsync(standardOutputTask),
-            ObserveTaskExceptionAsync(standardErrorTask)
-        );
-        using var cleanupTimerCancellation = new CancellationTokenSource();
-        Task cleanupTimer = Task.Delay(TerminationCleanupTimeout, cleanupTimerCancellation.Token);
-        Task completed = await Task.WhenAny(cleanupTask, cleanupTimer).ConfigureAwait(false);
-        if (completed == cleanupTask)
-        {
-            cleanupTimerCancellation.Cancel();
-            await ObserveTaskExceptionAsync(cleanupTimer).ConfigureAwait(false);
-            await cleanupTask.ConfigureAwait(false);
-            return;
-        }
-
-        _ = cleanupTask.ContinueWith(
-            static task => _ = task.Exception,
-            CancellationToken.None,
-            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default
-        );
-    }
-
-    private static async Task WaitForExitAfterTerminationAsync(Process process)
-    {
         try
         {
             await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
         }
         catch (InvalidOperationException) { }
     }
-
-    private static ProcessOutputReadResult GetCompletedReadResult(
-        Task<ProcessOutputReadResult> task
-    ) =>
-        task.IsCompletedSuccessfully
-            ? task.Result
-            : new ProcessOutputReadResult(ProcessOutputReadStatus.Completed, string.Empty);
 
     private static int? TryGetExitCode(Process process)
     {
@@ -479,167 +217,93 @@ public sealed class SystemProcessRunner : IProcessRunner
         }
     }
 
-    private static async Task ObserveTaskExceptionAsync(Task task)
+    private sealed class BoundedOutputCapture(int byteLimit)
     {
-        try
-        {
-            await task.ConfigureAwait(false);
-        }
-        catch (Exception) { }
-    }
+        private readonly StringBuilder builder = new();
 
-    private static async Task<ProcessOutputReadResult> ReadStreamAsync(
-        Stream stream,
-        int? byteLimit,
-        int? characterLimit
-    )
-    {
-        byte[] byteBuffer = ArrayPool<byte>.Shared.Rent(4096);
-        char[] charBuffer = ArrayPool<char>.Shared.Rent(
-            RedirectedStreamEncoding.GetMaxCharCount(byteBuffer.Length)
-        );
-        Decoder decoder = RedirectedStreamEncoding.GetDecoder();
-        var builder = new StringBuilder();
-        int observedBytes = 0;
-        int observedCharacters = 0;
+        public string Content => builder.ToString();
 
-        try
+        public bool InvalidUtf8 { get; private set; }
+
+        public bool TooLarge { get; private set; }
+
+        public async Task ReadAsync(Stream stream, CancellationTokenSource executionCancellation)
         {
-            while (true)
+            byte[] byteBuffer = ArrayPool<byte>.Shared.Rent(4096);
+            char[] charBuffer = ArrayPool<char>.Shared.Rent(
+                RedirectedStreamEncoding.GetMaxCharCount(byteBuffer.Length)
+            );
+            Decoder decoder = RedirectedStreamEncoding.GetDecoder();
+            int observedBytes = 0;
+
+            try
             {
-                int bytesRead = await stream
-                    .ReadAsync(byteBuffer.AsMemory(0, byteBuffer.Length), CancellationToken.None)
-                    .ConfigureAwait(false);
-                if (bytesRead == 0)
+                while (true)
                 {
-                    break;
+                    int bytesRead = await stream
+                        .ReadAsync(
+                            byteBuffer.AsMemory(0, byteBuffer.Length),
+                            executionCancellation.Token
+                        )
+                        .ConfigureAwait(false);
+                    if (bytesRead == 0)
+                    {
+                        break;
+                    }
+
+                    observedBytes += bytesRead;
+                    if (observedBytes > byteLimit)
+                    {
+                        TooLarge = true;
+                        executionCancellation.Cancel();
+                        return;
+                    }
+
+                    int charactersRead;
+                    try
+                    {
+                        charactersRead = decoder.GetChars(
+                            byteBuffer,
+                            0,
+                            bytesRead,
+                            charBuffer,
+                            0,
+                            flush: false
+                        );
+                    }
+                    catch (DecoderFallbackException)
+                    {
+                        InvalidUtf8 = true;
+                        executionCancellation.Cancel();
+                        return;
+                    }
+
+                    builder.Append(charBuffer, 0, charactersRead);
                 }
 
-                observedBytes += bytesRead;
-                if (byteLimit is { } maxBytes && observedBytes > maxBytes)
-                {
-                    return new ProcessOutputReadResult(
-                        ProcessOutputReadStatus.TooLarge,
-                        builder.ToString()
-                    );
-                }
-
-                int charactersRead;
                 try
                 {
-                    charactersRead = decoder.GetChars(
-                        byteBuffer,
+                    int remainingCharacters = decoder.GetChars(
+                        Array.Empty<byte>(),
                         0,
-                        bytesRead,
+                        0,
                         charBuffer,
                         0,
-                        flush: false
+                        flush: true
                     );
+                    builder.Append(charBuffer, 0, remainingCharacters);
                 }
                 catch (DecoderFallbackException)
                 {
-                    return new ProcessOutputReadResult(
-                        ProcessOutputReadStatus.InvalidOutput,
-                        builder.ToString()
-                    );
-                }
-
-                if (
-                    TryAppendWithinCharacterLimit(
-                        builder,
-                        charBuffer.AsSpan(0, charactersRead),
-                        ref observedCharacters,
-                        characterLimit
-                    )
-                )
-                {
-                    return new ProcessOutputReadResult(
-                        ProcessOutputReadStatus.TooLarge,
-                        builder.ToString()
-                    );
+                    InvalidUtf8 = true;
+                    executionCancellation.Cancel();
                 }
             }
-
-            int remainingCharacters;
-            try
+            finally
             {
-                remainingCharacters = decoder.GetChars(Array.Empty<byte>(), 0, 0, charBuffer, 0, flush: true);
+                ArrayPool<byte>.Shared.Return(byteBuffer);
+                ArrayPool<char>.Shared.Return(charBuffer);
             }
-            catch (DecoderFallbackException)
-            {
-                return new ProcessOutputReadResult(
-                    ProcessOutputReadStatus.InvalidOutput,
-                    builder.ToString()
-                );
-            }
-
-            if (
-                TryAppendWithinCharacterLimit(
-                    builder,
-                    charBuffer.AsSpan(0, remainingCharacters),
-                    ref observedCharacters,
-                    characterLimit
-                )
-            )
-            {
-                return new ProcessOutputReadResult(
-                    ProcessOutputReadStatus.TooLarge,
-                    builder.ToString()
-                );
-            }
-
-            return new ProcessOutputReadResult(ProcessOutputReadStatus.Completed, builder.ToString());
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(byteBuffer);
-            ArrayPool<char>.Shared.Return(charBuffer);
         }
     }
-
-    private static bool TryAppendWithinCharacterLimit(
-        StringBuilder builder,
-        ReadOnlySpan<char> characters,
-        ref int observedCharacters,
-        int? characterLimit
-    )
-    {
-        if (characters.Length == 0)
-        {
-            return false;
-        }
-
-        if (characterLimit is not { } maxCharacters)
-        {
-            builder.Append(characters);
-            observedCharacters += characters.Length;
-            return false;
-        }
-
-        int remainingCharacters = maxCharacters - observedCharacters;
-        if (remainingCharacters <= 0)
-        {
-            return true;
-        }
-
-        if (characters.Length > remainingCharacters)
-        {
-            builder.Append(characters[..remainingCharacters]);
-            observedCharacters = maxCharacters;
-            return true;
-        }
-
-        builder.Append(characters);
-        observedCharacters += characters.Length;
-        return false;
-    }
-
-    private enum ProcessOutputReadStatus
-    {
-        Completed = 0,
-        TooLarge = 1,
-        InvalidOutput = 2,
-    }
-
-    private sealed record ProcessOutputReadResult(ProcessOutputReadStatus Status, string Content);
 }

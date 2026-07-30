@@ -30,9 +30,17 @@ public sealed class RegistryCredentialLifecycleTests
         );
         time.Now = Now.AddHours(1);
         Assert.Equal(RegistryCredentialLifecycleState.Expired, policy.Evaluate(metadata));
+        time.Now = Now;
         Assert.Equal(
-            RegistryCredentialLifecycleState.Invalid,
-            policy.Evaluate(metadata with { IssuedAt = Now.AddHours(2) })
+            RegistryCredentialLifecycleState.Fresh,
+            policy.Evaluate(
+                metadata with
+                {
+                    IssuedAt = Now.AddMinutes(10),
+                    ExpiresAt = Now.AddHours(2),
+                    RefreshBefore = Now.AddHours(1),
+                }
+            )
         );
         Assert.Equal(
             RegistryCredentialLifecycleState.Fresh,
@@ -44,7 +52,7 @@ public sealed class RegistryCredentialLifecycleTests
     }
 
     [Fact]
-    public void MetadataCodecPreservesUnrelatedValuesAndRejectsReservedUnknownKeys()
+    public void MetadataCodecPreservesUnrelatedAndUnknownLifecycleValues()
     {
         RegistryCredentialLifecycleMetadata metadata = new RegistryCredentialExpiryPolicy(
             new MutableTimeProvider(Now)
@@ -66,7 +74,7 @@ public sealed class RegistryCredentialLifecycleTests
         Assert.Equal("preserved", values["benign"]);
 
         values["hcoona.azureAuthCredProvider.registryCredential.unknown"] = "value";
-        Assert.False(RegistryCredentialLifecycleMetadataCodec.TryRead(values, out _));
+        Assert.True(RegistryCredentialLifecycleMetadataCodec.TryRead(values, out _));
     }
 
     [Fact]
@@ -109,9 +117,7 @@ public sealed class RegistryCredentialLifecycleTests
             ConfigurationOwnershipManifestSerializer.Deserialize(
                 fileSystem.ReadAllText(manifestPath)
             );
-        Assert.True(
-            RegistryCredentialLifecycleMetadataCodec.TryRead(manifest.SafeMetadata, out _)
-        );
+        Assert.True(RegistryCredentialLifecycleMetadataCodec.TryRead(manifest.SafeMetadata, out _));
 
         ConfigurationPhase14PlanResult removed = await service.UnconfigureAsync(
             CredentialEcosystem.Npm,
@@ -161,7 +167,7 @@ public sealed class RegistryCredentialLifecycleTests
     }
 
     [Fact]
-    public async Task MalformedLifecycleIsInvalidAndUntouchedUntilStandardUnconfigure()
+    public async Task RefreshReconcilesMalformedLifecycleForRecognizedOwnership()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         ConfigurationPhase14VerticalSliceService service = CreateService(
@@ -182,46 +188,31 @@ public sealed class RegistryCredentialLifecycleTests
         {
             SafeMetadata = new Dictionary<string, string>(manifest.SafeMetadata)
             {
-                ["hcoona.azureAuthCredProvider.registryCredential.issuedAtUtc"] =
-                    "not-a-timestamp",
+                ["hcoona.azureAuthCredProvider.registryCredential.issuedAtUtc"] = "not-a-timestamp",
             },
         };
         string malformedJson = ConfigurationOwnershipManifestSerializer.Serialize(manifest);
         fileSystem.WriteAllText(manifestPath, malformedJson);
 
-        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
-            async () =>
-                await service.RefreshAsync(
-                    CredentialEcosystem.Npm,
-                    ConfigurationPhase14Scope.User,
-                    TestContext.Current.CancellationToken
-                )
-        );
-        Assert.Contains("lifecycle metadata is invalid", exception.Message, StringComparison.Ordinal);
-        Assert.Equal(malformedJson, fileSystem.ReadAllText(manifestPath));
-
-        ConfigurationPhase14DoctorResult doctor = await service.DoctorAsync(
-            TestContext.Current.CancellationToken
-        );
-        Assert.Equal(
-            RegistryCredentialLifecycleState.Invalid,
-            Assert
-                .Single(
-                    doctor.Ecosystems,
-                    result =>
-                        result.Ecosystem == CredentialEcosystem.Npm
-                        && result.Scope == ConfigurationPhase14Scope.User
-                )
-                .LifecycleState
-        );
-
-        ConfigurationPhase14PlanResult removed = await service.UnconfigureAsync(
+        ConfigurationPhase14PlanResult refreshed = await service.RefreshAsync(
             CredentialEcosystem.Npm,
             ConfigurationPhase14Scope.User,
             TestContext.Current.CancellationToken
         );
-        Assert.False(removed.OwnershipManifestCleanupIncomplete);
-        Assert.False(removed.OwnershipManifestPresent);
+        Assert.NotEqual(ConfigurationPlanOperation.DryRun, refreshed.PlanResult.Operation);
+
+        ConfigurationOwnershipManifest reconciled =
+            ConfigurationOwnershipManifestSerializer.Deserialize(
+                fileSystem.ReadAllText(manifestPath)
+            );
+        Assert.True(
+            RegistryCredentialLifecycleMetadataCodec.TryRead(
+                reconciled.SafeMetadata,
+                out RegistryCredentialLifecycleMetadata? lifecycle
+            )
+        );
+        Assert.NotNull(lifecycle);
+        Assert.DoesNotContain("not-a-timestamp", fileSystem.ReadAllText(manifestPath));
     }
 
     [Fact]
@@ -270,6 +261,30 @@ public sealed class RegistryCredentialLifecycleTests
         Assert.True(result.OwnershipManifestCleanupIncomplete);
         Assert.Equal(unrecognizedJson, fileSystem.ReadAllText(manifestPath));
         Assert.Equal(yarnBefore, fileSystem.ReadAllText(service.Paths.YarnUserYarnrcPath));
+    }
+
+    [Theory]
+    [InlineData(ConfigurationScope.User, RegistryCredentialLifecycleState.RefreshRecommended)]
+    [InlineData(ConfigurationScope.CiTemporary, RegistryCredentialLifecycleState.Fresh)]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Naming",
+        "CA1707:Identifiers should not contain underscores",
+        Justification = "The exact regression test name is part of the Phase 1 plan."
+    )]
+    public void CreateAndEvaluate_UnknownExpiry_UsesScopeSpecificStateWithoutFabricatedTimestamps(
+        ConfigurationScope scope,
+        RegistryCredentialLifecycleState expectedState
+    )
+    {
+        var policy = new RegistryCredentialExpiryPolicy(new MutableTimeProvider(Now));
+
+        RegistryCredentialLifecycleMetadata metadata = policy.Create(scope, expiresAt: null);
+        RegistryCredentialLifecycleState state = policy.Evaluate(metadata, scope);
+
+        Assert.Equal(Now, metadata.IssuedAt);
+        Assert.Null(metadata.ExpiresAt);
+        Assert.Null(metadata.RefreshBefore);
+        Assert.Equal(expectedState, state);
     }
 
     private static ConfigurationPhase14VerticalSliceService CreateService(

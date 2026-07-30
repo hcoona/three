@@ -29,10 +29,10 @@ protocol parsers, or final packaging.
 | Credential request/result   |       1 | Ecosystem, operation, canonical resource, audience, credential kind, identity flow, interaction policy, cache policy, CI context, result status, credential fields, account, tenant, cache key, and typed errors. Secret-bearing record `ToString()` output is redacted.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | Canonical resource identity |       1 | Azure DevOps host, organization, optional project, feed, repository, and HTTPS service endpoint. The endpoint host, organization, and supported path components for project, feed, and repository must match the canonical identity because the endpoint is not a separate cache partition dimension.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | Cache-key schema            |       1 | `azdo-cache-v1` plus ecosystem, host, organization, optional project, optional feed, optional repository, service identity, account, tenant, audience, and credential kind. Phase 2 Git defaults to host-and-organization partitioning with project, feed, and repository omitted; package adapters include feed identity. Service identity is a required canonical lower-case partition; mixed-case values are rejected rather than silently folded. Cache keys are produced only for accepted version 1 MVP requests. Consumers fail closed on unsupported majors, malformed v1 shapes, missing or extra dimensions, empty components, non-canonical partition encoding, unsupported resource identity partitions, reserved resource markers as identity values, non-canonical service identity, unspecified or unknown required enums, and future persistent-cache requests.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| ConfigurationChangePlan     |       1 | Declarative, owner-scoped changes only. Create, update, refresh, remove, atomic change-set, rollback state, manifest metadata, global scope, and CI temporary declaration-preservation semantics are explicit. Adapters do not apply writes directly. `WorkspaceReadOnly` plans carry no `ConfigurationChange` writes. Secret-bearing changes are flagged, require `containsCredentialMaterial=true`, and are redacted in `ToString()`. Value-writing npm `.npmrc` `_authToken` selectors and Yarn `.yarnrc.yml` `npmAuthToken` selectors are intrinsically secret by target/key semantics: they must set `isSecretValue=true`, require `containsCredentialMaterial=true`, reject CR or LF regardless of the supplied secret flag, and are redacted even on invalid instances. Phase 2 Yarn bearer-token plans emit `npmAuthToken` and `npmAlwaysAuth`. Yarn `npmAuthIdent` is unsupported in this product scenario: any `ConfigurationChangePlan` entry or ownership manifest entry targeting Yarn `npmAuthIdent` is rejected regardless of operation, and it is not generated for write, remove, or ownership cleanup plans. Doctor/plan-gate diagnostics still detect project-local Yarn `npmAuthIdent` as a forbidden same-registry shadowing or conflict source.                                                                                                                                                                                                                                                                                                                                                                               |
+| ConfigurationChangePlan     |       1 | Declarative, owner-scoped changes with dry-run projection, secret redaction, scoped targets, optional functional temporary-container data, and declaration-preservation semantics. Adapters do not apply writes directly. `WorkspaceReadOnly` plans carry no `ConfigurationChange` writes. Secret-bearing changes are flagged, require `containsCredentialMaterial=true`, and are redacted in `ToString()`. Ownership manifests are small selector sidecars used for precise removal; they do not record values, hashes, prior state, or transaction history.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | DoctorCheck                 |       1 | Pass, warning, fail, skipped, unsupported, deferred, and `notApplicable` statuses plus observed value, expected value, correlation ID, remediation, and safe details are explicit.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Adapter-host result mapping |       1 | Success writes protocol stdout only when the result contract major is supported, no error is attached, protocol-specific required credential material is present, and the adapter protocol has a stdout protocol for the operation. Git credential-helper `get` success accepts complete Basic material or bearer material; bearer material is adapted to Basic stdout with fixed username `AzureDevOps` and token-as-password, with no CR or LF in emitted fields. Git credential-helper `store`/`erase` success carries no credential material and writes no protocol stdout. Git results fail closed if Basic and bearer secret material are both present. When a Git `get` result carries a cache key, the cache-key credential kind must match the material: `bearerToken` keys require bearer material and permit the fixed Basic adaptation, while `basicPassword` and `patCompatibility` keys require username plus password material. `PythonKeyringBackend` is import/API-mode and does not write protocol stdout; stdout belongs only to the adapter-host v1 `KeyringHelper` protocol, whose helper argv uses `keyring-helper-v2`. `NpmConfiguration` success requires bearer material but writes no protocol stdout because npm-compatible configuration is surfaced by `ConfigurationChangePlan`. NuGet plugin success requires complete Basic material: username plus password, with no CR or LF in either field. Unsupported majors, error-bearing success, and missing or wrong-kind success material map to exit 64 and no protocol stdout. Failure classes suppress protocol stdout and use safe diagnostic stderr when required. |
-| keyring-helper-v2           |       2 | Fixed non-shell `python-keyring` command arguments, unsupported contract-major rejection, including old major 1, invalid command/mode/service URI rejection, exit codes, stdout/stderr behavior, non-optional helper integrity requirements, and redacted helper response `ToString()`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| keyring-helper-v2           |       2 | Fixed non-shell `python-keyring` command arguments, unsupported contract-major rejection, including old major 1, invalid command/mode/service URI rejection, exit codes, stdout/stderr behavior, and redacted helper response `ToString()`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 ## Identity and Cache Policy
 
@@ -179,9 +179,9 @@ names, and camel-case string enum values through
 not the Phase 2 wire shape. Versioned payloads must carry `contractMajor`; a
 missing version is rejected instead of being treated as explicit version 1.
 Contract tests serialize, deserialize, and negatively validate representative
-request, result, configuration, doctor, adapter-host, keyring-helper, and helper
-integrity contracts to pin the shape, including when reflection-based JSON
-metadata is disabled.
+request, result, configuration, doctor, adapter-host, and keyring-helper
+request/response contracts to pin the shape, including when reflection-based
+JSON metadata is disabled.
 
 The Phase 2 configuration enum surface is frozen with the following camel-case
 wire values:
@@ -193,10 +193,6 @@ wire values:
 | `ConfigurationTargetKind`              | `Unspecified`/`unspecified`, `GitConfig`/`gitConfig`, `NuGetPluginLayout`/`nuGetPluginLayout`, `PythonKeyringBackend`/`pythonKeyringBackend`, `KeyringShim`/`keyringShim`, `Npmrc`/`npmrc`, `Yarnrc`/`yarnrc`, `CiTemporaryFile`/`ciTemporaryFile`                                                  |
 | `ConfigurationDeclarationPreservation` | `Unspecified`/`unspecified`, `NotApplicable`/`notApplicable`, `AuthOnlyWhenDeclarationsRemainVisible`/`authOnlyWhenDeclarationsRemainVisible`, `CopyHiddenDeclarationsToTemporaryConfig`/`copyHiddenDeclarationsToTemporaryConfig`, `CompleteMergedTemporaryConfig`/`completeMergedTemporaryConfig` |
 | `ConfigurationTemporaryContainerKind`  | `Unspecified`/`unspecified`, `None`/`none`, `NpmrcFile`/`npmrcFile`, `TemporaryHome`/`temporaryHome`, `YarnRcFile`/`yarnRcFile`                                                                                                                                                                     |
-| `ConfigurationAtomicityPolicy`         | `Unspecified`/`unspecified`, `AtomicChangeSetRequired`/`atomicChangeSetRequired`                                                                                                                                                                                                                    |
-| `ConfigurationRollbackPolicy`          | `Unspecified`/`unspecified`, `Required`/`required`                                                                                                                                                                                                                                                  |
-| `ConfigurationPlanState`               | `Unspecified`/`unspecified`, `Planned`/`planned`, `Applied`/`applied`, `RolledBack`/`rolledBack`, `Failed`/`failed`                                                                                                                                                                                 |
-| `ConfigurationManifestCommitPolicy`    | `Unspecified`/`unspecified`, `CommitAfterDurableChanges`/`commitAfterDurableChanges`                                                                                                                                                                                                                |
 
 Secret-bearing contracts (`CredentialResult`, `ConfigurationChange`, and
 `KeyringHelperResponse`) must not expose plaintext secret values through
@@ -214,7 +210,6 @@ unsupported and rejected regardless of operation.
 `ConfigurationChangePlan` is a declarative plan, not an implementation of file
 writes. Version 1 explicitly carries:
 
-- a stable `changeSetId` for one logical registry credential update;
 - `create`, `update`, `refresh`, and `remove` operations;
 - npm and pnpm `_authToken` entries derived from the accepted npm registry
   endpoint host and path, not from a hard-coded package host. For example,
@@ -232,13 +227,8 @@ writes. Version 1 explicitly carries:
   and `npmRegistries[registry].npmAlwaysAuth`, where `registry` is the same
   terminal-slash-normalized accepted npm registry endpoint used for npm and pnpm
   selector derivation;
-- an atomic change-set policy requiring all sibling entries and metadata to
-  become durable before success;
-- a rollback policy and plan state for planned, applied, rolled-back, or failed
-  outcomes;
 - manifest metadata with product owner, entry selector, and product version.
-  Update, refresh, remove, and remove-adapter operations carry previous
-  owned-entry metadata on each `ConfigurationChange`. Value-writing operations
+  Value-writing operations
   (`set`, `create`, `update`, and `refresh`) require a non-null `value`;
   remove-style and other non-value operations must carry `value: null`.
   Value-writing line/config-file targets, including `GitConfig`, `Npmrc`, and
@@ -259,9 +249,8 @@ writes. Version 1 explicitly carries:
   configuration-manager-owned temporary `HOME` directory containing
   `.yarnrc.yml`; the immediate child `.yarnrc.yml` file path is the target of
   Yarn changes, and the temporary directory is the activation container.
-  CI-temporary containers always use whole-container cleanup on rollback and
-  removal; `deleteContainerOnRollback: false` and
-  `deleteContainerOnRemoval: false` are rejected for every CI-temporary plan;
+  product-owned CI-temporary containers are deleted during normal removal by
+  behavior rather than by serialized cleanup promises;
 - CI temporary target binding. `ProductOwnedPath` and `TargetPathOrName` must be
   fully qualified canonical paths without `.` or `..` path segments and must not
   be POSIX, Windows drive, or UNC share filesystem roots. Windows extended path
@@ -374,36 +363,18 @@ Exit rules:
 - `2`: interaction required or blocked.
 - `3`: unauthorized.
 - `64`: configuration or unsupported contract error.
-- `65`: helper integrity failure.
+- `65`: integrity-class credential failure.
 - `69`: cache unavailable.
 - `70`: fatal failure.
 
-Integrity metadata must include product ID, absolute helper path, SHA-256 digest,
-and explicit platform integrity policy fields. Requiring `platform` is the
-breaking change that advances the keyring helper contract major from 1 to 2. The
-contract policy API validates only declared policy, path syntax, and platform
-matching; it does not inspect the filesystem and does not prove helper existence,
-file digest, symlink/reparse state, mode bits, owner, or parent-chain safety.
-
-Linux strong policy is represented by `platform: linux`, `required` owner
-validation, `rejectSymlinks`, and `sha256Required`. Windows and macOS use the
-accepted weak policy represented by `platform: windows` or `platform: macOs`,
-`deferredNotAvailable` owner validation, `bestEffortRejectSymlinks`, and
-`sha256RequiredWeakPath`. The Phase 2 contract must not require native Windows or
-macOS owner validation, race-free no-follow identity, Authenticode, or
-signing/notarization validation now. Other trusted runtime platforms are
-unsupported and fail closed at contract-policy validation.
-
-`EnsureContractPolicyValid`/`IsContractPolicyValid` bind integrity metadata to
-the current or supplied trusted runtime platform and remain contract-policy checks
-only. `EnsureStructurallyValid`/`IsStructurallyValid` check self-declared metadata
-shape and declared-platform path syntax only. Before any helper execution, the
-caller must still take and revalidate a filesystem snapshot that proves regular
-file existence, expected SHA-256 content, symlink/reparse policy, executable mode,
-ownership requirements, and parent-chain safety for the declared platform.
-JSON wire payloads must carry the platform, owner-validation, symlink-policy,
-and digest-policy fields explicitly; omitted integrity policy metadata is
-rejected instead of defaulting to secure values.
+There is no separate runtime helper-integrity metadata contract. Production uses
+the `keyring-helper-v2` request/response protocol and invokes the helper from the
+installed product layout by a configured absolute path with ordinary
+existence/executable checks and standard .NET/operating-system process behavior.
+Malicious same-user replacement races, privileged attackers, hostile kernels or
+filesystems, adversarial symlink/TOCTOU scenarios, and power-loss guarantees are
+outside the supported threat model. Release artifacts remain covered by the
+separate signing, provenance, and supply-chain integrity policy.
 
 ## Evidence and Sign-off Linkage
 

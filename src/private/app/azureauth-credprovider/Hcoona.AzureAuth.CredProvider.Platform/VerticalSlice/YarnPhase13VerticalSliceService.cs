@@ -64,11 +64,10 @@ public sealed record YarnPhase13DoctorResult
 
     public required string? YarnRcFilenameOverride { get; init; }
 
-    public required IReadOnlyList<YarnPhase13RegistryDeclaration> RegistryDeclarations
-    {
-        get;
-        init;
-    }
+    // editorconfig-checker-disable
+    public required IReadOnlyList<YarnPhase13RegistryDeclaration> RegistryDeclarations { get; init; }
+
+    // editorconfig-checker-enable
 
     public required IReadOnlyList<YarnPhase13AuthIdentConflict> AuthIdentConflicts { get; init; }
 
@@ -95,7 +94,6 @@ public sealed class YarnPhase13VerticalSliceService
     private const string ProductVersion = "phase13";
     private const string ManifestId = "phase13-yarnrc-credential";
     private const string ConfigurePlanId = "phase13-yarnrc-credential-plan";
-    private const string ConfigureChangeSetId = "phase13-yarnrc-credential-changeset";
     private const string WriteGateStatusValue = "phase-1.4-accepted; writes-supported-by-phase-13b";
     private const string UnsupportedWriteMessageValue =
         "Yarn writes are supported by Phase 13B configuration-manager write plans.";
@@ -315,9 +313,7 @@ public sealed class YarnPhase13VerticalSliceService
             )
         )
         {
-            if (
-                AuthIdentConflictAppliesToDeclaration(conflict, declaration)
-            )
+            if (AuthIdentConflictAppliesToDeclaration(conflict, declaration))
             {
                 throw new InvalidOperationException(
                     "Yarn npmAuthIdent entries conflict with product-owned npmAuthToken plans."
@@ -377,7 +373,6 @@ public sealed class YarnPhase13VerticalSliceService
         );
         return ConfigurationChangePlanPolicy.Create(
             ConfigurePlanId,
-            ConfigureChangeSetId,
             ProductId,
             scope,
             new ConfigurationManifestMetadata
@@ -699,9 +694,7 @@ public sealed class YarnPhase13VerticalSliceService
     }
 
     private string? GetWorkspaceYarnrcPath() =>
-        workspaceDirectoryPath is null
-            ? null
-            : ResolveYarnrcPath(workspaceDirectoryPath);
+        workspaceDirectoryPath is null ? null : ResolveYarnrcPath(workspaceDirectoryPath);
 
     private string ResolveYarnrcPath(string containingDirectoryPath)
     {
@@ -765,8 +758,7 @@ public sealed class YarnPhase13VerticalSliceService
                     feed: "feed"
                 );
         }
-        catch (Exception exception)
-            when (IsExpectedDoctorProbeFailure(exception))
+        catch (Exception exception) when (IsExpectedDoctorProbeFailure(exception))
         {
             return false;
         }
@@ -816,10 +808,7 @@ public sealed class YarnPhase13VerticalSliceService
         return !string.IsNullOrWhiteSpace(key);
     }
 
-    private static bool TryParseYamlMapKey(
-        string text,
-        [NotNullWhen(true)] out string? key
-    )
+    private static bool TryParseYamlMapKey(string text, [NotNullWhen(true)] out string? key)
     {
         key = null;
         int colonIndex = FindUnquotedColon(text);
@@ -906,20 +895,12 @@ public sealed class YarnPhase13VerticalSliceService
             return null;
         }
 
-        if (
-            trimmed.Length >= 2
-            && trimmed[0] == '\''
-            && trimmed[^1] == '\''
-        )
+        if (trimmed.Length >= 2 && trimmed[0] == '\'' && trimmed[^1] == '\'')
         {
             return trimmed[1..^1].Replace("''", "'", StringComparison.Ordinal);
         }
 
-        if (
-            trimmed.Length >= 2
-            && trimmed[0] == '"'
-            && trimmed[^1] == '"'
-        )
+        if (trimmed.Length >= 2 && trimmed[0] == '"' && trimmed[^1] == '"')
         {
             return trimmed[1..^1].Replace("\\\"", "\"", StringComparison.Ordinal);
         }
@@ -1001,17 +982,16 @@ public sealed class YarnPhase13VerticalSliceService
     }
 
     private static string[] SplitLines(string contents) =>
-        contents.Replace("\r\n", "\n", StringComparison.Ordinal)
-            .Replace('\r', '\n')
-            .Split('\n');
+        contents.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Split('\n');
 
     private static bool IsExpectedDoctorProbeFailure(Exception exception) =>
-        exception is ArgumentException
-            or IOException
-            or InvalidOperationException
-            or NotSupportedException
-            or PlatformNotSupportedException
-            or UnauthorizedAccessException;
+        exception
+            is ArgumentException
+                or IOException
+                or InvalidOperationException
+                or NotSupportedException
+                or PlatformNotSupportedException
+                or UnauthorizedAccessException;
 
     private static string? NullIfWhiteSpace(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();

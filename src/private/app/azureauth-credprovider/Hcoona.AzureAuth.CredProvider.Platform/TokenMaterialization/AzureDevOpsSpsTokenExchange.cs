@@ -21,8 +21,7 @@ public sealed class AzureDevOpsSpsTokenExchange : ITokenExchange, IDisposable
 
     private const string AuthorizationEndpointHeader = "X-VSS-AuthorizationEndpoint";
     private const string SessionTokenPath = "_apis/Token/SessionTokens";
-    private const string SessionTokenQuery =
-        "tokenType=SelfDescribing&api-version=5.0-preview.1";
+    private const string SessionTokenQuery = "tokenType=SelfDescribing&api-version=5.0-preview.1";
 
     private readonly HttpClient _httpClient;
     private readonly int _maxResponseBytes;
@@ -34,7 +33,8 @@ public sealed class AzureDevOpsSpsTokenExchange : ITokenExchange, IDisposable
         HttpClient? httpClient = null,
         TimeProvider? timeProvider = null,
         TimeSpan? timeout = null,
-        int maxResponseBytes = DefaultMaxResponseBytes)
+        int maxResponseBytes = DefaultMaxResponseBytes
+    )
     {
         TimeSpan effectiveTimeout = timeout ?? DefaultTimeout;
         if (effectiveTimeout < MinimumTimeout || effectiveTimeout > MaximumTimeout)
@@ -60,7 +60,8 @@ public sealed class AzureDevOpsSpsTokenExchange : ITokenExchange, IDisposable
     public async ValueTask<AsyncTokenExchangeResult> ExchangeAsync(
         CredentialRequestV2 request,
         AcquiredAccessToken sourceToken,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(sourceToken);
@@ -75,16 +76,7 @@ public sealed class AzureDevOpsSpsTokenExchange : ITokenExchange, IDisposable
             return Failure(AsyncTokenExchangeStatus.Disabled, "SpsExchangeUnsupported");
         }
 
-        DateTimeOffset now = _timeProvider.GetUtcNow();
-        if (
-            sourceToken.ClaimValidation
-                != AccessTokenClaimValidation.AzureDevOpsClaimConsistency
-            || string.IsNullOrEmpty(sourceToken.Token?.Value)
-            || sourceToken.NotBefore is null
-            || sourceToken.ExpiresAt is null
-            || sourceToken.NotBefore > now
-            || !IsExpiryUsable(sourceToken.ExpiresAt.Value, now)
-        )
+        if (string.IsNullOrEmpty(sourceToken.Token?.Value))
         {
             return Failure(AsyncTokenExchangeStatus.Failed, "SpsSourceTokenInvalid");
         }
@@ -92,20 +84,20 @@ public sealed class AzureDevOpsSpsTokenExchange : ITokenExchange, IDisposable
         using var timeoutSource = new CancellationTokenSource(_timeout);
         using var linkedSource = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken,
-            timeoutSource.Token);
+            timeoutSource.Token
+        );
 
         try
         {
             EndpointDiscoveryResult discovery = await DiscoverEndpointAsync(
                     request.Resource.ServiceEndpoint,
                     request.Resource.Organization,
-                    linkedSource.Token)
+                    linkedSource.Token
+                )
                 .ConfigureAwait(false);
             if (discovery.Status == EndpointDiscoveryStatus.NotAdvertised)
             {
-                return Failure(
-                    AsyncTokenExchangeStatus.Disabled,
-                    "SpsExchangeNotAdvertised");
+                return Failure(AsyncTokenExchangeStatus.Disabled, "SpsExchangeNotAdvertised");
             }
 
             if (discovery.Status != EndpointDiscoveryStatus.Advertised)
@@ -113,16 +105,7 @@ public sealed class AzureDevOpsSpsTokenExchange : ITokenExchange, IDisposable
                 return Failure(AsyncTokenExchangeStatus.Failed, "SpsEndpointRejected");
             }
 
-            DateTimeOffset afterDiscovery = _timeProvider.GetUtcNow();
-            if (!IsExpiryUsable(sourceToken.ExpiresAt.Value, afterDiscovery))
-            {
-                return Failure(AsyncTokenExchangeStatus.Failed, "SpsSourceTokenInvalid");
-            }
-
-            return await SendExchangeAsync(
-                    discovery.Endpoint!,
-                    sourceToken,
-                    linkedSource.Token)
+            return await SendExchangeAsync(discovery.Endpoint!, sourceToken, linkedSource.Token)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -151,7 +134,8 @@ public sealed class AzureDevOpsSpsTokenExchange : ITokenExchange, IDisposable
     private async Task<EndpointDiscoveryResult> DiscoverEndpointAsync(
         Uri serviceEndpoint,
         string organization,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, serviceEndpoint);
         using HttpResponseMessage response = await _httpClient
@@ -166,37 +150,30 @@ public sealed class AzureDevOpsSpsTokenExchange : ITokenExchange, IDisposable
         if (
             !response.Headers.TryGetValues(
                 AuthorizationEndpointHeader,
-                out IEnumerable<string>? endpointValues)
+                out IEnumerable<string>? endpointValues
+            )
         )
         {
             return EndpointDiscoveryResult.NotAdvertised;
         }
 
         string[] values = endpointValues.ToArray();
-        return values.Length == 1
+        return
+            values.Length == 1
             && Uri.TryCreate(values[0], UriKind.Absolute, out Uri? baseEndpoint)
             && TryCreateAllowedSessionEndpoint(baseEndpoint, organization, out Uri? endpoint)
-                ? EndpointDiscoveryResult.Advertised(endpoint!)
-                : EndpointDiscoveryResult.Rejected;
+            ? EndpointDiscoveryResult.Advertised(endpoint!)
+            : EndpointDiscoveryResult.Rejected;
     }
 
     private async Task<AsyncTokenExchangeResult> SendExchangeAsync(
         Uri endpoint,
         AcquiredAccessToken sourceToken,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         DateTimeOffset beforePost = _timeProvider.GetUtcNow();
-        DateTimeOffset sourceExpiry = sourceToken.ExpiresAt!.Value;
-        if (!IsExpiryUsable(sourceExpiry, beforePost))
-        {
-            return Failure(AsyncTokenExchangeStatus.Failed, "SpsSourceTokenInvalid");
-        }
-
-        DateTimeOffset maximumSessionExpiry = AddCapped(
-            beforePost,
-            RequestedSessionLifetime);
-        DateTimeOffset requestedExpiry =
-            sourceExpiry < maximumSessionExpiry ? sourceExpiry : maximumSessionExpiry;
+        DateTimeOffset requestedExpiry = AddCapped(beforePost, RequestedSessionLifetime);
         if (!IsExpiryUsable(requestedExpiry, beforePost))
         {
             return Failure(AsyncTokenExchangeStatus.Failed, "SpsRequestedExpiryInvalid");
@@ -206,11 +183,13 @@ public sealed class AzureDevOpsSpsTokenExchange : ITokenExchange, IDisposable
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         request.Headers.Authorization = new AuthenticationHeaderValue(
             "Bearer",
-            sourceToken.Token.Value);
+            sourceToken.Token.Value
+        );
         request.Content = new StringContent(
             CreateRequestBody(requestedExpiry),
             Encoding.UTF8,
-            "application/json");
+            "application/json"
+        );
 
         using HttpResponseMessage response = await _httpClient
             .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
@@ -224,9 +203,7 @@ public sealed class AzureDevOpsSpsTokenExchange : ITokenExchange, IDisposable
             return Failure(AsyncTokenExchangeStatus.Failed, "SpsExchangeHttpStatus");
         }
 
-        byte[]? responseBody = await ReadBoundedBodyAsync(
-                response.Content,
-                cancellationToken)
+        byte[]? responseBody = await ReadBoundedBodyAsync(response.Content, cancellationToken)
             .ConfigureAwait(false);
         if (
             responseBody is null
@@ -237,24 +214,19 @@ public sealed class AzureDevOpsSpsTokenExchange : ITokenExchange, IDisposable
         }
 
         DateTimeOffset completedAt = _timeProvider.GetUtcNow();
-        DateTimeOffset finalExpiry = expiry < sourceExpiry ? expiry : sourceExpiry;
-        if (
-            expiry > requestedExpiry
-            || expiry > sourceExpiry
-            || expiry > maximumSessionExpiry
-            || !IsExpiryUsable(finalExpiry, completedAt)
-        )
+        if (expiry > requestedExpiry || !IsExpiryUsable(expiry, completedAt))
         {
             return Failure(AsyncTokenExchangeStatus.Failed, "SpsExchangeResponseInvalid");
         }
 
-        return AsyncTokenExchangeResult.Success(token!, finalExpiry);
+        return AsyncTokenExchangeResult.Success(token!, expiry);
     }
 
     internal static bool TryCreateAllowedSessionEndpoint(
         Uri baseEndpoint,
         string organization,
-        out Uri? endpoint)
+        out Uri? endpoint
+    )
     {
         endpoint = null;
         if (
@@ -279,7 +251,8 @@ public sealed class AzureDevOpsSpsTokenExchange : ITokenExchange, IDisposable
             && string.Equals(
                 basePath,
                 "/" + escapedOrganization,
-                StringComparison.OrdinalIgnoreCase)
+                StringComparison.OrdinalIgnoreCase
+            )
         )
         {
             finalPath = $"/{escapedOrganization}/{SessionTokenPath}";
@@ -290,7 +263,8 @@ public sealed class AzureDevOpsSpsTokenExchange : ITokenExchange, IDisposable
                 || string.Equals(
                     host,
                     organization + ".vssps.visualstudio.com",
-                    StringComparison.OrdinalIgnoreCase)
+                    StringComparison.OrdinalIgnoreCase
+                )
             )
             && basePath.Length == 0
         )
@@ -302,18 +276,15 @@ public sealed class AzureDevOpsSpsTokenExchange : ITokenExchange, IDisposable
             return false;
         }
 
-        var builder = new UriBuilder(baseEndpoint)
-        {
-            Path = finalPath,
-            Query = SessionTokenQuery,
-        };
+        var builder = new UriBuilder(baseEndpoint) { Path = finalPath, Query = SessionTokenQuery };
         endpoint = builder.Uri;
         return true;
     }
 
     private async Task<byte[]?> ReadBoundedBodyAsync(
         HttpContent content,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         if (content.Headers.ContentLength > _maxResponseBytes)
         {
@@ -347,7 +318,8 @@ public sealed class AzureDevOpsSpsTokenExchange : ITokenExchange, IDisposable
     private static bool TryParseResponse(
         byte[] utf8,
         out SecretText? token,
-        out DateTimeOffset expiry)
+        out DateTimeOffset expiry
+    )
     {
         token = null;
         expiry = default;
@@ -358,7 +330,8 @@ public sealed class AzureDevOpsSpsTokenExchange : ITokenExchange, IDisposable
                 AllowTrailingCommas = false,
                 CommentHandling = JsonCommentHandling.Disallow,
                 MaxDepth = 8,
-            });
+            }
+        );
         if (document.RootElement.ValueKind != JsonValueKind.Object)
         {
             return false;
@@ -371,8 +344,7 @@ public sealed class AzureDevOpsSpsTokenExchange : ITokenExchange, IDisposable
         {
             if (
                 !names.Add(property.Name)
-                || property.Name
-                    is not ("displayName" or "scope" or "validTo" or "token")
+                || property.Name is not ("displayName" or "scope" or "validTo" or "token")
                 || property.Value.ValueKind != JsonValueKind.String
             )
             {
@@ -397,7 +369,8 @@ public sealed class AzureDevOpsSpsTokenExchange : ITokenExchange, IDisposable
                 validTo,
                 CultureInfo.InvariantCulture,
                 DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
-                out expiry)
+                out expiry
+            )
         )
         {
             return false;
@@ -431,27 +404,23 @@ public sealed class AzureDevOpsSpsTokenExchange : ITokenExchange, IDisposable
             UseProxy = false,
             Credentials = null,
         };
-        return new HttpClient(handler, disposeHandler: true)
-        {
-            Timeout = Timeout.InfiniteTimeSpan,
-        };
+        return new HttpClient(handler, disposeHandler: true) { Timeout = Timeout.InfiniteTimeSpan };
     }
 
     private static bool IsRedirect(HttpStatusCode statusCode) =>
-        statusCode is HttpStatusCode.MultipleChoices
-            or HttpStatusCode.MovedPermanently
-            or HttpStatusCode.Found
-            or HttpStatusCode.SeeOther
-            or HttpStatusCode.TemporaryRedirect
-            or HttpStatusCode.PermanentRedirect;
+        statusCode
+            is HttpStatusCode.MultipleChoices
+                or HttpStatusCode.MovedPermanently
+                or HttpStatusCode.Found
+                or HttpStatusCode.SeeOther
+                or HttpStatusCode.TemporaryRedirect
+                or HttpStatusCode.PermanentRedirect;
 
     private static bool IsExpiryUsable(DateTimeOffset expiry, DateTimeOffset now) =>
         expiry > now && expiry - now > ExpirySafetySkew;
 
     private static DateTimeOffset AddCapped(DateTimeOffset value, TimeSpan duration) =>
-        value > DateTimeOffset.MaxValue - duration
-            ? DateTimeOffset.MaxValue
-            : value + duration;
+        value > DateTimeOffset.MaxValue - duration ? DateTimeOffset.MaxValue : value + duration;
 
     private enum EndpointDiscoveryStatus
     {
@@ -462,7 +431,8 @@ public sealed class AzureDevOpsSpsTokenExchange : ITokenExchange, IDisposable
 
     private readonly record struct EndpointDiscoveryResult(
         EndpointDiscoveryStatus Status,
-        Uri? Endpoint)
+        Uri? Endpoint
+    )
     {
         public static EndpointDiscoveryResult NotAdvertised =>
             new(EndpointDiscoveryStatus.NotAdvertised, null);
@@ -474,7 +444,6 @@ public sealed class AzureDevOpsSpsTokenExchange : ITokenExchange, IDisposable
             new(EndpointDiscoveryStatus.Advertised, endpoint);
     }
 
-    private static AsyncTokenExchangeResult Failure(
-        AsyncTokenExchangeStatus status,
-        string code) => AsyncTokenExchangeResult.Failure(status, code);
+    private static AsyncTokenExchangeResult Failure(AsyncTokenExchangeStatus status, string code) =>
+        AsyncTokenExchangeResult.Failure(status, code);
 }

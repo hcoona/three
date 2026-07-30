@@ -1,7 +1,4 @@
 using System.Diagnostics.CodeAnalysis;
-using System.Globalization;
-using System.Security.Cryptography;
-using System.Text;
 using Hcoona.AzureAuth.CredProvider.Contracts;
 using Hcoona.AzureAuth.CredProvider.Platform.AzurePipelines;
 using Hcoona.AzureAuth.CredProvider.Platform.Composition;
@@ -79,7 +76,7 @@ public sealed record ConfigurationPhase14PlanResult
 
     public int AppliedChangeCount =>
         PlanResults
-            .Where(static result => result.State == ConfigurationPlanState.Applied)
+            .Where(static result => result.Operation != ConfigurationPlanOperation.DryRun)
             .Sum(static result => result.Changes.Count);
 }
 
@@ -87,7 +84,10 @@ public sealed record ConfigurationPhase14DoctorResult
 {
     public required ConfigurationPhase14ResolvedPaths Paths { get; init; }
 
+    // editorconfig-checker-disable
     public required IReadOnlyList<ConfigurationPhase14EcosystemDoctorResult> Ecosystems { get; init; }
+
+    // editorconfig-checker-enable
 
     public required bool AzurePipelinesSystemAccessTokenPresent { get; init; }
 
@@ -122,7 +122,10 @@ public sealed record ConfigurationPhase14CleanupResult
 
     public required ConfigurationPhase14Scope Scope { get; init; }
 
+    // editorconfig-checker-disable
     public required IReadOnlyList<ConfigurationPhase14CleanupEcosystemResult> Ecosystems { get; init; }
+
+    // editorconfig-checker-enable
 
     public required bool PersistentDerivedCredentialsRemoved { get; init; }
 
@@ -150,15 +153,11 @@ public sealed record ConfigurationPhase14CleanupEcosystemResult
 
 public sealed class ConfigurationPhase14VerticalSliceService
 {
-    private sealed record ExistingOwnershipManifest(
-        ConfigurationOwnershipManifest Manifest,
-        string Json
-    );
+    private sealed record ExistingOwnershipManifest(ConfigurationOwnershipManifest Manifest);
 
     private const string ProductId = "azureauth-credprovider";
     private const string ProductVersion = "phase14.2";
     private const string PythonPlanId = "phase14-python-keyring-configure-plan";
-    private const string PythonChangeSetId = "phase14-python-keyring-configure-changeset";
     private const string PythonManifestId = "phase14-python-keyring";
     private const string NpmCredentialManifestId = "phase12-npmrc-credential";
     private const string YarnCredentialManifestId = "phase13-yarnrc-credential";
@@ -353,13 +352,8 @@ public sealed class ConfigurationPhase14VerticalSliceService
         List<ConfigurationPlanResult> previewResults = [];
         foreach (ConfigurationChangePlan plan in plans)
         {
-            ConfigurationChangePlan preparedPlan = AttachPreviousOwnershipManifestHashIfPresent(
-                plan,
-                ownershipManifestPath
-            );
             previewResults.Add(
-                await CreateManager(ownershipManifestPath)
-                    .DryRunAsync(preparedPlan, cancellationToken)
+                await CreateManager(ownershipManifestPath).DryRunAsync(plan, cancellationToken)
             );
         }
 
@@ -371,12 +365,8 @@ public sealed class ConfigurationPhase14VerticalSliceService
         List<ConfigurationPlanResult> appliedResults = [];
         for (var index = 0; index < plans.Count; index++)
         {
-            ConfigurationChangePlan preparedPlan = AttachPreviousOwnershipManifestHashIfPresent(
-                plans[index],
-                ownershipManifestPath
-            );
             ConfigurationPlanResult applied = await CreateManager(ownershipManifestPath)
-                .ApplyAsync(preparedPlan, cancellationToken);
+                .ApplyAsync(plans[index], cancellationToken);
             appliedResults.Add(applied with { Plan = previewResults[index].Plan });
         }
 
@@ -402,8 +392,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
             if (
                 !TryLoadOwnershipManifest(
                     ownershipManifestPath,
-                    out ConfigurationOwnershipManifest? manifest,
-                    out _
+                    out ConfigurationOwnershipManifest? manifest
                 )
                 || !OwnershipManifestMatchesExpectedBaseState(manifest, ecosystem, scope)
                 || manifest.ResourceIdentity?.ServiceEndpoint is not { } registryUrl
@@ -440,14 +429,6 @@ public sealed class ConfigurationPhase14VerticalSliceService
             scope,
             ownershipManifestPath
         );
-        if (existing is not null && !TryValidateLifecycleManifest(existing.Manifest, scope, out _))
-        {
-            throw new InvalidOperationException(
-                "The existing registry credential lifecycle metadata is invalid. Run "
-                    + "unconfigure before configuring it again."
-            );
-        }
-
         if (
             !forceRefresh
             && existing is not null
@@ -484,7 +465,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
             existing is not null
             && !ManifestMatchesRequestedConfiguration(existing.Manifest, applyPlan);
         ConfigurationChangePlan[] removalPlans = replaceExisting
-            ? CreateRemovePlans(ecosystem, scope, existing!.Manifest, existing.Json)
+            ? CreateRemovePlans(ecosystem, scope, existing!.Manifest)
             : [];
 
         List<ConfigurationPlanResult> previewResults = [];
@@ -492,130 +473,29 @@ public sealed class ConfigurationPhase14VerticalSliceService
         {
             previewResults.Add(
                 await CreateManager(ownershipManifestPath)
-                    .DryRunAsync(
-                        AttachPreviousOwnershipManifestHashIfPresent(
-                            removalPlan,
-                            ownershipManifestPath
-                        ),
-                        cancellationToken
-                    )
+                    .DryRunAsync(removalPlan, cancellationToken)
             );
         }
 
-        ConfigurationChangePlan preparedApplyPlan = replaceExisting
-            ? applyPlan
-            : AttachPreviousOwnershipManifestHashIfPresent(applyPlan, ownershipManifestPath);
-        if (replaceExisting)
-        {
-            ConfigurationChangePlan destinationValidationPlan =
-                CreateReplacementDestinationValidationPlan(applyPlan, removalPlans);
-            if (destinationValidationPlan.Changes.Count > 0)
-            {
-                string previewManifestPath = CreateReplacementPreviewManifestPath(
-                    ownershipManifestPath,
-                    removalPlans.Append(destinationValidationPlan)
-                );
-                _ = await CreateManager(previewManifestPath)
-                    .DryRunAsync(destinationValidationPlan, cancellationToken);
-            }
-
-            previewResults.Add(
-                await new ConfigurationManager().DryRunAsync(preparedApplyPlan, cancellationToken)
-            );
-        }
-        else
-        {
-            previewResults.Add(
-                await CreateManager(ownershipManifestPath)
-                    .DryRunAsync(preparedApplyPlan, cancellationToken)
-            );
-        }
+        previewResults.Add(
+            await CreateManager(ownershipManifestPath).DryRunAsync(applyPlan, cancellationToken)
+        );
 
         if (!execute)
         {
             return CreateResult(previewResults, ownershipManifestPath);
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
-        // Keep the short replacement commit noninterruptible once removal starts.
-        CancellationToken commitToken = replaceExisting
-            ? CancellationToken.None
-            : cancellationToken;
-        List<ConfigurationPlanResult> appliedResults = [];
-        foreach (ConfigurationChangePlan removalPlan in removalPlans)
-        {
-            ConfigurationPlanResult removed = await CreateManager(ownershipManifestPath)
-                .RemoveAsync(
-                    AttachPreviousOwnershipManifestHashIfPresent(
-                        removalPlan,
-                        ownershipManifestPath
-                    ),
-                    commitToken
-                );
-            appliedResults.Add(removed with { Plan = previewResults[appliedResults.Count].Plan });
-        }
-
-        ConfigurationPlanResult applied = await CreateManager(ownershipManifestPath)
-            .ApplyAsync(
-                AttachPreviousOwnershipManifestHashIfPresent(applyPlan, ownershipManifestPath),
-                commitToken
-            );
-        appliedResults.Add(applied with { Plan = previewResults[^1].Plan });
-        SetSecretFileModes(ownershipManifestPath, [applyPlan]);
+        var operations = removalPlans
+            .Select(plan => (plan, ConfigurationPlanOperation.Remove))
+            .Append((applyPlan, ConfigurationPlanOperation.Apply))
+            .ToArray();
+        IReadOnlyList<ConfigurationPlanResult> executed = await CreateManager(ownershipManifestPath)
+            .ExecuteBatchAsync(operations, cancellationToken);
+        List<ConfigurationPlanResult> appliedResults = executed
+            .Select((result, index) => result with { Plan = previewResults[index].Plan })
+            .ToList();
         return CreateResult(appliedResults, ownershipManifestPath);
-    }
-
-    private ConfigurationChangePlan CreateReplacementDestinationValidationPlan(
-        ConfigurationChangePlan applyPlan,
-        IReadOnlyList<ConfigurationChangePlan> removalPlans
-    )
-    {
-        ConfigurationChange[] removalChanges = removalPlans
-            .SelectMany(static plan => plan.Changes)
-            .ToArray();
-        return applyPlan with
-        {
-            Changes = applyPlan
-                .Changes.Where(applyChange =>
-                    !removalChanges.Any(removalChange =>
-                        applyChange.TargetKind == removalChange.TargetKind
-                        && PathEquals(applyChange.TargetPathOrName, removalChange.TargetPathOrName)
-                        && string.Equals(
-                            applyChange.Key,
-                            removalChange.Key,
-                            StringComparison.Ordinal
-                        )
-                    )
-                )
-                .ToArray(),
-        };
-    }
-
-    private string CreateReplacementPreviewManifestPath(
-        string ownershipManifestPath,
-        IEnumerable<ConfigurationChangePlan> plans
-    )
-    {
-        string[] targetPaths = plans
-            .SelectMany(static plan => plan.Changes)
-            .Select(static change => change.TargetPathOrName)
-            .ToArray();
-        string basePath = ownershipManifestPath + ".replacement-preview";
-        string candidate = basePath;
-        for (var suffix = 1; ; suffix++)
-        {
-            if (
-                !PathEquals(candidate, ownershipManifestPath)
-                && !targetPaths.Any(targetPath => PathEquals(candidate, targetPath))
-                && !fileSystem.FileExists(candidate)
-                && !fileSystem.DirectoryExists(candidate)
-            )
-            {
-                return candidate;
-            }
-
-            candidate = basePath + "." + suffix.ToString(CultureInfo.InvariantCulture);
-        }
     }
 
     private ExistingOwnershipManifest? LoadRecognizedPackageManifest(
@@ -629,8 +509,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
             if (
                 !TryLoadOwnershipManifest(
                     ownershipManifestPath,
-                    out ConfigurationOwnershipManifest? manifest,
-                    out string? json
+                    out ConfigurationOwnershipManifest? manifest
                 )
             )
             {
@@ -644,7 +523,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
                 );
             }
 
-            return new ExistingOwnershipManifest(manifest, json);
+            return new ExistingOwnershipManifest(manifest);
         }
         catch (Exception exception) when (IsExpectedOwnershipManifestReadOrParseFailure(exception))
         {
@@ -678,10 +557,9 @@ public sealed class ConfigurationPhase14VerticalSliceService
         cancellationToken.ThrowIfCancellationRequested();
         string ownershipManifestPath = GetOwnershipManifestPath(ecosystem, scope);
         ConfigurationOwnershipManifest? manifest;
-        string? manifestJson;
         try
         {
-            if (!TryLoadOwnershipManifest(ownershipManifestPath, out manifest, out manifestJson))
+            if (!TryLoadOwnershipManifest(ownershipManifestPath, out manifest))
             {
                 return CreateResult(
                     [
@@ -762,22 +640,12 @@ public sealed class ConfigurationPhase14VerticalSliceService
             );
         }
 
-        ConfigurationChangePlan[] plans = CreateRemovePlans(
-            ecosystem,
-            scope,
-            manifest,
-            manifestJson
-        );
+        ConfigurationChangePlan[] plans = CreateRemovePlans(ecosystem, scope, manifest);
         List<ConfigurationPlanResult> previewResults = [];
         foreach (ConfigurationChangePlan plan in plans)
         {
-            ConfigurationChangePlan preparedPlan = AttachPreviousOwnershipManifestHashIfPresent(
-                plan,
-                ownershipManifestPath
-            );
             previewResults.Add(
-                await CreateManager(ownershipManifestPath)
-                    .DryRunAsync(preparedPlan, cancellationToken)
+                await CreateManager(ownershipManifestPath).DryRunAsync(plan, cancellationToken)
             );
         }
 
@@ -794,18 +662,14 @@ public sealed class ConfigurationPhase14VerticalSliceService
         List<ConfigurationPlanResult> removedResults = [];
         for (var index = 0; index < plans.Length; index++)
         {
-            ConfigurationChangePlan preparedPlan = AttachPreviousOwnershipManifestHashIfPresent(
-                plans[index],
-                ownershipManifestPath
-            );
             ConfigurationPlanResult removed = await CreateManager(ownershipManifestPath)
-                .RemoveAsync(preparedPlan, cancellationToken);
+                .RemoveAsync(plans[index], cancellationToken);
             removedResults.Add(removed with { Plan = previewResults[index].Plan });
         }
 
         if (
             scope == ConfigurationPhase14Scope.CiTemporary
-            && !SafeFileExists(ownershipManifestPath)
+            && !fileSystem.FileExists(ownershipManifestPath)
         )
         {
             DeleteKnownCiTemporaryContainerIfEmpty(ecosystem);
@@ -1067,7 +931,6 @@ public sealed class ConfigurationPhase14VerticalSliceService
     {
         return ConfigurationChangePlanPolicy.Create(
             PythonPlanId + "-" + suffix,
-            PythonChangeSetId + "-" + suffix,
             ProductId,
             ConfigurationScope.User,
             CreatePythonManifestMetadata(),
@@ -1218,7 +1081,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
                 ? InteractivePolicy.Never
                 : InteractivePolicy.UserAllowed,
             AcquisitionMode = ciTemporary
-                ? AcquisitionMode.Unspecified
+                ? AcquisitionMode.SilentOnly
                 : AcquisitionMode.InteractionAllowed,
             CachePolicy = ciTemporary
                 ? CachePolicyMode.NonPersistentCi
@@ -1235,10 +1098,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
         };
         CredentialResult result = ciTemporary
             ? AzurePipelinesSystemAccessTokenService
-                .Handle(
-                    ToV1CiRequest(request),
-                    environmentVariableReader(AzurePipelinesSystemAccessTokenVariable)
-                )
+                .Handle(request, environmentVariableReader(AzurePipelinesSystemAccessTokenVariable))
                 .CreateProtocolResult("wp5-ci-temporary-configuration")
             : credentialAcquisition.Value.Acquire(request, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
@@ -1252,33 +1112,8 @@ public sealed class ConfigurationPhase14VerticalSliceService
             );
         }
 
-        if (!ciTemporary && result.ExpiresAt is null)
-        {
-            throw new InvalidOperationException(
-                "The acquired user registry credential did not include an expiry."
-            );
-        }
-
         return result;
     }
-
-    private static CredentialRequest ToV1CiRequest(CredentialRequestV2 request) =>
-        new()
-        {
-            Ecosystem = request.Ecosystem,
-            Operation = request.Operation,
-            Resource = request.Resource,
-            ServiceIdentity = request.ServiceIdentity,
-            AccountHint = request.AccountHint,
-            TenantHint = request.TenantHint,
-            RequestedAudience = request.RequestedAudience,
-            CredentialKind = request.CredentialKind,
-            IdentityFlow = request.IdentityFlow,
-            InteractivePolicy = request.InteractivePolicy,
-            CachePolicy = request.CachePolicy,
-            CiContext = request.CiContext,
-            ExtensionData = request.ExtensionData,
-        };
 
     private CredentialResult CreateDryRunCredential(ConfigurationPhase14Scope scope) =>
         new()
@@ -1321,34 +1156,6 @@ public sealed class ConfigurationPhase14VerticalSliceService
             ? credential.BearerToken
             : throw new InvalidOperationException("Package credential material is missing.");
 
-    private void SetSecretFileModes(
-        string ownershipManifestPath,
-        IReadOnlyList<ConfigurationChangePlan> plans
-    )
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        UnixFileMode secretMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
-        foreach (
-            string path in plans
-                .SelectMany(plan => plan.Changes)
-                .Where(change => change.IsSecretValue)
-                .Select(change => change.TargetPathOrName)
-                .Append(ownershipManifestPath)
-                .Select(NormalizePath)
-                .Distinct(GetPathComparerForPaths())
-        )
-        {
-            if (fileSystem.FileExists(path))
-            {
-                fileSystem.SetUnixFileMode(path, secretMode);
-            }
-        }
-    }
-
     private string GetNpmTargetPath(CredentialEcosystem ecosystem, ConfigurationPhase14Scope scope)
     {
         return (ecosystem, scope) switch
@@ -1363,7 +1170,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
         };
     }
 
-    private async ValueTask<ConfigurationPhase14EcosystemDoctorResult> InspectDoctorAsync(
+    private ValueTask<ConfigurationPhase14EcosystemDoctorResult> InspectDoctorAsync(
         CredentialEcosystem ecosystem,
         ConfigurationPhase14Scope scope,
         CancellationToken cancellationToken
@@ -1371,23 +1178,17 @@ public sealed class ConfigurationPhase14VerticalSliceService
     {
         cancellationToken.ThrowIfCancellationRequested();
         string ownershipManifestPath = GetOwnershipManifestPath(ecosystem, scope);
-        bool ownershipManifestPresent = SafeFileExists(ownershipManifestPath);
+        bool ownershipManifestPresent = fileSystem.FileExists(ownershipManifestPath);
         bool ownedTargetPresent = TryInspectOwnedTargetPresence(
             ecosystem,
             scope,
-            ownershipManifestPath
+            ownershipManifestPath,
+            cancellationToken
         );
         bool temporaryContainerPresent = TemporaryContainerExists(ecosystem, scope);
-        bool configurationPlanValid =
-            ownershipManifestPresent
-                ? await TryValidateRemovalPlanAsync(
-                    ecosystem,
-                    scope,
-                    ownershipManifestPath,
-                    cancellationToken
-                )
-            : scope == ConfigurationPhase14Scope.CiTemporary && temporaryContainerPresent ? false
-            : true;
+        bool configurationPlanValid = !ownershipManifestPresent
+            ? scope != ConfigurationPhase14Scope.CiTemporary || !temporaryContainerPresent
+            : TryLoadRecognizedManifest(ecosystem, scope, ownershipManifestPath);
         RegistryCredentialLifecycleMetadata? lifecycle = null;
         RegistryCredentialLifecycleState lifecycleState = RegistryCredentialLifecycleState.Missing;
         Uri? registryUrl = null;
@@ -1420,25 +1221,29 @@ public sealed class ConfigurationPhase14VerticalSliceService
             registryUrl = TryGetManifestRegistryUrl(ownershipManifestPath);
         }
 
-        return new ConfigurationPhase14EcosystemDoctorResult
-        {
-            Ecosystem = ecosystem,
-            Scope = scope,
-            ConfigurationPlanValid = configurationPlanValid,
-            OwnershipManifestPresent = ownershipManifestPresent,
-            OwnedTargetPresent = ownedTargetPresent,
-            TemporaryContainerPresent = temporaryContainerPresent,
-            LifecycleState = lifecycleState,
-            CredentialExpiresAt = lifecycle?.ExpiresAt,
-            RegistryUrl = registryUrl,
-        };
+        return ValueTask.FromResult(
+            new ConfigurationPhase14EcosystemDoctorResult
+            {
+                Ecosystem = ecosystem,
+                Scope = scope,
+                ConfigurationPlanValid = configurationPlanValid,
+                OwnershipManifestPresent = ownershipManifestPresent,
+                OwnedTargetPresent = ownedTargetPresent,
+                TemporaryContainerPresent = temporaryContainerPresent,
+                LifecycleState = lifecycleState,
+                CredentialExpiresAt = lifecycle?.ExpiresAt,
+                RegistryUrl = registryUrl,
+            }
+        );
     }
 
+    // editorconfig-checker-disable
     private async ValueTask<ConfigurationPhase14CleanupEcosystemResult> CleanupCiTemporaryEcosystemAsync(
         CredentialEcosystem ecosystem,
         bool execute,
         CancellationToken cancellationToken
     )
+    // editorconfig-checker-enable
     {
         if (!execute)
         {
@@ -1453,14 +1258,17 @@ public sealed class ConfigurationPhase14VerticalSliceService
             ecosystem,
             ConfigurationPhase14Scope.CiTemporary
         );
-        bool ownershipManifestBefore = SafeFileExists(ownershipManifestPath);
+        bool ownershipManifestBefore = fileSystem.FileExists(ownershipManifestPath);
         ConfigurationPhase14PlanResult result = await UnconfigureCoreAsync(
             ecosystem,
             ConfigurationPhase14Scope.CiTemporary,
             execute: true,
             cancellationToken
         );
-        if (!SafeFileExists(ownershipManifestPath) && IsKnownCiTemporaryContainerEmpty(ecosystem))
+        if (
+            !fileSystem.FileExists(ownershipManifestPath)
+            && IsKnownCiTemporaryContainerEmpty(ecosystem)
+        )
         {
             DeleteKnownCiTemporaryContainer(ecosystem);
         }
@@ -1469,7 +1277,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
             ecosystem,
             ConfigurationPhase14Scope.CiTemporary
         );
-        bool ownershipManifestAfter = SafeFileExists(ownershipManifestPath);
+        bool ownershipManifestAfter = fileSystem.FileExists(ownershipManifestPath);
         string state =
             temporaryContainerAfter || ownershipManifestAfter ? CleanupStateIncomplete
             : result.ChangeCount > 0 || temporaryContainerBefore || ownershipManifestBefore
@@ -1488,10 +1296,12 @@ public sealed class ConfigurationPhase14VerticalSliceService
         };
     }
 
+    // editorconfig-checker-disable
     private async ValueTask<ConfigurationPhase14CleanupEcosystemResult> InspectCiTemporaryCleanupAsync(
         CredentialEcosystem ecosystem,
         CancellationToken cancellationToken
     )
+    // editorconfig-checker-enable
     {
         cancellationToken.ThrowIfCancellationRequested();
         bool temporaryContainerPresent = TemporaryContainerExists(
@@ -1502,7 +1312,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
             ecosystem,
             ConfigurationPhase14Scope.CiTemporary
         );
-        bool ownershipManifestPresent = SafeFileExists(ownershipManifestPath);
+        bool ownershipManifestPresent = fileSystem.FileExists(ownershipManifestPath);
         ConfigurationPhase14PlanResult result = await UnconfigureCoreAsync(
             ecosystem,
             ConfigurationPhase14Scope.CiTemporary,
@@ -1539,7 +1349,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
         {
             return ecosystem switch
             {
-                CredentialEcosystem.Npm or CredentialEcosystem.Pnpm => !SafeFileExists(
+                CredentialEcosystem.Npm or CredentialEcosystem.Pnpm => !fileSystem.FileExists(
                     GetNpmTargetPath(ecosystem, ConfigurationPhase14Scope.CiTemporary)
                 )
                     || fileSystem
@@ -1547,16 +1357,15 @@ public sealed class ConfigurationPhase14VerticalSliceService
                             GetNpmTargetPath(ecosystem, ConfigurationPhase14Scope.CiTemporary)
                         )
                         .Length == 0,
-                CredentialEcosystem.Yarn => !fileSystem
+                CredentialEcosystem.Yarn => fileSystem
                     .EnumerateFiles(paths.YarnCiTemporaryHomePath, "*", SearchOption.AllDirectories)
-                    .Any()
-                    && !fileSystem
-                        .EnumerateDirectories(
-                            paths.YarnCiTemporaryHomePath,
-                            "*",
-                            SearchOption.AllDirectories
+                    .All(path =>
+                        string.Equals(
+                            Path.GetFileName(path),
+                            ".azureauth-credprovider.fs.lock",
+                            StringComparison.Ordinal
                         )
-                        .Any(),
+                    ),
                 _ => false,
             };
         }
@@ -1628,13 +1437,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
         ConfigurationOwnershipManifestEntry? authEntry = manifest.Entries.SingleOrDefault(entry =>
             string.Equals(entry.Key, manifest.EntrySelector, StringComparison.Ordinal)
         );
-        if (
-            authEntry is null
-            || authEntry.Operation != ConfigurationChangeOperation.Set
-            || authEntry.TargetKind != ConfigurationTargetKind.Npmrc
-            || !authEntry.HasPlannedValue
-            || !authEntry.IsSecretValue
-        )
+        if (authEntry is null || authEntry.TargetKind != ConfigurationTargetKind.Npmrc)
         {
             return false;
         }
@@ -1649,10 +1452,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
         );
         return manifest.Entries.Count == 2
             && registryEntry is not null
-            && registryEntry.Operation == ConfigurationChangeOperation.Set
             && registryEntry.TargetKind == ConfigurationTargetKind.Npmrc
-            && registryEntry.HasPlannedValue
-            && !registryEntry.IsSecretValue
             && string.Equals(
                 registryEntry.TargetPathOrName,
                 authEntry.TargetPathOrName,
@@ -1676,24 +1476,19 @@ public sealed class ConfigurationPhase14VerticalSliceService
         return manifest.Entries.Count == expectedEntryCount
             && targetPath is not null
             && manifest.Entries.All(entry =>
-                entry.Operation == ConfigurationChangeOperation.Set
-                && entry.TargetKind == ConfigurationTargetKind.Yarnrc
+                entry.TargetKind == ConfigurationTargetKind.Yarnrc
                 && PathEquals(entry.TargetPathOrName, targetPath)
-                && entry.HasPlannedValue
             )
             && manifest.Entries.Count(entry =>
-                entry.IsSecretValue
-                && string.Equals(entry.Key, manifest.EntrySelector, StringComparison.Ordinal)
+                string.Equals(entry.Key, manifest.EntrySelector, StringComparison.Ordinal)
             ) == 1
             && manifest.Entries.Count(entry =>
-                !entry.IsSecretValue
-                && string.Equals(entry.Key, expectedAlwaysAuthSelector, StringComparison.Ordinal)
+                string.Equals(entry.Key, expectedAlwaysAuthSelector, StringComparison.Ordinal)
             ) == 1
             && (
                 scope != ConfigurationPhase14Scope.CiTemporary
                 || manifest.Entries.Count(entry =>
-                    !entry.IsSecretValue
-                    && string.Equals(entry.Key, "npmRegistryServer", StringComparison.Ordinal)
+                    string.Equals(entry.Key, "npmRegistryServer", StringComparison.Ordinal)
                 ) == 1
             );
     }
@@ -1735,7 +1530,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
             )
         && manifest.ResourceIdentity is not null;
 
-    private async ValueTask<bool> IsCurrentConfigurationFreshAsync(
+    private ValueTask<bool> IsCurrentConfigurationFreshAsync(
         ConfigurationOwnershipManifest manifest,
         CredentialEcosystem ecosystem,
         ConfigurationPhase14Scope scope,
@@ -1756,25 +1551,23 @@ public sealed class ConfigurationPhase14VerticalSliceService
                 )
             )
             {
-                return false;
+                return ValueTask.FromResult(false);
             }
 
-            return expiryPolicy.Evaluate(
+            bool fresh =
+                expiryPolicy.Evaluate(
                     lifecycle,
                     scope == ConfigurationPhase14Scope.CiTemporary
                         ? ConfigurationScope.CiTemporary
                         : ConfigurationScope.User
                 ) == RegistryCredentialLifecycleState.Fresh
-                && await TryValidateRemovalPlanAsync(
-                    ecosystem,
-                    scope,
-                    ownershipManifestPath,
-                    cancellationToken
-                );
+                && CreateManager(ownershipManifestPath)
+                    .IsAppliedStateCurrent(requestedPlan, cancellationToken);
+            return ValueTask.FromResult(fresh);
         }
         catch (Exception exception) when (IsExpectedDoctorCheckFailure(exception))
         {
-            return false;
+            return ValueTask.FromResult(false);
         }
     }
 
@@ -1829,8 +1622,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
             if (
                 !TryLoadOwnershipManifest(
                     ownershipManifestPath,
-                    out ConfigurationOwnershipManifest? manifest,
-                    out _
+                    out ConfigurationOwnershipManifest? manifest
                 )
             )
             {
@@ -1852,8 +1644,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
             if (
                 !TryLoadOwnershipManifest(
                     ownershipManifestPath,
-                    out ConfigurationOwnershipManifest? manifest,
-                    out _
+                    out ConfigurationOwnershipManifest? manifest
                 ) || manifest.ResourceIdentity is null
             )
             {
@@ -1874,8 +1665,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
         {
             return TryLoadOwnershipManifest(
                     ownershipManifestPath,
-                    out ConfigurationOwnershipManifest? manifest,
-                    out _
+                    out ConfigurationOwnershipManifest? manifest
                 )
                 && RegistryCredentialLifecycleMetadataCodec.ContainsLifecycleMetadata(
                     manifest.SafeMetadata
@@ -1903,7 +1693,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
             case CredentialEcosystem.Npm:
             case CredentialEcosystem.Pnpm:
                 string path = GetNpmTargetPath(ecosystem, ConfigurationPhase14Scope.CiTemporary);
-                if (SafeFileExists(path))
+                if (fileSystem.FileExists(path))
                 {
                     fileSystem.DeleteFile(path);
                 }
@@ -1921,13 +1711,53 @@ public sealed class ConfigurationPhase14VerticalSliceService
 
     private void DeleteKnownCiTemporaryContainerIfEmpty(CredentialEcosystem ecosystem)
     {
+        if (ecosystem == CredentialEcosystem.Yarn)
+        {
+            string yarnrcPath = Path.Combine(paths.YarnCiTemporaryHomePath, ".yarnrc.yml");
+            if (
+                fileSystem.FileExists(yarnrcPath)
+                && string.IsNullOrWhiteSpace(fileSystem.ReadAllText(yarnrcPath))
+            )
+            {
+                fileSystem.DeleteFile(yarnrcPath);
+            }
+        }
+
         if (IsKnownCiTemporaryContainerEmpty(ecosystem))
         {
             DeleteKnownCiTemporaryContainer(ecosystem);
         }
     }
 
-    private async ValueTask<bool> TryValidateRemovalPlanAsync(
+    private bool TryLoadRecognizedManifest(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        string ownershipManifestPath
+    )
+    {
+        try
+        {
+            if (
+                !TryLoadOwnershipManifest(
+                    ownershipManifestPath,
+                    out ConfigurationOwnershipManifest? manifest
+                )
+            )
+            {
+                return false;
+            }
+
+            return ecosystem == CredentialEcosystem.Python
+                ? OwnershipManifestMatchesExpectedState(manifest, ecosystem, scope)
+                : OwnershipManifestMatchesExpectedBaseState(manifest, ecosystem, scope);
+        }
+        catch (Exception exception) when (IsExpectedDoctorCheckFailure(exception))
+        {
+            return false;
+        }
+    }
+
+    private bool TryInspectOwnedTargetPresence(
         CredentialEcosystem ecosystem,
         ConfigurationPhase14Scope scope,
         string ownershipManifestPath,
@@ -1939,64 +1769,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
             if (
                 !TryLoadOwnershipManifest(
                     ownershipManifestPath,
-                    out ConfigurationOwnershipManifest? manifest,
-                    out string? manifestJson
-                )
-            )
-            {
-                return false;
-            }
-
-            bool recognized =
-                ecosystem == CredentialEcosystem.Python
-                    ? OwnershipManifestMatchesExpectedState(manifest, ecosystem, scope)
-                    : OwnershipManifestMatchesExpectedBaseState(manifest, ecosystem, scope);
-            if (!recognized)
-            {
-                return false;
-            }
-
-            foreach (
-                ConfigurationChangePlan plan in CreateRemovePlans(
-                    ecosystem,
-                    scope,
-                    manifest,
-                    manifestJson
-                )
-            )
-            {
-                ConfigurationPlanResult result = await CreateManager(ownershipManifestPath)
-                    .DryRunAsync(
-                        AttachPreviousOwnershipManifestHashIfPresent(plan, ownershipManifestPath),
-                        cancellationToken
-                    );
-                if (result.State != ConfigurationPlanState.Planned)
-                {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-        catch (Exception exception) when (IsExpectedDoctorCheckFailure(exception))
-        {
-            return false;
-        }
-    }
-
-    private bool TryInspectOwnedTargetPresence(
-        CredentialEcosystem ecosystem,
-        ConfigurationPhase14Scope scope,
-        string ownershipManifestPath
-    )
-    {
-        try
-        {
-            if (
-                !TryLoadOwnershipManifest(
-                    ownershipManifestPath,
-                    out ConfigurationOwnershipManifest? manifest,
-                    out _
+                    out ConfigurationOwnershipManifest? manifest
                 )
             )
             {
@@ -2006,13 +1779,95 @@ public sealed class ConfigurationPhase14VerticalSliceService
             ConfigurationOwnershipManifestEntry[] entries = manifest
                 .Entries.Where(entry => EntryMatchesEcosystem(entry, ecosystem))
                 .ToArray();
-            return entries.Length > 0
-                && entries.All(entry => ConfigurationTargetExists(entry.TargetPathOrName));
+            if (entries.Length == 0)
+            {
+                return false;
+            }
+
+            if (ecosystem == CredentialEcosystem.Python)
+            {
+                return entries.All(entry => ConfigurationTargetExists(entry.TargetPathOrName));
+            }
+
+            ConfigurationChangePlan presencePlan = CreateOwnedTargetPresencePlan(
+                manifest,
+                ecosystem,
+                scope,
+                entries
+            );
+            return CreateManager(ownershipManifestPath)
+                .IsAppliedStateCurrent(presencePlan, cancellationToken);
         }
         catch (Exception exception) when (IsExpectedDoctorCheckFailure(exception))
         {
             return false;
         }
+    }
+
+    private ConfigurationChangePlan CreateOwnedTargetPresencePlan(
+        ConfigurationOwnershipManifest manifest,
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        IReadOnlyList<ConfigurationOwnershipManifestEntry> entries
+    )
+    {
+        string registryUrl =
+            manifest.ResourceIdentity?.ServiceEndpoint.AbsoluteUri
+            ?? throw new InvalidOperationException(
+                "The package ownership manifest does not identify its registry resource."
+            );
+        ConfigurationChange[] changes = entries
+            .Select(entry =>
+            {
+                bool isAuthToken = string.Equals(
+                    entry.Key,
+                    manifest.EntrySelector,
+                    StringComparison.Ordinal
+                );
+                string value = entry.Key switch
+                {
+                    "registry" or "npmRegistryServer" => registryUrl,
+                    _ when entry.Key.EndsWith(".npmAlwaysAuth", StringComparison.Ordinal) => "true",
+                    _ when isAuthToken => "owned-secret-present",
+                    _ => throw new InvalidOperationException(
+                        "The package ownership manifest contains an unsupported selector."
+                    ),
+                };
+                return new ConfigurationChange
+                {
+                    Operation = ConfigurationChangeOperation.Set,
+                    TargetKind = entry.TargetKind,
+                    TargetPathOrName = entry.TargetPathOrName,
+                    Key = entry.Key,
+                    Value = value,
+                    RequiresOwnershipRecord = true,
+                    PreserveDeclarationsAndComments = true,
+                    IsSecretValue = isAuthToken,
+                };
+            })
+            .ToArray();
+        return ConfigurationChangePlanPolicy.Create(
+            "phase14-" + ToContractEcosystemName(ecosystem) + "-presence-plan",
+            manifest.OwnerProductId,
+            scope == ConfigurationPhase14Scope.CiTemporary
+                ? ConfigurationScope.CiTemporary
+                : ConfigurationScope.User,
+            new ConfigurationManifestMetadata
+            {
+                ManifestId = manifest.ManifestId,
+                OwnerProductId = manifest.OwnerProductId,
+                EntrySelector = manifest.EntrySelector,
+                ResourceIdentity = manifest.ResourceIdentity,
+                ProductVersion = manifest.ProductVersion,
+                SafeMetadata = manifest.SafeMetadata,
+            },
+            changes,
+            temporaryContainer: CreatePackageTemporaryContainer(ecosystem, scope, manifest),
+            declarationPreservation: scope == ConfigurationPhase14Scope.CiTemporary
+                ? ConfigurationDeclarationPreservation.AuthOnlyWhenDeclarationsRemainVisible
+                : ConfigurationDeclarationPreservation.NotApplicable,
+            containsCredentialMaterial: true
+        );
     }
 
     private bool ConfigurationTargetExists(string targetPath)
@@ -2032,7 +1887,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
         ConfigurationPhase14Scope scope
     )
     {
-        return SafeFileExists(GetOwnershipManifestPath(ecosystem, scope))
+        return fileSystem.FileExists(GetOwnershipManifestPath(ecosystem, scope))
             || TemporaryContainerExists(ecosystem, scope);
     }
 
@@ -2048,36 +1903,12 @@ public sealed class ConfigurationPhase14VerticalSliceService
 
         return ecosystem switch
         {
-            CredentialEcosystem.Npm or CredentialEcosystem.Pnpm => SafeFileExists(
+            CredentialEcosystem.Npm or CredentialEcosystem.Pnpm => fileSystem.FileExists(
                 GetNpmTargetPath(ecosystem, scope)
             ),
-            CredentialEcosystem.Yarn => SafeDirectoryExists(paths.YarnCiTemporaryHomePath),
+            CredentialEcosystem.Yarn => fileSystem.DirectoryExists(paths.YarnCiTemporaryHomePath),
             _ => false,
         };
-    }
-
-    private bool SafeFileExists(string path)
-    {
-        try
-        {
-            return fileSystem.FileExists(path);
-        }
-        catch (Exception exception) when (IsExpectedDoctorCheckFailure(exception))
-        {
-            return false;
-        }
-    }
-
-    private bool SafeDirectoryExists(string path)
-    {
-        try
-        {
-            return fileSystem.DirectoryExists(path);
-        }
-        catch (Exception exception) when (IsExpectedDoctorCheckFailure(exception))
-        {
-            return false;
-        }
     }
 
     private static IReadOnlyList<CredentialEcosystem> GetSupportedUserEcosystems() =>
@@ -2132,10 +1963,13 @@ public sealed class ConfigurationPhase14VerticalSliceService
             State = CleanupStateIncomplete,
             ChangeCount = 0,
             AppliedChangeCount = 0,
-            OwnershipManifestPresent = SafeFileExists(GetOwnershipManifestPath(ecosystem, scope)),
+            OwnershipManifestPresent = fileSystem.FileExists(
+                GetOwnershipManifestPath(ecosystem, scope)
+            ),
             TemporaryContainerPresent = TemporaryContainerExists(ecosystem, scope),
         };
 
+    // editorconfig-checker-disable
     private static ConfigurationPhase14CleanupEcosystemResult CreateSharedPnpmCleanupAliasResult() =>
         new()
         {
@@ -2147,6 +1981,8 @@ public sealed class ConfigurationPhase14VerticalSliceService
             OwnershipManifestPresent = false,
             TemporaryContainerPresent = false,
         };
+
+    // editorconfig-checker-enable
 
     private static bool IsExpectedCleanupFailure(Exception exception) =>
         exception
@@ -2186,21 +2022,10 @@ public sealed class ConfigurationPhase14VerticalSliceService
                 or ArgumentException
                 or System.Text.Json.JsonException;
 
-    private static bool IsWindowsDrivePath(string path) =>
-        path.Length >= 3
-        && path[1] == ':'
-        && (path[2] == '\\' || path[2] == '/')
-        && char.IsAsciiLetter(path[0]);
-
-    private static bool IsWindowsUncPath(string path) =>
-        path.StartsWith(@"\\", StringComparison.Ordinal)
-        || path.StartsWith("//", StringComparison.Ordinal);
-
     private ConfigurationChangePlan[] CreateRemovePlans(
         CredentialEcosystem ecosystem,
         ConfigurationPhase14Scope scope,
-        ConfigurationOwnershipManifest manifest,
-        string manifestJson
+        ConfigurationOwnershipManifest manifest
     )
     {
         string ecosystemName = ToContractEcosystemName(ecosystem);
@@ -2212,14 +2037,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
         return entries
             .GroupBy(static entry => entry.TargetKind)
             .Select(group =>
-                CreateRemovePlan(
-                    ecosystem,
-                    ecosystemName,
-                    scope,
-                    manifest,
-                    manifestJson,
-                    group.ToArray()
-                )
+                CreateRemovePlan(ecosystem, ecosystemName, scope, manifest, group.ToArray())
             )
             .ToArray();
     }
@@ -2229,13 +2047,11 @@ public sealed class ConfigurationPhase14VerticalSliceService
         string ecosystemName,
         ConfigurationPhase14Scope scope,
         ConfigurationOwnershipManifest manifest,
-        string manifestJson,
         IReadOnlyList<ConfigurationOwnershipManifestEntry> entries
     )
     {
         return ConfigurationChangePlanPolicy.Create(
             "phase14-" + ecosystemName + "-unconfigure-plan",
-            "phase14-" + ecosystemName + "-unconfigure-changeset",
             ProductId,
             scope == ConfigurationPhase14Scope.CiTemporary
                 ? ConfigurationScope.CiTemporary
@@ -2247,19 +2063,21 @@ public sealed class ConfigurationPhase14VerticalSliceService
                 EntrySelector = manifest.EntrySelector,
                 ResourceIdentity = manifest.ResourceIdentity,
                 ProductVersion = manifest.ProductVersion,
-                PreviousOwnedEntryHash = ComputeSha256Metadata(manifestJson),
                 SafeMetadata = manifest.SafeMetadata,
             },
             entries.Select(CreateRemoveChange).ToArray(),
-            temporaryContainer: CreateRemoveTemporaryContainer(ecosystem, scope, manifest),
+            temporaryContainer: CreatePackageTemporaryContainer(ecosystem, scope, manifest),
             declarationPreservation: scope == ConfigurationPhase14Scope.CiTemporary
                 ? ConfigurationDeclarationPreservation.AuthOnlyWhenDeclarationsRemainVisible
                 : ConfigurationDeclarationPreservation.NotApplicable,
-            containsCredentialMaterial: manifest.ContainsCredentialMaterial
+            containsCredentialMaterial: ecosystem
+                is CredentialEcosystem.Npm
+                    or CredentialEcosystem.Pnpm
+                    or CredentialEcosystem.Yarn
         );
     }
 
-    private ConfigurationTemporaryContainer? CreateRemoveTemporaryContainer(
+    private ConfigurationTemporaryContainer? CreatePackageTemporaryContainer(
         CredentialEcosystem ecosystem,
         ConfigurationPhase14Scope scope,
         ConfigurationOwnershipManifest manifest
@@ -2307,11 +2125,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
             Key = entry.Key,
             Value = null,
             RequiresOwnershipRecord = true,
-            PreserveDeclarationsAndComments = entry.PreserveDeclarationsAndComments,
-            PreviousOwnedEntryMetadata =
-                entry.PreviousOwnedEntryMetadata
-                ?? entry.PlannedValueSha256
-                ?? "previous-secret-owned-entry",
+            PreserveDeclarationsAndComments = true,
         };
 
     private static bool EntryMatchesEcosystem(
@@ -2361,13 +2175,8 @@ public sealed class ConfigurationPhase14VerticalSliceService
             {
                 ContractMajor = ContractVersions.ConfigurationChangePlanMajor,
                 PlanId = "phase14-configuration-noop",
-                ChangeSetId = "phase14-configuration-noop",
                 OwnerProductId = ProductId,
                 Scope = sourcePlan?.Scope ?? ConfigurationScope.User,
-                AtomicityPolicy = ConfigurationAtomicityPolicy.AtomicChangeSetRequired,
-                RollbackPolicy = ConfigurationRollbackPolicy.Required,
-                State = ConfigurationPlanState.Planned,
-                ManifestCommitPolicy = ConfigurationManifestCommitPolicy.CommitAfterDurableChanges,
                 Manifest = sourcePlan?.Manifest ?? CreateNeutralNoOpManifestMetadata(),
                 DeclarationPreservation =
                     sourcePlan?.DeclarationPreservation
@@ -2376,7 +2185,6 @@ public sealed class ConfigurationPhase14VerticalSliceService
                 TemporaryContainer = sourcePlan?.TemporaryContainer,
             },
             Operation = operation,
-            State = applied ? ConfigurationPlanState.Applied : ConfigurationPlanState.Planned,
         };
 
     private ConfigurationPlanResult CreatePersistedNoOpPlanResult(
@@ -2386,9 +2194,10 @@ public sealed class ConfigurationPhase14VerticalSliceService
         string ownershipManifestPath
     )
     {
-        string manifestJson = ReadBoundedText(ownershipManifestPath);
         ConfigurationOwnershipManifest manifest =
-            ConfigurationOwnershipManifestSerializer.Deserialize(manifestJson);
+            ConfigurationOwnershipManifestSerializer.Deserialize(
+                fileSystem.ReadAllText(ownershipManifestPath)
+            );
         ConfigurationChangePlan persistedSourcePlan = sourcePlan with
         {
             Manifest = new ConfigurationManifestMetadata
@@ -2398,7 +2207,6 @@ public sealed class ConfigurationPhase14VerticalSliceService
                 EntrySelector = manifest.EntrySelector,
                 ResourceIdentity = manifest.ResourceIdentity,
                 ProductVersion = manifest.ProductVersion,
-                PreviousOwnedEntryHash = manifest.PreviousOwnedEntryHash,
                 SafeMetadata = manifest.SafeMetadata,
             },
         };
@@ -2420,26 +2228,6 @@ public sealed class ConfigurationPhase14VerticalSliceService
             ownershipManifestPath,
             new ConfigurationPhysicalTargetWriterDispatcher(fileSystem)
         );
-
-    private ConfigurationChangePlan AttachPreviousOwnershipManifestHashIfPresent(
-        ConfigurationChangePlan plan,
-        string ownershipManifestPath
-    )
-    {
-        if (!fileSystem.FileExists(ownershipManifestPath))
-        {
-            return plan;
-        }
-
-        string manifestJson = fileSystem.ReadAllText(ownershipManifestPath);
-        return plan with
-        {
-            Manifest = plan.Manifest with
-            {
-                PreviousOwnedEntryHash = ComputeSha256Metadata(manifestJson),
-            },
-        };
-    }
 
     private ConfigurationLayoutProjectionContext CreateCurrentLayoutProjectionContext() =>
         new()
@@ -2653,17 +2441,22 @@ public sealed class ConfigurationPhase14VerticalSliceService
         Func<string, string?> environmentVariableReader
     )
     {
-        string stateDirectoryPath = fileSystem.GetFullPath(
-            options.StateDirectoryPath ?? GetDefaultStateDirectoryPath()
-        );
-        string ciTemporaryProductRootPath = fileSystem.GetFullPath(
+        string stateDirectoryInput = options.StateDirectoryPath ?? GetDefaultStateDirectoryPath();
+        RequireFullyQualifiedPath(fileSystem, stateDirectoryInput, "state directory");
+        string stateDirectoryPath = fileSystem.GetFullPath(stateDirectoryInput);
+        string ciTemporaryProductRootInput =
             options.CiTemporaryProductRootPath
-                ?? (
-                    options.StateDirectoryPath is null
-                        ? GetDefaultCiTemporaryProductRootPath()
-                        : Path.Combine(stateDirectoryPath, "ci-jobs")
-                )
+            ?? (
+                options.StateDirectoryPath is null
+                    ? GetDefaultCiTemporaryProductRootPath()
+                    : Path.Combine(stateDirectoryPath, "ci-jobs")
+            );
+        RequireFullyQualifiedPath(
+            fileSystem,
+            ciTemporaryProductRootInput,
+            "CI temporary product root"
         );
+        string ciTemporaryProductRootPath = fileSystem.GetFullPath(ciTemporaryProductRootInput);
         string ciTemporaryRootPath = fileSystem.GetFullPath(
             jobScopeId is null
                 ? ciTemporaryProductRootPath
@@ -2729,7 +2522,11 @@ public sealed class ConfigurationPhase14VerticalSliceService
         }
 
         string environmentHome = Environment.GetEnvironmentVariable("HOME") ?? string.Empty;
-        return string.IsNullOrWhiteSpace(environmentHome) ? Path.GetTempPath() : environmentHome;
+        return !string.IsNullOrWhiteSpace(environmentHome)
+            ? environmentHome
+            : throw new InvalidOperationException(
+                "A fully qualified user home directory is required."
+            );
     }
 
     private static string? GetLocalAppDataDirectory()
@@ -2751,6 +2548,18 @@ public sealed class ConfigurationPhase14VerticalSliceService
         string? lowercase = NullIfWhiteSpace(
             environmentVariableReader(LowercaseNpmUserConfigEnvironmentVariable)
         );
+        if (uppercase is not null)
+        {
+            RequireFullyQualifiedPath(fileSystem, uppercase, NpmUserConfigEnvironmentVariable);
+        }
+        if (lowercase is not null)
+        {
+            RequireFullyQualifiedPath(
+                fileSystem,
+                lowercase,
+                LowercaseNpmUserConfigEnvironmentVariable
+            );
+        }
         string? uppercasePath = uppercase is null ? null : fileSystem.GetFullPath(uppercase);
         string? lowercasePath = lowercase is null ? null : fileSystem.GetFullPath(lowercase);
         if (
@@ -2759,7 +2568,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
             && !string.Equals(
                 uppercasePath,
                 lowercasePath,
-                UsesWindowsPathSemantics(uppercasePath) || UsesWindowsPathSemantics(lowercasePath)
+                OperatingSystem.IsWindows()
                     ? StringComparison.OrdinalIgnoreCase
                     : StringComparison.Ordinal
             )
@@ -2777,7 +2586,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
                 Path.Combine(
                     ResolveUserHomeDirectory(
                         environmentVariableReader,
-                        UsesWindowsPathSemantics(fileSystem.GetFullPath("."))
+                        OperatingSystem.IsWindows()
                     ),
                     ".npmrc"
                 )
@@ -2800,7 +2609,14 @@ public sealed class ConfigurationPhase14VerticalSliceService
             home = environmentVariableReader("HOME");
         }
 
-        return string.IsNullOrWhiteSpace(home) ? GetHomeDirectory() : home;
+        string resolved = string.IsNullOrWhiteSpace(home) ? GetHomeDirectory() : home;
+        if (!Path.IsPathFullyQualified(resolved))
+        {
+            throw new InvalidOperationException(
+                "The effective user home directory must be fully qualified."
+            );
+        }
+        return resolved;
     }
 
     private static string ResolveYarnUserConfigPath(
@@ -2810,13 +2626,32 @@ public sealed class ConfigurationPhase14VerticalSliceService
     {
         string home = ResolveUserHomeDirectory(
             environmentVariableReader,
-            UsesWindowsPathSemantics(fileSystem.GetFullPath("."))
+            OperatingSystem.IsWindows()
         );
         string? configuredFilename = environmentVariableReader(YarnRcFilenameEnvironmentVariable);
-        string filename = IsValidConfigurationFilename(configuredFilename)
-            ? configuredFilename!
-            : ".yarnrc.yml";
+        if (
+            !string.IsNullOrWhiteSpace(configuredFilename)
+            && !IsValidConfigurationFilename(configuredFilename)
+        )
+        {
+            throw new InvalidOperationException(
+                "YARN_RC_FILENAME must be a filename under the effective user home."
+            );
+        }
+        string filename = NullIfWhiteSpace(configuredFilename) ?? ".yarnrc.yml";
         return fileSystem.GetFullPath(Path.Combine(home, filename));
+    }
+
+    private static void RequireFullyQualifiedPath(
+        IFileSystem fileSystem,
+        string path,
+        string description
+    )
+    {
+        if (!fileSystem.IsPathFullyQualified(path))
+        {
+            throw new InvalidOperationException($"The {description} path must be fully qualified.");
+        }
     }
 
     private static bool IsValidConfigurationFilename(string? value) =>
@@ -2900,52 +2735,19 @@ public sealed class ConfigurationPhase14VerticalSliceService
 
     private bool TryLoadOwnershipManifest(
         string ownershipManifestPath,
-        [NotNullWhen(true)] out ConfigurationOwnershipManifest? manifest,
-        [NotNullWhen(true)] out string? manifestJson
+        [NotNullWhen(true)] out ConfigurationOwnershipManifest? manifest
     )
     {
         manifest = null;
-        manifestJson = null;
         if (!fileSystem.FileExists(ownershipManifestPath))
         {
             return false;
         }
 
-        manifestJson = ReadBoundedText(ownershipManifestPath);
-        manifest = ConfigurationOwnershipManifestSerializer.Deserialize(manifestJson);
+        manifest = ConfigurationOwnershipManifestSerializer.Deserialize(
+            fileSystem.ReadAllText(ownershipManifestPath)
+        );
         return true;
-    }
-
-    private string ReadBoundedText(string path)
-    {
-        const int maximumCharacters = 1024 * 1024;
-        if (fileSystem is SystemFileSystem)
-        {
-            using FileStream stream = new(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-            if (stream.Length > maximumCharacters)
-            {
-                throw new InvalidOperationException("Configuration file is too large.");
-            }
-
-            using StreamReader reader = new(
-                stream,
-                Encoding.UTF8,
-                detectEncodingFromByteOrderMarks: true
-            );
-            char[] buffer = new char[maximumCharacters + 1];
-            int count = reader.ReadBlock(buffer, 0, buffer.Length);
-            if (count > maximumCharacters)
-            {
-                throw new InvalidOperationException("Configuration file is too large.");
-            }
-
-            return new string(buffer, 0, count);
-        }
-
-        string contents = fileSystem.ReadAllText(path);
-        return contents.Length <= maximumCharacters
-            ? contents
-            : throw new InvalidOperationException("Configuration file is too large.");
     }
 
     private static string ToContractEcosystemName(CredentialEcosystem ecosystem) =>
@@ -2958,14 +2760,6 @@ public sealed class ConfigurationPhase14VerticalSliceService
             _ => throw new ArgumentOutOfRangeException(nameof(ecosystem), ecosystem, null),
         };
 
-    private static string ComputeSha256Metadata(string value) => "sha256:" + ComputeSha256(value);
-
-    private static string ComputeSha256(string value)
-    {
-        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(value));
-        return Convert.ToHexString(hash).ToLowerInvariant();
-    }
-
     private string GetSingleNormalizedPath(IEnumerable<string> values) =>
         GetSingleNormalizedPathOrDefault(values)
         ?? throw new InvalidOperationException("A single physical target path is required.");
@@ -2973,7 +2767,13 @@ public sealed class ConfigurationPhase14VerticalSliceService
     private string? GetSingleNormalizedPathOrDefault(IEnumerable<string> values)
     {
         string[] paths = values.Select(NormalizePath).ToArray();
-        return paths.Distinct(GetPathComparerForPaths(paths)).SingleOrDefault();
+        return paths
+            .Distinct(
+                OperatingSystem.IsWindows()
+                    ? StringComparer.OrdinalIgnoreCase
+                    : StringComparer.Ordinal
+            )
+            .SingleOrDefault();
     }
 
     private string NormalizePath(string path) => fileSystem.GetFullPath(path);
@@ -2982,18 +2782,10 @@ public sealed class ConfigurationPhase14VerticalSliceService
         string.Equals(
             NormalizePath(left),
             NormalizePath(right),
-            UsesWindowsPathSemantics(left) || UsesWindowsPathSemantics(right)
+            OperatingSystem.IsWindows()
                 ? StringComparison.OrdinalIgnoreCase
                 : StringComparison.Ordinal
         );
-
-    private static StringComparer GetPathComparerForPaths(IEnumerable<string>? paths = null) =>
-        OperatingSystem.IsWindows() || (paths?.Any(UsesWindowsPathSemantics) ?? false)
-            ? StringComparer.OrdinalIgnoreCase
-            : StringComparer.Ordinal;
-
-    private static bool UsesWindowsPathSemantics(string path) =>
-        OperatingSystem.IsWindows() || IsWindowsDrivePath(path) || IsWindowsUncPath(path);
 }
 
 public enum ConfigurationPhase14Scope

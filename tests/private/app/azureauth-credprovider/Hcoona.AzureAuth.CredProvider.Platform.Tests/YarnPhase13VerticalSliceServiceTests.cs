@@ -174,25 +174,19 @@ public sealed class YarnPhase13VerticalSliceServiceTests
         );
         string manifestJson = fileSystem.ReadAllText(manifestPath);
         string appliedYarnrc = fileSystem.ReadAllText("/home/alice/.yarnrc.yml");
-        ConfigurationOwnershipManifestEntry[] ownedEntries =
-            (applyResult.OwnershipManifest?.Entries ?? []).ToArray();
+        ConfigurationOwnershipManifestEntry[] ownedEntries = (
+            applyResult.OwnershipManifest?.Entries ?? []
+        ).ToArray();
         ConfigurationChangePlan removePlan = applyPlan with
         {
-            Manifest = applyPlan.Manifest with
-            {
-                ResourceIdentity = null,
-                PreviousOwnedEntryHash = "sha256:" + ComputeSha256(manifestJson),
-            },
             Changes = applyPlan
-                .Changes.Select(change => change with
-                {
-                    Operation = ConfigurationChangeOperation.Remove,
-                    Value = null,
-                    PreviousOwnedEntryMetadata = GetPreviousOwnedEntryMetadata(
-                        ownedEntries,
-                        change.Key
-                    ),
-                })
+                .Changes.Select(change =>
+                    change with
+                    {
+                        Operation = ConfigurationChangeOperation.Remove,
+                        Value = null,
+                    }
+                )
                 .ToArray(),
         };
 
@@ -201,65 +195,14 @@ public sealed class YarnPhase13VerticalSliceServiceTests
             TestContext.Current.CancellationToken
         );
 
-        Assert.Equal(ConfigurationPlanState.Applied, applyResult.State);
+        Assert.NotEqual(ConfigurationPlanOperation.DryRun, applyResult.Operation);
         Assert.Equal(2, ownedEntries.Length);
         Assert.Contains("npmAlwaysAuth: true", appliedYarnrc);
         Assert.Contains("npmAuthToken: 'short-lived-token'", appliedYarnrc);
         Assert.DoesNotContain("short-lived-token", manifestJson, StringComparison.Ordinal);
-        Assert.Equal(ConfigurationPlanState.Applied, removeResult.State);
+        Assert.NotEqual(ConfigurationPlanOperation.DryRun, removeResult.Operation);
         Assert.Equal("# user config\n", fileSystem.ReadAllText("/home/alice/.yarnrc.yml"));
         Assert.False(fileSystem.FileExists(manifestPath));
-    }
-
-    [Fact]
-    public async Task UserCredentialPlanDryRunRejectsUnsupportedExistingNpmRegistriesIndentation()
-    {
-        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
-        CreateDirectory(fileSystem, "/workspace");
-        CreateDirectory(fileSystem, "/home/alice");
-        CreateDirectory(fileSystem, "/state");
-        fileSystem.WriteAllText(
-            "/workspace/.yarnrc.yml",
-            "npmRegistryServer: 'https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/'\n"
-        );
-        fileSystem.WriteAllText(
-            "/home/alice/.yarnrc.yml",
-            """
-            npmRegistries:
-                'https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/':
-                    npmAuthToken: 'existing-token'
-            """
-        );
-        var service = new YarnPhase13VerticalSliceService(
-            new YarnPhase13VerticalSliceOptions
-            {
-                FileSystem = fileSystem,
-                WorkspaceDirectoryPath = "/workspace",
-                UserHomeDirectoryPath = "/home/alice",
-            }
-        );
-        ConfigurationChangePlan plan = service.CreateUserCredentialPlan(
-            new YarnPhase13CredentialPlanRequest
-            {
-                Declaration = Assert.Single(service.DiscoverRegistryDeclarations()),
-                AuthToken = "short-lived-token",
-            }
-        );
-        var manager = new ConfigurationManager(
-            fileSystem,
-            "/state/phase13-yarn-unsupported-shape-manifest.json",
-            new ConfigurationPhysicalTargetWriterDispatcher(fileSystem)
-        );
-
-        NotSupportedException exception = await Assert.ThrowsAsync<NotSupportedException>(
-            async () => await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
-        );
-
-        Assert.Contains("indentation", exception.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain(
-            "short-lived-token",
-            fileSystem.ReadAllText("/home/alice/.yarnrc.yml")
-        );
     }
 
     [Fact]
@@ -445,26 +388,16 @@ public sealed class YarnPhase13VerticalSliceServiceTests
             applyPlan,
             TestContext.Current.CancellationToken
         );
-        string manifestJson = fileSystem.ReadAllText(manifestPath);
-        ConfigurationOwnershipManifestEntry[] ownedEntries =
-            (applyResult.OwnershipManifest?.Entries ?? []).ToArray();
         ConfigurationChangePlan removePlan = applyPlan with
         {
-            Manifest = applyPlan.Manifest with
-            {
-                ResourceIdentity = null,
-                PreviousOwnedEntryHash = "sha256:" + ComputeSha256(manifestJson),
-            },
             Changes = applyPlan
-                .Changes.Select(change => change with
-                {
-                    Operation = ConfigurationChangeOperation.Remove,
-                    Value = null,
-                    PreviousOwnedEntryMetadata = GetPreviousOwnedEntryMetadata(
-                        ownedEntries,
-                        change.Key
-                    ),
-                })
+                .Changes.Select(change =>
+                    change with
+                    {
+                        Operation = ConfigurationChangeOperation.Remove,
+                        Value = null,
+                    }
+                )
                 .ToArray(),
         };
 
@@ -473,8 +406,8 @@ public sealed class YarnPhase13VerticalSliceServiceTests
             TestContext.Current.CancellationToken
         );
 
-        Assert.Equal(ConfigurationPlanState.Applied, applyResult.State);
-        Assert.Equal(ConfigurationPlanState.Applied, removeResult.State);
+        Assert.NotEqual(ConfigurationPlanOperation.DryRun, applyResult.Operation);
+        Assert.NotEqual(ConfigurationPlanOperation.DryRun, removeResult.Operation);
         Assert.False(fileSystem.DirectoryExists("/tmp/azureauth-yarn-home"));
         Assert.False(fileSystem.FileExists("/tmp/azureauth-yarn-home/.yarnrc.yml"));
         Assert.False(fileSystem.FileExists(manifestPath));
@@ -522,10 +455,7 @@ public sealed class YarnPhase13VerticalSliceServiceTests
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         CreateDirectory(fileSystem, "/workspace");
         var environment = new EnvironmentVariables(
-            new Dictionary<string, string?>
-            {
-                ["YARN_RC_FILENAME"] = ".selected.yarnrc.yml",
-            }
+            new Dictionary<string, string?> { ["YARN_RC_FILENAME"] = ".selected.yarnrc.yml" }
         );
         fileSystem.WriteAllText(
             "/workspace/.selected.yarnrc.yml",
@@ -623,8 +553,9 @@ public sealed class YarnPhase13VerticalSliceServiceTests
         );
 
         YarnPhase13RegistryDeclaration declaration = Assert.Single(
-            (await service.RunDoctorAsync(TestContext.Current.CancellationToken))
-                .RegistryDeclarations
+            (
+                await service.RunDoctorAsync(TestContext.Current.CancellationToken)
+            ).RegistryDeclarations
         );
 
         Assert.Equal("/home/alice/.yarnrc.yml", declaration.SourcePath);
@@ -648,10 +579,7 @@ public sealed class YarnPhase13VerticalSliceServiceTests
                 + "_packaging/selected/npm/registry/'\n"
         );
         var environment = new EnvironmentVariables(
-            new Dictionary<string, string?>
-            {
-                ["YARN_RC_FILENAME"] = "/tmp/selected.yarnrc.yml",
-            }
+            new Dictionary<string, string?> { ["YARN_RC_FILENAME"] = "/tmp/selected.yarnrc.yml" }
         );
         var service = new YarnPhase13VerticalSliceService(
             new YarnPhase13VerticalSliceOptions
@@ -692,10 +620,7 @@ public sealed class YarnPhase13VerticalSliceServiceTests
                 + "_packaging/selected/npm/registry/'\n"
         );
         var environment = new EnvironmentVariables(
-            new Dictionary<string, string?>
-            {
-                ["YARN_RC_FILENAME"] = ".selected.yarnrc.yml",
-            }
+            new Dictionary<string, string?> { ["YARN_RC_FILENAME"] = ".selected.yarnrc.yml" }
         );
         var service = new YarnPhase13VerticalSliceService(
             new YarnPhase13VerticalSliceOptions
@@ -819,26 +744,7 @@ public sealed class YarnPhase13VerticalSliceServiceTests
                         or nameof(InMemoryFileSystem.CreateDirectory)
                         or nameof(InMemoryFileSystem.DeleteFile)
                         or nameof(InMemoryFileSystem.DeleteDirectory)
-                        or nameof(InMemoryFileSystem.AddSymbolicLink)
         );
-    }
-
-    private static string GetPreviousOwnedEntryMetadata(
-        IReadOnlyList<ConfigurationOwnershipManifestEntry> ownedEntries,
-        string key
-    )
-    {
-        ConfigurationOwnershipManifestEntry entry = Assert.Single(
-            ownedEntries,
-            entry => string.Equals(entry.Key, key, StringComparison.Ordinal)
-        );
-        return entry.PlannedValueSha256 ?? "previous-yarnrc-secret-remove-entry";
-    }
-
-    private static string ComputeSha256(string value)
-    {
-        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(value));
-        return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
     private sealed class EnvironmentVariables

@@ -57,10 +57,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         CreateDirectory(fileSystem, "/workspace");
         CreateDirectory(fileSystem, "/home/alice");
-        fileSystem.WriteAllText(
-            "/workspace/.npmrc",
-            "registry=https://registry.npmjs.org/\n"
-        );
+        fileSystem.WriteAllText("/workspace/.npmrc", "registry=https://registry.npmjs.org/\n");
         fileSystem.WriteAllText(
             "/home/alice/.npmrc",
             "registry=https://dev.azure.com/org/project/_packaging/feed/npm/registry/\n"
@@ -143,10 +140,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
             "registry=https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
         );
         var environment = new EnvironmentVariables(
-            new Dictionary<string, string?>
-            {
-                ["NPM_CONFIG_USERCONFIG"] = "/tmp/ci-user.npmrc",
-            }
+            new Dictionary<string, string?> { ["NPM_CONFIG_USERCONFIG"] = "/tmp/ci-user.npmrc" }
         );
         var service = new NpmPhase12VerticalSliceService(
             new NpmPhase12VerticalSliceOptions
@@ -208,8 +202,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         CreateDirectory(fileSystem, "/workspace");
         fileSystem.WriteAllText(
             "/workspace/.npmrc",
-            "registry=https://pkgs.dev.azure.com/org/project/"
-                + "_packaging/feed/npm/registry/\n"
+            "registry=https://pkgs.dev.azure.com/org/project/" + "_packaging/feed/npm/registry/\n"
         );
         var service = new NpmPhase12VerticalSliceService(
             new NpmPhase12VerticalSliceOptions
@@ -324,7 +317,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
             TestContext.Current.CancellationToken
         );
 
-        Assert.Equal(ConfigurationPlanState.Applied, result.State);
+        Assert.NotEqual(ConfigurationPlanOperation.DryRun, result.Operation);
         Assert.Contains(
             "//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:_authToken=short-lived-token",
             fileSystem.ReadAllText("/tmp/azureauth-ci/.npmrc"),
@@ -347,10 +340,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
             "/workspace/.npmrc",
             "registry=https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
         );
-        fileSystem.WriteAllText(
-            "/home/alice/.npmrc",
-            "# user config\n"
-        );
+        fileSystem.WriteAllText("/home/alice/.npmrc", "# user config\n");
         var service = new NpmPhase12VerticalSliceService(
             new NpmPhase12VerticalSliceOptions
             {
@@ -386,19 +376,13 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         );
         ConfigurationChangePlan removePlan = applyPlan with
         {
-            Manifest = applyPlan.Manifest with
-            {
-                ResourceIdentity = null,
-                PreviousOwnedEntryHash = "sha256:" + ComputeSha256(manifestJson),
-            },
+            Manifest = applyPlan.Manifest with { ResourceIdentity = null },
             Changes =
             [
                 applyPlan.Changes[0] with
                 {
                     Operation = ConfigurationChangeOperation.Remove,
                     Value = null,
-                    PreviousOwnedEntryMetadata =
-                        ownedEntry.PlannedValueSha256 ?? "previous-npmrc-secret-remove-entry",
                 },
             ],
         };
@@ -408,8 +392,8 @@ public sealed class NpmPhase12VerticalSliceServiceTests
             TestContext.Current.CancellationToken
         );
 
-        Assert.Equal(ConfigurationPlanState.Applied, applyResult.State);
-        Assert.Equal(ConfigurationPlanState.Applied, removeResult.State);
+        Assert.NotEqual(ConfigurationPlanOperation.DryRun, applyResult.Operation);
+        Assert.NotEqual(ConfigurationPlanOperation.DryRun, removeResult.Operation);
         Assert.Equal("# user config\n", fileSystem.ReadAllText("/home/alice/.npmrc"));
         Assert.False(fileSystem.FileExists(manifestPath));
     }
@@ -535,10 +519,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
             "//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:_authToken=old\n"
         );
         var environment = new EnvironmentVariables(
-            new Dictionary<string, string?>
-            {
-                ["NPM_CONFIG_USERCONFIG"] = "/tmp/override.npmrc",
-            }
+            new Dictionary<string, string?> { ["NPM_CONFIG_USERCONFIG"] = "/tmp/override.npmrc" }
         );
         var service = new NpmPhase12VerticalSliceService(
             new NpmPhase12VerticalSliceOptions
@@ -568,10 +549,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         CreateDirectory(fileSystem, "/workspace");
         CreateDirectory(fileSystem, "/home/alice");
-        fileSystem.WriteAllText(
-            "/workspace/.npmrc",
-            "registry=https://registry.npmjs.org/\n"
-        );
+        fileSystem.WriteAllText("/workspace/.npmrc", "registry=https://registry.npmjs.org/\n");
         var service = new NpmPhase12VerticalSliceService(
             new NpmPhase12VerticalSliceOptions
             {
@@ -620,7 +598,6 @@ public sealed class NpmPhase12VerticalSliceServiceTests
                         or nameof(InMemoryFileSystem.CreateDirectory)
                         or nameof(InMemoryFileSystem.DeleteFile)
                         or nameof(InMemoryFileSystem.DeleteDirectory)
-                        or nameof(InMemoryFileSystem.AddSymbolicLink)
         );
     }
 

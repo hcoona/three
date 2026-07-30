@@ -27,7 +27,7 @@ namespace Hcoona.AzureAuth.CredProvider.Platform.Configuration;
     JsonSerializerDefaults.Web,
     WriteIndented = false,
     GenerationMode = JsonSourceGenerationMode.Metadata,
-    UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow
+    UnmappedMemberHandling = JsonUnmappedMemberHandling.Skip
 )]
 internal sealed partial class ConfigurationOwnershipManifestJson : JsonSerializerContext
 {
@@ -35,7 +35,7 @@ internal sealed partial class ConfigurationOwnershipManifestJson : JsonSerialize
     {
         JsonSerializerOptions options = ContractJson.CreateSerializerOptions();
         options.TypeInfoResolver = Default;
-        options.UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow;
+        options.UnmappedMemberHandling = JsonUnmappedMemberHandling.Skip;
         return options;
     }
 }

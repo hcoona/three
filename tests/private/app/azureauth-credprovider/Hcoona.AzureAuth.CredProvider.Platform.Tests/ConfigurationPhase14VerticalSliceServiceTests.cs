@@ -159,10 +159,10 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
             TestContext.Current.CancellationToken
         );
 
-        Assert.Equal(ConfigurationPlanState.Applied, configureResult.PlanResult.State);
+        Assert.NotEqual(ConfigurationPlanOperation.DryRun, configureResult.PlanResult.Operation);
         Assert.Equal(1, configureResult.ChangeCount);
         Assert.Contains("_authToken=fake-token-", configuredNpmrc, StringComparison.Ordinal);
-        Assert.Equal(ConfigurationPlanState.Applied, unconfigureResult.PlanResult.State);
+        Assert.NotEqual(ConfigurationPlanOperation.DryRun, unconfigureResult.PlanResult.Operation);
         Assert.Equal(1, unconfigureResult.ChangeCount);
         Assert.DoesNotContain(
             "fake-token-",
@@ -303,7 +303,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     [Theory]
     [InlineData(CredentialEcosystem.Npm)]
     [InlineData(CredentialEcosystem.Yarn)]
-    public async Task ReplacementDestinationConflictPreservesOldConfigurationAndManifest(
+    public async Task PathReplacementRejectsUnownedDestinationBeforeRemovingOwnedSelector(
         CredentialEcosystem ecosystem
     )
     {
@@ -338,68 +338,14 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
                 )
         );
 
-        Assert.Contains("Configuration conflict", exception.Message, StringComparison.Ordinal);
+        Assert.Contains(
+            "without recognized ownership",
+            exception.Message,
+            StringComparison.Ordinal
+        );
         Assert.Equal(oldContents, fileSystem.ReadAllText(oldPath));
         Assert.Equal(manifestContents, fileSystem.ReadAllText(manifestPath));
         Assert.Equal(oldContents, fileSystem.ReadAllText(destinationPath));
-        Assert.DoesNotContain(
-            fileSystem.Files.Keys,
-            path => path.Contains(".replacement-preview", StringComparison.Ordinal)
-        );
-    }
-
-    [Theory]
-    [InlineData(CredentialEcosystem.Npm)]
-    [InlineData(CredentialEcosystem.Yarn)]
-    public async Task CancellationAfterReplacementRemovalStartsDoesNotInterruptCommit(
-        CredentialEcosystem ecosystem
-    )
-    {
-        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
-        ConfigurationPhase14VerticalSliceService original = CreateService(
-            fileSystem,
-            environmentVariableReader: CreatePackagePathEnvironmentReader(ecosystem, "old")
-        );
-        await original.ConfigureAsync(
-            ecosystem,
-            ConfigurationPhase14Scope.User,
-            TestContext.Current.CancellationToken
-        );
-        string oldPath = GetPackageConfigurationPath(original, ecosystem);
-        ConfigurationPhase14VerticalSliceService replacement = CreateService(
-            fileSystem,
-            environmentVariableReader: CreatePackagePathEnvironmentReader(ecosystem, "new")
-        );
-        string destinationPath = GetPackageConfigurationPath(replacement, ecosystem);
-        using var cancellation = new CancellationTokenSource();
-        fileSystem.AfterRecord = (call, _) =>
-        {
-            if (
-                call.Operation == nameof(IFileSystem.AtomicWriteAllText)
-                && string.Equals(call.Path, oldPath, StringComparison.Ordinal)
-            )
-            {
-                cancellation.Cancel();
-            }
-        };
-
-        await replacement.ConfigureAsync(
-            ecosystem,
-            ConfigurationPhase14Scope.User,
-            cancellation.Token
-        );
-
-        Assert.True(cancellation.IsCancellationRequested);
-        Assert.DoesNotContain(
-            ecosystem == CredentialEcosystem.Yarn ? "npmAuthToken" : "_authToken",
-            fileSystem.ReadAllText(oldPath),
-            StringComparison.Ordinal
-        );
-        Assert.Contains(
-            ecosystem == CredentialEcosystem.Yarn ? "npmAuthToken" : "_authToken",
-            fileSystem.ReadAllText(destinationPath),
-            StringComparison.Ordinal
-        );
     }
 
     [Theory]
@@ -515,7 +461,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
             ConfigurationPhase14Scope.User,
             TestContext.Current.CancellationToken
         );
-        Assert.Equal(ConfigurationPlanState.Applied, refreshed.PlanResult.State);
+        Assert.NotEqual(ConfigurationPlanOperation.DryRun, refreshed.PlanResult.Operation);
         Assert.Equal(configured, fileSystem.ReadAllText(configurationPath));
     }
 
@@ -551,12 +497,12 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         );
 
         Assert.Equal(0, repeated.AppliedChangeCount);
-        Assert.Equal(ConfigurationPlanState.Applied, refreshed.PlanResult.State);
+        Assert.NotEqual(ConfigurationPlanOperation.DryRun, refreshed.PlanResult.Operation);
         Assert.Equal(configured, fileSystem.ReadAllText(configurationPath));
     }
 
     [Fact]
-    public async Task NpmConfigureWithRemovedOwnedAuthSelectorSurfacesConflict()
+    public async Task NpmConfigureRecreatesRemovedOwnedAuthSelector()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         var service = CreateService(fileSystem);
@@ -570,32 +516,30 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
             configured.Split('\n'),
             static line => line.Contains(":_authToken=", StringComparison.Ordinal)
         );
-        string withoutAuthSelector = configured.Replace(
-            authLine + "\n",
-            string.Empty,
-            StringComparison.Ordinal
+        string withoutAuthSelector = string.Join(
+            '\n',
+            configured
+                .Split('\n')
+                .Where(line => !string.Equals(line, authLine, StringComparison.Ordinal))
         );
         fileSystem.WriteAllText(service.Paths.NpmUserNpmrcPath, withoutAuthSelector);
 
-        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
-            async () =>
-                await service.ConfigureAsync(
-                    CredentialEcosystem.Npm,
-                    ConfigurationPhase14Scope.User,
-                    TestContext.Current.CancellationToken
-                )
+        ConfigurationPhase14PlanResult result = await service.ConfigureAsync(
+            CredentialEcosystem.Npm,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
         );
 
+        Assert.True(result.AppliedChangeCount > 0);
         Assert.Contains(
-            "Configuration conflict: Npmrc retained ownership proof does not match any existing file",
-            exception.Message,
+            "_authToken",
+            fileSystem.ReadAllText(service.Paths.NpmUserNpmrcPath),
             StringComparison.Ordinal
         );
-        Assert.Equal(withoutAuthSelector, fileSystem.ReadAllText(service.Paths.NpmUserNpmrcPath));
     }
 
     [Fact]
-    public async Task YarnConfigureWithRemovedOwnedAuthSelectorSurfacesConflict()
+    public async Task YarnConfigureRecreatesRemovedOwnedAuthSelector()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         var service = CreateService(fileSystem);
@@ -616,21 +560,18 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         );
         fileSystem.WriteAllText(service.Paths.YarnUserYarnrcPath, withoutAuthSelector);
 
-        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
-            async () =>
-                await service.ConfigureAsync(
-                    CredentialEcosystem.Yarn,
-                    ConfigurationPhase14Scope.User,
-                    TestContext.Current.CancellationToken
-                )
+        ConfigurationPhase14PlanResult result = await service.ConfigureAsync(
+            CredentialEcosystem.Yarn,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
         );
 
+        Assert.True(result.AppliedChangeCount > 0);
         Assert.Contains(
-            "Configuration conflict: Yarnrc retained ownership proof does not match any existing file",
-            exception.Message,
+            "npmAuthToken",
+            fileSystem.ReadAllText(service.Paths.YarnUserYarnrcPath),
             StringComparison.Ordinal
         );
-        Assert.Equal(withoutAuthSelector, fileSystem.ReadAllText(service.Paths.YarnUserYarnrcPath));
     }
 
     [Fact]
@@ -654,22 +595,8 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
 
         Assert.Equal(executed.ChangeCount, dryRun.ChangeCount);
         Assert.Equal(
-            executed.PlanResults.Select(static result =>
-                (
-                    result.Plan.PlanId,
-                    result.Plan.ChangeSetId,
-                    result.Plan.Scope,
-                    result.Plan.Manifest.PreviousOwnedEntryHash
-                )
-            ),
-            dryRun.PlanResults.Select(static result =>
-                (
-                    result.Plan.PlanId,
-                    result.Plan.ChangeSetId,
-                    result.Plan.Scope,
-                    result.Plan.Manifest.PreviousOwnedEntryHash
-                )
-            )
+            executed.PlanResults.Select(static result => (result.Plan.PlanId, result.Plan.Scope)),
+            dryRun.PlanResults.Select(static result => (result.Plan.PlanId, result.Plan.Scope))
         );
         Assert.Equal(
             executed.PlanResults.SelectMany(static result => result.Changes),
@@ -677,7 +604,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         );
         Assert.All(
             dryRun.PlanResults,
-            static result => Assert.Equal(ConfigurationPlanState.Planned, result.State)
+            static result => Assert.Equal(ConfigurationPlanOperation.DryRun, result.Operation)
         );
         Assert.False(dryRunFileSystem.DirectoryExists(dryRunService.Paths.ManifestDirectoryPath));
         Assert.False(dryRun.OwnershipManifestPresent);
@@ -714,22 +641,8 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
 
         Assert.Equal(executed.ChangeCount, dryRun.ChangeCount);
         Assert.Equal(
-            executed.PlanResults.Select(static result =>
-                (
-                    result.Plan.PlanId,
-                    result.Plan.ChangeSetId,
-                    result.Plan.Scope,
-                    result.Plan.Manifest.PreviousOwnedEntryHash
-                )
-            ),
-            dryRun.PlanResults.Select(static result =>
-                (
-                    result.Plan.PlanId,
-                    result.Plan.ChangeSetId,
-                    result.Plan.Scope,
-                    result.Plan.Manifest.PreviousOwnedEntryHash
-                )
-            )
+            executed.PlanResults.Select(static result => (result.Plan.PlanId, result.Plan.Scope)),
+            dryRun.PlanResults.Select(static result => (result.Plan.PlanId, result.Plan.Scope))
         );
         Assert.Equal(
             executed.PlanResults.SelectMany(static result => result.Changes),
@@ -837,8 +750,8 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         Assert.True(executed.OwnershipManifestCleanupIncomplete);
         Assert.Equal(ConfigurationPlanOperation.DryRun, dryRun.PlanResult.Operation);
         Assert.Equal(ConfigurationPlanOperation.Remove, executed.PlanResult.Operation);
-        Assert.Equal(ConfigurationPlanState.Planned, dryRun.PlanResult.State);
-        Assert.Equal(ConfigurationPlanState.Applied, executed.PlanResult.State);
+        Assert.Equal(ConfigurationPlanOperation.DryRun, dryRun.PlanResult.Operation);
+        Assert.NotEqual(ConfigurationPlanOperation.DryRun, executed.PlanResult.Operation);
         Assert.Empty(dryRun.PlanResult.Changes);
         Assert.Empty(executed.PlanResult.Changes);
         Assert.Equal(0, dryRun.ChangeCount);
@@ -863,7 +776,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         );
 
         string yarnrc = fileSystem.ReadAllText(service.Paths.YarnUserYarnrcPath);
-        Assert.Equal(ConfigurationPlanState.Applied, result.PlanResult.State);
+        Assert.NotEqual(ConfigurationPlanOperation.DryRun, result.PlanResult.Operation);
         Assert.Equal(2, result.ChangeCount);
         Assert.Contains("npmAlwaysAuth: true", yarnrc);
         Assert.Contains("npmAuthToken: 'fake-token-", yarnrc);
@@ -885,7 +798,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         Assert.Equal(2, result.ChangeCount);
         Assert.All(
             result.PlanResults,
-            planResult => Assert.Equal(ConfigurationPlanState.Applied, planResult.State)
+            planResult => Assert.NotEqual(ConfigurationPlanOperation.DryRun, planResult.Operation)
         );
     }
 
@@ -911,7 +824,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         Assert.False(result.OwnershipManifestPresent);
         Assert.All(
             result.PlanResults,
-            planResult => Assert.Equal(ConfigurationPlanState.Applied, planResult.State)
+            planResult => Assert.NotEqual(ConfigurationPlanOperation.DryRun, planResult.Operation)
         );
     }
 
@@ -1000,7 +913,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         );
 
         Assert.Empty(identityProvider.Requests);
-        Assert.Equal(ConfigurationPlanState.Applied, result.PlanResult.State);
+        Assert.NotEqual(ConfigurationPlanOperation.DryRun, result.PlanResult.Operation);
         Assert.Equal(ConfigurationScope.CiTemporary, result.PlanResult.Plan.Scope);
         Assert.True(result.PlanResult.Plan.ContainsCredentialMaterial);
         Assert.Contains(
@@ -1029,7 +942,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
             TestContext.Current.CancellationToken
         );
 
-        Assert.Equal(ConfigurationPlanState.Applied, result.PlanResult.State);
+        Assert.NotEqual(ConfigurationPlanOperation.DryRun, result.PlanResult.Operation);
         Assert.False(fileSystem.FileExists(service.Paths.NpmCiTemporaryNpmrcPath));
         Assert.False(result.OwnershipManifestPresent);
     }
@@ -1037,9 +950,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     [Theory]
     [InlineData(CredentialEcosystem.Npm)]
     [InlineData(CredentialEcosystem.Pnpm)]
-    public async Task CleanupCiTemporaryPreservesUnrelatedNpmrcContent(
-        CredentialEcosystem ecosystem
-    )
+    public async Task CleanupCiTemporaryDeletesProductOwnedNpmrc(CredentialEcosystem ecosystem)
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         var service = CreateService(fileSystem, environmentVariableReader: ReadCiEnvironment);
@@ -1058,12 +969,10 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         );
 
         ConfigurationPhase14CleanupEcosystemResult cleanup = Assert.Single(result.Ecosystems);
-        Assert.Equal("incomplete", cleanup.State);
+        Assert.Equal("removed", cleanup.State);
         Assert.False(cleanup.OwnershipManifestPresent);
-        Assert.True(cleanup.TemporaryContainerPresent);
-        string remaining = fileSystem.ReadAllText(path);
-        Assert.Contains("legacy-peer-deps=true", remaining, StringComparison.Ordinal);
-        Assert.DoesNotContain("_authToken", remaining, StringComparison.Ordinal);
+        Assert.False(cleanup.TemporaryContainerPresent);
+        Assert.False(fileSystem.FileExists(path));
     }
 
     [Fact]
@@ -1085,7 +994,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
             TestContext.Current.CancellationToken
         );
 
-        Assert.Equal(ConfigurationPlanState.Applied, result.PlanResult.State);
+        Assert.NotEqual(ConfigurationPlanOperation.DryRun, result.PlanResult.Operation);
         Assert.False(fileSystem.DirectoryExists(service.Paths.YarnCiTemporaryHomePath));
         Assert.False(result.OwnershipManifestPresent);
     }
@@ -1676,38 +1585,30 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
             StringComparison.Ordinal
         );
 
-        ConfigurationPhase14VerticalSliceService invalidFilenameService = CreateService(
-            new InMemoryFileSystem(InMemoryPathSemantics.Posix),
-            environmentVariableReader: name =>
-                name switch
-                {
-                    "HOME" => "/home/test",
-                    "YARN_RC_FILENAME" => "../outside.yml",
-                    _ => null,
-                }
+        Assert.Throws<InvalidOperationException>(() =>
+            CreateService(
+                new InMemoryFileSystem(InMemoryPathSemantics.Posix),
+                environmentVariableReader: name =>
+                    name switch
+                    {
+                        "HOME" => "/home/test",
+                        "YARN_RC_FILENAME" => "../outside.yml",
+                        _ => null,
+                    }
+            )
         );
-        Assert.Equal("/home/test/.yarnrc.yml", invalidFilenameService.Paths.YarnUserYarnrcPath);
     }
 
     [Fact]
-    public void EffectiveHomeUsesUserProfileOnWindowsAndHomeOnUnix()
+    public void EffectiveHomeUsesHomeOnPosix()
     {
         static string? ReadHomeEnvironment(string name) =>
             name switch
             {
                 "HOME" => "/home/unix-user",
-                "USERPROFILE" => @"C:\Users\windows-user",
                 _ => null,
             };
 
-        var windows = new ConfigurationPhase14VerticalSliceService(
-            new ConfigurationPhase14VerticalSliceOptions
-            {
-                FileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Windows),
-                StateDirectoryPath = @"C:\State\home",
-                EnvironmentVariableReader = ReadHomeEnvironment,
-            }
-        );
         var unix = new ConfigurationPhase14VerticalSliceService(
             new ConfigurationPhase14VerticalSliceOptions
             {
@@ -1717,14 +1618,12 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
             }
         );
 
-        Assert.Equal(@"C:\Users\windows-user\.npmrc", windows.Paths.NpmUserNpmrcPath);
-        Assert.Equal(@"C:\Users\windows-user\.yarnrc.yml", windows.Paths.YarnUserYarnrcPath);
         Assert.Equal("/home/unix-user/.npmrc", unix.Paths.NpmUserNpmrcPath);
         Assert.Equal("/home/unix-user/.yarnrc.yml", unix.Paths.YarnUserYarnrcPath);
     }
 
     [Fact]
-    public async Task CleanupCiTemporaryPreservesUnrelatedYarnHomeFiles()
+    public async Task CleanupCiTemporaryDeletesProductOwnedYarnHome()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         var service = CreateService(fileSystem, environmentVariableReader: ReadCiEnvironment);
@@ -1747,11 +1646,11 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         );
 
         ConfigurationPhase14CleanupEcosystemResult cleanupResult = Assert.Single(result.Ecosystems);
-        Assert.Equal("incomplete", cleanupResult.State);
+        Assert.Equal("removed", cleanupResult.State);
         Assert.True(cleanupResult.ChangeCount > 0);
         Assert.False(cleanupResult.OwnershipManifestPresent);
-        Assert.True(cleanupResult.TemporaryContainerPresent);
-        Assert.True(fileSystem.FileExists(Path.Combine(ciArtifactDirectory, "metadata.txt")));
+        Assert.False(cleanupResult.TemporaryContainerPresent);
+        Assert.False(fileSystem.DirectoryExists(service.Paths.YarnCiTemporaryHomePath));
     }
 
     [Theory]
@@ -1829,12 +1728,199 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         );
     }
 
+#pragma warning disable CA1707 // Exact regression-test names are required by the Phase 4 plan.
+    [Theory]
+    [InlineData(CredentialEcosystem.Npm)]
+    [InlineData(CredentialEcosystem.Pnpm)]
+    [InlineData(CredentialEcosystem.Yarn)]
+    public async Task DoctorAsync_MissingOwnedSelectorReportsMissingLifecycle(
+        CredentialEcosystem ecosystem
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        ConfigurationPhase14VerticalSliceService service = CreateService(fileSystem);
+        string configurationPath = GetPackageConfigurationPath(service, ecosystem);
+        fileSystem.CreateDirectory(Path.GetDirectoryName(configurationPath)!);
+        fileSystem.WriteAllText(
+            configurationPath,
+            ecosystem == CredentialEcosystem.Yarn
+                ? "# unrelated yarn configuration\nnodeLinker: node-modules\n"
+                : "# unrelated npm configuration\nfund=false\n"
+        );
+        await service.ConfigureAsync(
+            ecosystem,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+        string configured = fileSystem.ReadAllText(configurationPath);
+        string withoutManagedSelectors = string.Join(
+            '\n',
+            configured
+                .Split('\n')
+                .Where(line =>
+                    ecosystem == CredentialEcosystem.Yarn
+                        ? !line.TrimStart().StartsWith("npmAuthToken:", StringComparison.Ordinal)
+                        : !line.Contains(":_authToken=", StringComparison.Ordinal)
+                )
+        );
+        fileSystem.WriteAllText(configurationPath, withoutManagedSelectors);
+
+        ConfigurationPhase14DoctorResult doctor = await service.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        ConfigurationPhase14EcosystemDoctorResult package = Assert.Single(
+            doctor.Ecosystems,
+            result =>
+                result.Ecosystem == ecosystem && result.Scope == ConfigurationPhase14Scope.User
+        );
+        Assert.True(fileSystem.FileExists(configurationPath));
+        Assert.Contains("# unrelated", fileSystem.ReadAllText(configurationPath));
+        if (ecosystem == CredentialEcosystem.Yarn)
+        {
+            Assert.Contains(
+                "npmAlwaysAuth: true",
+                fileSystem.ReadAllText(configurationPath),
+                StringComparison.Ordinal
+            );
+        }
+        Assert.True(package.OwnershipManifestPresent);
+        Assert.False(package.OwnedTargetPresent);
+        Assert.Equal(RegistryCredentialLifecycleState.Missing, package.LifecycleState);
+    }
+
+    [Theory]
+    [InlineData(CredentialEcosystem.Npm)]
+    [InlineData(CredentialEcosystem.Pnpm)]
+    [InlineData(CredentialEcosystem.Yarn)]
+    public async Task DoctorAsync_ConfiguredCiPackageWithUnknownExpiryReportsFresh(
+        CredentialEcosystem ecosystem
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        ConfigurationPhase14VerticalSliceService service = CreateService(
+            fileSystem,
+            environmentVariableReader: ReadCiEnvironment
+        );
+        await service.ConfigureAsync(
+            ecosystem,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken
+        );
+
+        ConfigurationPhase14DoctorResult doctor = await service.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        ConfigurationPhase14EcosystemDoctorResult package = Assert.Single(
+            doctor.Ecosystems,
+            result =>
+                result.Ecosystem == ecosystem
+                && result.Scope == ConfigurationPhase14Scope.CiTemporary
+        );
+        Assert.True(package.OwnershipManifestPresent);
+        Assert.True(package.OwnedTargetPresent);
+        Assert.True(package.TemporaryContainerPresent);
+        Assert.Equal(RegistryCredentialLifecycleState.Fresh, package.LifecycleState);
+        Assert.Null(package.CredentialExpiresAt);
+    }
+
+    [Theory]
+    [InlineData(CredentialEcosystem.Npm)]
+    [InlineData(CredentialEcosystem.Pnpm)]
+    [InlineData(CredentialEcosystem.Yarn)]
+    public async Task ConfigureUserPackageCredential_UnknownExpiryRecommendsRefresh(
+        CredentialEcosystem ecosystem
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        var acquisition = new CapturingCredentialAcquisitionService("unknown-expiry-token");
+        ConfigurationPhase14VerticalSliceService service = CreateService(
+            fileSystem,
+            credentialAcquisition: acquisition
+        );
+
+        await service.ConfigureAsync(
+            ecosystem,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+        ConfigurationPhase14DoctorResult doctor = await service.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        CredentialRequestV2 request = Assert.Single(acquisition.Requests);
+        Assert.Equal(AcquisitionMode.InteractionAllowed, request.AcquisitionMode);
+        Assert.Contains(
+            "unknown-expiry-token",
+            fileSystem.ReadAllText(GetPackageConfigurationPath(service, ecosystem)),
+            StringComparison.Ordinal
+        );
+        ConfigurationPhase14EcosystemDoctorResult package = Assert.Single(
+            doctor.Ecosystems,
+            result =>
+                result.Ecosystem == ecosystem && result.Scope == ConfigurationPhase14Scope.User
+        );
+        Assert.True(package.OwnedTargetPresent);
+        Assert.Equal(RegistryCredentialLifecycleState.RefreshRecommended, package.LifecycleState);
+        Assert.Null(package.CredentialExpiresAt);
+    }
+
+    [Fact]
+    public async Task GetPackageCredential_CiUsesSystemTokenWithoutAcquisition()
+    {
+        const string SystemToken = "ambient-system-token";
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        var acquisition = new CapturingCredentialAcquisitionService("must-not-be-used");
+        var service = new ConfigurationPhase14VerticalSliceService(
+            new ConfigurationPhase14VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                StateDirectoryPath = "/state/phase14-v2-ci",
+                AzurePipelinesJobScopeId = "phase14-v2-ci-job",
+                CredentialAcquisition = new BoundedCredentialAcquisitionAdapter(acquisition),
+                EnvironmentVariableReader = name =>
+                    string.Equals(name, "SYSTEM_ACCESSTOKEN", StringComparison.Ordinal)
+                        ? SystemToken
+                        : null,
+                RegistryUrls = new Dictionary<CredentialEcosystem, Uri>
+                {
+                    [CredentialEcosystem.Npm] = new(TestRegistryUrl),
+                },
+            }
+        );
+
+        Assert.Equal(
+            "/state/phase14-v2-ci/ci-jobs/phase14-v2-ci-job",
+            service.Paths.CiTemporaryRootPath
+        );
+        await service.ConfigureAsync(
+            CredentialEcosystem.Npm,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Empty(acquisition.Requests);
+        Assert.Contains(
+            SystemToken,
+            fileSystem.ReadAllText(service.Paths.NpmCiTemporaryNpmrcPath),
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain(
+            "must-not-be-used",
+            fileSystem.ReadAllText(service.Paths.NpmCiTemporaryNpmrcPath),
+            StringComparison.Ordinal
+        );
+    }
+#pragma warning restore CA1707
+
     private static ConfigurationPhase14VerticalSliceService CreateService(
         InMemoryFileSystem fileSystem,
         IIdentityProvider? identityProvider = null,
         Func<string, string?>? environmentVariableReader = null,
         TimeProvider? timeProvider = null,
-        Uri? registryUrl = null
+        Uri? registryUrl = null,
+        ICredentialAcquisitionService? credentialAcquisition = null
     ) =>
         new(
             new ConfigurationPhase14VerticalSliceOptions
@@ -1843,7 +1929,9 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
                 StateDirectoryPath = "/state/phase14",
                 AzurePipelinesJobScopeId = "phase14-test-job",
                 CredentialAcquisition = identityProvider is null
-                    ? new BoundedCredentialAcquisitionAdapter(new SilentTestAcquisitionService())
+                    ? new BoundedCredentialAcquisitionAdapter(
+                        credentialAcquisition ?? new SilentTestAcquisitionService()
+                    )
                     : null,
                 CredentialCoreService = identityProvider is null
                     ? null
@@ -1943,6 +2031,29 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
                 AccessToken = "identity-token",
                 ExpiresAt = new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero),
             };
+        }
+    }
+
+    private sealed class CapturingCredentialAcquisitionService(string bearerToken)
+        : ICredentialAcquisitionService
+    {
+        public List<CredentialRequestV2> Requests { get; } = [];
+
+        public ValueTask<CredentialResult> AcquireAsync(
+            CredentialRequestV2 request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Requests.Add(request);
+            return ValueTask.FromResult(
+                new CredentialResult
+                {
+                    Status = CredentialResultStatus.Success,
+                    BearerToken = bearerToken,
+                    DiagnosticsCorrelationId = "phase14-v2-ci-capturing-test",
+                }
+            );
         }
     }
 

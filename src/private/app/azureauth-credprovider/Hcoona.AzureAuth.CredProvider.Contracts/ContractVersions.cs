@@ -36,15 +36,7 @@ public static class ContractVersions
     /// <summary>Gets the identifier of the keyring-helper contract.</summary>
     public const string KeyringHelperContractId = "keyring-helper-v2";
 
-    /// <summary>Gets the schema version of the AzureAuth deployment configuration contract.</summary>
-    public const int AzureAuthDeploymentConfigSchemaMajor = 1;
-
-    /// <summary>Gets the identifier of the AzureAuth deployment configuration contract.</summary>
-    public const string AzureAuthDeploymentConfigContractId = "azureauth-deployment-config-v1";
-
     /// <summary>Gets the schema version of the AzureAuth account-binding contract.</summary>
-    public const int AzureAuthAccountBindingSchemaMajor = 1;
-
     /// <summary>Gets the identifier of the AzureAuth account-binding contract.</summary>
     public const string AzureAuthAccountBindingContractId = "azureauth-account-binding-v1";
 

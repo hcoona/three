@@ -84,7 +84,6 @@ public sealed class NpmPhase12VerticalSliceService
     private const string ProductVersion = "phase12";
     private const string ManifestId = "phase12-npmrc-credential";
     private const string ConfigurePlanId = "phase12-npmrc-credential-plan";
-    private const string ConfigureChangeSetId = "phase12-npmrc-credential-changeset";
     private const string NpmUserConfigEnvironmentVariable = "NPM_CONFIG_USERCONFIG";
     private const string LowercaseNpmUserConfigEnvironmentVariable = "npm_config_userconfig";
     private const string WorkspaceNpmrcFileName = ".npmrc";
@@ -137,8 +136,7 @@ public sealed class NpmPhase12VerticalSliceService
         string? workspaceNpmrcPath = GetWorkspaceNpmrcPath();
         string effectiveUserNpmrcPath = ResolveUserNpmrcPath();
         string resolvedCiTemporaryNpmrcPath = ResolveCiTemporaryNpmrcPath();
-        IReadOnlyList<NpmPhase12RegistryDeclaration> declarations =
-            DiscoverRegistryDeclarations();
+        IReadOnlyList<NpmPhase12RegistryDeclaration> declarations = DiscoverRegistryDeclarations();
         NpmPhase12RegistryDeclaration? firstDeclaration =
             declarations.Count == 0 ? null : declarations[0];
 
@@ -151,14 +149,14 @@ public sealed class NpmPhase12VerticalSliceService
                 EffectiveUserNpmrcPath = effectiveUserNpmrcPath,
                 EffectiveUserNpmrcExists = fileSystem.FileExists(effectiveUserNpmrcPath),
                 CiTemporaryNpmrcPath = resolvedCiTemporaryNpmrcPath,
-                UppercaseUserConfigEnvironmentOverridePresent = NullIfWhiteSpace(
-                    environmentVariableReader(NpmUserConfigEnvironmentVariable)
-                )
-                    is not null,
-                LowercaseUserConfigEnvironmentOverridePresent = NullIfWhiteSpace(
-                    environmentVariableReader(LowercaseNpmUserConfigEnvironmentVariable)
-                )
-                    is not null,
+                UppercaseUserConfigEnvironmentOverridePresent =
+                    NullIfWhiteSpace(environmentVariableReader(NpmUserConfigEnvironmentVariable))
+                        is not null,
+                LowercaseUserConfigEnvironmentOverridePresent =
+                    NullIfWhiteSpace(
+                        environmentVariableReader(LowercaseNpmUserConfigEnvironmentVariable)
+                    )
+                        is not null,
                 RegistryDeclarations = declarations,
                 AzureArtifactsNpmEndpointCanonicalizationSuccess =
                     CheckAzureArtifactsNpmEndpointCanonicalization(),
@@ -178,9 +176,7 @@ public sealed class NpmPhase12VerticalSliceService
         );
     }
 
-    public ConfigurationChangePlan CreateUserCredentialPlan(
-        NpmPhase12CredentialPlanRequest request
-    )
+    public ConfigurationChangePlan CreateUserCredentialPlan(NpmPhase12CredentialPlanRequest request)
     {
         ValidateCredentialPlanRequest(request);
         string targetNpmrcPath = fileSystem.GetFullPath(
@@ -259,7 +255,6 @@ public sealed class NpmPhase12VerticalSliceService
         ConfigurationChange change = CreateAuthTokenChange(request, targetNpmrcPath, authTokenKey);
         return ConfigurationChangePlanPolicy.Create(
             ConfigurePlanId,
-            ConfigureChangeSetId,
             ProductId,
             scope,
             new ConfigurationManifestMetadata
@@ -425,10 +420,7 @@ public sealed class NpmPhase12VerticalSliceService
 
         if (string.Equals(host, "pkgs.dev.azure.com", StringComparison.OrdinalIgnoreCase))
         {
-            if (
-                segments
-                    is [var org, "_packaging", var feedName, "npm", "registry"]
-            )
+            if (segments is [var org, "_packaging", var feedName, "npm", "registry"])
             {
                 organization = org;
                 feed = feedName;
@@ -436,14 +428,14 @@ public sealed class NpmPhase12VerticalSliceService
 
             if (
                 segments
-                    is [
-                        var projectOrg,
-                        var projectName,
-                        "_packaging",
-                        var projectFeedName,
-                        "npm",
-                        "registry",
-                    ]
+                is [
+                    var projectOrg,
+                    var projectName,
+                    "_packaging",
+                    var projectFeedName,
+                    "npm",
+                    "registry",
+                ]
             )
             {
                 organization = projectOrg;
@@ -455,7 +447,7 @@ public sealed class NpmPhase12VerticalSliceService
         {
             if (
                 segments
-                    is [var org, var projectName, "_packaging", var feedName, "npm", "registry"]
+                is [var org, var projectName, "_packaging", var feedName, "npm", "registry"]
             )
             {
                 organization = org;
@@ -510,13 +502,7 @@ public sealed class NpmPhase12VerticalSliceService
 
             if (
                 segments
-                    is [
-                        "DefaultCollection",
-                        "_packaging",
-                        var collectionFeedName,
-                        "npm",
-                        "registry",
-                    ]
+                is ["DefaultCollection", "_packaging", var collectionFeedName, "npm", "registry"]
             )
             {
                 feed = collectionFeedName;
@@ -527,14 +513,14 @@ public sealed class NpmPhase12VerticalSliceService
         {
             if (
                 segments
-                    is [
-                        "DefaultCollection",
-                        var projectName,
-                        "_packaging",
-                        var feedName,
-                        "npm",
-                        "registry",
-                    ]
+                is [
+                    "DefaultCollection",
+                    var projectName,
+                    "_packaging",
+                    var feedName,
+                    "npm",
+                    "registry",
+                ]
             )
             {
                 project = projectName;
@@ -613,8 +599,7 @@ public sealed class NpmPhase12VerticalSliceService
             );
             return ConfigurationChangePlanPolicy.IsValid(plan);
         }
-        catch (Exception exception)
-            when (IsExpectedDoctorProbeFailure(exception))
+        catch (Exception exception) when (IsExpectedDoctorProbeFailure(exception))
         {
             return false;
         }
@@ -642,8 +627,7 @@ public sealed class NpmPhase12VerticalSliceService
             );
             return ConfigurationChangePlanPolicy.IsValid(plan);
         }
-        catch (Exception exception)
-            when (IsExpectedDoctorProbeFailure(exception))
+        catch (Exception exception) when (IsExpectedDoctorProbeFailure(exception))
         {
             return false;
         }
@@ -697,8 +681,7 @@ public sealed class NpmPhase12VerticalSliceService
                     feed: "feed"
                 );
         }
-        catch (Exception exception)
-            when (IsExpectedDoctorProbeFailure(exception))
+        catch (Exception exception) when (IsExpectedDoctorProbeFailure(exception))
         {
             return false;
         }
@@ -752,26 +735,19 @@ public sealed class NpmPhase12VerticalSliceService
         || path.StartsWith("//", StringComparison.Ordinal);
 
     private static string[] SplitLines(string contents) =>
-        contents.Replace("\r\n", "\n", StringComparison.Ordinal)
-            .Replace('\r', '\n')
-            .Split('\n');
+        contents.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Split('\n');
 
     private static string[] GetDecodedPathSegments(Uri uri)
     {
         string path = uri.AbsolutePath.Trim('/');
-        return path.Length == 0
-            ? []
-            : path.Split('/').Select(Uri.UnescapeDataString).ToArray();
+        return path.Length == 0 ? [] : path.Split('/').Select(Uri.UnescapeDataString).ToArray();
     }
 
     private static bool IsRegistryDeclarationKey(string key) =>
         string.Equals(key, "registry", StringComparison.Ordinal)
         || key.EndsWith(":registry", StringComparison.Ordinal);
 
-    private static bool TryGetLegacyVisualStudioOrganization(
-        string host,
-        out string? organization
-    )
+    private static bool TryGetLegacyVisualStudioOrganization(string host, out string? organization)
     {
         organization = null;
         const string packagingSuffix = ".pkgs.visualstudio.com";
@@ -819,12 +795,13 @@ public sealed class NpmPhase12VerticalSliceService
         };
 
     private static bool IsExpectedDoctorProbeFailure(Exception exception) =>
-        exception is ArgumentException
-            or IOException
-            or InvalidOperationException
-            or NotSupportedException
-            or PlatformNotSupportedException
-            or UnauthorizedAccessException;
+        exception
+            is ArgumentException
+                or IOException
+                or InvalidOperationException
+                or NotSupportedException
+                or PlatformNotSupportedException
+                or UnauthorizedAccessException;
 
     private static string? NullIfWhiteSpace(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value;

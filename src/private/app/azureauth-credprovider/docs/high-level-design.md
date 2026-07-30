@@ -39,7 +39,10 @@ The human-facing CLI owns:
 
 Protocol adapters are installed and configured by the CLI, but they are not the primary interface users interact with.
 
-Phase 1.2 selected direct MSAL integration as the current identity path. AzureAuth (`microsoft-authentication-cli`) remains a deferred optional helper/backend candidate if revisited later, but it is not a required runtime substrate and it does not replace the Git, NuGet, Python keyring, or npm protocol adapters.
+The current Windows and WSL identity path uses AzureAuth
+(`microsoft-authentication-cli`) 0.9.5 behind the shared identity-provider
+abstraction. Direct MSAL remains represented but is not implemented. AzureAuth
+does not replace the Git, NuGet, Python keyring, or npm protocol adapters.
 
 ## High-Level Components
 
@@ -79,8 +82,8 @@ The shared core owns credential behavior that must not diverge between ecosystem
 
 - Azure DevOps host and feed canonicalization,
 - tenant and account selection,
-- interactive browser or device-code login,
-- Phase 4D MVP identity-flow policy for interactive browser, device code, narrow explicit PAT compatibility, and Azure Pipelines system access token; generic non-interactive service identity flows such as service principal, managed identity, and workload identity federation are deferred unless explicitly future-labeled,
+- interactive browser login,
+- current identity-flow policy for interactive browser and Azure Pipelines system access token; device code, PAT compatibility, service principal, managed identity, and workload identity federation remain unavailable or deferred,
 - token exchange and refresh,
 - secure credential cache access,
 - cache partitioning,
@@ -88,7 +91,10 @@ The shared core owns credential behavior that must not diverge between ecosystem
 - policy enforcement,
 - diagnostic event generation.
 
-The shared core uses direct MSAL integration for Microsoft Entra token acquisition in the current plan. AzureAuth (`microsoft-authentication-cli`) is deferred and may be reconsidered only as an optional helper/backend candidate behind the same identity-provider abstraction if future requirements justify it.
+The shared core uses AzureAuth 0.9.5 for Microsoft Entra token acquisition on
+Windows and WSL. It derives the executable from the official per-user
+installation layout and uses AzureAuth web mode, which may reuse the host MSAL
+cache. Direct MSAL is not implemented.
 
 The core must not assume a single protocol output format. Protocol adapters are responsible for host-tool input and output.
 
@@ -128,7 +134,7 @@ Recommended resulting configuration:
 settings. The product CLI applies them by asking ConfigurationManager or the Git
 configuration writer to write the selected user Git configuration file directly,
 including ownership metadata, dry-run equivalence, conflict handling, and
-rollback/removal behavior. The user Git configuration target follows Git's
+precise removal behavior. The user Git configuration target follows Git's
 official global target selection: `~/.gitconfig` when it exists, otherwise the
 existing XDG Git config file, and otherwise `~/.gitconfig`. AzureAuth, if
 reused, remains only an identity-acquisition substrate behind the shared core
@@ -185,7 +191,7 @@ Python requires two adapter shapes for full coverage:
 1. A Python keyring backend package for twine and pip import mode.
 2. A `keyring` executable-compatible shim for uv and pip subprocess mode.
 
-The Python keyring backend should be intentionally thin. It should delegate credential acquisition to a product-owned helper through an absolute path and validate helper ownership and integrity before invocation. It should not import a large credential implementation into arbitrary project virtual environments.
+The Python keyring backend should be intentionally thin. It should delegate credential acquisition to an installed product helper through a configured absolute path and rely on ordinary file/executable checks and platform process-launch behavior. It should not import a large credential implementation into arbitrary project virtual environments.
 
 The backend package must be available in the same Python environment as the tool that imports keyring. `configure python` and `doctor` should account for active virtual environments, pipx-installed twine, tox/nox environments, and isolated CI environments. A unified CLI alone cannot satisfy twine because twine imports Python keyring rather than invoking an arbitrary external subcommand.
 

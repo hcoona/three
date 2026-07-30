@@ -21,7 +21,7 @@ public sealed record CredentialProviderProductionOptions
     public AzureAuthProviderConfig? ProviderConfig { get; init; }
     public AzureAuthBinding? Binding { get; init; }
     public IAzureAuthSecureRecordStore? SecureRecordStore { get; init; }
-    public IAzureAuthArtifactTrustInspector? TrustInspector { get; init; }
+    public IAzureAuthInstallationDiscovery? InstallationDiscovery { get; init; }
     public IProcessRunner? ProcessRunner { get; init; }
     public HttpClient? HttpClient { get; init; }
     public TimeProvider? TimeProvider { get; init; }
@@ -30,7 +30,9 @@ public sealed record CredentialProviderProductionOptions
     public ConfigurationPhase14VerticalSliceOptions? ConfigurationOptions { get; init; }
     public Func<string, string?>? EnvironmentVariableReader { get; init; }
     public string? SecureStoreRootPath { get; init; }
-    public IWindowsArtifactProbe? WindowsArtifactProbe { get; init; }
+    public string? WindowsLocalApplicationDataPath { get; init; }
+    public string? WindowsMountRoot { get; init; }
+    public string? WindowsPowerShellPath { get; init; }
     public bool? IsWslEnvironment { get; init; }
 }
 
@@ -40,11 +42,9 @@ public sealed record CredentialProviderReadiness
     public required CredentialProviderCapabilityReadiness Interactive { get; init; }
     public required CredentialProviderCapabilityReadiness Silent { get; init; }
 
-    public bool IsReady => Interactive.IsReady && Silent.IsReady;
-    public string Code => !Interactive.IsReady ? Interactive.Code : Silent.Code;
-    public string SafeMessage => !Interactive.IsReady
-        ? Interactive.SafeMessage
-        : Silent.SafeMessage;
+    public bool IsReady => Interactive.IsReady;
+    public string Code => Interactive.Code;
+    public string SafeMessage => Interactive.SafeMessage;
 }
 
 public sealed record CredentialProviderCapabilityReadiness
@@ -60,27 +60,23 @@ public sealed class CredentialProviderCompositionRoot
     public const string BindingRecordName = "azureauth/account-binding.json";
 
     private readonly BoundedCredentialAcquisitionAdapter boundary;
-    private readonly Lazy<CredentialProviderReadiness> readiness;
-    private readonly Func<CancellationToken, CredentialProviderReadiness> readinessFactory;
 
     private CredentialProviderCompositionRoot(
         CredentialProviderCompositionMode mode,
         AzureAuthProviderConfig providerConfig,
         AzureAuthPersistedRecord<AzureAuthBinding> bindingRecord,
-        IAzureAuthArtifactTrustInspector trustInspector,
+        AzureAuthInstallation installation,
         ICredentialAcquisitionService acquisitionService,
-        Func<CancellationToken, CredentialProviderReadiness> readinessFactory,
-        CredentialProviderProductionOptions options)
+        CredentialProviderReadiness readiness,
+        CredentialProviderProductionOptions options
+    )
     {
         Mode = mode;
         ProviderConfig = providerConfig;
         BindingRecord = bindingRecord;
-        TrustInspector = trustInspector;
+        Installation = installation;
         AcquisitionService = acquisitionService;
-        this.readinessFactory = readinessFactory;
-        readiness = new Lazy<CredentialProviderReadiness>(
-            () => readinessFactory(CancellationToken.None),
-            LazyThreadSafetyMode.ExecutionAndPublication);
+        Readiness = readiness;
         ProductionOptions = options;
         boundary = new BoundedCredentialAcquisitionAdapter(acquisitionService);
     }
@@ -88,29 +84,23 @@ public sealed class CredentialProviderCompositionRoot
     public CredentialProviderCompositionMode Mode { get; }
     public AzureAuthProviderConfig ProviderConfig { get; }
     public AzureAuthPersistedRecord<AzureAuthBinding> BindingRecord { get; }
-    public IAzureAuthArtifactTrustInspector TrustInspector { get; }
+    public AzureAuthInstallation Installation { get; }
     public ICredentialAcquisitionService AcquisitionService { get; }
-    public CredentialProviderReadiness Readiness => readiness.Value;
+    public CredentialProviderReadiness Readiness { get; }
     public CredentialProviderProductionOptions ProductionOptions { get; }
     public BoundedCredentialAcquisitionAdapter Boundary => boundary;
 
     public CredentialProviderReadiness GetReadiness(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return cancellationToken.CanBeCanceled
-            ? readinessFactory(cancellationToken)
-            : readiness.Value;
+        return Readiness;
     }
 
     public static CredentialProviderCompositionRoot CreateProduction(
-        CredentialProviderProductionOptions? options = null)
+        CredentialProviderProductionOptions? options = null
+    )
     {
         options ??= new CredentialProviderProductionOptions();
-        Func<string, string?> readEnvironment =
-            options.EnvironmentVariableReader ?? Environment.GetEnvironmentVariable;
-        string? rawWslInterop = readEnvironment("WSL_INTEROP");
-        string? wslInterop = WslInteropPathPolicy.IsValid(rawWslInterop) ? rawWslInterop : null;
-        bool isWsl = IsWsl(options, rawWslInterop);
         IAzureAuthSecureRecordStore store =
             options.SecureRecordStore
             ?? new SystemAzureAuthSecureRecordStore(
@@ -118,283 +108,243 @@ public sealed class CredentialProviderCompositionRoot
                 {
                     ConfigRootPath = options.SecureStoreRootPath,
                     EnvironmentVariableReader = options.EnvironmentVariableReader,
-                });
+                }
+            );
         AzureAuthPersistedRecord<AzureAuthProviderConfig> configRecord =
             new AzureAuthProviderConfigPersistence(store).Read(ProviderConfigRecordName);
-        AzureAuthProviderConfig config = options.ProviderConfig
-            ?? configRecord.Status switch
-            {
-                AzureAuthPersistedRecordStatus.Present => configRecord.Value!,
-                AzureAuthPersistedRecordStatus.Missing
-                    or AzureAuthPersistedRecordStatus.Unsupported => AzureAuthProviderConfig.CreateDefault(),
-                AzureAuthPersistedRecordStatus.Malformed => throw new InvalidOperationException(
-                    "Provider configuration is malformed."),
-                AzureAuthPersistedRecordStatus.Unsafe => throw new InvalidOperationException(
-                    "Provider configuration storage is unsafe."),
-                _ => throw new InvalidOperationException("Provider configuration is unavailable."),
-            };
-        AzureAuthProviderConfigPolicy.EnsureValid(config);
-
-        AzureAuthPersistedRecord<AzureAuthBinding> bindingRecord =
-            new AzureAuthBindingPersistence(store).Read(BindingRecordName);
-        if (bindingRecord.Status is AzureAuthPersistedRecordStatus.Malformed
-            or AzureAuthPersistedRecordStatus.Unsafe
-            or AzureAuthPersistedRecordStatus.Unavailable
-            or AzureAuthPersistedRecordStatus.Unspecified)
+        if (configRecord.Status == AzureAuthPersistedRecordStatus.Malformed)
         {
-            throw new InvalidOperationException("Provider binding storage is unavailable.");
+            throw new InvalidOperationException("Provider configuration is malformed.");
         }
+
+        AzureAuthProviderConfig config =
+            options.ProviderConfig
+            ?? configRecord.Value
+            ?? AzureAuthProviderConfig.CreateUnconfigured();
+        if (config.Selection != AzureAuthProviderSelection.Unspecified)
+        {
+            AzureAuthProviderConfigPolicy.EnsureValid(config);
+        }
+
+        AzureAuthPersistedRecord<AzureAuthBinding> bindingRecord = new AzureAuthBindingPersistence(
+            store
+        ).Read(BindingRecordName);
         if (options.Binding is not null)
         {
+            AzureAuthBindingPolicy.EnsureValid(options.Binding);
             bindingRecord = AzureAuthPersistedRecord<AzureAuthBinding>.Present(
                 BindingRecordName,
                 "explicit-composition-binding",
-                options.Binding);
+                options.Binding
+            );
         }
-        AzureAuthBinding binding = options.Binding
-            ?? bindingRecord.Value
-            ?? AzureAuthBindingPolicy.CreateUnbound(
-                DateTimeOffset.FromUnixTimeSeconds(
-                    (options.TimeProvider ?? TimeProvider.System)
-                        .GetUtcNow()
-                        .ToUnixTimeSeconds()));
-        AzureAuthBindingPolicy.EnsureValid(binding);
 
         IProcessRunner processRunner = options.ProcessRunner ?? new SystemProcessRunner();
-        IAzureAuthArtifactTrustInspector inspector = options.TrustInspector
-            ?? CreateProductionTrustInspector(options, processRunner, wslInterop, isWsl);
+        IAzureAuthInstallationDiscovery discovery =
+            options.InstallationDiscovery
+            ?? new SystemAzureAuthInstallationDiscovery(
+                processRunner,
+                new SystemAzureAuthInstallationDiscoveryOptions
+                {
+                    IsWslEnvironment = options.IsWslEnvironment,
+                    WindowsMountRoot = options.WindowsMountRoot ?? "/mnt/c",
+                    LocalApplicationDataPath = options.WindowsLocalApplicationDataPath,
+                    WindowsPowerShellPath = options.WindowsPowerShellPath,
+                }
+            );
+        AzureAuthInstallation installation =
+            config.Selection == AzureAuthProviderSelection.AzureAuth
+                ? discovery.Discover(config)
+                : AzureAuthInstallation.Failure(
+                    AzureAuthInstallationStatus.Unsupported,
+                    config.Selection == AzureAuthProviderSelection.Unspecified
+                        ? "ProviderNotConfigured"
+                        : "DirectMsalNotImplemented",
+                    config.Selection == AzureAuthProviderSelection.Unspecified
+                        ? "Provider configuration is missing."
+                        : "Direct MSAL is selected but is not implemented."
+                );
+        AzureAuthProcessLaunchOptions? launchOptions =
+            AzureAuthProcessLaunchOptions.FromInstallation(installation);
+        AzureAuthProductionPrerequisiteFailure? prerequisite =
+            AzureAuthProductionPrerequisitePolicy.Evaluate(
+                config,
+                bindingRecord,
+                installation,
+                launchOptions
+            );
+
+        IAccessTokenIdentityProvider identityProvider = prerequisite is not null
+            ? new PrerequisiteUnavailableAccessTokenProvider(
+                prerequisite.Code,
+                prerequisite.SafeMessage
+            )
+            : new AzureAuthIdentityProvider(
+                config,
+                bindingRecord.Value!,
+                launchOptions!,
+                processRunner
+            );
+        var exchange = new AzureDevOpsSpsTokenExchange(options.HttpClient, options.TimeProvider);
+        ICredentialAcquisitionService service = new ComposedCredentialAcquisitionService(
+            _ => identityProvider,
+            new CredentialMaterializationService(exchange, options.TimeProvider),
+            applyAzureAuthRequestPreflight: config.Selection == AzureAuthProviderSelection.AzureAuth
+        );
+        CredentialProviderReadiness readiness = CreateReadiness(config, prerequisite);
         CredentialProviderProductionOptions effectiveOptions = options with
         {
             SecureRecordStore = store,
-            TrustInspector = inspector,
+            InstallationDiscovery = discovery,
             ProcessRunner = processRunner,
         };
-        var exchange = new AzureDevOpsSpsTokenExchange(
-            effectiveOptions.HttpClient,
-            effectiveOptions.TimeProvider);
-        ICredentialAcquisitionService service = new ComposedCredentialAcquisitionService(
-            cancellationToken => CreateIdentityProvider(
-                config,
-                bindingRecord,
-                inspector,
-                processRunner,
-                options.TimeProvider,
-                wslInterop,
-                isWsl,
-                cancellationToken),
-            new CredentialMaterializationService(exchange, options.TimeProvider),
-            applyAzureAuthRequestPreflight:
-                config.Selection == AzureAuthProviderSelection.AzureAuth);
         return new CredentialProviderCompositionRoot(
             CredentialProviderCompositionMode.Production,
             config,
             bindingRecord,
-            inspector,
+            installation,
             service,
-            cancellationToken => GetReadiness(
-                config,
-                bindingRecord,
-                inspector,
-                options.ProviderConfig is null
-                    ? configRecord.Status
-                    : AzureAuthPersistedRecordStatus.Present,
-                wslInterop,
-                isWsl,
-                cancellationToken),
-            effectiveOptions);
+            readiness,
+            effectiveOptions
+        );
     }
 
     public static CredentialProviderCompositionRoot CreateExplicitTestScaffold(
         CredentialCoreService credentialCore,
-        CredentialProviderProductionOptions? options = null)
+        CredentialProviderProductionOptions? options = null
+    )
     {
         ArgumentNullException.ThrowIfNull(credentialCore);
         return CreateExplicitTestScaffold(
             new LegacyV1CredentialAcquisitionService(credentialCore),
-            options);
+            options
+        );
     }
 
     public static CredentialProviderCompositionRoot CreateExplicitTestScaffold(
         ICredentialAcquisitionService acquisitionService,
-        CredentialProviderProductionOptions? options = null)
+        CredentialProviderProductionOptions? options = null
+    )
     {
         ArgumentNullException.ThrowIfNull(acquisitionService);
         options ??= new CredentialProviderProductionOptions();
         AzureAuthProviderConfig config =
             options.ProviderConfig ?? AzureAuthProviderConfig.CreateDefault();
-        var binding = AzureAuthPersistedRecord<AzureAuthBinding>.Missing(BindingRecordName);
+        CredentialProviderCapabilityReadiness unavailable = Unavailable(
+            "TestScaffold",
+            "Explicit deterministic test scaffold; not production-ready."
+        );
         return new CredentialProviderCompositionRoot(
             CredentialProviderCompositionMode.TestScaffold,
             config,
-            binding,
-            options.TrustInspector ?? new DeferredAzureAuthArtifactTrustInspector(),
+            AzureAuthPersistedRecord<AzureAuthBinding>.Missing(BindingRecordName),
+            AzureAuthInstallation.Failure(
+                AzureAuthInstallationStatus.Unsupported,
+                "TestScaffold",
+                "Installation discovery is not used by the test scaffold."
+            ),
             acquisitionService,
-            _ => new CredentialProviderReadiness
-            {
-                Provider = config.Selection,
-                Interactive = Unavailable(
-                    "TestScaffold",
-                    "Explicit deterministic test scaffold; not production-ready."),
-                Silent = Unavailable(
-                    "TestScaffold",
-                    "Explicit deterministic test scaffold; not production-ready."),
-            },
-            options);
-    }
-
-    public GitCredentialHelperAdapter CreateGitCredentialHelperAdapter() => new(boundary);
-    public NuGetPluginAdapter CreateNuGetPluginAdapter() => new(boundary);
-    public KeyringHelperAdapter CreateKeyringHelperAdapter() => new(boundary);
-
-    public GitPhase8VerticalSliceService CreateGitService(
-        GitPhase8VerticalSliceOptions? options = null) =>
-        new((options ?? new GitPhase8VerticalSliceOptions()) with
-        {
-            CredentialAcquisition = boundary,
-        });
-
-    public NuGetPhase10VerticalSliceService CreateNuGetService(
-        NuGetPhase10VerticalSliceOptions? options = null) =>
-        new((options ?? new NuGetPhase10VerticalSliceOptions()) with
-        {
-            CredentialAcquisition = boundary,
-        });
-
-    public AuthPhase14VerticalSliceService CreateAuthService(
-        AuthPhase14VerticalSliceOptions? options = null) =>
-        new((options ?? new AuthPhase14VerticalSliceOptions()) with
-        {
-            CredentialAcquisition = boundary,
-            EnvironmentVariableReader = options?.EnvironmentVariableReader
-                ?? ProductionOptions.EnvironmentVariableReader,
-        });
-
-    public ConfigurationPhase14VerticalSliceService CreateConfigurationService(
-        ConfigurationPhase14VerticalSliceOptions? options = null)
-    {
-        ConfigurationPhase14VerticalSliceOptions source =
-            options ?? ProductionOptions.ConfigurationOptions
-            ?? new ConfigurationPhase14VerticalSliceOptions();
-        return new ConfigurationPhase14VerticalSliceService(source with
-        {
-            CredentialAcquisition = boundary,
-            FileSystem = source.FileSystem ?? ProductionOptions.FileSystem,
-            EnvironmentVariableReader = source.EnvironmentVariableReader
-                ?? ProductionOptions.EnvironmentVariableReader,
-        });
-    }
-
-    public AzureAuthDoctorReport RunProviderDoctor(
-        CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        AzureAuthTrustResult trust = ProviderConfig.Selection == AzureAuthProviderSelection.AzureAuth
-            ? AzureAuthTrustPolicy.Evaluate(
-                ProviderConfig.DeploymentConfig!,
-                TrustInspector,
-                cancellationToken)
-            : AzureAuthTrustResult.Unspecified();
-        return AzureAuthDoctor.Run(ProviderConfig, BindingRecord, trust);
-    }
-
-    private static CredentialProviderReadiness GetReadiness(
-        AzureAuthProviderConfig config,
-        AzureAuthPersistedRecord<AzureAuthBinding> bindingRecord,
-        IAzureAuthArtifactTrustInspector inspector,
-        AzureAuthPersistedRecordStatus configStatus,
-        string? wslInterop,
-        bool isWsl,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        if (config.Selection == AzureAuthProviderSelection.DirectMsal)
-        {
-            CredentialProviderCapabilityReadiness unavailable = Unavailable(
-                configStatus
-                    is AzureAuthPersistedRecordStatus.Missing
-                        or AzureAuthPersistedRecordStatus.Unsupported
-                    ? "ProviderNotConfigured"
-                    : "DirectMsalNotImplemented",
-                configStatus
-                    is AzureAuthPersistedRecordStatus.Missing
-                        or AzureAuthPersistedRecordStatus.Unsupported
-                    ? "Provider configuration is missing; direct MSAL is the fail-closed default "
-                        + "and is not implemented."
-                    : "Direct MSAL is selected but its production provider is not implemented.");
-            return new CredentialProviderReadiness
+            new CredentialProviderReadiness
             {
                 Provider = config.Selection,
                 Interactive = unavailable,
                 Silent = unavailable,
-            };
-        }
-
-        AzureAuthProductionPrerequisiteFailure? failure =
-            AzureAuthProductionPrerequisitePolicy.EvaluateWithTrust(
-                config,
-                bindingRecord,
-                inspector,
-                out AzureAuthTrustResult trust,
-                cancellationToken: cancellationToken);
-        if (failure is not null)
-        {
-            return CreateAzureAuthReadiness(
-                Unavailable(failure.Code, failure.SafeMessage));
-        }
-
-        AzureAuthProcessLaunchOptions? launchOptions = CreateProductionLaunchOptions(
-            config,
-            trust,
-            wslInterop,
-            isWsl);
-        if (launchOptions is null)
-        {
-            return CreateAzureAuthReadiness(
-                Unavailable(
-                    isWsl
-                        ? "AzureAuthLaunchContextInvalid"
-                        : "AzureAuthLaunchHostUnsupported",
-                    isWsl
-                        ? "The trusted AzureAuth WSL launch context could not be derived."
-                        : "The current host does not support AzureAuth process launch."));
-        }
-
-        if (!launchOptions.TryValidateInteractiveContext(out string code, out string safeMessage))
-        {
-            return CreateAzureAuthReadiness(Unavailable(code, safeMessage));
-        }
-
-        return CreateAzureAuthReadiness(
-            Ready(
-                "AzureAuthInteractiveReady",
-                "AzureAuth interactive acquisition prerequisites are validated."));
+            },
+            options
+        );
     }
 
-    private static CredentialProviderReadiness CreateAzureAuthReadiness(
-        CredentialProviderCapabilityReadiness interactive) =>
-        new()
+    public GitCredentialHelperAdapter CreateGitCredentialHelperAdapter() => new(boundary);
+
+    public NuGetPluginAdapter CreateNuGetPluginAdapter() => new(boundary);
+
+    public KeyringHelperAdapter CreateKeyringHelperAdapter() => new(boundary);
+
+    public GitPhase8VerticalSliceService CreateGitService(
+        GitPhase8VerticalSliceOptions? options = null
+    ) =>
+        new(
+            (options ?? new GitPhase8VerticalSliceOptions()) with
+            {
+                CredentialAcquisition = boundary,
+            }
+        );
+
+    public NuGetPhase10VerticalSliceService CreateNuGetService(
+        NuGetPhase10VerticalSliceOptions? options = null
+    ) =>
+        new(
+            (options ?? new NuGetPhase10VerticalSliceOptions()) with
+            {
+                CredentialAcquisition = boundary,
+            }
+        );
+
+    public AuthPhase14VerticalSliceService CreateAuthService(
+        AuthPhase14VerticalSliceOptions? options = null
+    ) =>
+        new(
+            (options ?? new AuthPhase14VerticalSliceOptions()) with
+            {
+                CredentialAcquisition = boundary,
+                EnvironmentVariableReader =
+                    options?.EnvironmentVariableReader
+                    ?? ProductionOptions.EnvironmentVariableReader,
+            }
+        );
+
+    public ConfigurationPhase14VerticalSliceService CreateConfigurationService(
+        ConfigurationPhase14VerticalSliceOptions? options = null
+    )
+    {
+        ConfigurationPhase14VerticalSliceOptions source =
+            options
+            ?? ProductionOptions.ConfigurationOptions
+            ?? new ConfigurationPhase14VerticalSliceOptions();
+        return new ConfigurationPhase14VerticalSliceService(
+            source with
+            {
+                CredentialAcquisition = boundary,
+                FileSystem = source.FileSystem ?? ProductionOptions.FileSystem,
+                EnvironmentVariableReader =
+                    source.EnvironmentVariableReader ?? ProductionOptions.EnvironmentVariableReader,
+            }
+        );
+    }
+
+    public AzureAuthDoctorReport RunProviderDoctor(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return AzureAuthDoctor.Run(ProviderConfig, BindingRecord, Installation);
+    }
+
+    private static CredentialProviderReadiness CreateReadiness(
+        AzureAuthProviderConfig config,
+        AzureAuthProductionPrerequisiteFailure? prerequisite
+    )
+    {
+        CredentialProviderCapabilityReadiness interactive = prerequisite is null
+            ? Ready(
+                "AzureAuthInteractiveReady",
+                "AzureAuth interactive acquisition is ready and may reuse the host MSAL cache."
+            )
+            : Unavailable(prerequisite.Code, prerequisite.SafeMessage);
+        return new CredentialProviderReadiness
         {
-            Provider = AzureAuthProviderSelection.AzureAuth,
+            Provider = config.Selection,
             Interactive = interactive,
-            Silent = Unavailable(
-                "SilentAcquisitionUnavailable",
-                "Silent AzureAuth acquisition is not implemented; use explicit interactive login "
-                    + "for interactive operations only. No automatic remediation is available."),
+            Silent =
+                config.Selection == AzureAuthProviderSelection.AzureAuth
+                    ? Unavailable(
+                        "SilentAcquisitionUnavailable",
+                        "AzureAuth 0.9.5 has no cache-only command mode; "
+                            + "silent acquisition is unavailable."
+                    )
+                    : interactive,
         };
+    }
 
-    private static CredentialProviderCapabilityReadiness Unavailable(
-        string code,
-        string safeMessage) =>
-        new()
-        {
-            Code = code,
-            SafeMessage = safeMessage,
-            IsReady = false,
-        };
-
-    private static CredentialProviderCapabilityReadiness Ready(
-        string code,
-        string safeMessage) =>
+    private static CredentialProviderCapabilityReadiness Ready(string code, string safeMessage) =>
         new()
         {
             Code = code,
@@ -402,139 +352,14 @@ public sealed class CredentialProviderCompositionRoot
             IsReady = true,
         };
 
-    private static IAccessTokenIdentityProvider CreateIdentityProvider(
-        AzureAuthProviderConfig config,
-        AzureAuthPersistedRecord<AzureAuthBinding> bindingRecord,
-        IAzureAuthArtifactTrustInspector inspector,
-        IProcessRunner processRunner,
-        TimeProvider? timeProvider,
-        string? wslInterop,
-        bool isWsl,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        if (config.Selection == AzureAuthProviderSelection.DirectMsal)
+    private static CredentialProviderCapabilityReadiness Unavailable(
+        string code,
+        string safeMessage
+    ) =>
+        new()
         {
-            return new DirectMsalUnavailableAccessTokenProvider();
-        }
-
-        if (config.Selection != AzureAuthProviderSelection.AzureAuth)
-        {
-            throw new InvalidOperationException("Unsupported provider selection.");
-        }
-
-        AzureAuthProductionPrerequisiteFailure? failure =
-            AzureAuthProductionPrerequisitePolicy.EvaluateWithTrust(
-                config,
-                bindingRecord,
-                inspector,
-                out AzureAuthTrustResult trust,
-                cancellationToken: cancellationToken);
-        if (failure is not null)
-        {
-            return new PrerequisiteUnavailableAccessTokenProvider(
-                failure.Code,
-                failure.SafeMessage);
-        }
-
-        AzureAuthProcessLaunchOptions? launchOptions = CreateProductionLaunchOptions(
-            config,
-            trust,
-            wslInterop,
-            isWsl);
-        if (launchOptions is null)
-        {
-            return new PrerequisiteUnavailableAccessTokenProvider(
-                isWsl
-                    ? "AzureAuthLaunchContextInvalid"
-                    : "AzureAuthLaunchHostUnsupported",
-                isWsl
-                    ? "The trusted AzureAuth WSL launch context could not be derived."
-                    : "The current host does not support AzureAuth process launch.");
-        }
-
-        if (!launchOptions.TryValidateInteractiveContext(out string code, out string safeMessage))
-        {
-            return new PrerequisiteUnavailableAccessTokenProvider(code, safeMessage);
-        }
-
-        return new AzureAuthIdentityProvider(
-            config,
-            bindingRecord.Value!,
-            launchOptions,
-            inspector,
-            processRunner,
-            timeProvider,
-            trust);
-    }
-
-    private static AzureAuthProcessLaunchOptions? CreateProductionLaunchOptions(
-        AzureAuthProviderConfig config,
-        AzureAuthTrustResult trust,
-        string? wslInterop,
-        bool isWsl)
-    {
-        return isWsl
-            ? AzureAuthProcessLaunchDiscovery.DiscoverWsl(config, trust, wslInterop)
-            : null;
-    }
-
-    private static IAzureAuthArtifactTrustInspector CreateProductionTrustInspector(
-        CredentialProviderProductionOptions options,
-        IProcessRunner processRunner,
-        string? wslInterop,
-        bool isWsl)
-    {
-        if (options.WindowsArtifactProbe is not null)
-        {
-            return new WslWindowsArtifactTrustInspector(options.WindowsArtifactProbe);
-        }
-
-        if (!isWsl)
-        {
-            return new DeferredAzureAuthArtifactTrustInspector();
-        }
-
-        return new WslWindowsArtifactTrustInspector(
-            new SystemWindowsArtifactProbe(
-                processRunner,
-                new SystemWindowsArtifactProbeOptions
-                {
-                    WslInterop = wslInterop,
-                    EnvironmentVariableReader = _ => null,
-                }));
-    }
-
-    private static bool IsWsl(
-        CredentialProviderProductionOptions options,
-        string? rawWslInterop)
-    {
-        if (options.IsWslEnvironment.HasValue)
-        {
-            return options.IsWslEnvironment.Value;
-        }
-
-        if (!OperatingSystem.IsLinux())
-        {
-            return false;
-        }
-
-        Func<string, string?> readEnvironment =
-            options.EnvironmentVariableReader ?? Environment.GetEnvironmentVariable;
-        if (!string.IsNullOrWhiteSpace(readEnvironment("WSL_DISTRO_NAME"))
-            || !string.IsNullOrWhiteSpace(rawWslInterop))
-        {
-            return true;
-        }
-
-        try
-        {
-            string version = File.ReadAllText("/proc/sys/kernel/osrelease");
-            return version.Contains("microsoft", StringComparison.OrdinalIgnoreCase);
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-        {
-            return false;
-        }
-    }
+            Code = code,
+            SafeMessage = safeMessage,
+            IsReady = false,
+        };
 }

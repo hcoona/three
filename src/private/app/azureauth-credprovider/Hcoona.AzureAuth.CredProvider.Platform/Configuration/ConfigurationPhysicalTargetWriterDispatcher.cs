@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
 using Hcoona.AzureAuth.CredProvider.Contracts;
@@ -8,132 +7,83 @@ namespace Hcoona.AzureAuth.CredProvider.Platform.Configuration;
 
 internal interface IConfigurationPhysicalTargetWriterDispatcher
 {
-    ValueTask Dispatch(
-        ConfigurationPhysicalTargetWriterRequest request,
-        CancellationToken cancellationToken
-    );
-}
-
-internal interface IConfigurationPhysicalTargetWriterDispatcherPreclaimPolicy
-{
-    bool RejectSecretGitConfigValueWritesBeforeManifestPreclaim { get; }
-}
-
-internal interface IConfigurationPhysicalTargetWriterDispatcherValidator
-{
     void Validate(
         ConfigurationPhysicalTargetWriterRequest request,
         CancellationToken cancellationToken
     );
-}
 
-internal interface IConfigurationPhysicalTargetRetainedOwnershipProofValidator
-{
-    void ValidateRetainedOwnershipProofs(
-        IReadOnlyList<ConfigurationPhysicalTargetOwnershipProof> ownershipProofs,
+    ValueTask Dispatch(
+        ConfigurationPhysicalTargetWriterRequest request,
+        CancellationToken cancellationToken
+    );
+
+    bool IsSatisfied(
+        ConfigurationPhysicalTargetWriterRequest request,
         CancellationToken cancellationToken
     );
 }
 
-internal sealed class ConfigurationPhysicalTargetWriterDispatcher(
-    IFileSystem fileSystem
-) : IConfigurationPhysicalTargetWriterDispatcher,
-    IConfigurationPhysicalTargetWriterDispatcherPreclaimPolicy,
-    IConfigurationPhysicalTargetWriterDispatcherValidator,
-    IConfigurationPhysicalTargetRetainedOwnershipProofValidator
+internal sealed class ConfigurationPhysicalTargetWriterDispatcher(IFileSystem fileSystem)
+    : IConfigurationPhysicalTargetWriterDispatcher
 {
     private readonly GitConfigPhysicalTargetWriter gitConfigWriter = new(fileSystem);
     private readonly NpmrcPhysicalTargetWriter npmrcWriter = new(fileSystem);
-    private readonly NuGetPluginLayoutPhysicalTargetWriter nuGetPluginLayoutWriter =
-        new(fileSystem);
+    private readonly NuGetPluginLayoutPhysicalTargetWriter nuGetPluginLayoutWriter = new(
+        fileSystem
+    );
     private readonly PythonKeyringPhysicalTargetWriter pythonKeyringWriter = new(fileSystem);
     private readonly YarnrcPhysicalTargetWriter yarnrcWriter = new(fileSystem);
 
-    public bool RejectSecretGitConfigValueWritesBeforeManifestPreclaim => true;
+    public void Validate(
+        ConfigurationPhysicalTargetWriterRequest request,
+        CancellationToken cancellationToken
+    ) => GetWriter(request.TargetKind).Validate(request, cancellationToken);
 
     public ValueTask Dispatch(
         ConfigurationPhysicalTargetWriterRequest request,
         CancellationToken cancellationToken
     )
     {
-        ArgumentNullException.ThrowIfNull(request);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        switch (request.TargetKind)
-        {
-            case ConfigurationTargetKind.GitConfig:
-                gitConfigWriter.Write(request, cancellationToken);
-                break;
-            case ConfigurationTargetKind.Npmrc:
-                npmrcWriter.Write(request, cancellationToken);
-                break;
-            case ConfigurationTargetKind.Yarnrc:
-                yarnrcWriter.Write(request, cancellationToken);
-                break;
-            case ConfigurationTargetKind.NuGetPluginLayout:
-                nuGetPluginLayoutWriter.Write(request, cancellationToken);
-                break;
-            case ConfigurationTargetKind.PythonKeyringBackend:
-            case ConfigurationTargetKind.KeyringShim:
-                pythonKeyringWriter.Write(request, cancellationToken);
-                break;
-            default:
-                throw new NotSupportedException(
-                    "Configuration apply/remove has no registered writer for this 4D physical "
-                        + "configuration target kind."
-                );
-        }
-
+        GetWriter(request.TargetKind).Write(request, cancellationToken);
         return ValueTask.CompletedTask;
     }
 
-    public void Validate(
+    public bool IsSatisfied(
         ConfigurationPhysicalTargetWriterRequest request,
         CancellationToken cancellationToken
-    )
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        cancellationToken.ThrowIfCancellationRequested();
+    ) => GetWriter(request.TargetKind).IsSatisfied(request, cancellationToken);
 
-        switch (request.TargetKind)
+    private IConfigurationPhysicalTargetWriter GetWriter(ConfigurationTargetKind targetKind) =>
+        targetKind switch
         {
-            case ConfigurationTargetKind.GitConfig:
-                gitConfigWriter.Validate(request, cancellationToken);
-                break;
-            case ConfigurationTargetKind.Npmrc:
-                npmrcWriter.Validate(request, cancellationToken);
-                break;
-            case ConfigurationTargetKind.Yarnrc:
-                yarnrcWriter.Validate(request, cancellationToken);
-                break;
-            case ConfigurationTargetKind.NuGetPluginLayout:
-                nuGetPluginLayoutWriter.Validate(request, cancellationToken);
-                break;
-            case ConfigurationTargetKind.PythonKeyringBackend:
-            case ConfigurationTargetKind.KeyringShim:
-                pythonKeyringWriter.Validate(request, cancellationToken);
-                break;
-            default:
-                throw new NotSupportedException(
-                    "Configuration dry-run has no registered validator for this 4D physical "
-                        + "configuration target kind."
-                );
-        }
-    }
+            ConfigurationTargetKind.GitConfig => gitConfigWriter,
+            ConfigurationTargetKind.Npmrc => npmrcWriter,
+            ConfigurationTargetKind.Yarnrc => yarnrcWriter,
+            ConfigurationTargetKind.NuGetPluginLayout => nuGetPluginLayoutWriter,
+            ConfigurationTargetKind.PythonKeyringBackend or ConfigurationTargetKind.KeyringShim =>
+                pythonKeyringWriter,
+            _ => throw new NotSupportedException(
+                "No physical configuration writer is registered for this target kind."
+            ),
+        };
+}
 
-    public void ValidateRetainedOwnershipProofs(
-        IReadOnlyList<ConfigurationPhysicalTargetOwnershipProof> ownershipProofs,
+internal interface IConfigurationPhysicalTargetWriter
+{
+    void Validate(
+        ConfigurationPhysicalTargetWriterRequest request,
         CancellationToken cancellationToken
-    )
-    {
-        ArgumentNullException.ThrowIfNull(ownershipProofs);
-        cancellationToken.ThrowIfCancellationRequested();
-        gitConfigWriter.ValidateRetainedOwnershipProofs(ownershipProofs, cancellationToken);
-        npmrcWriter.ValidateRetainedOwnershipProofs(ownershipProofs, cancellationToken);
-        nuGetPluginLayoutWriter.ValidateRetainedOwnershipProofs(ownershipProofs, cancellationToken);
-        pythonKeyringWriter.ValidateRetainedOwnershipProofs(ownershipProofs, cancellationToken);
-        yarnrcWriter.ValidateRetainedOwnershipProofs(ownershipProofs, cancellationToken);
-    }
+    );
+
+    void Write(
+        ConfigurationPhysicalTargetWriterRequest request,
+        CancellationToken cancellationToken
+    );
+
+    bool IsSatisfied(
+        ConfigurationPhysicalTargetWriterRequest request,
+        CancellationToken cancellationToken
+    );
 }
 
 internal sealed record ConfigurationPhysicalTargetWriterRequest
@@ -143,14 +93,14 @@ internal sealed record ConfigurationPhysicalTargetWriterRequest
         ConfigurationTargetKind targetKind,
         ConfigurationChangeOperation changeOperation,
         ConfigurationChange change,
-        IReadOnlyList<ConfigurationPhysicalTargetOwnershipProof>? ownershipProofs = null
+        IReadOnlyList<ConfigurationOwnershipManifestEntry>? existingOwnershipEntries = null
     )
-        : this(planOperation, targetKind, [change], ownershipProofs)
+        : this(planOperation, targetKind, [change], existingOwnershipEntries)
     {
         if (changeOperation != change.Operation)
         {
             throw new ArgumentException(
-                "Configuration physical writer request operation must match the change.",
+                "The request operation must match the change operation.",
                 nameof(changeOperation)
             );
         }
@@ -160,22 +110,14 @@ internal sealed record ConfigurationPhysicalTargetWriterRequest
         ConfigurationPlanOperation planOperation,
         ConfigurationTargetKind targetKind,
         IReadOnlyList<ConfigurationChange> changes,
-        IReadOnlyList<ConfigurationPhysicalTargetOwnershipProof>? ownershipProofs = null
+        IReadOnlyList<ConfigurationOwnershipManifestEntry>? existingOwnershipEntries = null
     )
     {
         ArgumentNullException.ThrowIfNull(changes);
-        if (changes.Count == 0)
+        if (changes.Count == 0 || changes.Any(change => change.TargetKind != targetKind))
         {
             throw new ArgumentException(
-                "Configuration physical writer request requires at least one change.",
-                nameof(changes)
-            );
-        }
-
-        if (changes.Any(change => change.TargetKind != targetKind))
-        {
-            throw new ArgumentException(
-                "Configuration physical writer request changes must match the target kind.",
+                "A physical writer request requires changes for one target kind.",
                 nameof(changes)
             );
         }
@@ -183,7 +125,7 @@ internal sealed record ConfigurationPhysicalTargetWriterRequest
         PlanOperation = planOperation;
         TargetKind = targetKind;
         Changes = changes.ToArray();
-        OwnershipProofs = ownershipProofs?.ToArray() ?? [];
+        ExistingOwnershipEntries = existingOwnershipEntries?.ToArray() ?? [];
     }
 
     public ConfigurationPlanOperation PlanOperation { get; }
@@ -192,12 +134,9 @@ internal sealed record ConfigurationPhysicalTargetWriterRequest
 
     public IReadOnlyList<ConfigurationChange> Changes { get; }
 
-    public IReadOnlyList<ConfigurationPhysicalTargetOwnershipProof> OwnershipProofs { get; }
+    public IReadOnlyList<ConfigurationOwnershipManifestEntry> ExistingOwnershipEntries { get; }
 
     public CanonicalResourceIdentity? ResourceIdentity { get; init; }
-
-    public IReadOnlyList<ConfigurationPhysicalTargetFileMutation> CompletedFileMutations =>
-        completedFileMutations;
 
     public ConfigurationChangeOperation ChangeOperation => Change.Operation;
 
@@ -205,1042 +144,137 @@ internal sealed record ConfigurationPhysicalTargetWriterRequest
         Changes.Count == 1
             ? Changes[0]
             : throw new InvalidOperationException(
-                "Configuration physical writer request contains multiple changes."
+                "The physical writer request contains multiple changes."
             );
 
-    public void RegisterCompletedFileMutation(
-        ConfigurationPhysicalTargetFileMutation mutation
-    )
+    public bool IsOwned(ConfigurationChange change)
     {
-        ArgumentNullException.ThrowIfNull(mutation);
-        completedFileMutations.Add(mutation);
+        string key =
+            change.TargetKind == ConfigurationTargetKind.GitConfig
+                ? GitConfigPhysicalTargetWriter.CanonicalizeSupportedConfigurationKey(change.Key)
+                : change.Key;
+        return ExistingOwnershipEntries.Any(entry =>
+            entry.TargetKind == change.TargetKind
+            && string.Equals(
+                Path.GetFullPath(entry.TargetPathOrName),
+                Path.GetFullPath(change.TargetPathOrName),
+                OperatingSystem.IsWindows()
+                    ? StringComparison.OrdinalIgnoreCase
+                    : StringComparison.Ordinal
+            )
+            && string.Equals(
+                entry.TargetKind == ConfigurationTargetKind.GitConfig
+                    ? GitConfigPhysicalTargetWriter.CanonicalizeSupportedConfigurationKey(entry.Key)
+                    : entry.Key,
+                key,
+                StringComparison.Ordinal
+            )
+        );
     }
-
-    private readonly List<ConfigurationPhysicalTargetFileMutation> completedFileMutations = [];
 }
 
-internal sealed record ConfigurationPhysicalTargetOwnershipProof(
-    ConfigurationTargetKind TargetKind,
-    string TargetPathOrName,
-    string Key,
-    string? PlannedValueSha256
-);
-
-internal sealed record ConfigurationPhysicalTargetFileMutation(
-    string Path,
-    bool PreviouslyExisted,
-    byte[]? PreviousContentsBytes,
-    string? ExpectedCurrentSha256Hash,
-    bool RequiresRollback = true,
-    UnixFileMode? PreviousUnixFileMode = null
-);
-
 internal sealed class GitConfigPhysicalTargetWriter(IFileSystem fileSystem)
+    : IConfigurationPhysicalTargetWriter
 {
-    private static readonly Encoding Utf8NoBom = new UTF8Encoding(
-        encoderShouldEmitUTF8Identifier: false,
-        throwOnInvalidBytes: true
-    );
-    private const string CredentialSectionName = "credential";
-    private const string IncludeSectionName = "include";
-    private const string IncludeIfSectionName = "includeIf";
-    private const string DevAzureComCredentialSubsection = "https://dev.azure.com";
-    private const string DevAzureComHost = "dev.azure.com";
-    private const string HelperVariableName = "helper";
-    private const string UseHttpPathVariableName = "useHttpPath";
-    private const string ProductOwnedCredentialScaffoldMarkerPrefix =
-        "# azureauth-credprovider: product-owned credential scaffold";
-    private const string ProductOwnedCredentialScaffoldMetadataPrefix =
-        "hcoona.azureAuthCredProvider.gitCredentialScaffold=created:";
-    private const string PreviousTrailingNewLineMissingMarker =
-        "previousTrailingNewLine=false";
-    private const string UnsafeCredentialHelperValueMessage =
-        "The Git config physical writer supports credential.helper only as a simple helper "
-            + "name or fully qualified path without shell syntax.";
-    private const string DevAzureComUseHttpPathCanonicalConfigurationKey =
-        "credential.https://dev.azure.com.useHttpPath";
-    private static readonly string DevAzureComUseHttpPathCanonicalTrueSha256 =
-        ComputeSha256("true");
-
-    public void Write(
-        ConfigurationPhysicalTargetWriterRequest request,
-        CancellationToken cancellationToken
-    )
-    {
-        string targetPath = GetSingleNormalizedGitConfigTargetPath(request, cancellationToken);
-        GitConfigChange[] changes = request
-            .Changes.Select(change => CreateGitConfigChange(request, targetPath, change))
-            .ToArray();
-        EnsureNoDuplicateGitConfigChanges(changes);
-        GitConfigDocument document = ReadDocument(targetPath);
-        ValidateExistingOwnershipProofs(document, request.OwnershipProofs, targetPath);
-        ValidateRetainedOwnershipProofs(request.OwnershipProofs, cancellationToken);
-        ValidateEffectiveCredentialHelperConflicts(
-            request.PlanOperation,
-            document,
-            changes,
-            request.OwnershipProofs,
-            targetPath
-        );
-        string updatedContents = CreateUpdatedContents(request.PlanOperation, document, changes);
-
-        if (string.Equals(document.OriginalText, updatedContents, StringComparison.Ordinal))
-        {
-            if (document.OriginalContentsBytes is not null)
-            {
-                request.RegisterCompletedFileMutation(
-                    new ConfigurationPhysicalTargetFileMutation(
-                        targetPath,
-                        true,
-                        document.OriginalContentsBytes,
-                        ComputeSha256(document.OriginalContentsBytes),
-                        RequiresRollback: false
-                    )
-                );
-            }
-
-            return;
-        }
-
-        byte[] updatedContentsBytes = Utf8NoBom.GetBytes(updatedContents);
-        var mutation = new ConfigurationPhysicalTargetFileMutation(
-            targetPath,
-            document.OriginalContentsBytes is not null,
-            document.OriginalContentsBytes,
-            ComputeSha256(updatedContentsBytes)
-        );
-        try
-        {
-            fileSystem.AtomicWriteAllText(
-                targetPath,
-                updatedContents,
-                Utf8NoBom,
-                AtomicWriteOptions.None,
-                document.MutationExpectation
-            );
-            request.RegisterCompletedFileMutation(mutation);
-        }
-        catch (FileMutationException exception)
-            when (exception.MutationMayHaveReachedDurableState)
-        {
-            request.RegisterCompletedFileMutation(mutation);
-            throw;
-        }
-    }
+    private const string HelperKey = "credential.helper";
+    private const string UseHttpPathKey = "credential.https://dev.azure.com.useHttpPath";
+    private static readonly Encoding Utf8NoBom = new UTF8Encoding(false, true);
 
     public void Validate(
         ConfigurationPhysicalTargetWriterRequest request,
         CancellationToken cancellationToken
     )
     {
-        string targetPath = GetSingleNormalizedGitConfigTargetPath(request, cancellationToken);
-        GitConfigChange[] changes = request
-            .Changes.Select(change => CreateGitConfigChange(request, targetPath, change))
-            .ToArray();
-        EnsureNoDuplicateGitConfigChanges(changes);
-        GitConfigDocument document = ReadDocument(targetPath);
-        ValidateExistingOwnershipProofs(document, request.OwnershipProofs, targetPath);
-        ValidateRetainedOwnershipProofs(request.OwnershipProofs, cancellationToken);
-        ValidateEffectiveCredentialHelperConflicts(
-            request.PlanOperation,
-            document,
-            changes,
-            request.OwnershipProofs,
-            targetPath
-        );
-        _ = CreateUpdatedContents(request.PlanOperation, document, changes);
+        cancellationToken.ThrowIfCancellationRequested();
+        ValidateRequest(request);
+        GitDocument document = ReadDocument(GetTargetPath(request));
+        _ = Apply(document, request, mutate: false);
     }
 
-    public void ValidateRetainedOwnershipProofs(
-        IReadOnlyList<ConfigurationPhysicalTargetOwnershipProof> ownershipProofs,
-        CancellationToken cancellationToken
-    )
-    {
-        ArgumentNullException.ThrowIfNull(ownershipProofs);
-        foreach (
-            IGrouping<string, ConfigurationPhysicalTargetOwnershipProof> proofsByTarget in
-                ownershipProofs
-                    .Where(proof => proof.TargetKind == ConfigurationTargetKind.GitConfig)
-                    .GroupBy(
-                        proof => CreatePhysicalPathIdentity(proof.TargetPathOrName),
-                        GetPathComparer()
-                    )
-        )
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            GitConfigDocument document = ReadDocument(proofsByTarget.Key);
-            ValidateExistingOwnershipProofs(
-                document,
-                proofsByTarget.ToArray(),
-                proofsByTarget.Key
-            );
-            ValidateEffectiveCredentialHelperConflictsForRetainedOwnershipProofs(
-                document,
-                proofsByTarget.ToArray(),
-                proofsByTarget.Key
-            );
-        }
-    }
-
-    private string GetSingleNormalizedGitConfigTargetPath(
+    public void Write(
         ConfigurationPhysicalTargetWriterRequest request,
         CancellationToken cancellationToken
     )
     {
-        ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
-        if (request.TargetKind != ConfigurationTargetKind.GitConfig)
+        ValidateRequest(request);
+        string targetPath = GetTargetPath(request);
+        GitDocument document = ReadDocument(targetPath);
+        string original = document.Text;
+        string updated = Apply(document, request, mutate: true);
+        if (string.Equals(updated, original, StringComparison.Ordinal))
         {
-            throw new NotSupportedException(
-                "The Git config physical writer supports only GitConfig targets."
-            );
-        }
-
-        return GetSingleNormalizedTargetPath(request.Changes);
-    }
-
-    private static string CreateUpdatedContents(
-        ConfigurationPlanOperation planOperation,
-        GitConfigDocument document,
-        IReadOnlyList<GitConfigChange> changes
-    ) =>
-        planOperation switch
-        {
-            ConfigurationPlanOperation.Apply => Apply(document, changes),
-            ConfigurationPlanOperation.Remove => Remove(document, changes),
-            _ => throw new NotSupportedException(
-                "The Git config physical writer supports apply/remove operations only."
-            ),
-        };
-
-    private string GetSingleNormalizedTargetPath(IReadOnlyList<ConfigurationChange> changes)
-    {
-        string targetPath = CreatePhysicalPathIdentity(changes[0].TargetPathOrName);
-        if (
-            changes
-                .Skip(1)
-                .Any(change =>
-                    !string.Equals(
-                        CreatePhysicalPathIdentity(change.TargetPathOrName),
-                        targetPath,
-                        GetPathComparison()
-                    )
-                )
-        )
-        {
-            throw new NotSupportedException(
-                "The Git config physical writer supports only batches that target one normalized "
-                    + "Git config file path."
-            );
-        }
-
-        return targetPath;
-    }
-
-    private GitConfigDocument ReadDocument(string targetPath)
-    {
-        EnsureTargetPathCanBeSafelyMutated(targetPath);
-        if (!fileSystem.FileExists(targetPath))
-        {
-            if (fileSystem.DirectoryExists(targetPath))
-            {
-                throw new InvalidOperationException(
-                    "Configuration conflict: Git config target exists as a directory."
-                );
-            }
-
-            return GitConfigDocument.CreateMissing(targetPath);
-        }
-
-        byte[] contents = fileSystem.ReadAllBytes(targetPath);
-        if (StartsWithUtf8Bom(contents))
-        {
-            throw new NotSupportedException(
-                "Configuration conflict: BOM-prefixed Git config files are not supported for "
-                    + "safe physical mutation."
-            );
-        }
-
-        string text = Utf8NoBom.GetString(contents);
-        return GitConfigDocument.Parse(
-            targetPath,
-            text,
-            FileMutationExpectation.Existing(ComputeSha256(contents)),
-            contents
-        );
-    }
-
-    private void EnsureTargetPathCanBeSafelyMutated(string targetPath)
-    {
-        if (IsUnsupportedLinkOrReparsePoint(targetPath))
-        {
-            throw new NotSupportedException(
-                "Configuration conflict: Git config target path is a symbolic-link or "
-                    + "reparse-point and is not supported."
-            );
-        }
-
-        string? targetParent = Path.GetDirectoryName(targetPath);
-        if (string.IsNullOrEmpty(targetParent))
-        {
-            targetParent = Directory.GetCurrentDirectory();
-        }
-
-        foreach (string directory in EnumerateDirectoryChain(targetParent))
-        {
-            try
-            {
-                if (IsUnsupportedLinkOrReparsePoint(directory))
-                {
-                    throw new NotSupportedException(
-                        "Configuration conflict: Git config target parent path contains a "
-                            + "symbolic-link or reparse-point directory."
-                    );
-                }
-
-                if (!fileSystem.DirectoryExists(directory) && fileSystem.FileExists(directory))
-                {
-                    throw new NotSupportedException(
-                        "Configuration conflict: Git config target parent path contains a "
-                            + "non-directory entry."
-                    );
-                }
-            }
-            catch (FileNotFoundException)
-            {
-                // Missing parent directories are valid for first apply; the conditional write
-                // creates them after the existing chain has been proven safe.
-            }
-            catch (DirectoryNotFoundException)
-            {
-                // See FileNotFoundException handling above.
-            }
-        }
-    }
-
-    private bool IsUnsupportedLinkOrReparsePoint(string targetPath)
-    {
-        try
-        {
-            if (fileSystem.IsSymbolicLink(targetPath))
-            {
-                return true;
-            }
-
-            return fileSystem is IFileSystemReparsePointSafety reparsePointSafety
-                && reparsePointSafety.IsReparsePoint(targetPath);
-        }
-        catch (FileNotFoundException)
-        {
-            return false;
-        }
-        catch (DirectoryNotFoundException)
-        {
-            return false;
-        }
-    }
-
-    private static Stack<string> EnumerateDirectoryChain(string path)
-    {
-        var directories = new Stack<string>();
-        string? current = Path.TrimEndingDirectorySeparator(path);
-        while (!string.IsNullOrEmpty(current))
-        {
-            directories.Push(current);
-            string? parent = Path.GetDirectoryName(current);
-            if (
-                string.IsNullOrEmpty(parent)
-                || string.Equals(parent, current, StringComparison.Ordinal)
-            )
-            {
-                break;
-            }
-
-            current = parent;
-        }
-
-        return directories;
-    }
-
-
-    private static string Apply(
-        GitConfigDocument document,
-        IReadOnlyList<GitConfigChange> changes
-    )
-    {
-        List<string> lines = [.. document.Lines];
-        bool appended = false;
-        foreach (GitConfigChange change in changes)
-        {
-            if (change.Value is null)
-            {
-                throw new NotSupportedException(
-                    "Git config apply changes require a planned value."
-                );
-            }
-
-            ThrowIfValueCannotBeWritten(change.Value);
-            GitConfigEntryLocation[] existingEntries = document.FindEntries(change.Key).ToArray();
-            ValidateApplyExistingEntries(change, existingEntries);
-            string renderedLine = RenderEntryLine(change.Key, change.Value);
-            if (existingEntries.Length == 1)
-            {
-                lines[existingEntries[0].LineIndex] = renderedLine;
-                document = document with { Lines = lines };
-                continue;
-            }
-
-            appended |= InsertEntryLine(lines, document, change, renderedLine);
-            document = GitConfigDocument.Parse(
-                document.Path,
-                Render(lines, document.NewLine, document.HadTrailingNewLine || appended),
-                document.MutationExpectation
-            );
-        }
-
-        return Render(lines, document.NewLine, document.HadTrailingNewLine || appended);
-    }
-
-    private static string Remove(
-        GitConfigDocument document,
-        IReadOnlyList<GitConfigChange> changes
-    )
-    {
-        List<string> lines = [.. document.Lines];
-        var removeLineIndexes = new SortedSet<int>();
-        foreach (GitConfigChange change in changes)
-        {
-            GitConfigEntryLocation[] existingEntries = document.FindEntries(change.Key).ToArray();
-            ValidateRemoveExistingEntries(change, existingEntries);
-            removeLineIndexes.Add(existingEntries[0].LineIndex);
-        }
-
-        foreach (int lineIndex in removeLineIndexes.Reverse())
-        {
-            lines.RemoveAt(lineIndex);
-        }
-
-        string updatedContents = Render(lines, document.NewLine, document.HadTrailingNewLine);
-        GitConfigDocument updatedDocument = GitConfigDocument.Parse(
-            document.Path,
-            updatedContents,
-            document.MutationExpectation
-        );
-        bool restoreMissingTrailingNewLine = PruneEmptyGitCredentialScaffolds(
-            lines,
-            updatedDocument,
-            changes
-        );
-        return Render(
-            lines,
-            document.NewLine,
-            document.HadTrailingNewLine && !restoreMissingTrailingNewLine
-        );
-    }
-
-    private static bool PruneEmptyGitCredentialScaffolds(
-        List<string> lines,
-        GitConfigDocument document,
-        IReadOnlyList<GitConfigChange> changes
-    )
-    {
-        var removeLineIndexes = new SortedSet<int>();
-        var missingTrailingNewLineCandidates = new List<GitConfigSectionLocation>();
-        foreach (GitConfigSectionLocation section in document.Sections)
-        {
-            if (
-                !TryGetExpectedScaffoldId(section.Key, changes, out string? scaffoldId)
-                || !InspectProductOwnedCredentialScaffoldSection(
-                    document,
-                    section,
-                    scaffoldId,
-                    out IReadOnlyList<int> markerLineIndexes,
-                    out bool sectionHadMissingTrailingNewLine,
-                    out bool hasForeignContent
-                )
-            )
-            {
-                continue;
-            }
-
-            if (hasForeignContent)
-            {
-                foreach (int markerLineIndex in markerLineIndexes)
-                {
-                    removeLineIndexes.Add(markerLineIndex);
-                }
-
-                continue;
-            }
-
-            if (sectionHadMissingTrailingNewLine)
-            {
-                missingTrailingNewLineCandidates.Add(section);
-            }
-
-            for (
-                var lineIndex = section.HeaderLineIndex;
-                lineIndex < section.EndExclusiveLineIndex;
-                lineIndex++
-            )
-            {
-                removeLineIndexes.Add(lineIndex);
-            }
-        }
-
-        bool restoreMissingTrailingNewLine = missingTrailingNewLineCandidates.Any(section =>
-            RemovedRangeOwnsEndOfFile(
-                section.HeaderLineIndex,
-                document.Lines.Count,
-                removeLineIndexes
-            )
-        );
-        foreach (int lineIndex in removeLineIndexes.Reverse())
-        {
-            lines.RemoveAt(lineIndex);
-        }
-
-        return restoreMissingTrailingNewLine;
-    }
-
-    private static bool RemovedRangeOwnsEndOfFile(
-        int startLineIndex,
-        int lineCount,
-        SortedSet<int> removeLineIndexes
-    )
-    {
-        for (int lineIndex = startLineIndex; lineIndex < lineCount; lineIndex++)
-        {
-            if (!removeLineIndexes.Contains(lineIndex))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private static bool InspectProductOwnedCredentialScaffoldSection(
-        GitConfigDocument document,
-        GitConfigSectionLocation section,
-        string expectedScaffoldId,
-        out IReadOnlyList<int> markerLineIndexes,
-        out bool previousTrailingNewLineMissing,
-        out bool hasForeignContent
-    )
-    {
-        var markers = new List<int>();
-        markerLineIndexes = markers;
-        previousTrailingNewLineMissing = false;
-        hasForeignContent = false;
-        if (!IsPrunableCredentialScaffoldSection(section.Key))
-        {
-            return false;
-        }
-
-        var hasProductMarker = false;
-        for (
-            var lineIndex = section.HeaderLineIndex + 1;
-            lineIndex < section.EndExclusiveLineIndex;
-            lineIndex++
-        )
-        {
-            string line = document.Lines[lineIndex];
-            if (string.IsNullOrWhiteSpace(line))
-            {
-                continue;
-            }
-
-            if (TryReadProductOwnedScaffoldMarker(line, expectedScaffoldId, out bool missing))
-            {
-                hasProductMarker = true;
-                markers.Add(lineIndex);
-                previousTrailingNewLineMissing |= missing;
-                continue;
-            }
-
-            if (IsProductOwnedScaffoldMarkerLine(line))
-            {
-                throw new InvalidOperationException(
-                    "Configuration conflict: product-owned Git credential scaffold marker does "
-                        + "not match the existing manifest."
-                );
-            }
-
-            hasForeignContent = true;
-        }
-
-        return hasProductMarker;
-    }
-
-    private static bool IsPrunableCredentialScaffoldSection(GitConfigKey key) =>
-        string.Equals(key.SectionName, CredentialSectionName, StringComparison.OrdinalIgnoreCase)
-        && (
-            key.Subsection is null
-            || IsDevAzureComCredentialSubsection(key.Subsection)
-        );
-
-    private static bool IsProductOwnedScaffoldMarkerLine(string line) =>
-        line.Trim().StartsWith(
-            ProductOwnedCredentialScaffoldMarkerPrefix + ";",
-            StringComparison.Ordinal
-        );
-
-    private static void ValidateApplyExistingEntries(
-        GitConfigChange change,
-        IReadOnlyList<GitConfigEntryLocation> existingEntries
-    )
-    {
-        if (existingEntries.Count > 1)
-        {
-            throw new InvalidOperationException(
-                "Configuration conflict: Git config key has multiple existing declarations and "
-                    + "cannot be updated safely."
-            );
-        }
-
-        if (existingEntries.Count == 0)
-        {
-            if (
-                change.Change.Operation
-                    is ConfigurationChangeOperation.Update or ConfigurationChangeOperation.Refresh
-                || change.HasOwnershipProof
-            )
-            {
-                throw new InvalidOperationException(
-                    "Configuration conflict: owned Git config key is missing from the physical "
-                        + "configuration file."
-                );
-            }
-
             return;
         }
 
-        if (change.Change.Operation == ConfigurationChangeOperation.Create)
-        {
-            throw new InvalidOperationException(
-                "Configuration conflict: Git config create target already exists."
-            );
-        }
-
-        if (!change.HasOwnershipProof)
-        {
-            throw new InvalidOperationException(
-                "Configuration conflict: Git config key already exists and is not proven to be "
-                    + "owned by the existing manifest."
-            );
-        }
-
-        ValidateOwnedExistingEntryValueHash(change, existingEntries[0]);
+        fileSystem.AtomicWriteAllBytes(targetPath, document.Encode(updated));
     }
 
-    private static void ValidateRemoveExistingEntries(
-        GitConfigChange change,
-        IReadOnlyList<GitConfigEntryLocation> existingEntries
-    )
-    {
-        if (change.Change.Operation != ConfigurationChangeOperation.Remove)
-        {
-            throw new NotSupportedException(
-                "Git config remove supports only remove changes."
-            );
-        }
-
-        if (existingEntries.Count == 0)
-        {
-            throw new InvalidOperationException(
-                "Configuration conflict: owned Git config key is missing from the physical "
-                    + "configuration file."
-            );
-        }
-
-        if (existingEntries.Count > 1)
-        {
-            throw new InvalidOperationException(
-                "Configuration conflict: Git config key has multiple existing declarations and "
-                    + "cannot be removed safely."
-            );
-        }
-
-        if (!change.HasOwnershipProof)
-        {
-            throw new InvalidOperationException(
-                "Configuration conflict: Git config key is not proven to be owned by this "
-                    + "product in the existing manifest."
-            );
-        }
-
-        ValidateOwnedExistingEntryValueHash(change, existingEntries[0]);
-    }
-
-    private static void ValidateOwnedExistingEntryValueHash(
-        GitConfigChange change,
-        GitConfigEntryLocation existingEntry
-    )
-    {
-        string? expectedHash = change.OwnershipProofPlannedValueSha256;
-        if (string.IsNullOrWhiteSpace(expectedHash))
-        {
-            throw new InvalidOperationException(
-                "Configuration conflict: owned Git config key manifest planned value hash is "
-                    + "required."
-            );
-        }
-
-        ValidateOwnedUseHttpPathCanonicalTrueValue(
-            change.Key,
-            expectedHash,
-            existingEntry
-        );
-        string actualHash = ComputeSha256(existingEntry.Value);
-        if (!string.Equals(actualHash, expectedHash, StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException(
-                "Configuration conflict: owned Git config key current value hash does not match "
-                    + "the existing manifest."
-            );
-        }
-    }
-
-    private static bool TryGetExpectedScaffoldId(
-        GitConfigKey sectionKey,
-        IReadOnlyList<GitConfigChange> changes,
-        [NotNullWhen(true)] out string? scaffoldId
-    )
-    {
-        scaffoldId = null;
-        foreach (GitConfigChange change in changes)
-        {
-            if (
-                ScaffoldSectionsEqual(sectionKey, change.Key)
-                && TryGetScaffoldId(
-                    change.Change.PreviousOwnedEntryMetadata,
-                    out string? candidateScaffoldId
-                )
-            )
-            {
-                scaffoldId = candidateScaffoldId;
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static bool ScaffoldSectionsEqual(GitConfigKey left, GitConfigKey right) =>
-        string.Equals(left.SectionName, right.SectionName, StringComparison.OrdinalIgnoreCase)
-        && ScaffoldCredentialSubsectionsEqualForSection(left, right);
-
-    private static bool ScaffoldCredentialSubsectionsEqualForSection(
-        GitConfigKey section,
-        GitConfigKey target
-    )
-    {
-        if (
-            IsCredentialSectionKey(section)
-            && IsCredentialUseHttpPathKey(target)
-            && IsDevAzureComCredentialSubsection(target.Subsection)
-        )
-        {
-            return IsDevAzureComCredentialSubsection(section.Subsection);
-        }
-
-        return string.Equals(section.Subsection, target.Subsection, StringComparison.Ordinal);
-    }
-
-    private static bool IsCredentialSectionKey(GitConfigKey key) =>
-        string.Equals(
-            key.SectionName,
-            CredentialSectionName,
-            StringComparison.OrdinalIgnoreCase
-        );
-
-    private static bool IsCredentialUseHttpPathKey(GitConfigKey key) =>
-        IsCredentialSectionKey(key)
-        && string.Equals(
-            key.VariableName,
-            UseHttpPathVariableName,
-            StringComparison.OrdinalIgnoreCase
-        );
-
-    private static bool IsDevAzureComCredentialSubsection(string? subsection) =>
-        GetDevAzureComCredentialSubsectionMatch(subsection)
-            == DevAzureComCredentialSubsectionMatch.Canonicalizable;
-
-    private static DevAzureComCredentialSubsectionMatch
-        GetDevAzureComCredentialSubsectionMatch(string? subsection)
-    {
-        if (subsection is null)
-        {
-            return DevAzureComCredentialSubsectionMatch.NotDevAzureCom;
-        }
-
-        if (
-            string.Equals(
-                subsection,
-                DevAzureComCredentialSubsection,
-                StringComparison.Ordinal
-            )
-        )
-        {
-            return DevAzureComCredentialSubsectionMatch.Canonicalizable;
-        }
-
-        if (
-            !Uri.TryCreate(subsection, UriKind.Absolute, out Uri? uri)
-            || !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
-        )
-        {
-            return DevAzureComCredentialSubsectionMatch.NotDevAzureCom;
-        }
-
-        DevAzureComCredentialSubsectionMatch hostMatch =
-            GetDevAzureComCredentialHostMatch(uri);
-        if (hostMatch != DevAzureComCredentialSubsectionMatch.Canonicalizable)
-        {
-            return hostMatch;
-        }
-
-        if (
-            !uri.IsDefaultPort
-            || !string.IsNullOrEmpty(uri.UserInfo)
-            || !string.IsNullOrEmpty(uri.Query)
-            || !string.IsNullOrEmpty(uri.Fragment)
-        )
-        {
-            return DevAzureComCredentialSubsectionMatch.UnsafeEffectiveAlias;
-        }
-
-        return uri.AbsolutePath is "" or "/"
-            ? DevAzureComCredentialSubsectionMatch.Canonicalizable
-            : DevAzureComCredentialSubsectionMatch.UnsafeEffectiveAlias;
-    }
-
-    private static DevAzureComCredentialSubsectionMatch GetDevAzureComCredentialHostMatch(Uri uri)
-    {
-        if (IsCanonicalDevAzureComHost(uri.IdnHost) && IsCanonicalDevAzureComHost(uri.Host))
-        {
-            return DevAzureComCredentialSubsectionMatch.Canonicalizable;
-        }
-
-        return IsDevAzureComEffectiveHostAlias(uri.IdnHost)
-            || IsDevAzureComEffectiveHostAlias(uri.Host)
-            ? DevAzureComCredentialSubsectionMatch.UnsafeEffectiveAlias
-            : DevAzureComCredentialSubsectionMatch.NotDevAzureCom;
-    }
-
-    private static bool IsCanonicalDevAzureComHost(string host) =>
-        string.Equals(host, DevAzureComHost, StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsDevAzureComEffectiveHostAlias(string host)
-    {
-        string trimmedHost = host.TrimEnd('.');
-        return trimmedHost.Length != host.Length
-            && string.Equals(trimmedHost, DevAzureComHost, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool InsertEntryLine(
-        List<string> lines,
-        GitConfigDocument document,
-        GitConfigChange change,
-        string renderedLine
-    )
-    {
-        GitConfigKey key = change.Key;
-        GitConfigSectionLocation? section = document.FindSection(key);
-        if (section is null)
-        {
-            bool markProductOwnedScaffold = ShouldMarkProductOwnedCredentialScaffold(change);
-            if (
-                !markProductOwnedScaffold
-                && lines.Count > 0
-                && !string.IsNullOrWhiteSpace(lines[^1])
-            )
-            {
-                lines.Add(string.Empty);
-            }
-
-            lines.Add(RenderSectionHeader(key));
-            if (markProductOwnedScaffold)
-            {
-                lines.Add(CreateProductOwnedScaffoldMarker(change, document.HadTrailingNewLine));
-            }
-
-            lines.Add(renderedLine);
-            return true;
-        }
-
-        lines.Insert(section.Value.EndExclusiveLineIndex, renderedLine);
-        return false;
-    }
-
-    private static bool ShouldMarkProductOwnedCredentialScaffold(GitConfigChange change) =>
-        IsPrunableCredentialScaffoldSection(change.Key)
-        && TryGetScaffoldId(change.Change.PreviousOwnedEntryMetadata, out _);
-
-    private static string CreateProductOwnedScaffoldMarker(
-        GitConfigChange change,
-        bool previousHadTrailingNewLine
-    )
-    {
-        if (!TryGetScaffoldId(change.Change.PreviousOwnedEntryMetadata, out string? scaffoldId))
-        {
-            throw new InvalidOperationException(
-                "Product-owned Git credential scaffolds require scaffold metadata."
-            );
-        }
-
-        string marker = ProductOwnedCredentialScaffoldMarkerPrefix + "; id=" + scaffoldId;
-        return previousHadTrailingNewLine
-            ? marker
-            : marker + "; " + PreviousTrailingNewLineMissingMarker;
-    }
-
-    private static bool TryReadProductOwnedScaffoldMarker(
-        string line,
-        string expectedScaffoldId,
-        out bool previousTrailingNewLineMissing
-    )
-    {
-        previousTrailingNewLineMissing = false;
-        string trimmed = line.Trim();
-        if (
-            !trimmed.StartsWith(
-                ProductOwnedCredentialScaffoldMarkerPrefix + ";",
-                StringComparison.Ordinal
-            )
-        )
-        {
-            return false;
-        }
-
-        string[] tokens = trimmed[(ProductOwnedCredentialScaffoldMarkerPrefix.Length + 1)..]
-            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (
-            !tokens.Any(token =>
-                string.Equals(token, "id=" + expectedScaffoldId, StringComparison.Ordinal)
-            )
-        )
-        {
-            return false;
-        }
-
-        previousTrailingNewLineMissing = tokens.Any(token =>
-            string.Equals(token, PreviousTrailingNewLineMissingMarker, StringComparison.Ordinal)
-        );
-        return true;
-    }
-
-    internal static string CreateProductOwnedCredentialScaffoldMetadata(string scaffoldId)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(scaffoldId);
-        return ProductOwnedCredentialScaffoldMetadataPrefix + scaffoldId;
-    }
-
-    internal static bool TryGetProductOwnedCredentialScaffoldId(
-        string? metadata,
-        [NotNullWhen(true)] out string? scaffoldId
-    ) => TryGetScaffoldId(metadata, out scaffoldId);
-
-    private static bool TryGetScaffoldId(
-        string? metadata,
-        [NotNullWhen(true)] out string? scaffoldId
-    )
-    {
-        scaffoldId = null;
-        if (
-            string.IsNullOrWhiteSpace(metadata)
-            || !metadata.StartsWith(
-                ProductOwnedCredentialScaffoldMetadataPrefix,
-                StringComparison.Ordinal
-            )
-        )
-        {
-            return false;
-        }
-
-        scaffoldId = metadata[ProductOwnedCredentialScaffoldMetadataPrefix.Length..];
-        return IsLowercaseHex32(scaffoldId);
-    }
-
-    private static bool IsLowercaseHex32(string value) =>
-        value.Length == 32
-        && value.All(character =>
-            character is >= '0' and <= '9' or >= 'a' and <= 'f'
-        );
-
-    private GitConfigChange CreateGitConfigChange(
+    public bool IsSatisfied(
         ConfigurationPhysicalTargetWriterRequest request,
-        string normalizedTargetPath,
-        ConfigurationChange change
+        CancellationToken cancellationToken
     )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ValidateRequest(request);
+        GitDocument document = ReadDocument(GetTargetPath(request));
+        return request.Changes.All(change =>
+        {
+            string? current = document.GetValue(CanonicalizeSupportedConfigurationKey(change.Key));
+            return change.IsSecretValue
+                ? current is not null
+                : string.Equals(
+                    current,
+                    RenderValue(change.Key, change.Value),
+                    StringComparison.Ordinal
+                );
+        });
+    }
+
+    internal static string? GetPlanningValidationViolation(ConfigurationChange change)
     {
         if (change.TargetKind != ConfigurationTargetKind.GitConfig)
         {
-            throw new NotSupportedException(
-                "The Git config physical writer supports only GitConfig changes."
-            );
+            return null;
         }
 
-        GitConfigKey key = ParseSupportedGitConfigKey(change.Key);
-        ThrowIfUnsupportedGoldenSliceValue(
-            key,
-            change,
-            rejectSecretValueWrites: true
-        );
-        return new GitConfigChange(
-            key,
-            change,
-            FindOwnershipProof(request.OwnershipProofs, normalizedTargetPath, key)
-        );
-    }
+        if (!TryCanonicalizeSupportedConfigurationKey(change.Key, out string canonicalKey))
+        {
+            return "The Git config writer supports only credential.helper and the canonical "
+                + "dev.azure.com useHttpPath selector.";
+        }
 
-    private static void ThrowIfUnsupportedGoldenSliceValue(
-        GitConfigKey key,
-        ConfigurationChange change,
-        bool rejectSecretValueWrites
-    )
-    {
         if (
-            rejectSecretValueWrites
-            && change.Operation != ConfigurationChangeOperation.Remove
-            && change.IsSecretValue
+            change.Operation
+            is ConfigurationChangeOperation.Set
+                or ConfigurationChangeOperation.Create
+                or ConfigurationChangeOperation.Update
+                or ConfigurationChangeOperation.Refresh
         )
         {
-            throw new NotSupportedException(
-                "The Git config physical writer requires non-secret values so ownership can be "
-                    + "verified against physical file contents."
-            );
-        }
+            if (change.Value is null || change.Value.Contains('\r') || change.Value.Contains('\n'))
+            {
+                return "Git config value-writing changes require a single-line value.";
+            }
 
-        if (
-            string.Equals(
-                key.CanonicalConfigurationKey,
-                DevAzureComUseHttpPathCanonicalConfigurationKey,
-                StringComparison.Ordinal
+            if (
+                string.Equals(canonicalKey, UseHttpPathKey, StringComparison.Ordinal)
+                && !string.Equals(change.Value, "true", StringComparison.OrdinalIgnoreCase)
             )
-            && change.Operation != ConfigurationChangeOperation.Remove
-            && !string.Equals(change.Value, "true", StringComparison.Ordinal)
-        )
-        {
-            throw new NotSupportedException(
-                "The Git config physical writer supports credential "
-                    + "\"https://dev.azure.com\".useHttpPath only with canonical value true."
-            );
+            {
+                return "The Git config writer requires useHttpPath=true.";
+            }
+
+            if (
+                string.Equals(canonicalKey, HelperKey, StringComparison.Ordinal)
+                && !TryRenderCredentialHelperCommandValue(change.Value, out _)
+            )
+            {
+                return "The Git credential helper value cannot be represented safely.";
+            }
         }
 
-        if (
-            string.Equals(
-                key.CanonicalConfigurationKey,
-                "credential.helper",
-                StringComparison.Ordinal
-            )
-            && change.Operation != ConfigurationChangeOperation.Remove
-            && change.Value is not null
-        )
-        {
-            ThrowIfUnsafeCredentialHelperValue(change.Value);
-        }
+        return null;
     }
 
     internal static bool TryCanonicalizeSupportedConfigurationKey(
@@ -1248,1684 +282,472 @@ internal sealed class GitConfigPhysicalTargetWriter(IFileSystem fileSystem)
         out string canonicalKey
     )
     {
-        if (string.Equals(key, "credential.helper", StringComparison.Ordinal))
+        canonicalKey = string.Empty;
+        if (string.Equals(key, HelperKey, StringComparison.OrdinalIgnoreCase))
         {
-            canonicalKey = "credential.helper";
+            canonicalKey = HelperKey;
             return true;
         }
 
         if (
-            string.Equals(
-                key,
-                DevAzureComUseHttpPathCanonicalConfigurationKey,
-                StringComparison.Ordinal
-            )
+            string.Equals(key, UseHttpPathKey, StringComparison.OrdinalIgnoreCase)
             || string.Equals(
                 key,
-                "credential \"https://dev.azure.com\".useHttpPath",
-                StringComparison.Ordinal
+                "credential.\"https://dev.azure.com\".useHttpPath",
+                StringComparison.OrdinalIgnoreCase
             )
         )
         {
-            canonicalKey = DevAzureComUseHttpPathCanonicalConfigurationKey;
+            canonicalKey = UseHttpPathKey;
             return true;
         }
 
-        canonicalKey = key;
         return false;
     }
 
     internal static string CanonicalizeSupportedConfigurationKey(string key) =>
         TryCanonicalizeSupportedConfigurationKey(key, out string canonicalKey)
             ? canonicalKey
+            : throw new NotSupportedException("Unsupported Git configuration key.");
+
+    internal static string RenderCredentialHelperCommandValue(string value) =>
+        TryRenderCredentialHelperCommandValue(value, out string? rendered)
+            ? rendered
             : throw new NotSupportedException(
-                "The Git config physical writer currently supports only credential.helper and "
-                    + "credential \"https://dev.azure.com\".useHttpPath keys."
+                "The Git credential helper value cannot be represented safely."
             );
 
-    internal static void ValidateChangeBeforeManifestPreclaim(
-        ConfigurationChange change,
-        bool rejectSecretValueWrites
+    private static bool TryRenderCredentialHelperCommandValue(
+        string value,
+        [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? rendered
     )
     {
-        ArgumentNullException.ThrowIfNull(change);
-        if (change.TargetKind != ConfigurationTargetKind.GitConfig)
-        {
-            return;
-        }
-
-        if (change.Operation == ConfigurationChangeOperation.RemoveAdapter)
-        {
-            throw new NotSupportedException(
-                "The Git config physical writer does not support remove-adapter changes."
-            );
-        }
-
-        GitConfigKey key = ParseSupportedGitConfigKey(change.Key);
-        ThrowIfUnsupportedGoldenSliceValue(key, change, rejectSecretValueWrites);
-        if (change.Operation != ConfigurationChangeOperation.Remove && change.Value is not null)
-        {
-            ThrowIfValueCannotBeWritten(change.Value);
-        }
-    }
-
-    private static GitConfigKey ParseSupportedGitConfigKey(string key)
-    {
-        string canonicalKey = CanonicalizeSupportedConfigurationKey(key);
-        if (string.Equals(canonicalKey, "credential.helper", StringComparison.Ordinal))
-        {
-            return new GitConfigKey(
-                CredentialSectionName,
-                null,
-                HelperVariableName,
-                canonicalKey
-            );
-        }
-
+        rendered = null;
         if (
-            string.Equals(
-                canonicalKey,
-                DevAzureComUseHttpPathCanonicalConfigurationKey,
-                StringComparison.Ordinal
-            )
+            value.Length == 0
+            || value.Contains('"', StringComparison.Ordinal)
+            || value.Any(char.IsControl)
         )
-        {
-            return new GitConfigKey(
-                CredentialSectionName,
-                DevAzureComCredentialSubsection,
-                UseHttpPathVariableName,
-                canonicalKey
-            );
-        }
-
-        throw new NotSupportedException(
-            "The Git config physical writer currently supports only credential.helper and "
-                + "credential \"https://dev.azure.com\".useHttpPath keys."
-        );
-    }
-
-    private ConfigurationPhysicalTargetOwnershipProof? FindOwnershipProof(
-        IReadOnlyList<ConfigurationPhysicalTargetOwnershipProof> ownershipProofs,
-        string normalizedTargetPath,
-        GitConfigKey key
-    ) =>
-        ownershipProofs.FirstOrDefault(proof =>
-            proof.TargetKind == ConfigurationTargetKind.GitConfig
-            && string.Equals(
-                CreatePhysicalPathIdentity(proof.TargetPathOrName),
-                normalizedTargetPath,
-                GetPathComparison()
-            )
-            && TryCanonicalizeSupportedConfigurationKey(proof.Key, out string proofKey)
-            && string.Equals(proofKey, key.CanonicalConfigurationKey, StringComparison.Ordinal)
-        );
-
-    private void ValidateExistingOwnershipProofs(
-        GitConfigDocument document,
-        IReadOnlyList<ConfigurationPhysicalTargetOwnershipProof> ownershipProofs,
-        string normalizedTargetPath
-    )
-    {
-        foreach (
-            ConfigurationPhysicalTargetOwnershipProof proof in ownershipProofs.Where(proof =>
-                proof.TargetKind == ConfigurationTargetKind.GitConfig
-                && string.Equals(
-                    CreatePhysicalPathIdentity(proof.TargetPathOrName),
-                    normalizedTargetPath,
-                    GetPathComparison()
-                )
-            )
-        )
-        {
-            GitConfigKey key = ParseSupportedGitConfigKey(proof.Key);
-            GitConfigEntryLocation[] entries = document.FindEntries(key).ToArray();
-            if (entries.Length != 1)
-            {
-                throw new InvalidOperationException(
-                    "Configuration conflict: owned Git config key is missing or duplicated in "
-                        + "the physical configuration file."
-                );
-            }
-
-            if (string.IsNullOrWhiteSpace(proof.PlannedValueSha256))
-            {
-                throw new InvalidOperationException(
-                    "Configuration conflict: owned Git config key has no verifiable planned "
-                        + "value hash."
-                );
-            }
-
-            ValidateOwnedUseHttpPathCanonicalTrueValue(
-                key,
-                proof.PlannedValueSha256,
-                entries[0]
-            );
-            string physicalValueHash = ComputeSha256(entries[0].Value);
-            if (
-                !string.Equals(
-                    physicalValueHash,
-                    proof.PlannedValueSha256,
-                    StringComparison.Ordinal
-                )
-            )
-            {
-                throw new InvalidOperationException(
-                    "Configuration conflict: owned Git config current value hash does not "
-                        + "match the existing manifest."
-                );
-            }
-        }
-    }
-
-    private void ValidateEffectiveCredentialHelperConflicts(
-        ConfigurationPlanOperation planOperation,
-        GitConfigDocument document,
-        IReadOnlyList<GitConfigChange> changes,
-        IReadOnlyList<ConfigurationPhysicalTargetOwnershipProof> ownershipProofs,
-        string normalizedTargetPath
-    )
-    {
-        if (planOperation != ConfigurationPlanOperation.Apply)
-        {
-            return;
-        }
-
-        bool hasHelperWrite =
-            changes.Any(change => IsSupportedGlobalCredentialHelperKey(change.Key));
-        bool hasUseHttpPathWrite = changes.Any(change => IsDevAzureComUseHttpPathKey(change.Key));
-        if (!hasHelperWrite && !hasUseHttpPathWrite)
-        {
-            return;
-        }
-
-        if (hasHelperWrite && !hasUseHttpPathWrite)
-        {
-            GitConfigKey useHttpPathKey = ParseSupportedGitConfigKey(
-                DevAzureComUseHttpPathCanonicalConfigurationKey
-            );
-            GitConfigEntryLocation[] effectiveUseHttpPathEntries = document
-                .FindEntries(useHttpPathKey)
-                .ToArray();
-            if (
-                effectiveUseHttpPathEntries.Length > 0
-                && IsTruthyGitConfigBooleanValue(effectiveUseHttpPathEntries[^1].Value)
-                && FindOwnershipProof(ownershipProofs, normalizedTargetPath, useHttpPathKey)
-                    is null
-            )
-            {
-                throw new InvalidOperationException(
-                    "Configuration conflict: existing credential "
-                        + "\"https://dev.azure.com\".useHttpPath=true entries must be owned "
-                        + "before writing credential.helper."
-                );
-            }
-        }
-
-        ValidateEffectiveCredentialHelperConflicts(
-            document,
-            ownershipProofs,
-            normalizedTargetPath
-        );
-    }
-
-    private void ValidateEffectiveCredentialHelperConflictsForRetainedOwnershipProofs(
-        GitConfigDocument document,
-        IReadOnlyList<ConfigurationPhysicalTargetOwnershipProof> ownershipProofs,
-        string normalizedTargetPath
-    )
-    {
-        if (!ownershipProofs.Any(IsEffectiveCredentialHelperConflictRelevantProof))
-        {
-            return;
-        }
-
-        ValidateEffectiveCredentialHelperConflicts(
-            document,
-            ownershipProofs,
-            normalizedTargetPath
-        );
-    }
-
-    private void ValidateEffectiveCredentialHelperConflicts(
-        GitConfigDocument document,
-        IReadOnlyList<ConfigurationPhysicalTargetOwnershipProof> ownershipProofs,
-        string normalizedTargetPath
-    )
-    {
-        GitConfigEntryLocation[] effectiveCredentialHelpers = document
-            .FindAzureDevOpsEffectiveCredentialHelperEntries()
-            .ToArray();
-        if (effectiveCredentialHelpers.Length == 0)
-        {
-            return;
-        }
-
-        GitConfigKey globalHelperKey = ParseSupportedGitConfigKey("credential.helper");
-        ConfigurationPhysicalTargetOwnershipProof? globalHelperOwnershipProof =
-            FindOwnershipProof(ownershipProofs, normalizedTargetPath, globalHelperKey);
-        foreach (GitConfigEntryLocation helperEntry in effectiveCredentialHelpers)
-        {
-            if (!IsSupportedGlobalCredentialHelperKey(helperEntry.Key))
-            {
-                throw new InvalidOperationException(
-                    "Configuration conflict: effective Azure DevOps Git credential helper "
-                        + "entries must be owned supported global credential.helper entries."
-                );
-            }
-
-            if (globalHelperOwnershipProof is null)
-            {
-                throw new InvalidOperationException(
-                    "Configuration conflict: effective Git credential helper is not proven to be "
-                        + "owned by the existing manifest."
-                );
-            }
-
-            ValidateOwnedCredentialHelperEntryValueHash(
-                globalHelperOwnershipProof,
-                helperEntry
-            );
-        }
-    }
-
-    private static bool IsEffectiveCredentialHelperConflictRelevantKey(GitConfigKey key) =>
-        IsSupportedGlobalCredentialHelperKey(key) || IsDevAzureComUseHttpPathKey(key);
-
-    private static bool IsEffectiveCredentialHelperConflictRelevantProof(
-        ConfigurationPhysicalTargetOwnershipProof ownershipProof
-    ) =>
-        TryCanonicalizeSupportedConfigurationKey(
-            ownershipProof.Key,
-            out string canonicalKey
-        )
-        && (
-            string.Equals(canonicalKey, "credential.helper", StringComparison.Ordinal)
-            || string.Equals(
-                canonicalKey,
-                DevAzureComUseHttpPathCanonicalConfigurationKey,
-                StringComparison.Ordinal
-            )
-        );
-
-    private static bool IsSupportedGlobalCredentialHelperKey(GitConfigKey key) =>
-        string.Equals(
-            key.SectionName,
-            CredentialSectionName,
-            StringComparison.OrdinalIgnoreCase
-        )
-        && key.Subsection is null
-        && string.Equals(
-            key.VariableName,
-            HelperVariableName,
-            StringComparison.OrdinalIgnoreCase
-        );
-
-    private static bool IsDevAzureComUseHttpPathKey(GitConfigKey key) =>
-        string.Equals(
-            key.CanonicalConfigurationKey,
-            DevAzureComUseHttpPathCanonicalConfigurationKey,
-            StringComparison.Ordinal
-        );
-
-    private static bool IsTruthyGitConfigBooleanValue(string value)
-    {
-        if (
-            string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(value, "on", StringComparison.OrdinalIgnoreCase)
-        )
-        {
-            return true;
-        }
-
-        if (value.Length == 0)
         {
             return false;
         }
 
-        int index = 0;
-        if (value[index] is '+' or '-')
+        string normalized = IsWindowsAbsolutePath(value) ? value.Replace('\\', '/') : value;
+        if (normalized.All(IsUnquotedShellPathCharacter))
         {
-            index++;
-            if (index == value.Length)
-            {
-                return false;
-            }
+            rendered = normalized;
+            return true;
         }
 
-        if (value[index] == '0')
-        {
-            if (index + 1 == value.Length)
-            {
-                return false;
-            }
-
-            if (value[index + 1] is 'x' or 'X')
-            {
-                return TryParseTruthyGitConfigNumericValue(value, index + 2, 16);
-            }
-
-            return TryParseTruthyGitConfigNumericValue(value, index + 1, 8);
-        }
-
-        return TryParseTruthyGitConfigNumericValue(value, index, 10);
+        rendered =
+            "\""
+            + normalized
+                .Replace("\\", "\\\\", StringComparison.Ordinal)
+                .Replace("$", "\\$", StringComparison.Ordinal)
+                .Replace("`", "\\`", StringComparison.Ordinal)
+            + "\"";
+        return true;
     }
 
-    private static bool TryParseTruthyGitConfigNumericValue(
-        string value,
-        int startIndex,
-        int numberBase
-    )
-    {
-        bool hasDigit = false;
-        bool hasNonZeroDigit = false;
-        for (int index = startIndex; index < value.Length; index++)
-        {
-            int digit = value[index] switch
-            {
-                >= '0' and <= '9' => value[index] - '0',
-                >= 'a' and <= 'f' when numberBase == 16 => value[index] - 'a' + 10,
-                >= 'A' and <= 'F' when numberBase == 16 => value[index] - 'A' + 10,
-                _ => -1,
-            };
-            if (digit < 0 || digit >= numberBase)
-            {
-                return false;
-            }
-
-            hasDigit = true;
-            if (digit != 0)
-            {
-                hasNonZeroDigit = true;
-            }
-        }
-
-        return hasDigit && hasNonZeroDigit;
-    }
-
-    private static void ValidateOwnedUseHttpPathCanonicalTrueValue(
-        GitConfigKey key,
-        string plannedValueSha256,
-        GitConfigEntryLocation existingEntry
-    )
-    {
-        if (!IsDevAzureComUseHttpPathKey(key))
-        {
-            return;
-        }
-
-        if (
-            string.Equals(
-                plannedValueSha256,
-                DevAzureComUseHttpPathCanonicalTrueSha256,
-                StringComparison.Ordinal
-            )
-            && string.Equals(existingEntry.Value, "true", StringComparison.Ordinal)
-        )
-        {
-            return;
-        }
-
-        throw new InvalidOperationException(
-            "Configuration conflict: owned Git config credential "
-                + "\"https://dev.azure.com\".useHttpPath entries must retain canonical value true."
-        );
-    }
-
-    private static void ValidateOwnedCredentialHelperEntryValueHash(
-        ConfigurationPhysicalTargetOwnershipProof ownershipProof,
-        GitConfigEntryLocation helperEntry
-    )
-    {
-        if (string.IsNullOrWhiteSpace(ownershipProof.PlannedValueSha256))
-        {
-            throw new InvalidOperationException(
-                "Configuration conflict: owned Git config key manifest planned value hash is "
-                    + "required."
-            );
-        }
-
-        string actualHash = ComputeSha256(helperEntry.Value);
-        if (
-            !string.Equals(
-                actualHash,
-                ownershipProof.PlannedValueSha256,
-                StringComparison.Ordinal
-            )
-        )
-        {
-            throw new InvalidOperationException(
-                "Configuration conflict: owned Git config key current value hash does not match "
-                    + "the existing manifest."
-            );
-        }
-    }
-
-    private static void EnsureNoDuplicateGitConfigChanges(
-        IReadOnlyList<GitConfigChange> changes
-    )
-    {
-        if (
-            changes
-                .GroupBy(
-                    change => change.Key.CanonicalConfigurationKey,
-                    StringComparer.Ordinal
-                )
-                .Any(group => group.Count() > 1)
-        )
-        {
-            throw new NotSupportedException(
-                "The Git config physical writer does not support multiple changes for the same "
-                    + "canonical Git config key in one batch."
-            );
-        }
-    }
-
-    private static bool StartsWithUtf8Bom(byte[] contents) =>
-        contents.Length >= 3
-        && contents[0] == 0xEF
-        && contents[1] == 0xBB
-        && contents[2] == 0xBF;
-
-    private static void ThrowIfValueCannotBeWritten(string value)
-    {
-        if (
-            value.Contains('\n')
-            || value.Contains('\r')
-            || value.Any(character => character < ' ' || character == '\u007f')
-        )
-        {
-            throw new NotSupportedException(
-                "Git config physical writer values must be single-line printable values."
-            );
-        }
-    }
-
-    private static void ThrowIfUnsafeCredentialHelperValue(string value)
-    {
-        if (value.Length == 0)
-        {
-            return;
-        }
-
-        if (value.StartsWith('!'))
-        {
-            throw new NotSupportedException(
-                "The Git config physical writer supports credential.helper only with installed "
-                    + "helper entries, not shell snippet helpers."
-            );
-        }
-
-        bool isFullyQualifiedPath = Path.IsPathFullyQualified(value);
-        if (
-            value.Any(character =>
-                character is '(' or ')'
-                    ? !isFullyQualifiedPath
-                    : !IsSafeCredentialHelperCharacter(character)
-            )
-        )
-        {
-            throw new NotSupportedException(UnsafeCredentialHelperValueMessage);
-        }
-
-        if (
-            value.Length >= 2
-            && char.IsLetter(value[0])
+    private static bool IsWindowsAbsolutePath(string value) =>
+        value.Length >= 3
+            && char.IsAsciiLetter(value[0])
             && value[1] == ':'
-            && !Path.IsPathFullyQualified(value)
-        )
-        {
-            throw new NotSupportedException(UnsafeCredentialHelperValueMessage);
-        }
+            && value[2] is '\\' or '/'
+        || value.StartsWith(@"\\", StringComparison.Ordinal);
 
-        if (HasCredentialHelperPathSeparator(value) && !Path.IsPathFullyQualified(value))
-        {
-            throw new NotSupportedException(UnsafeCredentialHelperValueMessage);
-        }
-    }
+    private static bool IsUnquotedShellPathCharacter(char character) =>
+        char.IsAsciiLetterOrDigit(character) || character is '/' or ':' or '.' or '_' or '-';
 
-    private static bool HasCredentialHelperPathSeparator(string value) =>
-        value.Contains(Path.DirectorySeparatorChar)
-        || value.Contains(Path.AltDirectorySeparatorChar);
-
-    private static bool IsSafeCredentialHelperCharacter(char character) =>
-        character is >= '0' and <= '9'
-        or >= 'A' and <= 'Z'
-        or >= 'a' and <= 'z'
-        or '.' or '_' or '-' or '/' or ':' or '\\';
-
-    internal static string EscapeCredentialHelperPathForShell(string value)
+    private void ValidateRequest(ConfigurationPhysicalTargetWriterRequest request)
     {
-        if (!Path.IsPathFullyQualified(value) || (!value.Contains('(') && !value.Contains(')')))
+        if (request.TargetKind != ConfigurationTargetKind.GitConfig)
         {
-            return value;
+            throw new NotSupportedException("The Git config writer received another target kind.");
         }
 
-        return value
-            .Replace("(", "\\(", StringComparison.Ordinal)
-            .Replace(")", "\\)", StringComparison.Ordinal);
-    }
-
-    private static string RenderGitConfigValue(GitConfigKey key, string value) =>
-        IsSupportedGlobalCredentialHelperKey(key)
-            ? EscapeCredentialHelperPathForShell(value)
-            : value;
-
-    private static string RenderEntryLine(GitConfigKey key, string value) =>
-        string.Create(
-            CultureInfo.InvariantCulture,
-            $"\t{key.VariableName} = {QuoteValue(RenderGitConfigValue(key, value))}"
-        );
-
-    private static string QuoteValue(string value)
-    {
-        var builder = new StringBuilder(value.Length + 2);
-        builder.Append('"');
-        foreach (char character in value)
+        string path = GetTargetPath(request);
+        if (!fileSystem.IsPathFullyQualified(path))
         {
-            if (character is '\\' or '"')
+            throw new ArgumentException("The Git config target path must be fully qualified.");
+        }
+
+        foreach (ConfigurationChange change in request.Changes)
+        {
+            string? violation = GetPlanningValidationViolation(change);
+            if (violation is not null)
             {
-                builder.Append('\\');
+                throw new NotSupportedException(violation);
             }
-
-            builder.Append(character);
         }
-
-        builder.Append('"');
-        return builder.ToString();
     }
 
-    private static string RenderSectionHeader(GitConfigKey key) =>
-        key.Subsection is null
-            ? $"[{key.SectionName}]"
-            : $"[{key.SectionName} \"{EscapeSubsection(key.Subsection)}\"]";
+    private string GetTargetPath(ConfigurationPhysicalTargetWriterRequest request)
+    {
+        string[] paths = request
+            .Changes.Select(change => fileSystem.GetFullPath(change.TargetPathOrName))
+            .Distinct(
+                OperatingSystem.IsWindows()
+                    ? StringComparer.OrdinalIgnoreCase
+                    : StringComparer.Ordinal
+            )
+            .ToArray();
+        return paths.Length == 1
+            ? paths[0]
+            : throw new NotSupportedException("A Git config writer request must target one file.");
+    }
 
-    private static string EscapeSubsection(string subsection) =>
-        subsection.Replace("\\", "\\\\", StringComparison.Ordinal)
-            .Replace("\"", "\\\"", StringComparison.Ordinal);
+    private GitDocument ReadDocument(string path)
+    {
+        if (!fileSystem.FileExists(path))
+        {
+            if (fileSystem.DirectoryExists(path))
+            {
+                throw new InvalidOperationException("The Git config target is a directory.");
+            }
+            return GitDocument.Missing();
+        }
 
-    private static string Render(
-        List<string> lines,
-        string newLine,
-        bool trailingNewLine
+        return GitDocument.Parse(fileSystem.ReadAllBytes(path));
+    }
+
+    private static string Apply(
+        GitDocument document,
+        ConfigurationPhysicalTargetWriterRequest request,
+        bool mutate
     )
     {
-        if (lines.Count == 0)
+        GitDocument working = mutate ? document : document.Clone();
+        foreach (ConfigurationChange change in request.Changes)
         {
-            return string.Empty;
-        }
-
-        string text = string.Join(newLine, lines);
-        return trailingNewLine ? text + newLine : text;
-    }
-
-    private string CreatePhysicalPathIdentity(string targetPathOrName)
-    {
-        string targetPath = fileSystem.GetFullPath(targetPathOrName);
-        return NormalizePhysicalTargetConfigurationPathSegments(
-            Path.TrimEndingDirectorySeparator(targetPath)
-        );
-    }
-
-    private static StringComparison GetPathComparison() =>
-        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-
-    private static StringComparer GetPathComparer() =>
-        OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
-
-    private static string NormalizePhysicalTargetConfigurationPathSegments(string path)
-    {
-        ConfigurationPathKind kind = GetConfigurationPathKind(path);
-        return kind == ConfigurationPathKind.Invalid
-            ? NormalizeRelativeConfigurationPathSegments(path)
-            : NormalizeAbsoluteConfigurationPathSegments(path);
-    }
-
-    private static string NormalizeAbsoluteConfigurationPathSegments(string path)
-    {
-        ConfigurationPathKind kind = GetConfigurationPathKind(path);
-        if (kind == ConfigurationPathKind.Invalid)
-        {
-            return path;
-        }
-
-        string normalized = IsWindowsConfigurationPathKind(kind)
-            ? path.Replace('\\', '/')
-            : path;
-        int duplicateSlashRootLength = kind == ConfigurationPathKind.WindowsUnc ? 2 : 0;
-        while (normalized.IndexOf("//", duplicateSlashRootLength, StringComparison.Ordinal) >= 0)
-        {
-            normalized =
-                normalized[..duplicateSlashRootLength]
-                + normalized[duplicateSlashRootLength..].Replace(
-                    "//",
-                    "/",
-                    StringComparison.Ordinal
-                );
-        }
-
-        int rootLength = GetAbsoluteConfigurationPathRootLength(normalized, kind);
-        while (normalized.Length > rootLength && normalized.EndsWith('/'))
-        {
-            normalized = normalized[..^1];
-        }
-
-        string root = normalized[..rootLength];
-        string remainder = normalized[rootLength..];
-        var segments = new List<string>();
-        foreach (string segment in remainder.Split('/', StringSplitOptions.RemoveEmptyEntries))
-        {
-            if (segment == ".")
+            string key = CanonicalizeSupportedConfigurationKey(change.Key);
+            string? existing = working.GetValue(key);
+            bool remove =
+                request.PlanOperation == ConfigurationPlanOperation.Remove
+                || change.Operation == ConfigurationChangeOperation.Remove;
+            if (remove)
             {
-                continue;
-            }
-
-            if (segment == "..")
-            {
-                if (segments.Count > 0)
+                if (!request.IsOwned(change))
                 {
-                    segments.RemoveAt(segments.Count - 1);
-                }
-
-                continue;
-            }
-
-            segments.Add(segment);
-        }
-
-        if (segments.Count == 0)
-        {
-            return root;
-        }
-
-        string joinedSegments = string.Join('/', segments);
-        return root.EndsWith('/') ? root + joinedSegments : root + "/" + joinedSegments;
-    }
-
-    private static string NormalizeRelativeConfigurationPathSegments(string path)
-    {
-        if (IsRootedInvalidConfigurationPath(path))
-        {
-            return NormalizeConfigurationPath(path);
-        }
-
-        string normalized = path.Replace('\\', '/');
-        while (normalized.Contains("//", StringComparison.Ordinal))
-        {
-            normalized = normalized.Replace("//", "/", StringComparison.Ordinal);
-        }
-
-        var segments = new List<string>();
-        foreach (string segment in normalized.Split('/', StringSplitOptions.RemoveEmptyEntries))
-        {
-            if (segment == ".")
-            {
-                continue;
-            }
-
-            if (segment == "..")
-            {
-                if (segments.Count > 0 && segments[^1] != "..")
-                {
-                    segments.RemoveAt(segments.Count - 1);
-                }
-                else
-                {
-                    segments.Add(segment);
-                }
-
-                continue;
-            }
-
-            segments.Add(segment);
-        }
-
-        return string.Join('/', segments);
-    }
-
-    private static string NormalizeConfigurationPath(string path)
-    {
-        ConfigurationPathKind kind = GetConfigurationPathKind(path);
-        string normalized = IsWindowsConfigurationPathKind(kind)
-            ? path.Replace('\\', '/')
-            : path;
-        int rootLength = kind == ConfigurationPathKind.WindowsUnc ? 2 : 0;
-        while (normalized.IndexOf("//", rootLength, StringComparison.Ordinal) >= 0)
-        {
-            normalized =
-                normalized[..rootLength]
-                + normalized[rootLength..].Replace("//", "/", StringComparison.Ordinal);
-        }
-
-        return normalized.TrimEnd('/');
-    }
-
-    private static bool IsRootedInvalidConfigurationPath(string path) =>
-        path.Length > 0 && (path[0] == '/' || path[0] == '\\');
-
-    private static int GetAbsoluteConfigurationPathRootLength(
-        string normalizedPath,
-        ConfigurationPathKind kind
-    )
-    {
-        if (kind == ConfigurationPathKind.PosixAbsolute)
-        {
-            return 1;
-        }
-
-        if (kind == ConfigurationPathKind.WindowsDrive)
-        {
-            return Math.Min(3, normalizedPath.Length);
-        }
-
-        int serverEnd = normalizedPath.IndexOf('/', 2);
-        if (serverEnd < 0)
-        {
-            return normalizedPath.Length;
-        }
-
-        int shareEnd = normalizedPath.IndexOf('/', serverEnd + 1);
-        return shareEnd < 0 ? normalizedPath.Length : shareEnd;
-    }
-
-    private static ConfigurationPathKind GetConfigurationPathKind(string path)
-    {
-        if (string.IsNullOrEmpty(path))
-        {
-            return ConfigurationPathKind.Invalid;
-        }
-
-        if (
-            path.StartsWith(@"\\", StringComparison.Ordinal)
-            || path.StartsWith("//", StringComparison.Ordinal)
-        )
-        {
-            return ConfigurationPathKind.WindowsUnc;
-        }
-
-        if (
-            path.Length >= 3
-            && char.IsLetter(path[0])
-            && path[1] == ':'
-            && (path[2] == '\\' || path[2] == '/')
-        )
-        {
-            return ConfigurationPathKind.WindowsDrive;
-        }
-
-        if (path[0] == '/')
-        {
-            return path.Contains('\\', StringComparison.Ordinal)
-                ? ConfigurationPathKind.Invalid
-                : ConfigurationPathKind.PosixAbsolute;
-        }
-
-        return ConfigurationPathKind.Invalid;
-    }
-
-    private static bool IsWindowsConfigurationPathKind(ConfigurationPathKind kind) =>
-        kind is ConfigurationPathKind.WindowsDrive or ConfigurationPathKind.WindowsUnc;
-
-    private enum ConfigurationPathKind
-    {
-        Invalid,
-        WindowsDrive,
-        WindowsUnc,
-        PosixAbsolute,
-    }
-
-    private static string ComputeSha256(string value) =>
-        ComputeSha256(Encoding.UTF8.GetBytes(value));
-
-    private static string ComputeSha256(byte[] value) =>
-        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(value))
-            .ToLower(CultureInfo.InvariantCulture);
-
-    private sealed record GitConfigChange(
-        GitConfigKey Key,
-        ConfigurationChange Change,
-        ConfigurationPhysicalTargetOwnershipProof? OwnershipProof
-    )
-    {
-        public string? Value => Change.Value;
-
-        public bool HasOwnershipProof => OwnershipProof is not null;
-
-        public string? OwnershipProofPlannedValueSha256 =>
-            OwnershipProof?.PlannedValueSha256;
-    }
-
-    private readonly record struct GitConfigKey(
-        string SectionName,
-        string? Subsection,
-        string VariableName,
-        string CanonicalConfigurationKey
-    );
-
-    private readonly record struct GitConfigSectionLocation(
-        GitConfigKey Key,
-        int HeaderLineIndex,
-        int EndExclusiveLineIndex
-    );
-
-    private readonly record struct GitConfigEntryLocation(
-        GitConfigKey Key,
-        int LineIndex,
-        string Value
-    );
-
-    private sealed record GitConfigDocument
-    {
-        private GitConfigDocument(
-            string path,
-            string originalText,
-            byte[]? originalContentsBytes,
-            IReadOnlyList<string> lines,
-            string newLine,
-            bool hadTrailingNewLine,
-            IReadOnlyList<GitConfigSectionLocation> sections,
-            IReadOnlyList<GitConfigEntryLocation> entries,
-            FileMutationExpectation mutationExpectation
-        )
-        {
-            Path = path;
-            OriginalText = originalText;
-            OriginalContentsBytes = originalContentsBytes;
-            Lines = lines;
-            NewLine = newLine;
-            HadTrailingNewLine = hadTrailingNewLine;
-            Sections = sections;
-            Entries = entries;
-            MutationExpectation = mutationExpectation;
-        }
-
-        public string Path { get; }
-
-        public string OriginalText { get; }
-
-        public byte[]? OriginalContentsBytes { get; }
-
-        public IReadOnlyList<string> Lines { get; init; }
-
-        public string NewLine { get; }
-
-        public bool HadTrailingNewLine { get; }
-
-        public IReadOnlyList<GitConfigSectionLocation> Sections { get; }
-
-        public IReadOnlyList<GitConfigEntryLocation> Entries { get; }
-
-        public FileMutationExpectation MutationExpectation { get; }
-
-        public static GitConfigDocument CreateMissing(string path) =>
-            new(
-                path,
-                string.Empty,
-                null,
-                [],
-                Environment.NewLine,
-                hadTrailingNewLine: false,
-                [],
-                [],
-                FileMutationExpectation.Missing
-            );
-
-        public static GitConfigDocument Parse(
-            string path,
-            string text,
-            FileMutationExpectation mutationExpectation,
-            byte[]? originalContentsBytes = null
-        )
-        {
-            string newLine = DetectNewLine(text);
-            string[] lines = SplitLines(text);
-            bool hadTrailingNewLine = text.EndsWith('\n');
-            var sections = new List<GitConfigSectionLocation>();
-            var entries = new List<GitConfigEntryLocation>();
-            GitConfigSectionBuilder? currentSection = null;
-
-            for (var lineIndex = 0; lineIndex < lines.Length; lineIndex++)
-            {
-                string line = lines[lineIndex];
-                ThrowIfLineContainsUnsupportedSyntax(line);
-                if (TryParseSection(line, out GitConfigKey sectionKey))
-                {
-                    ThrowIfUnsupportedIncludeDirective(sectionKey);
-                    if (currentSection is not null)
-                    {
-                        sections.Add(currentSection.ToLocation(lineIndex));
-                    }
-
-                    currentSection = new GitConfigSectionBuilder(sectionKey, lineIndex);
-                    continue;
-                }
-
-                if (line.TrimStart().StartsWith('['))
-                {
-                    throw new NotSupportedException(
-                        "Configuration conflict: Git config section syntax is not supported for "
-                            + "safe physical mutation."
+                    throw new InvalidOperationException(
+                        "Git configuration removal requires recognized ownership."
                     );
+                }
+                working.Remove(key);
+                continue;
+            }
+
+            if (existing is not null && !request.IsOwned(change))
+            {
+                throw new InvalidOperationException(
+                    "The Git configuration selector already exists without recognized ownership."
+                );
+            }
+
+            working.Set(key, RenderValue(key, change.Value));
+        }
+
+        return working.Render();
+    }
+
+    private static string? RenderValue(string key, string? value) =>
+        value is null ? null
+        : string.Equals(
+            CanonicalizeSupportedConfigurationKey(key),
+            HelperKey,
+            StringComparison.Ordinal
+        )
+            ? RenderCredentialHelperCommandValue(value)
+        : value.ToLowerInvariant();
+
+    private sealed class GitDocument
+    {
+        private readonly List<string> lines;
+        private readonly bool hadBom;
+        private readonly string newLine;
+        private readonly bool trailingNewLine;
+
+        private GitDocument(List<string> lines, bool hadBom, string newLine, bool trailingNewLine)
+        {
+            this.lines = lines;
+            this.hadBom = hadBom;
+            this.newLine = newLine;
+            this.trailingNewLine = trailingNewLine;
+        }
+
+        public string Text => Render();
+
+        public static GitDocument Missing() =>
+            new([], hadBom: false, Environment.NewLine, trailingNewLine: true);
+
+        public static GitDocument Parse(byte[] bytes)
+        {
+            bool bom = bytes is [0xEF, 0xBB, 0xBF, ..];
+            string text = Utf8NoBom.GetString(bom ? bytes[3..] : bytes);
+            string newline = text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+            bool trailing = text.EndsWith('\n');
+            return new GitDocument(SplitLines(text), bom, newline, trailing);
+        }
+
+        public GitDocument Clone() => new([.. lines], hadBom, newLine, trailingNewLine);
+
+        public string? GetValue(string canonicalKey)
+        {
+            (string section, string? subsection, string variable) = ParseKey(canonicalKey);
+            string? currentSection = null;
+            string? currentSubsection = null;
+            string? value = null;
+            var matches = 0;
+            foreach (string line in lines)
+            {
+                if (TryParseSection(line, out string? parsedSection, out string? parsedSubsection))
+                {
+                    currentSection = parsedSection;
+                    currentSubsection = parsedSubsection;
+                    continue;
                 }
 
                 if (
-                    currentSection is not null
-                    && TryParseVariableAssignment(
-                        line,
-                        out string variableName,
-                        out string variableValue
+                    string.Equals(currentSection, section, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(
+                        currentSubsection,
+                        subsection,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                    && TryParseVariable(line, out string? parsedVariable, out string? parsedValue)
+                    && string.Equals(parsedVariable, variable, StringComparison.OrdinalIgnoreCase)
+                )
+                {
+                    value = Unquote(parsedValue!);
+                    matches++;
+                }
+            }
+
+            return matches switch
+            {
+                0 => null,
+                1 => value,
+                _ => throw new InvalidOperationException(
+                    "The managed Git configuration selector is declared more than once."
+                ),
+            };
+        }
+
+        public void Set(string canonicalKey, string? value)
+        {
+            (string section, string? subsection, string variable) = ParseKey(canonicalKey);
+            int existing = FindVariableLine(section, subsection, variable);
+            string rendered = "\t" + variable + " = " + Quote(value ?? string.Empty);
+            if (existing >= 0)
+            {
+                lines[existing] = rendered;
+                return;
+            }
+
+            int sectionLine = FindSectionLine(section, subsection);
+            if (sectionLine < 0)
+            {
+                lines.Add(RenderSection(section, subsection));
+                lines.Add(rendered);
+                return;
+            }
+
+            int insert = sectionLine + 1;
+            while (insert < lines.Count && !TryParseSection(lines[insert], out _, out _))
+            {
+                insert++;
+            }
+            lines.Insert(insert, rendered);
+        }
+
+        public void Remove(string canonicalKey)
+        {
+            (string section, string? subsection, string variable) = ParseKey(canonicalKey);
+            int index = FindVariableLine(section, subsection, variable);
+            if (index >= 0)
+            {
+                lines.RemoveAt(index);
+            }
+        }
+
+        public string Render()
+        {
+            string text = string.Join(newLine, lines);
+            return trailingNewLine && lines.Count > 0 ? text + newLine : text;
+        }
+
+        public byte[] Encode(string value)
+        {
+            byte[] contents = Utf8NoBom.GetBytes(value);
+            return hadBom ? [0xEF, 0xBB, 0xBF, .. contents] : contents;
+        }
+
+        private int FindSectionLine(string section, string? subsection)
+        {
+            for (var index = 0; index < lines.Count; index++)
+            {
+                if (
+                    TryParseSection(lines[index], out string? parsed, out string? parsedSubsection)
+                    && string.Equals(parsed, section, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(
+                        parsedSubsection,
+                        subsection,
+                        StringComparison.OrdinalIgnoreCase
                     )
                 )
                 {
-                    entries.Add(
-                        new GitConfigEntryLocation(
-                            currentSection.Key with { VariableName = variableName },
-                            lineIndex,
-                            variableValue
-                        )
-                    );
-                    continue;
-                }
-
-                if (currentSection is null && IsNonCommentContent(line))
-                {
-                    throw new NotSupportedException(
-                        "Configuration conflict: top-level Git config content is not supported "
-                            + "for safe physical mutation."
-                    );
-                }
-
-                if (currentSection is not null && IsNonCommentContent(line))
-                {
-                    throw new NotSupportedException(
-                        "Configuration conflict: Git config variable syntax is not supported for "
-                            + "safe physical mutation."
-                    );
+                    return index;
                 }
             }
-
-            if (currentSection is not null)
-            {
-                sections.Add(currentSection.ToLocation(lines.Length));
-            }
-
-            return new GitConfigDocument(
-                path,
-                text,
-                originalContentsBytes,
-                lines,
-                newLine,
-                hadTrailingNewLine,
-                sections,
-                entries,
-                mutationExpectation
-            );
+            return -1;
         }
 
-        public IEnumerable<GitConfigEntryLocation> FindEntries(GitConfigKey key) =>
-            Entries.Where(entry => KeysEqual(entry.Key, key));
-
-        public IEnumerable<GitConfigEntryLocation>
-            FindAzureDevOpsEffectiveCredentialHelperEntries()
+        private int FindVariableLine(string section, string? subsection, string variable)
         {
-            foreach (GitConfigEntryLocation entry in Entries)
+            string? currentSection = null;
+            string? currentSubsection = null;
+            var matchingLine = -1;
+            for (var index = 0; index < lines.Count; index++)
             {
-                if (!IsCredentialHelperEntry(entry.Key))
+                if (
+                    TryParseSection(
+                        lines[index],
+                        out string? parsedSection,
+                        out string? parsedSubsection
+                    )
+                )
+                {
+                    currentSection = parsedSection;
+                    currentSubsection = parsedSubsection;
+                    continue;
+                }
+
+                if (
+                    !string.Equals(currentSection, section, StringComparison.OrdinalIgnoreCase)
+                    || !string.Equals(
+                        currentSubsection,
+                        subsection,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                    || !TryParseVariable(lines[index], out string? parsedVariable, out _)
+                    || !string.Equals(parsedVariable, variable, StringComparison.OrdinalIgnoreCase)
+                )
                 {
                     continue;
                 }
 
-                if (entry.Key.Subsection is null)
+                if (matchingLine >= 0)
                 {
-                    yield return entry;
-                    continue;
-                }
-
-                DevAzureComCredentialSubsectionMatch match =
-                    GetDevAzureComCredentialSubsectionMatch(entry.Key.Subsection);
-                if (match == DevAzureComCredentialSubsectionMatch.UnsafeEffectiveAlias)
-                {
-                    throw new NotSupportedException(
-                        "Configuration conflict: Git config contains an effective Azure DevOps "
-                            + "credential helper subsection alias that cannot be canonicalized "
-                            + "safely."
+                    throw new InvalidOperationException(
+                        "The managed Git configuration selector is declared more than once."
                     );
                 }
 
-                if (match == DevAzureComCredentialSubsectionMatch.Canonicalizable)
-                {
-                    yield return entry;
-                }
+                matchingLine = index;
             }
+
+            return matchingLine;
         }
 
-        public GitConfigSectionLocation? FindSection(GitConfigKey key)
+        private static (string Section, string? Subsection, string Variable) ParseKey(
+            string canonicalKey
+        ) =>
+            canonicalKey == HelperKey
+                ? ("credential", null, "helper")
+                : ("credential", "https://dev.azure.com", "useHttpPath");
+
+        private static bool TryParseSection(
+            string line,
+            out string? section,
+            out string? subsection
+        )
         {
-            foreach (GitConfigSectionLocation section in Sections)
+            section = null;
+            subsection = null;
+            string trimmed = line.Trim();
+            if (!trimmed.StartsWith('[') || !trimmed.EndsWith(']'))
             {
-                if (SectionsEqual(section.Key, key))
-                {
-                    return section;
-                }
+                return false;
             }
 
-            return null;
+            string body = trimmed[1..^1].Trim();
+            int quote = body.IndexOf('"');
+            if (quote < 0)
+            {
+                section = body;
+                return true;
+            }
+
+            section = body[..quote].Trim();
+            subsection = body[(quote + 1)..].TrimEnd('"').Trim();
+            return true;
         }
 
-        private static string DetectNewLine(string text)
+        private static bool TryParseVariable(string line, out string? variable, out string? value)
         {
-            bool hasCrLf = false;
-            bool hasLf = false;
-            bool hasBareCr = false;
-            for (var index = 0; index < text.Length; index++)
+            variable = null;
+            value = null;
+            string trimmed = line.Trim();
+            if (trimmed.Length == 0 || trimmed.StartsWith('#') || trimmed.StartsWith(';'))
             {
-                char character = text[index];
-                if (character == '\r')
-                {
-                    if (index + 1 < text.Length && text[index + 1] == '\n')
-                    {
-                        hasCrLf = true;
-                        index++;
-                    }
-                    else
-                    {
-                        hasBareCr = true;
-                    }
-
-                    continue;
-                }
-
-                if (character == '\n')
-                {
-                    hasLf = true;
-                }
+                return false;
             }
 
-            if (hasBareCr || (hasCrLf && hasLf))
+            int equals = trimmed.IndexOf('=');
+            if (equals < 0)
             {
-                throw new NotSupportedException(
-                    "Configuration conflict: mixed Git config newline styles are not supported "
-                        + "for safe physical mutation."
-                );
+                variable = trimmed;
+                value = "true";
+                return true;
             }
 
-            return hasCrLf ? "\r\n" : "\n";
+            variable = trimmed[..equals].Trim();
+            value = trimmed[(equals + 1)..].Trim();
+            return variable.Length > 0;
         }
 
-        private static string[] SplitLines(string text)
+        private static string RenderSection(string section, string? subsection) =>
+            subsection is null
+                ? "[" + section + "]"
+                : "["
+                    + section
+                    + " \""
+                    + subsection.Replace("\"", "\\\"", StringComparison.Ordinal)
+                    + "\"]";
+
+        private static string Quote(string value) =>
+            "\""
+            + value
+                .Replace("\\", "\\\\", StringComparison.Ordinal)
+                .Replace("\"", "\\\"", StringComparison.Ordinal)
+            + "\"";
+
+        private static string Unquote(string value)
+        {
+            string trimmed = value.Trim();
+            if (trimmed.Length >= 2 && trimmed[0] == '"' && trimmed[^1] == '"')
+            {
+                return trimmed[1..^1]
+                    .Replace("\\\"", "\"", StringComparison.Ordinal)
+                    .Replace("\\\\", "\\", StringComparison.Ordinal);
+            }
+            return trimmed;
+        }
+
+        private static List<string> SplitLines(string text)
         {
             if (text.Length == 0)
             {
                 return [];
             }
-
-            string[] rawLines = text.Split('\n');
-            int lineCount = text.EndsWith('\n') ? rawLines.Length - 1 : rawLines.Length;
-            var lines = new string[lineCount];
-            for (var index = 0; index < lineCount; index++)
+            List<string> result = text.Replace("\r\n", "\n", StringComparison.Ordinal)
+                .Split('\n')
+                .ToList();
+            if (text.EndsWith('\n'))
             {
-                lines[index] = rawLines[index].EndsWith('\r')
-                    ? rawLines[index][..^1]
-                    : rawLines[index];
+                result.RemoveAt(result.Count - 1);
             }
-
-            return lines;
+            return result;
         }
-
-        private static bool TryParseSection(string line, out GitConfigKey key)
-        {
-            key = default;
-            string trimmedStart = line.TrimStart();
-            if (!trimmedStart.StartsWith('['))
-            {
-                return false;
-            }
-
-            var index = 1;
-            int sectionNameStartIndex = index;
-            while (
-                index < trimmedStart.Length
-                && IsSupportedSectionNameCharacter(trimmedStart[index])
-            )
-            {
-                index++;
-            }
-
-            if (index == sectionNameStartIndex)
-            {
-                return false;
-            }
-
-            string sectionName = trimmedStart[sectionNameStartIndex..index];
-            if (!IsSupportedSectionName(sectionName))
-            {
-                return false;
-            }
-
-            if (index >= trimmedStart.Length)
-            {
-                return false;
-            }
-
-            if (trimmedStart[index] == ']')
-            {
-                if (!IsSectionHeaderTrailingTextSupported(trimmedStart[(index + 1)..]))
-                {
-                    return false;
-                }
-
-                key = new GitConfigKey(sectionName, null, string.Empty, string.Empty);
-                return true;
-            }
-
-            if (trimmedStart[index] is not ' ' and not '\t')
-            {
-                return false;
-            }
-
-            while (index < trimmedStart.Length && trimmedStart[index] is ' ' or '\t')
-            {
-                index++;
-            }
-
-            if (
-                index >= trimmedStart.Length
-                || trimmedStart[index] != '"'
-                || !TryParseQuotedSubsection(
-                    trimmedStart,
-                    index,
-                    out string subsection,
-                    out int closingQuoteIndex
-                )
-                || closingQuoteIndex + 1 >= trimmedStart.Length
-                || trimmedStart[closingQuoteIndex + 1] != ']'
-                || !IsSectionHeaderTrailingTextSupported(
-                    trimmedStart[(closingQuoteIndex + 2)..]
-                )
-            )
-            {
-                return false;
-            }
-
-            key = new GitConfigKey(
-                sectionName,
-                subsection,
-                string.Empty,
-                string.Empty
-            );
-            return true;
-        }
-
-        private static bool IsSupportedSectionName(string sectionName) =>
-            sectionName.Length > 0
-            && sectionName.All(character =>
-                char.IsAsciiLetterOrDigit(character)
-                || character is '-' or '.'
-            );
-
-        private static bool IsSupportedSectionNameCharacter(char character) =>
-            char.IsAsciiLetterOrDigit(character) || character is '-' or '.';
-
-        private static void ThrowIfUnsupportedIncludeDirective(GitConfigKey sectionKey)
-        {
-            if (
-                string.Equals(
-                    sectionKey.SectionName,
-                    IncludeSectionName,
-                    StringComparison.OrdinalIgnoreCase
-                )
-                || string.Equals(
-                    sectionKey.SectionName,
-                    IncludeIfSectionName,
-                    StringComparison.OrdinalIgnoreCase
-                )
-            )
-            {
-                throw new NotSupportedException(
-                    "Configuration conflict: Git config include/includeIf directives are not "
-                        + "supported for safe physical mutation."
-                );
-            }
-        }
-
-        private static bool IsSectionHeaderTrailingTextSupported(string text)
-        {
-            string trailingText = text.TrimStart();
-            return trailingText.Length == 0 || trailingText[0] is '#' or ';';
-        }
-
-        private static void ThrowIfLineContainsUnsupportedSyntax(string line)
-        {
-            if (
-                line.Any(character =>
-                    character != '\t' && (character < ' ' || character == '\u007f')
-                )
-            )
-            {
-                throw new NotSupportedException(
-                    "Configuration conflict: Git config contains unsupported control characters."
-                );
-            }
-
-            string trimmedEnd = line.TrimEnd();
-            if (trimmedEnd.EndsWith('\\'))
-            {
-                throw new NotSupportedException(
-                    "Configuration conflict: Git config line continuations are not supported for "
-                        + "safe physical mutation."
-                );
-            }
-        }
-
-        private static bool TryParseVariableAssignment(
-            string line,
-            out string variableName,
-            out string value
-        )
-        {
-            variableName = string.Empty;
-            value = string.Empty;
-            string trimmed = line.TrimStart();
-            if (trimmed.Length == 0 || trimmed[0] is '#' or ';' or '[')
-            {
-                return false;
-            }
-
-            int nameEnd = 0;
-            while (
-                nameEnd < trimmed.Length
-                && IsSupportedVariableNameCharacter(trimmed[nameEnd])
-            )
-            {
-                nameEnd++;
-            }
-
-            if (
-                nameEnd == 0
-                || !char.IsAsciiLetter(trimmed[0])
-                || (nameEnd < trimmed.Length && !IsVariableNameTerminator(trimmed[nameEnd]))
-            )
-            {
-                return false;
-            }
-
-            int index = nameEnd;
-            while (index < trimmed.Length && trimmed[index] is ' ' or '\t')
-            {
-                index++;
-            }
-
-            if (index >= trimmed.Length || trimmed[index] != '=')
-            {
-                return false;
-            }
-
-            index++;
-            while (index < trimmed.Length && trimmed[index] is ' ' or '\t')
-            {
-                index++;
-            }
-
-            if (!TryParseVariableValue(trimmed[index..], out value))
-            {
-                return false;
-            }
-
-            variableName = trimmed[..nameEnd];
-            return true;
-        }
-
-        private static bool IsSupportedVariableNameCharacter(char character) =>
-            char.IsAsciiLetterOrDigit(character) || character == '-';
-
-        private static bool IsVariableNameTerminator(char character) =>
-            character is ' ' or '\t' or '=';
-
-        private static bool TryParseVariableValue(string valueText, out string value)
-        {
-            value = string.Empty;
-            if (valueText.Length == 0)
-            {
-                return true;
-            }
-
-            if (valueText[0] == '"')
-            {
-                return TryParseQuotedVariableValue(valueText, out value);
-            }
-
-            return TryParseSimpleUnquotedVariableValue(valueText, out value);
-        }
-
-        private static bool TryParseSimpleUnquotedVariableValue(
-            string valueText,
-            out string value
-        )
-        {
-            value = string.Empty;
-            if (
-                valueText.Length != valueText.TrimEnd(' ', '\t').Length
-                || valueText.Contains('"', StringComparison.Ordinal)
-                || valueText.Contains('\\', StringComparison.Ordinal)
-                || valueText.Contains('#', StringComparison.Ordinal)
-                || valueText.Contains(';', StringComparison.Ordinal)
-            )
-            {
-                return false;
-            }
-
-            value = valueText;
-            return true;
-        }
-
-        private static bool TryParseQuotedVariableValue(string valueText, out string value)
-        {
-            value = string.Empty;
-            if (
-                !TryParseQuotedSubsection(
-                    valueText,
-                    openingQuoteIndex: 0,
-                    out string unescaped,
-                    out int closingQuoteIndex
-                )
-            )
-            {
-                return false;
-            }
-
-            string trailingText = valueText[(closingQuoteIndex + 1)..].TrimStart();
-            if (trailingText.Length > 0 && trailingText[0] is not '#' and not ';')
-            {
-                return false;
-            }
-
-            value = unescaped;
-            return true;
-        }
-
-        private static bool IsNonCommentContent(string line)
-        {
-            string trimmed = line.TrimStart();
-            return trimmed.Length > 0 && trimmed[0] is not '#' and not ';';
-        }
-
-        private static bool TryParseQuotedSubsection(
-            string text,
-            int openingQuoteIndex,
-            out string unescaped,
-            out int closingQuoteIndex
-        )
-        {
-            var builder = new StringBuilder(text.Length - openingQuoteIndex);
-            var escaping = false;
-            for (int index = openingQuoteIndex + 1; index < text.Length; index++)
-            {
-                char character = text[index];
-                if (escaping)
-                {
-                    builder.Append(
-                        character switch
-                        {
-                            '\\' => '\\',
-                            '"' => '"',
-                            _ => '\0',
-                        }
-                    );
-                    if (builder[^1] == '\0')
-                    {
-                        unescaped = string.Empty;
-                        closingQuoteIndex = -1;
-                        return false;
-                    }
-
-                    escaping = false;
-                    continue;
-                }
-
-                if (character == '\\')
-                {
-                    escaping = true;
-                    continue;
-                }
-
-                if (character == '"')
-                {
-                    unescaped = builder.ToString();
-                    closingQuoteIndex = index;
-                    return !unescaped.Any(subsectionCharacter =>
-                        subsectionCharacter < ' ' || subsectionCharacter == '\u007f'
-                    );
-                }
-
-                builder.Append(character);
-            }
-
-            unescaped = string.Empty;
-            closingQuoteIndex = -1;
-            return false;
-        }
-
-        private static bool KeysEqual(GitConfigKey left, GitConfigKey right) =>
-            string.Equals(left.SectionName, right.SectionName, StringComparison.OrdinalIgnoreCase)
-            && CredentialSubsectionsEqualForKey(left, right, failOnUnsafeDevAzureAlias: true)
-            && string.Equals(
-                left.VariableName,
-                right.VariableName,
-                StringComparison.OrdinalIgnoreCase
-            );
-
-        private static bool SectionsEqual(GitConfigKey left, GitConfigKey right) =>
-            string.Equals(left.SectionName, right.SectionName, StringComparison.OrdinalIgnoreCase)
-            && CredentialSubsectionsEqualForSection(
-                left,
-                right,
-                failOnUnsafeDevAzureAlias: false
-            );
-
-        private static bool CredentialSubsectionsEqualForKey(
-            GitConfigKey left,
-            GitConfigKey right,
-            bool failOnUnsafeDevAzureAlias
-        )
-        {
-            if (
-                IsCredentialUseHttpPathKey(left)
-                && IsCredentialUseHttpPathKey(right)
-                && (
-                    IsDevAzureComCredentialSubsection(
-                        left.Subsection,
-                        failOnUnsafeDevAzureAlias
-                    )
-                    || IsDevAzureComCredentialSubsection(
-                        right.Subsection,
-                        failOnUnsafeDevAzureAlias
-                    )
-                )
-            )
-            {
-                return IsDevAzureComCredentialSubsection(
-                        left.Subsection,
-                        failOnUnsafeDevAzureAlias
-                    )
-                    && IsDevAzureComCredentialSubsection(
-                        right.Subsection,
-                        failOnUnsafeDevAzureAlias
-                    );
-            }
-
-            return string.Equals(left.Subsection, right.Subsection, StringComparison.Ordinal);
-        }
-
-        private static bool CredentialSubsectionsEqualForSection(
-            GitConfigKey section,
-            GitConfigKey target,
-            bool failOnUnsafeDevAzureAlias
-        )
-        {
-            if (
-                IsCredentialSection(section)
-                && IsCredentialUseHttpPathKey(target)
-                && IsDevAzureComCredentialSubsection(
-                    target.Subsection,
-                    failOnUnsafeDevAzureAlias
-                )
-            )
-            {
-                return IsDevAzureComCredentialSubsection(
-                    section.Subsection,
-                    failOnUnsafeDevAzureAlias
-                );
-            }
-
-            return string.Equals(section.Subsection, target.Subsection, StringComparison.Ordinal);
-        }
-
-        private static bool IsCredentialSection(GitConfigKey key) =>
-            string.Equals(
-                key.SectionName,
-                CredentialSectionName,
-                StringComparison.OrdinalIgnoreCase
-            );
-
-        private static bool IsCredentialUseHttpPathKey(GitConfigKey key) =>
-            IsCredentialSection(key)
-            && string.Equals(
-                key.VariableName,
-                UseHttpPathVariableName,
-                StringComparison.OrdinalIgnoreCase
-            );
-
-        private static bool IsCredentialHelperEntry(GitConfigKey key) =>
-            IsCredentialSection(key)
-            && string.Equals(
-                key.VariableName,
-                HelperVariableName,
-                StringComparison.OrdinalIgnoreCase
-            );
-
-        private static bool IsDevAzureComCredentialSubsection(
-            string? subsection,
-            bool failOnUnsafeAlias
-        )
-        {
-            DevAzureComCredentialSubsectionMatch match =
-                GetDevAzureComCredentialSubsectionMatch(subsection);
-            if (match == DevAzureComCredentialSubsectionMatch.UnsafeEffectiveAlias)
-            {
-                if (failOnUnsafeAlias)
-                {
-                    throw new NotSupportedException(
-                        "Configuration conflict: Git config contains a credential "
-                            + "\"https://dev.azure.com\".useHttpPath subsection alias that "
-                            + "cannot be canonicalized safely."
-                    );
-                }
-
-                return false;
-            }
-
-            return match == DevAzureComCredentialSubsectionMatch.Canonicalizable;
-        }
-
-        private static DevAzureComCredentialSubsectionMatch
-            GetDevAzureComCredentialSubsectionMatch(string? subsection)
-        {
-            if (subsection is null)
-            {
-                return DevAzureComCredentialSubsectionMatch.NotDevAzureCom;
-            }
-
-            if (
-                string.Equals(
-                    subsection,
-                    DevAzureComCredentialSubsection,
-                    StringComparison.Ordinal
-                )
-            )
-            {
-                return DevAzureComCredentialSubsectionMatch.Canonicalizable;
-            }
-
-            if (
-                !Uri.TryCreate(subsection, UriKind.Absolute, out Uri? uri)
-                || !string.Equals(
-                    uri.Scheme,
-                    Uri.UriSchemeHttps,
-                    StringComparison.OrdinalIgnoreCase
-                )
-            )
-            {
-                return DevAzureComCredentialSubsectionMatch.NotDevAzureCom;
-            }
-
-            DevAzureComCredentialSubsectionMatch hostMatch =
-                GetDevAzureComCredentialHostMatch(uri);
-            if (hostMatch != DevAzureComCredentialSubsectionMatch.Canonicalizable)
-            {
-                return hostMatch;
-            }
-
-            if (
-                !uri.IsDefaultPort
-                || !string.IsNullOrEmpty(uri.UserInfo)
-                || !string.IsNullOrEmpty(uri.Query)
-                || !string.IsNullOrEmpty(uri.Fragment)
-            )
-            {
-                return DevAzureComCredentialSubsectionMatch.UnsafeEffectiveAlias;
-            }
-
-            return uri.AbsolutePath is "" or "/"
-                ? DevAzureComCredentialSubsectionMatch.Canonicalizable
-                : DevAzureComCredentialSubsectionMatch.UnsafeEffectiveAlias;
-        }
-
-        private static DevAzureComCredentialSubsectionMatch GetDevAzureComCredentialHostMatch(
-            Uri uri
-        )
-        {
-            if (
-                IsCanonicalDevAzureComHost(uri.IdnHost)
-                && IsCanonicalDevAzureComHost(uri.Host)
-            )
-            {
-                return DevAzureComCredentialSubsectionMatch.Canonicalizable;
-            }
-
-            return IsDevAzureComEffectiveHostAlias(uri.IdnHost)
-                || IsDevAzureComEffectiveHostAlias(uri.Host)
-                ? DevAzureComCredentialSubsectionMatch.UnsafeEffectiveAlias
-                : DevAzureComCredentialSubsectionMatch.NotDevAzureCom;
-        }
-
-        private static bool IsCanonicalDevAzureComHost(string host) =>
-            string.Equals(host, DevAzureComHost, StringComparison.OrdinalIgnoreCase);
-
-        private static bool IsDevAzureComEffectiveHostAlias(string host)
-        {
-            string trimmedHost = host.TrimEnd('.');
-            return trimmedHost.Length != host.Length
-                && string.Equals(
-                    trimmedHost,
-                    DevAzureComHost,
-                    StringComparison.OrdinalIgnoreCase
-                );
-        }
-    }
-
-    private enum DevAzureComCredentialSubsectionMatch
-    {
-        NotDevAzureCom,
-        Canonicalizable,
-        UnsafeEffectiveAlias,
-    }
-
-    private sealed record GitConfigSectionBuilder(
-        GitConfigKey Key,
-        int HeaderLineIndex
-    )
-    {
-        public GitConfigSectionLocation ToLocation(int endExclusiveLineIndex) =>
-            new(Key, HeaderLineIndex, endExclusiveLineIndex);
     }
 }

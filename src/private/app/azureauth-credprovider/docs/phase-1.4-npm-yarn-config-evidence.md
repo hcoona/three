@@ -17,7 +17,7 @@ Owner: **ADAPTER-NPM and CONFIG**
 | Gate status                | Passed for npm, pnpm, and Yarn Berry configuration write planning, including scoped registry credential target selection.                                                                                                                                                                                                                                                                                                                                    |
 | Decision                   | Implement npm-compatible credential writes as configuration-manager-owned change plans. npm and pnpm use `.npmrc` entries scoped by registry URL. Yarn Berry uses `.yarnrc.yml` `npmRegistries` auth entries while reading registry declarations from `npmRegistryServer` and `npmScopes`.                                                                                                                                                                   |
 | Evidence scope             | Local reference package inspection covers `@microsoft/artifacts-npm-credprovider` 1.1.3 and `@microsoft/artifacts-credprovider-wrapper` 1.1.4 package metadata, declarations, README guidance, and bundled JavaScript behavior snippets as supporting references with auditable registry shasums. Disposable probes cover npm 11.9.0, pnpm 10.34.1, and Yarn 4.9.2 config resolution and default plus scoped write targets with fake credential values only. |
-| Implementation may proceed | Yes for Phase 12 npm/pnpm change-plan generation and Phase 13B Yarn change-plan generation, including scoped registry credential targets, subject to the credential write target and atomicity policies in this record. The adapter must not write files directly; persistent and temporary files must be applied by the configuration manager.                                                                                                              |
+| Implementation may proceed | Yes for Phase 12 npm/pnpm change-plan generation and Phase 13B Yarn change-plan generation, including scoped registry credential targets, subject to the credential write and selector-ownership policies in this record. The adapter must not write files directly; persistent and temporary files must be applied by the configuration manager.                                                                                                            |
 | Phase 1R routing           | Not entered. Yarn write support is accepted for user-level and CI temporary scopes. If later platform validation disproves Yarn consumption of configuration-manager-owned `.yarnrc.yml` targets, Yarn writes must stop and enter Phase 1R unless the requirement is explicitly changed.                                                                                                                                                                     |
 
 ## Reference Package Snapshot
@@ -685,116 +685,68 @@ Decision for Yarn:
 
 ## Credential Write Target Policy
 
-| Ecosystem | Default persistent target                               | CI temporary target                                                                                                                            | Default repository-local credential writes |
-| --------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| npm       | User `.npmrc`, or selected userconfig managed by CONFIG | Product-owned temporary `.npmrc` selected via `NPM_CONFIG_USERCONFIG`; include declarations if they would otherwise be hidden                  | No                                         |
-| pnpm      | Same `.npmrc` model as npm                              | Same temporary `.npmrc` selected via `NPM_CONFIG_USERCONFIG`; include declarations if they would otherwise be hidden                           | No                                         |
-| Yarn      | User `.yarnrc.yml` `npmRegistries` entries              | Product-owned temporary `HOME/.yarnrc.yml`; merged `YARN_RC_FILENAME` only if explicitly implemented; include hidden user-sourced declarations | No                                         |
+Persistent package-manager changes are declarative and flow through the
+configuration manager. The manager keeps the selected registry declarations and
+unrelated user settings, rejects conflicting unowned selectors, and records exact
+owned selectors in a sidecar manifest for later cleanup.
 
-All credential-bearing plans must set `containsCredentialMaterial=true` and must
-be denied by default for repository-local targets. Dry-run output, doctor output,
-and ownership manifests must not contain token values.
+Normal application and removal are intentionally not described as a transaction:
 
-Atomicity policy:
+- sibling changes are applied under the ordinary ownership-group lock;
+- each target uses the normal .NET/OS write abstraction already selected by the
+  platform layer;
+- the ownership sidecar records target kind, target path, and key, not previous
+  values, value hashes, or mutation history;
+- removal deletes only recognized owned selectors and preserves declarations,
+  comments where supported by the writer, unrelated credentials, and unowned
+  package-manager settings;
+- product-owned CI temporary files or directories are deleted during normal
+  cleanup behavior.
 
-- Multi-entry credential writes for one logical registry target must be represented
-  as a single change set with one transaction boundary. Examples include Yarn
-  `npmAuthToken` plus `npmAlwaysAuth`, and npm/pnpm compatibility groups such as
-  `_authToken` plus explicitly selected `always-auth`, `username`, `_password`, or
-  `email`.
-- CONFIG may satisfy the transaction boundary either by applying all sibling
-  entries through an atomic single-file replacement, or by using an equivalent
-  plan-group mechanism that verifies all before-state hashes before the first
-  mutation and commits all sibling ownership metadata together after the file
-  update succeeds.
-- A change set is successful only after every sibling entry and its ownership
-  metadata or manifest record has been committed. If any sibling entry or metadata
-  commit fails, the whole change set fails; no partial success may be reported to
-  the adapter, caller, doctor output, or ownership manifest.
-- For persistent user/global files, partial failure must restore the file to the
-  verified prior state for every sibling entry, including deletion of entries that
-  did not exist before the change set. If restoration cannot be verified, CONFIG
-  must leave the operation failed and report recovery guidance without recording
-  ownership of the partially applied entries.
-- For product-owned CI temporary containers, partial failure or cancellation deletes
-  the entire temporary `.npmrc`, temporary `HOME`, or explicitly merged temporary
-  `YARN_RC_FILENAME` container. Because these containers are disposable and
-  product-owned, whole-container cleanup is preferred over per-entry repair.
-- Explicit project-scoped writes, when enabled, must use the same change-set
-  atomicity and manifest-commit semantics as user/global writes, in addition to the
-  opt-in, conflict-detection, and ownership-metadata requirements above.
-
-Rollback and removal policy:
-
-- User/global plans must distinguish `create`, `update`, and `refresh` for each
-  owned credential entry. A `create` records that no prior owned entry existed;
-  rollback removes only that newly-created owned entry.
-- An `update` or `refresh` must include prior product-owned entry metadata, or a
-  before-state hash plus selector/value metadata sufficient for CONFIG to verify
-  the target still matches the planned before state and restore the previous
-  product-owned value. Rollback must not delete a pre-existing owned credential
-  that was updated or refreshed.
-- User/global rollback and removal must preserve registry declarations, comments
-  where practical, unrelated credentials, unowned package-manager settings, and
-  pre-existing product-owned entries that are not part of the failed operation.
-- For product-owned CI temporary containers, rollback/removal deletes the whole
-  temporary `.npmrc` file or temporary `HOME` directory created by the
-  configuration manager. These files and directories are product-owned disposable
-  containers, so whole-file or whole-directory deletion is the intended cleanup
-  semantic.
-- For an explicitly implemented merged `YARN_RC_FILENAME` CI file, cleanup
-  deletes that product-owned merged temporary file rather than editing entries in
-  place.
+Sibling target writes are ordinary independent operations; partial failure does
+not trigger cross-target recovery or crash-state reconstruction. The supported
+model also excludes malicious same-user races, privileged attackers, hostile
+kernels/filesystems, adversarial symlink or TOCTOU scenarios, and power-loss
+guarantees.
 
 ## Configuration-Manager Change-Plan Implications
 
-Phase 12 and Phase 13B should implement adapter output as declarative plans, not
-file writes:
+Phase 12 and Phase 13B emit functional declarative plans, not file writes:
 
 ```text
-ConfigurationChangeSet
-  changeSetId: stable id for one logical registry credential update
-  ecosystem: npm | pnpm | yarn
-  targetScope: user | ci-temporary | explicit-project
-  targetPathOrConfigKey: selected .npmrc or .yarnrc.yml path
-  entries:
-    - entrySelector: registry URL plus auth key selector
-      operation: create | update | refresh | remove
-      intendedCanonicalValue: redacted in diagnostics when credential-bearing
-      priorOwnedEntry:
-        required for update/refresh; includes owner id, selector, redacted
-        previous value metadata, and before-state hash sufficient to verify and
-        restore
-  conflictPolicy: fail on non-owned conflicting credential entries by default
-  atomicApplyPolicy:
-    verify all sibling before states before mutation;
-    apply by atomic single-file replacement or equivalent CONFIG transaction;
-    commit ownership manifest only after every sibling entry is durable
-  rollbackPolicy:
-    user/global create removes only the newly-created owned entry;
-    user/global update/refresh restores the previous product-owned value after
-    before-state verification;
-    product-owned CI temporary deletes the temporary file or directory;
-    partial failure rolls back the whole change set, never individual success
-  ciTemporaryDeclarationPolicy:
-    auth-only temporary config is allowed only when registry declarations remain
-    visible from project/workspace config; otherwise copy/include the required
-    user-sourced declarations in the product-owned temporary config
-  containsCredentialMaterial: true for auth entries
-  expiresAt: required for CI temporary plans when the CI job duration is known
+ConfigurationChangePlan
+  planId
+  ownerProductId
+  scope: user | ci-temporary | explicit-path
+  manifest:
+    manifestId
+    ownerProductId
+    entrySelector
+    resourceIdentity?
+    productVersion?
+    safeMetadata
+  temporaryContainer?:
+    kind
+    productOwnedPath
+    activationEnvironment?
+  declarationPreservation
+  containsCredentialMaterial
+  expiresAt?
+  changes:
+    - operation: set | create | update | refresh | remove
+      targetKind
+      targetPathOrName
+      key
+      value
+      requiresOwnershipRecord
+      isSecretValue
+      preserveDeclarationsAndComments
 ```
 
-Canonical selectors:
-
-- npm/pnpm registry auth: `npmrc:<scope>: //<normalized-registry>/:_authToken`.
-- npm/pnpm optional compatibility fields, only when explicitly selected:
-  `username`, `_password`, `email`, and registry-scoped `always-auth`.
-- Yarn registry auth:
-  `.yarnrc.yml:npmRegistries["//<normalized-registry>"].npmAuthToken` and
-  `.npmAlwaysAuth`.
-- Yarn registry declarations are discovered from `.yarnrc.yml` `npmRegistryServer`
-  and `npmScopes.<scope>.npmRegistryServer`; they are not overwritten during a
-  credential refresh.
+Dry-run projects the same plan without exposing secret values. Apply and remove
+results use their explicit operation to describe what was requested. Temporary
+containers are product-owned and cleaned on removal by implementation behavior;
+the contract does not carry cleanup promise flags.
 
 ## Affected Requirements and Designs
 
@@ -814,7 +766,7 @@ Canonical selectors:
 - `mid-level-design.md`: npm adapter configuration inputs, request mapping, write
   policy, doctor checks, and configuration-manager ownership semantics are
   evidence-supported with npm/pnpm scoped auth selectors, the Yarn
-  `npmScopes`-to-`npmRegistries` scoped write selector, and rollback constraints
+  `npmScopes`-to-`npmRegistries` scoped write selector, and cleanup behavior
   recorded here. Lifecycle-script guidance is outside the Phase 1.4 evidence
   scope and must be validated by the concrete downstream owners before acceptance
   depends on it: ADAPTER-NPM Phase 12 for npm/pnpm adapter invocation checks,
@@ -844,9 +796,8 @@ Phase 1.4 passes with constraints:
    above, subject to the same CI temporary declaration-preservation rule for
    user-sourced declarations.
 4. Any implementation that writes credentials directly from the adapter, writes
-   credentials into repository-local config by default, cannot distinguish
-   create/update/refresh rollback state, reports success before all sibling
-   credential entries and ownership metadata are committed, permits partial
+   credentials into repository-local config by default, requires historical
+   value proofs, permits partial
    multi-entry credential success, or relies on `YARN_RC_FILENAME` without emitting
    a complete merged temporary rc file, or emits auth-only CI temporary config
    while hiding the only registry declaration source is out of scope and must stop
@@ -938,7 +889,7 @@ pnpm exec markdownlint-cli2 ...: exit 0
     - Owner: **CONFIG and ADAPTER-NPM**
     - Dependency impact: Phase 13B may proceed, but broad Yarn write rollout depends
       on configuration-manager tests that prove surgical `.yarnrc.yml` updates,
-      rollback, and unrelated-setting preservation.
+      removal, and unrelated-setting preservation.
 8. If a future Yarn version changes `npmRegistries` key normalization or config
    file discovery, Phase 13B must stop and either update this decision with new
    evidence or enter Phase 1R.

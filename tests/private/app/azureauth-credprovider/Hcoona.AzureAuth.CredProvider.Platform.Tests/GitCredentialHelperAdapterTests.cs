@@ -23,7 +23,8 @@ public sealed class GitCredentialHelperAdapterTests
             username=User@Example.com
 
             """,
-            credentialCore: new CredentialCoreService(provider));
+            credentialCore: new CredentialCoreService(provider)
+        );
 
         Assert.Equal(AdapterHostExitCode.Success, result.Outcome.Result.ExitCode);
         Assert.True(result.Outcome.Result.WriteProtocolStdout);
@@ -51,7 +52,8 @@ public sealed class GitCredentialHelperAdapterTests
             password=should-not-leak
 
             """,
-            credentialCore: new CredentialCoreService(provider));
+            credentialCore: new CredentialCoreService(provider)
+        );
 
         Assert.Equal(AdapterHostExitCode.Success, result.Outcome.Result.ExitCode);
         Assert.False(result.Outcome.Result.WriteProtocolStdout);
@@ -72,7 +74,8 @@ public sealed class GitCredentialHelperAdapterTests
             path=org/project/_git/repository
 
             """,
-            credentialCore: new CredentialCoreService(provider));
+            credentialCore: new CredentialCoreService(provider)
+        );
 
         Assert.Equal(AdapterHostExitCode.NoCredential, result.Outcome.Result.ExitCode);
         Assert.False(result.Outcome.Result.WriteProtocolStdout);
@@ -92,7 +95,8 @@ public sealed class GitCredentialHelperAdapterTests
             host=dev.azure.com
 
             """,
-            credentialCore: new CredentialCoreService(provider));
+            credentialCore: new CredentialCoreService(provider)
+        );
 
         Assert.Equal(AdapterHostExitCode.NoCredential, result.Outcome.Result.ExitCode);
         Assert.Equal(string.Empty, result.ProtocolStdout);
@@ -110,7 +114,8 @@ public sealed class GitCredentialHelperAdapterTests
             host=dev.azure.com
             host=should-not-leak.example
 
-            """);
+            """
+        );
 
         Assert.Equal(AdapterHostExitCode.ConfigurationError, result.Outcome.Result.ExitCode);
         Assert.False(result.Outcome.Result.WriteProtocolStdout);
@@ -130,7 +135,8 @@ public sealed class GitCredentialHelperAdapterTests
             path=org/project/_git/repository
 
             """,
-            executablePath: "/usr/local/bin/git-credential-azureauth-credprovider");
+            executablePath: "/usr/local/bin/git-credential-azureauth-credprovider"
+        );
 
         Assert.Equal(AdapterHostExitCode.Success, result.Outcome.Result.ExitCode);
         Assert.StartsWith("username=AzureDevOps\npassword=fake-secret-", result.ProtocolStdout);
@@ -148,7 +154,8 @@ public sealed class GitCredentialHelperAdapterTests
             path=org/project/_git/repository
 
             """,
-            executablePath: "/usr/local/bin/git-credential-azureauth-credprovider");
+            executablePath: "/usr/local/bin/git-credential-azureauth-credprovider"
+        );
 
         Assert.Equal(AdapterHostExitCode.Success, result.Outcome.Result.ExitCode);
         Assert.False(result.Outcome.Result.WriteProtocolStdout);
@@ -156,46 +163,87 @@ public sealed class GitCredentialHelperAdapterTests
         Assert.Equal(string.Empty, result.Stderr);
     }
 
+    [Fact]
+    public void GetWithOrdinaryProtocolUsernameDoesNotSetAccountHintOrTriggerBindingMismatch()
+    {
+        var credentialAcquisition = new MismatchSensitiveAcquisitionService();
+        AdapterRunResult result = Execute(
+            ["git", "credential-helper", "get"],
+            """
+            protocol=https
+            host=dev.azure.com
+            path=org/project/_git/repository
+            username=User@Example.com
+
+            """,
+            credentialAcquisition: credentialAcquisition
+        );
+
+        Assert.Equal(AdapterHostExitCode.Success, result.Outcome.Result.ExitCode);
+        Assert.True(result.Outcome.Result.WriteProtocolStdout);
+        Assert.Equal("username=AzureDevOps\npassword=fake-secret-git\n", result.ProtocolStdout);
+        Assert.Empty(result.HumanStdout);
+        Assert.Equal(string.Empty, result.Stderr);
+
+        CredentialRequestV2 request = Assert.Single(credentialAcquisition.Requests);
+        Assert.Null(request.AccountHint);
+        Assert.False(credentialAcquisition.BindingMismatchDetected);
+        Assert.DoesNotContain("User@Example.com", result.ProtocolStdout, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "AzureAuthBindingAccountMismatch",
+            result.Stderr,
+            StringComparison.Ordinal
+        );
+    }
+
     private static AdapterRunResult Execute(
         string[] args,
         string stdin,
         string executablePath = "/usr/local/bin/azureauth-credprovider",
-        CredentialCoreService? credentialCore = null)
+        CredentialCoreService? credentialCore = null,
+        ICredentialAcquisitionService? credentialAcquisition = null
+    )
     {
         var protocolStdout = new StringWriter();
         var humanStdout = new StringWriter();
         var stderr = new StringWriter();
         var diagnosticRouter = new DiagnosticRouter(
             [new TextWriterDiagnosticSink(stderr)],
-            SecretRedactor.Empty);
+            SecretRedactor.Empty
+        );
         _ = credentialCore;
         AdapterHostExecutionOutcome outcome = new GitCredentialHelperAdapter(
-            new SuccessfulTestAcquisitionService()).Execute(
-                executablePath,
-                args,
-                new StringReader(stdin),
-                protocolStdout,
-                humanStdout,
-                diagnosticRouter);
+            credentialAcquisition ?? new SuccessfulTestAcquisitionService()
+        ).Execute(
+            executablePath,
+            args,
+            new StringReader(stdin),
+            protocolStdout,
+            humanStdout,
+            diagnosticRouter
+        );
 
         return new AdapterRunResult(
             outcome,
             protocolStdout.ToString(),
             humanStdout.ToString(),
-            stderr.ToString());
+            stderr.ToString()
+        );
     }
 
     private sealed record AdapterRunResult(
         AdapterHostExecutionOutcome Outcome,
         string ProtocolStdout,
         string HumanStdout,
-        string Stderr);
+        string Stderr
+    );
 
     private sealed class SuccessfulTestAcquisitionService : ICredentialAcquisitionService
     {
         public ValueTask<CredentialResult> AcquireAsync(
             CredentialRequestV2 request,
-            CancellationToken cancellationToken = default) =>
+            CancellationToken cancellationToken = default
+        ) =>
             ValueTask.FromResult(
                 new CredentialResult
                 {
@@ -203,6 +251,49 @@ public sealed class GitCredentialHelperAdapterTests
                     Username = "AzureDevOps",
                     Password = "fake-secret-git",
                     DiagnosticsCorrelationId = "git-adapter-test",
-                });
+                }
+            );
+    }
+
+    private sealed class MismatchSensitiveAcquisitionService : ICredentialAcquisitionService
+    {
+        public bool BindingMismatchDetected { get; private set; }
+
+        public List<CredentialRequestV2> Requests { get; } = [];
+
+        public ValueTask<CredentialResult> AcquireAsync(
+            CredentialRequestV2 request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            Requests.Add(request);
+            if (request.AccountHint is not null)
+            {
+                BindingMismatchDetected = true;
+                return ValueTask.FromResult(
+                    new CredentialResult
+                    {
+                        Status = CredentialResultStatus.Unauthorized,
+                        DiagnosticsCorrelationId = "git-binding-mismatch-test",
+                        Error = new CredentialError
+                        {
+                            Kind = CredentialErrorKind.Unauthorized,
+                            Code = "AzureAuthBindingAccountMismatch",
+                            SafeMessage = "The supplied identity does not match the binding.",
+                        },
+                    }
+                );
+            }
+
+            return ValueTask.FromResult(
+                new CredentialResult
+                {
+                    Status = CredentialResultStatus.Success,
+                    Username = "AzureDevOps",
+                    Password = "fake-secret-git",
+                    DiagnosticsCorrelationId = "git-binding-match-test",
+                }
+            );
+        }
     }
 }

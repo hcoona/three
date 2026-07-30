@@ -6,8 +6,7 @@ public enum ProcessExecutionStatus
     Success = 1,
     NonZeroExit = 2,
     TimedOut = 3,
-    Canceled = 4,
-    OutputTooLarge = 5,
-    InvalidOutput = 6,
-    LaunchFailure = 7,
+    OutputTooLarge = 4,
+    InvalidOutput = 5,
+    LaunchFailure = 6,
 }
