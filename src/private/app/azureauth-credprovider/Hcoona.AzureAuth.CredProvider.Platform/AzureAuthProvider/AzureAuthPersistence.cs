@@ -34,6 +34,18 @@ public sealed class AzureAuthProviderConfigPersistence
         AzureAuthProviderConfig config
     ) => Save(expected, config);
 
+    public AzureAuthSecureRecordWriteResult Delete(
+        AzureAuthPersistedRecord<AzureAuthProviderConfig> expected
+    )
+    {
+        ArgumentNullException.ThrowIfNull(expected);
+        AzureAuthSecureRecordStoreContract.EnsureKnownRecordName(expected.RecordName);
+        return recordStore.CompareDelete(
+            expected.RecordName,
+            AzureAuthPersistenceCore.GetExpectedRevision(expected)
+        );
+    }
+
     private AzureAuthPersistedWriteResult<AzureAuthProviderConfig> Save(
         AzureAuthPersistedRecord<AzureAuthProviderConfig> expected,
         AzureAuthProviderConfig config

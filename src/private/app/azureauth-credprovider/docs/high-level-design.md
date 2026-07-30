@@ -15,6 +15,9 @@ The primary user-facing command is a standard CLI. The executable name is intent
 ```text
 <primary-cli> login
 <primary-cli> logout
+<primary-cli> identity configure --tenant <id> [--account <name>]
+<primary-cli> identity reconfigure --tenant <id> [--account <name>]
+<primary-cli> identity unconfigure
 <primary-cli> status
 <primary-cli> configure git
 <primary-cli> configure nuget
@@ -43,13 +46,16 @@ The current Windows and WSL identity path uses AzureAuth
 (`microsoft-authentication-cli`) 0.9.5 behind the shared identity-provider
 abstraction. Direct MSAL remains represented but is not implemented. AzureAuth
 does not replace the Git, NuGet, Python keyring, or npm protocol adapters.
+The product-owned `identity` commands record the required tenant and optional
+account preference without exposing a generic provider selector, acquiring a
+token, or claiming to verify the account.
 
 ## High-Level Components
 
 ```text
                       +-----------------------------+
                       | Primary CLI                 |
-                      | login/configure/doctor      |
+                      | identity/login/configure    |
                       +--------------+--------------+
                                      |
                                      v
@@ -93,8 +99,10 @@ The shared core owns credential behavior that must not diverge between ecosystem
 
 The shared core uses AzureAuth 0.9.5 for Microsoft Entra token acquisition on
 Windows and WSL. It derives the executable from the official per-user
-installation layout and uses AzureAuth web mode, which may reuse the host MSAL
-cache. Direct MSAL is not implemented.
+installation layout and tries the Windows WAM broker before AzureAuth web mode.
+WAM may reuse the OS account and broker-backed cache without prompting; a
+prompt broker failure falls through to browser authentication. Direct MSAL is
+not implemented.
 
 The core must not assume a single protocol output format. Protocol adapters are responsible for host-tool input and output.
 
@@ -183,6 +191,12 @@ NuGet discovery options should be documented and diagnosed explicitly:
 Default setup should prefer conventional plugin discovery. In Phase 4D MVP this means the `netcore` convention path for `dotnet` restore. `NUGET_PLUGIN_PATHS` and `NUGET_NETCORE_PLUGIN_PATHS` are optional process-scoped diagnostic or explicit temporary override paths and must not be persisted as user-global or machine-global defaults by MVP configuration flows.
 
 Interactive behavior is controlled by the invoking NuGet client. `dotnet restore` should require `--interactive` before the plugin initiates first-time user interaction. If deferred `netfx` support is later enabled, MSBuild restore should require `/p:NuGetInteractive=true` and NuGet.exe behavior should follow the invoking client's interactive policy. The plugin must honor NuGet protocol `NonInteractive` and `CanShowDialog` values and must not prompt or block when `NonInteractive` is true.
+
+For an interactive request, `CanShowDialog=true` selects browser interaction.
+`CanShowDialog=false` selects device code; the current AzureAuth `0.9.5`
+implementation rejects that unsupported flow before launch. Git and Python
+helper protocols do not authorize interaction, so those adapters remain
+silent-only rather than inferring permission from the environment.
 
 ## Python Adapter
 

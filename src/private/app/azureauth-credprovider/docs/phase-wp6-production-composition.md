@@ -6,6 +6,12 @@
 binding, AzureAuth installation discovery, process execution, materialization,
 and readiness.
 
+The composition root is a snapshot. After `identity configure`,
+`identity reconfigure`, or `identity unconfigure` changes persistence, callers
+create a fresh production root to observe the new state. Identity mutation does
+not construct the current production root first, so `reconfigure` and
+`unconfigure` can repair malformed records.
+
 Missing provider configuration is `ProviderNotConfigured`; production does not
 synthesize Direct MSAL or any deterministic credential provider. Direct MSAL
 remains explicitly unavailable when selected. Deterministic providers exist
@@ -42,7 +48,6 @@ azureauth.exe aad
   --client 872cd9fa-d31f-45e0-9eab-6e460a02d1f1
   --tenant <bound tenant>
   --scope 499b84ac-1321-427f-aa17-267ca6975798/.default
-  --mode web
   [--domain <best-effort account domain>]
   --output token
 ```
@@ -52,13 +57,34 @@ after `@`. It is a cached-account preference, not account enforcement.
 
 The process inherits the normal host integration environment. The product does
 not set `OEAUTH_MSAL_DISABLE_CACHE`, construct `WSLENV` allow/deny lists, or
-attest PATH. AzureAuth `--mode web` intentionally tries `CachedAuth` before
-opening browser UI, so interactive calls reuse the host MSAL cache.
+attest PATH. The product omits `--mode` and relies on pinned AzureAuth `0.9.5`'s
+Windows default: WAM broker, then web authentication. The broker first tries the
+OS account and its broker-backed cache, which permits unattended reuse when
+Windows already has a suitable account. A prompt broker failure falls through
+to web; an unanswered WAM dialog consumes AzureAuth's global timeout and does
+not fall through.
 
 AzureAuth `0.9.5` has no cache-only CLI mode. `SilentOnly` therefore always
 returns `SilentAcquisitionUnavailable` without launching. Interactive and
 silent readiness are independent; global compatibility readiness follows the
 interactive capability rather than requiring both.
+
+## Host interaction routing
+
+Interaction is authorized only by an explicit host protocol signal:
+
+| Host request                                       | Identity flow | Policy           | Acquisition mode     |
+| -------------------------------------------------- | ------------- | ---------------- | -------------------- |
+| NuGet `IsNonInteractive=true`                      | Browser       | `Never`          | `SilentOnly`         |
+| NuGet interactive and `CanShowDialog=true`         | Browser       | `HostToolAllows` | `InteractionAllowed` |
+| NuGet interactive and `CanShowDialog=false`        | Device code   | `HostToolAllows` | `InteractionAllowed` |
+| Git credential helper or Python keyring subprocess | Browser       | `Never`          | `SilentOnly`         |
+
+NuGet's non-interactive flag overrides dialog capability. AzureAuth `0.9.5`
+does not support device code, so that NuGet request shape returns
+`AzureAuthDeviceCodeUnsupported` before process launch. Git and Python expose no
+equivalent trustworthy interaction authorization signal; the product does not
+infer one from a terminal, environment variable, or process ancestry.
 
 ## Persistence
 
@@ -91,12 +117,12 @@ containment of a hostile provider.
 
 | Code                           | Meaning                                               |
 | ------------------------------ | ----------------------------------------------------- |
-| `ProviderNotConfigured`        | Persist a provider selection.                         |
-| `DirectMsalNotImplemented`     | Select supported AzureAuth or wait for Direct MSAL.   |
+| `ProviderNotConfigured`        | Run `identity configure` to record identity context.  |
+| `DirectMsalNotImplemented`     | Run `identity reconfigure` to use the supported path. |
 | `AzureAuthInstallationMissing` | Install AzureAuth 0.9.5 for the current Windows user. |
 | `AzureAuthVersionMismatch`     | Install/select supported version 0.9.5.               |
-| `AzureAuthBindingRequired`     | Bind the intended tenant and optional account.        |
-| `AzureAuthBindingMalformed`    | Rebind or unbind the malformed record.                |
+| `AzureAuthBindingRequired`     | Run `identity configure` with the intended tenant.    |
+| `AzureAuthBindingMalformed`    | Run `identity reconfigure` or `identity unconfigure`. |
 | `SilentAcquisitionUnavailable` | AzureAuth 0.9.5 has no silent-only mode.              |
 
 Status and doctor report provider selection, installation, binding, and separate

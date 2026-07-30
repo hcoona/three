@@ -41,7 +41,6 @@ azureauth.exe
   --client 872cd9fa-d31f-45e0-9eab-6e460a02d1f1
   --tenant <bound-tenant-id>
   --scope 499b84ac-1321-427f-aa17-267ca6975798/.default
-  --mode web
   [--domain <best-effort bound account domain>]
   --output token
 ```
@@ -60,13 +59,18 @@ Notes:
 - `--output token` is required; WP3 does not consume AzureAuth JSON output.
 - secrets are never placed in argv.
 - AzureAuth `0.9.5` source commit
-  `21258ff3a2cbb01d6891243114a55abe9ae3587e` supports repeated `--scope` and
-  `--mode`, plus `--domain` and bounded raw token output.
+  `21258ff3a2cbb01d6891243114a55abe9ae3587e` defines the Windows default
+  authentication order as broker and then web. The product omits `--mode` and
+  relies on that pinned default.
 - `--domain` is only best-effort cached-account filtering. It is derived from
   the optional bound account when a usable suffix follows `@`.
 - `--output json` is not used because AzureAuth manually interpolates
   user/display-name text and can produce malformed JSON.
-- `--mode web` tries `CachedAuth` first and then browser interaction.
+- On Windows, the default mode tries the WAM broker first and then browser
+  authentication if the broker fails promptly. The broker itself tries the OS
+  account and broker-backed cache before showing WAM interaction.
+- An unanswered WAM dialog consumes AzureAuth's global timeout; AzureAuth does
+  not continue to web after a flow-level timeout.
 
 ## Request Matrix
 

@@ -187,6 +187,9 @@ public sealed class GitCredentialHelperAdapterTests
 
         CredentialRequestV2 request = Assert.Single(credentialAcquisition.Requests);
         Assert.Null(request.AccountHint);
+        Assert.Equal(IdentityFlow.InteractiveBrowser, request.IdentityFlow);
+        Assert.Equal(InteractivePolicy.Never, request.InteractivePolicy);
+        Assert.Equal(AcquisitionMode.SilentOnly, request.AcquisitionMode);
         Assert.False(credentialAcquisition.BindingMismatchDetected);
         Assert.DoesNotContain("User@Example.com", result.ProtocolStdout, StringComparison.Ordinal);
         Assert.DoesNotContain(

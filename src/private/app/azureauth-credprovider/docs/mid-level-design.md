@@ -531,21 +531,24 @@ project component when present.
 
 ### Interactive Policy
 
-The plugin must honor NuGet's interactive policy. Current research identifies
-the following expected client controls; implementation must verify them against
-NuGet source, official documentation, or a minimal plugin prototype before
-locking adapter behavior:
+The plugin honors NuGet's interactive policy through the source-confirmed
+`IsNonInteractive` and `CanShowDialog` request values:
 
 - `dotnet restore` uses `--interactive` for first-time user interaction.
 - MSBuild restore uses `/p:NuGetInteractive=true` when deferred `netfx` support
   is implemented.
 - NuGet.exe behavior may allow prompting depending on the invoking client when
   deferred `netfx` support is implemented.
-- Protocol `NonInteractive` and dialog capability values are expected to be
-  authoritative for adapter behavior.
+- `IsNonInteractive=true` always maps to browser, `Never`, and `SilentOnly`.
+- Otherwise `CanShowDialog=true` maps to browser, `HostToolAllows`, and
+  `InteractionAllowed`.
+- Otherwise the request maps to device code, `HostToolAllows`, and
+  `InteractionAllowed`.
 
 When interaction is disallowed, the adapter returns a safe failure that explains
 the required explicit interactive invocation through NuGet-compatible channels.
+The current AzureAuth path rejects device code before process launch. Retry
+metadata never authorizes interaction.
 
 ### Runtime Layout
 

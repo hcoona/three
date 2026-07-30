@@ -39,6 +39,9 @@ public sealed class KeyringHelperAdapterTests
         Assert.Equal(CredentialKind.BasicPassword, credentialRequest.CredentialKind);
         Assert.Equal(TokenAudience.AzureArtifacts, credentialRequest.RequestedAudience);
         Assert.Null(credentialRequest.AccountHint);
+        Assert.Equal(IdentityFlow.InteractiveBrowser, credentialRequest.IdentityFlow);
+        Assert.Equal(InteractivePolicy.Never, credentialRequest.InteractivePolicy);
+        Assert.Equal(AcquisitionMode.SilentOnly, credentialRequest.AcquisitionMode);
         Assert.False(provider.BindingMismatchDetected);
         Assert.DoesNotContain(
             "AzureAuthBindingAccountMismatch",

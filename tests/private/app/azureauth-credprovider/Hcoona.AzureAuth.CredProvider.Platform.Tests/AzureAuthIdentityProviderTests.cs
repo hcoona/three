@@ -26,6 +26,22 @@ public sealed class AzureAuthIdentityProviderTests
     }
 
     [Fact]
+    public async Task DeviceCodeRemainsUnavailableWithoutLaunching()
+    {
+        var runner = new RecordingRunner(new ProcessResult(0, CreateToken(), ""));
+        AzureAuthIdentityProvider provider = CreateProvider(runner);
+
+        AcquiredAccessTokenResult result = await provider.AcquireAccessTokenAsync(
+            CreateRequest(identityFlow: IdentityFlow.DeviceCode),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(AcquiredAccessTokenStatus.RequestRejected, result.Status);
+        Assert.Equal("AzureAuthDeviceCodeUnsupported", result.Code);
+        Assert.Null(runner.StartSpec);
+    }
+
+    [Fact]
     public async Task InteractiveLaunchUsesExactArgvDomainAndInheritedEnvironment()
     {
         var runner = new RecordingRunner(new ProcessResult(0, CreateToken() + "\n", ""));
@@ -51,8 +67,6 @@ public sealed class AzureAuthIdentityProviderTests
                 "tenant-1",
                 "--scope",
                 AzureAuthIdentityProvider.AzureDevOpsDefaultScope,
-                "--mode",
-                "web",
                 "--domain",
                 "example.com",
                 "--output",
@@ -217,8 +231,6 @@ public sealed class AzureAuthIdentityProviderTests
                 "tenant-explicit-001",
                 "--scope",
                 AzureAuthIdentityProvider.AzureDevOpsDefaultScope,
-                "--mode",
-                "web",
                 "--domain",
                 "example.test",
                 "--output",
@@ -251,7 +263,8 @@ public sealed class AzureAuthIdentityProviderTests
     private static CredentialRequestV2 CreateRequest(
         AcquisitionMode mode = AcquisitionMode.InteractionAllowed,
         string? accountHint = null,
-        string? tenantHint = null
+        string? tenantHint = null,
+        IdentityFlow identityFlow = IdentityFlow.InteractiveBrowser
     ) =>
         new()
         {
@@ -268,7 +281,7 @@ public sealed class AzureAuthIdentityProviderTests
             TenantHint = tenantHint,
             RequestedAudience = TokenAudience.AzureDevOps,
             CredentialKind = CredentialKind.BearerToken,
-            IdentityFlow = IdentityFlow.InteractiveBrowser,
+            IdentityFlow = identityFlow,
             InteractivePolicy = InteractivePolicy.UserAllowed,
             AcquisitionMode = mode,
             CachePolicy = CachePolicyMode.ProductPersistentCacheDisabled,

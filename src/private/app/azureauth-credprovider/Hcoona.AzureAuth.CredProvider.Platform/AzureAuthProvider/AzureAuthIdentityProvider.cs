@@ -149,8 +149,6 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
             binding.TenantId!,
             "--scope",
             AzureDevOpsDefaultScope,
-            "--mode",
-            "web",
         };
         string? domain = TryGetAccountDomain(binding.AccountId);
         if (domain is not null)

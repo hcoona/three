@@ -19,7 +19,8 @@ public sealed class NuGetPluginAdapterTests
         bool resolved = NuGetPluginAdapter.TryResolveProtocolInvocation(
             "azureauth-credprovider",
             [pluginArgument],
-            out AdapterInvocationContext? context);
+            out AdapterInvocationContext? context
+        );
 
         Assert.True(resolved);
         Assert.NotNull(context);
@@ -53,7 +54,8 @@ public sealed class NuGetPluginAdapterTests
     {
         var request = new GetOperationClaimsRequest(
             "https://pkgs.dev.azure.com/org/_packaging/feed/nuget/v3/index.json",
-            new JObject());
+            new JObject()
+        );
 
         GetOperationClaimsResponse response = NuGetPluginAdapter.HandleGetOperationClaims(request);
 
@@ -65,17 +67,20 @@ public sealed class NuGetPluginAdapterTests
     [InlineData("https://dev.azure.com/org/project/_packaging/feed/nuget/v3/index.json")]
     [InlineData("https://org.pkgs.visualstudio.com/_packaging/feed/nuget/v3/index.json")]
     public void AuthenticationRequestReturnsBasicCredentialsForAzureArtifactsNuGetSource(
-        string packageSource)
+        string packageSource
+    )
     {
         NuGetPluginAdapter adapter = CreateTestAdapter();
         var request = new GetAuthenticationCredentialsRequest(
             new Uri(packageSource),
             isRetry: false,
             isNonInteractive: false,
-            canShowDialog: false);
+            canShowDialog: false
+        );
 
-        GetAuthenticationCredentialsResponse response =
-            adapter.HandleGetAuthenticationCredentials(request);
+        GetAuthenticationCredentialsResponse response = adapter.HandleGetAuthenticationCredentials(
+            request
+        );
 
         Assert.Equal(MessageResponseCode.Success, response.ResponseCode);
         Assert.Equal("AzureDevOps", response.Username);
@@ -92,14 +97,73 @@ public sealed class NuGetPluginAdapterTests
             new Uri("https://pkgs.dev.azure.com/org/_packaging/feed/nuget/v3/index.json"),
             isRetry: false,
             isNonInteractive: true,
-            canShowDialog: false);
+            canShowDialog: false
+        );
 
-        GetAuthenticationCredentialsResponse response =
-            adapter.HandleGetAuthenticationCredentials(request);
+        GetAuthenticationCredentialsResponse response = adapter.HandleGetAuthenticationCredentials(
+            request
+        );
 
         Assert.Equal(MessageResponseCode.Success, response.ResponseCode);
         Assert.Equal("AzureDevOps", response.Username);
         Assert.StartsWith("fake-secret-", response.Password, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(
+        true,
+        false,
+        IdentityFlow.InteractiveBrowser,
+        InteractivePolicy.Never,
+        AcquisitionMode.SilentOnly
+    )]
+    [InlineData(
+        true,
+        true,
+        IdentityFlow.InteractiveBrowser,
+        InteractivePolicy.Never,
+        AcquisitionMode.SilentOnly
+    )]
+    [InlineData(
+        false,
+        true,
+        IdentityFlow.InteractiveBrowser,
+        InteractivePolicy.HostToolAllows,
+        AcquisitionMode.InteractionAllowed
+    )]
+    [InlineData(
+        false,
+        false,
+        IdentityFlow.DeviceCode,
+        InteractivePolicy.HostToolAllows,
+        AcquisitionMode.InteractionAllowed
+    )]
+    public void AuthenticationRequestMapsNuGetInteractionSignals(
+        bool isNonInteractive,
+        bool canShowDialog,
+        IdentityFlow expectedIdentityFlow,
+        InteractivePolicy expectedInteractivePolicy,
+        AcquisitionMode expectedAcquisitionMode
+    )
+    {
+        var acquisitionService = new CapturingAcquisitionService();
+        var adapter = new NuGetPluginAdapter(acquisitionService);
+        var request = new GetAuthenticationCredentialsRequest(
+            new Uri("https://pkgs.dev.azure.com/org/_packaging/feed/nuget/v3/index.json"),
+            isRetry: true,
+            isNonInteractive,
+            canShowDialog
+        );
+
+        adapter.HandleGetAuthenticationCredentials(request);
+
+        CredentialRequestV2 capturedRequest = Assert.IsType<CredentialRequestV2>(
+            acquisitionService.Request
+        );
+        Assert.Equal(expectedIdentityFlow, capturedRequest.IdentityFlow);
+        Assert.Equal(expectedInteractivePolicy, capturedRequest.InteractivePolicy);
+        Assert.Equal(expectedAcquisitionMode, capturedRequest.AcquisitionMode);
+        Assert.Equal("true", capturedRequest.ExtensionData["nuget.isRetry"]);
     }
 
     [Fact]
@@ -110,10 +174,12 @@ public sealed class NuGetPluginAdapterTests
             new Uri("https://api.nuget.org/v3/index.json"),
             isRetry: false,
             isNonInteractive: false,
-            canShowDialog: false);
+            canShowDialog: false
+        );
 
-        GetAuthenticationCredentialsResponse response =
-            adapter.HandleGetAuthenticationCredentials(request);
+        GetAuthenticationCredentialsResponse response = adapter.HandleGetAuthenticationCredentials(
+            request
+        );
 
         Assert.Equal(MessageResponseCode.NotFound, response.ResponseCode);
         Assert.Null(response.Username);
@@ -128,10 +194,12 @@ public sealed class NuGetPluginAdapterTests
             new Uri("https://pkgs.dev.azure.com/org/_packaging/feed/npm"),
             isRetry: false,
             isNonInteractive: false,
-            canShowDialog: false);
+            canShowDialog: false
+        );
 
-        GetAuthenticationCredentialsResponse response =
-            adapter.HandleGetAuthenticationCredentials(request);
+        GetAuthenticationCredentialsResponse response = adapter.HandleGetAuthenticationCredentials(
+            request
+        );
 
         Assert.Equal(MessageResponseCode.Error, response.ResponseCode);
         Assert.Null(response.Username);
@@ -150,9 +218,12 @@ public sealed class NuGetPluginAdapterTests
                 proxyUsername: null,
                 proxyPassword: null,
                 username: "unused",
-                password: "unused"));
+                password: "unused"
+            )
+        );
         SetLogLevelResponse logLevelResponse = NuGetPluginAdapter.HandleSetLogLevel(
-            new SetLogLevelRequest(LogLevel.Information));
+            new SetLogLevelRequest(LogLevel.Information)
+        );
 
         Assert.Equal(MessageResponseCode.Success, credentialsResponse.ResponseCode);
         Assert.Equal(MessageResponseCode.Success, logLevelResponse.ResponseCode);
@@ -165,7 +236,8 @@ public sealed class NuGetPluginAdapterTests
     {
         public ValueTask<CredentialResult> AcquireAsync(
             CredentialRequestV2 request,
-            CancellationToken cancellationToken = default) =>
+            CancellationToken cancellationToken = default
+        ) =>
             ValueTask.FromResult(
                 new CredentialResult
                 {
@@ -173,6 +245,27 @@ public sealed class NuGetPluginAdapterTests
                     Username = "AzureDevOps",
                     Password = "fake-secret-nuget",
                     DiagnosticsCorrelationId = "nuget-adapter-test",
-                });
+                }
+            );
+    }
+
+    private sealed class CapturingAcquisitionService : ICredentialAcquisitionService
+    {
+        public CredentialRequestV2? Request { get; private set; }
+
+        public ValueTask<CredentialResult> AcquireAsync(
+            CredentialRequestV2 request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            Request = request;
+            return ValueTask.FromResult(
+                new CredentialResult
+                {
+                    Status = CredentialResultStatus.NoCredential,
+                    DiagnosticsCorrelationId = "nuget-request-capture",
+                }
+            );
+        }
     }
 }

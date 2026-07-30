@@ -39,6 +39,7 @@ public sealed class CliApplicationTests
                   acceptance                   Render Phase 15 hardening matrix.
                   login                        Run accepted MVP authentication orchestration.
                   logout                       Clear product-owned authentication state.
+                  identity                     Configure product identity context.
                   configure <ecosystem>        Apply supported configuration plans.
                   refresh <ecosystem>          Refresh an npm, pnpm, or Yarn credential.
                   unconfigure <ecosystem>      Remove supported configuration plans.
@@ -50,6 +51,7 @@ public sealed class CliApplicationTests
                   azureauth-credprovider status
                   azureauth-credprovider login --device-code
                   azureauth-credprovider login --ci azure-pipelines
+                  azureauth-credprovider identity configure --tenant <id> [--account <name>]
                   azureauth-credprovider status --ci azure-pipelines
                   azureauth-credprovider configure git --dry-run
                   azureauth-credprovider acceptance
@@ -73,6 +75,7 @@ public sealed class CliApplicationTests
     [InlineData("acceptance")]
     [InlineData("login")]
     [InlineData("logout")]
+    [InlineData("identity")]
     public void CommandHelpWritesGoldenText(string command)
     {
         CommandResult result = Invoke(command, "--help");
@@ -91,6 +94,7 @@ public sealed class CliApplicationTests
     [InlineData("acceptance", null, "-h", "unexpected")]
     [InlineData("login", null, "-h", "unexpected")]
     [InlineData("logout", null, "--help", "--bogus")]
+    [InlineData("identity", "configure", "--help", "--bogus")]
     public void HelpShortCircuitsInvalidTrailingTokens(
         string command,
         string? argumentBeforeHelp,
@@ -118,6 +122,142 @@ public sealed class CliApplicationTests
         Assert.Equal(0, result.ExitCode);
         Assert.Equal(GetExpectedHelp(command), result.StdOut);
         Assert.Equal(string.Empty, result.StdErr);
+    }
+
+    [Theory]
+    [InlineData("identity")]
+    [InlineData("identity", "configure")]
+    [InlineData("identity", "reconfigure", "--account", "alice@example.com")]
+    public void IdentityRequiresActionAndTenant(params string[] args)
+    {
+        CommandResult result = Invoke(args);
+
+        Assert.Equal(2, result.ExitCode);
+        Assert.Equal(string.Empty, result.StdOut);
+        Assert.Contains("error: identity", result.StdErr, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void IdentityConfigureAndUnconfigurePersistSafeProductOwnedContext()
+    {
+        string rootPath = CreateTestDirectory();
+        try
+        {
+            var store = new SystemAzureAuthSecureRecordStore(rootPath);
+            var runtimeOptions = new CliRuntimeOptions
+            {
+                IdentityConfiguration = new CredentialProviderIdentityConfigurationService(
+                    store,
+                    new MutableTimeProvider(
+                        new DateTimeOffset(2026, 7, 30, 16, 8, 47, TimeSpan.Zero)
+                    )
+                ),
+            };
+
+            CommandResult configured = InvokeWithRuntime(
+                runtimeOptions,
+                "identity",
+                "configure",
+                "--tenant",
+                " TenantA ",
+                "--account",
+                " Alice@Example.com "
+            );
+            CommandResult unchanged = InvokeWithRuntime(
+                runtimeOptions,
+                "identity",
+                "configure",
+                "--tenant",
+                "tenanta",
+                "--account",
+                "alice@example.com"
+            );
+            CommandResult unconfigured = InvokeWithRuntime(
+                runtimeOptions,
+                "identity",
+                "unconfigure"
+            );
+            CommandResult alreadyUnconfigured = InvokeWithRuntime(
+                runtimeOptions,
+                "identity",
+                "unconfigure"
+            );
+
+            Assert.Equal(0, configured.ExitCode);
+            Assert.Equal(
+                Normalize(
+                    """
+                    command: identity
+                    action: configure
+                    status: configured
+                    tenant: TenantA
+                    account-preference: Alice@Example.com
+                    credential-material: not-stored
+                    identity-verification: not-performed
+                    """
+                ),
+                configured.StdOut
+            );
+            Assert.Equal(string.Empty, configured.StdErr);
+            Assert.Equal(0, unchanged.ExitCode);
+            Assert.Contains("status: unchanged\n", unchanged.StdOut, StringComparison.Ordinal);
+            Assert.Contains("tenant: TenantA\n", unchanged.StdOut, StringComparison.Ordinal);
+            Assert.Equal(0, unconfigured.ExitCode);
+            Assert.Contains(
+                "status: unconfigured\n",
+                unconfigured.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Equal(0, alreadyUnconfigured.ExitCode);
+            Assert.Contains(
+                "status: unchanged\n",
+                alreadyUnconfigured.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.DoesNotContain(
+                "azureauth",
+                configured.StdOut,
+                StringComparison.OrdinalIgnoreCase
+            );
+            Assert.Equal(
+                AzureAuthSecureRecordReadStatus.Missing,
+                store.Read(CredentialProviderCompositionRoot.ProviderConfigRecordName).Status
+            );
+            Assert.Equal(
+                AzureAuthSecureRecordReadStatus.Missing,
+                store.Read(CredentialProviderCompositionRoot.BindingRecordName).Status
+            );
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(rootPath);
+        }
+    }
+
+    [Fact]
+    public void IdentityConcurrentChangeReturnsRetryableSafeError()
+    {
+        var runtimeOptions = new CliRuntimeOptions
+        {
+            IdentityConfiguration = new CredentialProviderIdentityConfigurationService(
+                new ConflictingIdentityRecordStore()
+            ),
+        };
+
+        CommandResult result = InvokeWithRuntime(
+            runtimeOptions,
+            "identity",
+            "configure",
+            "--tenant",
+            "tenant"
+        );
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Equal(string.Empty, result.StdOut);
+        Assert.Equal(
+            "error: identity configuration changed concurrently; retry the command.\n",
+            result.StdErr
+        );
     }
 
     [Theory]
@@ -162,7 +302,7 @@ public sealed class CliApplicationTests
                 deferred-identity-flows: pat-compatibility, service-principal, managed-identity, workload-identity
                 pat-compatibility: deferred-disabled
                 dry-run-rendering: enabled
-                mutating-commands: git-nuget-auth-config-cleanup
+                mutating-commands: identity-configuration, host-tool-configuration, auth, cleanup
                 supported-ecosystems: git, nuget, python, npm, pnpm, yarn
                 npm-user-lifecycle: missing
                 pnpm-user-lifecycle: missing
@@ -259,7 +399,7 @@ public sealed class CliApplicationTests
                 deferred-identity-flows: pat-compatibility, service-principal, managed-identity, workload-identity
                 pat-compatibility: deferred-disabled
                 dry-run-rendering: enabled
-                mutating-commands: git-nuget-auth-config-cleanup
+                mutating-commands: identity-configuration, host-tool-configuration, auth, cleanup
                 supported-ecosystems: git, nuget, python, npm, pnpm, yarn
                 npm-user-lifecycle: missing
                 pnpm-user-lifecycle: missing
@@ -774,6 +914,31 @@ public sealed class CliApplicationTests
                 new ProcessStartSpec(CliAppHostPath(), ["logout"], environment: environment),
                 TestContext.Current.CancellationToken
             );
+            ProcessResult identityRepair = await runner.RunAsync(
+                new ProcessStartSpec(
+                    CliAppHostPath(),
+                    [
+                        "identity",
+                        "reconfigure",
+                        "--tenant",
+                        "TenantA",
+                        "--account",
+                        "alice@example.com",
+                    ],
+                    environment: environment
+                ),
+                TestContext.Current.CancellationToken
+            );
+            ProcessResult repairedStatus = await runner.RunAsync(
+                new ProcessStartSpec(CliAppHostPath(), ["status"], environment: environment),
+                TestContext.Current.CancellationToken
+            );
+            AzureAuthSecureRecordReadResult repairedProvider = store.Read(
+                CredentialProviderCompositionRoot.ProviderConfigRecordName
+            );
+            AzureAuthSecureRecordReadResult repairedBinding = store.Read(
+                CredentialProviderCompositionRoot.BindingRecordName
+            );
             var teardownResults = new List<ProcessResult>();
             foreach (
                 string[] teardownArgs in new[]
@@ -832,6 +997,29 @@ public sealed class CliApplicationTests
             Assert.Equal(string.Empty, cleanup.StandardError);
             Assert.Equal(0, logout.ExitCode);
             Assert.Equal(string.Empty, logout.StandardError);
+            Assert.Equal(0, identityRepair.ExitCode);
+            Assert.Contains(
+                "status: reconfigured",
+                identityRepair.StandardOutput,
+                StringComparison.Ordinal
+            );
+            Assert.DoesNotContain(
+                "azureauth",
+                identityRepair.StandardOutput,
+                StringComparison.OrdinalIgnoreCase
+            );
+            Assert.Equal(string.Empty, identityRepair.StandardError);
+            Assert.Equal(0, repairedStatus.ExitCode);
+            Assert.Contains("provider: AzureAuth", repairedStatus.StandardOutput);
+            AzureAuthProviderConfig providerConfig = AzureAuthProviderConfigJson.Deserialize(
+                Encoding.UTF8.GetString(repairedProvider.Content.Span)
+            );
+            AzureAuthBinding binding = AzureAuthBindingJson.Deserialize(
+                Encoding.UTF8.GetString(repairedBinding.Content.Span)
+            );
+            Assert.Equal(AzureAuthProviderSelection.AzureAuth, providerConfig.Selection);
+            Assert.Equal("TenantA", binding.TenantId);
+            Assert.Equal("alice@example.com", binding.AccountId);
             Assert.All(
                 teardownResults,
                 result =>
@@ -3488,6 +3676,26 @@ public sealed class CliApplicationTests
                     + """
                       -h, --help                   Show help.
                     """,
+                "identity" => """
+                azureauth-credprovider identity
+                Usage:
+                  azureauth-credprovider identity configure --tenant <id> [--account <name>] [--help]
+                  azureauth-credprovider identity reconfigure --tenant <id> [--account <name>] [--help]
+                  azureauth-credprovider identity unconfigure [--help]
+
+                Actions:
+                  configure                    Record identity context if none exists.
+                  reconfigure                  Replace or repair identity context.
+                  unconfigure                  Remove recorded identity context.
+
+                Options:
+                  --tenant <id>                Required tenant for configure and reconfigure.
+                  --account <name>             Optional account preference.
+                  -h, --help                   Show help.
+
+                Identity configuration stores invocation context only.
+                It stores no credentials and does not verify the account.
+                """,
                 "refresh" => """
                 azureauth-credprovider refresh
                 Usage:
@@ -4061,6 +4269,23 @@ public sealed class CliApplicationTests
                     }
             );
         }
+    }
+
+    private sealed class ConflictingIdentityRecordStore : IAzureAuthSecureRecordStore
+    {
+        public AzureAuthSecureRecordReadResult Read(string path) =>
+            AzureAuthSecureRecordReadResult.Missing();
+
+        public AzureAuthSecureRecordWriteResult CompareExchange(
+            string path,
+            string expectedRevision,
+            ReadOnlyMemory<byte> newContent
+        ) => AzureAuthSecureRecordWriteResult.Conflict();
+
+        public AzureAuthSecureRecordWriteResult CompareDelete(
+            string path,
+            string expectedRevision
+        ) => AzureAuthSecureRecordWriteResult.Conflict();
     }
 
     private sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider

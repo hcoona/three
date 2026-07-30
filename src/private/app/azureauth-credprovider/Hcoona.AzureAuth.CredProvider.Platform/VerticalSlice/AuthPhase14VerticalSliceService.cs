@@ -177,7 +177,7 @@ public sealed class AuthPhase14VerticalSliceService
             AccountHint = NullIfWhiteSpace(request.AccountHint),
             TenantHint = NullIfWhiteSpace(request.TenantHint),
             RequestedAudience = TokenAudience.AzureDevOps,
-            CredentialKind = CredentialKind.BearerToken,
+            CredentialKind = CredentialKind.BasicPassword,
             IdentityFlow = IdentityFlow.InteractiveBrowser,
             InteractivePolicy = InteractivePolicy.UserAllowed,
             AcquisitionMode = AcquisitionMode.InteractionAllowed,

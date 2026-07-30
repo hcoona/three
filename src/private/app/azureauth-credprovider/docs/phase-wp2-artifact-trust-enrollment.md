@@ -36,6 +36,31 @@ deployment keys, or one installed file instance.
 
 No binding or provider record stores tokens, passwords, or other credentials.
 
+## Identity configuration workflow
+
+The product owns one identity configuration workflow:
+
+```text
+azureauth-credprovider identity configure --tenant <id> [--account <name>]
+azureauth-credprovider identity reconfigure --tenant <id> [--account <name>]
+azureauth-credprovider identity unconfigure
+```
+
+The CLI does not expose a generic provider extension point. It records the only
+implemented identity path, AzureAuth `0.9.5`, together with the required tenant
+and optional account preference.
+
+`configure` creates missing state and is idempotent for identical state. It
+requires `reconfigure` rather than silently replacing different or malformed
+state. `reconfigure` creates, replaces, or repairs both records.
+`unconfigure` idempotently deletes the binding first and then the provider
+record. A concurrent update remains an explicit retryable conflict.
+
+Configuration does not launch AzureAuth, acquire a token, or verify that the
+account exists. It records operator intent needed because Git, NuGet, and Python
+credential requests do not carry the Microsoft Entra tenant required by
+AzureAuth.
+
 ## Persistence
 
 Provider and binding records are bounded plain UTF-8 JSON beneath the normal
@@ -49,6 +74,11 @@ Writes use a same-process mutex, an ordinary cross-process file lock, a
 same-directory temporary file, and atomic move/replace. Product-created
 directories and files use owner-only Unix modes. Content hashes serve as
 cooperative revisions so concurrent CLI updates can report conflicts.
+
+The provider and binding are separate records, not a cross-file transaction.
+If a concurrent command interrupts a multi-record change, the resulting partial
+state fails closed and can be repaired by rerunning `identity reconfigure` or
+`identity unconfigure`.
 
 The store does not implement custom filesystem attestation, ancestor ownership
 proofs, link policing, Linux `statx`, directory `fsync`, Base64 envelopes, or

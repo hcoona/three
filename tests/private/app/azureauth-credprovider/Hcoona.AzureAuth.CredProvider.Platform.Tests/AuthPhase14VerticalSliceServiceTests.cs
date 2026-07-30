@@ -185,6 +185,30 @@ public sealed class AuthPhase14VerticalSliceServiceTests
     }
 
     [Fact]
+    public void LoginInteractiveBrowserRequestsSupportedGitBasicPasswordForm()
+    {
+        var acquisition = new CapturingCredentialAcquisitionService();
+        var service = new AuthPhase14VerticalSliceService(
+            new AuthPhase14VerticalSliceOptions
+            {
+                CredentialAcquisition = new BoundedCredentialAcquisitionAdapter(acquisition),
+            }
+        );
+
+        AuthPhase14LoginResult result = service.Login(
+            new AuthPhase14LoginRequest { IdentityFlow = IdentityFlow.InteractiveBrowser },
+            TestContext.Current.CancellationToken
+        );
+
+        CredentialRequestV2 request = Assert.IsType<CredentialRequestV2>(acquisition.Request);
+        Assert.Equal(CredentialEcosystem.Git, request.Ecosystem);
+        Assert.Equal(CredentialKind.BasicPassword, request.CredentialKind);
+        Assert.Equal(IdentityFlow.InteractiveBrowser, request.IdentityFlow);
+        Assert.Equal(AcquisitionMode.InteractionAllowed, request.AcquisitionMode);
+        Assert.Equal(CredentialResultStatus.Success, result.CredentialResult.Status);
+    }
+
+    [Fact]
     public void ExecuteAzurePipelinesTranslatesToSilentOnlyV2AndUsesV2Overload()
     {
         const string token = "phase14-system-access-token";
@@ -445,6 +469,28 @@ public sealed class AuthPhase14VerticalSliceServiceTests
         {
             InvocationCount++;
             throw new InvalidOperationException("Credential cache must not execute.");
+        }
+    }
+
+    private sealed class CapturingCredentialAcquisitionService : ICredentialAcquisitionService
+    {
+        public CredentialRequestV2? Request { get; private set; }
+
+        public ValueTask<CredentialResult> AcquireAsync(
+            CredentialRequestV2 request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            Request = request;
+            return ValueTask.FromResult(
+                new CredentialResult
+                {
+                    Status = CredentialResultStatus.Success,
+                    Username = "AzureDevOps",
+                    Password = "test-password",
+                    DiagnosticsCorrelationId = "auth-request-capture",
+                }
+            );
         }
     }
 

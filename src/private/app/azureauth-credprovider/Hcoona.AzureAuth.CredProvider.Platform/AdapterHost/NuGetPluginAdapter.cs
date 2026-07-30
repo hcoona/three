@@ -19,19 +19,17 @@ public sealed class NuGetPluginAdapter
     private readonly BoundedCredentialAcquisitionAdapter credentialAcquisition;
 
     public NuGetPluginAdapter()
-        : this(CredentialProviderCompositionRoot.CreateProduction().AcquisitionService)
-    { }
+        : this(CredentialProviderCompositionRoot.CreateProduction().AcquisitionService) { }
 
     public NuGetPluginAdapter(CredentialCoreService? credentialCore)
         : this(
             credentialCore is null
                 ? CredentialProviderCompositionRoot.CreateProduction().AcquisitionService
-                : new LegacyV1CredentialAcquisitionService(credentialCore))
-    { }
+                : new LegacyV1CredentialAcquisitionService(credentialCore)
+        ) { }
 
     public NuGetPluginAdapter(ICredentialAcquisitionService credentialAcquisition)
-        : this(new BoundedCredentialAcquisitionAdapter(credentialAcquisition))
-    { }
+        : this(new BoundedCredentialAcquisitionAdapter(credentialAcquisition)) { }
 
     public NuGetPluginAdapter(BoundedCredentialAcquisitionAdapter credentialAcquisition)
     {
@@ -44,13 +42,15 @@ public sealed class NuGetPluginAdapter
     public static bool TryResolveProtocolInvocation(
         string? executablePath,
         IEnumerable<string>? arguments,
-        out AdapterInvocationContext? context)
+        out AdapterInvocationContext? context
+    )
     {
         bool resolved = AdapterHostBootstrap.TryResolveInvocation(
             Descriptor,
             executablePath,
             arguments,
-            out context);
+            out context
+        );
         if (!resolved || context is null || !context.IsProtocolInvocation)
         {
             context = null;
@@ -63,10 +63,12 @@ public sealed class NuGetPluginAdapter
     public async Task<int> RunPluginAsync(CancellationToken cancellationToken = default)
     {
         RequestHandlers requestHandlers = CreateRequestHandlers();
-        using IPlugin plugin = await PluginFactory.CreateFromCurrentProcessAsync(
+        using IPlugin plugin = await PluginFactory
+            .CreateFromCurrentProcessAsync(
                 requestHandlers,
                 ConnectionOptions.CreateDefault(),
-                cancellationToken)
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
         await WaitForPluginCloseAsync(plugin, cancellationToken).ConfigureAwait(false);
@@ -80,7 +82,8 @@ public sealed class NuGetPluginAdapter
     }
 
     public static GetOperationClaimsResponse HandleGetOperationClaims(
-        GetOperationClaimsRequest request)
+        GetOperationClaimsRequest request
+    )
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -90,7 +93,8 @@ public sealed class NuGetPluginAdapter
     }
 
     public GetAuthenticationCredentialsResponse HandleGetAuthenticationCredentials(
-        GetAuthenticationCredentialsRequest request)
+        GetAuthenticationCredentialsRequest request
+    )
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -110,7 +114,8 @@ public sealed class NuGetPluginAdapter
 
         CredentialRequestV2 credentialRequest = CreateCredentialRequest(
             parseResult.Resource,
-            request);
+            request
+        );
         CredentialResult credentialResult = credentialAcquisition.Acquire(credentialRequest);
         return CreateAuthenticationCredentialsResponse(credentialResult);
     }
@@ -135,31 +140,33 @@ public sealed class NuGetPluginAdapter
         AddRequestHandler(
             requestHandlers,
             MessageMethod.GetOperationClaims,
-            new GetOperationClaimsHandler());
+            new GetOperationClaimsHandler()
+        );
         AddRequestHandler(
             requestHandlers,
             MessageMethod.GetAuthenticationCredentials,
-            new GetAuthenticationCredentialsHandler(this));
+            new GetAuthenticationCredentialsHandler(this)
+        );
         AddRequestHandler(
             requestHandlers,
             MessageMethod.SetCredentials,
-            new SetCredentialsHandler());
-        AddRequestHandler(
-            requestHandlers,
-            MessageMethod.SetLogLevel,
-            new SetLogLevelHandler());
+            new SetCredentialsHandler()
+        );
+        AddRequestHandler(requestHandlers, MessageMethod.SetLogLevel, new SetLogLevelHandler());
         return requestHandlers;
     }
 
     private static void AddRequestHandler(
         RequestHandlers requestHandlers,
         MessageMethod method,
-        IRequestHandler handler)
+        IRequestHandler handler
+    )
     {
         if (!requestHandlers.TryAdd(method, handler))
         {
             throw new InvalidOperationException(
-                "NuGet plugin request handler registration failed.");
+                "NuGet plugin request handler registration failed."
+            );
         }
     }
 
@@ -171,39 +178,45 @@ public sealed class NuGetPluginAdapter
             executableNames: [ProductExecutableName],
             argumentTokens: ["-Plugin"],
             argumentMatchMode: AdapterArgumentMatchMode.Exact,
-            protocol: AdapterProtocol.NuGetPlugin);
+            protocol: AdapterProtocol.NuGetPlugin
+        );
         AdapterEntrypointDescriptor shortPluginEntrypoint = new(
             "NuGetPluginShort",
             AdapterInvocationMode.Protocol,
             executableNames: [ProductExecutableName],
             argumentTokens: ["-P"],
             argumentMatchMode: AdapterArgumentMatchMode.Exact,
-            protocol: AdapterProtocol.NuGetPlugin);
+            protocol: AdapterProtocol.NuGetPlugin
+        );
         AdapterEntrypointDescriptor humanEntrypoint = new(
             "HumanCommand",
             AdapterInvocationMode.HumanCommand,
-            executableNames: [ProductExecutableName]);
+            executableNames: [ProductExecutableName]
+        );
 
         return new AdapterDescriptor(
             "NuGet Plugin",
             AdapterProtocol.NuGetPlugin,
-            [pluginEntrypoint, shortPluginEntrypoint, humanEntrypoint]);
+            [pluginEntrypoint, shortPluginEntrypoint, humanEntrypoint]
+        );
     }
 
     private static async Task WaitForPluginCloseAsync(
         IPlugin plugin,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var beginClose = new TaskCompletionSource(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        var endClose = new TaskCompletionSource(
-            TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        var endClose = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using CancellationTokenRegistration cancellationRegistration = cancellationToken.Register(
             () =>
             {
                 beginClose.TrySetCanceled(cancellationToken);
                 endClose.TrySetCanceled(cancellationToken);
-            });
+            }
+        );
 
         plugin.BeforeClose += (_, _) => beginClose.TrySetResult();
         plugin.Closed += (_, _) =>
@@ -215,14 +228,23 @@ public sealed class NuGetPluginAdapter
         await beginClose.Task.ConfigureAwait(false);
         using var shutdownTimeout = new CancellationTokenSource(PluginShutdownTimeout);
         using CancellationTokenRegistration shutdownRegistration = shutdownTimeout.Token.Register(
-            () => endClose.TrySetCanceled(shutdownTimeout.Token));
+            () =>
+                endClose.TrySetCanceled(shutdownTimeout.Token)
+        );
         await endClose.Task.ConfigureAwait(false);
     }
 
     private static CredentialRequestV2 CreateCredentialRequest(
         CanonicalResourceIdentity resource,
-        GetAuthenticationCredentialsRequest request)
+        GetAuthenticationCredentialsRequest request
+    )
     {
+        bool interactionAllowed = !request.IsNonInteractive;
+        IdentityFlow identityFlow =
+            interactionAllowed && !request.CanShowDialog
+                ? IdentityFlow.DeviceCode
+                : IdentityFlow.InteractiveBrowser;
+
         return new CredentialRequestV2
         {
             Ecosystem = CredentialEcosystem.NuGet,
@@ -231,15 +253,15 @@ public sealed class NuGetPluginAdapter
             ServiceIdentity = DefaultServiceIdentity,
             RequestedAudience = TokenAudience.AzureArtifacts,
             CredentialKind = CredentialKind.NuGetPluginCredential,
-            IdentityFlow = IdentityFlow.InteractiveBrowser,
-            InteractivePolicy = InteractivePolicy.Never,
-            AcquisitionMode = AcquisitionMode.SilentOnly,
+            IdentityFlow = identityFlow,
+            InteractivePolicy = interactionAllowed
+                ? InteractivePolicy.HostToolAllows
+                : InteractivePolicy.Never,
+            AcquisitionMode = interactionAllowed
+                ? AcquisitionMode.InteractionAllowed
+                : AcquisitionMode.SilentOnly,
             CachePolicy = CachePolicyMode.ProductPersistentCacheDisabled,
-            CiContext = new CiContext
-            {
-                ExplicitCiMode = false,
-                AllowsPersistentWrites = false,
-            },
+            CiContext = new CiContext { ExplicitCiMode = false, AllowsPersistentWrites = false },
             ExtensionData = new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["nuget.canShowDialog"] = request.CanShowDialog ? "true" : "false",
@@ -250,11 +272,13 @@ public sealed class NuGetPluginAdapter
     }
 
     private static GetAuthenticationCredentialsResponse CreateAuthenticationCredentialsResponse(
-        CredentialResult credentialResult)
+        CredentialResult credentialResult
+    )
     {
         AdapterHostResult mapped = AdapterHostResultMapper.Map(
             AdapterProtocol.NuGetPlugin,
-            credentialResult);
+            credentialResult
+        );
 
         if (mapped.ExitCode == AdapterHostExitCode.NoCredential)
         {
@@ -272,12 +296,13 @@ public sealed class NuGetPluginAdapter
                 credentialResult.Password,
                 message: null,
                 authenticationTypes: ["Basic"],
-                MessageResponseCode.Success);
+                MessageResponseCode.Success
+            );
         }
 
         return CreateErrorResponse(
-            credentialResult.Error?.SafeMessage
-                ?? "NuGet credential request failed.");
+            credentialResult.Error?.SafeMessage ?? "NuGet credential request failed."
+        );
     }
 
     private static GetAuthenticationCredentialsResponse CreateNotFoundResponse() =>
@@ -286,7 +311,8 @@ public sealed class NuGetPluginAdapter
             password: null,
             NoCredentialMessage,
             authenticationTypes: null,
-            MessageResponseCode.NotFound);
+            MessageResponseCode.NotFound
+        );
 
     private static GetAuthenticationCredentialsResponse CreateErrorResponse(string message) =>
         new(
@@ -294,7 +320,8 @@ public sealed class NuGetPluginAdapter
             password: null,
             message,
             authenticationTypes: null,
-            MessageResponseCode.Error);
+            MessageResponseCode.Error
+        );
 
     private static NuGetResourceParseResult TryCreateResource(Uri uri)
     {
@@ -322,8 +349,8 @@ public sealed class NuGetPluginAdapter
             !TryParseAzureArtifactsNuGetResource(
                 uri.IdnHost,
                 segments,
-                out AzureArtifactsNuGetResourceShape? shape)
-            || shape is null
+                out AzureArtifactsNuGetResourceShape? shape
+            ) || shape is null
         )
         {
             return NuGetResourceParseResult.ProtocolViolation();
@@ -337,7 +364,9 @@ public sealed class NuGetPluginAdapter
                     shape.Organization,
                     uri,
                     shape.Project,
-                    feed: shape.Feed));
+                    feed: shape.Feed
+                )
+            );
         }
         catch (ArgumentException)
         {
@@ -353,7 +382,8 @@ public sealed class NuGetPluginAdapter
     private static bool TryParseAzureArtifactsNuGetResource(
         string host,
         string[] segments,
-        [NotNullWhen(true)] out AzureArtifactsNuGetResourceShape? shape)
+        [NotNullWhen(true)] out AzureArtifactsNuGetResourceShape? shape
+    )
     {
         if (
             string.Equals(host, "pkgs.dev.azure.com", StringComparison.OrdinalIgnoreCase)
@@ -366,9 +396,7 @@ public sealed class NuGetPluginAdapter
                 return false;
             }
 
-            shape = ParseNuGetResourceSegments(
-                segments[0],
-                segments.Skip(1).ToArray());
+            shape = ParseNuGetResourceSegments(segments[0], segments.Skip(1).ToArray());
             return shape is not null;
         }
 
@@ -388,7 +416,8 @@ public sealed class NuGetPluginAdapter
 
     private static AzureArtifactsNuGetResourceShape? ParseNuGetResourceSegments(
         string organization,
-        string[] resourceSegments)
+        string[] resourceSegments
+    )
     {
         if (
             resourceSegments.Length == 5
@@ -399,7 +428,8 @@ public sealed class NuGetPluginAdapter
             return new AzureArtifactsNuGetResourceShape(
                 organization,
                 Project: null,
-                Feed: resourceSegments[1]);
+                Feed: resourceSegments[1]
+            );
         }
 
         if (
@@ -411,7 +441,8 @@ public sealed class NuGetPluginAdapter
             return new AzureArtifactsNuGetResourceShape(
                 organization,
                 Project: resourceSegments[0],
-                Feed: resourceSegments[2]);
+                Feed: resourceSegments[2]
+            );
         }
 
         return null;
@@ -464,7 +495,8 @@ public sealed class NuGetPluginAdapter
 
     private static bool TryGetLegacyVisualStudioOrganization(
         string host,
-        [NotNullWhen(true)] out string? organization)
+        [NotNullWhen(true)] out string? organization
+    )
     {
         const string suffix = ".pkgs.visualstudio.com";
         if (!host.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
@@ -494,18 +526,19 @@ public sealed class NuGetPluginAdapter
         : NuGetRequestHandler<GetOperationClaimsRequest, GetOperationClaimsResponse>
     {
         protected override GetOperationClaimsResponse HandleRequest(
-            GetOperationClaimsRequest request) =>
-            NuGetPluginAdapter.HandleGetOperationClaims(request);
+            GetOperationClaimsRequest request
+        ) => NuGetPluginAdapter.HandleGetOperationClaims(request);
     }
 
     private sealed class GetAuthenticationCredentialsHandler(NuGetPluginAdapter adapter)
         : NuGetRequestHandler<
             GetAuthenticationCredentialsRequest,
-            GetAuthenticationCredentialsResponse>
+            GetAuthenticationCredentialsResponse
+        >
     {
         protected override GetAuthenticationCredentialsResponse HandleRequest(
-            GetAuthenticationCredentialsRequest request) =>
-            adapter.HandleGetAuthenticationCredentials(request);
+            GetAuthenticationCredentialsRequest request
+        ) => adapter.HandleGetAuthenticationCredentials(request);
     }
 
     private sealed class SetCredentialsHandler
@@ -531,7 +564,8 @@ public sealed class NuGetPluginAdapter
             IConnection connection,
             Message request,
             IResponseHandler responseHandler,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken
+        )
         {
             ArgumentNullException.ThrowIfNull(connection);
             ArgumentNullException.ThrowIfNull(request);
@@ -550,7 +584,8 @@ public sealed class NuGetPluginAdapter
 
     private sealed record NuGetResourceParseResult(
         NuGetResourceParseStatus Status,
-        CanonicalResourceIdentity? Resource)
+        CanonicalResourceIdentity? Resource
+    )
     {
         public static NuGetResourceParseResult Success(CanonicalResourceIdentity resource) =>
             new(NuGetResourceParseStatus.Success, resource);
@@ -565,7 +600,8 @@ public sealed class NuGetPluginAdapter
     private sealed record AzureArtifactsNuGetResourceShape(
         string Organization,
         string? Project,
-        string Feed);
+        string Feed
+    );
 
     private enum NuGetResourceParseStatus
     {

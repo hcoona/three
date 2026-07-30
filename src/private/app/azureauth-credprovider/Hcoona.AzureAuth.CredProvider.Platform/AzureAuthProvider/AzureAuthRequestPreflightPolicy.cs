@@ -50,7 +50,8 @@ internal static class AzureAuthRequestPreflightPolicy
             return new AzureAuthRequestPreflightFailure(
                 AcquiredAccessTokenStatus.RequestRejected,
                 "AzureAuthDeviceCodeUnsupported",
-                "The AzureAuth integration uses web mode and does not support device-code requests."
+                "The AzureAuth integration uses broker and web modes and does not support "
+                    + "device-code requests."
             );
         }
 

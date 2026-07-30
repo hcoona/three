@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text;
 using Hcoona.AzureAuth.CredProvider.Contracts;
 using Hcoona.AzureAuth.CredProvider.Platform.AdapterHost;
+using Hcoona.AzureAuth.CredProvider.Platform.AzureAuthProvider;
 using Hcoona.AzureAuth.CredProvider.Platform.Composition;
 using Hcoona.AzureAuth.CredProvider.Platform.Configuration;
 using Hcoona.AzureAuth.CredProvider.Platform.CredentialCore;
@@ -138,6 +139,7 @@ internal static class CliApplication
                 CliCommand.Acceptance => HandleAcceptance(invocation, stdout),
                 CliCommand.Login => HandleLogin(invocation, stdout, stderr, runtimeOptions),
                 CliCommand.Logout => HandleLogout(invocation, stdout, stderr, runtimeOptions),
+                CliCommand.Identity => HandleIdentity(invocation, stdout, stderr, runtimeOptions),
                 _ => throw new InvalidOperationException("Unsupported CLI command."),
             };
         }
@@ -1002,6 +1004,63 @@ internal static class CliApplication
         return SuccessExitCode;
     }
 
+    private static int HandleIdentity(
+        CliInvocation invocation,
+        TextWriter stdout,
+        TextWriter stderr,
+        CliRuntimeOptions? runtimeOptions
+    )
+    {
+        CredentialProviderIdentityConfigurationService service =
+            runtimeOptions?.IdentityConfiguration
+            ?? new CredentialProviderIdentityConfigurationService();
+        CredentialProviderIdentityConfigurationResult result;
+        try
+        {
+            result = invocation.IdentityOptions.Action switch
+            {
+                CliIdentityAction.Configure => service.Configure(
+                    invocation.IdentityOptions.TenantId!,
+                    invocation.IdentityOptions.AccountPreference
+                ),
+                CliIdentityAction.Reconfigure => service.Reconfigure(
+                    invocation.IdentityOptions.TenantId!,
+                    invocation.IdentityOptions.AccountPreference
+                ),
+                CliIdentityAction.Unconfigure => service.Unconfigure(),
+                _ => throw new InvalidOperationException("Unsupported identity action."),
+            };
+        }
+        catch (AzureAuthBindingMismatchException)
+        {
+            TryWriteDiagnosticText(
+                stderr,
+                "error: identity context differs from the recorded configuration; "
+                    + $"run '{CommandName} identity reconfigure' to replace it."
+            );
+            return NotImplementedExitCode;
+        }
+        catch (CredentialProviderIdentityConfigurationConflictException)
+        {
+            TryWriteDiagnosticText(
+                stderr,
+                "error: identity configuration changed concurrently; retry the command."
+            );
+            return NotImplementedExitCode;
+        }
+        catch (InvalidOperationException exception)
+        {
+            TryWriteDiagnosticText(
+                stderr,
+                "error: " + EscapeNonPrintingCharacters(exception.Message)
+            );
+            return NotImplementedExitCode;
+        }
+
+        WriteText(stdout, BuildIdentityOutput(invocation.IdentityOptions.Action, result));
+        return SuccessExitCode;
+    }
+
     private static CliInvocation Parse(IReadOnlyList<string> args)
     {
         if (args.Count == 0)
@@ -1031,6 +1090,7 @@ internal static class CliApplication
             CliCommand.Acceptance => ParseAcceptance(remainingArgs),
             CliCommand.Login => ParseLogin(remainingArgs),
             CliCommand.Logout => ParseLogout(remainingArgs),
+            CliCommand.Identity => ParseIdentity(remainingArgs),
             CliCommand.Configure => ParseConfigurationCommand(CliCommand.Configure, remainingArgs),
             CliCommand.Refresh => ParseConfigurationCommand(CliCommand.Refresh, remainingArgs),
             CliCommand.Unconfigure => ParseConfigurationCommand(
@@ -1227,6 +1287,128 @@ internal static class CliApplication
             DryRun: false,
             HelpText: null
         );
+    }
+
+    private static CliInvocation ParseIdentity(IReadOnlyList<string> args)
+    {
+        if (ContainsStandaloneHelpToken(args))
+        {
+            ThrowIfAnyValuelessOptionHasAssignedValue(args);
+            return CliInvocation.CreateHelp(BuildIdentityHelp());
+        }
+
+        if (args.Count == 0)
+        {
+            throw CreateUsageError(
+                "error: identity requires an action: configure, reconfigure, or unconfigure."
+            );
+        }
+
+        string actionToken = args[0];
+        if (IsOptionToken(actionToken))
+        {
+            throw CreateUnknownOptionError(actionToken);
+        }
+
+        CliIdentityAction action = actionToken switch
+        {
+            { } value when string.Equals(value, "configure", StringComparison.OrdinalIgnoreCase) =>
+                CliIdentityAction.Configure,
+            { } value
+                when string.Equals(value, "reconfigure", StringComparison.OrdinalIgnoreCase) =>
+                CliIdentityAction.Reconfigure,
+            { } value
+                when string.Equals(value, "unconfigure", StringComparison.OrdinalIgnoreCase) =>
+                CliIdentityAction.Unconfigure,
+            _ => throw CreateUsageError(
+                "error: identity action must be configure, reconfigure, or unconfigure."
+            ),
+        };
+
+        string? tenantId = null;
+        string? accountPreference = null;
+        var tenantSpecified = false;
+        var accountSpecified = false;
+        for (var index = 1; index < args.Count; index++)
+        {
+            string token = args[index];
+            if (TryParseStringOption(args, ref index, "--tenant", out string? parsedTenant))
+            {
+                if (tenantSpecified)
+                {
+                    throw CreateUsageError(
+                        "error: option '--tenant' cannot be specified more than once."
+                    );
+                }
+
+                tenantSpecified = true;
+                tenantId = parsedTenant;
+                continue;
+            }
+
+            if (
+                TryParseStringOption(
+                    args,
+                    ref index,
+                    "--account",
+                    out string? parsedAccountPreference
+                )
+            )
+            {
+                if (accountSpecified)
+                {
+                    throw CreateUsageError(
+                        "error: option '--account' cannot be specified more than once."
+                    );
+                }
+
+                accountSpecified = true;
+                accountPreference = parsedAccountPreference;
+                continue;
+            }
+
+            if (IsOptionToken(token))
+            {
+                throw CreateUnknownOptionError(token);
+            }
+
+            throw CreateUsageError(
+                "error: identity does not accept additional positional arguments. "
+                    + $"Run '{CommandName} identity --help' for usage."
+            );
+        }
+
+        if (action == CliIdentityAction.Unconfigure)
+        {
+            if (tenantSpecified || accountSpecified)
+            {
+                throw CreateUsageError(
+                    "error: identity unconfigure does not accept --tenant or --account."
+                );
+            }
+        }
+        else if (string.IsNullOrWhiteSpace(tenantId))
+        {
+            throw CreateUsageError(
+                $"error: identity {actionToken.ToLowerInvariant()} requires --tenant <id>."
+            );
+        }
+
+        return new CliInvocation(
+            CliCommand.Identity,
+            null,
+            CliCiMode.None,
+            DryRun: false,
+            HelpText: null
+        )
+        {
+            IdentityOptions = new CliIdentityOptions
+            {
+                Action = action,
+                TenantId = tenantId,
+                AccountPreference = accountPreference,
+            },
+        };
     }
 
     private static CliInvocation ParseDoctor(IReadOnlyList<string> args)
@@ -1747,6 +1929,8 @@ internal static class CliApplication
                 CliCommand.Login,
             { } value when string.Equals(value, "logout", StringComparison.OrdinalIgnoreCase) =>
                 CliCommand.Logout,
+            { } value when string.Equals(value, "identity", StringComparison.OrdinalIgnoreCase) =>
+                CliCommand.Identity,
             { } value when string.Equals(value, "configure", StringComparison.OrdinalIgnoreCase) =>
                 CliCommand.Configure,
             { } value when string.Equals(value, "refresh", StringComparison.OrdinalIgnoreCase) =>
@@ -1834,6 +2018,7 @@ internal static class CliApplication
             "  acceptance                   Render Phase 15 hardening matrix.",
             "  login                        Run accepted MVP authentication orchestration.",
             "  logout                       Clear product-owned authentication state.",
+            "  identity                     Configure product identity context.",
             "  configure <ecosystem>        Apply supported configuration plans.",
             "  refresh <ecosystem>          Refresh an npm, pnpm, or Yarn credential.",
             "  unconfigure <ecosystem>      Remove supported configuration plans.",
@@ -1845,6 +2030,7 @@ internal static class CliApplication
             $"  {CommandName} status",
             $"  {CommandName} login --device-code",
             $"  {CommandName} login --ci azure-pipelines",
+            $"  {CommandName} identity configure --tenant <id> [--account <name>]",
             $"  {CommandName} status --ci azure-pipelines",
             $"  {CommandName} configure git --dry-run",
             $"  {CommandName} acceptance",
@@ -2008,6 +2194,30 @@ internal static class CliApplication
         );
     }
 
+    private static string BuildIdentityHelp()
+    {
+        return JoinLines(
+            $"{CommandName} identity",
+            "Usage:",
+            $"  {CommandName} identity configure --tenant <id> [--account <name>] [--help]",
+            $"  {CommandName} identity reconfigure --tenant <id> [--account <name>] [--help]",
+            $"  {CommandName} identity unconfigure [--help]",
+            string.Empty,
+            "Actions:",
+            "  configure                    Record identity context if none exists.",
+            "  reconfigure                  Replace or repair identity context.",
+            "  unconfigure                  Remove recorded identity context.",
+            string.Empty,
+            "Options:",
+            "  --tenant <id>                Required tenant for configure and reconfigure.",
+            "  --account <name>             Optional account preference.",
+            "  -h, --help                   Show help.",
+            string.Empty,
+            "Identity configuration stores invocation context only.",
+            "It stores no credentials and does not verify the account."
+        );
+    }
+
     private static string BuildStatusOutput(
         CliCiMode ciMode,
         CredentialProviderCompositionRoot root,
@@ -2046,7 +2256,7 @@ internal static class CliApplication
                 + "managed-identity, workload-identity",
             "pat-compatibility: deferred-disabled",
             "dry-run-rendering: enabled",
-            "mutating-commands: git-nuget-auth-config-cleanup",
+            "mutating-commands: identity-configuration, host-tool-configuration, auth, cleanup",
             $"supported-ecosystems: {string.Join(", ", SupportedEcosystems)}",
         ]);
         return JoinLines(lines);
@@ -2145,6 +2355,51 @@ internal static class CliApplication
             "plaintext-fallback: disabled",
         ];
         AddIncompleteCleanupRemediation(lines, cleanupResult);
+        return JoinLines(lines);
+    }
+
+    private static string BuildIdentityOutput(
+        CliIdentityAction action,
+        CredentialProviderIdentityConfigurationResult result
+    )
+    {
+        string actionText = action switch
+        {
+            CliIdentityAction.Configure => "configure",
+            CliIdentityAction.Reconfigure => "reconfigure",
+            CliIdentityAction.Unconfigure => "unconfigure",
+            _ => throw new InvalidOperationException("Unsupported identity action."),
+        };
+        string status = result.Changed
+            ? action switch
+            {
+                CliIdentityAction.Configure => "configured",
+                CliIdentityAction.Reconfigure => "reconfigured",
+                CliIdentityAction.Unconfigure => "unconfigured",
+                _ => throw new InvalidOperationException("Unsupported identity action."),
+            }
+            : "unchanged";
+        var lines = new List<string>
+        {
+            "command: identity",
+            $"action: {actionText}",
+            $"status: {status}",
+        };
+        if (result.IsConfigured)
+        {
+            lines.Add("tenant: " + EscapeNonPrintingCharacters(result.TenantId!));
+            lines.Add(
+                "account-preference: "
+                    + (
+                        result.AccountPreference is null
+                            ? "none"
+                            : EscapeNonPrintingCharacters(result.AccountPreference)
+                    )
+            );
+        }
+
+        lines.Add("credential-material: not-stored");
+        lines.Add("identity-verification: not-performed");
         return JoinLines(lines);
     }
 
@@ -3214,6 +3469,7 @@ internal static class CliApplication
             CliCommand.Cleanup => "cleanup",
             CliCommand.Login => "login",
             CliCommand.Logout => "logout",
+            CliCommand.Identity => "identity",
             CliCommand.Configure => "configure",
             CliCommand.Refresh => "refresh",
             CliCommand.Unconfigure => "unconfigure",
@@ -3485,6 +3741,8 @@ internal sealed record CliInvocation(
 {
     public CliAuthOptions AuthOptions { get; init; } = new();
 
+    public CliIdentityOptions IdentityOptions { get; init; } = new();
+
     public Uri? RegistryUrl { get; init; }
 
     public string CommandName => CliApplicationCommandNames.Get(Command);
@@ -3515,6 +3773,23 @@ internal sealed record CliAuthOptions
     public string? DeferredFlowName { get; init; }
 }
 
+internal sealed record CliIdentityOptions
+{
+    public CliIdentityAction Action { get; init; }
+
+    public string? TenantId { get; init; }
+
+    public string? AccountPreference { get; init; }
+}
+
+internal enum CliIdentityAction
+{
+    Unknown = 0,
+    Configure = 1,
+    Reconfigure = 2,
+    Unconfigure = 3,
+}
+
 internal enum CliCommand
 {
     Unknown = 0,
@@ -3528,6 +3803,7 @@ internal enum CliCommand
     Configure = 8,
     Unconfigure = 9,
     Refresh = 10,
+    Identity = 11,
 }
 
 internal enum CliCiMode
@@ -3548,6 +3824,7 @@ internal static class CliApplicationCommandNames
             CliCommand.Acceptance => "acceptance",
             CliCommand.Login => "login",
             CliCommand.Logout => "logout",
+            CliCommand.Identity => "identity",
             CliCommand.Configure => "configure",
             CliCommand.Refresh => "refresh",
             CliCommand.Unconfigure => "unconfigure",
@@ -3570,6 +3847,8 @@ internal sealed record CliRuntimeOptions
     public AuthPhase14VerticalSliceOptions? AuthPhase14Options { get; init; }
 
     public ConfigurationPhase14VerticalSliceOptions? ConfigurationPhase14Options { get; init; }
+
+    public CredentialProviderIdentityConfigurationService? IdentityConfiguration { get; init; }
 
     public CancellationToken CancellationToken { get; init; }
 }
