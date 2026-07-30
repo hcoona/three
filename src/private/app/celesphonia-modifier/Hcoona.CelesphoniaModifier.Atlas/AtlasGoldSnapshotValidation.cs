@@ -6,10 +6,10 @@ namespace Hcoona.CelesphoniaModifier.Atlas;
 public static class AtlasGoldSnapshotValidation
 {
     public static ValueTask<AtlasGoldSnapshotValidationSummary> RunAsync(
-        string requestPath,
+        string requestFilePath,
         CancellationToken cancellationToken = default) =>
         RunAsync(
-            requestPath,
+            requestFilePath,
             AtlasIoSeams.Default,
             AtlasSaveReaderLimits.Default,
             AtlasGoldSnapshotValidationSeams.Default,

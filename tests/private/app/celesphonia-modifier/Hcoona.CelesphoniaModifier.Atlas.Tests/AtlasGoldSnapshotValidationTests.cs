@@ -184,7 +184,9 @@ public sealed class AtlasGoldSnapshotValidationTests
         ParameterInfo[] parameters = run.GetParameters();
         Assert.Equal(2, parameters.Length);
         Assert.Equal(typeof(string), parameters[0].ParameterType);
+        Assert.Equal("requestFilePath", parameters[0].Name);
         Assert.Equal(typeof(CancellationToken), parameters[1].ParameterType);
+        Assert.Equal("cancellationToken", parameters[1].Name);
         Assert.True(parameters[1].HasDefaultValue);
         Assert.Null(parameters[1].DefaultValue);
         Assert.False(typeof(AtlasGoldSnapshotValidationSeams).IsPublic);
@@ -439,46 +441,38 @@ public sealed class AtlasGoldSnapshotValidationTests
         string json = GoldJson("71", "71");
         await using SnapshotSurveyWorkspace workspace =
             await CreateValidationWorkspaceAsync(("file1.rpgsave", json));
-        string slotPath = Path.Combine(workspace.SnapshotRoot, "file1.rpgsave");
-        IReadOnlyDictionary<string, byte[]> before = await workspace.ReadSnapshotFilesAsync();
-        byte[] slotBytes = before["file1.rpgsave"];
-        AtlasSaveReadResult source = AtlasSaveReader.Read(
-            slotBytes,
-            cancellationToken: TestContext.Current.CancellationToken);
-        byte[] original = source.OriginalCompressedBytes.ToArray();
-        byte[] jsonSource = source.Json.Utf8Source.ToArray();
-        byte[] noOp = source.GetSemanticNoOpBytes();
-        AtlasTokenCensus tokenCensus = source.TokenCensus;
-        AtlasGraphCensus graphCensus = source.GraphCensus;
-        byte[] structural = AtlasStructuralScanner
-            .Scan(
-                source,
-                AtlasDocumentRole.SlotSave,
-                cancellationToken: TestContext.Current.CancellationToken)
-            .GetCanonicalUtf8Bytes(TestContext.Current.CancellationToken);
+        AtlasIoSeams.Default.DeleteDirectory(workspace.SaveRoot, true);
+        IReadOnlyDictionary<string, WorkspaceInventoryEntry> before =
+            await ReadWorkspaceInventoryAsync(workspace.Root, AtlasIoSeams.Default);
         AtlasIoSeams io = CreateReadOnlyLiveSourceRejectingIo(workspace.SaveRoot);
+        AtlasSaveReadResult? classifiedSource = null;
+        A3SourceObservations? beforeA6 = null;
+        AtlasGoldSnapshotValidationSeams seams = new()
+        {
+            ReadGold = (source, cancellationToken) =>
+            {
+                Assert.Null(classifiedSource);
+                classifiedSource = source;
+                beforeA6 = CaptureA3SourceObservations(source, cancellationToken);
+                return AtlasGoldReadModel.Read(source, cancellationToken);
+            },
+        };
 
         AtlasGoldSnapshotValidationSummary result =
-            await workspace.RunGoldValidationAsync(io);
+            await workspace.RunGoldValidationAsync(
+                io,
+                seams,
+                TestContext.Current.CancellationToken);
 
         Assert.Equal(AtlasGoldSnapshotValidationState.AllConsistent, result.State);
-        Assert.Equal(before, await workspace.ReadSnapshotFilesAsync());
-        Assert.Equal(slotBytes, await File.ReadAllBytesAsync(
-            slotPath,
-            TestContext.Current.CancellationToken));
-        Assert.Equal(original, source.OriginalCompressedBytes.ToArray());
-        Assert.Equal(jsonSource, source.Json.Utf8Source.ToArray());
-        Assert.Equal(noOp, source.GetSemanticNoOpBytes());
-        Assert.Equal(tokenCensus, source.TokenCensus);
-        Assert.Equal(graphCensus, source.GraphCensus);
-        Assert.Equal(
-            structural,
-            AtlasStructuralScanner
-                .Scan(
-                    source,
-                    AtlasDocumentRole.SlotSave,
-                    cancellationToken: TestContext.Current.CancellationToken)
-                .GetCanonicalUtf8Bytes(TestContext.Current.CancellationToken));
+        AssertWorkspaceInventoryEqual(
+            before,
+            await ReadWorkspaceInventoryAsync(workspace.Root, AtlasIoSeams.Default));
+        AssertA3SourceObservationsUnchanged(
+            classifiedSource
+                ?? throw new InvalidOperationException("A3 source was not classified."),
+            beforeA6
+                ?? throw new InvalidOperationException("A3 observations were not captured."));
     }
 
     [Theory]
@@ -651,12 +645,16 @@ public sealed class AtlasGoldSnapshotValidationTests
             targetOpen: 2);
 
         using CancellationTokenSource parsing = new();
+        bool parsingEntered = false;
         AtlasGoldSnapshotValidationSeams parsingSeams = new()
         {
             ReadSave = (bytes, limits, token) =>
             {
+                parsingEntered = true;
+                Assert.Equal(parsing.Token, token);
+                AtlasSaveReadResult result = AtlasSaveReader.Read(bytes, limits, token);
                 parsing.Cancel();
-                return AtlasSaveReader.Read(bytes, limits, token);
+                return result;
             },
         };
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
@@ -664,14 +662,20 @@ public sealed class AtlasGoldSnapshotValidationTests
                 AtlasIoSeams.Default,
                 parsingSeams,
                 parsing.Token).AsTask());
+        Assert.True(parsingEntered);
 
         using CancellationTokenSource classification = new();
+        bool classificationEntered = false;
         AtlasGoldSnapshotValidationSeams classificationSeams = new()
         {
             ReadGold = (source, token) =>
             {
+                classificationEntered = true;
+                Assert.Equal(classification.Token, token);
+                AtlasGoldReadModelResult result =
+                    AtlasGoldReadModel.Read(source, token);
                 classification.Cancel();
-                return AtlasGoldReadModel.Read(source, token);
+                return result;
             },
         };
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
@@ -679,6 +683,7 @@ public sealed class AtlasGoldSnapshotValidationTests
                 AtlasIoSeams.Default,
                 classificationSeams,
                 classification.Token).AsTask());
+        Assert.True(classificationEntered);
     }
 
     [Fact]
@@ -766,50 +771,93 @@ public sealed class AtlasGoldSnapshotValidationTests
 
     private static AtlasIoSeams CreateReadOnlyLiveSourceRejectingIo(string saveRoot) =>
         AtlasTestSupport.CreateIo(
+            readAllBytesAsync: (path, cancellationToken) =>
+                AccessNonLive(
+                    saveRoot,
+                    path,
+                    () => AtlasIoSeams.Default.ReadAllBytesAsync(
+                        path,
+                        cancellationToken)),
             fileExists: path =>
-                IsLivePath(saveRoot, path)
-                    ? throw new InvalidOperationException("Live source access is forbidden.")
-                    : AtlasIoSeams.Default.FileExists(path),
+                AccessNonLive(
+                    saveRoot,
+                    path,
+                    () => AtlasIoSeams.Default.FileExists(path)),
             directoryExists: path =>
-                IsLivePath(saveRoot, path)
-                    ? throw new InvalidOperationException("Live source access is forbidden.")
-                    : AtlasIoSeams.Default.DirectoryExists(path),
+                AccessNonLive(
+                    saveRoot,
+                    path,
+                    () => AtlasIoSeams.Default.DirectoryExists(path)),
             getAttributes: path =>
-                IsLivePath(saveRoot, path)
-                    ? throw new InvalidOperationException("Live source access is forbidden.")
-                    : AtlasIoSeams.Default.GetAttributes(path),
+                AccessNonLive(
+                    saveRoot,
+                    path,
+                    () => AtlasIoSeams.Default.GetAttributes(path)),
+            tryGetDirectoryFinalPath: path =>
+                AccessNonLive(
+                    saveRoot,
+                    path,
+                    () => AtlasIoSeams.Default.TryGetDirectoryFinalPath(path)),
+            getDriveInfo: path =>
+                AccessNonLive(
+                    saveRoot,
+                    path,
+                    () => AtlasIoSeams.Default.GetDriveInfo(path)),
             enumerateFileSystemEntries: (path, option) =>
-                IsLivePath(saveRoot, path)
-                    ? throw new InvalidOperationException("Live source access is forbidden.")
-                    : AtlasIoSeams.Default.EnumerateFileSystemEntries(path, option),
+                AccessNonLive(
+                    saveRoot,
+                    path,
+                    () => AtlasIoSeams.Default.EnumerateFileSystemEntries(path, option)),
             openFile: (path, mode, access, share, options) =>
             {
-                if (IsLivePath(saveRoot, path))
-                {
-                    throw new InvalidOperationException("Live source access is forbidden.");
-                }
-
                 if (mode != FileMode.Open || access != FileAccess.Read)
                 {
                     throw new InvalidOperationException("Output writes are forbidden.");
                 }
 
-                return AtlasIoSeams.Default.OpenFile(path, mode, access, share, options);
+                return AccessNonLive(
+                    saveRoot,
+                    path,
+                    () => AtlasIoSeams.Default.OpenFile(
+                        path,
+                        mode,
+                        access,
+                        share,
+                        options));
             },
-            createDirectory: _ =>
-                throw new InvalidOperationException("Output writes are forbidden."),
-            moveFile: (_, _) =>
-                throw new InvalidOperationException("Output writes are forbidden."),
-            moveDirectory: (_, _) =>
-                throw new InvalidOperationException("Output writes are forbidden."),
-            replaceFile: (_, _, _) =>
-                throw new InvalidOperationException("Output writes are forbidden."),
-            deleteDirectory: (_, _) =>
-                throw new InvalidOperationException("Output writes are forbidden."),
-            deleteFile: _ =>
-                throw new InvalidOperationException("Output writes are forbidden."),
-            setAttributes: (_, _) =>
-                throw new InvalidOperationException("Output writes are forbidden."));
+            createDirectory: _ => ThrowOutputWrite(),
+            moveFile: (_, _) => ThrowOutputWrite(),
+            moveDirectory: (_, _) => ThrowOutputWrite(),
+            replaceFile: (_, _, _) => ThrowOutputWrite(),
+            deleteDirectory: (_, _) => ThrowOutputWrite(),
+            deleteFile: _ => ThrowOutputWrite(),
+            setAttributes: (_, _) => ThrowOutputWrite(),
+            getLength: path =>
+                AccessNonLive(
+                    saveRoot,
+                    path,
+                    () => AtlasIoSeams.Default.GetLength(path)),
+            getLastWriteTimeUtc: path =>
+                AccessNonLive(
+                    saveRoot,
+                    path,
+                    () => AtlasIoSeams.Default.GetLastWriteTimeUtc(path)));
+
+    private static T AccessNonLive<T>(
+        string saveRoot,
+        string path,
+        Func<T> operation)
+    {
+        if (IsLivePath(saveRoot, path))
+        {
+            throw new InvalidOperationException("Live source access is forbidden.");
+        }
+
+        return operation();
+    }
+
+    private static void ThrowOutputWrite() =>
+        throw new InvalidOperationException("Output writes are forbidden.");
 
     private static bool IsLivePath(string saveRoot, string path) =>
         AtlasSaveSnapshotContracts.ContainsPath(saveRoot, path);
@@ -878,6 +926,89 @@ public sealed class AtlasGoldSnapshotValidationTests
         string[] values = Enumerable.Repeat("0", 216).ToArray();
         values[215] = gold;
         return $"[{string.Join(",", values)}]";
+    }
+
+    private static async Task<IReadOnlyDictionary<string, WorkspaceInventoryEntry>>
+        ReadWorkspaceInventoryAsync(
+            string root,
+            AtlasIoSeams io)
+    {
+        List<string> paths = [root];
+        paths.AddRange(io.EnumerateFileSystemEntries(root, SearchOption.AllDirectories));
+        Dictionary<string, WorkspaceInventoryEntry> result =
+            new(StringComparer.Ordinal);
+        foreach (string path in paths.Order(StringComparer.Ordinal))
+        {
+            FileAttributes attributes = io.GetAttributes(path);
+            bool isDirectory = (attributes & FileAttributes.Directory) != 0;
+            byte[]? bytes = isDirectory
+                ? null
+                : await io.ReadAllBytesAsync(
+                    path,
+                    TestContext.Current.CancellationToken);
+            result.Add(
+                Path.GetRelativePath(root, path),
+                new WorkspaceInventoryEntry(
+                    attributes,
+                    isDirectory ? null : io.GetLength(path),
+                    isDirectory ? null : io.GetLastWriteTimeUtc(path),
+                    bytes));
+        }
+
+        return result;
+    }
+
+    private static void AssertWorkspaceInventoryEqual(
+        IReadOnlyDictionary<string, WorkspaceInventoryEntry> expected,
+        IReadOnlyDictionary<string, WorkspaceInventoryEntry> actual)
+    {
+        Assert.Equal(
+            expected.Keys.Order(StringComparer.Ordinal),
+            actual.Keys.Order(StringComparer.Ordinal));
+        foreach ((string path, WorkspaceInventoryEntry expectedEntry) in expected)
+        {
+            WorkspaceInventoryEntry actualEntry = actual[path];
+            Assert.Equal(expectedEntry.Attributes, actualEntry.Attributes);
+            Assert.Equal(expectedEntry.Length, actualEntry.Length);
+            Assert.Equal(expectedEntry.LastWriteTimeUtc, actualEntry.LastWriteTimeUtc);
+            Assert.Equal(expectedEntry.Bytes, actualEntry.Bytes);
+        }
+    }
+
+    private static A3SourceObservations CaptureA3SourceObservations(
+        AtlasSaveReadResult source,
+        CancellationToken cancellationToken) =>
+        new(
+            source.OriginalCompressedBytes.ToArray(),
+            source.Json.Utf8Source.ToArray(),
+            source.GetSemanticNoOpBytes(),
+            source.TokenCensus,
+            source.GraphCensus,
+            AtlasStructuralScanner
+                .Scan(
+                    source,
+                    AtlasDocumentRole.SlotSave,
+                    cancellationToken: cancellationToken)
+                .GetCanonicalUtf8Bytes(cancellationToken));
+
+    private static void AssertA3SourceObservationsUnchanged(
+        AtlasSaveReadResult source,
+        A3SourceObservations expected)
+    {
+        Assert.Equal(expected.OriginalCompressedBytes, source.OriginalCompressedBytes.ToArray());
+        Assert.Equal(expected.LosslessJsonSource, source.Json.Utf8Source.ToArray());
+        Assert.Equal(expected.SemanticNoOpBytes, source.GetSemanticNoOpBytes());
+        Assert.Equal(expected.TokenCensus, source.TokenCensus);
+        Assert.Equal(expected.GraphCensus, source.GraphCensus);
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        Assert.Equal(
+            expected.StructuralObservations,
+            AtlasStructuralScanner
+                .Scan(
+                    source,
+                    AtlasDocumentRole.SlotSave,
+                    cancellationToken: cancellationToken)
+                .GetCanonicalUtf8Bytes(cancellationToken));
     }
 
     private static void AssertSummary(
@@ -983,6 +1114,20 @@ public sealed class AtlasGoldSnapshotValidationTests
 
         return schema;
     }
+
+    private sealed record WorkspaceInventoryEntry(
+        FileAttributes Attributes,
+        long? Length,
+        DateTimeOffset? LastWriteTimeUtc,
+        byte[]? Bytes);
+
+    private sealed record A3SourceObservations(
+        byte[] OriginalCompressedBytes,
+        byte[] LosslessJsonSource,
+        byte[] SemanticNoOpBytes,
+        AtlasTokenCensus TokenCensus,
+        AtlasGraphCensus GraphCensus,
+        byte[] StructuralObservations);
 
     private sealed class CancelingReadStream(
         Stream inner,
