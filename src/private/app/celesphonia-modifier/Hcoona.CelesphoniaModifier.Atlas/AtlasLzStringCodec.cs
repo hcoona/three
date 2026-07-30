@@ -58,8 +58,7 @@ public static class AtlasLzStringCodec
             throw new AtlasLzStringException(AtlasLzStringFailure.DecompressedSizeLimit);
         }
 
-        BitCharacterWriter writer = new(
-            6,
+        BitWordWriter writer = new(
             effectiveLimits.MaximumEncodedBytes,
             cancellationToken);
         Dictionary<char, int> characterCodes = [];
@@ -105,15 +104,13 @@ public static class AtlasLzStringCodec
         }
 
         writer.WriteBits(2, numberOfBits);
-        string payload = writer.Complete();
-        int padding = (4 - (payload.Length % 4)) % 4;
-        string encoded = payload + new string('=', padding);
+        byte[] encoded = writer.Complete();
         if (encoded.Length > effectiveLimits.MaximumEncodedBytes)
         {
             throw new AtlasLzStringException(AtlasLzStringFailure.EncodedInputLimit);
         }
 
-        return Encoding.ASCII.GetBytes(encoded);
+        return encoded;
 
         void WriteDictionaryValue(int code)
         {
@@ -504,12 +501,11 @@ public static class AtlasLzStringCodec
                 checked(prefix.Length + 1));
     }
 
-    private sealed class BitCharacterWriter(
-        int bitsPerCharacter,
-        int maximumCharacters,
+    private sealed class BitWordWriter(
+        int maximumEncodedBytes,
         CancellationToken cancellationToken)
     {
-        private readonly StringBuilder output = new();
+        private readonly ArrayBufferWriter<byte> output = new();
         private int value;
         private int position;
 
@@ -519,10 +515,9 @@ public static class AtlasLzStringCodec
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 value = (value << 1) | (bits & 1);
-                if (position == bitsPerCharacter - 1)
+                if (position == 15)
                 {
-                    EnsureCapacity();
-                    output.Append(Alphabet[value]);
+                    WriteWord();
                     position = 0;
                     value = 0;
                 }
@@ -535,30 +530,39 @@ public static class AtlasLzStringCodec
             }
         }
 
-        public string Complete()
+        public byte[] Complete()
         {
             while (true)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 value <<= 1;
-                if (position == bitsPerCharacter - 1)
+                if (position == 15)
                 {
-                    EnsureCapacity();
-                    output.Append(Alphabet[value]);
-                    return output.ToString();
+                    WriteWord();
+                    cancellationToken.ThrowIfCancellationRequested();
+                    string encoded = Convert.ToBase64String(output.WrittenSpan);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    return Encoding.ASCII.GetBytes(encoded);
                 }
 
                 position++;
             }
         }
 
-        private void EnsureCapacity()
+        private void WriteWord()
         {
-            if (output.Length >= maximumCharacters)
+            int requiredBytes = checked(output.WrittenCount + 2);
+            long encodedLength = ((requiredBytes + 2L) / 3L) * 4L;
+            if (encodedLength > maximumEncodedBytes)
             {
                 throw new AtlasLzStringException(
                     AtlasLzStringFailure.EncodedInputLimit);
             }
+
+            Span<byte> destination = output.GetSpan(2);
+            destination[0] = (byte)(value >> 8);
+            destination[1] = (byte)value;
+            output.Advance(2);
         }
     }
 

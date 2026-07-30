@@ -6,15 +6,20 @@ namespace Hcoona.CelesphoniaModifier.Atlas.Tests;
 
 public sealed class AtlasSaveReaderTests
 {
-    public static TheoryData<string, string> PublicCodecVectors =>
+    public static TheoryData<string, string> GameCompatibleCodecVectors =>
         new()
         {
-            { string.Empty, "Q===" },
-            { "hello", "BYUwNmD2Q===" },
-            { "Hello world", "BIUwNmD2AEDukCcwBMg=" },
-            { "雪と星😀", "ldpgsGT4ZovBuAB7Q===" },
-            { "\ud800", "gAbQ" },
-            { "\udc00", "gA7Q" },
+            { string.Empty, "QAA=" },
+            { "hello", "BYUwNmD2QAA=" },
+            { "Hello world", "BIUwNmD2AEDukCcwBMgAAA==" },
+            { "雪と星😀", "ldpgsGT4ZovBuAB7QAA=" },
+            { "\ud800", "gAbQAA==" },
+            { "\udc00", "gA7QAA==" },
+            {
+                "dictionary-width-transition",
+                "CYSwxgLiD2B2CGAnAngWgO4mBAFqii8sAziFHEAA"
+            },
+            { "TOBEORNOTTOBEORTOBEORNOT", "CoeQQgoiBKByLFJGSpwUAA==" },
         };
 
     public static TheoryData<byte[], AtlasLzStringFailure> InvalidCodecGrammar =>
@@ -43,8 +48,8 @@ public sealed class AtlasSaveReaderTests
         };
 
     [Theory]
-    [MemberData(nameof(PublicCodecVectors))]
-    public void CodecMatchesReviewedPublicVectors(string value, string encoded)
+    [MemberData(nameof(GameCompatibleCodecVectors))]
+    public void CodecMatchesGameCompatibleExactVectors(string value, string encoded)
     {
         byte[] expected = Encoding.ASCII.GetBytes(encoded);
 
@@ -124,7 +129,9 @@ public sealed class AtlasSaveReaderTests
 
     [Theory]
     [InlineData("AAAA")]
+    [InlineData("Q===")]
     [InlineData("QAAA")]
+    [InlineData("BYUwNmD2Q===")]
     [InlineData("BYUwNmD2QAAA")]
     public void CodecRejectsMalformedTruncatedOrNoncanonicalStreams(string encoded)
     {
@@ -148,7 +155,7 @@ public sealed class AtlasSaveReaderTests
                 "hello",
                 lowEncoded,
                 TestContext.Current.CancellationToken));
-        await using MemoryStream stream = new("BYUwNmD2Q==="u8.ToArray());
+        await using MemoryStream stream = new("BYUwNmD2QAA="u8.ToArray());
         await Assert.ThrowsAsync<AtlasLzStringException>(
             () => AtlasLzStringCodec.DecompressFromBase64Async(
                 stream,
