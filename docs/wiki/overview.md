@@ -21,8 +21,8 @@ for new v3 implementation work.
 
 - CI Qualification and Release Delivery are peer bounded contexts.
 - Delivery Governance is an external authority boundary.
-- A small Trusted Decision Kernel owns Authority Epoch, Evidence Admission, and
-  final decision rules.
+- A small, same-revision Trusted Decision Kernel owns Evidence Admission and
+  final decision rules while GitHub Governance supplies authority.
 - Shared Foundation providers and adapters supply repository modeling, build,
   quality, and destination mechanisms without owning business policy.
 - Decision, Build and Qualification, and Side-Effect Zones are separate runtime

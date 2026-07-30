@@ -21,7 +21,7 @@ Normative terminology is maintained in the
              policy authority / review / environments / OIDC
                                   |
                          Trusted Decision Kernel
-          authority epoch / minimum obligations / evidence admission
+              minimum obligations / evidence admission / decisions
                                   |
                +------------------+------------------+
                |                                     |
@@ -92,7 +92,6 @@ Buddy and Official are Release policy channels over the same Release machinery.
 
 Delivery Governance controls:
 
-- Authority Epoch activation;
 - protected branch and target eligibility;
 - policy and control-code review;
 - protected environments and required reviewers;
@@ -189,26 +188,32 @@ scope, downgrade obligations, authorize publication, or reinterpret verdicts.
 
 The kernel owns only cross-system authority semantics:
 
-- Authority Epoch selection;
 - minimum obligation enforcement;
 - Evidence Admission;
 - final decision rules;
 - authorization prerequisite validation; and
-- authority-owned contract compatibility.
+- strict authoritative-record validation.
 
 Repository discovery, ecosystem execution, batching, destination API
 integration, and presentation remain outside the kernel.
 
-### Authority Evolution
+### Governed Same-Revision Control
 
-The current Authority Epoch evaluates a Candidate Authority before merge.
-Candidate code may run complete conformance, differential, replay, failure, and
-Official dry-run tests but cannot issue final Decisions or receive Official
-publication capability.
+CI uses the Decision Kernel from the tested candidate revision. Release uses
+the Decision Kernel from the exact protected target revision being released.
+The kernel has no independently selected authority revision or runtime
+promotion protocol.
 
-Authority promotion is atomic on merge by default. Post-merge shadowing is
-reserved for governance or platform behavior that cannot be exercised before
-merge.
+GitHub Governance supplies authority through control-code ownership, required
+review, protected refs, workflow permissions, protected environments, and OIDC
+trust. A change to the kernel, workflow control code, authoritative record
+shape, or minimum policy becomes eligible only as part of the reviewed revision
+that contains it.
+
+A control-code fix therefore creates a new candidate or Release target. An
+ordinary replay of an older target continues to use that target's original
+kernel. Exceptional state left by an older target is handled through
+reconciliation or separately authorized remediation.
 
 ### Runtime Zones
 
@@ -236,7 +241,7 @@ GitHub event
   -> repository model facts
   -> closed CI Qualification Plan
   -> parallel build and quality obligations
-  -> authority-owned Evidence envelopes
+  -> kernel-owned Evidence envelopes
   -> Evidence Admission
   -> immutable Final Decision
   -> required-check and human-summary projections
@@ -326,8 +331,8 @@ Retry uses whole-release replay.
 - Every replay reruns planning, build, qualification, authorization checks,
   observation, and reporting.
 - Already satisfied remote destinations do not repeat side effects.
-- A control-code fix requires a fresh dispatch for the same target commit under
-  the new Authority Epoch.
+- A control-code fix produces a new target revision; it is not injected into an
+  ordinary replay of the old target.
 
 ### Partial Publication and Remediation
 
@@ -395,7 +400,7 @@ proved after operational records expire fails closed.
 | `WD-CI-*`         | CI Qualification flow, Planner, executors, Evidence Admission, Final Decision        |
 | `WD-REL-*`        | Release Attempt, Plan lineage, independent build and qualification, Side-Effect Zone |
 | `WD-CHN-*`        | Buddy and Official channel policy over Release Delivery                              |
-| `WD-AUTH-*`       | Trusted Decision Kernel, Authority Epoch, Candidate Authority, Delivery Governance   |
+| `WD-AUTH-*`       | Same-revision Decision Kernel, protected review, Delivery Governance                 |
 | `WD-SEC-*`        | Decision, Build and Qualification, and Side-Effect runtime zones                     |
 | `WD-EVD-*`        | Evidence Admission, append-only Decisions, structured explanation projections        |
 | `WD-OPS-*`        | Remote-State Observation, whole-release replay, Saga, reconciliation, remediation    |
@@ -410,8 +415,8 @@ The next design stage should produce separate MLDs for:
 1. **Repository Model and Release Units:** Project Node discovery, dependency
    and path-impact facts, Release Unit authoring, variants, and Build
    Definitions.
-2. **Trusted Decision Kernel and Governance Integration:** Authority Epoch,
-   admission, decision, authorization, and promotion contracts.
+2. **Trusted Decision Kernel and Governance Integration:** same-revision
+   control, admission, decision, review, and authorization contracts.
 3. **CI Qualification:** candidate identity, affected-scope planning,
    execution, Evidence, Decision, and GitHub projection contracts.
 4. **Release Delivery:** Release Intent, Plan lineage, build and qualification,
@@ -428,7 +433,7 @@ They separate into bounded-context documents at the MLD stage.
 
 The HLD intentionally leaves these questions to later design:
 
-- exact JSON schemas and contract versioning;
+- exact strict record schemas and transport;
 - adapter package decomposition;
 - exact GitHub workflow and job topology;
 - artifact and Evidence physical naming;

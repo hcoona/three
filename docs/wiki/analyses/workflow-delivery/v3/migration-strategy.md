@@ -13,7 +13,8 @@ architecture.
 
 v2 and v3 differ at their architectural roots:
 
-- candidate-owned versus current-authority CI decisions;
+- v2 authority and promotion machinery versus GitHub-governed same-revision
+  Decision Kernel execution;
 - project/profile-centric control types versus an explicit Release Unit domain
   over normalized project and build facts;
 - one pre-build Release Plan versus a two-snapshot Plan lineage;

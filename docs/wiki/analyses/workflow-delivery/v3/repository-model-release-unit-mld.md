@@ -123,7 +123,6 @@ These edges are exceptions, not a replacement for native dependency graphs.
 Each Provider emits a target-bound Fact Snapshot containing:
 
 - target commit SHA;
-- provider contract and implementation version;
 - relevant ecosystem toolchain version;
 - manifest and configuration input digests;
 - normalized Project Nodes;
@@ -415,7 +414,7 @@ workspace boundary while linking to the parent package.
 ## Deferred LLD Decisions
 
 - descriptor basename and serialization format;
-- exact descriptor and Fact Snapshot schemas;
+- exact strict descriptor and Fact Snapshot schemas;
 - canonical Project Node identity encoding;
 - Provider command lines and isolation details;
 - Build Definition digest canonicalization;

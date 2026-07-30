@@ -67,8 +67,7 @@ against implementation and maintenance cost.
   governance boundary. A business workflow may request authority but must not
   grant final authority to itself.
 - **WD-SYS-005:** Every authoritative operation must bind an immutable target
-  identity, the applicable authority identity, and the complete scope of the
-  decision or side effect.
+  identity and the complete scope of the decision or side effect.
 - **WD-SYS-006:** Unknown, unclassified, incomplete, or conflicting required
   scope must block a successful decision.
 
@@ -114,7 +113,7 @@ against implementation and maintenance cost.
   builds.
 - **WD-REL-007:** Publication authorization must bind the exact artifact bytes,
   provenance, destination observations, intended actions, qualification
-  decision, authority identity, and required destination capabilities.
+  decision, and required destination capabilities.
 - **WD-REL-008:** Release must obtain short-lived, destination-specific
   Publication Capabilities only after qualification and observation establish
   the exact authorized action.
@@ -132,20 +131,22 @@ against implementation and maintenance cost.
 - **WD-CHN-004:** Non-authoritative branches may exercise Official dry-run
   behavior but must not obtain live Official publication capability.
 
-### Authority Evolution
+### Governed Control Code
 
-- **WD-AUTH-001:** Every authoritative Plan, Evidence item, Decision, and
-  authorization must identify the Authority Epoch under which it was created
-  or admitted.
-- **WD-AUTH-002:** Candidate Authority must be testable before activation but
-  must not issue final Decisions or receive live Official publication
-  capability.
-- **WD-AUTH-003:** Authority promotion should become effective atomically when
-  the reviewed change merges.
-- **WD-AUTH-004:** Post-merge shadowing is required only for governance or
-  platform behavior that cannot be adequately exercised before merge.
-- **WD-AUTH-005:** Delivery Governance must control Authority Epoch activation,
-  protected target eligibility, protected environment review, OIDC and
+- **WD-AUTH-001:** CI decision code must come from the tested candidate
+  revision. Release decision code must come from the exact protected target
+  revision being released.
+- **WD-AUTH-002:** Changes to the Decision Kernel, workflow control code,
+  authoritative record contracts, or minimum policy must require
+  Governance-configured owner review before merge or live Release eligibility.
+- **WD-AUTH-003:** Merging a reviewed control-code change makes that code
+  eligible only as part of the resulting new candidate or Release target
+  revision. No independent runtime promotion protocol is required.
+- **WD-AUTH-004:** CI execution must not receive publication capability, and
+  Release execution must not receive live capability until the target revision
+  satisfies protected-ref and environment policy.
+- **WD-AUTH-005:** Delivery Governance must control protected target
+  eligibility, control-code review, protected environment review, OIDC and
   destination trust, capability grant and revocation, and Break-Glass
   Remediation approval.
 
@@ -168,7 +169,7 @@ against implementation and maintenance cost.
 ### Evidence, Decisions, and Explanation
 
 - **WD-EVD-001:** Evidence Admission must verify exact ownership, target,
-  obligation, artifact, authority, and integrity bindings without rerunning the
+  obligation, artifact, attempt, and integrity bindings without rerunning the
   quality command.
 - **WD-EVD-002:** Final Decisions must be append-only. GitHub checks and human
   summaries are projections, not the authoritative audit record.
@@ -194,8 +195,9 @@ against implementation and maintenance cost.
 - **WD-OPS-004:** Every replay must rerun planning, build, qualification,
   authorization checks, observation, and reporting for the complete Release
   Attempt.
-- **WD-OPS-005:** A control-code fix must use a fresh dispatch for the same
-  target commit under the new Authority Epoch.
+- **WD-OPS-005:** A control-code fix creates a new candidate or Release target
+  revision. Ordinary replay of an older target must continue using that
+  target's original control code.
 - **WD-OPS-006:** Publication must use append-only Saga semantics. A successful
   destination must not be automatically rolled back solely because another
   destination fails.

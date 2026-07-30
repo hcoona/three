@@ -66,44 +66,18 @@ they must not grant final authority to themselves.
 
 ### Trusted Decision Kernel
 
-The smallest stable authority component that selects an authority version,
-enforces minimum obligations, admits evidence, produces final decisions, and
-checks authorization prerequisites.
+The smallest stable decision-code boundary that enforces minimum obligations,
+admits evidence, produces final decisions, and checks authorization
+prerequisites.
 
 The kernel must not contain ecosystem discovery, batching optimization, or
 general execution logic when those responsibilities can remain outside the
-authority boundary.
+decision boundary.
 
-### Authority Epoch
-
-An immutable identity for the trusted policy, kernel, and contract set that is
-authorized to produce final decisions.
-
-Plans, evidence, and decisions must identify the Authority Epoch under which
-they were created or admitted.
-
-### Candidate Authority
-
-A proposed future Trusted Decision Kernel or policy version that is evaluated
-without final decision or publication authority.
-
-Candidate Authority behavior may run in pull requests for conformance,
-differential, replay, failure, and dry-run testing.
-
-### Atomic Authority Promotion
-
-The default process for replacing one Authority Epoch with another:
-
-1. the current authority evaluates the Candidate Authority in the pull request;
-2. the pull request performs complete conformance and differential testing;
-3. Official publication remains disabled or dry-run only;
-4. the current authority approves the promotion change; and
-5. merging the change atomically activates the new Authority Epoch.
-
-A post-merge dormant shadow period is required only when a change affects
-governance or platform behavior that cannot be adequately exercised before
-merge, such as repository rules, protected environments, OIDC trust, or live
-Official destinations.
+CI loads the kernel from the tested candidate revision. Release loads it from
+the exact protected target revision being released. GitHub Governance, rather
+than an independently deployed kernel version, determines whether that revision
+may merge or obtain live publication capability.
 
 ### Decision Zone
 
@@ -155,8 +129,8 @@ A Release Delivery policy channel for authoritative production publication.
 
 A live Official release must:
 
-- run through the current Authority Epoch;
 - target a revision reachable from a Governance-configured authoritative branch;
+- use the Decision Kernel contained in that target revision;
 - rebuild every selected artifact variant;
 - complete its own Release Qualification Target;
 - freeze the Release Plan, artifact digests, destinations, and plan digest before
@@ -256,15 +230,10 @@ indexes rather than source identities.
 The immutable identity of one Release execution context. It contains:
 
 - the target commit SHA whose source is built and qualified;
-- the authority commit SHA whose trusted control code plans and verifies the
-  Release;
 - the Release Unit identity;
 - the frozen Release Plan digest;
 - the selected artifact content digests; and
 - the authorization identity bound to that plan.
-
-The target and authority commits are commonly the same. They differ when the
-current trusted control plane releases an older authoritative commit.
 
 Tags, branches, and workflow run IDs are indexes rather than Release execution
 identities.
@@ -370,15 +339,15 @@ its required quality checks rather than adopting CI results as release evidence.
 The lightweight process that proves an execution result belongs to the exact
 Plan obligation being decided.
 
-Admission verifies schema, candidate or target commit, authority commit, Plan
-digest, obligation identity, definition and request digests, producer job,
-attempt, runner family, and relevant artifact content digests.
+Admission verifies strict record shape, candidate or target commit, Plan digest,
+obligation identity, definition and request digests, producer job, attempt,
+runner family, and relevant artifact content digests.
 
 Admission does not rerun the command, reinterpret test results, or duplicate the
 executor's quality logic. High-risk side-effect boundaries may additionally
 recompute artifact digests and verify provenance before publication.
 
-Target code may produce raw results, but an authority-owned evidence writer
+Target code may produce raw results, but a kernel-owned Evidence writer
 creates the final Evidence envelope from the execution result and GitHub job
 context.
 
@@ -419,8 +388,8 @@ obligation to be satisfied.
 ### Final Decision
 
 An immutable record produced after aggregation completes. It binds the
-candidate or target identity, Authority Epoch, Plan digest, Evidence Set digest,
-obligation outcomes, verdict, and completion time.
+candidate or target identity, Plan digest, Evidence Set digest, obligation
+outcomes, verdict, and completion time.
 
 Late Evidence and workflow reruns produce a new Final Decision rather than
 modifying an existing record.
@@ -498,8 +467,8 @@ publish, and unknown, partial, or conflicting state requires reconciliation.
 
 GitHub `Re-run failed jobs` is not a supported Release recovery protocol because
 it produces a mixed-attempt job graph. A normal transient retry uses `Re-run all
-jobs`. A workflow or authority fix requires a fresh dispatch for the same target
-commit under the new authority.
+jobs`. A workflow or control-code fix creates a new target revision; ordinary
+replay of an older target continues to use that target's original code.
 
 Each live side-effect job obtains a new attempt-scoped Publication Capability.
 
@@ -660,12 +629,12 @@ The rule that CI Qualification and Release Delivery own separate Plans,
 Evidence Sets, Decisions, and state machines while consuming shared normalized
 foundation interfaces.
 
-The Trusted Decision Kernel is a third, deliberately small authority component
-rather than a universal business Planner.
+The Trusted Decision Kernel is a deliberately small shared code boundary rather
+than a universal business Planner or separately deployed authority system.
 
 New ecosystems and destinations normally add providers or adapters and policy
-mapping without modifying the Kernel. Shared contracts and the Authority Epoch
-change only when a new cross-system semantic is required.
+mapping without modifying the Kernel. Shared decision code changes only when a
+new cross-system semantic is required.
 
 ### Decision Explanation
 
@@ -710,9 +679,9 @@ append-only audit model.
 
 A short-lived, externally granted authority to perform a specific side effect.
 
-A Publication Capability binds the channel, Release Unit, target and authority
-commits, Release Plan digest, artifact digests, destination, permitted actions,
-validity window, and execution attempt.
+A Publication Capability binds the channel, Release Unit, target commit,
+Release Plan digest, artifact digests, destination, permitted actions, validity
+window, and execution attempt.
 
 Qualification may request a Capability but cannot approve or create one.
 Delivery Governance grants it through platform controls such as protected
@@ -741,12 +710,12 @@ Capability.
 7. Release Qualification covers the complete Project Node and declared-input
    closure required by the Release Unit Build Definitions, plus explicit
    compatibility obligations.
-8. Authority changes are tested before merge and are approved by the current
-   Authority Epoch.
-9. Authority promotion is atomic on merge by default; post-merge shadow is
-   risk-triggered rather than mandatory.
-10. Candidate Authority may exercise Official dry-run behavior but cannot receive
-    live Official publication capability.
+8. CI uses Decision Kernel code from the tested candidate revision, and Release
+   uses code from the exact protected target revision.
+9. Kernel, workflow, record-contract, and minimum-policy changes require
+   Governance-configured owner review.
+10. Control-code changes create a new candidate or Release target; normal replay
+    never injects newer control code into an older target.
 11. A runtime that executes target code must not possess publication capability,
     and a runtime with publication capability must not execute target code.
 12. CI Qualification and Release Delivery have no runtime evidence, artifact, or
@@ -762,8 +731,8 @@ Capability.
     Remediation with append-only before-and-after evidence.
 18. CI decisions bind the actual GitHub candidate tree and, for pull requests,
     its base and head commits.
-19. Release actions bind the target commit, authority commit, Release Unit,
-    frozen plan, artifact digests, and plan-specific authorization.
+19. Release actions bind the target commit, Release Unit, frozen plan, artifact
+    digests, and plan-specific authorization.
 20. CI and Release Qualification Targets are fully closed before execution;
     unresolved Project Nodes, Release Units, inputs, or obligations are blocking
     rather than implicitly excluded.

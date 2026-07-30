@@ -1145,3 +1145,16 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Established NBGV as the sole canonical version authority.
 - Kept intermediate-output reuse and cross-artifact binary consistency as
   acceptance-tested Build Adapter invariants rather than authoring policy.
+
+## [2026-07-30] query | Simplify Decision Kernel authority
+
+- Removed the independent Authority Epoch, Candidate Authority, and dual-revision
+  promotion model.
+- Bound CI decision code to the tested candidate revision and Release decision
+  code to the exact protected target revision.
+- Made GitHub owner review, protected refs, environments, and OIDC the external
+  authority boundary.
+- Accepted that a Release control-code fix creates a new target/version; an old
+  target cannot use newer control code through ordinary replay.
+- Removed initial record schema versioning because all machine consumers are
+  within the same revision and attempt.
