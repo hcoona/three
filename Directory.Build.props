@@ -29,9 +29,9 @@
   <Sdk Name="Microsoft.Build.CopyOnWrite" />
 
   <ItemGroup>
-    <GlobalPackageReference Include="DotNet.ReproducibleBuilds" Version="2.0.2" />
-    <GlobalPackageReference Include="Nerdbank.GitVersioning" Version="3.9.50" />
-    <GlobalPackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.300" />
+    <GlobalPackageReference Include="DotNet.ReproducibleBuilds" Version="2.0.5" />
+    <GlobalPackageReference Include="Nerdbank.GitVersioning" Version="3.10.91" />
+    <GlobalPackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.301" />
   </ItemGroup>
 
   <PropertyGroup Label="SourceLink">

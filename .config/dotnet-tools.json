@@ -3,10 +3,13 @@
   "isRoot": true,
   "tools": {
     "nbgv": {
-      "version": "3.9.50",
-      "commands": [
-        "nbgv"
-      ],
+      "version": "3.10.91",
+      "commands": ["nbgv"],
+      "rollForward": false
+    },
+    "csharp-ls": {
+      "version": "0.26.0",
+      "commands": ["csharp-ls"],
       "rollForward": false
     }
   }

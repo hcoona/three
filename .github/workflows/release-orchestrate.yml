@@ -205,7 +205,7 @@ jobs:
       # SYNC[tool-versions]: keep in step with the workflow-level env: block above.
       # These EXPECTED_* values are what the lint check validates hardcoded with: values against.
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Verify hardcoded versions match env declarations
         shell: bash
@@ -266,7 +266,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout (policy scripts)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
@@ -314,7 +314,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout (policy publish-target scripts)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
@@ -788,13 +788,13 @@ jobs:
     steps:
       - name: Install jq
         if: inputs.enforce_non_clobber
-        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        uses: dcarbone/install-jq-action@4fcb5062d7ce9bc4382d1a352d19ba3ba2c317c1 # v4.0.1
         with:
           version: '1.7.1'
 
       - name: Checkout (non-clobber guard scripts)
         if: inputs.enforce_non_clobber
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
@@ -905,12 +905,12 @@ jobs:
           echo "See: https://docs.pypi.org/trusted-publishers/"
 
       - name: Install jq
-        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        uses: dcarbone/install-jq-action@4fcb5062d7ce9bc4382d1a352d19ba3ba2c317c1 # v4.0.1
         with:
           version: '1.7.1'
 
       - name: Checkout (workflow scripts)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
           ref: ${{ needs.resolve.outputs.target }}
@@ -932,7 +932,7 @@ jobs:
           bash "${GITHUB_WORKSPACE}/eng/scripts/validate_pypi_remote_digests.sh"
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
+        uses: pypa/gh-action-pypi-publish@ba38be9e461d3875417946c167d0b5f3d385a247 # v1.14.1
         with:
           packages-dir: ${{ github.workspace }}/out/
           skip-existing: true
@@ -965,7 +965,7 @@ jobs:
           path: ${{ github.workspace }}/out
 
       - name: Attest build provenance (GitHub)
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: ${{ github.workspace }}/out/*
 
@@ -1140,7 +1140,7 @@ jobs:
       packages: write
     steps:
       - name: Checkout (workflow scripts)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
           ref: ${{ needs.resolve.outputs.target }}
@@ -1156,7 +1156,7 @@ jobs:
           echo "scope=${scope}" >> "${GITHUB_OUTPUT}"
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           # registry-url intentionally omitted: auth is handled by the custom .npmrc
@@ -1284,13 +1284,13 @@ jobs:
       id-token: write
     steps:
       - name: Checkout (workflow scripts)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
           ref: ${{ needs.resolve.outputs.target }}
 
       - name: Setup Node.js (npmjs)
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           registry-url: https://registry.npmjs.org
@@ -1351,7 +1351,7 @@ jobs:
           path: ${{ github.workspace }}/out
 
       - name: Attest build provenance (GitHub)
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: ${{ github.workspace }}/out/*
 
@@ -1499,7 +1499,7 @@ jobs:
       packages: write
     steps:
       - name: Checkout (workflow scripts)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
           ref: ${{ needs.resolve.outputs.target }}
@@ -1511,7 +1511,7 @@ jobs:
           path: ${{ github.workspace }}/out
 
       - name: Setup Ruby
-        uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f # v1.310.0
+        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
         with:
           ruby-version: ${{ env.RUBY_VERSION }}
 
@@ -1611,12 +1611,12 @@ jobs:
       id-token: write
     steps:
       - name: Install jq
-        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        uses: dcarbone/install-jq-action@4fcb5062d7ce9bc4382d1a352d19ba3ba2c317c1 # v4.0.1
         with:
           version: '1.7.1'
 
       - name: Checkout (workflow scripts)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
           ref: ${{ needs.resolve.outputs.target }}
@@ -1628,12 +1628,12 @@ jobs:
           path: ${{ github.workspace }}/out
 
       - name: Setup Ruby
-        uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f # v1.310.0
+        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
         with:
           ruby-version: ${{ env.RUBY_VERSION }}
 
       - name: Configure RubyGems Trusted Publishing credentials
-        uses: rubygems/configure-rubygems-credentials@762a4b77c3300434bb57c7ce80b20e36231927aa # v2.0.0
+        uses: rubygems/configure-rubygems-credentials@dc5a8d8553e6ee01fc26761a49e99e733d17954a # v2.1.0
         with:
           trusted-publisher: true
 
@@ -1668,7 +1668,7 @@ jobs:
           path: ${{ github.workspace }}/out
 
       - name: Attest build provenance (GitHub)
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: ${{ github.workspace }}/out/*
 
@@ -1820,7 +1820,7 @@ jobs:
           path: ${{ github.workspace }}/out
 
       - name: Attest build provenance (GitHub)
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: ${{ github.workspace }}/out/*
 
@@ -1963,12 +1963,12 @@ jobs:
       contents: read
     steps:
       - name: Checkout (release sentinel scripts)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
       - name: Install jq
-        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        uses: dcarbone/install-jq-action@4fcb5062d7ce9bc4382d1a352d19ba3ba2c317c1 # v4.0.1
         with:
           version: '1.7.1'
 

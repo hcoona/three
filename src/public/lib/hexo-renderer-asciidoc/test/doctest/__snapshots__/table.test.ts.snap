@@ -3,9 +3,9 @@
 exports[`DocTest:table > aligns-per-cell 1`] = `
 "<table class="tableblock frame-all grid-all stretch">
 <colgroup>
-<col style="width: 33.3333%;">
-<col style="width: 33.3333%;">
-<col style="width: 33.3334%;">
+<col width="33.3333%">
+<col width="33.3333%">
+<col width="33.3334%">
 </colgroup>
 <tbody>
 <tr>
@@ -28,8 +28,8 @@ exports[`DocTest:table > aligns-per-cell 1`] = `
 exports[`DocTest:table > basic 1`] = `
 "<table class="tableblock frame-all grid-all stretch">
 <colgroup>
-<col style="width: 50%;">
-<col style="width: 50%;">
+<col width="50%">
+<col width="50%">
 </colgroup>
 <tbody>
 <tr>
@@ -47,7 +47,7 @@ exports[`DocTest:table > basic 1`] = `
 exports[`DocTest:table > cell-with-paragraphs 1`] = `
 "<table class="tableblock frame-all grid-all stretch">
 <colgroup>
-<col style="width: 100%;">
+<col width="100%">
 </colgroup>
 <tbody>
 <tr>
@@ -64,9 +64,9 @@ exports[`DocTest:table > cell-with-paragraphs 1`] = `
 exports[`DocTest:table > colspan 1`] = `
 "<table class="tableblock frame-all grid-all stretch">
 <colgroup>
-<col style="width: 33.3333%;">
-<col style="width: 33.3333%;">
-<col style="width: 33.3334%;">
+<col width="33.3333%">
+<col width="33.3333%">
+<col width="33.3334%">
 </colgroup>
 <tbody>
 <tr>
@@ -85,8 +85,8 @@ exports[`DocTest:table > colspan 1`] = `
 exports[`DocTest:table > insane-cells-formatting 1`] = `
 "<table class="tableblock frame-all grid-all stretch">
 <colgroup>
-<col style="width: 50%;">
-<col style="width: 50%;">
+<col width="50%">
+<col width="50%">
 </colgroup>
 <tbody>
 <tr>
@@ -118,9 +118,9 @@ exports[`DocTest:table > insane-cells-formatting 1`] = `
 exports[`DocTest:table > rowspan 1`] = `
 "<table class="tableblock frame-all grid-all stretch">
 <colgroup>
-<col style="width: 33.3333%;">
-<col style="width: 33.3333%;">
-<col style="width: 33.3334%;">
+<col width="33.3333%">
+<col width="33.3333%">
+<col width="33.3334%">
 </colgroup>
 <tbody>
 <tr>
@@ -157,7 +157,7 @@ exports[`DocTest:table > with-autowidth 1`] = `
 `;
 
 exports[`DocTest:table > with-autowidth-and-width 1`] = `
-"<table class="tableblock frame-all grid-all" style="width: 80%;">
+"<table class="tableblock frame-all grid-all" width="80%">
 <colgroup>
 <col>
 <col>
@@ -174,9 +174,9 @@ exports[`DocTest:table > with-autowidth-and-width 1`] = `
 exports[`DocTest:table > with-cols-halign 1`] = `
 "<table class="tableblock frame-all grid-all stretch">
 <colgroup>
-<col style="width: 33.3333%;">
-<col style="width: 33.3333%;">
-<col style="width: 33.3334%;">
+<col width="33.3333%">
+<col width="33.3333%">
+<col width="33.3334%">
 </colgroup>
 <tbody>
 <tr>
@@ -191,12 +191,12 @@ exports[`DocTest:table > with-cols-halign 1`] = `
 exports[`DocTest:table > with-cols-styles 1`] = `
 "<table class="tableblock frame-all grid-all stretch">
 <colgroup>
-<col style="width: 16.6666%;">
-<col style="width: 16.6666%;">
-<col style="width: 16.6666%;">
-<col style="width: 16.6666%;">
-<col style="width: 16.6666%;">
-<col style="width: 16.667%;">
+<col width="16.6666%">
+<col width="16.6666%">
+<col width="16.6666%">
+<col width="16.6666%">
+<col width="16.6666%">
+<col width="16.667%">
 </colgroup>
 <tbody>
 <tr>
@@ -218,9 +218,9 @@ exports[`DocTest:table > with-cols-styles 1`] = `
 exports[`DocTest:table > with-cols-valign 1`] = `
 "<table class="tableblock frame-all grid-all stretch">
 <colgroup>
-<col style="width: 33.3333%;">
-<col style="width: 33.3333%;">
-<col style="width: 33.3334%;">
+<col width="33.3333%">
+<col width="33.3333%">
+<col width="33.3334%">
 </colgroup>
 <tbody>
 <tr>
@@ -235,9 +235,9 @@ exports[`DocTest:table > with-cols-valign 1`] = `
 exports[`DocTest:table > with-cols-width 1`] = `
 "<table class="tableblock frame-all grid-all stretch">
 <colgroup>
-<col style="width: 50%;">
-<col style="width: 20%;">
-<col style="width: 30%;">
+<col width="50%">
+<col width="20%">
+<col width="30%">
 </colgroup>
 <tbody>
 <tr>
@@ -252,8 +252,8 @@ exports[`DocTest:table > with-cols-width 1`] = `
 exports[`DocTest:table > with-float 1`] = `
 "<table class="tableblock frame-all grid-all stretch left">
 <colgroup>
-<col style="width: 50%;">
-<col style="width: 50%;">
+<col width="50%">
+<col width="50%">
 </colgroup>
 <tbody>
 <tr>
@@ -267,8 +267,8 @@ exports[`DocTest:table > with-float 1`] = `
 exports[`DocTest:table > with-footer 1`] = `
 "<table class="tableblock frame-all grid-all stretch">
 <colgroup>
-<col style="width: 50%;">
-<col style="width: 50%;">
+<col width="50%">
+<col width="50%">
 </colgroup>
 <tbody>
 <tr>
@@ -292,8 +292,8 @@ exports[`DocTest:table > with-footer 1`] = `
 exports[`DocTest:table > with-frame-sides 1`] = `
 "<table class="tableblock frame-sides grid-all stretch">
 <colgroup>
-<col style="width: 50%;">
-<col style="width: 50%;">
+<col width="50%">
+<col width="50%">
 </colgroup>
 <tbody>
 <tr>
@@ -307,8 +307,8 @@ exports[`DocTest:table > with-frame-sides 1`] = `
 exports[`DocTest:table > with-grid-cols 1`] = `
 "<table class="tableblock frame-all grid-cols stretch">
 <colgroup>
-<col style="width: 50%;">
-<col style="width: 50%;">
+<col width="50%">
+<col width="50%">
 </colgroup>
 <tbody>
 <tr>
@@ -322,8 +322,8 @@ exports[`DocTest:table > with-grid-cols 1`] = `
 exports[`DocTest:table > with-header 1`] = `
 "<table class="tableblock frame-all grid-all stretch">
 <colgroup>
-<col style="width: 50%;">
-<col style="width: 50%;">
+<col width="50%">
+<col width="50%">
 </colgroup>
 <thead>
 <tr>
@@ -347,8 +347,8 @@ exports[`DocTest:table > with-header 1`] = `
 exports[`DocTest:table > with-id-and-role 1`] = `
 "<table id="tabular" class="tableblock frame-all grid-all stretch center">
 <colgroup>
-<col style="width: 50%;">
-<col style="width: 50%;">
+<col width="50%">
+<col width="50%">
 </colgroup>
 <tbody>
 <tr>
@@ -363,8 +363,8 @@ exports[`DocTest:table > with-title 1`] = `
 "<table class="tableblock frame-all grid-all stretch">
 <caption class="title">Table 1. Table FTW!</caption>
 <colgroup>
-<col style="width: 50%;">
-<col style="width: 50%;">
+<col width="50%">
+<col width="50%">
 </colgroup>
 <tbody>
 <tr>
@@ -376,10 +376,10 @@ exports[`DocTest:table > with-title 1`] = `
 `;
 
 exports[`DocTest:table > with-width 1`] = `
-"<table class="tableblock frame-all grid-all" style="width: 80%;">
+"<table class="tableblock frame-all grid-all" width="80%">
 <colgroup>
-<col style="width: 50%;">
-<col style="width: 50%;">
+<col width="50%">
+<col width="50%">
 </colgroup>
 <tbody>
 <tr>

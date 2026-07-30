@@ -40,6 +40,7 @@ public sealed class UserHookConfigurationManagerTests
                     hookFilePath,
                     "managed session-start",
                     "managed user-prompt-submit",
+                    "managed pre-tool-use",
                     "managed stop",
                     "2026-03-13T12:34:56.789Z");
 
@@ -50,6 +51,7 @@ public sealed class UserHookConfigurationManagerTests
             Assert.Equal("gpt-5.4", installedSettings.AdditionalProperties?["model"].GetString());
             Assert.Single(installedSettings.Hooks["SessionStart"]);
             Assert.Single(installedSettings.Hooks["UserPromptSubmit"]);
+            Assert.Single(installedSettings.Hooks["PreToolUse"]);
             Assert.Equal(2, installedSettings.Hooks["Stop"].Count);
 
             ConfigurationApplyResult uninstallResult =
@@ -61,6 +63,7 @@ public sealed class UserHookConfigurationManagerTests
             UserHookSettingsDocument uninstalledSettings = ReadSettings(hookFilePath);
             Assert.False(uninstalledSettings.Hooks.ContainsKey("SessionStart"));
             Assert.False(uninstalledSettings.Hooks.ContainsKey("UserPromptSubmit"));
+            Assert.False(uninstalledSettings.Hooks.ContainsKey("PreToolUse"));
             Assert.Single(uninstalledSettings.Hooks["Stop"]);
             Assert.Equal("echo custom-stop", uninstalledSettings.Hooks["Stop"][0].Command);
         }
@@ -86,6 +89,7 @@ public sealed class UserHookConfigurationManagerTests
                     hookFilePath,
                     "managed session-start",
                     "managed user-prompt-submit",
+                    "managed pre-tool-use",
                     "managed stop",
                     "2026-03-13T12:34:56.789Z");
 
@@ -1266,6 +1270,7 @@ public sealed class UserHookConfigurationManagerTests
                     hookFilePath,
                     "managed session-start",
                     "managed user-prompt-submit",
+                    "managed pre-tool-use",
                     "managed stop",
                     "2026-03-13T12:34:56.789Z"));
 

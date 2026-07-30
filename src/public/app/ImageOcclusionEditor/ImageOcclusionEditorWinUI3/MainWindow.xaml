@@ -41,6 +41,7 @@
     <!-- Using explicit Source to test if WebView2 works -->
     <WebView2 x:Name="webView"
       Grid.Row="0"
+      AutomationProperties.AutomationId="SvgEditorWebView"
       DefaultBackgroundColor="White" />
 
     <!-- Bottom Panel for Buttons -->
@@ -57,6 +58,7 @@
 
           <!-- Cancel Button -->
           <Button Content="Cancel (ESC)"
+            AutomationProperties.AutomationId="CancelButton"
             MinWidth="160"
             MinHeight="36"
             Padding="16,8"
@@ -69,6 +71,7 @@
 
           <!-- Save Button -->
           <Button Content="Save (Ctrl+Shift+S)"
+            AutomationProperties.AutomationId="SaveButton"
             MinWidth="160"
             MinHeight="36"
             Padding="16,8"
@@ -82,6 +85,7 @@
 
           <!-- Save & Exit Button -->
           <Button Content="Save &amp; Exit (Ctrl+S)"
+            AutomationProperties.AutomationId="SaveExitButton"
             MinWidth="160"
             MinHeight="36"
             Padding="16,8"

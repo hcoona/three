@@ -19,7 +19,7 @@
     "typecheck": "pnpm exec tsgo --noEmit --project tsconfig.json"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.4.16",
+    "@biomejs/biome": "2.5.5",
     "@types/node": "^24.0.0",
     "@typescript/native-preview": "^7.0.0-dev.20260523.1"
   }

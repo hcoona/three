@@ -4,7 +4,7 @@
   "description": "Workspace root for pnpm-managed packages in the Three monorepo.",
   "license": "LGPL-3.0-or-later WITH LGPL-3.0-linking-exception",
   "engines": {
-    "node": ">=20.19.0"
+    "node": ">=22"
   },
   "scripts": {
     "bootstrap": "pnpm install",
@@ -14,13 +14,13 @@
     "format": "pnpm -r --if-present format"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.4.16",
+    "@biomejs/biome": "2.5.5",
     "@commitlint/cli": "^21.0.0",
     "@commitlint/config-conventional": "^21.0.0",
     "@commitlint/format": "^21.0.0",
     "@commitlint/types": "^21.0.0",
     "ap-style-title-case": "^2.0.0",
-    "markdownlint-cli2": "0.22.1",
-    "prettier": "3.8.3"
+    "markdownlint-cli2": "0.23.1",
+    "prettier": "3.9.6"
   }
 }

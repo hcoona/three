@@ -12,7 +12,7 @@ export interface RendererData {
 
 export type RendererLocals = Record<string, unknown>;
 
-export type Renderer = (data: RendererData, locals?: RendererLocals) => string;
+export type Renderer = (data: RendererData, locals?: RendererLocals) => Promise<string>;
 
 export interface RendererExtension {
   register(name: string, output: string, fn: Renderer, sync?: boolean): void;

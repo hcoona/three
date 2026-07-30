@@ -109,4 +109,58 @@ internal static partial class AppLog
         ILogger logger,
         string hookEventName,
         string reason);
+
+    [LoggerMessage(
+        EventId = 1511,
+        EventName = nameof(IgnoringToolCallHookSession),
+        Level = LogLevel.Information,
+        Message =
+            "Ignoring {HookEventName} hook for tool-call subagent session {SessionId}.")]
+    public static partial void IgnoringToolCallHookSession(
+        ILogger logger,
+        string hookEventName,
+        string sessionId);
+
+    [LoggerMessage(
+        EventId = 1512,
+        EventName = nameof(HandlingAskUserTool),
+        Level = LogLevel.Information,
+        Message =
+            "Handling ask_user tool {ToolUseId} for session {SessionId} in {WorkspacePath}.")]
+    public static partial void HandlingAskUserTool(
+        ILogger logger,
+        string sessionId,
+        string toolUseId,
+        string workspacePath);
+
+    [LoggerMessage(
+        EventId = 1513,
+        EventName = nameof(SkippingDuplicateAttentionRequest),
+        Level = LogLevel.Information,
+        Message =
+            "Skipping duplicate attention request {ToolUseId} for session {SessionId}.")]
+    public static partial void SkippingDuplicateAttentionRequest(
+        ILogger logger,
+        string sessionId,
+        string toolUseId);
+
+    [LoggerMessage(
+        EventId = 1514,
+        EventName = nameof(SendingAttentionNotification),
+        Level = LogLevel.Information,
+        Message =
+            "Sending {MessageCount} Telegram attention message(s) for session {SessionId} "
+            + "and tool call {ToolUseId}.")]
+    public static partial void SendingAttentionNotification(
+        ILogger logger,
+        int messageCount,
+        string sessionId,
+        string toolUseId);
+
+    [LoggerMessage(
+        EventId = 1515,
+        EventName = nameof(PreToolUseHookFailed),
+        Level = LogLevel.Error,
+        Message = "PreToolUse hook failed.")]
+    public static partial void PreToolUseHookFailed(ILogger logger, Exception exception);
 }

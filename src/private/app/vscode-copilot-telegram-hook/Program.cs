@@ -33,6 +33,7 @@ internal static class Program
         builder.Services.AddSingleton<GitRepositoryProbe>();
         builder.Services.AddSingleton<WorkspaceStateStore>();
         builder.Services.AddTransient<HookCommandService>();
+        builder.Services.AddTransient<CopilotCliNotificationService>();
         builder.Services.AddTransient<UserCommandService>();
 
         builder.Services

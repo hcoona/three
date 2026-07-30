@@ -86,8 +86,8 @@ input, including:
 
 - `timestamp`,
 - `cwd`,
-- `sessionId`,
-- `hookEventName`, and
+- `session_id`,
+- `hook_event_name`, and
 - `transcript_path`.
 
 `Stop` also provides `stop_hook_active`, and `SessionStart` can inject
@@ -103,7 +103,7 @@ Markdown guidance loaded into chat requests, while the hooks documentation
 documents hook input and output only for hook scripts.
 
 The official docs do **not** document a direct way for instructions files to
-read hook standard-input fields such as `sessionId` or `timestamp`.
+read hook standard-input fields such as `session_id` or `timestamp`.
 
 As a result, if the product wants Copilot-authored summaries that are later
 delivered by a hook, the design still needs an explicit summary handoff or

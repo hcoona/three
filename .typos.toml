@@ -1,5 +1,12 @@
 [files]
 extend-exclude = [
+  '.agents/**',
+  '.github/agents/**',
+  '.github/lsp.json',
+  '.github/mcp.json',
+  '.vscode/mcp.json',
+  'apm.lock.yaml',
+  '**/apm.lock.yaml',
   'packages.lock.json',
   "src/private/app/OxfordWordlistExtractor/*.html",
   "src/public/lib/Hjg.Pngcs/FilterType.cs",
