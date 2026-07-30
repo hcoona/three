@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using Xunit;
 
@@ -13,6 +14,7 @@ public sealed class ProjectBoundaryTests
         "AtlasDirectoryPath.cs",
         "AtlasDiscovery.cs",
         "AtlasFinalizedSaveSnapshot.cs",
+        "AtlasGoldFileApplication.cs",
         "AtlasGoldReadModel.cs",
         "AtlasGoldMutationKernel.cs",
         "AtlasGoldSnapshotValidation.cs",
@@ -53,6 +55,7 @@ public sealed class ProjectBoundaryTests
         "AtlasDefinitionIntakeTests.cs",
         "AtlasDiscoveryTests.cs",
         "AtlasGoldReadModelTests.cs",
+        "AtlasGoldFileApplicationTests.cs",
         "AtlasGoldMutationKernelTests.cs",
         "AtlasGoldSnapshotValidationTests.cs",
         "AtlasIntakeContractTests.cs",
@@ -353,6 +356,100 @@ public sealed class ProjectBoundaryTests
                 || type.Name.Contains("Stream", StringComparison.Ordinal)
                 || type.Name.Contains("File", StringComparison.Ordinal)
                 || type.Name.Contains("Directory", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void A6GoldFileApplicationBoundaryIsLibraryOnlyAndClosed()
+    {
+        ProjectPaths paths = ProjectPaths.Create();
+        Type[] publicTypes = typeof(AtlasGoldFileApplication)
+            .Assembly
+            .GetExportedTypes()
+            .Where(static type =>
+                type.Name.StartsWith("AtlasGoldFileApplication", StringComparison.Ordinal))
+            .OrderBy(static type => type.Name, StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(
+            [
+                typeof(AtlasGoldFileApplication),
+                typeof(AtlasGoldFileApplicationDisposition),
+                typeof(AtlasGoldFileApplicationException),
+                typeof(AtlasGoldFileApplicationFailure),
+            ],
+            publicTypes);
+
+        MethodInfo method = Assert.Single(
+            typeof(AtlasGoldFileApplication).GetMethods(
+                BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly));
+        Assert.Equal(nameof(AtlasGoldFileApplication.ApplyAsync), method.Name);
+        string publicSurface = string.Join(
+            "\n",
+            publicTypes.SelectMany(static type =>
+                type.GetMembers(
+                    BindingFlags.Public
+                        | BindingFlags.Instance
+                        | BindingFlags.Static
+                        | BindingFlags.DeclaredOnly))
+                .Select(static member => member.Name));
+        foreach (string excluded in new[]
+                 {
+                     "Cleanup",
+                     "MultiSlot",
+                     "Global",
+                     "Journal",
+                     "Ledger",
+                     "Manifest",
+                     "Hash",
+                     "Guid",
+                     "Attestation",
+                     "Git",
+                     "Private",
+                     "Request",
+                 })
+        {
+            Assert.DoesNotContain(excluded, publicSurface, StringComparison.OrdinalIgnoreCase);
+        }
+
+        string applicationPath = Path.Combine(
+            paths.LibraryDirectory,
+            "AtlasGoldFileApplication.cs");
+        string productionText = File.ReadAllText(applicationPath);
+        Assert.Equal(
+            [
+                ".celesphonia-original.bak",
+                ".celesphonia-original.bak.staging",
+                ".celesphonia-stage.tmp",
+            ],
+            Regex.Matches(productionText, @"\.celesphonia-[A-Za-z0-9.-]+")
+                .Select(static match => match.Value)
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal));
+        Assert.DoesNotContain("DeleteFile", productionText, StringComparison.Ordinal);
+        Assert.DoesNotContain("System.CommandLine", productionText, StringComparison.Ordinal);
+        Assert.Contains("Windows-only", productionText, StringComparison.Ordinal);
+        Assert.Contains("game and every other save writer to be closed", productionText);
+        Assert.Contains("Deleting the completed backup resets the baseline", productionText);
+        Assert.Contains("intentionally retains the fixed candidate stage", productionText);
+        Assert.Contains("Cancellation is honored until", productionText);
+        Assert.Contains(
+            "no rollback or automatic cleanup",
+            productionText,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("later persisted operation increment", productionText);
+        Assert.Contains("private-operation authority.", productionText);
+
+        string cliText = string.Join(
+            "\n",
+            Directory.EnumerateFiles(paths.CliDirectory, "*.cs").Select(File.ReadAllText));
+        Assert.DoesNotContain(
+            nameof(AtlasGoldFileApplication),
+            cliText,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            Directory.EnumerateFiles(paths.SchemaDirectory, "*.json"),
+            static path => Path.GetFileName(path).Contains(
+                "gold-file-application",
+                StringComparison.OrdinalIgnoreCase));
     }
 
     private static void AssertPackageAssets(XDocument project, string packageName)
