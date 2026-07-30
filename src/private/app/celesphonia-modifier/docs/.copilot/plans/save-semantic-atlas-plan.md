@@ -25,11 +25,20 @@
 > historical A4 scanner mechanics here and governs the synthetic single-document scanner.
 > This document retains historical research and A5+ context without granting A5/private/real authority.
 
+<!-- Separate independent authority notices. -->
+
+> **Conditional A5R1 relationship**
+> Before exact verified shared `R5R1`, no A5 authority comes from this document or the A5R1 candidate.
+> After that event, `atlas-v0-a5-explicit-snapshot-corpus-survey.md` partially supersedes only
+> historical A5 survey-runner mechanics here and governs the synthetic explicit finalized-snapshot
+> survey implementation. This document retains historical research and A6+ context without granting a
+> real private survey, semantics, editing, or writes.
+
 **Lifecycle:** Active normative research baseline before verified shared `R14`; partially superseded and
-historical supporting for A0-A4 execution after the applicable activation records
+historical supporting for A0-A5 execution after the applicable activation records
 
 **Status:** Confirmed research baseline before verified `R14`; historical supporting under A2R14 after
-verified `R14`, including A4 scanner context after verified shared `R4R1`
+verified `R14`, including A4 scanner and A5 survey-runner context after their verified shared records
 
 **Purpose:** Produce a comprehensive, privacy-safe structural map before selecting deep research
 

@@ -23,6 +23,14 @@
 > synthetic single-document library increment. A5 and later sections remain historical context with
 > no authority from A4R1.
 
+<!-- Separate independent authority notices. -->
+
+> **Conditional A5R1 replacement**
+> Before exact verified shared `R5R1`, the historical A5 section remains blocked. After that event,
+> `atlas-v0-a5-explicit-snapshot-corpus-survey.md` supersedes only its survey-runner mechanics and
+> governs the synthetic explicit finalized-snapshot survey implementation. A real private survey,
+> A6, and later work remain unauthorized by plan or artifact presence.
+
 **Status:** Confirmed execution baseline
 
 > **Conditional A2 amendment**
@@ -310,6 +318,12 @@ exist.
 - Canonical output includes a segment not classified by the closed redaction policy.
 
 ## 11. Increment A5: Full Private Corpus Survey
+
+> **Conditional lifecycle**
+> Before verified shared `R5R1`, this historical A5 section remains blocked. After verified shared
+> `R5R1`, its survey-runner mechanics are superseded by
+> `atlas-v0-a5-explicit-snapshot-corpus-survey.md`; the text below remains historical supporting
+> context and is intentionally not rewritten. A5R1 releases no real private-survey result.
 
 ### Outputs
 

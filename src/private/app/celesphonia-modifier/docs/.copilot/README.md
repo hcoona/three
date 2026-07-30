@@ -19,6 +19,10 @@ Before verified shared `R3R1`, the old A3 remains blocked and the new plan grant
 `plans/atlas-v0-a4-synthetic-structural-scanner.md` is the conditional A4R1 replacement plan. Before
 verified shared `R4R1`, it grants no implementation or scan authority; afterward it governs only the
 synthetic single-document scanner and leaves A5/private/real work blocked.
+`plans/atlas-v0-a5-explicit-snapshot-corpus-survey.md` is the conditional A5R1 replacement plan.
+Before verified shared `R5R1`, it grants no implementation or survey authority; afterward it governs
+only the synthetic implementation of an explicit finalized-snapshot survey runner and leaves every
+real private survey blocked pending an explicit user-supplied receipt path.
 
 ## Normative baseline
 
@@ -36,6 +40,10 @@ synthetic single-document scanner and leaves A5/private/real work blocked.
 - `plans/atlas-v0-a4-synthetic-structural-scanner.md` is the conditional A4R1 governing plan. After
   verified shared `R4R1`, it supersedes only historical A4 scanner mechanics and authorizes the
   synthetic C4R1 library/schema/test implementation. Historical A5+ material retains no authority.
+- `plans/atlas-v0-a5-explicit-snapshot-corpus-survey.md` is the conditional A5R1 governing plan. After
+  verified shared `R5R1`, it supersedes only historical A5 survey-runner mechanics and authorizes the
+  synthetic C5R1 library/CLI/schema/test implementation. It does not claim or authorize a real survey
+  by presence.
 - `plans/atlas-v0-a0-research-contract.md` records the approved finite corpus, definition,
   privacy, redaction, Agent-egress, artifact-lifecycle, and handoff contract for increment A0.
   Human scope approval alone does not establish increment completion.
@@ -230,6 +238,11 @@ synthetic single-document scanner and leaves A5/private/real work blocked.
   `R4R1`, activates only the A4R1 synthetic implementation authority.
 - `reviews/atlas-v0-a4-synthetic-structural-scanner-release-gate.md`, when present and verified as
   exact `G4R1`, establishes the reviewed synthetic A4R1 release and grants no A5/private/real authority.
+- `reviews/atlas-v0-a5-explicit-snapshot-corpus-survey-plan-review.md`, when present and verified as
+  exact `R5R1`, activates only the A5R1 synthetic implementation authority.
+- `reviews/atlas-v0-a5-explicit-snapshot-corpus-survey-release-gate.md`, when present and verified as
+  exact `G5R1`, establishes the reviewed A5R1 survey runner and does not claim that a real private
+  survey occurred.
 - `reviews/atlas-v0-a2-private-run-acceptance.md` is obsolete and blocked. A2R8 publishes no private
   discovery token, disposition, outcome, count, difference, hash, path, name, or document content.
 
