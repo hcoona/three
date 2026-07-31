@@ -7,7 +7,7 @@ Active and normative.
 v3 is a clean implementation line. It does not evolve the v2 control
 architecture in place. Proven v2 mechanisms may be ported only through v3
 Shared Foundation adapters and must not leak v2 domain or authority types into
-the v3 kernel.
+v3 CI or Release decision models.
 
 ## Normative Pages
 
@@ -23,7 +23,7 @@ the v3 kernel.
 ## Next Design Work
 
 1. review and confirm the Repository Model and Release Unit MLD;
-2. define the Trusted Decision Kernel and Governance Integration MLD;
+2. define the Governance Integration and Shared Decision Primitives MLD;
 3. define the CI Qualification MLD;
 4. define the Release Delivery MLD;
 5. define the Shared Foundation MLD;

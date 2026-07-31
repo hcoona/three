@@ -21,8 +21,8 @@ for new v3 implementation work.
 
 - CI Qualification and Release Delivery are peer bounded contexts.
 - Delivery Governance is an external authority boundary.
-- A small, same-revision Trusted Decision Kernel owns Evidence Admission and
-  final decision rules while GitHub Governance supplies authority.
+- CI and Release each own same-revision planning, Evidence Admission, and
+  finalization while GitHub Governance supplies authority.
 - Shared Foundation providers and adapters supply repository modeling, build,
   quality, and destination mechanisms without owning business policy.
 - Decision, Build and Qualification, and Side-Effect Zones are separate runtime
@@ -70,7 +70,7 @@ have changed.
 ## Next Architecture Work
 
 1. Review and confirm the Repository Model and Release Unit MLD.
-2. Define the Trusted Decision Kernel and Governance Integration MLD.
+2. Define the Governance Integration and Shared Decision Primitives MLD.
 3. Define the CI Qualification MLD.
 4. Define the Release Delivery MLD.
 5. Define the Shared Foundation MLD.

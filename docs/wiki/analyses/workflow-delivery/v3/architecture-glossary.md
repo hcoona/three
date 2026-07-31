@@ -64,21 +64,6 @@ configuration.
 CI Qualification and Release Delivery may request decisions or capabilities, but
 they must not grant final authority to themselves.
 
-### Trusted Decision Kernel
-
-The smallest stable decision-code boundary that enforces minimum obligations,
-admits evidence, produces final decisions, and checks authorization
-prerequisites.
-
-The kernel must not contain ecosystem discovery, batching optimization, or
-general execution logic when those responsibilities can remain outside the
-decision boundary.
-
-CI loads the kernel from the tested candidate revision. Release loads it from
-the exact protected target revision being released. GitHub Governance, rather
-than an independently deployed kernel version, determines whether that revision
-may merge or obtain live publication capability.
-
 ### Decision Zone
 
 The trusted runtime zone that executes authoritative policy, planning, evidence
@@ -130,7 +115,7 @@ A Release Delivery policy channel for authoritative production publication.
 A live Official release must:
 
 - target a revision reachable from a Governance-configured authoritative branch;
-- use the Decision Kernel contained in that target revision;
+- use the Release Planner and Finalizer contained in that target revision;
 - rebuild every selected artifact variant;
 - complete its own Release Qualification Target;
 - freeze the Release Plan, artifact digests, destinations, and plan digest before
@@ -307,6 +292,23 @@ variants, obligations, versions, artifacts, destinations, or authorization
 requirements. A runtime discovery that conflicts with the Plan or Build
 Definition causes failure rather than replanning.
 
+### Planner
+
+The bounded-context-owned decision service that converts immutable inputs,
+repository facts, and applicable policy into a closed Plan before execution.
+
+CI and Release have separate Planners because they select different scope,
+obligations, identities, and side effects.
+
+### Finalizer
+
+The bounded-context-owned decision service that admits execution records and
+produces the immutable Decision or outcome after execution.
+
+CI and Release have separate Finalizers. Shared Foundation may provide strict
+record validation, canonicalization, digest, and Evidence-binding functions,
+but it does not select the verdict.
+
 ### Official Version Identity
 
 The canonical version identity assigned by Official to one Release Unit and one
@@ -347,7 +349,7 @@ Admission does not rerun the command, reinterpret test results, or duplicate the
 executor's quality logic. High-risk side-effect boundaries may additionally
 recompute artifact digests and verify provenance before publication.
 
-Target code may produce raw results, but a kernel-owned Evidence writer
+Target code may produce raw results, but a CI- or Release-owned Evidence writer
 creates the final Evidence envelope from the execution result and GitHub job
 context.
 
@@ -629,12 +631,10 @@ The rule that CI Qualification and Release Delivery own separate Plans,
 Evidence Sets, Decisions, and state machines while consuming shared normalized
 foundation interfaces.
 
-The Trusted Decision Kernel is a deliberately small shared code boundary rather
-than a universal business Planner or separately deployed authority system.
-
 New ecosystems and destinations normally add providers or adapters and policy
-mapping without modifying the Kernel. Shared decision code changes only when a
-new cross-system semantic is required.
+mapping without modifying CI or Release decision semantics. Shared Foundation
+remains a mechanism library rather than a universal business Planner or
+Finalizer.
 
 ### Decision Explanation
 
@@ -710,10 +710,10 @@ Capability.
 7. Release Qualification covers the complete Project Node and declared-input
    closure required by the Release Unit Build Definitions, plus explicit
    compatibility obligations.
-8. CI uses Decision Kernel code from the tested candidate revision, and Release
-   uses code from the exact protected target revision.
-9. Kernel, workflow, record-contract, and minimum-policy changes require
-   Governance-configured owner review.
+8. CI uses Planner and Finalizer code from the tested candidate revision, and
+   Release uses code from the exact protected target revision.
+9. Planning, finalization, workflow, record-shape, and minimum-policy changes
+   require Governance-configured owner review.
 10. Control-code changes create a new candidate or Release target; normal replay
     never injects newer control code into an older target.
 11. A runtime that executes target code must not possess publication capability,

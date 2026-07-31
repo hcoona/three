@@ -1158,3 +1158,14 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   target cannot use newer control code through ordinary replay.
 - Removed initial record schema versioning because all machine consumers are
   within the same revision and attempt.
+
+## [2026-07-30] query | Remove the top-level Decision Kernel layer
+
+- Found that the same-revision Kernel had no independent trust, deployment,
+  identity, lifecycle, or policy responsibility.
+- Moved planning, Evidence Admission, and finalization into the CI and Release
+  bounded contexts that own those decisions.
+- Retained canonicalization, digest, strict record validation, and exact
+  Evidence binding as Shared Foundation mechanisms.
+- Replaced the Kernel MLD stage with Governance Integration and Shared Decision
+  Primitives.

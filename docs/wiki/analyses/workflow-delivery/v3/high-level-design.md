@@ -19,19 +19,14 @@ Normative terminology is maintained in the
 ```text
                          Delivery Governance
              policy authority / review / environments / OIDC
-                                  |
-                         Trusted Decision Kernel
-              minimum obligations / evidence admission / decisions
-                                  |
-               +------------------+------------------+
                |                                     |
         CI Qualification                       Release Delivery
-    change-oriented qualification       release-unit-oriented delivery
+      planner / finalizer                    planner / finalizer
                |                                     |
                +------------------+------------------+
                                   |
                            Shared Foundation
-       repository model / build / quality / destination adapters
+ record / digest / evidence binding / repository / build / quality / destination
 ```
 
 CI Qualification and Release Delivery are peer bounded contexts. Delivery
@@ -39,9 +34,9 @@ Governance is an external authority boundary, not a third business system. The
 Shared Foundation provides mechanisms and normalized facts, not business
 policy.
 
-The Trusted Decision Kernel is the small cross-system authority core. CI and
-Release retain independent aggregate roots, Plans, Evidence, Decisions, and
-state machines.
+CI and Release each own their Planner, Finalizer, aggregate roots, Plans,
+Evidence, Decisions, and state machines. There is no universal cross-system
+Planner or Finalizer.
 
 ## System Boundaries
 
@@ -165,54 +160,56 @@ Units.
 
 ## Shared Foundation
 
-The Shared Foundation exposes four stable extension families:
+The Shared Foundation exposes five stable mechanism families:
 
-1. Repository Model Providers normalize ecosystem manifests, workspaces,
+1. Shared Record Primitives provide canonicalization, digest, strict record
+   validation, and exact Evidence-binding functions without selecting policy or
+   verdicts.
+2. Repository Model Providers normalize ecosystem manifests, workspaces,
    global configuration, Project Nodes, dependency relationships, path impact,
    and build capabilities.
-2. Build Adapters execute shared Build Definitions and map declared artifacts
+3. Build Adapters execute shared Build Definitions and map declared artifacts
    to produced outputs.
-3. Quality Adapters execute quality definitions and emit standard Evidence.
-4. Destination Adapters implement observation, publication, Receipt,
+4. Quality Adapters execute quality definitions and emit standard Evidence.
+5. Destination Adapters implement observation, publication, Receipt,
    mutability, digest, Capability, and remediation semantics.
 
 Adding an ecosystem or destination normally adds an adapter and policy mapping
-rather than modifying the Trusted Decision Kernel.
+rather than modifying context-owned decision semantics.
 
 Adapters provide facts and mechanical execution. They do not decide business
 scope, downgrade obligations, authorize publication, or reinterpret verdicts.
 
-## Authority and Trust
+## Governance and Trust
 
-### Trusted Decision Kernel
+### Context-Owned Planning and Finalization
 
-The kernel owns only cross-system authority semantics:
+CI Qualification owns CI scope planning, obligation disposition, Evidence
+Admission, and CI Final Decision.
 
-- minimum obligation enforcement;
-- Evidence Admission;
-- final decision rules;
-- authorization prerequisite validation; and
-- strict authoritative-record validation.
+Release Delivery owns Release planning, qualification finalization,
+Publication Snapshot finalization, Receipt admission, and Release outcome.
 
-Repository discovery, ecosystem execution, batching, destination API
-integration, and presentation remain outside the kernel.
+Shared Foundation supplies mechanical canonicalization, digest, strict record
+validation, and Evidence-binding functions. It does not choose scope, policy,
+authorization, or verdicts.
 
 ### Governed Same-Revision Control
 
-CI uses the Decision Kernel from the tested candidate revision. Release uses
-the Decision Kernel from the exact protected target revision being released.
-The kernel has no independently selected authority revision or runtime
+CI uses its Planner and Finalizer from the tested candidate revision. Release
+uses its Planner and Finalizer from the exact protected target revision being
+released. There is no independently selected decision-code revision or runtime
 promotion protocol.
 
 GitHub Governance supplies authority through control-code ownership, required
 review, protected refs, workflow permissions, protected environments, and OIDC
-trust. A change to the kernel, workflow control code, authoritative record
-shape, or minimum policy becomes eligible only as part of the reviewed revision
-that contains it.
+trust. A change to planning, finalization, workflow control code, authoritative
+record shape, or minimum policy becomes eligible only as part of the reviewed
+revision that contains it.
 
 A control-code fix therefore creates a new candidate or Release target. An
 ordinary replay of an older target continues to use that target's original
-kernel. Exceptional state left by an older target is handled through
+control code. Exceptional state left by an older target is handled through
 reconciliation or separately authorized remediation.
 
 ### Runtime Zones
@@ -241,7 +238,7 @@ GitHub event
   -> repository model facts
   -> closed CI Qualification Plan
   -> parallel build and quality obligations
-  -> kernel-owned Evidence envelopes
+  -> CI-owned Evidence envelopes
   -> Evidence Admission
   -> immutable Final Decision
   -> required-check and human-summary projections
@@ -400,13 +397,13 @@ proved after operational records expire fails closed.
 | `WD-CI-*`         | CI Qualification flow, Planner, executors, Evidence Admission, Final Decision        |
 | `WD-REL-*`        | Release Attempt, Plan lineage, independent build and qualification, Side-Effect Zone |
 | `WD-CHN-*`        | Buddy and Official channel policy over Release Delivery                              |
-| `WD-AUTH-*`       | Same-revision Decision Kernel, protected review, Delivery Governance                 |
+| `WD-AUTH-*`       | Same-revision context decision code, protected review, Delivery Governance           |
 | `WD-SEC-*`        | Decision, Build and Qualification, and Side-Effect runtime zones                     |
 | `WD-EVD-*`        | Evidence Admission, append-only Decisions, structured explanation projections        |
 | `WD-OPS-*`        | Remote-State Observation, whole-release replay, Saga, reconciliation, remediation    |
 | `WD-CON-*`        | Domain-derived concurrency and destination locks                                     |
 | `WD-RET-*`        | Platform-aware records, durable destination identities, fail-closed expiration       |
-| `WD-NFR-*`        | Kernel minimization, adapter extension model, explanation contract, CI objective     |
+| `WD-NFR-*`        | Context separation, adapter extension model, explanation contract, CI objective      |
 
 ## Middle-Layer Design Decomposition
 
@@ -415,8 +412,8 @@ The next design stage should produce separate MLDs for:
 1. **Repository Model and Release Units:** Project Node discovery, dependency
    and path-impact facts, Release Unit authoring, variants, and Build
    Definitions.
-2. **Trusted Decision Kernel and Governance Integration:** same-revision
-   control, admission, decision, review, and authorization contracts.
+2. **Governance Integration and Shared Decision Primitives:** same-revision
+   control review, record primitives, and authorization boundaries.
 3. **CI Qualification:** candidate identity, affected-scope planning,
    execution, Evidence, Decision, and GitHub projection contracts.
 4. **Release Delivery:** Release Intent, Plan lineage, build and qualification,

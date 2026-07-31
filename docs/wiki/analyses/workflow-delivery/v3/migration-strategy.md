@@ -14,7 +14,7 @@ architecture.
 v2 and v3 differ at their architectural roots:
 
 - v2 authority and promotion machinery versus GitHub-governed same-revision
-  Decision Kernel execution;
+  context-owned planning and finalization;
 - project/profile-centric control types versus an explicit Release Unit domain
   over normalized project and build facts;
 - one pre-build Release Plan versus a two-snapshot Plan lineage;
@@ -31,8 +31,8 @@ incompatible authority, identity, Evidence, and replay contracts.
 2. Create the v3 branch from the current repository mainline for a clean diff;
    this is a Git baseline choice, not architectural reuse of v1.
 3. Port this versioned v3 documentation first.
-4. Create new v3 domain and kernel namespaces with no imports from v2 Plan,
-   project, profile, proof, report, or control-plane types.
+4. Create new v3 CI, Release, and Shared Foundation namespaces with no imports
+   from v2 Plan, project, profile, proof, report, or control-plane types.
 5. Port mechanisms through anti-corruption adapters.
 6. Implement one vertical slice before expanding across ecosystems.
 7. Switch required checks, workflow identities, Environments, and Registry trust

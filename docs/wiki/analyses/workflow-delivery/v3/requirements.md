@@ -136,8 +136,8 @@ against implementation and maintenance cost.
 - **WD-AUTH-001:** CI decision code must come from the tested candidate
   revision. Release decision code must come from the exact protected target
   revision being released.
-- **WD-AUTH-002:** Changes to the Decision Kernel, workflow control code,
-  authoritative record contracts, or minimum policy must require
+- **WD-AUTH-002:** Changes to CI or Release planning, finalization, workflow
+  control code, authoritative record shapes, or minimum policy must require
   Governance-configured owner review before merge or live Release eligibility.
 - **WD-AUTH-003:** Merging a reviewed control-code change makes that code
   eligible only as part of the resulting new candidate or Release target
