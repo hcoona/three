@@ -45,6 +45,16 @@ public sealed class ReleaseHardeningPhase15VerticalSliceServiceTests
         AssertDeferredReleaseEvidence(result, "remote-windows-first-platform-acceptance");
         AssertDeferredReleaseEvidence(result, "final-installer-uninstaller-validation");
 
+        ReleaseHardeningPhase15Check windows = Assert.Single(
+            result.Checks,
+            static check => check.Id == "remote-windows-first-platform-acceptance"
+        );
+        Assert.Contains("11b669b9", windows.Evidence, StringComparison.Ordinal);
+        Assert.Contains("Windows 11 Enterprise", windows.Notes, StringComparison.Ordinal);
+        Assert.Contains("Windows 11 24H2", windows.Notes, StringComparison.Ordinal);
+        Assert.Contains("Windows Server", windows.Notes, StringComparison.Ordinal);
+        Assert.Contains("remain required", windows.Notes, StringComparison.Ordinal);
+
         ReleaseHardeningPhase15Check installer = Assert.Single(
             result.Checks,
             static check => check.Area == "installer"

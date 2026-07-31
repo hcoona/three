@@ -1,6 +1,6 @@
 # WP3 — AzureAuth Async Process Identity Provider
 
-Status: **implemented in production; WSL-to-Windows live acceptance recorded**
+Status: **implemented in production; WSL-to-Windows and Windows developer-host acceptance recorded**
 
 Date: **2026-07-30**
 
@@ -48,6 +48,29 @@ The installed executable reported version `0.9.5.0` and SHA-256
 No account identifier, tenant identifier, or token material is recorded here.
 This acceptance closes the WSL-to-Windows AzureAuth row only; it does not claim
 Windows-native host-tool acceptance.
+
+## Native Windows developer-host acceptance
+
+On 2026-07-30, commit `11b669b9` was published as a framework-dependent
+`win-x64` apphost and exercised natively on Windows 11 Enterprise x64 build
+`10.0.26200` with the installed .NET `10.0.10` runtime. Using a disposable
+Windows-local application and configuration root, the production apphost:
+
+1. started through `azureauth-credprovider.exe`;
+2. configured an operator-supplied tenant without persisting credential
+   material or claiming identity verification;
+3. discovered and invoked the installed AzureAuth `0.9.5` through its default
+   Windows authentication ordering with no explicit mode override;
+4. completed the browser-allowed login command without terminal input;
+5. returned only safe status fields and did not print credential material; and
+6. unconfigured identity state and removed the disposable Windows root.
+
+No account identifier, tenant identifier, or token material is recorded here.
+This is source-build evidence from Windows 11 build `26200`, not the frozen
+Windows 11 24H2 build `26100` baseline. It therefore does not establish exact
+Windows 11 24H2, Windows Server, installer-produced binary, native Git helper,
+Visual Studio, or NuGet.exe acceptance, so the combined Windows-first release
+row remains deferred.
 
 ## Exact AzureAuth Invocation
 

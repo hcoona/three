@@ -151,9 +151,12 @@ public static class ReleaseHardeningPhase15VerticalSliceService
                 DeferredReleaseEvidence(
                     "remote-windows-first-platform-acceptance",
                     "platform",
-                    "phase-0-decisions",
-                    "Remote Windows 11 and Windows Server acceptance evidence is still required "
-                        + "before full release readiness closes."
+                    "phase-0-decisions; phase-wp3-azureauth-process-provider; commit 11b669b9",
+                    "Native Windows 11 Enterprise x64 apphost, identity configuration, and "
+                        + "AzureAuth login acceptance passed on build 26200 on 2026-07-30. "
+                        + "The exact Windows 11 24H2 baseline, Windows Server 2022 or 2025, "
+                        + "and installer-produced binary acceptance remain required before full "
+                        + "release readiness closes."
                 ),
                 ReleaseEvidencePass(
                     "real-package-manager-invocation-paths",
