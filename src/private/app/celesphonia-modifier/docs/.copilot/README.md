@@ -11,9 +11,13 @@ Read these sources in order:
 2. [Documentation agent instructions](../AGENTS.md) when changing any file under `docs/`.
 3. [Project operating model](plans/project-operating-model.md), especially the persisted handoff
    and independent increment release gates.
-4. [A6R5 governing plan](plans/atlas-v0-a6-private-gold-editor.md), especially its authority,
+4. [A6R6 Gold writable-domain evidence plan](plans/atlas-v0-a6-gold-writable-domain-evidence.md),
+   especially its authority, gates, terminal outcomes, and resume procedure.
+5. [A2R15 definition-intake plan](plans/atlas-v0-a2-local-definition-intake-simplification.md),
+   especially its conditional A6R6 extension correction.
+6. [A6R5 governing plan](plans/atlas-v0-a6-private-gold-editor.md), especially its authority,
    exclusions, residual risks, and stop/resume section.
-5. [A6R5 release record](reviews/atlas-v0-a6-private-gold-editor-release-gate.md).
+7. [A6R5 release record](reviews/atlas-v0-a6-private-gold-editor-release-gate.md).
 
 The latest verified product gate is `G6R5`
 `00e749c3a9c2b391be37fd2644c599bd15488664`. It historically released the reviewed experimental,
@@ -28,12 +32,15 @@ at `9e678be5969d8e8ed4e2e03d585e14e5f0c361bf`. Treat G6R5 as historical release 
 evidence only; do not use it to modify private or real saves. Synthetic and read-only investigation
 remain subject to their existing authority boundaries.
 
-No correction execution increment is currently authorized. The required next product decision is
-whether the user authorizes a Gold-domain correction increment or leaves the editor suspended. A
-correction must first establish positive repository-safe evidence for the supported Celesphonia
-game/version writable domain, then persist and independently review a resumable correction plan
-before material implementation. Do not infer A7, A8, broader editing, restore, discovery, packaging,
-or distribution work from historical plans.
+The project leader selected Gold-domain correction as the next outcome. The current
+[A6R6 Gold writable-domain evidence plan](plans/atlas-v0-a6-gold-writable-domain-evidence.md) is an
+evidence prerequisite and grants no execution authority before verified shared `R6R6`. R6R6 may
+activate only its bounded five-path synthetic definition-intake and analysis-tool candidate; private
+definition access remains blocked until that candidate receives independent `T6R6` activation. A6R6
+accesses no save and changes no Gold implementation. Only verified shared `G6R6` with
+`EngineDefaultApplicable` may permit a separately persisted and independently reviewed A6R7
+correction plan. Do not infer A7, A8, broader editing, restore, discovery, packaging, or
+distribution work from historical plans.
 
 The conditional or pre-gate lifecycle labels inside the A6R5 plan and release record describe the
 candidate documents before their named Git events. Do not edit those immutable records to make them
@@ -135,6 +142,12 @@ implementation evidence and an explicit owner-affirmed compatibility limitation.
   `9e678be5969d8e8ed4e2e03d585e14e5f0c361bf` suspend current real-save write use because the
   accepted Gold range lacks the required game/version semantic evidence. Agents and automated
   validation remain excluded from private saves.
+- `plans/atlas-v0-a6-gold-writable-domain-evidence.md` is the conditional A6R6 governing plan.
+  Before verified shared `R6R6`, it grants no definition access or execution authority. R6R6
+  authorizes only the five-path synthetic definition-intake and analysis-tool candidate. Only
+  verified shared `T6R6` authorizes one protected definition copy and read-only Gold-domain analysis,
+  with no save or Gold implementation access. Only verified shared `G6R6` with
+  `EngineDefaultApplicable` may permit a separately planned A6R7 correction.
 - `plans/atlas-v0-a0-research-contract.md` records the approved finite corpus, definition,
   privacy, redaction, Agent-egress, artifact-lifecycle, and handoff contract for increment A0.
   Human scope approval alone does not establish increment completion.

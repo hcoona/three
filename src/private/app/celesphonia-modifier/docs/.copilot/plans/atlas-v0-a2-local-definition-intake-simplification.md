@@ -17,6 +17,13 @@ corruption without attempting to defend against a malicious local user or admini
 > This file changes no active authority until its exact persisted candidate is independently reviewed,
 > committed, pushed, and activated by verified shared `R15`.
 
+**Conditional A6R6 extension correction:** Before verified shared `T6R6`, this plan's
+`.js`/`.json` source and destination extension rule remains unchanged. After verified shared `T6R6`,
+the extension correction in `atlas-v0-a6-gold-writable-domain-evidence.md` partially supersedes only
+that rule and the matching receipt destination pattern by also permitting the historically included
+`.html` web entry. All other A2R15 scope, safety, fidelity, recovery, and contract requirements
+remain active.
+
 ## 1. Context and threat model
 
 Celesphonia Modifier is a local game save editor intended for one user on their own machine. The
