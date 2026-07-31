@@ -323,6 +323,37 @@ public sealed class GoldEditorOperationsTests
     }
 
     [Fact]
+    public async Task InaccessiblePreviewDoesNotInvokeApplication()
+    {
+        await using SyntheticGoldSave save = await SyntheticGoldSave.CreateAsync(4);
+        int invocations = 0;
+        IOException previewFailure = new("Synthetic inaccessible preview.");
+        GoldEditorDocument document = await new GoldEditorOperations().LoadAsync(
+            save.SlotPath,
+            TestContext.Current.CancellationToken);
+        GoldEditorOperations operations = new(
+            readStreamFactory: _ => throw previewFailure,
+            applyInvoker: (_, _, _, _) =>
+            {
+                invocations++;
+                return ValueTask.FromResult(
+                    AtlasGoldFileApplicationDisposition.Unchanged);
+            });
+
+        GoldEditorApplyOutcome outcome = await operations.ApplyAsync(
+            document,
+            6,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, invocations);
+        Assert.Equal(GoldEditorApplyOutcomeKind.PreviewReadFailed, outcome.Kind);
+        GoldEditorLoadException exception =
+            Assert.IsType<GoldEditorLoadException>(outcome.PreviewReadException);
+        Assert.Equal(GoldEditorLoadFailure.MissingOrInaccessibleFile, exception.Failure);
+        Assert.Same(previewFailure, exception.InnerException);
+    }
+
+    [Fact]
     public async Task CancellationBeforeApplicationInvocationIsObserved()
     {
         await using SyntheticGoldSave save = await SyntheticGoldSave.CreateAsync(4);

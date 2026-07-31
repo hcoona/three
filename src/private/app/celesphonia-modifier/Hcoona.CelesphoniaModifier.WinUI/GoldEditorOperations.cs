@@ -322,15 +322,43 @@ internal sealed class GoldEditorOperations : IGoldEditorOperations
         ArgumentNullException.ThrowIfNull(document);
         cancellationToken.ThrowIfCancellationRequested();
 
+        Stream convergenceStream;
+        try
+        {
+            convergenceStream = _readStreamFactory(document.SlotPath);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (
+            exception is FileNotFoundException
+            or DirectoryNotFoundException
+            or UnauthorizedAccessException
+            or IOException)
+        {
+            return GoldEditorApplyOutcome.PreviewReadFailed(
+                new GoldEditorLoadException(
+                    GoldEditorLoadFailure.MissingOrInaccessibleFile,
+                    exception));
+        }
+        catch (Exception exception)
+        {
+            return GoldEditorApplyOutcome.PreviewReadFailed(
+                new GoldEditorLoadException(
+                    GoldEditorLoadFailure.UnexpectedLocalFailure,
+                    exception));
+        }
+
         AtlasGoldFileApplicationDisposition disposition;
         try
         {
-            await using Stream convergenceStream = _readStreamFactory(document.SlotPath);
+            await using Stream ownedConvergenceStream = convergenceStream;
             AtlasSaveReadResult convergedSource;
             try
             {
                 convergedSource = await AtlasSaveReader.ReadAsync(
-                        convergenceStream,
+                        ownedConvergenceStream,
                         AtlasSaveReaderLimits.Default,
                         cancellationToken)
                     .ConfigureAwait(false);
