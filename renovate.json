@@ -521,7 +521,6 @@
       "matchManagers": ["mise"],
       "matchDepNames": [
         "hk",
-        "pipx:prek",
         "go:github.com/B1NARY-GR0UP/nwa",
         "go:github.com/editorconfig-checker/editorconfig-checker/v3/cmd/editorconfig-checker",
         "taplo",

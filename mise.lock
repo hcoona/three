@@ -157,18 +157,6 @@ version = "0.11.0"
 backend = "github:koalaman/shellcheck"
 
 [tools."github:koalaman/shellcheck".options]
-asset_pattern = "shellcheck-*.zip"
-
-[tools."github:koalaman/shellcheck"."platforms.windows-x64"]
-checksum = "sha256:8a4e35ab0b331c85d73567b12f2a444df187f483e5079ceffa6bda1faa2e740e"
-url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.zip"
-url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056944"
-
-[[tools."github:koalaman/shellcheck"]]
-version = "0.11.0"
-backend = "github:koalaman/shellcheck"
-
-[tools."github:koalaman/shellcheck".options]
 asset_pattern = "shellcheck-*.linux.x86_64.tar.xz"
 
 [tools."github:koalaman/shellcheck"."platforms.linux-x64"]
@@ -180,47 +168,6 @@ url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/2790
 checksum = "sha256:8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
 url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz"
 url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056942"
-
-[[tools."github:koalaman/shellcheck"]]
-version = "0.11.0"
-backend = "github:koalaman/shellcheck"
-
-[tools."github:koalaman/shellcheck".options]
-asset_pattern = "shellcheck-*.linux.aarch64.tar.xz"
-
-[tools."github:koalaman/shellcheck"."platforms.linux-arm64"]
-checksum = "sha256:12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e261eaa7e7c14588"
-url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.aarch64.tar.xz"
-url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056934"
-
-[tools."github:koalaman/shellcheck"."platforms.linux-arm64-musl"]
-checksum = "sha256:12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e261eaa7e7c14588"
-url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.aarch64.tar.xz"
-url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056934"
-
-[[tools."github:koalaman/shellcheck"]]
-version = "0.11.0"
-backend = "github:koalaman/shellcheck"
-
-[tools."github:koalaman/shellcheck".options]
-asset_pattern = "shellcheck-*.darwin.aarch64.tar.xz"
-
-[tools."github:koalaman/shellcheck"."platforms.macos-arm64"]
-checksum = "sha256:56affdd8de5527894dca6dc3d7e0a99a873b0f004d7aabc30ae407d3f48b0a79"
-url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.darwin.aarch64.tar.xz"
-url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056932"
-
-[[tools."github:koalaman/shellcheck"]]
-version = "0.11.0"
-backend = "github:koalaman/shellcheck"
-
-[tools."github:koalaman/shellcheck".options]
-asset_pattern = "shellcheck-*.darwin.x86_64.tar.xz"
-
-[tools."github:koalaman/shellcheck"."platforms.macos-x64"]
-checksum = "sha256:3c89db4edcab7cf1c27bff178882e0f6f27f7afdf54e859fa041fca10febe4c6"
-url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.darwin.x86_64.tar.xz"
-url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056930"
 
 [[tools."github:microsoft/apm"]]
 version = "0.26.0"
@@ -310,36 +257,38 @@ version = "3.13.0"
 backend = "go:mvdan.cc/sh/v3/cmd/shfmt"
 
 [[tools.hk]]
-version = "1.38.0"
+version = "1.53.0"
 backend = "aqua:jdx/hk"
 
 [tools.hk."platforms.linux-arm64"]
-checksum = "sha256:c012fea4a0cd9659088c10601c3ae085c5ac4407eeeaa442ced1913a5f26f8a7"
-url = "https://github.com/jdx/hk/releases/download/v1.38.0/hk-aarch64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/hk/releases/assets/368636451"
+checksum = "sha256:3cf58d268a9114f0923a06c38cf0995b9da43bf2279b09aac3c3c615a615b3e4"
+url = "https://github.com/jdx/hk/releases/download/v1.53.0/hk-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/hk/releases/assets/487429257"
 
 [tools.hk."platforms.linux-arm64-musl"]
-checksum = "sha256:c012fea4a0cd9659088c10601c3ae085c5ac4407eeeaa442ced1913a5f26f8a7"
-url = "https://github.com/jdx/hk/releases/download/v1.38.0/hk-aarch64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:36fdea5faa4994f4c46e18cb5a52f07a7db4228f1ea618cf371bc297cbc48070"
+url = "https://github.com/jdx/hk/releases/download/v1.53.0/hk-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/hk/releases/assets/487429258"
 
 [tools.hk."platforms.linux-x64"]
-checksum = "sha256:cb34efc1829a1d59c0cd526be494a9f01b36d1c9965087cff09a09f32d129431"
-url = "https://github.com/jdx/hk/releases/download/v1.38.0/hk-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/hk/releases/assets/368636454"
+checksum = "sha256:960c14b3bcd61e36dcb42c304e3cc23b22ef2e6f28ac6559e3856d27acf6b54a"
+url = "https://github.com/jdx/hk/releases/download/v1.53.0/hk-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/hk/releases/assets/487429267"
 
 [tools.hk."platforms.linux-x64-musl"]
-checksum = "sha256:cb34efc1829a1d59c0cd526be494a9f01b36d1c9965087cff09a09f32d129431"
-url = "https://github.com/jdx/hk/releases/download/v1.38.0/hk-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:c2075be6f6d4b3606450bdcb58ce5d17d9668804e8ee4f9d93dda596cae2de55"
+url = "https://github.com/jdx/hk/releases/download/v1.53.0/hk-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/hk/releases/assets/487429272"
 
 [tools.hk."platforms.macos-arm64"]
-checksum = "sha256:02421d12f8a706d5753eec1652f966c8df90bf810e4153b3a560f4038c784529"
-url = "https://github.com/jdx/hk/releases/download/v1.38.0/hk-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/jdx/hk/releases/assets/368636450"
+checksum = "sha256:d5c1f9a4c3598cc72c9f15908af6e036b138b9dd97c8891e4d08f699c98a5069"
+url = "https://github.com/jdx/hk/releases/download/v1.53.0/hk-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/jdx/hk/releases/assets/487429255"
 
 [tools.hk."platforms.windows-x64"]
-checksum = "sha256:3850e253ebe3b13b6932e951606eafe56801031c663437d656a49dc0ab9fdbf4"
-url = "https://github.com/jdx/hk/releases/download/v1.38.0/hk-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jdx/hk/releases/assets/368636453"
+checksum = "sha256:a2e5c6131d01cfd6d62204872798f97fc933e7f142d718b3e191434e2d31ef1c"
+url = "https://github.com/jdx/hk/releases/download/v1.53.0/hk-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jdx/hk/releases/assets/487429261"
 
 [[tools.java]]
 version = "25.0.2"
@@ -399,10 +348,6 @@ url = "https://nodejs.org/dist/v24.14.0/node-v24.14.0-darwin-x64.tar.gz"
 [tools.node."platforms.windows-x64"]
 checksum = "sha256:313fa40c0d7b18575821de8cb17483031fe07d95de5994f6f435f3b345f85c66"
 url = "https://nodejs.org/dist/v24.14.0/node-v24.14.0-win-x64.zip"
-
-[[tools."pipx:prek"]]
-version = "0.3.5"
-backend = "pipx:prek"
 
 [[tools.pkl]]
 version = "0.32.1"
@@ -606,6 +551,45 @@ backend = "core:ruby"
 [tools.ruby."platforms.windows-x64"]
 checksum = "sha256:328d7a86bea2f4c432783025050c9ffa1c36fcfc54ebccc466b63450ec3af223"
 url = "https://github.com/oneclick/rubyinstaller2/releases/download/RubyInstaller-4.0.6-1/rubyinstaller-4.0.6-1-x64.7z"
+
+[[tools.ruby]]
+version = "4.0.6"
+backend = "core:ruby"
+
+[tools.ruby.options]
+compile = "false"
+precompiled_url = "jdx/ruby"
+ruby_build_repo = "https://github.com/rbenv/ruby-build.git"
+ruby_install = "false"
+
+[tools.ruby."platforms.linux-arm64"]
+checksum = "sha256:6144c26cd5a1ff85358beb7e68e592ada6d0319aa8093cf353465d60f10aa970"
+url = "https://github.com/jdx/ruby/releases/download/4.0.6-1/ruby-4.0.6.arm64_linux.tar.gz"
+provenance = "github-attestations"
+
+[tools.ruby."platforms.linux-arm64-musl"]
+checksum = "sha256:6144c26cd5a1ff85358beb7e68e592ada6d0319aa8093cf353465d60f10aa970"
+url = "https://github.com/jdx/ruby/releases/download/4.0.6-1/ruby-4.0.6.arm64_linux.tar.gz"
+provenance = "github-attestations"
+
+[tools.ruby."platforms.linux-x64"]
+checksum = "sha256:aefa111873bac3b15c5c416bfaaca84e793d5312d4496d651ad79c44521b200a"
+url = "https://github.com/jdx/ruby/releases/download/4.0.6-1/ruby-4.0.6.x86_64_linux.tar.gz"
+provenance = "github-attestations"
+
+[tools.ruby."platforms.linux-x64-musl"]
+checksum = "sha256:aefa111873bac3b15c5c416bfaaca84e793d5312d4496d651ad79c44521b200a"
+url = "https://github.com/jdx/ruby/releases/download/4.0.6-1/ruby-4.0.6.x86_64_linux.tar.gz"
+provenance = "github-attestations"
+
+[tools.ruby."platforms.macos-arm64"]
+checksum = "sha256:518c5849d7ab337790943963ded4f0b402d2d4ededea265288a5a19d4c8fee18"
+url = "https://github.com/jdx/ruby/releases/download/4.0.6-1/ruby-4.0.6.macos.tar.gz"
+provenance = "github-attestations"
+
+[tools.ruby."platforms.macos-x64"]
+checksum = "sha256:837d299e8f7ddf2be31a229a7a7e019d354979825117989acb3b32b1a9be262a"
+url = "https://cache.ruby-lang.org/pub/ruby/4.0/ruby-4.0.6.tar.gz"
 
 [[tools.taplo]]
 version = "0.10.0"

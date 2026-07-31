@@ -1,4 +1,4 @@
-import "@hk/Config.pkl"
+import "../Config.pkl"
 
 uv_lock = new Config.Step {
   batch = true

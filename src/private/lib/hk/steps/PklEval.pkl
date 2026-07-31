@@ -1,7 +1,7 @@
-import "@hk/Config.pkl"
+import "../Config.pkl"
 
 pkl_eval = new Config.Step {
   batch = true
-  glob = "*.pkl"
+  glob = List("*.pkl")
   check = "python eng/scripts/hk_pkl_eval.py {{files}}"
 }
