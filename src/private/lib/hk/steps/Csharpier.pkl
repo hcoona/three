@@ -1,4 +1,4 @@
-import "@hk/Config.pkl"
+import "../Config.pkl"
 
 csharpier = new Config.Step {
   batch = true

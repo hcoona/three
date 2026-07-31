@@ -1,4 +1,4 @@
-import "@hk/Config.pkl"
+import "../Config.pkl"
 
 commitlint = new Config.Step {
   prefix = "pnpm exec --"
