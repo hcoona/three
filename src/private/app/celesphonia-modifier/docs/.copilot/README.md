@@ -1,5 +1,43 @@
 # Celesphonia Modifier `.copilot` index
 
+## Zero-context current handoff
+
+Start here when no conversation or session history is available.
+
+Read these sources in order:
+
+1. [Project agent instructions](../../AGENTS.md), including delegation, planning correction,
+   private-data, review, release, and runtime-cleanup rules.
+2. [Documentation agent instructions](../AGENTS.md) when changing any file under `docs/`.
+3. [Project operating model](plans/project-operating-model.md), especially the persisted handoff
+   and independent increment release gates.
+4. [A6R5 governing plan](plans/atlas-v0-a6-private-gold-editor.md), especially its authority,
+   exclusions, residual risks, and stop/resume section.
+5. [A6R5 release record](reviews/atlas-v0-a6-private-gold-editor-release-gate.md).
+
+The latest verified product gate is `G6R5`
+`00e749c3a9c2b391be37fd2644c599bd15488664`. It releases only the reviewed experimental,
+owner-operated WinUI Gold editor for the declared Celesphonia v1.05 Steam build 13624401 baseline.
+The application cannot verify that baseline, and the gate grants no E3 status, distribution
+authority, Agent private-data access, or automated private execution.
+
+No later execution increment is currently authorized. The correct next action is to stop and ask
+the user to select the next outcome. Do not infer A7, A8, broader editing, restore, discovery,
+packaging, or distribution work from historical plans. After the user selects an outcome, persist
+and independently review its resumable plan before material implementation begins.
+
+The conditional or pre-gate lifecycle labels inside the A6R5 plan and release record describe the
+candidate documents before their named Git events. Do not edit those immutable records to make them
+read like a live dashboard. The verified `R6R5`, final `C6R5`, and `G6R5` commit ancestry recorded in
+Git establishes the current state.
+
+Project-specific delegation and runtime cleanup rules live in the project
+[agent instructions](../../AGENTS.md). Build, test, formatting, HK, inventory, and Windows runtime
+evidence for the released candidate live in the
+[A6R5 release record](reviews/atlas-v0-a6-private-gold-editor-release-gate.md). Any future increment
+must define and validate its own exact acceptance evidence rather than treating the prior command
+set as automatic authority.
+
 > **Warning**
 > `research-tools/save-research-decoder.js` is a historical research-only tool. A2R14 grants it no
 > execution authority. Its inputs and outputs can contain private save data and must never be committed.

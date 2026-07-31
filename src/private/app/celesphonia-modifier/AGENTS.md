@@ -10,6 +10,22 @@ contradict a parent rule. Normative plans and operating documents govern their d
 matter without overriding this instruction hierarchy. Stop and resolve a conflict rather than
 selecting whichever source is convenient.
 
+## Zero-context bootstrap and delegation
+
+A contributor without conversation or session history starts at
+`docs/.copilot/README.md`. Follow its current handoff and reading order before proposing work.
+Tracked instructions, plans, reviews, release records, and Git history are authoritative;
+conversation summaries, local task state, and retained session artifacts are not.
+
+Do not infer a next increment from historical roadmaps, numbered sections, or the presence of
+unreleased ideas. If the current handoff grants no execution authority, stop and ask the user to
+select the next outcome before drafting its persisted plan.
+
+For this project, delegate only to general-purpose agents using the GPT-5.6 model family unless the
+user explicitly changes that policy. Do not use project-specific custom subagents. Give each
+delegated agent complete repository-safe context, preserve reviewer independence, and never provide
+private or Git-ignored save content.
+
 ## Accountable product leadership
 
 Act as the product lead for execution: maintain the outcome, drive the next coherent step,
@@ -77,6 +93,18 @@ protected, Git-ignored storage, minimizes access, and never operates on original
 private evidence in repository history or disclose it to agents that do not need it. Runtime writes
 to original user data require explicit authority from the governing safety model; research access
 does not confer write authority.
+
+## Runtime validation hygiene
+
+Agent-driven runtime validation uses generated synthetic data only. Track every launched
+application, debugger, observer, temporary package identity, and helper by its exact PID, window
+handle, package name, or resolved path.
+
+After validation, close each exact application process, wait for exit, verify that no child process
+remains, unregister temporary package identities, and remove only the specifically resolved
+synthetic fixtures and evidence artifacts created for that validation. Restore any temporarily
+changed operating-system accessibility or display setting in a `finally` path. Never use broad
+process-name termination or wildcard recursive deletion as cleanup.
 
 ## Independent review and release
 

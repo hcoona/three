@@ -52,6 +52,18 @@ while preserving stable provenance and a route to the replacement.
 Keep links, indexes, titles, and authority descriptions consistent with the documents that exist.
 Presence in an index is navigation, not proof that a gate passed.
 
+Maintain a concise zero-context current handoff at the start of `docs/.copilot/README.md`. It must
+identify the latest verified product gate, state whether any execution increment is currently
+authorized, name the decision required from the user when work is blocked, and link to the exact
+authoritative instructions, governing plan, and release evidence. It is a navigation layer and must
+not duplicate or broaden their authority.
+
+After a verified gate, supersession, or material stop decision, update that handoff in a separate
+documentation-maintenance change when the gate's sole-path or immutable-record rules prevent the
+index from changing in the gate commit. Do not rewrite historical plan or review lifecycle labels
+merely because their named event later occurred; explain the resulting current state in the handoff
+and bind it to immutable Git evidence.
+
 ## Privacy-safe representation
 
 Apply data minimization. Repository documentation may contain only repository-safe abstractions,
