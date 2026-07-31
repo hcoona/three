@@ -100,8 +100,8 @@ importers:
         specifier: 8.1.2
         version: 8.1.2(chokidar@3.6.0)
       markdownlint-cli2:
-        specifier: 0.23.1
-        version: 0.23.1(supports-color@7.2.0)
+        specifier: 0.23.2
+        version: 0.23.2(supports-color@7.2.0)
       nerdbank-gitversioning:
         specifier: ^3.7.91
         version: 3.10.91
