@@ -16,15 +16,24 @@ Read these sources in order:
 5. [A6R5 release record](reviews/atlas-v0-a6-private-gold-editor-release-gate.md).
 
 The latest verified product gate is `G6R5`
-`00e749c3a9c2b391be37fd2644c599bd15488664`. It releases only the reviewed experimental,
+`00e749c3a9c2b391be37fd2644c599bd15488664`. It historically released the reviewed experimental,
 owner-operated WinUI Gold editor for the declared Celesphonia v1.05 Steam build 13624401 baseline.
-The application cannot verify that baseline, and the gate grants no E3 status, distribution
+The application cannot verify that baseline, and the gate granted no E3 status, distribution
 authority, Agent private-data access, or automated private execution.
 
-No later execution increment is currently authorized. The correct next action is to stop and ask
-the user to select the next outcome. Do not infer A7, A8, broader editing, restore, discovery,
-packaging, or distribution work from historical plans. After the user selects an outcome, persist
-and independently review its resumable plan before material implementation begins.
+Real-save write use of G6R5 is now suspended. Its full signed `Int64` Gold acceptance was based on
+storage representation rather than an evidenced game/version writable domain, so it does not
+satisfy the project [writable domain semantics](../../AGENTS.md#writable-domain-semantics) adopted
+at `9e678be5969d8e8ed4e2e03d585e14e5f0c361bf`. Treat G6R5 as historical release and implementation
+evidence only; do not use it to modify private or real saves. Synthetic and read-only investigation
+remain subject to their existing authority boundaries.
+
+No correction execution increment is currently authorized. The required next product decision is
+whether the user authorizes a Gold-domain correction increment or leaves the editor suspended. A
+correction must first establish positive repository-safe evidence for the supported Celesphonia
+game/version writable domain, then persist and independently review a resumable correction plan
+before material implementation. Do not infer A7, A8, broader editing, restore, discovery, packaging,
+or distribution work from historical plans.
 
 The conditional or pre-gate lifecycle labels inside the A6R5 plan and release record describe the
 candidate documents before their named Git events. Do not edit those immutable records to make them
@@ -121,8 +130,11 @@ implementation evidence and an explicit owner-affirmed compatibility limitation.
 - `plans/atlas-v0-a6-private-gold-editor.md` is the conditional A6R5 governing plan. After verified
   shared `R6R5`, it supersedes only stale sequencing and heavyweight prerequisites for the first
   private Gold UI and authorizes the exact synthetic WinUI implementation. It does not claim E3 or
-  automatic fingerprint qualification. Only verified `G6R5` releases experimental owner-operated
-  use of the declared baseline; Agents and automated validation remain excluded from private saves.
+  automatic fingerprint qualification. Verified `G6R5` historically released experimental
+  owner-operated use of the declared baseline, but the project writable-domain instructions at
+  `9e678be5969d8e8ed4e2e03d585e14e5f0c361bf` suspend current real-save write use because the
+  accepted Gold range lacks the required game/version semantic evidence. Agents and automated
+  validation remain excluded from private saves.
 - `plans/atlas-v0-a0-research-contract.md` records the approved finite corpus, definition,
   privacy, redaction, Agent-egress, artifact-lifecycle, and handoff contract for increment A0.
   Human scope approval alone does not establish increment completion.
@@ -353,7 +365,9 @@ implementation evidence and an explicit owner-affirmed compatibility limitation.
   `G6R5`, releases only the reviewed experimental personal-use WinUI Gold editor for an
   owner-affirmed declared baseline. It grants no E3 status, automatic compatibility claim, Agent
   private-data access, automated private execution, discovery, catalog, restore, cleanup, or
-  distribution authority.
+  distribution authority. The project writable-domain instructions at
+  `9e678be5969d8e8ed4e2e03d585e14e5f0c361bf` suspend current real-save write use until a corrected
+  Gold writable domain is evidenced, planned, implemented, and released.
 - `reviews/atlas-v0-a2-private-run-acceptance.md` is obsolete and blocked. A2R8 publishes no private
   discovery token, disposition, outcome, count, difference, hash, path, name, or document content.
 
