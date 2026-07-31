@@ -33,6 +33,6 @@
     "@wxt-dev/auto-icons": "^1.1.1",
     "nerdbank-gitversioning": "^3.7.91",
     "typescript": "^7.0.0",
-    "wxt": "^0.20.26"
+    "wxt": "^0.21.0"
   }
 }
