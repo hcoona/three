@@ -60,6 +60,9 @@ Host tools own:
 12. Use AzureAuth (`microsoft-authentication-cli`) 0.9.5 as the current Windows, WSL, and native Linux identity path; keep Direct MSAL unimplemented behind the same provider abstraction.
 13. Support interactive browser acquisition and explicit Azure Pipelines system access tokens; keep device code, PAT compatibility, service principal, managed identity, and workload identity federation unavailable or deferred until implemented.
 14. Provide a `doctor` command that validates Git helper configuration through Git's own discovery behavior, NuGet plugin discovery, Python keyring availability, npm registry configuration, credential cache health, and common CI misconfigurations.
+15. Provide an internal deployment-validation bundle that exercises complete
+    application, Git, NuGet, Python wheel, installation, and uninstallation
+    shapes without representing that bundle as a signed release installer.
 
 ## Non-Functional Requirements
 
@@ -103,6 +106,11 @@ Host tools own:
 4. Keep trusted credential logic outside arbitrary project virtual environments where practical by using a thin backend that invokes the installed product helper by a configured absolute path after ordinary existence and executable checks.
 5. Support Azure Artifacts Python simple-index and upload endpoints in both organization-scoped and project-scoped forms.
 6. Provide supported bootstrap paths that make the Python keyring backend discoverable in the exact Python environment running pip or twine, including virtual environments, pipx-managed tools, and isolated CI environments.
+7. Configure the backend with the installed product apphost's absolute path and
+   provide a separate controlled-PATH `keyring` shim that delegates to the
+   wheel-provided `azureauth-keyring` console script; Windows subprocess mode
+   requires a real `.exe` launcher and remains deferred until that launcher is
+   implemented and validated.
 
 ### npm, pnpm, and Yarn
 

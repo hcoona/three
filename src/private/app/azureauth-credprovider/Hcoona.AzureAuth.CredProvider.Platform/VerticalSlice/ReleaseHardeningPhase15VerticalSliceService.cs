@@ -181,6 +181,21 @@ public static class ReleaseHardeningPhase15VerticalSliceService
                         + "root was deleted. Because the feed is public, this evidence does not "
                         + "claim private-feed authorization."
                 ),
+                Pass(
+                    "internal-deployment-validation-bundle",
+                    "installer",
+                    requiredForFullRelease: true,
+                    "phase-wp16-deployment-validation-bundle; "
+                        + "New-DeploymentValidationBundle.ps1; "
+                        + "Install-DeploymentValidationBundle.ps1; "
+                        + "Uninstall-DeploymentValidationBundle.ps1",
+                    "On 2026-07-31, an internal unsigned linux-x64 bundle completed an isolated "
+                        + "install, CLI and Git launcher invocation, Git/NuGet/Python "
+                        + "configuration without authentication, wheel contract validation, "
+                        + "configuration-aware uninstall, and exact payload removal. This is "
+                        + "deployment-shape evidence only, not a release installer, standalone "
+                        + "Ubuntu acceptance, or Windows bundle acceptance."
+                ),
                 DeferredReleaseEvidence(
                     "final-installer-uninstaller-validation",
                     "installer",

@@ -20,6 +20,26 @@ Owner: **ADAPTER-PY**
 | Implementation may proceed | Yes for Python adapter design and later implementation. Release packaging records normal artifact digest and provenance evidence; runtime helper invocation relies on the installed product layout and standard OS/.NET filesystem guarantees.                 |
 | Phase 1R routing           | Not entered. If later platform validation disproves helper discovery or invocation, dependent Python packaging work must stop and enter Phase 1R.                                                                                                              |
 
+## Current Production Contract
+
+The historical probe below explored helper digest, owner, and symlink checks.
+The production implementation deliberately supersedes those checks with the
+accepted simpler model: a backend manifest records `contractMajor`, `productId`,
+`absoluteHelperPath`, and `platform`; the backend performs ordinary platform,
+absolute-path, existence, file, and executable checks; and it invokes:
+
+```text
+<absolute-product-apphost> python-keyring get ...
+```
+
+On POSIX platforms, `configure python` separately creates a PATH-facing
+`keyring` shim that delegates to the wheel-provided `azureauth-keyring` console
+script. The shim is for uv and pip subprocess discovery and is not
+helper-integrity metadata. Windows subprocess mode remains deferred until a real
+`keyring.exe` launcher is available. Runtime digest, owner, ACL,
+package-ownership, symlink, inode, and TOCTOU proof systems are not part of the
+production contract.
+
 ## Upstream Snapshot
 
 Reference source inspected from the local mirror of

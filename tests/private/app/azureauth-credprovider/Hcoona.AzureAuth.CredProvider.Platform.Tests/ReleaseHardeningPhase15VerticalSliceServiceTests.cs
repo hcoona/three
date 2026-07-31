@@ -68,11 +68,31 @@ public sealed class ReleaseHardeningPhase15VerticalSliceServiceTests
 
         ReleaseHardeningPhase15Check installer = Assert.Single(
             result.Checks,
-            static check => check.Area == "installer"
+            static check => check.Id == "final-installer-uninstaller-validation"
         );
         Assert.Equal(ReleaseHardeningPhase15CheckStatus.DeferredReleaseEvidence, installer.Status);
         Assert.Equal("project-breakdown phase 15", installer.Evidence);
         Assert.Contains("Final installer package", installer.Notes, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EvaluateRecordsInternalDeploymentBundleWithoutReleaseClaims()
+    {
+        ReleaseHardeningPhase15MatrixResult result =
+            ReleaseHardeningPhase15VerticalSliceService.Evaluate();
+
+        ReleaseHardeningPhase15Check check = Assert.Single(
+            result.Checks,
+            static candidate => candidate.Id == "internal-deployment-validation-bundle"
+        );
+        Assert.True(check.RequiredForMvp);
+        Assert.True(check.RequiredForFullRelease);
+        Assert.Equal(ReleaseHardeningPhase15CheckStatus.Pass, check.Status);
+        Assert.Contains("phase-wp16-deployment-validation-bundle", check.Evidence);
+        Assert.Contains("internal unsigned linux-x64", check.Notes);
+        Assert.Contains("without authentication", check.Notes);
+        Assert.Contains("not a release installer", check.Notes);
+        Assert.Contains("Windows bundle acceptance", check.Notes);
     }
 
     [Fact]

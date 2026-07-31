@@ -3,37 +3,34 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import stat
+import subprocess
 from io import StringIO
 from typing import TYPE_CHECKING
 
 import pytest
 
+from azureauth_credprovider_keyring import helper
 from azureauth_credprovider_keyring.backend import AzureAuthKeyringBackend
 from azureauth_credprovider_keyring.contracts import (
     CONTRACT_MAJOR,
-    DIGEST_SHA256_REQUIRED,
-    DIGEST_SHA256_REQUIRED_WEAK_PATH,
     EXIT_CONFIGURATION_ERROR,
     EXIT_NO_CREDENTIAL,
     EXIT_SUCCESS,
-    OWNER_DEFERRED,
-    OWNER_REQUIRED,
     PLATFORM_LINUX,
     PLATFORM_MACOS,
     PLATFORM_WINDOWS,
     PRODUCT_ID,
-    SYMLINK_BEST_EFFORT_REJECT,
-    SYMLINK_REJECT,
+    HelperContract,
     HelperIntegrityError,
 )
 from azureauth_credprovider_keyring.endpoint import (
     EndpointStatus,
     classify_python_feed_endpoint,
 )
+from azureauth_credprovider_keyring.helper import build_helper_args
 from azureauth_credprovider_keyring.integrity import ENV_MANIFEST_PATH
 from azureauth_credprovider_keyring.shim import run
 
@@ -42,6 +39,28 @@ if TYPE_CHECKING:
 
 PYTHON_FEED = "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/"
 TEST_TOKEN = "phase11-token"  # noqa: S105
+
+
+def test_helper_uses_shared_cli_keyring_entrypoint() -> None:
+    """The backend invokes the product apphost through its fixed entrypoint."""
+    assert build_helper_args(
+        "/opt/azureauth-credprovider/azureauth-credprovider",
+        PYTHON_FEED,
+        "user",
+        "creds",
+    ) == [
+        "/opt/azureauth-credprovider/azureauth-credprovider",
+        "python-keyring",
+        "get",
+        "--protocol-version",
+        "2",
+        "--service",
+        PYTHON_FEED,
+        "--username",
+        "user",
+        "--mode",
+        "creds",
+    ]
 
 
 def test_endpoint_classifies_modern_and_legacy_python_feeds() -> None:
@@ -82,7 +101,7 @@ def test_backend_get_credential_invokes_validated_helper(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """The backend validates integrity before invoking the helper."""
+    """The backend validates and invokes the configured helper."""
     marker = tmp_path / "invoked.marker"
     helper = _write_helper(tmp_path)
     manifest = _write_manifest(tmp_path, helper)
@@ -98,14 +117,13 @@ def test_backend_get_credential_invokes_validated_helper(
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX executable-bit test helper")
-def test_backend_rejects_digest_mismatch_before_invocation(
+def test_backend_rejects_relative_helper_before_invocation(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Digest mismatches fail closed before helper execution."""
+    """Relative helper paths fail before helper execution."""
     marker = tmp_path / "invoked.marker"
-    helper = _write_helper(tmp_path)
-    manifest = _write_manifest(tmp_path, helper, sha256="0" * 64)
+    manifest = _write_manifest(tmp_path, "relative/keyring-helper")
     monkeypatch.setenv(ENV_MANIFEST_PATH, str(manifest))
     monkeypatch.setenv("AZUREAUTH_TEST_MARKER", str(marker))
 
@@ -260,36 +278,22 @@ def _write_helper(tmp_path: Path) -> Path:
 
 def _write_manifest(
     tmp_path: Path,
-    helper: Path,
-    *,
-    sha256: str | None = None,
+    helper: Path | str,
 ) -> Path:
     manifest = tmp_path / "backend-manifest.json"
     manifest.write_text(
-        json.dumps(_manifest_data(helper, sha256=sha256), sort_keys=True),
+        json.dumps(_manifest_data(helper), sort_keys=True),
         encoding="utf-8",
     )
     return manifest
 
 
-def _manifest_data(helper: Path, *, sha256: str | None) -> dict[str, object]:
-    platform = _runtime_platform()
-    weak_policy = platform in {PLATFORM_WINDOWS, PLATFORM_MACOS}
+def _manifest_data(helper: Path | str) -> dict[str, object]:
     return {
         "contractMajor": CONTRACT_MAJOR,
         "productId": PRODUCT_ID,
         "absoluteHelperPath": str(helper),
-        "sha256": sha256 or hashlib.sha256(helper.read_bytes()).hexdigest(),
-        "platform": platform,
-        "ownerValidation": OWNER_DEFERRED if weak_policy else OWNER_REQUIRED,
-        "symlinkPolicy": (
-            SYMLINK_BEST_EFFORT_REJECT if weak_policy else SYMLINK_REJECT
-        ),
-        "digestPolicy": (
-            DIGEST_SHA256_REQUIRED_WEAK_PATH
-            if weak_policy
-            else DIGEST_SHA256_REQUIRED
-        ),
+        "platform": _runtime_platform(),
     }
 
 
@@ -299,3 +303,80 @@ def _runtime_platform() -> str:
     if os.uname().sysname == "Darwin":
         return PLATFORM_MACOS
     return PLATFORM_LINUX
+
+
+def test_invoke_helper_executes_shared_cli_argv_without_auth(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Invoke the validated apphost noninteractively with shared CLI argv."""
+    contract = HelperContract(
+        contract_major=CONTRACT_MAJOR,
+        product_id=PRODUCT_ID,
+        absolute_helper_path="/opt/azureauth-credprovider/azureauth-credprovider",
+        platform=PLATFORM_LINUX,
+    )
+    validated_paths: list[str | Path | None] = []
+    subprocess_calls: list[tuple[list[str], dict[str, object]]] = []
+
+    def fake_load_and_validate_helper(
+        manifest_path: str | Path | None = None,
+    ) -> HelperContract:
+        validated_paths.append(manifest_path)
+        return contract
+
+    def fake_run(
+        args: list[str],
+        **kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        subprocess_calls.append((args, kwargs))
+        return subprocess.CompletedProcess(
+            args,
+            returncode=0,
+            stdout=f"AzureDevOps\n{TEST_TOKEN}\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(
+        helper,
+        "load_and_validate_helper",
+        fake_load_and_validate_helper,
+    )
+    monkeypatch.setattr(helper.subprocess, "run", fake_run)
+
+    credential = helper.invoke_helper(
+        PYTHON_FEED,
+        "user",
+        mode="creds",
+        manifest_path="/ignored/backend-manifest.json",
+    )
+
+    expected_argv = [
+        "/opt/azureauth-credprovider/azureauth-credprovider",
+        "python-keyring",
+        "get",
+        "--protocol-version",
+        "2",
+        "--service",
+        PYTHON_FEED,
+        "--username",
+        "user",
+        "--mode",
+        "creds",
+    ]
+    assert validated_paths == ["/ignored/backend-manifest.json"]
+    assert subprocess_calls == [
+        (
+            expected_argv,
+            {
+                "stdin": subprocess.DEVNULL,
+                "capture_output": True,
+                "check": False,
+                "encoding": "utf-8",
+                "text": True,
+            },
+        )
+    ]
+    assert "keyring-helper-v2" not in subprocess_calls[0][0]
+    assert "shell" not in subprocess_calls[0][1]
+    assert credential.username == "AzureDevOps"
+    assert credential.password == TEST_TOKEN

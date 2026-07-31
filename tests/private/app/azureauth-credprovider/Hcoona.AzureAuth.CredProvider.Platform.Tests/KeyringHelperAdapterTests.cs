@@ -127,6 +127,15 @@ public sealed class KeyringHelperAdapterTests
         Assert.Equal(AdapterHostExitCode.Success, result.Outcome.Result.ExitCode);
         Assert.Equal("AzureDevOps\nphase11-secret\n", result.ProtocolStdout);
         Assert.Equal(string.Empty, result.Stderr);
+        Assert.Equal(1, provider.InvocationCount);
+
+        CredentialRequestV2 credentialRequest = Assert.Single(provider.Requests);
+        Assert.Equal(CredentialEcosystem.Python, credentialRequest.Ecosystem);
+        Assert.Equal(CredentialOperation.Get, credentialRequest.Operation);
+        Assert.Equal("org", credentialRequest.Resource.Organization);
+        Assert.Equal("project", credentialRequest.Resource.Project);
+        Assert.Equal("feed", credentialRequest.Resource.Feed);
+        Assert.Equal("creds", credentialRequest.ExtensionData["python.keyring.mode"]);
     }
 
     [Fact]
@@ -308,6 +317,53 @@ public sealed class KeyringHelperAdapterTests
         Assert.NotNull(context);
         Assert.Equal(AdapterProtocol.KeyringHelper, context.Protocol);
         Assert.Equal(["set"], context.PayloadArguments);
+    }
+
+    [Fact]
+    public void TryResolveProtocolInvocationRecognizesSharedApphostAndStripsEntrypoint()
+    {
+        const string Apphost = "/opt/azureauth-credprovider/azureauth-credprovider";
+        string[] arguments =
+        [
+            "python-keyring",
+            "get",
+            "--protocol-version",
+            "2",
+            "--service",
+            "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/",
+            "--username",
+            "user",
+            "--mode",
+            "creds",
+        ];
+
+        bool resolved = KeyringHelperAdapter.TryResolveProtocolInvocation(
+            Apphost,
+            arguments,
+            out AdapterInvocationContext? context
+        );
+
+        Assert.True(resolved);
+        Assert.NotNull(context);
+        Assert.Equal("KeyringHelper", context.Entrypoint.Name);
+        Assert.Equal(AdapterProtocol.KeyringHelper, context.Protocol);
+        Assert.Equal(Apphost, context.ExecutablePath);
+        Assert.Equal(arguments, context.RawArguments);
+        Assert.Equal(["python-keyring"], context.MatchedArguments);
+        Assert.Equal(
+            [
+                "get",
+                "--protocol-version",
+                "2",
+                "--service",
+                "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/",
+                "--username",
+                "user",
+                "--mode",
+                "creds",
+            ],
+            context.PayloadArguments
+        );
     }
 
     private static AdapterRunResult Execute(

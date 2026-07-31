@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Text.Json;
 using Hcoona.AzureAuth.CredProvider.Contracts;
 using Hcoona.AzureAuth.CredProvider.Platform.AzurePipelines;
 using Hcoona.AzureAuth.CredProvider.Platform.Composition;
@@ -25,6 +26,8 @@ public sealed record ConfigurationPhase14VerticalSliceOptions
     public Func<ICredentialAcquisitionService>? CredentialAcquisitionFactory { get; init; }
 
     public Func<string, string?>? EnvironmentVariableReader { get; init; }
+
+    public string? ProductExecutablePath { get; init; }
 
     public IReadOnlyDictionary<CredentialEcosystem, Uri>? RegistryUrls { get; init; }
 
@@ -183,6 +186,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
     private readonly Dictionary<CredentialEcosystem, Uri> registryUrls;
     private readonly RegistryCredentialExpiryPolicy expiryPolicy;
     private readonly TimeProvider timeProvider;
+    private readonly string? productExecutablePath;
 
     public ConfigurationPhase14VerticalSliceService(
         ConfigurationPhase14VerticalSliceOptions? options = null
@@ -217,6 +221,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
         registryUrls = ValidateRegistryUrls(options.RegistryUrls);
         timeProvider = options.TimeProvider ?? TimeProvider.System;
         expiryPolicy = new RegistryCredentialExpiryPolicy(timeProvider, options.ExpiryPolicy);
+        productExecutablePath = ResolveProductExecutablePath(options.ProductExecutablePath);
     }
 
     public ConfigurationPhase14ResolvedPaths Paths => paths;
@@ -362,14 +367,23 @@ public sealed class ConfigurationPhase14VerticalSliceService
             return CreateResult(previewResults, ownershipManifestPath);
         }
 
-        List<ConfigurationPlanResult> appliedResults = [];
-        for (var index = 0; index < plans.Count; index++)
-        {
-            ConfigurationPlanResult applied = await CreateManager(ownershipManifestPath)
-                .ApplyAsync(plans[index], cancellationToken);
-            appliedResults.Add(applied with { Plan = previewResults[index].Plan });
-        }
-
+        (ConfigurationChangePlan Plan, ConfigurationPlanOperation Operation)[] operations = plans
+            .Select(plan =>
+                (
+                    plan,
+                    plan.Changes.All(static change =>
+                        change.Operation == ConfigurationChangeOperation.Remove
+                    )
+                        ? ConfigurationPlanOperation.Remove
+                        : ConfigurationPlanOperation.Apply
+                )
+            )
+            .ToArray();
+        IReadOnlyList<ConfigurationPlanResult> executed = await CreateManager(ownershipManifestPath)
+            .ExecuteBatchAsync(operations, cancellationToken);
+        List<ConfigurationPlanResult> appliedResults = executed
+            .Select((result, index) => result with { Plan = previewResults[index].Plan })
+            .ToList();
         return CreateResult(appliedResults, ownershipManifestPath);
     }
 
@@ -903,23 +917,144 @@ public sealed class ConfigurationPhase14VerticalSliceService
             ConfigurationLayoutProjector.ProjectPythonKeyringBackend(
                 CreateCurrentLayoutProjectionContext()
             );
+        ConfigurationChangePlan backendPlan = CreatePythonPlan(
+            "backend",
+            ConfigurationTargetKind.PythonKeyringBackend,
+            backendProjection.TargetPath,
+            CreatePythonBackendManifestValue(GetRequiredProductExecutablePath())
+        );
+        if (OperatingSystem.IsWindows())
+        {
+            ConfigurationChangePlan? obsoleteShimRemovalPlan =
+                CreateObsoleteWindowsPythonShimRemovalPlan(scope, backendProjection.TargetPath);
+            return obsoleteShimRemovalPlan is null
+                ? [backendPlan]
+                : [obsoleteShimRemovalPlan, backendPlan];
+        }
+
         ConfigurationTargetLayoutProjection shimProjection =
             ConfigurationLayoutProjector.ProjectKeyringShim(CreateCurrentLayoutProjectionContext());
         return
         [
-            CreatePythonPlan(
-                "backend",
-                ConfigurationTargetKind.PythonKeyringBackend,
-                backendProjection.TargetPath,
-                CreatePythonBackendManifestValue(shimProjection.TargetPath)
-            ),
+            backendPlan,
             CreatePythonPlan(
                 "shim",
                 ConfigurationTargetKind.KeyringShim,
                 shimProjection.TargetPath,
-                CreateKeyringShimValue()
+                CreatePosixKeyringShimValue()
             ),
         ];
+    }
+
+    private ConfigurationChangePlan? CreateObsoleteWindowsPythonShimRemovalPlan(
+        ConfigurationPhase14Scope scope,
+        string expectedBackendPath
+    )
+    {
+        string ownershipManifestPath = GetOwnershipManifestPath(CredentialEcosystem.Python, scope);
+        if (
+            !TryLoadOwnershipManifest(
+                ownershipManifestPath,
+                out ConfigurationOwnershipManifest? manifest
+            )
+        )
+        {
+            return null;
+        }
+
+        ConfigurationOwnershipManifestEntry[] obsoleteEntries = manifest
+            .Entries.Where(static entry => entry.TargetKind == ConfigurationTargetKind.KeyringShim)
+            .ToArray();
+        if (obsoleteEntries.Length == 0)
+        {
+            return null;
+        }
+
+        string expectedShimPath = ConfigurationLayoutProjector
+            .ProjectKeyringShim(CreateCurrentLayoutProjectionContext())
+            .TargetPath;
+        if (
+            !PythonOwnershipManifestMatchesExpectedMigrationState(
+                manifest,
+                scope,
+                expectedBackendPath,
+                expectedShimPath
+            )
+        )
+        {
+            throw new InvalidOperationException(
+                "The existing Python ownership manifest does not identify the expected "
+                    + "product-owned Windows keyring shim."
+            );
+        }
+
+        return CreateRemovePlan(
+            CredentialEcosystem.Python,
+            "python",
+            scope,
+            manifest,
+            obsoleteEntries
+        );
+    }
+
+    private bool PythonOwnershipManifestMatchesExpectedMigrationState(
+        ConfigurationOwnershipManifest manifest,
+        ConfigurationPhase14Scope scope,
+        string expectedBackendPath,
+        string expectedShimPath
+    )
+    {
+        ConfigurationManifestMetadata expectedMetadata = CreatePythonManifestMetadata();
+        if (
+            manifest.SchemaVersion != ConfigurationOwnershipManifest.CurrentSchemaVersion
+            || !string.Equals(
+                manifest.ManifestId,
+                expectedMetadata.ManifestId,
+                StringComparison.Ordinal
+            )
+            || !string.Equals(
+                manifest.OwnerProductId,
+                expectedMetadata.OwnerProductId,
+                StringComparison.Ordinal
+            )
+            || manifest.Scope
+                != (
+                    scope == ConfigurationPhase14Scope.CiTemporary
+                        ? ConfigurationScope.CiTemporary
+                        : ConfigurationScope.User
+                )
+            || !string.Equals(
+                manifest.EntrySelector,
+                expectedMetadata.EntrySelector,
+                StringComparison.Ordinal
+            )
+            || !Equals(manifest.ResourceIdentity, expectedMetadata.ResourceIdentity)
+            || !string.Equals(
+                manifest.ProductVersion,
+                expectedMetadata.ProductVersion,
+                StringComparison.Ordinal
+            )
+            || manifest.SafeMetadata is null
+            || !manifest.SafeMetadata.TryGetValue("ecosystem", out string? ecosystem)
+            || !string.Equals(ecosystem, "python", StringComparison.Ordinal)
+            || manifest.Entries.Count != 2
+        )
+        {
+            return false;
+        }
+
+        ConfigurationOwnershipManifestEntry? backendEntry = manifest.Entries.SingleOrDefault(
+            static entry => entry.TargetKind == ConfigurationTargetKind.PythonKeyringBackend
+        );
+        ConfigurationOwnershipManifestEntry? shimEntry = manifest.Entries.SingleOrDefault(
+            static entry => entry.TargetKind == ConfigurationTargetKind.KeyringShim
+        );
+        return backendEntry is not null
+            && shimEntry is not null
+            && string.Equals(backendEntry.Key, PhysicalTargetKey, StringComparison.Ordinal)
+            && string.Equals(shimEntry.Key, PhysicalTargetKey, StringComparison.Ordinal)
+            && PathEquals(backendEntry.TargetPathOrName, expectedBackendPath)
+            && PathEquals(shimEntry.TargetPathOrName, expectedShimPath);
     }
 
     private static ConfigurationChangePlan CreatePythonPlan(
@@ -2277,17 +2412,52 @@ public sealed class ConfigurationPhase14VerticalSliceService
             },
         };
 
-    private static string CreatePythonBackendManifestValue(string shimPath) =>
-        "azureauth-credprovider python-keyring-backend\n"
-        + "phase=14.2\n"
-        + "helper="
-        + shimPath
-        + "\n";
+    private static string CreatePythonBackendManifestValue(string helperPath) =>
+        "{\"contractMajor\":2,\"productId\":\"azureauth-credprovider\","
+        + "\"absoluteHelperPath\":\""
+        + JsonEncodedText.Encode(helperPath)
+        + "\",\"platform\":\""
+        + GetPythonHelperPlatform()
+        + "\"}\n";
 
-    private static string CreateKeyringShimValue() =>
-        OperatingSystem.IsWindows()
-            ? "azureauth-credprovider keyring shim phase=14.2\r\n"
-            : "#!/usr/bin/env sh\nexec azureauth-credprovider keyring-helper-v2 \"$@\"\n";
+    private static string CreatePosixKeyringShimValue() =>
+        "#!/bin/sh\nexec azureauth-keyring \"$@\"\n";
+
+    private string GetRequiredProductExecutablePath() =>
+        productExecutablePath
+        ?? throw new InvalidOperationException(
+            "Python configuration requires the absolute installed "
+                + "azureauth-credprovider executable path."
+        );
+
+    private static string GetPythonHelperPlatform() =>
+        OperatingSystem.IsWindows() ? "windows"
+        : OperatingSystem.IsLinux() ? "linux"
+        : OperatingSystem.IsMacOS() ? "macOs"
+        : throw new PlatformNotSupportedException(
+            "Python keyring configuration requires Windows, Linux, or macOS."
+        );
+
+    private static string? ResolveProductExecutablePath(string? configuredPath)
+    {
+        string? candidate = string.IsNullOrWhiteSpace(configuredPath)
+            ? Environment.ProcessPath
+            : configuredPath;
+        if (
+            string.IsNullOrWhiteSpace(candidate)
+            || !Path.IsPathFullyQualified(candidate)
+            || !string.Equals(
+                Path.GetFileNameWithoutExtension(candidate),
+                ProductId,
+                StringComparison.OrdinalIgnoreCase
+            )
+        )
+        {
+            return null;
+        }
+
+        return Path.GetFullPath(candidate);
+    }
 
     private NpmPhase12RegistryDeclaration CreateNpmDeclaration(CredentialEcosystem ecosystem)
     {

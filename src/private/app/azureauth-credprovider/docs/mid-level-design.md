@@ -610,10 +610,11 @@ For MVP, `configure python` writes or updates backend configuration so the
 backend can locate the product-owned helper by absolute path. That write is a
 configuration-manager change plan, not a direct backend mutation.
 
-The backend-helper protocol is versioned. MVP uses `keyring-helper-v2`:
+The backend-helper protocol is versioned. The configured helper path names the
+installed product apphost. MVP uses `keyring-helper-v2`:
 
 ```text
-<helper> python-keyring get
+<absolute-product-apphost> python-keyring get
   --protocol-version 2
   --service <service>
   [--username <username>]
@@ -637,6 +638,18 @@ inspection or prototypes prove they improve reliability without weakening adapte
 isolation.
 
 ### Keyring Executable Shim
+
+On POSIX platforms, `configure python` also creates a product-owned `keyring`
+shim. The shim delegates to the wheel-provided `azureauth-keyring` console script
+from the activated Python environment. It is activated through controlled PATH
+ordering; it is not the absolute credential helper recorded in the backend
+manifest.
+
+Windows import mode uses the same backend manifest, but subprocess mode remains
+deferred until a real `keyring.exe` launcher is implemented and validated.
+Writing `keyring.cmd` would not satisfy uv's direct executable launch.
+Reconfiguration removes any obsolete product-owned Windows shim placeholder
+from earlier development builds.
 
 The shim must support the command forms observed in local experiments:
 
@@ -772,7 +785,7 @@ Configuration operations target one of these scopes:
 
 | Scope             | Usage                                                                                                                                                              |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| User              | Default developer-machine setup for Git helper, NuGet plugin registration, Python keyring shim discovery, and npm credentials.                                     |
+| User              | Default developer-machine setup for Git helper, NuGet plugin registration, Python backend manifest and controlled keyring-shim activation, and npm credentials.    |
 | WorkspaceReadOnly | Workspace discovery, registry declarations, and project-specific diagnostics only; this scope authorizes inspection and diagnostics, not configuration writes.     |
 | ExplicitPath      | User-selected writes to an explicit configuration path, including repository-local or tool-specific files only when the command mode and policy allow that target. |
 | CiTemporary       | CI or shell-temporary configuration through configuration-manager-owned temporary files or environment activation metadata.                                        |

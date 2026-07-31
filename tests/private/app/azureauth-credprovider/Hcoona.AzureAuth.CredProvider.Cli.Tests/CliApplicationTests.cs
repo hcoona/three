@@ -1204,6 +1204,7 @@ public sealed class CliApplicationTests
             {
                 StateDirectoryPath = statePath,
                 EnvironmentVariableReader = _ => null,
+                ProductExecutablePath = GetTestProductExecutablePath(),
             },
         };
 
@@ -1212,17 +1213,26 @@ public sealed class CliApplicationTests
             CommandResult result = InvokeWithRuntime(runtime, "configure", "python", "--dry-run");
 
             Assert.Equal(0, result.ExitCode);
-            Assert.Contains("planned-change-count: 2\n", result.StdOut, StringComparison.Ordinal);
+            Assert.Contains(
+                OperatingSystem.IsWindows()
+                    ? "planned-change-count: 1\n"
+                    : "planned-change-count: 2\n",
+                result.StdOut,
+                StringComparison.Ordinal
+            );
             Assert.Contains(
                 "1. set product-owned Python keyring backend\n",
                 result.StdOut,
                 StringComparison.Ordinal
             );
-            Assert.Contains(
-                "2. set product-owned Python keyring shim\n",
-                result.StdOut,
-                StringComparison.Ordinal
-            );
+            if (!OperatingSystem.IsWindows())
+            {
+                Assert.Contains(
+                    "2. set product-owned Python keyring shim\n",
+                    result.StdOut,
+                    StringComparison.Ordinal
+                );
+            }
             Assert.False(Directory.Exists(statePath));
             Assert.Equal(string.Empty, result.StdErr);
         }
@@ -4162,8 +4172,14 @@ public sealed class CliApplicationTests
             StateDirectoryPath = Path.Combine(stateDirectoryPath, "configuration"),
             AzurePipelinesJobScopeId = "cli-test-job",
             EnvironmentVariableReader = _ => null,
+            ProductExecutablePath = GetTestProductExecutablePath(),
             RegistryUrls = CreateTestRegistryUrls(),
         };
+
+    private static string GetTestProductExecutablePath() =>
+        OperatingSystem.IsWindows()
+            ? @"C:\Program Files\AzureAuth\CredProvider\azureauth-credprovider.exe"
+            : "/opt/azureauth-credprovider/azureauth-credprovider";
 
     private static Dictionary<CredentialEcosystem, Uri> CreateTestRegistryUrls() =>
         new Dictionary<CredentialEcosystem, Uri>

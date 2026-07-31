@@ -21,15 +21,6 @@ PLATFORM_LINUX = "linux"
 PLATFORM_WINDOWS = "windows"
 PLATFORM_MACOS = "macOs"
 
-OWNER_REQUIRED = "required"
-OWNER_DEFERRED = "deferredNotAvailable"
-
-SYMLINK_REJECT = "rejectSymlinks"
-SYMLINK_BEST_EFFORT_REJECT = "bestEffortRejectSymlinks"
-
-DIGEST_SHA256_REQUIRED = "sha256Required"
-DIGEST_SHA256_REQUIRED_WEAK_PATH = "sha256RequiredWeakPath"
-
 
 class KeyringHelperError(RuntimeError):
     """Base class for keyring helper errors safe to show to users."""
@@ -78,14 +69,10 @@ class HelperCredential:
 
 
 @dataclass(frozen=True)
-class IntegrityContract:
-    """Parsed keyring-helper-v2 integrity contract."""
+class HelperContract:
+    """Parsed keyring-helper-v2 installation contract."""
 
     contract_major: int
     product_id: str
     absolute_helper_path: str
-    sha256: str
     platform: str
-    owner_validation: str
-    symlink_policy: str
-    digest_policy: str

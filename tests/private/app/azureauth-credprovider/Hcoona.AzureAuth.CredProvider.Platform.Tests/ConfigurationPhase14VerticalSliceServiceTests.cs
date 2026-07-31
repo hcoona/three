@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Hcoona.AzureAuth.CredProvider.Contracts;
 using Hcoona.AzureAuth.CredProvider.Platform.Composition;
 using Hcoona.AzureAuth.CredProvider.Platform.Configuration;
@@ -783,7 +784,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     }
 
     [Fact]
-    public async Task ConfigurePythonAppliesBackendAndShimPlans()
+    public async Task ConfigurePythonWritesProductExecutableManifest()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         var service = CreateService(fileSystem);
@@ -794,16 +795,168 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
             TestContext.Current.CancellationToken
         );
 
-        Assert.Equal(2, result.PlanResults.Count);
-        Assert.Equal(2, result.ChangeCount);
+        int expectedChangeCount = OperatingSystem.IsWindows() ? 1 : 2;
+        Assert.Equal(expectedChangeCount, result.PlanResults.Count);
+        Assert.Equal(expectedChangeCount, result.ChangeCount);
         Assert.All(
             result.PlanResults,
             planResult => Assert.NotEqual(ConfigurationPlanOperation.DryRun, planResult.Operation)
         );
+        ConfigurationPlannedChange manifestChange = Assert.Single(result.PlanResults[0].Changes);
+        using JsonDocument manifest = JsonDocument.Parse(
+            fileSystem.ReadAllText(manifestChange.TargetPathOrName)
+        );
+        JsonElement root = manifest.RootElement;
+        Assert.Equal(2, root.GetProperty("contractMajor").GetInt32());
+        Assert.Equal("azureauth-credprovider", root.GetProperty("productId").GetString());
+        Assert.Equal(
+            GetTestProductExecutablePath(),
+            root.GetProperty("absoluteHelperPath").GetString()
+        );
+        Assert.Equal(GetTestProductPlatform(), root.GetProperty("platform").GetString());
+        if (!OperatingSystem.IsWindows())
+        {
+            ConfigurationPlannedChange shimChange = Assert.Single(result.PlanResults[1].Changes);
+            Assert.Equal(
+                "#!/bin/sh\nexec azureauth-keyring \"$@\"\n",
+                fileSystem.ReadAllText(shimChange.TargetPathOrName)
+            );
+        }
     }
 
     [Fact]
-    public async Task ConfigureAndUnconfigurePythonRemoveBackendAndShimPlans()
+    public async Task ConfigurePythonRemovesObsoleteOwnedWindowsShim()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Windows);
+        var service = CreateService(fileSystem);
+        await service.ConfigureAsync(
+            CredentialEcosystem.Python,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+
+        string manifestPath = Path.Combine(
+            service.Paths.ManifestDirectoryPath,
+            "python-user-ownership-manifest.json"
+        );
+        ConfigurationOwnershipManifest manifest =
+            ConfigurationOwnershipManifestSerializer.Deserialize(
+                fileSystem.ReadAllText(manifestPath)
+            );
+        ConfigurationOwnershipManifestEntry backendEntry = Assert.Single(manifest.Entries);
+        const string ObsoleteShimPath =
+            @"C:\Users\alice\AppData\Local\AzureAuth\CredProvider\keyring-shim\keyring.exe";
+        fileSystem.WriteAllText(ObsoleteShimPath, "obsolete placeholder");
+        fileSystem.WriteAllText(
+            manifestPath,
+            ConfigurationOwnershipManifestSerializer.Serialize(
+                manifest with
+                {
+                    Entries =
+                    [
+                        backendEntry,
+                        backendEntry with
+                        {
+                            Sequence = backendEntry.Sequence + 1,
+                            TargetKind = ConfigurationTargetKind.KeyringShim,
+                            TargetPathOrName = ObsoleteShimPath,
+                        },
+                    ],
+                }
+            )
+        );
+
+        ConfigurationPhase14PlanResult result = await service.ConfigureAsync(
+            CredentialEcosystem.Python,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(2, result.ChangeCount);
+        Assert.Equal(ConfigurationPlanOperation.Remove, result.PlanResults[0].Operation);
+        Assert.Equal(ConfigurationPlanOperation.Apply, result.PlanResults[1].Operation);
+        Assert.False(fileSystem.FileExists(ObsoleteShimPath));
+        ConfigurationOwnershipManifest reconciled =
+            ConfigurationOwnershipManifestSerializer.Deserialize(
+                fileSystem.ReadAllText(manifestPath)
+            );
+        Assert.DoesNotContain(
+            reconciled.Entries,
+            static entry => entry.TargetKind == ConfigurationTargetKind.KeyringShim
+        );
+    }
+
+    [Fact]
+    public async Task ConfigurePythonRejectsUnrelatedWindowsShimWithoutDeletingIt()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        const string UnrelatedShimPath = @"C:\unrelated\keyring.exe";
+        const string UnrelatedContents = "unrelated file";
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Windows);
+        var service = CreateService(fileSystem);
+        await service.ConfigureAsync(
+            CredentialEcosystem.Python,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+        string manifestPath = Path.Combine(
+            service.Paths.ManifestDirectoryPath,
+            "python-user-ownership-manifest.json"
+        );
+        ConfigurationOwnershipManifest manifest =
+            ConfigurationOwnershipManifestSerializer.Deserialize(
+                fileSystem.ReadAllText(manifestPath)
+            );
+        ConfigurationOwnershipManifestEntry backendEntry = Assert.Single(manifest.Entries);
+        fileSystem.WriteAllText(UnrelatedShimPath, UnrelatedContents);
+        fileSystem.WriteAllText(
+            manifestPath,
+            ConfigurationOwnershipManifestSerializer.Serialize(
+                manifest with
+                {
+                    Entries =
+                    [
+                        backendEntry,
+                        backendEntry with
+                        {
+                            Sequence = backendEntry.Sequence + 1,
+                            TargetKind = ConfigurationTargetKind.KeyringShim,
+                            TargetPathOrName = UnrelatedShimPath,
+                        },
+                    ],
+                }
+            )
+        );
+
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            async () =>
+                await service.ConfigureAsync(
+                    CredentialEcosystem.Python,
+                    ConfigurationPhase14Scope.User,
+                    TestContext.Current.CancellationToken
+                )
+        );
+
+        Assert.Equal(
+            "The existing Python ownership manifest does not identify the expected "
+                + "product-owned Windows keyring shim.",
+            exception.Message
+        );
+        Assert.True(fileSystem.FileExists(UnrelatedShimPath));
+        Assert.Equal(UnrelatedContents, fileSystem.ReadAllText(UnrelatedShimPath));
+    }
+
+    [Fact]
+    public async Task ConfigureAndUnconfigurePythonRemoveBackendManifest()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         var service = CreateService(fileSystem);
@@ -819,8 +972,9 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
             TestContext.Current.CancellationToken
         );
 
-        Assert.Equal(2, result.PlanResults.Count);
-        Assert.Equal(2, result.ChangeCount);
+        int expectedChangeCount = OperatingSystem.IsWindows() ? 1 : 2;
+        Assert.Equal(expectedChangeCount, result.PlanResults.Count);
+        Assert.Equal(expectedChangeCount, result.ChangeCount);
         Assert.False(result.OwnershipManifestPresent);
         Assert.All(
             result.PlanResults,
@@ -860,7 +1014,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
             TestContext.Current.CancellationToken
         );
 
-        Assert.Equal(2, pythonResult.ChangeCount);
+        Assert.Equal(OperatingSystem.IsWindows() ? 1 : 2, pythonResult.ChangeCount);
         Assert.Equal(1, npmResult.ChangeCount);
         Assert.Equal(1, pnpmResult.ChangeCount);
         Assert.Equal(2, yarnResult.ChangeCount);
@@ -1937,6 +2091,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
                     ? null
                     : new CredentialCoreService(identityProvider),
                 EnvironmentVariableReader = environmentVariableReader ?? (_ => null),
+                ProductExecutablePath = GetTestProductExecutablePath(),
                 TimeProvider = timeProvider,
                 RegistryUrls = new Dictionary<CredentialEcosystem, Uri>
                 {
@@ -1946,6 +2101,16 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
                 },
             }
         );
+
+    private static string GetTestProductExecutablePath() =>
+        OperatingSystem.IsWindows()
+            ? @"C:\Program Files\AzureAuth\CredProvider\azureauth-credprovider.exe"
+            : "/opt/azureauth-credprovider/azureauth-credprovider";
+
+    private static string GetTestProductPlatform() =>
+        OperatingSystem.IsWindows() ? "windows"
+        : OperatingSystem.IsMacOS() ? "macOs"
+        : "linux";
 
     private static Func<string, string?> CreatePackagePathEnvironmentReader(
         CredentialEcosystem ecosystem,

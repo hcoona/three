@@ -205,9 +205,24 @@ Python requires two adapter shapes for full coverage:
 1. A Python keyring backend package for twine and pip import mode.
 2. A `keyring` executable-compatible shim for uv and pip subprocess mode.
 
-The Python keyring backend should be intentionally thin. It should delegate credential acquisition to an installed product helper through a configured absolute path and rely on ordinary file/executable checks and platform process-launch behavior. It should not import a large credential implementation into arbitrary project virtual environments.
+The Python keyring backend should be intentionally thin. `configure python`
+writes a backend manifest containing the protocol major, product ID, platform,
+and installed apphost's absolute path. The backend invokes that apphost as:
 
-The backend package must be available in the same Python environment as the tool that imports keyring. `configure python` and `doctor` should account for active virtual environments, pipx-installed twine, tox/nox environments, and isolated CI environments. A unified CLI alone cannot satisfy twine because twine imports Python keyring rather than invoking an arbitrary external subcommand.
+```text
+<absolute-product-apphost> python-keyring get ...
+```
+
+It relies on ordinary file/executable checks and platform process-launch
+behavior. It does not import a large credential implementation into arbitrary
+project virtual environments.
+
+The backend package must be available in the same Python environment as the tool
+that imports keyring. The product bundle carries the wheel but does not install
+it into arbitrary environments. Bootstrap and `doctor` should account for active
+virtual environments, pipx-installed twine, tox/nox environments, and isolated
+CI environments. A unified CLI alone cannot satisfy twine because twine imports
+Python keyring rather than invoking an arbitrary external subcommand.
 
 Keeping the large credential implementation outside the project virtual environment reduces the trusted code imported into arbitrary Python environments, but it is not a security boundary. The invoking package-manager process must receive credentials, so a compromised environment can still observe returned credentials.
 
@@ -218,9 +233,22 @@ keyring get <service> <username>    # stdout is the password
 keyring get <service> --mode creds  # stdout is newline-separated username and password
 ```
 
-It must print only the expected keyring response to stdout.
+The product-owned shim delegates to the wheel-provided `azureauth-keyring`
+console script. This separates uv and pip's PATH-based executable discovery from
+the backend's absolute product-apphost invocation. It must print only the
+expected keyring response to stdout.
 
-The shim must define exit behavior for no credential, unsupported host, and fatal errors. It should either delegate unsupported keyring commands to a real Python `keyring` CLI or avoid global shadowing by using controlled PATH injection. pip subprocess mode requires a username in the index URL and may ignore a `keyring` executable installed only in the current Python environment's scripts directory. uv invokes `keyring` from `PATH` directly and can use `--mode creds` when no username is present.
+The current production shim is POSIX-only. Windows import-mode configuration
+still writes the backend manifest, but Windows subprocess mode remains deferred
+until the product has a real `keyring.exe` launcher; a `.cmd` file is not a
+substitute for uv's direct process launch.
+
+The shim must define exit behavior for no credential, unsupported host, and fatal
+errors. It avoids global shadowing through controlled PATH activation. pip
+subprocess mode requires a username in the index URL and may ignore a `keyring`
+executable installed only in the current Python environment's scripts directory.
+uv invokes `keyring` from `PATH` directly and can use `--mode creds` when no
+username is present.
 
 ## npm Adapter
 
@@ -321,6 +349,28 @@ Removal behavior should include:
 - NuGet: remove this product's plugin installation or explicit plugin-path override without deleting unrelated NuGet package sources.
 - Python: remove this product's keyring backend or shim registration from the targeted Python environment without uninstalling unrelated keyring backends.
 - npm: remove this product's generated credential entries while preserving registry declarations and unrelated npm or Yarn configuration.
+
+## Packaging and Deployment Validation
+
+The repository can produce an internal, unsigned, non-release deployment
+validation bundle for one Windows or Linux RID. The bundle contains the complete
+framework-dependent app payload, CLI and Git launchers, the NuGet netcore plugin
+payload, the Python wheel, a file-hash manifest, and install/uninstall scripts.
+Current bundle generation and installation support x64 hosts and `win-x64` or
+`linux-x64` payloads only.
+
+Physical installation is deliberately separate from ecosystem activation. It
+copies payloads only into per-user, product-owned locations and does not mutate
+global PATH, shell profiles, the registry, Git configuration, NuGet
+configuration, or Python environments. Ecosystem configuration remains an
+explicit CLI operation. Uninstallation first invokes product-owned Git, NuGet,
+and Python unconfiguration, then removes the recorded product and NuGet payload
+roots.
+
+This bundle validates deployment shape and lifecycle behavior. It is not a
+signed release artifact or release installer and does not close Windows,
+standalone Linux, Windows Python subprocess mode, signing, provenance, or
+installer-produced-binary acceptance.
 
 ## Explicitly Deferred
 
