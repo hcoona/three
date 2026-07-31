@@ -74,7 +74,7 @@
     "@typescript/native-preview": "^7.0.0-dev.20260523.1",
     "@vitest/coverage-v8": "^4.1.7",
     "hexo": "8.1.2",
-    "markdownlint-cli2": "0.23.1",
+    "markdownlint-cli2": "0.23.2",
     "nerdbank-gitversioning": "^3.7.91",
     "prettier": "3.9.6",
     "tsdown": "^0.22.0",
