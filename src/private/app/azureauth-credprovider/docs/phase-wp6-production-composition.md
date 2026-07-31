@@ -23,7 +23,7 @@ The supported release is AzureAuth `0.9.5`, source commit
 `21258ff3a2cbb01d6891243114a55abe9ae3587e`.
 
 The provider config stores the selected version, not an executable path.
-Production derives:
+Windows production derives:
 
 `%LOCALAPPDATA%\Programs\AzureAuth\0.9.5\azureauth.exe`
 
@@ -33,6 +33,13 @@ obtain `LocalApplicationData` and the executable file version using normal
 framework APIs, then maps the absolute `C:` path under `/mnt/c`. Discovery
 requires an ordinary file and version `0.9.5`.
 
+Native Linux uses the official `azureauth` Debian package payload at
+`/usr/lib/azureauth/azureauth`. Discovery reads the adjacent managed
+`azureauth.dll` assembly identity and requires version `0.9.5.0`; it does not
+launch `azureauth info`, which creates telemetry device-ID state. An explicit
+absolute `AZUREAUTH_CREDPROVIDER_AZUREAUTH_PATH` supports isolated acceptance
+and deployment bundles without PATH lookup.
+
 Discovery does not inspect hashes, Authenticode, ACLs, owners, SIDs, reparse
 points, ancestors, System32 trust, or stable artifact identities. The supported
 model trusts the OS and official same-user installation. Missing, wrong-version,
@@ -40,8 +47,8 @@ unsupported-host, and unavailable discovery results have actionable codes.
 
 ## Launch
 
-Interactive acquisition uses the mapped absolute executable and its containing
-directory as the working directory:
+Windows and WSL interactive acquisition use the mapped absolute executable and
+its containing directory as the working directory:
 
 ```text
 azureauth.exe aad
@@ -64,10 +71,16 @@ Windows already has a suitable account. A prompt broker failure falls through
 to web; an unanswered WAM dialog consumes AzureAuth's global timeout and does
 not fall through.
 
-AzureAuth `0.9.5` has no cache-only CLI mode. `SilentOnly` therefore always
-returns `SilentAcquisitionUnavailable` without launching. Interactive and
-silent readiness are independent; global compatibility readiness follows the
-interactive capability rather than requiring both.
+Native Linux interactive browser acquisition adds explicit `--mode web` and
+removes inherited `AZUREAUTH_MODE`, `AZUREAUTH_NO_USER`, and
+`Corext_NonInteractive` values from the child. Native Linux `SilentOnly` also
+uses `--mode web` but sets `AZUREAUTH_NO_USER=1`; AzureAuth retains its initial
+cached-token attempt while suppressing interactive flows. A cache miss returns
+`AzureAuthSilentTokenUnavailable`.
+
+Windows AzureAuth `0.9.5` has no equivalent cache-only CLI mode, so Windows and
+WSL `SilentOnly` still return `SilentAcquisitionUnavailable` without launching.
+Interactive and silent readiness remain independent.
 
 ## Host interaction routing
 
@@ -80,8 +93,9 @@ Interaction is authorized only by an explicit host protocol signal:
 | NuGet interactive and `CanShowDialog=false`        | Device code   | `HostToolAllows` | `InteractionAllowed` |
 | Git credential helper or Python keyring subprocess | Browser       | `Never`          | `SilentOnly`         |
 
-NuGet's non-interactive flag overrides dialog capability. AzureAuth `0.9.5`
-does not support device code, so that NuGet request shape returns
+NuGet's non-interactive flag overrides dialog capability. The product does not
+surface AzureAuth device-code prompts through its bounded process runner, so
+that NuGet request shape returns
 `AzureAuthDeviceCodeUnsupported` before process launch. Git and Python expose no
 equivalent trustworthy interaction authorization signal; the product does not
 infer one from a terminal, environment variable, or process ancestry.
@@ -115,15 +129,16 @@ containment of a hostile provider.
 
 ## Readiness and stable states
 
-| Code                           | Meaning                                               |
-| ------------------------------ | ----------------------------------------------------- |
-| `ProviderNotConfigured`        | Run `identity configure` to record identity context.  |
-| `DirectMsalNotImplemented`     | Run `identity reconfigure` to use the supported path. |
-| `AzureAuthInstallationMissing` | Install AzureAuth 0.9.5 for the current Windows user. |
-| `AzureAuthVersionMismatch`     | Install/select supported version 0.9.5.               |
-| `AzureAuthBindingRequired`     | Run `identity configure` with the intended tenant.    |
-| `AzureAuthBindingMalformed`    | Run `identity reconfigure` or `identity unconfigure`. |
-| `SilentAcquisitionUnavailable` | AzureAuth 0.9.5 has no silent-only mode.              |
+| Code                              | Meaning                                               |
+| --------------------------------- | ----------------------------------------------------- |
+| `ProviderNotConfigured`           | Run `identity configure` to record identity context.  |
+| `DirectMsalNotImplemented`        | Run `identity reconfigure` to use the supported path. |
+| `AzureAuthInstallationMissing`    | Install AzureAuth 0.9.5 for the current platform.     |
+| `AzureAuthVersionMismatch`        | Install/select supported version 0.9.5.               |
+| `AzureAuthBindingRequired`        | Run `identity configure` with the intended tenant.    |
+| `AzureAuthBindingMalformed`       | Run `identity reconfigure` or `identity unconfigure`. |
+| `SilentAcquisitionUnavailable`    | Windows/WSL AzureAuth has no silent-only mode.        |
+| `AzureAuthSilentTokenUnavailable` | Native Linux cache lookup requires interaction.       |
 
 Status and doctor report provider selection, installation, binding, and separate
 interactive/silent readiness without printing tokens or process output.

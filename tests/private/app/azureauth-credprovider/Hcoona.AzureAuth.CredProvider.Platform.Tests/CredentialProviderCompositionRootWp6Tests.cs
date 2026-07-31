@@ -57,7 +57,8 @@ public sealed class CredentialProviderCompositionRootWp6Tests
                 AzureAuthInstallation.Available(
                     @"C:\Users\User\AppData\Local\Programs\AzureAuth\0.9.5\azureauth.exe",
                     "/mnt/c/Users/User/AppData/Local/Programs/AzureAuth/0.9.5/azureauth.exe",
-                    "0.9.5"
+                    "0.9.5",
+                    AzureAuthHostPlatform.Wsl
                 )
             );
 
@@ -80,6 +81,49 @@ public sealed class CredentialProviderCompositionRootWp6Tests
             _ = root.GetReadiness(TestContext.Current.CancellationToken);
             _ = root.RunProviderDoctor(TestContext.Current.CancellationToken);
             Assert.Equal(1, discovery.CallCount);
+        }
+        finally
+        {
+            Directory.Delete(rootPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void NativeLinuxReadinessIncludesCacheOnlyAcquisition()
+    {
+        string rootPath = CreateTestDirectory();
+        try
+        {
+            AzureAuthProviderConfig config = AzureAuthProviderConfig.CreateAzureAuth();
+            AzureAuthBinding binding = AzureAuthBindingPolicy.CreateBound(
+                config,
+                null,
+                "tenant",
+                DateTimeOffset.UtcNow
+            );
+            var discovery = new CountingDiscovery(
+                AzureAuthInstallation.Available(
+                    "/usr/lib/azureauth/azureauth",
+                    "/usr/lib/azureauth/azureauth",
+                    "0.9.5",
+                    AzureAuthHostPlatform.NativeLinux
+                )
+            );
+
+            CredentialProviderCompositionRoot root =
+                CredentialProviderCompositionRoot.CreateProduction(
+                    new CredentialProviderProductionOptions
+                    {
+                        SecureStoreRootPath = rootPath,
+                        ProviderConfig = config,
+                        Binding = binding,
+                        InstallationDiscovery = discovery,
+                    }
+                );
+
+            Assert.True(root.Readiness.Interactive.IsReady);
+            Assert.True(root.Readiness.Silent.IsReady);
+            Assert.Equal("AzureAuthSilentReady", root.Readiness.Silent.Code);
         }
         finally
         {

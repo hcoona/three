@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text;
 using Hcoona.AzureAuth.CredProvider.Platform.AzureAuthProvider;
 using Hcoona.AzureAuth.CredProvider.Platform.Processes;
@@ -175,11 +176,68 @@ public sealed class Wp6ProductionAdapterTests
             if (expectedStatus == AzureAuthInstallationStatus.Available)
             {
                 Assert.Equal(executable, result.HostExecutablePath);
+                Assert.Equal(AzureAuthHostPlatform.Wsl, result.HostPlatform);
             }
         }
         finally
         {
             Directory.Delete(mountRoot, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("0.9.5.0", AzureAuthInstallationStatus.Available)]
+    [InlineData("0.9.4.0", AzureAuthInstallationStatus.WrongVersion)]
+    public void NativeLinuxDiscoveryReadsAdjacentManagedAssemblyIdentity(
+        string assemblyVersion,
+        AzureAuthInstallationStatus expectedStatus
+    )
+    {
+        string root = CreateTestDirectory();
+        try
+        {
+            string executable = Path.Combine(root, "azureauth");
+            File.WriteAllText(executable, "");
+            File.WriteAllText(Path.Combine(root, "azureauth.dll"), "");
+            var runner = new DiscoveryRunner("must not be used");
+            var discovery = new SystemAzureAuthInstallationDiscovery(
+                runner,
+                new SystemAzureAuthInstallationDiscoveryOptions
+                {
+                    IsWslEnvironment = false,
+                    EnvironmentVariableReader = name =>
+                        name
+                        == SystemAzureAuthInstallationDiscovery.NativeLinuxExecutablePathEnvironmentVariable
+                            ? executable
+                            : null,
+                    ManagedAssemblyIdentityReader = path =>
+                    {
+                        Assert.Equal(Path.Combine(root, "azureauth.dll"), path);
+                        return new AssemblyName("azureauth")
+                        {
+                            Version = Version.Parse(assemblyVersion),
+                        };
+                    },
+                }
+            );
+
+            AzureAuthInstallation result = discovery.Discover(
+                AzureAuthProviderConfig.CreateAzureAuth(),
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Equal(expectedStatus, result.Status);
+            Assert.Null(runner.StartSpec);
+            if (expectedStatus == AzureAuthInstallationStatus.Available)
+            {
+                Assert.Equal(executable, result.InstalledExecutablePath);
+                Assert.Equal(executable, result.HostExecutablePath);
+                Assert.Equal(AzureAuthHostPlatform.NativeLinux, result.HostPlatform);
+            }
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
         }
     }
 

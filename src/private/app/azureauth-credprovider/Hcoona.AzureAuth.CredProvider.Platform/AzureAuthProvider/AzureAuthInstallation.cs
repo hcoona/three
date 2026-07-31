@@ -1,9 +1,18 @@
 using System.Diagnostics;
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Hcoona.AzureAuth.CredProvider.Platform.Processes;
 
 namespace Hcoona.AzureAuth.CredProvider.Platform.AzureAuthProvider;
+
+public enum AzureAuthHostPlatform
+{
+    Unspecified = 0,
+    Windows = 1,
+    Wsl = 2,
+    NativeLinux = 3,
+}
 
 public enum AzureAuthInstallationStatus
 {
@@ -18,11 +27,13 @@ public sealed record AzureAuthInstallation
 {
     public required AzureAuthInstallationStatus Status { get; init; }
 
-    public string? WindowsExecutablePath { get; init; }
+    public string? InstalledExecutablePath { get; init; }
 
     public string? HostExecutablePath { get; init; }
 
     public string? Version { get; init; }
+
+    public AzureAuthHostPlatform HostPlatform { get; init; }
 
     public required string Code { get; init; }
 
@@ -30,20 +41,23 @@ public sealed record AzureAuthInstallation
 
     public bool IsAvailable =>
         Status == AzureAuthInstallationStatus.Available
-        && WindowsExecutablePath is not null
-        && HostExecutablePath is not null;
+        && InstalledExecutablePath is not null
+        && HostExecutablePath is not null
+        && HostPlatform != AzureAuthHostPlatform.Unspecified;
 
     public static AzureAuthInstallation Available(
-        string windowsExecutablePath,
+        string installedExecutablePath,
         string hostExecutablePath,
-        string version
+        string version,
+        AzureAuthHostPlatform hostPlatform = AzureAuthHostPlatform.Windows
     ) =>
         new()
         {
             Status = AzureAuthInstallationStatus.Available,
-            WindowsExecutablePath = windowsExecutablePath,
+            InstalledExecutablePath = installedExecutablePath,
             HostExecutablePath = hostExecutablePath,
             Version = version,
+            HostPlatform = hostPlatform,
             Code = "AzureAuthInstallationAvailable",
             SafeMessage = "The supported AzureAuth installation is available.",
         };
@@ -79,6 +93,14 @@ public sealed record SystemAzureAuthInstallationDiscoveryOptions
 
     public string? WindowsPowerShellPath { get; init; }
 
+    public string? NativeLinuxExecutablePath { get; init; }
+
+    public Func<string, string?> EnvironmentVariableReader { get; init; } =
+        Environment.GetEnvironmentVariable;
+
+    public Func<string, AssemblyName> ManagedAssemblyIdentityReader { get; init; } =
+        AssemblyName.GetAssemblyName;
+
     public TimeSpan Timeout { get; init; } = TimeSpan.FromSeconds(15);
 
     public int MaximumOutputBytes { get; init; } = 8 * 1024;
@@ -86,6 +108,10 @@ public sealed record SystemAzureAuthInstallationDiscoveryOptions
 
 public sealed class SystemAzureAuthInstallationDiscovery : IAzureAuthInstallationDiscovery
 {
+    internal const string NativeLinuxExecutablePathEnvironmentVariable =
+        "AZUREAUTH_CREDPROVIDER_AZUREAUTH_PATH";
+    internal const string DefaultNativeLinuxExecutablePath = "/usr/lib/azureauth/azureauth";
+
     private static readonly string DiscoveryScript =
         "$ErrorActionPreference='Stop'\n"
         + "$localAppData=[Environment]::GetFolderPath("
@@ -137,13 +163,16 @@ public sealed class SystemAzureAuthInstallationDiscovery : IAzureAuthInstallatio
         }
 
         bool isWsl = options.IsWslEnvironment ?? IsWslEnvironment();
-        return OperatingSystem.IsLinux() && isWsl
-            ? DiscoverWsl(cancellationToken)
-            : AzureAuthInstallation.Failure(
-                AzureAuthInstallationStatus.Unsupported,
-                "AzureAuthLaunchHostUnsupported",
-                "AzureAuth production integration requires Windows or WSL."
-            );
+        if (OperatingSystem.IsLinux())
+        {
+            return isWsl ? DiscoverWsl(cancellationToken) : DiscoverNativeLinux();
+        }
+
+        return AzureAuthInstallation.Failure(
+            AzureAuthInstallationStatus.Unsupported,
+            "AzureAuthLaunchHostUnsupported",
+            "AzureAuth production integration requires Windows, WSL, or native Linux."
+        );
     }
 
     private AzureAuthInstallation DiscoverWsl(CancellationToken cancellationToken)
@@ -225,9 +254,81 @@ public sealed class SystemAzureAuthInstallationDiscovery : IAzureAuthInstallatio
             ? AzureAuthInstallation.Available(
                 windowsPath,
                 hostPath,
-                AzureAuthProviderConfig.SupportedAzureAuthVersion
+                AzureAuthProviderConfig.SupportedAzureAuthVersion,
+                AzureAuthHostPlatform.Wsl
             )
             : WrongVersion(output.FileVersion);
+    }
+
+    private AzureAuthInstallation DiscoverNativeLinux()
+    {
+        string path =
+            options.NativeLinuxExecutablePath
+            ?? options.EnvironmentVariableReader(NativeLinuxExecutablePathEnvironmentVariable)
+            ?? DefaultNativeLinuxExecutablePath;
+        if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path))
+        {
+            return AzureAuthInstallation.Failure(
+                AzureAuthInstallationStatus.Unavailable,
+                "AzureAuthLinuxExecutablePathInvalid",
+                "The native Linux AzureAuth executable path must be absolute."
+            );
+        }
+
+        if (!File.Exists(path))
+        {
+            return AzureAuthInstallation.Failure(
+                AzureAuthInstallationStatus.Missing,
+                "AzureAuthInstallationMissing",
+                "AzureAuth 0.9.5 is not installed at the native Linux package location."
+            );
+        }
+
+        string? directory = Path.GetDirectoryName(path);
+        if (directory is null)
+        {
+            return AzureAuthInstallation.Failure(
+                AzureAuthInstallationStatus.Unavailable,
+                "AzureAuthVersionUnavailable",
+                "The AzureAuth executable directory could not be determined."
+            );
+        }
+
+        string assemblyPath = Path.Combine(directory, "azureauth.dll");
+        string? version;
+        try
+        {
+            AssemblyName identity = options.ManagedAssemblyIdentityReader(assemblyPath);
+            if (!string.Equals(identity.Name, "azureauth", StringComparison.Ordinal))
+            {
+                return WrongVersion(identity.Version?.ToString());
+            }
+
+            version = identity.Version?.ToString();
+        }
+        catch (Exception exception)
+            when (exception
+                    is IOException
+                        or UnauthorizedAccessException
+                        or BadImageFormatException
+                        or ArgumentException
+            )
+        {
+            return AzureAuthInstallation.Failure(
+                AzureAuthInstallationStatus.Unavailable,
+                "AzureAuthVersionUnavailable",
+                "The AzureAuth managed assembly version could not be read."
+            );
+        }
+
+        return IsSupportedVersion(version)
+            ? AzureAuthInstallation.Available(
+                path,
+                path,
+                AzureAuthProviderConfig.SupportedAzureAuthVersion,
+                AzureAuthHostPlatform.NativeLinux
+            )
+            : WrongVersion(version);
     }
 
     private static AzureAuthInstallation InspectNativeInstallation(string localApplicationData)
@@ -265,7 +366,8 @@ public sealed class SystemAzureAuthInstallationDiscovery : IAzureAuthInstallatio
             ? AzureAuthInstallation.Available(
                 path,
                 path,
-                AzureAuthProviderConfig.SupportedAzureAuthVersion
+                AzureAuthProviderConfig.SupportedAzureAuthVersion,
+                AzureAuthHostPlatform.Windows
             )
             : WrongVersion(version);
     }

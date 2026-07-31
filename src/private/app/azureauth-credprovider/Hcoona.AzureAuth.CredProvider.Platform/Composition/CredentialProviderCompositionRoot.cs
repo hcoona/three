@@ -33,6 +33,7 @@ public sealed record CredentialProviderProductionOptions
     public string? WindowsLocalApplicationDataPath { get; init; }
     public string? WindowsMountRoot { get; init; }
     public string? WindowsPowerShellPath { get; init; }
+    public string? NativeLinuxAzureAuthExecutablePath { get; init; }
     public bool? IsWslEnvironment { get; init; }
 }
 
@@ -150,6 +151,9 @@ public sealed class CredentialProviderCompositionRoot
                     WindowsMountRoot = options.WindowsMountRoot ?? "/mnt/c",
                     LocalApplicationDataPath = options.WindowsLocalApplicationDataPath,
                     WindowsPowerShellPath = options.WindowsPowerShellPath,
+                    NativeLinuxExecutablePath = options.NativeLinuxAzureAuthExecutablePath,
+                    EnvironmentVariableReader =
+                        options.EnvironmentVariableReader ?? Environment.GetEnvironmentVariable,
                 }
             );
         AzureAuthInstallation installation =
@@ -188,10 +192,9 @@ public sealed class CredentialProviderCompositionRoot
         var exchange = new AzureDevOpsSpsTokenExchange(options.HttpClient, options.TimeProvider);
         ICredentialAcquisitionService service = new ComposedCredentialAcquisitionService(
             _ => identityProvider,
-            new CredentialMaterializationService(exchange, options.TimeProvider),
-            applyAzureAuthRequestPreflight: config.Selection == AzureAuthProviderSelection.AzureAuth
+            new CredentialMaterializationService(exchange, options.TimeProvider)
         );
-        CredentialProviderReadiness readiness = CreateReadiness(config, prerequisite);
+        CredentialProviderReadiness readiness = CreateReadiness(config, prerequisite, installation);
         CredentialProviderProductionOptions effectiveOptions = options with
         {
             SecureRecordStore = store,
@@ -320,7 +323,8 @@ public sealed class CredentialProviderCompositionRoot
 
     private static CredentialProviderReadiness CreateReadiness(
         AzureAuthProviderConfig config,
-        AzureAuthProductionPrerequisiteFailure? prerequisite
+        AzureAuthProductionPrerequisiteFailure? prerequisite,
+        AzureAuthInstallation installation
     )
     {
         CredentialProviderCapabilityReadiness interactive = prerequisite is null
@@ -334,13 +338,20 @@ public sealed class CredentialProviderCompositionRoot
             Provider = config.Selection,
             Interactive = interactive,
             Silent =
-                config.Selection == AzureAuthProviderSelection.AzureAuth
+                prerequisite is not null ? interactive
+                : config.Selection == AzureAuthProviderSelection.AzureAuth
+                && installation.HostPlatform == AzureAuthHostPlatform.NativeLinux
+                    ? Ready(
+                        "AzureAuthSilentReady",
+                        "AzureAuth native Linux cache-only acquisition is ready."
+                    )
+                : config.Selection == AzureAuthProviderSelection.AzureAuth
                     ? Unavailable(
                         "SilentAcquisitionUnavailable",
-                        "AzureAuth 0.9.5 has no cache-only command mode; "
+                        "AzureAuth 0.9.5 has no cache-only command mode on Windows or WSL; "
                             + "silent acquisition is unavailable."
                     )
-                    : interactive,
+                : interactive,
         };
     }
 

@@ -167,10 +167,10 @@ ecosystems:
 - Diagnostic event production.
 
 The core uses AzureAuth (`microsoft-authentication-cli`) 0.9.5 for the current
-Windows and WSL identity path. The provider is selected and bound explicitly,
-and the executable is derived from the official per-user installation layout.
-Direct MSAL remains unimplemented behind the same identity-provider
-abstraction.
+Windows, WSL, and native Linux identity path. The provider is selected and bound
+explicitly. Windows and WSL derive the executable from the official per-user
+installation layout; native Linux uses the official package payload. Direct
+MSAL remains unimplemented behind the same identity-provider abstraction.
 
 ### Core Submodules
 

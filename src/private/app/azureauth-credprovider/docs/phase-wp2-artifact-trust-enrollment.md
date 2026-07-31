@@ -88,9 +88,9 @@ persistence outcomes; ordinary I/O failures remain explicit errors.
 
 ## Threat model
 
-The product assumes a supported Windows or WSL2 host, an uncompromised OS and
-user account, and cooperative same-user commands. It handles accidental missing
-or wrong versions, malformed configuration, concurrent updates, secret
-redaction, and actionable operational errors. It does not attempt to defend
-against root/Administrator, hostile same-user binary replacement, malicious
-kernels/filesystems, or adversarial TOCTOU.
+The product assumes a supported Windows, WSL2, or native Linux host, an
+uncompromised OS and user account, and cooperative same-user commands. It
+handles accidental missing or wrong versions, malformed configuration,
+concurrent updates, secret redaction, and actionable operational errors. It
+does not attempt to defend against root/Administrator, hostile same-user binary
+replacement, malicious kernels/filesystems, or adversarial TOCTOU.

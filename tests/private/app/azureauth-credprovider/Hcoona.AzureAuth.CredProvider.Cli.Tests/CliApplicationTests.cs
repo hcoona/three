@@ -349,6 +349,11 @@ public sealed class CliApplicationTests
             StringComparison.Ordinal
         );
         Assert.Contains(
+            "standalone-linux-x64-platform-acceptance: deferred-release-evidence\n",
+            result.StdOut,
+            StringComparison.Ordinal
+        );
+        Assert.Contains(
             "azureauth-wsl-live-acceptance: pass\n",
             result.StdOut,
             StringComparison.Ordinal

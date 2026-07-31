@@ -54,12 +54,10 @@ internal sealed class ComposedCredentialAcquisitionService : ICredentialAcquisit
 {
     private readonly Func<CancellationToken, IAccessTokenIdentityProvider> identityProviderFactory;
     private readonly CredentialMaterializationService materializationService;
-    private readonly bool applyAzureAuthRequestPreflight;
 
     internal ComposedCredentialAcquisitionService(
         Func<CancellationToken, IAccessTokenIdentityProvider> identityProviderFactory,
-        CredentialMaterializationService materializationService,
-        bool applyAzureAuthRequestPreflight = false
+        CredentialMaterializationService materializationService
     )
     {
         this.identityProviderFactory =
@@ -68,7 +66,6 @@ internal sealed class ComposedCredentialAcquisitionService : ICredentialAcquisit
         this.materializationService =
             materializationService
             ?? throw new ArgumentNullException(nameof(materializationService));
-        this.applyAzureAuthRequestPreflight = applyAzureAuthRequestPreflight;
     }
 
     public async ValueTask<CredentialResult> AcquireAsync(
@@ -77,17 +74,6 @@ internal sealed class ComposedCredentialAcquisitionService : ICredentialAcquisit
     )
     {
         ArgumentNullException.ThrowIfNull(request);
-
-        if (applyAzureAuthRequestPreflight)
-        {
-            AzureAuthRequestPreflightFailure? failure = AzureAuthRequestPreflightPolicy.Evaluate(
-                request
-            );
-            if (failure is not null)
-            {
-                return MapAcquisitionFailure(failure.ToAcquisitionResult());
-            }
-        }
 
         if (request.AcquisitionMode == AcquisitionMode.Unspecified)
         {

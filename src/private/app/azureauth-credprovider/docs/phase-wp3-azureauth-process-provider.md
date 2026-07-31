@@ -1,6 +1,6 @@
 # WP3 — AzureAuth Async Process Identity Provider
 
-Status: **implemented in production; WSL-to-Windows and Windows developer-host acceptance recorded**
+Status: **implemented in production for Windows, WSL, and native Linux**
 
 Date: **2026-07-30**
 
@@ -26,6 +26,39 @@ Still out of scope:
 - AzureAuth device-code invocation
 - product-owned persistent derived credential caching
 - Windows-native Git, Visual Studio, and NuGet.exe acceptance
+
+## Native Linux implementation and bounded acceptance
+
+AzureAuth 0.9.5 publishes a self-contained `linux-x64` Debian package. The
+official release asset has SHA-256
+`c5ff138423e246b2f6773c3dfaf4327f4e96c3c38bdffb6f886c409309ec0a99`
+and installs its payload under `/usr/lib/azureauth`.
+
+Production native Linux discovery uses the absolute
+`/usr/lib/azureauth/azureauth` payload and reads the adjacent managed
+`azureauth.dll` assembly identity without launching AzureAuth. An explicit
+absolute `AZUREAUTH_CREDPROVIDER_AZUREAUTH_PATH` is available for isolated
+acceptance and deployment bundles. Neither path uses PATH-only discovery.
+
+On 2026-07-31, the verified official `linux-x64` artifact was extracted into an
+isolated session root. With WSL detection explicitly disabled, the production
+Linux apphost:
+
+1. discovered the extracted native ELF payload and its `0.9.5.0` managed
+   assembly;
+2. reported interactive and silent native-Linux readiness;
+3. handled a real Git credential-helper request with interaction forbidden;
+4. launched native AzureAuth with `--mode web` and `AZUREAUTH_NO_USER=1`;
+5. reused an isolated cache seeded directly through AzureAuth device code;
+6. returned exactly Git username/password fields while the acceptance harness
+   captured and did not print credential material; and
+7. removed product identity state and the complete temporary cache root.
+
+The acceptance ran under WSL2 with product WSL detection disabled. It validates
+the native Linux executable, discovery, cache-only process routing, product
+materialization, and Git protocol path, but it does not claim standalone Ubuntu
+24.04, product browser acquisition, system keyring, or installer-produced
+binary acceptance.
 
 ## Live WSL acceptance
 
@@ -89,6 +122,16 @@ azureauth.exe
   --output token
 ```
 
+Native Linux interactive browser requests add:
+
+```text
+--mode web
+```
+
+Native Linux silent-only requests use the same explicit mode and set
+`AZUREAUTH_NO_USER=1` in the child environment. Windows and WSL continue to
+omit `--mode` and use the pinned Windows default.
+
 Frozen upstream constants:
 
 - Azure DevOps resource: `499b84ac-1321-427f-aa17-267ca6975798`
@@ -118,14 +161,14 @@ Notes:
 
 ## Request Matrix
 
-| Request shape                                                                                                                    | WP3 AzureAuth behavior                                               |
-| -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `contractMajor: 2`, `acquisitionMode: interactionAllowed`, browser, human interactive policy, non-CI, accepted WP1 request shape | Allowed to reach process preflight                                   |
-| Device code                                                                                                                      | Rejected; no process launch                                          |
-| `acquisitionMode: unspecified`                                                                                                   | Fail closed before process                                           |
-| Valid `acquisitionMode: silentOnly`, `interactivePolicy: never`, non-CI frozen v1 shape                                          | Valid acquisition request; `SilentAcquisitionUnavailable`; no launch |
-| Invalid `silentOnly` combinations, including interactive policy, explicit CI, or opaque token                                    | Reject before process                                                |
-| Invalid `interactionAllowed` combinations, explicit CI, unsupported cache or frozen-request drift                                | Reject before process                                                |
+| Request shape                                                                                                                    | WP3 AzureAuth behavior                                                     |
+| -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `contractMajor: 2`, `acquisitionMode: interactionAllowed`, browser, human interactive policy, non-CI, accepted WP1 request shape | Windows/WSL default mode; native Linux explicit web mode                   |
+| Device code                                                                                                                      | Rejected; no process launch                                                |
+| `acquisitionMode: unspecified`                                                                                                   | Fail closed before process                                                 |
+| Valid `acquisitionMode: silentOnly`, `interactivePolicy: never`, non-CI frozen v1 shape                                          | Native Linux cache-only launch; Windows/WSL `SilentAcquisitionUnavailable` |
+| Invalid `silentOnly` combinations, including interactive policy, explicit CI, or opaque token                                    | Reject before process                                                      |
+| Invalid `interactionAllowed` combinations, explicit CI, unsupported cache or frozen-request drift                                | Reject before process                                                      |
 
 `AzureAuthIdentityProvider` accepts only `CredentialRequestV2`.
 
@@ -141,9 +184,11 @@ Before launch, production composition:
 
 Native Windows derives the installation from `LocalApplicationData`. WSL uses
 fixed Windows PowerShell only to read `LocalApplicationData` and file version,
-then maps the absolute `C:` path under `/mnt/c`. The integration trusts normal
-OS and framework abstractions; it does not implement hashes, Authenticode, ACL,
-owner, ancestor, reparse, stable-identity, or TOCTOU proofs.
+then maps the absolute `C:` path under `/mnt/c`. Native Linux uses the fixed
+official package payload path and its adjacent managed assembly version. The
+integration trusts normal OS, package-manager, and framework abstractions; it
+does not implement installed-file hashes, Authenticode, ACL, owner, ancestor,
+reparse, stable-identity, or TOCTOU proofs.
 
 ## Environment, Working Directory, and Stdio
 
@@ -202,8 +247,10 @@ identity remains a best-effort preference.
 
 The process inherits the ordinary host integration environment.
 `OEAUTH_MSAL_DISABLE_CACHE` is not set: host MSAL cache reuse is an intentional
-product behavior. AzureAuth has no cache-only CLI mode, so `SilentOnly` remains
-unavailable and never launches.
+product behavior. Windows and WSL AzureAuth have no cache-only CLI mode, so
+`SilentOnly` remains unavailable there and never launches. Native Linux
+`SilentOnly` launches AzureAuth with `AZUREAUTH_NO_USER=1`, preserving its
+cached-token attempt while suppressing user interaction.
 
 ## Error Codes
 
@@ -212,6 +259,7 @@ including:
 
 - `AzureAuthAcquisitionModeRequired`
 - `SilentAcquisitionUnavailable`
+- `AzureAuthSilentTokenUnavailable`
 - `AzureAuthRequestRejected`
 - `AzureAuthPolicyRejected`
 - `AzureAuthDeviceCodeUnsupported`

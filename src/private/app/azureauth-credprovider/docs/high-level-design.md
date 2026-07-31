@@ -42,7 +42,7 @@ The human-facing CLI owns:
 
 Protocol adapters are installed and configured by the CLI, but they are not the primary interface users interact with.
 
-The current Windows and WSL identity path uses AzureAuth
+The current Windows, WSL, and native Linux identity path uses AzureAuth
 (`microsoft-authentication-cli`) 0.9.5 behind the shared identity-provider
 abstraction. Direct MSAL remains represented but is not implemented. AzureAuth
 does not replace the Git, NuGet, Python keyring, or npm protocol adapters.
@@ -98,11 +98,11 @@ The shared core owns credential behavior that must not diverge between ecosystem
 - diagnostic event generation.
 
 The shared core uses AzureAuth 0.9.5 for Microsoft Entra token acquisition on
-Windows and WSL. It derives the executable from the official per-user
-installation layout and tries the Windows WAM broker before AzureAuth web mode.
-WAM may reuse the OS account and broker-backed cache without prompting; a
-prompt broker failure falls through to browser authentication. Direct MSAL is
-not implemented.
+Windows, WSL, and native Linux. Windows and WSL derive the executable from the
+official per-user Windows installation and use AzureAuth's default WAM-then-web
+ordering. Native Linux uses the official Linux package payload and explicit web
+mode for interactive requests; silent-only host requests use AzureAuth's
+no-user cache path. Direct MSAL is not implemented.
 
 The core must not assume a single protocol output format. Protocol adapters are responsible for host-tool input and output.
 

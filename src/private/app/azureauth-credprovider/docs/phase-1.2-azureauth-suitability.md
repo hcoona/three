@@ -5,9 +5,9 @@ Status: **Superseded historical decision**
 Date: **2026-06-05**
 
 The later WP2, WP3, and WP6 implementation records supersede this gate's
-direct-MSAL selection: AzureAuth 0.9.5 is now the implemented Windows/WSL
-provider, while Direct MSAL remains unimplemented. The evidence below is
-retained as decision history.
+direct-MSAL selection: AzureAuth 0.9.5 is now the implemented Windows, WSL, and
+native Linux provider, while Direct MSAL remains unimplemented. The evidence
+below is retained as decision history.
 
 Decision ID: **phase-1.2-azureauth-suitability**
 

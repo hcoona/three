@@ -16,13 +16,92 @@ public sealed class AzureAuthIdentityProviderTests
         AzureAuthIdentityProvider provider = CreateProvider(runner);
 
         AcquiredAccessTokenResult result = await provider.AcquireAccessTokenAsync(
-            CreateRequest(AcquisitionMode.SilentOnly),
+            CreateRequest(AcquisitionMode.SilentOnly, interactivePolicy: InteractivePolicy.Never),
             TestContext.Current.CancellationToken
         );
 
         Assert.Equal(AcquiredAccessTokenStatus.InteractionRequired, result.Status);
         Assert.Equal("SilentAcquisitionUnavailable", result.Code);
         Assert.Null(runner.StartSpec);
+    }
+
+    [Fact]
+    public async Task NativeLinuxSilentOnlyUsesCacheOnlyEnvironmentAndExplicitWebMode()
+    {
+        var runner = new RecordingRunner(new ProcessResult(0, CreateToken(), ""));
+        AzureAuthIdentityProvider provider = CreateProvider(
+            runner,
+            AzureAuthHostPlatform.NativeLinux
+        );
+
+        AcquiredAccessTokenResult result = await provider.AcquireAccessTokenAsync(
+            CreateRequest(AcquisitionMode.SilentOnly, interactivePolicy: InteractivePolicy.Never),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(AcquiredAccessTokenStatus.Success, result.Status);
+        ProcessStartSpec start = Assert.IsType<ProcessStartSpec>(runner.StartSpec);
+        Assert.Equal(
+            [
+                "aad",
+                "--client",
+                AzureAuthIdentityProvider.AzureDevOpsPublicClientId,
+                "--tenant",
+                "tenant-1",
+                "--scope",
+                AzureAuthIdentityProvider.AzureDevOpsDefaultScope,
+                "--mode",
+                "web",
+                "--domain",
+                "example.com",
+                "--output",
+                "token",
+            ],
+            start.Arguments
+        );
+        Assert.Equal("1", start.Environment["AZUREAUTH_NO_USER"]);
+        Assert.Null(start.Environment["AZUREAUTH_MODE"]);
+        Assert.Null(start.Environment["Corext_NonInteractive"]);
+    }
+
+    [Fact]
+    public async Task NativeLinuxInteractiveBrowserClearsInheritedModeControls()
+    {
+        var runner = new RecordingRunner(new ProcessResult(0, CreateToken(), ""));
+        AzureAuthIdentityProvider provider = CreateProvider(
+            runner,
+            AzureAuthHostPlatform.NativeLinux
+        );
+
+        AcquiredAccessTokenResult result = await provider.AcquireAccessTokenAsync(
+            CreateRequest(),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(AcquiredAccessTokenStatus.Success, result.Status);
+        ProcessStartSpec start = Assert.IsType<ProcessStartSpec>(runner.StartSpec);
+        Assert.Equal(["--mode", "web"], start.Arguments.Skip(7).Take(2));
+        Assert.Null(start.Environment["AZUREAUTH_MODE"]);
+        Assert.Null(start.Environment["AZUREAUTH_NO_USER"]);
+        Assert.Null(start.Environment["Corext_NonInteractive"]);
+    }
+
+    [Fact]
+    public async Task NativeLinuxSilentCacheMissRequiresInteraction()
+    {
+        AzureAuthIdentityProvider provider = CreateProvider(
+            new RecordingRunner(new ProcessResult(1, "", "cache miss")),
+            AzureAuthHostPlatform.NativeLinux
+        );
+
+        AcquiredAccessTokenResult result = await provider.AcquireAccessTokenAsync(
+            CreateRequest(AcquisitionMode.SilentOnly, interactivePolicy: InteractivePolicy.Never),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(AcquiredAccessTokenStatus.InteractionRequired, result.Status);
+        Assert.Equal("AzureAuthSilentTokenUnavailable", result.Code);
+        Assert.DoesNotContain("cache miss", result.SafeMessage, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -240,7 +319,10 @@ public sealed class AzureAuthIdentityProviderTests
         );
     }
 
-    private static AzureAuthIdentityProvider CreateProvider(IProcessRunner runner)
+    private static AzureAuthIdentityProvider CreateProvider(
+        IProcessRunner runner,
+        AzureAuthHostPlatform hostPlatform = AzureAuthHostPlatform.Wsl
+    )
     {
         AzureAuthProviderConfig config = AzureAuthProviderConfig.CreateAzureAuth();
         AzureAuthBinding binding = AzureAuthBindingPolicy.CreateBound(
@@ -249,22 +331,36 @@ public sealed class AzureAuthIdentityProviderTests
             "tenant-1",
             DateTimeOffset.UtcNow
         );
-        return new AzureAuthIdentityProvider(config, binding, CreateLaunchOptions(), runner);
+        return new AzureAuthIdentityProvider(
+            config,
+            binding,
+            CreateLaunchOptions(hostPlatform),
+            runner
+        );
     }
 
-    private static AzureAuthProcessLaunchOptions CreateLaunchOptions() =>
+    private static AzureAuthProcessLaunchOptions CreateLaunchOptions(
+        AzureAuthHostPlatform hostPlatform = AzureAuthHostPlatform.Wsl
+    ) =>
         new()
         {
             ExecutablePath =
-                "/mnt/c/Users/User/AppData/Local/Programs/AzureAuth/0.9.5/azureauth.exe",
-            WorkingDirectory = "/mnt/c/Users/User/AppData/Local/Programs/AzureAuth/0.9.5",
+                hostPlatform == AzureAuthHostPlatform.NativeLinux
+                    ? "/usr/lib/azureauth/azureauth"
+                    : "/mnt/c/Users/User/AppData/Local/Programs/AzureAuth/0.9.5/azureauth.exe",
+            WorkingDirectory =
+                hostPlatform == AzureAuthHostPlatform.NativeLinux
+                    ? "/usr/lib/azureauth"
+                    : "/mnt/c/Users/User/AppData/Local/Programs/AzureAuth/0.9.5",
+            HostPlatform = hostPlatform,
         };
 
     private static CredentialRequestV2 CreateRequest(
         AcquisitionMode mode = AcquisitionMode.InteractionAllowed,
         string? accountHint = null,
         string? tenantHint = null,
-        IdentityFlow identityFlow = IdentityFlow.InteractiveBrowser
+        IdentityFlow identityFlow = IdentityFlow.InteractiveBrowser,
+        InteractivePolicy interactivePolicy = InteractivePolicy.UserAllowed
     ) =>
         new()
         {
@@ -282,7 +378,7 @@ public sealed class AzureAuthIdentityProviderTests
             RequestedAudience = TokenAudience.AzureDevOps,
             CredentialKind = CredentialKind.BearerToken,
             IdentityFlow = identityFlow,
-            InteractivePolicy = InteractivePolicy.UserAllowed,
+            InteractivePolicy = interactivePolicy,
             AcquisitionMode = mode,
             CachePolicy = CachePolicyMode.ProductPersistentCacheDisabled,
             CiContext = new CiContext { ExplicitCiMode = false, AllowsPersistentWrites = false },

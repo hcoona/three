@@ -158,6 +158,18 @@ public static class ReleaseHardeningPhase15VerticalSliceService
                         + "and installer-produced binary acceptance remain required before full "
                         + "release readiness closes."
                 ),
+                DeferredReleaseEvidence(
+                    "standalone-linux-x64-platform-acceptance",
+                    "platform",
+                    "phase-wp3-azureauth-process-provider; AzureAuth 0.9.5 release commit "
+                        + "21258ff3",
+                    "The verified official AzureAuth 0.9.5 linux-x64 artifact and the production "
+                        + "Linux apphost completed a silent-only Git helper acquisition with "
+                        + "credential output captured but not printed. This ran under WSL2 with "
+                        + "WSL detection disabled after AzureAuth directly seeded an isolated "
+                        + "temporary cache. Standalone Ubuntu 24.04, product browser acquisition, "
+                        + "and installer-produced binary acceptance remain required."
+                ),
                 ReleaseEvidencePass(
                     "real-package-manager-invocation-paths",
                     "npm",

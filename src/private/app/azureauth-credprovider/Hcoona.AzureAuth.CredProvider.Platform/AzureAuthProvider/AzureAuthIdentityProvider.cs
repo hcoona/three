@@ -58,9 +58,9 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
             }
 
             ProcessResult processResult = await processRunner
-                .RunAsync(CreateStartSpec(), cancellationToken)
+                .RunAsync(CreateStartSpec(request), cancellationToken)
                 .ConfigureAwait(false);
-            return MapProcessResult(processResult);
+            return MapProcessResult(processResult, request);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -75,7 +75,8 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
     private AcquiredAccessTokenResult? GetPreflightFailure(CredentialRequestV2 request)
     {
         AzureAuthRequestPreflightFailure? requestFailure = AzureAuthRequestPreflightPolicy.Evaluate(
-            request
+            request,
+            launchOptions.HostPlatform
         );
         if (requestFailure is not null)
         {
@@ -138,7 +139,7 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
         return null;
     }
 
-    private ProcessStartSpec CreateStartSpec()
+    private ProcessStartSpec CreateStartSpec(CredentialRequestV2 request)
     {
         var arguments = new List<string>
         {
@@ -150,6 +151,20 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
             "--scope",
             AzureDevOpsDefaultScope,
         };
+        Dictionary<string, string?>? environment = null;
+        if (launchOptions.HostPlatform == AzureAuthHostPlatform.NativeLinux)
+        {
+            arguments.Add("--mode");
+            arguments.Add("web");
+            environment = new Dictionary<string, string?>
+            {
+                ["AZUREAUTH_MODE"] = null,
+                ["AZUREAUTH_NO_USER"] =
+                    request.AcquisitionMode == AcquisitionMode.SilentOnly ? "1" : null,
+                ["Corext_NonInteractive"] = null,
+            };
+        }
+
         string? domain = TryGetAccountDomain(binding.AccountId);
         if (domain is not null)
         {
@@ -163,16 +178,26 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
             launchOptions.ExecutablePath,
             arguments,
             workingDirectory: launchOptions.WorkingDirectory,
+            environment: environment,
             timeout: launchOptions.Timeout,
             outputCaptureOptions: launchOptions.ToOutputCaptureOptions()
         );
     }
 
-    private AcquiredAccessTokenResult MapProcessResult(ProcessResult processResult) =>
+    private AcquiredAccessTokenResult MapProcessResult(
+        ProcessResult processResult,
+        CredentialRequestV2 request
+    ) =>
         processResult.Status switch
         {
             ProcessExecutionStatus.Success => ValidateSuccessfulProcessOutput(
                 processResult.StandardOutput
+            ),
+            ProcessExecutionStatus.NonZeroExit
+                when request.AcquisitionMode == AcquisitionMode.SilentOnly => Failure(
+                AcquiredAccessTokenStatus.InteractionRequired,
+                "AzureAuthSilentTokenUnavailable",
+                "AzureAuth did not find a reusable native Linux cached token."
             ),
             ProcessExecutionStatus.NonZeroExit => Failure(
                 AcquiredAccessTokenStatus.ProcessFailed,

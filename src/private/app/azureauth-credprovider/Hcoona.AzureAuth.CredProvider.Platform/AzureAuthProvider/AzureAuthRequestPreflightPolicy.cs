@@ -15,7 +15,10 @@ internal sealed record AzureAuthRequestPreflightFailure(
 
 internal static class AzureAuthRequestPreflightPolicy
 {
-    internal static AzureAuthRequestPreflightFailure? Evaluate(CredentialRequestV2 request)
+    internal static AzureAuthRequestPreflightFailure? Evaluate(
+        CredentialRequestV2 request,
+        AzureAuthHostPlatform hostPlatform
+    )
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -25,15 +28,19 @@ internal static class AzureAuthRequestPreflightPolicy
                 return new AzureAuthRequestPreflightFailure(
                     AcquiredAccessTokenStatus.InteractionBlocked,
                     "AzureAuthAcquisitionModeRequired",
-                    "AzureAuth requires acquisitionMode interactionAllowed."
+                    "AzureAuth requires an explicit acquisition mode."
                 );
             case AcquisitionMode.SilentOnly:
-                return new AzureAuthRequestPreflightFailure(
-                    AcquiredAccessTokenStatus.InteractionRequired,
-                    "SilentAcquisitionUnavailable",
-                    "AzureAuth 0.9.5 has no cache-only mode, so SilentOnly acquisition "
-                        + "is unavailable."
-                );
+                if (hostPlatform != AzureAuthHostPlatform.NativeLinux)
+                {
+                    return new AzureAuthRequestPreflightFailure(
+                        AcquiredAccessTokenStatus.InteractionRequired,
+                        "SilentAcquisitionUnavailable",
+                        "AzureAuth 0.9.5 has no cache-only mode on Windows or WSL, so "
+                            + "SilentOnly acquisition is unavailable."
+                    );
+                }
+                break;
             case AcquisitionMode.InteractionAllowed:
                 break;
             default:
@@ -65,7 +72,19 @@ internal static class AzureAuthRequestPreflightPolicy
             );
         }
 
-        if (!IdentityFlowPolicy.IsAcceptedMvpRequest(ToV1Projection(request)))
+        if (request.IdentityFlow != IdentityFlow.InteractiveBrowser)
+        {
+            return new AzureAuthRequestPreflightFailure(
+                AcquiredAccessTokenStatus.RequestRejected,
+                "AzureAuthPolicyRejected",
+                "AzureAuth rejected the credential request."
+            );
+        }
+
+        if (
+            request.AcquisitionMode == AcquisitionMode.InteractionAllowed
+            && !IdentityFlowPolicy.IsAcceptedMvpRequest(ToV1Projection(request))
+        )
         {
             return new AzureAuthRequestPreflightFailure(
                 AcquiredAccessTokenStatus.RequestRejected,

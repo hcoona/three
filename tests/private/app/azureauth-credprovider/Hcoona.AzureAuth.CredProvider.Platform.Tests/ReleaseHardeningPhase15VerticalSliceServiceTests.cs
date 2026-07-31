@@ -43,6 +43,7 @@ public sealed class ReleaseHardeningPhase15VerticalSliceServiceTests
             ReleaseHardeningPhase15VerticalSliceService.Evaluate();
 
         AssertDeferredReleaseEvidence(result, "remote-windows-first-platform-acceptance");
+        AssertDeferredReleaseEvidence(result, "standalone-linux-x64-platform-acceptance");
         AssertDeferredReleaseEvidence(result, "final-installer-uninstaller-validation");
 
         ReleaseHardeningPhase15Check windows = Assert.Single(
@@ -54,6 +55,16 @@ public sealed class ReleaseHardeningPhase15VerticalSliceServiceTests
         Assert.Contains("Windows 11 24H2", windows.Notes, StringComparison.Ordinal);
         Assert.Contains("Windows Server", windows.Notes, StringComparison.Ordinal);
         Assert.Contains("remain required", windows.Notes, StringComparison.Ordinal);
+
+        ReleaseHardeningPhase15Check linux = Assert.Single(
+            result.Checks,
+            static check => check.Id == "standalone-linux-x64-platform-acceptance"
+        );
+        Assert.Contains("21258ff3", linux.Evidence, StringComparison.Ordinal);
+        Assert.Contains("linux-x64", linux.Notes, StringComparison.Ordinal);
+        Assert.Contains("silent-only", linux.Notes, StringComparison.Ordinal);
+        Assert.Contains("under WSL2", linux.Notes, StringComparison.Ordinal);
+        Assert.Contains("Standalone Ubuntu 24.04", linux.Notes, StringComparison.Ordinal);
 
         ReleaseHardeningPhase15Check installer = Assert.Single(
             result.Checks,

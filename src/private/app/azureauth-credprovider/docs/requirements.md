@@ -57,7 +57,7 @@ Host tools own:
 9. Preserve host-tool protocol boundaries: protocol adapters must write only protocol-valid content to stdout.
 10. Provide configuration commands that can install, verify, and remove each ecosystem integration.
 11. Support non-interactive CI operation without persisting secrets by default.
-12. Use AzureAuth (`microsoft-authentication-cli`) 0.9.5 as the current Windows and WSL identity path; keep Direct MSAL unimplemented behind the same provider abstraction.
+12. Use AzureAuth (`microsoft-authentication-cli`) 0.9.5 as the current Windows, WSL, and native Linux identity path; keep Direct MSAL unimplemented behind the same provider abstraction.
 13. Support interactive browser acquisition and explicit Azure Pipelines system access tokens; keep device code, PAT compatibility, service principal, managed identity, and workload identity federation unavailable or deferred until implemented.
 14. Provide a `doctor` command that validates Git helper configuration through Git's own discovery behavior, NuGet plugin discovery, Python keyring availability, npm registry configuration, credential cache health, and common CI misconfigurations.
 

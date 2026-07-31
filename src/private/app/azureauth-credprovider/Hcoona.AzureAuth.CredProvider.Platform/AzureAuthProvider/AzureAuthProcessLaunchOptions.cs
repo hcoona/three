@@ -10,6 +10,8 @@ public sealed record AzureAuthProcessLaunchOptions
 
     public required string WorkingDirectory { get; init; }
 
+    public AzureAuthHostPlatform HostPlatform { get; init; } = AzureAuthHostPlatform.Windows;
+
     public TimeSpan Timeout { get; init; } = TimeSpan.FromMinutes(15);
 
     public int MaxStandardOutputBytes { get; init; } = DefaultOutputLimit;
@@ -40,6 +42,13 @@ public sealed record AzureAuthProcessLaunchOptions
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(Timeout, TimeSpan.Zero);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(MaxStandardOutputBytes);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(MaxStandardErrorBytes);
+        if (HostPlatform == AzureAuthHostPlatform.Unspecified)
+        {
+            throw new ArgumentException(
+                "AzureAuth host platform must be specified.",
+                nameof(HostPlatform)
+            );
+        }
     }
 
     internal ProcessOutputCaptureOptions ToOutputCaptureOptions() =>
@@ -67,6 +76,7 @@ public sealed record AzureAuthProcessLaunchOptions
             {
                 ExecutablePath = executablePath,
                 WorkingDirectory = workingDirectory,
+                HostPlatform = installation.HostPlatform,
             };
     }
 }
