@@ -1,0 +1,61 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.22000.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>Hcoona.CelesphoniaModifier.WinUI.Tests</RootNamespace>
+    <AssemblyName>Hcoona.CelesphoniaModifier.WinUI.Tests</AssemblyName>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <MSTestAnalysisMode>None</MSTestAnalysisMode>
+
+    <RepositoryRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\..\..\..'))</RepositoryRoot>
+    <CelesphoniaRoot>$(RepositoryRoot)\src\private\app\celesphonia-modifier</CelesphoniaRoot>
+    <WinUIRoot>$(CelesphoniaRoot)\Hcoona.CelesphoniaModifier.WinUI</WinUIRoot>
+    <AtlasRoot>$(CelesphoniaRoot)\Hcoona.CelesphoniaModifier.Atlas</AtlasRoot>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />
+    <PackageReference Include="Microsoft.Testing.Extensions.TrxReport" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="xunit.v3.mtp-v2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <TestingPlatformBuilderHook Remove="98058041-B5B6-4A75-9834-58E6DF796A22" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="$(AtlasRoot)\Hcoona.CelesphoniaModifier.Atlas.csproj" />
+    <ProjectReference Include="$(WinUIRoot)\Hcoona.CelesphoniaModifier.WinUI.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyMetadata Include="RepositoryRoot" Value="$(RepositoryRoot)" />
+  </ItemGroup>
+
+  <Target Name="RejectTestingPlatformTelemetry" BeforeTargets="CoreCompile">
+    <ItemGroup>
+      <_A6TelemetryHook
+        Include="@(TestingPlatformBuilderHook)"
+        Condition="'%(TestingPlatformBuilderHook.DisplayName)' == 'Microsoft.Testing.Extensions.Telemetry'" />
+    </ItemGroup>
+    <Error
+      Condition="'@(_A6TelemetryHook)' != ''"
+      Text="Microsoft Testing Platform telemetry must remain disabled." />
+  </Target>
+
+</Project>

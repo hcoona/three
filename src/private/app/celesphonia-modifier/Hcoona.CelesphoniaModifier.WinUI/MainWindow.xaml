@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+  x:Class="Hcoona.CelesphoniaModifier.WinUI.MainWindow"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:local="using:Hcoona.CelesphoniaModifier.WinUI"
+  Title="Celesphonia Modifier — Experimental Gold Editor">
+
+  <Window.SystemBackdrop>
+    <MicaBackdrop />
+  </Window.SystemBackdrop>
+
+  <Grid
+    x:Name="RootContent"
+    Background="{ThemeResource LayerFillColorDefaultBrush}">
+    <ScrollViewer
+      AutomationProperties.AutomationId="GoldEditorScrollViewer"
+      HorizontalScrollBarVisibility="Disabled"
+      HorizontalScrollMode="Disabled"
+      VerticalScrollBarVisibility="Auto"
+      VerticalScrollMode="Auto">
+      <StackPanel
+        MaxWidth="720"
+        Padding="32"
+        Spacing="18">
+        <TextBlock
+          AutomationProperties.AutomationId="EditorHeading"
+          Style="{ThemeResource TitleTextBlockStyle}"
+          Text="Gold Editor"
+          TextWrapping="Wrap" />
+        <TextBlock
+          AutomationProperties.AutomationId="EditorExplanation"
+          Style="{ThemeResource BodyTextBlockStyle}"
+          Text="Load one canonical save slot, review its consistent Gold value, and apply one exact signed 64-bit integer."
+          TextWrapping="Wrap" />
+
+        <InfoBar
+          AutomationProperties.AutomationId="ExperimentalWarningInfoBar"
+          AutomationProperties.Name="Experimental compatibility and backup warning"
+          IsClosable="False"
+          IsOpen="True"
+          Message="Declared baseline: Celesphonia v1.05 Steam build 13624401. This app cannot verify the installation or save version. Close the game and every other editor before applying. The first changed write creates one adjacent original archive."
+          Severity="Warning"
+          Title="Experimental" />
+
+        <StackPanel Spacing="8">
+          <TextBlock
+            Style="{ThemeResource BodyStrongTextBlockStyle}"
+            Text="Save slot" />
+          <TextBox
+            AutomationProperties.AutomationId="SaveSlotPathTextBox"
+            AutomationProperties.Name="Selected save slot path"
+            IsReadOnly="True"
+            PlaceholderText="No save slot selected"
+            Text="{x:Bind ViewModel.SlotPath, Mode=OneWay}"
+            TextWrapping="Wrap" />
+          <Button
+            x:Name="BrowseButton"
+            AutomationProperties.AutomationId="BrowseButton"
+            AutomationProperties.Name="Browse for a save slot"
+            Click="BrowseButton_Click"
+            Content="Browse..."
+            IsEnabled="{x:Bind ViewModel.CanBrowse, Mode=OneWay}">
+            <Button.KeyboardAccelerators>
+              <KeyboardAccelerator
+                Key="O"
+                Modifiers="Control" />
+            </Button.KeyboardAccelerators>
+          </Button>
+        </StackPanel>
+
+        <StackPanel Spacing="6">
+          <TextBlock
+            Style="{ThemeResource BodyStrongTextBlockStyle}"
+            Text="Current Gold" />
+          <TextBlock
+            AutomationProperties.AutomationId="CurrentGoldText"
+            AutomationProperties.Name="Current Gold value"
+            Style="{ThemeResource SubtitleTextBlockStyle}"
+            Text="{x:Bind ViewModel.CurrentGoldText, Mode=OneWay}"
+            TextWrapping="Wrap" />
+        </StackPanel>
+
+        <StackPanel Spacing="8">
+          <TextBlock
+            Style="{ThemeResource BodyStrongTextBlockStyle}"
+            Text="New Gold" />
+          <TextBox
+            x:Name="NewGoldTextBox"
+            AutomationProperties.AutomationId="NewGoldTextBox"
+            AutomationProperties.Name="New Gold value"
+            IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}"
+            PlaceholderText="Enter an Int64 value"
+            Text="{x:Bind ViewModel.NewGoldText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+            TextWrapping="Wrap" />
+          <TextBlock
+            AutomationProperties.AutomationId="GoldValidationText"
+            AutomationProperties.LiveSetting="Polite"
+            Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+            Text="{x:Bind ViewModel.ValidationText, Mode=OneWay}"
+            TextWrapping="Wrap" />
+        </StackPanel>
+
+        <Button
+          x:Name="ApplyGoldButton"
+          AutomationProperties.AutomationId="ApplyGoldButton"
+          AutomationProperties.Name="Apply Gold"
+          Click="ApplyGoldButton_Click"
+          Content="Apply Gold"
+          IsEnabled="{x:Bind ViewModel.CanApply, Mode=OneWay}"
+          Style="{ThemeResource AccentButtonStyle}">
+          <Button.KeyboardAccelerators>
+            <KeyboardAccelerator
+              Key="S"
+              Modifiers="Control" />
+          </Button.KeyboardAccelerators>
+        </Button>
+
+        <Button
+          x:Name="CancelOperationButton"
+          AutomationProperties.AutomationId="CancelOperationButton"
+          AutomationProperties.Name="Cancel operation"
+          Click="CancelOperationButton_Click"
+          Content="Cancel operation"
+          IsEnabled="{x:Bind ViewModel.CanCancel, Mode=OneWay}"
+          Visibility="{x:Bind local:MainWindow.ToVisibility(ViewModel.IsBusy), Mode=OneWay}">
+          <Button.KeyboardAccelerators>
+            <KeyboardAccelerator Key="Escape" />
+          </Button.KeyboardAccelerators>
+        </Button>
+
+        <Grid
+          AutomationProperties.AutomationId="OperationStatusArea"
+          ColumnSpacing="12"
+          Visibility="{x:Bind local:MainWindow.ToVisibility(ViewModel.IsBusy), Mode=OneWay}">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <ProgressRing
+            AutomationProperties.AutomationId="OperationProgressRing"
+            AutomationProperties.Name="Operation in progress"
+            IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
+          <TextBlock
+            Grid.Column="1"
+            AutomationProperties.AutomationId="OperationStatusText"
+            AutomationProperties.LiveSetting="Polite"
+            Text="{x:Bind ViewModel.StatusText, Mode=OneWay}"
+            TextWrapping="Wrap"
+            VerticalAlignment="Center" />
+        </Grid>
+
+        <InfoBar
+          x:Name="ResultInfoBar"
+          AutomationProperties.AutomationId="ResultInfoBar"
+          AutomationProperties.LiveSetting="{x:Bind local:MainWindow.ToAutomationLiveSetting(ViewModel.ResultAnnouncement), Mode=OneWay}"
+          AutomationProperties.Name="{x:Bind ViewModel.ResultTitle, Mode=OneWay}"
+          IsClosable="False"
+          IsOpen="{x:Bind ViewModel.IsResultOpen, Mode=OneWay}"
+          Message="{x:Bind ViewModel.ResultMessage, Mode=OneWay}"
+          Severity="{x:Bind local:MainWindow.ToInfoBarSeverity(ViewModel.ResultSeverity), Mode=OneWay}"
+          Title="{x:Bind ViewModel.ResultTitle, Mode=OneWay}" />
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</Window>

@@ -3,6 +3,12 @@
     <WindowsOnlyProjectReference Include="src/public/app/ImageOcclusionEditor/ImageOcclusionEditorWinUI3/ImageOcclusionEditorWinUI3.csproj">
       <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     </WindowsOnlyProjectReference>
+    <WindowsOnlyProjectReference Include="src/private/app/celesphonia-modifier/Hcoona.CelesphoniaModifier.WinUI/Hcoona.CelesphoniaModifier.WinUI.csproj">
+      <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    </WindowsOnlyProjectReference>
+    <WindowsOnlyProjectReference Include="tests/private/app/celesphonia-modifier/Hcoona.CelesphoniaModifier.WinUI.Tests/Hcoona.CelesphoniaModifier.WinUI.Tests.csproj">
+      <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    </WindowsOnlyProjectReference>
   </ItemGroup>
 
   <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
@@ -12,7 +18,7 @@
 
   <ItemGroup Condition="'$(OS)' != 'Windows_NT'">
     <ProjectReference Include="src\**\*.*proj" Exclude="@(WindowsOnlyProjectReference)" />
-    <ProjectReference Include="tests\**\*.*proj" />
+    <ProjectReference Include="tests\**\*.*proj" Exclude="@(WindowsOnlyProjectReference)" />
   </ItemGroup>
 
   <Target Name="RestoreWindowsOnlyProjectsOnNonWindows" BeforeTargets="Restore" Condition="'$(OS)' != 'Windows_NT'">
