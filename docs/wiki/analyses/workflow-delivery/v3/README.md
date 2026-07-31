@@ -19,14 +19,14 @@ v3 CI or Release decision models.
 ## Middle-Level Design
 
 - [Repository Model and Release Unit MLD](./repository-model-release-unit-mld.md)
+- [Governance Integration MLD](./governance-integration-mld.md)
 
 ## Next Design Work
 
-1. review and confirm the Repository Model and Release Unit MLD;
-2. define the Governance Integration and Shared Decision Primitives MLD;
-3. define the CI Qualification MLD;
-4. define the Release Delivery MLD;
-5. define the Shared Foundation MLD;
-6. create a brief LLD for the first end-to-end vertical slice;
-7. implement and validate that vertical slice; and
-8. expand by ecosystem and destination.
+1. review and confirm the Governance Integration MLD;
+2. define the CI Qualification MLD;
+3. define the Release Delivery MLD;
+4. extract the Shared Foundation MLD from confirmed CI and Release mechanisms;
+5. create a brief LLD for the first end-to-end vertical slice;
+6. implement and validate that vertical slice; and
+7. expand by ecosystem and destination.

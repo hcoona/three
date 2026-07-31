@@ -1169,3 +1169,17 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   Evidence binding as Shared Foundation mechanisms.
 - Replaced the Kernel MLD stage with Governance Integration and Shared Decision
   Primitives.
+
+## [2026-07-30] query | Define Governance Integration MLD
+
+- Made GitHub Rulesets, CODEOWNERS, Environments, workflow permissions, OIDC,
+  and destination trust the native authority sources without a repository
+  mirror.
+- Restricted publication authority to destination-specific side-effect jobs and
+  isolated Buddy from Official identities and destinations.
+- Prohibited runtime re-adjudication of platform reviews and governance state.
+- Defined Agent-guided rollout inspection, human-required gates, and limited
+  safe smoke scenarios instead of a permanent automated governance audit
+  system.
+- Deferred Shared Foundation extraction until CI and Release MLDs establish
+  concrete shared mechanisms.
