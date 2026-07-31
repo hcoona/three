@@ -54,6 +54,42 @@ Reusable work follows the project's declared implementation policy from the star
 experiment must be explicitly bounded, carry no hidden migration assumption, and remain outside the
 reusable production path.
 
+## Writable domain semantics
+
+Treat storage representation, runtime numeric behavior, engine invariants, and game-specific
+domain policy as separate layers. A value being parseable, serializable, or accepted by a lower
+layer does not make it valid for a user-facing write.
+
+Before implementing any write-capable feature, persist an evidenced writable-value contract for
+each affected field. Record:
+
+- units and meaning;
+- minimum, maximum, precision, and exactness requirements;
+- sentinel, reserved, or structurally invalid values;
+- normalization, rejection, clamping, overflow, and rounding behavior;
+- cross-field, mirrored-field, and lifecycle invariants;
+- engine defaults and any game- or version-specific override evidence; and
+- the source and confidence of every constraint.
+
+The accepted write domain is the evidenced intersection of the storage format, runtime
+representation, engine behavior, and game-specific rules. Never promote the backing type's full
+range into UI or operation authority merely because narrower semantics are unknown. When an
+applicable engine default is evidenced, a plan may adopt it only with positive evidence that every
+supported game and version inherits that default without a relevant override. Absence of override
+evidence is not proof that the default applies. Otherwise keep the capability read-only or block
+the write pending evidence.
+
+Reject unsupported values explicitly. Do not use silent clamping, rounding, normalization, or a
+warning disclaimer as a substitute for enforcing the writable-value contract. Proportional
+security simplification may remove controls for out-of-scope threats, but it must not remove domain
+correctness or game-runtime compatibility validation.
+
+Re-evaluate the writable-value contract whenever authority escalates from observation to mutation,
+from an in-memory kernel to file application, or from an internal API to a user-facing or automated
+write surface. Acceptance evidence must cover values immediately below and above the supported
+domain, both boundaries, runtime parse and serialization behavior, relevant cross-field
+invariants, and a game-compatible round trip when that can be tested without private data.
+
 ## Planning correction
 
 Before remediating a review round, run a planning-drift gate against the accepted outcome, claim,
