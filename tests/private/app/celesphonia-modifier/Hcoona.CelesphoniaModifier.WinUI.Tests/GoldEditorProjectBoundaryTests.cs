@@ -305,6 +305,12 @@ public sealed partial class GoldEditorProjectBoundaryTests
         Assert.Contains("_closePending = true", code, StringComparison.Ordinal);
         Assert.Contains("ViewModel.RequestCancellation()", code, StringComparison.Ordinal);
         Assert.Contains("_allowClose = true", code, StringComparison.Ordinal);
+        Assert.Contains("RestoreApplyFocus()", code, StringComparison.Ordinal);
+        Assert.Contains("DispatcherQueue.TryEnqueue", code, StringComparison.Ordinal);
+        Assert.Contains(
+            "ApplyGoldButton.Focus(FocusState.Programmatic)",
+            code,
+            StringComparison.Ordinal);
     }
 
     [Fact]

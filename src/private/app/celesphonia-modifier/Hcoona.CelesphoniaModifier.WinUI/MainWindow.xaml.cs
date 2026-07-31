@@ -102,7 +102,7 @@ public sealed partial class MainWindow : Window
         bool confirmed = await ShowConfirmationAsync(confirmation);
         if (!confirmed)
         {
-            _ = ApplyGoldButton.Focus(FocusState.Programmatic);
+            RestoreApplyFocus();
             return;
         }
 
@@ -252,8 +252,14 @@ public sealed partial class MainWindow : Window
 
         if (ViewModel.ShouldRestoreApplyFocus && ApplyGoldButton.IsEnabled)
         {
-            _ = ApplyGoldButton.Focus(FocusState.Programmatic);
+            RestoreApplyFocus();
         }
+    }
+
+    private void RestoreApplyFocus()
+    {
+        _ = DispatcherQueue.TryEnqueue(
+            () => _ = ApplyGoldButton.Focus(FocusState.Programmatic));
     }
 
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
