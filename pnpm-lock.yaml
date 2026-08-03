@@ -72,8 +72,8 @@ importers:
   src/public/lib/hexo-renderer-asciidoc:
     dependencies:
       '@asciidoctor/core':
-        specifier: 4.0.6
-        version: 4.0.6
+        specifier: 4.0.7
+        version: 4.0.7
       cheerio:
         specifier: ^1.2.0
         version: 1.2.0
@@ -157,8 +157,8 @@ packages:
       rollup:
         optional: true
 
-  '@asciidoctor/core@4.0.6':
-    resolution: {integrity: sha512-woI/pRaDQgVg0wtqiHiWV3eCv2CXN5tRwNajX7eYodMwbIAcRufFq9KvSpjAxgvM3x/Xidp7aHYEh6l3msk3tA==}
+  '@asciidoctor/core@4.0.7':
+    resolution: {integrity: sha512-uJFZD/Ca2+z8rC9Sq5ih7HkpmzoeJXkXCDEoilNRCnXMw33k2zh5U2RhIGvm+t9JFxDjEs/KtzRdD9ugoG+f9A==}
     engines: {node: '>=20'}
 
   '@babel/code-frame@7.29.7':
@@ -3019,7 +3019,7 @@ snapshots:
       source-map: 0.7.6
       yargs: 17.7.3
 
-  '@asciidoctor/core@4.0.6': {}
+  '@asciidoctor/core@4.0.7': {}
 
   '@babel/code-frame@7.29.7':
     dependencies:
