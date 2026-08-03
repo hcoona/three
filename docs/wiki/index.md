@@ -35,6 +35,7 @@ Read it first when deciding which pages to inspect.
 - [steam-account-history-to-csv Package Metadata](./sources/2026-04-21-steam-account-history-to-csv-package-json.md) | Public-path browser-extension project that is still private. |
 - [Workflow Release Requirements Interview](./sources/2026-04-21-workflow-release-requirements-interview.md) | Requirement-phase clarifications from the workflow release discussion. |
 - [GitHub Packages Supported Registries](./sources/2026-04-22-github-packages-supported-registries.md) | Official GitHub capability boundary for npm, RubyGems, and NuGet, and the lack of a PyPI registry. |
+- [Workflow Release CI HK Source Page](./sources/2026-05-11-workflow-release-ci-hk-source-page.md) | Documented HK validation surfaces and repository verification of current plan-output limitations. |
 
 ## Concepts
 
@@ -52,6 +53,7 @@ No entity pages yet.
 - [Workflow Delivery v3 High-Level Design](./analyses/workflow-delivery/v3/high-level-design.md) | Active top-level architecture for the clean v3 implementation line.
 - [Workflow Delivery v3 Repository Model and Release Unit MLD](./analyses/workflow-delivery/v3/repository-model-release-unit-mld.md) | Project fact discovery, Release Unit authoring, Build Definitions, NBGV authority, and Repository Model compilation.
 - [Workflow Delivery v3 Governance Integration MLD](./analyses/workflow-delivery/v3/governance-integration-mld.md) | Native platform authority, same-revision control, permission isolation, and Agent-guided rollout acceptance.
+- [Workflow Delivery v3 CI Qualification MLD](./analyses/workflow-delivery/v3/ci-qualification-mld.md) | Candidate identity, HK source-tree conformance, project-selected quality policy, affected-scope planning, Evidence, and CI decision contracts.
 - [Workflow Delivery v3 Architecture Glossary](./analyses/workflow-delivery/v3/architecture-glossary.md) | Normative v3 terminology and confirmed architecture principles.
 - [Workflow Delivery v3 Migration and Document Policy](./analyses/workflow-delivery/v3/migration-strategy.md) | Clean-line implementation strategy and explicit rules for porting, rewriting, or archiving v2 assets.
 - [Workflow Delivery v2 Archive](./analyses/workflow-delivery/v2/README.md) | Permanent v2 commit and catalog of mechanism and research sources; not normative for v3.

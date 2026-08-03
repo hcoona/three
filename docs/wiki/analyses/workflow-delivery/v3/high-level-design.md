@@ -237,18 +237,27 @@ GitHub event
   -> candidate identity (base/head/tested merge, merge-group, or push SHA)
   -> repository model facts
   -> closed CI Qualification Plan
-  -> parallel build and quality obligations
+       + opaque source-tree conformance
+       + affected-system quality obligations
+  -> parallel required and advisory execution lanes
   -> CI-owned Evidence envelopes
-  -> Evidence Admission
-  -> immutable Final Decision
-  -> required-check and human-summary projections
+  -> required Evidence Admission
+  -> immutable required Final Decision
+  -> stable required-check projection
+  -> non-authoritative advisory reporting
 ```
 
 ### Responsibility Split
 
 The Planner owns semantic scope. It resolves the candidate identity, affected
-Project Node and Release Unit closure, artifact variants, and required and
-advisory obligations.
+Project Node and Release Unit closure, project-selected quality policy, concrete
+quality targets and dimensions, artifact variants, and required and advisory
+obligations.
+
+The repository-root HK gate implements one required opaque
+`SourceTreeConformance` definition. The Planner binds the definition and
+candidate input but does not inspect HK profiles, steps, file applicability, or
+internal planning.
 
 Executors resolve only mechanical details required to perform an immutable
 Plan. They may not add, remove, substitute, or downgrade planned scope.
@@ -259,6 +268,10 @@ Admission and Final Decision execute in the Decision Zone.
 Success requires a ready Plan and `satisfied` Evidence for every required
 obligation. Missing, skipped, canceled, timed-out, unknown, and conflicting
 states cannot become success.
+
+The CI Finalizer considers required obligations only. Advisory obligations use
+Plan-bound Evidence and a separate non-authoritative Reporter so they do not
+delay or indirectly gate the required check.
 
 ## Release Delivery Design
 
@@ -412,10 +425,12 @@ The next design stage should produce separate MLDs for:
 1. **Repository Model and Release Units:** Project Node discovery, dependency
    and path-impact facts, Release Unit authoring, variants, and Build
    Definitions.
-2. **Governance Integration and Shared Decision Primitives:** same-revision
-   control review, record primitives, and authorization boundaries.
+2. **Governance Integration:** same-revision control review, platform-native
+   authority, and authorization boundaries.
 3. **CI Qualification:** candidate identity, affected-scope planning,
-   execution, Evidence, Decision, and GitHub projection contracts.
+   project-selected quality policy, opaque source-tree conformance,
+   model-driven execution, Evidence, Decision, advisory reporting, and GitHub
+   projection contracts.
 4. **Release Delivery:** Release Intent, Plan lineage, build and qualification,
    observation, capability, publication, Receipt, replay, and remediation
    contracts.

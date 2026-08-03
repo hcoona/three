@@ -146,6 +146,62 @@ A Project Node is not an authored ownership, qualification, versioning, or
 publication boundary. The ecosystem build system remains authoritative for its
 internal dependency and output semantics.
 
+### Source-Tree Conformance
+
+The repository-local assertion that an immutable checkout satisfies its
+formatting, linting, static source, lock, generated-file, configuration, and
+path-triggered scenario rules.
+
+The repository-root HK gate owns this assertion as one opaque composite Quality
+Definition. CI binds the candidate and definition identity but does not inspect
+HK profiles, steps, file applicability, batching, or internal planning.
+
+### Affected-System Qualification
+
+The model-driven assertion that systems affected by a candidate remain correct
+across Project Node dependency closure, provider-native quality targets,
+execution dimensions, supporting tests, and affected Release Unit variants.
+
+The CI Planner owns this scope. HK does not replace it.
+
+### Quality Capability
+
+An ecosystem-resolvable quality operation available to a Project Node or
+provider-native aggregate target, such as build, type checking, analysis, or
+test execution.
+
+Providers discover standard capabilities from native manifests and metadata.
+Project custom policy supplies only definitions that native ecosystem facts
+cannot express.
+
+### Quality Preset
+
+An ecosystem-qualified, semantically versioned quality contract selected by a
+project.
+
+A preset states which capabilities are required, required when present, or
+advisory. It does not copy native commands or imply cross-ecosystem equivalence.
+Adding or strengthening required semantics creates a new preset identity that
+projects adopt explicitly.
+
+### Effective Quality Policy
+
+The preset or custom policy that applies to one Project Node after
+directory-scoped authoring is resolved.
+
+For one ecosystem, the effective selection is the nearest tracked ancestor
+descriptor entry matching that ecosystem. Directory scope is an authoring
+mechanism, not a domain object. The compiled Plan records the resolved policy
+rather than directory inheritance.
+
+### Quality Definition
+
+The executable semantic contract for one kind of quality proof.
+
+A Quality Definition identifies its Provider or Quality Adapter, supported
+target kind, inputs, coverage dimensions, runner constraints, prerequisites,
+raw result interpretation, and Evidence contract.
+
 ### Release Unit
 
 A logical product unit that is versioned, qualified, authorized, and delivered as
@@ -163,8 +219,9 @@ bind to an immutable repository revision and identify the relevant Project
 Nodes, Release Units, variants, inputs, and obligations.
 
 In CI Qualification, the target is derived from changed paths, affected Project
-Nodes and dependency relationships, affected Release Units, global inputs, and
-repository obligations.
+Nodes and dependency relationships, effective project quality policy,
+provider-native quality targets and dimensions, affected Release Units, global
+inputs, and repository obligations.
 
 In Release Delivery, the target is derived from the selected Release Unit and the
 complete quality scope required by release policy.
@@ -287,6 +344,10 @@ An executor may restore locked dependencies, enumerate tests within a selected
 test target, locate declared outputs, inspect remote state for idempotency, and
 adapt paths to the assigned runner.
 
+An opaque composite definition may internally select implementation steps when
+those steps are not domain obligations. The root HK gate uses this rule for
+source-tree conformance.
+
 It may not add, remove, substitute, or downgrade Project Nodes, Release Units,
 variants, obligations, versions, artifacts, destinations, or authorization
 requirements. A runtime discovery that conflicts with the Plan or Build
@@ -308,6 +369,17 @@ produces the immutable Decision or outcome after execution.
 CI and Release have separate Finalizers. Shared Foundation may provide strict
 record validation, canonicalization, digest, and Evidence-binding functions,
 but it does not select the verdict.
+
+The CI Finalizer considers required obligations only. Advisory obligations use
+a separate non-authoritative Reporter.
+
+### Advisory Reporter
+
+The CI-owned projection component that validates and summarizes advisory
+Evidence without producing an authoritative qualification verdict.
+
+It may finish after the required Final Decision. Its failure is visible but does
+not change the required check.
 
 ### Official Version Identity
 
@@ -335,6 +407,9 @@ Qualification Target.
 
 CI evidence and Release evidence have separate ownership. Release Delivery reruns
 its required quality checks rather than adopting CI results as release evidence.
+
+CI required and advisory obligations both produce Plan-bound Evidence. Only
+required Evidence enters the authoritative CI Final Decision.
 
 ### Evidence Admission
 
@@ -374,6 +449,10 @@ The policy-assigned effect of one quality obligation:
 Checks that do not apply are excluded explicitly during planning rather than
 being silently skipped during execution.
 
+`required-when-present` is a preset capability-resolution mode rather than a
+terminal obligation disposition. When the capability exists, the resulting
+obligation is required. Its absence is valid.
+
 ### Obligation Outcome
 
 The terminal qualification state of one obligation:
@@ -389,12 +468,13 @@ obligation to be satisfied.
 
 ### Final Decision
 
-An immutable record produced after aggregation completes. It binds the
-candidate or target identity, Plan digest, Evidence Set digest, obligation
-outcomes, verdict, and completion time.
+An immutable record produced after required aggregation completes. It binds the
+candidate or target identity, Plan digest, required Evidence Set digest,
+required obligation outcomes, verdict, and completion time.
 
-Late Evidence and workflow reruns produce a new Final Decision rather than
-modifying an existing record.
+Required workflow reruns produce a new Final Decision rather than modifying an
+existing record. Advisory Evidence is reported separately and does not create a
+new authoritative Decision.
 
 A GitHub required-check context may project the latest authoritative Final
 Decision for the current candidate. That mutable user-interface projection does
@@ -584,9 +664,15 @@ compliance requirement may introduce such a capability explicitly.
 The product objective that the required CI Final Decision for an ordinary pull
 request completes within 12 minutes at the 95th percentile.
 
-Broad changes to workflow authority, policy, global toolchains, or many Release
-Units are measured separately. Exceeding the SLO is performance debt rather
-than a correctness failure.
+Measurement begins when GitHub creates the workflow run and includes runner
+queue time. Superseded candidates are excluded.
+
+Broad changes to workflow authority, policy, global toolchains, or more than one
+Release Unit are measured separately. Exceeding the SLO is performance debt
+rather than a correctness failure.
+
+Ordinary candidates remain in the cohort when quality fails or planning blocks.
+Only supersession and explicit broad-change classification exclude them.
 
 The SLO may drive parallelism, batching, early failure presentation, and cache
 optimization. It must not reduce required obligations, publishable variant
@@ -744,8 +830,9 @@ Capability.
     obligation; skipped, missing, unknown, cancelled, timed out, and conflicting
     states cannot become success.
 24. Diagnostics explain structural state but never determine the verdict.
-25. Final Decisions are append-only; reruns and late Evidence create new
-    Decisions while GitHub checks project the latest authoritative result.
+25. Final Decisions are append-only; required reruns create new Decisions while
+    GitHub checks project the latest authoritative result. Advisory Evidence
+    remains outside the authoritative Decision.
 26. Publication authority is externally granted through short-lived,
     destination-specific Capabilities bound to an immutable Plan and artifacts.
 27. Release retry uses whole-release replay rather than GitHub failed-job
@@ -778,7 +865,29 @@ Capability.
     Qualification and Publication snapshots; in-place Plan backfill is forbidden.
 40. Architecture review begins from the ideal system direction and boundaries
     before considering the current implementation.
-41. A domain abstraction is introduced only when concrete scenarios demonstrate
+41. CI separates source-tree conformance from affected-system qualification.
+    The repository-root HK gate owns the former as one opaque composite
+    obligation.
+42. The CI Planner does not inspect HK profiles, steps, file applicability, or
+    internal planning and does not depend on HK plan serialization.
+43. Projects select ecosystem-specific, semantically versioned quality presets
+    or custom policy. Required semantic strengthening requires project opt-in.
+44. Effective project quality policy uses nearest-ancestor, ecosystem-matching
+    authoring without creating a directory domain object or cross-ecosystem
+    preset semantics.
+45. CI impact includes the full typed reverse Project Node closure and all
+    publishable variants of every affected Release Unit.
+46. Quality obligation identity is Quality Definition, concrete target, and
+    concrete dimensions. Execution batching and mechanical reuse do not change
+    that identity.
+47. Required and advisory obligations execute in separate lanes. The CI
+    Finalizer decides required obligations, while an Advisory Reporter presents
+    non-authoritative results.
+48. Incremental CI requires an authoritative comparison range. Schedule and
+    explicit manual full validation use complete repository qualification; an
+    invalid range does not silently fall back to full validation.
+49. A blocked CI Plan executes no authoritative partial obligations.
+50. A domain abstraction is introduced only when concrete scenarios demonstrate
     independent behavior, identity, lifecycle, or policy responsibility.
 
 ## Open Decisions

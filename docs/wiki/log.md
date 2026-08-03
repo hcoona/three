@@ -1183,3 +1183,21 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   system.
 - Deferred Shared Foundation extraction until CI and Release MLDs establish
   concrete shared mechanisms.
+
+## [2026-08-03] query | Define CI Qualification MLD
+
+- Separated root-authoritative HK source-tree conformance from model-driven
+  affected-system qualification.
+- Made HK one opaque required composite obligation and removed any dependency
+  on HK plan or per-step machine output.
+- Defined ecosystem-specific, semantically versioned quality presets and custom
+  project policy with nearest-ancestor ecosystem selection.
+- Closed typed reverse Project Node impact, supporting test targets,
+  provider-native dimensions, affected Release Unit variants, obligation DAGs,
+  identity-preserving batching, and candidate-scoped Evidence.
+- Restricted the authoritative Finalizer to required obligations and assigned
+  advisory results to a separate non-authoritative Reporter.
+- Defined explicit incremental and full-validation modes, supersession,
+  fail-closed planning, and the ordinary pull-request P95 12-minute cohort.
+- Corrected the HK source page after HK 1.38.0 verification showed that
+  `--plan --json` is not a reliable machine interface.

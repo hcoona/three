@@ -2,9 +2,9 @@
 
 ## Purpose
 
-This source page records HK facts that are relevant to the high-level design for
-CI affected validation. It supports the decision that local HK validation can be
-planner-aligned while still defaulting to lightweight execution.
+This source page records HK facts that are relevant to CI validation design. It
+distinguishes documented CLI surfaces from behavior verified in the repository's
+current HK environment.
 
 This page is source-oriented. It does not define the repository's final HK
 configuration, CI workflow YAML, or validation-plan schema.
@@ -37,14 +37,30 @@ Sources:
   `--skip-step`.
 - `hk check` and `hk run` support file filtering options such as `--glob` and
   `--exclude`.
-- `hk check` and `hk run` support `--plan`, and `--json` can output the plan as
-  JSON when combined with `--plan` or `--why`.
+- `hk check` exposes both `--plan` and `--json` options.
 
 Sources:
 
 - [HK check CLI](https://hk.jdx.dev/cli/check.html)
 - [HK run CLI](https://hk.jdx.dev/cli/run.html)
 - [HK settings: all](https://hk.jdx.dev/gen/settings-config.html#all)
+
+### Repository verification of plan output
+
+Repository verification on 2026-08-03 used HK 1.38.0.
+
+- `hk check --plan --json --step markdown-prettier docs/wiki/index.md` accepted
+  the option combination but panicked with exit code 101:
+  `not yet implemented: list files and run types like check-first`.
+- A nonexistent or nonmatching `--step` returned exit code 0 and only displayed
+  a success mark, so the result could not distinguish an empty plan from a
+  successful nonempty plan.
+- Normal explicit execution with
+  `HK_FIX=0 hk check --step markdown-prettier docs/wiki/index.md` succeeded.
+
+The repository therefore has verified HK step execution and internal
+applicability behavior, but it does not have a reliable machine-readable HK
+plan interface on which CI planning can depend.
 
 ### HK supports lightweight versus heavyweight selection mechanisms
 
@@ -99,11 +115,9 @@ Sources:
 - HK can support a local lightweight path and a heavier explicit path using
   documented mechanisms such as profiles, the `slow` profile, step selection,
   file selection, and `--all`.
-- HK can expose an inspectable execution plan through `--plan` and JSON output,
-  which is useful for local diagnostics and for keeping local preflight behavior
-  understandable.
-- HK can be aligned with CI planning concepts without requiring local hooks to
-  execute heavy CI work by default.
+- HK can act as an opaque repository-local validation gate. CI may bind the
+  candidate input and overall gate definition while allowing HK to select and
+  execute internal steps.
 - Heavy checks such as full test suites, full builds, release-shaped artifact
   production, and full scheduled-style validation should remain explicit rather
   than default pre-commit work unless a later design intentionally opts in.
@@ -117,5 +131,7 @@ Sources:
   were not identified as a documented HK mechanism in the reviewed sources.
 - HK `check` commands are conventionally read-only, but HK does not enforce that
   they never write files.
-- Local HK success must not be treated as CI success. CI remains authoritative
-  for validation plans and validation evidence.
+- The current repository design must not parse or require HK plan JSON.
+- Local HK success must not be treated as a complete CI qualification result.
+  HK proves source-tree conformance; CI separately owns affected-system
+  qualification and the required Final Decision.

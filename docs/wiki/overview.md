@@ -11,6 +11,7 @@ Workflow delivery architecture **v3** is active and normative.
 - [v3 high-level design](./analyses/workflow-delivery/v3/high-level-design.md)
 - [v3 Repository Model and Release Unit MLD](./analyses/workflow-delivery/v3/repository-model-release-unit-mld.md)
 - [v3 Governance Integration MLD](./analyses/workflow-delivery/v3/governance-integration-mld.md)
+- [v3 CI Qualification MLD](./analyses/workflow-delivery/v3/ci-qualification-mld.md)
 - [v3 architecture glossary](./analyses/workflow-delivery/v3/architecture-glossary.md)
 - [v3 migration and document policy](./analyses/workflow-delivery/v3/migration-strategy.md)
 
@@ -32,6 +33,14 @@ for new v3 implementation work.
   Nodes and dependency relationships are discovered technical facts.
 - CI and Release share Build Definitions and adapters but do not share runtime
   Plans, Evidence, artifacts, or verdicts.
+- CI uses one root-authoritative opaque HK gate for source-tree conformance and
+  model-driven qualification for affected-system correctness.
+- Projects select ecosystem-specific quality presets or custom policy through
+  cascading directory-scoped authoring; the Planner resolves concrete targets,
+  dimensions, and typed reverse dependency closure.
+- Required obligations feed the authoritative CI Finalizer. Advisory
+  obligations use a separate non-authoritative Reporter and do not delay the
+  stable required check.
 - Release uses one logical Plan lineage with immutable Qualification and
   Publication snapshots.
 - Buddy is an isolated distributable preview channel. Official is canonical,
@@ -70,11 +79,9 @@ have changed.
 
 ## Next Architecture Work
 
-1. Review and confirm the Governance Integration MLD.
-2. Define the CI Qualification MLD.
-3. Define the Release Delivery MLD.
-4. Extract the Shared Foundation MLD from confirmed CI and Release mechanisms.
-5. Select the first vertical slice and create its brief LLD.
+1. Define the Release Delivery MLD.
+2. Extract the Shared Foundation MLD from confirmed CI and Release mechanisms.
+3. Select the first vertical slice and create its brief LLD.
 
 ## Related Pages
 

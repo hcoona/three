@@ -20,13 +20,12 @@ v3 CI or Release decision models.
 
 - [Repository Model and Release Unit MLD](./repository-model-release-unit-mld.md)
 - [Governance Integration MLD](./governance-integration-mld.md)
+- [CI Qualification MLD](./ci-qualification-mld.md)
 
 ## Next Design Work
 
-1. review and confirm the Governance Integration MLD;
-2. define the CI Qualification MLD;
-3. define the Release Delivery MLD;
-4. extract the Shared Foundation MLD from confirmed CI and Release mechanisms;
-5. create a brief LLD for the first end-to-end vertical slice;
-6. implement and validate that vertical slice; and
-7. expand by ecosystem and destination.
+1. define the Release Delivery MLD;
+2. extract the Shared Foundation MLD from confirmed CI and Release mechanisms;
+3. create a brief LLD for the first end-to-end vertical slice;
+4. implement and validate that vertical slice; and
+5. expand by ecosystem and destination.

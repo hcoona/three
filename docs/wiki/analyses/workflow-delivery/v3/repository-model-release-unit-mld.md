@@ -351,7 +351,10 @@ changed paths
 Project Graph use is an internal affected-selection mechanism, not a
 user-authored domain layer.
 
-The CI MLD will define exact per-ecosystem path-boundary behavior, global rules,
+The
+[CI Qualification MLD](./ci-qualification-mld.md)
+defines exact responsibility boundaries for Provider-native path ownership,
+ecosystem-global inputs, declared extra inputs, repository path policy,
 unclassified-path handling, and repository-level obligations.
 
 ### Release Delivery
