@@ -116,6 +116,30 @@ On 2026-07-31, an isolated `linux-x64` bundle completed:
 No token acquisition, AzureAuth launch, browser interaction, WAM interaction,
 device code, or private-feed authorization occurred.
 
+## WSL-Hosted Native Linux Authentication Evidence
+
+On 2026-08-03, commit `63dacbac` was rebuilt and installed through the same
+internal `linux-x64` deployment-validation bundle. The verified official
+AzureAuth 0.9.5 Linux package was supplied through the absolute diagnostic
+override. With WSL detection disabled, the installed apphost completed:
+
+1. product `login --browser` using native AzureAuth system-browser
+   authentication;
+2. safe login status output with no credential material;
+3. Git silent-only acquisition from AzureAuth's isolated cache;
+4. Python wheel installation, backend configuration, and silent-only
+   acquisition through the `python-keyring` apphost contract; and
+5. configuration-aware uninstall and complete removal of the isolated product,
+   configuration, and AzureAuth cache roots.
+
+Credential responses were captured only long enough to validate their protocol
+shape and were deleted without being printed. Azure CLI authentication was not
+used because AzureAuth does not consume the Azure CLI token cache.
+
+The host remained WSL2. This evidence does not establish standalone Ubuntu
+24.04 behavior, Linux system-keyring persistence, private-feed authorization, or
+authentication through a release installer.
+
 ## Explicit Boundaries
 
 This evidence does not establish:

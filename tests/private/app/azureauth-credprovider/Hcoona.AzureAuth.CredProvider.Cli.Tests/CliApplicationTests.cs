@@ -354,6 +354,14 @@ public sealed class CliApplicationTests
             StringComparison.Ordinal
         );
         Assert.Contains(
+            "standalone-linux-x64-platform-acceptance-evidence: "
+                + "phase-wp3-azureauth-process-provider; "
+                + "phase-wp16-deployment-validation-bundle; commit 63dacbac; "
+                + "AzureAuth 0.9.5 release commit 21258ff3\n",
+            result.StdOut,
+            StringComparison.Ordinal
+        );
+        Assert.Contains(
             "azureauth-wsl-live-acceptance: pass\n",
             result.StdOut,
             StringComparison.Ordinal

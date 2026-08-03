@@ -76,7 +76,8 @@ removes inherited `AZUREAUTH_MODE`, `AZUREAUTH_NO_USER`, and
 `Corext_NonInteractive` values from the child. Native Linux `SilentOnly` also
 uses `--mode web` but sets `AZUREAUTH_NO_USER=1`; AzureAuth retains its initial
 cached-token attempt while suppressing interactive flows. A cache miss returns
-`AzureAuthSilentTokenUnavailable`.
+`AzureAuthSilentTokenUnavailable`. This cache is owned by AzureAuth and is not
+the Azure CLI cache; `az login` does not populate it.
 
 Windows AzureAuth `0.9.5` has no equivalent cache-only CLI mode, so Windows and
 WSL `SilentOnly` still return `SilentAcquisitionUnavailable` without launching.

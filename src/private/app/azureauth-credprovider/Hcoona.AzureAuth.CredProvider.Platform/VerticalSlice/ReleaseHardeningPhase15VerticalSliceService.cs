@@ -161,14 +161,17 @@ public static class ReleaseHardeningPhase15VerticalSliceService
                 DeferredReleaseEvidence(
                     "standalone-linux-x64-platform-acceptance",
                     "platform",
-                    "phase-wp3-azureauth-process-provider; AzureAuth 0.9.5 release commit "
-                        + "21258ff3",
-                    "The verified official AzureAuth 0.9.5 linux-x64 artifact and the production "
-                        + "Linux apphost completed a silent-only Git helper acquisition with "
-                        + "credential output captured but not printed. This ran under WSL2 with "
-                        + "WSL detection disabled after AzureAuth directly seeded an isolated "
-                        + "temporary cache. Standalone Ubuntu 24.04, product browser acquisition, "
-                        + "and installer-produced binary acceptance remain required."
+                    "phase-wp3-azureauth-process-provider; "
+                        + "phase-wp16-deployment-validation-bundle; commit 63dacbac; "
+                        + "AzureAuth 0.9.5 release commit 21258ff3",
+                    "On 2026-08-03, the internal deployment-validation Linux apphost completed "
+                        + "product browser login and subsequent Git and Python silent-only cache "
+                        + "acquisitions through the verified official AzureAuth 0.9.5 linux-x64 "
+                        + "artifact. Credential output was captured for structural validation "
+                        + "but not printed. This ran under WSL2 with WSL detection disabled and "
+                        + "all isolated product, configuration, and AzureAuth cache state was "
+                        + "removed afterward. Standalone Ubuntu 24.04, system keyring behavior, "
+                        + "and release-installer-produced binary acceptance remain required."
                 ),
                 ReleaseEvidencePass(
                     "real-package-manager-invocation-paths",

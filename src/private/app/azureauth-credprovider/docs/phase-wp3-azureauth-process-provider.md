@@ -34,6 +34,10 @@ official release asset has SHA-256
 `c5ff138423e246b2f6773c3dfaf4327f4e96c3c38bdffb6f886c409309ec0a99`
 and installs its payload under `/usr/lib/azureauth`.
 
+Native Linux AzureAuth first checks its own MSAL cache, then uses system-browser
+authentication by default. It does not consume Azure CLI's authentication cache,
+so `az login` does not seed AzureAuth.
+
 Production native Linux discovery uses the absolute
 `/usr/lib/azureauth/azureauth` payload and reads the adjacent managed
 `azureauth.dll` assembly identity without launching AzureAuth. An explicit
@@ -59,6 +63,26 @@ the native Linux executable, discovery, cache-only process routing, product
 materialization, and Git protocol path, but it does not claim standalone Ubuntu
 24.04, product browser acquisition, system keyring, or installer-produced
 binary acceptance.
+
+On 2026-08-03, commit `63dacbac` was rebuilt as the internal
+deployment-validation `linux-x64` bundle and installed into isolated roots. With
+WSL detection disabled, the installed product apphost:
+
+1. discovered the same verified native AzureAuth 0.9.5 artifact;
+2. reported interactive and silent native-Linux readiness;
+3. completed product `login --browser` through AzureAuth's system-browser flow;
+4. returned only the expected safe login status fields;
+5. reused AzureAuth's isolated cache through Git and Python silent-only
+   acquisitions;
+6. validated the Git and Python credential protocol shapes without printing
+   credential material; and
+7. removed the complete isolated product, configuration, and AzureAuth cache
+   state.
+
+This strengthens the native-binary, installed-apphost, browser, and cache reuse
+evidence. Because the host kernel and integration environment were still WSL2,
+standalone Ubuntu 24.04, system keyring behavior, and authentication through a
+release-installer-produced binary remain required.
 
 ## Live WSL acceptance
 

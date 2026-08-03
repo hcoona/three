@@ -61,10 +61,50 @@ public sealed class ReleaseHardeningPhase15VerticalSliceServiceTests
             static check => check.Id == "standalone-linux-x64-platform-acceptance"
         );
         Assert.Contains("21258ff3", linux.Evidence, StringComparison.Ordinal);
-        Assert.Contains("linux-x64", linux.Notes, StringComparison.Ordinal);
-        Assert.Contains("silent-only", linux.Notes, StringComparison.Ordinal);
-        Assert.Contains("under WSL2", linux.Notes, StringComparison.Ordinal);
-        Assert.Contains("Standalone Ubuntu 24.04", linux.Notes, StringComparison.Ordinal);
+        Assert.Contains(
+            "phase-wp16-deployment-validation-bundle",
+            linux.Evidence,
+            StringComparison.Ordinal
+        );
+        Assert.Contains("commit 63dacbac", linux.Evidence, StringComparison.Ordinal);
+        Assert.Contains("On 2026-08-03", linux.Notes, StringComparison.Ordinal);
+        Assert.Contains(
+            "internal deployment-validation Linux apphost",
+            linux.Notes,
+            StringComparison.Ordinal
+        );
+        Assert.Contains(
+            "completed product browser login and subsequent Git and Python "
+                + "silent-only cache acquisitions",
+            linux.Notes,
+            StringComparison.Ordinal
+        );
+        Assert.Contains(
+            "verified official AzureAuth 0.9.5 linux-x64 artifact",
+            linux.Notes,
+            StringComparison.Ordinal
+        );
+        Assert.Contains(
+            "Credential output was captured for structural validation but not printed",
+            linux.Notes,
+            StringComparison.Ordinal
+        );
+        Assert.Contains(
+            "under WSL2 with WSL detection disabled",
+            linux.Notes,
+            StringComparison.Ordinal
+        );
+        Assert.Contains(
+            "all isolated product, configuration, and AzureAuth cache state was removed afterward",
+            linux.Notes,
+            StringComparison.Ordinal
+        );
+        Assert.Contains(
+            "Standalone Ubuntu 24.04, system keyring behavior, and "
+                + "release-installer-produced binary acceptance remain required.",
+            linux.Notes,
+            StringComparison.Ordinal
+        );
 
         ReleaseHardeningPhase15Check installer = Assert.Single(
             result.Checks,
