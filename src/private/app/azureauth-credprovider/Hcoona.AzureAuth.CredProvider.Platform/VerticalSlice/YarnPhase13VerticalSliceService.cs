@@ -143,6 +143,7 @@ public sealed class YarnPhase13VerticalSliceService
         string targetYarnrcPath = fileSystem.GetFullPath(
             NullIfWhiteSpace(request.TargetYarnrcPath) ?? ResolveUserYarnrcPath()
         );
+        ThrowIfProjectAuthWouldShadowPlan(request.Declaration, targetYarnrcPath);
         ThrowIfForbiddenAuthIdentConflictExists(request.Declaration, targetYarnrcPath);
 
         return CreateCredentialPlan(
@@ -170,6 +171,7 @@ public sealed class YarnPhase13VerticalSliceService
         string targetYarnrcPath = fileSystem.GetFullPath(
             Path.Combine(temporaryHomePath, WorkspaceYarnrcFileName)
         );
+        ThrowIfProjectAuthWouldShadowPlan(request.Declaration, targetYarnrcPath);
         ThrowIfForbiddenAuthIdentConflictExists(request.Declaration, targetYarnrcPath);
         var temporaryContainer = new ConfigurationTemporaryContainer
         {
@@ -319,6 +321,42 @@ public sealed class YarnPhase13VerticalSliceService
                     "Yarn npmAuthIdent entries conflict with product-owned npmAuthToken plans."
                 );
             }
+        }
+    }
+
+    private void ThrowIfProjectAuthWouldShadowPlan(
+        YarnPhase13RegistryDeclaration declaration,
+        string targetYarnrcPath
+    )
+    {
+        string? workspaceYarnrcPath = GetWorkspaceYarnrcPath();
+        if (
+            workspaceYarnrcPath is null
+            || !fileSystem.FileExists(workspaceYarnrcPath)
+            || PathsEqual(workspaceYarnrcPath, targetYarnrcPath)
+        )
+        {
+            return;
+        }
+
+        string plannedRegistry = NormalizeComparableRegistryKey(declaration.NpmRegistriesKey);
+        YarnProjectAuthBlock? shadow = ReadProjectAuthBlocks(workspaceYarnrcPath)
+            .FirstOrDefault(block =>
+                block.RegistryKey is not null
+                && block.ShadowingSelector is not null
+                && string.Equals(
+                    NormalizeComparableRegistryKey(block.RegistryKey),
+                    plannedRegistry,
+                    StringComparison.Ordinal
+                )
+            );
+        if (shadow is not null)
+        {
+            throw new InvalidOperationException(
+                "Project-local Yarn selector "
+                    + shadow.ShadowingSelector
+                    + " would shadow the planned user or CI credential."
+            );
         }
     }
 
@@ -613,6 +651,85 @@ public sealed class YarnPhase13VerticalSliceService
         }
     }
 
+    private List<YarnProjectAuthBlock> ReadProjectAuthBlocks(string yarnrcPath)
+    {
+        var blocks = new List<YarnProjectAuthBlock>();
+        YarnAuthIdentContext context = YarnAuthIdentContext.None;
+        YarnProjectAuthBlock? currentBlock = null;
+        foreach (string rawLine in SplitLines(fileSystem.ReadAllText(yarnrcPath)))
+        {
+            string line = StripYamlComment(rawLine);
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            int indent = CountLeadingSpaces(line);
+            string trimmed = line.Trim();
+            if (indent == 0)
+            {
+                currentBlock = null;
+                if (IsYamlMapHeader(trimmed, "npmRegistries"))
+                {
+                    context = YarnAuthIdentContext.NpmRegistries;
+                    continue;
+                }
+
+                if (IsYamlMapHeader(trimmed, "npmScopes"))
+                {
+                    context = YarnAuthIdentContext.NpmScopes;
+                    continue;
+                }
+
+                context = YarnAuthIdentContext.None;
+                continue;
+            }
+
+            if (indent == 2 && TryParseYamlMapKey(trimmed, out string? mapKey))
+            {
+                currentBlock = new YarnProjectAuthBlock(
+                    context == YarnAuthIdentContext.NpmRegistries
+                        ? UnquoteYamlScalar(mapKey) ?? mapKey
+                        : null,
+                    context == YarnAuthIdentContext.NpmScopes
+                        ? "npmScopes." + NormalizeScopeName(mapKey)
+                        : null
+                );
+                if (context != YarnAuthIdentContext.None)
+                {
+                    blocks.Add(currentBlock);
+                }
+                continue;
+            }
+
+            if (
+                indent < 4
+                || currentBlock is null
+                || !TryParseYamlKeyValue(
+                    trimmed,
+                    out string? settingKey,
+                    out string? settingValue
+                )
+            )
+            {
+                continue;
+            }
+
+            if (
+                context == YarnAuthIdentContext.NpmScopes
+                && string.Equals(settingKey, "npmRegistryServer", StringComparison.Ordinal)
+            )
+            {
+                currentBlock.RegistryKey = UnquoteYamlScalar(settingValue);
+                continue;
+            }
+
+            currentBlock.RecordAuthSetting(settingKey, settingValue);
+        }
+
+        return blocks;
+    }
+
     private IEnumerable<string> GetReadableYarnrcPaths()
     {
         string? workspaceYarnrcPath = GetWorkspaceYarnrcPath();
@@ -846,7 +963,10 @@ public sealed class YarnPhase13VerticalSliceService
                 continue;
             }
 
-            if (current == ':')
+            if (
+                current == ':'
+                && (index == text.Length - 1 || char.IsWhiteSpace(text[index + 1]))
+            )
             {
                 return index;
             }
@@ -917,15 +1037,15 @@ public sealed class YarnPhase13VerticalSliceService
             && string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
         )
         {
-            return uri.AbsoluteUri;
+            return uri.AbsoluteUri.TrimEnd('/');
         }
 
         if (registryKey.StartsWith("//", StringComparison.Ordinal))
         {
-            return "https:" + registryKey;
+            return ("https:" + registryKey).TrimEnd('/');
         }
 
-        return registryKey;
+        return registryKey.TrimEnd('/');
     }
 
     private bool PathsEqual(string left, string right)
@@ -994,6 +1114,34 @@ public sealed class YarnPhase13VerticalSliceService
 
     private static string? NullIfWhiteSpace(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private sealed class YarnProjectAuthBlock(string? registryKey, string? selectorPrefix)
+    {
+        public string? RegistryKey { get; set; } = registryKey;
+
+        public string? ShadowingSelector { get; private set; }
+
+        public void RecordAuthSetting(string key, string? value)
+        {
+            bool authValuePresent =
+                (
+                    string.Equals(key, "npmAuthToken", StringComparison.Ordinal)
+                    || string.Equals(key, "npmAuthIdent", StringComparison.Ordinal)
+                ) && !IsYamlNullOrEmpty(value);
+            bool alwaysAuthDisabled =
+                string.Equals(key, "npmAlwaysAuth", StringComparison.Ordinal)
+                && string.Equals(
+                    UnquoteYamlScalar(value),
+                    "false",
+                    StringComparison.OrdinalIgnoreCase
+                );
+            if (ShadowingSelector is null && (authValuePresent || alwaysAuthDisabled))
+            {
+                ShadowingSelector =
+                    (selectorPrefix ?? "npmRegistries[registry]") + "." + key;
+            }
+        }
+    }
 }
 
 internal enum YarnAuthIdentContext

@@ -106,6 +106,77 @@ public sealed class ConfigurationYarnrcPhysicalWriterTests
         Assert.Equal(original, fileSystem.ReadAllText(Path));
     }
 
+    [Fact]
+    public void WriteUpdatesUnquotedUrlRegistryKeyWithoutAddingDuplicate()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CanonicalResourceIdentity resource = CreateResource();
+        string registry = resource.ServiceEndpoint.AbsoluteUri;
+        fileSystem.AtomicWriteAllText(
+            Path,
+            $"npmRegistries:\n  {registry}:\n    npmAuthToken: 'old-token'\n"
+        );
+        ConfigurationChange tokenChange = CreateChange(
+            $"npmRegistries.{registry}.npmAuthToken",
+            "replacement-token",
+            isSecret: true
+        );
+        var writer = new YarnrcPhysicalTargetWriter(fileSystem);
+
+        writer.Write(
+            CreateRequest([tokenChange], resource, ownership: [Owned(tokenChange)]),
+            TestContext.Current.CancellationToken
+        );
+
+        string text = fileSystem.ReadAllText(Path);
+        Assert.Equal(
+            1,
+            text.Split($"  {registry}:", StringSplitOptions.None).Length - 1
+        );
+        Assert.Contains("npmAuthToken: 'replacement-token'", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("npmAuthToken: 'old-token'", text, StringComparison.Ordinal);
+        Assert.DoesNotContain($"  '{registry}':", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RemoveFindsUnquotedUrlRegistryKeyWithoutLeavingDuplicate()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CanonicalResourceIdentity resource = CreateResource();
+        string registry = resource.ServiceEndpoint.AbsoluteUri;
+        fileSystem.AtomicWriteAllText(
+            Path,
+            $"npmRegistries:\n  {registry}:\n    npmAuthToken: 'token'\n"
+                + "nodeLinker: node-modules\n"
+        );
+        ConfigurationChange tokenChange = CreateChange(
+            $"npmRegistries.{registry}.npmAuthToken",
+            "token",
+            isSecret: true
+        );
+        ConfigurationChange remove = tokenChange with
+        {
+            Operation = ConfigurationChangeOperation.Remove,
+            Value = null,
+        };
+        var writer = new YarnrcPhysicalTargetWriter(fileSystem);
+
+        writer.Write(
+            CreateRequest(
+                [remove],
+                resource,
+                ConfigurationPlanOperation.Remove,
+                [Owned(tokenChange)]
+            ),
+            TestContext.Current.CancellationToken
+        );
+
+        string text = fileSystem.ReadAllText(Path);
+        Assert.DoesNotContain(registry, text, StringComparison.Ordinal);
+        Assert.DoesNotContain("npmAuthToken", text, StringComparison.Ordinal);
+        Assert.Contains("nodeLinker: node-modules", text, StringComparison.Ordinal);
+    }
+
     private static ConfigurationPhysicalTargetWriterRequest CreateRequest(
         IReadOnlyList<ConfigurationChange> changes,
         CanonicalResourceIdentity resource,

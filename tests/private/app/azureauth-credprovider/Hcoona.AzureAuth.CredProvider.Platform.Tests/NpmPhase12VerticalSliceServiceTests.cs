@@ -571,6 +571,89 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         Assert.False(result.CiTemporaryCredentialPlanValid);
     }
 
+    [Theory]
+    [InlineData("_authToken")]
+    [InlineData("_auth")]
+    [InlineData("username")]
+    [InlineData("_password")]
+    public void CreateUserCredentialPlanRejectsProjectAuthSelectors(string authSelector)
+    {
+        const string ProjectSecret = "project-secret-value";
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        string registry =
+            "https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/";
+        fileSystem.WriteAllText(
+            "/workspace/.npmrc",
+            "registry="
+                + registry
+                + "\n//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:"
+                + authSelector
+                + "="
+                + ProjectSecret
+                + "\n"
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            service.CreateUserCredentialPlan(
+                new NpmPhase12CredentialPlanRequest
+                {
+                    Declaration = Assert.Single(service.DiscoverRegistryDeclarations()),
+                    AuthToken = "short-lived-token",
+                }
+            )
+        );
+
+        Assert.Contains("Project-local npm authentication", exception.Message);
+        Assert.DoesNotContain(ProjectSecret, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CreateCiTemporaryCredentialPlanRejectsProjectAuthToken()
+    {
+        const string ProjectSecret = "project-secret-value";
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        fileSystem.WriteAllText(
+            "/workspace/.npmrc",
+            """
+            registry=https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/
+            //pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:_authToken=project-secret-value
+            """
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            service.CreateCiTemporaryCredentialPlan(
+                new NpmPhase12CredentialPlanRequest
+                {
+                    Declaration = Assert.Single(service.DiscoverRegistryDeclarations()),
+                    AuthToken = "short-lived-token",
+                    TargetNpmrcPath = "/work/ci/.npmrc",
+                }
+            )
+        );
+
+        Assert.Contains("Project-local npm authentication", exception.Message);
+        Assert.DoesNotContain(ProjectSecret, exception.Message, StringComparison.Ordinal);
+    }
+
     private static void CreateDirectory(InMemoryFileSystem fileSystem, string path)
     {
         string[] segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);

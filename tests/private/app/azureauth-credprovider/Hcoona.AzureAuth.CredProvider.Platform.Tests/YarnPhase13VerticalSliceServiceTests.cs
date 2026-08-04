@@ -755,6 +755,102 @@ public sealed class YarnPhase13VerticalSliceServiceTests
         Assert.Equal("npmScopes.scope.npmAuthIdent", conflict.Key);
     }
 
+    [Theory]
+    [InlineData("npmAuthToken", "project-secret-value")]
+    [InlineData("npmAuthIdent", "user:password")]
+    [InlineData("npmAlwaysAuth", "false")]
+    public void CreateUserCredentialPlanRejectsProjectRegistryAuthShadow(
+        string selector,
+        string value
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/workspace/.yarnrc.yml",
+            "npmRegistryServer: https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
+                + "npmRegistries:\n"
+                + "  https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:\n"
+                + "    "
+                + selector
+                + ": '"
+                + value
+                + "'\n"
+        );
+        var service = new YarnPhase13VerticalSliceService(
+            new YarnPhase13VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            service.CreateUserCredentialPlan(
+                new YarnPhase13CredentialPlanRequest
+                {
+                    Declaration = Assert.Single(service.DiscoverRegistryDeclarations()),
+                    AuthToken = "short-lived-token",
+                }
+            )
+        );
+
+        Assert.Contains(selector, exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(value, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("npmAuthToken", "project-secret-value")]
+    [InlineData("npmAuthIdent", "user:password")]
+    [InlineData("npmAlwaysAuth", "false")]
+    public void CreateCiTemporaryCredentialPlanRejectsMatchingProjectScopeAuthShadow(
+        string selector,
+        string value
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        fileSystem.WriteAllText(
+            "/workspace/.yarnrc.yml",
+            "npmRegistryServer: https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
+                + "npmScopes:\n"
+                + "  shadow:\n"
+                + "    npmRegistryServer: https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry\n"
+                + "    "
+                + selector
+                + ": '"
+                + value
+                + "'\n"
+        );
+        var service = new YarnPhase13VerticalSliceService(
+            new YarnPhase13VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            service.CreateCiTemporaryCredentialPlan(
+                new YarnPhase13CredentialPlanRequest
+                {
+                    Declaration = Assert.Single(
+                        service.DiscoverRegistryDeclarations(),
+                        static declaration => declaration.Scope is null
+                    ),
+                    AuthToken = "short-lived-token",
+                    TemporaryHomePath = "/work/ci-yarn-home",
+                }
+            )
+        );
+
+        Assert.Contains("npmScopes.shadow." + selector, exception.Message);
+        Assert.DoesNotContain(value, exception.Message, StringComparison.Ordinal);
+    }
+
     private static void CreateDirectory(InMemoryFileSystem fileSystem, string path)
     {
         string[] segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);

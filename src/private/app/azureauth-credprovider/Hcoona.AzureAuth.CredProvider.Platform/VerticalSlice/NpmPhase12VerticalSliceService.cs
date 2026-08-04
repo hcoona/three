@@ -182,6 +182,7 @@ public sealed class NpmPhase12VerticalSliceService
         string targetNpmrcPath = fileSystem.GetFullPath(
             NullIfWhiteSpace(request.TargetNpmrcPath) ?? ResolveUserNpmrcPath()
         );
+        ThrowIfProjectAuthWouldShadowPlan(request.Declaration, targetNpmrcPath);
 
         return CreateCredentialPlan(
             request,
@@ -205,6 +206,7 @@ public sealed class NpmPhase12VerticalSliceService
                 nameof(request)
             );
         targetNpmrcPath = fileSystem.GetFullPath(targetNpmrcPath);
+        ThrowIfProjectAuthWouldShadowPlan(request.Declaration, targetNpmrcPath);
         string platform = InferActivationPlatform(targetNpmrcPath);
         var activationEnvironment = new ConfigurationActivationEnvironment
         {
@@ -242,6 +244,89 @@ public sealed class NpmPhase12VerticalSliceService
             );
         }
     }
+
+    private void ThrowIfProjectAuthWouldShadowPlan(
+        NpmPhase12RegistryDeclaration declaration,
+        string targetNpmrcPath
+    )
+    {
+        string? workspaceNpmrcPath = GetWorkspaceNpmrcPath();
+        if (
+            workspaceNpmrcPath is null
+            || !fileSystem.FileExists(workspaceNpmrcPath)
+            || PathsEqual(workspaceNpmrcPath, targetNpmrcPath)
+        )
+        {
+            return;
+        }
+
+        string plannedRegistry = NormalizeRegistryUrl(declaration.RegistryUrl);
+        foreach (string rawLine in SplitLines(fileSystem.ReadAllText(workspaceNpmrcPath)))
+        {
+            string trimmedLine = rawLine.Trim();
+            if (
+                trimmedLine.Length == 0
+                || trimmedLine.StartsWith('#')
+                || trimmedLine.StartsWith(';')
+            )
+            {
+                continue;
+            }
+
+            int separatorIndex = rawLine.IndexOf('=', StringComparison.Ordinal);
+            string key =
+                separatorIndex < 0 ? trimmedLine : rawLine[..separatorIndex].Trim();
+            if (
+                TryParseRegistryAuthSelector(key, out string registry)
+                && string.Equals(registry, plannedRegistry, StringComparison.Ordinal)
+            )
+            {
+                throw new InvalidOperationException(
+                    "Project-local npm authentication would shadow the planned user or CI "
+                        + "credential."
+                );
+            }
+        }
+    }
+
+    private static bool TryParseRegistryAuthSelector(string key, out string registry)
+    {
+        registry = string.Empty;
+        int separator = key.LastIndexOf("/:", StringComparison.Ordinal);
+        if (separator <= 1)
+        {
+            return false;
+        }
+
+        string leaf = key[(separator + 2)..];
+        if (
+            leaf
+                is not (
+                    "_authToken"
+                    or "_auth"
+                    or "username"
+                    or "_password"
+                )
+        )
+        {
+            return false;
+        }
+
+        string registryText = key[..(separator + 1)];
+        if (
+            !registryText.StartsWith("//", StringComparison.Ordinal)
+            || !Uri.TryCreate("https:" + registryText, UriKind.Absolute, out Uri? registryUri)
+        )
+        {
+            return false;
+        }
+
+        registry = NormalizeRegistryUrl(registryUri);
+        return true;
+    }
+
+    private static string NormalizeRegistryUrl(Uri registryUrl) =>
+        registryUrl.AbsoluteUri.TrimEnd('/');
 
     private static ConfigurationChangePlan CreateCredentialPlan(
         NpmPhase12CredentialPlanRequest request,

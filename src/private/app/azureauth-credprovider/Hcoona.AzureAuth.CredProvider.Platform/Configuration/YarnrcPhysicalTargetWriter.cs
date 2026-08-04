@@ -722,7 +722,11 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
                     quote = '\0';
                     continue;
                 }
-                if (quote == '\0' && character == ':')
+                if (
+                    quote == '\0'
+                    && character == ':'
+                    && (index == value.Length - 1 || char.IsWhiteSpace(value[index + 1]))
+                )
                 {
                     return index;
                 }
