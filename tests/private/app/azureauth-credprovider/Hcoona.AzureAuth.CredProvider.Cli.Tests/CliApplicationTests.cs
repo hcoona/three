@@ -4473,6 +4473,8 @@ public sealed class CliApplicationTests
     {
         public bool FileExists(string path) => false;
 
+        public bool IsExecutableFile(string path) => false;
+
         public bool DirectoryExists(string path) => false;
 
         public string GetFullPath(string path) => Path.GetFullPath(path);

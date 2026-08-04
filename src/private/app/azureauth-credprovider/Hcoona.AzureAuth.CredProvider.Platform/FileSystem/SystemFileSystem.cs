@@ -17,6 +17,26 @@ public sealed class SystemFileSystem : IFileSystem, IFileSystemMutationLock
         return File.Exists(path);
     }
 
+    public bool IsExecutableFile(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        if (!File.Exists(path))
+        {
+            return false;
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            return true;
+        }
+
+        const UnixFileMode executeModes =
+            UnixFileMode.UserExecute
+            | UnixFileMode.GroupExecute
+            | UnixFileMode.OtherExecute;
+        return (File.GetUnixFileMode(path) & executeModes) != 0;
+    }
+
     public bool DirectoryExists(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);

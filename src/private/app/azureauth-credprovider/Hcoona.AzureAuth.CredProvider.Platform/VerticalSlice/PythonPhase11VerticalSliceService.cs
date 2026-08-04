@@ -281,7 +281,7 @@ public sealed class PythonPhase11VerticalSliceService
         foreach (string directory in pathDirectories)
         {
             string candidatePath = Path.Combine(directory, keyringExecutableFileName);
-            if (fileSystem.FileExists(candidatePath))
+            if (fileSystem.IsExecutableFile(candidatePath))
             {
                 firstKeyringExecutablePath = fileSystem.GetFullPath(candidatePath);
                 break;
@@ -476,8 +476,13 @@ public sealed class PythonPhase11VerticalSliceService
         }
 
         return path.Split(pathListSeparator)
-            .Select(segment => segment.Length == 0 ? currentDirectoryPath : segment)
-            .Select(fileSystem.GetFullPath)
+            .Select(segment =>
+                segment.Length == 0
+                    ? currentDirectoryPath
+                    : fileSystem.IsPathFullyQualified(segment)
+                        ? fileSystem.GetFullPath(segment)
+                        : fileSystem.GetFullPath(Path.Combine(currentDirectoryPath, segment))
+            )
             .ToArray();
     }
 

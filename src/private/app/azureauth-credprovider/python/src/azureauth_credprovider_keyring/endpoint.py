@@ -60,13 +60,13 @@ def _classify_parsed_endpoint(parsed: SplitResult) -> EndpointCheck:
         return EndpointCheck(EndpointStatus.UNSUPPORTED, host=host)
 
     try:
-        has_explicit_port = parsed.port is not None
+        port = parsed.port
     except ValueError:
-        has_explicit_port = True
+        port = -1
 
     if (
         parsed.scheme.lower() != "https"
-        or has_explicit_port
+        or port not in {None, 443}
         or parsed.username is not None
         or parsed.password is not None
         or parsed.query

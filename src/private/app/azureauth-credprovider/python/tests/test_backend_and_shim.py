@@ -17,6 +17,7 @@ from azureauth_credprovider_keyring.backend import AzureAuthKeyringBackend
 from azureauth_credprovider_keyring.contracts import (
     CONTRACT_MAJOR,
     EXIT_CONFIGURATION_ERROR,
+    EXIT_FATAL,
     EXIT_NO_CREDENTIAL,
     EXIT_SUCCESS,
     PLATFORM_LINUX,
@@ -81,6 +82,27 @@ def test_endpoint_classifies_modern_and_legacy_python_feeds() -> None:
         assert check.status == EndpointStatus.SUPPORTED
         assert check.organization == "org"
         assert check.feed == "feed"
+
+
+def test_endpoint_accepts_explicit_https_default_port() -> None:
+    """Explicit HTTPS port 443 is equivalent to the implicit default."""
+    check = classify_python_feed_endpoint(
+        "https://pkgs.dev.azure.com:443/org/_packaging/feed/pypi/simple/",
+    )
+
+    assert check.status == EndpointStatus.SUPPORTED
+    assert check.organization == "org"
+    assert check.feed == "feed"
+
+
+@pytest.mark.parametrize("port", ["444", "not-a-port", "99999"])
+def test_endpoint_rejects_non_default_and_malformed_ports(port: str) -> None:
+    """Only the default HTTPS port is valid for Azure Artifacts feeds."""
+    check = classify_python_feed_endpoint(
+        f"https://pkgs.dev.azure.com:{port}/org/_packaging/feed/pypi/simple/",
+    )
+
+    assert check.status == EndpointStatus.INVALID
 
 
 def test_backend_unsupported_host_returns_none_without_manifest(
@@ -380,3 +402,46 @@ def test_invoke_helper_executes_shared_cli_argv_without_auth(
     assert "shell" not in subprocess_calls[0][1]
     assert credential.username == "AzureDevOps"
     assert credential.password == TEST_TOKEN
+
+
+def test_shim_redacts_generic_helper_launch_oserror(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Generic process launch failures become controlled redacted errors."""
+    raw_error_detail = "sensitive-path-and-token"
+    contract = HelperContract(
+        contract_major=CONTRACT_MAJOR,
+        product_id=PRODUCT_ID,
+        absolute_helper_path="/opt/azureauth-credprovider/azureauth-credprovider",
+        platform=PLATFORM_LINUX,
+    )
+
+    monkeypatch.setattr(
+        helper,
+        "load_and_validate_helper",
+        lambda _manifest_path=None: contract,
+    )
+
+    def fail_launch(
+        args: list[str],
+        **kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        del args, kwargs
+        raise OSError(raw_error_detail)
+
+    monkeypatch.setattr(helper.subprocess, "run", fail_launch)
+    stdout = StringIO()
+    stderr = StringIO()
+
+    exit_code = run(
+        ["get", PYTHON_FEED],
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert exit_code == EXIT_FATAL
+    assert stdout.getvalue() == ""
+    assert stderr.getvalue() == (
+        "error: Keyring helper process could not be started.\n"
+    )
+    assert raw_error_detail not in stderr.getvalue()

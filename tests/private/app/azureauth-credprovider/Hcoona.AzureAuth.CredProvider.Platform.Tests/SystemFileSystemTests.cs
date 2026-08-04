@@ -70,6 +70,40 @@ public sealed class SystemFileSystemTests
         }
     }
 
+    [Fact(Skip = "Unix file mode test.", SkipWhen = nameof(IsWindows))]
+    public void ExecutableFileCheckUsesUnixExecuteModes()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        string root = CreateTestDirectory();
+        string path = Path.Combine(root, "tool");
+        var fileSystem = new SystemFileSystem();
+
+        try
+        {
+            File.WriteAllText(path, "contents");
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+
+            Assert.False(fileSystem.IsExecutableFile(path));
+
+            File.SetUnixFileMode(
+                path,
+                UnixFileMode.UserRead
+                    | UnixFileMode.UserWrite
+                    | UnixFileMode.UserExecute
+            );
+
+            Assert.True(fileSystem.IsExecutableFile(path));
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(root);
+        }
+    }
+
     [Fact]
     public void AtomicWriteCreatesParentsAndReplacesExistingFile()
     {

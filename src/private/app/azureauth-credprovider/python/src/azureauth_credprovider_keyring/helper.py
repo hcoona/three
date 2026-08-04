@@ -81,6 +81,9 @@ def invoke_helper(
     except FileNotFoundError as error:
         message = "Keyring helper executable disappeared before execution."
         raise HelperIntegrityError(message) from error
+    except OSError as error:
+        message = "Keyring helper process could not be started."
+        raise HelperExecutionError(EXIT_FATAL, message) from error
 
     if completed.returncode == 0:
         return _parse_success_stdout(completed.stdout, mode)

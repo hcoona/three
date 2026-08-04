@@ -59,6 +59,30 @@ public sealed class InMemoryFileSystem : IFileSystem, IFileSystemMutationLock
         return files.ContainsKey(normalizedPath);
     }
 
+    public bool IsExecutableFile(string path)
+    {
+        string normalizedPath = NormalizePath(path);
+        bool exists = files.ContainsKey(normalizedPath);
+        bool windowsSemantics =
+            pathSemantics == InMemoryPathSemantics.Windows
+            || (pathSemantics == InMemoryPathSemantics.Host && OperatingSystem.IsWindows());
+        const UnixFileMode executeModes =
+            UnixFileMode.UserExecute
+            | UnixFileMode.GroupExecute
+            | UnixFileMode.OtherExecute;
+        bool result =
+            exists
+            && (
+                windowsSemantics
+                || (
+                    unixFileModes.TryGetValue(normalizedPath, out UnixFileMode mode)
+                    && (mode & executeModes) != 0
+                )
+            );
+        Record(nameof(IsExecutableFile), normalizedPath, result.ToString());
+        return result;
+    }
+
     public bool DirectoryExists(string path)
     {
         string normalizedPath = NormalizePath(path);

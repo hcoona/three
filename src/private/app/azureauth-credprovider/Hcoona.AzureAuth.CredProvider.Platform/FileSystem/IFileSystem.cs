@@ -6,6 +6,8 @@ public interface IFileSystem
 {
     bool FileExists(string path);
 
+    bool IsExecutableFile(string path);
+
     bool DirectoryExists(string path);
 
     string GetFullPath(string path);

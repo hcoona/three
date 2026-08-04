@@ -72,6 +72,29 @@ public sealed class InMemoryFileSystemTests
     }
 
     [Fact]
+    public void ExecutableFileCheckUsesPosixModesAndDefersOnWindows()
+    {
+        var posixFileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        posixFileSystem.CreateDirectory("/root");
+        posixFileSystem.WriteAllText("/root/tool", "contents");
+
+        Assert.False(posixFileSystem.IsExecutableFile("/root/tool"));
+
+        posixFileSystem.SetUnixFileMode(
+            "/root/tool",
+            UnixFileMode.UserRead | UnixFileMode.UserExecute
+        );
+
+        Assert.True(posixFileSystem.IsExecutableFile("/root/tool"));
+
+        var windowsFileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Windows);
+        windowsFileSystem.CreateDirectory(@"C:\root");
+        windowsFileSystem.WriteAllText(@"C:\root\tool.exe", "contents");
+
+        Assert.True(windowsFileSystem.IsExecutableFile(@"C:\root\tool.exe"));
+    }
+
+    [Fact]
     public void MutationLockRejectsConcurrentHolderAndCanBeReacquired()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);

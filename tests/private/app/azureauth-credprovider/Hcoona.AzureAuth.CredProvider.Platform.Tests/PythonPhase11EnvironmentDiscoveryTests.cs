@@ -66,8 +66,8 @@ public sealed class PythonPhase11EnvironmentDiscoveryTests
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         CreateDirectory(fileSystem, ExpectedShimDirectory);
         CreateDirectory(fileSystem, "/usr/bin");
-        fileSystem.WriteAllText(ExpectedShimPath, "#!/bin/sh\n");
-        fileSystem.WriteAllText("/usr/bin/keyring", "#!/bin/sh\n");
+        WriteExecutable(fileSystem, ExpectedShimPath);
+        WriteExecutable(fileSystem, "/usr/bin/keyring");
         var environment = new EnvironmentVariables(
             new Dictionary<string, string?>
             {
@@ -101,8 +101,8 @@ public sealed class PythonPhase11EnvironmentDiscoveryTests
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         CreateDirectory(fileSystem, ExpectedShimDirectory);
         CreateDirectory(fileSystem, "/usr/bin");
-        fileSystem.WriteAllText(ExpectedShimPath, "#!/bin/sh\n");
-        fileSystem.WriteAllText("/usr/bin/keyring", "#!/bin/sh\n");
+        WriteExecutable(fileSystem, ExpectedShimPath);
+        WriteExecutable(fileSystem, "/usr/bin/keyring");
         var environment = new EnvironmentVariables(
             new Dictionary<string, string?>
             {
@@ -136,8 +136,8 @@ public sealed class PythonPhase11EnvironmentDiscoveryTests
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         CreateDirectory(fileSystem, ExpectedShimDirectory);
         CreateDirectory(fileSystem, "/workspace");
-        fileSystem.WriteAllText(ExpectedShimPath, "#!/bin/sh\n");
-        fileSystem.WriteAllText("/workspace/keyring", "#!/bin/sh\n");
+        WriteExecutable(fileSystem, ExpectedShimPath);
+        WriteExecutable(fileSystem, "/workspace/keyring");
         var environment = new EnvironmentVariables(
             new Dictionary<string, string?>
             {
@@ -162,6 +162,79 @@ public sealed class PythonPhase11EnvironmentDiscoveryTests
 
         Assert.False(result.KeyringShim.ExpectedShimFirstOnPath);
         Assert.Equal("/workspace/keyring", result.KeyringShim.FirstKeyringExecutablePath);
+    }
+
+    [Fact]
+    public async Task DoctorResolvesRelativeAndEmptyPathEntriesFromModeledCurrentDirectory()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, ExpectedShimDirectory);
+        CreateDirectory(fileSystem, "/workspace/tools");
+        WriteExecutable(fileSystem, ExpectedShimPath);
+        WriteExecutable(fileSystem, "/workspace/tools/keyring");
+        var environment = new EnvironmentVariables(
+            new Dictionary<string, string?>
+            {
+                ["HOME"] = "/home/alice",
+                ["PATH"] = "tools::" + ExpectedShimDirectory + ":",
+            }
+        );
+        var service = new PythonPhase11VerticalSliceService(
+            new PythonPhase11VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                EnvironmentVariableReader = environment.Get,
+                ExpectedKeyringShimPath = ExpectedShimPath,
+                CurrentDirectoryPath = "/workspace",
+                PathListSeparator = ':',
+            }
+        );
+
+        PythonPhase11DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(
+            ["/workspace/tools", "/workspace", ExpectedShimDirectory, "/workspace"],
+            result.KeyringShim.PathDirectories
+        );
+        Assert.Equal(
+            "/workspace/tools/keyring",
+            result.KeyringShim.FirstKeyringExecutablePath
+        );
+    }
+
+    [Fact]
+    public async Task DoctorSkipsNonExecutablePosixPathCandidate()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, ExpectedShimDirectory);
+        CreateDirectory(fileSystem, "/untrusted");
+        fileSystem.WriteAllText("/untrusted/keyring", "#!/bin/sh\n");
+        WriteExecutable(fileSystem, ExpectedShimPath);
+        var environment = new EnvironmentVariables(
+            new Dictionary<string, string?>
+            {
+                ["HOME"] = "/home/alice",
+                ["PATH"] = "/untrusted:" + ExpectedShimDirectory,
+            }
+        );
+        var service = new PythonPhase11VerticalSliceService(
+            new PythonPhase11VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                EnvironmentVariableReader = environment.Get,
+                ExpectedKeyringShimPath = ExpectedShimPath,
+                PathListSeparator = ':',
+            }
+        );
+
+        PythonPhase11DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.True(result.KeyringShim.ExpectedShimFirstOnPath);
+        Assert.Equal(ExpectedShimPath, result.KeyringShim.FirstKeyringExecutablePath);
     }
 
     [Fact]
@@ -233,6 +306,15 @@ public sealed class PythonPhase11EnvironmentDiscoveryTests
                 fileSystem.CreateDirectory(current);
             }
         }
+    }
+
+    private static void WriteExecutable(InMemoryFileSystem fileSystem, string path)
+    {
+        fileSystem.WriteAllText(path, "#!/bin/sh\n");
+        fileSystem.SetUnixFileMode(
+            path,
+            UnixFileMode.UserRead | UnixFileMode.UserExecute
+        );
     }
 
     private static void AssertNoFilesystemMutationCalls(IEnumerable<FileSystemCall> calls)
