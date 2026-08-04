@@ -94,9 +94,19 @@ public sealed class NuGetPluginAdapter
 
     public GetAuthenticationCredentialsResponse HandleGetAuthenticationCredentials(
         GetAuthenticationCredentialsRequest request
+    ) =>
+        HandleGetAuthenticationCredentialsAsync(request, CancellationToken.None)
+            .AsTask()
+            .GetAwaiter()
+            .GetResult();
+
+    internal async ValueTask<GetAuthenticationCredentialsResponse> HandleGetAuthenticationCredentialsAsync(
+        GetAuthenticationCredentialsRequest request,
+        CancellationToken cancellationToken
     )
     {
         ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
 
         NuGetResourceParseResult parseResult = TryCreateResource(request.Uri);
         if (parseResult.Status == NuGetResourceParseStatus.NoCredential)
@@ -116,7 +126,10 @@ public sealed class NuGetPluginAdapter
             parseResult.Resource,
             request
         );
-        CredentialResult credentialResult = credentialAcquisition.Acquire(credentialRequest);
+        CredentialResult credentialResult = await credentialAcquisition
+            .AcquireAsync(credentialRequest, cancellationToken)
+            .ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
         return CreateAuthenticationCredentialsResponse(credentialResult);
     }
 
@@ -133,7 +146,7 @@ public sealed class NuGetPluginAdapter
         return new SetLogLevelResponse(MessageResponseCode.Success);
     }
 
-    private RequestHandlers CreateRequestHandlers()
+    internal RequestHandlers CreateRequestHandlers()
     {
         var requestHandlers = new RequestHandlers();
         AddRequestHandler(requestHandlers, MessageMethod.Initialize, new InitializeHandler());
@@ -518,16 +531,19 @@ public sealed class NuGetPluginAdapter
     private sealed class InitializeHandler
         : NuGetRequestHandler<InitializeRequest, InitializeResponse>
     {
-        protected override InitializeResponse HandleRequest(InitializeRequest request) =>
-            NuGetPluginAdapter.HandleInitialize(request);
+        protected override ValueTask<InitializeResponse> HandleRequestAsync(
+            InitializeRequest request,
+            CancellationToken cancellationToken
+        ) => ValueTask.FromResult(NuGetPluginAdapter.HandleInitialize(request));
     }
 
     private sealed class GetOperationClaimsHandler
         : NuGetRequestHandler<GetOperationClaimsRequest, GetOperationClaimsResponse>
     {
-        protected override GetOperationClaimsResponse HandleRequest(
-            GetOperationClaimsRequest request
-        ) => NuGetPluginAdapter.HandleGetOperationClaims(request);
+        protected override ValueTask<GetOperationClaimsResponse> HandleRequestAsync(
+            GetOperationClaimsRequest request,
+            CancellationToken cancellationToken
+        ) => ValueTask.FromResult(NuGetPluginAdapter.HandleGetOperationClaims(request));
     }
 
     private sealed class GetAuthenticationCredentialsHandler(NuGetPluginAdapter adapter)
@@ -536,23 +552,28 @@ public sealed class NuGetPluginAdapter
             GetAuthenticationCredentialsResponse
         >
     {
-        protected override GetAuthenticationCredentialsResponse HandleRequest(
-            GetAuthenticationCredentialsRequest request
-        ) => adapter.HandleGetAuthenticationCredentials(request);
+        protected override ValueTask<GetAuthenticationCredentialsResponse> HandleRequestAsync(
+            GetAuthenticationCredentialsRequest request,
+            CancellationToken cancellationToken
+        ) => adapter.HandleGetAuthenticationCredentialsAsync(request, cancellationToken);
     }
 
     private sealed class SetCredentialsHandler
         : NuGetRequestHandler<SetCredentialsRequest, SetCredentialsResponse>
     {
-        protected override SetCredentialsResponse HandleRequest(SetCredentialsRequest request) =>
-            NuGetPluginAdapter.HandleSetCredentials(request);
+        protected override ValueTask<SetCredentialsResponse> HandleRequestAsync(
+            SetCredentialsRequest request,
+            CancellationToken cancellationToken
+        ) => ValueTask.FromResult(NuGetPluginAdapter.HandleSetCredentials(request));
     }
 
     private sealed class SetLogLevelHandler
         : NuGetRequestHandler<SetLogLevelRequest, SetLogLevelResponse>
     {
-        protected override SetLogLevelResponse HandleRequest(SetLogLevelRequest request) =>
-            NuGetPluginAdapter.HandleSetLogLevel(request);
+        protected override ValueTask<SetLogLevelResponse> HandleRequestAsync(
+            SetLogLevelRequest request,
+            CancellationToken cancellationToken
+        ) => ValueTask.FromResult(NuGetPluginAdapter.HandleSetLogLevel(request));
     }
 
     private abstract class NuGetRequestHandler<TRequest, TResponse> : IRequestHandler
@@ -573,13 +594,17 @@ public sealed class NuGetPluginAdapter
             cancellationToken.ThrowIfCancellationRequested();
 
             TRequest payload = MessageUtilities.DeserializePayload<TRequest>(request);
-            TResponse response = HandleRequest(payload);
+            TResponse response = await HandleRequestAsync(payload, cancellationToken)
+                .ConfigureAwait(false);
             await responseHandler
-                .SendResponseAsync(request, response, CancellationToken.None)
+                .SendResponseAsync(request, response, cancellationToken)
                 .ConfigureAwait(false);
         }
 
-        protected abstract TResponse HandleRequest(TRequest request);
+        protected abstract ValueTask<TResponse> HandleRequestAsync(
+            TRequest request,
+            CancellationToken cancellationToken
+        );
     }
 
     private sealed record NuGetResourceParseResult(

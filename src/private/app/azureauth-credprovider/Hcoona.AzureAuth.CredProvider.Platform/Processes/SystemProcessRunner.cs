@@ -7,10 +7,47 @@ namespace Hcoona.AzureAuth.CredProvider.Platform.Processes;
 
 public sealed class SystemProcessRunner : IProcessRunner
 {
+    private static readonly TimeSpan ProcessCleanupTimeout = TimeSpan.FromSeconds(2);
     private static readonly Encoding RedirectedStreamEncoding = new UTF8Encoding(
         encoderShouldEmitUTF8Identifier: false,
         throwOnInvalidBytes: true
     );
+    private readonly IProcessCleanupStrategy processCleanup;
+    private readonly TimeSpan processCleanupTimeout;
+    private readonly IProcessStartStrategy processStart;
+
+    public SystemProcessRunner()
+        : this(
+            SystemProcessCleanupStrategy.Instance,
+            ProcessCleanupTimeout,
+            SystemProcessStartStrategy.Instance
+        ) { }
+
+    internal SystemProcessRunner(
+        IProcessCleanupStrategy processCleanup,
+        TimeSpan processCleanupTimeout
+    )
+        : this(processCleanup, processCleanupTimeout, SystemProcessStartStrategy.Instance) { }
+
+    internal SystemProcessRunner(IProcessStartStrategy processStart)
+        : this(SystemProcessCleanupStrategy.Instance, ProcessCleanupTimeout, processStart) { }
+
+    private SystemProcessRunner(
+        IProcessCleanupStrategy processCleanup,
+        TimeSpan processCleanupTimeout,
+        IProcessStartStrategy processStart
+    )
+    {
+        ArgumentNullException.ThrowIfNull(processCleanup);
+        ArgumentNullException.ThrowIfNull(processStart);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(
+            processCleanupTimeout,
+            TimeSpan.Zero
+        );
+        this.processCleanup = processCleanup;
+        this.processCleanupTimeout = processCleanupTimeout;
+        this.processStart = processStart;
+    }
 
     public async Task<ProcessResult> RunAsync(
         ProcessStartSpec startSpec,
@@ -20,10 +57,32 @@ public sealed class SystemProcessRunner : IProcessRunner
         ArgumentNullException.ThrowIfNull(startSpec);
         cancellationToken.ThrowIfCancellationRequested();
 
+        using var timeoutCancellation = new CancellationTokenSource(startSpec.Timeout);
+        using var executionCancellation = new CancellationTokenSource();
+        var cancellationCause = (int)ProcessCancellationCause.None;
+        using CancellationTokenRegistration callerCancellationRegistration =
+            cancellationToken.Register(() =>
+                CancelExecution(ProcessCancellationCause.Caller)
+            );
+        using CancellationTokenRegistration timeoutCancellationRegistration =
+            timeoutCancellation.Token.Register(() =>
+                CancelExecution(ProcessCancellationCause.Timeout)
+            );
+
+        void CancelExecution(ProcessCancellationCause cause)
+        {
+            Interlocked.CompareExchange(
+                ref cancellationCause,
+                (int)cause,
+                (int)ProcessCancellationCause.None
+            );
+            executionCancellation.Cancel();
+        }
+
         using var process = new Process { StartInfo = CreateStartInfo(startSpec) };
         try
         {
-            if (!process.Start())
+            if (!processStart.Start(process))
             {
                 return ProcessResult.LaunchFailure();
             }
@@ -33,11 +92,6 @@ public sealed class SystemProcessRunner : IProcessRunner
             return ProcessResult.LaunchFailure();
         }
 
-        using var timeoutCancellation = new CancellationTokenSource(startSpec.Timeout);
-        using var executionCancellation = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken,
-            timeoutCancellation.Token
-        );
         var standardOutput = new BoundedOutputCapture(
             startSpec.OutputCaptureOptions.StandardOutputByteLimit
         );
@@ -73,9 +127,15 @@ public sealed class SystemProcessRunner : IProcessRunner
         }
         catch (OperationCanceledException)
         {
+            bool outputTooLarge = standardOutput.TooLarge || standardError.TooLarge;
+            bool invalidOutput = standardOutput.InvalidUtf8 || standardError.InvalidUtf8;
+            bool teeFailed = standardError.TeeFailed;
+            ProcessCancellationCause triggeringCancellationCause =
+                (ProcessCancellationCause)Volatile.Read(ref cancellationCause);
+
             await KillAndWaitAsync(process).ConfigureAwait(false);
 
-            if (standardOutput.TooLarge || standardError.TooLarge)
+            if (outputTooLarge)
             {
                 return ProcessResult.OutputTooLarge(
                     standardOutput.Content,
@@ -84,7 +144,7 @@ public sealed class SystemProcessRunner : IProcessRunner
                 );
             }
 
-            if (standardOutput.InvalidUtf8 || standardError.InvalidUtf8)
+            if (invalidOutput)
             {
                 return ProcessResult.InvalidOutput(
                     standardOutput.Content,
@@ -93,7 +153,7 @@ public sealed class SystemProcessRunner : IProcessRunner
                 );
             }
 
-            if (standardError.TeeFailed)
+            if (teeFailed)
             {
                 return ProcessResult.InvalidOutput(
                     standardOutput.Content,
@@ -102,7 +162,11 @@ public sealed class SystemProcessRunner : IProcessRunner
                 );
             }
 
-            cancellationToken.ThrowIfCancellationRequested();
+            if (triggeringCancellationCause == ProcessCancellationCause.Caller)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
             return ProcessResult.TimedOut(
                 standardOutput.Content,
                 standardError.Content,
@@ -207,21 +271,27 @@ public sealed class SystemProcessRunner : IProcessRunner
         return startInfo;
     }
 
-    private static async Task KillAndWaitAsync(Process process)
+    private async Task KillAndWaitAsync(Process process)
     {
         try
         {
-            process.Kill(entireProcessTree: true);
+            processCleanup.Kill(process);
         }
         catch (InvalidOperationException) { }
         catch (NotSupportedException) { }
         catch (Win32Exception) { }
 
+        using var cleanupCancellation = new CancellationTokenSource(processCleanupTimeout);
         try
         {
-            await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
+            await processCleanup
+                .WaitForExitAsync(process, cleanupCancellation.Token)
+                .ConfigureAwait(false);
         }
         catch (InvalidOperationException) { }
+        catch (NotSupportedException) { }
+        catch (Win32Exception) { }
+        catch (OperationCanceledException) when (cleanupCancellation.IsCancellationRequested) { }
     }
 
     private static int? TryGetExitCode(Process process)
@@ -234,6 +304,57 @@ public sealed class SystemProcessRunner : IProcessRunner
         {
             return null;
         }
+        catch (NotSupportedException)
+        {
+            return null;
+        }
+        catch (Win32Exception)
+        {
+            return null;
+        }
+    }
+
+    internal interface IProcessCleanupStrategy
+    {
+        void Kill(Process process);
+
+        Task WaitForExitAsync(Process process, CancellationToken cancellationToken);
+    }
+
+    internal interface IProcessStartStrategy
+    {
+        bool Start(Process process);
+    }
+
+    private enum ProcessCancellationCause
+    {
+        None,
+        Caller,
+        Timeout,
+    }
+
+    internal sealed class SystemProcessStartStrategy : IProcessStartStrategy
+    {
+        internal static SystemProcessStartStrategy Instance { get; } = new();
+
+        private SystemProcessStartStrategy() { }
+
+        public bool Start(Process process) => process.Start();
+    }
+
+    internal sealed class SystemProcessCleanupStrategy : IProcessCleanupStrategy
+    {
+        internal static SystemProcessCleanupStrategy Instance { get; } = new();
+
+        private SystemProcessCleanupStrategy() { }
+
+        public void Kill(Process process)
+        {
+            process.Kill(entireProcessTree: true);
+        }
+
+        public Task WaitForExitAsync(Process process, CancellationToken cancellationToken) =>
+            process.WaitForExitAsync(cancellationToken);
     }
 
     private sealed class BoundedOutputCapture

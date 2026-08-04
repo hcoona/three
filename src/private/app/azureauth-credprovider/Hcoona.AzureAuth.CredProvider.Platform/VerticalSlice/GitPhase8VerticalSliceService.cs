@@ -331,17 +331,20 @@ public sealed class GitPhase8VerticalSliceService
                 ExecuteGitCredentialHelperAdapterPath(
                     ProductId,
                     ["git", "credential-helper", "get"],
-                    CredentialOperation.Get
+                    CredentialOperation.Get,
+                    cancellationToken
                 );
             gitCredentialHelperStoreSuccess = ExecuteGitCredentialHelperAdapterPath(
                 ProductId,
                 ["git", "credential-helper", "store"],
-                CredentialOperation.Store
+                CredentialOperation.Store,
+                cancellationToken
             ).Success;
             gitCredentialHelperEraseSuccess = ExecuteGitCredentialHelperAdapterPath(
                 ProductId,
                 ["git", "credential-helper", "erase"],
-                CredentialOperation.Erase
+                CredentialOperation.Erase,
+                cancellationToken
             ).Success;
         }
         catch (Exception exception) when (IsExpectedDoctorCheckFailure(exception))
@@ -885,7 +888,8 @@ public sealed class GitPhase8VerticalSliceService
     private (bool Success, bool PayloadCaptured) ExecuteGitCredentialHelperAdapterPath(
         string executablePath,
         string[] arguments,
-        CredentialOperation expectedOperation
+        CredentialOperation expectedOperation,
+        CancellationToken cancellationToken
     )
     {
         var protocolStdout = new StringWriter();
@@ -897,7 +901,8 @@ public sealed class GitPhase8VerticalSliceService
             new StringReader(GitCredentialHelperProtocolInput),
             protocolStdout,
             TextWriter.Null,
-            new DiagnosticRouter([], SecretRedactor.Empty)
+            new DiagnosticRouter([], SecretRedactor.Empty),
+            cancellationToken
         );
 
         string capturedPayload = protocolStdout.ToString();

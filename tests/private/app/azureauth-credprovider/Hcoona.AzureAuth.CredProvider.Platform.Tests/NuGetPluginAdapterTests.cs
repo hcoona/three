@@ -5,6 +5,7 @@ using Hcoona.AzureAuth.CredProvider.Platform.CredentialCore;
 using Newtonsoft.Json.Linq;
 using NuGet.Common;
 using NuGet.Protocol.Plugins;
+using System.Reflection;
 using Xunit;
 
 namespace Hcoona.AzureAuth.CredProvider.Platform.Tests;
@@ -351,5 +352,197 @@ public sealed class NuGetPluginAdapterTests
         Assert.Equal(InteractivePolicy.HostToolAllows, capturedRequest.InteractivePolicy);
         Assert.Equal(AcquisitionMode.InteractionAllowed, capturedRequest.AcquisitionMode);
         Assert.Equal(expectedRetryExtension, capturedRequest.ExtensionData["nuget.isRetry"]);
+    }
+
+    [Fact]
+    public async Task AuthenticationRequestTokenFlowsThroughAcquisitionAndResponseSending()
+    {
+        var acquisition = new RequestTokenCapturingAcquisitionService();
+        var adapter = new NuGetPluginAdapter(acquisition);
+        IRequestHandler handler = GetAuthenticationCredentialsHandler(adapter);
+        var responseHandler = new CapturingResponseHandler();
+        using var requestCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken
+        );
+        Message request = CreateAuthenticationCredentialsMessage("token-flow");
+
+        await handler.HandleResponseAsync(
+            CreateUnusedConnection(),
+            request,
+            responseHandler,
+            requestCancellation.Token
+        );
+
+        Assert.Equal(requestCancellation.Token, acquisition.CancellationToken);
+        Assert.Equal(requestCancellation.Token, responseHandler.CancellationToken);
+        var response = Assert.IsType<GetAuthenticationCredentialsResponse>(
+            responseHandler.Payload
+        );
+        Assert.Equal(MessageResponseCode.Success, response.ResponseCode);
+        Assert.Equal("AzureDevOps", response.Username);
+        Assert.Equal("fake-secret-request-token", response.Password);
+        Assert.Equal(1, responseHandler.SendCount);
+
+        requestCancellation.Cancel();
+        Assert.True(acquisition.CancellationToken.IsCancellationRequested);
+        Assert.True(responseHandler.CancellationToken.IsCancellationRequested);
+    }
+
+    [Fact]
+    public async Task AuthenticationRequestCancellationStopsBeforeResponseSending()
+    {
+        var acquisition = new CancelableAcquisitionService();
+        var adapter = new NuGetPluginAdapter(acquisition);
+        IRequestHandler handler = GetAuthenticationCredentialsHandler(adapter);
+        var responseHandler = new CapturingResponseHandler();
+        using var requestCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken
+        );
+        Message request = CreateAuthenticationCredentialsMessage("canceled-flow");
+
+        Task handling = handler.HandleResponseAsync(
+            CreateUnusedConnection(),
+            request,
+            responseHandler,
+            requestCancellation.Token
+        );
+        await acquisition.Entered.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken
+        );
+        requestCancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+            await handling.WaitAsync(
+                TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken
+            )
+        );
+        Assert.Equal(requestCancellation.Token, acquisition.CancellationToken);
+        Assert.True(acquisition.CancellationObserved);
+        Assert.Equal(0, responseHandler.SendCount);
+    }
+
+    private static IRequestHandler GetAuthenticationCredentialsHandler(
+        NuGetPluginAdapter adapter
+    )
+    {
+        RequestHandlers handlers = adapter.CreateRequestHandlers();
+        Assert.True(
+            handlers.TryGet(
+                MessageMethod.GetAuthenticationCredentials,
+                out IRequestHandler? handler
+            )
+        );
+        return Assert.IsAssignableFrom<IRequestHandler>(handler);
+    }
+
+    private static Message CreateAuthenticationCredentialsMessage(string requestId) =>
+        MessageUtilities.Create(
+            requestId,
+            MessageType.Request,
+            MessageMethod.GetAuthenticationCredentials,
+            new GetAuthenticationCredentialsRequest(
+                new Uri(
+                    "https://pkgs.dev.azure.com/org/_packaging/feed/nuget/v3/index.json"
+                ),
+                isRetry: false,
+                isNonInteractive: true,
+                canShowDialog: false
+            )
+        );
+
+    private static IConnection CreateUnusedConnection() =>
+        DispatchProxy.Create<IConnection, UnusedConnectionProxy>();
+
+    public class UnusedConnectionProxy : DispatchProxy
+    {
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args) =>
+            throw new InvalidOperationException("The request handler must not use the connection.");
+    }
+
+    private sealed class CapturingResponseHandler : IResponseHandler
+    {
+        public CancellationToken CancellationToken { get; private set; }
+
+        public object? Payload { get; private set; }
+
+        public int SendCount { get; private set; }
+
+        public Task SendResponseAsync<TPayload>(
+            Message request,
+            TPayload payload,
+            CancellationToken cancellationToken
+        )
+            where TPayload : class
+        {
+            CancellationToken = cancellationToken;
+            Payload = payload;
+            SendCount++;
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class RequestTokenCapturingAcquisitionService
+        : ICredentialAcquisitionService
+    {
+        public CancellationToken CancellationToken { get; private set; }
+
+        public ValueTask<CredentialResult> AcquireAsync(
+            CredentialRequestV2 request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            CancellationToken = cancellationToken;
+            return ValueTask.FromResult(
+                new CredentialResult
+                {
+                    Status = CredentialResultStatus.Success,
+                    Username = "AzureDevOps",
+                    Password = "fake-secret-request-token",
+                    DiagnosticsCorrelationId = "nuget-request-token",
+                }
+            );
+        }
+    }
+
+    private sealed class CancelableAcquisitionService : ICredentialAcquisitionService
+    {
+        private readonly TaskCompletionSource entered = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+
+        public CancellationToken CancellationToken { get; private set; }
+
+        public bool CancellationObserved { get; private set; }
+
+        public Task Entered => entered.Task;
+
+        public ValueTask<CredentialResult> AcquireAsync(
+            CredentialRequestV2 request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            CancellationToken = cancellationToken;
+            entered.TrySetResult();
+            return new ValueTask<CredentialResult>(WaitForCancellationAsync(cancellationToken));
+        }
+
+        private async Task<CredentialResult> WaitForCancellationAsync(
+            CancellationToken cancellationToken
+        )
+        {
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                throw new InvalidOperationException("The request was expected to be canceled.");
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                CancellationObserved = true;
+                throw;
+            }
+        }
     }
 }

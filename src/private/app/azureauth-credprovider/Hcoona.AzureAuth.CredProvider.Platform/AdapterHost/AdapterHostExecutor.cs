@@ -49,6 +49,10 @@ public static class AdapterHostExecutor
                 diagnosticRouter
             );
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception)
         {
             return CreateFailureOutcome(

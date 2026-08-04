@@ -27,16 +27,23 @@ public sealed class BoundedCredentialAcquisitionAdapter
     public CredentialResult Acquire(
         CredentialRequestV2 request,
         CancellationToken cancellationToken = default
+    ) =>
+        AcquireAsync(request, cancellationToken)
+            .AsTask()
+            .GetAwaiter()
+            .GetResult();
+
+    internal async ValueTask<CredentialResult> AcquireAsync(
+        CredentialRequestV2 request,
+        CancellationToken cancellationToken = default
     )
     {
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return service
+            return await service
                 .AcquireAsync(request, cancellationToken)
-                .AsTask()
-                .GetAwaiter()
-                .GetResult();
+                .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {

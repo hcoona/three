@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -342,6 +343,200 @@ public sealed class SystemProcessRunnerTests
     }
 
     [Fact]
+    public async Task RunAsyncOversizedTimeoutThrowsBeforeLaunchingProcess()
+    {
+        var processStart = new CountingProcessStartStrategy();
+        var runner = new SystemProcessRunner(processStart);
+        var startSpec = new ProcessStartSpec("must-not-launch", timeout: TimeSpan.MaxValue);
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+            runner.RunAsync(startSpec, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Equal(0, processStart.InvocationCount);
+    }
+
+    [Fact]
+    public async Task RunAsyncKillFailurePreservesCancellationAndBoundsCleanup()
+    {
+        var cleanup = new FailingProcessCleanupStrategy();
+        var runner = new SystemProcessRunner(cleanup, TimeSpan.FromMilliseconds(50));
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken
+        );
+
+        try
+        {
+            Task<ProcessResult> runTask = runner.RunAsync(
+                HelperStartSpec("sleep"),
+                cancellation.Token
+            );
+            cancellation.Cancel();
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+                await runTask.WaitAsync(
+                    TimeSpan.FromSeconds(1),
+                    TestContext.Current.CancellationToken
+                )
+            );
+
+            Assert.Equal(1, cleanup.KillAttempts);
+            Assert.Equal(1, cleanup.WaitAttempts);
+            Assert.True(cleanup.WaitCancellationObserved);
+        }
+        finally
+        {
+            cleanup.ForceKill();
+        }
+    }
+
+    [Fact]
+    public async Task RunAsyncKillFailurePreservesTimeoutAndBoundsCleanup()
+    {
+        var cleanup = new FailingProcessCleanupStrategy();
+        var runner = new SystemProcessRunner(cleanup, TimeSpan.FromMilliseconds(50));
+
+        try
+        {
+            var helperNonce = ProcessTestApp.CreateHelperNonce();
+            ProcessResult result = await runner
+                .RunAsync(
+                    new ProcessStartSpec(
+                        ProcessTestApp.AppHostPath(),
+                        ProcessTestApp.CreateHelperArguments(
+                            helperNonce,
+                            "sleep"
+                        ),
+                        environment: ProcessTestApp.CreateHelperEnvironment(helperNonce),
+                        timeout: TimeSpan.FromMilliseconds(50)
+                    ),
+                    TestContext.Current.CancellationToken
+                )
+                .WaitAsync(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+
+            Assert.Equal(ProcessExecutionStatus.TimedOut, result.Status);
+            Assert.Equal(1, cleanup.KillAttempts);
+            Assert.Equal(1, cleanup.WaitAttempts);
+            Assert.True(cleanup.WaitCancellationObserved);
+        }
+        finally
+        {
+            cleanup.ForceKill();
+        }
+    }
+
+    [Fact]
+    public async Task RunAsyncTimeoutRemainsPrimaryWhenCallerCancelsDuringCleanup()
+    {
+        var cleanup = new FailingProcessCleanupStrategy();
+        var runner = new SystemProcessRunner(cleanup, TimeSpan.FromMilliseconds(100));
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken
+        );
+
+        try
+        {
+            var helperNonce = ProcessTestApp.CreateHelperNonce();
+            Task<ProcessResult> runTask = runner.RunAsync(
+                new ProcessStartSpec(
+                    ProcessTestApp.AppHostPath(),
+                    ProcessTestApp.CreateHelperArguments(helperNonce, "sleep"),
+                    environment: ProcessTestApp.CreateHelperEnvironment(helperNonce),
+                    timeout: TimeSpan.FromMilliseconds(50)
+                ),
+                cancellation.Token
+            );
+
+            await cleanup.WaitEntered.WaitAsync(
+                TimeSpan.FromSeconds(1),
+                TestContext.Current.CancellationToken
+            );
+            cancellation.Cancel();
+            ProcessResult result = await runTask.WaitAsync(
+                TimeSpan.FromSeconds(1),
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Equal(ProcessExecutionStatus.TimedOut, result.Status);
+            Assert.True(cleanup.WaitCancellationObserved);
+        }
+        finally
+        {
+            cleanup.ForceKill();
+        }
+    }
+
+    [Fact]
+    public async Task RunAsyncTimeoutRemainsPrimaryWhenCallerCancelsAfterTimeoutBeforeLaunchCompletes()
+    {
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken
+        );
+        var processStart = new TimeoutThenCallerCancellationStartStrategy(
+            TimeSpan.FromMilliseconds(100),
+            cancellation
+        );
+        var runner = new SystemProcessRunner(processStart);
+        var helperNonce = ProcessTestApp.CreateHelperNonce();
+
+        ProcessResult result = await runner
+            .RunAsync(
+                new ProcessStartSpec(
+                    ProcessTestApp.AppHostPath(),
+                    ProcessTestApp.CreateHelperArguments(helperNonce, "sleep"),
+                    environment: ProcessTestApp.CreateHelperEnvironment(helperNonce),
+                    timeout: TimeSpan.FromMilliseconds(50)
+                ),
+                cancellation.Token
+            )
+            .WaitAsync(TimeSpan.FromSeconds(3), TestContext.Current.CancellationToken);
+
+        Assert.True(cancellation.IsCancellationRequested);
+        Assert.Equal(ProcessExecutionStatus.TimedOut, result.Status);
+    }
+
+    [Fact]
+    public async Task RunAsyncKillFailurePreservesOutputLimitAndBoundsCleanup()
+    {
+        var cleanup = new FailingProcessCleanupStrategy();
+        var runner = new SystemProcessRunner(cleanup, TimeSpan.FromMilliseconds(50));
+
+        try
+        {
+            var helperNonce = ProcessTestApp.CreateHelperNonce();
+            ProcessResult result = await runner
+                .RunAsync(
+                    new ProcessStartSpec(
+                        ProcessTestApp.AppHostPath(),
+                        ProcessTestApp.CreateHelperArguments(
+                            helperNonce,
+                            "stderr-then-sleep"
+                        ),
+                        environment: ProcessTestApp.CreateHelperEnvironment(helperNonce),
+                        timeout: TimeSpan.FromSeconds(30),
+                        outputCaptureOptions: new ProcessOutputCaptureOptions
+                        {
+                            StandardOutputByteLimit = 16,
+                            StandardErrorByteLimit = 1,
+                        }
+                    ),
+                    TestContext.Current.CancellationToken
+                )
+                .WaitAsync(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+
+            Assert.Equal(ProcessExecutionStatus.OutputTooLarge, result.Status);
+            Assert.Equal("d", result.StandardError);
+            Assert.Equal(1, cleanup.KillAttempts);
+            Assert.Equal(1, cleanup.WaitAttempts);
+            Assert.True(cleanup.WaitCancellationObserved);
+        }
+        finally
+        {
+            cleanup.ForceKill();
+        }
+    }
+
+    [Fact]
     public void ProcessStartSpecRejectsInvalidTimeoutAndCaptureLimits()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() =>
@@ -465,6 +660,92 @@ public sealed class SystemProcessRunnerTests
         }
 
         throw new TimeoutException($"Process {processId} did not exit after cancellation.");
+    }
+
+    private sealed class CountingProcessStartStrategy
+        : SystemProcessRunner.IProcessStartStrategy
+    {
+        public int InvocationCount { get; private set; }
+
+        public bool Start(Process process)
+        {
+            InvocationCount++;
+            throw new InvalidOperationException("The process must not be launched.");
+        }
+    }
+
+    private sealed class TimeoutThenCallerCancellationStartStrategy(
+        TimeSpan delay,
+        CancellationTokenSource cancellation
+    ) : SystemProcessRunner.IProcessStartStrategy
+    {
+        public bool Start(Process process)
+        {
+            Thread.Sleep(delay);
+            cancellation.Cancel();
+            return process.Start();
+        }
+    }
+
+    private sealed class FailingProcessCleanupStrategy
+        : SystemProcessRunner.IProcessCleanupStrategy
+    {
+        private readonly TaskCompletionSource waitEntered = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private int? processId;
+
+        public int KillAttempts { get; private set; }
+
+        public int WaitAttempts { get; private set; }
+
+        public bool WaitCancellationObserved { get; private set; }
+
+        public Task WaitEntered => waitEntered.Task;
+
+        public void Kill(Process process)
+        {
+            processId = process.Id;
+            KillAttempts++;
+            throw new Win32Exception("Simulated process-tree kill failure.");
+        }
+
+        public async Task WaitForExitAsync(
+            Process process,
+            CancellationToken cancellationToken
+        )
+        {
+            Assert.Equal(processId, process.Id);
+            WaitAttempts++;
+            waitEntered.TrySetResult();
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                WaitCancellationObserved = true;
+                throw new Win32Exception("Simulated wait failure after cleanup cancellation.");
+            }
+        }
+
+        public void ForceKill()
+        {
+            if (processId is not int capturedProcessId)
+            {
+                return;
+            }
+
+            try
+            {
+                using Process process = Process.GetProcessById(capturedProcessId);
+                process.Kill(entireProcessTree: true);
+                process.WaitForExit(milliseconds: 5_000);
+            }
+            catch (ArgumentException) { }
+            catch (InvalidOperationException) { }
+            catch (Win32Exception) { }
+        }
     }
 
     [Fact]

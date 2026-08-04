@@ -318,8 +318,9 @@ public sealed class NuGetPhase10VerticalSliceService
             NetCorePluginEntrypointPresent = netCorePluginEntrypointPresent,
             PluginModeEntrypointResolvable = pluginModeEntrypointResolvable,
             AzureArtifactsSourceCanonicalizationSuccess =
-                TryValidateAzureArtifactsSourceCanonicalization(),
-            InteractivePolicyGuidanceSuccess = TryValidateInteractivePolicyGuidance(),
+                await TryValidateAzureArtifactsSourceCanonicalizationAsync(cancellationToken),
+            InteractivePolicyGuidanceSuccess =
+                await TryValidateInteractivePolicyGuidanceAsync(cancellationToken),
             OptionalEnvironmentOverridesAbsent = OptionalEnvironmentOverridesAreAbsent(),
         };
     }
@@ -608,16 +609,26 @@ public sealed class NuGetPhase10VerticalSliceService
             "Credential acquisition is unavailable in a configuration-only service."
         );
 
-    private bool TryValidateAzureArtifactsSourceCanonicalization()
+    private async ValueTask<bool> TryValidateAzureArtifactsSourceCanonicalizationAsync(
+        CancellationToken cancellationToken
+    )
     {
         try
         {
             var adapter = new NuGetPluginAdapter(GetCredentialAcquisition());
-            return AuthenticationSucceeds(adapter, OrganizationScopedSource)
-                && AuthenticationSucceeds(adapter, ProjectScopedSource)
-                && AuthenticationSucceeds(adapter, LegacySource)
-                && UnsupportedHostReturnsNotFound(adapter)
-                && WrongAzureArtifactsSuffixReturnsError(adapter);
+            return await AuthenticationSucceedsAsync(
+                    adapter,
+                    OrganizationScopedSource,
+                    cancellationToken
+                )
+                && await AuthenticationSucceedsAsync(
+                    adapter,
+                    ProjectScopedSource,
+                    cancellationToken
+                )
+                && await AuthenticationSucceedsAsync(adapter, LegacySource, cancellationToken)
+                && await UnsupportedHostReturnsNotFoundAsync(adapter, cancellationToken)
+                && await WrongAzureArtifactsSuffixReturnsErrorAsync(adapter, cancellationToken);
         }
         catch (Exception exception) when (IsExpectedStateCheckFailure(exception))
         {
@@ -625,19 +636,22 @@ public sealed class NuGetPhase10VerticalSliceService
         }
     }
 
-    private bool TryValidateInteractivePolicyGuidance()
+    private async ValueTask<bool> TryValidateInteractivePolicyGuidanceAsync(
+        CancellationToken cancellationToken
+    )
     {
         try
         {
             var adapter = new NuGetPluginAdapter(GetCredentialAcquisition());
             GetAuthenticationCredentialsResponse response =
-                adapter.HandleGetAuthenticationCredentials(
+                await adapter.HandleGetAuthenticationCredentialsAsync(
                     new GetAuthenticationCredentialsRequest(
                         OrganizationScopedSource,
                         isRetry: false,
                         isNonInteractive: true,
                         canShowDialog: false
-                    )
+                    ),
+                    cancellationToken
                 );
 
             return response.ResponseCode == MessageResponseCode.Error
@@ -652,47 +666,63 @@ public sealed class NuGetPhase10VerticalSliceService
         }
     }
 
-    private static bool AuthenticationSucceeds(NuGetPluginAdapter adapter, Uri source)
+    private static async ValueTask<bool> AuthenticationSucceedsAsync(
+        NuGetPluginAdapter adapter,
+        Uri source,
+        CancellationToken cancellationToken
+    )
     {
-        GetAuthenticationCredentialsResponse response = adapter.HandleGetAuthenticationCredentials(
-            new GetAuthenticationCredentialsRequest(
-                source,
-                isRetry: false,
-                isNonInteractive: false,
-                canShowDialog: false
-            )
-        );
+        GetAuthenticationCredentialsResponse response =
+            await adapter.HandleGetAuthenticationCredentialsAsync(
+                new GetAuthenticationCredentialsRequest(
+                    source,
+                    isRetry: false,
+                    isNonInteractive: false,
+                    canShowDialog: false
+                ),
+                cancellationToken
+            );
         return response.ResponseCode == MessageResponseCode.Success
             && string.Equals(response.Username, "AzureDevOps", StringComparison.Ordinal)
             && response.Password?.StartsWith("fake-secret-", StringComparison.Ordinal) == true
             && response.AuthenticationTypes is ["Basic"];
     }
 
-    private static bool UnsupportedHostReturnsNotFound(NuGetPluginAdapter adapter)
+    private static async ValueTask<bool> UnsupportedHostReturnsNotFoundAsync(
+        NuGetPluginAdapter adapter,
+        CancellationToken cancellationToken
+    )
     {
-        GetAuthenticationCredentialsResponse response = adapter.HandleGetAuthenticationCredentials(
-            new GetAuthenticationCredentialsRequest(
-                new Uri("https://api.nuget.org/v3/index.json"),
-                isRetry: false,
-                isNonInteractive: false,
-                canShowDialog: false
-            )
-        );
+        GetAuthenticationCredentialsResponse response =
+            await adapter.HandleGetAuthenticationCredentialsAsync(
+                new GetAuthenticationCredentialsRequest(
+                    new Uri("https://api.nuget.org/v3/index.json"),
+                    isRetry: false,
+                    isNonInteractive: false,
+                    canShowDialog: false
+                ),
+                cancellationToken
+            );
         return response.ResponseCode == MessageResponseCode.NotFound
             && response.Username is null
             && response.Password is null;
     }
 
-    private static bool WrongAzureArtifactsSuffixReturnsError(NuGetPluginAdapter adapter)
+    private static async ValueTask<bool> WrongAzureArtifactsSuffixReturnsErrorAsync(
+        NuGetPluginAdapter adapter,
+        CancellationToken cancellationToken
+    )
     {
-        GetAuthenticationCredentialsResponse response = adapter.HandleGetAuthenticationCredentials(
-            new GetAuthenticationCredentialsRequest(
-                new Uri("https://pkgs.dev.azure.com/org/_packaging/feed/npm"),
-                isRetry: false,
-                isNonInteractive: false,
-                canShowDialog: false
-            )
-        );
+        GetAuthenticationCredentialsResponse response =
+            await adapter.HandleGetAuthenticationCredentialsAsync(
+                new GetAuthenticationCredentialsRequest(
+                    new Uri("https://pkgs.dev.azure.com/org/_packaging/feed/npm"),
+                    isRetry: false,
+                    isNonInteractive: false,
+                    canShowDialog: false
+                ),
+                cancellationToken
+            );
         return response.ResponseCode == MessageResponseCode.Error
             && response.Username is null
             && response.Password is null;

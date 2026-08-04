@@ -76,6 +76,25 @@ public sealed class GitCredentialHelperAdapter
         TextWriter protocolStdout,
         TextWriter humanStdout,
         DiagnosticRouter diagnosticRouter
+    ) =>
+        Execute(
+            executablePath,
+            arguments,
+            protocolStdin,
+            protocolStdout,
+            humanStdout,
+            diagnosticRouter,
+            CancellationToken.None
+        );
+
+    internal AdapterHostExecutionOutcome Execute(
+        string? executablePath,
+        IEnumerable<string>? arguments,
+        TextReader protocolStdin,
+        TextWriter protocolStdout,
+        TextWriter humanStdout,
+        DiagnosticRouter diagnosticRouter,
+        CancellationToken cancellationToken
     )
     {
         ArgumentNullException.ThrowIfNull(protocolStdin);
@@ -83,15 +102,17 @@ public sealed class GitCredentialHelperAdapter
         ArgumentNullException.ThrowIfNull(humanStdout);
         ArgumentNullException.ThrowIfNull(diagnosticRouter);
 
-        return AdapterHostExecutor.Execute(
+        AdapterHostExecutionOutcome outcome = AdapterHostExecutor.Execute(
             Descriptor,
             executablePath,
             arguments,
-            context => Handle(context, protocolStdin),
+            context => Handle(context, protocolStdin, cancellationToken),
             protocolStdout,
             humanStdout,
             diagnosticRouter
         );
+        cancellationToken.ThrowIfCancellationRequested();
+        return outcome;
     }
 
     public static string? CreateProtocolStdout(CredentialResult credentialResult)
@@ -136,7 +157,8 @@ public sealed class GitCredentialHelperAdapter
 
     private AdapterHostHandlerOutput Handle(
         AdapterInvocationContext context,
-        TextReader protocolStdin
+        TextReader protocolStdin,
+        CancellationToken cancellationToken
     )
     {
         if (context.PayloadArguments.Count != 1)
@@ -159,7 +181,7 @@ public sealed class GitCredentialHelperAdapter
 
         return operation switch
         {
-            CredentialOperation.Get => HandleGet(fields),
+            CredentialOperation.Get => HandleGet(fields, cancellationToken),
             CredentialOperation.Store or CredentialOperation.Erase => CreateSuccessOutput(
                 operation
             ),
@@ -167,7 +189,10 @@ public sealed class GitCredentialHelperAdapter
         };
     }
 
-    private AdapterHostHandlerOutput HandleGet(IReadOnlyDictionary<string, string> fields)
+    private AdapterHostHandlerOutput HandleGet(
+        IReadOnlyDictionary<string, string> fields,
+        CancellationToken cancellationToken
+    )
     {
         GitResourceParseResult resourceParseResult = TryCreateResource(fields);
         if (resourceParseResult.Status == GitResourceParseStatus.NoCredential)
@@ -184,7 +209,8 @@ public sealed class GitCredentialHelperAdapter
         }
 
         CredentialRequestV2 request = CreateGetRequest(resourceParseResult.Resource);
-        CredentialResult result = credentialAcquisition.Acquire(request);
+        CredentialResult result = credentialAcquisition.Acquire(request, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
         return new AdapterHostHandlerOutput(
             credentialResult: result,
             operation: CredentialOperation.Get,

@@ -199,12 +199,68 @@ public sealed class GitCredentialHelperAdapterTests
         );
     }
 
+    [Fact]
+    public void GetPropagatesRuntimeCancellationToCredentialAcquisition()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var acquisition = new CancellationCapturingAcquisitionService(cancellation);
+
+        Assert.ThrowsAny<OperationCanceledException>(() =>
+            ExecuteWithCancellation(
+                ["git", "credential-helper", "get"],
+                """
+                protocol=https
+                host=dev.azure.com
+                path=org/project/_git/repository
+
+                """,
+                acquisition,
+                cancellation.Token
+            )
+        );
+
+        Assert.Equal(cancellation.Token, acquisition.CancellationToken);
+        Assert.True(acquisition.CancellationToken.IsCancellationRequested);
+    }
+
     private static AdapterRunResult Execute(
         string[] args,
         string stdin,
         string executablePath = "/usr/local/bin/azureauth-credprovider",
         CredentialCoreService? credentialCore = null,
         ICredentialAcquisitionService? credentialAcquisition = null
+    ) =>
+        ExecuteCore(
+            args,
+            stdin,
+            executablePath,
+            credentialCore,
+            credentialAcquisition,
+            TestContext.Current.CancellationToken
+        );
+
+    private static AdapterRunResult ExecuteWithCancellation(
+        string[] args,
+        string stdin,
+        ICredentialAcquisitionService credentialAcquisition,
+        CancellationToken cancellationToken
+    ) =>
+        ExecuteCore(
+            args,
+            stdin,
+            "/usr/local/bin/azureauth-credprovider",
+            credentialCore: null,
+            credentialAcquisition,
+            cancellationToken
+        );
+
+    private static AdapterRunResult ExecuteCore(
+        string[] args,
+        string stdin,
+        string executablePath,
+        CredentialCoreService? credentialCore,
+        ICredentialAcquisitionService? credentialAcquisition,
+        CancellationToken cancellationToken
     )
     {
         var protocolStdout = new StringWriter();
@@ -223,7 +279,8 @@ public sealed class GitCredentialHelperAdapterTests
             new StringReader(stdin),
             protocolStdout,
             humanStdout,
-            diagnosticRouter
+            diagnosticRouter,
+            cancellationToken
         );
 
         return new AdapterRunResult(
@@ -256,6 +313,30 @@ public sealed class GitCredentialHelperAdapterTests
                     DiagnosticsCorrelationId = "git-adapter-test",
                 }
             );
+    }
+
+    private sealed class CancellationCapturingAcquisitionService(
+        CancellationTokenSource cancellation
+    )
+        : ICredentialAcquisitionService
+    {
+        public CancellationToken CancellationToken { get; private set; }
+
+        public ValueTask<CredentialResult> AcquireAsync(
+            CredentialRequestV2 request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            CancellationToken = cancellationToken;
+            cancellation.Cancel();
+            return ValueTask.FromResult(
+                new CredentialResult
+                {
+                    Status = CredentialResultStatus.NoCredential,
+                    DiagnosticsCorrelationId = "git-cancellation-capture",
+                }
+            );
+        }
     }
 
     private sealed class MismatchSensitiveAcquisitionService : ICredentialAcquisitionService

@@ -845,6 +845,42 @@ public sealed class CliApplicationTests
     }
 
     [Fact]
+    public void GitCredentialHelperProtocolPropagatesRuntimeCancellation()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var acquisition = new CapturingCancellationTokenAcquisitionService(cancellation);
+        var stdout = new StringWriter(new StringBuilder());
+        var stderr = new StringWriter(new StringBuilder());
+        var runtimeOptions = new CliRuntimeOptions
+        {
+            CancellationToken = cancellation.Token,
+            CompositionRoot =
+                CredentialProviderCompositionRoot.CreateExplicitTestScaffold(acquisition),
+        };
+
+        int exitCode = CliApplication.Run(
+            ["git", "credential-helper", "get"],
+            stdout,
+            stderr,
+            runtimeOptions,
+            new StringReader(
+                """
+                protocol=https
+                host=dev.azure.com
+                path=org/project/_git/repository
+
+                """
+            ),
+            "azureauth-credprovider"
+        );
+
+        Assert.Equal(cancellation.Token, acquisition.CancellationToken);
+        Assert.Equal(130, exitCode);
+        Assert.Equal(string.Empty, stdout.ToString());
+        Assert.Equal("error: operation canceled.\n", stderr.ToString());
+    }
+
+    [Fact]
     public void GitCredentialHelperMalformedInputFailsWithoutLeakingInput()
     {
         CommandResult result = InvokeWithStandardInput(
@@ -2851,6 +2887,114 @@ public sealed class CliApplicationTests
         Assert.Equal("error: operation canceled.\n", result.StdErr);
     }
 
+    [Theory]
+    [InlineData("configure", false)]
+    [InlineData("configure", true)]
+    [InlineData("unconfigure", false)]
+    [InlineData("unconfigure", true)]
+    [InlineData("doctor", false)]
+    public void GitCliOperationsPropagateRuntimeCancellation(string command, bool dryRun)
+    {
+        string stateDirectory = CreateTestDirectory();
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        CliRuntimeOptions runtimeOptions = CreateGitPhase8RuntimeOptions(stateDirectory) with
+        {
+            CancellationToken = cancellation.Token,
+        };
+        string[] args =
+            command == "doctor"
+                ? ["doctor"]
+                : dryRun
+                    ? [command, "git", "--dry-run"]
+                    : [command, "git"];
+
+        try
+        {
+            CommandResult result = InvokeWithRuntime(runtimeOptions, args);
+
+            Assert.Equal(130, result.ExitCode);
+            Assert.Equal(string.Empty, result.StdOut);
+            Assert.Equal("error: operation canceled.\n", result.StdErr);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Theory]
+    [InlineData("configure", false)]
+    [InlineData("configure", true)]
+    [InlineData("unconfigure", false)]
+    [InlineData("unconfigure", true)]
+    public void NuGetCliOperationsPropagateRuntimeCancellation(string command, bool dryRun)
+    {
+        string stateDirectory = CreateTestDirectory();
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        CliRuntimeOptions runtimeOptions = CreateGitPhase8RuntimeOptions(stateDirectory) with
+        {
+            CancellationToken = cancellation.Token,
+        };
+        string[] args = dryRun
+            ? [command, "nuget", "--dry-run"]
+            : [command, "nuget"];
+
+        try
+        {
+            CommandResult result = InvokeWithRuntime(runtimeOptions, args);
+
+            Assert.Equal(130, result.ExitCode);
+            Assert.Equal(string.Empty, result.StdOut);
+            Assert.Equal("error: operation canceled.\n", result.StdErr);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public void NuGetDoctorPropagatesCancellationDuringCredentialProbe()
+    {
+        string stateDirectory = CreateTestDirectory();
+        using var cancellation = new CancellationTokenSource();
+        var nuGetFileSystem = new EmptyNuGetDryRunFileSystem();
+        var acquisition = new CancelingCredentialAcquisitionService(
+            cancellation,
+            cancelOnInvocation: 3
+        );
+        CliRuntimeOptions baseOptions = CreateGitPhase8RuntimeOptions(stateDirectory);
+        CliRuntimeOptions runtimeOptions = baseOptions with
+        {
+            CancellationToken = cancellation.Token,
+            CompositionRoot =
+                CredentialProviderCompositionRoot.CreateExplicitTestScaffold(acquisition),
+            NuGetPhase10Options = baseOptions.NuGetPhase10Options! with
+            {
+                FileSystem = nuGetFileSystem,
+            },
+        };
+
+        try
+        {
+            CommandResult result = InvokeWithRuntime(runtimeOptions, "doctor");
+
+            Assert.True(acquisition.RuntimeCancellationObserved);
+            Assert.Equal(3, acquisition.InvocationCount);
+            Assert.True(cancellation.IsCancellationRequested);
+            Assert.True(nuGetFileSystem.FileExistsInvocationCount > 0);
+            Assert.Equal(130, result.ExitCode);
+            Assert.Equal(string.Empty, result.StdOut);
+            Assert.Equal("error: operation canceled.\n", result.StdErr);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
     [Fact]
     public void FreshConfigureDoesNotLoadProviderButNonFreshConfigureDoes()
     {
@@ -4344,6 +4488,32 @@ public sealed class CliApplicationTests
         }
     }
 
+    private sealed class CapturingCancellationTokenAcquisitionService(
+        CancellationTokenSource cancellation
+    )
+        : ICredentialAcquisitionService
+    {
+        public CancellationToken? CancellationToken { get; private set; }
+
+        public ValueTask<CredentialResult> AcquireAsync(
+            CredentialRequestV2 request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            CancellationToken = cancellationToken;
+            cancellation.Cancel();
+            return ValueTask.FromResult(
+                new CredentialResult
+                {
+                    Status = CredentialResultStatus.Success,
+                    Username = "AzureDevOps",
+                    Password = "fake-secret-token-capture",
+                    DiagnosticsCorrelationId = "git-cli-token-capture",
+                }
+            );
+        }
+    }
+
     private sealed class ConflictingIdentityRecordStore : IAzureAuthSecureRecordStore
     {
         public AzureAuthSecureRecordReadResult Read(string path) =>
@@ -4484,7 +4654,13 @@ public sealed class CliApplicationTests
 
     private sealed class EmptyNuGetDryRunFileSystem : IFileSystem
     {
-        public bool FileExists(string path) => false;
+        public int FileExistsInvocationCount { get; private set; }
+
+        public bool FileExists(string path)
+        {
+            FileExistsInvocationCount++;
+            return false;
+        }
 
         public bool IsExecutableFile(string path) => false;
 
@@ -4546,6 +4722,42 @@ public sealed class CliApplicationTests
 
         private static InvalidOperationException CreateMutationException() =>
             new("The dry-run fake filesystem must not be mutated.");
+    }
+
+    private sealed class CancelingCredentialAcquisitionService(
+        CancellationTokenSource cancellation,
+        int cancelOnInvocation
+    ) : ICredentialAcquisitionService
+    {
+        public int InvocationCount { get; private set; }
+
+        public bool RuntimeCancellationObserved { get; private set; }
+
+        public ValueTask<CredentialResult> AcquireAsync(
+            CredentialRequestV2 request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            InvocationCount++;
+            if (cancellationToken == cancellation.Token)
+            {
+                RuntimeCancellationObserved = true;
+                if (InvocationCount == cancelOnInvocation)
+                {
+                    cancellation.Cancel();
+                }
+            }
+
+            return ValueTask.FromResult(
+                new CredentialResult
+                {
+                    Status = CredentialResultStatus.Success,
+                    Username = "AzureDevOps",
+                    Password = "fake-secret-doctor-cancellation",
+                    DiagnosticsCorrelationId = "nuget-doctor-runtime-cancellation",
+                }
+            );
+        }
     }
 
     private sealed record CommandResult(int ExitCode, string StdOut, string StdErr);

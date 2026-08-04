@@ -243,7 +243,15 @@ internal static class CliApplication
         );
         CredentialProviderCompositionRoot root = GetCompositionRoot(runtimeOptions);
         AdapterHostExecutionOutcome outcome = root.CreateGitCredentialHelperAdapter()
-            .Execute(executablePath, args, stdin, stdout, TextWriter.Null, diagnosticRouter);
+            .Execute(
+                executablePath,
+                args,
+                stdin,
+                stdout,
+                TextWriter.Null,
+                diagnosticRouter,
+                GetCancellationToken(runtimeOptions)
+            );
         return (int)outcome.Result.ExitCode;
     }
 
@@ -306,7 +314,7 @@ internal static class CliApplication
                 try
                 {
                     dryRunResult = CreateGitPhase8VerticalSliceService(runtimeOptions)
-                        .DryRunConfigureAsync()
+                        .DryRunConfigureAsync(GetCancellationToken(runtimeOptions))
                         .AsTask()
                         .GetAwaiter()
                         .GetResult();
@@ -330,7 +338,7 @@ internal static class CliApplication
                 try
                 {
                     dryRunResult = CreateNuGetPhase10VerticalSliceService(runtimeOptions)
-                        .DryRunConfigureAsync()
+                        .DryRunConfigureAsync(GetCancellationToken(runtimeOptions))
                         .AsTask()
                         .GetAwaiter()
                         .GetResult();
@@ -393,7 +401,7 @@ internal static class CliApplication
             try
             {
                 configureResult = CreateGitPhase8VerticalSliceService(runtimeOptions)
-                    .ConfigureAsync()
+                    .ConfigureAsync(GetCancellationToken(runtimeOptions))
                     .AsTask()
                     .GetAwaiter()
                     .GetResult();
@@ -417,7 +425,7 @@ internal static class CliApplication
             try
             {
                 configureResult = CreateNuGetPhase10VerticalSliceService(runtimeOptions)
-                    .ConfigureAsync()
+                    .ConfigureAsync(GetCancellationToken(runtimeOptions))
                     .AsTask()
                     .GetAwaiter()
                     .GetResult();
@@ -585,7 +593,7 @@ internal static class CliApplication
                 try
                 {
                     CreateGitPhase8ConfigurationService(runtimeOptions)
-                        .ValidateUnconfigureDryRunAsync()
+                        .ValidateUnconfigureDryRunAsync(GetCancellationToken(runtimeOptions))
                         .AsTask()
                         .GetAwaiter()
                         .GetResult();
@@ -604,7 +612,7 @@ internal static class CliApplication
                 try
                 {
                     CreateNuGetPhase10ConfigurationService(runtimeOptions)
-                        .ValidateUnconfigureDryRunAsync()
+                        .ValidateUnconfigureDryRunAsync(GetCancellationToken(runtimeOptions))
                         .AsTask()
                         .GetAwaiter()
                         .GetResult();
@@ -669,7 +677,7 @@ internal static class CliApplication
             try
             {
                 unconfigureResult = CreateGitPhase8ConfigurationService(runtimeOptions)
-                    .UnconfigureAsync()
+                    .UnconfigureAsync(GetCancellationToken(runtimeOptions))
                     .AsTask()
                     .GetAwaiter()
                     .GetResult();
@@ -693,7 +701,7 @@ internal static class CliApplication
             try
             {
                 unconfigureResult = CreateNuGetPhase10ConfigurationService(runtimeOptions)
-                    .UnconfigureAsync()
+                    .UnconfigureAsync(GetCancellationToken(runtimeOptions))
                     .AsTask()
                     .GetAwaiter()
                     .GetResult();
@@ -775,14 +783,14 @@ internal static class CliApplication
         CancellationToken cancellationToken = GetCancellationToken(runtimeOptions);
         CredentialProviderReadiness readiness = root.GetReadiness(cancellationToken);
         GitPhase8DoctorResult doctorResult = CreateGitPhase8VerticalSliceService(runtimeOptions)
-            .DoctorAsync()
+            .DoctorAsync(cancellationToken)
             .AsTask()
             .GetAwaiter()
             .GetResult();
         NuGetPhase10DoctorResult nuGetDoctorResult = CreateNuGetPhase10VerticalSliceService(
                 runtimeOptions
             )
-            .DoctorAsync()
+            .DoctorAsync(cancellationToken)
             .AsTask()
             .GetAwaiter()
             .GetResult();
