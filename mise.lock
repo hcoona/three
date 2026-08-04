@@ -113,6 +113,53 @@ url = "https://github.com/cli/cli/releases/download/v2.88.0/gh_2.88.0_windows_am
 url_api = "https://api.github.com/repos/cli/cli/releases/assets/371025645"
 provenance = "github-attestations"
 
+[[tools."github:alibaba/open-code-review"]]
+version = "1.8.8"
+backend = "github:alibaba/open-code-review"
+
+[tools."github:alibaba/open-code-review"."platforms.linux-arm64"]
+checksum = "sha256:33422e4856baa5b8640a2a0f7596d644948050e6547b087aeaa424e957b26019"
+url = "https://github.com/alibaba/open-code-review/releases/download/v1.8.8/opencodereview-linux-arm64"
+url_api = "https://api.github.com/repos/alibaba/open-code-review/releases/assets/501366064"
+provenance = "github-attestations"
+
+[tools."github:alibaba/open-code-review"."platforms.linux-arm64-musl"]
+checksum = "sha256:33422e4856baa5b8640a2a0f7596d644948050e6547b087aeaa424e957b26019"
+url = "https://github.com/alibaba/open-code-review/releases/download/v1.8.8/opencodereview-linux-arm64"
+url_api = "https://api.github.com/repos/alibaba/open-code-review/releases/assets/501366064"
+provenance = "github-attestations"
+
+[tools."github:alibaba/open-code-review"."platforms.linux-x64"]
+checksum = "sha256:68a9b8835f6e4e210531833657a3a4902841283c410322fc4342778d91959756"
+url = "https://github.com/alibaba/open-code-review/releases/download/v1.8.8/opencodereview-linux-amd64"
+url_api = "https://api.github.com/repos/alibaba/open-code-review/releases/assets/501366067"
+provenance = "github-attestations"
+provenance_verified = true
+
+[tools."github:alibaba/open-code-review"."platforms.linux-x64-musl"]
+checksum = "sha256:68a9b8835f6e4e210531833657a3a4902841283c410322fc4342778d91959756"
+url = "https://github.com/alibaba/open-code-review/releases/download/v1.8.8/opencodereview-linux-amd64"
+url_api = "https://api.github.com/repos/alibaba/open-code-review/releases/assets/501366067"
+provenance = "github-attestations"
+
+[tools."github:alibaba/open-code-review"."platforms.macos-arm64"]
+checksum = "sha256:db7da11ad1faa5ba3dca2d5add1ebe49ceedf37708e7044c92e9141721e50cd2"
+url = "https://github.com/alibaba/open-code-review/releases/download/v1.8.8/opencodereview-darwin-arm64"
+url_api = "https://api.github.com/repos/alibaba/open-code-review/releases/assets/501366069"
+provenance = "github-attestations"
+
+[tools."github:alibaba/open-code-review"."platforms.macos-x64"]
+checksum = "sha256:335f58f616629ad1272bc5c6832b778e476f5afc9cbb834aed5b6d34ffd87612"
+url = "https://github.com/alibaba/open-code-review/releases/download/v1.8.8/opencodereview-darwin-amd64"
+url_api = "https://api.github.com/repos/alibaba/open-code-review/releases/assets/501366066"
+provenance = "github-attestations"
+
+[tools."github:alibaba/open-code-review"."platforms.windows-x64"]
+checksum = "sha256:67825fc8a35cdf2af484cee6cb232ac53c4a4e83d4b6f13599a37d7f716f32d6"
+url = "https://github.com/alibaba/open-code-review/releases/download/v1.8.8/opencodereview-windows-amd64.exe"
+url_api = "https://api.github.com/repos/alibaba/open-code-review/releases/assets/501366065"
+provenance = "github-attestations"
+
 [[tools."github:hadolint/hadolint"]]
 version = "2.14.0"
 backend = "github:hadolint/hadolint"
@@ -151,18 +198,6 @@ url_api = "https://api.github.com/repos/hadolint/hadolint/releases/assets/295944
 checksum = "sha256:8e0ee174f88edb14f207a68430c7a53c2883ed509cdbde9a3a26fffa140fa5e4"
 url = "https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-windows-x86_64.exe"
 url_api = "https://api.github.com/repos/hadolint/hadolint/releases/assets/295944079"
-
-[[tools."github:koalaman/shellcheck"]]
-version = "0.11.0"
-backend = "github:koalaman/shellcheck"
-
-[tools."github:koalaman/shellcheck".options]
-asset_pattern = "shellcheck-*.zip"
-
-[tools."github:koalaman/shellcheck"."platforms.windows-x64"]
-checksum = "sha256:8a4e35ab0b331c85d73567b12f2a444df187f483e5079ceffa6bda1faa2e740e"
-url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.zip"
-url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056944"
 
 [[tools."github:koalaman/shellcheck"]]
 version = "0.11.0"
@@ -606,6 +641,45 @@ backend = "core:ruby"
 [tools.ruby."platforms.windows-x64"]
 checksum = "sha256:328d7a86bea2f4c432783025050c9ffa1c36fcfc54ebccc466b63450ec3af223"
 url = "https://github.com/oneclick/rubyinstaller2/releases/download/RubyInstaller-4.0.6-1/rubyinstaller-4.0.6-1-x64.7z"
+
+[[tools.ruby]]
+version = "4.0.6"
+backend = "core:ruby"
+
+[tools.ruby.options]
+compile = "false"
+precompiled_url = "jdx/ruby"
+ruby_build_repo = "https://github.com/rbenv/ruby-build.git"
+ruby_install = "false"
+
+[tools.ruby."platforms.linux-arm64"]
+checksum = "sha256:6144c26cd5a1ff85358beb7e68e592ada6d0319aa8093cf353465d60f10aa970"
+url = "https://github.com/jdx/ruby/releases/download/4.0.6-1/ruby-4.0.6.arm64_linux.tar.gz"
+provenance = "github-attestations"
+
+[tools.ruby."platforms.linux-arm64-musl"]
+checksum = "sha256:6144c26cd5a1ff85358beb7e68e592ada6d0319aa8093cf353465d60f10aa970"
+url = "https://github.com/jdx/ruby/releases/download/4.0.6-1/ruby-4.0.6.arm64_linux.tar.gz"
+provenance = "github-attestations"
+
+[tools.ruby."platforms.linux-x64"]
+checksum = "sha256:aefa111873bac3b15c5c416bfaaca84e793d5312d4496d651ad79c44521b200a"
+url = "https://github.com/jdx/ruby/releases/download/4.0.6-1/ruby-4.0.6.x86_64_linux.tar.gz"
+provenance = "github-attestations"
+
+[tools.ruby."platforms.linux-x64-musl"]
+checksum = "sha256:aefa111873bac3b15c5c416bfaaca84e793d5312d4496d651ad79c44521b200a"
+url = "https://github.com/jdx/ruby/releases/download/4.0.6-1/ruby-4.0.6.x86_64_linux.tar.gz"
+provenance = "github-attestations"
+
+[tools.ruby."platforms.macos-arm64"]
+checksum = "sha256:518c5849d7ab337790943963ded4f0b402d2d4ededea265288a5a19d4c8fee18"
+url = "https://github.com/jdx/ruby/releases/download/4.0.6-1/ruby-4.0.6.macos.tar.gz"
+provenance = "github-attestations"
+
+[tools.ruby."platforms.macos-x64"]
+checksum = "sha256:837d299e8f7ddf2be31a229a7a7e019d354979825117989acb3b32b1a9be262a"
+url = "https://cache.ruby-lang.org/pub/ruby/4.0/ruby-4.0.6.tar.gz"
 
 [[tools.taplo]]
 version = "0.10.0"
