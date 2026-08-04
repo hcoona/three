@@ -692,6 +692,459 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         );
     }
 
+    [Fact]
+    public async Task PythonManifestWithTamperedSchemaIsUnrecognizedAndPreserved()
+    {
+        await AssertPythonManifestTamperingIsRejectedAsync(manifest =>
+            ConfigurationOwnershipManifestSerializer
+                .Serialize(manifest)
+                .Replace(
+                    "\"schemaVersion\":1",
+                    "\"schemaVersion\":2",
+                    StringComparison.Ordinal
+                )
+        );
+    }
+
+    [Fact]
+    public async Task PythonManifestWithTamperedOwnerIsUnrecognizedAndPreserved()
+    {
+        await AssertPythonManifestTamperingIsRejectedAsync(manifest =>
+            SerializeManifest(manifest with { OwnerProductId = "forged-owner" })
+        );
+    }
+
+    [Fact]
+    public async Task PythonManifestWithTamperedIdentityIsUnrecognizedAndPreserved()
+    {
+        await AssertPythonManifestTamperingIsRejectedAsync(manifest =>
+            SerializeManifest(manifest with { ManifestId = "forged-python-manifest" })
+        );
+    }
+
+    [Fact]
+    public async Task PythonManifestWithTamperedScopeIsUnrecognizedAndPreserved()
+    {
+        await AssertPythonManifestTamperingIsRejectedAsync(manifest =>
+            SerializeManifest(manifest with { Scope = ConfigurationScope.ExplicitPath })
+        );
+    }
+
+    [Fact]
+    public async Task PythonManifestWithTamperedSelectorIsUnrecognizedAndPreserved()
+    {
+        await AssertPythonManifestTamperingIsRejectedAsync(manifest =>
+            SerializeManifest(manifest with { EntrySelector = "python.forged" })
+        );
+    }
+
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("host")]
+    [InlineData("organization")]
+    [InlineData("endpoint")]
+    [InlineData("project")]
+    [InlineData("feed")]
+    [InlineData("repository")]
+    public async Task PythonManifestWithTamperedResourceIdentityIsUnrecognizedAndPreserved(
+        string field
+    )
+    {
+        await AssertPythonManifestTamperingIsRejectedAsync(manifest =>
+        {
+            CanonicalResourceIdentity resource = Assert.IsType<CanonicalResourceIdentity>(
+                manifest.ResourceIdentity
+            );
+            CanonicalResourceIdentity? tampered = field switch
+            {
+                "missing" => null,
+                "host" => resource with { AzureDevOpsHost = "example.com" },
+                "organization" => resource with { Organization = "forged-org" },
+                "endpoint" => resource with
+                {
+                    ServiceEndpoint = new Uri("https://dev.azure.com/forged-org/"),
+                },
+                "project" => resource with { Project = "forged-project" },
+                "feed" => resource with { Feed = "forged-feed" },
+                "repository" => resource with { Repository = "forged-repository" },
+                _ => throw new ArgumentOutOfRangeException(nameof(field), field, null),
+            };
+            return SerializeManifest(
+                manifest with
+                {
+                    ResourceIdentity = tampered,
+                }
+            );
+        });
+    }
+
+    [Fact]
+    public async Task PythonManifestWithTamperedProductVersionIsUnrecognizedAndPreserved()
+    {
+        await AssertPythonManifestTamperingIsRejectedAsync(manifest =>
+            SerializeManifest(manifest with { ProductVersion = "0.0.0-forged" })
+        );
+    }
+
+    [Fact]
+    public async Task PythonManifestWithTamperedEcosystemMetadataIsUnrecognizedAndPreserved()
+    {
+        await AssertPythonManifestTamperingIsRejectedAsync(manifest =>
+            SerializeManifest(
+                manifest with
+                {
+                    SafeMetadata = new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        ["ecosystem"] = "npm",
+                    },
+                }
+            )
+        );
+    }
+
+    [Fact]
+    public async Task PythonManifestWithUnexpectedEcosystemMetadataIsUnrecognizedAndPreserved()
+    {
+        await AssertPythonManifestTamperingIsRejectedAsync(manifest =>
+            SerializeManifest(
+                manifest with
+                {
+                    SafeMetadata = new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        ["ecosystem"] = "python",
+                        ["forged"] = "metadata",
+                    },
+                }
+            )
+        );
+    }
+
+    [Theory]
+    [InlineData(ConfigurationTargetKind.PythonKeyringBackend)]
+    [InlineData(ConfigurationTargetKind.KeyringShim)]
+    public async Task PythonManifestWithMissingRequiredEntryRoleIsUnrecognizedAndPreserved(
+        ConfigurationTargetKind missingTargetKind
+    )
+    {
+        await AssertPythonManifestTamperingIsRejectedAsync(manifest =>
+            SerializeManifest(
+                manifest with
+                {
+                    Entries = manifest
+                        .Entries.Where(entry => entry.TargetKind != missingTargetKind)
+                        .Select(
+                            static (entry, index) => entry with { Sequence = index + 1 }
+                        )
+                        .ToArray(),
+                }
+            )
+        );
+    }
+
+    [Fact]
+    public async Task PythonManifestWithUnexpectedEntryCountIsUnrecognizedAndPreserved()
+    {
+        await AssertPythonManifestTamperingIsRejectedAsync(manifest =>
+        {
+            ConfigurationOwnershipManifestEntry first = manifest.Entries[0];
+            return SerializeManifest(
+                manifest with
+                {
+                    Entries =
+                    [
+                        .. manifest.Entries,
+                        first with
+                        {
+                            Sequence = manifest.Entries.Count + 1,
+                            TargetKind = ConfigurationTargetKind.Npmrc,
+                            TargetPathOrName = "/forged/extra-entry",
+                            Key = "forged-extra-entry",
+                        },
+                    ],
+                }
+            );
+        });
+    }
+
+    [Fact]
+    public async Task PythonManifestWithReorderedEntryRolesIsUnrecognizedAndPreserved()
+    {
+        await AssertPythonManifestTamperingIsRejectedAsync(manifest =>
+            SerializeManifest(
+                manifest with
+                {
+                    Entries =
+                    [
+                        manifest.Entries[1] with { Sequence = 1 },
+                        manifest.Entries[0] with { Sequence = 2 },
+                    ],
+                }
+            )
+        );
+    }
+
+    [Theory]
+    [InlineData(ConfigurationTargetKind.PythonKeyringBackend)]
+    [InlineData(ConfigurationTargetKind.KeyringShim)]
+    public async Task PythonManifestWithUnsupportedEntryKindIsUnrecognizedAndPreserved(
+        ConfigurationTargetKind targetKind
+    )
+    {
+        await AssertPythonManifestTamperingIsRejectedAsync(manifest =>
+            SerializeManifest(
+                manifest with
+                {
+                    Entries = manifest
+                        .Entries.Select(entry =>
+                            entry.TargetKind == targetKind
+                                ? entry with
+                                {
+                                    TargetKind = ConfigurationTargetKind.Npmrc,
+                                }
+                                : entry
+                        )
+                        .ToArray(),
+                }
+            )
+        );
+    }
+
+    [Theory]
+    [InlineData(ConfigurationTargetKind.PythonKeyringBackend)]
+    [InlineData(ConfigurationTargetKind.KeyringShim)]
+    public async Task PythonManifestWithUnsupportedEntryKeyIsUnrecognizedAndPreserved(
+        ConfigurationTargetKind targetKind
+    )
+    {
+        await AssertPythonManifestTamperingIsRejectedAsync(manifest =>
+            SerializeManifest(
+                manifest with
+                {
+                    Entries = manifest
+                        .Entries.Select(entry =>
+                            entry.TargetKind == targetKind
+                                ? entry with
+                                {
+                                    Key = "forged-key",
+                                }
+                                : entry
+                        )
+                        .ToArray(),
+                }
+            )
+        );
+    }
+
+    [Theory]
+    [InlineData(ConfigurationTargetKind.PythonKeyringBackend)]
+    [InlineData(ConfigurationTargetKind.KeyringShim)]
+    public async Task PythonManifestWithNoncanonicalProjectedPathIsUnrecognizedAndPreserved(
+        ConfigurationTargetKind targetKind
+    )
+    {
+        await AssertPythonManifestTamperingIsRejectedAsync(manifest =>
+            SerializeManifest(
+                manifest with
+                {
+                    Entries = manifest
+                        .Entries.Select(entry =>
+                            entry.TargetKind == targetKind
+                                ? entry with
+                                {
+                                    TargetPathOrName = "/alternate/noncanonical-python-target",
+                                }
+                                : entry
+                        )
+                        .ToArray(),
+                }
+            )
+        );
+    }
+
+    [Fact]
+    public async Task PythonManifestWithForgedArbitraryTargetNeverAuthorizesDeletionAndReportsIncomplete()
+    {
+        const string ForgedPath = "/arbitrary/forged-python-target";
+        byte[] forgedBytes = [0, 1, 2, 3, 255, 13, 10];
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        ConfigurationPhase14VerticalSliceService service = CreateService(fileSystem);
+        await service.ConfigureAsync(
+            CredentialEcosystem.Python,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+        ConfigurationOwnershipManifest manifest = ReadPythonManifest(fileSystem, service);
+        string manifestPath = service.Paths.OwnershipManifestPath;
+        fileSystem.AtomicWriteAllBytes(ForgedPath, forgedBytes);
+        string forgedManifest = SerializeManifest(
+            manifest with
+            {
+                Entries =
+                [
+                    manifest.Entries[0] with { TargetPathOrName = ForgedPath },
+                    .. manifest.Entries.Skip(1),
+                ],
+            }
+        );
+        fileSystem.WriteAllText(manifestPath, forgedManifest);
+
+        ConfigurationPhase14DoctorResult doctor = await service.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+        ConfigurationPhase14PlanResult result = await service.UnconfigureAsync(
+            CredentialEcosystem.Python,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+
+        ConfigurationPhase14EcosystemDoctorResult python = GetPythonDoctorResult(doctor);
+        Assert.False(python.ConfigurationPlanValid);
+        Assert.True(result.OwnershipManifestCleanupIncomplete);
+        Assert.Equal(0, result.ChangeCount);
+        Assert.Equal(0, result.AppliedChangeCount);
+        Assert.True(result.OwnershipManifestPresent);
+        Assert.Equal(forgedManifest, fileSystem.ReadAllText(manifestPath));
+        Assert.True(fileSystem.FileExists(ForgedPath));
+        Assert.Equal(forgedBytes, fileSystem.ReadAllBytes(ForgedPath));
+    }
+
+    [Fact]
+    public async Task ConfigurePythonWithForgedManifestRejectsBeforeWritingAndPreservesBytes()
+    {
+        const string ForgedPath = "/arbitrary/configure-target";
+        byte[] forgedBytes = [5, 4, 3, 2, 1];
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        ConfigurationPhase14VerticalSliceService service = CreateService(fileSystem);
+        await service.ConfigureAsync(
+            CredentialEcosystem.Python,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+        ConfigurationOwnershipManifest manifest = ReadPythonManifest(fileSystem, service);
+        Dictionary<string, byte[]> originalTargets = manifest.Entries.ToDictionary(
+            static entry => entry.TargetPathOrName,
+            entry => fileSystem.ReadAllBytes(entry.TargetPathOrName),
+            StringComparer.Ordinal
+        );
+        fileSystem.AtomicWriteAllBytes(ForgedPath, forgedBytes);
+        string forgedManifest = SerializeManifest(
+            manifest with
+            {
+                Entries =
+                [
+                    manifest.Entries[0] with { TargetPathOrName = ForgedPath },
+                    .. manifest.Entries.Skip(1),
+                ],
+            }
+        );
+        fileSystem.WriteAllText(service.Paths.OwnershipManifestPath, forgedManifest);
+
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            async () =>
+                await service.ConfigureAsync(
+                    CredentialEcosystem.Python,
+                    ConfigurationPhase14Scope.User,
+                    TestContext.Current.CancellationToken
+                )
+        );
+
+        Assert.Equal("The existing Python ownership manifest is not recognized.", exception.Message);
+        Assert.Equal(forgedManifest, fileSystem.ReadAllText(service.Paths.OwnershipManifestPath));
+        Assert.Equal(forgedBytes, fileSystem.ReadAllBytes(ForgedPath));
+        foreach ((string path, byte[] bytes) in originalTargets)
+        {
+            Assert.True(fileSystem.FileExists(path));
+            Assert.Equal(bytes, fileSystem.ReadAllBytes(path));
+        }
+    }
+
+    [Fact]
+    public async Task PythonManifestCurrentWindowsLayoutRemainsRecognized()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Windows);
+        ConfigurationPhase14VerticalSliceService service = CreateService(fileSystem);
+        await service.ConfigureAsync(
+            CredentialEcosystem.Python,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+        ConfigurationOwnershipManifest manifest = ReadPythonManifest(fileSystem, service);
+        ConfigurationOwnershipManifestEntry backend = Assert.Single(manifest.Entries);
+        Assert.Equal(ConfigurationTargetKind.PythonKeyringBackend, backend.TargetKind);
+
+        ConfigurationPhase14PlanResult result = await service.UnconfigureAsync(
+            CredentialEcosystem.Python,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.False(result.OwnershipManifestCleanupIncomplete);
+        Assert.False(result.OwnershipManifestPresent);
+        Assert.Equal(1, result.ChangeCount);
+        Assert.Equal(1, result.AppliedChangeCount);
+        Assert.False(fileSystem.FileExists(backend.TargetPathOrName));
+    }
+
+    [Fact]
+    public async Task PythonManifestLegacyWindowsLayoutRemainsRecognized()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Windows);
+        ConfigurationPhase14VerticalSliceService service = CreateService(fileSystem);
+        await service.ConfigureAsync(
+            CredentialEcosystem.Python,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+        ConfigurationOwnershipManifest manifest = ReadPythonManifest(fileSystem, service);
+        ConfigurationOwnershipManifestEntry backend = Assert.Single(manifest.Entries);
+        string productRoot = Path.GetDirectoryName(
+            Path.GetDirectoryName(backend.TargetPathOrName)!
+        )!;
+        string legacyShimPath = Path.Combine(productRoot, "keyring-shim", "keyring.exe");
+        fileSystem.WriteAllText(legacyShimPath, "legacy product-owned shim");
+        fileSystem.WriteAllText(
+            service.Paths.OwnershipManifestPath,
+            SerializeManifest(
+                manifest with
+                {
+                    Entries =
+                    [
+                        backend,
+                        backend with
+                        {
+                            Sequence = 2,
+                            TargetKind = ConfigurationTargetKind.KeyringShim,
+                            TargetPathOrName = legacyShimPath,
+                        },
+                    ],
+                }
+            )
+        );
+
+        ConfigurationPhase14PlanResult result = await service.UnconfigureAsync(
+            CredentialEcosystem.Python,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.False(result.OwnershipManifestCleanupIncomplete);
+        Assert.False(result.OwnershipManifestPresent);
+        Assert.Equal(2, result.ChangeCount);
+        Assert.Equal(2, result.AppliedChangeCount);
+        Assert.False(fileSystem.FileExists(backend.TargetPathOrName));
+        Assert.False(fileSystem.FileExists(legacyShimPath));
+    }
+
     [Theory]
     [InlineData(CredentialEcosystem.Npm)]
     [InlineData(CredentialEcosystem.Pnpm)]
@@ -947,8 +1400,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         );
 
         Assert.Equal(
-            "The existing Python ownership manifest does not identify the expected "
-                + "product-owned Windows keyring shim.",
+            "The existing Python ownership manifest is not recognized.",
             exception.Message
         );
         Assert.True(fileSystem.FileExists(UnrelatedShimPath));
@@ -2100,6 +2552,75 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
                     [CredentialEcosystem.Yarn] = registryUrl ?? new(TestRegistryUrl),
                 },
             }
+        );
+
+    private static async Task AssertPythonManifestTamperingIsRejectedAsync(
+        Func<ConfigurationOwnershipManifest, string> createTamperedManifest
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        ConfigurationPhase14VerticalSliceService service = CreateService(fileSystem);
+        await service.ConfigureAsync(
+            CredentialEcosystem.Python,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+        ConfigurationOwnershipManifest manifest = ReadPythonManifest(fileSystem, service);
+        Dictionary<string, byte[]> originalTargets = manifest.Entries.ToDictionary(
+            static entry => entry.TargetPathOrName,
+            entry => fileSystem.ReadAllBytes(entry.TargetPathOrName),
+            StringComparer.Ordinal
+        );
+        string tamperedManifest = createTamperedManifest(manifest);
+        fileSystem.WriteAllText(service.Paths.OwnershipManifestPath, tamperedManifest);
+
+        ConfigurationPhase14DoctorResult doctor = await service.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+        ConfigurationPhase14PlanResult result = await service.UnconfigureAsync(
+            CredentialEcosystem.Python,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+
+        ConfigurationPhase14EcosystemDoctorResult python = GetPythonDoctorResult(doctor);
+        Assert.False(python.ConfigurationPlanValid);
+        Assert.True(python.OwnershipManifestPresent);
+        Assert.False(python.OwnedTargetPresent);
+        Assert.True(result.OwnershipManifestCleanupIncomplete);
+        Assert.Equal(0, result.ChangeCount);
+        Assert.Equal(0, result.AppliedChangeCount);
+        Assert.True(result.OwnershipManifestPresent);
+        Assert.Equal(
+            tamperedManifest,
+            fileSystem.ReadAllText(service.Paths.OwnershipManifestPath)
+        );
+        foreach ((string path, byte[] bytes) in originalTargets)
+        {
+            Assert.True(fileSystem.FileExists(path));
+            Assert.Equal(bytes, fileSystem.ReadAllBytes(path));
+        }
+    }
+
+    private static ConfigurationOwnershipManifest ReadPythonManifest(
+        InMemoryFileSystem fileSystem,
+        ConfigurationPhase14VerticalSliceService service
+    ) =>
+        ConfigurationOwnershipManifestSerializer.Deserialize(
+            fileSystem.ReadAllText(service.Paths.OwnershipManifestPath)
+        );
+
+    private static string SerializeManifest(ConfigurationOwnershipManifest manifest) =>
+        ConfigurationOwnershipManifestSerializer.Serialize(manifest);
+
+    private static ConfigurationPhase14EcosystemDoctorResult GetPythonDoctorResult(
+        ConfigurationPhase14DoctorResult doctor
+    ) =>
+        Assert.Single(
+            doctor.Ecosystems,
+            static result =>
+                result.Ecosystem == CredentialEcosystem.Python
+                && result.Scope == ConfigurationPhase14Scope.User
         );
 
     private static string GetTestProductExecutablePath() =>

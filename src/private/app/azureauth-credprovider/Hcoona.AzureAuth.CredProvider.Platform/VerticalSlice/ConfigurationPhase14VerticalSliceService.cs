@@ -158,6 +158,12 @@ public sealed class ConfigurationPhase14VerticalSliceService
 {
     private sealed record ExistingOwnershipManifest(ConfigurationOwnershipManifest Manifest);
 
+    private enum PythonOwnershipManifestLayout
+    {
+        Current,
+        LegacyWindows,
+    }
+
     private const string ProductId = "azureauth-credprovider";
     private const string ProductVersion = "phase14.2";
     private const string PythonPlanId = "phase14-python-keyring-configure-plan";
@@ -353,6 +359,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
         }
 
         string ownershipManifestPath = GetOwnershipManifestPath(ecosystem, scope);
+        EnsureRecognizedPythonManifestIfPresent(scope, ownershipManifestPath);
         IReadOnlyList<ConfigurationChangePlan> plans = CreatePythonPlans(scope);
         List<ConfigurationPlanResult> previewResults = [];
         foreach (ConfigurationChangePlan plan in plans)
@@ -604,11 +611,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
             );
         }
 
-        bool recognized =
-            ecosystem == CredentialEcosystem.Python
-                ? OwnershipManifestMatchesExpectedState(manifest, ecosystem, scope)
-                : OwnershipManifestMatchesExpectedBaseState(manifest, ecosystem, scope);
-        if (!recognized)
+        if (!OwnershipManifestMatchesExpectedState(manifest, ecosystem, scope))
         {
             return CreateResult(
                 [
@@ -974,12 +977,10 @@ public sealed class ConfigurationPhase14VerticalSliceService
             .ProjectKeyringShim(CreateCurrentLayoutProjectionContext())
             .TargetPath;
         if (
-            !PythonOwnershipManifestMatchesExpectedMigrationState(
-                manifest,
-                scope,
-                expectedBackendPath,
-                expectedShimPath
-            )
+            !TryRecognizePythonOwnershipManifest(manifest, scope, out var layout)
+            || layout != PythonOwnershipManifestLayout.LegacyWindows
+            || !PathEquals(expectedBackendPath, GetExpectedPythonBackendPath())
+            || !PathEquals(expectedShimPath, GetExpectedPythonShimPath())
         )
         {
             throw new InvalidOperationException(
@@ -997,13 +998,42 @@ public sealed class ConfigurationPhase14VerticalSliceService
         );
     }
 
-    private bool PythonOwnershipManifestMatchesExpectedMigrationState(
-        ConfigurationOwnershipManifest manifest,
+    private void EnsureRecognizedPythonManifestIfPresent(
         ConfigurationPhase14Scope scope,
-        string expectedBackendPath,
-        string expectedShimPath
+        string ownershipManifestPath
     )
     {
+        ConfigurationOwnershipManifest? manifest;
+        try
+        {
+            if (!TryLoadOwnershipManifest(ownershipManifestPath, out manifest))
+            {
+                return;
+            }
+        }
+        catch (Exception exception) when (IsExpectedOwnershipManifestReadOrParseFailure(exception))
+        {
+            throw new InvalidOperationException(
+                "The existing Python ownership manifest is invalid.",
+                exception
+            );
+        }
+
+        if (!TryRecognizePythonOwnershipManifest(manifest, scope, out _))
+        {
+            throw new InvalidOperationException(
+                "The existing Python ownership manifest is not recognized."
+            );
+        }
+    }
+
+    private bool TryRecognizePythonOwnershipManifest(
+        ConfigurationOwnershipManifest manifest,
+        ConfigurationPhase14Scope scope,
+        out PythonOwnershipManifestLayout layout
+    )
+    {
+        layout = default;
         ConfigurationManifestMetadata expectedMetadata = CreatePythonManifestMetadata();
         if (
             manifest.SchemaVersion != ConfigurationOwnershipManifest.CurrentSchemaVersion
@@ -1035,27 +1065,74 @@ public sealed class ConfigurationPhase14VerticalSliceService
                 StringComparison.Ordinal
             )
             || manifest.SafeMetadata is null
+            || manifest.SafeMetadata.Count != 1
             || !manifest.SafeMetadata.TryGetValue("ecosystem", out string? ecosystem)
             || !string.Equals(ecosystem, "python", StringComparison.Ordinal)
-            || manifest.Entries.Count != 2
         )
         {
             return false;
         }
 
-        ConfigurationOwnershipManifestEntry? backendEntry = manifest.Entries.SingleOrDefault(
-            static entry => entry.TargetKind == ConfigurationTargetKind.PythonKeyringBackend
-        );
-        ConfigurationOwnershipManifestEntry? shimEntry = manifest.Entries.SingleOrDefault(
-            static entry => entry.TargetKind == ConfigurationTargetKind.KeyringShim
-        );
-        return backendEntry is not null
-            && shimEntry is not null
-            && string.Equals(backendEntry.Key, PhysicalTargetKey, StringComparison.Ordinal)
-            && string.Equals(shimEntry.Key, PhysicalTargetKey, StringComparison.Ordinal)
-            && PathEquals(backendEntry.TargetPathOrName, expectedBackendPath)
-            && PathEquals(shimEntry.TargetPathOrName, expectedShimPath);
+        string expectedBackendPath = GetExpectedPythonBackendPath();
+        string expectedShimPath = GetExpectedPythonShimPath();
+        bool backendMatches =
+            manifest.Entries.Count >= 1
+            && PythonManifestEntryMatches(
+                manifest.Entries[0],
+                sequence: 1,
+                ConfigurationTargetKind.PythonKeyringBackend,
+                expectedBackendPath
+            );
+        if (!backendMatches)
+        {
+            return false;
+        }
+
+        if (OperatingSystem.IsWindows() && manifest.Entries.Count == 1)
+        {
+            layout = PythonOwnershipManifestLayout.Current;
+            return true;
+        }
+
+        if (
+            manifest.Entries.Count != 2
+            || !PythonManifestEntryMatches(
+                manifest.Entries[1],
+                sequence: 2,
+                ConfigurationTargetKind.KeyringShim,
+                expectedShimPath
+            )
+        )
+        {
+            return false;
+        }
+
+        layout = OperatingSystem.IsWindows()
+            ? PythonOwnershipManifestLayout.LegacyWindows
+            : PythonOwnershipManifestLayout.Current;
+        return true;
     }
+
+    private bool PythonManifestEntryMatches(
+        ConfigurationOwnershipManifestEntry entry,
+        int sequence,
+        ConfigurationTargetKind targetKind,
+        string expectedPath
+    ) =>
+        entry.Sequence == sequence
+        && entry.TargetKind == targetKind
+        && string.Equals(entry.Key, PhysicalTargetKey, StringComparison.Ordinal)
+        && PathEquals(entry.TargetPathOrName, expectedPath);
+
+    private string GetExpectedPythonBackendPath() =>
+        ConfigurationLayoutProjector
+            .ProjectPythonKeyringBackend(CreateCurrentLayoutProjectionContext())
+            .TargetPath;
+
+    private string GetExpectedPythonShimPath() =>
+        ConfigurationLayoutProjector
+            .ProjectKeyringShim(CreateCurrentLayoutProjectionContext())
+            .TargetPath;
 
     private static ConfigurationChangePlan CreatePythonPlan(
         string suffix,
@@ -1516,7 +1593,8 @@ public sealed class ConfigurationPhase14VerticalSliceService
         ConfigurationPhase14Scope scope
     ) =>
         ecosystem == CredentialEcosystem.Python
-        || OwnershipManifestMatchesExpectedBaseState(manifest, ecosystem, scope);
+            ? TryRecognizePythonOwnershipManifest(manifest, scope, out _)
+            : OwnershipManifestMatchesExpectedBaseState(manifest, ecosystem, scope);
 
     private bool OwnershipManifestMatchesExpectedBaseState(
         ConfigurationOwnershipManifest manifest,
@@ -1882,9 +1960,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
                 return false;
             }
 
-            return ecosystem == CredentialEcosystem.Python
-                ? OwnershipManifestMatchesExpectedState(manifest, ecosystem, scope)
-                : OwnershipManifestMatchesExpectedBaseState(manifest, ecosystem, scope);
+            return OwnershipManifestMatchesExpectedState(manifest, ecosystem, scope);
         }
         catch (Exception exception) when (IsExpectedDoctorCheckFailure(exception))
         {
@@ -1906,6 +1982,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
                     ownershipManifestPath,
                     out ConfigurationOwnershipManifest? manifest
                 )
+                || !OwnershipManifestMatchesExpectedState(manifest, ecosystem, scope)
             )
             {
                 return false;
