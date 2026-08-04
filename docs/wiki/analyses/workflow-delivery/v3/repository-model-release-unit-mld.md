@@ -64,7 +64,8 @@ target Git tree
          -> canonical version authority
 
 Release Unit declarations
-  + provider Fact Snapshots
+  + complete Provider Request Manifest
+  + terminal Provider Results
   + NBGV facts
   -> Repository Model Compiler
   -> immutable Repository Model Snapshot
@@ -73,6 +74,11 @@ Release Unit declarations
 The compiled snapshot is the shared technical input to CI and Release. It
 contains no CI Plan, Release Plan, Evidence, authorization, or business
 verdict.
+
+The Repository Model Compiler and Provider contracts are Shared Foundation
+mechanisms. This MLD defines their repository and Release Unit semantics; the
+[Shared Foundation MLD](./shared-foundation-mld.md)
+defines their execution, trust, record, and extension boundaries.
 
 ## Technical Facts
 
@@ -118,21 +124,30 @@ Cross-ecosystem or root-external inputs that no ecosystem can express may be
 declared as explicit extra input edges in the Release Unit build authoring.
 These edges are exceptions, not a replacement for native dependency graphs.
 
-### Fact Snapshot
+### Provider Result and Fact Bundle
 
-Each Provider emits a target-bound Fact Snapshot containing:
+Each Provider produces a target-bound Provider Result containing:
 
 - target commit SHA;
+- Provider logical and implementation identity;
+- Provider request digest;
 - relevant ecosystem toolchain version;
 - manifest and configuration input digests;
 - normalized Project Nodes;
 - dependency and known global-input facts;
 - build capabilities; and
-- explicit unresolved or conflicting facts.
+- explicit unresolved or conflicting facts;
+- mechanical outcome; and
+- diagnostic reference.
 
-Providers run without publication credentials. The Decision Zone consumes
-admitted facts rather than evaluating target-controlled project systems
-directly.
+A pure Provider returns its Provider Result directly within authoritative
+compilation.
+
+A target-evaluating Provider wraps the same Provider Result in an immutable Fact
+Bundle that additionally binds producer job, workflow run and attempt, request
+artifact, and transport digest. Providers run without publication credentials.
+The Decision Zone consumes admitted Fact Bundles rather than evaluating
+target-controlled project systems directly.
 
 ## Repository Model Providers
 
@@ -314,8 +329,14 @@ version block model compilation.
 
 ## Repository Model Compilation
 
-The compiler combines Release Unit declarations, Provider Fact Snapshots, and
-NBGV facts into one immutable Repository Model Snapshot.
+The compiler combines Release Unit declarations, a closed Provider Request
+Manifest, terminal Provider Results, and NBGV facts into one immutable
+Repository Model Snapshot.
+
+The Provider Request Manifest binds every expected Provider request, execution
+mode, request digest, and expected result identity. Exactly one terminal
+Provider Result must exist for every request. Missing, duplicate, or unexpected
+results block model compilation.
 
 For each Release Unit, it:
 
@@ -417,7 +438,8 @@ workspace boundary while linking to the parent package.
 ## Deferred LLD Decisions
 
 - descriptor basename and serialization format;
-- exact strict descriptor and Fact Snapshot schemas;
+- exact strict descriptor, Provider Result, Fact Bundle, and Provider Request
+  Manifest schemas;
 - canonical Project Node identity encoding;
 - Provider command lines and isolation details;
 - Build Definition digest canonicalization;

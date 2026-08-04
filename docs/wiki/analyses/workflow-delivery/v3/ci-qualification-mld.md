@@ -13,8 +13,10 @@ Evidence, and publishes one stable required-check decision.
 
 It realizes the
 [Workflow Delivery v3 Requirements](./requirements.md),
-[High-Level Design](./high-level-design.md), and
-[Repository Model and Release Unit MLD](./repository-model-release-unit-mld.md).
+[High-Level Design](./high-level-design.md),
+[Repository Model and Release Unit MLD](./repository-model-release-unit-mld.md),
+and
+[Shared Foundation MLD](./shared-foundation-mld.md).
 Exact file syntax, strict schemas, command lines, and GitHub workflow topology
 remain lower-layer decisions.
 

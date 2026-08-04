@@ -13,6 +13,7 @@ Workflow delivery architecture **v3** is active and normative.
 - [v3 Governance Integration MLD](./analyses/workflow-delivery/v3/governance-integration-mld.md)
 - [v3 CI Qualification MLD](./analyses/workflow-delivery/v3/ci-qualification-mld.md)
 - [v3 Release Delivery MLD](./analyses/workflow-delivery/v3/release-delivery-mld.md)
+- [v3 Shared Foundation MLD](./analyses/workflow-delivery/v3/shared-foundation-mld.md)
 - [v3 architecture glossary](./analyses/workflow-delivery/v3/architecture-glossary.md)
 - [v3 migration and document policy](./analyses/workflow-delivery/v3/migration-strategy.md)
 
@@ -26,8 +27,15 @@ for new v3 implementation work.
 - Delivery Governance is an external authority boundary.
 - CI and Release each own same-revision planning, Evidence Admission, and
   finalization while GitHub Governance supplies authority.
-- Shared Foundation providers and adapters supply repository modeling, build,
-  quality, and destination mechanisms without owning business policy.
+- Shared Foundation is a logical mechanism layer with no aggregate root,
+  scheduler, universal record model, authorization, or Finalizer.
+- Shared Foundation provides record, artifact, provenance, Repository Model,
+  Provider, Definition, Build, Quality, execution-class, outcome, cache, and
+  generic client primitives without owning business policy.
+- Destination projection, action, Receipt, replay, and remediation semantics are
+  Release-owned; Foundation provides generic clients only.
+- Providers and Adapters emit mechanical results. CI and Release independently
+  form and admit their authoritative records.
 - Decision, Build and Qualification, and Side-Effect Zones are separate runtime
   trust boundaries.
 - Release Unit and Qualification Target are the core domain objects. Project
@@ -90,8 +98,8 @@ have changed.
 
 ## Next Architecture Work
 
-1. Extract the Shared Foundation MLD from confirmed CI and Release mechanisms.
-2. Select the first vertical slice and create its brief LLD.
+1. Select the first vertical slice.
+2. Create its brief LLD.
 
 ## Related Pages
 

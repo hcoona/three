@@ -5,9 +5,9 @@
 Active and normative.
 
 v3 is a clean implementation line. It does not evolve the v2 control
-architecture in place. Proven v2 mechanisms may be ported only through v3
-Shared Foundation adapters and must not leak v2 domain or authority types into
-v3 CI or Release decision models.
+architecture in place. Proven v2 mechanisms may be ported only through reviewed
+v3 Provider, Adapter, or client boundaries and must not leak v2 domain or
+authority types into v3 CI or Release decision models.
 
 ## Normative Pages
 
@@ -22,10 +22,11 @@ v3 CI or Release decision models.
 - [Governance Integration MLD](./governance-integration-mld.md)
 - [CI Qualification MLD](./ci-qualification-mld.md)
 - [Release Delivery MLD](./release-delivery-mld.md)
+- [Shared Foundation MLD](./shared-foundation-mld.md)
 
 ## Next Design Work
 
-1. extract the Shared Foundation MLD from confirmed CI and Release mechanisms;
-2. create a brief LLD for the first end-to-end vertical slice;
+1. select the first end-to-end vertical slice;
+2. create its brief LLD;
 3. implement and validate that vertical slice; and
 4. expand by ecosystem and destination.

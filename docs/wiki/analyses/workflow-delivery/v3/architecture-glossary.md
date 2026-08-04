@@ -48,8 +48,10 @@ not consume CI check results as release evidence.
 The mechanism-level foundation shared by CI Qualification and Release Delivery.
 
 It may define stable identity, revision, digest, fact, artifact, provenance,
-contract, and execution-capability primitives. It does not own CI scope policy,
-release-channel policy, approval policy, or final business decisions.
+contract, Repository Model compilation, and execution-capability primitives.
+It does not own an aggregate root, scheduler, universal record envelope, CI
+scope policy, release-channel policy, approval policy, or final business
+decisions.
 
 ### Delivery Governance
 
@@ -200,7 +202,7 @@ The executable semantic contract for one kind of quality proof.
 
 A Quality Definition identifies its Provider or Quality Adapter, supported
 target kind, inputs, coverage dimensions, runner constraints, prerequisites,
-raw result interpretation, and Evidence contract.
+raw result interpretation, and mechanical Quality Result contract.
 
 ### Release Unit
 
@@ -753,33 +755,99 @@ separately and do not share the CI 12-minute objective.
 
 ### Repository Model Provider
 
-An adapter that converts ecosystem manifests, workspace configuration, global
+A mechanism that converts ecosystem manifests, workspace configuration, global
 configuration, project relationships, and build capabilities into normalized
-Project Node, dependency, path-impact, and global-input facts.
+Project Node, dependency, path-impact, global-input, dimension, and capability
+facts.
 
 It does not infer Release Unit identity or own CI or Release policy.
+
+A pure Provider parses immutable inputs without target execution. A
+target-evaluating Provider runs in an unprivileged discovery job and emits a
+target-bound Fact Bundle for strict Repository Model admission.
+
+### Fact Bundle
+
+The immutable transport wrapper emitted by a target-evaluating Provider around
+one Provider Result.
+
+It binds the Provider Result digest, producer job, workflow attempt, request
+artifact, immutable transport identity, and Bundle digest. It contains no CI or
+Release policy.
+
+### Provider Request Manifest
+
+The closed authoritative list of Provider requests required for one Repository
+Model compilation.
+
+It binds exact target, static catalog, Provider implementation and execution
+mode, request digests, and expected terminal result identities. Compilation
+requires exactly one terminal Provider Result per entry.
 
 ### Build Adapter
 
 An adapter that executes a Build Definition through one ecosystem toolchain and
 maps declared artifacts to produced outputs.
 
-CI and Release share the adapter. The adapter does not decide whether a build is
-required.
+CI and Release share the adapter. It returns a mechanical Build Result and does
+not decide whether a build is required or whether the output is admissible.
 
 ### Quality Adapter
 
-An adapter that executes one quality definition and emits standard Evidence.
+An adapter that executes one closed Quality Invocation and emits a mechanical
+Quality Result.
 
-It does not decide whether the resulting obligation is required or advisory.
+It does not decide whether the resulting obligation is required or advisory and
+does not directly emit authoritative CI or Release Evidence.
 
 ### Destination Adapter
 
-An adapter that implements observation, publication, Receipt, mutability, digest
-visibility, Publication Capability, and remediation semantics for one
-destination family.
+A Release Delivery infrastructure adapter that implements projection
+observation, publication, Receipt payload, mutability, digest visibility, and
+remediation semantics for one destination family.
 
-It does not decide whether Buddy or Official may use the destination.
+It does not decide whether Buddy or Official policy selects the destination and
+is not owned by Shared Foundation. Shared Foundation may provide generic GitHub,
+registry, transport, artifact, and digest client primitives used by the adapter.
+
+### Artifact Reference
+
+A context-neutral mechanical reference that separates logical artifact
+identity, content digest and size, immutable transport identity, producer
+invocation, target, and purpose.
+
+CI and Release may share the structure while applying independent admission.
+A CI Artifact Reference cannot satisfy Release solely because its bytes or
+logical output role match.
+
+### Mechanical Result
+
+A family-specific Provider or Adapter output that reports normalized facts,
+outputs, outcomes, and diagnostics without expressing a business verdict.
+
+CI or Release binds the result to its own Plan or Attempt and forms the
+authoritative Evidence, Observation Record, or Receipt.
+
+### Execution Class
+
+A Foundation declaration describing the trust and capability shape required by
+one invocation.
+
+Initial classes distinguish authoritative pure control code, unprivileged
+target evaluation, unprivileged target execution, read-only remote observation,
+privileged side effect, and privileged remediation. Foundation declares the
+class; context workflows and Delivery Governance create the actual runtime and
+grant.
+
+### Cross-Revision Exchange Contract
+
+A machine contract intentionally produced by one control-code revision and
+consumed by another.
+
+It carries stable kind, explicit contract version, producer repository,
+workflow, ref, run, attempt, job and revision, original domain lineage, payload
+digest, and compatibility rules. Same-revision, same-attempt internal records
+do not require a universal API version.
 
 ### Independent Aggregate Roots
 
@@ -787,10 +855,11 @@ The rule that CI Qualification and Release Delivery own separate Plans,
 Evidence Sets, Decisions, and state machines while consuming shared normalized
 foundation interfaces.
 
-New ecosystems and destinations normally add providers or adapters and policy
-mapping without modifying CI or Release decision semantics. Shared Foundation
-remains a mechanism library rather than a universal business Planner or
-Finalizer.
+New ecosystems normally add Providers or Build and Quality Adapters. New
+destinations add Release-owned Destination Adapters that may reuse Foundation
+client primitives. Neither extension path modifies CI or Release decision
+semantics. Shared Foundation remains a mechanism layer rather than a universal
+business Planner or Finalizer.
 
 ### Decision Explanation
 
@@ -1010,6 +1079,45 @@ credential format cannot encode every such binding.
 65. Buddy dry-run uses a non-live simulation projection identity for version and
     destination projection and never reserves a live Buddy Intent or preview
     identity.
+66. Shared Foundation is a logical mechanism layer with no aggregate root,
+    independent business lifecycle, scheduler, authorization, or Finalizer.
+67. Shared Foundation exposes record primitives and binding helpers but no
+    universal CI/Release record envelope or Evidence model.
+68. Providers resolve normalized facts and capabilities; Adapters execute
+    closed family-specific mechanical invocations.
+69. CI and Release own scheduling, batching decisions, fail-stop, retries,
+    skips, and final aggregation. Foundation may expose compatibility hints only.
+70. Providers and Adapters emit Mechanical Results. The calling context forms
+    and admits authoritative Evidence, Observation Records, and Receipts.
+71. Artifact Reference and internal provenance primitives are shared, while CI
+    and Release apply independent purpose- and context-bound admission.
+72. Provider, Adapter, Definition, and client implementations use a
+    same-revision static catalog; initial scope has no dynamic plugin loading or
+    remote plugin ABI.
+73. A target-evaluating Provider runs in an unprivileged discovery boundary and
+    emits a target-bound Fact Bundle; only a pure Provider may run directly in
+    authoritative planning.
+74. Foundation declares execution classes and capability requirements but never
+    creates, grants, discovers, broadens, or downgrades credentials.
+75. Foundation owns mechanism Definition schemas and catalogs; context policy
+    selects Definitions and determines scope, requiredness, and projections.
+76. Destination projection, action, Receipt, replay, and remediation semantics
+    are Release-owned. Foundation provides generic client primitives only.
+77. CI and Release may share transparent non-authoritative caches, but each
+    rematerializes outputs and creates new context-specific provenance and
+    authoritative records.
+78. Foundation normalizes mechanical outcomes and diagnostics without emitting
+    CI or Release business verdicts.
+79. Explicit contract versioning is required only for intentional
+    cross-revision exchange contracts, such as old reconciliation requests
+    consumed by current remediation code.
+80. Repository Model compilation binds a closed Provider Request Manifest and
+    requires exactly one terminal Provider Result for every expected request.
+81. Governance owner review covers executable Foundation mechanisms, Release
+    Destination Adapters, authenticated clients, static catalogs, capability
+    declarations, and cross-revision compatibility code.
+82. Privileged cross-revision consumers admit protected producer and original
+    domain lineage; kind, version, and payload digest alone are insufficient.
 
 ## Open Decisions
 

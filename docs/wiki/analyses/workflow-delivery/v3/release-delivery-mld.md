@@ -16,8 +16,8 @@ It realizes the
 [Workflow Delivery v3 Requirements](./requirements.md),
 [High-Level Design](./high-level-design.md),
 [Repository Model and Release Unit MLD](./repository-model-release-unit-mld.md),
-and
-[Governance Integration MLD](./governance-integration-mld.md).
+[Governance Integration MLD](./governance-integration-mld.md), and
+[Shared Foundation MLD](./shared-foundation-mld.md).
 Exact record schemas, descriptor syntax, workflow YAML, commands, and
 destination API mappings remain lower-layer decisions.
 
@@ -294,7 +294,7 @@ Official.
 
 ### Destination Definition and Adapter
 
-Shared Destination Definitions and Adapters own:
+Release Delivery Destination Definitions and Adapters own:
 
 - endpoint family and mechanical identity;
 - observable remote facts;
@@ -307,6 +307,10 @@ Shared Destination Definitions and Adapters own:
 - destination mutability constraints.
 
 They do not decide whether a Release Unit publishes to that destination.
+
+Shared Foundation provides only generic artifact, digest, invocation,
+capability-requirement, GitHub, and registry client primitives. Those clients do
+not classify projections, plan actions, define Receipts, or choose recovery.
 
 ### Delivery Governance
 
@@ -893,6 +897,22 @@ It requires:
 Remediation uses current protected remediation control code. It does not inject
 new code into ordinary replay of the old target.
 
+Before requesting remediation approval, current code admits the cross-revision
+reconciliation request by verifying:
+
+- producer repository and protected workflow identity;
+- producer ref and target revision;
+- workflow run, attempt, and producer job;
+- original Release Execution and Attempt;
+- Qualification and Publication Snapshot digests;
+- successful Qualification Decision;
+- Reconciliation Record and logical projection;
+- qualified artifact transport identities and content digests; and
+- cross-revision contract kind, version, and payload digest.
+
+An internally consistent but untrusted or unrelated Actions artifact is not an
+admissible remediation request.
+
 After remediation, a normal whole-release replay must rebuild, requalify,
 observe, and prove the Release completed.
 
@@ -904,16 +924,18 @@ For a GitHub Release projection with an exact ZIP and missing installer:
    projection, and emits an immutable reconciliation request artifact.
 2. The operator runs a dedicated protected
    `release-remediate-github-release.yml` workflow.
-3. A read-only preflight job downloads the reconciliation request and qualified
-   artifact by Actions artifact ID, verifies SHA-256, and uses `gh api` to
-   verify the release, target, existing ZIP digest, and missing installer.
-4. A write job binds a stronger remediation Environment, receives only
+3. A read-only preflight job verifies the request's protected producer and
+   original Release, Qualification, Reconciliation, and artifact lineage.
+4. The preflight job downloads the admitted qualified artifact by Actions
+   artifact ID, verifies SHA-256, and uses `gh api` to verify the release,
+   target, existing ZIP digest, and missing installer.
+5. A write job binds a stronger remediation Environment, receives only
    `contents: write`, performs no target checkout, re-fetches and compares the
    complete expected remote state after approval, and then executes
    `gh release upload` without `--clobber`.
-5. The job verifies the GitHub-computed asset digest and persists a Remediation
+6. The job verifies the GitHub-computed asset digest and persists a Remediation
    Record with before and after state.
-6. A later normal Release replay proves every projection exact and completes
+7. A later normal Release replay proves every projection exact and completes
    the Release.
 
 If any expected state changed after preflight or the asset now exists,

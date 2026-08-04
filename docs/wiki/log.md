@@ -1238,3 +1238,34 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Aligned the HLD to per-mutation Receipts and clarified that protected-target
   control code is required for live Release, while dry-run uses its exact
   selected simulation revision without live authority.
+
+## [2026-08-04] query | Define Shared Foundation MLD
+
+- Defined Shared Foundation as a logical mechanism layer without an aggregate
+  root, independent runtime service, scheduler, authorization, universal record
+  model, or Finalizer.
+- Separated read-only Providers from closed-invocation Build and Quality
+  Adapters and introduced pure versus target-evaluating Provider trust modes.
+- Assigned the shared Repository Model Compiler, static Definition catalogs,
+  mechanical outcomes, execution classes, generic clients, Artifact References,
+  and internal provenance primitives to Foundation.
+- Required CI and Release to wrap Mechanical Results into independently owned
+  and admitted Evidence, Observation Records, and Receipts.
+- Allowed transparent cross-context cache reuse while requiring Release to
+  rematerialize outputs, recompute digests, and create new Release provenance.
+- Moved destination projection, action, Receipt, replay, and remediation
+  semantics to Release Delivery while retaining only generic client primitives
+  in Foundation.
+- Kept same-revision internal records unversioned and introduced explicit
+  versioning only for intentional cross-revision exchange contracts such as
+  reconciliation requests consumed by current remediation code.
+- Incorporated independent review by unifying Provider output as Fact Bundle,
+  removing stale destination and Evidence ownership wording, documenting
+  accepted Provider semantic-completeness obligations, restricting
+  cross-context compiler caches by writer trust and provenance, and binding
+  authenticated clients to allowlisted capability origins and operations.
+- Closed final review gaps by separating in-process Provider Results from
+  isolated Fact Bundle transport, requiring a closed Provider Request Manifest,
+  expanding owner-review coverage to executable mechanisms and catalogs, and
+  admitting protected producer plus original Release lineage before
+  cross-revision remediation.

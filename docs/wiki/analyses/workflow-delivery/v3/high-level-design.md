@@ -26,7 +26,7 @@ Normative terminology is maintained in the
                +------------------+------------------+
                                   |
                            Shared Foundation
- record / digest / evidence binding / repository / build / quality / destination
+ record / digest / repository / artifact / provenance / build / quality / clients
 ```
 
 CI Qualification and Release Delivery are peer bounded contexts. Delivery
@@ -162,25 +162,36 @@ Units.
 
 ## Shared Foundation
 
-The Shared Foundation exposes five stable mechanism families:
+The Shared Foundation exposes six stable mechanism families:
 
 1. Shared Record Primitives provide canonicalization, digest, strict record
-   validation, and exact Evidence-binding functions without selecting policy or
-   verdicts.
-2. Repository Model Providers normalize ecosystem manifests, workspaces,
-   global configuration, Project Nodes, dependency relationships, path impact,
-   and build capabilities.
-3. Build Adapters execute shared Build Definitions and map declared artifacts
-   to produced outputs.
-4. Quality Adapters execute quality definitions and emit standard Evidence.
-5. Destination Adapters implement observation, publication, Receipt,
-   mutability, digest, Capability, and remediation semantics.
+   validation, and exact binding functions without defining a universal record
+   envelope.
+2. Artifact and Provenance Primitives separate logical, content, transport, and
+   producer identity while leaving admission to CI or Release.
+3. Repository Model Providers and the Repository Model Compiler normalize
+   ecosystem manifests, workspaces, Project Nodes, dependency relationships,
+   path impact, and capabilities.
+4. Static Definition Catalogs describe Build, Quality, and other mechanism
+   contracts without self-activating into a Plan.
+5. Build and Quality Adapters execute closed family-specific invocations and
+   return mechanical results rather than authoritative Evidence.
+6. Execution and Client Primitives declare execution classes, capability
+   requirements, mechanical outcomes, cache hints, and generic platform calls
+   without creating jobs or granting authority.
 
-Adding an ecosystem or destination normally adds an adapter and policy mapping
-rather than modifying context-owned decision semantics.
+Adding an ecosystem normally adds Provider, Build Adapter, or Quality Adapter
+implementations and policy mapping rather than modifying context-owned decision
+semantics.
 
-Adapters provide facts and mechanical execution. They do not decide business
-scope, downgrade obligations, authorize publication, or reinterpret verdicts.
+Destination projection classification, action planning, Receipt semantics, and
+remediation belong to Release Delivery. Shared Foundation may provide generic
+GitHub or registry client primitives, but it does not own a Destination Adapter
+business contract.
+
+Providers provide normalized facts. Adapters execute closed mechanical
+operations. Neither decides business scope, downgrades obligations, authorizes
+publication, or reinterprets verdicts.
 
 ## Governance and Trust
 
@@ -193,8 +204,9 @@ Release Delivery owns Release planning, qualification finalization,
 Publication Snapshot finalization, Receipt admission, and Release outcome.
 
 Shared Foundation supplies mechanical canonicalization, digest, strict record
-validation, and Evidence-binding functions. It does not choose scope, policy,
-authorization, or verdicts.
+validation, fact compilation, artifact and provenance identity, closed
+invocation, result normalization, and binding functions. It does not choose
+scope, policy, authorization, or verdicts.
 
 ### Governed Same-Revision Control
 
@@ -208,8 +220,10 @@ runtime promotion protocol.
 GitHub Governance supplies authority through control-code ownership, required
 review, protected refs, workflow permissions, protected environments, and OIDC
 trust. A change to planning, finalization, workflow control code, authoritative
-record shape, or minimum policy becomes eligible only as part of the reviewed
-revision that contains it.
+record shape, minimum policy, executable Provider, Adapter, compiler,
+authenticated client, static catalog, capability declaration, or cross-revision
+compatibility code becomes eligible only as part of the reviewed revision that
+contains it.
 
 A control-code fix therefore creates a new candidate or Release target. An
 ordinary replay of an older target continues to use that target's original
@@ -454,8 +468,9 @@ The next design stage should produce separate MLDs for:
    lineage, complete variant build and qualification, projection observation,
    authorization, capability groups, publication, Receipt, replay, and
    remediation contracts.
-5. **Shared Foundation:** provider and adapter interfaces, normalized facts,
-   artifact identity, provenance, and execution envelopes.
+5. **Shared Foundation:** record primitives, Provider and Adapter interfaces,
+   Repository Model compilation, static Definition catalogs, artifact identity,
+   provenance, execution classes, and generic client primitives.
 
 CI and Release remain together in this HLD because their separation, shared
 foundation, and governance relationship are top-level architectural decisions.

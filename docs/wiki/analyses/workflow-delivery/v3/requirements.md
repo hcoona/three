@@ -141,7 +141,9 @@ against implementation and maintenance cost.
   code from the exact selected simulation revision and must receive no approval
   or live publication capability.
 - **WD-AUTH-002:** Changes to CI or Release planning, finalization, workflow
-  control code, authoritative record shapes, or minimum policy must require
+  control code, authoritative record shapes, minimum policy, executable
+  Providers, Adapters, compilers, authenticated clients, static catalogs,
+  capability declarations, or cross-revision compatibility code must require
   Governance-configured owner review before merge or live Release eligibility.
 - **WD-AUTH-003:** Merging a reviewed control-code change makes that code
   eligible only as part of the resulting new candidate or Release target

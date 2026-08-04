@@ -99,6 +99,12 @@ Governance therefore requires owner review for changes to:
 - workflow permissions and topology;
 - authoritative record shapes;
 - minimum qualification policy;
+- executable Providers, Build and Quality Adapters, and Repository Model
+  compiler code;
+- generic authenticated clients and Release Destination Adapters;
+- static Definition and implementation catalogs;
+- execution-class and capability declarations;
+- cross-revision contract compatibility and migration code;
 - destination identity or Environment references; and
 - rollout and remediation controls.
 
