@@ -207,7 +207,8 @@ public sealed class Wp6ProductionAdapterTests
                     IsWslEnvironment = false,
                     EnvironmentVariableReader = name =>
                         name
-                        == SystemAzureAuthInstallationDiscovery.NativeLinuxExecutablePathEnvironmentVariable
+                        == SystemAzureAuthInstallationDiscovery
+                            .NativeLinuxExecutablePathEnvironmentVariable
                             ? executable
                             : null,
                     ManagedAssemblyIdentityReader = path =>

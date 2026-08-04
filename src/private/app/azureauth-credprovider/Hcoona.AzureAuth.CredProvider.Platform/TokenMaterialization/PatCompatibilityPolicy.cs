@@ -29,7 +29,8 @@ public static class PatCompatibilityPolicy
             ? new(
                 IdentityFlowState.Deferred,
                 "PatCompatibilityDeferred",
-                "PAT compatibility is deferred and has no production acquisition or materialization path.")
+                "PAT compatibility is deferred and has no production "
+                    + "acquisition or materialization path.")
             : new(
                 IdentityFlowState.Disabled,
                 "PatCompatibilityNotSelected",

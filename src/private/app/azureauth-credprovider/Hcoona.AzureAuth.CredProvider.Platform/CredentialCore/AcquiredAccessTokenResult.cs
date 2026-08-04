@@ -60,6 +60,11 @@ public sealed record AcquiredAccessTokenResult
 
     public override string ToString() =>
         Succeeded
-            ? $"{nameof(AcquiredAccessTokenResult)} {{ {nameof(Status)} = {Status}, {nameof(AccessToken)} = {AccessToken} }}"
-            : $"{nameof(AcquiredAccessTokenResult)} {{ {nameof(Status)} = {Status}, {nameof(Code)} = {Code}, {nameof(SafeMessage)} = {SafeMessage} }}";
+            ? $"{nameof(AcquiredAccessTokenResult)} {{ "
+                + $"{nameof(Status)} = {Status}, "
+                + $"{nameof(AccessToken)} = {AccessToken} }}"
+            : $"{nameof(AcquiredAccessTokenResult)} {{ "
+                + $"{nameof(Status)} = {Status}, "
+                + $"{nameof(Code)} = {Code}, "
+                + $"{nameof(SafeMessage)} = {SafeMessage} }}";
 }
