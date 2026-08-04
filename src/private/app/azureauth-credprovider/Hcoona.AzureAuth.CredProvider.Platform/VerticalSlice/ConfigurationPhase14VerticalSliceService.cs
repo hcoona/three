@@ -158,6 +158,11 @@ public sealed class ConfigurationPhase14VerticalSliceService
 {
     private sealed record ExistingOwnershipManifest(ConfigurationOwnershipManifest Manifest);
 
+    private sealed record PackageOwnershipIntentLayouts(
+        ConfigurationOwnershipManifest Previous,
+        ConfigurationOwnershipManifest Requested
+    );
+
     private enum PythonOwnershipManifestLayout
     {
         Current,
@@ -415,7 +420,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
                     ownershipManifestPath,
                     out ConfigurationOwnershipManifest? manifest
                 )
-                || !OwnershipManifestMatchesExpectedBaseState(manifest, ecosystem, scope)
+                || !OwnershipManifestMatchesExpectedState(manifest, ecosystem, scope)
                 || manifest.ResourceIdentity?.ServiceEndpoint is not { } registryUrl
             )
             {
@@ -448,7 +453,8 @@ public sealed class ConfigurationPhase14VerticalSliceService
         ExistingOwnershipManifest? existing = LoadRecognizedPackageManifest(
             ecosystem,
             scope,
-            ownershipManifestPath
+            ownershipManifestPath,
+            requestedDryRunPlan
         );
         if (
             !forceRefresh
@@ -522,7 +528,8 @@ public sealed class ConfigurationPhase14VerticalSliceService
     private ExistingOwnershipManifest? LoadRecognizedPackageManifest(
         CredentialEcosystem ecosystem,
         ConfigurationPhase14Scope scope,
-        string ownershipManifestPath
+        string ownershipManifestPath,
+        ConfigurationChangePlan requestedPlan
     )
     {
         try
@@ -537,7 +544,15 @@ public sealed class ConfigurationPhase14VerticalSliceService
                 return null;
             }
 
-            if (!OwnershipManifestMatchesExpectedBaseState(manifest, ecosystem, scope))
+            if (
+                !OwnershipManifestMatchesExpectedBaseState(manifest, ecosystem, scope)
+                && !PackageOwnershipIntentMatchesExpectedState(
+                    manifest,
+                    ecosystem,
+                    scope,
+                    requestedPlan
+                )
+            )
             {
                 throw new InvalidOperationException(
                     "The existing registry credential ownership manifest is not recognized."
@@ -1213,7 +1228,8 @@ public sealed class ConfigurationPhase14VerticalSliceService
     private ConfigurationChangePlan CreateYarnPlan(
         ConfigurationPhase14Scope scope,
         CredentialResult credential,
-        CanonicalResourceIdentity? resourceOverride = null
+        CanonicalResourceIdentity? resourceOverride = null,
+        string? targetPathOverride = null
     )
     {
         var service = new YarnPhase13VerticalSliceService(
@@ -1231,7 +1247,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
         {
             Declaration = declaration,
             AuthToken = GetRequiredBearerToken(credential),
-            TargetYarnrcPath = paths.YarnUserYarnrcPath,
+            TargetYarnrcPath = targetPathOverride ?? paths.YarnUserYarnrcPath,
             TemporaryHomePath = paths.YarnCiTemporaryHomePath,
         };
         ConfigurationChangePlan plan =
@@ -1594,7 +1610,267 @@ public sealed class ConfigurationPhase14VerticalSliceService
     ) =>
         ecosystem == CredentialEcosystem.Python
             ? TryRecognizePythonOwnershipManifest(manifest, scope, out _)
-            : OwnershipManifestMatchesExpectedBaseState(manifest, ecosystem, scope);
+            : OwnershipManifestMatchesExpectedBaseState(manifest, ecosystem, scope)
+                || PackageOwnershipIntentMatchesExpectedState(
+                    manifest,
+                    ecosystem,
+                    scope,
+                    requestedPlan: null
+                );
+
+    private bool PackageOwnershipIntentMatchesExpectedState(
+        ConfigurationOwnershipManifest manifest,
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        ConfigurationChangePlan? requestedPlan
+    ) =>
+        TryGetPackageOwnershipIntentLayouts(
+            manifest,
+            ecosystem,
+            scope,
+            requestedPlan,
+            out _
+        );
+
+    private bool TryGetPackageOwnershipIntentLayouts(
+        ConfigurationOwnershipManifest manifest,
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        ConfigurationChangePlan? requestedPlan,
+        [NotNullWhen(true)] out PackageOwnershipIntentLayouts? layouts
+    )
+    {
+        layouts = null;
+        if (
+            !IsPackageEcosystem(ecosystem)
+            || !ManifestMatchesExpectedOwnership(manifest, scope)
+            || !TryValidateLifecycleManifest(manifest, scope, out _)
+            || manifest.ResourceIdentity is not { } requestedResource
+            || manifest.Entries.Any(entry => !IsCanonicalPath(entry.TargetPathOrName))
+        )
+        {
+            return false;
+        }
+
+        ConfigurationChangePlan finalPlan;
+        if (requestedPlan is not null)
+        {
+            finalPlan = requestedPlan;
+        }
+        else
+        {
+            ConfigurationTargetKind targetKind =
+                ecosystem is CredentialEcosystem.Npm or CredentialEcosystem.Pnpm
+                    ? ConfigurationTargetKind.Npmrc
+                    : ConfigurationTargetKind.Yarnrc;
+            ConfigurationOwnershipManifestEntry? finalAuthEntry = manifest
+                .Entries.LastOrDefault(entry =>
+                    entry.TargetKind == targetKind
+                    && string.Equals(
+                        entry.Key,
+                        manifest.EntrySelector,
+                        StringComparison.Ordinal
+                    )
+                );
+            if (finalAuthEntry is null)
+            {
+                return false;
+            }
+
+            finalPlan = CreatePackageLayoutPlan(
+                ecosystem,
+                scope,
+                requestedResource,
+                finalAuthEntry.TargetPathOrName
+            );
+        }
+
+        ConfigurationOwnershipManifest finalLayout = ProjectManifest(finalPlan);
+        if (
+            !PackageIntentMetadataMatches(manifest, finalLayout)
+            || manifest.Entries.Count <= finalLayout.Entries.Count
+        )
+        {
+            return false;
+        }
+
+        ConfigurationOwnershipManifestEntry? previousAuthEntry = manifest
+            .Entries.FirstOrDefault(entry =>
+                !finalLayout.Entries.Any(finalEntry => EntriesMatch(entry, finalEntry))
+                && TryGetPackageResourceFromAuthEntry(entry, ecosystem, out _)
+            );
+        if (
+            previousAuthEntry is null
+            || !TryGetPackageResourceFromAuthEntry(
+                previousAuthEntry,
+                ecosystem,
+                out CanonicalResourceIdentity? previousResource
+            )
+        )
+        {
+            return false;
+        }
+
+        ConfigurationOwnershipManifest previousLayout = ProjectManifest(
+            CreatePackageLayoutPlan(
+                ecosystem,
+                scope,
+                previousResource,
+                previousAuthEntry.TargetPathOrName
+            )
+        );
+        var expectedEntries = new List<ConfigurationOwnershipManifestEntry>(
+            previousLayout.Entries
+        );
+        foreach (ConfigurationOwnershipManifestEntry entry in finalLayout.Entries)
+        {
+            if (!expectedEntries.Any(existing => EntriesMatch(existing, entry)))
+            {
+                expectedEntries.Add(entry);
+            }
+        }
+
+        bool matches = manifest.Entries.Count == expectedEntries.Count
+            && manifest.Entries.Zip(
+                expectedEntries,
+                (actual, expected) => (actual, expected)
+            )
+                .Select(
+                    (pair, index) =>
+                        pair.actual.Sequence == index + 1
+                        && EntriesMatch(pair.actual, pair.expected)
+                )
+                .All(static matches => matches);
+        if (matches)
+        {
+            layouts = new PackageOwnershipIntentLayouts(previousLayout, finalLayout);
+        }
+
+        return matches;
+    }
+
+    private static bool PackageIntentMetadataMatches(
+        ConfigurationOwnershipManifest manifest,
+        ConfigurationOwnershipManifest finalLayout
+    ) =>
+        manifest.SchemaVersion == finalLayout.SchemaVersion
+        && string.Equals(manifest.ManifestId, finalLayout.ManifestId, StringComparison.Ordinal)
+        && string.Equals(
+            manifest.OwnerProductId,
+            finalLayout.OwnerProductId,
+            StringComparison.Ordinal
+        )
+        && manifest.Scope == finalLayout.Scope
+        && string.Equals(
+            manifest.EntrySelector,
+            finalLayout.EntrySelector,
+            StringComparison.Ordinal
+        )
+        && Equals(manifest.ResourceIdentity, finalLayout.ResourceIdentity)
+        && string.Equals(
+            manifest.ProductVersion,
+            finalLayout.ProductVersion,
+            StringComparison.Ordinal
+        )
+        && manifest.SafeMetadata.TryGetValue("ecosystem", out string? actualEcosystem)
+        && finalLayout.SafeMetadata.TryGetValue("ecosystem", out string? expectedEcosystem)
+        && string.Equals(actualEcosystem, expectedEcosystem, StringComparison.Ordinal);
+
+    private ConfigurationChangePlan CreatePackageLayoutPlan(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        CanonicalResourceIdentity resource,
+        string targetPath
+    ) =>
+        ecosystem switch
+        {
+            CredentialEcosystem.Npm or CredentialEcosystem.Pnpm => CreateNpmCompatiblePlan(
+                ecosystem,
+                scope,
+                CreateDryRunCredential(scope),
+                resource,
+                targetPath
+            ),
+            CredentialEcosystem.Yarn => CreateYarnPlan(
+                scope,
+                CreateDryRunCredential(scope),
+                resource,
+                targetPath
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(ecosystem), ecosystem, null),
+        };
+
+    private static ConfigurationOwnershipManifest ProjectManifest(
+        ConfigurationChangePlan plan
+    ) =>
+        ConfigurationPlanProjector.CreateOwnershipManifest(
+            plan,
+            ConfigurationPlanProjector.CreatePlannedOperations(plan)
+        );
+
+    private static bool TryGetPackageResourceFromAuthEntry(
+        ConfigurationOwnershipManifestEntry entry,
+        CredentialEcosystem ecosystem,
+        [NotNullWhen(true)] out CanonicalResourceIdentity? resource
+    )
+    {
+        const string YarnAuthPrefix = "npmRegistries[\"";
+        const string YarnAuthSuffix = "\"].npmAuthToken";
+        resource = null;
+        string? registryUrl = ecosystem switch
+        {
+            CredentialEcosystem.Npm or CredentialEcosystem.Pnpm
+                when entry.TargetKind == ConfigurationTargetKind.Npmrc
+                    && entry.Key.StartsWith("//", StringComparison.Ordinal)
+                    && entry.Key.EndsWith("/:_authToken", StringComparison.Ordinal) =>
+                "https:" + entry.Key[..^"/:_authToken".Length] + "/",
+            CredentialEcosystem.Yarn
+                when entry.TargetKind == ConfigurationTargetKind.Yarnrc
+                    && entry.Key.StartsWith(YarnAuthPrefix, StringComparison.Ordinal)
+                    && entry.Key.EndsWith(YarnAuthSuffix, StringComparison.Ordinal) =>
+                entry.Key[
+                    YarnAuthPrefix.Length
+                        ..^YarnAuthSuffix.Length
+                ] + "/",
+            _ => null,
+        };
+        if (
+            registryUrl is null
+            || !Uri.TryCreate(registryUrl, UriKind.Absolute, out Uri? registryUri)
+            || !NpmPhase12VerticalSliceService.TryCreateAzureArtifactsNpmResourceIdentity(
+                registryUri,
+                out resource
+            )
+            || resource is null
+        )
+        {
+            return false;
+        }
+
+        NpmCompatibleAuthSelectors selectors = NpmCompatibleAuthSelectorPolicy.Create(resource);
+        string expectedSelector =
+            ecosystem is CredentialEcosystem.Npm or CredentialEcosystem.Pnpm
+                ? selectors.NpmAuthTokenKey
+                : selectors.YarnAuthTokenKey;
+        return string.Equals(entry.Key, expectedSelector, StringComparison.Ordinal);
+    }
+
+    private bool EntriesMatch(
+        ConfigurationOwnershipManifestEntry left,
+        ConfigurationOwnershipManifestEntry right
+    ) =>
+        left.TargetKind == right.TargetKind
+        && PathEquals(left.TargetPathOrName, right.TargetPathOrName)
+        && string.Equals(left.Key, right.Key, StringComparison.Ordinal);
+
+    private bool IsCanonicalPath(string path) =>
+        string.Equals(
+            path,
+            NormalizePath(path),
+            OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal
+        );
 
     private bool OwnershipManifestMatchesExpectedBaseState(
         ConfigurationOwnershipManifest manifest,
@@ -2241,11 +2517,66 @@ public sealed class ConfigurationPhase14VerticalSliceService
     )
     {
         string ecosystemName = ToContractEcosystemName(ecosystem);
+        if (
+            IsPackageEcosystem(ecosystem)
+            && !OwnershipManifestMatchesExpectedBaseState(manifest, ecosystem, scope)
+            && TryGetPackageOwnershipIntentLayouts(
+                manifest,
+                ecosystem,
+                scope,
+                requestedPlan: null,
+                out PackageOwnershipIntentLayouts? layouts
+            )
+        )
+        {
+            ConfigurationOwnershipManifestEntry[] previousOnly = layouts
+                .Previous.Entries.Where(previous =>
+                    !layouts.Requested.Entries.Any(requested =>
+                        EntriesMatch(previous, requested)
+                    )
+                )
+                .ToArray();
+            return CreateRemovePlansForEntries(
+                    ecosystem,
+                    ecosystemName,
+                    scope,
+                    layouts.Previous,
+                    previousOnly
+                )
+                .Concat(
+                    CreateRemovePlansForEntries(
+                        ecosystem,
+                        ecosystemName,
+                        scope,
+                        layouts.Requested,
+                        layouts.Requested.Entries
+                    )
+                )
+                .ToArray();
+        }
+
         ConfigurationOwnershipManifestEntry[] entries = manifest
             .Entries.Where(entry => EntryMatchesEcosystem(entry, ecosystem))
             .OrderBy(entry => entry.Sequence)
             .ToArray();
 
+        return CreateRemovePlansForEntries(
+            ecosystem,
+            ecosystemName,
+            scope,
+            manifest,
+            entries
+        );
+    }
+
+    private ConfigurationChangePlan[] CreateRemovePlansForEntries(
+        CredentialEcosystem ecosystem,
+        string ecosystemName,
+        ConfigurationPhase14Scope scope,
+        ConfigurationOwnershipManifest manifest,
+        IReadOnlyList<ConfigurationOwnershipManifestEntry> entries
+    )
+    {
         return entries
             .GroupBy(static entry => entry.TargetKind)
             .Select(group =>

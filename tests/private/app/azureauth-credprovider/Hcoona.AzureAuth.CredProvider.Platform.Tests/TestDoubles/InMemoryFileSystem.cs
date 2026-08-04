@@ -15,6 +15,7 @@ public sealed class InMemoryFileSystem : IFileSystem, IFileSystemMutationLock
     private readonly HashSet<string> heldLocks;
     private readonly InMemoryPathSemantics pathSemantics;
     private readonly StringComparer pathComparer;
+    private readonly List<ScheduledCallback> scheduledCallbacks = [];
     private readonly List<ScheduledFailure> scheduledFailures = [];
     private readonly Dictionary<string, UnixFileMode> unixFileModes;
     private readonly Queue<Exception> failures = [];
@@ -66,6 +67,22 @@ public sealed class InMemoryFileSystem : IFileSystem, IFileSystemMutationLock
         ArgumentNullException.ThrowIfNull(exception);
         scheduledFailures.Add(
             new ScheduledFailure(operation, NormalizePath(path), occurrence, exception)
+        );
+    }
+
+    public void RunOnMatchingCall(
+        string operation,
+        string path,
+        int occurrence,
+        Action callback
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(operation);
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ArgumentOutOfRangeException.ThrowIfLessThan(occurrence, 1);
+        ArgumentNullException.ThrowIfNull(callback);
+        scheduledCallbacks.Add(
+            new ScheduledCallback(operation, NormalizePath(path), occurrence, callback)
         );
     }
 
@@ -518,6 +535,27 @@ public sealed class InMemoryFileSystem : IFileSystem, IFileSystemMutationLock
 
     private void Record(string operation, string path, string? value = null)
     {
+        int callbackIndex = scheduledCallbacks.FindIndex(callback =>
+            string.Equals(callback.Operation, operation, StringComparison.Ordinal)
+            && pathComparer.Equals(callback.Path, path)
+        );
+        if (callbackIndex >= 0)
+        {
+            ScheduledCallback callback = scheduledCallbacks[callbackIndex];
+            if (callback.RemainingOccurrences == 1)
+            {
+                scheduledCallbacks.RemoveAt(callbackIndex);
+                callback.Callback();
+            }
+            else
+            {
+                scheduledCallbacks[callbackIndex] = callback with
+                {
+                    RemainingOccurrences = callback.RemainingOccurrences - 1,
+                };
+            }
+        }
+
         int scheduledIndex = scheduledFailures.FindIndex(failure =>
             string.Equals(failure.Operation, operation, StringComparison.Ordinal)
             && pathComparer.Equals(failure.Path, path)
@@ -544,6 +582,13 @@ public sealed class InMemoryFileSystem : IFileSystem, IFileSystemMutationLock
 
         Calls.Add(new FileSystemCall(operation, path, value));
     }
+
+    private sealed record ScheduledCallback(
+        string Operation,
+        string Path,
+        int RemainingOccurrences,
+        Action Callback
+    );
 
     private sealed record ScheduledFailure(
         string Operation,

@@ -382,6 +382,250 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         Assert.DoesNotContain("test-feed", contents, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(CredentialEcosystem.Npm, PackageReplacementFailurePoint.CancellationAfterIntent)]
+    [InlineData(CredentialEcosystem.Npm, PackageReplacementFailurePoint.TargetWriteAfterIntent)]
+    [InlineData(CredentialEcosystem.Npm, PackageReplacementFailurePoint.FinalManifestAfterIntent)]
+    [InlineData(CredentialEcosystem.Yarn, PackageReplacementFailurePoint.CancellationAfterIntent)]
+    [InlineData(CredentialEcosystem.Yarn, PackageReplacementFailurePoint.TargetWriteAfterIntent)]
+    [InlineData(CredentialEcosystem.Yarn, PackageReplacementFailurePoint.FinalManifestAfterIntent)]
+    public async Task RegistryResourceReplacementFailureAfterIntentRetriesAndConverges(
+        CredentialEcosystem ecosystem,
+        PackageReplacementFailurePoint failurePoint
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        ConfigurationPhase14VerticalSliceService original = CreateService(fileSystem);
+        await original.ConfigureAsync(
+            ecosystem,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+        var replacementRegistry = new Uri(
+            "https://pkgs.dev.azure.com/test-org/_packaging/replacement-feed/npm/registry/"
+        );
+        ConfigurationPhase14VerticalSliceService replacement = CreateService(
+            fileSystem,
+            registryUrl: replacementRegistry
+        );
+        string targetPath = GetPackageConfigurationPath(replacement, ecosystem);
+        string manifestPath = GetPackageManifestPath(replacement, ecosystem);
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken
+        );
+        InjectPackageReplacementFailure(
+            fileSystem,
+            targetPath,
+            manifestPath,
+            failurePoint,
+            cancellation
+        );
+
+        if (failurePoint == PackageReplacementFailurePoint.CancellationAfterIntent)
+        {
+            await Assert.ThrowsAsync<OperationCanceledException>(async () =>
+                await replacement.ConfigureAsync(
+                    ecosystem,
+                    ConfigurationPhase14Scope.User,
+                    cancellation.Token
+                )
+            );
+        }
+        else
+        {
+            await Assert.ThrowsAsync<IOException>(async () =>
+                await replacement.ConfigureAsync(
+                    ecosystem,
+                    ConfigurationPhase14Scope.User,
+                    cancellation.Token
+                )
+            );
+        }
+
+        ConfigurationOwnershipManifest transitional =
+            ConfigurationOwnershipManifestSerializer.Deserialize(
+                fileSystem.ReadAllText(manifestPath)
+            );
+        Assert.Equal(ecosystem == CredentialEcosystem.Npm ? 2 : 4, transitional.Entries.Count);
+        Assert.Contains(
+            transitional.Entries,
+            entry => entry.Key.Contains("test-feed", StringComparison.Ordinal)
+        );
+        Assert.Contains(
+            transitional.Entries,
+            entry => entry.Key.Contains("replacement-feed", StringComparison.Ordinal)
+        );
+        Assert.Equal(
+            replacementRegistry,
+            replacement.ResolvePersistedRegistryUrl(
+                ecosystem,
+                ConfigurationPhase14Scope.User
+            )
+        );
+
+        await replacement.ConfigureAsync(
+            ecosystem,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+        await replacement.ConfigureAsync(
+            ecosystem,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+
+        ConfigurationOwnershipManifest recovered =
+            ConfigurationOwnershipManifestSerializer.Deserialize(
+                fileSystem.ReadAllText(manifestPath)
+            );
+        Assert.Equal(ecosystem == CredentialEcosystem.Npm ? 1 : 2, recovered.Entries.Count);
+        Assert.All(
+            recovered.Entries,
+            entry => Assert.Contains("replacement-feed", entry.Key, StringComparison.Ordinal)
+        );
+        Assert.DoesNotContain(
+            "test-feed",
+            fileSystem.ReadAllText(targetPath),
+            StringComparison.Ordinal
+        );
+
+        await replacement.UnconfigureAsync(
+            ecosystem,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+        ConfigurationPhase14PlanResult repeatedUnconfigure =
+            await replacement.UnconfigureAsync(
+                ecosystem,
+                ConfigurationPhase14Scope.User,
+                TestContext.Current.CancellationToken
+            );
+
+        Assert.False(fileSystem.FileExists(manifestPath));
+        Assert.False(repeatedUnconfigure.OwnershipManifestPresent);
+        Assert.False(repeatedUnconfigure.OwnershipManifestCleanupIncomplete);
+    }
+
+    [Fact]
+    public async Task TransitionalPackageOwnershipCanBeUnconfiguredDirectly()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        ConfigurationPhase14VerticalSliceService original = CreateService(fileSystem);
+        await original.ConfigureAsync(
+            CredentialEcosystem.Npm,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+        ConfigurationPhase14VerticalSliceService replacement = CreateService(
+            fileSystem,
+            registryUrl: new Uri(
+                "https://pkgs.dev.azure.com/test-org/_packaging/replacement-feed/npm/registry/"
+            )
+        );
+        string manifestPath = GetPackageManifestPath(replacement, CredentialEcosystem.Npm);
+        fileSystem.FailMatchingCall(
+            nameof(InMemoryFileSystem.AtomicWriteAllBytes),
+            replacement.Paths.NpmUserNpmrcPath,
+            occurrence: 2,
+            new IOException("Injected target write failure after ownership intent.")
+        );
+        await Assert.ThrowsAsync<IOException>(async () =>
+            await replacement.ConfigureAsync(
+                CredentialEcosystem.Npm,
+                ConfigurationPhase14Scope.User,
+                TestContext.Current.CancellationToken
+            )
+        );
+
+        ConfigurationPhase14PlanResult result = await replacement.UnconfigureAsync(
+            CredentialEcosystem.Npm,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.False(result.OwnershipManifestCleanupIncomplete);
+        Assert.False(fileSystem.FileExists(manifestPath));
+        Assert.DoesNotContain(
+            "_authToken",
+            fileSystem.ReadAllText(replacement.Paths.NpmUserNpmrcPath),
+            StringComparison.Ordinal
+        );
+    }
+
+    [Fact]
+    public async Task TransitionalPackageOwnershipWithExtraPathRemainsRejected()
+    {
+        const string ForgedPath = "/forged/extra.npmrc";
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        ConfigurationPhase14VerticalSliceService original = CreateService(fileSystem);
+        await original.ConfigureAsync(
+            CredentialEcosystem.Npm,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+        ConfigurationPhase14VerticalSliceService replacement = CreateService(
+            fileSystem,
+            registryUrl: new Uri(
+                "https://pkgs.dev.azure.com/test-org/_packaging/replacement-feed/npm/registry/"
+            )
+        );
+        string manifestPath = GetPackageManifestPath(replacement, CredentialEcosystem.Npm);
+        fileSystem.FailMatchingCall(
+            nameof(InMemoryFileSystem.AtomicWriteAllBytes),
+            replacement.Paths.NpmUserNpmrcPath,
+            occurrence: 2,
+            new IOException("Injected target write failure after ownership intent.")
+        );
+        await Assert.ThrowsAsync<IOException>(async () =>
+            await replacement.ConfigureAsync(
+                CredentialEcosystem.Npm,
+                ConfigurationPhase14Scope.User,
+                TestContext.Current.CancellationToken
+            )
+        );
+        ConfigurationOwnershipManifest transitional =
+            ConfigurationOwnershipManifestSerializer.Deserialize(
+                fileSystem.ReadAllText(manifestPath)
+            );
+        fileSystem.CreateDirectory(Path.GetDirectoryName(ForgedPath)!);
+        fileSystem.WriteAllText(ForgedPath, "sentinel=true\n");
+        ConfigurationOwnershipManifest forged = transitional with
+        {
+            Entries =
+            [
+                .. transitional.Entries,
+                transitional.Entries[0] with
+                {
+                    Sequence = transitional.Entries.Count + 1,
+                    TargetPathOrName = ForgedPath,
+                },
+            ],
+        };
+        fileSystem.WriteAllText(
+            manifestPath,
+            ConfigurationOwnershipManifestSerializer.Serialize(forged)
+        );
+
+        InvalidOperationException configureException =
+            await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+                await replacement.ConfigureAsync(
+                    CredentialEcosystem.Npm,
+                    ConfigurationPhase14Scope.User,
+                    TestContext.Current.CancellationToken
+                )
+            );
+        ConfigurationPhase14PlanResult unconfigure = await replacement.UnconfigureAsync(
+            CredentialEcosystem.Npm,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Contains("invalid", configureException.Message, StringComparison.Ordinal);
+        Assert.True(unconfigure.OwnershipManifestCleanupIncomplete);
+        Assert.True(fileSystem.FileExists(manifestPath));
+        Assert.Equal("sentinel=true\n", fileSystem.ReadAllText(ForgedPath));
+    }
+
     [Fact]
     public async Task UnconfigureRemovesOwnedSelectorWhenItsValueChanged()
     {
@@ -2772,5 +3016,54 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    public enum PackageReplacementFailurePoint
+    {
+        CancellationAfterIntent,
+        TargetWriteAfterIntent,
+        FinalManifestAfterIntent,
+    }
+
+    private static void InjectPackageReplacementFailure(
+        InMemoryFileSystem fileSystem,
+        string targetPath,
+        string manifestPath,
+        PackageReplacementFailurePoint failurePoint,
+        CancellationTokenSource cancellation
+    )
+    {
+        if (failurePoint == PackageReplacementFailurePoint.CancellationAfterIntent)
+        {
+            fileSystem.RunOnMatchingCall(
+                nameof(InMemoryFileSystem.AtomicWriteAllText),
+                manifestPath,
+                occurrence: 1,
+                cancellation.Cancel
+            );
+            return;
+        }
+
+        (string operation, string path, int occurrence, Exception exception) = failurePoint switch
+        {
+            PackageReplacementFailurePoint.TargetWriteAfterIntent =>
+                (
+                    nameof(InMemoryFileSystem.AtomicWriteAllBytes),
+                    targetPath,
+                    2,
+                    (Exception)
+                        new IOException("Injected target write failure after ownership intent.")
+                ),
+            PackageReplacementFailurePoint.FinalManifestAfterIntent =>
+                (
+                    nameof(InMemoryFileSystem.AtomicWriteAllText),
+                    manifestPath,
+                    2,
+                    (Exception)
+                        new IOException("Injected final manifest failure after ownership intent.")
+                ),
+            _ => throw new ArgumentOutOfRangeException(nameof(failurePoint)),
+        };
+        fileSystem.FailMatchingCall(operation, path, occurrence, exception);
     }
 }
