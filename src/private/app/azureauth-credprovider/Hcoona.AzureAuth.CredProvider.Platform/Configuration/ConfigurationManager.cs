@@ -155,37 +155,69 @@ public sealed class ConfigurationManager : IConfigurationManager
                 .Select(operation => (ValidateAndNormalize(operation.Plan), operation.Operation))
                 .ToArray();
         using IDisposable ownershipLock = AcquireOwnershipGroupLock();
-        ConfigurationOwnershipManifest? manifest = LoadManifest();
-        ConfigurationOwnershipManifest? originalManifest = manifest;
+        ConfigurationOwnershipManifest? originalManifest = LoadManifest();
+        ConfigurationOwnershipManifest? previewManifest = originalManifest;
+        var resultManifests = new List<ConfigurationOwnershipManifest?>(normalized.Length);
 
         foreach ((ConfigurationChangePlan plan, ConfigurationPlanOperation operation) in normalized)
         {
-            ValidateManifestForPlan(manifest, plan, operation);
+            ValidateManifestForPlan(previewManifest, plan, operation);
             ValidatePlanAgainstCurrentState(
                 plan,
-                MergePrevalidationOwnership(manifest, originalManifest),
+                MergePrevalidationOwnership(previewManifest, originalManifest),
                 operation,
                 cancellationToken
             );
-            manifest = PreviewManifestAfterOperation(manifest, plan, operation);
+            previewManifest = PreviewManifestAfterOperation(previewManifest, plan, operation);
+            resultManifests.Add(previewManifest);
         }
 
-        manifest = LoadManifest();
-        var results = new List<ConfigurationPlanResult>(normalized.Length);
         foreach ((ConfigurationChangePlan plan, ConfigurationPlanOperation operation) in normalized)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            await ApplyChanges(plan, manifest, operation, cancellationToken);
-            manifest = PreviewManifestAfterOperation(manifest, plan, operation);
-            PersistManifest(manifest);
-            if (operation == ConfigurationPlanOperation.Remove)
+            if (operation != ConfigurationPlanOperation.Remove)
             {
-                DeleteTemporaryContainer(plan);
+                continue;
             }
-            results.Add(CreateResult(plan, operation, manifest));
+
+            cancellationToken.ThrowIfCancellationRequested();
+            await ApplyChanges(plan, originalManifest, operation, cancellationToken);
+            DeleteTemporaryContainer(plan);
         }
 
-        return results;
+        ConfigurationOwnershipManifest? ownershipIntent = CreateOwnershipIntent(
+            originalManifest,
+            previewManifest
+        );
+        bool hasApply = normalized.Any(operation =>
+            operation.Operation == ConfigurationPlanOperation.Apply
+        );
+        if (hasApply)
+        {
+            PersistManifest(ownershipIntent);
+        }
+
+        foreach ((ConfigurationChangePlan plan, ConfigurationPlanOperation operation) in normalized)
+        {
+            if (operation != ConfigurationPlanOperation.Apply)
+            {
+                continue;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            await ApplyChanges(plan, ownershipIntent, operation, cancellationToken);
+        }
+
+        if (!ManifestsEquivalent(ownershipIntent, previewManifest))
+        {
+            PersistManifest(previewManifest);
+        }
+
+        return normalized
+            .Select(
+                (operation, index) =>
+                    CreateResult(operation.Plan, operation.Operation, resultManifests[index])
+            )
+            .ToArray();
     }
 
     private void DeleteTemporaryContainer(ConfigurationChangePlan plan)
@@ -674,6 +706,54 @@ public sealed class ConfigurationManager : IConfigurationManager
         {
             Entries = entries,
         };
+    }
+
+    private ConfigurationOwnershipManifest? CreateOwnershipIntent(
+        ConfigurationOwnershipManifest? original,
+        ConfigurationOwnershipManifest? final
+    )
+    {
+        if (final is null)
+        {
+            return original;
+        }
+        if (original is null)
+        {
+            return final;
+        }
+
+        var entries = new List<ConfigurationOwnershipManifestEntry>(original.Entries);
+        foreach (ConfigurationOwnershipManifestEntry finalEntry in final.Entries)
+        {
+            if (!entries.Any(entry => EntryMatchesEntry(entry, finalEntry)))
+            {
+                entries.Add(finalEntry);
+            }
+        }
+
+        return final with
+        {
+            Entries = entries
+                .Select((entry, index) => entry with { Sequence = index + 1 })
+                .ToArray(),
+        };
+    }
+
+    private static bool ManifestsEquivalent(
+        ConfigurationOwnershipManifest? left,
+        ConfigurationOwnershipManifest? right
+    )
+    {
+        if (left is null || right is null)
+        {
+            return left is null && right is null;
+        }
+
+        return string.Equals(
+            ConfigurationOwnershipManifestSerializer.Serialize(left),
+            ConfigurationOwnershipManifestSerializer.Serialize(right),
+            StringComparison.Ordinal
+        );
     }
 
     private void PersistManifest(ConfigurationOwnershipManifest? manifest)

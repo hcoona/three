@@ -15,6 +15,7 @@ public sealed class InMemoryFileSystem : IFileSystem, IFileSystemMutationLock
     private readonly HashSet<string> heldLocks;
     private readonly InMemoryPathSemantics pathSemantics;
     private readonly StringComparer pathComparer;
+    private readonly List<ScheduledFailure> scheduledFailures = [];
     private readonly Dictionary<string, UnixFileMode> unixFileModes;
     private readonly Queue<Exception> failures = [];
     private readonly string rootPath;
@@ -50,6 +51,22 @@ public sealed class InMemoryFileSystem : IFileSystem, IFileSystemMutationLock
     {
         ArgumentNullException.ThrowIfNull(exception);
         failures.Enqueue(exception);
+    }
+
+    public void FailMatchingCall(
+        string operation,
+        string path,
+        int occurrence,
+        Exception exception
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(operation);
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ArgumentOutOfRangeException.ThrowIfLessThan(occurrence, 1);
+        ArgumentNullException.ThrowIfNull(exception);
+        scheduledFailures.Add(
+            new ScheduledFailure(operation, NormalizePath(path), occurrence, exception)
+        );
     }
 
     public bool FileExists(string path)
@@ -501,6 +518,25 @@ public sealed class InMemoryFileSystem : IFileSystem, IFileSystemMutationLock
 
     private void Record(string operation, string path, string? value = null)
     {
+        int scheduledIndex = scheduledFailures.FindIndex(failure =>
+            string.Equals(failure.Operation, operation, StringComparison.Ordinal)
+            && pathComparer.Equals(failure.Path, path)
+        );
+        if (scheduledIndex >= 0)
+        {
+            ScheduledFailure failure = scheduledFailures[scheduledIndex];
+            if (failure.RemainingOccurrences == 1)
+            {
+                scheduledFailures.RemoveAt(scheduledIndex);
+                throw failure.Exception;
+            }
+
+            scheduledFailures[scheduledIndex] = failure with
+            {
+                RemainingOccurrences = failure.RemainingOccurrences - 1,
+            };
+        }
+
         if (failures.TryDequeue(out Exception? exception))
         {
             throw exception;
@@ -508,6 +544,13 @@ public sealed class InMemoryFileSystem : IFileSystem, IFileSystemMutationLock
 
         Calls.Add(new FileSystemCall(operation, path, value));
     }
+
+    private sealed record ScheduledFailure(
+        string Operation,
+        string Path,
+        int RemainingOccurrences,
+        Exception Exception
+    );
 
     private sealed class ActionDisposable(Action dispose) : IDisposable
     {

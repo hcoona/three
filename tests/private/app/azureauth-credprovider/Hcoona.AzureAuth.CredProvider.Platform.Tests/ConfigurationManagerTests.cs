@@ -129,6 +129,186 @@ public sealed class ConfigurationManagerTests
         Assert.False(fileSystem.FileExists(TargetPath));
     }
 
+    [Fact]
+    public async Task ApplyManifestIntentFailureLeavesTargetUntouchedAndRetryConverges()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        var manager = new ConfigurationManager(fileSystem, ManifestPath);
+        ConfigurationChangePlan plan = CreateNpmPlan(TargetPath, Secret);
+        fileSystem.FailMatchingCall(
+            nameof(InMemoryFileSystem.AtomicWriteAllText),
+            ManifestPath,
+            1,
+            new IOException("Injected manifest intent failure.")
+        );
+
+        await Assert.ThrowsAsync<IOException>(async () =>
+            await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.False(fileSystem.FileExists(TargetPath));
+        Assert.False(fileSystem.FileExists(ManifestPath));
+
+        await manager.ApplyAsync(plan, TestContext.Current.CancellationToken);
+
+        AssertOwnedSelector(fileSystem, plan.Changes.Single().Key);
+        Assert.Contains(Secret, fileSystem.ReadAllText(TargetPath), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ApplyTargetWriterFailureLeavesOwnershipIntentAndRetryConverges()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        var manager = new ConfigurationManager(fileSystem, ManifestPath);
+        ConfigurationChangePlan plan = CreateNpmPlan(TargetPath, Secret);
+        fileSystem.FailMatchingCall(
+            nameof(InMemoryFileSystem.AtomicWriteAllBytes),
+            TargetPath,
+            1,
+            new IOException("Injected target writer failure.")
+        );
+
+        await Assert.ThrowsAsync<IOException>(async () =>
+            await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.False(fileSystem.FileExists(TargetPath));
+        AssertOwnedSelector(fileSystem, plan.Changes.Single().Key);
+
+        await manager.ApplyAsync(plan, TestContext.Current.CancellationToken);
+
+        AssertOwnedSelector(fileSystem, plan.Changes.Single().Key);
+        Assert.Contains(Secret, fileSystem.ReadAllText(TargetPath), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RemoveTargetWriterFailureRetainsOwnershipAndRetryConverges()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        var manager = new ConfigurationManager(fileSystem, ManifestPath);
+        ConfigurationChangePlan plan = CreateNpmPlan(TargetPath, Secret);
+        await manager.ApplyAsync(plan, TestContext.Current.CancellationToken);
+        fileSystem.FailMatchingCall(
+            nameof(InMemoryFileSystem.AtomicWriteAllBytes),
+            TargetPath,
+            1,
+            new IOException("Injected target writer failure.")
+        );
+
+        await Assert.ThrowsAsync<IOException>(async () =>
+            await manager.RemoveAsync(
+                CreateRemovePlan(plan),
+                TestContext.Current.CancellationToken
+            )
+        );
+
+        Assert.Contains(Secret, fileSystem.ReadAllText(TargetPath), StringComparison.Ordinal);
+        AssertOwnedSelector(fileSystem, plan.Changes.Single().Key);
+
+        await manager.RemoveAsync(
+            CreateRemovePlan(plan),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.DoesNotContain(
+            plan.Changes.Single().Key,
+            fileSystem.ReadAllText(TargetPath),
+            StringComparison.Ordinal
+        );
+        Assert.False(fileSystem.FileExists(ManifestPath));
+    }
+
+    [Fact]
+    public async Task RemoveManifestRemovalFailureRetainsOwnershipAndRetryConverges()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        var manager = new ConfigurationManager(fileSystem, ManifestPath);
+        ConfigurationChangePlan plan = CreateNpmPlan(TargetPath, Secret);
+        await manager.ApplyAsync(plan, TestContext.Current.CancellationToken);
+        fileSystem.FailMatchingCall(
+            nameof(InMemoryFileSystem.DeleteFile),
+            ManifestPath,
+            1,
+            new IOException("Injected manifest removal failure.")
+        );
+
+        await Assert.ThrowsAsync<IOException>(async () =>
+            await manager.RemoveAsync(
+                CreateRemovePlan(plan),
+                TestContext.Current.CancellationToken
+            )
+        );
+
+        Assert.DoesNotContain(
+            plan.Changes.Single().Key,
+            fileSystem.ReadAllText(TargetPath),
+            StringComparison.Ordinal
+        );
+        AssertOwnedSelector(fileSystem, plan.Changes.Single().Key);
+
+        await manager.RemoveAsync(
+            CreateRemovePlan(plan),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.False(fileSystem.FileExists(ManifestPath));
+    }
+
+    [Fact]
+    public async Task RemoveManifestWriteFailureRetainsOwnershipAndRetryConverges()
+    {
+        const string retainedSelector =
+            "//pkgs.dev.azure.com/org/_packaging/retained-feed/npm/registry/:_authToken";
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        var manager = new ConfigurationManager(fileSystem, ManifestPath);
+        ConfigurationChangePlan removedPlan = CreateNpmPlanForFeed(
+            "removed-npm-plan",
+            "removed-feed",
+            Secret
+        );
+        ConfigurationChangePlan retainedPlan = CreateNpmPlanForFeed(
+            "retained-npm-plan",
+            "retained-feed",
+            "retained-token-value"
+        );
+        await manager.ApplyAsync(removedPlan, TestContext.Current.CancellationToken);
+        await manager.ApplyAsync(retainedPlan, TestContext.Current.CancellationToken);
+        fileSystem.FailMatchingCall(
+            nameof(InMemoryFileSystem.AtomicWriteAllText),
+            ManifestPath,
+            1,
+            new IOException("Injected manifest write failure.")
+        );
+
+        await Assert.ThrowsAsync<IOException>(async () =>
+            await manager.RemoveAsync(
+                CreateRemovePlan(removedPlan),
+                TestContext.Current.CancellationToken
+            )
+        );
+
+        Assert.DoesNotContain(
+            removedPlan.Changes.Single().Key,
+            fileSystem.ReadAllText(TargetPath),
+            StringComparison.Ordinal
+        );
+        Assert.Equal(
+            [removedPlan.Changes.Single().Key, retainedSelector],
+            LoadManifest(fileSystem).Entries.Select(entry => entry.Key)
+        );
+
+        await manager.RemoveAsync(
+            CreateRemovePlan(removedPlan),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Contains(retainedSelector, fileSystem.ReadAllText(TargetPath), StringComparison.Ordinal);
+        ConfigurationOwnershipManifestEntry entry = Assert.Single(
+            LoadManifest(fileSystem).Entries
+        );
+        Assert.Equal(retainedSelector, entry.Key);
+    }
+
     private static ConfigurationChangePlan CreateNpmPlan(string targetPath, string token)
     {
         CanonicalResourceIdentity resource = CanonicalResourceIdentity.Create(
@@ -246,6 +426,69 @@ public sealed class ConfigurationManagerTests
         );
     }
 
+    [Theory]
+    [InlineData(ReplacementFailurePoint.RemoveTarget)]
+    [InlineData(ReplacementFailurePoint.OwnershipIntent)]
+    [InlineData(ReplacementFailurePoint.ApplyTarget)]
+    [InlineData(ReplacementFailurePoint.FinalOwnership)]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Naming",
+        "CA1707:Identifiers should not contain underscores",
+        Justification = "The test name identifies the remove-then-apply replacement operation."
+    )]
+    public async Task ExecuteBatchAsync_RemoveThenApply_FailureRetainsCoverageAndRetryConverges(
+        ReplacementFailurePoint failurePoint
+    )
+    {
+        const string oldSelector =
+            "//pkgs.dev.azure.com/org/_packaging/old-feed/npm/registry/:_authToken";
+        const string replacementSelector =
+            "//pkgs.dev.azure.com/org/_packaging/replacement-feed/npm/registry/:_authToken";
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        var manager = new ConfigurationManager(fileSystem, ManifestPath);
+        ConfigurationChangePlan oldPlan = CreateNpmPlanForFeed("old-npm-plan", "old-feed", Secret);
+        ConfigurationChangePlan replacementPlan = CreateNpmPlanForFeed(
+            "replacement-npm-plan",
+            "replacement-feed",
+            "replacement-token-value"
+        );
+        await manager.ApplyAsync(oldPlan, TestContext.Current.CancellationToken);
+        InjectReplacementFailure(fileSystem, failurePoint);
+
+        await Assert.ThrowsAsync<IOException>(async () =>
+            await manager.ExecuteBatchAsync(
+                [
+                    (CreateRemovePlan(oldPlan), ConfigurationPlanOperation.Remove),
+                    (replacementPlan, ConfigurationPlanOperation.Apply),
+                ],
+                TestContext.Current.CancellationToken
+            )
+        );
+
+        AssertReplacementFailureState(
+            fileSystem,
+            failurePoint,
+            oldSelector,
+            replacementSelector
+        );
+
+        await manager.ExecuteBatchAsync(
+            [
+                (CreateRemovePlan(oldPlan), ConfigurationPlanOperation.Remove),
+                (replacementPlan, ConfigurationPlanOperation.Apply),
+            ],
+            TestContext.Current.CancellationToken
+        );
+
+        string npmrc = fileSystem.ReadAllText(TargetPath);
+        Assert.DoesNotContain(oldSelector, npmrc, StringComparison.Ordinal);
+        Assert.Contains(replacementSelector, npmrc, StringComparison.Ordinal);
+        ConfigurationOwnershipManifest manifest = LoadManifest(fileSystem);
+        ConfigurationOwnershipManifestEntry entry = Assert.Single(manifest.Entries);
+        Assert.Equal(replacementSelector, entry.Key);
+        Assert.DoesNotContain(Secret, fileSystem.ReadAllText(ManifestPath), StringComparison.Ordinal);
+    }
+
     private static ConfigurationChangePlan CreateNpmPlanForFeed(
         string planId,
         string feed,
@@ -286,5 +529,90 @@ public sealed class ConfigurationManagerTests
             ],
             containsCredentialMaterial: true
         );
+    }
+
+    private static void InjectReplacementFailure(
+        InMemoryFileSystem fileSystem,
+        ReplacementFailurePoint failurePoint
+    )
+    {
+        (string operation, string path, int occurrence) = failurePoint switch
+        {
+            ReplacementFailurePoint.RemoveTarget =>
+                (nameof(InMemoryFileSystem.AtomicWriteAllBytes), TargetPath, 1),
+            ReplacementFailurePoint.OwnershipIntent =>
+                (nameof(InMemoryFileSystem.AtomicWriteAllText), ManifestPath, 1),
+            ReplacementFailurePoint.ApplyTarget =>
+                (nameof(InMemoryFileSystem.AtomicWriteAllBytes), TargetPath, 2),
+            ReplacementFailurePoint.FinalOwnership =>
+                (nameof(InMemoryFileSystem.AtomicWriteAllText), ManifestPath, 2),
+            _ => throw new ArgumentOutOfRangeException(nameof(failurePoint)),
+        };
+        fileSystem.FailMatchingCall(
+            operation,
+            path,
+            occurrence,
+            new IOException($"Injected {failurePoint} failure.")
+        );
+    }
+
+    private static void AssertReplacementFailureState(
+        InMemoryFileSystem fileSystem,
+        ReplacementFailurePoint failurePoint,
+        string oldSelector,
+        string replacementSelector
+    )
+    {
+        string target = fileSystem.ReadAllText(TargetPath);
+        ConfigurationOwnershipManifest manifest = LoadManifest(fileSystem);
+        string[] expectedOwnership = failurePoint switch
+        {
+            ReplacementFailurePoint.RemoveTarget => [oldSelector],
+            ReplacementFailurePoint.OwnershipIntent => [oldSelector],
+            ReplacementFailurePoint.ApplyTarget => [oldSelector, replacementSelector],
+            ReplacementFailurePoint.FinalOwnership => [oldSelector, replacementSelector],
+            _ => throw new ArgumentOutOfRangeException(nameof(failurePoint)),
+        };
+        Assert.Equal(expectedOwnership, manifest.Entries.Select(entry => entry.Key));
+        Assert.DoesNotContain(Secret, fileSystem.ReadAllText(ManifestPath), StringComparison.Ordinal);
+
+        if (failurePoint == ReplacementFailurePoint.RemoveTarget)
+        {
+            Assert.Contains(oldSelector, target, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.DoesNotContain(oldSelector, target, StringComparison.Ordinal);
+        }
+
+        if (failurePoint == ReplacementFailurePoint.FinalOwnership)
+        {
+            Assert.Contains(replacementSelector, target, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.DoesNotContain(replacementSelector, target, StringComparison.Ordinal);
+        }
+    }
+
+    private static void AssertOwnedSelector(InMemoryFileSystem fileSystem, string selector)
+    {
+        ConfigurationOwnershipManifest manifest = LoadManifest(fileSystem);
+        ConfigurationOwnershipManifestEntry entry = Assert.Single(manifest.Entries);
+        Assert.Equal(selector, entry.Key);
+        Assert.DoesNotContain(Secret, fileSystem.ReadAllText(ManifestPath), StringComparison.Ordinal);
+    }
+
+    private static ConfigurationOwnershipManifest LoadManifest(InMemoryFileSystem fileSystem) =>
+        ConfigurationOwnershipManifestSerializer.Deserialize(
+            fileSystem.ReadAllText(ManifestPath)
+        );
+
+    public enum ReplacementFailurePoint
+    {
+        RemoveTarget,
+        OwnershipIntent,
+        ApplyTarget,
+        FinalOwnership,
     }
 }
