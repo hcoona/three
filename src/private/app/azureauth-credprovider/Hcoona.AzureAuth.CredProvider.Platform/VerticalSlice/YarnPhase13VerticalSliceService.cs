@@ -401,13 +401,11 @@ public sealed class YarnPhase13VerticalSliceService
         ConfigurationDeclarationPreservation declarationPreservation
     )
     {
-        string authTokenKey = NpmCompatibleAuthSelectorPolicy
-            .Create(request.Declaration.ResourceIdentity)
-            .YarnAuthTokenKey;
-        string alwaysAuthKey = CreateNpmRegistriesAuthKey(
-            request.Declaration.NpmRegistriesKey,
-            "npmAlwaysAuth"
+        NpmCompatibleAuthSelectors authSelectors = NpmCompatibleAuthSelectorPolicy.Create(
+            request.Declaration.ResourceIdentity
         );
+        string authTokenKey = authSelectors.YarnAuthTokenKey;
+        string alwaysAuthKey = authSelectors.YarnAlwaysAuthKey;
         return ConfigurationChangePlanPolicy.Create(
             ConfigurePlanId,
             ProductId,
@@ -456,9 +454,6 @@ public sealed class YarnPhase13VerticalSliceService
             IsSecretValue = isSecretValue,
             RequiresOwnershipRecord = true,
         };
-
-    private static string CreateNpmRegistriesAuthKey(string npmRegistriesKey, string leafKey) =>
-        "npmRegistries." + npmRegistriesKey + "." + leafKey;
 
     private static void ValidateCredentialPlanRequest(YarnPhase13CredentialPlanRequest request)
     {
@@ -656,6 +651,9 @@ public sealed class YarnPhase13VerticalSliceService
         var blocks = new List<YarnProjectAuthBlock>();
         YarnAuthIdentContext context = YarnAuthIdentContext.None;
         YarnProjectAuthBlock? currentBlock = null;
+        int? blockIndent = null;
+        int? settingIndent = null;
+        bool settingAllowsNestedContent = false;
         foreach (string rawLine in SplitLines(fileSystem.ReadAllText(yarnrcPath)))
         {
             string line = StripYamlComment(rawLine);
@@ -669,6 +667,9 @@ public sealed class YarnPhase13VerticalSliceService
             if (indent == 0)
             {
                 currentBlock = null;
+                blockIndent = null;
+                settingIndent = null;
+                settingAllowsNestedContent = false;
                 if (IsYamlMapHeader(trimmed, "npmRegistries"))
                 {
                     context = YarnAuthIdentContext.NpmRegistries;
@@ -681,12 +682,46 @@ public sealed class YarnPhase13VerticalSliceService
                     continue;
                 }
 
+                if (
+                    TryParseYamlKeyValue(
+                        trimmed,
+                        out string? topLevelKey,
+                        out string? topLevelValue
+                    )
+                    && IsManagedProjectAuthMapKey(topLevelKey)
+                    && !IsYamlNullOrEmpty(topLevelValue)
+                )
+                {
+                    throw CreateMalformedProjectAuthStructureException(yarnrcPath);
+                }
+
                 context = YarnAuthIdentContext.None;
                 continue;
             }
 
-            if (indent == 2 && TryParseYamlMapKey(trimmed, out string? mapKey))
+            if (context == YarnAuthIdentContext.None)
             {
+                continue;
+            }
+
+            if (HasTabInLeadingWhitespace(line))
+            {
+                throw CreateMalformedProjectAuthStructureException(yarnrcPath);
+            }
+
+            blockIndent ??= indent;
+            if (indent < blockIndent)
+            {
+                throw CreateMalformedProjectAuthStructureException(yarnrcPath);
+            }
+
+            if (indent == blockIndent)
+            {
+                if (!TryParseYamlMapKey(trimmed, out string? mapKey))
+                {
+                    throw CreateMalformedProjectAuthStructureException(yarnrcPath);
+                }
+
                 currentBlock = new YarnProjectAuthBlock(
                     context == YarnAuthIdentContext.NpmRegistries
                         ? UnquoteYamlScalar(mapKey) ?? mapKey
@@ -699,22 +734,45 @@ public sealed class YarnPhase13VerticalSliceService
                 {
                     blocks.Add(currentBlock);
                 }
+                settingIndent = null;
+                settingAllowsNestedContent = false;
+                continue;
+            }
+
+            if (currentBlock is null)
+            {
+                throw CreateMalformedProjectAuthStructureException(yarnrcPath);
+            }
+
+            settingIndent ??= indent;
+            if (indent < settingIndent || (indent > settingIndent && !settingAllowsNestedContent))
+            {
+                throw CreateMalformedProjectAuthStructureException(yarnrcPath);
+            }
+
+            if (indent > settingIndent)
+            {
+                continue;
+            }
+
+            if (TryParseYamlMapKey(trimmed, out _))
+            {
+                settingAllowsNestedContent = true;
                 continue;
             }
 
             if (
-                indent < 4
-                || currentBlock is null
-                || !TryParseYamlKeyValue(
+                !TryParseYamlKeyValue(
                     trimmed,
                     out string? settingKey,
                     out string? settingValue
                 )
             )
             {
-                continue;
+                throw CreateMalformedProjectAuthStructureException(yarnrcPath);
             }
 
+            settingAllowsNestedContent = AllowsNestedYamlContent(settingValue);
             if (
                 context == YarnAuthIdentContext.NpmScopes
                 && string.Equals(settingKey, "npmRegistryServer", StringComparison.Ordinal)
@@ -729,6 +787,23 @@ public sealed class YarnPhase13VerticalSliceService
 
         return blocks;
     }
+
+    private static InvalidOperationException CreateMalformedProjectAuthStructureException(
+        string yarnrcPath
+    ) =>
+        new(
+            "Project-local Yarn npmRegistries or npmScopes structure is malformed; refusing "
+                + "to create a credential plan for "
+                + yarnrcPath
+                + "."
+        );
+
+    private static bool IsManagedProjectAuthMapKey(string key) =>
+        string.Equals(key, "npmRegistries", StringComparison.Ordinal)
+        || string.Equals(key, "npmScopes", StringComparison.Ordinal);
+
+    private static bool AllowsNestedYamlContent(string value) =>
+        value.StartsWith('|') || value.StartsWith('>');
 
     private IEnumerable<string> GetReadableYarnrcPaths()
     {
@@ -1098,6 +1173,24 @@ public sealed class YarnPhase13VerticalSliceService
         }
 
         return index;
+    }
+
+    private static bool HasTabInLeadingWhitespace(string value)
+    {
+        foreach (char character in value)
+        {
+            if (character == '\t')
+            {
+                return true;
+            }
+
+            if (character != ' ')
+            {
+                return false;
+            }
+        }
+
+        return false;
     }
 
     private static string[] SplitLines(string contents) =>

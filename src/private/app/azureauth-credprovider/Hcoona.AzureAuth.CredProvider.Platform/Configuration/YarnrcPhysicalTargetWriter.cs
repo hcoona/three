@@ -149,7 +149,7 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
 
         if (
             resourceIdentity is null
-            || !MatchesRegistrySelector(change.Key, registry, leaf, resourceIdentity)
+            || !MatchesRegistrySelector(change.Key, registry, resourceIdentity)
         )
         {
             return "The Yarn registry selector must match the canonical registry identity.";
@@ -180,22 +180,25 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
     private static bool MatchesRegistrySelector(
         string key,
         string registry,
-        string leaf,
         CanonicalResourceIdentity resourceIdentity
-    ) =>
-        string.Equals(
-            registry,
-            resourceIdentity.ServiceEndpoint.AbsoluteUri,
-            StringComparison.Ordinal
+    )
+    {
+        if (
+            RegistryKeysEqual(registry, resourceIdentity.ServiceEndpoint.AbsoluteUri)
         )
-        || (
-            string.Equals(leaf, NpmAuthTokenKey, StringComparison.Ordinal)
-            && string.Equals(
-                key,
-                NpmCompatibleAuthSelectorPolicy.Create(resourceIdentity).YarnAuthTokenKey,
-                StringComparison.Ordinal
-            )
+        {
+            return true;
+        }
+
+        NpmCompatibleAuthSelectors selectors = NpmCompatibleAuthSelectorPolicy.Create(
+            resourceIdentity
         );
+        return string.Equals(key, selectors.YarnAuthTokenKey, StringComparison.Ordinal)
+            || string.Equals(key, selectors.YarnAlwaysAuthKey, StringComparison.Ordinal);
+    }
+
+    private static bool RegistryKeysEqual(string left, string right) =>
+        string.Equals(left.TrimEnd('/'), right.TrimEnd('/'), StringComparison.Ordinal);
 
     private void ValidateRequest(ConfigurationPhysicalTargetWriterRequest request)
     {
@@ -338,7 +341,7 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
 
             registry = key[NpmRegistriesBracketPrefix.Length..bracketSeparator];
             leaf = key[(bracketSeparator + 3)..];
-            return leaf == NpmAuthTokenKey;
+            return leaf is NpmAuthTokenKey or NpmAlwaysAuthKey;
         }
 
         if (!key.StartsWith(NpmRegistriesPrefix, StringComparison.Ordinal))
@@ -582,7 +585,7 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
                 if (
                     indent == 2
                     && TryParseYamlKey(lines[index], out string? parsed)
-                    && string.Equals(Unquote(parsed!), registry, StringComparison.Ordinal)
+                    && RegistryKeysEqual(Unquote(parsed!), registry)
                 )
                 {
                     matches.Add(index);

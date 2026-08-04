@@ -39,7 +39,13 @@ public sealed class ConfigurationYarnrcPhysicalWriterTests
         Assert.True(bytes.AsSpan().StartsWith(Bom));
         Assert.Contains("# keep\r\n", text, StringComparison.Ordinal);
         Assert.Contains("https://registry.example.com/", text, StringComparison.Ordinal);
-        Assert.Contains("npmAuthToken: 'token'", text, StringComparison.Ordinal);
+        Assert.Contains(
+            "  'https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry':\r\n"
+                + "    npmAlwaysAuth: true\r\n"
+                + "    npmAuthToken: 'token'\r\n",
+            text,
+            StringComparison.Ordinal
+        );
         Assert.DoesNotContain("\n", text.Replace("\r\n", "", StringComparison.Ordinal));
         Assert.Equal(
             UnixFileMode.UserRead | UnixFileMode.UserWrite,
@@ -191,11 +197,12 @@ public sealed class ConfigurationYarnrcPhysicalWriterTests
     private static ConfigurationChange[] CreateChanges(CanonicalResourceIdentity resource)
     {
         string registry = resource.ServiceEndpoint.AbsoluteUri;
+        NpmCompatibleAuthSelectors selectors = NpmCompatibleAuthSelectorPolicy.Create(resource);
         return
         [
             CreateChange("npmRegistryServer", registry, isSecret: false),
-            CreateChange($"npmRegistries.{registry}.npmAlwaysAuth", "true", isSecret: false),
-            CreateChange($"npmRegistries.{registry}.npmAuthToken", "token", isSecret: true),
+            CreateChange(selectors.YarnAlwaysAuthKey, "true", isSecret: false),
+            CreateChange(selectors.YarnAuthTokenKey, "token", isSecret: true),
         ];
     }
 
