@@ -1201,3 +1201,40 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   fail-closed planning, and the ordinary pull-request P95 12-minute cohort.
 - Corrected the HK source page after HK 1.38.0 verification showed that
   `--plan --json` is not a reliable machine interface.
+
+## [2026-08-04] query | Define Release Delivery MLD
+
+- Defined channel-specific Release identity, append-only whole-release
+  Attempts, and a separate dry-run simulation lifecycle.
+- Required every channel to build the complete Release Unit artifact variant
+  set and execute an independent all-required Release quality policy.
+- Split each Attempt into immutable Qualification and Publication snapshots,
+  with channel approval captured by an Authorization Record bound to the exact
+  Publication Snapshot digest.
+- Assigned logical projections to Release Units, mechanics to Destination
+  Adapters, and publication Capability to Delivery Governance.
+- Defined projection-atomic read-only observation, parallel independent
+  capability groups, ordered fail-stop actions within each group, and
+  per-action Receipts.
+- Defined `in-progress`, `replayable`, `reconciliation-required`, and
+  `completed` Release Execution states with whole-release replay and separate
+  Break-Glass Remediation.
+- Replaced the earlier strong Release-lock terminology with GitHub execution
+  serialization and documented the governed single-writer assumption and its
+  residual external-writer risk.
+- Required final artifact bytes to be frozen before publication and excluded
+  byte-changing signing or notarization from the initial scope.
+- Incorporated independent architecture and platform review by moving external
+  provenance after channel approval, requiring approval for exact-satisfied
+  no-op Releases, separating stable Release Identity from Attempt bindings,
+  correcting platform Capability scope claims, and requiring per-action Receipt
+  persistence before later mutations.
+- Closed final review findings by removing the remaining selected-variant
+  wording and requiring post-approval expected-state revalidation immediately
+  before Break-Glass Remediation mutation.
+- Defined a non-live Buddy simulation projection identity so dry-run version
+  projection is deterministic without reserving or colliding with live Buddy
+  identity.
+- Aligned the HLD to per-mutation Receipts and clarified that protected-target
+  control code is required for live Release, while dry-run uses its exact
+  selected simulation revision without live authority.

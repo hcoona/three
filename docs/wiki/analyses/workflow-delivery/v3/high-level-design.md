@@ -66,7 +66,8 @@ Release Delivery:
 - creates a Publication Snapshot bound to exact artifacts and destination state;
 - obtains destination-specific Publication Capabilities;
 - performs publication through Side-Effect Zone adapters;
-- records per-destination Receipts and the final Release outcome; and
+- persists a Receipt for every completed mutation, records capability-group
+  results, and derives the final Release outcome; and
 - handles retry through whole-release replay.
 
 It does not consume CI Plans, Evidence, artifacts, status checks, or verdicts.
@@ -131,7 +132,8 @@ A Qualification Target is the immutable object covered by a quality decision.
 - CI derives it from a candidate change, affected Project Node closure, affected
   Release Units, and applicable repository obligations.
 - Release derives it from the complete Project Node and declared-input closure
-  needed by the Release Unit Build Definitions, all selected variants, and
+  needed by the Release Unit Build Definitions, the complete artifact variant
+  set, and
   explicit compatibility obligations.
 
 The target closes before execution. Unknown or unclassified scope is blocking.
@@ -196,10 +198,12 @@ authorization, or verdicts.
 
 ### Governed Same-Revision Control
 
-CI uses its Planner and Finalizer from the tested candidate revision. Release
-uses its Planner and Finalizer from the exact protected target revision being
-released. There is no independently selected decision-code revision or runtime
-promotion protocol.
+CI uses its Planner and Finalizer from the tested candidate revision. Live
+Release uses its Planner and Finalizer from the exact protected target revision
+being released. Dry-run simulation uses the Planner and Finalizer from the exact
+selected simulation revision and receives no approval or live publication
+Capability. There is no independently selected decision-code revision or
+runtime promotion protocol.
 
 GitHub Governance supplies authority through control-code ownership, required
 review, protected refs, workflow permissions, protected environments, and OIDC
@@ -278,16 +282,19 @@ delay or indirectly gate the required check.
 ### Flow
 
 ```text
-Release Intent
-  -> target eligibility and identity
+manual Release Intent on selected Git ref
+  -> pinned same-revision target
+  -> structural and lineage eligibility
+  -> channel-specific Release Identity
   -> Qualification Snapshot
-  -> complete Release build and qualification
+  -> complete Release Unit variant build and required qualification
   -> actual artifact identity and provenance
-  -> Remote-State Observation
-  -> Publication Snapshot
-  -> Governance approval and just-in-time Capabilities
-  -> destination side effects
-  -> Receipts and Release outcome
+  -> projection-atomic Remote-State Observation
+  -> Publication Snapshot and capability groups
+  -> channel-level Governance approval
+  -> destination-specific just-in-time Capabilities
+  -> parallel independent capability groups
+  -> Receipts, Attempt Outcome, and Release Execution state
 ```
 
 ### Release Plan Lineage
@@ -310,8 +317,10 @@ post-qualification mutation from changing what was qualified.
 CI and Release use the same Build Definitions and Build Adapters.
 
 CI builds every publishable variant of an affected Release Unit. Release
-rebuilds every selected variant for its final target commit and reruns all
-Release quality obligations.
+rebuilds every publishable variant of the Release Unit for its final target
+commit and reruns all required Release quality obligations. Artifact variants
+belong to the Release Unit rather than to Buddy or Official. Channel policy
+selects identity and complete destination projections.
 
 Pull-request artifacts and CI Evidence are never used by Release.
 
@@ -328,9 +337,12 @@ Capability.
 
 - Absent state may publish.
 - Exact satisfied state skips the side effect.
-- Partial, unknown, conflicting, or unprovable state fails closed.
+- Partial, unknown, conflicting, or unprovable projection state fails closed.
 
 Reconciliation is exceptional handling for state that cannot safely proceed.
+Observation uses read-only capability before approval. The initial architecture
+assumes Delivery Governance is the only normal writer and accepts the residual
+risk of an out-of-band mutation after observation.
 
 ### Retry
 
@@ -344,10 +356,16 @@ Retry uses whole-release replay.
 - A control-code fix produces a new target revision; it is not injected into an
   ordinary replay of the old target.
 
+Each Release Execution is one channel-specific business Release containing
+append-only Attempts. Dry-run uses a separate simulation identity and does not
+enter live Release lineage.
+
 ### Partial Publication and Remediation
 
-Publication follows an append-only Saga. Successful destinations are not
-automatically rolled back when another destination fails.
+Publication follows an append-only Saga. Independent capability groups may run
+in parallel after one channel-level approval. Actions within a capability group
+run in order and stop after failure. Successful destinations are not
+automatically rolled back when another group fails.
 
 Ordinary replay may resume only absent or exactly satisfied state.
 Break-Glass Remediation is a separately approved operation with expected-state
@@ -357,16 +375,17 @@ rewrites the original Release history.
 ## Concurrency Design
 
 - CI cancels superseded candidate runs.
-- Release serializes by Official canonical identity or Buddy preview identity.
+- Release uses GitHub concurrency groups to serialize workflow execution by
+  Official canonical identity or Buddy preview identity.
 - In-progress Release executions are never auto-canceled.
+- `queue: single` retains only the newest pending duplicate request.
 - Different versions may run concurrently unless a Destination Adapter declares
-  a wider mutable-resource lock.
-- Remediation shares the original Release and destination locks.
-- Duplicate pending requests are rejected or coalesced rather than treated as
-  an unbounded GitHub concurrency queue.
+  a concrete wider mutable-resource serialization group.
+- Remediation uses the matching Release and destination serialization groups.
 
-Concurrency keys are projections of domain identity. GitHub workflow
-concurrency is an execution mechanism, not the source of Release identity.
+Concurrency keys are projections of domain identity. GitHub concurrency is a
+best-effort repository execution mechanism, not a distributed correctness lock,
+authorization source, or protection against external writers.
 
 ## Evidence, Decisions, and Explanation
 
@@ -414,7 +433,7 @@ proved after operational records expire fails closed.
 | `WD-SEC-*`        | Decision, Build and Qualification, and Side-Effect runtime zones                     |
 | `WD-EVD-*`        | Evidence Admission, append-only Decisions, structured explanation projections        |
 | `WD-OPS-*`        | Remote-State Observation, whole-release replay, Saga, reconciliation, remediation    |
-| `WD-CON-*`        | Domain-derived concurrency and destination locks                                     |
+| `WD-CON-*`        | Domain-derived GitHub execution serialization and destination concurrency groups     |
 | `WD-RET-*`        | Platform-aware records, durable destination identities, fail-closed expiration       |
 | `WD-NFR-*`        | Context separation, adapter extension model, explanation contract, CI objective      |
 
@@ -431,9 +450,10 @@ The next design stage should produce separate MLDs for:
    project-selected quality policy, opaque source-tree conformance,
    model-driven execution, Evidence, Decision, advisory reporting, and GitHub
    projection contracts.
-4. **Release Delivery:** Release Intent, Plan lineage, build and qualification,
-   observation, capability, publication, Receipt, replay, and remediation
-   contracts.
+4. **Release Delivery:** manual same-revision Intent, channel identity, Plan
+   lineage, complete variant build and qualification, projection observation,
+   authorization, capability groups, publication, Receipt, replay, and
+   remediation contracts.
 5. **Shared Foundation:** provider and adapter interfaces, normalized facts,
    artifact identity, provenance, and execution envelopes.
 

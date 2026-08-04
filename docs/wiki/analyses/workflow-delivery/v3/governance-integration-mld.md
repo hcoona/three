@@ -64,8 +64,12 @@ CI Qualification                    Release Delivery
 same candidate revision             same protected target revision
 no publication capability           planning/build/qualification: no capability
                                      |
-                                     +-- destination-specific side-effect job
+                                     +-- channel approval gate
                                            protected Environment
+                                           Authorization Record
+                                     |
+                                     +-- destination-specific capability groups
+                                           destination Environment
                                            minimal job permissions
                                            OIDC identity
                                            destination trust policy
@@ -79,8 +83,12 @@ its enforcement outcomes; they do not grant authority to themselves.
 CI planning and finalization use the code contained in the tested candidate
 revision.
 
-Release planning, finalization, and side-effect orchestration use the code
+Live Release planning, finalization, and side-effect orchestration use the code
 contained in the exact protected target revision being released.
+
+Dry-run simulation uses planning and finalization code from the exact selected
+simulation revision. It receives no approval, publication Environment, OIDC
+permission, or live publication Capability.
 
 There is no independently selected authority revision, control-code promotion
 protocol, or runtime control-code substitution.
@@ -153,9 +161,22 @@ Admission, and qualification finalization:
 Target-controlled build execution and publication authority therefore remain
 separate.
 
-### Destination Side-Effect Jobs
+### Channel Approval and Authorization Record
 
-Each destination side effect executes in a dedicated job.
+A Release requests one channel-level approval after the exact Publication
+Snapshot is sealed. The approval gate:
+
+- binds the Buddy or Official channel Environment;
+- receives no destination credentials or OIDC permission;
+- verifies the Publication Snapshot digest; and
+- emits an append-only Authorization Record binding approval to that digest.
+
+The Authorization Record permits destination-specific capability groups to
+start. It is not a credential and cannot authorize a different snapshot.
+
+### Destination Capability Groups
+
+Each destination-specific capability group executes in a dedicated job.
 
 That job:
 
@@ -166,10 +187,12 @@ That job:
 - consumes verified immutable artifacts and the materialized publication
   description;
 - does not check out or execute target source code; and
-- emits a destination Receipt.
+- emits per-action Receipts and one capability-group result bundle.
 
 Workflow-level permissions remain empty or read-only. Publication authority
 must not be granted broadly and then constrained only by application logic.
+Independent capability groups may run in parallel after the Authorization
+Record exists. Actions within a group remain ordered and fail-stop.
 
 ### Buddy and Official Isolation
 

@@ -12,6 +12,7 @@ Workflow delivery architecture **v3** is active and normative.
 - [v3 Repository Model and Release Unit MLD](./analyses/workflow-delivery/v3/repository-model-release-unit-mld.md)
 - [v3 Governance Integration MLD](./analyses/workflow-delivery/v3/governance-integration-mld.md)
 - [v3 CI Qualification MLD](./analyses/workflow-delivery/v3/ci-qualification-mld.md)
+- [v3 Release Delivery MLD](./analyses/workflow-delivery/v3/release-delivery-mld.md)
 - [v3 architecture glossary](./analyses/workflow-delivery/v3/architecture-glossary.md)
 - [v3 migration and document policy](./analyses/workflow-delivery/v3/migration-strategy.md)
 
@@ -41,6 +42,16 @@ for new v3 implementation work.
 - Required obligations feed the authoritative CI Finalizer. Advisory
   obligations use a separate non-authoritative Reporter and do not delay the
   stable required check.
+- Release starts only through manual dispatch on the exact target ref. One
+  channel-specific Release Execution contains append-only whole-release
+  Attempts, while dry-run remains a separate simulation.
+- Every Release builds the complete Release Unit variant set. Buddy and Official
+  differ by identity and complete destination projections, not product subsets.
+- Publication uses one channel approval followed by parallel independent,
+  destination-specific capability groups. Actions retain separate Receipts and
+  projection-internal partial state requires reconciliation.
+- GitHub concurrency provides best-effort execution serialization and duplicate
+  coalescing; it is not a distributed lock or correctness authority.
 - Release uses one logical Plan lineage with immutable Qualification and
   Publication snapshots.
 - Buddy is an isolated distributable preview channel. Official is canonical,
@@ -79,9 +90,8 @@ have changed.
 
 ## Next Architecture Work
 
-1. Define the Release Delivery MLD.
-2. Extract the Shared Foundation MLD from confirmed CI and Release mechanisms.
-3. Select the first vertical slice and create its brief LLD.
+1. Extract the Shared Foundation MLD from confirmed CI and Release mechanisms.
+2. Select the first vertical slice and create its brief LLD.
 
 ## Related Pages
 

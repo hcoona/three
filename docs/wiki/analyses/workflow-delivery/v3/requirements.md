@@ -118,7 +118,9 @@ against implementation and maintenance cost.
   Publication Capabilities only after qualification and observation establish
   the exact authorized action.
 - **WD-REL-009:** Release must record a Receipt for every completed destination
-  side effect and an explainable final outcome for the Release Attempt.
+  side effect, persist it before starting a later side effect in the same
+  capability group, and produce an explainable final outcome for the Release
+  Attempt.
 
 ### Buddy and Official Channels
 
@@ -134,8 +136,10 @@ against implementation and maintenance cost.
 ### Governed Control Code
 
 - **WD-AUTH-001:** CI decision code must come from the tested candidate
-  revision. Release decision code must come from the exact protected target
-  revision being released.
+  revision. Live Release decision code must come from the exact protected
+  target revision being released. Dry-run Release simulation must use decision
+  code from the exact selected simulation revision and must receive no approval
+  or live publication capability.
 - **WD-AUTH-002:** Changes to CI or Release planning, finalization, workflow
   control code, authoritative record shapes, or minimum policy must require
   Governance-configured owner review before merge or live Release eligibility.
@@ -160,8 +164,10 @@ against implementation and maintenance cost.
 - **WD-SEC-003:** Publication execution must consume only verified immutable
   artifacts and a fully materialized, authorized publication description. It
   must not execute target-controlled code.
-- **WD-SEC-004:** Publication Capability must be scoped to the destination,
-  identity, and action being authorized.
+- **WD-SEC-004:** Delivery Governance must scope publication credentials to the
+  narrowest destination and identity boundary the platform supports. The
+  trusted side-effect executor must additionally enforce the exact authorized
+  Snapshot, artifact, and action set.
 - **WD-SEC-005:** Failure to obtain the required OIDC identity or Publication
   Capability must block the affected side effect. No long-lived credential
   fallback is permitted.
@@ -215,9 +221,9 @@ against implementation and maintenance cost.
 - **WD-CON-003:** An in-progress Release execution must not be automatically
   canceled.
 - **WD-CON-004:** Different release versions may execute concurrently unless a
-  destination declares a wider mutable-resource lock.
-- **WD-CON-005:** Remediation must acquire the original Release and destination
-  locks.
+  destination declares a wider mutable-resource serialization boundary.
+- **WD-CON-005:** Remediation must use the original Release and destination
+  serialization boundaries.
 - **WD-CON-006:** Duplicate pending Release requests must be rejected or
   coalesced rather than accumulated as an unbounded workflow queue.
 

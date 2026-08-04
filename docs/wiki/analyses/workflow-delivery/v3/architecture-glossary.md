@@ -116,7 +116,7 @@ A live Official release must:
 
 - target a revision reachable from a Governance-configured authoritative branch;
 - use the Release Planner and Finalizer contained in that target revision;
-- rebuild every selected artifact variant;
+- rebuild every publishable artifact variant declared by the Release Unit;
 - complete its own Release Qualification Target;
 - freeze the Release Plan, artifact digests, destinations, and plan digest before
   authorization; and
@@ -267,18 +267,18 @@ evaluates the pushed commit SHA.
 Branch names, pull request numbers, workflow run IDs, and check-run IDs are
 indexes rather than source identities.
 
-### Release Execution Identity
+### Release Identity
 
-The immutable identity of one Release execution context. It contains:
+The stable identity of one channel-specific business Release. It contains:
 
-- the target commit SHA whose source is built and qualified;
 - the Release Unit identity;
-- the frozen Release Plan digest;
-- the selected artifact content digests; and
-- the authorization identity bound to that plan.
+- the channel;
+- the target commit SHA whose source is built and qualified; and
+- the Official canonical version or Buddy preview identity.
 
-Tags, branches, and workflow run IDs are indexes rather than Release execution
-identities.
+Plan digests, artifact digests, workflow attempts, and Authorization Records are
+Attempt bindings rather than Release Identity fields. Tags, branches, and
+workflow run IDs are indexes rather than Release identities.
 
 ## Build and Quality Terms
 
@@ -312,8 +312,8 @@ CI Qualification and Release Delivery use the same Build Definition but
 materialize separate Build Requests for different revisions and purposes.
 
 When a change affects a Release Unit, CI builds every publishable artifact
-variant defined for that Release Unit. Release later rebuilds every selected
-variant for the final release revision.
+variant defined for that Release Unit. Release later rebuilds the complete
+publishable variant set for the final release revision.
 
 ### Build Request
 
@@ -496,10 +496,34 @@ materializes and executes its own plan against its own Qualification Target.
 Release target eligibility is a Delivery Governance concern rather than a
 runtime dependency on CI status.
 
+### Release Intent
+
+The request to deliver exactly one Release Unit through exactly one channel.
+
+Manual initiation uses the GitHub-selected workflow ref as the target. An
+independent target SHA or ref input is forbidden. The workflow pins the resolved
+`github.sha`, and every Plan, artifact, Evidence object, action, and record binds
+that same revision.
+
 ### Release Execution
 
-The durable business execution of one Release Intent. It may contain multiple
-Release Attempts while preserving the same release identity.
+The channel-specific business Release created from one Release Intent. It
+contains append-only whole-release Attempts while preserving one immutable
+Release Identity.
+
+Its state is one of `in-progress`, `replayable`,
+`reconciliation-required`, or `completed`. Platform retention limits how long
+its operational records remain replayable.
+
+### Release Simulation
+
+A dry-run execution that performs planning, build, qualification, observation,
+and publication simulation without obtaining live publication Capability or
+entering the Buddy or Official Release lineage.
+
+A Buddy simulation uses an immutable non-live simulation projection identity
+as the Buddy version-projection input. That identity cannot reserve or collide
+with a live Buddy Intent or preview identity.
 
 ### Release Plan Lineage
 
@@ -511,8 +535,9 @@ Plans.
 
 The first sealed snapshot in a Release Plan Lineage. It freezes the Release
 Unit, target commit, channel, version, Project Node and declared-input closure,
-build dependencies, artifact variants, Build Definitions, quality obligations,
-destinations, and Publication Capability requirements.
+build dependencies, the complete Release Unit artifact variant set, Build
+Definitions, selected Release quality policy, required quality obligations,
+logical publication projections, and Publication Capability requirements.
 
 It authorizes only unprivileged build and qualification work.
 
@@ -521,11 +546,11 @@ It authorizes only unprivileged build and qualification work.
 The second sealed snapshot in a Release Plan Lineage. It references the
 Qualification Snapshot digest, preserves every frozen semantic field, and adds
 actual artifact identities, content digests, provenance, destination
-observations, publication actions, Qualification Decision, and exact Capability
-requirements.
+observations, publication actions and dependency edges, capability groups,
+Qualification Decision, and exact Capability requirements.
 
-Governance approval binds the Publication Snapshot digest. A finalizer verifies
-that no Qualification Snapshot field changed.
+An Authorization Record binds Governance approval to the Publication Snapshot
+digest. A finalizer verifies that no Qualification Snapshot field changed.
 
 GitHub transports the snapshots as separate attempt-specific artifacts even
 though they share one logical Release Plan lineage.
@@ -535,17 +560,25 @@ though they share one logical Release Plan lineage.
 One coherent plan, build, qualification, authorization, publication, and
 reporting pass within a Release Execution.
 
+An Attempt is identified by its Release Identity and GitHub workflow run
+attempt. Its Qualification Snapshot, Publication Snapshot, artifact digests,
+and Authorization Record are immutable bindings created within that Attempt.
+
 An Attempt does not combine successful jobs, artifacts, approvals, or evidence
 from multiple GitHub run attempts as if they formed one atomic pass.
+
+An Attempt Outcome records qualification, observation, authorization, action,
+Receipt, and reporting results without replacing the Release Execution state.
 
 ### Whole-Release Replay
 
 The supported retry model for a failed Release Attempt.
 
 Every replay reruns planning, the complete Release build, Release
-qualification, authorization checks, and reporting. The planner observes every
-destination again: exact satisfied state skips its side effect, absent state may
-publish, and unknown, partial, or conflicting state requires reconciliation.
+qualification, observation, authorization, and reporting. The planner observes
+every projection again: exact satisfied state skips its side effect, absent
+state may publish, and unknown, projection-internal partial, or conflicting
+state requires reconciliation.
 
 GitHub `Re-run failed jobs` is not a supported Release recovery protocol because
 it produces a mixed-attempt job graph. A normal transient retry uses `Re-run all
@@ -556,10 +589,11 @@ Each live side-effect job obtains a new attempt-scoped Publication Capability.
 
 ### Remote-State Observation
 
-The mandatory pre-side-effect planning step in every Release Attempt, including
-the first attempt.
+The mandatory read-only pre-authorization planning step in every Release
+Attempt, including the first attempt.
 
-Each destination is classified against the desired Release identity:
+Each logical publication projection is classified atomically against the
+desired Release identity:
 
 - absent state may produce a publish action;
 - exact satisfied state produces no side effect;
@@ -570,29 +604,65 @@ Cancellation does not create a separate reconciliation workflow. A later
 whole-release replay performs the same normal Remote-State Observation before
 any new write.
 
+The initial architecture assumes Delivery Governance is the only normal writer.
+It does not require a second observation after authorization and accepts
+out-of-band mutation between observation and publication as a residual risk.
+
+### Publication Projection
+
+A channel-selected logical remote product that must become exact as one unit,
+such as a registry package version or a GitHub Release with its required assets.
+
+The Release Unit selects projections, the Destination Adapter defines their
+mechanics and action expansion, and Delivery Governance grants the necessary
+Capability. A projection may expand into multiple ordered actions, but
+projection-internal partial state is not ordinary replayable state.
+
+### Capability Group
+
+An execution group whose actions share one destination-specific authorization
+and credential boundary.
+
+Independent groups may run in parallel after channel approval. Actions within a
+group run in order and stop after the first failure. Every action retains its
+own identity and Receipt.
+
+### Authorization Record
+
+The append-only record that binds one channel-level approval to one exact
+Publication Snapshot digest.
+
+It authorizes capability-group execution but does not itself contain or replace
+destination credentials. Each capability group independently obtains its
+short-lived Capability through its configured Governance boundary.
+
 ### Release Reconciliation
 
-The exceptional process used when Remote-State Observation cannot classify a
-destination as safely absent or exactly satisfied.
+The read-only exceptional process used when Remote-State Observation cannot
+classify a projection as safely absent or exactly satisfied.
 
 Reconciliation resolves partial, unknown, conflicting, or unprovable state.
 Existing successful publication is not automatically rolled back.
 
-### Release Identity Lock
+### Release Execution Serialization
 
-The serialization boundary for one externally visible Release identity.
+The best-effort GitHub execution boundary for one externally visible Release
+identity.
 
-Official locks use the Release Unit and canonical version. Buddy locks use the
-Release Unit and preview identity. Break-Glass Remediation acquires the original
-Release identity lock and any affected destination lock.
+Official concurrency groups use the Release Unit and canonical version. Buddy
+groups use the Release Unit and preview identity. Break-Glass Remediation uses
+the matching Release and affected destination serialization groups.
 
-The lock does not grant authorization or replace Remote-State Observation.
-Different versions may run concurrently unless a destination adapter declares a
-broader shared mutable-resource lock.
+Serialization does not grant authorization or replace Remote-State Observation.
+Different versions may run concurrently unless a Destination Adapter declares a
+concrete broader mutable-resource serialization group.
 
-Release locks never cancel an in-progress execution. Duplicate pending requests
-are rejected or coalesced rather than relying on an unbounded GitHub concurrency
-queue.
+Release concurrency never cancels an in-progress execution. `queue: single`
+retains only the newest pending duplicate request.
+
+GitHub concurrency is not a distributed lock, durable queue, or protection
+against external writers. Correctness still depends on observation,
+Destination Adapter behavior, and the governed single-writer assumption.
 
 ## Quality Attribute Terms
 
@@ -750,7 +820,7 @@ Release Intent. It requires:
 - an explicit remediation action and destination;
 - a reason and incident or work-item reference;
 - a dry-run or equivalent precondition check;
-- a short-lived, action-scoped remediation capability; and
+- a short-lived, narrowly scoped remediation capability; and
 - an append-only Remediation Record containing before and after state.
 
 Destination capability remains authoritative. An immutable registry may support
@@ -763,23 +833,32 @@ append-only audit model.
 
 ### Publication Capability
 
-A short-lived, externally granted authority to perform a specific side effect.
+A short-lived, externally granted credential or platform permission used to
+perform a planned side effect.
 
-A Publication Capability binds the channel, Release Unit, target commit,
-Release Plan digest, artifact digests, destination, permitted actions, validity
-window, and execution attempt.
+Delivery Governance scopes the capability to the narrowest channel,
+destination, repository, workflow, Environment, identity, and validity boundary
+that the platform supports. The architecture does not assume that GitHub OIDC
+or a destination token cryptographically carries the Publication Snapshot
+digest, artifact digests, or exact action set.
+
+The trusted side-effect executor validates the Authorization Record,
+Publication Snapshot, artifact digests, action IDs, and Attempt before using the
+capability. Receipts record both the authorized semantic action and the actual
+platform identity used.
 
 Qualification may request a Capability but cannot approve or create one.
 Delivery Governance grants it through platform controls such as protected
 environments, job permissions, OIDC trust, and registry trusted-publishing
 policy.
 
-Capabilities are destination-specific. Buddy cannot reach Official
-destinations, dry-run receives no live Capability, and Break-Glass Remediation
-uses a separate remediation Capability.
+Capabilities are destination-specific to the extent supported by the platform.
+Buddy cannot reach Official destinations, dry-run receives no live Capability,
+and Break-Glass Remediation uses a separate remediation Capability.
 
-A Plan, artifact, attempt, or approval change invalidates the previous
-Capability.
+A Plan, artifact, attempt, or approval change invalidates the executor's
+authorization to use a previously obtained capability even when the external
+credential format cannot encode every such binding.
 
 ## Confirmed Architecture Principles
 
@@ -790,14 +869,17 @@ Capability.
 3. Shared concepts must not collapse CI and Release into one universal plan or
    evidence model.
 4. Pull request artifacts must not be reused or promoted by Release Delivery.
-5. Release Delivery independently reruns all quality checks required by its policy.
+5. Release Delivery independently reruns every obligation in its selected
+   channel-specific quality policy, and every such obligation is required.
 6. CI and Release may share quality definitions, build specifications, ecosystem
    adapters, and execution capabilities.
 7. Release Qualification covers the complete Project Node and declared-input
    closure required by the Release Unit Build Definitions, plus explicit
    compatibility obligations.
-8. CI uses Planner and Finalizer code from the tested candidate revision, and
-   Release uses code from the exact protected target revision.
+8. CI uses Planner and Finalizer code from the tested candidate revision. Live
+   Release uses code from the exact protected target revision. Dry-run Release
+   simulation uses code from its exact selected simulation revision without
+   approval or live publication Capability.
 9. Planning, finalization, workflow, record-shape, and minimum-policy changes
    require Governance-configured owner review.
 10. Control-code changes create a new candidate or Release target; normal replay
@@ -807,11 +889,12 @@ Capability.
 12. CI Qualification and Release Delivery have no runtime evidence, artifact, or
     verdict dependency on each other.
 13. CI builds all publishable variants of every affected Release Unit by using
-    the same Build Definitions used by Release Delivery.
+    the same Build Definitions used by Release Delivery. Artifact variants
+    belong to the Release Unit rather than to a channel.
 14. Buddy is a distributable preview channel with destinations, identities, and
     capabilities isolated from Official.
-15. Official publication requires an authoritative target revision and
-    authorization bound to an immutable Release Plan digest.
+15. Official publication requires an authoritative target revision and an
+    Authorization Record bound to an immutable Publication Snapshot digest.
 16. Original Buddy and Official Release Records remain immutable.
 17. Forced correction is modeled as a separately authorized Break-Glass
     Remediation with append-only before-and-after evidence.
@@ -833,19 +916,21 @@ Capability.
 25. Final Decisions are append-only; required reruns create new Decisions while
     GitHub checks project the latest authoritative result. Advisory Evidence
     remains outside the authoritative Decision.
-26. Publication authority is externally granted through short-lived,
-    destination-specific Capabilities bound to an immutable Plan and artifacts.
+26. Publication credentials are externally granted through short-lived,
+    narrowly scoped platform Capabilities. Trusted side-effect executors enforce
+    the exact immutable Plan, artifact, Attempt, and action bindings.
 27. Release retry uses whole-release replay rather than GitHub failed-job
     resumption.
 28. Release builds are required to be bit-for-bit reproducible as a Release Unit
     business contract; the delivery system does not certify reproducibility by
     duplicate building.
-29. Partial publication is handled as an append-only Saga with per-destination
-    reconciliation rather than automatic rollback.
-30. Every Release Attempt observes destination state before obtaining
-    publication capability; cancellation adds no separate recovery workflow.
-31. CI may cancel superseded candidate runs; Release executions serialize by
-    Release identity and do not cancel in-progress publication.
+29. Partial publication is handled as an append-only Saga with
+    projection-atomic reconciliation rather than automatic rollback.
+30. Every Release Attempt performs read-only projection observation before
+    authorization; cancellation adds no separate recovery workflow.
+31. CI may cancel superseded candidate runs. Release uses best-effort GitHub
+    execution serialization by Release identity and never cancels in-progress
+    publication.
 32. Cache availability may affect performance but never correctness, scope,
     Evidence, or verdict.
 33. Publication Capabilities are requested just in time; their unavailability
@@ -889,6 +974,42 @@ Capability.
 49. A blocked CI Plan executes no authoritative partial obligations.
 50. A domain abstraction is introduced only when concrete scenarios demonstrate
     independent behavior, identity, lifecycle, or policy responsibility.
+51. Manual Release dispatch uses the selected Git ref as the exact target;
+    independent target SHA or ref inputs are forbidden.
+52. One Release Execution contains append-only whole-release Attempts. Dry-run
+    uses a separate simulation identity and never enters live Release lineage.
+53. Buddy and Official each select a complete Release quality policy. Neither
+    implicitly inherits CI project policy or the other channel's policy.
+54. The Release Unit selects logical publication projections, Destination
+    Adapters define mechanics, and Delivery Governance grants Capability.
+55. Projection-internal partial state requires read-only reconciliation and, if
+    mutation is necessary, separately authorized Break-Glass Remediation.
+56. One channel-level approval produces an Authorization Record for the exact
+    Publication Snapshot. Destination-specific capability groups independently
+    acquire their short-lived Capabilities.
+57. Independent capability groups may execute in parallel. Actions within a
+    group remain ordered, fail-stop, and individually receipted.
+58. Release correctness assumes Delivery Governance is the only normal writer
+    and treats out-of-band mutation after observation as an accepted residual
+    risk rather than introducing a distributed lock or mandatory second read.
+59. The Finalizer aggregates immutable result bundles and does not query remote
+    destinations again.
+60. Artifact final bytes are frozen before publication; the initial scope
+    excludes signing or notarization that changes artifact bytes.
+61. External provenance projections execute only after the Authorization Record
+    exists, even when they are prerequisites for other publication groups.
+62. Every live Release Attempt requires channel approval of its Publication
+    Snapshot, including an exact-satisfied no-op Attempt. A no-op Attempt
+    requires no destination Capability.
+63. Each action Receipt is persisted before a later mutation begins in the same
+    capability group. A group result bundle references those Receipts rather
+    than being their sole durable container.
+64. Break-Glass Remediation revalidates the complete expected remote state after
+    approval and immediately before mutation. Normal Release does not add the
+    same second observation under the governed single-writer assumption.
+65. Buddy dry-run uses a non-live simulation projection identity for version and
+    destination projection and never reserves a live Buddy Intent or preview
+    identity.
 
 ## Open Decisions
 
