@@ -18,6 +18,27 @@ public static class AdapterHostExecutor
         TextWriter protocolStdout,
         TextWriter humanStdout,
         DiagnosticRouter diagnosticRouter
+    ) =>
+        ExecuteWithCancellation(
+            descriptor,
+            executablePath,
+            arguments,
+            handler,
+            protocolStdout,
+            humanStdout,
+            diagnosticRouter,
+            CancellationToken.None
+        );
+
+    internal static AdapterHostExecutionOutcome ExecuteWithCancellation(
+        AdapterDescriptor descriptor,
+        string? executablePath,
+        IEnumerable<string>? arguments,
+        Func<AdapterInvocationContext, AdapterHostHandlerOutput> handler,
+        TextWriter protocolStdout,
+        TextWriter humanStdout,
+        DiagnosticRouter diagnosticRouter,
+        CancellationToken cancellationToken
     )
     {
         ArgumentNullException.ThrowIfNull(descriptor);
@@ -35,7 +56,13 @@ public static class AdapterHostExecutor
                 ?? throw new InvalidOperationException("Adapter handler returned no output.");
 
             return context.IsProtocolInvocation
-                ? ExecuteProtocol(context, output, protocolStdout, diagnosticRouter)
+                ? ExecuteProtocol(
+                    context,
+                    output,
+                    protocolStdout,
+                    diagnosticRouter,
+                    cancellationToken
+                )
                 : ExecuteHuman(context, output, humanStdout, diagnosticRouter);
         }
         catch (InvalidOperationException) when (context is null)
@@ -70,7 +97,8 @@ public static class AdapterHostExecutor
         AdapterInvocationContext context,
         AdapterHostHandlerOutput output,
         TextWriter protocolStdout,
-        DiagnosticRouter diagnosticRouter
+        DiagnosticRouter diagnosticRouter,
+        CancellationToken cancellationToken
     )
     {
         AdapterHostResult result = MapProtocolResult(context, output);
@@ -79,6 +107,7 @@ public static class AdapterHostExecutor
             diagnosticRouter.Route(CreateSafeDiagnosticEvent(result, output));
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         if (result.WriteProtocolStdout)
         {
             WriteText(protocolStdout, output.ProtocolStdout!);

@@ -596,8 +596,9 @@ public sealed class NuGetPluginAdapter
             TRequest payload = MessageUtilities.DeserializePayload<TRequest>(request);
             TResponse response = await HandleRequestAsync(payload, cancellationToken)
                 .ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
             await responseHandler
-                .SendResponseAsync(request, response, cancellationToken)
+                .SendResponseAsync(request, response, CancellationToken.None)
                 .ConfigureAwait(false);
         }
 

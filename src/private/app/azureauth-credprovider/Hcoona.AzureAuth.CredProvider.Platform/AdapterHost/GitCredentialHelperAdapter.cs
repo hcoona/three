@@ -35,7 +35,8 @@ public sealed class GitCredentialHelperAdapter
             credentialCore is null
                 ? CredentialProviderCompositionRoot.CreateProduction().AcquisitionService
                 : new LegacyV1CredentialAcquisitionService(credentialCore)
-        ) { }
+        )
+    { }
 
     public GitCredentialHelperAdapter(ICredentialAcquisitionService credentialAcquisition)
         : this(new BoundedCredentialAcquisitionAdapter(credentialAcquisition)) { }
@@ -102,17 +103,16 @@ public sealed class GitCredentialHelperAdapter
         ArgumentNullException.ThrowIfNull(humanStdout);
         ArgumentNullException.ThrowIfNull(diagnosticRouter);
 
-        AdapterHostExecutionOutcome outcome = AdapterHostExecutor.Execute(
+        return AdapterHostExecutor.ExecuteWithCancellation(
             Descriptor,
             executablePath,
             arguments,
             context => Handle(context, protocolStdin, cancellationToken),
             protocolStdout,
             humanStdout,
-            diagnosticRouter
+            diagnosticRouter,
+            cancellationToken
         );
-        cancellationToken.ThrowIfCancellationRequested();
-        return outcome;
     }
 
     public static string? CreateProtocolStdout(CredentialResult credentialResult)
@@ -207,10 +207,8 @@ public sealed class GitCredentialHelperAdapter
         {
             return CreateProtocolViolationOutput(CredentialOperation.Get);
         }
-
         CredentialRequestV2 request = CreateGetRequest(resourceParseResult.Resource);
         CredentialResult result = credentialAcquisition.Acquire(request, cancellationToken);
-        cancellationToken.ThrowIfCancellationRequested();
         return new AdapterHostHandlerOutput(
             credentialResult: result,
             operation: CredentialOperation.Get,

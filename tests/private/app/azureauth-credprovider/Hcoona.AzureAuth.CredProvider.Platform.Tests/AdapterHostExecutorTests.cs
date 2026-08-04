@@ -1,3 +1,4 @@
+using System.Text;
 using Hcoona.AzureAuth.CredProvider.Contracts;
 using Hcoona.AzureAuth.CredProvider.Platform.AdapterHost;
 using Hcoona.AzureAuth.CredProvider.Platform.Diagnostics;
@@ -26,6 +27,125 @@ public sealed class AdapterHostExecutorTests
         Assert.Equal(AdapterHostExitCode.Success, outcome.Result.ExitCode);
         Assert.Equal("username=user\npassword=secret\n", protocolStdout.ToString());
         Assert.Equal(string.Empty, humanStdout.ToString());
+        Assert.Equal(string.Empty, stderr.ToString());
+    }
+
+    [Fact]
+    public async Task ExecuteProtocolCancellationBeforeFirstByteWritesNoCredentialsAndFails()
+    {
+        var protocolOutput = new StringBuilder();
+        var coordinator = new CoordinatedSharedStringWriterCoordinator();
+        using var protocolStdout = new CoordinatedSharedStringWriter(
+            protocolOutput,
+            coordinator
+        );
+        var stderr = new StringWriter();
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        Task<AdapterHostExecutionOutcome> execution = Task.Run(
+            () =>
+                ExecuteWithCancellation(
+                    CreateSuccessOutput("username=user\npassword=secret\n"),
+                    ["git", "credential-helper", "get"],
+                    protocolStdout,
+                    new StringWriter(),
+                    stderr,
+                    cancellation.Token
+                ),
+            TestContext.Current.CancellationToken
+        );
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+            await execution.WaitAsync(
+                TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken
+            )
+        );
+        Assert.True(execution.IsFaulted);
+        Assert.Equal(string.Empty, protocolOutput.ToString());
+        Assert.Equal(string.Empty, stderr.ToString());
+    }
+
+    [Fact]
+    public async Task ExecuteProtocolCancellationWhileWritePendingAndFailureBeforeFirstByteReturnsFatal()
+    {
+        var protocolOutput = new StringBuilder();
+        var coordinator = new CoordinatedSharedStringWriterCoordinator();
+        var protocolStdout = new CoordinatedSharedStringWriter(protocolOutput, coordinator);
+        var stderr = new StringWriter();
+        using var cancellation = new CancellationTokenSource();
+        Task<AdapterHostExecutionOutcome> execution = Task.Run(
+            () =>
+                ExecuteWithCancellation(
+                    CreateSuccessOutput("username=user\npassword=secret\n"),
+                    ["git", "credential-helper", "get"],
+                    protocolStdout,
+                    new StringWriter(),
+                    stderr,
+                    cancellation.Token
+                ),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.True(coordinator.WaitForPendingWrite(TimeSpan.FromSeconds(5)));
+        cancellation.Cancel();
+        protocolStdout.Dispose();
+        Assert.True(coordinator.TryReleaseNextPendingWrite(null, out _));
+
+        AdapterHostExecutionOutcome outcome = await execution.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken
+        );
+        Assert.Equal(AdapterHostExitCode.Fatal, outcome.Result.ExitCode);
+        Assert.False(outcome.Result.WriteProtocolStdout);
+        Assert.Equal(string.Empty, protocolOutput.ToString());
+        Assert.Contains("Adapter host execution failed.", stderr.ToString());
+        Assert.Contains("code=UnhandledHostFailure", stderr.ToString());
+    }
+
+    [Fact]
+    public async Task ExecuteProtocolCancellationAfterSuccessfulWriteAndFlushReturnsSuccess()
+    {
+        const string ExpectedCredential = "username=user\npassword=secret\n";
+        var protocolOutput = new StringBuilder();
+        var coordinator = new CoordinatedSharedStringWriterCoordinator();
+        using var protocolStdout = new CoordinatedSharedStringWriter(
+            protocolOutput,
+            coordinator,
+            coordinateAfterFlush: true
+        );
+        var stderr = new StringWriter();
+        using var cancellation = new CancellationTokenSource();
+        Task<AdapterHostExecutionOutcome> execution = Task.Run(
+            () =>
+                ExecuteWithCancellation(
+                    CreateSuccessOutput(ExpectedCredential),
+                    ["git", "credential-helper", "get"],
+                    protocolStdout,
+                    new StringWriter(),
+                    stderr,
+                    cancellation.Token
+                ),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.True(coordinator.WaitForPendingWrite(TimeSpan.FromSeconds(5)));
+        Assert.True(coordinator.TryReleaseNextPendingWrite(null, out _));
+        Assert.True(coordinator.WaitForPendingWrite(TimeSpan.FromSeconds(5)));
+        Assert.Equal(ExpectedCredential, protocolOutput.ToString());
+
+        cancellation.Cancel();
+        Assert.True(coordinator.TryReleaseNextPendingWrite(null, out _));
+
+        AdapterHostExecutionOutcome outcome = await execution.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken
+        );
+        Assert.True(cancellation.IsCancellationRequested);
+        Assert.Equal(AdapterHostExitCode.Success, outcome.Result.ExitCode);
+        Assert.True(outcome.Result.WriteProtocolStdout);
+        Assert.Equal(ExpectedCredential, protocolOutput.ToString());
         Assert.Equal(string.Empty, stderr.ToString());
     }
 
@@ -236,6 +356,27 @@ public sealed class AdapterHostExecutorTests
             protocolStdout,
             humanStdout,
             CreateRouter(stderr)
+        );
+    }
+
+    private static AdapterHostExecutionOutcome ExecuteWithCancellation(
+        AdapterHostHandlerOutput output,
+        string[] arguments,
+        TextWriter protocolStdout,
+        TextWriter humanStdout,
+        TextWriter stderr,
+        CancellationToken cancellationToken
+    )
+    {
+        return AdapterHostExecutor.ExecuteWithCancellation(
+            CreateDescriptor(),
+            "azureauth-credprovider",
+            arguments,
+            _ => output,
+            protocolStdout,
+            humanStdout,
+            CreateRouter(stderr),
+            cancellationToken
         );
     }
 

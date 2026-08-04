@@ -1,3 +1,4 @@
+using System.Text;
 using Hcoona.AzureAuth.CredProvider.Contracts;
 using Hcoona.AzureAuth.CredProvider.Platform.AdapterHost;
 using Hcoona.AzureAuth.CredProvider.Platform.Composition;
@@ -223,6 +224,136 @@ public sealed class GitCredentialHelperAdapterTests
         Assert.True(acquisition.CancellationToken.IsCancellationRequested);
     }
 
+    [Fact]
+    public async Task GetCancellationBeforeFirstByteWritesNoCredentialsAndFails()
+    {
+        var protocolOutput = new StringBuilder();
+        var coordinator = new CoordinatedSharedStringWriterCoordinator();
+        using var protocolStdout = new CoordinatedSharedStringWriter(
+            protocolOutput,
+            coordinator
+        );
+        using var cancellation = new CancellationTokenSource();
+        var acquisition = new CancellationCapturingAcquisitionService(cancellation);
+
+        Task<AdapterRunResult> execution = Task.Run(
+            () =>
+                ExecuteWithCancellation(
+                    ["git", "credential-helper", "get"],
+                    """
+                    protocol=https
+                    host=dev.azure.com
+                    path=org/project/_git/repository
+
+                    """,
+                    acquisition,
+                    protocolStdout,
+                    cancellation.Token
+                ),
+            TestContext.Current.CancellationToken
+        );
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+            await execution.WaitAsync(
+                TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken
+            )
+        );
+        Assert.True(execution.IsFaulted);
+        Assert.Equal(cancellation.Token, acquisition.CancellationToken);
+        Assert.Equal(string.Empty, protocolOutput.ToString());
+    }
+
+    [Fact]
+    public async Task GetCancellationWhileWritePendingAndFailureBeforeFirstByteReturnsFatal()
+    {
+        var protocolOutput = new StringBuilder();
+        var coordinator = new CoordinatedSharedStringWriterCoordinator();
+        var protocolStdout = new CoordinatedSharedStringWriter(protocolOutput, coordinator);
+        using var cancellation = new CancellationTokenSource();
+        Task<AdapterRunResult> execution = Task.Run(
+            () =>
+                ExecuteWithCancellation(
+                    ["git", "credential-helper", "get"],
+                    """
+                    protocol=https
+                    host=dev.azure.com
+                    path=org/project/_git/repository
+
+                    """,
+                    new SuccessfulTestAcquisitionService(),
+                    protocolStdout,
+                    cancellation.Token
+                ),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.True(coordinator.WaitForPendingWrite(TimeSpan.FromSeconds(5)));
+        cancellation.Cancel();
+        protocolStdout.Dispose();
+        Assert.True(coordinator.TryReleaseNextPendingWrite(null, out _));
+
+        AdapterRunResult result = await execution.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken
+        );
+        Assert.Equal(AdapterHostExitCode.Fatal, result.Outcome.Result.ExitCode);
+        Assert.False(result.Outcome.Result.WriteProtocolStdout);
+        Assert.Equal(string.Empty, protocolOutput.ToString());
+        Assert.Equal(string.Empty, result.ProtocolStdout);
+        Assert.Contains("code=UnhandledHostFailure", result.Stderr);
+    }
+
+    [Fact]
+    public async Task GetCancellationAfterSuccessfulWriteAndFlushReturnsSuccess()
+    {
+        const string ExpectedCredential = "username=AzureDevOps\npassword=fake-secret-git\n";
+        var protocolOutput = new StringBuilder();
+        var coordinator = new CoordinatedSharedStringWriterCoordinator();
+        using var protocolStdout = new CoordinatedSharedStringWriter(
+            protocolOutput,
+            coordinator,
+            coordinateAfterFlush: true
+        );
+        using var cancellation = new CancellationTokenSource();
+        Task<AdapterRunResult> execution = Task.Run(
+            () =>
+                ExecuteWithCancellation(
+                    ["git", "credential-helper", "get"],
+                    """
+                    protocol=https
+                    host=dev.azure.com
+                    path=org/project/_git/repository
+
+                    """,
+                    new SuccessfulTestAcquisitionService(),
+                    protocolStdout,
+                    cancellation.Token
+                ),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.True(coordinator.WaitForPendingWrite(TimeSpan.FromSeconds(5)));
+        Assert.True(coordinator.TryReleaseNextPendingWrite(null, out _));
+        Assert.True(coordinator.WaitForPendingWrite(TimeSpan.FromSeconds(5)));
+        Assert.Equal(ExpectedCredential, protocolOutput.ToString());
+
+        cancellation.Cancel();
+        Assert.True(coordinator.TryReleaseNextPendingWrite(null, out _));
+
+        AdapterRunResult result = await execution.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken
+        );
+        Assert.True(cancellation.IsCancellationRequested);
+        Assert.Equal(AdapterHostExitCode.Success, result.Outcome.Result.ExitCode);
+        Assert.True(result.Outcome.Result.WriteProtocolStdout);
+        Assert.Equal(ExpectedCredential, protocolOutput.ToString());
+        Assert.Equal(ExpectedCredential, result.ProtocolStdout);
+        Assert.Empty(result.HumanStdout);
+        Assert.Equal(string.Empty, result.Stderr);
+    }
+
     private static AdapterRunResult Execute(
         string[] args,
         string stdin,
@@ -254,16 +385,34 @@ public sealed class GitCredentialHelperAdapterTests
             cancellationToken
         );
 
+    private static AdapterRunResult ExecuteWithCancellation(
+        string[] args,
+        string stdin,
+        ICredentialAcquisitionService credentialAcquisition,
+        TextWriter protocolStdout,
+        CancellationToken cancellationToken
+    ) =>
+        ExecuteCore(
+            args,
+            stdin,
+            "/usr/local/bin/azureauth-credprovider",
+            credentialCore: null,
+            credentialAcquisition,
+            cancellationToken,
+            protocolStdout
+        );
+
     private static AdapterRunResult ExecuteCore(
         string[] args,
         string stdin,
         string executablePath,
         CredentialCoreService? credentialCore,
         ICredentialAcquisitionService? credentialAcquisition,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        TextWriter? suppliedProtocolStdout = null
     )
     {
-        var protocolStdout = new StringWriter();
+        TextWriter protocolStdout = suppliedProtocolStdout ?? new StringWriter();
         var humanStdout = new StringWriter();
         var stderr = new StringWriter();
         var diagnosticRouter = new DiagnosticRouter(
@@ -285,7 +434,7 @@ public sealed class GitCredentialHelperAdapterTests
 
         return new AdapterRunResult(
             outcome,
-            protocolStdout.ToString(),
+            protocolStdout.ToString() ?? string.Empty,
             humanStdout.ToString(),
             stderr.ToString()
         );

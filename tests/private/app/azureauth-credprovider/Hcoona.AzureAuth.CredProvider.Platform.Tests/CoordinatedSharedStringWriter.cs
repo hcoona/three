@@ -5,14 +5,17 @@ namespace Hcoona.AzureAuth.CredProvider.Platform.Tests;
 internal sealed class CoordinatedSharedStringWriter : StringWriter
 {
     private readonly CoordinatedSharedStringWriterCoordinator _coordinator;
+    private readonly bool _coordinateAfterFlush;
 
     public CoordinatedSharedStringWriter(
         StringBuilder builder,
-        CoordinatedSharedStringWriterCoordinator coordinator)
+        CoordinatedSharedStringWriterCoordinator coordinator,
+        bool coordinateAfterFlush = false)
         : base(builder)
     {
         ArgumentNullException.ThrowIfNull(builder);
         _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
+        _coordinateAfterFlush = coordinateAfterFlush;
     }
 
     public override void Write(string? value)
@@ -28,6 +31,26 @@ internal sealed class CoordinatedSharedStringWriter : StringWriter
         {
             pendingWrite.WaitForRelease();
             base.Write(value);
+        }
+        finally
+        {
+            _coordinator.CompletePendingWrite(pendingWrite);
+        }
+    }
+
+    public override void Flush()
+    {
+        base.Flush();
+        if (!_coordinateAfterFlush)
+        {
+            return;
+        }
+
+        CoordinatedSharedStringWriterCoordinator.PendingWrite pendingWrite =
+            _coordinator.RegisterPendingWrite();
+        try
+        {
+            pendingWrite.WaitForRelease();
         }
         finally
         {

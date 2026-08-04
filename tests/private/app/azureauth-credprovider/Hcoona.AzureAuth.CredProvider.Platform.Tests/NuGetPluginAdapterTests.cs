@@ -355,7 +355,7 @@ public sealed class NuGetPluginAdapterTests
     }
 
     [Fact]
-    public async Task AuthenticationRequestTokenFlowsThroughAcquisitionAndResponseSending()
+    public async Task AuthenticationRequestTokenFlowsThroughAcquisitionButNotCommittedEmission()
     {
         var acquisition = new RequestTokenCapturingAcquisitionService();
         var adapter = new NuGetPluginAdapter(acquisition);
@@ -374,7 +374,7 @@ public sealed class NuGetPluginAdapterTests
         );
 
         Assert.Equal(requestCancellation.Token, acquisition.CancellationToken);
-        Assert.Equal(requestCancellation.Token, responseHandler.CancellationToken);
+        Assert.Equal(CancellationToken.None, responseHandler.CancellationToken);
         var response = Assert.IsType<GetAuthenticationCredentialsResponse>(
             responseHandler.Payload
         );
@@ -385,7 +385,7 @@ public sealed class NuGetPluginAdapterTests
 
         requestCancellation.Cancel();
         Assert.True(acquisition.CancellationToken.IsCancellationRequested);
-        Assert.True(responseHandler.CancellationToken.IsCancellationRequested);
+        Assert.False(responseHandler.CancellationToken.IsCancellationRequested);
     }
 
     [Fact]
@@ -421,6 +421,67 @@ public sealed class NuGetPluginAdapterTests
         Assert.Equal(requestCancellation.Token, acquisition.CancellationToken);
         Assert.True(acquisition.CancellationObserved);
         Assert.Equal(0, responseHandler.SendCount);
+    }
+
+    [Fact]
+    public async Task AuthenticationRequestCancellationWhileResponsePendingAndSendFailsPreservesFailure()
+    {
+        var adapter = new NuGetPluginAdapter(new RequestTokenCapturingAcquisitionService());
+        IRequestHandler handler = GetAuthenticationCredentialsHandler(adapter);
+        var responseHandler = new CoordinatedFailingResponseHandler();
+        using var requestCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken
+        );
+        Message request = CreateAuthenticationCredentialsMessage("failed-emission");
+
+        Task handling = handler.HandleResponseAsync(
+            CreateUnusedConnection(),
+            request,
+            responseHandler,
+            requestCancellation.Token
+        );
+        await responseHandler.Entered.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken
+        );
+        requestCancellation.Cancel();
+        responseHandler.Release();
+
+        await Assert.ThrowsAsync<IOException>(async () =>
+            await handling.WaitAsync(
+                TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken
+            )
+        );
+        Assert.Equal(CancellationToken.None, responseHandler.CancellationToken);
+        Assert.Equal(1, responseHandler.SendCount);
+        Assert.Equal(0, responseHandler.CompletedEmissionCount);
+    }
+
+    [Fact]
+    public async Task AuthenticationRequestCancellationAfterCompleteEmissionReturnsSuccess()
+    {
+        var adapter = new NuGetPluginAdapter(new RequestTokenCapturingAcquisitionService());
+        IRequestHandler handler = GetAuthenticationCredentialsHandler(adapter);
+        using var requestCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken
+        );
+        var responseHandler = new CancelAfterCompleteResponseHandler(requestCancellation);
+        Message request = CreateAuthenticationCredentialsMessage("completed-emission");
+
+        await handler
+            .HandleResponseAsync(
+                CreateUnusedConnection(),
+                request,
+                responseHandler,
+                requestCancellation.Token
+            )
+            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        Assert.True(requestCancellation.IsCancellationRequested);
+        Assert.Equal(CancellationToken.None, responseHandler.CancellationToken);
+        Assert.Equal(1, responseHandler.SendCount);
+        Assert.Equal(1, responseHandler.CompletedEmissionCount);
     }
 
     private static IRequestHandler GetAuthenticationCredentialsHandler(
@@ -479,6 +540,70 @@ public sealed class NuGetPluginAdapterTests
             CancellationToken = cancellationToken;
             Payload = payload;
             SendCount++;
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class CoordinatedFailingResponseHandler : IResponseHandler
+    {
+        private readonly TaskCompletionSource entered = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private readonly TaskCompletionSource release = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+
+        public CancellationToken CancellationToken { get; private set; }
+
+        public int CompletedEmissionCount { get; private set; }
+
+        public Task Entered => entered.Task;
+
+        public int SendCount { get; private set; }
+
+        public async Task SendResponseAsync<TPayload>(
+            Message request,
+            TPayload payload,
+            CancellationToken cancellationToken
+        )
+            where TPayload : class
+        {
+            CancellationToken = cancellationToken;
+            SendCount++;
+            entered.TrySetResult();
+            await release.Task.ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            throw new IOException("Response emission failed before completion.");
+        }
+
+        public void Release()
+        {
+            release.TrySetResult();
+        }
+    }
+
+    private sealed class CancelAfterCompleteResponseHandler(
+        CancellationTokenSource requestCancellation
+    ) : IResponseHandler
+    {
+        public CancellationToken CancellationToken { get; private set; }
+
+        public int CompletedEmissionCount { get; private set; }
+
+        public int SendCount { get; private set; }
+
+        public Task SendResponseAsync<TPayload>(
+            Message request,
+            TPayload payload,
+            CancellationToken cancellationToken
+        )
+            where TPayload : class
+        {
+            CancellationToken = cancellationToken;
+            SendCount++;
+            CompletedEmissionCount++;
+            requestCancellation.Cancel();
             cancellationToken.ThrowIfCancellationRequested();
             return Task.CompletedTask;
         }
