@@ -16,7 +16,9 @@ public sealed record SystemAzureAuthSecureRecordStoreOptions
     public TimeSpan LockTimeout { get; init; } = TimeSpan.FromSeconds(3);
 }
 
-public sealed class SystemAzureAuthSecureRecordStore : IAzureAuthSecureRecordStore
+public sealed class SystemAzureAuthSecureRecordStore
+    : IAzureAuthSecureRecordStore,
+        IAzureAuthSecureRecordStoreOperationScope
 {
     private const int MaximumRecordBytes = 1024 * 1024;
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
@@ -61,6 +63,15 @@ public sealed class SystemAzureAuthSecureRecordStore : IAzureAuthSecureRecordSto
         return ReadUnderLock(path);
     }
 
+    TResult IAzureAuthSecureRecordStoreOperationScope.Execute<TResult>(
+        Func<IAzureAuthSecureRecordStore, TResult> operation
+    )
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        using RecordLockScope scope = AcquireLock(createRoot: true);
+        return operation(new LockedRecordStore(this));
+    }
+
     public AzureAuthSecureRecordWriteResult CompareExchange(
         string path,
         string expectedRevision,
@@ -79,23 +90,7 @@ public sealed class SystemAzureAuthSecureRecordStore : IAzureAuthSecureRecordSto
 
         _ = StrictUtf8.GetString(newContent.Span);
         using RecordLockScope scope = AcquireLock(createRoot: true);
-        AzureAuthSecureRecordReadResult current = ReadUnderLock(path);
-        if (!RevisionMatches(current, expectedRevision))
-        {
-            return AzureAuthSecureRecordWriteResult.Conflict();
-        }
-
-        string revision = ComputeRevision(newContent.Span);
-        if (
-            current.Status == AzureAuthSecureRecordReadStatus.Present
-            && string.Equals(current.Revision, revision, StringComparison.Ordinal)
-        )
-        {
-            return AzureAuthSecureRecordWriteResult.Success(revision);
-        }
-
-        WriteUnderLock(path, newContent.Span);
-        return AzureAuthSecureRecordWriteResult.Success(revision);
+        return CompareExchangeUnderLock(path, expectedRevision, newContent);
     }
 
     public AzureAuthSecureRecordWriteResult CompareDelete(string path, string expectedRevision)
@@ -113,20 +108,7 @@ public sealed class SystemAzureAuthSecureRecordStore : IAzureAuthSecureRecordSto
         }
 
         using RecordLockScope scope = AcquireLock(createRoot: false);
-        AzureAuthSecureRecordReadResult current = ReadUnderLock(path);
-        if (!RevisionMatches(current, expectedRevision))
-        {
-            return AzureAuthSecureRecordWriteResult.Conflict();
-        }
-
-        if (current.Status == AzureAuthSecureRecordReadStatus.Present)
-        {
-            File.Delete(GetRecordPath(path));
-        }
-
-        return AzureAuthSecureRecordWriteResult.Success(
-            AzureAuthSecureRecordStoreContract.MissingRevision
-        );
+        return CompareDeleteUnderLock(path, expectedRevision);
     }
 
     private RecordLockScope AcquireLock(bool createRoot)
@@ -215,6 +197,52 @@ public sealed class SystemAzureAuthSecureRecordStore : IAzureAuthSecureRecordSto
 
         byte[] content = File.ReadAllBytes(recordPath);
         return AzureAuthSecureRecordReadResult.Present(ComputeRevision(content), content);
+    }
+
+    private AzureAuthSecureRecordWriteResult CompareExchangeUnderLock(
+        string path,
+        string expectedRevision,
+        ReadOnlyMemory<byte> newContent
+    )
+    {
+        AzureAuthSecureRecordReadResult current = ReadUnderLock(path);
+        if (!RevisionMatches(current, expectedRevision))
+        {
+            return AzureAuthSecureRecordWriteResult.Conflict();
+        }
+
+        string revision = ComputeRevision(newContent.Span);
+        if (
+            current.Status == AzureAuthSecureRecordReadStatus.Present
+            && string.Equals(current.Revision, revision, StringComparison.Ordinal)
+        )
+        {
+            return AzureAuthSecureRecordWriteResult.Success(revision);
+        }
+
+        WriteUnderLock(path, newContent.Span);
+        return AzureAuthSecureRecordWriteResult.Success(revision);
+    }
+
+    private AzureAuthSecureRecordWriteResult CompareDeleteUnderLock(
+        string path,
+        string expectedRevision
+    )
+    {
+        AzureAuthSecureRecordReadResult current = ReadUnderLock(path);
+        if (!RevisionMatches(current, expectedRevision))
+        {
+            return AzureAuthSecureRecordWriteResult.Conflict();
+        }
+
+        if (current.Status == AzureAuthSecureRecordReadStatus.Present)
+        {
+            File.Delete(GetRecordPath(path));
+        }
+
+        return AzureAuthSecureRecordWriteResult.Success(
+            AzureAuthSecureRecordStoreContract.MissingRevision
+        );
     }
 
     private void WriteUnderLock(string recordName, ReadOnlySpan<byte> content)
@@ -354,6 +382,46 @@ public sealed class SystemAzureAuthSecureRecordStore : IAzureAuthSecureRecordSto
             {
                 Monitor.Exit(processLock);
             }
+        }
+    }
+
+    private sealed class LockedRecordStore(SystemAzureAuthSecureRecordStore owner)
+        : IAzureAuthSecureRecordStore
+    {
+        public AzureAuthSecureRecordReadResult Read(string path)
+        {
+            AzureAuthSecureRecordStoreContract.EnsureKnownRecordName(path);
+            return owner.ReadUnderLock(path);
+        }
+
+        public AzureAuthSecureRecordWriteResult CompareExchange(
+            string path,
+            string expectedRevision,
+            ReadOnlyMemory<byte> newContent
+        )
+        {
+            AzureAuthSecureRecordStoreContract.EnsureKnownRecordName(path);
+            ArgumentException.ThrowIfNullOrWhiteSpace(expectedRevision);
+            if (newContent.Length > MaximumRecordBytes)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(newContent),
+                    "AzureAuth records cannot exceed one MiB."
+                );
+            }
+
+            _ = StrictUtf8.GetString(newContent.Span);
+            return owner.CompareExchangeUnderLock(path, expectedRevision, newContent);
+        }
+
+        public AzureAuthSecureRecordWriteResult CompareDelete(
+            string path,
+            string expectedRevision
+        )
+        {
+            AzureAuthSecureRecordStoreContract.EnsureKnownRecordName(path);
+            ArgumentException.ThrowIfNullOrWhiteSpace(expectedRevision);
+            return owner.CompareDeleteUnderLock(path, expectedRevision);
         }
     }
 }

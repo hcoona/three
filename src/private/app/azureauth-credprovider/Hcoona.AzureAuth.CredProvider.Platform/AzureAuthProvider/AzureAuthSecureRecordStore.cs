@@ -16,6 +16,26 @@ public interface IAzureAuthSecureRecordStore
     AzureAuthSecureRecordWriteResult CompareDelete(string path, string expectedRevision);
 }
 
+internal interface IAzureAuthSecureRecordStoreOperationScope
+{
+    TResult Execute<TResult>(Func<IAzureAuthSecureRecordStore, TResult> operation);
+}
+
+internal static class AzureAuthSecureRecordStoreOperationScope
+{
+    internal static TResult Execute<TResult>(
+        IAzureAuthSecureRecordStore store,
+        Func<IAzureAuthSecureRecordStore, TResult> operation
+    )
+    {
+        ArgumentNullException.ThrowIfNull(store);
+        ArgumentNullException.ThrowIfNull(operation);
+        return store is IAzureAuthSecureRecordStoreOperationScope scopedStore
+            ? scopedStore.Execute(operation)
+            : operation(store);
+    }
+}
+
 public enum AzureAuthSecureRecordReadStatus
 {
     Missing = 1,

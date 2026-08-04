@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Text;
 using Hcoona.AzureAuth.CredProvider.Platform.AzureAuthProvider;
+using Hcoona.AzureAuth.CredProvider.Platform.Composition;
 using Hcoona.AzureAuth.CredProvider.Platform.Processes;
 using Xunit;
 
@@ -83,6 +84,60 @@ public sealed class Wp6ProductionAdapterTests
             Assert.Single(
                 results,
                 result => result.Status == AzureAuthSecureRecordWriteStatus.Conflict
+            );
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void SecureStoreMultiRecordScopeRetainsPerRecordCas()
+    {
+        string root = CreateTestDirectory();
+        try
+        {
+            var store = new SystemAzureAuthSecureRecordStore(root);
+
+            AzureAuthSecureRecordStoreOperationScope.Execute(
+                store,
+                scopedStore =>
+                {
+                    AzureAuthSecureRecordWriteResult config = scopedStore.CompareExchange(
+                        CredentialProviderCompositionRoot.ProviderConfigRecordName,
+                        AzureAuthSecureRecordStoreContract.MissingRevision,
+                        Encoding.UTF8.GetBytes("""{"record":"config"}""")
+                    );
+                    AzureAuthSecureRecordWriteResult binding = scopedStore.CompareExchange(
+                        CredentialProviderCompositionRoot.BindingRecordName,
+                        AzureAuthSecureRecordStoreContract.MissingRevision,
+                        Encoding.UTF8.GetBytes("""{"record":"binding"}""")
+                    );
+
+                    Assert.Equal(AzureAuthSecureRecordWriteStatus.Success, config.Status);
+                    Assert.Equal(AzureAuthSecureRecordWriteStatus.Success, binding.Status);
+                    Assert.Equal(
+                        AzureAuthSecureRecordWriteStatus.Conflict,
+                        scopedStore
+                            .CompareDelete(
+                                CredentialProviderCompositionRoot.ProviderConfigRecordName,
+                                "stale"
+                            )
+                            .Status
+                    );
+                    return true;
+                }
+            );
+
+            Assert.Equal(
+                """{"record":"config"}""",
+                store.Read(CredentialProviderCompositionRoot.ProviderConfigRecordName)
+                    .GetUtf8String()
+            );
+            Assert.Equal(
+                """{"record":"binding"}""",
+                store.Read(CredentialProviderCompositionRoot.BindingRecordName).GetUtf8String()
             );
         }
         finally

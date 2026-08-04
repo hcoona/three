@@ -420,6 +420,171 @@ public sealed class CredentialProviderIdentityConfigurationServiceTests
     }
 
     [Fact]
+    public async Task ConfigureThenConcurrentUnconfigureSerializesWithoutOrphanRecords()
+    {
+        var store = new InMemoryRecordStore(pauseAfterFirstMutation: true);
+        var configureService = new CredentialProviderIdentityConfigurationService(
+            store,
+            new MutableTimeProvider(Now)
+        );
+        var unconfigureService = new CredentialProviderIdentityConfigurationService(
+            store,
+            new MutableTimeProvider(Now.AddMinutes(1))
+        );
+
+        Task<CredentialProviderIdentityConfigurationResult> configure = Task.Run(
+            () => configureService.Configure("tenant", "user@example.com"),
+            TestContext.Current.CancellationToken
+        );
+        await store.FirstMutationReached.WaitAsync(
+            TimeSpan.FromSeconds(10),
+            TestContext.Current.CancellationToken
+        );
+        Task<CredentialProviderIdentityConfigurationResult> unconfigure = Task.Run(
+            unconfigureService.Unconfigure,
+            TestContext.Current.CancellationToken
+        );
+
+        try
+        {
+            await store.SecondScopeAttempted.WaitAsync(
+                TimeSpan.FromSeconds(10),
+                TestContext.Current.CancellationToken
+            );
+            Assert.Equal(1, store.ScopeEntryCount);
+        }
+        finally
+        {
+            store.ReleaseFirstOperation();
+        }
+
+        CredentialProviderIdentityConfigurationResult[] results = await Task.WhenAll(
+            configure,
+            unconfigure
+        );
+
+        Assert.True(results[0].IsConfigured);
+        Assert.False(results[1].IsConfigured);
+        Assert.Equal(2, store.ScopeEntryCount);
+        AssertRecordsAreBothMissing(store);
+    }
+
+    [Fact]
+    public async Task UnconfigureThenConcurrentConfigureSerializesWithoutOrphanRecords()
+    {
+        InMemoryRecordStore store = CreateConfiguredInterleavingStore(
+            AzureAuthProviderConfig.CreateAzureAuth(),
+            "old-tenant",
+            "old@example.com",
+            Now.AddDays(-1)
+        );
+        var unconfigureService = new CredentialProviderIdentityConfigurationService(
+            store,
+            new MutableTimeProvider(Now)
+        );
+        var configureService = new CredentialProviderIdentityConfigurationService(
+            store,
+            new MutableTimeProvider(Now.AddMinutes(1))
+        );
+
+        Task<CredentialProviderIdentityConfigurationResult> unconfigure = Task.Run(
+            unconfigureService.Unconfigure,
+            TestContext.Current.CancellationToken
+        );
+        await store.FirstMutationReached.WaitAsync(
+            TimeSpan.FromSeconds(10),
+            TestContext.Current.CancellationToken
+        );
+        Task<CredentialProviderIdentityConfigurationResult> configure = Task.Run(
+            () => configureService.Configure("new-tenant", "new@example.com"),
+            TestContext.Current.CancellationToken
+        );
+
+        try
+        {
+            await store.SecondScopeAttempted.WaitAsync(
+                TimeSpan.FromSeconds(10),
+                TestContext.Current.CancellationToken
+            );
+            Assert.Equal(1, store.ScopeEntryCount);
+        }
+        finally
+        {
+            store.ReleaseFirstOperation();
+        }
+
+        CredentialProviderIdentityConfigurationResult[] results = await Task.WhenAll(
+            unconfigure,
+            configure
+        );
+
+        Assert.False(results[0].IsConfigured);
+        Assert.True(results[1].IsConfigured);
+        Assert.Equal(2, store.ScopeEntryCount);
+        AssertRecordsAreConfiguredTogether(
+            store,
+            AzureAuthProviderSelection.AzureAuth,
+            "new-tenant",
+            "new@example.com"
+        );
+    }
+
+    [Fact]
+    public async Task ReconfigureThenConcurrentUnconfigureSerializesWithoutOrphanRecords()
+    {
+        InMemoryRecordStore store = CreateConfiguredInterleavingStore(
+            AzureAuthProviderConfig.CreateDirectMsal(),
+            "old-tenant",
+            "old@example.com",
+            Now.AddDays(-1)
+        );
+        var reconfigureService = new CredentialProviderIdentityConfigurationService(
+            store,
+            new MutableTimeProvider(Now)
+        );
+        var unconfigureService = new CredentialProviderIdentityConfigurationService(
+            store,
+            new MutableTimeProvider(Now.AddMinutes(1))
+        );
+
+        Task<CredentialProviderIdentityConfigurationResult> reconfigure = Task.Run(
+            () => reconfigureService.Reconfigure("new-tenant", "new@example.com"),
+            TestContext.Current.CancellationToken
+        );
+        await store.FirstMutationReached.WaitAsync(
+            TimeSpan.FromSeconds(10),
+            TestContext.Current.CancellationToken
+        );
+        Task<CredentialProviderIdentityConfigurationResult> unconfigure = Task.Run(
+            unconfigureService.Unconfigure,
+            TestContext.Current.CancellationToken
+        );
+
+        try
+        {
+            await store.SecondScopeAttempted.WaitAsync(
+                TimeSpan.FromSeconds(10),
+                TestContext.Current.CancellationToken
+            );
+            Assert.Equal(1, store.ScopeEntryCount);
+        }
+        finally
+        {
+            store.ReleaseFirstOperation();
+        }
+
+        CredentialProviderIdentityConfigurationResult[] results = await Task.WhenAll(
+            reconfigure,
+            unconfigure
+        );
+
+        Assert.True(results[0].IsConfigured);
+        Assert.False(results[1].IsConfigured);
+        Assert.Equal(2, store.ScopeEntryCount);
+        AssertRecordsAreBothMissing(store);
+    }
+
+    [Fact]
     public void FreshProductionCompositionRootObservesPersistedConfigurationAndBinding()
     {
         var store = new InMemoryRecordStore();
@@ -479,14 +644,115 @@ public sealed class CredentialProviderIdentityConfigurationServiceTests
         }
     }
 
-    private sealed class InMemoryRecordStore : IAzureAuthSecureRecordStore
+    private static void AssertRecordsAreBothMissing(IAzureAuthSecureRecordStore store)
+    {
+        Assert.Equal(
+            AzureAuthPersistedRecordStatus.Missing,
+            new AzureAuthProviderConfigPersistence(store)
+                .Read(CredentialProviderCompositionRoot.ProviderConfigRecordName)
+                .Status
+        );
+        Assert.Equal(
+            AzureAuthPersistedRecordStatus.Missing,
+            new AzureAuthBindingPersistence(store)
+                .Read(CredentialProviderCompositionRoot.BindingRecordName)
+                .Status
+        );
+    }
+
+    private static void AssertRecordsAreConfiguredTogether(
+        IAzureAuthSecureRecordStore store,
+        AzureAuthProviderSelection expectedSelection,
+        string expectedTenant,
+        string expectedAccount
+    )
+    {
+        AzureAuthPersistedRecord<AzureAuthProviderConfig> config =
+            new AzureAuthProviderConfigPersistence(store).Read(
+                CredentialProviderCompositionRoot.ProviderConfigRecordName
+            );
+        AzureAuthPersistedRecord<AzureAuthBinding> binding = new AzureAuthBindingPersistence(
+            store
+        ).Read(CredentialProviderCompositionRoot.BindingRecordName);
+        Assert.Equal(AzureAuthPersistedRecordStatus.Present, config.Status);
+        Assert.Equal(AzureAuthPersistedRecordStatus.Present, binding.Status);
+        Assert.Equal(expectedSelection, config.Value!.Selection);
+        Assert.Equal(expectedSelection, binding.Value!.ProviderSelection);
+        Assert.Equal(expectedTenant, binding.Value.TenantId);
+        Assert.Equal(expectedAccount, binding.Value.AccountId);
+    }
+
+    private static InMemoryRecordStore CreateConfiguredInterleavingStore(
+        AzureAuthProviderConfig config,
+        string tenantId,
+        string? accountId,
+        DateTimeOffset recordedAtUtc
+    )
+    {
+        var store = new InMemoryRecordStore(pauseAfterFirstMutation: true);
+        store.Put(
+            CredentialProviderCompositionRoot.ProviderConfigRecordName,
+            AzureAuthProviderConfigJson.Serialize(config)
+        );
+        store.Put(
+            CredentialProviderCompositionRoot.BindingRecordName,
+            AzureAuthBindingJson.Serialize(
+                AzureAuthBindingPolicy.CreateBound(config, accountId, tenantId, recordedAtUtc)
+            )
+        );
+        return store;
+    }
+
+    private sealed class InMemoryRecordStore
+        : IAzureAuthSecureRecordStore,
+            IAzureAuthSecureRecordStoreOperationScope
     {
         private readonly HashSet<string> conflictNextWrites = new(StringComparer.Ordinal);
         private readonly Dictionary<string, byte[]> entries = new(StringComparer.Ordinal);
+        private readonly object operationLock = new();
+        private readonly bool pauseAfterFirstMutation;
+        private readonly TaskCompletionSource firstMutationReached = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private readonly TaskCompletionSource releaseFirstOperation = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private readonly TaskCompletionSource secondScopeAttempted = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private int firstScopeMutationCount;
+        private int scopeAttemptCount;
+        private int scopeEntryCount;
+
+        public InMemoryRecordStore(bool pauseAfterFirstMutation = false)
+        {
+            this.pauseAfterFirstMutation = pauseAfterFirstMutation;
+        }
 
         public int CompareExchangeCount { get; private set; }
 
         public List<string> DeleteOrder { get; } = [];
+
+        public Task FirstMutationReached => firstMutationReached.Task;
+
+        public Task SecondScopeAttempted => secondScopeAttempted.Task;
+
+        public int ScopeEntryCount => Volatile.Read(ref scopeEntryCount);
+
+        public TResult Execute<TResult>(Func<IAzureAuthSecureRecordStore, TResult> operation)
+        {
+            int attempt = Interlocked.Increment(ref scopeAttemptCount);
+            if (pauseAfterFirstMutation && attempt == 2)
+            {
+                secondScopeAttempted.SetResult();
+            }
+
+            lock (operationLock)
+            {
+                Interlocked.Increment(ref scopeEntryCount);
+                return operation(this);
+            }
+        }
 
         public AzureAuthSecureRecordReadResult Read(string path) =>
             entries.TryGetValue(path, out byte[]? content)
@@ -513,6 +779,7 @@ public sealed class CredentialProviderIdentityConfigurationServiceTests
 
             byte[] content = newContent.ToArray();
             entries[path] = content;
+            PauseFirstScopeAfterFirstMutation();
             return AzureAuthSecureRecordWriteResult.Success(Revision(content));
         }
 
@@ -526,6 +793,7 @@ public sealed class CredentialProviderIdentityConfigurationServiceTests
             }
 
             entries.Remove(path);
+            PauseFirstScopeAfterFirstMutation();
             return AzureAuthSecureRecordWriteResult.Success(
                 AzureAuthSecureRecordStoreContract.MissingRevision
             );
@@ -533,8 +801,28 @@ public sealed class CredentialProviderIdentityConfigurationServiceTests
 
         public void ConflictNextWrite(string path) => conflictNextWrites.Add(path);
 
+        public void ReleaseFirstOperation() => releaseFirstOperation.SetResult();
+
         public void Put(string path, string content) =>
             entries[path] = Encoding.UTF8.GetBytes(content);
+
+        private void PauseFirstScopeAfterFirstMutation()
+        {
+            if (
+                pauseAfterFirstMutation
+                && ScopeEntryCount == 1
+                && Interlocked.Increment(ref firstScopeMutationCount) == 1
+            )
+            {
+                firstMutationReached.SetResult();
+                releaseFirstOperation.Task.WaitAsync(
+                    TimeSpan.FromSeconds(10),
+                    TestContext.Current.CancellationToken
+                )
+                    .GetAwaiter()
+                    .GetResult();
+            }
+        }
 
         private static bool RevisionMatches(
             AzureAuthSecureRecordReadResult current,

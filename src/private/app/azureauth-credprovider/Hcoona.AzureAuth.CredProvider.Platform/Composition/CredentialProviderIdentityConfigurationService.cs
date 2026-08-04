@@ -29,8 +29,7 @@ public sealed class CredentialProviderIdentityConfigurationConflictException()
 
 public sealed class CredentialProviderIdentityConfigurationService
 {
-    private readonly AzureAuthProviderConfigPersistence providerConfigPersistence;
-    private readonly AzureAuthBindingPersistence bindingPersistence;
+    private readonly IAzureAuthSecureRecordStore secureRecordStore;
     private readonly TimeProvider timeProvider;
 
     public CredentialProviderIdentityConfigurationService(
@@ -39,8 +38,7 @@ public sealed class CredentialProviderIdentityConfigurationService
     )
     {
         secureRecordStore ??= new SystemAzureAuthSecureRecordStore();
-        providerConfigPersistence = new AzureAuthProviderConfigPersistence(secureRecordStore);
-        bindingPersistence = new AzureAuthBindingPersistence(secureRecordStore);
+        this.secureRecordStore = secureRecordStore;
         this.timeProvider = timeProvider ?? TimeProvider.System;
     }
 
@@ -57,6 +55,31 @@ public sealed class CredentialProviderIdentityConfigurationService
             tenantId,
             recordedAtUtc
         );
+        return AzureAuthSecureRecordStoreOperationScope.Execute(
+            secureRecordStore,
+            scopedStore =>
+                ConfigureCore(
+                    scopedStore,
+                    targetConfig,
+                    targetBinding,
+                    tenantId,
+                    accountPreference,
+                    recordedAtUtc
+                )
+        );
+    }
+
+    private static CredentialProviderIdentityConfigurationResult ConfigureCore(
+        IAzureAuthSecureRecordStore secureRecordStore,
+        AzureAuthProviderConfig targetConfig,
+        AzureAuthBinding targetBinding,
+        string tenantId,
+        string? accountPreference,
+        DateTimeOffset recordedAtUtc
+    )
+    {
+        var providerConfigPersistence = new AzureAuthProviderConfigPersistence(secureRecordStore);
+        var bindingPersistence = new AzureAuthBindingPersistence(secureRecordStore);
         AzureAuthPersistedRecord<AzureAuthProviderConfig> configRecord =
             providerConfigPersistence.Read(
                 CredentialProviderCompositionRoot.ProviderConfigRecordName
@@ -118,6 +141,31 @@ public sealed class CredentialProviderIdentityConfigurationService
             tenantId,
             recordedAtUtc
         );
+        return AzureAuthSecureRecordStoreOperationScope.Execute(
+            secureRecordStore,
+            scopedStore =>
+                ReconfigureCore(
+                    scopedStore,
+                    targetConfig,
+                    targetBinding,
+                    tenantId,
+                    accountPreference,
+                    recordedAtUtc
+                )
+        );
+    }
+
+    private static CredentialProviderIdentityConfigurationResult ReconfigureCore(
+        IAzureAuthSecureRecordStore secureRecordStore,
+        AzureAuthProviderConfig targetConfig,
+        AzureAuthBinding targetBinding,
+        string tenantId,
+        string? accountPreference,
+        DateTimeOffset recordedAtUtc
+    )
+    {
+        var providerConfigPersistence = new AzureAuthProviderConfigPersistence(secureRecordStore);
+        var bindingPersistence = new AzureAuthBindingPersistence(secureRecordStore);
         AzureAuthPersistedRecord<AzureAuthProviderConfig> configRecord =
             providerConfigPersistence.Read(
                 CredentialProviderCompositionRoot.ProviderConfigRecordName
@@ -186,6 +234,18 @@ public sealed class CredentialProviderIdentityConfigurationService
 
     public CredentialProviderIdentityConfigurationResult Unconfigure()
     {
+        return AzureAuthSecureRecordStoreOperationScope.Execute(
+            secureRecordStore,
+            UnconfigureCore
+        );
+    }
+
+    private static CredentialProviderIdentityConfigurationResult UnconfigureCore(
+        IAzureAuthSecureRecordStore secureRecordStore
+    )
+    {
+        var providerConfigPersistence = new AzureAuthProviderConfigPersistence(secureRecordStore);
+        var bindingPersistence = new AzureAuthBindingPersistence(secureRecordStore);
         AzureAuthPersistedRecord<AzureAuthProviderConfig> configRecord =
             providerConfigPersistence.Read(
                 CredentialProviderCompositionRoot.ProviderConfigRecordName
