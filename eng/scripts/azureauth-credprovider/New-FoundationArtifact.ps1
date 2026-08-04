@@ -24,6 +24,9 @@ param(
     [switch]$NoBuild,
 
     [Parameter(DontShow = $true)]
+    [scriptblock]$AfterArtifactCapture,
+
+    [Parameter(DontShow = $true)]
     [scriptblock]$BeforePackageReplace
 )
 
@@ -166,12 +169,6 @@ function ConvertTo-ArtifactPath {
     return $artifactPath
 }
 
-function Get-Sha256Hex {
-    param([Parameter(Mandatory = $true)][string]$Path)
-
-    return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()
-}
-
 Assert-SafeTargetRid -Rid $TargetRid
 
 $outputRootPath = if ([System.IO.Path]::IsPathFullyQualified($OutputRoot)) {
@@ -214,27 +211,79 @@ function Write-ArchiveEntryFromByteArray {
     }
 }
 
-function Write-ArchiveEntryFromFile {
+function New-ArtifactSnapshot {
+    param(
+        [Parameter(Mandatory = $true)][string]$SourcePath,
+        [Parameter(Mandatory = $true)][string]$SnapshotPath
+    )
+
+    $source = $null
+    $snapshot = $null
+    $hash = $null
+    try {
+        $source = [System.IO.File]::Open(
+            $SourcePath,
+            [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::Read,
+            [System.IO.FileShare]::Read
+        )
+        $snapshot = [System.IO.File]::Open(
+            $SnapshotPath,
+            [System.IO.FileMode]::CreateNew,
+            [System.IO.FileAccess]::ReadWrite,
+            [System.IO.FileShare]::None
+        )
+        $hash = [System.Security.Cryptography.IncrementalHash]::CreateHash(
+            [System.Security.Cryptography.HashAlgorithmName]::SHA256
+        )
+
+        $buffer = [byte[]]::new(81920)
+        [long]$length = 0
+        while (($bytesRead = $source.Read($buffer, 0, $buffer.Length)) -gt 0) {
+            $snapshot.Write($buffer, 0, $bytesRead)
+            $hash.AppendData($buffer, 0, $bytesRead)
+            $length += $bytesRead
+        }
+
+        $snapshot.Flush()
+        $snapshot.Position = 0
+        $result = [pscustomobject][ordered]@{
+            stream = $snapshot
+            length = $length
+            sha256 = [System.Convert]::ToHexString($hash.GetHashAndReset()).ToLowerInvariant()
+        }
+        $snapshot = $null
+        return $result
+    }
+    finally {
+        if ($null -ne $hash) {
+            $hash.Dispose()
+        }
+        if ($null -ne $snapshot) {
+            $snapshot.Dispose()
+        }
+        if ($null -ne $source) {
+            $source.Dispose()
+        }
+    }
+}
+
+function Write-ArchiveEntryFromStream {
     param(
         [Parameter(Mandatory = $true)][System.IO.Compression.ZipArchive]$Archive,
         [Parameter(Mandatory = $true)][string]$EntryName,
-        [Parameter(Mandatory = $true)][string]$Path
+        [Parameter(Mandatory = $true)][System.IO.Stream]$Source
     )
 
     $entry = $Archive.CreateEntry($EntryName, [System.IO.Compression.CompressionLevel]::NoCompression)
     $entry.LastWriteTime = [System.DateTimeOffset]::new(1980, 1, 1, 0, 0, 0, [System.TimeSpan]::Zero)
-    $source = [System.IO.File]::OpenRead($Path)
+    $Source.Position = 0
+    $destination = $entry.Open()
     try {
-        $destination = $entry.Open()
-        try {
-            $source.CopyTo($destination)
-        }
-        finally {
-            $destination.Dispose()
-        }
+        $Source.CopyTo($destination)
     }
     finally {
-        $source.Dispose()
+        $destination.Dispose()
     }
 }
 
@@ -285,7 +334,7 @@ foreach ($project in $projects) {
     $projectFiles[$project.Name] = $files
 }
 
-$artifactFiles = [System.Collections.Generic.List[object]]::new()
+$artifactCandidates = [System.Collections.Generic.List[object]]::new()
 $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 $null = $seen.Add('manifest.json')
 foreach ($project in $projects) {
@@ -296,48 +345,66 @@ foreach ($project in $projects) {
             throw "Duplicate or case-ambiguous artifact path '$artifactPath'."
         }
 
-        $artifactFiles.Add([pscustomobject][ordered]@{
+        $artifactCandidates.Add([pscustomobject][ordered]@{
                 sourcePath = $file.FullName
                 path       = $artifactPath
-                length     = $file.Length
-                sha256     = Get-Sha256Hex -Path $file.FullName
             })
     }
 }
 
-$manifestFiles = @(
-    $artifactFiles |
-        Sort-Object path |
-        ForEach-Object {
-            [ordered]@{
-                path   = $_.path
-                length = $_.length
-                sha256 = $_.sha256
-            }
-        }
-)
-
-$manifest = [ordered]@{
-    schemaVersion   = 'azureauth-credprovider-foundation-artifact-v1'
-    artifactName    = 'azureauth-credprovider-foundation'
-    buildOs         = $BuildOs
-    targetRid       = $TargetRid
-    productVersion  = $ProductVersion
-    sourceRevision  = $SourceRevision
-    producedBy      = 'eng/scripts/azureauth-credprovider/New-FoundationArtifact.ps1'
-    releaseStatus   = 'internal-non-release'
-    signatureStatus = 'unsigned'
-    isInternal      = $true
-    isRelease       = $false
-    isSigned        = $false
-    files           = $manifestFiles
-}
-
-$manifestJson = $manifest | ConvertTo-Json -Depth 10 -Compress
-$manifestBytes = [System.Text.Encoding]::UTF8.GetBytes($manifestJson)
-
-$temporaryPackagePath = "$packagePath.$([System.Guid]::NewGuid().ToString('N')).tmp"
+$operationId = [System.Guid]::NewGuid().ToString('N')
+$snapshotRoot = "$packagePath.$operationId.snapshot"
+$temporaryPackagePath = "$packagePath.$operationId.tmp"
+$artifactFiles = [System.Collections.Generic.List[object]]::new()
 try {
+    New-Item -ItemType Directory -Path $snapshotRoot | Out-Null
+    $snapshotIndex = 0
+    foreach ($file in ($artifactCandidates | Sort-Object path)) {
+        $snapshotPath = Join-Path $snapshotRoot ('{0:D8}.snapshot' -f $snapshotIndex)
+        $snapshot = New-ArtifactSnapshot -SourcePath $file.sourcePath -SnapshotPath $snapshotPath
+        $artifactFiles.Add([pscustomobject][ordered]@{
+                path           = $file.path
+                length         = $snapshot.length
+                sha256         = $snapshot.sha256
+                snapshotStream = $snapshot.stream
+            })
+        $snapshotIndex++
+    }
+
+    $manifestFiles = @(
+        $artifactFiles |
+            ForEach-Object {
+                [ordered]@{
+                    path   = $_.path
+                    length = $_.length
+                    sha256 = $_.sha256
+                }
+            }
+    )
+
+    $manifest = [ordered]@{
+        schemaVersion   = 'azureauth-credprovider-foundation-artifact-v1'
+        artifactName    = 'azureauth-credprovider-foundation'
+        buildOs         = $BuildOs
+        targetRid       = $TargetRid
+        productVersion  = $ProductVersion
+        sourceRevision  = $SourceRevision
+        producedBy      = 'eng/scripts/azureauth-credprovider/New-FoundationArtifact.ps1'
+        releaseStatus   = 'internal-non-release'
+        signatureStatus = 'unsigned'
+        isInternal      = $true
+        isRelease       = $false
+        isSigned        = $false
+        files           = $manifestFiles
+    }
+
+    $manifestJson = $manifest | ConvertTo-Json -Depth 10 -Compress
+    $manifestBytes = [System.Text.Encoding]::UTF8.GetBytes($manifestJson)
+
+    if ($null -ne $AfterArtifactCapture) {
+        & $AfterArtifactCapture $stagingRoot
+    }
+
     $packageStream = [System.IO.File]::Open(
         $temporaryPackagePath,
         [System.IO.FileMode]::CreateNew,
@@ -348,8 +415,8 @@ try {
         $archive = [System.IO.Compression.ZipArchive]::new($packageStream, [System.IO.Compression.ZipArchiveMode]::Create)
         try {
             Write-ArchiveEntryFromByteArray -Archive $archive -EntryName 'manifest.json' -Bytes $manifestBytes
-            foreach ($file in ($artifactFiles | Sort-Object path)) {
-                Write-ArchiveEntryFromFile -Archive $archive -EntryName $file.path -Path $file.sourcePath
+            foreach ($file in $artifactFiles) {
+                Write-ArchiveEntryFromStream -Archive $archive -EntryName $file.path -Source $file.snapshotStream
             }
         }
         finally {
@@ -367,8 +434,14 @@ try {
     [System.IO.File]::Move($temporaryPackagePath, $packagePath, $true)
 }
 finally {
+    foreach ($file in $artifactFiles) {
+        $file.snapshotStream.Dispose()
+    }
     if (Test-Path -LiteralPath $temporaryPackagePath) {
         Remove-Item -LiteralPath $temporaryPackagePath -Force
+    }
+    if (Test-Path -LiteralPath $snapshotRoot) {
+        Remove-Item -LiteralPath $snapshotRoot -Recurse -Force
     }
 }
 

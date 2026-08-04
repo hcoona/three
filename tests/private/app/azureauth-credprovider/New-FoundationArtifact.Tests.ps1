@@ -44,6 +44,28 @@ function Assert-BytesEqual {
     }
 }
 
+function Read-ZipEntryBytes {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.IO.Compression.ZipArchiveEntry]$Entry
+    )
+
+    $source = $Entry.Open()
+    try {
+        $destination = [System.IO.MemoryStream]::new()
+        try {
+            $source.CopyTo($destination)
+            return $destination.ToArray()
+        }
+        finally {
+            $destination.Dispose()
+        }
+    }
+    finally {
+        $source.Dispose()
+    }
+}
+
 function New-CanonicalStaging {
     param(
         [Parameter(Mandatory = $true)]
@@ -65,6 +87,8 @@ function Invoke-FoundationArtifact {
         [Parameter(Mandatory = $true)]
         [string]$OutputRoot,
 
+        [scriptblock]$AfterArtifactCapture,
+
         [scriptblock]$BeforePackageReplace
     )
 
@@ -75,6 +99,9 @@ function Invoke-FoundationArtifact {
         ProductVersion = '1.2.3-test'
         SourceRevision = 'test-revision'
         NoBuild       = $true
+    }
+    if ($null -ne $AfterArtifactCapture) {
+        $parameters.AfterArtifactCapture = $AfterArtifactCapture
     }
     if ($null -ne $BeforePackageReplace) {
         $parameters.BeforePackageReplace = $BeforePackageReplace
@@ -100,6 +127,81 @@ function Assert-InvocationFails {
     }
 
     throw $Message
+}
+
+function Assert-NoTemporaryPackagingArtifacts {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$OutputRoot,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Context
+    )
+
+    $temporaryArtifacts = @(
+        Get-ChildItem -LiteralPath $OutputRoot -Force |
+            Where-Object {
+                $_.Name -like "$packageName.*.tmp" -or
+                $_.Name -like "$packageName.*.snapshot"
+            }
+    )
+    Assert-True (
+        $temporaryArtifacts.Count -eq 0
+    ) "Temporary snapshots or package partials remain after $Context."
+}
+
+function Test-ManifestMetadataMatchesCapturedZipEntryAfterStagedSourceReplacement {
+    $snapshotOutput = Join-Path $testRoot 'captured-source-replacement'
+    $snapshotStagingRoot = New-CanonicalStaging -OutputRoot $snapshotOutput
+    $capturedSourcePath = Join-Path $snapshotStagingRoot 'Contracts/contracts.dll'
+    $capturedBytes = [System.IO.File]::ReadAllBytes($capturedSourcePath)
+    $replacementBytes = [System.Text.Encoding]::UTF8.GetBytes('contracts replaced after capture')
+
+    Invoke-FoundationArtifact -OutputRoot $snapshotOutput -AfterArtifactCapture {
+        param([string]$capturedStagingRoot)
+
+        $sourcePath = Join-Path $capturedStagingRoot 'Contracts/contracts.dll'
+        $replacementPath = Join-Path $capturedStagingRoot 'Contracts/contracts.replacement'
+        [System.IO.File]::WriteAllBytes(
+            $replacementPath,
+            [System.Text.Encoding]::UTF8.GetBytes('contracts replaced after capture')
+        )
+        [System.IO.File]::Move($replacementPath, $sourcePath, $true)
+    }
+
+    Assert-BytesEqual $replacementBytes (
+        [System.IO.File]::ReadAllBytes($capturedSourcePath)
+    ) 'The staged source was not replaced after artifact capture.'
+
+    $snapshotPackagePath = Join-Path $snapshotOutput $packageName
+    $archive = [System.IO.Compression.ZipFile]::OpenRead($snapshotPackagePath)
+    try {
+        $manifestEntry = $archive.GetEntry('manifest.json')
+        Assert-True ($null -ne $manifestEntry) 'The snapshot package has no manifest.'
+        [byte[]]$manifestBytes = Read-ZipEntryBytes -Entry $manifestEntry
+        $manifest = [System.Text.Encoding]::UTF8.GetString($manifestBytes) | ConvertFrom-Json
+        $manifestFiles = @($manifest.files | Where-Object path -CEQ 'Contracts/contracts.dll')
+        Assert-True ($manifestFiles.Count -eq 1) 'The manifest does not contain exactly one Contracts/contracts.dll entry.'
+
+        $contractsEntry = $archive.GetEntry('Contracts/contracts.dll')
+        Assert-True ($null -ne $contractsEntry) 'The snapshot package has no Contracts/contracts.dll entry.'
+        [byte[]]$contractsBytes = Read-ZipEntryBytes -Entry $contractsEntry
+        $contractsSha256 = [System.Convert]::ToHexString(
+            [System.Security.Cryptography.SHA256]::HashData($contractsBytes)
+        ).ToLowerInvariant()
+
+        Assert-True (
+            $manifestFiles[0].length -eq $contractsBytes.LongLength
+        ) 'Manifest length does not match the ZIP entry bytes after staged source replacement.'
+        Assert-True (
+            $manifestFiles[0].sha256 -ceq $contractsSha256
+        ) 'Manifest SHA-256 does not match the ZIP entry bytes after staged source replacement.'
+        Assert-BytesEqual $capturedBytes $contractsBytes 'The ZIP entry does not contain the captured source bytes.'
+    }
+    finally {
+        $archive.Dispose()
+    }
+    Assert-NoTemporaryPackagingArtifacts -OutputRoot $snapshotOutput -Context 'successful source replacement packaging'
 }
 
 try {
@@ -128,6 +230,7 @@ try {
     finally {
         $archive.Dispose()
     }
+    Assert-NoTemporaryPackagingArtifacts -OutputRoot $reuseOutput -Context 'successful package replacement'
 
     foreach ($case in @('absent', 'empty', 'partial')) {
         $invalidOutput = Join-Path $testRoot $case
@@ -151,6 +254,7 @@ try {
             Invoke-FoundationArtifact -OutputRoot $invalidOutput
         } "Expected $case canonical staging to be rejected."
         Assert-BytesEqual $existingArchive ([System.IO.File]::ReadAllBytes($packagePath)) "Existing archive changed after $case staging failure."
+        Assert-NoTemporaryPackagingArtifacts -OutputRoot $invalidOutput -Context "$case staging failure"
     }
 
     $failureOutput = Join-Path $testRoot 'replacement-failure'
@@ -165,9 +269,9 @@ try {
         }
     } 'Expected the injected replacement failure.'
     Assert-BytesEqual $existingArchive ([System.IO.File]::ReadAllBytes($packagePath)) 'Existing archive changed after replacement failure.'
-    Assert-True (
-        @(Get-ChildItem -LiteralPath $failureOutput -Filter '*.tmp' -File).Count -eq 0
-    ) 'Temporary package was not cleaned up after replacement failure.'
+    Assert-NoTemporaryPackagingArtifacts -OutputRoot $failureOutput -Context 'replacement failure'
+
+    Test-ManifestMetadataMatchesCapturedZipEntryAfterStagedSourceReplacement
 
     Write-Output 'All New-FoundationArtifact regression tests passed.'
 }
