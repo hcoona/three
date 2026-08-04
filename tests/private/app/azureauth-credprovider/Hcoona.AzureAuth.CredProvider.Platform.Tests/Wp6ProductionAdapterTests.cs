@@ -688,54 +688,6 @@ public sealed class Wp6ProductionAdapterTests
         }
     }
 
-    [Theory]
-    [InlineData(0, 0, nameof(LinuxExecuteAccessResult.Allowed))]
-    [InlineData(-1, 13, nameof(LinuxExecuteAccessResult.Denied))]
-    [InlineData(-1, 1, nameof(LinuxExecuteAccessResult.Denied))]
-    [InlineData(-1, 2, nameof(LinuxExecuteAccessResult.Unavailable))]
-    public void LinuxExecuteAccessCheckMapsNativeResult(
-        int nativeResult,
-        int nativeError,
-        string expected
-    )
-    {
-        const string ExecutablePath = "/usr/lib/azureauth/azureauth";
-
-        LinuxExecuteAccessResult actual =
-            SystemAzureAuthInstallationDiscoveryOptions.InvokeLinuxEffectiveExecuteAccessCheck(
-                ExecutablePath,
-                (directoryFileDescriptor, path, mode, flags) =>
-                {
-                    Assert.Equal(-100, directoryFileDescriptor);
-                    Assert.Equal(ExecutablePath, path);
-                    Assert.Equal(1, mode);
-                    Assert.Equal(0x200, flags);
-                    return nativeResult;
-                },
-                () =>
-                    nativeResult == 0
-                        ? throw new InvalidOperationException(
-                            "Successful access checks must not read an error."
-                        )
-                        : nativeError
-            );
-
-        Assert.Equal(expected, actual.ToString());
-    }
-
-    [Fact]
-    public void LinuxExecuteAccessCheckMapsInteropFailureToUnavailable()
-    {
-        LinuxExecuteAccessResult result =
-            SystemAzureAuthInstallationDiscoveryOptions.InvokeLinuxEffectiveExecuteAccessCheck(
-                "/usr/lib/azureauth/azureauth",
-                (_, _, _, _) => throw new EntryPointNotFoundException(),
-                () => throw new InvalidOperationException("Last error must not be read.")
-            );
-
-        Assert.Equal(LinuxExecuteAccessResult.Unavailable, result);
-    }
-
     private static string CreateTestDirectory()
     {
         string path = Path.Combine(

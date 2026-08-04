@@ -96,7 +96,6 @@ public sealed record SystemAzureAuthInstallationDiscoveryOptions
     private const int AtFdcwd = -100;
     private const int XOk = 1;
     private const int AtEaccess = 0x200;
-    private const int OperationNotPermitted = 1;
     private const int PermissionDenied = 13;
 
     internal AzureAuthHostPlatform? ForcedHostPlatform { get; init; }
@@ -124,29 +123,21 @@ public sealed record SystemAzureAuthInstallationDiscoveryOptions
 
     public int MaximumOutputBytes { get; init; } = 8 * 1024;
 
-    private static LinuxExecuteAccessResult HasLinuxEffectiveExecuteAccess(string path) =>
-        OperatingSystem.IsLinux()
-            ? InvokeLinuxEffectiveExecuteAccessCheck(
-                path,
-                FileAccessAt,
-                Marshal.GetLastPInvokeError
-            )
-            : LinuxExecuteAccessResult.Unavailable;
-
-    internal static LinuxExecuteAccessResult InvokeLinuxEffectiveExecuteAccessCheck(
-        string path,
-        Func<int, string, int, int, int> fileAccessAt,
-        Func<int> getLastError
-    )
+    private static LinuxExecuteAccessResult HasLinuxEffectiveExecuteAccess(string path)
     {
+        if (!OperatingSystem.IsLinux())
+        {
+            return LinuxExecuteAccessResult.Unavailable;
+        }
+
         try
         {
-            if (fileAccessAt(AtFdcwd, path, XOk, AtEaccess) == 0)
+            if (FileAccessAt(AtFdcwd, path, XOk, AtEaccess) == 0)
             {
                 return LinuxExecuteAccessResult.Allowed;
             }
 
-            return getLastError() is PermissionDenied or OperationNotPermitted
+            return Marshal.GetLastPInvokeError() == PermissionDenied
                 ? LinuxExecuteAccessResult.Denied
                 : LinuxExecuteAccessResult.Unavailable;
         }
@@ -165,12 +156,12 @@ public sealed record SystemAzureAuthInstallationDiscoveryOptions
     [DllImport(
         "libc",
         EntryPoint = "faccessat",
-        CharSet = CharSet.Ansi,
         ExactSpelling = true,
         SetLastError = true
     )]
     private static extern int FileAccessAt(
         int directoryFileDescriptor,
+        [MarshalAs(UnmanagedType.LPUTF8Str)]
         string path,
         int mode,
         int flags
