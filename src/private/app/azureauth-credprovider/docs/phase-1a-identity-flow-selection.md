@@ -5,10 +5,11 @@ Status: **Partially superseded historical decision**
 Date: **2026-06-06**
 
 The current implementation supports interactive browser acquisition through
-AzureAuth and explicit Azure Pipelines system access tokens. Device code and
-PAT compatibility remain unavailable or deferred despite their earlier
-selection below. Current behavior is documented by the WP3, WP5, and WP6
-records.
+AzureAuth, explicit native Linux device-code login, and explicit Azure Pipelines
+system access tokens. Device code remains unavailable on Windows, WSL, and host
+protocols without a human prompt stream. PAT compatibility remains deferred
+despite its earlier selection below. Current behavior is documented by the WP3,
+WP5, and WP6 records.
 
 Decision ID: **phase-1a-identity-flow-selection**
 

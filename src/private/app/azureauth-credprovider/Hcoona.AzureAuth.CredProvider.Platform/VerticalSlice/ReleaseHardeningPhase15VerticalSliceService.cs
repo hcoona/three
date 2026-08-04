@@ -158,20 +158,25 @@ public static class ReleaseHardeningPhase15VerticalSliceService
                         + "and installer-produced binary acceptance remain required before full "
                         + "release readiness closes."
                 ),
-                DeferredReleaseEvidence(
+                ReleaseEvidencePass(
                     "standalone-linux-x64-platform-acceptance",
                     "platform",
                     "phase-wp3-azureauth-process-provider; "
-                        + "phase-wp16-deployment-validation-bundle; commit 63dacbac; "
+                        + "phase-wp16-deployment-validation-bundle; implementation after "
+                        + "commit 46424808; "
                         + "AzureAuth 0.9.5 release commit 21258ff3",
-                    "On 2026-08-03, the internal deployment-validation Linux apphost completed "
-                        + "product browser login and subsequent Git and Python silent-only cache "
-                        + "acquisitions through the verified official AzureAuth 0.9.5 linux-x64 "
-                        + "artifact. Credential output was captured for structural validation "
-                        + "but not printed. This ran under WSL2 with WSL detection disabled and "
-                        + "all isolated product, configuration, and AzureAuth cache state was "
-                        + "removed afterward. Standalone Ubuntu 24.04, system keyring behavior, "
-                        + "and release-installer-produced binary acceptance remain required."
+                    "On 2026-08-04, the internal deployment-validation Linux apphost completed "
+                        + "explicit headless device-code login and subsequent Git and Python "
+                        + "silent-only cache acquisitions through the verified official "
+                        + "AzureAuth 0.9.5 linux-x64 artifact. Credential output was captured "
+                        + "for structural validation but not printed. The run used WSL2 with WSL "
+                        + "detection disabled; by explicit operator decision, this forced-native "
+                        + "execution closes the repository's standalone Linux platform gate. "
+                        + "AzureAuth used its documented owner-only headless file-cache fallback "
+                        + "after keyring persistence was unavailable. All isolated product, "
+                        + "configuration, and AzureAuth cache state was removed afterward. Native "
+                        + "system-keyring behavior and release-installer-produced binary "
+                        + "acceptance remain separate evidence."
                 ),
                 ReleaseEvidencePass(
                     "real-package-manager-invocation-paths",

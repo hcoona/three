@@ -349,14 +349,15 @@ public sealed class CliApplicationTests
             StringComparison.Ordinal
         );
         Assert.Contains(
-            "standalone-linux-x64-platform-acceptance: deferred-release-evidence\n",
+            "standalone-linux-x64-platform-acceptance: pass\n",
             result.StdOut,
             StringComparison.Ordinal
         );
         Assert.Contains(
             "standalone-linux-x64-platform-acceptance-evidence: "
                 + "phase-wp3-azureauth-process-provider; "
-                + "phase-wp16-deployment-validation-bundle; commit 63dacbac; "
+                + "phase-wp16-deployment-validation-bundle; implementation after "
+                + "commit 46424808; "
                 + "AzureAuth 0.9.5 release commit 21258ff3\n",
             result.StdOut,
             StringComparison.Ordinal
@@ -456,7 +457,7 @@ public sealed class CliApplicationTests
                 tenant: tenanta
                 credential-material: issued-not-printed
                 persistent-derived-credentials: disabled
-                plaintext-fallback: disabled
+                product-plaintext-fallback: disabled
                 """
             ),
             result.StdOut
@@ -467,19 +468,60 @@ public sealed class CliApplicationTests
     }
 
     [Fact]
-    public void LoginDeviceCodeFailsWithStableBrowserRemediation()
+    public void LoginDeviceCodeWithAcceptedCredentialReturnsSuccessWithoutBrowserRemediation()
     {
+        var acquisitionService = new CapturingAcceptedDeviceCodeAcquisitionService();
         CommandResult result = InvokeWithRuntime(
-            new CliRuntimeOptions { CompositionRoot = CreateTestCompositionRoot() },
+            new CliRuntimeOptions
+            {
+                CompositionRoot = CredentialProviderCompositionRoot.CreateExplicitTestScaffold(
+                    acquisitionService
+                ),
+            },
             "login",
             "--device-code"
         );
 
-        Assert.Equal(1, result.ExitCode);
-        Assert.Equal(string.Empty, result.StdOut);
         Assert.Equal(
-            "error: Device-code login is unavailable; use interactive-browser login.\n",
-            result.StdErr
+            Normalize(
+                """
+                command: login
+                phase: 15-end-to-end-hardening
+                ci-mode: none
+                identity-flow: device-code
+                status: success
+                account: unbound
+                tenant: unbound
+                credential-material: issued-not-printed
+                persistent-derived-credentials: disabled
+                product-plaintext-fallback: disabled
+                """
+            ),
+            result.StdOut
+        );
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(string.Empty, result.StdErr);
+        CredentialRequestV2 request = Assert.IsType<CredentialRequestV2>(
+            acquisitionService.Request
+        );
+        Assert.Equal(CredentialKind.BasicPassword, request.CredentialKind);
+        Assert.Equal(IdentityFlow.DeviceCode, request.IdentityFlow);
+        Assert.Equal(InteractivePolicy.UserAllowed, request.InteractivePolicy);
+        Assert.Equal(AcquisitionMode.InteractionAllowed, request.AcquisitionMode);
+        Assert.DoesNotContain(
+            "Device-code login is unavailable",
+            result.StdErr,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain(
+            CapturingAcceptedDeviceCodeAcquisitionService.Password,
+            result.StdOut,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain(
+            CapturingAcceptedDeviceCodeAcquisitionService.Password,
+            result.StdErr,
+            StringComparison.Ordinal
         );
     }
 
@@ -559,7 +601,7 @@ public sealed class CliApplicationTests
                 tenant: unbound
                 credential-material: provided-not-printed
                 persistent-derived-credentials: disabled
-                plaintext-fallback: disabled
+                product-plaintext-fallback: disabled
                 """
             ),
             result.StdOut
@@ -596,7 +638,7 @@ public sealed class CliApplicationTests
                 persistent-derived-credentials-removed: none
                 removed-change-count: 0
                 cleanup: complete
-                plaintext-fallback: disabled
+                product-plaintext-fallback: disabled
                 """
             ),
             result.StdOut
@@ -3984,7 +4026,7 @@ public sealed class CliApplicationTests
                         + "workload-identity",
                     "auth-pat-compatibility: deferred-disabled",
                     "auth-persistent-derived-credentials: disabled",
-                    "auth-plaintext-fallback: disabled",
+                    "auth-product-plaintext-fallback: disabled",
                     "nuget-configuration-plan: pass",
                     "nuget-plugin-layout-marker: absent",
                     "nuget-ownership-manifest: absent",
@@ -4492,4 +4534,965 @@ public sealed class CliApplicationTests
     }
 
     private sealed record CommandResult(int ExitCode, string StdOut, string StdErr);
+
+    [Fact]
+    public async Task LoginDeviceCodePassesExplicitModeAndStreamsPromptSafely()
+    {
+        const string Token = "phase2-cli-private-token";
+        string rootPath = CreateTestDirectory();
+        var stdout = new StringWriter(new StringBuilder());
+        var stderr = new StringWriter(new StringBuilder());
+        var runner = new CoordinatedDeviceCodeProcessRunner(
+            new ProcessResult(0, Token, string.Empty)
+        );
+        try
+        {
+            CredentialProviderCompositionRoot root = CreatePhase2ProductionRoot(
+                rootPath,
+                CreatePhase2Installation(AzureAuthHostPlatform.NativeLinux),
+                runner,
+                stderr
+            );
+            var runtime = new CliRuntimeOptions { CompositionRoot = root };
+
+            Task<int> run = Task.Run(() =>
+                CliApplication.Run(["login", "--device-code"], stdout, stderr, runtime)
+            );
+            await runner.PromptWritten.Task.WaitAsync(
+                TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.False(run.IsCompleted);
+            Assert.Equal(CoordinatedDeviceCodeProcessRunner.Prompt, stderr.ToString());
+            Assert.DoesNotContain(Token, stderr.ToString(), StringComparison.Ordinal);
+
+            runner.Release();
+            int exitCode = await run.WaitAsync(
+                TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Equal(0, exitCode);
+            Assert.Equal(
+                Normalize(
+                    """
+                    command: login
+                    phase: 15-end-to-end-hardening
+                    ci-mode: none
+                    identity-flow: device-code
+                    status: success
+                    account: unselected
+                    tenant: tenant-cli
+                    credential-material: issued-not-printed
+                    persistent-derived-credentials: disabled
+                    product-plaintext-fallback: disabled
+                    """
+                ),
+                stdout.ToString()
+            );
+            Assert.Equal(CoordinatedDeviceCodeProcessRunner.Prompt, stderr.ToString());
+            Assert.DoesNotContain(Token, stdout.ToString(), StringComparison.Ordinal);
+            Assert.DoesNotContain(Token, stderr.ToString(), StringComparison.Ordinal);
+            Assert.Equal(1, runner.InvocationCount);
+            ProcessStartSpec start = Assert.IsType<ProcessStartSpec>(runner.StartSpec);
+            Assert.Same(stderr, start.StandardErrorTee);
+            Assert.Equal(
+                [
+                    "aad",
+                    "--client",
+                    "872cd9fa-d31f-45e0-9eab-6e460a02d1f1",
+                    "--tenant",
+                    "tenant-cli",
+                    "--scope",
+                    "499b84ac-1321-427f-aa17-267ca6975798/.default",
+                    "--mode",
+                    "devicecode",
+                    "--domain",
+                    "example.com",
+                    "--output",
+                    "token",
+                ],
+                start.Arguments
+            );
+            Assert.Equal(8192, start.OutputCaptureOptions.StandardOutputByteLimit);
+            Assert.Equal(8192, start.OutputCaptureOptions.StandardErrorByteLimit);
+            Assert.Equal(3, start.Environment.Count);
+            Assert.All(start.Environment.Values, Assert.Null);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(rootPath);
+        }
+    }
+
+    [Theory]
+    [InlineData(AzureAuthHostPlatform.Windows)]
+    [InlineData(AzureAuthHostPlatform.Wsl)]
+    public void LoginDeviceCodeRejectsWindowsAndWslBeforeLaunch(AzureAuthHostPlatform hostPlatform)
+    {
+        const string Token = "must-not-launch-private-token";
+        string rootPath = CreateTestDirectory();
+        var stdout = new StringWriter(new StringBuilder());
+        var stderr = new StringWriter(new StringBuilder());
+        var runner = new PromptingResultProcessRunner(
+            new ProcessResult(0, Token, "must-not-stream")
+        );
+        try
+        {
+            CredentialProviderCompositionRoot root = CreatePhase2ProductionRoot(
+                rootPath,
+                CreatePhase2Installation(hostPlatform),
+                runner,
+                stderr
+            );
+
+            int exitCode = CliApplication.Run(
+                ["login", "--device-code"],
+                stdout,
+                stderr,
+                new CliRuntimeOptions { CompositionRoot = root }
+            );
+
+            Assert.Equal(1, exitCode);
+            Assert.Equal(string.Empty, stdout.ToString());
+            Assert.Equal(
+                "error: AzureAuth device-code login requires an explicit interactive "
+                    + "native Linux request.\n",
+                stderr.ToString()
+            );
+            Assert.Equal(0, runner.InvocationCount);
+            Assert.Null(runner.StartSpec);
+            Assert.DoesNotContain(Token, stderr.ToString(), StringComparison.Ordinal);
+            Assert.DoesNotContain("must-not-stream", stderr.ToString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(rootPath);
+        }
+    }
+
+    [Fact]
+    public async Task LoginDeviceCodeCancellationReturns130WithoutTokenOrDiagnosticLeak()
+    {
+        const string Token = "canceled-private-token";
+        string rootPath = CreateTestDirectory();
+        var stdout = new StringWriter(new StringBuilder());
+        var stderr = new StringWriter(new StringBuilder());
+        var runner = new CoordinatedDeviceCodeProcessRunner(
+            new ProcessResult(0, Token, "canceled-diagnostic-secret")
+        );
+        using var cancellation = new CancellationTokenSource();
+        try
+        {
+            CredentialProviderCompositionRoot root = CreatePhase2ProductionRoot(
+                rootPath,
+                CreatePhase2Installation(AzureAuthHostPlatform.NativeLinux),
+                runner,
+                stderr
+            );
+            var runtime = new CliRuntimeOptions
+            {
+                CompositionRoot = root,
+                CancellationToken = cancellation.Token,
+            };
+
+            Task<int> run = Task.Run(() =>
+                CliApplication.Run(["login", "--device-code"], stdout, stderr, runtime)
+            );
+            await runner.PromptWritten.Task.WaitAsync(
+                TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken
+            );
+
+            cancellation.Cancel();
+            int exitCode = await run.WaitAsync(
+                TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Equal(130, exitCode);
+            Assert.Equal(string.Empty, stdout.ToString());
+            Assert.Equal(
+                CoordinatedDeviceCodeProcessRunner.Prompt + "error: operation canceled.\n",
+                stderr.ToString()
+            );
+            Assert.Equal(1, runner.InvocationCount);
+            Assert.DoesNotContain(Token, stderr.ToString(), StringComparison.Ordinal);
+            Assert.DoesNotContain(
+                "canceled-diagnostic-secret",
+                stderr.ToString(),
+                StringComparison.Ordinal
+            );
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(rootPath);
+        }
+    }
+
+    [Theory]
+    [InlineData("nonzero", "AzureAuth did not return a token.", true)]
+    [InlineData("timeout", "AzureAuth token acquisition timed out.", true)]
+    [InlineData("launch-failure", "AzureAuth process launch failed.", false)]
+    [InlineData(
+        "stdout-too-large",
+        "AzureAuth process output exceeded the configured limit.",
+        true
+    )]
+    [InlineData(
+        "stderr-too-large",
+        "AzureAuth process output exceeded the configured limit.",
+        true
+    )]
+    [InlineData("invalid-utf8", "AzureAuth process output was invalid.", true)]
+    public void LoginDeviceCodeFailureUsesSafeDiagnosticAndNeverPrintsToken(
+        string failureCase,
+        string expectedSafeMessage,
+        bool streamPrompt
+    )
+    {
+        const string Token = "failure-private-token";
+        const string DiagnosticSecret = "arbitrary-azureauth-diagnostic-secret";
+        ProcessResult processResult = failureCase switch
+        {
+            "nonzero" => new ProcessResult(19, string.Empty, DiagnosticSecret),
+            "timeout" => ProcessResult.TimedOut(string.Empty, DiagnosticSecret),
+            "launch-failure" => ProcessResult.LaunchFailure(string.Empty, DiagnosticSecret),
+            "stdout-too-large" => ProcessResult.OutputTooLarge(Token, string.Empty),
+            "stderr-too-large" => ProcessResult.OutputTooLarge(string.Empty, DiagnosticSecret),
+            "invalid-utf8" => ProcessResult.InvalidOutput(string.Empty, DiagnosticSecret),
+            _ => throw new ArgumentOutOfRangeException(nameof(failureCase)),
+        };
+        string rootPath = CreateTestDirectory();
+        var stdout = new StringWriter(new StringBuilder());
+        var stderr = new StringWriter(new StringBuilder());
+        var runner = new PromptingResultProcessRunner(processResult, streamPrompt);
+        try
+        {
+            CredentialProviderCompositionRoot root = CreatePhase2ProductionRoot(
+                rootPath,
+                CreatePhase2Installation(AzureAuthHostPlatform.NativeLinux),
+                runner,
+                stderr
+            );
+
+            int exitCode = CliApplication.Run(
+                ["login", "--device-code"],
+                stdout,
+                stderr,
+                new CliRuntimeOptions { CompositionRoot = root }
+            );
+
+            Assert.Equal(1, exitCode);
+            Assert.Equal(string.Empty, stdout.ToString());
+            Assert.Equal(
+                (streamPrompt ? PromptingResultProcessRunner.Prompt : string.Empty)
+                    + "error: "
+                    + expectedSafeMessage
+                    + "\n",
+                stderr.ToString()
+            );
+            Assert.Equal(1, runner.InvocationCount);
+            Assert.DoesNotContain(Token, stderr.ToString(), StringComparison.Ordinal);
+            Assert.DoesNotContain(DiagnosticSecret, stderr.ToString(), StringComparison.Ordinal);
+            ProcessStartSpec start = Assert.IsType<ProcessStartSpec>(runner.StartSpec);
+            Assert.Same(stderr, start.StandardErrorTee);
+            Assert.Equal(8192, start.OutputCaptureOptions.StandardOutputByteLimit);
+            Assert.Equal(8192, start.OutputCaptureOptions.StandardErrorByteLimit);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(rootPath);
+        }
+    }
+
+    [Fact]
+    public void StatusReportsDeviceCodeAcceptedOnlyForNativeLinuxWithPromptWriter()
+    {
+        string rootPath = CreateTestDirectory();
+        var promptWriter = new StringWriter();
+        var runner = new PromptingResultProcessRunner(
+            new ProcessResult(0, "unused-private-token", string.Empty)
+        );
+        try
+        {
+            CredentialProviderCompositionRoot root = CreatePhase2ProductionRoot(
+                rootPath,
+                CreatePhase2Installation(AzureAuthHostPlatform.NativeLinux),
+                runner,
+                promptWriter
+            );
+            var runtime = new CliRuntimeOptions
+            {
+                CompositionRoot = root,
+                ConfigurationPhase14Options = CreateConfigurationPhase14Options(rootPath),
+            };
+
+            CommandResult result = InvokeWithRuntime(runtime, "status");
+
+            Assert.Equal(0, result.ExitCode);
+            Assert.Contains(
+                "accepted-identity-flows: browser, device-code, azure-pipelines\n",
+                result.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains(
+                "unavailable-identity-flows: none\n",
+                result.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains(
+                "interactive-readiness: interactive-ready\n",
+                result.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains(
+                "silent-readiness: silent-ready\n",
+                result.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Equal(string.Empty, result.StdErr);
+            Assert.Equal(0, runner.InvocationCount);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(rootPath);
+        }
+    }
+
+    [Theory]
+    [InlineData(AzureAuthHostPlatform.Windows, true, true)]
+    [InlineData(AzureAuthHostPlatform.Wsl, true, true)]
+    [InlineData(AzureAuthHostPlatform.NativeLinux, false, true)]
+    [InlineData(AzureAuthHostPlatform.NativeLinux, true, false)]
+    public void StatusReportsDeviceCodeUnavailableWhenUnsupported(
+        AzureAuthHostPlatform hostPlatform,
+        bool hasPromptWriter,
+        bool installationReady
+    )
+    {
+        string rootPath = CreateTestDirectory();
+        TextWriter? promptWriter = hasPromptWriter ? new StringWriter() : null;
+        var runner = new PromptingResultProcessRunner(
+            new ProcessResult(0, "unused-private-token", string.Empty),
+            streamPrompt: false
+        );
+        try
+        {
+            AzureAuthInstallation installation = installationReady
+                ? CreatePhase2Installation(hostPlatform)
+                : AzureAuthInstallation.Failure(
+                    AzureAuthInstallationStatus.Missing,
+                    "AzureAuthInstallationMissing",
+                    "AzureAuth installation is unavailable."
+                );
+            CredentialProviderCompositionRoot root = CreatePhase2ProductionRoot(
+                rootPath,
+                installation,
+                runner,
+                promptWriter
+            );
+            var runtime = new CliRuntimeOptions
+            {
+                CompositionRoot = root,
+                ConfigurationPhase14Options = CreateConfigurationPhase14Options(rootPath),
+            };
+
+            CommandResult result = InvokeWithRuntime(runtime, "status");
+
+            Assert.Equal(0, result.ExitCode);
+            Assert.Contains(
+                "accepted-identity-flows: browser, azure-pipelines\n",
+                result.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains(
+                "unavailable-identity-flows: device-code\n",
+                result.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.DoesNotContain(
+                "browser, device-code, azure-pipelines",
+                result.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Equal(string.Empty, result.StdErr);
+            Assert.Equal(0, runner.InvocationCount);
+            if (!installationReady)
+            {
+                Assert.Contains(
+                    "interactive-readiness: interactive-unavailable\n",
+                    result.StdOut,
+                    StringComparison.Ordinal
+                );
+            }
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(rootPath);
+        }
+    }
+
+    [Theory]
+    [InlineData(AzureAuthHostPlatform.NativeLinux, true, true, true)]
+    [InlineData(AzureAuthHostPlatform.Windows, true, true, false)]
+    [InlineData(AzureAuthHostPlatform.Wsl, true, true, false)]
+    [InlineData(AzureAuthHostPlatform.NativeLinux, false, true, false)]
+    [InlineData(AzureAuthHostPlatform.NativeLinux, true, false, false)]
+    public void DoctorReportsDeviceCodeAcceptedOnlyWhenReady(
+        AzureAuthHostPlatform hostPlatform,
+        bool hasPromptWriter,
+        bool installationReady,
+        bool expectedDeviceCodeReady
+    )
+    {
+        string rootPath = CreateTestDirectory();
+        TextWriter? promptWriter = hasPromptWriter ? new StringWriter() : null;
+        var runner = new PromptingResultProcessRunner(
+            new ProcessResult(0, "unused-private-token", string.Empty),
+            streamPrompt: false
+        );
+        try
+        {
+            AzureAuthInstallation installation = installationReady
+                ? CreatePhase2Installation(hostPlatform)
+                : AzureAuthInstallation.Failure(
+                    AzureAuthInstallationStatus.Missing,
+                    "AzureAuthInstallationMissing",
+                    "AzureAuth installation is unavailable."
+                );
+            CredentialProviderCompositionRoot root = CreatePhase2ProductionRoot(
+                rootPath,
+                installation,
+                runner,
+                promptWriter
+            );
+            CliRuntimeOptions runtime = CreateGitPhase8RuntimeOptions(rootPath) with
+            {
+                CompositionRoot = root,
+            };
+
+            CommandResult result = InvokeWithRuntime(runtime, "doctor");
+
+            Assert.Contains("command: doctor\n", result.StdOut, StringComparison.Ordinal);
+            Assert.Contains(
+                "composition-mode: Production\n",
+                result.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains(
+                expectedDeviceCodeReady
+                    ? "auth-accepted-identity-flows: browser, device-code, azure-pipelines\n"
+                    : "auth-accepted-identity-flows: browser, azure-pipelines\n",
+                result.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains(
+                expectedDeviceCodeReady
+                    ? "auth-unavailable-identity-flows: none\n"
+                    : "auth-unavailable-identity-flows: device-code\n",
+                result.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Equal(string.Empty, result.StdErr);
+            Assert.All(runner.StartSpecs, start => Assert.Null(start.StandardErrorTee));
+            Assert.Equal(string.Empty, promptWriter?.ToString() ?? string.Empty);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(rootPath);
+        }
+    }
+
+    [Fact]
+    public void RootHelpListsDeviceCodeLoginExample()
+    {
+        CommandResult result = Invoke();
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains(
+            "azureauth-credprovider login --device-code\n",
+            result.StdOut,
+            StringComparison.Ordinal
+        );
+        Assert.Equal(string.Empty, result.StdErr);
+    }
+
+    [Fact]
+    public void LoginHelpListsDeviceCodeLoginOption()
+    {
+        CommandResult result = Invoke("login", "--help");
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains(
+            "azureauth-credprovider login [--browser|--device-code|--pat <value>]\n",
+            result.StdOut,
+            StringComparison.Ordinal
+        );
+        Assert.Contains(
+            "--device-code                Use device-code authentication.",
+            result.StdOut,
+            StringComparison.Ordinal
+        );
+        Assert.Equal(string.Empty, result.StdErr);
+    }
+
+    private static CredentialProviderCompositionRoot CreatePhase2ProductionRoot(
+        string secureStoreRootPath,
+        AzureAuthInstallation installation,
+        IProcessRunner processRunner,
+        TextWriter? promptWriter
+    )
+    {
+        AzureAuthProviderConfig config = AzureAuthProviderConfig.CreateAzureAuth();
+        AzureAuthBinding binding = AzureAuthBindingPolicy.CreateBound(
+            config,
+            "cli.user@example.com",
+            "tenant-cli",
+            DateTimeOffset.UtcNow
+        );
+        return CredentialProviderCompositionRoot.CreateProduction(
+            new CredentialProviderProductionOptions
+            {
+                SecureStoreRootPath = secureStoreRootPath,
+                ProviderConfig = config,
+                Binding = binding,
+                InstallationDiscovery = new StaticPhase2InstallationDiscovery(installation),
+                ProcessRunner = processRunner,
+                DeviceCodePromptWriter = promptWriter,
+            }
+        );
+    }
+
+    private static AzureAuthInstallation CreatePhase2Installation(
+        AzureAuthHostPlatform hostPlatform
+    ) =>
+        AzureAuthInstallation.Available(
+            "/opt/azureauth/azureauth",
+            "/opt/azureauth/azureauth",
+            "0.9.5",
+            hostPlatform
+        );
+
+    private sealed class StaticPhase2InstallationDiscovery(AzureAuthInstallation installation)
+        : IAzureAuthInstallationDiscovery
+    {
+        public AzureAuthInstallation Discover(
+            AzureAuthProviderConfig config,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return installation;
+        }
+    }
+
+    private sealed class PromptingResultProcessRunner(
+        ProcessResult result,
+        bool streamPrompt = true
+    ) : IProcessRunner
+    {
+        public const string Prompt =
+            "Open https://microsoft.com/devicelogin and enter CLI-CODE-1234.\n";
+
+        public int InvocationCount { get; private set; }
+
+        public ProcessStartSpec? StartSpec { get; private set; }
+
+        public List<ProcessStartSpec> StartSpecs { get; } = [];
+
+        public async Task<ProcessResult> RunAsync(
+            ProcessStartSpec startSpec,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            InvocationCount++;
+            StartSpec = startSpec;
+            StartSpecs.Add(startSpec);
+            if (streamPrompt)
+            {
+                TextWriter writer = Assert.IsAssignableFrom<TextWriter>(startSpec.StandardErrorTee);
+                await writer.WriteAsync(Prompt);
+                await writer.FlushAsync(cancellationToken);
+            }
+
+            return result;
+        }
+    }
+
+    private sealed class CoordinatedDeviceCodeProcessRunner(ProcessResult result) : IProcessRunner
+    {
+        public const string Prompt =
+            "Open https://microsoft.com/devicelogin and enter CLI-CODE-1234.\n";
+
+        private readonly TaskCompletionSource<bool> release = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+
+        public TaskCompletionSource<bool> PromptWritten { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int InvocationCount { get; private set; }
+
+        public ProcessStartSpec? StartSpec { get; private set; }
+
+        public void Release() => release.TrySetResult(true);
+
+        public async Task<ProcessResult> RunAsync(
+            ProcessStartSpec startSpec,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            InvocationCount++;
+            StartSpec = startSpec;
+            TextWriter writer = Assert.IsAssignableFrom<TextWriter>(startSpec.StandardErrorTee);
+            await writer.WriteAsync(Prompt);
+            await writer.FlushAsync(cancellationToken);
+            PromptWritten.TrySetResult(true);
+            await release.Task.WaitAsync(cancellationToken);
+            return result;
+        }
+    }
+
+    private sealed class CapturingAcceptedDeviceCodeAcquisitionService
+        : ICredentialAcquisitionService
+    {
+        public const string Password = "accepted-device-private-secret";
+
+        public CredentialRequestV2? Request { get; private set; }
+
+        public ValueTask<CredentialResult> AcquireAsync(
+            CredentialRequestV2 request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Request = request;
+            return ValueTask.FromResult(
+                new CredentialResult
+                {
+                    Status = CredentialResultStatus.Success,
+                    Username = "AzureDevOps",
+                    Password = Password,
+                    Account = request.AccountHint ?? "unbound",
+                    Tenant = request.TenantHint ?? "unbound",
+                    DiagnosticsCorrelationId = "accepted-device-code-cli-test",
+                }
+            );
+        }
+    }
+
+    [Theory]
+    [InlineData(AzureAuthHostPlatform.NativeLinux, true, true, true)]
+    [InlineData(AzureAuthHostPlatform.Windows, true, true, false)]
+    [InlineData(AzureAuthHostPlatform.Wsl, true, true, false)]
+    [InlineData(AzureAuthHostPlatform.NativeLinux, false, true, false)]
+    [InlineData(AzureAuthHostPlatform.NativeLinux, true, false, false)]
+    public void DoctorDeviceCodeReadinessRowsReturnExactAggregateExitCode(
+        AzureAuthHostPlatform hostPlatform,
+        bool hasPromptWriter,
+        bool installationReady,
+        bool expectedDeviceCodeReady
+    )
+    {
+        string rootPath = CreateTestDirectory();
+        TextWriter? promptWriter = hasPromptWriter ? new StringWriter() : null;
+        var runner = new PromptingResultProcessRunner(
+            new ProcessResult(0, "unused-private-token", string.Empty),
+            streamPrompt: false
+        );
+        try
+        {
+            AzureAuthInstallation installation = installationReady
+                ? CreatePhase2Installation(hostPlatform)
+                : AzureAuthInstallation.Failure(
+                    AzureAuthInstallationStatus.Missing,
+                    "AzureAuthInstallationMissing",
+                    "AzureAuth installation is unavailable."
+                );
+            CredentialProviderCompositionRoot root = CreatePhase2ProductionRoot(
+                rootPath,
+                installation,
+                runner,
+                promptWriter
+            );
+            CliRuntimeOptions runtime = CreateGitPhase8RuntimeOptions(rootPath) with
+            {
+                CompositionRoot = root,
+            };
+
+            CommandResult result = InvokeWithRuntime(runtime, "doctor");
+
+            Assert.Equal(1, result.ExitCode);
+            Assert.Contains(
+                expectedDeviceCodeReady
+                    ? "auth-accepted-identity-flows: browser, device-code, azure-pipelines\n"
+                    : "auth-accepted-identity-flows: browser, azure-pipelines\n",
+                result.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains(
+                expectedDeviceCodeReady
+                    ? "auth-unavailable-identity-flows: none\n"
+                    : "auth-unavailable-identity-flows: device-code\n",
+                result.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Equal(string.Empty, result.StdErr);
+            Assert.All(runner.StartSpecs, start => Assert.Null(start.StandardErrorTee));
+            Assert.Equal(string.Empty, promptWriter?.ToString() ?? string.Empty);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(rootPath);
+        }
+    }
+
+    [Fact]
+    public void DoctorFullyHealthyAggregateReturnsZeroWithoutAuthenticationOrSecretLeak()
+    {
+        const string PrivateToken = "doctor-private-auth-token";
+        const string PrivateDiagnostic = "doctor-private-auth-diagnostic";
+        string rootPath = CreateTestDirectory();
+        var promptWriter = new StringWriter();
+        var authenticationRunner = new PromptingResultProcessRunner(
+            new ProcessResult(0, PrivateToken, PrivateDiagnostic),
+            streamPrompt: false
+        );
+        try
+        {
+            CredentialProviderCompositionRoot productionRoot = CreatePhase2ProductionRoot(
+                rootPath,
+                CreatePhase2Installation(AzureAuthHostPlatform.NativeLinux),
+                authenticationRunner,
+                promptWriter
+            );
+            System.Reflection.ConstructorInfo rootConstructor = Assert.Single(
+                typeof(CredentialProviderCompositionRoot).GetConstructors(
+                    System.Reflection.BindingFlags.Instance
+                        | System.Reflection.BindingFlags.NonPublic
+                )
+            );
+            var acquisitionService = new HealthyDoctorAcquisitionService();
+            CredentialProviderCompositionRoot root =
+                Assert.IsType<CredentialProviderCompositionRoot>(
+                    rootConstructor.Invoke([
+                        CredentialProviderCompositionMode.Production,
+                        productionRoot.ProviderConfig,
+                        productionRoot.BindingRecord,
+                        productionRoot.Installation,
+                        acquisitionService,
+                        productionRoot.Readiness,
+                        productionRoot.ProductionOptions,
+                    ])
+                );
+            var gitDiscoveryRunner = new HealthyDoctorGitDiscoveryProcessRunner();
+            var gitOptions = new GitPhase8VerticalSliceOptions
+            {
+                StateDirectoryPath = rootPath,
+                ProcessRunner = gitDiscoveryRunner,
+                GitExecutablePath = "fake-git",
+                ProductExecutablePath = CreateFakeProductExecutable(rootPath),
+            };
+            gitDiscoveryRunner.ExpectedHelperCommand = new GitPhase8VerticalSliceService(gitOptions)
+                .Paths
+                .GitHelperPath;
+            var runtime = new CliRuntimeOptions
+            {
+                CompositionRoot = root,
+                GitPhase8Options = gitOptions,
+                NuGetPhase10Options = CreateIsolatedNuGetPhase10Options(),
+                ConfigurationPhase14Options = CreateConfigurationPhase14Options(rootPath),
+            };
+            CommandResult configureGit = InvokeWithRuntime(runtime, "configure", "git");
+
+            CommandResult doctor = InvokeWithRuntime(runtime, "doctor");
+
+            Assert.Equal(0, configureGit.ExitCode);
+            Assert.Equal(string.Empty, configureGit.StdErr);
+            Assert.Equal(0, doctor.ExitCode);
+            Assert.Contains(
+                "composition-mode: Production\n",
+                doctor.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains(
+                "interactive-readiness: interactive-ready\n",
+                doctor.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains(
+                "silent-readiness: silent-ready\n",
+                doctor.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains("configuration-plan: pass\n", doctor.StdOut, StringComparison.Ordinal);
+            Assert.Contains(
+                "owned-git-entries: present\n",
+                doctor.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains(
+                "ownership-manifest: present\n",
+                doctor.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains(
+                "dev.azure.com-useHttpPath: present\n",
+                doctor.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains("credential-core: pass\n", doctor.StdOut, StringComparison.Ordinal);
+            Assert.Contains(
+                "git-credential-helper-get: pass\n",
+                doctor.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains(
+                "git-credential-helper-store: pass\n",
+                doctor.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains(
+                "git-credential-helper-erase: pass\n",
+                doctor.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains(
+                "local-shell-helper-shorthand: pass\n",
+                doctor.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains(
+                "nuget-configuration-plan: pass\n",
+                doctor.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains(
+                "nuget-azure-artifacts-source: pass\n",
+                doctor.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains(
+                "nuget-interactive-policy: pass\n",
+                doctor.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains(
+                "nuget-environment-overrides: absent\n",
+                doctor.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains(
+                "configuration-aggregation: pass\n",
+                doctor.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains(
+                "auth-accepted-identity-flows: browser, device-code, azure-pipelines\n",
+                doctor.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains(
+                "auth-unavailable-identity-flows: none\n",
+                doctor.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Equal(string.Empty, doctor.StdErr);
+            Assert.Equal(0, authenticationRunner.InvocationCount);
+            Assert.Null(authenticationRunner.StartSpec);
+            Assert.Empty(authenticationRunner.StartSpecs);
+            Assert.NotEmpty(acquisitionService.Requests);
+            Assert.All(
+                acquisitionService.Requests,
+                request => Assert.NotEqual(InteractivePolicy.UserAllowed, request.InteractivePolicy)
+            );
+            ProcessStartSpec gitDiscovery = Assert.Single(gitDiscoveryRunner.StartSpecs);
+            Assert.Equal("fake-git", gitDiscovery.FileName);
+            Assert.Equal(
+                ["config", "--global", "--get", "credential.helper"],
+                gitDiscovery.Arguments
+            );
+            Assert.Null(gitDiscovery.StandardErrorTee);
+            Assert.Equal(string.Empty, promptWriter.ToString());
+            Assert.DoesNotContain(PrivateToken, doctor.StdOut, StringComparison.Ordinal);
+            Assert.DoesNotContain(PrivateToken, doctor.StdErr, StringComparison.Ordinal);
+            Assert.DoesNotContain(PrivateDiagnostic, doctor.StdOut, StringComparison.Ordinal);
+            Assert.DoesNotContain(PrivateDiagnostic, doctor.StdErr, StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(rootPath);
+        }
+    }
+
+    private sealed class HealthyDoctorAcquisitionService : ICredentialAcquisitionService
+    {
+        public List<CredentialRequestV2> Requests { get; } = [];
+
+        public ValueTask<CredentialResult> AcquireAsync(
+            CredentialRequestV2 request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Requests.Add(request);
+            if (
+                request.Ecosystem == CredentialEcosystem.NuGet
+                && request.AcquisitionMode == AcquisitionMode.SilentOnly
+            )
+            {
+                return ValueTask.FromResult(
+                    new CredentialResult
+                    {
+                        Status = CredentialResultStatus.InteractionBlocked,
+                        DiagnosticsCorrelationId = "healthy-doctor-interaction-blocked",
+                        Error = new CredentialError
+                        {
+                            Kind = CredentialErrorKind.InteractionBlocked,
+                            Code = "InteractionBlocked",
+                            SafeMessage =
+                                "Credential request requires interaction, but interaction is "
+                                + "blocked by policy.",
+                        },
+                    }
+                );
+            }
+
+            return ValueTask.FromResult(
+                new CredentialResult
+                {
+                    Status = CredentialResultStatus.Success,
+                    Username = "AzureDevOps",
+                    Password = "fake-secret-healthy-doctor",
+                    Account = request.AccountHint ?? "unbound",
+                    Tenant = request.TenantHint ?? "unbound",
+                    DiagnosticsCorrelationId = "healthy-doctor-success",
+                }
+            );
+        }
+    }
+
+    private sealed class HealthyDoctorGitDiscoveryProcessRunner : IProcessRunner
+    {
+        public string ExpectedHelperCommand { private get; set; } = null!;
+
+        public List<ProcessStartSpec> StartSpecs { get; } = [];
+
+        public Task<ProcessResult> RunAsync(
+            ProcessStartSpec startSpec,
+            CancellationToken cancellationToken = default
+        )
+        {
+            ArgumentNullException.ThrowIfNull(startSpec);
+            cancellationToken.ThrowIfCancellationRequested();
+            StartSpecs.Add(startSpec);
+            return Task.FromResult(
+                new ProcessResult(0, ExpectedHelperCommand + "\n", string.Empty)
+            );
+        }
+    }
 }

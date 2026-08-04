@@ -32,8 +32,8 @@ MVP behavior may still:
 
 1. Acquire credentials through the selected identity provider.
 2. Use policy-compliant identity-provider or MSAL account/token cache behavior
-   where the selected provider owns that cache and does not silently downgrade to
-   plaintext storage.
+   where the selected provider owns that cache, including only the explicit
+   native Linux headless exception recorded below.
 3. Return protocol-required credentials to host tools through protocol stdout or
    host-tool response channels.
 4. Emit configuration-manager-approved npm-compatible or CI temporary credential
@@ -49,12 +49,12 @@ configuration-manager policy, CI policy, and redaction requirements.
 The identity-provider cache boundary is separate from the product-owned derived
 credential cache boundary:
 
-| Boundary                                      | MVP position                                                                                                                                                                              |
-| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Identity provider or MSAL account/token cache | Allowed only when the selected provider's behavior is policy-compliant for the current platform and mode. The product must not rely on an unprotected fallback to satisfy product policy. |
-| AzureAuth MSAL and account token cache        | Not a required runtime substrate. AzureAuth's inspected unprotected fallback risk cannot weaken this product's no-plaintext policy.                                                       |
-| AzureAuth ADO PAT cache                       | Not the product's derived host-tool cache and not an accepted MVP dependency. It does not prove this product may persist derived Git, NuGet, Python keyring, or npm credentials.          |
-| Product-owned derived credential cache        | Deferred out of MVP and disabled by default. Adding it later requires the acceptance conditions below.                                                                                    |
+| Boundary                                      | MVP position                                                                                                                                                                                          |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Identity provider or MSAL account/token cache | Allowed when the selected provider's documented behavior is accepted for the current platform and mode. Provider cache behavior does not authorize a product-owned fallback.                          |
+| AzureAuth MSAL and account token cache        | Provider-owned. Secure platform persistence is preferred; pinned AzureAuth 0.9.5's owner-only unprotected fallback is explicitly accepted only for native Linux headless operation as recorded below. |
+| AzureAuth ADO PAT cache                       | Not the product's derived host-tool cache and not an accepted MVP dependency. It does not prove this product may persist derived Git, NuGet, Python keyring, or npm credentials.                      |
+| Product-owned derived credential cache        | Deferred out of MVP and disabled by default. It has no plaintext fallback. Adding it later requires the acceptance conditions below.                                                                  |
 
 The shared core may still define cache-key data shapes, no-cache policies, and
 typed results that leave room for a later persistent cache. It must not require
@@ -69,12 +69,37 @@ The accepted Phase 1.6 policy remains unchanged:
 2. A future product-owned persistent cache must fail closed with a typed
    `CacheUnavailable` or equivalent policy error instead of downgrading to
    plaintext.
-3. Plaintext persistence may be introduced only by a separate explicit security
-   decision that names the mode, makes it non-default, presents user-visible
-   risk, and proves cleanup and redaction behavior.
-4. Existing reference-tool behavior, including AzureAuth or other tools that can
-   use unprotected fallback files, is negative evidence for this product policy,
-   not permission to adopt that fallback.
+3. Product-owned plaintext persistence may be introduced only by a separate
+   explicit security decision that names the mode, presents user-visible risk,
+   and proves cleanup and redaction behavior.
+4. Provider-owned fallback behavior is not permission for this product to adopt
+   the same fallback; each selected provider and scenario requires an explicit
+   decision.
+
+## Native Linux Headless Provider-Cache Decision
+
+Status: **Accepted bounded exception**
+
+Date: **2026-08-04**
+
+AzureAuth 0.9.5 first attempts Linux keyring persistence. On a headless host
+without that service, it uses an unprotected MSAL cache beneath `~/.azureauth`
+and sets the directory and file to owner-only modes. Live device-code acceptance
+observed the failed keyring verification and then proved silent Git and Python
+cache reuse.
+
+This provider-owned fallback is accepted for native Linux headless operation.
+The actual threat model trusts the current OS account and ordinary owner-only
+filesystem enforcement; it does not attempt to manufacture a secure store when
+the host does not provide one. Rejecting this fallback would make noninteractive
+Git and Python reuse impossible after device-code login, while application-layer
+encryption would only replace the missing key-management problem.
+
+This exception does not apply to product-owned derived credentials, PAT caches,
+repository configuration, protocol output, or CI persistence. The product still
+does not implement a plaintext fallback. Human output therefore uses the
+qualified field `product-plaintext-fallback: disabled` rather than claiming that
+all selected identity providers avoid unprotected caches.
 
 ## Affected Requirements and Designs
 

@@ -299,4 +299,78 @@ public sealed class GitCredentialHelperAdapterTests
             );
         }
     }
+
+    [Fact]
+    public void GetKeepsSilentOnlyPolicyAndHumanStdoutEmpty()
+    {
+        var credentialAcquisition = new MismatchSensitiveAcquisitionService();
+
+        AdapterRunResult result = Execute(
+            ["git", "credential-helper", "get"],
+            """
+            protocol=https
+            host=dev.azure.com
+            path=org/project/_git/repository
+
+            """,
+            credentialAcquisition: credentialAcquisition
+        );
+
+        Assert.Equal(AdapterHostExitCode.Success, result.Outcome.Result.ExitCode);
+        Assert.True(result.Outcome.Result.WriteProtocolStdout);
+        Assert.Equal("username=AzureDevOps\npassword=fake-secret-git\n", result.ProtocolStdout);
+        Assert.Empty(result.HumanStdout);
+        Assert.Equal(string.Empty, result.Stderr);
+        Assert.DoesNotContain("fake-secret-git", result.HumanStdout, StringComparison.Ordinal);
+
+        CredentialRequestV2 request = Assert.Single(credentialAcquisition.Requests);
+        Assert.Equal(CredentialEcosystem.Git, request.Ecosystem);
+        Assert.Equal(CredentialOperation.Get, request.Operation);
+        Assert.Equal(TokenAudience.AzureDevOps, request.RequestedAudience);
+        Assert.Equal(CredentialKind.BasicPassword, request.CredentialKind);
+        Assert.Equal(IdentityFlow.InteractiveBrowser, request.IdentityFlow);
+        Assert.NotEqual(IdentityFlow.DeviceCode, request.IdentityFlow);
+        Assert.Equal(InteractivePolicy.Never, request.InteractivePolicy);
+        Assert.Equal(AcquisitionMode.SilentOnly, request.AcquisitionMode);
+        Assert.Equal(CachePolicyMode.ProductPersistentCacheDisabled, request.CachePolicy);
+        CiContext ciContext = Assert.IsType<CiContext>(request.CiContext);
+        Assert.False(ciContext.ExplicitCiMode);
+        Assert.False(ciContext.AllowsPersistentWrites);
+    }
+
+    [Fact]
+    public void GetSilentRequestPreservesDefaultServiceAndCanonicalResource()
+    {
+        var credentialAcquisition = new MismatchSensitiveAcquisitionService();
+
+        AdapterRunResult result = Execute(
+            ["git", "credential-helper", "get"],
+            """
+            protocol=https
+            host=dev.azure.com
+            path=org/project/_git/repository
+
+            """,
+            credentialAcquisition: credentialAcquisition
+        );
+
+        Assert.Equal(AdapterHostExitCode.Success, result.Outcome.Result.ExitCode);
+        Assert.Empty(result.HumanStdout);
+        Assert.Equal(string.Empty, result.Stderr);
+        CredentialRequestV2 request = Assert.Single(credentialAcquisition.Requests);
+        Assert.Equal("default", request.ServiceIdentity);
+        CanonicalResourceIdentity resource = request.Resource;
+        Assert.Equal("dev.azure.com", resource.AzureDevOpsHost);
+        Assert.Equal("org", resource.Organization);
+        Assert.Equal("project", resource.Project);
+        Assert.Null(resource.Feed);
+        Assert.Equal("repository", resource.Repository);
+        Assert.Equal(
+            new Uri("https://dev.azure.com/org/project/_git/repository"),
+            resource.ServiceEndpoint
+        );
+        Assert.Equal(IdentityFlow.InteractiveBrowser, request.IdentityFlow);
+        Assert.Equal(AcquisitionMode.SilentOnly, request.AcquisitionMode);
+        Assert.Equal("username=AzureDevOps\npassword=fake-secret-git\n", result.ProtocolStdout);
+    }
 }

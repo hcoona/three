@@ -42,7 +42,8 @@ public sealed class SystemProcessRunner : IProcessRunner
             startSpec.OutputCaptureOptions.StandardOutputByteLimit
         );
         var standardError = new BoundedOutputCapture(
-            startSpec.OutputCaptureOptions.StandardErrorByteLimit
+            startSpec.OutputCaptureOptions.StandardErrorByteLimit,
+            startSpec.StandardErrorTee
         );
 
         Task standardInputTask = WriteAndCloseStandardInputAsync(
@@ -92,6 +93,15 @@ public sealed class SystemProcessRunner : IProcessRunner
                 );
             }
 
+            if (standardError.TeeFailed)
+            {
+                return ProcessResult.InvalidOutput(
+                    standardOutput.Content,
+                    standardError.Content,
+                    TryGetExitCode(process)
+                );
+            }
+
             cancellationToken.ThrowIfCancellationRequested();
             return ProcessResult.TimedOut(
                 standardOutput.Content,
@@ -115,6 +125,15 @@ public sealed class SystemProcessRunner : IProcessRunner
         }
 
         if (standardOutput.InvalidUtf8 || standardError.InvalidUtf8)
+        {
+            return ProcessResult.InvalidOutput(
+                standardOutput.Content,
+                standardError.Content,
+                process.ExitCode
+            );
+        }
+
+        if (standardError.TeeFailed)
         {
             return ProcessResult.InvalidOutput(
                 standardOutput.Content,
@@ -217,13 +236,23 @@ public sealed class SystemProcessRunner : IProcessRunner
         }
     }
 
-    private sealed class BoundedOutputCapture(int byteLimit)
+    private sealed class BoundedOutputCapture
     {
         private readonly StringBuilder builder = new();
+        private readonly int byteLimit;
+        private readonly TextWriter? tee;
+
+        public BoundedOutputCapture(int byteLimit, TextWriter? tee = null)
+        {
+            this.byteLimit = byteLimit;
+            this.tee = tee;
+        }
 
         public string Content => builder.ToString();
 
         public bool InvalidUtf8 { get; private set; }
+
+        public bool TeeFailed { get; private set; }
 
         public bool TooLarge { get; private set; }
 
@@ -251,34 +280,39 @@ public sealed class SystemProcessRunner : IProcessRunner
                         break;
                     }
 
-                    observedBytes += bytesRead;
-                    if (observedBytes > byteLimit)
+                    int bytesToCapture = Math.Min(bytesRead, byteLimit - observedBytes);
+                    if (bytesToCapture > 0)
+                    {
+                        int charactersRead;
+                        try
+                        {
+                            charactersRead = decoder.GetChars(
+                                byteBuffer,
+                                0,
+                                bytesToCapture,
+                                charBuffer,
+                                0,
+                                flush: false
+                            );
+                        }
+                        catch (DecoderFallbackException)
+                        {
+                            InvalidUtf8 = true;
+                            executionCancellation.Cancel();
+                            return;
+                        }
+
+                        observedBytes += bytesToCapture;
+                        await AppendAsync(charBuffer, charactersRead, executionCancellation)
+                            .ConfigureAwait(false);
+                    }
+
+                    if (bytesToCapture < bytesRead)
                     {
                         TooLarge = true;
                         executionCancellation.Cancel();
                         return;
                     }
-
-                    int charactersRead;
-                    try
-                    {
-                        charactersRead = decoder.GetChars(
-                            byteBuffer,
-                            0,
-                            bytesRead,
-                            charBuffer,
-                            0,
-                            flush: false
-                        );
-                    }
-                    catch (DecoderFallbackException)
-                    {
-                        InvalidUtf8 = true;
-                        executionCancellation.Cancel();
-                        return;
-                    }
-
-                    builder.Append(charBuffer, 0, charactersRead);
                 }
 
                 try
@@ -291,7 +325,8 @@ public sealed class SystemProcessRunner : IProcessRunner
                         0,
                         flush: true
                     );
-                    builder.Append(charBuffer, 0, remainingCharacters);
+                    await AppendAsync(charBuffer, remainingCharacters, executionCancellation)
+                        .ConfigureAwait(false);
                 }
                 catch (DecoderFallbackException)
                 {
@@ -303,6 +338,44 @@ public sealed class SystemProcessRunner : IProcessRunner
             {
                 ArrayPool<byte>.Shared.Return(byteBuffer);
                 ArrayPool<char>.Shared.Return(charBuffer);
+            }
+        }
+
+        private async Task AppendAsync(
+            char[] characters,
+            int count,
+            CancellationTokenSource executionCancellation
+        )
+        {
+            if (count == 0)
+            {
+                return;
+            }
+
+            builder.Append(characters, 0, count);
+            if (tee is null)
+            {
+                return;
+            }
+
+            string teePayload = new(characters, 0, count);
+            try
+            {
+                await tee.WriteAsync(teePayload.AsMemory(), executionCancellation.Token)
+                    .WaitAsync(executionCancellation.Token)
+                    .ConfigureAwait(false);
+                await tee.FlushAsync(executionCancellation.Token)
+                    .WaitAsync(executionCancellation.Token)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (executionCancellation.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                TeeFailed = true;
+                executionCancellation.Cancel();
             }
         }
     }

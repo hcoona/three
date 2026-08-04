@@ -54,12 +54,19 @@ internal static class AzureAuthRequestPreflightPolicy
 
         if (request.IdentityFlow == IdentityFlow.DeviceCode)
         {
-            return new AzureAuthRequestPreflightFailure(
-                AcquiredAccessTokenStatus.RequestRejected,
-                "AzureAuthDeviceCodeUnsupported",
-                "The AzureAuth integration uses broker and web modes and does not support "
-                    + "device-code requests."
-            );
+            if (
+                hostPlatform != AzureAuthHostPlatform.NativeLinux
+                || request.AcquisitionMode != AcquisitionMode.InteractionAllowed
+                || request.InteractivePolicy != InteractivePolicy.UserAllowed
+            )
+            {
+                return new AzureAuthRequestPreflightFailure(
+                    AcquiredAccessTokenStatus.RequestRejected,
+                    "AzureAuthDeviceCodeUnsupported",
+                    "AzureAuth device-code login requires an explicit interactive "
+                        + "native Linux request."
+                );
+            }
         }
 
         if (request.CachePolicy == CachePolicyMode.FuturePersistentCacheRequested)
@@ -72,7 +79,9 @@ internal static class AzureAuthRequestPreflightPolicy
             );
         }
 
-        if (request.IdentityFlow != IdentityFlow.InteractiveBrowser)
+        if (
+            request.IdentityFlow is not (IdentityFlow.InteractiveBrowser or IdentityFlow.DeviceCode)
+        )
         {
             return new AzureAuthRequestPreflightFailure(
                 AcquiredAccessTokenStatus.RequestRejected,

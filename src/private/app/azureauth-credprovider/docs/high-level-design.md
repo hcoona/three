@@ -88,8 +88,11 @@ The shared core owns credential behavior that must not diverge between ecosystem
 
 - Azure DevOps host and feed canonicalization,
 - tenant and account selection,
-- interactive browser login,
-- current identity-flow policy for interactive browser and Azure Pipelines system access token; device code, PAT compatibility, service principal, managed identity, and workload identity federation remain unavailable or deferred,
+- interactive browser and native Linux device-code login,
+- current identity-flow policy for interactive browser, native Linux device code,
+  and Azure Pipelines system access token; PAT compatibility, service principal,
+  managed identity, and workload identity federation remain unavailable or
+  deferred,
 - token exchange and refresh,
 - secure credential cache access,
 - cache partitioning,
@@ -101,8 +104,12 @@ The shared core uses AzureAuth 0.9.5 for Microsoft Entra token acquisition on
 Windows, WSL, and native Linux. Windows and WSL derive the executable from the
 official per-user Windows installation and use AzureAuth's default WAM-then-web
 ordering. Native Linux uses the official Linux package payload and explicit web
-mode for interactive requests; silent-only host requests use AzureAuth's
-no-user cache path. Direct MSAL is not implemented.
+or device-code mode for explicit interactive requests; silent-only host
+requests use AzureAuth's no-user cache path. On a headless host without Linux
+keyring persistence, AzureAuth's documented owner-only file-cache fallback is
+an explicitly accepted provider-cache behavior; product-owned derived
+credentials remain non-persistent with no plaintext fallback. Direct MSAL is
+not implemented.
 
 The core must not assume a single protocol output format. Protocol adapters are responsible for host-tool input and output.
 
@@ -193,10 +200,12 @@ Default setup should prefer conventional plugin discovery. In Phase 4D MVP this 
 Interactive behavior is controlled by the invoking NuGet client. `dotnet restore` should require `--interactive` before the plugin initiates first-time user interaction. If deferred `netfx` support is later enabled, MSBuild restore should require `/p:NuGetInteractive=true` and NuGet.exe behavior should follow the invoking client's interactive policy. The plugin must honor NuGet protocol `NonInteractive` and `CanShowDialog` values and must not prompt or block when `NonInteractive` is true.
 
 For an interactive request, `CanShowDialog=true` selects browser interaction.
-`CanShowDialog=false` selects device code; the current AzureAuth `0.9.5`
-implementation rejects that unsupported flow before launch. Git and Python
-helper protocols do not authorize interaction, so those adapters remain
-silent-only rather than inferring permission from the environment.
+`CanShowDialog=false` selects device code, but the NuGet plugin process does not
+own a human terminal prompt stream and therefore rejects that flow before
+launch. Explicit native Linux CLI login does own such a stream and supports
+device code. Git and Python helper protocols do not authorize interaction, so
+those adapters remain silent-only rather than inferring permission from the
+environment.
 
 ## Python Adapter
 

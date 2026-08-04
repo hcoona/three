@@ -23,7 +23,6 @@ Implemented in WP3:
 Still out of scope:
 
 - Direct MSAL
-- AzureAuth device-code invocation
 - product-owned persistent derived credential caching
 - Windows-native Git, Visual Studio, and NuGet.exe acceptance
 
@@ -80,9 +79,30 @@ WSL detection disabled, the installed product apphost:
    state.
 
 This strengthens the native-binary, installed-apphost, browser, and cache reuse
-evidence. Because the host kernel and integration environment were still WSL2,
-standalone Ubuntu 24.04, system keyring behavior, and authentication through a
-release-installer-produced binary remain required.
+evidence.
+
+On 2026-08-04, the implementation after commit `46424808` was rebuilt and
+installed through a fresh isolated bundle. The same verified AzureAuth artifact
+completed explicit product `login --device-code`; its bounded human
+instructions were streamed through product stderr while token stdout remained
+private. The product returned only safe login status fields, then Git and the
+installed Python wheel reused the resulting cache through silent-only
+acquisition. Credential responses were structurally validated without being
+printed and were immediately deleted. Product configuration, the installed
+bundle, and the complete isolated AzureAuth cache root were then removed.
+
+The headless host had no usable Linux keyring. AzureAuth reported persistence
+verification failure and used its documented headless fallback: an unprotected
+cache under its own directory with owner-only directory and file modes. This is
+an explicit provider-cache decision for the native Linux headless scenario, not
+a product-owned derived credential cache or permission for the product to add a
+plaintext fallback.
+
+The run remained WSL2 with product WSL detection disabled. By explicit operator
+decision, this forced-native execution closes the repository's standalone Linux
+x64 platform gate. It does not establish native system-keyring behavior or
+authentication through a release-installer-produced binary; those remain
+separate evidence.
 
 ## Live WSL acceptance
 
@@ -188,13 +208,21 @@ Notes:
 | Request shape                                                                                                                    | WP3 AzureAuth behavior                                                     |
 | -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | `contractMajor: 2`, `acquisitionMode: interactionAllowed`, browser, human interactive policy, non-CI, accepted WP1 request shape | Windows/WSL default mode; native Linux explicit web mode                   |
-| Device code                                                                                                                      | Rejected; no process launch                                                |
+| Explicit CLI device code with an attached human prompt stream                                                                    | Native Linux explicit device-code mode; Windows/WSL rejected               |
 | `acquisitionMode: unspecified`                                                                                                   | Fail closed before process                                                 |
 | Valid `acquisitionMode: silentOnly`, `interactivePolicy: never`, non-CI frozen v1 shape                                          | Native Linux cache-only launch; Windows/WSL `SilentAcquisitionUnavailable` |
 | Invalid `silentOnly` combinations, including interactive policy, explicit CI, or opaque token                                    | Reject before process                                                      |
 | Invalid `interactionAllowed` combinations, explicit CI, unsupported cache or frozen-request drift                                | Reject before process                                                      |
 
 `AzureAuthIdentityProvider` accepts only `CredentialRequestV2`.
+
+Native Linux device-code login tees AzureAuth's bounded stderr to the attached
+CLI human stream in real time. AzureAuth intentionally writes the short-lived
+device-code instructions and warning/error logs to stderr while reserving stdout
+for the token. The runner continues to capture and bound both streams; only
+stdout enters token validation. A missing human stream rejects device code
+before launch, which keeps NuGet, Git, Python, and other protocol modes from
+accidentally emitting prompts.
 
 ## Installation and Binding Prerequisites
 

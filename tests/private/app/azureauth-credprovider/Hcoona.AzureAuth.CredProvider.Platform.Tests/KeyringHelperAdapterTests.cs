@@ -553,4 +553,80 @@ public sealed class KeyringHelperAdapterTests
         string HumanStdout,
         string Stderr
     );
+
+    [Fact]
+    public void GetPasswordKeepsSilentOnlyPolicyAndHumanStdoutEmpty()
+    {
+        var credentialAcquisition = new SuccessfulAcquisitionService();
+        KeyringHelperRequest helperRequest = CreateRequest(
+            "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/",
+            username: null,
+            KeyringHelperMode.Password
+        );
+
+        AdapterRunResult result = Execute(
+            KeyringHelperV2.BuildArguments(helperRequest).Skip(1).ToArray(),
+            credentialAcquisition: credentialAcquisition
+        );
+
+        Assert.Equal(AdapterHostExitCode.Success, result.Outcome.Result.ExitCode);
+        Assert.True(result.Outcome.Result.WriteProtocolStdout);
+        Assert.Equal("phase11-secret\n", result.ProtocolStdout);
+        Assert.Empty(result.HumanStdout);
+        Assert.Equal(string.Empty, result.Stderr);
+        Assert.DoesNotContain("phase11-secret", result.HumanStdout, StringComparison.Ordinal);
+
+        CredentialRequestV2 request = Assert.Single(credentialAcquisition.Requests);
+        Assert.Equal(CredentialEcosystem.Python, request.Ecosystem);
+        Assert.Equal(CredentialOperation.Get, request.Operation);
+        Assert.Equal(TokenAudience.AzureArtifacts, request.RequestedAudience);
+        Assert.Equal(CredentialKind.BasicPassword, request.CredentialKind);
+        Assert.Equal(IdentityFlow.InteractiveBrowser, request.IdentityFlow);
+        Assert.NotEqual(IdentityFlow.DeviceCode, request.IdentityFlow);
+        Assert.Equal(InteractivePolicy.Never, request.InteractivePolicy);
+        Assert.Equal(AcquisitionMode.SilentOnly, request.AcquisitionMode);
+        Assert.Equal(CachePolicyMode.ProductPersistentCacheDisabled, request.CachePolicy);
+        CiContext ciContext = Assert.IsType<CiContext>(request.CiContext);
+        Assert.False(ciContext.ExplicitCiMode);
+        Assert.False(ciContext.AllowsPersistentWrites);
+        IReadOnlyDictionary<string, string> extensionData = Assert.IsAssignableFrom<
+            IReadOnlyDictionary<string, string>
+        >(request.ExtensionData);
+        Assert.Equal("password", extensionData["python.keyring.mode"]);
+    }
+
+    [Fact]
+    public void GetPasswordSilentRequestPreservesDefaultServiceAndCanonicalResource()
+    {
+        var credentialAcquisition = new SuccessfulAcquisitionService();
+        KeyringHelperRequest helperRequest = CreateRequest(
+            "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/",
+            username: null,
+            KeyringHelperMode.Password
+        );
+
+        AdapterRunResult result = Execute(
+            KeyringHelperV2.BuildArguments(helperRequest).Skip(1).ToArray(),
+            credentialAcquisition: credentialAcquisition
+        );
+
+        Assert.Equal(AdapterHostExitCode.Success, result.Outcome.Result.ExitCode);
+        Assert.Empty(result.HumanStdout);
+        Assert.Equal(string.Empty, result.Stderr);
+        CredentialRequestV2 request = Assert.Single(credentialAcquisition.Requests);
+        Assert.Equal("default", request.ServiceIdentity);
+        CanonicalResourceIdentity resource = request.Resource;
+        Assert.Equal("pkgs.dev.azure.com", resource.AzureDevOpsHost);
+        Assert.Equal("org", resource.Organization);
+        Assert.Null(resource.Project);
+        Assert.Equal("feed", resource.Feed);
+        Assert.Null(resource.Repository);
+        Assert.Equal(
+            new Uri("https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/"),
+            resource.ServiceEndpoint
+        );
+        Assert.Equal(IdentityFlow.InteractiveBrowser, request.IdentityFlow);
+        Assert.Equal(AcquisitionMode.SilentOnly, request.AcquisitionMode);
+        Assert.Equal("phase11-secret\n", result.ProtocolStdout);
+    }
 }

@@ -26,6 +26,7 @@ public sealed record CredentialProviderProductionOptions
     public HttpClient? HttpClient { get; init; }
     public TimeProvider? TimeProvider { get; init; }
     public DiagnosticRouter? Diagnostics { get; init; }
+    public TextWriter? DeviceCodePromptWriter { get; init; }
     public IFileSystem? FileSystem { get; init; }
     public ConfigurationPhase14VerticalSliceOptions? ConfigurationOptions { get; init; }
     public Func<string, string?>? EnvironmentVariableReader { get; init; }
@@ -187,7 +188,8 @@ public sealed class CredentialProviderCompositionRoot
                 config,
                 bindingRecord.Value!,
                 launchOptions!,
-                processRunner
+                processRunner,
+                options.DeviceCodePromptWriter
             );
         var exchange = new AzureDevOpsSpsTokenExchange(options.HttpClient, options.TimeProvider);
         ICredentialAcquisitionService service = new ComposedCredentialAcquisitionService(

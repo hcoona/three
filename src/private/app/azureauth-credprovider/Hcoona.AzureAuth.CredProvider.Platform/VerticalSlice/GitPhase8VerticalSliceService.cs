@@ -809,7 +809,7 @@ public sealed class GitPhase8VerticalSliceService
             ServiceIdentity = "default",
             RequestedAudience = TokenAudience.AzureDevOps,
             CredentialKind = CredentialKind.BasicPassword,
-            IdentityFlow = IdentityFlow.DeviceCode,
+            IdentityFlow = IdentityFlow.InteractiveBrowser,
             InteractivePolicy = InteractivePolicy.Never,
             AcquisitionMode = AcquisitionMode.SilentOnly,
             CachePolicy = CachePolicyMode.ProductPersistentCacheDisabled,

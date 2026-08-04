@@ -37,13 +37,12 @@ public sealed class ReleaseHardeningPhase15VerticalSliceServiceTests
     }
 
     [Fact]
-    public void EvaluateMarksRemainingFullReleaseEvidenceGapsAsDeferredReleaseEvidence()
+    public void EvaluatePassesLinuxAndDefersRemainingFullReleaseEvidenceGaps()
     {
         ReleaseHardeningPhase15MatrixResult result =
             ReleaseHardeningPhase15VerticalSliceService.Evaluate();
 
         AssertDeferredReleaseEvidence(result, "remote-windows-first-platform-acceptance");
-        AssertDeferredReleaseEvidence(result, "standalone-linux-x64-platform-acceptance");
         AssertDeferredReleaseEvidence(result, "final-installer-uninstaller-validation");
 
         ReleaseHardeningPhase15Check windows = Assert.Single(
@@ -60,21 +59,22 @@ public sealed class ReleaseHardeningPhase15VerticalSliceServiceTests
             result.Checks,
             static check => check.Id == "standalone-linux-x64-platform-acceptance"
         );
+        Assert.Equal(ReleaseHardeningPhase15CheckStatus.Pass, linux.Status);
         Assert.Contains("21258ff3", linux.Evidence, StringComparison.Ordinal);
         Assert.Contains(
             "phase-wp16-deployment-validation-bundle",
             linux.Evidence,
             StringComparison.Ordinal
         );
-        Assert.Contains("commit 63dacbac", linux.Evidence, StringComparison.Ordinal);
-        Assert.Contains("On 2026-08-03", linux.Notes, StringComparison.Ordinal);
+        Assert.Contains("commit 46424808", linux.Evidence, StringComparison.Ordinal);
+        Assert.Contains("On 2026-08-04", linux.Notes, StringComparison.Ordinal);
         Assert.Contains(
             "internal deployment-validation Linux apphost",
             linux.Notes,
             StringComparison.Ordinal
         );
         Assert.Contains(
-            "completed product browser login and subsequent Git and Python "
+            "completed explicit headless device-code login and subsequent Git and Python "
                 + "silent-only cache acquisitions",
             linux.Notes,
             StringComparison.Ordinal
@@ -90,18 +90,28 @@ public sealed class ReleaseHardeningPhase15VerticalSliceServiceTests
             StringComparison.Ordinal
         );
         Assert.Contains(
-            "under WSL2 with WSL detection disabled",
+            "used WSL2 with WSL detection disabled",
             linux.Notes,
             StringComparison.Ordinal
         );
         Assert.Contains(
-            "all isolated product, configuration, and AzureAuth cache state was removed afterward",
+            "forced-native execution closes the repository's standalone Linux platform gate",
             linux.Notes,
             StringComparison.Ordinal
         );
         Assert.Contains(
-            "Standalone Ubuntu 24.04, system keyring behavior, and "
-                + "release-installer-produced binary acceptance remain required.",
+            "documented owner-only headless file-cache fallback",
+            linux.Notes,
+            StringComparison.Ordinal
+        );
+        Assert.Contains(
+            "All isolated product, configuration, and AzureAuth cache state was removed afterward",
+            linux.Notes,
+            StringComparison.Ordinal
+        );
+        Assert.Contains(
+            "Native system-keyring behavior and release-installer-produced binary "
+                + "acceptance remain separate evidence.",
             linux.Notes,
             StringComparison.Ordinal
         );

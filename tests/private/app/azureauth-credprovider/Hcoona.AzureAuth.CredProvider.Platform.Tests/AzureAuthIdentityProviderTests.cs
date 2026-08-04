@@ -424,4 +424,577 @@ public sealed class AzureAuthIdentityProviderTests
             return Task.FromResult(result);
         }
     }
+
+    [Theory]
+    [InlineData(AzureAuthHostPlatform.Windows)]
+    [InlineData(AzureAuthHostPlatform.Wsl)]
+    public async Task AcquireAccessTokenAsyncRejectsUnsupportedDeviceCodePlatformBeforeLaunch(
+        AzureAuthHostPlatform hostPlatform
+    )
+    {
+        var promptWriter = new StringWriter();
+        var runner = new RecordingRunner(new ProcessResult(0, CreateToken(), ""));
+        AzureAuthIdentityProvider provider = CreateDeviceCodeProvider(
+            runner,
+            hostPlatform,
+            promptWriter
+        );
+
+        AcquiredAccessTokenResult result = await provider.AcquireAccessTokenAsync(
+            CreateDeviceCodeRequest(
+                AcquisitionMode.InteractionAllowed,
+                InteractivePolicy.UserAllowed
+            ),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(AcquiredAccessTokenStatus.RequestRejected, result.Status);
+        Assert.Equal("AzureAuthDeviceCodeUnsupported", result.Code);
+        Assert.Equal(
+            "AzureAuth device-code login requires an explicit interactive native Linux request.",
+            result.SafeMessage
+        );
+        Assert.Null(result.AccessToken);
+        Assert.Equal(0, runner.InvocationCount);
+        Assert.Null(runner.StartSpec);
+        Assert.Equal(string.Empty, promptWriter.ToString());
+    }
+
+    [Fact]
+    public async Task AcquireAccessTokenAsyncRejectsSilentOnlyDeviceCodeBeforeLaunch()
+    {
+        var promptWriter = new StringWriter();
+        var runner = new RecordingRunner(new ProcessResult(0, CreateToken(), ""));
+        AzureAuthIdentityProvider provider = CreateDeviceCodeProvider(
+            runner,
+            AzureAuthHostPlatform.NativeLinux,
+            promptWriter
+        );
+
+        AcquiredAccessTokenResult result = await provider.AcquireAccessTokenAsync(
+            CreateDeviceCodeRequest(AcquisitionMode.SilentOnly, InteractivePolicy.UserAllowed),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(AcquiredAccessTokenStatus.RequestRejected, result.Status);
+        Assert.Equal("AzureAuthRequestRejected", result.Code);
+        Assert.Equal("AzureAuth rejected the credential request.", result.SafeMessage);
+        Assert.Null(result.AccessToken);
+        Assert.Equal(0, runner.InvocationCount);
+        Assert.Null(runner.StartSpec);
+        Assert.Equal(string.Empty, promptWriter.ToString());
+    }
+
+    [Fact]
+    public async Task AcquireAccessTokenAsyncRejectsHostToolAllowsDeviceCodeBeforeLaunch()
+    {
+        var promptWriter = new StringWriter();
+        var runner = new RecordingRunner(new ProcessResult(0, CreateToken(), ""));
+        AzureAuthIdentityProvider provider = CreateDeviceCodeProvider(
+            runner,
+            AzureAuthHostPlatform.NativeLinux,
+            promptWriter
+        );
+
+        AcquiredAccessTokenResult result = await provider.AcquireAccessTokenAsync(
+            CreateDeviceCodeRequest(
+                AcquisitionMode.InteractionAllowed,
+                InteractivePolicy.HostToolAllows
+            ),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(AcquiredAccessTokenStatus.RequestRejected, result.Status);
+        Assert.Equal("AzureAuthDeviceCodeUnsupported", result.Code);
+        Assert.Null(result.AccessToken);
+        Assert.Equal(0, runner.InvocationCount);
+        Assert.Null(runner.StartSpec);
+        Assert.Equal(string.Empty, promptWriter.ToString());
+    }
+
+    private static AzureAuthIdentityProvider CreateDeviceCodeProvider(
+        IProcessRunner runner,
+        AzureAuthHostPlatform hostPlatform,
+        TextWriter promptWriter
+    )
+    {
+        AzureAuthProviderConfig config = AzureAuthProviderConfig.CreateAzureAuth();
+        AzureAuthBinding binding = AzureAuthBindingPolicy.CreateBound(
+            config,
+            "device.user@example.com",
+            "tenant-device",
+            DateTimeOffset.UtcNow
+        );
+        return new AzureAuthIdentityProvider(
+            config,
+            binding,
+            CreateLaunchOptions(hostPlatform),
+            runner,
+            promptWriter
+        );
+    }
+
+    private static CredentialRequestV2 CreateDeviceCodeRequest(
+        AcquisitionMode acquisitionMode,
+        InteractivePolicy interactivePolicy
+    ) =>
+        CreateRequest(
+            acquisitionMode,
+            accountHint: "device.user@example.com",
+            tenantHint: "tenant-device",
+            identityFlow: IdentityFlow.DeviceCode,
+            interactivePolicy: interactivePolicy
+        ) with
+        {
+            CredentialKind = CredentialKind.BasicPassword,
+        };
+
+    [Fact]
+    public async Task AcquireAccessTokenAsyncAcceptsNativeLinuxDeviceCodeWithWriter()
+    {
+        const string Token = "phase2-device-token";
+        var promptWriter = new StringWriter();
+        var runner = new RecordingRunner(new ProcessResult(0, Token, string.Empty));
+        AzureAuthIdentityProvider provider = CreatePhase2DeviceCodeProvider(runner, promptWriter);
+
+        AcquiredAccessTokenResult result = await provider.AcquireAccessTokenAsync(
+            CreateDeviceCodeRequest(
+                AcquisitionMode.InteractionAllowed,
+                InteractivePolicy.UserAllowed
+            ),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(AcquiredAccessTokenStatus.Success, result.Status);
+        Assert.Equal(Token, result.AccessToken?.Token.Value);
+        Assert.Equal("tenant-device", result.AccessToken?.TenantId);
+        Assert.Equal(1, runner.InvocationCount);
+        ProcessStartSpec start = Assert.IsType<ProcessStartSpec>(runner.StartSpec);
+        Assert.Equal(
+            [
+                "aad",
+                "--client",
+                AzureAuthIdentityProvider.AzureDevOpsPublicClientId,
+                "--tenant",
+                "tenant-device",
+                "--scope",
+                AzureAuthIdentityProvider.AzureDevOpsDefaultScope,
+                "--mode",
+                "devicecode",
+                "--domain",
+                "example.com",
+                "--output",
+                "token",
+            ],
+            start.Arguments
+        );
+        Assert.Equal("/usr/lib/azureauth/azureauth", start.FileName);
+        Assert.Equal("/usr/lib/azureauth", start.WorkingDirectory);
+        Assert.Equal(3, start.Environment.Count);
+        Assert.True(start.Environment.ContainsKey("AZUREAUTH_MODE"));
+        Assert.True(start.Environment.ContainsKey("AZUREAUTH_NO_USER"));
+        Assert.True(start.Environment.ContainsKey("Corext_NonInteractive"));
+        Assert.All(start.Environment.Values, Assert.Null);
+        Assert.Same(promptWriter, start.StandardErrorTee);
+        Assert.Equal(string.Empty, promptWriter.ToString());
+    }
+
+    [Fact]
+    public async Task AcquireAccessTokenAsyncWithoutPromptWriterBlocksBeforeLaunch()
+    {
+        var runner = new RecordingRunner(
+            new ProcessResult(0, "must-not-launch-token", string.Empty)
+        );
+        AzureAuthProviderConfig config = AzureAuthProviderConfig.CreateAzureAuth();
+        AzureAuthBinding binding = AzureAuthBindingPolicy.CreateBound(
+            config,
+            "device.user@example.com",
+            "tenant-device",
+            DateTimeOffset.UtcNow
+        );
+        var provider = new AzureAuthIdentityProvider(
+            config,
+            binding,
+            CreateLaunchOptions(AzureAuthHostPlatform.NativeLinux),
+            runner,
+            deviceCodePromptWriter: null
+        );
+
+        AcquiredAccessTokenResult result = await provider.AcquireAccessTokenAsync(
+            CreateDeviceCodeRequest(
+                AcquisitionMode.InteractionAllowed,
+                InteractivePolicy.UserAllowed
+            ),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(AcquiredAccessTokenStatus.InteractionBlocked, result.Status);
+        Assert.NotEqual("ProtocolViolation", result.Code);
+        Assert.Equal("AzureAuthDeviceCodePromptUnavailable", result.Code);
+        Assert.Equal(
+            "Native Linux device-code login requires an attached human prompt stream.",
+            result.SafeMessage
+        );
+        Assert.Null(result.AccessToken);
+        Assert.Equal(0, runner.InvocationCount);
+        Assert.Null(runner.StartSpec);
+    }
+
+    [Theory]
+    [InlineData("device.user@example.com", true)]
+    [InlineData("device-user", false)]
+    public async Task NativeLinuxDeviceCodeUsesExactArgv(string accountId, bool hasDomain)
+    {
+        var promptWriter = new StringWriter();
+        var runner = new RecordingRunner(new ProcessResult(0, "exact-argv-token", string.Empty));
+        AzureAuthIdentityProvider provider = CreatePhase2DeviceCodeProvider(
+            runner,
+            promptWriter,
+            accountId: accountId
+        );
+
+        AcquiredAccessTokenResult result = await provider.AcquireAccessTokenAsync(
+            CreateDeviceCodeRequest(
+                AcquisitionMode.InteractionAllowed,
+                InteractivePolicy.UserAllowed
+            ) with
+            {
+                AccountHint = accountId,
+            },
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(AcquiredAccessTokenStatus.Success, result.Status);
+        ProcessStartSpec start = Assert.IsType<ProcessStartSpec>(runner.StartSpec);
+        var expectedArguments = new List<string>
+        {
+            "aad",
+            "--client",
+            AzureAuthIdentityProvider.AzureDevOpsPublicClientId,
+            "--tenant",
+            "tenant-device",
+            "--scope",
+            AzureAuthIdentityProvider.AzureDevOpsDefaultScope,
+            "--mode",
+            "devicecode",
+        };
+        if (hasDomain)
+        {
+            expectedArguments.Add("--domain");
+            expectedArguments.Add("example.com");
+        }
+        expectedArguments.Add("--output");
+        expectedArguments.Add("token");
+        Assert.Equal(expectedArguments, start.Arguments);
+        Assert.Equal(hasDomain, start.Arguments.Contains("--domain", StringComparer.Ordinal));
+        Assert.Equal("/usr/lib/azureauth/azureauth", start.FileName);
+        Assert.Equal("/usr/lib/azureauth", start.WorkingDirectory);
+        Assert.Equal(3, start.Environment.Count);
+        Assert.True(start.Environment.ContainsKey("AZUREAUTH_MODE"));
+        Assert.True(start.Environment.ContainsKey("AZUREAUTH_NO_USER"));
+        Assert.True(start.Environment.ContainsKey("Corext_NonInteractive"));
+        Assert.All(start.Environment.Values, Assert.Null);
+        Assert.Equal(1, runner.InvocationCount);
+    }
+
+    [Fact]
+    public async Task NativeLinuxDeviceCodeAttachesOnlyStderrTeeAndCaptureLimits()
+    {
+        const string Token = "private-bounded-token";
+        var promptWriter = new StringWriter();
+        var runner = new RecordingRunner(new ProcessResult(0, Token, string.Empty));
+        AzureAuthIdentityProvider provider = CreatePhase2DeviceCodeProvider(
+            runner,
+            promptWriter,
+            maxStandardOutputBytes: 137,
+            maxStandardErrorBytes: 251
+        );
+
+        AcquiredAccessTokenResult result = await provider.AcquireAccessTokenAsync(
+            CreateDeviceCodeRequest(
+                AcquisitionMode.InteractionAllowed,
+                InteractivePolicy.UserAllowed
+            ),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(AcquiredAccessTokenStatus.Success, result.Status);
+        ProcessStartSpec start = Assert.IsType<ProcessStartSpec>(runner.StartSpec);
+        Assert.Same(promptWriter, start.StandardErrorTee);
+        Assert.Equal(137, start.OutputCaptureOptions.StandardOutputByteLimit);
+        Assert.Equal(251, start.OutputCaptureOptions.StandardErrorByteLimit);
+        Assert.Equal(Token, result.AccessToken?.Token.Value);
+        Assert.DoesNotContain(Token, promptWriter.ToString(), StringComparison.Ordinal);
+        Assert.Equal(string.Empty, promptWriter.ToString());
+    }
+
+    [Fact]
+    public async Task NativeLinuxSilentBrowserNeverAttachesPromptTee()
+    {
+        const string Token = "silent-browser-token";
+        var promptWriter = new StringWriter();
+        var runner = new RecordingRunner(new ProcessResult(0, Token, string.Empty));
+        AzureAuthIdentityProvider provider = CreatePhase2DeviceCodeProvider(runner, promptWriter);
+
+        AcquiredAccessTokenResult result = await provider.AcquireAccessTokenAsync(
+            CreateRequest(
+                AcquisitionMode.SilentOnly,
+                accountHint: "device.user@example.com",
+                tenantHint: "tenant-device",
+                identityFlow: IdentityFlow.InteractiveBrowser,
+                interactivePolicy: InteractivePolicy.Never
+            ),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(AcquiredAccessTokenStatus.Success, result.Status);
+        ProcessStartSpec start = Assert.IsType<ProcessStartSpec>(runner.StartSpec);
+        Assert.Null(start.StandardErrorTee);
+        Assert.Equal(["--mode", "web"], start.Arguments.Skip(7).Take(2));
+        Assert.Equal("1", start.Environment["AZUREAUTH_NO_USER"]);
+        Assert.Null(start.Environment["AZUREAUTH_MODE"]);
+        Assert.Null(start.Environment["Corext_NonInteractive"]);
+        Assert.Equal(Token, result.AccessToken?.Token.Value);
+        Assert.Equal(string.Empty, promptWriter.ToString());
+    }
+
+    [Theory]
+    [InlineData(
+        ProcessExecutionStatus.NonZeroExit,
+        AcquiredAccessTokenStatus.ProcessFailed,
+        "AzureAuthProcessExitNonZero",
+        "AzureAuth did not return a token."
+    )]
+    [InlineData(
+        ProcessExecutionStatus.TimedOut,
+        AcquiredAccessTokenStatus.TimedOut,
+        "AzureAuthProcessTimedOut",
+        "AzureAuth token acquisition timed out."
+    )]
+    [InlineData(
+        ProcessExecutionStatus.OutputTooLarge,
+        AcquiredAccessTokenStatus.OutputRejected,
+        "AzureAuthProcessOutputTooLarge",
+        "AzureAuth process output exceeded the configured limit."
+    )]
+    [InlineData(
+        ProcessExecutionStatus.InvalidOutput,
+        AcquiredAccessTokenStatus.OutputRejected,
+        "AzureAuthProcessOutputInvalid",
+        "AzureAuth process output was invalid."
+    )]
+    [InlineData(
+        ProcessExecutionStatus.LaunchFailure,
+        AcquiredAccessTokenStatus.ProcessFailed,
+        "AzureAuthProcessLaunchFailed",
+        "AzureAuth process launch failed."
+    )]
+    public async Task DeviceCodeProcessFailuresMapToExistingActionableCodes(
+        ProcessExecutionStatus processStatus,
+        AcquiredAccessTokenStatus expectedStatus,
+        string expectedCode,
+        string expectedSafeMessage
+    )
+    {
+        const string Secret = "arbitrary-azureauth-stderr-secret";
+        ProcessResult processResult = processStatus switch
+        {
+            ProcessExecutionStatus.NonZeroExit => new ProcessResult(23, string.Empty, Secret),
+            ProcessExecutionStatus.TimedOut => ProcessResult.TimedOut(string.Empty, Secret),
+            ProcessExecutionStatus.OutputTooLarge => ProcessResult.OutputTooLarge(
+                "partial-private-token",
+                Secret
+            ),
+            ProcessExecutionStatus.InvalidOutput => ProcessResult.InvalidOutput(
+                string.Empty,
+                Secret
+            ),
+            ProcessExecutionStatus.LaunchFailure => ProcessResult.LaunchFailure(
+                string.Empty,
+                Secret
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(processStatus)),
+        };
+        var promptWriter = new StringWriter();
+        var runner = new RecordingRunner(processResult);
+        AzureAuthIdentityProvider provider = CreatePhase2DeviceCodeProvider(
+            runner,
+            promptWriter,
+            maxStandardOutputBytes: 137,
+            maxStandardErrorBytes: 251
+        );
+
+        AcquiredAccessTokenResult result = await provider.AcquireAccessTokenAsync(
+            CreateDeviceCodeRequest(
+                AcquisitionMode.InteractionAllowed,
+                InteractivePolicy.UserAllowed
+            ),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(expectedStatus, result.Status);
+        Assert.Equal(expectedCode, result.Code);
+        Assert.Equal(expectedSafeMessage, result.SafeMessage);
+        Assert.Null(result.AccessToken);
+        Assert.DoesNotContain(Secret, result.SafeMessage, StringComparison.Ordinal);
+        Assert.Equal(1, runner.InvocationCount);
+        ProcessStartSpec start = Assert.IsType<ProcessStartSpec>(runner.StartSpec);
+        Assert.Equal(137, start.OutputCaptureOptions.StandardOutputByteLimit);
+        Assert.Equal(251, start.OutputCaptureOptions.StandardErrorByteLimit);
+    }
+
+    [Fact]
+    public async Task NativeLinuxDeviceCodeCancellationMapsSafely()
+    {
+        var promptWriter = new StringWriter();
+        var runner = new CancelableDeviceCodeRunner();
+        AzureAuthIdentityProvider provider = CreatePhase2DeviceCodeProvider(runner, promptWriter);
+        using var cancellation = new CancellationTokenSource();
+
+        Task<AcquiredAccessTokenResult> acquisition = provider
+            .AcquireAccessTokenAsync(
+                CreateDeviceCodeRequest(
+                    AcquisitionMode.InteractionAllowed,
+                    InteractivePolicy.UserAllowed
+                ),
+                cancellation.Token
+            )
+            .AsTask();
+        Task firstCompletion = await Task.WhenAny(runner.PromptWritten.Task, acquisition)
+            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        Assert.Same(runner.PromptWritten.Task, firstCompletion);
+        Assert.False(acquisition.IsCompleted);
+
+        cancellation.Cancel();
+        AcquiredAccessTokenResult result = await acquisition;
+
+        Assert.Equal(AcquiredAccessTokenStatus.Canceled, result.Status);
+        Assert.Equal("AzureAuthProcessCanceled", result.Code);
+        Assert.Equal("AzureAuth token acquisition was canceled.", result.SafeMessage);
+        Assert.Null(result.AccessToken);
+        Assert.Equal(1, runner.InvocationCount);
+        Assert.Equal(CancelableDeviceCodeRunner.Prompt, promptWriter.ToString());
+        Assert.DoesNotContain("token", promptWriter.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("token\tvalue")]
+    [InlineData("token\r\nsecond-line")]
+    [InlineData("token\0value")]
+    public async Task NativeLinuxDeviceCodeRejectsInvalidTokenOutput(string processOutput)
+    {
+        var promptWriter = new StringWriter();
+        var runner = new RecordingRunner(
+            new ProcessResult(0, processOutput, "arbitrary-diagnostic-secret")
+        );
+        AzureAuthIdentityProvider provider = CreatePhase2DeviceCodeProvider(runner, promptWriter);
+
+        AcquiredAccessTokenResult result = await provider.AcquireAccessTokenAsync(
+            CreateDeviceCodeRequest(
+                AcquisitionMode.InteractionAllowed,
+                InteractivePolicy.UserAllowed
+            ),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(AcquiredAccessTokenStatus.OutputRejected, result.Status);
+        Assert.Equal("AzureAuthTokenOutputInvalid", result.Code);
+        Assert.Equal("AzureAuth token output was invalid.", result.SafeMessage);
+        Assert.Null(result.AccessToken);
+        Assert.Equal(1, runner.InvocationCount);
+        Assert.Equal(string.Empty, promptWriter.ToString());
+        Assert.DoesNotContain(
+            "arbitrary-diagnostic-secret",
+            result.SafeMessage,
+            StringComparison.Ordinal
+        );
+    }
+
+    private static AzureAuthIdentityProvider CreatePhase2DeviceCodeProvider(
+        IProcessRunner runner,
+        TextWriter promptWriter,
+        int maxStandardOutputBytes = 8192,
+        int maxStandardErrorBytes = 8192,
+        string accountId = "device.user@example.com"
+    )
+    {
+        AzureAuthProviderConfig config = AzureAuthProviderConfig.CreateAzureAuth();
+        AzureAuthBinding binding = AzureAuthBindingPolicy.CreateBound(
+            config,
+            accountId,
+            "tenant-device",
+            DateTimeOffset.UtcNow
+        );
+        return new AzureAuthIdentityProvider(
+            config,
+            binding,
+            CreateLaunchOptions(AzureAuthHostPlatform.NativeLinux) with
+            {
+                MaxStandardOutputBytes = maxStandardOutputBytes,
+                MaxStandardErrorBytes = maxStandardErrorBytes,
+            },
+            runner,
+            promptWriter
+        );
+    }
+
+    private sealed class CancelableDeviceCodeRunner : IProcessRunner
+    {
+        public const string Prompt =
+            "Open https://microsoft.com/devicelogin and enter CODE-1234.\n";
+
+        public TaskCompletionSource<bool> PromptWritten { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int InvocationCount { get; private set; }
+
+        public async Task<ProcessResult> RunAsync(
+            ProcessStartSpec startSpec,
+            CancellationToken cancellationToken = default
+        )
+        {
+            InvocationCount++;
+            TextWriter promptWriter = Assert.IsAssignableFrom<TextWriter>(
+                startSpec.StandardErrorTee
+            );
+            await promptWriter.WriteAsync(Prompt);
+            await promptWriter.FlushAsync(cancellationToken);
+            PromptWritten.TrySetResult(true);
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            return new ProcessResult(0, "unreachable-private-token", string.Empty);
+        }
+    }
+
+    [Fact]
+    public async Task HostToolAllowsDeviceCodeRejectionPreservesExactSafeMessage()
+    {
+        var promptWriter = new StringWriter();
+        var runner = new RecordingRunner(new ProcessResult(0, CreateToken(), ""));
+        AzureAuthIdentityProvider provider = CreateDeviceCodeProvider(
+            runner,
+            AzureAuthHostPlatform.NativeLinux,
+            promptWriter
+        );
+
+        AcquiredAccessTokenResult result = await provider.AcquireAccessTokenAsync(
+            CreateDeviceCodeRequest(
+                AcquisitionMode.InteractionAllowed,
+                InteractivePolicy.HostToolAllows
+            ),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(AcquiredAccessTokenStatus.RequestRejected, result.Status);
+        Assert.Equal("AzureAuthDeviceCodeUnsupported", result.Code);
+        Assert.Equal(
+            "AzureAuth device-code login requires an explicit interactive native Linux request.",
+            result.SafeMessage
+        );
+        Assert.Null(result.AccessToken);
+        Assert.Equal(0, runner.InvocationCount);
+        Assert.Null(runner.StartSpec);
+        Assert.Equal(string.Empty, promptWriter.ToString());
+    }
 }

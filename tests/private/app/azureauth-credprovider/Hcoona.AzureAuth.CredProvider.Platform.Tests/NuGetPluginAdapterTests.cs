@@ -268,4 +268,88 @@ public sealed class NuGetPluginAdapterTests
             );
         }
     }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public void AuthenticationRequestPreservesFixedMetadataAndExactInteractionExtensions(
+        bool isNonInteractive,
+        bool canShowDialog
+    )
+    {
+        var acquisitionService = new CapturingAcquisitionService();
+        var adapter = new NuGetPluginAdapter(acquisitionService);
+        var request = new GetAuthenticationCredentialsRequest(
+            new Uri("https://pkgs.dev.azure.com/org/_packaging/feed/nuget/v3/index.json"),
+            isRetry: true,
+            isNonInteractive,
+            canShowDialog
+        );
+
+        adapter.HandleGetAuthenticationCredentials(request);
+
+        CredentialRequestV2 capturedRequest = Assert.IsType<CredentialRequestV2>(
+            acquisitionService.Request
+        );
+        Assert.Equal(CredentialEcosystem.NuGet, capturedRequest.Ecosystem);
+        Assert.Equal(CredentialOperation.Get, capturedRequest.Operation);
+        Assert.Equal(TokenAudience.AzureArtifacts, capturedRequest.RequestedAudience);
+        Assert.Equal(CredentialKind.NuGetPluginCredential, capturedRequest.CredentialKind);
+        Assert.Equal(CachePolicyMode.ProductPersistentCacheDisabled, capturedRequest.CachePolicy);
+        CiContext ciContext = Assert.IsType<CiContext>(capturedRequest.CiContext);
+        Assert.False(ciContext.ExplicitCiMode);
+        Assert.False(ciContext.AllowsPersistentWrites);
+        Assert.Equal(
+            canShowDialog ? "true" : "false",
+            capturedRequest.ExtensionData["nuget.canShowDialog"]
+        );
+        Assert.Equal(
+            isNonInteractive ? "true" : "false",
+            capturedRequest.ExtensionData["nuget.isNonInteractive"]
+        );
+        Assert.Equal("true", capturedRequest.ExtensionData["nuget.isRetry"]);
+    }
+
+    [Theory]
+    [InlineData(false, "false")]
+    [InlineData(true, "true")]
+    public void AuthenticationRequestPreservesDefaultIdentityCanonicalResourceAndRetryExtension(
+        bool isRetry,
+        string expectedRetryExtension
+    )
+    {
+        var acquisitionService = new CapturingAcquisitionService();
+        var adapter = new NuGetPluginAdapter(acquisitionService);
+        var source = new Uri("https://pkgs.dev.azure.com/org/_packaging/feed/nuget/v3/index.json");
+        var request = new GetAuthenticationCredentialsRequest(
+            source,
+            isRetry,
+            isNonInteractive: false,
+            canShowDialog: false
+        );
+
+        GetAuthenticationCredentialsResponse response = adapter.HandleGetAuthenticationCredentials(
+            request
+        );
+
+        Assert.Equal(MessageResponseCode.NotFound, response.ResponseCode);
+        CredentialRequestV2 capturedRequest = Assert.IsType<CredentialRequestV2>(
+            acquisitionService.Request
+        );
+        Assert.Equal("default", capturedRequest.ServiceIdentity);
+        Assert.Null(capturedRequest.AccountHint);
+        CanonicalResourceIdentity resource = capturedRequest.Resource;
+        Assert.Equal("pkgs.dev.azure.com", resource.AzureDevOpsHost);
+        Assert.Equal("org", resource.Organization);
+        Assert.Null(resource.Project);
+        Assert.Equal("feed", resource.Feed);
+        Assert.Null(resource.Repository);
+        Assert.Equal(source, resource.ServiceEndpoint);
+        Assert.Equal(IdentityFlow.DeviceCode, capturedRequest.IdentityFlow);
+        Assert.Equal(InteractivePolicy.HostToolAllows, capturedRequest.InteractivePolicy);
+        Assert.Equal(AcquisitionMode.InteractionAllowed, capturedRequest.AcquisitionMode);
+        Assert.Equal(expectedRetryExtension, capturedRequest.ExtensionData["nuget.isRetry"]);
+    }
 }

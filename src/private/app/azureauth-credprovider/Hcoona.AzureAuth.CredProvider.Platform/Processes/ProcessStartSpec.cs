@@ -13,7 +13,8 @@ public sealed class ProcessStartSpec
         IReadOnlyDictionary<string, string?>? environment = null,
         string? standardInput = null,
         TimeSpan? timeout = null,
-        ProcessOutputCaptureOptions? outputCaptureOptions = null
+        ProcessOutputCaptureOptions? outputCaptureOptions = null,
+        TextWriter? standardErrorTee = null
     )
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
@@ -34,6 +35,7 @@ public sealed class ProcessStartSpec
         }
         OutputCaptureOptions = outputCaptureOptions ?? ProcessOutputCaptureOptions.Default;
         OutputCaptureOptions.Validate();
+        StandardErrorTee = standardErrorTee;
     }
 
     public string FileName { get; }
@@ -49,6 +51,8 @@ public sealed class ProcessStartSpec
     public TimeSpan Timeout { get; }
 
     public ProcessOutputCaptureOptions OutputCaptureOptions { get; }
+
+    public TextWriter? StandardErrorTee { get; }
 
     private static ReadOnlyCollection<string> CopyArguments(IEnumerable<string>? arguments)
     {

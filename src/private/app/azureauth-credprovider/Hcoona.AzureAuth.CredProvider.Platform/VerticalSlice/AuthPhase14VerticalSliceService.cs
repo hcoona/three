@@ -118,13 +118,6 @@ public sealed class AuthPhase14VerticalSliceService
 
     private static void ValidateLoginRequest(AuthPhase14LoginRequest request)
     {
-        if (request.IdentityFlow == IdentityFlow.DeviceCode)
-        {
-            throw new NotSupportedException(
-                "Device-code login is unavailable; use interactive-browser login."
-            );
-        }
-
         IdentityFlowState state = IdentityFlowPolicy.GetMvpState(request.IdentityFlow);
         if (state == IdentityFlowState.Deferred)
         {
@@ -141,7 +134,9 @@ public sealed class AuthPhase14VerticalSliceService
 
     private static CredentialRequestV2 CreateCredentialRequest(AuthPhase14LoginRequest request)
     {
-        if (request.IdentityFlow != IdentityFlow.InteractiveBrowser)
+        if (
+            request.IdentityFlow is not (IdentityFlow.InteractiveBrowser or IdentityFlow.DeviceCode)
+        )
         {
             return new CredentialRequestV2
             {
@@ -178,7 +173,7 @@ public sealed class AuthPhase14VerticalSliceService
             TenantHint = NullIfWhiteSpace(request.TenantHint),
             RequestedAudience = TokenAudience.AzureDevOps,
             CredentialKind = CredentialKind.BasicPassword,
-            IdentityFlow = IdentityFlow.InteractiveBrowser,
+            IdentityFlow = request.IdentityFlow,
             InteractivePolicy = InteractivePolicy.UserAllowed,
             AcquisitionMode = AcquisitionMode.InteractionAllowed,
             CachePolicy = CachePolicyMode.ProductPersistentCacheDisabled,

@@ -509,4 +509,39 @@ public sealed class AuthPhase14VerticalSliceServiceTests
             throw new InvalidOperationException("Unreachable.");
         }
     }
+
+    [Fact]
+    public void LoginWithDeviceCodeCreatesUserAllowedCredentialRequest()
+    {
+        var acquisition = new CapturingCredentialAcquisitionService();
+        var service = new AuthPhase14VerticalSliceService(
+            new AuthPhase14VerticalSliceOptions
+            {
+                CredentialAcquisition = new BoundedCredentialAcquisitionAdapter(acquisition),
+            }
+        );
+
+        AuthPhase14LoginResult result = service.Login(
+            new AuthPhase14LoginRequest
+            {
+                IdentityFlow = IdentityFlow.DeviceCode,
+                AccountHint = " Device.User@Example ",
+                TenantHint = " Tenant-Device ",
+            },
+            TestContext.Current.CancellationToken
+        );
+
+        CredentialRequestV2 request = Assert.IsType<CredentialRequestV2>(acquisition.Request);
+        Assert.Equal(IdentityFlow.DeviceCode, request.IdentityFlow);
+        Assert.Equal(AcquisitionMode.InteractionAllowed, request.AcquisitionMode);
+        Assert.Equal(InteractivePolicy.UserAllowed, request.InteractivePolicy);
+        Assert.Equal(CredentialKind.BasicPassword, request.CredentialKind);
+        Assert.Equal(CachePolicyMode.ProductPersistentCacheDisabled, request.CachePolicy);
+        Assert.Equal("Device.User@Example", request.AccountHint);
+        Assert.Equal("Tenant-Device", request.TenantHint);
+        Assert.Null(request.CiContext);
+        Assert.Equal(CredentialResultStatus.Success, result.CredentialResult.Status);
+        Assert.Equal(IdentityFlow.DeviceCode, result.IdentityFlow);
+        Assert.False(result.PersistentDerivedCredentialsStored);
+    }
 }

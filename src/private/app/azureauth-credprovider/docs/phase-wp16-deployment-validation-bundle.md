@@ -136,9 +136,23 @@ Credential responses were captured only long enough to validate their protocol
 shape and were deleted without being printed. Azure CLI authentication was not
 used because AzureAuth does not consume the Azure CLI token cache.
 
-The host remained WSL2. This evidence does not establish standalone Ubuntu
-24.04 behavior, Linux system-keyring persistence, private-feed authorization, or
-authentication through a release installer.
+On 2026-08-04, the implementation after commit `46424808` was rebuilt into a
+fresh isolated bundle and exercised again with product `login --device-code`.
+AzureAuth's bounded device-code instructions reached the human prompt stream
+while token stdout remained private. Login returned only safe status fields.
+Git and the installed Python wheel then reused the resulting AzureAuth cache
+through silent-only requests. Credential payloads were validated without being
+printed and were deleted immediately.
+
+The headless environment had no usable Linux keyring, so AzureAuth used its
+documented owner-only unprotected file-cache fallback. Product configuration,
+installation, credential responses, and the complete isolated AzureAuth cache
+root were removed after acceptance.
+
+The host remained WSL2 with product WSL detection disabled. By explicit operator
+decision, this forced-native execution closes the repository's standalone Linux
+x64 platform gate. Native system-keyring behavior, private-feed authorization,
+and authentication through a release installer remain separate evidence.
 
 ## Explicit Boundaries
 
@@ -147,7 +161,7 @@ This evidence does not establish:
 - a signed or production release installer;
 - Windows bundle execution;
 - Windows Python subprocess mode and its required real `keyring.exe` launcher;
-- standalone Ubuntu 24.04 acceptance;
+- native Linux system-keyring persistence;
 - exact Windows 11 24H2 or Windows Server acceptance;
 - installer-produced binary authentication;
 - private-feed authorization; or

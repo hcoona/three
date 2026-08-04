@@ -547,8 +547,9 @@ The plugin honors NuGet's interactive policy through the source-confirmed
 
 When interaction is disallowed, the adapter returns a safe failure that explains
 the required explicit interactive invocation through NuGet-compatible channels.
-The current AzureAuth path rejects device code before process launch. Retry
-metadata never authorizes interaction.
+The NuGet plugin does not own a human terminal prompt stream, so its device-code
+shape remains unavailable even though explicit native Linux CLI login supports
+AzureAuth device code. Retry metadata never authorizes interaction.
 
 ### Runtime Layout
 

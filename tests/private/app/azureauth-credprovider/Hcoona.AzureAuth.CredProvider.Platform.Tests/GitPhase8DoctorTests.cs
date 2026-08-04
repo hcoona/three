@@ -1,4 +1,5 @@
 using Hcoona.AzureAuth.CredProvider.Platform.AdapterHost;
+using Hcoona.AzureAuth.CredProvider.Platform.Composition;
 using Hcoona.AzureAuth.CredProvider.Platform.Processes;
 using Hcoona.AzureAuth.CredProvider.Platform.VerticalSlice;
 using Xunit;
@@ -445,6 +446,177 @@ public sealed class GitPhase8DoctorTests
 
             InvocationCount++;
             throw exception;
+        }
+    }
+
+    [Fact]
+    public async Task GitDoctorCreatesNonPromptingInteractiveBrowserRequest()
+    {
+        string stateDirectory = CreateTestDirectory();
+        var credentialAcquisition = new CapturingDoctorCredentialAcquisitionService();
+        var processRunner = new RecordingGitDiscoveryProcessRunner();
+        var service = new GitPhase8VerticalSliceService(
+            new GitPhase8VerticalSliceOptions
+            {
+                StateDirectoryPath = stateDirectory,
+                ProcessRunner = processRunner,
+                LocalShellGitDiscoverySupported = false,
+                ProductExecutablePath = CreateFakeProductExecutable(stateDirectory),
+                CredentialAcquisition = new BoundedCredentialAcquisitionAdapter(
+                    credentialAcquisition
+                ),
+            }
+        );
+
+        try
+        {
+            await service.ConfigureAsync(TestContext.Current.CancellationToken);
+
+            GitPhase8DoctorResult result = await service.DoctorAsync(
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.True(result.CredentialCoreSuccess);
+            Assert.True(result.GitCredentialHelperGetSuccess);
+            Assert.True(result.ProtocolPayloadCaptured);
+            Assert.Empty(processRunner.StartSpecs);
+            Assert.Equal(2, credentialAcquisition.Requests.Count);
+
+            Hcoona.AzureAuth.CredProvider.Contracts.CredentialRequestV2 request =
+                credentialAcquisition.Requests[0];
+            Assert.Equal(
+                Hcoona.AzureAuth.CredProvider.Contracts.CredentialEcosystem.Git,
+                request.Ecosystem
+            );
+            Assert.Equal(
+                Hcoona.AzureAuth.CredProvider.Contracts.CredentialOperation.Get,
+                request.Operation
+            );
+            Assert.Equal(
+                Hcoona.AzureAuth.CredProvider.Contracts.TokenAudience.AzureDevOps,
+                request.RequestedAudience
+            );
+            Assert.Equal(
+                Hcoona.AzureAuth.CredProvider.Contracts.CredentialKind.BasicPassword,
+                request.CredentialKind
+            );
+            Assert.Equal(
+                Hcoona.AzureAuth.CredProvider.Contracts.IdentityFlow.InteractiveBrowser,
+                request.IdentityFlow
+            );
+            Assert.Equal(
+                Hcoona.AzureAuth.CredProvider.Contracts.InteractivePolicy.Never,
+                request.InteractivePolicy
+            );
+            Assert.Equal(
+                Hcoona.AzureAuth.CredProvider.Contracts.AcquisitionMode.SilentOnly,
+                request.AcquisitionMode
+            );
+            Assert.Equal(
+                Hcoona
+                    .AzureAuth
+                    .CredProvider
+                    .Contracts
+                    .CachePolicyMode
+                    .ProductPersistentCacheDisabled,
+                request.CachePolicy
+            );
+            Hcoona.AzureAuth.CredProvider.Contracts.CiContext ciContext =
+                Assert.IsType<Hcoona.AzureAuth.CredProvider.Contracts.CiContext>(request.CiContext);
+            Assert.False(ciContext.ExplicitCiMode);
+            Assert.False(ciContext.AllowsPersistentWrites);
+            Assert.DoesNotContain(
+                credentialAcquisition.Requests,
+                candidate =>
+                    candidate.IdentityFlow
+                    == Hcoona.AzureAuth.CredProvider.Contracts.IdentityFlow.DeviceCode
+            );
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    private sealed class CapturingDoctorCredentialAcquisitionService
+        : Hcoona.AzureAuth.CredProvider.Platform.Composition.ICredentialAcquisitionService
+    {
+        public List<Hcoona.AzureAuth.CredProvider.Contracts.CredentialRequestV2> Requests { get; } =
+        [];
+
+        public ValueTask<Hcoona.AzureAuth.CredProvider.Contracts.CredentialResult> AcquireAsync(
+            Hcoona.AzureAuth.CredProvider.Contracts.CredentialRequestV2 request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Requests.Add(request);
+            return ValueTask.FromResult(
+                new Hcoona.AzureAuth.CredProvider.Contracts.CredentialResult
+                {
+                    Status = Hcoona.AzureAuth.CredProvider.Contracts.CredentialResultStatus.Success,
+                    Username = "AzureDevOps",
+                    Password = "doctor-private-token",
+                    DiagnosticsCorrelationId = "git-doctor-silent-request-test",
+                }
+            );
+        }
+    }
+
+    [Fact]
+    public async Task GitDoctorSilentRequestPreservesDefaultServiceAndCanonicalResource()
+    {
+        string stateDirectory = CreateTestDirectory();
+        var credentialAcquisition = new CapturingDoctorCredentialAcquisitionService();
+        var processRunner = new RecordingGitDiscoveryProcessRunner();
+        var service = new GitPhase8VerticalSliceService(
+            new GitPhase8VerticalSliceOptions
+            {
+                StateDirectoryPath = stateDirectory,
+                ProcessRunner = processRunner,
+                LocalShellGitDiscoverySupported = false,
+                ProductExecutablePath = CreateFakeProductExecutable(stateDirectory),
+                CredentialAcquisition = new BoundedCredentialAcquisitionAdapter(
+                    credentialAcquisition
+                ),
+            }
+        );
+
+        try
+        {
+            await service.ConfigureAsync(TestContext.Current.CancellationToken);
+
+            GitPhase8DoctorResult result = await service.DoctorAsync(
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.True(result.CredentialCoreSuccess);
+            Assert.True(result.GitCredentialHelperGetSuccess);
+            Assert.Empty(processRunner.StartSpecs);
+            Assert.Equal(2, credentialAcquisition.Requests.Count);
+            Hcoona.AzureAuth.CredProvider.Contracts.CredentialRequestV2 request =
+                credentialAcquisition.Requests[0];
+            Assert.Equal("default", request.ServiceIdentity);
+            Hcoona.AzureAuth.CredProvider.Contracts.CanonicalResourceIdentity resource =
+                request.Resource;
+            Assert.Equal("dev.azure.com", resource.AzureDevOpsHost);
+            Assert.Equal("org", resource.Organization);
+            Assert.Null(resource.Project);
+            Assert.Null(resource.Feed);
+            Assert.Null(resource.Repository);
+            Assert.Equal(new Uri("https://dev.azure.com/org"), resource.ServiceEndpoint);
+            Assert.Equal(
+                Hcoona.AzureAuth.CredProvider.Contracts.IdentityFlow.InteractiveBrowser,
+                request.IdentityFlow
+            );
+            Assert.Equal(
+                Hcoona.AzureAuth.CredProvider.Contracts.AcquisitionMode.SilentOnly,
+                request.AcquisitionMode
+            );
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
         }
     }
 }

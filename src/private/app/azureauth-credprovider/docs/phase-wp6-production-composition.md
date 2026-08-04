@@ -79,6 +79,20 @@ cached-token attempt while suppressing interactive flows. A cache miss returns
 `AzureAuthSilentTokenUnavailable`. This cache is owned by AzureAuth and is not
 the Azure CLI cache; `az login` does not populate it.
 
+Explicit native Linux device-code acquisition uses `--mode devicecode`, clears
+the same inherited interaction controls, captures token stdout privately, and
+tees only bounded stderr instructions to the CLI human prompt stream. It
+requires `InteractionAllowed`, `UserAllowed`, and that prompt stream; all other
+device-code request shapes reject before launch.
+
+When Linux keyring persistence is unavailable on a headless host, pinned
+AzureAuth 0.9.5 falls back to its documented unprotected cache with owner-only
+directory and file modes. The native Linux headless support decision explicitly
+accepts that provider-owned behavior under the same-user threat model because
+silent Git and Python reuse otherwise cannot exist without adding a replacement
+credential store. Product-owned derived credentials remain non-persistent and
+have no plaintext fallback.
+
 Windows AzureAuth `0.9.5` has no equivalent cache-only CLI mode, so Windows and
 WSL `SilentOnly` still return `SilentAcquisitionUnavailable` without launching.
 Interactive and silent readiness remain independent.
@@ -95,11 +109,13 @@ Interaction is authorized only by an explicit host protocol signal:
 | Git credential helper or Python keyring subprocess | Browser       | `Never`          | `SilentOnly`         |
 
 NuGet's non-interactive flag overrides dialog capability. The product does not
-surface AzureAuth device-code prompts through its bounded process runner, so
-that NuGet request shape returns
-`AzureAuthDeviceCodeUnsupported` before process launch. Git and Python expose no
-equivalent trustworthy interaction authorization signal; the product does not
-infer one from a terminal, environment variable, or process ancestry.
+attach the CLI human prompt stream to NuGet plugin execution, so that NuGet
+request shape remains unavailable before process launch. Explicit native Linux
+`login --device-code` attaches the CLI stderr stream and tees AzureAuth's bounded
+device-code instructions in real time while keeping token stdout private. Git
+and Python expose no equivalent trustworthy interaction authorization signal;
+the product does not infer one from a terminal, environment variable, or process
+ancestry.
 
 ## Persistence
 
@@ -142,4 +158,7 @@ containment of a hostile provider.
 | `AzureAuthSilentTokenUnavailable` | Native Linux cache lookup requires interaction.       |
 
 Status and doctor report provider selection, installation, binding, and separate
-interactive/silent readiness without printing tokens or process output.
+interactive/silent readiness without printing tokens or process output. Login,
+logout, and doctor qualify their no-plaintext statement as
+`product-plaintext-fallback` so it is not misread as a claim about AzureAuth's
+provider-owned cache.

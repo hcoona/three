@@ -339,4 +339,318 @@ public sealed class CredentialProviderCompositionRootWp6Tests
             Directory.Delete(rootPath, recursive: true);
         }
     }
+
+    [Fact]
+    public async Task CreateProductionWithPromptWriterRoutesUserAllowedDeviceCodePrompt()
+    {
+        const string DeviceToken = "composition-device-private-token";
+        const string BrowserToken = "composition-browser-private-token";
+        string rootPath = CreateTestDirectory();
+        var promptWriter = new StringWriter();
+        var processRunner = new CompositionRecordingRunner(
+            new ProcessResult(0, DeviceToken, string.Empty),
+            new ProcessResult(0, BrowserToken, string.Empty)
+        );
+        try
+        {
+            AzureAuthProviderConfig config = AzureAuthProviderConfig.CreateAzureAuth();
+            AzureAuthBinding binding = AzureAuthBindingPolicy.CreateBound(
+                config,
+                "composition.user@example.com",
+                "tenant-composition",
+                DateTimeOffset.UtcNow
+            );
+            CredentialProviderCompositionRoot root =
+                CredentialProviderCompositionRoot.CreateProduction(
+                    new CredentialProviderProductionOptions
+                    {
+                        SecureStoreRootPath = rootPath,
+                        ProviderConfig = config,
+                        Binding = binding,
+                        InstallationDiscovery = new CountingDiscovery(
+                            AzureAuthInstallation.Available(
+                                "/usr/lib/azureauth/azureauth",
+                                "/usr/lib/azureauth/azureauth",
+                                "0.9.5",
+                                AzureAuthHostPlatform.NativeLinux
+                            )
+                        ),
+                        ProcessRunner = processRunner,
+                        DeviceCodePromptWriter = promptWriter,
+                    }
+                );
+            CredentialRequestV2 deviceRequest = CreateRequest() with
+            {
+                AccountHint = "composition.user@example.com",
+                TenantHint = "tenant-composition",
+                CredentialKind = CredentialKind.BasicPassword,
+                IdentityFlow = IdentityFlow.DeviceCode,
+                InteractivePolicy = InteractivePolicy.UserAllowed,
+                AcquisitionMode = AcquisitionMode.InteractionAllowed,
+            };
+            CredentialRequestV2 browserRequest = CreateRequest() with
+            {
+                AccountHint = "composition.user@example.com",
+                TenantHint = "tenant-composition",
+                CredentialKind = CredentialKind.BasicPassword,
+                IdentityFlow = IdentityFlow.InteractiveBrowser,
+                InteractivePolicy = InteractivePolicy.UserAllowed,
+                AcquisitionMode = AcquisitionMode.InteractionAllowed,
+            };
+
+            CredentialResult deviceResult = await root.AcquisitionService.AcquireAsync(
+                deviceRequest,
+                TestContext.Current.CancellationToken
+            );
+            CredentialResult browserResult = await root.AcquisitionService.AcquireAsync(
+                browserRequest,
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Equal(CredentialResultStatus.Success, deviceResult.Status);
+            Assert.Equal(CredentialResultStatus.Success, browserResult.Status);
+            Assert.Equal(DeviceToken, deviceResult.Password);
+            Assert.Equal(BrowserToken, browserResult.Password);
+            Assert.Equal(2, processRunner.StartSpecs.Count);
+            Assert.Same(promptWriter, processRunner.StartSpecs[0].StandardErrorTee);
+            Assert.Null(processRunner.StartSpecs[1].StandardErrorTee);
+            Assert.Contains("devicecode", processRunner.StartSpecs[0].Arguments);
+            Assert.Contains("web", processRunner.StartSpecs[1].Arguments);
+            Assert.Same(promptWriter, root.ProductionOptions.DeviceCodePromptWriter);
+            Assert.True(root.Readiness.Interactive.IsReady);
+            Assert.DoesNotContain(DeviceToken, promptWriter.ToString(), StringComparison.Ordinal);
+            Assert.DoesNotContain(BrowserToken, promptWriter.ToString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(rootPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CreateProductionWithoutPromptWriterMapsValidDeviceCodeToInteractionBlocked()
+    {
+        string rootPath = CreateTestDirectory();
+        var processRunner = new CountingProcessRunner();
+        try
+        {
+            AzureAuthProviderConfig config = AzureAuthProviderConfig.CreateAzureAuth();
+            AzureAuthBinding binding = AzureAuthBindingPolicy.CreateBound(
+                config,
+                "composition.user@example.com",
+                "tenant-composition",
+                DateTimeOffset.UtcNow
+            );
+            CredentialProviderCompositionRoot root =
+                CredentialProviderCompositionRoot.CreateProduction(
+                    new CredentialProviderProductionOptions
+                    {
+                        SecureStoreRootPath = rootPath,
+                        ProviderConfig = config,
+                        Binding = binding,
+                        InstallationDiscovery = new CountingDiscovery(
+                            AzureAuthInstallation.Available(
+                                "/usr/lib/azureauth/azureauth",
+                                "/usr/lib/azureauth/azureauth",
+                                "0.9.5",
+                                AzureAuthHostPlatform.NativeLinux
+                            )
+                        ),
+                        ProcessRunner = processRunner,
+                    }
+                );
+            CredentialRequestV2 request = CreateRequest() with
+            {
+                AccountHint = "composition.user@example.com",
+                TenantHint = "tenant-composition",
+                CredentialKind = CredentialKind.BasicPassword,
+                IdentityFlow = IdentityFlow.DeviceCode,
+                InteractivePolicy = InteractivePolicy.UserAllowed,
+                AcquisitionMode = AcquisitionMode.InteractionAllowed,
+            };
+
+            Assert.True(CredentialRequestV2Policy.IsValid(request));
+
+            CredentialResult result = await root.AcquisitionService.AcquireAsync(
+                request,
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Equal(CredentialResultStatus.InteractionBlocked, result.Status);
+            Assert.NotEqual(CredentialResultStatus.ProtocolViolation, result.Status);
+            Assert.Equal(CredentialErrorKind.InteractionBlocked, result.Error?.Kind);
+            Assert.Equal("AzureAuthDeviceCodePromptUnavailable", result.Error?.Code);
+            Assert.False(result.ContainsCredentialMaterial);
+            Assert.Null(root.ProductionOptions.DeviceCodePromptWriter);
+            Assert.Equal(0, processRunner.CallCount);
+        }
+        finally
+        {
+            Directory.Delete(rootPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CreateProductionRejectsHostToolAllowsBeforePromptWriterValidation()
+    {
+        string rootPath = CreateTestDirectory();
+        var processRunner = new CountingProcessRunner();
+        try
+        {
+            AzureAuthProviderConfig config = AzureAuthProviderConfig.CreateAzureAuth();
+            AzureAuthBinding binding = AzureAuthBindingPolicy.CreateBound(
+                config,
+                "composition.user@example.com",
+                "tenant-composition",
+                DateTimeOffset.UtcNow
+            );
+            CredentialProviderCompositionRoot root =
+                CredentialProviderCompositionRoot.CreateProduction(
+                    new CredentialProviderProductionOptions
+                    {
+                        SecureStoreRootPath = rootPath,
+                        ProviderConfig = config,
+                        Binding = binding,
+                        InstallationDiscovery = new CountingDiscovery(
+                            AzureAuthInstallation.Available(
+                                "/usr/lib/azureauth/azureauth",
+                                "/usr/lib/azureauth/azureauth",
+                                "0.9.5",
+                                AzureAuthHostPlatform.NativeLinux
+                            )
+                        ),
+                        ProcessRunner = processRunner,
+                    }
+                );
+            CredentialRequestV2 request = CreateRequest() with
+            {
+                AccountHint = "composition.user@example.com",
+                TenantHint = "tenant-composition",
+                CredentialKind = CredentialKind.BasicPassword,
+                IdentityFlow = IdentityFlow.DeviceCode,
+                InteractivePolicy = InteractivePolicy.HostToolAllows,
+                AcquisitionMode = AcquisitionMode.InteractionAllowed,
+            };
+
+            Assert.True(CredentialRequestV2Policy.IsValid(request));
+
+            CredentialResult result = await root.AcquisitionService.AcquireAsync(
+                request,
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Equal(CredentialResultStatus.ProtocolViolation, result.Status);
+            Assert.NotEqual(CredentialResultStatus.InteractionBlocked, result.Status);
+            Assert.Equal(CredentialErrorKind.ProtocolViolation, result.Error?.Kind);
+            Assert.Equal("AzureAuthDeviceCodeUnsupported", result.Error?.Code);
+            Assert.False(result.ContainsCredentialMaterial);
+            Assert.Null(root.ProductionOptions.DeviceCodePromptWriter);
+            Assert.Equal(0, processRunner.CallCount);
+        }
+        finally
+        {
+            Directory.Delete(rootPath, recursive: true);
+        }
+    }
+
+    private sealed class CompositionRecordingRunner(params ProcessResult[] results) : IProcessRunner
+    {
+        private readonly Queue<ProcessResult> queuedResults = new(results);
+
+        public List<ProcessStartSpec> StartSpecs { get; } = [];
+
+        public Task<ProcessResult> RunAsync(
+            ProcessStartSpec startSpec,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            StartSpecs.Add(startSpec);
+            return Task.FromResult(queuedResults.Dequeue());
+        }
+    }
+
+    [Theory]
+    [InlineData(
+        InteractivePolicy.UserAllowed,
+        CredentialResultStatus.InteractionBlocked,
+        CredentialErrorKind.InteractionBlocked,
+        "AzureAuthDeviceCodePromptUnavailable",
+        "Native Linux device-code login requires an attached human prompt stream."
+    )]
+    [InlineData(
+        InteractivePolicy.HostToolAllows,
+        CredentialResultStatus.ProtocolViolation,
+        CredentialErrorKind.ProtocolViolation,
+        "AzureAuthDeviceCodeUnsupported",
+        "AzureAuth device-code login requires an explicit interactive native Linux request."
+    )]
+    public async Task DeviceCodeCompositionRejectionsPreserveExactSafeMessages(
+        InteractivePolicy interactivePolicy,
+        CredentialResultStatus expectedStatus,
+        CredentialErrorKind expectedKind,
+        string expectedCode,
+        string expectedSafeMessage
+    )
+    {
+        string rootPath = CreateTestDirectory();
+        var processRunner = new CountingProcessRunner();
+        try
+        {
+            AzureAuthProviderConfig config = AzureAuthProviderConfig.CreateAzureAuth();
+            AzureAuthBinding binding = AzureAuthBindingPolicy.CreateBound(
+                config,
+                "composition.user@example.com",
+                "tenant-composition",
+                DateTimeOffset.UtcNow
+            );
+            CredentialProviderCompositionRoot root =
+                CredentialProviderCompositionRoot.CreateProduction(
+                    new CredentialProviderProductionOptions
+                    {
+                        SecureStoreRootPath = rootPath,
+                        ProviderConfig = config,
+                        Binding = binding,
+                        InstallationDiscovery = new CountingDiscovery(
+                            AzureAuthInstallation.Available(
+                                "/usr/lib/azureauth/azureauth",
+                                "/usr/lib/azureauth/azureauth",
+                                "0.9.5",
+                                AzureAuthHostPlatform.NativeLinux
+                            )
+                        ),
+                        ProcessRunner = processRunner,
+                    }
+                );
+            CredentialRequestV2 request = CreateRequest() with
+            {
+                AccountHint = "composition.user@example.com",
+                TenantHint = "tenant-composition",
+                CredentialKind = CredentialKind.BasicPassword,
+                IdentityFlow = IdentityFlow.DeviceCode,
+                InteractivePolicy = interactivePolicy,
+                AcquisitionMode = AcquisitionMode.InteractionAllowed,
+            };
+
+            Assert.True(CredentialRequestV2Policy.IsValid(request));
+
+            CredentialResult result = await root.AcquisitionService.AcquireAsync(
+                request,
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Equal(expectedStatus, result.Status);
+            CredentialError error = Assert.IsType<CredentialError>(result.Error);
+            Assert.Equal(expectedKind, error.Kind);
+            Assert.Equal(expectedCode, error.Code);
+            Assert.Equal(expectedSafeMessage, error.SafeMessage);
+            Assert.False(result.ContainsCredentialMaterial);
+            Assert.Null(root.ProductionOptions.DeviceCodePromptWriter);
+            Assert.Equal(0, processRunner.CallCount);
+        }
+        finally
+        {
+            Directory.Delete(rootPath, recursive: true);
+        }
+    }
 }

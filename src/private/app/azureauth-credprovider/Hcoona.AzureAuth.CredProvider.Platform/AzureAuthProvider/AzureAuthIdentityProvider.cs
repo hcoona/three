@@ -13,6 +13,7 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
 
     private readonly AzureAuthBinding binding;
     private readonly AzureAuthProviderConfig providerConfig;
+    private readonly TextWriter? deviceCodePromptWriter;
     private readonly AzureAuthProcessLaunchOptions launchOptions;
     private readonly IProcessRunner processRunner;
 
@@ -20,7 +21,8 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
         AzureAuthProviderConfig providerConfig,
         AzureAuthBinding binding,
         AzureAuthProcessLaunchOptions launchOptions,
-        IProcessRunner? processRunner = null
+        IProcessRunner? processRunner = null,
+        TextWriter? deviceCodePromptWriter = null
     )
     {
         AzureAuthProviderConfigPolicy.EnsureValid(providerConfig);
@@ -32,6 +34,7 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
         this.binding = binding;
         this.launchOptions = launchOptions;
         this.processRunner = processRunner ?? new SystemProcessRunner();
+        this.deviceCodePromptWriter = deviceCodePromptWriter;
     }
 
     public async ValueTask<AcquiredAccessTokenResult> AcquireAccessTokenAsync(
@@ -81,6 +84,15 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
         if (requestFailure is not null)
         {
             return requestFailure.ToAcquisitionResult();
+        }
+
+        if (request.IdentityFlow == IdentityFlow.DeviceCode && deviceCodePromptWriter is null)
+        {
+            return Failure(
+                AcquiredAccessTokenStatus.InteractionBlocked,
+                "AzureAuthDeviceCodePromptUnavailable",
+                "Native Linux device-code login requires an attached human prompt stream."
+            );
         }
 
         if (providerConfig.Selection != AzureAuthProviderSelection.AzureAuth)
@@ -155,7 +167,7 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
         if (launchOptions.HostPlatform == AzureAuthHostPlatform.NativeLinux)
         {
             arguments.Add("--mode");
-            arguments.Add("web");
+            arguments.Add(request.IdentityFlow == IdentityFlow.DeviceCode ? "devicecode" : "web");
             environment = new Dictionary<string, string?>
             {
                 ["AZUREAUTH_MODE"] = null,
@@ -180,7 +192,10 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
             workingDirectory: launchOptions.WorkingDirectory,
             environment: environment,
             timeout: launchOptions.Timeout,
-            outputCaptureOptions: launchOptions.ToOutputCaptureOptions()
+            outputCaptureOptions: launchOptions.ToOutputCaptureOptions(),
+            standardErrorTee: request.IdentityFlow == IdentityFlow.DeviceCode
+                ? deviceCodePromptWriter
+                : null
         );
     }
 

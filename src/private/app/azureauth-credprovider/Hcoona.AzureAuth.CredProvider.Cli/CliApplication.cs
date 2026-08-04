@@ -196,6 +196,7 @@ internal static class CliApplication
                                 [new TextWriterDiagnosticSink(stderr)],
                                 redactor
                             ),
+                            DeviceCodePromptWriter = stderr,
                         }
                     ),
             LazyThreadSafetyMode.ExecutionAndPublication
@@ -2224,6 +2225,7 @@ internal static class CliApplication
         CredentialProviderReadiness readiness
     )
     {
+        bool deviceCodeReady = IsDeviceCodeReady(root, readiness);
         List<string> lines =
         [
             "command: status",
@@ -2250,8 +2252,13 @@ internal static class CliApplication
             "environment-probing: disabled",
             "persistent-cache: disabled",
             "persistent-derived-credentials: disabled",
-            "accepted-identity-flows: browser, azure-pipelines",
-            "unavailable-identity-flows: device-code",
+            "accepted-identity-flows: "
+                + (
+                    deviceCodeReady
+                        ? "browser, device-code, azure-pipelines"
+                        : "browser, azure-pipelines"
+                ),
+            "unavailable-identity-flows: " + (deviceCodeReady ? "none" : "device-code"),
             "deferred-identity-flows: pat-compatibility, service-principal, "
                 + "managed-identity, workload-identity",
             "pat-compatibility: deferred-disabled",
@@ -2332,7 +2339,7 @@ internal static class CliApplication
                 + (opaqueAzurePipelinesToken ? "provided-not-printed" : "issued-not-printed"),
             "persistent-derived-credentials: "
                 + (loginResult.PersistentDerivedCredentialsStored ? "stored" : "disabled"),
-            "plaintext-fallback: disabled"
+            "product-plaintext-fallback: disabled"
         );
     }
 
@@ -2352,7 +2359,7 @@ internal static class CliApplication
             $"removed-change-count: {cleanupResult.AppliedChangeCount}",
             "cleanup: "
                 + (IsConfigurationPhase14CleanupSuccess(cleanupResult) ? "complete" : "incomplete"),
-            "plaintext-fallback: disabled",
+            "product-plaintext-fallback: disabled",
         ];
         AddIncompleteCleanupRemediation(lines, cleanupResult);
         return JoinLines(lines);
@@ -2870,6 +2877,7 @@ internal static class CliApplication
         ArgumentNullException.ThrowIfNull(nuGetDoctorResult);
         ArgumentNullException.ThrowIfNull(configurationDoctorResult);
 
+        bool deviceCodeReady = IsDeviceCodeReady(root, readiness);
         List<string> lines =
         [
             $"command: {invocation.CommandName}",
@@ -2898,13 +2906,18 @@ internal static class CliApplication
             "local-shell-helper-shorthand: " + GetLocalShellHelperShorthandStatusText(doctorResult),
             "protocol-payload: "
                 + (doctorResult.ProtocolPayloadCaptured ? "captured-not-printed" : "not-captured"),
-            "auth-accepted-identity-flows: browser, azure-pipelines",
-            "auth-unavailable-identity-flows: device-code",
+            "auth-accepted-identity-flows: "
+                + (
+                    deviceCodeReady
+                        ? "browser, device-code, azure-pipelines"
+                        : "browser, azure-pipelines"
+                ),
+            "auth-unavailable-identity-flows: " + (deviceCodeReady ? "none" : "device-code"),
             "auth-deferred-identity-flows: pat-compatibility, service-principal, "
                 + "managed-identity, workload-identity",
             "auth-pat-compatibility: deferred-disabled",
             "auth-persistent-derived-credentials: disabled",
-            "auth-plaintext-fallback: disabled",
+            "auth-product-plaintext-fallback: disabled",
         ];
         if (!readiness.Interactive.IsReady)
         {
@@ -2916,6 +2929,14 @@ internal static class CliApplication
 
         return JoinLines(lines);
     }
+
+    private static bool IsDeviceCodeReady(
+        CredentialProviderCompositionRoot root,
+        CredentialProviderReadiness readiness
+    ) =>
+        readiness.Interactive.IsReady
+        && root.Installation.HostPlatform == AzureAuthHostPlatform.NativeLinux
+        && root.ProductionOptions.DeviceCodePromptWriter is not null;
 
     private static IEnumerable<string> BuildNuGetDoctorLines(NuGetPhase10DoctorResult doctorResult)
     {

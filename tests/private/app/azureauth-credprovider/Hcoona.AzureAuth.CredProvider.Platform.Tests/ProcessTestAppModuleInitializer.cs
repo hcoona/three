@@ -41,6 +41,12 @@ internal static class ProcessTestAppModuleInitializer
                 Thread.Sleep(TimeSpan.FromSeconds(30));
                 Environment.Exit(0);
                 break;
+            case "stderr-then-sleep":
+                Console.Error.Write("device-code prompt");
+                Console.Error.Flush();
+                Thread.Sleep(TimeSpan.FromSeconds(30));
+                Environment.Exit(0);
+                break;
             case "read-env":
                 ReadEnvironment(helperArguments.Skip(1).ToArray());
                 break;
@@ -118,9 +124,11 @@ internal static class ProcessTestAppModuleInitializer
         var childHelperNonce = ProcessTestApp.CreateHelperNonce();
         var childStartInfo = new ProcessStartInfo
         {
-            FileName = Environment.ProcessPath
+            FileName =
+                Environment.ProcessPath
                 ?? throw new InvalidOperationException(
-                    "Process helper requires a resolved apphost path."),
+                    "Process helper requires a resolved apphost path."
+                ),
             UseShellExecute = false,
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
@@ -128,14 +136,14 @@ internal static class ProcessTestAppModuleInitializer
         }.WithArguments(ProcessTestApp.CreateHelperArguments(childHelperNonce, "sleep"));
         foreach (var variable in ProcessTestApp.CreateHelperEnvironment(childHelperNonce))
         {
-            childStartInfo.Environment[variable.Key] = variable.Value
+            childStartInfo.Environment[variable.Key] =
+                variable.Value
                 ?? throw new InvalidOperationException(
-                    $"Process helper environment '{variable.Key}' cannot be null.");
+                    $"Process helper environment '{variable.Key}' cannot be null."
+                );
         }
 
-        using var child = Process.Start(
-            childStartInfo
-        );
+        using var child = Process.Start(childStartInfo);
 
         if (child is null)
         {

@@ -58,7 +58,10 @@ Host tools own:
 10. Provide configuration commands that can install, verify, and remove each ecosystem integration.
 11. Support non-interactive CI operation without persisting secrets by default.
 12. Use AzureAuth (`microsoft-authentication-cli`) 0.9.5 as the current Windows, WSL, and native Linux identity path; keep Direct MSAL unimplemented behind the same provider abstraction.
-13. Support interactive browser acquisition and explicit Azure Pipelines system access tokens; keep device code, PAT compatibility, service principal, managed identity, and workload identity federation unavailable or deferred until implemented.
+13. Support interactive browser acquisition, explicit native Linux device-code
+    login, and explicit Azure Pipelines system access tokens; keep PAT
+    compatibility, service principal, managed identity, and workload identity
+    federation unavailable or deferred until implemented.
 14. Provide a `doctor` command that validates Git helper configuration through Git's own discovery behavior, NuGet plugin discovery, Python keyring availability, npm registry configuration, credential cache health, and common CI misconfigurations.
 15. Provide an internal deployment-validation bundle that exercises complete
     application, Git, NuGet, Python wheel, installation, and uninstallation
@@ -76,6 +79,11 @@ Host tools own:
 8. Partition credential cache entries by ecosystem, service identity, feed or host, account, tenant, token audience, and credential type.
 9. Prefer short-lived or identity-derived credentials over long-lived personal access tokens.
 10. Avoid writing credentials into repository-local configuration files by default.
+11. Keep product-owned derived credentials non-persistent by default and never
+    add a product plaintext cache fallback. On headless native Linux, permit
+    pinned AzureAuth 0.9.5's documented provider-owned cache fallback under
+    owner-only directory and file modes so device-code login can support later
+    silent host-tool acquisition.
 
 ## Integration Requirements by Ecosystem
 
