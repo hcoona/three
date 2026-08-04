@@ -1540,7 +1540,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
 
         string expectedSelector = ecosystem is CredentialEcosystem.Npm or CredentialEcosystem.Pnpm
             ? NpmCompatibleAuthSelectorPolicy.Create(expectedResource).NpmAuthTokenKey
-            : "npmRegistries." + registryUrl.AbsoluteUri + ".npmAuthToken";
+            : NpmCompatibleAuthSelectorPolicy.Create(expectedResource).YarnAuthTokenKey;
         return string.Equals(manifest.EntrySelector, expectedSelector, StringComparison.Ordinal);
     }
 

@@ -363,10 +363,9 @@ public sealed class YarnPhase13VerticalSliceService
         ConfigurationDeclarationPreservation declarationPreservation
     )
     {
-        string authTokenKey = CreateNpmRegistriesAuthKey(
-            request.Declaration.NpmRegistriesKey,
-            "npmAuthToken"
-        );
+        string authTokenKey = NpmCompatibleAuthSelectorPolicy
+            .Create(request.Declaration.ResourceIdentity)
+            .YarnAuthTokenKey;
         string alwaysAuthKey = CreateNpmRegistriesAuthKey(
             request.Declaration.NpmRegistriesKey,
             "npmAlwaysAuth"

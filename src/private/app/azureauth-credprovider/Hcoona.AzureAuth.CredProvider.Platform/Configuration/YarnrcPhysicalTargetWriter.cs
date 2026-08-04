@@ -9,6 +9,7 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
 {
     private const string NpmRegistryServerKey = "npmRegistryServer";
     private const string NpmRegistriesPrefix = "npmRegistries.";
+    private const string NpmRegistriesBracketPrefix = "npmRegistries[\"";
     private const string NpmAuthTokenKey = "npmAuthToken";
     private const string NpmAlwaysAuthKey = "npmAlwaysAuth";
     private const string NpmAuthIdentKey = "npmAuthIdent";
@@ -148,11 +149,7 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
 
         if (
             resourceIdentity is null
-            || !string.Equals(
-                registry,
-                resourceIdentity.ServiceEndpoint.AbsoluteUri,
-                StringComparison.Ordinal
-            )
+            || !MatchesRegistrySelector(change.Key, registry, leaf, resourceIdentity)
         )
         {
             return "The Yarn registry selector must match the canonical registry identity.";
@@ -179,6 +176,26 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
 
         return "The Yarn writer does not support npmAuthIdent.";
     }
+
+    private static bool MatchesRegistrySelector(
+        string key,
+        string registry,
+        string leaf,
+        CanonicalResourceIdentity resourceIdentity
+    ) =>
+        string.Equals(
+            registry,
+            resourceIdentity.ServiceEndpoint.AbsoluteUri,
+            StringComparison.Ordinal
+        )
+        || (
+            string.Equals(leaf, NpmAuthTokenKey, StringComparison.Ordinal)
+            && string.Equals(
+                key,
+                NpmCompatibleAuthSelectorPolicy.Create(resourceIdentity).YarnAuthTokenKey,
+                StringComparison.Ordinal
+            )
+        );
 
     private void ValidateRequest(ConfigurationPhysicalTargetWriterRequest request)
     {
@@ -311,6 +328,19 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
     {
         registry = string.Empty;
         leaf = string.Empty;
+        if (key.StartsWith(NpmRegistriesBracketPrefix, StringComparison.Ordinal))
+        {
+            int bracketSeparator = key.LastIndexOf("\"].", StringComparison.Ordinal);
+            if (bracketSeparator <= NpmRegistriesBracketPrefix.Length)
+            {
+                return false;
+            }
+
+            registry = key[NpmRegistriesBracketPrefix.Length..bracketSeparator];
+            leaf = key[(bracketSeparator + 3)..];
+            return leaf == NpmAuthTokenKey;
+        }
+
         if (!key.StartsWith(NpmRegistriesPrefix, StringComparison.Ordinal))
         {
             return false;

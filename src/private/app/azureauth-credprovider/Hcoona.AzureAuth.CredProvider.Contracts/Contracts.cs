@@ -1716,6 +1716,12 @@ public static class ConfigurationChangePlanPolicy
             return npmrcSelectorViolation;
         }
 
+        string? yarnrcSelectorViolation = GetYarnrcSecretAuthTokenSelectorViolation(plan);
+        if (yarnrcSelectorViolation is not null)
+        {
+            return yarnrcSelectorViolation;
+        }
+
         string? ciTemporaryTargetViolation = GetCiTemporaryTargetViolation(plan);
         if (ciTemporaryTargetViolation is not null)
         {
@@ -2193,8 +2199,6 @@ public static class ConfigurationChangePlanPolicy
         && (
             string.Equals(key, "npmAuthToken", StringComparison.Ordinal)
             || key.EndsWith(".npmAuthToken", StringComparison.Ordinal)
-            || string.Equals(key, "npmAuthIdent", StringComparison.Ordinal)
-            || key.EndsWith(".npmAuthIdent", StringComparison.Ordinal)
         );
 
     private static bool IsYarnNpmAuthIdentKey(string? key) =>
@@ -2314,6 +2318,76 @@ public static class ConfigurationChangePlanPolicy
         )
         {
             return "Protocol violation: Npmrc secret auth token keys must match the canonical "
+                + "registry identity.";
+        }
+
+        return null;
+    }
+
+    private static string? GetYarnrcSecretAuthTokenSelectorViolation(
+        ConfigurationChangePlan plan
+    )
+    {
+        ConfigurationChange[] yarnrcSecretAuthTokenChanges = plan
+            .Changes.Where(change =>
+                change.TargetKind == ConfigurationTargetKind.Yarnrc
+                && change.IsSecretValue
+                && IsYarnNpmAuthTokenKey(change.Key)
+                && RequiresValue(change.Operation)
+            )
+            .ToArray();
+        if (yarnrcSecretAuthTokenChanges.Length == 0)
+        {
+            return null;
+        }
+
+        if (plan.Manifest.ResourceIdentity is null)
+        {
+            return "Protocol violation: Yarnrc secret auth token entries require a canonical "
+                + "registry identity.";
+        }
+
+        string? resourceViolation = CanonicalResourceIdentityPolicy.GetViolation(
+            plan.Manifest.ResourceIdentity
+        );
+        if (resourceViolation is not null)
+        {
+            return resourceViolation;
+        }
+
+        if (
+            !CanonicalResourceIdentityPolicy.IsServiceEndpointCompatibleWithEcosystem(
+                plan.Manifest.ResourceIdentity.ServiceEndpoint,
+                CredentialEcosystem.Npm
+            )
+        )
+        {
+            return "Protocol violation: Yarnrc secret auth token entries require a canonical "
+                + "npm registry identity.";
+        }
+
+        NpmCompatibleAuthSelectors selectors = NpmCompatibleAuthSelectorPolicy.Create(
+            plan.Manifest.ResourceIdentity
+        );
+        if (
+            !string.Equals(
+                plan.Manifest.EntrySelector,
+                selectors.YarnAuthTokenKey,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            return "Protocol violation: Yarnrc secret auth token manifest selectors must match "
+                + "the canonical registry identity.";
+        }
+
+        if (
+            yarnrcSecretAuthTokenChanges.Any(change =>
+                !string.Equals(change.Key, selectors.YarnAuthTokenKey, StringComparison.Ordinal)
+            )
+        )
+        {
+            return "Protocol violation: Yarnrc secret auth token keys must match the canonical "
                 + "registry identity.";
         }
 

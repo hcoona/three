@@ -118,15 +118,29 @@ public sealed class YarnPhase13VerticalSliceServiceTests
             plan.Changes,
             static change => change.Key.EndsWith(".npmAuthToken", StringComparison.Ordinal)
         );
+        string expectedAuthTokenSelector = NpmCompatibleAuthSelectorPolicy
+            .Create(declaration.ResourceIdentity)
+            .YarnAuthTokenKey;
         Assert.Equal("/home/alice/.yarnrc.yml", alwaysAuthChange.TargetPathOrName);
         Assert.Equal(ConfigurationTargetKind.Yarnrc, alwaysAuthChange.TargetKind);
         Assert.Equal(ConfigurationChangeOperation.Set, alwaysAuthChange.Operation);
         Assert.False(alwaysAuthChange.IsSecretValue);
         Assert.Equal("true", alwaysAuthChange.Value);
+        Assert.Equal(
+            "npmRegistries." + declaration.RegistryUrl.AbsoluteUri + ".npmAlwaysAuth",
+            alwaysAuthChange.Key
+        );
         Assert.Equal("/home/alice/.yarnrc.yml", authTokenChange.TargetPathOrName);
+        Assert.Equal(expectedAuthTokenSelector, authTokenChange.Key);
         Assert.True(authTokenChange.IsSecretValue);
         Assert.Equal("short-lived-token", authTokenChange.Value);
-        Assert.Equal(authTokenChange.Key, plan.Manifest.EntrySelector);
+        Assert.Equal(expectedAuthTokenSelector, plan.Manifest.EntrySelector);
+        Assert.Equal(declaration.ResourceIdentity, plan.Manifest.ResourceIdentity);
+        Assert.Equal(
+            declaration.RegistryUrl,
+            Assert.IsType<CanonicalResourceIdentity>(plan.Manifest.ResourceIdentity)
+                .ServiceEndpoint
+        );
         Assert.True(ConfigurationChangePlanPolicy.IsValid(plan));
         Assert.True(new ConfigurationManager().ValidatePlan(plan).IsValid);
     }
@@ -265,6 +279,30 @@ public sealed class YarnPhase13VerticalSliceServiceTests
             static change =>
                 Assert.Equal("/tmp/azureauth-yarn-home/.yarnrc.yml", change.TargetPathOrName)
         );
+        ConfigurationChange alwaysAuthChange = Assert.Single(
+            plan.Changes,
+            static change => change.Key.EndsWith(".npmAlwaysAuth", StringComparison.Ordinal)
+        );
+        ConfigurationChange authTokenChange = Assert.Single(
+            plan.Changes,
+            static change => change.Key.EndsWith(".npmAuthToken", StringComparison.Ordinal)
+        );
+        string expectedAuthTokenSelector = NpmCompatibleAuthSelectorPolicy
+            .Create(declaration.ResourceIdentity)
+            .YarnAuthTokenKey;
+        Assert.False(alwaysAuthChange.IsSecretValue);
+        Assert.Equal("true", alwaysAuthChange.Value);
+        Assert.True(authTokenChange.IsSecretValue);
+        Assert.Equal("short-lived-token", authTokenChange.Value);
+        Assert.Equal(expectedAuthTokenSelector, authTokenChange.Key);
+        Assert.Equal(expectedAuthTokenSelector, plan.Manifest.EntrySelector);
+        Assert.Equal(declaration.ResourceIdentity, plan.Manifest.ResourceIdentity);
+        Assert.Equal(
+            declaration.RegistryUrl,
+            Assert.IsType<CanonicalResourceIdentity>(plan.Manifest.ResourceIdentity)
+                .ServiceEndpoint
+        );
+        Assert.True(ConfigurationChangePlanPolicy.IsValid(plan));
         Assert.True(new ConfigurationManager().ValidatePlan(plan).IsValid);
     }
 

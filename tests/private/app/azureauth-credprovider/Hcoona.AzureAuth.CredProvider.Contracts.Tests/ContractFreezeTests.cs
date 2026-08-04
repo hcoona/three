@@ -3059,7 +3059,12 @@ public sealed class ContractFreezeTests
         };
 
         Assert.Equal(ConfigurationScope.User, plan.Scope);
-        Assert.True(ConfigurationChangePlanPolicy.IsValid(plan));
+        Assert.False(ConfigurationChangePlanPolicy.IsValid(plan));
+        Assert.Contains(
+            "canonical registry identity",
+            ConfigurationChangePlanPolicy.GetViolation(plan),
+            StringComparison.Ordinal
+        );
         Assert.All(
             plan.Changes,
             change => Assert.Equal(ConfigurationTargetKind.Yarnrc, change.TargetKind)
@@ -3239,7 +3244,12 @@ public sealed class ContractFreezeTests
         };
 
         Assert.Equal(ConfigurationScope.CiTemporary, plan.Scope);
-        Assert.True(ConfigurationChangePlanPolicy.IsValid(plan));
+        Assert.False(ConfigurationChangePlanPolicy.IsValid(plan));
+        Assert.Contains(
+            "canonical registry identity",
+            ConfigurationChangePlanPolicy.GetViolation(plan),
+            StringComparison.Ordinal
+        );
         Assert.Equal(
             ConfigurationDeclarationPreservation.CopyHiddenDeclarationsToTemporaryConfig,
             plan.DeclarationPreservation
@@ -3585,16 +3595,15 @@ public sealed class ContractFreezeTests
     [Fact]
     public void ConfigurationChangePlanPolicyDerivesAndValidatesCredentialMaterialFlag()
     {
-        ConfigurationChange secretChange = CreateYarnAuthTokenChange(
-            "https://pkgs.dev.azure.com/org/_packaging/feed/npm"
-        );
+        ConfigurationChangePlan validSecretPlan = CreateYarnSecretAuthTokenPlan();
+        ConfigurationChange secretChange = Assert.Single(validSecretPlan.Changes);
         ConfigurationChange intrinsicSecretChange = secretChange with { IsSecretValue = false };
 
         ConfigurationChangePlan derivedPlan = ConfigurationChangePlanPolicy.Create(
             "plan-secret-material-derived",
             "azureauth-credprovider",
             ConfigurationScope.User,
-            CreateManifest("secret-material-derived"),
+            validSecretPlan.Manifest with { ManifestId = "manifest-secret-material-derived" },
             [secretChange]
         );
         var inconsistentPlan = derivedPlan with { ContainsCredentialMaterial = false };
@@ -3614,7 +3623,7 @@ public sealed class ContractFreezeTests
                 "plan-secret-material-false",
                 "azureauth-credprovider",
                 ConfigurationScope.User,
-                CreateManifest("secret-material-false"),
+                validSecretPlan.Manifest with { ManifestId = "manifest-secret-material-false" },
                 [secretChange],
                 containsCredentialMaterial: false
             )
@@ -3863,6 +3872,145 @@ public sealed class ContractFreezeTests
 
         Assert.True(ConfigurationChangePlanPolicy.IsValid(plan));
         Assert.Null(ConfigurationChangePlanPolicy.GetViolation(plan));
+    }
+
+    [Theory]
+    [InlineData("missing-resource")]
+    [InlineData("manifest-selector")]
+    [InlineData("change-key")]
+    public void ConfigurationChangePlanPolicyRejectsYarnSecretAuthTokenBindingMismatch(
+        string mismatch
+    )
+    {
+        ConfigurationChangePlan validPlan = CreateYarnSecretAuthTokenPlan();
+        Assert.True(ConfigurationChangePlanPolicy.IsValid(validPlan));
+        Assert.Null(ConfigurationChangePlanPolicy.GetViolation(validPlan));
+
+        ConfigurationChangePlan plan = mismatch switch
+        {
+            "missing-resource" => validPlan with
+            {
+                Manifest = validPlan.Manifest with { ResourceIdentity = null },
+            },
+            "manifest-selector" => validPlan with
+            {
+                Manifest = validPlan.Manifest with
+                {
+                    EntrySelector =
+                        "npmRegistries.https://pkgs.dev.azure.com/org/_packaging/other/npm/"
+                        + "registry/.npmAuthToken",
+                },
+            },
+            "change-key" => validPlan with
+            {
+                Changes =
+                [
+                    Assert.Single(validPlan.Changes) with
+                    {
+                        Key =
+                            "npmRegistries.https://pkgs.dev.azure.com/org/_packaging/other/npm/"
+                            + "registry/.npmAuthToken",
+                    },
+                ],
+            },
+            _ => throw new ArgumentOutOfRangeException(nameof(mismatch), mismatch, null),
+        };
+
+        Assert.False(ConfigurationChangePlanPolicy.IsValid(plan));
+        string violation = Assert.IsType<string>(
+            ConfigurationChangePlanPolicy.GetViolation(plan)
+        );
+        Assert.Contains("canonical registry identity", violation, StringComparison.Ordinal);
+        Assert.Throws<ArgumentException>(() => ConfigurationChangePlanPolicy.EnsureValid(plan));
+    }
+
+    [Theory]
+    [InlineData(ConfigurationChangeOperation.Set)]
+    [InlineData(ConfigurationChangeOperation.Create)]
+    [InlineData(ConfigurationChangeOperation.Update)]
+    [InlineData(ConfigurationChangeOperation.Refresh)]
+    public void ConfigurationChangePlanPolicyBindsEveryYarnSecretAuthTokenValueWrite(
+        ConfigurationChangeOperation operation
+    )
+    {
+        ConfigurationChangePlan validPlan = CreateYarnSecretAuthTokenPlan();
+        ConfigurationChangePlan plan = validPlan with
+        {
+            Manifest = validPlan.Manifest with { ResourceIdentity = null },
+            Changes =
+            [
+                Assert.Single(validPlan.Changes) with
+                {
+                    Operation = operation,
+                },
+            ],
+        };
+
+        Assert.False(ConfigurationChangePlanPolicy.IsValid(plan));
+        string violation = Assert.IsType<string>(
+            ConfigurationChangePlanPolicy.GetViolation(plan)
+        );
+        Assert.Contains("canonical registry identity", violation, StringComparison.Ordinal);
+        Assert.Throws<ArgumentException>(() => ConfigurationChangePlanPolicy.EnsureValid(plan));
+    }
+
+    [Fact]
+    public void ConfigurationChangePlanPolicyScopesYarnBindingToSecretAuthTokenValueWrites()
+    {
+        ConfigurationChangePlan validPlan = CreateYarnSecretAuthTokenPlan();
+        ConfigurationChangePlan nonSecretAlwaysAuthPlan = validPlan with
+        {
+            Manifest = validPlan.Manifest with
+            {
+                EntrySelector = "unbound-npm-always-auth",
+                ResourceIdentity = null,
+            },
+            ContainsCredentialMaterial = false,
+            Changes =
+            [
+                CreateYarnAlwaysAuthChange(
+                    "https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/"
+                ),
+            ],
+        };
+        ConfigurationChangePlan removeOnlyAuthTokenPlan = validPlan with
+        {
+            Manifest = validPlan.Manifest with { ResourceIdentity = null },
+            Changes =
+            [
+                Assert.Single(validPlan.Changes) with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    Value = null,
+                },
+            ],
+        };
+        ConfigurationChangePlan secretAlwaysAuthPlan = validPlan with
+        {
+            Manifest = validPlan.Manifest with
+            {
+                EntrySelector = "unbound-secret-npm-always-auth",
+                ResourceIdentity = null,
+            },
+            Changes =
+            [
+                CreateYarnAlwaysAuthChange(
+                    "https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/"
+                ) with
+                {
+                    IsSecretValue = true,
+                },
+            ],
+        };
+
+        Assert.All(
+            [nonSecretAlwaysAuthPlan, removeOnlyAuthTokenPlan, secretAlwaysAuthPlan],
+            plan =>
+            {
+                Assert.True(ConfigurationChangePlanPolicy.IsValid(plan));
+                Assert.Null(ConfigurationChangePlanPolicy.GetViolation(plan));
+            }
+        );
     }
 
     [Theory]
@@ -7576,7 +7724,7 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void ContractJsonUsesFrameworkCaseInsensitiveEnumReading()
+    public void ContractJsonRejectsNonCanonicalEnumReading()
     {
         var options = ContractJson.CreateSerializerOptions();
         string pascalEcosystemJson = CreateCredentialRequestJson(
@@ -7602,23 +7750,17 @@ public sealed class ContractFreezeTests
         string upperConfigurationJson = CreateConfigurationPlanJson()
             .Replace("\"scope\":\"user\"", "\"scope\":\"USER\"", StringComparison.Ordinal);
 
-        Assert.Equal(
-            CredentialEcosystem.Git,
-            JsonSerializer.Deserialize<CredentialRequest>(pascalEcosystemJson, options)?.Ecosystem
+        Assert.Throws<JsonException>(() =>
+            JsonSerializer.Deserialize<CredentialRequest>(pascalEcosystemJson, options)
         );
-        Assert.Equal(
-            CredentialResultStatus.Success,
-            JsonSerializer.Deserialize<CredentialResult>(upperStatusJson, options)?.Status
+        Assert.Throws<JsonException>(() =>
+            JsonSerializer.Deserialize<CredentialResult>(upperStatusJson, options)
         );
-        Assert.Equal(
-            AdapterProtocol.GitCredentialHelper,
-            JsonSerializer.Deserialize<AdapterHostResult>(pascalAdapterJson, options)?.Protocol
+        Assert.Throws<JsonException>(() =>
+            JsonSerializer.Deserialize<AdapterHostResult>(pascalAdapterJson, options)
         );
-        Assert.Equal(
-            ConfigurationScope.User,
-            JsonSerializer
-                .Deserialize<ConfigurationChangePlan>(upperConfigurationJson, options)
-                ?.Scope
+        Assert.Throws<JsonException>(() =>
+            JsonSerializer.Deserialize<ConfigurationChangePlan>(upperConfigurationJson, options)
         );
     }
 
@@ -8568,6 +8710,128 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
+    public void ContractJsonRejectsNonCanonicalEnumDeclaredNameCasing()
+    {
+        var options = ContractJson.CreateSerializerOptions();
+        Type[] publicEnumTypes = typeof(ContractVersions)
+            .Assembly.ExportedTypes.Where(static type => type.IsEnum)
+            .OrderBy(static type => type.FullName, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.False(JsonSerializer.IsReflectionEnabledByDefault);
+        Assert.All(
+            publicEnumTypes,
+            enumType =>
+            {
+                Assert.All(
+                    Enum.GetNames(enumType),
+                    declaredName =>
+                    {
+                        string canonicalName = JsonNamingPolicy.CamelCase.ConvertName(declaredName);
+                        Assert.NotEqual(canonicalName, declaredName);
+                        Assert.Throws<JsonException>(() =>
+                            JsonSerializer.Deserialize(
+                                SerializeJsonStringLiteral(declaredName),
+                                enumType,
+                                options
+                            )
+                        );
+                    }
+                );
+            }
+        );
+    }
+
+    [Fact]
+    public void EveryPublicContractEnumRetainsFrozenLiteralNumericValues()
+    {
+        var expected = new Dictionary<Type, string>
+        {
+            [typeof(AcquisitionMode)] = "Unspecified=0;SilentOnly=1;InteractionAllowed=2",
+            [typeof(AdapterHostExitCode)] =
+                "Success=0;NoCredential=1;InteractionRequired=2;Unauthorized=3;"
+                + "ConfigurationError=64;IntegrityFailure=65;CacheUnavailable=69;Fatal=70",
+            [typeof(AdapterProtocol)] =
+                "Unspecified=0;GitCredentialHelper=1;NuGetPlugin=2;PythonKeyringBackend=3;"
+                + "KeyringHelper=4;NpmConfiguration=5",
+            [typeof(CachePolicyMode)] =
+                "Unspecified=0;NoCache=1;ProductPersistentCacheDisabled=2;NonPersistentCi=3;"
+                + "FuturePersistentCacheRequested=4",
+            [typeof(ConfigurationChangeOperation)] =
+                "Unspecified=0;Set=1;Remove=2;EnsureFile=3;InstallAdapter=4;RemoveAdapter=5;"
+                + "Create=6;Update=7;Refresh=8",
+            [typeof(ConfigurationDeclarationPreservation)] =
+                "Unspecified=0;NotApplicable=1;AuthOnlyWhenDeclarationsRemainVisible=2;"
+                + "CopyHiddenDeclarationsToTemporaryConfig=3;CompleteMergedTemporaryConfig=4",
+            [typeof(ConfigurationScope)] =
+                "Unspecified=0;User=1;WorkspaceReadOnly=2;ExplicitPath=3;CiTemporary=4;Global=5",
+            [typeof(ConfigurationTargetKind)] =
+                "Unspecified=0;GitConfig=1;NuGetPluginLayout=2;PythonKeyringBackend=3;"
+                + "KeyringShim=4;Npmrc=5;Yarnrc=6;CiTemporaryFile=7",
+            [typeof(ConfigurationTemporaryContainerKind)] =
+                "Unspecified=0;None=1;NpmrcFile=2;TemporaryHome=3;YarnRcFile=4",
+            [typeof(CredentialEcosystem)] =
+                "Unspecified=0;Git=1;NuGet=2;Python=3;Npm=4;Pnpm=5;Yarn=6",
+            [typeof(CredentialErrorKind)] =
+                "Unspecified=0;UnsupportedHost=1;UnsupportedFlow=2;FlowDeferred=3;"
+                + "FlowDisabled=4;InteractionRequired=5;InteractionBlocked=6;"
+                + "CredentialUnavailable=7;Unauthorized=8;CacheUnavailable=9;"
+                + "PolicyViolation=10;IntegrityFailure=11;ProtocolViolation=12;Fatal=13",
+            [typeof(CredentialKind)] =
+                "Unspecified=0;BasicPassword=1;BearerToken=2;NpmAuthToken=3;"
+                + "NuGetPluginCredential=4;PatCompatibility=5",
+            [typeof(CredentialOperation)] =
+                "Unspecified=0;Get=1;Store=2;Erase=3;Refresh=4;Configure=5;Doctor=6",
+            [typeof(CredentialResultStatus)] =
+                "Unspecified=0;Success=1;NoCredential=2;InteractionRequired=3;"
+                + "InteractionBlocked=4;Unauthorized=5;CredentialUnavailable=6;"
+                + "FlowDeferred=7;FlowDisabled=8;UnsupportedFlow=9;CacheUnavailable=10;"
+                + "Fatal=11;IntegrityFailure=12;ProtocolViolation=13",
+            [typeof(DoctorCheckSeverity)] = "Unspecified=0;Info=1;Warning=2;Error=3",
+            [typeof(DoctorCheckStatus)] =
+                "Unspecified=0;Pass=1;Warning=2;Fail=3;Skipped=4;Unsupported=5;Deferred=6;"
+                + "NotApplicable=7",
+            [typeof(IdentityFlow)] =
+                "Unspecified=0;InteractiveBrowser=1;DeviceCode=2;PatCompatibility=3;"
+                + "AzurePipelinesSystemAccessToken=4;ServicePrincipal=5;ManagedIdentity=6;"
+                + "WorkloadIdentityFederation=7",
+            [typeof(IdentityFlowState)] =
+                "Unspecified=0;AcceptedMvp=1;Deferred=2;Disabled=3;Unsupported=4",
+            [typeof(InteractivePolicy)] =
+                "Unspecified=0;Never=1;HostToolAllows=2;UserAllowed=3",
+            [typeof(KeyringHelperMode)] = "Unspecified=0;Password=1;Credentials=2",
+            [typeof(TokenAudience)] = "Unspecified=0;AzureDevOps=1;AzureArtifacts=2",
+        };
+        Type[] publicEnumTypes = typeof(ContractVersions)
+            .Assembly.ExportedTypes.Where(static type => type.IsEnum)
+            .OrderBy(static type => type.FullName, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(
+            expected.Keys.OrderBy(static type => type.FullName, StringComparer.Ordinal),
+            publicEnumTypes
+        );
+        Assert.All(
+            expected,
+            pair =>
+            {
+                string actual = string.Join(
+                    ';',
+                    Enum.GetNames(pair.Key)
+                        .Select(name =>
+                            string.Create(
+                                CultureInfo.InvariantCulture,
+                                $"{name}={Convert.ToInt32(Enum.Parse(pair.Key, name), CultureInfo.InvariantCulture)}"
+                            )
+                        )
+                );
+
+                Assert.Equal(pair.Value, actual);
+            }
+        );
+    }
+
+    [Fact]
     public void ContractJsonRejectsUndefinedAdapterProtocolDuringSourceGeneratedRootSerialization()
     {
         var options = ContractJson.CreateSerializerOptions();
@@ -9034,6 +9298,9 @@ public sealed class ContractFreezeTests
         foreach ((TEnum value, string wireValue) in expected)
         {
             string json = JsonSerializer.Serialize(value, options);
+            string numericString = Convert
+                .ToInt32(value, CultureInfo.InvariantCulture)
+                .ToString(CultureInfo.InvariantCulture);
 
             Assert.Equal($"\"{wireValue}\"", json);
             Assert.Equal(value, JsonSerializer.Deserialize<TEnum>(json, options));
@@ -9045,7 +9312,31 @@ public sealed class ContractFreezeTests
                     options
                 )
             );
+            Assert.Throws<JsonException>(() =>
+                JsonSerializer.Deserialize<TEnum>(
+                    SerializeJsonStringLiteral(numericString),
+                    options
+                )
+            );
+            Assert.Throws<JsonException>(() =>
+                JsonSerializer.Deserialize<TEnum>("\"futureValue\"", options)
+            );
         }
+
+        string compositeWireValue = string.Join(
+            ',',
+            expected
+                .OrderBy(pair => Convert.ToInt32(pair.Key, CultureInfo.InvariantCulture))
+                .Skip(1)
+                .Take(2)
+                .Select(static pair => pair.Value)
+        );
+        Assert.Throws<JsonException>(() =>
+            JsonSerializer.Deserialize<TEnum>(
+                SerializeJsonStringLiteral(compositeWireValue),
+                options
+            )
+        );
 
         var undefined = (TEnum)Enum.ToObject(typeof(TEnum), 999);
         Assert.Throws<JsonException>(() => JsonSerializer.Serialize(undefined, options));
@@ -9067,6 +9358,45 @@ public sealed class ContractFreezeTests
             new Uri("https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry"),
             feed: "feed"
         );
+
+    private static ConfigurationChangePlan CreateYarnSecretAuthTokenPlan()
+    {
+        const string registryUrl =
+            "https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/";
+        CanonicalResourceIdentity resource = CanonicalResourceIdentity.Create(
+            "pkgs.dev.azure.com",
+            "org",
+            new Uri(registryUrl),
+            feed: "feed"
+        );
+        string selector = NpmCompatibleAuthSelectorPolicy.Create(resource).YarnAuthTokenKey;
+
+        return new ConfigurationChangePlan
+        {
+            PlanId = "plan-yarn-secret-auth-token",
+            OwnerProductId = "azureauth-credprovider",
+            Scope = ConfigurationScope.User,
+            Manifest = CreateManifest("yarn-secret-auth-token") with
+            {
+                EntrySelector = selector,
+                ResourceIdentity = resource,
+            },
+            ContainsCredentialMaterial = true,
+            Changes =
+            [
+                new ConfigurationChange
+                {
+                    Operation = ConfigurationChangeOperation.Set,
+                    TargetKind = ConfigurationTargetKind.Yarnrc,
+                    TargetPathOrName = "user .yarnrc.yml",
+                    Key = selector,
+                    Value = "secret-token",
+                    RequiresOwnershipRecord = true,
+                    IsSecretValue = true,
+                },
+            ],
+        };
+    }
 
     private static ConfigurationChangePlan CreateValidConfigurationPlan() =>
         new()

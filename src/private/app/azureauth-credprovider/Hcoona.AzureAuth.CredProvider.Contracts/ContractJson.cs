@@ -13,9 +13,31 @@ public static class ContractJson
             WriteIndented = false,
             TypeInfoResolver = ContractJsonSerializerContext.Default,
         };
-        options.Converters.Add(
-            new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false)
-        );
+        AddEnumConverter<AcquisitionMode>(options);
+        AddEnumConverter<AdapterHostExitCode>(options);
+        AddEnumConverter<AdapterProtocol>(options);
+        AddEnumConverter<CachePolicyMode>(options);
+        AddEnumConverter<ConfigurationChangeOperation>(options);
+        AddEnumConverter<ConfigurationDeclarationPreservation>(options);
+        AddEnumConverter<ConfigurationScope>(options);
+        AddEnumConverter<ConfigurationTargetKind>(options);
+        AddEnumConverter<ConfigurationTemporaryContainerKind>(options);
+        AddEnumConverter<CredentialEcosystem>(options);
+        AddEnumConverter<CredentialErrorKind>(options);
+        AddEnumConverter<CredentialKind>(options);
+        AddEnumConverter<CredentialOperation>(options);
+        AddEnumConverter<CredentialResultStatus>(options);
+        AddEnumConverter<DoctorCheckSeverity>(options);
+        AddEnumConverter<DoctorCheckStatus>(options);
+        AddEnumConverter<IdentityFlow>(options);
+        AddEnumConverter<IdentityFlowState>(options);
+        AddEnumConverter<InteractivePolicy>(options);
+        AddEnumConverter<KeyringHelperMode>(options);
+        AddEnumConverter<TokenAudience>(options);
         return options;
     }
+
+    private static void AddEnumConverter<TEnum>(JsonSerializerOptions options)
+        where TEnum : struct, Enum =>
+        options.Converters.Add(new ContractEnumJsonConverter<TEnum>());
 }
