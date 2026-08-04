@@ -35,37 +35,50 @@ public static class FoundationArtifactWriter
         FoundationArtifactPath.EnsureSafeTargetRid(options.TargetRid);
 
         PreparedArtifactFile[] preparedFiles = PrepareFiles(inputs);
-        var manifest = new FoundationArtifactManifest(
-            FoundationArtifactManifest.CurrentSchemaVersion,
-            options.ArtifactName,
-            options.BuildOs,
-            options.TargetRid,
-            options.ProductVersion,
-            options.SourceRevision,
-            "eng/scripts/azureauth-credprovider/New-FoundationArtifact.ps1",
-            "internal-non-release",
-            "unsigned",
-            IsInternal: true,
-            IsRelease: false,
-            IsSigned: false,
-            preparedFiles
-                .Select(file => new FoundationArtifactFile(
-                    file.ArtifactPath,
-                    file.Length,
-                    file.Sha256
-                ))
-                .ToArray()
-        );
-        byte[] manifestBytes = JsonSerializer.SerializeToUtf8Bytes(manifest, ManifestJsonOptions);
-
-        using var archive = new ZipArchive(destination, ZipArchiveMode.Create, leaveOpen: true);
-        WriteBytes(archive, ManifestArchivePath, manifestBytes);
-        foreach (PreparedArtifactFile file in preparedFiles)
+        try
         {
-            WriteFile(archive, file.ArtifactPath, file.SourcePath);
-        }
+            var manifest = new FoundationArtifactManifest(
+                FoundationArtifactManifest.CurrentSchemaVersion,
+                options.ArtifactName,
+                options.BuildOs,
+                options.TargetRid,
+                options.ProductVersion,
+                options.SourceRevision,
+                "eng/scripts/azureauth-credprovider/New-FoundationArtifact.ps1",
+                "internal-non-release",
+                "unsigned",
+                IsInternal: true,
+                IsRelease: false,
+                IsSigned: false,
+                preparedFiles
+                    .Select(file => new FoundationArtifactFile(
+                        file.ArtifactPath,
+                        file.Length,
+                        file.Sha256
+                    ))
+                    .ToArray()
+            );
+            byte[] manifestBytes = JsonSerializer.SerializeToUtf8Bytes(
+                manifest,
+                ManifestJsonOptions
+            );
 
-        return new FoundationArtifactPackage(manifest, manifestBytes);
+            using var archive = new ZipArchive(destination, ZipArchiveMode.Create, leaveOpen: true);
+            WriteBytes(archive, ManifestArchivePath, manifestBytes);
+            foreach (PreparedArtifactFile file in preparedFiles)
+            {
+                WriteCapturedContent(archive, file.ArtifactPath, file.Content);
+            }
+
+            return new FoundationArtifactPackage(manifest, manifestBytes);
+        }
+        finally
+        {
+            foreach (PreparedArtifactFile file in preparedFiles)
+            {
+                file.Dispose();
+            }
+        }
     }
 
     private static PreparedArtifactFile[] PrepareFiles(
@@ -78,48 +91,72 @@ public static class FoundationArtifactWriter
             ManifestArchivePath,
         };
 
-        foreach (FoundationArtifactInput input in inputs)
+        try
         {
-            ArgumentNullException.ThrowIfNull(input);
-            ArgumentException.ThrowIfNullOrWhiteSpace(input.SourcePath);
-            FoundationArtifactPath.EnsureSafeRelativePath(input.ArtifactPath);
-
-            if (!artifactPaths.Add(input.ArtifactPath))
+            foreach (FoundationArtifactInput input in inputs)
             {
-                throw new ArgumentException(
-                    "Duplicate or case-ambiguous artifact path "
-                        + $"'{input.ArtifactPath}' is not allowed.",
-                    nameof(inputs)
-                );
+                ArgumentNullException.ThrowIfNull(input);
+                ArgumentException.ThrowIfNullOrWhiteSpace(input.SourcePath);
+                FoundationArtifactPath.EnsureSafeRelativePath(input.ArtifactPath);
+
+                if (!artifactPaths.Add(input.ArtifactPath))
+                {
+                    throw new ArgumentException(
+                        "Duplicate or case-ambiguous artifact path "
+                            + $"'{input.ArtifactPath}' is not allowed.",
+                        nameof(inputs)
+                    );
+                }
+
+                files.Add(CaptureFile(input.SourcePath, input.ArtifactPath));
             }
 
-            var fileInfo = new FileInfo(input.SourcePath);
-            if (!fileInfo.Exists)
-            {
-                throw new FileNotFoundException(
-                    $"Artifact source file '{input.SourcePath}' does not exist.",
-                    input.SourcePath
-                );
-            }
-
-            files.Add(
-                new PreparedArtifactFile(
-                    input.SourcePath,
-                    input.ArtifactPath,
-                    fileInfo.Length,
-                    ComputeSha256(input.SourcePath)
-                )
-            );
+            return files.OrderBy(file => file.ArtifactPath, StringComparer.Ordinal).ToArray();
         }
+        catch
+        {
+            foreach (PreparedArtifactFile file in files)
+            {
+                file.Dispose();
+            }
 
-        return files.OrderBy(file => file.ArtifactPath, StringComparer.Ordinal).ToArray();
+            throw;
+        }
     }
 
-    private static string ComputeSha256(string sourcePath)
+    private static PreparedArtifactFile CaptureFile(string sourcePath, string artifactPath)
     {
-        using var stream = File.OpenRead(sourcePath);
-        byte[] hash = SHA256.HashData(stream);
-        return Convert.ToHexString(hash).ToLowerInvariant();
+        try
+        {
+            using FileStream source = File.OpenRead(sourcePath);
+            var content = new MemoryStream();
+            try
+            {
+                source.CopyTo(content);
+                content.Position = 0;
+                byte[] hash = SHA256.HashData(content);
+                content.Position = 0;
+                return new PreparedArtifactFile(
+                    artifactPath,
+                    content,
+                    content.Length,
+                    Convert.ToHexString(hash).ToLowerInvariant()
+                );
+            }
+            catch
+            {
+                content.Dispose();
+                throw;
+            }
+        }
+        catch (Exception exception)
+            when (exception is FileNotFoundException or DirectoryNotFoundException)
+        {
+            throw new FileNotFoundException(
+                $"Artifact source file '{sourcePath}' does not exist.",
+                sourcePath
+            );
+        }
     }
 
     private static void WriteBytes(ZipArchive archive, string artifactPath, byte[] content)
@@ -130,13 +167,20 @@ public static class FoundationArtifactWriter
         stream.Write(content);
     }
 
-    private static void WriteFile(ZipArchive archive, string artifactPath, string sourcePath)
+    private static void WriteCapturedContent(
+        ZipArchive archive,
+        string artifactPath,
+        MemoryStream content
+    )
     {
-        ZipArchiveEntry entry = archive.CreateEntry(artifactPath, CompressionLevel.NoCompression);
+        ZipArchiveEntry entry = archive.CreateEntry(
+            artifactPath,
+            CompressionLevel.NoCompression
+        );
         entry.LastWriteTime = DeterministicArchiveTimestamp;
         using Stream destination = entry.Open();
-        using Stream source = File.OpenRead(sourcePath);
-        source.CopyTo(destination);
+        content.Position = 0;
+        content.CopyTo(destination);
     }
 
     private static void ThrowIfMissingMetadata(string value, string parameterName)
@@ -148,9 +192,15 @@ public static class FoundationArtifactWriter
     }
 
     private sealed record PreparedArtifactFile(
-        string SourcePath,
         string ArtifactPath,
+        MemoryStream Content,
         long Length,
         string Sha256
-    );
+    ) : IDisposable
+    {
+        public void Dispose()
+        {
+            Content.Dispose();
+        }
+    }
 }

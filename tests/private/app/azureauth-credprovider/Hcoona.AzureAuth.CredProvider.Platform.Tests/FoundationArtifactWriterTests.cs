@@ -296,9 +296,43 @@ public sealed class FoundationArtifactWriterTests
         Assert.Equal(first, second);
     }
 
+    [Fact]
+    public void ManifestAndArchiveUseSameCapturedBytesWhenSourceMutates()
+    {
+        using TestDirectory testDirectory = TestDirectory.Create();
+        string source = testDirectory.WriteFile("platform.dll", "original");
+
+        FoundationArtifactPackage package = CreatePackage(
+            testDirectory,
+            InputsThatMutateSourceAfterCapture()
+        );
+
+        FoundationArtifactFile file = Assert.Single(package.Manifest.Files);
+        Assert.Equal("original".Length, file.Length);
+        Assert.Equal(Sha256Hex("original"), file.Sha256);
+        using var archive = ZipFile.OpenRead(testDirectory.PackagePath);
+        Assert.Equal("original", ReadEntryText(archive, "Platform/platform.dll"));
+        Assert.Equal("mutated after capture", File.ReadAllText(source));
+
+        IEnumerable<FoundationArtifactInput> InputsThatMutateSourceAfterCapture()
+        {
+            yield return new FoundationArtifactInput(source, "Platform/platform.dll");
+            File.WriteAllText(source, "mutated after capture");
+        }
+    }
+
     private static FoundationArtifactPackage CreatePackage(
         TestDirectory testDirectory,
         params FoundationArtifactInput[] inputs
+    )
+    {
+        using FileStream stream = File.Create(testDirectory.PackagePath);
+        return FoundationArtifactWriter.Create(stream, inputs, CreateOptions());
+    }
+
+    private static FoundationArtifactPackage CreatePackage(
+        TestDirectory testDirectory,
+        IEnumerable<FoundationArtifactInput> inputs
     )
     {
         using FileStream stream = File.Create(testDirectory.PackagePath);

@@ -21,7 +21,10 @@ param(
     [ValidateNotNullOrEmpty()]
     [string]$OutputRoot = 'artifacts/azureauth-credprovider/foundation',
 
-    [switch]$NoBuild
+    [switch]$NoBuild,
+
+    [Parameter(DontShow = $true)]
+    [scriptblock]$BeforePackageReplace
 )
 
 Set-StrictMode -Version Latest
@@ -235,18 +238,19 @@ function Write-ArchiveEntryFromFile {
     }
 }
 
-if (Test-Path -LiteralPath $stagingRoot) {
-    Remove-Item -LiteralPath $stagingRoot -Recurse -Force
-}
-New-Item -ItemType Directory -Path $stagingRoot -Force | Out-Null
 New-Item -ItemType Directory -Path $outputRootPath -Force | Out-Null
 
-foreach ($project in $projects) {
-    $projectPath = Join-Path $repoRoot $project.Path
-    $projectOutput = Join-Path $stagingRoot $project.Name
-    New-Item -ItemType Directory -Path $projectOutput -Force | Out-Null
+if (-not $NoBuild) {
+    if (Test-Path -LiteralPath $stagingRoot) {
+        Remove-Item -LiteralPath $stagingRoot -Recurse -Force
+    }
+    New-Item -ItemType Directory -Path $stagingRoot -Force | Out-Null
 
-    if (-not $NoBuild) {
+    foreach ($project in $projects) {
+        $projectPath = Join-Path $repoRoot $project.Path
+        $projectOutput = Join-Path $stagingRoot $project.Name
+        New-Item -ItemType Directory -Path $projectOutput -Force | Out-Null
+
         dotnet restore $projectPath -p:RestoreLockedMode=true -p:ContinuousIntegrationBuild=true -p:Deterministic=true "-p:PathMap=$pathMap"
         if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
@@ -259,12 +263,34 @@ foreach ($project in $projects) {
     }
 }
 
+$projectFiles = @{}
+if (-not (Test-Path -LiteralPath $stagingRoot -PathType Container)) {
+    throw "Canonical staging directory '$stagingRoot' does not exist. Run without -NoBuild first."
+}
+
+foreach ($project in $projects) {
+    $projectOutput = Join-Path $stagingRoot $project.Name
+    if (-not (Test-Path -LiteralPath $projectOutput -PathType Container)) {
+        throw "Canonical staging is incomplete: project directory '$projectOutput' does not exist."
+    }
+
+    $files = @(
+        Get-ChildItem -LiteralPath $projectOutput -File -Recurse |
+            Sort-Object FullName
+    )
+    if ($files.Count -eq 0) {
+        throw "Canonical staging is incomplete: project directory '$projectOutput' contains no files."
+    }
+
+    $projectFiles[$project.Name] = $files
+}
+
 $artifactFiles = [System.Collections.Generic.List[object]]::new()
 $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 $null = $seen.Add('manifest.json')
 foreach ($project in $projects) {
     $projectOutput = Join-Path $stagingRoot $project.Name
-    foreach ($file in Get-ChildItem -LiteralPath $projectOutput -File -Recurse | Sort-Object FullName) {
+    foreach ($file in $projectFiles[$project.Name]) {
         $artifactPath = ConvertTo-ArtifactPath -Root $projectOutput -File $file.FullName -Prefix $project.Name
         if (-not $seen.Add($artifactPath)) {
             throw "Duplicate or case-ambiguous artifact path '$artifactPath'."
@@ -310,25 +336,40 @@ $manifest = [ordered]@{
 $manifestJson = $manifest | ConvertTo-Json -Depth 10 -Compress
 $manifestBytes = [System.Text.Encoding]::UTF8.GetBytes($manifestJson)
 
-if (Test-Path -LiteralPath $packagePath) {
-    Remove-Item -LiteralPath $packagePath -Force
-}
-
-$packageStream = [System.IO.File]::Create($packagePath)
+$temporaryPackagePath = "$packagePath.$([System.Guid]::NewGuid().ToString('N')).tmp"
 try {
-    $archive = [System.IO.Compression.ZipArchive]::new($packageStream, [System.IO.Compression.ZipArchiveMode]::Create)
+    $packageStream = [System.IO.File]::Open(
+        $temporaryPackagePath,
+        [System.IO.FileMode]::CreateNew,
+        [System.IO.FileAccess]::Write,
+        [System.IO.FileShare]::None
+    )
     try {
-        Write-ArchiveEntryFromByteArray -Archive $archive -EntryName 'manifest.json' -Bytes $manifestBytes
-        foreach ($file in ($artifactFiles | Sort-Object path)) {
-            Write-ArchiveEntryFromFile -Archive $archive -EntryName $file.path -Path $file.sourcePath
+        $archive = [System.IO.Compression.ZipArchive]::new($packageStream, [System.IO.Compression.ZipArchiveMode]::Create)
+        try {
+            Write-ArchiveEntryFromByteArray -Archive $archive -EntryName 'manifest.json' -Bytes $manifestBytes
+            foreach ($file in ($artifactFiles | Sort-Object path)) {
+                Write-ArchiveEntryFromFile -Archive $archive -EntryName $file.path -Path $file.sourcePath
+            }
+        }
+        finally {
+            $archive.Dispose()
         }
     }
     finally {
-        $archive.Dispose()
+        $packageStream.Dispose()
     }
+
+    if ($null -ne $BeforePackageReplace) {
+        & $BeforePackageReplace $temporaryPackagePath $packagePath
+    }
+
+    [System.IO.File]::Move($temporaryPackagePath, $packagePath, $true)
 }
 finally {
-    $packageStream.Dispose()
+    if (Test-Path -LiteralPath $temporaryPackagePath) {
+        Remove-Item -LiteralPath $temporaryPackagePath -Force
+    }
 }
 
 Write-Output "Created internal non-release unsigned foundation artifact: $packagePath"
