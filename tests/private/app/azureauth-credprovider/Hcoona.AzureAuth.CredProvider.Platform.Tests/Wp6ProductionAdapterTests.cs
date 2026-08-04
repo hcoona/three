@@ -265,6 +265,10 @@ public sealed class Wp6ProductionAdapterTests
                     IsWslEnvironment = true,
                     WindowsMountRoot = mountRoot,
                     WindowsPowerShellPath = powerShell,
+                    LinuxExecuteAccessChecker = _ =>
+                        throw new InvalidOperationException(
+                            "WSL discovery must not check Linux execute access."
+                        ),
                 }
             );
 
@@ -334,6 +338,10 @@ public sealed class Wp6ProductionAdapterTests
                     ForcedHostPlatform = AzureAuthHostPlatform.Wsl,
                     WindowsMountRoot = cMount,
                     WindowsPowerShellPath = powerShell,
+                    LinuxExecuteAccessChecker = _ =>
+                        throw new InvalidOperationException(
+                            "WSL discovery must not check Linux execute access."
+                        ),
                 }
             );
 
@@ -395,6 +403,10 @@ public sealed class Wp6ProductionAdapterTests
                     IsWslEnvironment = true,
                     WindowsMountRoot = cMount,
                     WindowsPowerShellPath = powerShell,
+                    LinuxExecuteAccessChecker = _ =>
+                        throw new InvalidOperationException(
+                            "WSL discovery must not check Linux execute access."
+                        ),
                 }
             );
 
@@ -413,30 +425,11 @@ public sealed class Wp6ProductionAdapterTests
     }
 
     [Theory]
-    [InlineData(
-        "0.9.5.0",
-        AzureAuthInstallationStatus.Available,
-        UnixFileMode.UserExecute
-    )]
-    [InlineData(
-        "0.9.5.0",
-        AzureAuthInstallationStatus.Available,
-        UnixFileMode.GroupExecute
-    )]
-    [InlineData(
-        "0.9.5.0",
-        AzureAuthInstallationStatus.Available,
-        UnixFileMode.OtherExecute
-    )]
-    [InlineData(
-        "0.9.4.0",
-        AzureAuthInstallationStatus.WrongVersion,
-        UnixFileMode.UserExecute
-    )]
+    [InlineData("0.9.5.0", AzureAuthInstallationStatus.Available)]
+    [InlineData("0.9.4.0", AzureAuthInstallationStatus.WrongVersion)]
     public void NativeLinuxDiscoveryReadsAdjacentManagedAssemblyIdentity(
         string assemblyVersion,
-        AzureAuthInstallationStatus expectedStatus,
-        UnixFileMode executeBit
+        AzureAuthInstallationStatus expectedStatus
     )
     {
         string root = CreateTestDirectory();
@@ -458,7 +451,7 @@ public sealed class Wp6ProductionAdapterTests
                             .NativeLinuxExecutablePathEnvironmentVariable
                             ? executable
                             : null,
-                    UnixFileModeReader = _ => executeBit,
+                    LinuxExecuteAccessChecker = _ => LinuxExecuteAccessResult.Allowed,
                     ManagedAssemblyIdentityReader = path =>
                     {
                         Assert.Equal(Path.Combine(root, "azureauth.dll"), path);
@@ -490,6 +483,58 @@ public sealed class Wp6ProductionAdapterTests
         }
     }
 
+    [Theory]
+    [InlineData(UnixFileMode.UserExecute)]
+    [InlineData(UnixFileMode.GroupExecute)]
+    [InlineData(UnixFileMode.OtherExecute)]
+    public void NativeLinuxDiscoveryRejectsExecuteBitWhenEffectiveAccessIsDenied(
+        UnixFileMode unrelatedExecuteBit
+    )
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        string root = CreateTestDirectory();
+        try
+        {
+            string executable = Path.Combine(root, "azureauth");
+            File.WriteAllText(executable, "");
+            File.SetUnixFileMode(
+                executable,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | unrelatedExecuteBit
+            );
+            var discovery = new SystemAzureAuthInstallationDiscovery(
+                new DiscoveryRunner("must not be used"),
+                new SystemAzureAuthInstallationDiscoveryOptions
+                {
+                    ForcedHostPlatform = AzureAuthHostPlatform.NativeLinux,
+                    NativeLinuxExecutablePath = executable,
+                    LinuxExecuteAccessChecker = path =>
+                    {
+                        Assert.Equal(executable, path);
+                        return LinuxExecuteAccessResult.Denied;
+                    },
+                    ManagedAssemblyIdentityReader = _ =>
+                        throw new InvalidOperationException("Version must not be read."),
+                }
+            );
+
+            AzureAuthInstallation result = discovery.Discover(
+                AzureAuthProviderConfig.CreateAzureAuth(),
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Equal(AzureAuthInstallationStatus.Unavailable, result.Status);
+            Assert.Equal("AzureAuthLinuxExecutableNotExecutable", result.Code);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Fact]
     public void ForcedNativeLinuxDiscoveryRejectsNonExecutableAppHost()
     {
@@ -504,7 +549,7 @@ public sealed class Wp6ProductionAdapterTests
                 {
                     ForcedHostPlatform = AzureAuthHostPlatform.NativeLinux,
                     NativeLinuxExecutablePath = executable,
-                    UnixFileModeReader = _ => UnixFileMode.UserRead | UnixFileMode.UserWrite,
+                    LinuxExecuteAccessChecker = _ => LinuxExecuteAccessResult.Denied,
                     ManagedAssemblyIdentityReader = _ =>
                         throw new InvalidOperationException("Version must not be read."),
                 }
@@ -518,6 +563,72 @@ public sealed class Wp6ProductionAdapterTests
             Assert.Equal(AzureAuthInstallationStatus.Unavailable, result.Status);
             Assert.Equal("AzureAuthLinuxExecutableNotExecutable", result.Code);
             Assert.False(result.IsAvailable);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ForcedNativeLinuxDiscoveryMapsAccessCheckFailureToUnavailable()
+    {
+        string root = CreateTestDirectory();
+        try
+        {
+            string executable = Path.Combine(root, "azureauth");
+            File.WriteAllText(executable, "");
+            var discovery = new SystemAzureAuthInstallationDiscovery(
+                new DiscoveryRunner("must not be used"),
+                new SystemAzureAuthInstallationDiscoveryOptions
+                {
+                    ForcedHostPlatform = AzureAuthHostPlatform.NativeLinux,
+                    NativeLinuxExecutablePath = executable,
+                    LinuxExecuteAccessChecker = _ => LinuxExecuteAccessResult.Unavailable,
+                    ManagedAssemblyIdentityReader = _ =>
+                        throw new InvalidOperationException("Version must not be read."),
+                }
+            );
+
+            AzureAuthInstallation result = discovery.Discover(
+                AzureAuthProviderConfig.CreateAzureAuth(),
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Equal(AzureAuthInstallationStatus.Unavailable, result.Status);
+            Assert.Equal("AzureAuthLinuxExecutableAccessUnavailable", result.Code);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ForcedWindowsDiscoveryDoesNotCheckLinuxExecuteAccess()
+    {
+        string root = CreateTestDirectory();
+        try
+        {
+            var discovery = new SystemAzureAuthInstallationDiscovery(
+                new DiscoveryRunner("must not be used"),
+                new SystemAzureAuthInstallationDiscoveryOptions
+                {
+                    ForcedHostPlatform = AzureAuthHostPlatform.Windows,
+                    LocalApplicationDataPath = root,
+                    LinuxExecuteAccessChecker = _ =>
+                        throw new InvalidOperationException(
+                            "Windows discovery must not check Linux execute access."
+                        ),
+                }
+            );
+
+            AzureAuthInstallation result = discovery.Discover(
+                AzureAuthProviderConfig.CreateAzureAuth(),
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Equal(AzureAuthInstallationStatus.Missing, result.Status);
         }
         finally
         {
@@ -575,6 +686,54 @@ public sealed class Wp6ProductionAdapterTests
         {
             Directory.Delete(root, recursive: true);
         }
+    }
+
+    [Theory]
+    [InlineData(0, 0, nameof(LinuxExecuteAccessResult.Allowed))]
+    [InlineData(-1, 13, nameof(LinuxExecuteAccessResult.Denied))]
+    [InlineData(-1, 1, nameof(LinuxExecuteAccessResult.Denied))]
+    [InlineData(-1, 2, nameof(LinuxExecuteAccessResult.Unavailable))]
+    public void LinuxExecuteAccessCheckMapsNativeResult(
+        int nativeResult,
+        int nativeError,
+        string expected
+    )
+    {
+        const string ExecutablePath = "/usr/lib/azureauth/azureauth";
+
+        LinuxExecuteAccessResult actual =
+            SystemAzureAuthInstallationDiscoveryOptions.InvokeLinuxEffectiveExecuteAccessCheck(
+                ExecutablePath,
+                (directoryFileDescriptor, path, mode, flags) =>
+                {
+                    Assert.Equal(-100, directoryFileDescriptor);
+                    Assert.Equal(ExecutablePath, path);
+                    Assert.Equal(1, mode);
+                    Assert.Equal(0x200, flags);
+                    return nativeResult;
+                },
+                () =>
+                    nativeResult == 0
+                        ? throw new InvalidOperationException(
+                            "Successful access checks must not read an error."
+                        )
+                        : nativeError
+            );
+
+        Assert.Equal(expected, actual.ToString());
+    }
+
+    [Fact]
+    public void LinuxExecuteAccessCheckMapsInteropFailureToUnavailable()
+    {
+        LinuxExecuteAccessResult result =
+            SystemAzureAuthInstallationDiscoveryOptions.InvokeLinuxEffectiveExecuteAccessCheck(
+                "/usr/lib/azureauth/azureauth",
+                (_, _, _, _) => throw new EntryPointNotFoundException(),
+                () => throw new InvalidOperationException("Last error must not be read.")
+            );
+
+        Assert.Equal(LinuxExecuteAccessResult.Unavailable, result);
     }
 
     private static string CreateTestDirectory()

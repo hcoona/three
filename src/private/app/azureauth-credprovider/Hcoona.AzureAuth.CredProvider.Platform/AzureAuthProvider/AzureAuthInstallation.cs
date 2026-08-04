@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Hcoona.AzureAuth.CredProvider.Platform.Processes;
@@ -83,8 +84,21 @@ public interface IAzureAuthInstallationDiscovery
     );
 }
 
+internal enum LinuxExecuteAccessResult
+{
+    Allowed,
+    Denied,
+    Unavailable,
+}
+
 public sealed record SystemAzureAuthInstallationDiscoveryOptions
 {
+    private const int AtFdcwd = -100;
+    private const int XOk = 1;
+    private const int AtEaccess = 0x200;
+    private const int OperationNotPermitted = 1;
+    private const int PermissionDenied = 13;
+
     internal AzureAuthHostPlatform? ForcedHostPlatform { get; init; }
 
     public bool? IsWslEnvironment { get; init; }
@@ -103,15 +117,64 @@ public sealed record SystemAzureAuthInstallationDiscoveryOptions
     public Func<string, AssemblyName> ManagedAssemblyIdentityReader { get; init; } =
         AssemblyName.GetAssemblyName;
 
-    internal Func<string, UnixFileMode> UnixFileModeReader { get; init; } =
-        static path =>
-            OperatingSystem.IsLinux()
-                ? File.GetUnixFileMode(path)
-                : throw new PlatformNotSupportedException();
+    internal Func<string, LinuxExecuteAccessResult> LinuxExecuteAccessChecker { get; init; } =
+        HasLinuxEffectiveExecuteAccess;
 
     public TimeSpan Timeout { get; init; } = TimeSpan.FromSeconds(15);
 
     public int MaximumOutputBytes { get; init; } = 8 * 1024;
+
+    private static LinuxExecuteAccessResult HasLinuxEffectiveExecuteAccess(string path) =>
+        OperatingSystem.IsLinux()
+            ? InvokeLinuxEffectiveExecuteAccessCheck(
+                path,
+                FileAccessAt,
+                Marshal.GetLastPInvokeError
+            )
+            : LinuxExecuteAccessResult.Unavailable;
+
+    internal static LinuxExecuteAccessResult InvokeLinuxEffectiveExecuteAccessCheck(
+        string path,
+        Func<int, string, int, int, int> fileAccessAt,
+        Func<int> getLastError
+    )
+    {
+        try
+        {
+            if (fileAccessAt(AtFdcwd, path, XOk, AtEaccess) == 0)
+            {
+                return LinuxExecuteAccessResult.Allowed;
+            }
+
+            return getLastError() is PermissionDenied or OperationNotPermitted
+                ? LinuxExecuteAccessResult.Denied
+                : LinuxExecuteAccessResult.Unavailable;
+        }
+        catch (Exception exception)
+            when (exception
+                    is DllNotFoundException
+                        or EntryPointNotFoundException
+                        or MarshalDirectiveException
+                        or BadImageFormatException
+            )
+        {
+            return LinuxExecuteAccessResult.Unavailable;
+        }
+    }
+
+    [DllImport(
+        "libc",
+        EntryPoint = "faccessat",
+        CharSet = CharSet.Ansi,
+        ExactSpelling = true,
+        SetLastError = true
+    )]
+    private static extern int FileAccessAt(
+        int directoryFileDescriptor,
+        string path,
+        int mode,
+        int flags
+    );
 }
 
 public sealed class SystemAzureAuthInstallationDiscovery : IAzureAuthInstallationDiscovery
@@ -292,31 +355,17 @@ public sealed class SystemAzureAuthInstallationDiscovery : IAzureAuthInstallatio
             );
         }
 
-        UnixFileMode fileMode;
-        try
-        {
-            fileMode = options.UnixFileModeReader(path);
-        }
-        catch (Exception exception)
-            when (exception
-                    is IOException
-                        or UnauthorizedAccessException
-                        or PlatformNotSupportedException
-                        or ArgumentException
-            )
+        LinuxExecuteAccessResult executeAccess = options.LinuxExecuteAccessChecker(path);
+        if (executeAccess == LinuxExecuteAccessResult.Unavailable)
         {
             return AzureAuthInstallation.Failure(
                 AzureAuthInstallationStatus.Unavailable,
-                "AzureAuthLinuxExecutableModeUnavailable",
-                "The native Linux AzureAuth executable permissions could not be read."
+                "AzureAuthLinuxExecutableAccessUnavailable",
+                "The native Linux AzureAuth executable access could not be checked."
             );
         }
 
-        const UnixFileMode ExecuteBits =
-            UnixFileMode.UserExecute
-            | UnixFileMode.GroupExecute
-            | UnixFileMode.OtherExecute;
-        if ((fileMode & ExecuteBits) == 0)
+        if (executeAccess == LinuxExecuteAccessResult.Denied)
         {
             return AzureAuthInstallation.Failure(
                 AzureAuthInstallationStatus.Unavailable,
