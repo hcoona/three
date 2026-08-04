@@ -62,3 +62,8 @@ internal interface IFileSystemMutationLock
 {
     IDisposable AcquireMutationLock(string directory);
 }
+
+internal interface IFileSystemLinkResolver
+{
+    string ResolveFilePathForWrite(string path);
+}

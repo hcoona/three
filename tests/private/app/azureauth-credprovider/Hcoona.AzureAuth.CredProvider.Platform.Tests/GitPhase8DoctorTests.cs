@@ -339,6 +339,176 @@ public sealed class GitPhase8DoctorTests
     }
 
     [Fact]
+    public async Task InterruptedUnconfigureRetryResumesInactiveOwnedCleanup()
+    {
+        string stateDirectory = CreateTestDirectory();
+        using var cancellation = new CancellationTokenSource();
+        GitPhase8VerticalSliceService service = CreateRealGitService(
+            stateDirectory,
+            afterOwnedGitActivationRemoved: cancellation.Cancel
+        );
+
+        try
+        {
+            await service.ConfigureAsync(TestContext.Current.CancellationToken);
+            byte[] privateConfig = File.ReadAllBytes(service.Paths.GitConfigPath);
+            byte[] manifest = File.ReadAllBytes(service.Paths.OwnershipManifestPath);
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+                await service.UnconfigureAsync(cancellation.Token)
+            );
+
+            Assert.DoesNotContain(
+                "# BEGIN azureauth-credprovider managed include",
+                File.ReadAllText(service.Paths.UserGitConfigPath),
+                StringComparison.Ordinal
+            );
+            Assert.Equal(privateConfig, File.ReadAllBytes(service.Paths.GitConfigPath));
+            Assert.Equal(manifest, File.ReadAllBytes(service.Paths.OwnershipManifestPath));
+
+            GitPhase8UnconfigureResult result = await CreateRealGitService(stateDirectory)
+                .UnconfigureAsync(TestContext.Current.CancellationToken);
+
+            Assert.True(result.HadOwnedConfiguration);
+            Assert.False(result.OwnedGitEntriesPresent);
+            Assert.False(result.OwnershipManifestPresent);
+            Assert.DoesNotContain(
+                "azureauth-credprovider",
+                File.ReadAllText(service.Paths.GitConfigPath),
+                StringComparison.Ordinal
+            );
+            Assert.False(File.Exists(service.Paths.GitHelperPath));
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task InterruptedUnconfigureRetryFailsClosedOnTamperedPrivateState()
+    {
+        string stateDirectory = CreateTestDirectory();
+        using var cancellation = new CancellationTokenSource();
+        GitPhase8VerticalSliceService service = CreateRealGitService(
+            stateDirectory,
+            afterOwnedGitActivationRemoved: cancellation.Cancel
+        );
+
+        try
+        {
+            await service.ConfigureAsync(TestContext.Current.CancellationToken);
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+                await service.UnconfigureAsync(cancellation.Token)
+            );
+            string tampered = ReplaceConfiguredValue(
+                File.ReadAllText(service.Paths.GitConfigPath),
+                "useHttpPath",
+                "false"
+            );
+            File.WriteAllText(service.Paths.GitConfigPath, tampered);
+            byte[] manifest = File.ReadAllBytes(service.Paths.OwnershipManifestPath);
+
+            await Assert.ThrowsAsync<GitPhase8UnrecognizedStateException>(async () =>
+                await CreateRealGitService(stateDirectory)
+                    .UnconfigureAsync(TestContext.Current.CancellationToken)
+            );
+
+            Assert.Equal(tampered, File.ReadAllText(service.Paths.GitConfigPath));
+            Assert.Equal(manifest, File.ReadAllBytes(service.Paths.OwnershipManifestPath));
+            Assert.DoesNotContain(
+                "# BEGIN azureauth-credprovider managed include",
+                File.ReadAllText(service.Paths.UserGitConfigPath),
+                StringComparison.Ordinal
+            );
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task ConfigureAndUnconfigurePreserveUserGitConfigSymbolicLink()
+    {
+        string stateDirectory = CreateTestDirectory();
+        string homeDirectory = Path.Combine(stateDirectory, "user-home");
+        Directory.CreateDirectory(homeDirectory);
+        string targetPath = Path.Combine(homeDirectory, "actual.gitconfig");
+        string userGitConfigPath = Path.Combine(homeDirectory, ".gitconfig");
+        const string Original = "# existing user config\n";
+        File.WriteAllText(targetPath, Original);
+        if (!TryCreateFileSymbolicLink(userGitConfigPath, Path.GetFileName(targetPath)))
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+            return;
+        }
+
+        string? originalLinkTarget = new FileInfo(userGitConfigPath).LinkTarget;
+        GitPhase8VerticalSliceService service = CreateRealGitService(
+            stateDirectory,
+            homeDirectory
+        );
+
+        try
+        {
+            await service.ConfigureAsync(TestContext.Current.CancellationToken);
+
+            Assert.Equal(originalLinkTarget, new FileInfo(userGitConfigPath).LinkTarget);
+            Assert.Contains(
+                "# BEGIN azureauth-credprovider managed include",
+                File.ReadAllText(targetPath),
+                StringComparison.Ordinal
+            );
+
+            await service.UnconfigureAsync(TestContext.Current.CancellationToken);
+
+            Assert.Equal(originalLinkTarget, new FileInfo(userGitConfigPath).LinkTarget);
+            Assert.Equal(Original, File.ReadAllText(targetPath));
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task ConfigureFailsClosedOnDanglingUserGitConfigSymbolicLink()
+    {
+        string stateDirectory = CreateTestDirectory();
+        string homeDirectory = Path.Combine(stateDirectory, "user-home");
+        Directory.CreateDirectory(homeDirectory);
+        string userGitConfigPath = Path.Combine(homeDirectory, ".gitconfig");
+        const string MissingTarget = "missing.gitconfig";
+        if (!TryCreateFileSymbolicLink(userGitConfigPath, MissingTarget))
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+            return;
+        }
+
+        GitPhase8VerticalSliceService service = CreateRealGitService(
+            stateDirectory,
+            homeDirectory
+        );
+
+        try
+        {
+            await Assert.ThrowsAsync<GitPhase8UnrecognizedStateException>(async () =>
+                await service.ConfigureAsync(TestContext.Current.CancellationToken)
+            );
+
+            Assert.Equal(MissingTarget, new FileInfo(userGitConfigPath).LinkTarget);
+            Assert.False(File.Exists(Path.Combine(homeDirectory, MissingTarget)));
+            Assert.False(File.Exists(service.Paths.GitConfigPath));
+            Assert.False(File.Exists(service.Paths.OwnershipManifestPath));
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
     public async Task ConfigureMigratesUntouchedLegacyPrivateOnlyState()
     {
         string stateDirectory = CreateTestDirectory();
@@ -594,7 +764,8 @@ public sealed class GitPhase8DoctorTests
 
     private static GitPhase8VerticalSliceService CreateRealGitService(
         string stateDirectory,
-        string? homeDirectory = null
+        string? homeDirectory = null,
+        Action? afterOwnedGitActivationRemoved = null
     ) =>
         new(
             new GitPhase8VerticalSliceOptions
@@ -605,8 +776,30 @@ public sealed class GitPhase8DoctorTests
                 GitExecutablePath = "git",
                 LocalShellGitDiscoverySupported = true,
                 ProductExecutablePath = CreateFakeProductExecutable(stateDirectory),
+                AfterOwnedGitActivationRemoved = afterOwnedGitActivationRemoved,
             }
         );
+
+    private static bool TryCreateFileSymbolicLink(string path, string targetPath)
+    {
+        try
+        {
+            File.CreateSymbolicLink(path, targetPath);
+            return true;
+        }
+        catch (PlatformNotSupportedException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+        catch (IOException) when (OperatingSystem.IsWindows())
+        {
+            return false;
+        }
+    }
 
     private static int CountOccurrences(string value, string match)
     {

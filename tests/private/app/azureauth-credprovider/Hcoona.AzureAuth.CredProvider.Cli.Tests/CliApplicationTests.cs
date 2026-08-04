@@ -2005,6 +2005,40 @@ public sealed class CliApplicationTests
         }
     }
 
+    [Fact]
+    public void UnconfigureGitResumesInactiveOwnedCleanup()
+    {
+        string stateDirectory = CreateTestDirectory();
+        GitPhase8VerticalSliceService service = CreateGitPhase8Service(stateDirectory);
+        CliRuntimeOptions runtimeOptions = CreateGitPhase8RuntimeOptions(stateDirectory);
+
+        try
+        {
+            CommandResult configureResult = InvokeWithRuntime(runtimeOptions, "configure", "git");
+            Assert.Equal(0, configureResult.ExitCode);
+            File.WriteAllText(service.Paths.UserGitConfigPath, string.Empty);
+
+            CommandResult unconfigureResult = InvokeWithRuntime(
+                runtimeOptions,
+                "unconfigure",
+                "git"
+            );
+
+            Assert.Equal(0, unconfigureResult.ExitCode);
+            Assert.Equal(
+                GetExpectedGitMutationOutput("unconfigure", "remove", 2, false, false),
+                unconfigureResult.StdOut
+            );
+            Assert.Equal(string.Empty, unconfigureResult.StdErr);
+            Assert.False(File.Exists(service.Paths.OwnershipManifestPath));
+            Assert.False(File.Exists(service.Paths.GitHelperPath));
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

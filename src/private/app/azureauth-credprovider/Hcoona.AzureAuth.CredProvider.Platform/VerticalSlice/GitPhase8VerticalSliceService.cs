@@ -28,6 +28,8 @@ public sealed record GitPhase8VerticalSliceOptions
     public bool? LocalShellGitDiscoverySupported { get; init; }
 
     public BoundedCredentialAcquisitionAdapter? CredentialAcquisition { get; init; }
+
+    internal Action? AfterOwnedGitActivationRemoved { get; init; }
 }
 
 public sealed record GitPhase8VerticalSliceResolvedPaths
@@ -144,6 +146,7 @@ public sealed class GitPhase8VerticalSliceService
     private readonly IProcessRunner processRunner;
     private readonly ProductExecutableInvocation? productExecutableInvocation;
     private readonly Lazy<BoundedCredentialAcquisitionAdapter>? credentialAcquisition;
+    private readonly Action? afterOwnedGitActivationRemoved;
 
     public GitPhase8VerticalSliceService(GitPhase8VerticalSliceOptions? options = null)
         : this(options, configurationOnly: false) { }
@@ -163,6 +166,7 @@ public sealed class GitPhase8VerticalSliceService
         productExecutableInvocation = ResolveProductExecutableInvocation(
             options?.ProductExecutablePath
         );
+        afterOwnedGitActivationRemoved = options?.AfterOwnedGitActivationRemoved;
         localShellGitDiscoverySupported =
             options?.LocalShellGitDiscoverySupported ?? true;
         if (!configurationOnly)
@@ -422,8 +426,15 @@ public sealed class GitPhase8VerticalSliceService
         {
             ConfigurationManager manager = CreateManager();
             ThrowIfAppliedGitConfigurationIsNotCurrent(manager, cancellationToken);
-            ThrowIfOwnedGitActivationIsNotCurrent();
-            gitActivation.Remove(paths.UserGitConfigPath, paths.GitConfigPath);
+            GitUserGlobalConfigActivationState activationState = gitActivation.Inspect(
+                paths.UserGitConfigPath,
+                paths.GitConfigPath
+            );
+            if (activationState == GitUserGlobalConfigActivationState.Present)
+            {
+                gitActivation.Remove(paths.UserGitConfigPath, paths.GitConfigPath);
+                afterOwnedGitActivationRemoved?.Invoke();
+            }
             planResult = await manager.RemoveAsync(
                 CreateUnconfigurePlan(manifest),
                 cancellationToken
@@ -466,7 +477,7 @@ public sealed class GitPhase8VerticalSliceService
         {
             ConfigurationManager manager = CreateManager();
             ThrowIfAppliedGitConfigurationIsNotCurrent(manager, cancellationToken);
-            ThrowIfOwnedGitActivationIsNotCurrent();
+            _ = gitActivation.Inspect(paths.UserGitConfigPath, paths.GitConfigPath);
             await manager.DryRunAsync(CreateUnconfigurePlan(manifest), cancellationToken);
         }
         catch (Exception exception) when (IsExpectedDoctorCheckFailure(exception))
@@ -1457,16 +1468,6 @@ public sealed class GitPhase8VerticalSliceService
         catch (Exception exception) when (IsExpectedDoctorCheckFailure(exception))
         {
             return false;
-        }
-    }
-
-    private void ThrowIfOwnedGitActivationIsNotCurrent()
-    {
-        if (!TryInspectOwnedGitActivation())
-        {
-            throw new GitPhase8UnrecognizedStateException(
-                "The Phase 8 Git configuration state is not recognized."
-            );
         }
     }
 

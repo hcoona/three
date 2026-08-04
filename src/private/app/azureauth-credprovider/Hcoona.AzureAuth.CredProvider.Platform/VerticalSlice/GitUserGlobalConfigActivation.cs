@@ -38,7 +38,7 @@ internal sealed class GitUserGlobalConfigActivation(IFileSystem fileSystem)
         }
 
         string updated = document.AppendOwnedBlock(productGitConfigPath);
-        fileSystem.AtomicWriteAllBytes(userGitConfigPath, document.Encode(updated));
+        Write(userGitConfigPath, document, updated);
     }
 
     public void Remove(string userGitConfigPath, string productGitConfigPath)
@@ -53,37 +53,67 @@ internal sealed class GitUserGlobalConfigActivation(IFileSystem fileSystem)
         }
 
         string updated = document.Text.Remove(block.Value.Start, block.Value.Length);
-        fileSystem.AtomicWriteAllBytes(userGitConfigPath, document.Encode(updated));
+        Write(userGitConfigPath, document, updated);
     }
 
     private GitConfigText Read(string path)
     {
-        if (!fileSystem.FileExists(path))
+        string writePath =
+            fileSystem is IFileSystemLinkResolver linkResolver
+                ? linkResolver.ResolveFilePathForWrite(path)
+                : path;
+        if (!fileSystem.FileExists(writePath))
         {
-            if (fileSystem.DirectoryExists(path))
+            if (fileSystem.DirectoryExists(writePath))
             {
                 throw new InvalidOperationException(
                     "The user-global Git configuration path is a directory."
                 );
             }
 
-            return GitConfigText.Missing();
+            return GitConfigText.Missing(writePath);
         }
 
-        return GitConfigText.Parse(fileSystem.ReadAllBytes(path));
+        return GitConfigText.Parse(fileSystem.ReadAllBytes(writePath), writePath);
     }
 
-    private sealed record GitConfigText(string Text, bool HadBom, string NewLine)
+    private void Write(string path, GitConfigText document, string updated)
     {
-        public static GitConfigText Missing() =>
-            new(string.Empty, HadBom: false, Environment.NewLine);
+        if (
+            fileSystem is IFileSystemLinkResolver linkResolver
+            && !string.Equals(
+                linkResolver.ResolveFilePathForWrite(path),
+                document.WritePath,
+                OperatingSystem.IsWindows()
+                    ? StringComparison.OrdinalIgnoreCase
+                    : StringComparison.Ordinal
+            )
+        )
+        {
+            throw new IOException(
+                "The user-global Git configuration link changed while it was being updated."
+            );
+        }
 
-        public static GitConfigText Parse(byte[] bytes)
+        fileSystem.AtomicWriteAllBytes(document.WritePath, document.Encode(updated));
+    }
+
+    private sealed record GitConfigText(
+        string Text,
+        bool HadBom,
+        string NewLine,
+        string WritePath
+    )
+    {
+        public static GitConfigText Missing(string writePath) =>
+            new(string.Empty, HadBom: false, Environment.NewLine, writePath);
+
+        public static GitConfigText Parse(byte[] bytes, string writePath)
         {
             bool hadBom = bytes is [0xEF, 0xBB, 0xBF, ..];
             string text = Utf8NoBom.GetString(hadBom ? bytes[3..] : bytes);
             string newLine = text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
-            return new GitConfigText(text, hadBom, newLine);
+            return new GitConfigText(text, hadBom, newLine, writePath);
         }
 
         public (int Start, int Length)? FindOwnedBlock(string productGitConfigPath)

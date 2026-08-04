@@ -3,7 +3,10 @@ using System.Text;
 
 namespace Hcoona.AzureAuth.CredProvider.Platform.FileSystem;
 
-public sealed class SystemFileSystem : IFileSystem, IFileSystemMutationLock
+public sealed class SystemFileSystem
+    : IFileSystem,
+        IFileSystemMutationLock,
+        IFileSystemLinkResolver
 {
     private const UnixFileMode OwnerOnlyFileMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
     private static readonly Encoding Utf8NoBom = new UTF8Encoding(
@@ -200,6 +203,42 @@ public sealed class SystemFileSystem : IFileSystem, IFileSystemMutationLock
                 Thread.Sleep(25);
             }
         }
+    }
+
+    string IFileSystemLinkResolver.ResolveFilePathForWrite(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+
+        string fullPath = Path.GetFullPath(path);
+        var file = new FileInfo(fullPath);
+        string? linkTarget = file.LinkTarget;
+        if (linkTarget is null)
+        {
+            if (!file.Exists)
+            {
+                if (Directory.Exists(fullPath))
+                {
+                    throw new IOException($"The file path '{fullPath}' is a directory.");
+                }
+
+                return fullPath;
+            }
+
+            if ((file.Attributes & FileAttributes.ReparsePoint) == 0)
+            {
+                return fullPath;
+            }
+        }
+
+        FileSystemInfo? resolvedTarget = file.ResolveLinkTarget(returnFinalTarget: true);
+        if (resolvedTarget is not FileInfo resolvedFile || !resolvedFile.Exists)
+        {
+            throw new IOException(
+                $"The file link '{fullPath}' does not resolve to an existing file."
+            );
+        }
+
+        return resolvedFile.FullName;
     }
 
     private static void AtomicWrite(
