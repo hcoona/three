@@ -113,6 +113,57 @@ public sealed class Wp6ProductionAdapterTests
         }
     }
 
+    [Fact]
+    public void SecureStoreReturnsInvalidUtf8ForPersistenceRepairAndDelete()
+    {
+        const string ConfigName = "azureauth/provider-config.json";
+        const string BindingName = "azureauth/account-binding.json";
+        string root = CreateTestDirectory();
+        try
+        {
+            var store = new SystemAzureAuthSecureRecordStore(root);
+            string recordsRoot = Path.Combine(root, "azureauth");
+            Directory.CreateDirectory(recordsRoot);
+            byte[] invalidUtf8 = [0xC3, 0x28];
+            File.WriteAllBytes(Path.Combine(recordsRoot, "provider-config.json"), invalidUtf8);
+
+            AzureAuthSecureRecordReadResult rawConfig = store.Read(ConfigName);
+            var configPersistence = new AzureAuthProviderConfigPersistence(store);
+            AzureAuthPersistedRecord<AzureAuthProviderConfig> malformedConfig =
+                configPersistence.Read(ConfigName);
+            AzureAuthPersistedWriteResult<AzureAuthProviderConfig> repaired =
+                configPersistence.Repair(
+                    malformedConfig,
+                    AzureAuthProviderConfig.CreateDirectMsal()
+                );
+
+            Assert.Equal(AzureAuthSecureRecordReadStatus.Present, rawConfig.Status);
+            Assert.Equal(invalidUtf8, rawConfig.Content.ToArray());
+            Assert.Equal(AzureAuthPersistedRecordStatus.Malformed, malformedConfig.Status);
+            Assert.Equal(rawConfig.Revision, malformedConfig.Revision);
+            Assert.Equal(AzureAuthSecureRecordWriteStatus.Success, repaired.Status);
+
+            File.WriteAllBytes(Path.Combine(recordsRoot, "account-binding.json"), invalidUtf8);
+            var bindingPersistence = new AzureAuthBindingPersistence(store);
+            AzureAuthPersistedRecord<AzureAuthBinding> malformedBinding =
+                bindingPersistence.Read(BindingName);
+            AzureAuthSecureRecordWriteResult deleted = bindingPersistence.Unbind(
+                malformedBinding
+            );
+
+            Assert.Equal(AzureAuthPersistedRecordStatus.Malformed, malformedBinding.Status);
+            Assert.Equal(AzureAuthSecureRecordWriteStatus.Success, deleted.Status);
+            Assert.Equal(
+                AzureAuthSecureRecordReadStatus.Missing,
+                store.Read(BindingName).Status
+            );
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Theory]
     [InlineData("0.9.5.0", AzureAuthInstallationStatus.Available)]
     [InlineData("0.9.4.0", AzureAuthInstallationStatus.WrongVersion)]
@@ -155,6 +206,7 @@ public sealed class Wp6ProductionAdapterTests
                 runner,
                 new SystemAzureAuthInstallationDiscoveryOptions
                 {
+                    ForcedHostPlatform = AzureAuthHostPlatform.Wsl,
                     IsWslEnvironment = true,
                     WindowsMountRoot = mountRoot,
                     WindowsPowerShellPath = powerShell,
@@ -185,12 +237,151 @@ public sealed class Wp6ProductionAdapterTests
         }
     }
 
+    [Fact]
+    public void ForcedWslDiscoveryMapsLocalAppDataFromArbitraryWindowsDrive()
+    {
+        string root = CreateTestDirectory();
+        try
+        {
+            string cMount = Path.Combine(root, "mnt", "c");
+            string dMount = Path.Combine(root, "mnt", "d");
+            string powerShell = Path.Combine(
+                cMount,
+                "Windows",
+                "System32",
+                "WindowsPowerShell",
+                "v1.0",
+                "powershell.exe"
+            );
+            Directory.CreateDirectory(Path.GetDirectoryName(powerShell)!);
+            File.WriteAllText(powerShell, "");
+            string executable = Path.Combine(
+                dMount,
+                "Users",
+                "User",
+                "AppData",
+                "Local",
+                "Programs",
+                "AzureAuth",
+                "0.9.5",
+                "azureauth.exe"
+            );
+            Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
+            File.WriteAllText(executable, "");
+            var runner = new DiscoveryRunner(
+                "{\"localApplicationData\":\"D:\\\\Users\\\\User\\\\AppData\\\\Local\","
+                    + "\"exists\":true,\"fileVersion\":\"0.9.5.0\"}"
+            );
+            var discovery = new SystemAzureAuthInstallationDiscovery(
+                runner,
+                new SystemAzureAuthInstallationDiscoveryOptions
+                {
+                    ForcedHostPlatform = AzureAuthHostPlatform.Wsl,
+                    WindowsMountRoot = cMount,
+                    WindowsPowerShellPath = powerShell,
+                }
+            );
+
+            AzureAuthInstallation result = discovery.Discover(
+                AzureAuthProviderConfig.CreateAzureAuth(),
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Equal(AzureAuthInstallationStatus.Available, result.Status);
+            Assert.Equal(
+                @"D:\Users\User\AppData\Local\Programs\AzureAuth\0.9.5\azureauth.exe",
+                result.InstalledExecutablePath
+            );
+            Assert.Equal(executable, result.HostExecutablePath);
+            Assert.Equal(AzureAuthHostPlatform.Wsl, result.HostPlatform);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void WslDiscoverySmokeMapsConfiguredDriveLayoutOnLinux()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        string root = CreateTestDirectory();
+        try
+        {
+            string cMount = Path.Combine(root, "mnt", "c");
+            string dMount = Path.Combine(root, "mnt", "d");
+            string powerShell = Path.Combine(cMount, "powershell.exe");
+            Directory.CreateDirectory(cMount);
+            File.WriteAllText(powerShell, "");
+            string executable = Path.Combine(
+                dMount,
+                "Users",
+                "User",
+                "AppData",
+                "Local",
+                "Programs",
+                "AzureAuth",
+                "0.9.5",
+                "azureauth.exe"
+            );
+            Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
+            File.WriteAllText(executable, "");
+            var discovery = new SystemAzureAuthInstallationDiscovery(
+                new DiscoveryRunner(
+                    "{\"localApplicationData\":\"D:\\\\Users\\\\User\\\\AppData\\\\Local\","
+                        + "\"exists\":true,\"fileVersion\":\"0.9.5.0\"}"
+                ),
+                new SystemAzureAuthInstallationDiscoveryOptions
+                {
+                    IsWslEnvironment = true,
+                    WindowsMountRoot = cMount,
+                    WindowsPowerShellPath = powerShell,
+                }
+            );
+
+            AzureAuthInstallation result = discovery.Discover(
+                AzureAuthProviderConfig.CreateAzureAuth(),
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Equal(AzureAuthInstallationStatus.Available, result.Status);
+            Assert.Equal(executable, result.HostExecutablePath);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Theory]
-    [InlineData("0.9.5.0", AzureAuthInstallationStatus.Available)]
-    [InlineData("0.9.4.0", AzureAuthInstallationStatus.WrongVersion)]
+    [InlineData(
+        "0.9.5.0",
+        AzureAuthInstallationStatus.Available,
+        UnixFileMode.UserExecute
+    )]
+    [InlineData(
+        "0.9.5.0",
+        AzureAuthInstallationStatus.Available,
+        UnixFileMode.GroupExecute
+    )]
+    [InlineData(
+        "0.9.5.0",
+        AzureAuthInstallationStatus.Available,
+        UnixFileMode.OtherExecute
+    )]
+    [InlineData(
+        "0.9.4.0",
+        AzureAuthInstallationStatus.WrongVersion,
+        UnixFileMode.UserExecute
+    )]
     public void NativeLinuxDiscoveryReadsAdjacentManagedAssemblyIdentity(
         string assemblyVersion,
-        AzureAuthInstallationStatus expectedStatus
+        AzureAuthInstallationStatus expectedStatus,
+        UnixFileMode executeBit
     )
     {
         string root = CreateTestDirectory();
@@ -204,6 +395,7 @@ public sealed class Wp6ProductionAdapterTests
                 runner,
                 new SystemAzureAuthInstallationDiscoveryOptions
                 {
+                    ForcedHostPlatform = AzureAuthHostPlatform.NativeLinux,
                     IsWslEnvironment = false,
                     EnvironmentVariableReader = name =>
                         name
@@ -211,6 +403,7 @@ public sealed class Wp6ProductionAdapterTests
                             .NativeLinuxExecutablePathEnvironmentVariable
                             ? executable
                             : null,
+                    UnixFileModeReader = _ => executeBit,
                     ManagedAssemblyIdentityReader = path =>
                     {
                         Assert.Equal(Path.Combine(root, "azureauth.dll"), path);
@@ -235,6 +428,93 @@ public sealed class Wp6ProductionAdapterTests
                 Assert.Equal(executable, result.HostExecutablePath);
                 Assert.Equal(AzureAuthHostPlatform.NativeLinux, result.HostPlatform);
             }
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ForcedNativeLinuxDiscoveryRejectsNonExecutableAppHost()
+    {
+        string root = CreateTestDirectory();
+        try
+        {
+            string executable = Path.Combine(root, "azureauth");
+            File.WriteAllText(executable, "");
+            var discovery = new SystemAzureAuthInstallationDiscovery(
+                new DiscoveryRunner("must not be used"),
+                new SystemAzureAuthInstallationDiscoveryOptions
+                {
+                    ForcedHostPlatform = AzureAuthHostPlatform.NativeLinux,
+                    NativeLinuxExecutablePath = executable,
+                    UnixFileModeReader = _ => UnixFileMode.UserRead | UnixFileMode.UserWrite,
+                    ManagedAssemblyIdentityReader = _ =>
+                        throw new InvalidOperationException("Version must not be read."),
+                }
+            );
+
+            AzureAuthInstallation result = discovery.Discover(
+                AzureAuthProviderConfig.CreateAzureAuth(),
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Equal(AzureAuthInstallationStatus.Unavailable, result.Status);
+            Assert.Equal("AzureAuthLinuxExecutableNotExecutable", result.Code);
+            Assert.False(result.IsAvailable);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void NativeLinuxDiscoverySmokeRequiresActualExecuteBit()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        string root = CreateTestDirectory();
+        try
+        {
+            string executable = Path.Combine(root, "azureauth");
+            File.WriteAllText(executable, "");
+            File.WriteAllText(Path.Combine(root, "azureauth.dll"), "");
+            File.SetUnixFileMode(executable, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            var discovery = new SystemAzureAuthInstallationDiscovery(
+                new DiscoveryRunner("must not be used"),
+                new SystemAzureAuthInstallationDiscoveryOptions
+                {
+                    IsWslEnvironment = false,
+                    NativeLinuxExecutablePath = executable,
+                    ManagedAssemblyIdentityReader = _ =>
+                        new AssemblyName("azureauth") { Version = Version.Parse("0.9.5.0") },
+                }
+            );
+
+            AzureAuthInstallation unavailable = discovery.Discover(
+                AzureAuthProviderConfig.CreateAzureAuth(),
+                TestContext.Current.CancellationToken
+            );
+            File.SetUnixFileMode(
+                executable,
+                UnixFileMode.UserRead
+                    | UnixFileMode.UserWrite
+                    | UnixFileMode.UserExecute
+            );
+            AzureAuthInstallation available = discovery.Discover(
+                AzureAuthProviderConfig.CreateAzureAuth(),
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Equal(AzureAuthInstallationStatus.Unavailable, unavailable.Status);
+            Assert.Equal("AzureAuthLinuxExecutableNotExecutable", unavailable.Code);
+            Assert.Equal(AzureAuthInstallationStatus.Available, available.Status);
+            Assert.True(available.IsAvailable);
         }
         finally
         {

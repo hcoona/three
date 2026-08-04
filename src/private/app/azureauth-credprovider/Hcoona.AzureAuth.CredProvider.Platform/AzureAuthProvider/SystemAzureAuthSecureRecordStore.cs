@@ -214,7 +214,6 @@ public sealed class SystemAzureAuthSecureRecordStore : IAzureAuthSecureRecordSto
         }
 
         byte[] content = File.ReadAllBytes(recordPath);
-        _ = StrictUtf8.GetString(content);
         return AzureAuthSecureRecordReadResult.Present(ComputeRevision(content), content);
     }
 

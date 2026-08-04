@@ -85,6 +85,8 @@ public interface IAzureAuthInstallationDiscovery
 
 public sealed record SystemAzureAuthInstallationDiscoveryOptions
 {
+    internal AzureAuthHostPlatform? ForcedHostPlatform { get; init; }
+
     public bool? IsWslEnvironment { get; init; }
 
     public string WindowsMountRoot { get; init; } = "/mnt/c";
@@ -100,6 +102,12 @@ public sealed record SystemAzureAuthInstallationDiscoveryOptions
 
     public Func<string, AssemblyName> ManagedAssemblyIdentityReader { get; init; } =
         AssemblyName.GetAssemblyName;
+
+    internal Func<string, UnixFileMode> UnixFileModeReader { get; init; } =
+        static path =>
+            OperatingSystem.IsLinux()
+                ? File.GetUnixFileMode(path)
+                : throw new PlatformNotSupportedException();
 
     public TimeSpan Timeout { get; init; } = TimeSpan.FromSeconds(15);
 
@@ -154,7 +162,8 @@ public sealed class SystemAzureAuthInstallationDiscovery : IAzureAuthInstallatio
             );
         }
 
-        if (OperatingSystem.IsWindows())
+        AzureAuthHostPlatform hostPlatform = GetHostPlatform();
+        if (hostPlatform == AzureAuthHostPlatform.Windows)
         {
             string localApplicationData =
                 options.LocalApplicationDataPath
@@ -162,17 +171,16 @@ public sealed class SystemAzureAuthInstallationDiscovery : IAzureAuthInstallatio
             return InspectNativeInstallation(localApplicationData);
         }
 
-        bool isWsl = options.IsWslEnvironment ?? IsWslEnvironment();
-        if (OperatingSystem.IsLinux())
+        return hostPlatform switch
         {
-            return isWsl ? DiscoverWsl(cancellationToken) : DiscoverNativeLinux();
-        }
-
-        return AzureAuthInstallation.Failure(
-            AzureAuthInstallationStatus.Unsupported,
-            "AzureAuthLaunchHostUnsupported",
-            "AzureAuth production integration requires Windows, WSL, or native Linux."
-        );
+            AzureAuthHostPlatform.Wsl => DiscoverWsl(cancellationToken),
+            AzureAuthHostPlatform.NativeLinux => DiscoverNativeLinux(),
+            _ => AzureAuthInstallation.Failure(
+                AzureAuthInstallationStatus.Unsupported,
+                "AzureAuthLaunchHostUnsupported",
+                "AzureAuth production integration requires Windows, WSL, or native Linux."
+            ),
+        };
     }
 
     private AzureAuthInstallation DiscoverWsl(CancellationToken cancellationToken)
@@ -281,6 +289,39 @@ public sealed class SystemAzureAuthInstallationDiscovery : IAzureAuthInstallatio
                 AzureAuthInstallationStatus.Missing,
                 "AzureAuthInstallationMissing",
                 "AzureAuth 0.9.5 is not installed at the native Linux package location."
+            );
+        }
+
+        UnixFileMode fileMode;
+        try
+        {
+            fileMode = options.UnixFileModeReader(path);
+        }
+        catch (Exception exception)
+            when (exception
+                    is IOException
+                        or UnauthorizedAccessException
+                        or PlatformNotSupportedException
+                        or ArgumentException
+            )
+        {
+            return AzureAuthInstallation.Failure(
+                AzureAuthInstallationStatus.Unavailable,
+                "AzureAuthLinuxExecutableModeUnavailable",
+                "The native Linux AzureAuth executable permissions could not be read."
+            );
+        }
+
+        const UnixFileMode ExecuteBits =
+            UnixFileMode.UserExecute
+            | UnixFileMode.GroupExecute
+            | UnixFileMode.OtherExecute;
+        if ((fileMode & ExecuteBits) == 0)
+        {
+            return AzureAuthInstallation.Failure(
+                AzureAuthInstallationStatus.Unavailable,
+                "AzureAuthLinuxExecutableNotExecutable",
+                "The native Linux AzureAuth apphost is not executable."
             );
         }
 
@@ -421,7 +462,10 @@ public sealed class SystemAzureAuthInstallationDiscovery : IAzureAuthInstallatio
     private static string? MapWindowsPath(string windowsPath, string mountRoot)
     {
         if (
-            !windowsPath.StartsWith(@"C:\", StringComparison.OrdinalIgnoreCase)
+            windowsPath.Length < 3
+            || !char.IsAsciiLetter(windowsPath[0])
+            || windowsPath[1] != ':'
+            || windowsPath[2] != '\\'
             || string.IsNullOrWhiteSpace(mountRoot)
             || !Path.IsPathFullyQualified(mountRoot)
         )
@@ -429,8 +473,48 @@ public sealed class SystemAzureAuthInstallationDiscovery : IAzureAuthInstallatio
             return null;
         }
 
+        string normalizedMountRoot = Path.TrimEndingDirectorySeparator(
+            Path.GetFullPath(mountRoot)
+        );
+        string mountName = Path.GetFileName(normalizedMountRoot);
+        if (mountName.Length == 1 && char.IsAsciiLetter(mountName[0]))
+        {
+            string? mountParent = Path.GetDirectoryName(normalizedMountRoot);
+            if (mountParent is null)
+            {
+                return null;
+            }
+
+            normalizedMountRoot = Path.Combine(
+                mountParent,
+                char.ToLowerInvariant(windowsPath[0]).ToString()
+            );
+        }
+
         string relative = windowsPath[3..].Replace('\\', Path.DirectorySeparatorChar);
-        return Path.GetFullPath(Path.Combine(mountRoot, relative));
+        return Path.GetFullPath(Path.Combine(normalizedMountRoot, relative));
+    }
+
+    private AzureAuthHostPlatform GetHostPlatform()
+    {
+        if (options.ForcedHostPlatform is { } forced)
+        {
+            return forced;
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            return AzureAuthHostPlatform.Windows;
+        }
+
+        if (!OperatingSystem.IsLinux())
+        {
+            return AzureAuthHostPlatform.Unspecified;
+        }
+
+        return options.IsWslEnvironment ?? IsWslEnvironment()
+            ? AzureAuthHostPlatform.Wsl
+            : AzureAuthHostPlatform.NativeLinux;
     }
 
     private static bool IsWslEnvironment() =>

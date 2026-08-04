@@ -4075,6 +4075,15 @@ public static class CredentialRequestV2Policy
         }
 
         if (
+            (request.AccountHint is not null && string.IsNullOrWhiteSpace(request.AccountHint))
+            || (request.TenantHint is not null && string.IsNullOrWhiteSpace(request.TenantHint))
+        )
+        {
+            return "Protocol violation: credential request v2 accountHint and tenantHint must "
+                + "not be whitespace-only.";
+        }
+
+        if (
             request.AcquisitionMode is not AcquisitionMode.Unspecified
             && request.Operation != CredentialOperation.Get
         )

@@ -167,6 +167,29 @@ public sealed class AzureAuthIdentityProviderTests
         Assert.Equal("tenant-1", result.AccessToken.TenantId);
     }
 
+    [Theory]
+    [InlineData(" ", null)]
+    [InlineData(null, "\t")]
+    public async Task WhitespaceOnlyHintsReturnRequestRejectedWithoutLaunching(
+        string? accountHint,
+        string? tenantHint
+    )
+    {
+        var runner = new RecordingRunner(new ProcessResult(0, CreateToken(), ""));
+        AzureAuthIdentityProvider provider = CreateProvider(runner);
+
+        AcquiredAccessTokenResult result = await provider.AcquireAccessTokenAsync(
+            CreateRequest(accountHint: accountHint, tenantHint: tenantHint),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(AcquiredAccessTokenStatus.RequestRejected, result.Status);
+        Assert.Equal("AzureAuthRequestRejected", result.Code);
+        Assert.Equal("AzureAuth rejected the credential request.", result.SafeMessage);
+        Assert.Equal(0, runner.InvocationCount);
+        Assert.Null(runner.StartSpec);
+    }
+
     [Fact]
     public async Task AccountWithoutDomainDoesNotAddDomainArgument()
     {
