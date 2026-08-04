@@ -1954,9 +1954,8 @@ public sealed class ConfigurationPhase14VerticalSliceService
         ConfigurationPhase14Scope scope
     )
     {
-        string? expectedAlwaysAuthSelector = manifest.ResourceIdentity?.ServiceEndpoint
-            is { } registryUrl
-            ? "npmRegistries." + registryUrl.AbsoluteUri + ".npmAlwaysAuth"
+        string? expectedAlwaysAuthSelector = manifest.ResourceIdentity is { } resource
+            ? NpmCompatibleAuthSelectorPolicy.Create(resource).YarnAlwaysAuthKey
             : null;
         string? targetPath = GetSingleNormalizedPathOrDefault(
             manifest.Entries.Select(static entry => entry.TargetPathOrName)
