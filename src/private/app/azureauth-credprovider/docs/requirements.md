@@ -26,7 +26,7 @@ The product owns:
 - interactive and non-interactive credential acquisition,
 - account and tenant selection,
 - host/feed canonicalization,
-- secure token cache coordination,
+- identity-provider cache policy and future product-cache boundaries,
 - protocol adapters for host-tool credential exchange,
 - user-facing configuration and diagnostics commands.
 
@@ -51,7 +51,8 @@ Host tools own:
 3. Support Azure Artifacts NuGet v3 feeds for Phase 4D MVP `dotnet` restore through NuGet `netcore` plugin convention discovery; treat NuGet.exe, MSBuild, and Visual Studio (`netfx`) restore support as deferred post-MVP scope.
 4. Support Azure Artifacts Python simple-index and upload endpoints for pip, twine, and uv workflows.
 5. Support Azure Artifacts npm registry endpoints for npm, pnpm, and Yarn workflows.
-6. Reuse a single credential core for token acquisition, account selection, cache access, and policy enforcement.
+6. Reuse a single credential core for token acquisition, account selection,
+   cache policy and key partitioning, and policy enforcement.
 7. Provide entry points that conform to each host tool's required discovery and invocation protocol.
 8. Avoid duplicating credential logic across ecosystem adapters.
 9. Preserve host-tool protocol boundaries: protocol adapters must write only protocol-valid content to stdout.
@@ -62,7 +63,10 @@ Host tools own:
     login, and explicit Azure Pipelines system access tokens; keep PAT
     compatibility, service principal, managed identity, and workload identity
     federation unavailable or deferred until implemented.
-14. Provide a `doctor` command that validates Git helper configuration through Git's own discovery behavior, NuGet plugin discovery, Python keyring availability, npm registry configuration, credential cache health, and common CI misconfigurations.
+14. Provide a `doctor` command that validates Git helper configuration through
+    Git's own discovery behavior, NuGet plugin discovery, Python keyring
+    availability, npm registry configuration, identity-provider readiness and
+    silent-cache availability, and common CI misconfigurations.
 15. Provide an internal deployment-validation bundle that exercises complete
     application, Git, NuGet, Python wheel, installation, and uninstallation
     shapes without representing that bundle as a signed release installer.
@@ -76,7 +80,9 @@ Host tools own:
 5. Keep protocol adapters small, deterministic, and testable.
 6. Keep token handling centralized and auditable.
 7. Redact secrets in stdout, stderr, logs, traces, dry-run output, and error messages.
-8. Partition credential cache entries by ecosystem, service identity, feed or host, account, tenant, token audience, and credential type.
+8. Model cache keys by ecosystem, service identity, feed or host, account,
+   tenant, token audience, and credential type without requiring a
+   product-owned persistent cache.
 9. Prefer short-lived or identity-derived credentials over long-lived personal access tokens.
 10. Avoid writing credentials into repository-local configuration files by default.
 11. Keep product-owned derived credentials non-persistent by default and never

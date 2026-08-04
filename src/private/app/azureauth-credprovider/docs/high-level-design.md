@@ -94,7 +94,7 @@ The shared core owns credential behavior that must not diverge between ecosystem
   managed identity, and workload identity federation remain unavailable or
   deferred,
 - token exchange and refresh,
-- secure credential cache access,
+- identity-provider cache policy and future product-cache boundaries,
 - cache partitioning,
 - redaction,
 - policy enforcement,
@@ -342,7 +342,7 @@ CI behavior must:
 - Python keyring backend discovery,
 - `keyring` shim availability for uv,
 - npm and Yarn registry configuration format and required entries,
-- cache health and account selection,
+- identity-provider readiness, silent-cache availability, and account selection,
 - host/feed canonicalization,
 - CI mode and secret handling.
 
@@ -376,10 +376,12 @@ explicit CLI operation. Uninstallation first invokes product-owned Git, NuGet,
 and Python unconfiguration, then removes the recorded product and NuGet payload
 roots.
 
-This bundle validates deployment shape and lifecycle behavior. It is not a
-signed release artifact or release installer and does not close Windows,
-standalone Linux, Windows Python subprocess mode, signing, provenance, or
-installer-produced-binary acceptance.
+The bundle by itself validates deployment shape and lifecycle behavior. It is
+not a signed release artifact or release installer and does not close Windows,
+Windows Python subprocess mode, signing, provenance, or
+installer-produced-binary acceptance. Separate live acceptance through the
+installed bundle closed the repository's forced-native Linux x64 platform gate;
+native Linux system-keyring behavior remains separate evidence.
 
 ## Explicitly Deferred
 

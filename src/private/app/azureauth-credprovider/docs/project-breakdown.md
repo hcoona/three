@@ -1,6 +1,6 @@
 # Unified Azure DevOps Credential Provider Project Breakdown
 
-Status: **Draft execution baseline**
+Status: **Historical execution baseline with active-source precedence**
 
 ## Audience and Use
 
@@ -13,6 +13,12 @@ remain authoritative for product behavior:
 - `research.md`
 - `high-level-design.md`
 - `mid-level-design.md`
+
+The phase table records the original execution sequence. Later accepted decision
+records and the current implementation supersede obsolete phase assumptions.
+In particular, AzureAuth 0.9.5 is the selected Windows, WSL, and native Linux
+identity provider; Direct MSAL and product-owned persistent derived credential
+caching remain unimplemented.
 
 Agents must not infer unsupported behavior. When a requirement is gated by source
 inspection or prototype evidence, keep the work behind that gate until the gate
@@ -61,9 +67,9 @@ The system of record for gate decisions is the project tracker selected in Phase
 decision, affected requirements, follow-up actions, and whether implementation
 may proceed.
 
-AzureAuth is not a program-wide mandatory gate. If AzureAuth fails suitability,
-continue through the identity-provider abstraction with the direct MSAL path
-unless the project lead and identity lead explicitly re-scope the program.
+AzureAuth 0.9.5 is the selected production identity path. A future provider or
+version change remains behind the identity-provider abstraction and requires an
+explicit accepted decision; agents must not silently substitute Direct MSAL.
 
 Yarn write support is a product requirement. Until the Yarn configuration update
 gate closes, Yarn support is limited to read-only diagnostics that report
@@ -93,7 +99,7 @@ available.
 | 3     | PLATFORM                 | Foundation platform. Create build and test skeletons, packaging skeleton, cross-platform process and filesystem abstractions, redaction, logging, correlation primitives, and Windows path-with-spaces tests. The packaging skeleton produces deterministic internal, non-release, unsigned foundation archives for the Contracts and Platform outputs only; it records SHA-256 file integrity and safe provenance metadata without machine-local paths and keeps build OS distinct from target RID. | CI produces artifacts on the target OS matrix and runs contract and foundation tests.                                                                                                              |
 | 4     | CONFIG                   | Configuration manager. Implement declarative change plans, selector ownership sidecars, dry-run equivalence, conflict handling, scoped persistent writes, and precise removal. Enforce no adapter direct writes.                                                                                                                                                                                                                                                                                     | Golden tests cover Git, NuGet, Python, and npm plan application and removal. Yarn selectors are covered in read-only mode, with conditional write/remove extension points if the Yarn gate passes. |
 | 5A    | ARCH and PLATFORM        | Minimal adapter-host scaffold. Implement explicit known entry-point routing, stdout/stderr discipline, and fatal-error mapping against frozen contracts.                                                                                                                                                                                                                                                                                                                                             | Adapter and child-process tests prove protocol stdout discipline and mapped exit behavior.                                                                                                         |
-| 6     | ID and ARCH              | Credential core. Implement identity-provider abstraction with a fake provider first, secure-cache adapter, identity-flow policy matrix from Phase 1A, token-exchange boundary, and cache partitioning.                                                                                                                                                                                                                                                                                               | Core tests prove cache partitioning, policy enforcement, redaction, fake-provider behavior, and selected AzureAuth or direct MSAL path readiness.                                                  |
+| 6     | ID and ARCH              | Credential core. Implement identity-provider abstraction with a fake provider first, cache policy/key model, identity-flow policy matrix from Phase 1A, token-exchange boundary, and cache partitioning. Product-owned persistent derived credential caching remains disabled unless a later accepted decision enables it.                                                                                                                                                                           | Core tests prove cache-key partitioning, policy enforcement, redaction, fake-provider behavior, and selected AzureAuth path readiness without requiring a product-owned persistent cache.          |
 | 5B    | PLATFORM                 | Installer and discovery planning. Define artifact-placement conventions and basic side-effect-free discovery probes. Do not materialize fake installation artifacts or package final ecosystem adapters in this phase.                                                                                                                                                                                                                                                                               | Placement projections and basic discovery behavior are documented and tested. Final installer behavior remains owned by ecosystem phases and Phase 15.                                             |
 | 7     | PL and PLATFORM          | CLI shell. Implement command structure, help text, status shell, dry-run rendering, error presentation, and CI mode selection. Do not implement full configure or login orchestration yet.                                                                                                                                                                                                                                                                                                           | Snapshot and golden CLI tests pass.                                                                                                                                                                |
 | 8     | ARCH                     | Architecture vertical slice. Connect CLI shell, configuration manager, fake credential core, adapter host, and fake Git protocol path.                                                                                                                                                                                                                                                                                                                                                               | Configure, dry-run, doctor, and unconfigure round trip without real credentials.                                                                                                                   |

@@ -1024,22 +1024,22 @@ Each step has host-tool shape tests before real authentication is enabled.
 | Doctor                | Synthetic `pass`, `warning`, `fail`, `skipped`, `unsupported`, `deferred`, and `notApplicable` result tests.                                                                        |
 | Security              | Redaction tests; protocol stdout exact-output tests; CI no-persistence tests.                                                                                                       |
 
-## Design Risks and Required Prototypes
+## Design Risks and Versioned Follow-up
 
-| Risk                                | Required prototype or source verification                                                                                                                                                                                                 |
-| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Core deployment boundary            | Prototype whether adapters call a library, a single executable, or a local broker before locking packaging and failure-isolation behavior.                                                                                                |
-| NuGet plugin message compatibility  | Implement a minimal source-confirmed plugin handshake before finalizing the adapter runtime package shape.                                                                                                                                |
-| AzureAuth optional backend revisit  | If revisited in a later phase, verify required token audiences, non-interactive flows, MSAL cache reuse, logging behavior, and process-boundary security before adopting AzureAuth as an optional helper/backend.                         |
-| Future CI identity flow selection   | MVP CI is limited to explicit Azure Pipelines system access token in explicit CI mode with a non-persistent context; verify service principal, managed identity, WIF, and other short-lived CI identities only for future accepted flows. |
-| Python keyring environment coverage | Prototype backend installation and discovery in virtual environment, pipx, and uv subprocess scenarios.                                                                                                                                   |
-| Git GUI client PATH differences     | Validate helper discovery through Git for Windows and at least one GUI-launched Git environment before relying on PATH-only installation.                                                                                                 |
-| npm and Yarn config writes          | Prototype config update behavior across npm, pnpm, and Yarn Berry with user-level and temporary CI scopes.                                                                                                                                |
-| Future persistent cache             | Verify platform secure-store behavior and failure modes on Windows, Linux, and macOS before a later phase enables any product-owned persistent derived credential cache; MVP requests remain rejected or disabled by default.             |
+| Risk or change trigger               | Required evidence                                                                                                                                                                                                                         |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Core deployment boundary             | Prototype whether adapters call a library, a single executable, or a local broker before locking packaging and failure-isolation behavior.                                                                                                |
+| NuGet plugin message compatibility   | Implement a minimal source-confirmed plugin handshake before finalizing the adapter runtime package shape.                                                                                                                                |
+| AzureAuth version or platform change | When changing pinned AzureAuth 0.9.5 or expanding platforms, verify the documented CLI contract, package layout, cache behavior, and required token audiences. The accepted current version does not require runtime attestation.         |
+| Future CI identity flow selection    | MVP CI is limited to explicit Azure Pipelines system access token in explicit CI mode with a non-persistent context; verify service principal, managed identity, WIF, and other short-lived CI identities only for future accepted flows. |
+| Python keyring environment coverage  | Prototype backend installation and discovery in virtual environment, pipx, and uv subprocess scenarios.                                                                                                                                   |
+| Git GUI client PATH differences      | Validate helper discovery through Git for Windows and at least one GUI-launched Git environment before relying on PATH-only installation.                                                                                                 |
+| npm and Yarn config writes           | Prototype config update behavior across npm, pnpm, and Yarn Berry with user-level and temporary CI scopes.                                                                                                                                |
+| Future persistent cache              | Verify platform secure-store behavior and failure modes on Windows, Linux, and macOS before a later phase enables any product-owned persistent derived credential cache; MVP requests remain rejected or disabled by default.             |
 
-These risks are not assumptions. They are explicit verification gates that must
-be closed by source inspection or experiment before implementation decisions are
-locked.
+These rows are future-scope gates or dependency-change triggers. Accepted
+current behavior relies on the pinned dependency contract and ordinary
+OS/framework abstractions; it does not require repeated runtime proof.
 
 ## Mid-Level Design Decision
 

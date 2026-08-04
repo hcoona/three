@@ -1,8 +1,16 @@
 # Phase 1.6 Secure-Cache Behavior Evidence Gate
 
-Status: **Blocked; local Linux no-write subset accepted**
+Status: **Superseded blocked historical decision**
 
 Date: **2026-06-05**
+
+The accepted `phase-1r-secure-cache-rescope.md` decision supersedes this
+blocker's effect on MVP implementation. Product-owned persistent derived
+credential caching is deferred and disabled by default. Current provider-cache
+policy, including the bounded native Linux headless AzureAuth exception, is
+documented by Phase 1R and the WP3/WP6 implementation records. The evidence
+below remains as decision history and does not describe the current runtime
+architecture.
 
 Decision ID: **phase-1.6-secure-cache-evidence**
 
