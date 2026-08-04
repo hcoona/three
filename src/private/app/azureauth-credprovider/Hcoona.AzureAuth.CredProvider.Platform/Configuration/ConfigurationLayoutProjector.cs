@@ -58,7 +58,8 @@ internal static class ConfigurationLayoutProjector
             ProjectedPaths = [targetPath],
             ActivationGuidance =
             [
-                "Use a file-level Git config writer for the selected user config file; "
+                "Use file-level Git config writers for the private product config and the "
+                    + "explicitly marked include block in the selected user config file; "
                     + "do not invoke the git config CLI.",
             ],
         };

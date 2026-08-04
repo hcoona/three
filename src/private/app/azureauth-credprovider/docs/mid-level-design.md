@@ -414,17 +414,16 @@ The default resulting Git configuration is:
 `<helper-name>` is a substitution placeholder. The installed helper executable
 must be discoverable by Git itself, not only by the current shell.
 
-`configure git` must apply these settings by asking ConfigurationManager or the
-Git configuration writer to directly write the selected user Git configuration
-file. It must not invoke `git config --global` as its writer implementation.
-Target selection must match Git's official global target behavior: use
-`~/.gitconfig` if it exists, otherwise use the existing XDG Git config file,
-otherwise create/use `~/.gitconfig`. ConfigurationManager owns dry-run
-rendering, ownership metadata, conflict handling, application, and removal for
-these Git writes. CLI documentation may show `git config --global` only as an
-illustrative equivalent for the resulting configuration, not as the mechanism
-used by the product CLI. AzureAuth is not the runtime component that writes Git
-configuration.
+`configure git` must write these settings to a private product Git config
+through ConfigurationManager and activate it with an explicitly marked,
+product-owned `[include]` block in the selected user-global Git config. It must
+not invoke `git config --global` as its writer implementation. Target selection
+uses `~/.gitconfig` if it exists, otherwise the existing XDG Git config file,
+otherwise `~/.gitconfig`. Configure and unconfigure fail closed on modified
+markers, collisions, or unrecognized private state; unconfigure removes only
+the exact owned include block and private entries. Doctor queries effective
+configuration with real `git config --global --includes` commands, does not
+override `GIT_CONFIG_GLOBAL`, and does not invoke credential helpers.
 
 ### Supported Operations
 

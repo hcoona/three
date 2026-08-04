@@ -146,14 +146,15 @@ Recommended resulting configuration:
 ```
 
 `configure git` must not shell out to `git config --global` to apply these
-settings. The product CLI applies them by asking ConfigurationManager or the Git
-configuration writer to write the selected user Git configuration file directly,
-including ownership metadata, dry-run equivalence, conflict handling, and
-precise removal behavior. The user Git configuration target follows Git's
-official global target selection: `~/.gitconfig` when it exists, otherwise the
-existing XDG Git config file, and otherwise `~/.gitconfig`. AzureAuth, if
-reused, remains only an identity-acquisition substrate behind the shared core
-abstraction, not the runtime component that mutates Git configuration.
+settings. The product CLI writes them to a private product Git config through
+ConfigurationManager, then adds an explicitly marked product-owned `[include]`
+block to the selected user-global Git config. Unconfigure removes only that
+exact block and the product-owned private settings. The user-global target is
+`~/.gitconfig` when it exists, otherwise the existing XDG Git config file, and
+otherwise `~/.gitconfig`. Doctor uses real `git config --global --includes`
+queries without overriding `GIT_CONFIG_GLOBAL` and never invokes credential
+helpers. AzureAuth, if reused, remains only an identity-acquisition substrate
+behind the shared core abstraction.
 
 The `useHttpPath` setting is required for `dev.azure.com` because the organization is in the URL path. Legacy `<org>.visualstudio.com` remotes carry the organization in the host name and do not require the same setting.
 

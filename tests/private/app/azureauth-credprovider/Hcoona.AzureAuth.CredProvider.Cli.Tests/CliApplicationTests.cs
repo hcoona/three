@@ -1972,7 +1972,9 @@ public sealed class CliApplicationTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void UnconfigureGitWithoutManifestLeavesConfigurationUntouched(bool dryRun)
+    public void UnconfigureGitWithoutManifestFailsClosedAndLeavesConfigurationUntouched(
+        bool dryRun
+    )
     {
         string stateDirectory = CreateTestDirectory();
         GitPhase8VerticalSliceService service = CreateGitPhase8Service(stateDirectory);
@@ -1988,19 +1990,12 @@ public sealed class CliApplicationTests
                 ? InvokeWithRuntime(runtimeOptions, "unconfigure", "git", "--dry-run")
                 : InvokeWithRuntime(runtimeOptions, "unconfigure", "git");
 
-            Assert.Equal(0, unconfigureResult.ExitCode);
-            Assert.Equal(string.Empty, unconfigureResult.StdErr);
-            if (dryRun)
-            {
-                Assert.NotEmpty(unconfigureResult.StdOut);
-            }
-            else
-            {
-                Assert.Equal(
-                    GetExpectedGitMutationOutput("unconfigure", "not-needed", 0, false, false),
-                    unconfigureResult.StdOut
-                );
-            }
+            Assert.Equal(1, unconfigureResult.ExitCode);
+            Assert.Equal(string.Empty, unconfigureResult.StdOut);
+            Assert.Equal(
+                "error: unconfigure cannot modify unrecognized Phase 8 Git state.\n",
+                unconfigureResult.StdErr
+            );
             Assert.False(File.Exists(service.Paths.OwnershipManifestPath));
             Assert.Contains(
                 "azureauth-credprovider",
@@ -4202,6 +4197,7 @@ public sealed class CliApplicationTests
             {
                 StateDirectoryPath = stateDirectory,
                 ProcessRunner = new PassingGitDiscoveryProcessRunner(),
+                LocalShellGitDiscoverySupported = true,
                 ProductExecutablePath = CreateFakeProductExecutable(stateDirectory),
             },
             NuGetPhase10Options = CreateIsolatedNuGetPhase10Options(),
@@ -4265,6 +4261,7 @@ public sealed class CliApplicationTests
             {
                 StateDirectoryPath = stateDirectory,
                 ProcessRunner = new PassingGitDiscoveryProcessRunner(),
+                LocalShellGitDiscoverySupported = true,
                 ProductExecutablePath = CreateFakeProductExecutable(stateDirectory),
             }
         );
@@ -4380,6 +4377,22 @@ public sealed class CliApplicationTests
         {
             ArgumentNullException.ThrowIfNull(startSpec);
             cancellationToken.ThrowIfCancellationRequested();
+
+            if (startSpec.Arguments.Contains("config"))
+            {
+                return new SystemProcessRunner().RunAsync(
+                    new ProcessStartSpec(
+                        "git",
+                        startSpec.Arguments,
+                        startSpec.WorkingDirectory,
+                        startSpec.Environment,
+                        startSpec.StandardInput,
+                        startSpec.Timeout,
+                        startSpec.OutputCaptureOptions
+                    ),
+                    cancellationToken
+                );
+            }
 
             TryWriteHelperMarker(startSpec);
             return Task.FromResult(
@@ -5297,6 +5310,7 @@ public sealed class CliApplicationTests
                 StateDirectoryPath = rootPath,
                 ProcessRunner = gitDiscoveryRunner,
                 GitExecutablePath = "fake-git",
+                LocalShellGitDiscoverySupported = true,
                 ProductExecutablePath = CreateFakeProductExecutable(rootPath),
             };
             gitDiscoveryRunner.ExpectedHelperCommand = new GitPhase8VerticalSliceService(gitOptions)
@@ -5412,12 +5426,21 @@ public sealed class CliApplicationTests
                 acquisitionService.Requests,
                 request => Assert.NotEqual(InteractivePolicy.UserAllowed, request.InteractivePolicy)
             );
-            ProcessStartSpec gitDiscovery = Assert.Single(gitDiscoveryRunner.StartSpecs);
+            Assert.Equal(2, gitDiscoveryRunner.StartSpecs.Count);
+            ProcessStartSpec gitDiscovery = gitDiscoveryRunner.StartSpecs[0];
             Assert.Equal("fake-git", gitDiscovery.FileName);
             Assert.Equal(
-                ["config", "--global", "--get", "credential.helper"],
+                [
+                    "config",
+                    "--global",
+                    "--includes",
+                    "--null",
+                    "--get-regexp",
+                    @"^credential(\..*)?\.helper$",
+                ],
                 gitDiscovery.Arguments
             );
+            Assert.False(gitDiscovery.Environment.ContainsKey("GIT_CONFIG_GLOBAL"));
             Assert.Null(gitDiscovery.StandardErrorTee);
             Assert.Equal(string.Empty, promptWriter.ToString());
             Assert.DoesNotContain(PrivateToken, doctor.StdOut, StringComparison.Ordinal);
@@ -5492,8 +5515,17 @@ public sealed class CliApplicationTests
             ArgumentNullException.ThrowIfNull(startSpec);
             cancellationToken.ThrowIfCancellationRequested();
             StartSpecs.Add(startSpec);
+            if (startSpec.Arguments.Contains("--get-urlmatch"))
+            {
+                return Task.FromResult(new ProcessResult(0, "true\n", string.Empty));
+            }
+
             return Task.FromResult(
-                new ProcessResult(0, ExpectedHelperCommand + "\n", string.Empty)
+                new ProcessResult(
+                    0,
+                    "credential.helper\n" + ExpectedHelperCommand + "\0",
+                    string.Empty
+                )
             );
         }
     }
