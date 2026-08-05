@@ -340,14 +340,25 @@ public sealed class YarnPhase13VerticalSliceService
         }
 
         string plannedRegistry = NormalizeComparableRegistryKey(declaration.NpmRegistriesKey);
+        bool userScopedDeclaration =
+            declaration.Scope is not null
+            && PathsEqual(declaration.SourcePath, ResolveUserYarnrcPath());
         YarnProjectAuthBlock? shadow = ReadProjectAuthBlocks(workspaceYarnrcPath)
             .FirstOrDefault(block =>
-                block.RegistryKey is not null
-                && block.ShadowingSelector is not null
-                && string.Equals(
-                    NormalizeComparableRegistryKey(block.RegistryKey),
-                    plannedRegistry,
-                    StringComparison.Ordinal
+                block.ShadowingSelector is not null
+                && (
+                    block.RegistryKey is not null
+                        ? string.Equals(
+                            NormalizeComparableRegistryKey(block.RegistryKey),
+                            plannedRegistry,
+                            StringComparison.Ordinal
+                        )
+                        : userScopedDeclaration
+                            && string.Equals(
+                                block.Scope,
+                                NormalizeScopeName(declaration.Scope!),
+                                StringComparison.Ordinal
+                            )
                 )
             );
         if (shadow is not null)
@@ -727,7 +738,7 @@ public sealed class YarnPhase13VerticalSliceService
                         ? UnquoteYamlScalar(mapKey) ?? mapKey
                         : null,
                     context == YarnAuthIdentContext.NpmScopes
-                        ? "npmScopes." + NormalizeScopeName(mapKey)
+                        ? NormalizeScopeName(mapKey)
                         : null
                 );
                 if (context != YarnAuthIdentContext.None)
@@ -1208,9 +1219,11 @@ public sealed class YarnPhase13VerticalSliceService
     private static string? NullIfWhiteSpace(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-    private sealed class YarnProjectAuthBlock(string? registryKey, string? selectorPrefix)
+    private sealed class YarnProjectAuthBlock(string? registryKey, string? scope)
     {
         public string? RegistryKey { get; set; } = registryKey;
+
+        public string? Scope { get; } = scope;
 
         public string? ShadowingSelector { get; private set; }
 
@@ -1231,7 +1244,7 @@ public sealed class YarnPhase13VerticalSliceService
             if (ShadowingSelector is null && (authValuePresent || alwaysAuthDisabled))
             {
                 ShadowingSelector =
-                    (selectorPrefix ?? "npmRegistries[registry]") + "." + key;
+                    (Scope is null ? "npmRegistries[registry]" : "npmScopes." + Scope) + "." + key;
             }
         }
     }

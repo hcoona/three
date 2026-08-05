@@ -892,6 +892,194 @@ public sealed class YarnPhase13VerticalSliceServiceTests
     }
 
     [Theory]
+    [InlineData("npmAuthToken", "project-secret-value")]
+    [InlineData("npmAuthIdent", "user:password")]
+    public void CreateUserCredentialPlanRejectsSameScopeProjectAuthWithoutRegistry(
+        string selector,
+        string value
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/workspace/.yarnrc.yml",
+            "npmScopes:\n"
+                + "  azure:\n"
+                + "    "
+                + selector
+                + ": '"
+                + value
+                + "'\n"
+        );
+        fileSystem.WriteAllText(
+            "/home/alice/.yarnrc.yml",
+            """
+            npmScopes:
+              '@azure':
+                npmRegistryServer: https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/
+            """
+        );
+        var service = new YarnPhase13VerticalSliceService(
+            new YarnPhase13VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            service.CreateUserCredentialPlan(
+                new YarnPhase13CredentialPlanRequest
+                {
+                    Declaration = Assert.Single(service.DiscoverRegistryDeclarations()),
+                    AuthToken = "short-lived-token",
+                }
+            )
+        );
+
+        Assert.Contains("npmScopes.azure." + selector, exception.Message);
+        Assert.DoesNotContain(value, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CreateUserCredentialPlanAllowsUnrelatedProjectScopeAuthWithoutRegistry()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/workspace/.yarnrc.yml",
+            """
+            npmScopes:
+              unrelated:
+                npmAuthToken: project-secret-value
+            """
+        );
+        fileSystem.WriteAllText(
+            "/home/alice/.yarnrc.yml",
+            """
+            npmScopes:
+              azure:
+                npmRegistryServer: https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/
+            """
+        );
+        var service = new YarnPhase13VerticalSliceService(
+            new YarnPhase13VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+
+        ConfigurationChangePlan plan = service.CreateUserCredentialPlan(
+            new YarnPhase13CredentialPlanRequest
+            {
+                Declaration = Assert.Single(service.DiscoverRegistryDeclarations()),
+                AuthToken = "short-lived-token",
+            }
+        );
+
+        Assert.Equal(2, plan.Changes.Count);
+    }
+
+    [Fact]
+    public void CreateUserCredentialPlanAllowsSameScopeProjectAuthForNonUserDeclaration()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/workspace/.yarnrc.yml",
+            """
+            npmScopes:
+              azure:
+                npmAuthToken: project-secret-value
+            """
+        );
+        fileSystem.WriteAllText(
+            "/home/alice/.yarnrc.yml",
+            """
+            npmScopes:
+              azure:
+                npmRegistryServer: https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/
+            """
+        );
+        var service = new YarnPhase13VerticalSliceService(
+            new YarnPhase13VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+        YarnPhase13RegistryDeclaration declaration = Assert.Single(
+            service.DiscoverRegistryDeclarations()
+        ) with
+        {
+            SourcePath = "/state/explicit-registry-declaration.yarnrc.yml",
+        };
+
+        ConfigurationChangePlan plan = service.CreateUserCredentialPlan(
+            new YarnPhase13CredentialPlanRequest
+            {
+                Declaration = declaration,
+                AuthToken = "short-lived-token",
+            }
+        );
+
+        Assert.Equal(2, plan.Changes.Count);
+    }
+
+    [Fact]
+    public void CreateUserCredentialPlanAllowsSameScopeProjectAuthForDifferentRegistry()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/home/alice/.yarnrc.yml",
+            """
+            npmScopes:
+              azure:
+                npmRegistryServer: https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/
+            """
+        );
+        var service = new YarnPhase13VerticalSliceService(
+            new YarnPhase13VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+        YarnPhase13RegistryDeclaration declaration = Assert.Single(
+            service.DiscoverRegistryDeclarations()
+        );
+        fileSystem.WriteAllText(
+            "/workspace/.yarnrc.yml",
+            """
+            npmScopes:
+              azure:
+                npmRegistryServer: https://pkgs.dev.azure.com/org/_packaging/other/npm/registry/
+                npmAuthToken: project-secret-value
+            """
+        );
+
+        ConfigurationChangePlan plan = service.CreateUserCredentialPlan(
+            new YarnPhase13CredentialPlanRequest
+            {
+                Declaration = declaration,
+                AuthToken = "short-lived-token",
+            }
+        );
+
+        Assert.Equal(2, plan.Changes.Count);
+    }
+
+    [Theory]
     [InlineData("npmRegistries")]
     [InlineData("npmScopes")]
     public void CreateUserCredentialPlanRejectsFourSpaceProjectAuthShadow(string blockKind)

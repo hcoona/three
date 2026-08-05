@@ -1186,6 +1186,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
             {
                 FileSystem = fileSystem,
                 EnvironmentVariableReader = environmentVariableReader,
+                WorkspaceDirectoryPath = ".",
                 UserNpmrcPath =
                     ecosystem == CredentialEcosystem.Pnpm
                         ? paths.PnpmUserNpmrcPath
@@ -1244,6 +1245,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
             {
                 FileSystem = fileSystem,
                 EnvironmentVariableReader = environmentVariableReader,
+                WorkspaceDirectoryPath = ".",
                 UserYarnrcPath = paths.YarnUserYarnrcPath,
             }
         );

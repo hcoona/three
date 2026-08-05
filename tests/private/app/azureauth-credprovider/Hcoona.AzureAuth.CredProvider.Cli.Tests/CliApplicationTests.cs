@@ -2424,6 +2424,90 @@ public sealed class CliApplicationTests
         }
     }
 
+    [Fact]
+    public void ConfigureNpmRejectsSameRegistryProjectNpmrcAuthThroughPhase14()
+    {
+        const string ProjectSecret = "project-secret-value";
+        string stateDirectory = CreateTestDirectory();
+        string projectDirectory = Path.Combine(stateDirectory, "project");
+        string projectNpmrcPath = Path.Combine(projectDirectory, ".npmrc");
+        string userNpmrcPath = Path.Combine(stateDirectory, "npm", "user.npmrc");
+        string projectNpmrc =
+            "//pkgs.dev.azure.com/test-org/_packaging/test-feed/npm/registry/"
+            + ":_authToken="
+            + ProjectSecret
+            + "\n";
+        try
+        {
+            CreateOwnerOnlyDirectory(projectDirectory);
+            WriteOwnerOnlyText(projectNpmrcPath, projectNpmrc);
+
+            CommandResult result = InvokeWithRuntimeFromDirectory(
+                projectDirectory,
+                CreateConfigurationRuntime(stateDirectory),
+                "configure",
+                "npm",
+                "--registry-url",
+                TestRegistryUrl
+            );
+
+            Assert.Equal(1, result.ExitCode);
+            Assert.Equal(string.Empty, result.StdOut);
+            Assert.Contains("Project-local npm authentication", result.StdErr);
+            Assert.Contains("would shadow", result.StdErr, StringComparison.Ordinal);
+            Assert.DoesNotContain(ProjectSecret, result.StdErr, StringComparison.Ordinal);
+            Assert.Equal(projectNpmrc, File.ReadAllText(projectNpmrcPath));
+            Assert.False(File.Exists(userNpmrcPath));
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public void ConfigureYarnRejectsSameRegistryProjectYarnrcAuthThroughPhase14()
+    {
+        const string ProjectSecret = "project-secret-value";
+        string stateDirectory = CreateTestDirectory();
+        string projectDirectory = Path.Combine(stateDirectory, "project");
+        string projectYarnrcPath = Path.Combine(projectDirectory, ".yarnrc.yml");
+        string userYarnrcPath = Path.Combine(stateDirectory, "yarn", ".yarnrc.yml");
+        string projectYarnrc =
+            $"""
+            npmRegistries:
+              {TestRegistryUrl}:
+                npmAuthToken: {ProjectSecret}
+            """;
+        try
+        {
+            CreateOwnerOnlyDirectory(projectDirectory);
+            WriteOwnerOnlyText(projectYarnrcPath, projectYarnrc);
+
+            CommandResult result = InvokeWithRuntimeFromDirectory(
+                projectDirectory,
+                CreateConfigurationRuntime(stateDirectory),
+                "configure",
+                "yarn",
+                "--registry-url",
+                TestRegistryUrl
+            );
+
+            Assert.Equal(1, result.ExitCode);
+            Assert.Equal(string.Empty, result.StdOut);
+            Assert.Contains("Project-local Yarn selector", result.StdErr);
+            Assert.Contains("npmAuthToken", result.StdErr, StringComparison.Ordinal);
+            Assert.Contains("would shadow", result.StdErr, StringComparison.Ordinal);
+            Assert.DoesNotContain(ProjectSecret, result.StdErr, StringComparison.Ordinal);
+            Assert.Equal(projectYarnrc, File.ReadAllText(projectYarnrcPath));
+            Assert.False(File.Exists(userYarnrcPath));
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
     [Theory]
     [InlineData("npm", false)]
     [InlineData("npm", true)]
@@ -4293,6 +4377,24 @@ public sealed class CliApplicationTests
             : CliApplication.Run(args, stdout, stderr, runtimeOptions);
 
         return new CommandResult(exitCode, stdout.ToString(), stderr.ToString());
+    }
+
+    private static CommandResult InvokeWithRuntimeFromDirectory(
+        string workingDirectory,
+        CliRuntimeOptions runtimeOptions,
+        params string[] args
+    )
+    {
+        string originalDirectory = Environment.CurrentDirectory;
+        try
+        {
+            Environment.CurrentDirectory = workingDirectory;
+            return InvokeWithRuntime(runtimeOptions, args);
+        }
+        finally
+        {
+            Environment.CurrentDirectory = originalDirectory;
+        }
     }
 
     private static CliRuntimeOptions CreateAuthRuntimeWithEnvironment(
