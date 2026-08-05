@@ -38,18 +38,20 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
         {
             if (
                 containsSecret
-                && fileSystem.FileExists(targetPath)
+                && fileSystem.FileExists(document.WritePath)
                 && !FileSystemPathSemantics.UsesWindowsPaths(fileSystem)
-                && fileSystem.GetUnixFileMode(targetPath) != OwnerOnlyMode
+                && fileSystem.GetUnixFileMode(document.WritePath) != OwnerOnlyMode
             )
             {
-                fileSystem.SetUnixFileMode(targetPath, OwnerOnlyMode);
+                RevalidateWritePath(targetPath, document.WritePath);
+                fileSystem.SetUnixFileMode(document.WritePath, OwnerOnlyMode);
             }
             return;
         }
 
+        RevalidateWritePath(targetPath, document.WritePath);
         fileSystem.AtomicWriteAllBytes(
-            targetPath,
+            document.WritePath,
             document.Encode(updated),
             containsSecret
                 ? AtomicWriteOptions.RestrictUnixFileModeToOwnerOnly
@@ -69,7 +71,7 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
         {
             string? value = document.GetValue(change.Key);
             return change.IsSecretValue
-                ? value is not null
+                ? !string.IsNullOrEmpty(value)
                 : string.Equals(value, change.Value, StringComparison.Ordinal);
         });
     }
@@ -198,16 +200,37 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
 
     private NpmrcDocument ReadDocument(string targetPath)
     {
-        if (!fileSystem.FileExists(targetPath))
+        string writePath = ResolveWritePath(targetPath);
+        if (!fileSystem.FileExists(writePath))
         {
-            if (fileSystem.DirectoryExists(targetPath))
+            if (fileSystem.DirectoryExists(writePath))
             {
                 throw new InvalidOperationException("The npmrc target is a directory.");
             }
-            return NpmrcDocument.Missing();
+            return NpmrcDocument.Missing(writePath);
         }
 
-        return NpmrcDocument.Parse(fileSystem.ReadAllBytes(targetPath));
+        return NpmrcDocument.Parse(fileSystem.ReadAllBytes(writePath), writePath);
+    }
+
+    private string ResolveWritePath(string targetPath) =>
+        fileSystem is IFileSystemLinkResolver linkResolver
+            ? linkResolver.ResolveFilePathForWrite(targetPath)
+            : targetPath;
+
+    private void RevalidateWritePath(string targetPath, string writePath)
+    {
+        if (
+            fileSystem is IFileSystemLinkResolver
+            && !FileSystemPathSemantics
+                .GetComparer(fileSystem)
+                .Equals(ResolveWritePath(targetPath), writePath)
+        )
+        {
+            throw new IOException(
+                "The npmrc configuration link changed while it was being updated."
+            );
+        }
     }
 
     private string Apply(
@@ -259,20 +282,29 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
         private readonly string newLine;
         private readonly bool trailingNewLine;
 
-        private NpmrcDocument(List<string> lines, bool hadBom, string newLine, bool trailingNewLine)
+        private NpmrcDocument(
+            List<string> lines,
+            bool hadBom,
+            string newLine,
+            bool trailingNewLine,
+            string writePath
+        )
         {
             this.lines = lines;
             this.hadBom = hadBom;
             this.newLine = newLine;
             this.trailingNewLine = trailingNewLine;
+            WritePath = writePath;
         }
 
         public string Text => Render();
 
-        public static NpmrcDocument Missing() =>
-            new([], hadBom: false, "\n", trailingNewLine: true);
+        public string WritePath { get; }
 
-        public static NpmrcDocument Parse(byte[] bytes)
+        public static NpmrcDocument Missing(string writePath) =>
+            new([], hadBom: false, "\n", trailingNewLine: true, writePath);
+
+        public static NpmrcDocument Parse(byte[] bytes, string writePath)
         {
             bool bom = bytes is [0xEF, 0xBB, 0xBF, ..];
             string text = Utf8NoBom.GetString(bom ? bytes[3..] : bytes);
@@ -280,11 +312,13 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
                 SplitLines(text),
                 bom,
                 text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n",
-                text.EndsWith('\n')
+                text.EndsWith('\n'),
+                writePath
             );
         }
 
-        public NpmrcDocument Clone() => new([.. lines], hadBom, newLine, trailingNewLine);
+        public NpmrcDocument Clone() =>
+            new([.. lines], hadBom, newLine, trailingNewLine, WritePath);
 
         public string? GetValue(string key)
         {

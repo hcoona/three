@@ -44,18 +44,20 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
         {
             if (
                 containsSecret
-                && fileSystem.FileExists(targetPath)
+                && fileSystem.FileExists(document.WritePath)
                 && !FileSystemPathSemantics.UsesWindowsPaths(fileSystem)
-                && fileSystem.GetUnixFileMode(targetPath) != OwnerOnlyMode
+                && fileSystem.GetUnixFileMode(document.WritePath) != OwnerOnlyMode
             )
             {
-                fileSystem.SetUnixFileMode(targetPath, OwnerOnlyMode);
+                RevalidateWritePath(targetPath, document.WritePath);
+                fileSystem.SetUnixFileMode(document.WritePath, OwnerOnlyMode);
             }
             return;
         }
 
+        RevalidateWritePath(targetPath, document.WritePath);
         fileSystem.AtomicWriteAllBytes(
-            targetPath,
+            document.WritePath,
             document.Encode(updated),
             containsSecret
                 ? AtomicWriteOptions.RestrictUnixFileModeToOwnerOnly
@@ -75,7 +77,7 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
         {
             string? value = document.GetValue(change.Key);
             return change.IsSecretValue
-                ? value is not null
+                ? IsPresentSecretScalar(value)
                 : string.Equals(
                     NormalizeScalar(value),
                     NormalizeScalar(change.Value),
@@ -251,18 +253,39 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
 
     private YarnDocument ReadDocument(string targetPath)
     {
-        if (!fileSystem.FileExists(targetPath))
+        string writePath = ResolveWritePath(targetPath);
+        if (!fileSystem.FileExists(writePath))
         {
-            if (fileSystem.DirectoryExists(targetPath))
+            if (fileSystem.DirectoryExists(writePath))
             {
                 throw new InvalidOperationException(
                     "The Yarn configuration target is a directory."
                 );
             }
-            return YarnDocument.Missing();
+            return YarnDocument.Missing(writePath);
         }
 
-        return YarnDocument.Parse(fileSystem.ReadAllBytes(targetPath));
+        return YarnDocument.Parse(fileSystem.ReadAllBytes(writePath), writePath);
+    }
+
+    private string ResolveWritePath(string targetPath) =>
+        fileSystem is IFileSystemLinkResolver linkResolver
+            ? linkResolver.ResolveFilePathForWrite(targetPath)
+            : targetPath;
+
+    private void RevalidateWritePath(string targetPath, string writePath)
+    {
+        if (
+            fileSystem is IFileSystemLinkResolver
+            && !FileSystemPathSemantics
+                .GetComparer(fileSystem)
+                .Equals(ResolveWritePath(targetPath), writePath)
+        )
+        {
+            throw new IOException(
+                "The Yarn configuration link changed while it was being updated."
+            );
+        }
     }
 
     private string Apply(
@@ -359,6 +382,73 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
     private static string? NormalizeScalar(string? value) =>
         value is null ? null : Unquote(value).Trim().ToLowerInvariant();
 
+    private static bool IsPresentSecretScalar(string? value)
+    {
+        string? trimmed =
+            value is null ? null : StripYamlComment(value).Trim();
+        if (string.IsNullOrEmpty(trimmed))
+        {
+            return false;
+        }
+
+        bool quoted =
+            trimmed.Length >= 2
+            && (
+                (trimmed[0] == '\'' && trimmed[^1] == '\'')
+                || (trimmed[0] == '"' && trimmed[^1] == '"')
+            );
+        if (quoted)
+        {
+            return Unquote(trimmed).Length > 0;
+        }
+
+        return !string.Equals(trimmed, "~", StringComparison.Ordinal)
+            && !string.Equals(trimmed, "null", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string StripYamlComment(string value)
+    {
+        int comment = FindYamlCommentStart(value);
+        return comment < 0 ? value : value[..comment];
+    }
+
+    private static int FindYamlCommentStart(string value)
+    {
+        char quote = '\0';
+        for (int index = 0; index < value.Length; index++)
+        {
+            char character = value[index];
+            if (quote == '\0' && character is '\'' or '"')
+            {
+                quote = character;
+                continue;
+            }
+            if (quote != '\0' && character == quote)
+            {
+                if (quote == '\'' && index + 1 < value.Length && value[index + 1] == '\'')
+                {
+                    index++;
+                    continue;
+                }
+                if (quote == '"' && index > 0 && value[index - 1] == '\\')
+                {
+                    continue;
+                }
+                quote = '\0';
+                continue;
+            }
+            if (
+                quote == '\0'
+                && character == '#'
+                && (index == 0 || char.IsWhiteSpace(value[index - 1]))
+            )
+            {
+                return index;
+            }
+        }
+        return -1;
+    }
+
     private sealed class YarnDocument
     {
         private readonly List<string> lines;
@@ -366,32 +456,45 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
         private readonly string newLine;
         private readonly bool trailingNewLine;
 
-        private YarnDocument(List<string> lines, bool hadBom, string newLine, bool trailingNewLine)
+        private YarnDocument(
+            List<string> lines,
+            bool hadBom,
+            string newLine,
+            bool trailingNewLine,
+            string writePath
+        )
         {
             this.lines = lines;
             this.hadBom = hadBom;
             this.newLine = newLine;
             this.trailingNewLine = trailingNewLine;
+            WritePath = writePath;
         }
 
         public string Text => Render();
 
-        public static YarnDocument Missing() =>
-            new([], hadBom: false, "\n", trailingNewLine: true);
+        public string WritePath { get; }
 
-        public static YarnDocument Parse(byte[] bytes)
+        public static YarnDocument Missing(string writePath) =>
+            new([], hadBom: false, "\n", trailingNewLine: true, writePath);
+
+        public static YarnDocument Parse(byte[] bytes, string writePath)
         {
             bool bom = bytes is [0xEF, 0xBB, 0xBF, ..];
             string text = Utf8NoBom.GetString(bom ? bytes[3..] : bytes);
+            List<string> parsedLines = SplitLines(text);
+            NormalizeFlowStyleNpmRegistries(parsedLines);
             return new YarnDocument(
-                SplitLines(text),
+                parsedLines,
                 bom,
                 text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n",
-                text.EndsWith('\n')
+                text.EndsWith('\n'),
+                writePath
             );
         }
 
-        public YarnDocument Clone() => new([.. lines], hadBom, newLine, trailingNewLine);
+        public YarnDocument Clone() =>
+            new([.. lines], hadBom, newLine, trailingNewLine, WritePath);
 
         public string? GetValue(string key)
         {
@@ -437,8 +540,13 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
             }
 
             int existing = FindRegistryLeaf(registry, leaf);
+            int registryLine = FindRegistryHeader(registry);
+            int leafIndent =
+                existing >= 0
+                    ? CountIndent(lines[existing])
+                    : GetLeafIndent(registryLine);
             string rendered =
-                "    "
+                new string(' ', leafIndent)
                 + leaf
                 + ": "
                 + (
@@ -452,7 +560,7 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
                 return;
             }
 
-            int registryLine = EnsureRegistryBlock(registry);
+            registryLine = EnsureRegistryBlock(registry);
             int insert = registryLine + 1;
             while (insert < lines.Count)
             {
@@ -461,7 +569,7 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
                     insert++;
                     continue;
                 }
-                if (CountIndent(lines[insert]) < 4)
+                if (CountIndent(lines[insert]) <= CountIndent(lines[registryLine]))
                 {
                     break;
                 }
@@ -523,6 +631,7 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
                 registries = lines.Count - 1;
             }
 
+            int registryIndent = GetRegistryIndent(registries);
             int insert = registries + 1;
             while (insert < lines.Count)
             {
@@ -537,7 +646,7 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
                 }
                 insert++;
             }
-            lines.Insert(insert, "  " + Quote(registry) + ":");
+            lines.Insert(insert, new string(' ', registryIndent) + Quote(registry) + ":");
             return insert;
         }
 
@@ -566,6 +675,7 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
                 return -1;
             }
 
+            int registryIndent = GetRegistryIndent(section);
             var matches = new List<int>();
             for (var index = section + 1; index < lines.Count; index++)
             {
@@ -579,7 +689,7 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
                     break;
                 }
                 if (
-                    indent == 2
+                    indent == registryIndent
                     && TryParseYamlKey(lines[index], out string? parsed)
                     && RegistryKeysEqual(Unquote(parsed!), registry)
                 )
@@ -598,6 +708,8 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
                 return -1;
             }
 
+            int headerIndent = CountIndent(lines[header]);
+            int leafIndent = GetLeafIndent(header);
             var matches = new List<int>();
             for (var index = header + 1; index < lines.Count; index++)
             {
@@ -606,12 +718,12 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
                     continue;
                 }
                 int indent = CountIndent(lines[index]);
-                if (indent <= 2 && !string.IsNullOrWhiteSpace(lines[index]))
+                if (indent <= headerIndent && !string.IsNullOrWhiteSpace(lines[index]))
                 {
                     break;
                 }
                 if (
-                    indent == 4
+                    indent == leafIndent
                     && TryParseYamlKey(lines[index], out string? parsed)
                     && string.Equals(parsed, leaf, StringComparison.Ordinal)
                 )
@@ -638,7 +750,7 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
             {
                 next++;
             }
-            if (next >= lines.Count || CountIndent(lines[next]) <= 2)
+            if (next >= lines.Count || CountIndent(lines[next]) <= CountIndent(lines[header]))
             {
                 lines.RemoveAt(header);
             }
@@ -664,6 +776,270 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
             {
                 lines.RemoveAt(section);
             }
+        }
+
+        private int GetRegistryIndent(int section)
+        {
+            for (int index = section + 1; index < lines.Count; index++)
+            {
+                if (string.IsNullOrWhiteSpace(lines[index]) || IsCommentOnly(lines[index]))
+                {
+                    continue;
+                }
+
+                int indent = CountIndent(lines[index]);
+                return indent == 0 ? 2 : indent;
+            }
+
+            return 2;
+        }
+
+        private int GetLeafIndent(int registryHeader)
+        {
+            if (registryHeader < 0)
+            {
+                int section = FindTopLevelKey("npmRegistries");
+                int registryIndent = section < 0 ? 2 : GetRegistryIndent(section);
+                if (section >= 0)
+                {
+                    for (int index = section + 1; index < lines.Count; index++)
+                    {
+                        if (
+                            string.IsNullOrWhiteSpace(lines[index])
+                            || IsCommentOnly(lines[index])
+                        )
+                        {
+                            continue;
+                        }
+
+                        int indent = CountIndent(lines[index]);
+                        if (indent == 0)
+                        {
+                            break;
+                        }
+                        if (indent > registryIndent)
+                        {
+                            return indent;
+                        }
+                    }
+                }
+                return registryIndent * 2;
+            }
+
+            int headerIndent = CountIndent(lines[registryHeader]);
+            for (int index = registryHeader + 1; index < lines.Count; index++)
+            {
+                if (string.IsNullOrWhiteSpace(lines[index]) || IsCommentOnly(lines[index]))
+                {
+                    continue;
+                }
+
+                int indent = CountIndent(lines[index]);
+                if (indent <= headerIndent)
+                {
+                    break;
+                }
+                return indent;
+            }
+
+            return headerIndent * 2;
+        }
+
+        private static void NormalizeFlowStyleNpmRegistries(List<string> documentLines)
+        {
+            for (int index = 0; index < documentLines.Count; index++)
+            {
+                string line = documentLines[index];
+                if (
+                    CountIndent(line) != 0
+                    || !TryParseYamlKey(line, out string? key)
+                    || !string.Equals(key, "npmRegistries", StringComparison.Ordinal)
+                )
+                {
+                    continue;
+                }
+
+                string trimmed = line.Trim();
+                int separator = FindKeyValueSeparator(trimmed);
+                string value = trimmed[(separator + 1)..].Trim();
+                int comment = FindYamlCommentStart(value);
+                string mapping =
+                    comment < 0 ? value : value[..comment].TrimEnd();
+                if (!mapping.StartsWith('{') || !mapping.EndsWith('}'))
+                {
+                    return;
+                }
+
+                List<(string Key, string Value)> registries = ParseFlowMapping(
+                    mapping[1..^1]
+                );
+                string header =
+                    comment < 0
+                        ? "npmRegistries:"
+                        : "npmRegistries: " + value[comment..];
+                var replacement = new List<string> { header };
+                foreach ((string registryKey, string registryValue) in registries)
+                {
+                    if (
+                        registryValue.StartsWith('{')
+                        && registryValue.EndsWith('}')
+                    )
+                    {
+                        replacement.Add("  " + registryKey + ":");
+                        foreach (
+                            (string leafKey, string leafValue) in ParseFlowMapping(
+                                registryValue[1..^1]
+                            )
+                        )
+                        {
+                            replacement.Add("    " + leafKey + ": " + leafValue);
+                        }
+                    }
+                    else
+                    {
+                        replacement.Add("  " + registryKey + ": " + registryValue);
+                    }
+                }
+
+                documentLines.RemoveAt(index);
+                documentLines.InsertRange(index, replacement);
+                return;
+            }
+        }
+
+        private static List<(string Key, string Value)> ParseFlowMapping(string value)
+        {
+            var result = new List<(string Key, string Value)>();
+            foreach (string item in SplitFlowItems(value))
+            {
+                int separator = FindFlowKeyValueSeparator(item);
+                if (separator <= 0)
+                {
+                    throw new InvalidOperationException(
+                        "The Yarn npmRegistries flow mapping is not recognized."
+                    );
+                }
+
+                string key = item[..separator].Trim();
+                string itemValue = item[(separator + 1)..].Trim();
+                if (key.Length == 0)
+                {
+                    throw new InvalidOperationException(
+                        "The Yarn npmRegistries flow mapping is not recognized."
+                    );
+                }
+                result.Add((key, itemValue));
+            }
+            return result;
+        }
+
+        private static List<string> SplitFlowItems(string value)
+        {
+            var result = new List<string>();
+            int start = 0;
+            int depth = 0;
+            char quote = '\0';
+            for (int index = 0; index < value.Length; index++)
+            {
+                char character = value[index];
+                if (quote == '\0' && character is '\'' or '"')
+                {
+                    quote = character;
+                    continue;
+                }
+                if (quote != '\0' && character == quote)
+                {
+                    if (quote == '\'' && index + 1 < value.Length && value[index + 1] == '\'')
+                    {
+                        index++;
+                        continue;
+                    }
+                    if (quote == '"' && index > 0 && value[index - 1] == '\\')
+                    {
+                        continue;
+                    }
+                    quote = '\0';
+                    continue;
+                }
+                if (quote != '\0')
+                {
+                    continue;
+                }
+                if (character is '{' or '[')
+                {
+                    depth++;
+                    continue;
+                }
+                if (character is '}' or ']')
+                {
+                    depth--;
+                    continue;
+                }
+                if (character == ',' && depth == 0)
+                {
+                    string item = value[start..index].Trim();
+                    if (item.Length > 0)
+                    {
+                        result.Add(item);
+                    }
+                    start = index + 1;
+                }
+            }
+
+            string finalItem = value[start..].Trim();
+            if (finalItem.Length > 0)
+            {
+                result.Add(finalItem);
+            }
+            return result;
+        }
+
+        private static int FindFlowKeyValueSeparator(string value)
+        {
+            int depth = 0;
+            char quote = '\0';
+            for (int index = 0; index < value.Length; index++)
+            {
+                char character = value[index];
+                if (quote == '\0' && character is '\'' or '"')
+                {
+                    quote = character;
+                    continue;
+                }
+                if (quote != '\0' && character == quote)
+                {
+                    if (quote == '\'' && index + 1 < value.Length && value[index + 1] == '\'')
+                    {
+                        index++;
+                        continue;
+                    }
+                    if (quote == '"' && index > 0 && value[index - 1] == '\\')
+                    {
+                        continue;
+                    }
+                    quote = '\0';
+                    continue;
+                }
+                if (quote != '\0')
+                {
+                    continue;
+                }
+                if (character is '{' or '[')
+                {
+                    depth++;
+                    continue;
+                }
+                if (character is '}' or ']')
+                {
+                    depth--;
+                    continue;
+                }
+                if (character == ':' && depth == 0)
+                {
+                    return index;
+                }
+            }
+            return -1;
         }
 
         private static int SingleOrMissing(List<int> matches, string selector) =>
@@ -697,7 +1073,7 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
         {
             string trimmed = line.Trim();
             int colon = FindKeyValueSeparator(trimmed);
-            return colon < 0 ? string.Empty : Unquote(trimmed[(colon + 1)..].Trim());
+            return colon < 0 ? string.Empty : trimmed[(colon + 1)..].Trim();
         }
 
         private static int FindKeyValueSeparator(string value)
