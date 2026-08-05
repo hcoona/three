@@ -347,7 +347,7 @@ jobs:
       - name: Run tests
         run: |
           set -Eeuo pipefail
-          uv run --frozen pytest
+          uv run --frozen --all-packages pytest
 
   ruby-tests:
     name: Test (Ruby 3.3)
