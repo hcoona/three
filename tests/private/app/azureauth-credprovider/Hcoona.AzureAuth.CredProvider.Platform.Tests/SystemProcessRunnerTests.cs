@@ -235,6 +235,92 @@ public sealed class SystemProcessRunnerTests
     }
 
     [Fact]
+    public async Task RunAsyncCancellationKillsContainedDescendantAfterImmediateParentExits()
+    {
+        if (OperatingSystem.IsWindows() || !File.Exists("/bin/sh"))
+        {
+            return;
+        }
+
+        string pidFile = Path.Combine(
+            CreateTestDirectory("exited parent cancellation"),
+            "processes.pid"
+        );
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken
+        );
+        Task<ProcessResult> runTask = new SystemProcessRunner().RunAsync(
+            ParentExitStartSpec(pidFile, TimeSpan.FromSeconds(30)),
+            cancellation.Token
+        );
+        (int parentProcessId, int descendantProcessId) = await WaitForProcessIdsAsync(
+            pidFile,
+            TestContext.Current.CancellationToken
+        );
+
+        await AssertProcessExitsAsync(
+            parentProcessId,
+            TestContext.Current.CancellationToken
+        );
+        AssertProcessIsRunning(descendantProcessId);
+        Assert.False(runTask.IsCompleted);
+
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+            await runTask.WaitAsync(
+                TimeSpan.FromSeconds(10),
+                TestContext.Current.CancellationToken
+            )
+        );
+        await AssertProcessExitsAsync(
+            descendantProcessId,
+            TestContext.Current.CancellationToken
+        );
+    }
+
+    [Fact]
+    public async Task RunAsyncTimeoutKillsContainedDescendantAfterImmediateParentExits()
+    {
+        if (OperatingSystem.IsWindows() || !File.Exists("/bin/sh"))
+        {
+            return;
+        }
+
+        string pidFile = Path.Combine(
+            CreateTestDirectory("exited parent timeout"),
+            "processes.pid"
+        );
+        Task<ProcessResult> runTask = new SystemProcessRunner().RunAsync(
+            ParentExitStartSpec(pidFile, TimeSpan.FromSeconds(2)),
+            TestContext.Current.CancellationToken
+        );
+        (int parentProcessId, int descendantProcessId) = await WaitForProcessIdsAsync(
+            pidFile,
+            TestContext.Current.CancellationToken
+        );
+
+        await AssertProcessExitsAsync(
+            parentProcessId,
+            TestContext.Current.CancellationToken
+        );
+        AssertProcessIsRunning(descendantProcessId);
+        Assert.False(runTask.IsCompleted);
+
+        ProcessResult result = await runTask.WaitAsync(
+            TimeSpan.FromSeconds(10),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(ProcessExecutionStatus.TimedOut, result.Status);
+        Assert.False(result.Succeeded);
+        await AssertProcessExitsAsync(
+            descendantProcessId,
+            TestContext.Current.CancellationToken
+        );
+    }
+
+    [Fact]
     public async Task RunAsyncTimesOutWhileChildDoesNotReadLargeStandardInput()
     {
         if (!OperatingSystem.IsLinux() || !File.Exists("/bin/sh"))
@@ -579,6 +665,13 @@ public sealed class SystemProcessRunnerTests
         return ProcessTestApp.AppHostPath();
     }
 
+    private static ProcessStartSpec ParentExitStartSpec(string pidFile, TimeSpan timeout)
+    {
+        string command =
+            $"sleep 30 & child=$!; printf '%s %s' \"$$\" \"$child\" > {ShellQuote(pidFile)}";
+        return new ProcessStartSpec("/bin/sh", ["-c", command], timeout: timeout);
+    }
+
     private static void AssertExactNormalizedStderr(ProcessResult result, string expectedStderr)
     {
         Assert.Equal(expectedStderr, ProcessTestApp.NormalizeNewlines(result.StandardError));
@@ -631,6 +724,47 @@ public sealed class SystemProcessRunnerTests
         }
 
         throw new TimeoutException("Timed out waiting for child process id.");
+    }
+
+    private static async Task<(int ParentProcessId, int DescendantProcessId)> WaitForProcessIdsAsync(
+        string path,
+        CancellationToken cancellationToken
+    )
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(10));
+
+        while (!timeout.IsCancellationRequested)
+        {
+            if (File.Exists(path))
+            {
+                string value = await File.ReadAllTextAsync(path, timeout.Token)
+                    .ConfigureAwait(false);
+                string[] processIds = value.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (
+                    processIds.Length == 2
+                    && int.TryParse(processIds[0], provider: null, out int parentProcessId)
+                    && int.TryParse(
+                        processIds[1],
+                        provider: null,
+                        out int descendantProcessId
+                    )
+                )
+                {
+                    return (parentProcessId, descendantProcessId);
+                }
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(50), timeout.Token).ConfigureAwait(false);
+        }
+
+        throw new TimeoutException("Timed out waiting for parent and descendant process ids.");
+    }
+
+    private static void AssertProcessIsRunning(int processId)
+    {
+        using Process process = Process.GetProcessById(processId);
+        Assert.False(process.HasExited);
     }
 
     private static async Task AssertProcessExitsAsync(

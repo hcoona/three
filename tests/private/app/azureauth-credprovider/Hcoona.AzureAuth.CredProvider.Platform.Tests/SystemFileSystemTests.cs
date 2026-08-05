@@ -180,6 +180,49 @@ public sealed class SystemFileSystemTests
     }
 
     [Fact(Skip = "Unix file mode test.", SkipWhen = nameof(IsWindows))]
+    public void OwnerOnlyAtomicWriteCreatesTemporaryFileWithOwnerOnlyModeBeforeWriting()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        string root = CreateTestDirectory();
+        string path = Path.Combine(root, "secret.txt");
+        string? observedTemporaryPath = null;
+        UnixFileMode? observedMode = null;
+        long? observedLength = null;
+        SystemFileSystem? fileSystem = null;
+        fileSystem = new SystemFileSystem(temporaryPath =>
+        {
+            observedTemporaryPath = temporaryPath;
+            observedMode = fileSystem!.GetUnixFileMode(temporaryPath);
+            observedLength = new FileInfo(temporaryPath).Length;
+        });
+
+        try
+        {
+            fileSystem.AtomicWriteAllText(
+                path,
+                "secret",
+                options: AtomicWriteOptions.RestrictUnixFileModeToOwnerOnly
+            );
+
+            UnixFileMode ownerOnlyMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+            Assert.NotNull(observedTemporaryPath);
+            Assert.Equal(ownerOnlyMode, observedMode);
+            Assert.Equal(0, observedLength);
+            Assert.Equal("secret", File.ReadAllText(path));
+            Assert.Equal(ownerOnlyMode, File.GetUnixFileMode(path));
+            Assert.Empty(Directory.EnumerateFiles(root, "*.tmp"));
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(root);
+        }
+    }
+
+    [Fact(Skip = "Unix file mode test.", SkipWhen = nameof(IsWindows))]
     public void AtomicWritePreservesExistingUnixMode()
     {
         if (OperatingSystem.IsWindows())

@@ -14,6 +14,15 @@ public sealed class SystemFileSystem
         encoderShouldEmitUTF8Identifier: false,
         throwOnInvalidBytes: true
     );
+    private readonly Action<string>? beforeTemporaryFileWrite;
+
+    public SystemFileSystem() { }
+
+    internal SystemFileSystem(Action<string> beforeTemporaryFileWrite)
+    {
+        ArgumentNullException.ThrowIfNull(beforeTemporaryFileWrite);
+        this.beforeTemporaryFileWrite = beforeTemporaryFileWrite;
+    }
 
     public bool FileExists(string path)
     {
@@ -248,7 +257,7 @@ public sealed class SystemFileSystem
         return new GitConfigLockFile(targetPath);
     }
 
-    private static void AtomicWrite(
+    private void AtomicWrite(
         string path,
         Action<string> writeTemporaryFile,
         AtomicWriteOptions options
@@ -270,6 +279,25 @@ public sealed class SystemFileSystem
                 : null;
         try
         {
+            if (
+                !OperatingSystem.IsWindows()
+                && (options & AtomicWriteOptions.RestrictUnixFileModeToOwnerOnly) != 0
+            )
+            {
+                using var temporaryFile = new FileStream(
+                    temporaryPath,
+                    new FileStreamOptions
+                    {
+                        Mode = FileMode.CreateNew,
+                        Access = FileAccess.Write,
+                        Share = FileShare.None,
+                        UnixCreateMode = OwnerOnlyFileMode,
+                    }
+                );
+                File.SetUnixFileMode(temporaryFile.SafeFileHandle, OwnerOnlyFileMode);
+            }
+
+            beforeTemporaryFileWrite?.Invoke(temporaryPath);
             writeTemporaryFile(temporaryPath);
             if (!OperatingSystem.IsWindows())
             {

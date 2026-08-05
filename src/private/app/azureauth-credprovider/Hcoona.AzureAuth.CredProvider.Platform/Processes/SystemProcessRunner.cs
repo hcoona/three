@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace Hcoona.AzureAuth.CredProvider.Platform.Processes;
@@ -12,6 +13,7 @@ public sealed class SystemProcessRunner : IProcessRunner
         encoderShouldEmitUTF8Identifier: false,
         throwOnInvalidBytes: true
     );
+    private static readonly string? UnixSessionLauncherPath = FindUnixSessionLauncher();
     private readonly IProcessCleanupStrategy processCleanup;
     private readonly TimeSpan processCleanupTimeout;
     private readonly IProcessStartStrategy processStart;
@@ -234,9 +236,13 @@ public sealed class SystemProcessRunner : IProcessRunner
 
     private static ProcessStartInfo CreateStartInfo(ProcessStartSpec startSpec)
     {
+        bool useUnixSessionLauncher = ShouldUseUnixSessionLauncher(startSpec);
+        string fileName = useUnixSessionLauncher
+            ? UnixSessionLauncherPath!
+            : startSpec.FileName;
         var startInfo = new ProcessStartInfo
         {
-            FileName = startSpec.FileName,
+            FileName = fileName,
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -250,6 +256,12 @@ public sealed class SystemProcessRunner : IProcessRunner
         if (startSpec.WorkingDirectory is not null)
         {
             startInfo.WorkingDirectory = startSpec.WorkingDirectory;
+        }
+
+        if (useUnixSessionLauncher)
+        {
+            startInfo.ArgumentList.Add("--");
+            startInfo.ArgumentList.Add(startSpec.FileName);
         }
 
         foreach (string argument in startSpec.Arguments)
@@ -270,6 +282,64 @@ public sealed class SystemProcessRunner : IProcessRunner
         }
 
         return startInfo;
+    }
+
+    private static bool ShouldUseUnixSessionLauncher(ProcessStartSpec startSpec)
+    {
+        if (UnixSessionLauncherPath is null)
+        {
+            return false;
+        }
+
+        string executable = startSpec.FileName;
+        if (executable.Contains(Path.DirectorySeparatorChar))
+        {
+            string executablePath = Path.IsPathFullyQualified(executable)
+                ? executable
+                : Path.Combine(
+                    startSpec.WorkingDirectory ?? Environment.CurrentDirectory,
+                    executable
+                );
+            return File.Exists(executablePath);
+        }
+
+        string? searchPath =
+            startSpec.Environment.TryGetValue("PATH", out string? configuredPath)
+                ? configuredPath
+                : Environment.GetEnvironmentVariable("PATH");
+        string workingDirectory = startSpec.WorkingDirectory ?? Environment.CurrentDirectory;
+        return searchPath
+            ?.Split(Path.PathSeparator)
+            .Any(directory =>
+                File.Exists(
+                    Path.Combine(
+                        string.IsNullOrEmpty(directory)
+                            ? workingDirectory
+                            : Path.IsPathFullyQualified(directory)
+                                ? directory
+                                : Path.Combine(workingDirectory, directory),
+                        executable
+                    )
+                )
+            ) == true;
+    }
+
+    private static string? FindUnixSessionLauncher()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return null;
+        }
+
+        foreach (string candidate in new[] { "/usr/bin/setsid", "/bin/setsid" })
+        {
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
     }
 
     private async Task KillAndWaitAsync(Process process)
@@ -351,11 +421,42 @@ public sealed class SystemProcessRunner : IProcessRunner
 
         public void Kill(Process process)
         {
-            process.Kill(entireProcessTree: true);
+            if (
+                OperatingSystem.IsWindows()
+                || UnixSessionLauncherPath is null
+                || !string.Equals(
+                    process.StartInfo.FileName,
+                    UnixSessionLauncherPath,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                process.Kill(entireProcessTree: true);
+                return;
+            }
+
+            const int noSuchProcessError = 3;
+            const int sigkill = 9;
+            if (UnixNativeMethods.Kill(-process.Id, sigkill) == 0)
+            {
+                return;
+            }
+
+            int error = Marshal.GetLastPInvokeError();
+            if (error != noSuchProcessError)
+            {
+                throw new Win32Exception(error);
+            }
         }
 
         public Task WaitForExitAsync(Process process, CancellationToken cancellationToken) =>
             process.WaitForExitAsync(cancellationToken);
+    }
+
+    private static class UnixNativeMethods
+    {
+        [DllImport("libc", EntryPoint = "kill", SetLastError = true)]
+        internal static extern int Kill(int processId, int signal);
     }
 
     private sealed class BoundedOutputCapture
