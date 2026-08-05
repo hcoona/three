@@ -73,12 +73,22 @@ internal sealed class PythonKeyringPhysicalTargetWriter(IFileSystem fileSystem)
         cancellationToken.ThrowIfCancellationRequested();
         ValidateRequest(request);
         string targetPath = fileSystem.GetFullPath(request.Change.TargetPathOrName);
-        return fileSystem.FileExists(targetPath)
-            && string.Equals(
+        if (
+            fileSystem.DirectoryExists(targetPath)
+            || !fileSystem.FileExists(targetPath)
+            || !string.Equals(
                 fileSystem.ReadAllText(targetPath, Utf8NoBom),
                 request.Change.Value,
                 StringComparison.Ordinal
-            );
+            )
+        )
+        {
+            return false;
+        }
+
+        return request.TargetKind != ConfigurationTargetKind.KeyringShim
+            || FileSystemPathSemantics.UsesWindowsPaths(fileSystem)
+            || fileSystem.GetUnixFileMode(targetPath) == ExecutableOwnerMode;
     }
 
     internal static string? GetPlanningValidationViolation(ConfigurationChange change)

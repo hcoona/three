@@ -681,7 +681,7 @@ public sealed class YarnPhase13VerticalSliceServiceTests
     }
 
     [Fact]
-    public async Task DoctorTreatsRelativeYarnRcFilenameOverrideAsWorkspaceAndUserFileName()
+    public async Task DoctorTreatsRelativeYarnRcFilenameOverrideAsWorkspaceSearchPath()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         CreateDirectory(fileSystem, "/workspace");
@@ -716,7 +716,7 @@ public sealed class YarnPhase13VerticalSliceServiceTests
 
         Assert.Equal(".selected.yarnrc.yml", result.YarnRcFilenameOverride);
         Assert.Equal("/workspace/.selected.yarnrc.yml", result.WorkspaceYarnrcPath);
-        Assert.Equal("/home/alice/.selected.yarnrc.yml", result.EffectiveUserYarnrcPath);
+        Assert.Equal("/home/alice/.yarnrc.yml", result.EffectiveUserYarnrcPath);
         Assert.Equal("/workspace/.selected.yarnrc.yml", declaration.SourcePath);
         Assert.Equal("selected", declaration.ResourceIdentity.Feed);
     }

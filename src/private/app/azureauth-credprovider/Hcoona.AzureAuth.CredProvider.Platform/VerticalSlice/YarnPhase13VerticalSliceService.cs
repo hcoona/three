@@ -142,6 +142,7 @@ public sealed class YarnPhase13VerticalSliceService
         string targetYarnrcPath = fileSystem.GetFullPath(
             NullIfWhiteSpace(request.TargetYarnrcPath) ?? ResolveUserYarnrcPath()
         );
+        ThrowIfRepositoryLocalCredentialTarget(targetYarnrcPath);
         ThrowIfProjectAuthWouldShadowPlan(request.Declaration, targetYarnrcPath);
         ThrowIfForbiddenAuthIdentConflictExists(request.Declaration, targetYarnrcPath);
 
@@ -353,6 +354,78 @@ public sealed class YarnPhase13VerticalSliceService
                     + " would shadow the planned user or CI credential."
             );
         }
+    }
+
+    private void ThrowIfRepositoryLocalCredentialTarget(string targetYarnrcPath)
+    {
+        if (
+            workspaceDirectoryPath is null
+            || PathsEqual(targetYarnrcPath, ResolveDefaultUserYarnrcPath())
+        )
+        {
+            return;
+        }
+
+        string? repositoryRootPath = GetRepositoryRootPath();
+        if (
+            repositoryRootPath is not null
+            && FileSystemPathSemantics.IsSameOrDescendant(
+                fileSystem,
+                targetYarnrcPath,
+                repositoryRootPath
+            )
+        )
+        {
+            throw new InvalidOperationException(
+                "Repository-local Yarn configuration cannot store credential material."
+            );
+        }
+
+        string? targetDirectory = FileSystemPathSemantics.GetParentDirectory(
+            fileSystem,
+            targetYarnrcPath
+        );
+        for (
+            string? directory = workspaceDirectoryPath;
+            directory is not null;
+            directory = FileSystemPathSemantics.GetParentDirectory(fileSystem, directory)
+        )
+        {
+            if (targetDirectory is not null && PathsEqual(targetDirectory, directory))
+            {
+                throw new InvalidOperationException(
+                    "Repository-local Yarn configuration cannot store credential material."
+                );
+            }
+        }
+    }
+
+    private string? GetRepositoryRootPath()
+    {
+        string? repositoryRootPath = null;
+        for (
+            string? directory = workspaceDirectoryPath;
+            directory is not null;
+            directory = FileSystemPathSemantics.GetParentDirectory(fileSystem, directory)
+        )
+        {
+            if (
+                fileSystem.FileExists(
+                    FileSystemPathSemantics.Combine(fileSystem, directory, "package.json")
+                )
+                || fileSystem.FileExists(
+                    FileSystemPathSemantics.Combine(fileSystem, directory, "yarn.lock")
+                )
+                || fileSystem.DirectoryExists(
+                    FileSystemPathSemantics.Combine(fileSystem, directory, ".git")
+                )
+            )
+            {
+                repositoryRootPath = directory;
+            }
+        }
+
+        return repositoryRootPath;
     }
 
     private string? ResolveEffectiveProjectAuthRegistry(YarnProjectAuthBlock block)
@@ -855,16 +928,9 @@ public sealed class YarnPhase13VerticalSliceService
 
     private IEnumerable<string> GetReadableWorkspaceYarnrcPaths()
     {
-        if (workspaceDirectoryPath is null)
-        {
-            yield break;
-        }
-
         var seenPaths = new List<string>();
-        string? directoryPath = workspaceDirectoryPath;
-        while (directoryPath is not null)
+        foreach (string yarnrcPath in GetWorkspaceYarnrcPaths())
         {
-            string yarnrcPath = ResolveYarnrcPath(directoryPath);
             if (
                 !seenPaths.Any(seenPath => PathsEqual(seenPath, yarnrcPath))
                 && fileSystem.FileExists(yarnrcPath)
@@ -873,17 +939,6 @@ public sealed class YarnPhase13VerticalSliceService
                 seenPaths.Add(yarnrcPath);
                 yield return yarnrcPath;
             }
-
-            string? parentPath = Path.GetDirectoryName(directoryPath);
-            if (
-                string.IsNullOrEmpty(parentPath)
-                || string.Equals(parentPath, directoryPath, StringComparison.Ordinal)
-            )
-            {
-                yield break;
-            }
-
-            directoryPath = parentPath;
         }
     }
 
@@ -944,19 +999,59 @@ public sealed class YarnPhase13VerticalSliceService
             return userYarnrcPath;
         }
 
-        string home = userHomeDirectoryPath ?? GetHomeDirectory();
-        return ResolveYarnrcPath(home);
+        string? overridePath = GetYarnRcFilenameOverride();
+        return overridePath is not null && IsRootedPath(overridePath)
+            ? fileSystem.GetFullPath(overridePath)
+            : ResolveDefaultUserYarnrcPath();
     }
 
-    private string? GetWorkspaceYarnrcPath() =>
-        workspaceDirectoryPath is null ? null : ResolveYarnrcPath(workspaceDirectoryPath);
+    private string ResolveDefaultUserYarnrcPath()
+    {
+        string home = userHomeDirectoryPath ?? GetHomeDirectory();
+        return FileSystemPathSemantics.Combine(fileSystem, home, WorkspaceYarnrcFileName);
+    }
+
+    private string? GetWorkspaceYarnrcPath()
+    {
+        if (workspaceDirectoryPath is null)
+        {
+            return null;
+        }
+
+        return GetWorkspaceYarnrcPaths().FirstOrDefault(fileSystem.FileExists)
+            ?? ResolveYarnrcPath(workspaceDirectoryPath);
+    }
+
+    private IEnumerable<string> GetWorkspaceYarnrcPaths()
+    {
+        if (workspaceDirectoryPath is null)
+        {
+            yield break;
+        }
+
+        string rcFilename = GetEffectiveYarnrcFileName();
+        if (IsRootedPath(rcFilename))
+        {
+            yield return fileSystem.GetFullPath(rcFilename);
+            yield break;
+        }
+
+        for (
+            string? directory = workspaceDirectoryPath;
+            directory is not null;
+            directory = FileSystemPathSemantics.GetParentDirectory(fileSystem, directory)
+        )
+        {
+            yield return ResolveYarnrcPath(directory);
+        }
+    }
 
     private string ResolveYarnrcPath(string containingDirectoryPath)
     {
         string rcFilename = GetEffectiveYarnrcFileName();
         return IsRootedPath(rcFilename)
             ? fileSystem.GetFullPath(rcFilename)
-            : fileSystem.GetFullPath(Path.Combine(containingDirectoryPath, rcFilename));
+            : FileSystemPathSemantics.Combine(fileSystem, containingDirectoryPath, rcFilename);
     }
 
     private string GetEffectiveYarnrcFileName() =>

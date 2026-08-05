@@ -29,6 +29,8 @@ public sealed record ConfigurationPhase14VerticalSliceOptions
 
     public string? ProductExecutablePath { get; init; }
 
+    public string? WorkspaceDirectoryPath { get; init; }
+
     public IReadOnlyDictionary<CredentialEcosystem, Uri>? RegistryUrls { get; init; }
 
     public TimeProvider? TimeProvider { get; init; }
@@ -199,6 +201,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
     private readonly RegistryCredentialExpiryPolicy expiryPolicy;
     private readonly TimeProvider timeProvider;
     private readonly string? productExecutablePath;
+    private readonly string workspaceDirectoryPath;
 
     public ConfigurationPhase14VerticalSliceService(
         ConfigurationPhase14VerticalSliceOptions? options = null
@@ -230,6 +233,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
             options.AzurePipelinesJobScopeId
             ?? environmentVariableReader(AzurePipelinesJobScopeIdVariable);
         jobScopeId = IsValidJobScopeId(rawJobScopeId) ? rawJobScopeId : null;
+        workspaceDirectoryPath = fileSystem.GetFullPath(options.WorkspaceDirectoryPath ?? ".");
         paths = ResolvePaths(
             options,
             fileSystem,
@@ -1186,7 +1190,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
             {
                 FileSystem = fileSystem,
                 EnvironmentVariableReader = environmentVariableReader,
-                WorkspaceDirectoryPath = ".",
+                WorkspaceDirectoryPath = workspaceDirectoryPath,
                 UserNpmrcPath =
                     ecosystem == CredentialEcosystem.Pnpm
                         ? paths.PnpmUserNpmrcPath
@@ -1245,7 +1249,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
             {
                 FileSystem = fileSystem,
                 EnvironmentVariableReader = environmentVariableReader,
-                WorkspaceDirectoryPath = ".",
+                WorkspaceDirectoryPath = workspaceDirectoryPath,
                 UserYarnrcPath = paths.YarnUserYarnrcPath,
             }
         );
@@ -2284,7 +2288,13 @@ public sealed class ConfigurationPhase14VerticalSliceService
 
             if (ecosystem == CredentialEcosystem.Python)
             {
-                return entries.All(entry => ConfigurationTargetExists(entry.TargetPathOrName));
+                ConfigurationManager manager = CreateManager(ownershipManifestPath);
+                return entries.All(entry =>
+                    manager.IsAppliedStateCurrent(
+                        CreatePythonPresencePlan(entry),
+                        cancellationToken
+                    )
+                );
             }
 
             ConfigurationChangePlan presencePlan = CreateOwnedTargetPresencePlan(
@@ -2300,6 +2310,27 @@ public sealed class ConfigurationPhase14VerticalSliceService
         {
             return false;
         }
+    }
+
+    private ConfigurationChangePlan CreatePythonPresencePlan(
+        ConfigurationOwnershipManifestEntry entry
+    )
+    {
+        string value = entry.TargetKind switch
+        {
+            ConfigurationTargetKind.PythonKeyringBackend =>
+                CreatePythonBackendManifestValue(GetRequiredProductExecutablePath()),
+            ConfigurationTargetKind.KeyringShim => CreatePosixKeyringShimValue(),
+            _ => throw new InvalidOperationException(
+                "The Python ownership manifest contains an unsupported target kind."
+            ),
+        };
+        return CreatePythonPlan(
+            "presence-" + entry.Sequence,
+            entry.TargetKind,
+            entry.TargetPathOrName,
+            value
+        );
     }
 
     private ConfigurationChangePlan CreateOwnedTargetPresencePlan(
@@ -3278,18 +3309,26 @@ public sealed class ConfigurationPhase14VerticalSliceService
     )
     {
         string home = ResolveUserHomeDirectory(fileSystem, environmentVariableReader);
-        string? configuredFilename = environmentVariableReader(YarnRcFilenameEnvironmentVariable);
+        string? configuredFilename = NullIfWhiteSpace(
+            environmentVariableReader(YarnRcFilenameEnvironmentVariable)
+        );
         if (
-            !string.IsNullOrWhiteSpace(configuredFilename)
-            && !IsValidConfigurationFilename(configuredFilename)
+            configuredFilename is not null
+            && !fileSystem.IsPathFullyQualified(configuredFilename)
+            && !IsValidRelativeConfigurationPath(configuredFilename)
         )
         {
             throw new InvalidOperationException(
-                "YARN_RC_FILENAME must be a filename under the effective user home."
+                "YARN_RC_FILENAME must be an absolute path or a relative path without traversal."
             );
         }
-        string filename = NullIfWhiteSpace(configuredFilename) ?? ".yarnrc.yml";
-        return FileSystemPathSemantics.Combine(fileSystem, home, filename);
+
+        if (configuredFilename is not null && fileSystem.IsPathFullyQualified(configuredFilename))
+        {
+            return fileSystem.GetFullPath(configuredFilename);
+        }
+
+        return FileSystemPathSemantics.Combine(fileSystem, home, ".yarnrc.yml");
     }
 
     private static void RequireFullyQualifiedPath(
@@ -3304,12 +3343,18 @@ public sealed class ConfigurationPhase14VerticalSliceService
         }
     }
 
-    private static bool IsValidConfigurationFilename(string? value) =>
-        !string.IsNullOrWhiteSpace(value)
-        && value is not "." and not ".."
-        && !Path.IsPathRooted(value)
-        && string.Equals(Path.GetFileName(value), value, StringComparison.Ordinal)
-        && value.IndexOfAny(Path.GetInvalidFileNameChars()) < 0;
+    private static bool IsValidRelativeConfigurationPath(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        string[] segments = value
+            .Replace('\\', '/')
+            .Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return segments.Length > 0 && segments.All(segment => segment is not "." and not "..");
+    }
 
     private string GetOwnershipManifestPath(
         CredentialEcosystem ecosystem,

@@ -39,4 +39,44 @@ internal static class FileSystemPathSemantics
 
         return fileSystem.GetFullPath(result);
     }
+
+    internal static string? GetParentDirectory(IFileSystem fileSystem, string path)
+    {
+        ArgumentNullException.ThrowIfNull(fileSystem);
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+
+        string fullPath = fileSystem.GetFullPath(path);
+        string parentPath = fileSystem.GetFullPath(
+            fullPath.EndsWith('/') || fullPath.EndsWith('\\')
+                ? fullPath + ".."
+                : fullPath + "/.."
+        );
+        return string.Equals(parentPath, fullPath, GetComparison(fileSystem))
+            ? null
+            : parentPath;
+    }
+
+    internal static bool IsSameOrDescendant(
+        IFileSystem fileSystem,
+        string path,
+        string directory
+    )
+    {
+        ArgumentNullException.ThrowIfNull(fileSystem);
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ArgumentException.ThrowIfNullOrWhiteSpace(directory);
+
+        string fullPath = fileSystem.GetFullPath(path);
+        string fullDirectory = fileSystem.GetFullPath(directory);
+        if (string.Equals(fullPath, fullDirectory, GetComparison(fileSystem)))
+        {
+            return true;
+        }
+
+        char separator = UsesWindowsPaths(fileSystem) ? '\\' : '/';
+        string prefix = fullDirectory.EndsWith(separator)
+            ? fullDirectory
+            : fullDirectory + separator;
+        return fullPath.StartsWith(prefix, GetComparison(fileSystem));
+    }
 }

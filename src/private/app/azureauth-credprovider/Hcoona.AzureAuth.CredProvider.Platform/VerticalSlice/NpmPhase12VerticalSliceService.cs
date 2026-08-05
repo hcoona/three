@@ -182,7 +182,11 @@ public sealed class NpmPhase12VerticalSliceService
         string targetNpmrcPath = fileSystem.GetFullPath(
             NullIfWhiteSpace(request.TargetNpmrcPath) ?? ResolveUserNpmrcPath()
         );
-        ThrowIfProjectAuthWouldShadowPlan(request.Declaration, targetNpmrcPath);
+        ThrowIfProjectAuthWouldShadowPlan(
+            request.Declaration,
+            request.Ecosystem,
+            targetNpmrcPath
+        );
 
         return CreateCredentialPlan(
             request,
@@ -206,7 +210,11 @@ public sealed class NpmPhase12VerticalSliceService
                 nameof(request)
             );
         targetNpmrcPath = fileSystem.GetFullPath(targetNpmrcPath);
-        ThrowIfProjectAuthWouldShadowPlan(request.Declaration, targetNpmrcPath);
+        ThrowIfProjectAuthWouldShadowPlan(
+            request.Declaration,
+            request.Ecosystem,
+            targetNpmrcPath
+        );
         string platform = InferActivationPlatform(targetNpmrcPath);
         var activationEnvironment = new ConfigurationActivationEnvironment
         {
@@ -247,10 +255,11 @@ public sealed class NpmPhase12VerticalSliceService
 
     private void ThrowIfProjectAuthWouldShadowPlan(
         NpmPhase12RegistryDeclaration declaration,
+        CredentialEcosystem ecosystem,
         string targetNpmrcPath
     )
     {
-        string? workspaceNpmrcPath = GetWorkspaceNpmrcPath();
+        string? workspaceNpmrcPath = GetWorkspaceNpmrcPath(ecosystem);
         if (
             workspaceNpmrcPath is null
             || !fileSystem.FileExists(workspaceNpmrcPath)
@@ -610,10 +619,68 @@ public sealed class NpmPhase12VerticalSliceService
         return fileSystem.GetFullPath(Path.Combine(home, WorkspaceNpmrcFileName));
     }
 
-    private string? GetWorkspaceNpmrcPath() =>
-        workspaceDirectoryPath is null
-            ? null
-            : fileSystem.GetFullPath(Path.Combine(workspaceDirectoryPath, WorkspaceNpmrcFileName));
+    private string? GetWorkspaceNpmrcPath(
+        CredentialEcosystem ecosystem = CredentialEcosystem.Npm
+    )
+    {
+        if (workspaceDirectoryPath is null)
+        {
+            return null;
+        }
+
+        string invocationNpmrcPath = FileSystemPathSemantics.Combine(
+            fileSystem,
+            workspaceDirectoryPath,
+            WorkspaceNpmrcFileName
+        );
+        string? nearestProjectNpmrcPath = null;
+        for (
+            string? directory = workspaceDirectoryPath;
+            directory is not null;
+            directory = FileSystemPathSemantics.GetParentDirectory(fileSystem, directory)
+        )
+        {
+            string npmrcPath = FileSystemPathSemantics.Combine(
+                fileSystem,
+                directory,
+                WorkspaceNpmrcFileName
+            );
+            if (
+                ecosystem == CredentialEcosystem.Pnpm
+                && fileSystem.FileExists(
+                    FileSystemPathSemantics.Combine(
+                        fileSystem,
+                        directory,
+                        "pnpm-workspace.yaml"
+                    )
+                )
+            )
+            {
+                return npmrcPath;
+            }
+
+            if (
+                nearestProjectNpmrcPath is null
+                && (
+                    fileSystem.FileExists(
+                        FileSystemPathSemantics.Combine(fileSystem, directory, "package.json")
+                    )
+                    || fileSystem.DirectoryExists(
+                        FileSystemPathSemantics.Combine(fileSystem, directory, "node_modules")
+                    )
+                )
+            )
+            {
+                nearestProjectNpmrcPath = npmrcPath;
+                if (ecosystem == CredentialEcosystem.Npm)
+                {
+                    return npmrcPath;
+                }
+            }
+        }
+
+        return nearestProjectNpmrcPath ?? invocationNpmrcPath;
+    }
 
     private string GetHomeDirectory()
     {

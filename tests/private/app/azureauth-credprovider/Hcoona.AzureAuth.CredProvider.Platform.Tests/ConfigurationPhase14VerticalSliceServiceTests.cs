@@ -142,6 +142,66 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         Assert.Contains("resolve to different", exception.Message, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(CredentialEcosystem.Npm)]
+    [InlineData(CredentialEcosystem.Pnpm)]
+    [InlineData(CredentialEcosystem.Yarn)]
+    public async Task NestedInvocationRejectsEffectiveAncestorCredentialShadow(
+        CredentialEcosystem ecosystem
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectoryTree(fileSystem, "/workspace/packages/app/src");
+        switch (ecosystem)
+        {
+            case CredentialEcosystem.Npm:
+                fileSystem.WriteAllText("/workspace/package.json", """{"name":"workspace"}""");
+                fileSystem.WriteAllText(
+                    "/workspace/.npmrc",
+                    "//pkgs.dev.azure.com/test-org/_packaging/test-feed/npm/registry/:"
+                        + "_authToken=repository-secret\n"
+                );
+                break;
+            case CredentialEcosystem.Pnpm:
+                fileSystem.WriteAllText("/workspace/pnpm-workspace.yaml", "packages: []\n");
+                fileSystem.WriteAllText(
+                    "/workspace/.npmrc",
+                    "//pkgs.dev.azure.com/test-org/_packaging/test-feed/npm/registry/:"
+                        + "_authToken=repository-secret\n"
+                );
+                break;
+            case CredentialEcosystem.Yarn:
+                fileSystem.WriteAllText(
+                    "/workspace/.yarnrc.yml",
+                    """
+                    npmRegistries:
+                      'https://pkgs.dev.azure.com/test-org/_packaging/test-feed/npm/registry/':
+                        npmAuthToken: repository-secret
+                    """
+                );
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(ecosystem), ecosystem, null);
+        }
+
+        ConfigurationPhase14VerticalSliceService service = CreateService(
+            fileSystem,
+            workspaceDirectoryPath: "/workspace/packages/app/src"
+        );
+
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            async () =>
+                await service.ConfigureAsync(
+                    ecosystem,
+                    ConfigurationPhase14Scope.User,
+                    TestContext.Current.CancellationToken
+                )
+        );
+
+        Assert.Contains("Project-local", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("repository-secret", exception.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task ConfigureAndUnconfigureNpmApplyAndRemoveOwnedNpmrcToken()
     {
@@ -853,6 +913,84 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         );
         Assert.False(dryRunFileSystem.DirectoryExists(dryRunService.Paths.ManifestDirectoryPath));
         Assert.False(dryRun.OwnershipManifestPresent);
+    }
+
+    [Fact]
+    public async Task PythonDoctorRejectsCorruptedGeneratedTargetContent()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        ConfigurationPhase14VerticalSliceService service = CreateService(fileSystem);
+        await service.ConfigureAsync(
+            CredentialEcosystem.Python,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+        ConfigurationOwnershipManifestEntry backend = Assert.Single(
+            ReadPythonManifest(fileSystem, service).Entries,
+            static entry =>
+                entry.TargetKind == ConfigurationTargetKind.PythonKeyringBackend
+        );
+        fileSystem.WriteAllText(backend.TargetPathOrName, """{"corrupted":true}""");
+
+        ConfigurationPhase14EcosystemDoctorResult python = GetPythonDoctorResult(
+            await service.DoctorAsync(TestContext.Current.CancellationToken)
+        );
+
+        Assert.True(python.ConfigurationPlanValid);
+        Assert.False(python.OwnedTargetPresent);
+    }
+
+    [Fact]
+    public async Task PythonDoctorRejectsGeneratedTargetThatBecameDirectory()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        ConfigurationPhase14VerticalSliceService service = CreateService(fileSystem);
+        await service.ConfigureAsync(
+            CredentialEcosystem.Python,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+        ConfigurationOwnershipManifestEntry backend = Assert.Single(
+            ReadPythonManifest(fileSystem, service).Entries,
+            static entry =>
+                entry.TargetKind == ConfigurationTargetKind.PythonKeyringBackend
+        );
+        fileSystem.DeleteFile(backend.TargetPathOrName);
+        fileSystem.CreateDirectory(backend.TargetPathOrName);
+
+        ConfigurationPhase14EcosystemDoctorResult python = GetPythonDoctorResult(
+            await service.DoctorAsync(TestContext.Current.CancellationToken)
+        );
+
+        Assert.True(python.ConfigurationPlanValid);
+        Assert.False(python.OwnedTargetPresent);
+    }
+
+    [Fact]
+    public async Task PythonDoctorRejectsNonExecutablePosixShim()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        ConfigurationPhase14VerticalSliceService service = CreateService(fileSystem);
+        await service.ConfigureAsync(
+            CredentialEcosystem.Python,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+        ConfigurationOwnershipManifestEntry shim = Assert.Single(
+            ReadPythonManifest(fileSystem, service).Entries,
+            static entry => entry.TargetKind == ConfigurationTargetKind.KeyringShim
+        );
+        fileSystem.SetUnixFileMode(
+            shim.TargetPathOrName,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite
+        );
+
+        ConfigurationPhase14EcosystemDoctorResult python = GetPythonDoctorResult(
+            await service.DoctorAsync(TestContext.Current.CancellationToken)
+        );
+
+        Assert.True(python.ConfigurationPlanValid);
+        Assert.False(python.OwnedTargetPresent);
     }
 
     [Fact]
@@ -2390,7 +2528,107 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     }
 
     [Fact]
-    public async Task YarnFilenameEnvironmentIsValidatedAndPersistedForInspectionAndRemoval()
+    public async Task YarnAbsoluteFilenameOverrideSelectsNonRepositoryCredentialTarget()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectoryTree(fileSystem, "/secure/yarn");
+        ConfigurationPhase14VerticalSliceService service = CreateService(
+            fileSystem,
+            environmentVariableReader: name =>
+                name switch
+                {
+                    "YARN_RC_FILENAME" => "/secure/yarn/credentials.yml",
+                    _ => null,
+                },
+            workspaceDirectoryPath: "/workspace"
+        );
+
+        await service.ConfigureAsync(
+            CredentialEcosystem.Yarn,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal("/secure/yarn/credentials.yml", service.Paths.YarnUserYarnrcPath);
+        Assert.Contains(
+            "npmAuthToken",
+            fileSystem.ReadAllText(service.Paths.YarnUserYarnrcPath),
+            StringComparison.Ordinal
+        );
+    }
+
+    [Fact]
+    public async Task YarnAncestorRelativeSubpathIsInspectedWithoutBecomingUserTarget()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectoryTree(fileSystem, "/workspace/config");
+        CreateDirectoryTree(fileSystem, "/workspace/packages/app/src");
+        fileSystem.WriteAllText(
+            "/workspace/config/team.yarnrc.yml",
+            """
+            npmRegistries:
+              'https://pkgs.dev.azure.com/test-org/_packaging/test-feed/npm/registry/':
+                npmAuthToken: repository-secret
+            """
+        );
+        ConfigurationPhase14VerticalSliceService service = CreateService(
+            fileSystem,
+            environmentVariableReader: name =>
+                name switch
+                {
+                    "YARN_RC_FILENAME" => "config/team.yarnrc.yml",
+                    _ => null,
+                },
+            workspaceDirectoryPath: "/workspace/packages/app/src"
+        );
+
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            async () =>
+                await service.ConfigureAsync(
+                    CredentialEcosystem.Yarn,
+                    ConfigurationPhase14Scope.User,
+                    TestContext.Current.CancellationToken
+                )
+        );
+
+        Assert.Equal("/home/test/.yarnrc.yml", service.Paths.YarnUserYarnrcPath);
+        Assert.Contains("Project-local Yarn selector", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("repository-secret", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task YarnAbsoluteFilenameOverrideRejectsRepositoryCredentialTarget()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectoryTree(fileSystem, "/workspace/config");
+        CreateDirectoryTree(fileSystem, "/workspace/packages/app");
+        fileSystem.WriteAllText("/workspace/package.json", """{"name":"workspace"}""");
+        ConfigurationPhase14VerticalSliceService service = CreateService(
+            fileSystem,
+            environmentVariableReader: name =>
+                name switch
+                {
+                    "YARN_RC_FILENAME" => "/workspace/config/team.yarnrc.yml",
+                    _ => null,
+                },
+            workspaceDirectoryPath: "/workspace/packages/app"
+        );
+
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            async () =>
+                await service.ConfigureAsync(
+                    CredentialEcosystem.Yarn,
+                    ConfigurationPhase14Scope.User,
+                    TestContext.Current.CancellationToken
+                )
+        );
+
+        Assert.Contains("Repository-local Yarn", exception.Message, StringComparison.Ordinal);
+        Assert.False(fileSystem.FileExists(service.Paths.YarnUserYarnrcPath));
+    }
+
+    [Fact]
+    public async Task YarnRelativeFilenameOverrideKeepsUserTargetForInspectionAndRemoval()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         ConfigurationPhase14VerticalSliceService configuredService = CreateService(
@@ -2408,7 +2646,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
             ConfigurationPhase14Scope.User,
             TestContext.Current.CancellationToken
         );
-        Assert.Equal("/home/test/team.yarnrc.yml", configuredService.Paths.YarnUserYarnrcPath);
+        Assert.Equal("/home/test/.yarnrc.yml", configuredService.Paths.YarnUserYarnrcPath);
 
         ConfigurationPhase14VerticalSliceService changedEnvironmentService = CreateService(
             fileSystem,
@@ -2781,7 +3019,8 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         Func<string, string?>? environmentVariableReader = null,
         TimeProvider? timeProvider = null,
         Uri? registryUrl = null,
-        ICredentialAcquisitionService? credentialAcquisition = null
+        ICredentialAcquisitionService? credentialAcquisition = null,
+        string? workspaceDirectoryPath = null
     ) =>
         new(
             new ConfigurationPhase14VerticalSliceOptions
@@ -2804,6 +3043,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
                     environmentVariableReader
                 ),
                 ProductExecutablePath = GetTestProductExecutablePath(fileSystem),
+                WorkspaceDirectoryPath = workspaceDirectoryPath,
                 TimeProvider = timeProvider,
                 RegistryUrls = new Dictionary<CredentialEcosystem, Uri>
                 {
@@ -2813,6 +3053,19 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
                 },
             }
         );
+
+    private static void CreateDirectoryTree(InMemoryFileSystem fileSystem, string path)
+    {
+        string current = string.Empty;
+        foreach (string segment in path.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            current += "/" + segment;
+            if (!fileSystem.DirectoryExists(current))
+            {
+                fileSystem.CreateDirectory(current);
+            }
+        }
+    }
 
     private static async Task AssertPythonManifestTamperingIsRejectedAsync(
         Func<ConfigurationOwnershipManifest, string> createTamperedManifest
@@ -2923,7 +3176,8 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
             (ecosystem, name) switch
             {
                 (CredentialEcosystem.Npm, "NPM_CONFIG_USERCONFIG") => "/home/" + suffix + "/.npmrc",
-                (CredentialEcosystem.Yarn, "YARN_RC_FILENAME") => "." + suffix + ".yarnrc.yml",
+                (CredentialEcosystem.Yarn, "YARN_RC_FILENAME") =>
+                    "/home/" + suffix + "/.yarnrc.yml",
                 _ => null,
             };
 
