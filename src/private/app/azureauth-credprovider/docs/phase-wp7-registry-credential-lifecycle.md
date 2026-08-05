@@ -35,7 +35,9 @@ Credentials are written to the effective user configuration:
 
 - npm and pnpm share `NPM_CONFIG_USERCONFIG`, `npm_config_userconfig`, or `~/.npmrc`;
 - conflicting upper- and lowercase npm overrides are rejected; and
-- Yarn uses `YARN_RC_FILENAME` under the effective home, or `.yarnrc.yml`.
+- Yarn 4+ uses an absolute `YARN_RC_FILENAME` when configured. A relative value affects
+  project discovery, but AzureAuth user writes target `$HOME/.yarnrc.yml` according to Yarn 4
+  user-configuration semantics.
 
 npm and pnpm are one ownership group with one sidecar and one ordinary mutation lock. Yarn has a
 separate ownership group. A recognized sidecar identifies the product, scope, resource, target,

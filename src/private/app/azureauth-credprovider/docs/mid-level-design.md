@@ -321,7 +321,7 @@ canonical entry selector and precedence model before implementing `configure`:
 | NuGet     | Plugin installation path, runtime family, and explicit plugin-path environment or config setting when used.                  | NuGet conventional plugin discovery plus explicit plugin-path overrides.                                                                                   |
 | Python    | Python environment identity, package distribution name, backend registration, shim path, and PATH insertion point when used. | Python environment import path and process PATH order.                                                                                                     |
 | npm/pnpm  | Config file scope, registry URL selector, and auth key selector.                                                             | npm-compatible layered config order for user, global, explicit path, and CI temporary configuration; workspace files are read through `WorkspaceReadOnly`. |
-| Yarn      | `.yarnrc.yml` path, `npmScopes` or `npmRegistries` selector, and auth field selector.                                        | Yarn Berry configuration resolution with Phase 1.4-approved user-level and CI-temporary change-plan targets; direct adapter writes remain disallowed.      |
+| Yarn      | `.yarnrc.yml` path, `npmScopes` or `npmRegistries` selector, and auth field selector.                                        | Yarn 4+ configuration resolution with Phase 1.4-approved user-level and CI-temporary change-plan targets; direct adapter writes remain disallowed.          |
 
 The default removal strategy is surgical deletion of product-owned entries.
 Each target mutation uses the normal lower-layer write behavior without
@@ -718,13 +718,13 @@ than a separate credential implementation.
 The adapter reads:
 
 - Workspace and user `.npmrc` files for npm and pnpm.
-- `.yarnrc.yml` for Yarn Berry.
+- `.yarnrc.yml` for Yarn 4+.
 - Scoped registry declarations.
 - Registry-specific authentication blocks.
 
-For npm, pnpm, and Yarn Berry, the adapter emits user-level credential write
+For npm, pnpm, and Yarn 4+, the adapter emits user-level credential write
 plans by default, even when registry declarations are read from workspace files.
-Yarn Berry user-level and CI-temporary change-plan generation is enabled under
+Yarn 4+ user-level and CI-temporary change-plan generation is enabled under
 the Phase 1.4 evidence gate and Phase 2 contract constraints. Direct adapter
 writes remain disallowed, and writing credentials into repository-local files
 requires an explicit user choice or a CI mode that uses
@@ -1033,7 +1033,7 @@ Each step has host-tool shape tests before real authentication is enabled.
 | Future CI identity flow selection    | MVP CI is limited to explicit Azure Pipelines system access token in explicit CI mode with a non-persistent context; verify service principal, managed identity, WIF, and other short-lived CI identities only for future accepted flows. |
 | Python keyring environment coverage  | Prototype backend installation and discovery in virtual environment, pipx, and uv subprocess scenarios.                                                                                                                                   |
 | Git GUI client PATH differences      | Validate helper discovery through Git for Windows and at least one GUI-launched Git environment before relying on PATH-only installation.                                                                                                 |
-| npm and Yarn config writes           | Prototype config update behavior across npm, pnpm, and Yarn Berry with user-level and temporary CI scopes.                                                                                                                                |
+| npm and Yarn config writes           | Prototype config update behavior across npm, pnpm, and Yarn 4+ with user-level and temporary CI scopes.                                                                                                                                   |
 | Future persistent cache              | Verify platform secure-store behavior and failure modes on Windows, Linux, and macOS before a later phase enables any product-owned persistent derived credential cache; MVP requests remain rejected or disabled by default.             |
 
 These rows are future-scope gates or dependency-change triggers. Accepted

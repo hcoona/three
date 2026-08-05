@@ -41,7 +41,7 @@ public sealed class CliApplicationTests
                   logout                       Clear product-owned authentication state.
                   identity                     Configure product identity context.
                   configure <ecosystem>        Apply supported configuration plans.
-                  refresh <ecosystem>          Refresh an npm, pnpm, or Yarn credential.
+                  refresh <ecosystem>          Refresh an npm, pnpm, or Yarn 4+ credential.
                   unconfigure <ecosystem>      Remove supported configuration plans.
 
                 Options:
@@ -4039,7 +4039,7 @@ public sealed class CliApplicationTests
                       python
                       npm
                       pnpm
-                      yarn
+                      yarn (Yarn 4+ only)
 
                     Options:
                     """
@@ -4049,7 +4049,7 @@ public sealed class CliApplicationTests
                     + "  --ci <mode>                  Select CI mode explicitly: "
                     + "none | azure-pipelines.\n"
                     + "  --registry-url <url>         Required Azure Artifacts npm URL for "
-                    + "npm, pnpm, and Yarn.\n"
+                    + "npm, pnpm, and Yarn 4+.\n"
                     + """
                       -h, --help                   Show help.
                     """,
@@ -4068,7 +4068,7 @@ public sealed class CliApplicationTests
                       python
                       npm
                       pnpm
-                      yarn
+                      yarn (Yarn 4+ only)
 
                     Options:
                     """
@@ -4112,7 +4112,7 @@ public sealed class CliApplicationTests
                     Ecosystems:
                       npm
                       pnpm
-                      yarn
+                      yarn (Yarn 4+ only)
 
                     Options:
                     """
@@ -4148,7 +4148,7 @@ public sealed class CliApplicationTests
                     Ecosystems:
                       npm
                       pnpm
-                      yarn
+                      yarn (Yarn 4+ only)
 
                     Status:
                       Clean product-owned CI temporary package configuration.

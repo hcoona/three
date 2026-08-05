@@ -193,7 +193,7 @@ https://pkgs.dev.azure.com/<ORG>/<PROJECT>/_packaging/<FEED>/npm/registry/
 The npm ecosystem does not expose a NuGet-style credential-provider plugin protocol for Azure Artifacts feeds. Authentication is driven by registry configuration files:
 
 - `.npmrc` for npm and pnpm,
-- `.yarnrc.yml` for Yarn Berry.
+- `.yarnrc.yml` for Yarn 4+.
 
 The extracted `@microsoft/artifacts-npm-credprovider` package is a CLI, not a package-manager plugin. It reads npm or Yarn registry configuration, obtains credentials through `@microsoft/artifacts-credprovider-wrapper`, and writes credential material back to the relevant npm or Yarn configuration location.
 

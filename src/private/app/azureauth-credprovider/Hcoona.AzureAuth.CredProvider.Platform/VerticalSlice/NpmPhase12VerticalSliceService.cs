@@ -1,4 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using Hcoona.AzureAuth.CredProvider.Contracts;
 using Hcoona.AzureAuth.CredProvider.Platform.FileSystem;
 
@@ -634,6 +636,7 @@ public sealed class NpmPhase12VerticalSliceService
             WorkspaceNpmrcFileName
         );
         string? nearestProjectNpmrcPath = null;
+        var descendantPackageDirectories = new List<string>();
         for (
             string? directory = workspaceDirectoryPath;
             directory is not null;
@@ -659,12 +662,16 @@ public sealed class NpmPhase12VerticalSliceService
                 return npmrcPath;
             }
 
+            string packageJsonPath = FileSystemPathSemantics.Combine(
+                fileSystem,
+                directory,
+                "package.json"
+            );
+            bool packageJsonExists = fileSystem.FileExists(packageJsonPath);
             if (
                 nearestProjectNpmrcPath is null
                 && (
-                    fileSystem.FileExists(
-                        FileSystemPathSemantics.Combine(fileSystem, directory, "package.json")
-                    )
+                    packageJsonExists
                     || fileSystem.DirectoryExists(
                         FileSystemPathSemantics.Combine(fileSystem, directory, "node_modules")
                     )
@@ -672,14 +679,240 @@ public sealed class NpmPhase12VerticalSliceService
             )
             {
                 nearestProjectNpmrcPath = npmrcPath;
-                if (ecosystem == CredentialEcosystem.Npm)
-                {
-                    return npmrcPath;
-                }
+            }
+
+            if (
+                ecosystem == CredentialEcosystem.Npm
+                && packageJsonExists
+                && DeclaresNpmWorkspace(packageJsonPath, directory, descendantPackageDirectories)
+            )
+            {
+                return npmrcPath;
+            }
+
+            if (packageJsonExists)
+            {
+                descendantPackageDirectories.Add(directory);
             }
         }
 
         return nearestProjectNpmrcPath ?? invocationNpmrcPath;
+    }
+
+    private bool DeclaresNpmWorkspace(
+        string packageJsonPath,
+        string packageDirectory,
+        IReadOnlyList<string> descendantPackageDirectories
+    )
+    {
+        string[] workspacePatterns;
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(fileSystem.ReadAllText(packageJsonPath));
+            if (
+                document.RootElement.ValueKind != JsonValueKind.Object
+                || !document.RootElement.TryGetProperty("workspaces", out JsonElement workspaces)
+                || !TryGetNpmWorkspacePatterns(workspaces, out workspacePatterns)
+            )
+            {
+                return false;
+            }
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+
+        foreach (string descendantPackageDirectory in descendantPackageDirectories)
+        {
+            string? relativePath = GetDescendantRelativePath(
+                packageDirectory,
+                descendantPackageDirectory
+            );
+            if (
+                relativePath is not null
+                && MatchesNpmWorkspacePatterns(relativePath, workspacePatterns)
+            )
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryGetNpmWorkspacePatterns(
+        JsonElement workspaces,
+        out string[] patterns
+    )
+    {
+        JsonElement packagePatterns = workspaces;
+        if (
+            workspaces.ValueKind == JsonValueKind.Object
+            && (
+                !workspaces.TryGetProperty("packages", out packagePatterns)
+                || packagePatterns.ValueKind != JsonValueKind.Array
+            )
+        )
+        {
+            patterns = [];
+            return false;
+        }
+
+        if (packagePatterns.ValueKind != JsonValueKind.Array)
+        {
+            patterns = [];
+            return false;
+        }
+
+        patterns = packagePatterns
+            .EnumerateArray()
+            .Where(static value => value.ValueKind == JsonValueKind.String)
+            .Select(static value => value.GetString())
+            .Where(static value => !string.IsNullOrWhiteSpace(value))
+            .Select(static value => value!.Trim())
+            .ToArray();
+        return patterns.Length > 0;
+    }
+
+    private string? GetDescendantRelativePath(string directory, string descendant)
+    {
+        string fullDirectory = fileSystem.GetFullPath(directory);
+        string fullDescendant = fileSystem.GetFullPath(descendant);
+        if (
+            !FileSystemPathSemantics.IsSameOrDescendant(
+                fileSystem,
+                fullDescendant,
+                fullDirectory
+            )
+            || PathsEqual(fullDirectory, fullDescendant)
+        )
+        {
+            return null;
+        }
+
+        char separator = FileSystemPathSemantics.UsesWindowsPaths(fileSystem) ? '\\' : '/';
+        string prefix = fullDirectory.EndsWith(separator)
+            ? fullDirectory
+            : fullDirectory + separator;
+        return fullDescendant[prefix.Length..].Replace('\\', '/').Trim('/');
+    }
+
+    private bool MatchesNpmWorkspacePatterns(string relativePath, IReadOnlyList<string> patterns)
+    {
+        bool included = false;
+        foreach (string configuredPattern in patterns)
+        {
+            bool excluded = configuredPattern.StartsWith('!');
+            string pattern = excluded ? configuredPattern[1..] : configuredPattern;
+            pattern = pattern.Replace('\\', '/').Trim();
+            while (pattern.StartsWith("./", StringComparison.Ordinal))
+            {
+                pattern = pattern[2..];
+            }
+
+            pattern = pattern.TrimStart('/').TrimEnd('/');
+            if (pattern.Length == 0)
+            {
+                continue;
+            }
+
+            foreach (string expandedPattern in ExpandWorkspacePatternBraces(pattern))
+            {
+                if (MatchesNpmWorkspacePattern(relativePath, expandedPattern))
+                {
+                    included = !excluded;
+                }
+            }
+        }
+
+        return included;
+    }
+
+    private bool MatchesNpmWorkspacePattern(string relativePath, string pattern)
+    {
+        var regex = new System.Text.StringBuilder("^");
+        for (int index = 0; index < pattern.Length; index++)
+        {
+            char current = pattern[index];
+            if (current == '*')
+            {
+                bool globStar = index + 1 < pattern.Length && pattern[index + 1] == '*';
+                if (globStar)
+                {
+                    index++;
+                    if (index + 1 < pattern.Length && pattern[index + 1] == '/')
+                    {
+                        index++;
+                        regex.Append("(?:.*/)?");
+                    }
+                    else
+                    {
+                        regex.Append(".*");
+                    }
+                }
+                else
+                {
+                    regex.Append("[^/]*");
+                }
+
+                continue;
+            }
+
+            if (current == '?')
+            {
+                regex.Append("[^/]");
+                continue;
+            }
+
+            regex.Append(Regex.Escape(current.ToString()));
+        }
+
+        regex.Append('$');
+        RegexOptions options = RegexOptions.CultureInvariant;
+        if (FileSystemPathSemantics.UsesWindowsPaths(fileSystem))
+        {
+            options |= RegexOptions.IgnoreCase;
+        }
+
+        return Regex.IsMatch(relativePath, regex.ToString(), options);
+    }
+
+    private static IEnumerable<string> ExpandWorkspacePatternBraces(string pattern)
+    {
+        int openBrace = pattern.IndexOf('{', StringComparison.Ordinal);
+        if (openBrace < 0)
+        {
+            yield return pattern;
+            yield break;
+        }
+
+        int closeBrace = pattern.IndexOf('}', openBrace + 1);
+        if (closeBrace < 0)
+        {
+            yield return pattern;
+            yield break;
+        }
+
+        string[] alternatives = pattern[(openBrace + 1)..closeBrace].Split(
+            ',',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+        );
+        if (alternatives.Length == 0)
+        {
+            yield return pattern;
+            yield break;
+        }
+
+        foreach (string alternative in alternatives)
+        {
+            string expanded =
+                pattern[..openBrace] + alternative + pattern[(closeBrace + 1)..];
+            foreach (string nestedExpansion in ExpandWorkspacePatternBraces(expanded))
+            {
+                yield return nestedExpansion;
+            }
+        }
     }
 
     private string GetHomeDirectory()

@@ -225,7 +225,7 @@ writes. Version 1 explicitly carries:
   package managers do not consume credential-provider stdout, so
   `NpmConfiguration` success validates bearer material but leaves protocol stdout
   empty;
-- Yarn Berry `.yarnrc.yml` entries for user-level and CI-temporary
+- Yarn 4+ `.yarnrc.yml` entries for user-level and CI-temporary
   bearer-token plans separately target `npmRegistries[registry].npmAuthToken`
   and `npmRegistries[registry].npmAlwaysAuth`, where `registry` is the same
   terminal-slash-normalized accepted npm registry endpoint used for npm and pnpm
@@ -248,7 +248,7 @@ writes. Version 1 explicitly carries:
 - CI temporary container metadata and declaration-preservation mode so auth-only
   temporary config is allowed only when declarations remain visible, otherwise
   hidden declarations must be copied or a complete merged temporary config must
-  be emitted. Yarn Berry CI-temporary activation is frozen as a
+  be emitted. Yarn 4+ CI-temporary activation is frozen as a
   configuration-manager-owned temporary `HOME` directory containing
   `.yarnrc.yml`; the immediate child `.yarnrc.yml` file path is the target of
   Yarn changes, and the temporary directory is the activation container.
@@ -268,14 +268,14 @@ writes. Version 1 explicitly carries:
   `NPM_CONFIG_USERCONFIG` and `npm_config_userconfig` to the product-owned
   `.npmrc` path. Both modes require an explicit empty `clearVariables` list so
   npm and pnpm consume the temporary file without relying on host-default user
-  config discovery. Yarn Berry CI-temporary changes use only
+  config discovery. Yarn 4+ CI-temporary changes use only
   `TemporaryHome` activation: the declared product-owned temporary home is the
   activation container, and the only accepted `Yarnrc` target is its immediate
   child `.yarnrc.yml`.
   Standalone `YarnRcFile` activation is not accepted in the Phase 2 CI-temporary
   contract. Repository-local and user-level paths outside the declared
   product-owned container are rejected;
-- Yarn Berry CI-temporary activation environment. On Windows, activation must
+- Yarn 4+ CI-temporary activation environment. On Windows, activation must
   set/override `USERPROFILE` and `HOME` to the product-owned temporary home and
   clear `HOMEDRIVE`, `HOMEPATH`, and `YARN_RC_FILENAME` so Yarn/Node resolve one
   temporary home and cannot select an ambient Yarn configuration file. On
@@ -285,7 +285,7 @@ writes. Version 1 explicitly carries:
   shape: Windows clears only `HOMEDRIVE` and `HOMEPATH`, while POSIX clears no
   variables. The `clearVariables` field remains required on the JSON wire, and
   generic POSIX plans carry `clearVariables: []` explicitly;
-- Yarn Berry CI-temporary plans must detect same-registry project-local
+- Yarn 4+ CI-temporary plans must detect same-registry project-local
   `.yarnrc.yml` auth entries that would shadow the temporary `HOME`
   `npmRegistries[registry].npmAuthToken`. This includes project-local
   `npmRegistries[registry].npmAuthToken` entries, same-registry

@@ -81,6 +81,87 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         Assert.Equal("feed", declaration.ResourceIdentity.Feed);
     }
 
+    [Theory]
+    [InlineData("""["packages/*"]""", "/repo/packages/app/src")]
+    [InlineData("""{"packages":["{apps,packages}/**"]}""", "/repo/apps/group/app/src")]
+    public void DiscoverRegistryDeclarationsUsesMatchingAncestorNpmWorkspaceRoot(
+        string workspaces,
+        string invocationDirectory
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        string packageDirectory = invocationDirectory[..invocationDirectory.LastIndexOf("/src")];
+        CreateDirectory(fileSystem, invocationDirectory);
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/repo/package.json",
+            $$"""{"name":"root","private":true,"workspaces":{{workspaces}}}"""
+        );
+        fileSystem.WriteAllText(packageDirectory + "/package.json", """{"name":"nested"}""");
+        fileSystem.WriteAllText(
+            "/repo/.npmrc",
+            "registry=https://pkgs.dev.azure.com/org/_packaging/root/npm/registry/\n"
+        );
+        fileSystem.WriteAllText(
+            packageDirectory + "/.npmrc",
+            "registry=https://pkgs.dev.azure.com/org/_packaging/nested/npm/registry/\n"
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = invocationDirectory,
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+
+        NpmPhase12RegistryDeclaration declaration = Assert.Single(
+            service.DiscoverRegistryDeclarations()
+        );
+
+        Assert.Equal("/repo/.npmrc", declaration.SourcePath);
+        Assert.Equal("root", declaration.ResourceIdentity.Feed);
+    }
+
+    [Fact]
+    public void DiscoverRegistryDeclarationsDoesNotTreatNonmatchingAncestorPackageAsWorkspaceRoot()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/repo/packages/app/src");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/repo/package.json",
+            """{"name":"root","workspaces":["tools/*"]}"""
+        );
+        fileSystem.WriteAllText(
+            "/repo/packages/app/package.json",
+            """{"name":"nested"}"""
+        );
+        fileSystem.WriteAllText(
+            "/repo/.npmrc",
+            "registry=https://pkgs.dev.azure.com/org/_packaging/root/npm/registry/\n"
+        );
+        fileSystem.WriteAllText(
+            "/repo/packages/app/.npmrc",
+            "registry=https://pkgs.dev.azure.com/org/_packaging/nested/npm/registry/\n"
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/repo/packages/app/src",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+
+        NpmPhase12RegistryDeclaration declaration = Assert.Single(
+            service.DiscoverRegistryDeclarations()
+        );
+
+        Assert.Equal("/repo/packages/app/.npmrc", declaration.SourcePath);
+        Assert.Equal("nested", declaration.ResourceIdentity.Feed);
+    }
+
     [Fact]
     public void CreateUserCredentialPlanTargetsUserNpmrcAndOnlyWritesSecretAuthToken()
     {

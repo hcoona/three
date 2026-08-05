@@ -14,8 +14,8 @@ Owner: **ADAPTER-NPM and CONFIG**
 
 | Field                      | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Gate status                | Passed for npm, pnpm, and Yarn Berry configuration write planning, including scoped registry credential target selection.                                                                                                                                                                                                                                                                                                                                    |
-| Decision                   | Implement npm-compatible credential writes as configuration-manager-owned change plans. npm and pnpm use `.npmrc` entries scoped by registry URL. Yarn Berry uses `.yarnrc.yml` `npmRegistries` auth entries while reading registry declarations from `npmRegistryServer` and `npmScopes`.                                                                                                                                                                   |
+| Gate status                | Passed for npm, pnpm, and Yarn 4+ configuration write planning, including scoped registry credential target selection.                                                                                                                                                                                                                                                                                                                                       |
+| Decision                   | Implement npm-compatible credential writes as configuration-manager-owned change plans. npm and pnpm use `.npmrc` entries scoped by registry URL. Yarn 4+ uses `.yarnrc.yml` `npmRegistries` auth entries while reading registry declarations from `npmRegistryServer` and `npmScopes`.                                                                                                                                                                      |
 | Evidence scope             | Local reference package inspection covers `@microsoft/artifacts-npm-credprovider` 1.1.3 and `@microsoft/artifacts-credprovider-wrapper` 1.1.4 package metadata, declarations, README guidance, and bundled JavaScript behavior snippets as supporting references with auditable registry shasums. Disposable probes cover npm 11.9.0, pnpm 10.34.1, and Yarn 4.9.2 config resolution and default plus scoped write targets with fake credential values only. |
 | Implementation may proceed | Yes for Phase 12 npm/pnpm change-plan generation and Phase 13B Yarn change-plan generation, including scoped registry credential targets, subject to the credential write and selector-ownership policies in this record. The adapter must not write files directly; persistent and temporary files must be applied by the configuration manager.                                                                                                            |
 | Phase 1R routing           | Not entered. Yarn write support is accepted for user-level and CI temporary scopes. If later platform validation disproves Yarn consumption of configuration-manager-owned `.yarnrc.yml` targets, Yarn writes must stop and enter Phase 1R unless the requirement is explicitly changed.                                                                                                                                                                     |
@@ -471,7 +471,7 @@ Decision for npm and pnpm:
 - The configuration manager may support explicit project-scoped writes only as a
   separate opt-in mode with conflict detection and ownership metadata.
 
-## Yarn Berry Evidence
+## Yarn 4+ Evidence
 
 ### Registry Keys Read by Yarn
 
@@ -529,7 +529,7 @@ exit=0
 This matches the local reference provider, which stores registry keys as `//`
 plus the normalized registry host/path.
 
-### Scoped Yarn Berry Auth Target
+### Scoped Yarn 4+ Auth Target
 
 A scoped Yarn target probe used the project `npmScopes.scope.npmRegistryServer`
 declaration and user-level `npmRegistries` entries for both default and scoped
@@ -571,7 +571,7 @@ $ COREPACK_HOME="$SCRATCH/corepack" HOME="$SCRATCH/home-negative" corepack yarn@
 exit=0
 ```
 
-Decision: for Yarn Berry scoped packages, CONFIG writes `npmAuthToken` and
+Decision: for Yarn 4+ scoped packages, CONFIG writes `npmAuthToken` and
 `npmAlwaysAuth` under the `npmRegistries` key matching
 `npmScopes.<scope>.npmRegistryServer`. The default registry credential is not an
 acceptable substitute for a scoped registry credential target.
@@ -761,7 +761,7 @@ the contract does not carry cleanup promise flags.
   targets.
 - `high-level-design.md`: The npm adapter discovery and user-level default write
   model are evidence-supported for npm and pnpm, including scoped registry
-  credential target selection, and Yarn Berry write support is unblocked for
+  credential target selection, and Yarn 4+ write support is unblocked for
   configuration-manager-owned plans instead of read-only diagnostics only.
 - `mid-level-design.md`: npm adapter configuration inputs, request mapping, write
   policy, doctor checks, and configuration-manager ownership semantics are
@@ -791,7 +791,7 @@ Phase 1.4 passes with constraints:
    or by copying user-sourced declarations into the temporary `.npmrc`.
 2. Phase 13A remains valid for read-only Yarn diagnostics.
 3. Phase 13B may implement Yarn write support for config-manager-owned change
-   plans because Yarn Berry user-level, scoped `npmScopes` to `npmRegistries`,
+   plans because Yarn 4+ user-level, scoped `npmScopes` to `npmRegistries`,
    and CI temporary write targets were accepted by the config-resolution probes
    above, subject to the same CI temporary declaration-preservation rule for
    user-sourced declarations.

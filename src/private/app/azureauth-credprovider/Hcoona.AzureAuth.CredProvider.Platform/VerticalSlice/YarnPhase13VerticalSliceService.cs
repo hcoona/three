@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Text;
 using Hcoona.AzureAuth.CredProvider.Contracts;
 using Hcoona.AzureAuth.CredProvider.Platform.FileSystem;
 
@@ -225,9 +226,10 @@ public sealed class YarnPhase13VerticalSliceService
         var declarations = new List<YarnPhase13RegistryDeclaration>();
         bool inNpmScopes = false;
         string? currentScope = null;
-        foreach (string rawLine in lines)
+        int? scopeIndent = null;
+        for (int lineIndex = 0; lineIndex < lines.Length; lineIndex++)
         {
-            string line = StripYamlComment(rawLine);
+            string line = StripYamlComment(lines[lineIndex]);
             if (string.IsNullOrWhiteSpace(line))
             {
                 continue;
@@ -239,19 +241,59 @@ public sealed class YarnPhase13VerticalSliceService
             {
                 inNpmScopes = IsYamlMapHeader(trimmed, "npmScopes");
                 currentScope = null;
+                scopeIndent = null;
                 if (
                     TryParseYamlKeyValue(trimmed, out string? key, out string? value)
-                    && string.Equals(key, "npmRegistryServer", StringComparison.Ordinal)
-                    && TryCreateRegistryDeclaration(
-                        yarnrcPath,
-                        key,
-                        scope: null,
-                        value,
-                        out YarnPhase13RegistryDeclaration? declaration
-                    )
                 )
                 {
-                    declarations.Add(declaration);
+                    if (
+                        string.Equals(key, "npmRegistryServer", StringComparison.Ordinal)
+                        && TryCreateRegistryDeclaration(
+                            yarnrcPath,
+                            key,
+                            scope: null,
+                            value,
+                            out YarnPhase13RegistryDeclaration? declaration
+                        )
+                    )
+                    {
+                        declarations.Add(declaration);
+                    }
+                    else if (
+                        string.Equals(key, "npmScopes", StringComparison.Ordinal)
+                        && TryCollectFlowMappingValue(
+                            lines,
+                            ref lineIndex,
+                            value,
+                            out string? flowValue
+                        )
+                        && TryCreateFlowProjectAuthBlocks(
+                            YarnAuthIdentContext.NpmScopes,
+                            flowValue!,
+                            out List<YarnProjectAuthBlock>? flowBlocks
+                        )
+                    )
+                    {
+                        foreach (
+                            YarnProjectAuthBlock block in flowBlocks!.Where(static block =>
+                                block.Scope is not null && block.RegistryKey is not null
+                            )
+                        )
+                        {
+                            if (
+                                TryCreateRegistryDeclaration(
+                                    yarnrcPath,
+                                    "npmScopes." + block.Scope + ".npmRegistryServer",
+                                    block.Scope,
+                                    block.RegistryKey!,
+                                    out YarnPhase13RegistryDeclaration? flowScopedDeclaration
+                                )
+                            )
+                            {
+                                declarations.Add(flowScopedDeclaration);
+                            }
+                        }
+                    }
                 }
 
                 continue;
@@ -262,14 +304,15 @@ public sealed class YarnPhase13VerticalSliceService
                 continue;
             }
 
-            if (indent == 2 && TryParseYamlMapKey(trimmed, out string? scopeName))
+            scopeIndent ??= indent;
+            if (indent == scopeIndent && TryParseYamlMapKey(trimmed, out string? scopeName))
             {
                 currentScope = NormalizeScopeName(scopeName);
                 continue;
             }
 
             if (
-                indent >= 4
+                indent > scopeIndent.Value
                 && currentScope is not null
                 && TryParseYamlKeyValue(trimmed, out string? scopedKey, out string? scopedValue)
                 && string.Equals(scopedKey, "npmRegistryServer", StringComparison.Ordinal)
@@ -367,18 +410,22 @@ public sealed class YarnPhase13VerticalSliceService
         }
 
         string? repositoryRootPath = GetRepositoryRootPath();
-        if (
-            repositoryRootPath is not null
-            && FileSystemPathSemantics.IsSameOrDescendant(
-                fileSystem,
-                targetYarnrcPath,
-                repositoryRootPath
-            )
-        )
+        if (repositoryRootPath is not null)
         {
-            throw new InvalidOperationException(
-                "Repository-local Yarn configuration cannot store credential material."
-            );
+            if (
+                FileSystemPathSemantics.IsSameOrDescendant(
+                    fileSystem,
+                    targetYarnrcPath,
+                    repositoryRootPath
+                )
+            )
+            {
+                throw new InvalidOperationException(
+                    "Repository-local Yarn configuration cannot store credential material."
+                );
+            }
+
+            return;
         }
 
         string? targetDirectory = FileSystemPathSemantics.GetParentDirectory(
@@ -410,14 +457,20 @@ public sealed class YarnPhase13VerticalSliceService
         )
         {
             if (
+                fileSystem.DirectoryExists(
+                    FileSystemPathSemantics.Combine(fileSystem, directory, ".git")
+                )
+            )
+            {
+                return directory;
+            }
+
+            if (
                 fileSystem.FileExists(
                     FileSystemPathSemantics.Combine(fileSystem, directory, "package.json")
                 )
                 || fileSystem.FileExists(
                     FileSystemPathSemantics.Combine(fileSystem, directory, "yarn.lock")
-                )
-                || fileSystem.DirectoryExists(
-                    FileSystemPathSemantics.Combine(fileSystem, directory, ".git")
                 )
             )
             {
@@ -635,6 +688,24 @@ public sealed class YarnPhase13VerticalSliceService
         List<YarnPhase13AuthIdentConflict> conflicts
     )
     {
+        foreach (YarnProjectAuthBlock block in ReadFlowProjectAuthBlocks(yarnrcPath))
+        {
+            if (block.AuthIdentSelector is null)
+            {
+                continue;
+            }
+
+            conflicts.Add(
+                CreateAuthIdentConflict(
+                    yarnrcPath,
+                    block.Scope is null
+                        ? block.RegistryKey!
+                        : "npmScopes." + block.Scope,
+                    block.AuthIdentSelector
+                )
+            );
+        }
+
         string[] lines = SplitLines(fileSystem.ReadAllText(yarnrcPath));
         YarnAuthIdentContext context = YarnAuthIdentContext.None;
         string? currentRegistryKey = null;
@@ -748,6 +819,50 @@ public sealed class YarnPhase13VerticalSliceService
         }
     }
 
+    private List<YarnProjectAuthBlock> ReadFlowProjectAuthBlocks(string yarnrcPath)
+    {
+        var blocks = new List<YarnProjectAuthBlock>();
+        string[] lines = SplitLines(fileSystem.ReadAllText(yarnrcPath));
+        for (int lineIndex = 0; lineIndex < lines.Length; lineIndex++)
+        {
+            string line = StripYamlComment(lines[lineIndex]);
+            if (string.IsNullOrWhiteSpace(line) || CountLeadingSpaces(line) != 0)
+            {
+                continue;
+            }
+
+            string trimmed = line.Trim();
+            if (
+                !TryParseYamlKeyValue(
+                    trimmed,
+                    out string? topLevelKey,
+                    out string? topLevelValue
+                )
+                || !IsManagedProjectAuthMapKey(topLevelKey)
+                || !TryCollectFlowMappingValue(
+                    lines,
+                    ref lineIndex,
+                    topLevelValue,
+                    out string? flowValue
+                )
+                || !TryCreateFlowProjectAuthBlocks(
+                    string.Equals(topLevelKey, "npmRegistries", StringComparison.Ordinal)
+                        ? YarnAuthIdentContext.NpmRegistries
+                        : YarnAuthIdentContext.NpmScopes,
+                    flowValue!,
+                    out List<YarnProjectAuthBlock>? flowBlocks
+                )
+            )
+            {
+                continue;
+            }
+
+            blocks.AddRange(flowBlocks!);
+        }
+
+        return blocks;
+    }
+
     private List<YarnProjectAuthBlock> ReadProjectAuthBlocks(string yarnrcPath)
     {
         var blocks = new List<YarnProjectAuthBlock>();
@@ -756,9 +871,10 @@ public sealed class YarnPhase13VerticalSliceService
         int? blockIndent = null;
         int? settingIndent = null;
         bool settingAllowsNestedContent = false;
-        foreach (string rawLine in SplitLines(fileSystem.ReadAllText(yarnrcPath)))
+        string[] lines = SplitLines(fileSystem.ReadAllText(yarnrcPath));
+        for (int lineIndex = 0; lineIndex < lines.Length; lineIndex++)
         {
-            string line = StripYamlComment(rawLine);
+            string line = StripYamlComment(lines[lineIndex]);
             if (string.IsNullOrWhiteSpace(line))
             {
                 continue;
@@ -791,10 +907,37 @@ public sealed class YarnPhase13VerticalSliceService
                         out string? topLevelValue
                     )
                     && IsManagedProjectAuthMapKey(topLevelKey)
-                    && !IsYamlNullOrEmpty(topLevelValue)
                 )
                 {
-                    throw CreateMalformedProjectAuthStructureException(yarnrcPath);
+                    if (
+                        TryCollectFlowMappingValue(
+                            lines,
+                            ref lineIndex,
+                            topLevelValue,
+                            out string? flowValue
+                        )
+                        && TryCreateFlowProjectAuthBlocks(
+                            string.Equals(
+                                topLevelKey,
+                                "npmRegistries",
+                                StringComparison.Ordinal
+                            )
+                                ? YarnAuthIdentContext.NpmRegistries
+                                : YarnAuthIdentContext.NpmScopes,
+                            flowValue!,
+                            out List<YarnProjectAuthBlock>? flowBlocks
+                        )
+                    )
+                    {
+                        blocks.AddRange(flowBlocks!);
+                        context = YarnAuthIdentContext.None;
+                        continue;
+                    }
+
+                    if (!IsYamlNullOrEmpty(topLevelValue))
+                    {
+                        throw CreateMalformedProjectAuthStructureException(yarnrcPath);
+                    }
                 }
 
                 context = YarnAuthIdentContext.None;
@@ -888,6 +1031,165 @@ public sealed class YarnPhase13VerticalSliceService
         }
 
         return blocks;
+    }
+
+    private static bool TryCollectFlowMappingValue(
+        string[] lines,
+        ref int lineIndex,
+        string initialValue,
+        [NotNullWhen(true)] out string? flowValue
+    )
+    {
+        flowValue = null;
+        string value = initialValue.Trim();
+        if (!value.StartsWith('{'))
+        {
+            return false;
+        }
+
+        var builder = new StringBuilder(value);
+        int balance = GetFlowCollectionBalance(value);
+        while (balance > 0 && lineIndex + 1 < lines.Length)
+        {
+            lineIndex++;
+            string continuation = StripYamlComment(lines[lineIndex]).Trim();
+            if (continuation.Length == 0)
+            {
+                continue;
+            }
+
+            builder.Append(' ').Append(continuation);
+            balance = GetFlowCollectionBalance(builder.ToString());
+        }
+
+        if (balance != 0)
+        {
+            return false;
+        }
+
+        flowValue = builder.ToString();
+        return true;
+    }
+
+    private static int GetFlowCollectionBalance(string value)
+    {
+        int balance = 0;
+        char? quote = null;
+        bool escaped = false;
+        for (int index = 0; index < value.Length; index++)
+        {
+            char current = value[index];
+            if (quote is not null)
+            {
+                if (quote == '"' && current == '\\' && !escaped)
+                {
+                    escaped = true;
+                    continue;
+                }
+
+                if (current == quote && !escaped)
+                {
+                    if (
+                        quote == '\''
+                        && index + 1 < value.Length
+                        && value[index + 1] == '\''
+                    )
+                    {
+                        index++;
+                        continue;
+                    }
+
+                    quote = null;
+                }
+
+                escaped = false;
+                continue;
+            }
+
+            if (current is '\'' or '"')
+            {
+                quote = current;
+            }
+            else if (current is '{' or '[')
+            {
+                balance++;
+            }
+            else if (current is '}' or ']')
+            {
+                balance--;
+                if (balance < 0)
+                {
+                    return -1;
+                }
+            }
+        }
+
+        return quote is null ? balance : -1;
+    }
+
+    private static bool TryCreateFlowProjectAuthBlocks(
+        YarnAuthIdentContext context,
+        string flowValue,
+        [NotNullWhen(true)] out List<YarnProjectAuthBlock>? blocks
+    )
+    {
+        blocks = null;
+        if (
+            !YamlFlowMappingParser.TryParse(flowValue, out List<YamlFlowEntry>? outerEntries)
+        )
+        {
+            return false;
+        }
+
+        var parsedBlocks = new List<YarnProjectAuthBlock>();
+        foreach (YamlFlowEntry outerEntry in outerEntries)
+        {
+            if (outerEntry.Value.Mapping is null)
+            {
+                return false;
+            }
+
+            var block = new YarnProjectAuthBlock(
+                context == YarnAuthIdentContext.NpmRegistries ? outerEntry.Key : null,
+                context == YarnAuthIdentContext.NpmScopes
+                    ? NormalizeScopeName(outerEntry.Key)
+                    : null
+            );
+            foreach (YamlFlowEntry setting in outerEntry.Value.Mapping)
+            {
+                if (
+                    string.Equals(setting.Key, "npmRegistryServer", StringComparison.Ordinal)
+                )
+                {
+                    if (setting.Value.Mapping is not null)
+                    {
+                        return false;
+                    }
+
+                    block.RegistryKey = UnquoteYamlScalar(setting.Value.Scalar);
+                    continue;
+                }
+
+                if (
+                    string.Equals(setting.Key, "npmAuthToken", StringComparison.Ordinal)
+                    || string.Equals(setting.Key, "npmAuthIdent", StringComparison.Ordinal)
+                    || string.Equals(setting.Key, "npmAlwaysAuth", StringComparison.Ordinal)
+                )
+                {
+                    if (setting.Value.Mapping is not null)
+                    {
+                        return false;
+                    }
+
+                    block.RecordAuthSetting(setting.Key, setting.Value.Scalar);
+                }
+            }
+
+            parsedBlocks.Add(block);
+        }
+
+        blocks = parsedBlocks;
+        return true;
     }
 
     private static InvalidOperationException CreateMalformedProjectAuthStructureException(
@@ -1367,6 +1669,280 @@ public sealed class YarnPhase13VerticalSliceService
     private static string? NullIfWhiteSpace(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
+    private sealed record YamlFlowEntry(string Key, YamlFlowValue Value);
+
+    private sealed record YamlFlowValue(string? Scalar, List<YamlFlowEntry>? Mapping);
+
+    private sealed class YamlFlowMappingParser
+    {
+        private readonly string text;
+        private int index;
+
+        private YamlFlowMappingParser(string text) => this.text = text;
+
+        public static bool TryParse(
+            string text,
+            [NotNullWhen(true)] out List<YamlFlowEntry>? entries
+        )
+        {
+            var parser = new YamlFlowMappingParser(text);
+            if (!parser.TryParseMapping(out entries))
+            {
+                entries = null;
+                return false;
+            }
+
+            parser.SkipWhitespace();
+            return parser.index == text.Length;
+        }
+
+        private bool TryParseMapping([NotNullWhen(true)] out List<YamlFlowEntry>? entries)
+        {
+            entries = null;
+            SkipWhitespace();
+            if (!TryConsume('{'))
+            {
+                return false;
+            }
+
+            var parsedEntries = new List<YamlFlowEntry>();
+            SkipWhitespace();
+            if (TryConsume('}'))
+            {
+                entries = parsedEntries;
+                return true;
+            }
+
+            while (index < text.Length)
+            {
+                if (!TryReadKey(out string? key) || !TryConsume(':'))
+                {
+                    return false;
+                }
+
+                SkipWhitespace();
+                YamlFlowValue value;
+                if (index < text.Length && text[index] == '{')
+                {
+                    if (!TryParseMapping(out List<YamlFlowEntry>? nestedEntries))
+                    {
+                        return false;
+                    }
+
+                    value = new YamlFlowValue(null, nestedEntries);
+                }
+                else
+                {
+                    if (!TryReadScalar(out string? scalar))
+                    {
+                        return false;
+                    }
+
+                    value = new YamlFlowValue(scalar, null);
+                }
+
+                parsedEntries.Add(new YamlFlowEntry(key, value));
+                SkipWhitespace();
+                if (TryConsume('}'))
+                {
+                    entries = parsedEntries;
+                    return true;
+                }
+
+                if (!TryConsume(','))
+                {
+                    return false;
+                }
+
+                SkipWhitespace();
+                if (TryConsume('}'))
+                {
+                    entries = parsedEntries;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool TryReadKey([NotNullWhen(true)] out string? key)
+        {
+            key = null;
+            SkipWhitespace();
+            int start = index;
+            char? quote = null;
+            bool escaped = false;
+            while (index < text.Length)
+            {
+                char current = text[index];
+                if (quote is not null)
+                {
+                    index++;
+                    if (quote == '"' && current == '\\' && !escaped)
+                    {
+                        escaped = true;
+                        continue;
+                    }
+
+                    if (current == quote && !escaped)
+                    {
+                        if (
+                            quote == '\''
+                            && index < text.Length
+                            && text[index] == '\''
+                        )
+                        {
+                            index++;
+                            continue;
+                        }
+
+                        quote = null;
+                    }
+
+                    escaped = false;
+                    continue;
+                }
+
+                if (current is '\'' or '"')
+                {
+                    quote = current;
+                    index++;
+                    continue;
+                }
+
+                if (
+                    current == ':'
+                    && !(
+                        index + 2 < text.Length
+                        && text[index + 1] == '/'
+                        && text[index + 2] == '/'
+                    )
+                )
+                {
+                    string rawKey = text[start..index].Trim();
+                    key = UnquoteYamlScalar(rawKey);
+                    return key is not null;
+                }
+
+                if (current is ',' or '}' or '{' or '[' or ']')
+                {
+                    return false;
+                }
+
+                index++;
+            }
+
+            return false;
+        }
+
+        private bool TryReadScalar([NotNullWhen(true)] out string? scalar)
+        {
+            scalar = null;
+            SkipWhitespace();
+            int start = index;
+            char? quote = null;
+            bool escaped = false;
+            int sequenceDepth = 0;
+            while (index < text.Length)
+            {
+                char current = text[index];
+                if (quote is not null)
+                {
+                    index++;
+                    if (quote == '"' && current == '\\' && !escaped)
+                    {
+                        escaped = true;
+                        continue;
+                    }
+
+                    if (current == quote && !escaped)
+                    {
+                        if (
+                            quote == '\''
+                            && index < text.Length
+                            && text[index] == '\''
+                        )
+                        {
+                            index++;
+                            continue;
+                        }
+
+                        quote = null;
+                    }
+
+                    escaped = false;
+                    continue;
+                }
+
+                if (current is '\'' or '"')
+                {
+                    quote = current;
+                    index++;
+                    continue;
+                }
+
+                if (current == '[')
+                {
+                    sequenceDepth++;
+                    index++;
+                    continue;
+                }
+
+                if (current == ']')
+                {
+                    if (sequenceDepth == 0)
+                    {
+                        return false;
+                    }
+
+                    sequenceDepth--;
+                    index++;
+                    continue;
+                }
+
+                if (sequenceDepth == 0 && (current is ',' or '}'))
+                {
+                    break;
+                }
+
+                if (sequenceDepth == 0 && current == '{')
+                {
+                    return false;
+                }
+
+                index++;
+            }
+
+            if (quote is not null || sequenceDepth != 0)
+            {
+                return false;
+            }
+
+            scalar = text[start..index].Trim();
+            return true;
+        }
+
+        private bool TryConsume(char expected)
+        {
+            SkipWhitespace();
+            if (index >= text.Length || text[index] != expected)
+            {
+                return false;
+            }
+
+            index++;
+            return true;
+        }
+
+        private void SkipWhitespace()
+        {
+            while (index < text.Length && char.IsWhiteSpace(text[index]))
+            {
+                index++;
+            }
+        }
+    }
+
     private sealed class YarnProjectAuthBlock(string? registryKey, string? scope)
     {
         public string? RegistryKey { get; set; } = registryKey;
@@ -1374,6 +1950,8 @@ public sealed class YarnPhase13VerticalSliceService
         public string? Scope { get; } = scope;
 
         public string? AuthenticationSelector { get; private set; }
+
+        public string? AuthIdentSelector { get; private set; }
 
         public string? ShadowingSelector { get; private set; }
 
@@ -1396,6 +1974,15 @@ public sealed class YarnPhase13VerticalSliceService
             if (authValuePresent && AuthenticationSelector is null)
             {
                 AuthenticationSelector = selector;
+            }
+
+            if (
+                AuthIdentSelector is null
+                && string.Equals(key, "npmAuthIdent", StringComparison.Ordinal)
+                && authValuePresent
+            )
+            {
+                AuthIdentSelector = selector;
             }
 
             if (ShadowingSelector is null && (authValuePresent || alwaysAuthDisabled))

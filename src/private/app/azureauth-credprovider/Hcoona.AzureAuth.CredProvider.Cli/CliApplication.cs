@@ -2046,7 +2046,7 @@ internal static class CliApplication
             "  logout                       Clear product-owned authentication state.",
             "  identity                     Configure product identity context.",
             "  configure <ecosystem>        Apply supported configuration plans.",
-            "  refresh <ecosystem>          Refresh an npm, pnpm, or Yarn credential.",
+            "  refresh <ecosystem>          Refresh an npm, pnpm, or Yarn 4+ credential.",
             "  unconfigure <ecosystem>      Remove supported configuration plans.",
             string.Empty,
             "Options:",
@@ -2103,7 +2103,7 @@ internal static class CliApplication
         lines.AddRange([
             "  npm",
             "  pnpm",
-            "  yarn",
+            "  yarn (Yarn 4+ only)",
             string.Empty,
             "Options:",
             "  --dry-run                    Render planned actions without mutating files.",
@@ -2114,7 +2114,7 @@ internal static class CliApplication
             lines.Add(
                 command == CliCommand.Configure
                     ? "  --registry-url <url>         Required Azure Artifacts npm URL "
-                        + "for npm, pnpm, and Yarn."
+                        + "for npm, pnpm, and Yarn 4+."
                     : "  --registry-url <url>         Azure Artifacts npm URL; optional only "
                         + "when the canonical ownership manifest is valid."
             );
@@ -2150,7 +2150,7 @@ internal static class CliApplication
             "Ecosystems:",
             "  npm",
             "  pnpm",
-            "  yarn",
+            "  yarn (Yarn 4+ only)",
             string.Empty,
             "Status:",
             "  Clean product-owned CI temporary package configuration.",

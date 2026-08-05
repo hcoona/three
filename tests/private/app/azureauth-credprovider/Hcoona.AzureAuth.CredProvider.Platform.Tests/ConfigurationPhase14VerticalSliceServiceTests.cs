@@ -142,6 +142,31 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         Assert.Contains("resolve to different", exception.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task RelativeYarnRcFilenameWritesYarn4HomeUserTarget()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        ConfigurationPhase14VerticalSliceService service = CreateService(
+            fileSystem,
+            environmentVariableReader: name =>
+                name switch
+                {
+                    "HOME" => "/home/alice",
+                    "YARN_RC_FILENAME" => ".project.yarnrc.yml",
+                    _ => null,
+                }
+        );
+
+        Assert.Equal("/home/alice/.yarnrc.yml", service.Paths.YarnUserYarnrcPath);
+        await service.ConfigureAsync(
+            CredentialEcosystem.Yarn,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+        Assert.True(fileSystem.FileExists("/home/alice/.yarnrc.yml"));
+        Assert.False(fileSystem.FileExists("/home/alice/.project.yarnrc.yml"));
+    }
+
     [Theory]
     [InlineData(CredentialEcosystem.Npm)]
     [InlineData(CredentialEcosystem.Pnpm)]

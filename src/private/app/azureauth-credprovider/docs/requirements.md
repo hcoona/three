@@ -130,7 +130,7 @@ Host tools own:
 
 1. Provide an npm ecosystem command that reads npm and Yarn registry configuration and updates credential material safely.
 2. Support `.npmrc` registry entries for npm and pnpm.
-3. Support `.yarnrc.yml` registry entries for Yarn Berry (Yarn 2+), including `npmRegistryServer`, `npmScopes`, and auth material under `npmRegistries`.
+3. Support `.yarnrc.yml` registry entries for Yarn 4+ only, including `npmRegistryServer`, `npmScopes`, and auth material under `npmRegistries`. Yarn 2 and Yarn 3 are outside the supported product boundary.
 4. Support invocation from package-manager lifecycle or bootstrap scripts when the CLI is already available.
 5. Avoid writing raw long-lived tokens to repository-local `.npmrc` files by default.
 
