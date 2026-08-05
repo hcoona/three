@@ -467,7 +467,7 @@ public sealed class SystemProcessRunnerTests
     }
 
     [Fact]
-    public async Task RunAsyncTimeoutRemainsPrimaryWhenCallerCancelsAfterTimeoutBeforeLaunchCompletes()
+    public async Task RunAsyncTimeoutWinsWhenCallerCancelsBeforeLaunchCompletes()
     {
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
             TestContext.Current.CancellationToken

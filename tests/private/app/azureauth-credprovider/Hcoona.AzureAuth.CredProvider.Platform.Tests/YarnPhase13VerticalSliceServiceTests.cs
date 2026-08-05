@@ -856,7 +856,8 @@ public sealed class YarnPhase13VerticalSliceServiceTests
             "npmRegistryServer: https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
                 + "npmScopes:\n"
                 + "  shadow:\n"
-                + "    npmRegistryServer: https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry\n"
+                + "    npmRegistryServer: "
+                + "https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry\n"
                 + "    "
                 + selector
                 + ": '"
@@ -898,17 +899,19 @@ public sealed class YarnPhase13VerticalSliceServiceTests
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         CreateDirectory(fileSystem, "/workspace");
         CreateDirectory(fileSystem, "/home/alice");
+        const string RegistryUrl =
+            "https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/";
         string authBlock =
             blockKind == "npmRegistries"
-                ? """
+                ? $"""
                   npmRegistries:
-                      https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:
+                      {RegistryUrl}:
                           npmAuthToken: project-secret-value
                   """
-                : """
+                : $"""
                   npmScopes:
                       shadow:
-                          npmRegistryServer: https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/
+                          npmRegistryServer: {RegistryUrl}
                           npmAuthToken: project-secret-value
                   """;
         fileSystem.WriteAllText(
@@ -948,16 +951,22 @@ public sealed class YarnPhase13VerticalSliceServiceTests
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         CreateDirectory(fileSystem, "/workspace");
         CreateDirectory(fileSystem, "/home/alice");
+        const string RegistryUrl =
+            "https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/";
+        const string OtherRegistryUrl =
+            "https://pkgs.dev.azure.com/org/_packaging/other/npm/registry/";
+        const string ScopedRegistryUrl =
+            "https://pkgs.dev.azure.com/org/_packaging/scoped/npm/registry/";
         fileSystem.WriteAllText(
             "/workspace/.yarnrc.yml",
-            """
-            npmRegistryServer: https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/
+            $"""
+            npmRegistryServer: {RegistryUrl}
             npmRegistries:
-                https://pkgs.dev.azure.com/org/_packaging/other/npm/registry/:
+                {OtherRegistryUrl}:
                     npmAuthToken: unrelated-registry-token
             npmScopes:
                 unrelated:
-                    npmRegistryServer: https://pkgs.dev.azure.com/org/_packaging/scoped/npm/registry/
+                    npmRegistryServer: {ScopedRegistryUrl}
                     npmAlwaysAuth: false
             """
         );
