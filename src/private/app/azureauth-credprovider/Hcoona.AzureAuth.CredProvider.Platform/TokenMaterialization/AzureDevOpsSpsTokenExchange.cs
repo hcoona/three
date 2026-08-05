@@ -179,6 +179,41 @@ public sealed class AzureDevOpsSpsTokenExchange : ITokenExchange, IDisposable
             return Failure(AsyncTokenExchangeStatus.Failed, "SpsRequestedExpiryInvalid");
         }
 
+        HttpResponseMessage response = await SendSessionTokenRequestAsync(
+                endpoint,
+                sourceToken,
+                requestedExpiry,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.BadRequest)
+        {
+            response.Dispose();
+            using HttpResponseMessage retryResponse = await SendSessionTokenRequestAsync(
+                    endpoint,
+                    sourceToken,
+                    requestedExpiry: null,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+            return await CreateExchangeResultAsync(retryResponse, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        using (response)
+        {
+            return await CreateExchangeResultAsync(response, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private async Task<HttpResponseMessage> SendSessionTokenRequestAsync(
+        Uri endpoint,
+        AcquiredAccessToken sourceToken,
+        DateTimeOffset? requestedExpiry,
+        CancellationToken cancellationToken
+    )
+    {
         using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         request.Headers.Authorization = new AuthenticationHeaderValue(
@@ -191,9 +226,16 @@ public sealed class AzureDevOpsSpsTokenExchange : ITokenExchange, IDisposable
             "application/json"
         );
 
-        using HttpResponseMessage response = await _httpClient
+        return await _httpClient
             .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    private async Task<AsyncTokenExchangeResult> CreateExchangeResultAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken
+    )
+    {
         if (
             IsRedirect(response.StatusCode)
             || response.StatusCode < HttpStatusCode.OK
@@ -214,7 +256,7 @@ public sealed class AzureDevOpsSpsTokenExchange : ITokenExchange, IDisposable
         }
 
         DateTimeOffset completedAt = _timeProvider.GetUtcNow();
-        if (expiry > requestedExpiry || !IsExpiryUsable(expiry, completedAt))
+        if (!IsExpiryUsable(expiry, completedAt))
         {
             return Failure(AsyncTokenExchangeStatus.Failed, "SpsExchangeResponseInvalid");
         }
@@ -247,7 +289,10 @@ public sealed class AzureDevOpsSpsTokenExchange : ITokenExchange, IDisposable
         string basePath = baseEndpoint.AbsolutePath.TrimEnd('/');
         string finalPath;
         if (
-            string.Equals(host, "vssps.dev.azure.com", StringComparison.OrdinalIgnoreCase)
+            (
+                string.Equals(host, "vssps.dev.azure.com", StringComparison.OrdinalIgnoreCase)
+                || host.EndsWith(".vssps.dev.azure.com", StringComparison.OrdinalIgnoreCase)
+            )
             && string.Equals(
                 basePath,
                 "/" + escapedOrganization,
@@ -380,7 +425,7 @@ public sealed class AzureDevOpsSpsTokenExchange : ITokenExchange, IDisposable
         return true;
     }
 
-    private static string CreateRequestBody(DateTimeOffset requestedExpiry)
+    private static string CreateRequestBody(DateTimeOffset? requestedExpiry)
     {
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream))
@@ -388,7 +433,11 @@ public sealed class AzureDevOpsSpsTokenExchange : ITokenExchange, IDisposable
             writer.WriteStartObject();
             writer.WriteString("displayName", "Azure DevOps Artifacts Credential Provider");
             writer.WriteString("scope", "vso.packaging_write vso.drop_write");
-            writer.WriteString("validTo", requestedExpiry.UtcDateTime);
+            if (requestedExpiry is not null)
+            {
+                writer.WriteString("validTo", requestedExpiry.Value.UtcDateTime);
+            }
+
             writer.WriteEndObject();
         }
 
@@ -397,15 +446,18 @@ public sealed class AzureDevOpsSpsTokenExchange : ITokenExchange, IDisposable
 
     private static HttpClient CreateProductionHttpClient()
     {
-        var handler = new SocketsHttpHandler
+        SocketsHttpHandler handler = CreateProductionHttpHandler();
+        return new HttpClient(handler, disposeHandler: true) { Timeout = Timeout.InfiniteTimeSpan };
+    }
+
+    internal static SocketsHttpHandler CreateProductionHttpHandler() =>
+        new()
         {
             AllowAutoRedirect = false,
             UseCookies = false,
-            UseProxy = false,
+            UseProxy = true,
             Credentials = null,
         };
-        return new HttpClient(handler, disposeHandler: true) { Timeout = Timeout.InfiniteTimeSpan };
-    }
 
     private static bool IsRedirect(HttpStatusCode statusCode) =>
         statusCode

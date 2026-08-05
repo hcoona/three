@@ -340,8 +340,7 @@ public sealed class TokenMaterializationWp4Tests
     [Theory]
     [InlineData(30, 25)]
     [InlineData(30, 31)]
-    [InlineData(300, 0)]
-    public async Task SpsExchangeRejectsUnusableOrOverlongResponseExpiry(
+    public async Task SpsExchangeRejectsUnusableResponseExpiry(
         int responseExpiryMinutes,
         int completionAdvanceMinutes
     )
@@ -743,5 +742,342 @@ public sealed class TokenMaterializationWp4Tests
             );
             return await handler(request, call, cancellationToken);
         }
+    }
+
+    [Theory]
+    [InlineData(
+        "https://vssps.dev.azure.com/org/",
+        "https://vssps.dev.azure.com/org/_apis/Token/SessionTokens?tokenType=SelfDescribing&api-version=5.0-preview.1"
+    )]
+    [InlineData(
+        "https://app.vssps.dev.azure.com/org/",
+        "https://app.vssps.dev.azure.com/org/_apis/Token/SessionTokens?tokenType=SelfDescribing&api-version=5.0-preview.1"
+    )]
+    [InlineData(
+        "https://spsprodweu5.vssps.dev.azure.com/org/",
+        "https://spsprodweu5.vssps.dev.azure.com/org/_apis/Token/SessionTokens?tokenType=SelfDescribing&api-version=5.0-preview.1"
+    )]
+    public void SpsSessionEndpointAcceptsOfficialAzureDevOpsHosts(
+        string baseEndpoint,
+        string expectedEndpoint
+    )
+    {
+        bool accepted = AzureDevOpsSpsTokenExchange.TryCreateAllowedSessionEndpoint(
+            new Uri(baseEndpoint),
+            "org",
+            out Uri? endpoint
+        );
+
+        Assert.True(accepted);
+        Assert.Equal(new Uri(expectedEndpoint), endpoint);
+    }
+
+    [Theory]
+    [InlineData("https://evilvssps.dev.azure.com/org/")]
+    [InlineData("https://vssps.dev.azure.com.evil.example/org/")]
+    [InlineData("http://vssps.dev.azure.com/org/")]
+    [InlineData("https://vssps.dev.azure.com:444/org/")]
+    [InlineData("https://user@vssps.dev.azure.com/org/")]
+    [InlineData("https://vssps.dev.azure.com/other/")]
+    [InlineData("https://vssps.dev.azure.com/org/wrong")]
+    [InlineData("https://vssps.dev.azure.com/org/?unsafe=true")]
+    [InlineData("https://vssps.dev.azure.com/org/#unsafe")]
+    public void SpsSessionEndpointRejectsLookalikeOrUnsafeUris(string baseEndpoint)
+    {
+        bool accepted = AzureDevOpsSpsTokenExchange.TryCreateAllowedSessionEndpoint(
+            new Uri(baseEndpoint),
+            "org",
+            out Uri? endpoint
+        );
+
+        Assert.False(accepted);
+        Assert.Null(endpoint);
+    }
+
+    [Fact]
+    public void CreateProductionHttpHandlerUsesSystemProxyAndDisablesRedirectsCookiesAndCustomTlsValidation()
+    {
+        using SocketsHttpHandler handler =
+            AzureDevOpsSpsTokenExchange.CreateProductionHttpHandler();
+
+        Assert.True(handler.UseProxy);
+        Assert.Null(handler.Proxy);
+        Assert.False(handler.AllowAutoRedirect);
+        Assert.False(handler.UseCookies);
+        Assert.Null(handler.SslOptions.RemoteCertificateValidationCallback);
+    }
+
+    [Fact]
+    public async Task SpsExchangeRetriesTokenDurationPolicyBadRequestOnceWithoutValidTo()
+    {
+        const string tokenDurationPolicyBadRequest =
+            """{"type":"TokenDurationPolicy","message":"The requested validTo violates the token duration policy."}""";
+        DateTimeOffset serviceExpiry = Now.AddMinutes(45);
+        var handler = new RecordingHandler(
+            (_, call, _) =>
+            {
+                if (call == 1)
+                {
+                    var discovery = new HttpResponseMessage(HttpStatusCode.Unauthorized);
+                    discovery.Headers.Add(
+                        "X-VSS-AuthorizationEndpoint",
+                        "https://vssps.dev.azure.com/org/"
+                    );
+                    return Task.FromResult(discovery);
+                }
+
+                if (call == 2)
+                {
+                    return Task.FromResult(
+                        new HttpResponseMessage(HttpStatusCode.BadRequest)
+                        {
+                            Content = new StringContent(
+                                tokenDurationPolicyBadRequest,
+                                Encoding.UTF8,
+                                "application/json"
+                            ),
+                        }
+                    );
+                }
+
+                if (call == 3)
+                {
+                    return Task.FromResult(
+                        JsonResponse(
+                            $$"""{"token":"relaxed-session-token","validTo":"{{serviceExpiry:O}}"}"""
+                        )
+                    );
+                }
+
+                throw new InvalidOperationException("Only one relaxed retry is allowed.");
+            }
+        );
+        using var exchange = new AzureDevOpsSpsTokenExchange(
+            new HttpClient(handler),
+            new FixedTimeProvider(Now)
+        );
+        AcquiredAccessToken sourceToken = CreateAcquiredToken();
+        string expectedAuthorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue(
+                "Bearer",
+                sourceToken.Token.Value
+            ).ToString();
+
+        AsyncTokenExchangeResult result = await exchange.ExchangeAsync(
+            CreateRequest(CredentialEcosystem.NuGet, CredentialKind.NuGetPluginCredential),
+            sourceToken,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(AsyncTokenExchangeStatus.Success, result.Status);
+        Assert.Equal("relaxed-session-token", result.Token!.Value);
+        Assert.Equal(serviceExpiry, result.ExpiresAt);
+        Assert.Collection(
+            handler.Calls,
+            call =>
+            {
+                Assert.Equal(HttpMethod.Get, call.Method);
+                Assert.Equal(
+                    new Uri(
+                        "https://pkgs.dev.azure.com/org/_packaging/feed/nuget/v3/index.json"
+                    ),
+                    call.Uri
+                );
+                Assert.Null(call.Authorization);
+            },
+            firstPost =>
+            {
+                Assert.Equal(HttpMethod.Post, firstPost.Method);
+                Assert.Equal(
+                    new Uri(
+                        "https://vssps.dev.azure.com/org/_apis/Token/SessionTokens"
+                            + "?tokenType=SelfDescribing&api-version=5.0-preview.1"
+                    ),
+                    firstPost.Uri
+                );
+                Assert.Equal(expectedAuthorization, firstPost.Authorization);
+            },
+            retryPost =>
+            {
+                Assert.Equal(HttpMethod.Post, retryPost.Method);
+                Assert.Equal(handler.Calls[1].Uri, retryPost.Uri);
+                Assert.Equal(handler.Calls[1].Authorization, retryPost.Authorization);
+            }
+        );
+
+        using System.Text.Json.JsonDocument firstBody = System.Text.Json.JsonDocument.Parse(
+            handler.Calls[1].Body!
+        );
+        Assert.True(firstBody.RootElement.TryGetProperty("validTo", out var firstValidTo));
+        Assert.Equal(System.Text.Json.JsonValueKind.String, firstValidTo.ValueKind);
+        Assert.False(string.IsNullOrWhiteSpace(firstValidTo.GetString()));
+        string? firstDisplayName = firstBody.RootElement.GetProperty("displayName").GetString();
+        string? firstScope = firstBody.RootElement.GetProperty("scope").GetString();
+        Assert.Equal("Azure DevOps Artifacts Credential Provider", firstDisplayName);
+        Assert.Equal("vso.packaging_write vso.drop_write", firstScope);
+
+        using System.Text.Json.JsonDocument retryBody = System.Text.Json.JsonDocument.Parse(
+            handler.Calls[2].Body!
+        );
+        Assert.Equal(
+            firstDisplayName,
+            retryBody.RootElement.GetProperty("displayName").GetString()
+        );
+        Assert.Equal(firstScope, retryBody.RootElement.GetProperty("scope").GetString());
+        bool retryOmitsUsableValidTo =
+            !retryBody.RootElement.TryGetProperty("validTo", out var retryValidTo)
+            || retryValidTo.ValueKind == System.Text.Json.JsonValueKind.Null;
+        Assert.True(retryOmitsUsableValidTo);
+    }
+
+    [Fact]
+    public async Task SpsExchangeStopsAfterSecondTokenDurationPolicyBadRequest()
+    {
+        const string tokenDurationPolicyBadRequest =
+            """{"type":"TokenDurationPolicy","message":"The requested validTo violates the token duration policy."}""";
+        var handler = new RecordingHandler(
+            (_, call, _) =>
+            {
+                if (call == 1)
+                {
+                    var discovery = new HttpResponseMessage(HttpStatusCode.Unauthorized);
+                    discovery.Headers.Add(
+                        "X-VSS-AuthorizationEndpoint",
+                        "https://vssps.dev.azure.com/org/"
+                    );
+                    return Task.FromResult(discovery);
+                }
+
+                if (call is 2 or 3)
+                {
+                    return Task.FromResult(
+                        new HttpResponseMessage(HttpStatusCode.BadRequest)
+                        {
+                            Content = new StringContent(
+                                tokenDurationPolicyBadRequest,
+                                Encoding.UTF8,
+                                "application/json"
+                            ),
+                        }
+                    );
+                }
+
+                throw new InvalidOperationException("A second retry must not be attempted.");
+            }
+        );
+        using var exchange = new AzureDevOpsSpsTokenExchange(
+            new HttpClient(handler),
+            new FixedTimeProvider(Now)
+        );
+        AcquiredAccessToken sourceToken = CreateAcquiredToken();
+        string expectedAuthorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue(
+                "Bearer",
+                sourceToken.Token.Value
+            ).ToString();
+
+        AsyncTokenExchangeResult result = await exchange.ExchangeAsync(
+            CreateRequest(CredentialEcosystem.NuGet, CredentialKind.NuGetPluginCredential),
+            sourceToken,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(AsyncTokenExchangeStatus.Failed, result.Status);
+        Assert.Equal("SpsExchangeHttpStatus", result.Code);
+        Assert.Null(result.Token);
+        Assert.Null(result.ExpiresAt);
+        Assert.Collection(
+            handler.Calls,
+            call =>
+            {
+                Assert.Equal(HttpMethod.Get, call.Method);
+                Assert.Equal(
+                    new Uri(
+                        "https://pkgs.dev.azure.com/org/_packaging/feed/nuget/v3/index.json"
+                    ),
+                    call.Uri
+                );
+                Assert.Null(call.Authorization);
+            },
+            firstPost =>
+            {
+                Assert.Equal(HttpMethod.Post, firstPost.Method);
+                Assert.Equal(
+                    new Uri(
+                        "https://vssps.dev.azure.com/org/_apis/Token/SessionTokens"
+                            + "?tokenType=SelfDescribing&api-version=5.0-preview.1"
+                    ),
+                    firstPost.Uri
+                );
+                Assert.Equal(expectedAuthorization, firstPost.Authorization);
+            },
+            retryPost =>
+            {
+                Assert.Equal(HttpMethod.Post, retryPost.Method);
+                Assert.Equal(handler.Calls[1].Uri, retryPost.Uri);
+                Assert.Equal(handler.Calls[1].Authorization, retryPost.Authorization);
+            }
+        );
+
+        using System.Text.Json.JsonDocument firstBody = System.Text.Json.JsonDocument.Parse(
+            handler.Calls[1].Body!
+        );
+        Assert.True(firstBody.RootElement.TryGetProperty("validTo", out var firstValidTo));
+        Assert.Equal(System.Text.Json.JsonValueKind.String, firstValidTo.ValueKind);
+        Assert.False(string.IsNullOrWhiteSpace(firstValidTo.GetString()));
+        string? firstDisplayName = firstBody.RootElement.GetProperty("displayName").GetString();
+        string? firstScope = firstBody.RootElement.GetProperty("scope").GetString();
+        Assert.Equal("Azure DevOps Artifacts Credential Provider", firstDisplayName);
+        Assert.Equal("vso.packaging_write vso.drop_write", firstScope);
+
+        using System.Text.Json.JsonDocument retryBody = System.Text.Json.JsonDocument.Parse(
+            handler.Calls[2].Body!
+        );
+        Assert.Equal(
+            firstDisplayName,
+            retryBody.RootElement.GetProperty("displayName").GetString()
+        );
+        Assert.Equal(firstScope, retryBody.RootElement.GetProperty("scope").GetString());
+        bool retryOmitsUsableValidTo =
+            !retryBody.RootElement.TryGetProperty("validTo", out var retryValidTo)
+            || retryValidTo.ValueKind == System.Text.Json.JsonValueKind.Null;
+        Assert.True(retryOmitsUsableValidTo);
+    }
+
+    [Fact]
+    public async Task SpsExchangeAcceptsServiceAuthoritativeExpiryBeyondRequestedLifetime()
+    {
+        DateTimeOffset serviceExpiry = Now.AddHours(5);
+        var handler = CreateTwoStepHandler(
+            $$"""{"token":"service-authoritative-token","validTo":"{{serviceExpiry:O}}"}"""
+        );
+        using var exchange = new AzureDevOpsSpsTokenExchange(
+            new HttpClient(handler),
+            new FixedTimeProvider(Now)
+        );
+
+        AsyncTokenExchangeResult result = await exchange.ExchangeAsync(
+            CreateRequest(CredentialEcosystem.NuGet, CredentialKind.NuGetPluginCredential),
+            CreateAcquiredToken(),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(AsyncTokenExchangeStatus.Success, result.Status);
+        Assert.Equal("service-authoritative-token", result.Token!.Value);
+        Assert.Equal(serviceExpiry, result.ExpiresAt);
+        Assert.Collection(
+            handler.Calls,
+            call => Assert.Equal(HttpMethod.Get, call.Method),
+            call => Assert.Equal(HttpMethod.Post, call.Method)
+        );
+
+        using System.Text.Json.JsonDocument requestBody = System.Text.Json.JsonDocument.Parse(
+            handler.Calls[1].Body!
+        );
+        Assert.True(requestBody.RootElement.TryGetProperty("validTo", out var validToElement));
+        Assert.Equal(System.Text.Json.JsonValueKind.String, validToElement.ValueKind);
+        DateTimeOffset requestedValidTo = validToElement.GetDateTimeOffset();
+        Assert.Equal(Now.AddHours(4), requestedValidTo);
+        Assert.True(result.ExpiresAt > requestedValidTo);
     }
 }
