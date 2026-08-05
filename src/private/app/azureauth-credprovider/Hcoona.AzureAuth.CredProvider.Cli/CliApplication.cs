@@ -3004,6 +3004,14 @@ internal static class CliApplication
                 + GetCheckStatusText(doctorResult.KeyringShim.ExpectedShimExists),
             "python-keyring-shim-first-on-path: "
                 + GetCheckStatusText(doctorResult.KeyringShim.ExpectedShimFirstOnPath),
+            "python-interpreter: "
+                + (
+                    doctorResult.KeyringModuleProbe.PythonExecutablePath is null
+                        ? "not-found"
+                        : EscapeNonPrintingCharacters(
+                            doctorResult.KeyringModuleProbe.PythonExecutablePath
+                        )
+                ),
             "python-keyring-module: "
                 + GetCheckStatusText(doctorResult.KeyringModuleProbe.KeyringModuleResolvable),
             "python-azure-artifacts-endpoint-canonicalization: "

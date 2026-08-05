@@ -234,6 +234,42 @@ public sealed class CliApplicationTests
         }
     }
 
+    private sealed class RecordingPythonResolutionProcessRunner : IProcessRunner
+    {
+        private readonly Queue<Func<ProcessStartSpec, ProcessResult>> handlers = [];
+
+        public List<ProcessStartSpec> StartSpecs { get; } = [];
+
+        public void EnqueueResult(ProcessResult result)
+        {
+            ArgumentNullException.ThrowIfNull(result);
+            handlers.Enqueue(_ => result);
+        }
+
+        public void EnqueueFailure(Exception exception)
+        {
+            ArgumentNullException.ThrowIfNull(exception);
+            handlers.Enqueue(_ => throw exception);
+        }
+
+        public Task<ProcessResult> RunAsync(
+            ProcessStartSpec startSpec,
+            CancellationToken cancellationToken = default
+        )
+        {
+            ArgumentNullException.ThrowIfNull(startSpec);
+            cancellationToken.ThrowIfCancellationRequested();
+            StartSpecs.Add(startSpec);
+
+            if (handlers.Count == 0)
+            {
+                return Task.FromResult(new ProcessResult(0, string.Empty, string.Empty));
+            }
+
+            return Task.FromResult(handlers.Dequeue()(startSpec));
+        }
+    }
+
     [Fact]
     public void IdentityConcurrentChangeReturnsRetryableSafeError()
     {
@@ -4332,6 +4368,7 @@ public sealed class CliApplicationTests
                     "nuget-environment-overrides: absent",
                     "python-keyring-shim-exists: fail",
                     "python-keyring-shim-first-on-path: fail",
+                    "python-interpreter: not-found",
                     "python-keyring-module: fail",
                     "python-azure-artifacts-endpoint-canonicalization: pass",
                     "configuration-aggregation: pass",
@@ -4524,6 +4561,17 @@ public sealed class CliApplicationTests
                 ProductExecutablePath = CreateFakeProductExecutable(stateDirectory),
             },
             NuGetPhase10Options = CreateIsolatedNuGetPhase10Options(),
+            PythonPhase11Options = new PythonPhase11VerticalSliceOptions
+            {
+                FileSystem = new SystemFileSystem(),
+                ProcessRunner = new RecordingPythonResolutionProcessRunner(),
+                EnvironmentVariableReader = _ => null,
+                ExpectedKeyringShimPath = Path.Combine(
+                    stateDirectory,
+                    "missing-keyring"
+                ),
+                CurrentDirectoryPath = stateDirectory,
+            },
             ConfigurationPhase14Options = CreateConfigurationPhase14Options(stateDirectory),
         };
     }
@@ -6041,10 +6089,14 @@ public sealed class CliApplicationTests
         Healthy,
         MissingKeyringModule,
         ShadowedExpectedShim,
+        HealthyResolvedFromVirtualEnvironment,
+        ResolvedInterpreterMissingKeyringModule,
+        NoCurrentTerminalInterpreter,
     }
 
     private sealed class PythonDoctorFixture : IDisposable
     {
+        private readonly Dictionary<string, string?> environmentVariables = [];
         private string modeledPath;
 
         public PythonDoctorFixture(PythonDoctorFixtureMode mode)
@@ -6067,11 +6119,11 @@ public sealed class CliApplicationTests
                 OperatingSystem.IsWindows() ? "Scripts" : "bin"
             );
             CreateOwnerOnlyDirectory(scriptsDirectory);
-            string pythonExecutablePath = Path.Combine(
+            PythonExecutablePath = Path.Combine(
                 scriptsDirectory,
                 OperatingSystem.IsWindows() ? "python.exe" : "python"
             );
-            WriteExecutable(pythonExecutablePath);
+            WriteExecutable(PythonExecutablePath);
             string sitePackagesPath = OperatingSystem.IsWindows()
                 ? Path.Combine(environmentRoot, "Lib", "site-packages")
                 : Path.Combine(environmentRoot, "lib", "python3.11", "site-packages");
@@ -6079,6 +6131,8 @@ public sealed class CliApplicationTests
             CreateOwnerOnlyDirectory(Path.Combine(sitePackagesPath, "keyring"));
 
             modeledPath = shimDirectory;
+            ResolutionProcessRunner = new RecordingPythonResolutionProcessRunner();
+            bool useExplicitPythonExecutablePath = true;
             if (mode == PythonDoctorFixtureMode.MissingKeyringModule)
             {
                 DeleteDirectoryIfExists(Path.Combine(sitePackagesPath, "keyring"));
@@ -6095,13 +6149,36 @@ public sealed class CliApplicationTests
                     + Path.PathSeparator
                     + Path.GetDirectoryName(expectedKeyringShimPath);
             }
+            else if (mode == PythonDoctorFixtureMode.HealthyResolvedFromVirtualEnvironment)
+            {
+                useExplicitPythonExecutablePath = false;
+                environmentVariables["VIRTUAL_ENV"] = environmentRoot;
+            }
+            else if (mode == PythonDoctorFixtureMode.ResolvedInterpreterMissingKeyringModule)
+            {
+                useExplicitPythonExecutablePath = false;
+                environmentVariables["VIRTUAL_ENV"] = environmentRoot;
+                DeleteDirectoryIfExists(Path.Combine(sitePackagesPath, "keyring"));
+            }
+            else if (mode == PythonDoctorFixtureMode.NoCurrentTerminalInterpreter)
+            {
+                useExplicitPythonExecutablePath = false;
+                environmentVariables["TOX_ENV_DIR"] = environmentRoot;
+                ResolutionProcessRunner.EnqueueResult(ProcessResult.LaunchFailure());
+                ResolutionProcessRunner.EnqueueResult(ProcessResult.LaunchFailure());
+            }
+
+            environmentVariables["PATH"] = modeledPath;
 
             Options = new PythonPhase11VerticalSliceOptions
             {
                 FileSystem = new SystemFileSystem(),
+                ProcessRunner = ResolutionProcessRunner,
                 EnvironmentVariableReader = ReadEnvironmentVariable,
                 ExpectedKeyringShimPath = expectedKeyringShimPath,
-                PythonExecutablePath = pythonExecutablePath,
+                PythonExecutablePath = useExplicitPythonExecutablePath
+                    ? PythonExecutablePath
+                    : null,
                 CurrentDirectoryPath = RootPath,
                 PathListSeparator = Path.PathSeparator,
                 KeyringExecutableFileName = keyringExecutableFileName,
@@ -6112,6 +6189,10 @@ public sealed class CliApplicationTests
 
         public bool PathWasRequested { get; private set; }
 
+        public string PythonExecutablePath { get; }
+
+        public RecordingPythonResolutionProcessRunner ResolutionProcessRunner { get; }
+
         public PythonPhase11VerticalSliceOptions Options { get; }
 
         public void Dispose() => DeleteDirectoryIfExists(RootPath);
@@ -6121,10 +6202,9 @@ public sealed class CliApplicationTests
             if (string.Equals(name, "PATH", StringComparison.Ordinal))
             {
                 PathWasRequested = true;
-                return modeledPath;
             }
 
-            return null;
+            return environmentVariables.TryGetValue(name, out string? value) ? value : null;
         }
 
         private static void WriteExecutable(string path)
@@ -6147,6 +6227,90 @@ public sealed class CliApplicationTests
     [Fact]
     public void DoctorPathShadowedPythonKeyringShimRendersFailureAndReturnsNonZero() =>
         AssertDoctorPythonFailure(PythonDoctorFixtureMode.ShadowedExpectedShim);
+
+    [Fact]
+    public void DoctorResolvesCurrentTerminalVirtualEnvironmentWithoutExplicitPythonPath()
+    {
+        using var pythonFixture = new PythonDoctorFixture(
+            PythonDoctorFixtureMode.HealthyResolvedFromVirtualEnvironment
+        );
+        CliRuntimeOptions runtime = CreateHealthyDoctorRuntimeOptions(pythonFixture);
+
+        CommandResult configureGit = InvokeWithRuntime(runtime, "configure", "git");
+        CommandResult doctor = InvokeWithRuntime(runtime, "doctor");
+
+        Assert.Equal(0, configureGit.ExitCode);
+        Assert.Equal(string.Empty, configureGit.StdErr);
+        Assert.Equal(0, doctor.ExitCode);
+        AssertDoctorCheck(doctor.StdOut, "python-keyring-shim-exists", "pass");
+        AssertDoctorCheck(doctor.StdOut, "python-keyring-shim-first-on-path", "pass");
+        AssertDoctorCheck(
+            doctor.StdOut,
+            "python-interpreter",
+            pythonFixture.PythonExecutablePath
+        );
+        AssertDoctorCheck(doctor.StdOut, "python-keyring-module", "pass");
+        AssertDoctorCheck(doctor.StdOut, "doctor-aggregation", "pass");
+        Assert.Empty(pythonFixture.ResolutionProcessRunner.StartSpecs);
+        Assert.True(pythonFixture.PathWasRequested);
+        Assert.DoesNotContain("machine-wide", doctor.StdOut, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void DoctorFailsResolvedCurrentTerminalInterpreterWhenKeyringModuleIsMissing()
+    {
+        using var pythonFixture = new PythonDoctorFixture(
+            PythonDoctorFixtureMode.ResolvedInterpreterMissingKeyringModule
+        );
+        CliRuntimeOptions runtime = CreateHealthyDoctorRuntimeOptions(pythonFixture);
+
+        CommandResult configureGit = InvokeWithRuntime(runtime, "configure", "git");
+        CommandResult doctor = InvokeWithRuntime(runtime, "doctor");
+
+        Assert.Equal(0, configureGit.ExitCode);
+        Assert.Equal(string.Empty, configureGit.StdErr);
+        Assert.Equal(1, doctor.ExitCode);
+        AssertDoctorCheck(doctor.StdOut, "python-keyring-shim-exists", "pass");
+        AssertDoctorCheck(doctor.StdOut, "python-keyring-shim-first-on-path", "pass");
+        AssertDoctorCheck(
+            doctor.StdOut,
+            "python-interpreter",
+            pythonFixture.PythonExecutablePath
+        );
+        AssertDoctorCheck(doctor.StdOut, "python-keyring-module", "fail");
+        AssertDoctorCheck(doctor.StdOut, "doctor-aggregation", "fail");
+        Assert.Empty(pythonFixture.ResolutionProcessRunner.StartSpecs);
+        Assert.True(pythonFixture.PathWasRequested);
+        Assert.DoesNotContain("machine-wide", doctor.StdOut, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void DoctorFailsWhenNoCurrentTerminalPythonInterpreterExists()
+    {
+        using var pythonFixture = new PythonDoctorFixture(
+            PythonDoctorFixtureMode.NoCurrentTerminalInterpreter
+        );
+        CliRuntimeOptions runtime = CreateHealthyDoctorRuntimeOptions(pythonFixture);
+
+        CommandResult configureGit = InvokeWithRuntime(runtime, "configure", "git");
+        CommandResult doctor = InvokeWithRuntime(runtime, "doctor");
+
+        Assert.Equal(0, configureGit.ExitCode);
+        Assert.Equal(string.Empty, configureGit.StdErr);
+        Assert.Equal(1, doctor.ExitCode);
+        AssertDoctorCheck(doctor.StdOut, "python-keyring-shim-exists", "pass");
+        AssertDoctorCheck(doctor.StdOut, "python-keyring-shim-first-on-path", "pass");
+        AssertDoctorCheck(doctor.StdOut, "python-interpreter", "not-found");
+        AssertDoctorCheck(doctor.StdOut, "python-keyring-module", "fail");
+        AssertDoctorCheck(doctor.StdOut, "doctor-aggregation", "fail");
+        Assert.Collection(
+            pythonFixture.ResolutionProcessRunner.StartSpecs,
+            startSpec => Assert.Equal("python3", startSpec.FileName),
+            startSpec => Assert.Equal("python", startSpec.FileName)
+        );
+        Assert.True(pythonFixture.PathWasRequested);
+        Assert.DoesNotContain("machine-wide", doctor.StdOut, StringComparison.OrdinalIgnoreCase);
+    }
 
     private static void AssertDoctorPythonFailure(PythonDoctorFixtureMode mode)
     {

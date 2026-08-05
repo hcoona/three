@@ -110,6 +110,22 @@ def test_endpoint_rejects_non_default_and_malformed_ports(port: str) -> None:
     assert check.status == EndpointStatus.INVALID
 
 
+@pytest.mark.parametrize(
+    "service",
+    [
+        "https:///pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/",
+        "https:///dev.azure.com/org/project/_packaging/feed/pypi/upload/",
+    ],
+)
+def test_endpoint_invalidates_leading_slash_azure_host_regression(
+    service: str,
+) -> None:
+    """Keep malformed Azure URLs invalid when the host moves into the path."""
+    check = classify_python_feed_endpoint(service)
+
+    assert check.status == EndpointStatus.INVALID
+
+
 def test_backend_unsupported_host_returns_none_without_manifest(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -205,6 +221,114 @@ def test_backend_malformed_recognized_azure_services_fail_explicitly(
         match="Azure Artifacts Python feed URL",
     ):
         backend.get_credential(service, "user")
+    assert helper_calls == []
+
+
+@pytest.mark.parametrize("service", ["PyPI", "system credential"])
+def test_backend_non_url_service_names_still_chain_regression(
+    monkeypatch: pytest.MonkeyPatch,
+    service: str,
+) -> None:
+    """Ordinary non-URL service names still chain to other backends."""
+    helper_calls: list[tuple[object, ...]] = []
+
+    def unexpected_helper_call(*args: object, **kwargs: object) -> None:
+        helper_calls.append((*args, kwargs))
+        pytest.fail("ordinary non-URL service invoked the AzureAuth helper")
+
+    monkeypatch.setattr(
+        backend_module,
+        "get_password",
+        unexpected_helper_call,
+    )
+    monkeypatch.setattr(
+        backend_module,
+        "get_credentials",
+        unexpected_helper_call,
+    )
+    backend = AzureAuthKeyringBackend()
+
+    assert backend.get_password(service, "user") is None
+    assert backend.get_credential(service, "user") is None
+    assert helper_calls == []
+
+
+@pytest.mark.parametrize(
+    "service",
+    [
+        "https:///pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/",
+        "https:///dev.azure.com/org/project/_packaging/feed/pypi/upload/",
+    ],
+)
+def test_backend_leading_slash_azure_hosts_fail_explicitly_regression(
+    monkeypatch: pytest.MonkeyPatch,
+    service: str,
+) -> None:
+    """Malformed Azure feed URLs fail explicitly instead of chaining."""
+    helper_calls: list[tuple[object, ...]] = []
+
+    def unexpected_helper_call(*args: object, **kwargs: object) -> None:
+        helper_calls.append((*args, kwargs))
+        pytest.fail("malformed Azure URL invoked the AzureAuth helper")
+
+    monkeypatch.setattr(
+        backend_module,
+        "get_password",
+        unexpected_helper_call,
+    )
+    monkeypatch.setattr(
+        backend_module,
+        "get_credentials",
+        unexpected_helper_call,
+    )
+    backend = AzureAuthKeyringBackend()
+
+    with pytest.raises(
+        HelperProtocolError,
+        match="Azure Artifacts Python feed URL",
+    ):
+        backend.get_password(service, "user")
+    with pytest.raises(
+        HelperProtocolError,
+        match="Azure Artifacts Python feed URL",
+    ):
+        backend.get_credential(service, "user")
+    assert helper_calls == []
+
+
+@pytest.mark.parametrize(
+    "service",
+    [
+        "https:///example.com/simple/",
+        "https://[example.com",
+        "/pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/",
+    ],
+)
+def test_backend_unrelated_malformed_services_still_chain_regression(
+    monkeypatch: pytest.MonkeyPatch,
+    service: str,
+) -> None:
+    """Malformed non-Azure strings still chain to other backends."""
+    helper_calls: list[tuple[object, ...]] = []
+
+    def unexpected_helper_call(*args: object, **kwargs: object) -> None:
+        helper_calls.append((*args, kwargs))
+        pytest.fail("unrelated malformed service invoked the AzureAuth helper")
+
+    monkeypatch.setattr(
+        backend_module,
+        "get_password",
+        unexpected_helper_call,
+    )
+    monkeypatch.setattr(
+        backend_module,
+        "get_credentials",
+        unexpected_helper_call,
+    )
+    backend = AzureAuthKeyringBackend()
+
+    assert backend.get_password(service, "user") is None
+    assert backend.get_credential(service, "user") is None
     assert helper_calls == []
 
 

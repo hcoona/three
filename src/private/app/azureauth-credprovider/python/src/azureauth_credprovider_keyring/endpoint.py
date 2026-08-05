@@ -52,7 +52,15 @@ def classify_python_feed_endpoint(service: str) -> EndpointCheck:
         )
         result = EndpointCheck(status)
     else:
-        result = _classify_parsed_endpoint(parsed)
+        if (
+            parsed.hostname is None
+            and "://" in service
+            and parsed.path.startswith("/")
+            and _targets_recognized_azure_domain(parsed.path.lstrip("/"))
+        ):
+            result = EndpointCheck(EndpointStatus.INVALID)
+        else:
+            result = _classify_parsed_endpoint(parsed)
 
     return result
 

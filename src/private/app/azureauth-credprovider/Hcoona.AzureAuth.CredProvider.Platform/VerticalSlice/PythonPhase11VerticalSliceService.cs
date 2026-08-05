@@ -2,12 +2,15 @@ using System.Diagnostics.CodeAnalysis;
 using Hcoona.AzureAuth.CredProvider.Contracts;
 using Hcoona.AzureAuth.CredProvider.Platform.Configuration;
 using Hcoona.AzureAuth.CredProvider.Platform.FileSystem;
+using Hcoona.AzureAuth.CredProvider.Platform.Processes;
 
 namespace Hcoona.AzureAuth.CredProvider.Platform.VerticalSlice;
 
 public sealed record PythonPhase11VerticalSliceOptions
 {
     public IFileSystem? FileSystem { get; init; }
+
+    public IProcessRunner? ProcessRunner { get; init; }
 
     public Func<string, string?>? EnvironmentVariableReader { get; init; }
 
@@ -134,12 +137,14 @@ public sealed class PythonPhase11VerticalSliceService
     private readonly IFileSystem fileSystem;
     private readonly string keyringExecutableFileName;
     private readonly char pathListSeparator;
+    private readonly IProcessRunner processRunner;
     private readonly string? pythonExecutablePath;
 
     public PythonPhase11VerticalSliceService(PythonPhase11VerticalSliceOptions? options = null)
     {
         options ??= new PythonPhase11VerticalSliceOptions();
         fileSystem = options.FileSystem ?? new SystemFileSystem();
+        processRunner = options.ProcessRunner ?? new SystemProcessRunner();
         environmentVariableReader =
             options.EnvironmentVariableReader ?? Environment.GetEnvironmentVariable;
         currentDirectoryPath = fileSystem.GetFullPath(
@@ -158,7 +163,7 @@ public sealed class PythonPhase11VerticalSliceService
 
     public string ExpectedKeyringShimPath { get; }
 
-    public ValueTask<PythonPhase11DoctorResult> RunDoctorAsync(
+    public async ValueTask<PythonPhase11DoctorResult> RunDoctorAsync(
         CancellationToken cancellationToken = default
     )
     {
@@ -166,18 +171,19 @@ public sealed class PythonPhase11VerticalSliceService
 
         PythonPhase11KeyringShimProbe keyringShim = ProbeKeyringShim();
         List<PythonPhase11EnvironmentProbe> environmentProbes = DiscoverEnvironmentProbes();
-        PythonPhase11KeyringModuleProbe keyringModuleProbe = ProbeKeyringModule();
+        PythonPhase11KeyringModuleProbe keyringModuleProbe = await ProbeKeyringModuleAsync(
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
-        return ValueTask.FromResult(
-            new PythonPhase11DoctorResult
-            {
-                KeyringShim = keyringShim,
-                EnvironmentProbes = environmentProbes,
-                KeyringModuleProbe = keyringModuleProbe,
-                AzureArtifactsPythonEndpointCanonicalizationSuccess =
-                    CheckAzureArtifactsPythonEndpointCanonicalization(),
-            }
-        );
+        return new PythonPhase11DoctorResult
+        {
+            KeyringShim = keyringShim,
+            EnvironmentProbes = environmentProbes,
+            KeyringModuleProbe = keyringModuleProbe,
+            AzureArtifactsPythonEndpointCanonicalizationSuccess =
+                CheckAzureArtifactsPythonEndpointCanonicalization(),
+        };
     }
 
     private List<PythonPhase11EnvironmentProbe> DiscoverEnvironmentProbes()
@@ -272,7 +278,7 @@ public sealed class PythonPhase11VerticalSliceService
     {
         string expectedShimPath = fileSystem.GetFullPath(ExpectedKeyringShimPath);
         string expectedShimDirectoryPath =
-            Path.GetDirectoryName(expectedShimPath)
+            GetDirectoryPath(expectedShimPath)
             ?? throw new InvalidOperationException(
                 "The expected keyring shim path has no directory."
             );
@@ -307,9 +313,20 @@ public sealed class PythonPhase11VerticalSliceService
         };
     }
 
-    private PythonPhase11KeyringModuleProbe ProbeKeyringModule()
+    private async ValueTask<PythonPhase11KeyringModuleProbe> ProbeKeyringModuleAsync(
+        CancellationToken cancellationToken
+    )
     {
-        if (pythonExecutablePath is null)
+        string? effectivePythonExecutablePath = pythonExecutablePath;
+        if (effectivePythonExecutablePath is null)
+        {
+            effectivePythonExecutablePath = await ResolveCurrentTerminalPythonExecutablePathAsync(
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+
+        if (effectivePythonExecutablePath is null)
         {
             return new PythonPhase11KeyringModuleProbe
             {
@@ -317,10 +334,11 @@ public sealed class PythonPhase11VerticalSliceService
                 PythonExecutableExists = false,
                 Attempted = false,
                 KeyringModuleResolvable = false,
+                FailureMessage = "Current-terminal Python interpreter could not be resolved.",
             };
         }
 
-        string normalizedPythonExecutablePath = fileSystem.GetFullPath(pythonExecutablePath);
+        string normalizedPythonExecutablePath = fileSystem.GetFullPath(effectivePythonExecutablePath);
         bool pythonExecutableExists = fileSystem.FileExists(normalizedPythonExecutablePath);
         if (
             !TryResolveSitePackagesPath(
@@ -353,6 +371,111 @@ public sealed class PythonPhase11VerticalSliceService
             SitePackagesPath = sitePackagesPath,
             KeyringModuleResolvable = pythonExecutableExists && keyringPackagePresent,
         };
+    }
+
+    private async ValueTask<string?> ResolveCurrentTerminalPythonExecutablePathAsync(
+        CancellationToken cancellationToken
+    )
+    {
+        string? virtualEnv = NullIfWhiteSpace(environmentVariableReader(VirtualEnvVariableName));
+        string? virtualEnvPython = TryResolveVirtualEnvPythonExecutablePath(virtualEnv);
+        if (virtualEnvPython is not null)
+        {
+            return virtualEnvPython;
+        }
+
+        string? python3Path = await TryResolvePythonCommandExecutablePathAsync(
+                "python3",
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        if (python3Path is not null)
+        {
+            return python3Path;
+        }
+
+        return await TryResolvePythonCommandExecutablePathAsync("python", cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private string? TryResolveVirtualEnvPythonExecutablePath(string? virtualEnv)
+    {
+        if (virtualEnv is null)
+        {
+            return null;
+        }
+
+        foreach (string candidatePath in GetVirtualEnvPythonCandidatePaths(virtualEnv))
+        {
+            string normalizedCandidatePath = fileSystem.GetFullPath(candidatePath);
+            if (fileSystem.IsExecutableFile(normalizedCandidatePath))
+            {
+                return normalizedCandidatePath;
+            }
+        }
+
+        return null;
+    }
+
+    private IEnumerable<string> GetVirtualEnvPythonCandidatePaths(string virtualEnv)
+    {
+        bool preferWindowsLayout =
+            keyringExecutableFileName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            || LooksLikeWindowsPath(virtualEnv);
+        if (preferWindowsLayout)
+        {
+            yield return $"{virtualEnv}/Scripts/python.exe";
+            yield break;
+        }
+
+        yield return $"{virtualEnv}/bin/python";
+    }
+
+    private async ValueTask<string?> TryResolvePythonCommandExecutablePathAsync(
+        string commandName,
+        CancellationToken cancellationToken
+    )
+    {
+        ProcessResult result;
+        try
+        {
+            result = await processRunner.RunAsync(
+                    new ProcessStartSpec(
+                        commandName,
+                        ["-c", "import os, sys; print(os.path.realpath(sys.executable))"],
+                        environment: BuildPythonCommandResolutionEnvironment()
+                    ),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            return null;
+        }
+
+        if (!result.Succeeded)
+        {
+            return null;
+        }
+
+        string? resolvedPath = result.StandardOutput.Split(
+                ['\r', '\n'],
+                StringSplitOptions.RemoveEmptyEntries
+            )
+            .Select(static line => line.Trim())
+            .FirstOrDefault(static line => line.Length > 0);
+        return resolvedPath is null ? null : fileSystem.GetFullPath(resolvedPath);
+    }
+
+    private Dictionary<string, string?>? BuildPythonCommandResolutionEnvironment()
+    {
+        string? path = environmentVariableReader(PathVariableName);
+        return path is null ? null : new Dictionary<string, string?> { [PathVariableName] = path };
     }
 
     private static bool CheckAzureArtifactsPythonEndpointCanonicalization()
@@ -497,8 +620,8 @@ public sealed class PythonPhase11VerticalSliceService
     )
     {
         sitePackagesPath = null;
-        string? scriptsDirectory = Path.GetDirectoryName(pythonExecutablePath);
-        string? environmentRoot = Path.GetDirectoryName(scriptsDirectory);
+        string? scriptsDirectory = GetDirectoryPath(pythonExecutablePath);
+        string? environmentRoot = scriptsDirectory is null ? null : GetDirectoryPath(scriptsDirectory);
         if (
             string.IsNullOrWhiteSpace(scriptsDirectory)
             || string.IsNullOrWhiteSpace(environmentRoot)
@@ -507,10 +630,10 @@ public sealed class PythonPhase11VerticalSliceService
             return false;
         }
 
-        string scriptsDirectoryName = Path.GetFileName(scriptsDirectory);
+        string scriptsDirectoryName = GetFileName(scriptsDirectory);
         if (string.Equals(scriptsDirectoryName, "Scripts", StringComparison.OrdinalIgnoreCase))
         {
-            string windowsSitePackagesPath = Path.Combine(environmentRoot, "Lib", "site-packages");
+            string windowsSitePackagesPath = $"{environmentRoot}/Lib/site-packages";
             if (fileSystem.DirectoryExists(windowsSitePackagesPath))
             {
                 sitePackagesPath = fileSystem.GetFullPath(windowsSitePackagesPath);
@@ -525,7 +648,7 @@ public sealed class PythonPhase11VerticalSliceService
             return false;
         }
 
-        string libDirectory = Path.Combine(environmentRoot, "lib");
+        string libDirectory = $"{environmentRoot}/lib";
         if (!fileSystem.DirectoryExists(libDirectory))
         {
             return false;
@@ -534,7 +657,7 @@ public sealed class PythonPhase11VerticalSliceService
         sitePackagesPath = fileSystem
             .EnumerateDirectories(libDirectory, "python*")
             .Order(StringComparer.Ordinal)
-            .Select(pythonVersionDirectory => Path.Combine(pythonVersionDirectory, "site-packages"))
+            .Select(pythonVersionDirectory => $"{pythonVersionDirectory}/site-packages")
             .FirstOrDefault(fileSystem.DirectoryExists);
         if (sitePackagesPath is null)
         {
@@ -642,6 +765,38 @@ public sealed class PythonPhase11VerticalSliceService
         return separatorIndex < 0 ? path : path[(separatorIndex + 1)..];
     }
 
+    private static string? GetDirectoryPath(string path)
+    {
+        int endIndex = path.Length - 1;
+        while (endIndex >= 0 && (path[endIndex] == '/' || path[endIndex] == '\\'))
+        {
+            endIndex--;
+        }
+
+        if (endIndex < 0)
+        {
+            return null;
+        }
+
+        int separatorIndex = path.LastIndexOfAny(['/', '\\'], endIndex);
+        if (separatorIndex < 0)
+        {
+            return null;
+        }
+
+        if (separatorIndex == 0)
+        {
+            return path[..1];
+        }
+
+        if (separatorIndex == 2 && path.Length >= 3 && path[1] == ':')
+        {
+            return path[..3];
+        }
+
+        return path[..separatorIndex];
+    }
+
     private static bool PathHasSegment(string? path, string segment)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -652,6 +807,9 @@ public sealed class PythonPhase11VerticalSliceService
         return path.Split('/', '\\')
             .Any(part => string.Equals(part, segment, StringComparison.OrdinalIgnoreCase));
     }
+
+    private static bool LooksLikeWindowsPath(string path) =>
+        path.Length >= 2 && char.IsAsciiLetter(path[0]) && path[1] == ':';
 
     private bool SamePath(string left, string right) =>
         string.Equals(
