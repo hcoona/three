@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from dataclasses import dataclass
 from typing import TextIO
@@ -23,6 +24,8 @@ from azureauth_credprovider_keyring.helper import invoke_helper
 
 GET_MIN_ARG_COUNT = 2
 MODE_ARG_COUNT = 2
+OUTPUT_JSON = "json"
+OUTPUT_PLAIN = "plain"
 
 
 @dataclass(frozen=True)
@@ -32,6 +35,7 @@ class ShimRequest:
     service: str
     username: str | None
     mode: str
+    output: str
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -62,12 +66,20 @@ def run(argv: list[str], *, stdout: TextIO, stderr: TextIO) -> int:
             request.username,
             mode=request.mode,
         )
-        if request.mode == MODE_CREDENTIALS:
-            if credential.username is None:
-                stderr.write(
-                    "error: keyring helper did not return a username.\n"
-                )
-                return EXIT_CONFIGURATION_ERROR
+        if request.mode == MODE_CREDENTIALS and credential.username is None:
+            stderr.write("error: keyring helper did not return a username.\n")
+            return EXIT_CONFIGURATION_ERROR
+        if request.output == OUTPUT_JSON:
+            payload = (
+                {
+                    "username": credential.username,
+                    "password": credential.password,
+                }
+                if request.mode == MODE_CREDENTIALS
+                else {"password": credential.password}
+            )
+            stdout.write(json.dumps(payload) + "\n")
+        elif request.mode == MODE_CREDENTIALS:
             stdout.write(f"{credential.username}\n{credential.password}\n")
         else:
             stdout.write(f"{credential.password}\n")
@@ -82,6 +94,8 @@ def run(argv: list[str], *, stdout: TextIO, stderr: TextIO) -> int:
 
 
 def _parse_args(argv: list[str]) -> ShimRequest:
+    argv, mode, output = _parse_global_options(argv)
+
     if len(argv) < GET_MIN_ARG_COUNT or argv[0] != "get":
         message = "keyring shim supports only the get command."
         raise KeyringHelperError(EXIT_CONFIGURATION_ERROR, message)
@@ -89,8 +103,10 @@ def _parse_args(argv: list[str]) -> ShimRequest:
     service = argv[1]
     remaining = argv[2:]
     username: str | None = None
-    mode = MODE_PASSWORD
 
+    if remaining and remaining[0].startswith("--") and remaining[0] != "--mode":
+        message = "keyring shim get syntax is invalid."
+        raise KeyringHelperError(EXIT_CONFIGURATION_ERROR, message)
     if remaining and remaining[0] != "--mode":
         username = remaining[0]
         remaining = remaining[1:]
@@ -104,5 +120,30 @@ def _parse_args(argv: list[str]) -> ShimRequest:
     if mode not in {MODE_PASSWORD, MODE_CREDENTIALS}:
         message = "keyring shim mode must be password or creds."
         raise KeyringHelperError(EXIT_CONFIGURATION_ERROR, message)
+    if output not in {OUTPUT_PLAIN, OUTPUT_JSON}:
+        message = "keyring shim output must be plain or json."
+        raise KeyringHelperError(EXIT_CONFIGURATION_ERROR, message)
 
-    return ShimRequest(service=service, username=username, mode=mode)
+    return ShimRequest(
+        service=service,
+        username=username,
+        mode=mode,
+        output=output,
+    )
+
+
+def _parse_global_options(argv: list[str]) -> tuple[list[str], str, str]:
+    mode = MODE_PASSWORD
+    output = OUTPUT_PLAIN
+    while argv and argv[0].startswith("--"):
+        option = argv[0]
+        if option.startswith("--mode="):
+            mode = option.removeprefix("--mode=")
+        elif option.startswith("--output="):
+            output = option.removeprefix("--output=")
+        else:
+            message = "keyring shim option is invalid."
+            raise KeyringHelperError(EXIT_CONFIGURATION_ERROR, message)
+        argv = argv[1:]
+
+    return argv, mode, output

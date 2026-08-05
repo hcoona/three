@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling>=1.24.2"]
+requires = ["hatchling>=1.24.2", "nbgv-python"]
 build-backend = "hatchling.build"
 
 [project]
 name = "azureauth-credprovider-keyring"
-version = "0.0.0-dev"
+dynamic = ["version"]
 description = "Python keyring backend and shim for azureauth-credprovider."
 readme = "README.md"
 authors = [{ name = "Shuai Zhang", email = "zhangshuai.ustc@gmail.com" }]
@@ -25,6 +25,12 @@ dev = ["pytest>=8.3.4"]
 [tool.hatch.build.targets.wheel]
 packages = ["src/azureauth_credprovider_keyring"]
 
+[tool.hatch.version]
+source = "nbgv"
+
+[tool.hatch.version.nbgv]
+version-field = "SemVer2"
+
 [tool.ruff]
 extend = "../../../../../pyproject.toml"
 
@@ -35,3 +41,6 @@ extend = "../../../../../pyproject.toml"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.uv.sources]
+nbgv-python = { workspace = true }

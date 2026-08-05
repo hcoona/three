@@ -60,7 +60,6 @@ $projectPath = Join-Path $repoRoot (
     'src/private/app/azureauth-credprovider/' +
     'Hcoona.AzureAuth.CredProvider.Cli/Hcoona.AzureAuth.CredProvider.Cli.csproj'
 )
-$pythonProjectPath = Join-Path $repoRoot 'src/private/app/azureauth-credprovider/python'
 $stagingRoot = Join-Path $outputRootPath "staging/$BuildOs/$TargetRid"
 $appRoot = Join-Path $stagingRoot 'app'
 $launcherRoot = Join-Path $stagingRoot 'launchers'
@@ -89,9 +88,12 @@ try {
         exit $LASTEXITCODE
     }
 
-    Push-Location $pythonProjectPath
+    Push-Location $repoRoot
     try {
-        uv build --wheel --out-dir $pythonRoot
+        uv build `
+            --package azureauth-credprovider-keyring `
+            --wheel `
+            --out-dir $pythonRoot
         if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
         }

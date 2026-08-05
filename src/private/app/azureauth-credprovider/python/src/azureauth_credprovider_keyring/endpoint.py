@@ -11,6 +11,11 @@ DIRECT_FEED_SEGMENT_COUNT = 4
 PROJECT_FEED_SEGMENT_COUNT = 5
 CONTROL_CHARACTER_CATEGORY = "Cc"
 SUPPORTED_PYPI_ENDPOINT_KINDS = {"simple", "upload"}
+RECOGNIZED_MODERN_HOSTS = {"pkgs.dev.azure.com", "dev.azure.com"}
+RECOGNIZED_LEGACY_HOST_SUFFIXES = (
+    ".pkgs.visualstudio.com",
+    ".visualstudio.com",
+)
 
 
 class EndpointStatus(Enum):
@@ -40,7 +45,12 @@ def classify_python_feed_endpoint(service: str) -> EndpointCheck:
     try:
         parsed = urlsplit(service)
     except ValueError:
-        result = EndpointCheck(EndpointStatus.INVALID)
+        status = (
+            EndpointStatus.INVALID
+            if _targets_recognized_azure_domain(service)
+            else EndpointStatus.UNSUPPORTED
+        )
+        result = EndpointCheck(status)
     else:
         result = _classify_parsed_endpoint(parsed)
 
@@ -50,13 +60,15 @@ def classify_python_feed_endpoint(service: str) -> EndpointCheck:
 def _classify_parsed_endpoint(parsed: SplitResult) -> EndpointCheck:
     host = parsed.hostname.lower() if parsed.hostname else None
     if host is None:
-        return EndpointCheck(EndpointStatus.INVALID)
+        status = (
+            EndpointStatus.INVALID
+            if _targets_recognized_azure_domain(parsed.path)
+            else EndpointStatus.UNSUPPORTED
+        )
+        return EndpointCheck(status)
 
     legacy_organization = _legacy_organization(host)
-    if (
-        host not in {"pkgs.dev.azure.com", "dev.azure.com"}
-        and legacy_organization is None
-    ):
+    if host not in RECOGNIZED_MODERN_HOSTS and legacy_organization is None:
         return EndpointCheck(EndpointStatus.UNSUPPORTED, host=host)
 
     try:
@@ -178,13 +190,34 @@ def _decode_path_segments(path: str) -> list[str] | None:
 
 
 def _legacy_organization(host: str) -> str | None:
-    for suffix in (".pkgs.visualstudio.com", ".visualstudio.com"):
+    for suffix in RECOGNIZED_LEGACY_HOST_SUFFIXES:
         if host.endswith(suffix) and len(host) > len(suffix):
             organization = host[: -len(suffix)]
             if organization.strip() and "." not in organization:
                 return organization
 
     return None
+
+
+def _targets_recognized_azure_domain(service: str) -> bool:
+    candidate = service.strip().casefold()
+    if "://" in candidate:
+        candidate = candidate.split("://", maxsplit=1)[1]
+    candidate = candidate.split("/", maxsplit=1)[0]
+    candidate = candidate.split("?", maxsplit=1)[0]
+    candidate = candidate.split("#", maxsplit=1)[0]
+    candidate = candidate.rsplit("@", maxsplit=1)[-1]
+    if candidate.startswith("["):
+        candidate = candidate[1:].split("]", maxsplit=1)[0]
+    else:
+        candidate = candidate.split(":", maxsplit=1)[0]
+    candidate = candidate.rstrip(".")
+
+    if candidate in RECOGNIZED_MODERN_HOSTS:
+        return True
+    return any(
+        candidate.endswith(suffix) for suffix in RECOGNIZED_LEGACY_HOST_SUFFIXES
+    )
 
 
 def _contains_control_character(value: str) -> bool:

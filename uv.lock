@@ -335,7 +335,6 @@ wheels = [
 
 [[package]]
 name = "azureauth-credprovider-keyring"
-version = "0.0.0.dev0"
 source = { editable = "src/private/app/azureauth-credprovider/python" }
 
 [package.dev-dependencies]
