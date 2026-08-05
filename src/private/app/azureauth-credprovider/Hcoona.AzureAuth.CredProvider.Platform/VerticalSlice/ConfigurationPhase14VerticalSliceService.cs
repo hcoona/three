@@ -1837,8 +1837,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
                     && entry.Key.StartsWith(YarnAuthPrefix, StringComparison.Ordinal)
                     && entry.Key.EndsWith(YarnAuthSuffix, StringComparison.Ordinal) =>
                 entry.Key[
-                    YarnAuthPrefix.Length
-                        ..^YarnAuthSuffix.Length
+                    YarnAuthPrefix.Length..^YarnAuthSuffix.Length
                 ] + "/",
             _ => null,
         };

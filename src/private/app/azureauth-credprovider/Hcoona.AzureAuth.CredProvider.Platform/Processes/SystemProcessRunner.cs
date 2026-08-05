@@ -21,7 +21,8 @@ public sealed class SystemProcessRunner : IProcessRunner
             SystemProcessCleanupStrategy.Instance,
             ProcessCleanupTimeout,
             SystemProcessStartStrategy.Instance
-        ) { }
+        )
+    { }
 
     internal SystemProcessRunner(
         IProcessCleanupStrategy processCleanup,

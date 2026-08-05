@@ -26,7 +26,8 @@ public sealed class NuGetPluginAdapter
             credentialCore is null
                 ? CredentialProviderCompositionRoot.CreateProduction().AcquisitionService
                 : new LegacyV1CredentialAcquisitionService(credentialCore)
-        ) { }
+        )
+    { }
 
     public NuGetPluginAdapter(ICredentialAcquisitionService credentialAcquisition)
         : this(new BoundedCredentialAcquisitionAdapter(credentialAcquisition)) { }

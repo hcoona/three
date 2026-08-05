@@ -3626,7 +3626,7 @@ internal static class CliApplication
     private static string EscapeNonPrintingCharacters(string value)
     {
         StringBuilder? builder = null;
-        for (var index = 0; index < value.Length; )
+        for (var index = 0; index < value.Length;)
         {
             UnicodeCategory category = CharUnicodeInfo.GetUnicodeCategory(value, index);
             bool isSurrogatePair =
@@ -3676,7 +3676,7 @@ internal static class CliApplication
     private static string GetDisplayedOptionName(string token)
     {
         string optionName = GetOptionName(token);
-        for (var index = 0; index < optionName.Length; )
+        for (var index = 0; index < optionName.Length;)
         {
             UnicodeCategory category = CharUnicodeInfo.GetUnicodeCategory(optionName, index);
             if (IsDisplayedOptionBoundary(optionName, index, category))

@@ -4209,11 +4209,12 @@ public static class CredentialRequestV2Policy
             && request.AccountHint is null
             && request.TenantHint is null
             && ciContext
-                is {
-                    ExplicitCiMode: true,
-                    HasAzurePipelinesSystemAccessToken: true,
-                    AllowsPersistentWrites: false,
-                }
+                is
+            {
+                ExplicitCiMode: true,
+                HasAzurePipelinesSystemAccessToken: true,
+                AllowsPersistentWrites: false,
+            }
             && string.Equals(
                 ciContext.Provider,
                 CiProviderNames.AzurePipelines,
