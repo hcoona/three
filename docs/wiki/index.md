@@ -56,6 +56,7 @@ No entity pages yet.
 - [Workflow Delivery v3 CI Qualification MLD](./analyses/workflow-delivery/v3/ci-qualification-mld.md) | Candidate identity, HK source-tree conformance, project-selected quality policy, affected-scope planning, Evidence, and CI decision contracts.
 - [Workflow Delivery v3 Release Delivery MLD](./analyses/workflow-delivery/v3/release-delivery-mld.md) | Manual same-revision release identity, complete variant qualification, projection observation, authorization, capability groups, Saga replay, and remediation.
 - [Workflow Delivery v3 Shared Foundation MLD](./analyses/workflow-delivery/v3/shared-foundation-mld.md) | Record and artifact primitives, Repository Model compilation, static Definition catalogs, Providers, Build and Quality Adapters, execution classes, and generic clients.
+- [Workflow Delivery v3 AI Agent Handoff](./analyses/workflow-delivery/v3/agent-handoff.md) | Concise current checkpoint, next action, architecture guardrails, and engineering discipline for clean-context agents.
 - [Workflow Delivery v3 Architecture Glossary](./analyses/workflow-delivery/v3/architecture-glossary.md) | Normative v3 terminology and confirmed architecture principles.
 - [Workflow Delivery v3 Migration and Document Policy](./analyses/workflow-delivery/v3/migration-strategy.md) | Clean-line implementation strategy and explicit rules for porting, rewriting, or archiving v2 assets.
 - [Workflow Delivery v2 Archive](./analyses/workflow-delivery/v2/README.md) | Permanent v2 commit and catalog of mechanism and research sources; not normative for v3.

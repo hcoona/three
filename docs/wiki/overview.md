@@ -14,6 +14,7 @@ Workflow delivery architecture **v3** is active and normative.
 - [v3 CI Qualification MLD](./analyses/workflow-delivery/v3/ci-qualification-mld.md)
 - [v3 Release Delivery MLD](./analyses/workflow-delivery/v3/release-delivery-mld.md)
 - [v3 Shared Foundation MLD](./analyses/workflow-delivery/v3/shared-foundation-mld.md)
+- [v3 AI Agent Handoff](./analyses/workflow-delivery/v3/agent-handoff.md)
 - [v3 architecture glossary](./analyses/workflow-delivery/v3/architecture-glossary.md)
 - [v3 migration and document policy](./analyses/workflow-delivery/v3/migration-strategy.md)
 
@@ -68,6 +69,8 @@ for new v3 implementation work.
   Remote-State Observation.
 - Break-Glass Remediation is independently authorized and append-only.
 - Platform-native retention is used without assuming a permanent Release ledger.
+- The first vertical slice is `hcoona-release-smoke-npm`: CI Qualification,
+  live Buddy publication to GitHub Packages, and Official npmjs dry-run.
 
 ## Implementation Direction
 
@@ -98,8 +101,8 @@ have changed.
 
 ## Next Architecture Work
 
-1. Select the first vertical slice.
-2. Create its brief LLD.
+1. Confirm the first-slice scenarios and brief LLD.
+2. Obtain explicit LLD approval before implementation.
 
 ## Related Pages
 

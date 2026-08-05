@@ -1269,3 +1269,17 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   expanding owner-review coverage to executable mechanisms and catalogs, and
   admitting protected producer plus original Release lineage before
   cross-revision remediation.
+
+## [2026-08-04] query | Establish Workflow Delivery v3 AI handoff
+
+- Added a root Agent-instruction router to the tracked v3 handoff.
+- Recorded that requirements, HLD, and all five MLDs are confirmed and corrected
+  their stale draft labels.
+- Froze `hcoona-release-smoke-npm` as the first vertical slice with CI
+  Qualification, live Buddy publication to GitHub Packages, and Official npmjs
+  dry-run.
+- Captured the waterfall gates, interactive decision protocol, architecture
+  guardrails, scope and security discipline, commit sizing, scenario-oriented
+  testing, HK validation, and multi-agent review with independent TP/FP triage.
+- Required future phase and slice changes to update the handoff and navigation
+  pages without turning the handoff into a second normative architecture.

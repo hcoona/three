@@ -25,3 +25,12 @@ Note that in GitHub workflows, general C# builds run on Windows runners unless a
 Do not get stuck in a pager when executing CLI commands.
 
 You must use ENGLISH rather than CHINESE for all code, comments, commit messages, documentation in this repository.
+
+## Workflow Delivery v3
+
+Before acting on any Workflow Delivery v3 request, read
+`docs/wiki/analyses/workflow-delivery/v3/agent-handoff.md`.
+
+Workflow Delivery v3 is the only normative source for new workflow delivery
+work. Do not use v1 or v2 to fill a v3 decision gap unless the v3 documents
+explicitly require mechanism extraction and revalidation.

@@ -4,7 +4,7 @@
 
 Architecture version: **v3**.
 
-Review state: **Draft synthesized from confirmed decisions**.
+Review state: **Confirmed on 2026-08-03**.
 
 This middle-level design defines how CI Qualification identifies an immutable
 candidate, derives affected scope, resolves project-selected quality policy,

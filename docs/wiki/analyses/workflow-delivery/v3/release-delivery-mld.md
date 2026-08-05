@@ -4,7 +4,7 @@
 
 Architecture version: **v3**.
 
-Review state: **Draft synthesized from confirmed decisions**.
+Review state: **Confirmed on 2026-08-04**.
 
 This middle-level design defines how Release Delivery accepts a manual Release
 Intent, derives channel-specific identity, independently builds and qualifies a

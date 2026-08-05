@@ -4,7 +4,7 @@
 
 Architecture version: **v3**.
 
-Review state: **Draft synthesized from confirmed decisions**.
+Review state: **Confirmed on 2026-07-30**.
 
 This middle-level design defines how CI Qualification and Release Delivery rely
 on GitHub and destination platforms for review, protected execution, identity,

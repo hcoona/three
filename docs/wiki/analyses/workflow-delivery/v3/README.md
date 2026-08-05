@@ -9,6 +9,12 @@ architecture in place. Proven v2 mechanisms may be ported only through reviewed
 v3 Provider, Adapter, or client boundaries and must not leak v2 domain or
 authority types into v3 CI or Release decision models.
 
+## AI Agent Handoff
+
+Agents continuing v3 work must read the
+[Workflow Delivery v3 AI Agent Handoff](./agent-handoff.md)
+before planning or editing.
+
 ## Normative Pages
 
 - [Requirements](./requirements.md)
@@ -24,9 +30,17 @@ authority types into v3 CI or Release decision models.
 - [Release Delivery MLD](./release-delivery-mld.md)
 - [Shared Foundation MLD](./shared-foundation-mld.md)
 
-## Next Design Work
+## Current Design Work
 
-1. select the first end-to-end vertical slice;
-2. create its brief LLD;
-3. implement and validate that vertical slice; and
-4. expand by ecosystem and destination.
+The first vertical slice is `hcoona-release-smoke-npm`:
+
+- CI Qualification;
+- live Buddy publication to GitHub Packages; and
+- Official npmjs dry-run.
+
+Next:
+
+1. confirm the slice scenarios and brief LLD;
+2. obtain explicit LLD approval and remaining implementation instructions;
+3. implement and validate the slice; and
+4. expand by ecosystem and destination only after acceptance.

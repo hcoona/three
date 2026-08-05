@@ -4,7 +4,7 @@
 
 Architecture version: **v3**.
 
-Review state: **Draft synthesized from confirmed decisions**.
+Review state: **Confirmed on 2026-08-04**.
 
 This middle-level design defines the reusable mechanism layer used by CI
 Qualification and Release Delivery. It covers record primitives, artifact
