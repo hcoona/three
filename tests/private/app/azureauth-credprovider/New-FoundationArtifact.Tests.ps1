@@ -93,12 +93,12 @@ function Invoke-FoundationArtifact {
     )
 
     $parameters = @{
-        BuildOs       = $buildOs
-        TargetRid     = $targetRid
-        OutputRoot    = $OutputRoot
+        BuildOs        = $buildOs
+        TargetRid      = $targetRid
+        OutputRoot     = $OutputRoot
         ProductVersion = '1.2.3-test'
         SourceRevision = 'test-revision'
-        NoBuild       = $true
+        NoBuild        = $true
     }
     if ($null -ne $AfterArtifactCapture) {
         $parameters.AfterArtifactCapture = $AfterArtifactCapture
