@@ -31,19 +31,23 @@ internal sealed class GitUserGlobalConfigActivation(IFileSystem fileSystem)
 
     public void EnsurePresent(string userGitConfigPath, string productGitConfigPath)
     {
-        GitConfigText document = Read(userGitConfigPath);
+        string writePath = ResolveWritePath(userGitConfigPath);
+        using IGitConfigLockFile configLock = AcquireLock(writePath);
+        GitConfigText document = ReadResolved(writePath);
         if (document.FindOwnedBlock(productGitConfigPath) is not null)
         {
             return;
         }
 
         string updated = document.AppendOwnedBlock(productGitConfigPath);
-        Write(userGitConfigPath, document, updated);
+        Commit(configLock, userGitConfigPath, document, updated);
     }
 
     public void Remove(string userGitConfigPath, string productGitConfigPath)
     {
-        GitConfigText document = Read(userGitConfigPath);
+        string writePath = ResolveWritePath(userGitConfigPath);
+        using IGitConfigLockFile configLock = AcquireLock(writePath);
+        GitConfigText document = ReadResolved(writePath);
         (int Start, int Length)? block = document.FindOwnedBlock(productGitConfigPath);
         if (block is null)
         {
@@ -53,15 +57,25 @@ internal sealed class GitUserGlobalConfigActivation(IFileSystem fileSystem)
         }
 
         string updated = document.Text.Remove(block.Value.Start, block.Value.Length);
-        Write(userGitConfigPath, document, updated);
+        Commit(configLock, userGitConfigPath, document, updated);
     }
 
-    private GitConfigText Read(string path)
+    private IGitConfigLockFile AcquireLock(string writePath)
     {
-        string writePath =
-            fileSystem is IFileSystemLinkResolver linkResolver
-                ? linkResolver.ResolveFilePathForWrite(path)
-                : path;
+        if (fileSystem is not IFileSystemGitConfigLock gitConfigLock)
+        {
+            throw new InvalidOperationException(
+                "Git configuration activation requires cooperative lock-file support."
+            );
+        }
+
+        return gitConfigLock.AcquireGitConfigLock(writePath);
+    }
+
+    private GitConfigText Read(string path) => ReadResolved(ResolveWritePath(path));
+
+    private GitConfigText ReadResolved(string writePath)
+    {
         if (!fileSystem.FileExists(writePath))
         {
             if (fileSystem.DirectoryExists(writePath))
@@ -77,26 +91,37 @@ internal sealed class GitUserGlobalConfigActivation(IFileSystem fileSystem)
         return GitConfigText.Parse(fileSystem.ReadAllBytes(writePath), writePath);
     }
 
-    private void Write(string path, GitConfigText document, string updated)
+    private void Commit(
+        IGitConfigLockFile configLock,
+        string path,
+        GitConfigText document,
+        string updated
+    )
     {
-        if (
-            fileSystem is IFileSystemLinkResolver linkResolver
-            && !string.Equals(
-                linkResolver.ResolveFilePathForWrite(path),
-                document.WritePath,
-                OperatingSystem.IsWindows()
-                    ? StringComparison.OrdinalIgnoreCase
-                    : StringComparison.Ordinal
-            )
-        )
+        if (!PathsEqual(ResolveWritePath(path), document.WritePath))
         {
             throw new IOException(
                 "The user-global Git configuration link changed while it was being updated."
             );
         }
 
-        fileSystem.AtomicWriteAllBytes(document.WritePath, document.Encode(updated));
+        configLock.WriteAllBytes(document.Encode(updated));
+        configLock.Commit();
     }
+
+    private string ResolveWritePath(string path) =>
+        fileSystem is IFileSystemLinkResolver linkResolver
+            ? linkResolver.ResolveFilePathForWrite(path)
+            : fileSystem.GetFullPath(path);
+
+    private static bool PathsEqual(string left, string right) =>
+        string.Equals(
+            left,
+            right,
+            OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal
+        );
 
     private sealed record GitConfigText(
         string Text,

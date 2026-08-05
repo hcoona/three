@@ -4,7 +4,10 @@ using Hcoona.AzureAuth.CredProvider.Platform.FileSystem;
 
 namespace Hcoona.AzureAuth.CredProvider.Platform.Tests.TestDoubles;
 
-public sealed class InMemoryFileSystem : IFileSystem, IFileSystemMutationLock
+public sealed class InMemoryFileSystem
+    : IFileSystem,
+        IFileSystemMutationLock,
+        IFileSystemGitConfigLock
 {
     private static readonly Encoding Utf8NoBom = new UTF8Encoding(
         encoderShouldEmitUTF8Identifier: false,
@@ -326,6 +329,31 @@ public sealed class InMemoryFileSystem : IFileSystem, IFileSystemMutationLock
         return new ActionDisposable(() => heldLocks.Remove(normalizedPath));
     }
 
+    IGitConfigLockFile IFileSystemGitConfigLock.AcquireGitConfigLock(string targetPath)
+    {
+        string normalizedTargetPath = NormalizePath(targetPath);
+        string lockPath = normalizedTargetPath + ".lock";
+        Record(nameof(IFileSystemGitConfigLock.AcquireGitConfigLock), normalizedTargetPath);
+        EnsureParentDirectoryExists(lockPath);
+        ThrowIfDirectory(lockPath);
+        if (files.ContainsKey(lockPath))
+        {
+            throw new IOException($"The Git configuration lock '{lockPath}' already exists.");
+        }
+
+        files[lockPath] = [];
+        unixFileModes[lockPath] = unixFileModes.TryGetValue(
+            normalizedTargetPath,
+            out UnixFileMode mode
+        )
+            ? mode
+            : UnixFileMode.UserRead
+                | UnixFileMode.UserWrite
+                | UnixFileMode.GroupRead
+                | UnixFileMode.OtherRead;
+        return new GitConfigLockFile(this, normalizedTargetPath, lockPath);
+    }
+
     private StringComparison Comparison =>
         pathSemantics == InMemoryPathSemantics.Windows
             ? StringComparison.OrdinalIgnoreCase
@@ -349,6 +377,48 @@ public sealed class InMemoryFileSystem : IFileSystem, IFileSystemMutationLock
                     | UnixFileMode.GroupRead
                     | UnixFileMode.OtherRead
             );
+        }
+    }
+
+    private sealed class GitConfigLockFile(
+        InMemoryFileSystem fileSystem,
+        string targetPath,
+        string lockPath
+    ) : IGitConfigLockFile
+    {
+        private bool committed;
+        private bool disposed;
+
+        public void WriteAllBytes(byte[] contents)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            ArgumentNullException.ThrowIfNull(contents);
+            fileSystem.files[lockPath] = contents.ToArray();
+        }
+
+        public void Commit()
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            fileSystem.files[targetPath] = fileSystem.files[lockPath];
+            fileSystem.unixFileModes[targetPath] = fileSystem.unixFileModes[lockPath];
+            fileSystem.files.Remove(lockPath);
+            fileSystem.unixFileModes.Remove(lockPath);
+            committed = true;
+        }
+
+        public void Dispose()
+        {
+            if (disposed)
+            {
+                return;
+            }
+
+            disposed = true;
+            if (!committed)
+            {
+                fileSystem.files.Remove(lockPath);
+                fileSystem.unixFileModes.Remove(lockPath);
+            }
         }
     }
 

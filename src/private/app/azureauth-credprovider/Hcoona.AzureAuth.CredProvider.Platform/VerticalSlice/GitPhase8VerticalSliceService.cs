@@ -227,6 +227,7 @@ public sealed class GitPhase8VerticalSliceService
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
+        using IDisposable lifecycleLock = AcquireLifecycleLock();
 
         ThrowIfUnrecognizedOwnershipManifestExists();
         ConfigurationPlanResult planResult;
@@ -407,6 +408,7 @@ public sealed class GitPhase8VerticalSliceService
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
+        using IDisposable lifecycleLock = AcquireLifecycleLock();
 
         if (!TryLoadExpectedOwnershipManifest(out ConfigurationOwnershipManifest? manifest))
         {
@@ -501,6 +503,20 @@ public sealed class GitPhase8VerticalSliceService
 
     private ConfigurationManager CreateManager() =>
         new(fileSystem, paths.OwnershipManifestPath, CreatePhysicalTargetWriterDispatcher());
+
+    private IDisposable AcquireLifecycleLock()
+    {
+        if (fileSystem is not IFileSystemMutationLock mutationLock)
+        {
+            throw new InvalidOperationException(
+                "The Phase 8 Git lifecycle requires cross-process mutation locking."
+            );
+        }
+
+        return mutationLock.AcquireMutationLock(
+            Path.Combine(paths.StateDirectoryPath, ".locks", "git-phase8-lifecycle")
+        );
+    }
 
     private ConfigurationPhysicalTargetWriterDispatcher CreatePhysicalTargetWriterDispatcher() =>
         new(fileSystem);

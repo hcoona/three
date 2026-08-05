@@ -67,3 +67,15 @@ internal interface IFileSystemLinkResolver
 {
     string ResolveFilePathForWrite(string path);
 }
+
+internal interface IFileSystemGitConfigLock
+{
+    IGitConfigLockFile AcquireGitConfigLock(string targetPath);
+}
+
+internal interface IGitConfigLockFile : IDisposable
+{
+    void WriteAllBytes(byte[] contents);
+
+    void Commit();
+}

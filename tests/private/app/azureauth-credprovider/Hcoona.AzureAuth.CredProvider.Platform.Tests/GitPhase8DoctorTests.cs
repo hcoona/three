@@ -380,6 +380,179 @@ public sealed class GitPhase8DoctorTests
     }
 
     [Fact]
+    public async Task ConfigureHonorsGitLockAndPreservesConcurrentCommittedUpdate()
+    {
+        string stateDirectory = CreateTestDirectory();
+        string homeDirectory = Path.Combine(stateDirectory, "user-home");
+        Directory.CreateDirectory(homeDirectory);
+        string userGitConfigPath = Path.Combine(homeDirectory, ".gitconfig");
+        string lockPath = userGitConfigPath + ".lock";
+        const string Original = "# original\n";
+        const string ConcurrentUpdate =
+            "# original\n[user]\n\temail = concurrent@example.test\n";
+        File.WriteAllText(userGitConfigPath, Original);
+        File.WriteAllText(lockPath, ConcurrentUpdate);
+        GitPhase8VerticalSliceService service = CreateRealGitService(
+            stateDirectory,
+            homeDirectory
+        );
+
+        try
+        {
+            await Assert.ThrowsAsync<GitPhase8UnrecognizedStateException>(async () =>
+                await service.ConfigureAsync(TestContext.Current.CancellationToken)
+            );
+
+            Assert.Equal(Original, File.ReadAllText(userGitConfigPath));
+            Assert.Equal(ConcurrentUpdate, File.ReadAllText(lockPath));
+
+            File.Move(lockPath, userGitConfigPath, overwrite: true);
+            GitPhase8ConfigureResult result = await service.ConfigureAsync(
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.True(result.OwnedGitEntriesPresent);
+            Assert.Contains(
+                "email = concurrent@example.test",
+                File.ReadAllText(userGitConfigPath),
+                StringComparison.Ordinal
+            );
+            Assert.False(File.Exists(lockPath));
+
+            await service.UnconfigureAsync(TestContext.Current.CancellationToken);
+
+            Assert.Equal(ConcurrentUpdate, File.ReadAllText(userGitConfigPath));
+            Assert.False(File.Exists(lockPath));
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public void GitActivationCleansLockWhenUpdateFails()
+    {
+        string stateDirectory = CreateTestDirectory();
+        string userGitConfigPath = Path.Combine(stateDirectory, ".gitconfig");
+        string productGitConfigPath = Path.Combine(stateDirectory, "product.gitconfig");
+        const string Malformed =
+            "# BEGIN azureauth-credprovider managed include\n[include]\n";
+        File.WriteAllText(userGitConfigPath, Malformed);
+        var activation = new GitUserGlobalConfigActivation(new SystemFileSystem());
+
+        try
+        {
+            Assert.Throws<InvalidOperationException>(() =>
+                activation.EnsurePresent(userGitConfigPath, productGitConfigPath)
+            );
+
+            Assert.Equal(Malformed, File.ReadAllText(userGitConfigPath));
+            Assert.False(File.Exists(userGitConfigPath + ".lock"));
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task ConfigureWaitsForUnconfigureLifecycleToFinish()
+    {
+        string stateDirectory = CreateTestDirectory();
+        using var activationRemoved = new ManualResetEventSlim();
+        using var continueUnconfigure = new ManualResetEventSlim();
+        GitPhase8VerticalSliceService configuredService = CreateRealGitService(stateDirectory);
+        Task<GitPhase8UnconfigureResult>? unconfigureTask = null;
+        Task<GitPhase8ConfigureResult>? configureTask = null;
+
+        try
+        {
+            await configuredService.ConfigureAsync(TestContext.Current.CancellationToken);
+            GitPhase8VerticalSliceService unconfigureService = CreateRealGitService(
+                stateDirectory,
+                afterOwnedGitActivationRemoved: () =>
+                {
+                    activationRemoved.Set();
+                    continueUnconfigure.Wait(TestContext.Current.CancellationToken);
+                }
+            );
+            unconfigureTask = Task.Run(
+                async () =>
+                    await unconfigureService.UnconfigureAsync(
+                        TestContext.Current.CancellationToken
+                    ),
+                TestContext.Current.CancellationToken
+            );
+            Assert.True(
+                activationRemoved.Wait(
+                    TimeSpan.FromSeconds(5),
+                    TestContext.Current.CancellationToken
+                )
+            );
+
+            GitPhase8VerticalSliceService configureService = CreateRealGitService(
+                stateDirectory
+            );
+            configureTask = Task.Run(
+                async () =>
+                    await configureService.ConfigureAsync(
+                        TestContext.Current.CancellationToken
+                    ),
+                TestContext.Current.CancellationToken
+            );
+
+            Task firstCompletion = await Task.WhenAny(
+                configureTask,
+                Task.Delay(
+                    TimeSpan.FromMilliseconds(500),
+                    TestContext.Current.CancellationToken
+                )
+            );
+            Assert.NotSame(configureTask, firstCompletion);
+            Assert.DoesNotContain(
+                "# BEGIN azureauth-credprovider managed include",
+                File.ReadAllText(configureService.Paths.UserGitConfigPath),
+                StringComparison.Ordinal
+            );
+
+            continueUnconfigure.Set();
+            GitPhase8UnconfigureResult unconfigureResult = await unconfigureTask;
+            GitPhase8ConfigureResult configureResult = await configureTask;
+
+            Assert.False(unconfigureResult.OwnedGitEntriesPresent);
+            Assert.False(unconfigureResult.OwnershipManifestPresent);
+            Assert.True(configureResult.OwnedGitEntriesPresent);
+            Assert.True(configureResult.OwnershipManifestPresent);
+            Assert.Contains(
+                "# BEGIN azureauth-credprovider managed include",
+                File.ReadAllText(configureService.Paths.UserGitConfigPath),
+                StringComparison.Ordinal
+            );
+        }
+        finally
+        {
+            continueUnconfigure.Set();
+            if (unconfigureTask is not null || configureTask is not null)
+            {
+                Task[] tasks =
+                [
+                    unconfigureTask ?? Task.CompletedTask,
+                    configureTask ?? Task.CompletedTask,
+                ];
+                _ = await Task.WhenAny(
+                    Task.WhenAll(tasks),
+                    Task.Delay(
+                        TimeSpan.FromSeconds(5),
+                        TestContext.Current.CancellationToken
+                    )
+                );
+            }
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
     public async Task InterruptedUnconfigureRetryResumesInactiveOwnedCleanup()
     {
         string stateDirectory = CreateTestDirectory();
@@ -1322,7 +1495,8 @@ public sealed class GitPhase8DoctorTests
     private sealed class OneShotManifestDeleteFailureFileSystem
         : IFileSystem,
             IFileSystemMutationLock,
-            IFileSystemLinkResolver
+            IFileSystemLinkResolver,
+            IFileSystemGitConfigLock
     {
         internal const string InjectedFailureMessage =
             "Injected ownership manifest deletion failure.";
@@ -1428,5 +1602,9 @@ public sealed class GitPhase8DoctorTests
 
         string IFileSystemLinkResolver.ResolveFilePathForWrite(string path) =>
             ((IFileSystemLinkResolver)inner).ResolveFilePathForWrite(path);
+
+        IGitConfigLockFile IFileSystemGitConfigLock.AcquireGitConfigLock(
+            string targetPath
+        ) => ((IFileSystemGitConfigLock)inner).AcquireGitConfigLock(targetPath);
     }
 }

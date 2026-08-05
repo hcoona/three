@@ -6,7 +6,8 @@ namespace Hcoona.AzureAuth.CredProvider.Platform.FileSystem;
 public sealed class SystemFileSystem
     : IFileSystem,
         IFileSystemMutationLock,
-        IFileSystemLinkResolver
+        IFileSystemLinkResolver,
+        IFileSystemGitConfigLock
 {
     private const UnixFileMode OwnerOnlyFileMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
     private static readonly Encoding Utf8NoBom = new UTF8Encoding(
@@ -241,6 +242,12 @@ public sealed class SystemFileSystem
         return resolvedFile.FullName;
     }
 
+    IGitConfigLockFile IFileSystemGitConfigLock.AcquireGitConfigLock(string targetPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetPath);
+        return new GitConfigLockFile(targetPath);
+    }
+
     private static void AtomicWrite(
         string path,
         Action<string> writeTemporaryFile,
@@ -283,6 +290,88 @@ public sealed class SystemFileSystem
             try
             {
                 File.Delete(temporaryPath);
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+    }
+
+    private sealed class GitConfigLockFile : IGitConfigLockFile
+    {
+        private readonly string lockPath;
+        private readonly string targetPath;
+        private FileStream? stream;
+        private bool committed;
+
+        public GitConfigLockFile(string targetPath)
+        {
+            this.targetPath = Path.GetFullPath(targetPath);
+            string directory =
+                Path.GetDirectoryName(this.targetPath)
+                ?? throw new IOException(
+                    $"The file path '{this.targetPath}' has no parent directory."
+                );
+            Directory.CreateDirectory(directory);
+            lockPath = this.targetPath + ".lock";
+            try
+            {
+                stream = new FileStream(
+                    lockPath,
+                    FileMode.CreateNew,
+                    FileAccess.Write,
+                    FileShare.None
+                );
+
+                if (!OperatingSystem.IsWindows() && File.Exists(this.targetPath))
+                {
+                    File.SetUnixFileMode(lockPath, File.GetUnixFileMode(this.targetPath));
+                }
+            }
+            catch
+            {
+                if (stream is not null)
+                {
+                    stream.Dispose();
+                    stream = null;
+                    File.Delete(lockPath);
+                }
+                throw;
+            }
+        }
+
+        public void WriteAllBytes(byte[] contents)
+        {
+            ArgumentNullException.ThrowIfNull(contents);
+            FileStream currentStream =
+                stream ?? throw new ObjectDisposedException(nameof(GitConfigLockFile));
+            currentStream.SetLength(0);
+            currentStream.Write(contents);
+            currentStream.Flush(flushToDisk: true);
+        }
+
+        public void Commit()
+        {
+            FileStream currentStream =
+                stream ?? throw new ObjectDisposedException(nameof(GitConfigLockFile));
+            currentStream.Flush(flushToDisk: true);
+            currentStream.Dispose();
+            stream = null;
+            File.Move(lockPath, targetPath, overwrite: true);
+            committed = true;
+        }
+
+        public void Dispose()
+        {
+            stream?.Dispose();
+            stream = null;
+            if (committed)
+            {
+                return;
+            }
+
+            try
+            {
+                File.Delete(lockPath);
             }
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }
