@@ -260,7 +260,7 @@ public sealed class NpmPhase12VerticalSliceService
             return;
         }
 
-        string plannedRegistry = NormalizeRegistryUrl(declaration.RegistryUrl);
+        Uri plannedRegistry = declaration.RegistryUrl;
         foreach (string rawLine in SplitLines(fileSystem.ReadAllText(workspaceNpmrcPath)))
         {
             string trimmedLine = rawLine.Trim();
@@ -277,8 +277,8 @@ public sealed class NpmPhase12VerticalSliceService
             string key =
                 separatorIndex < 0 ? trimmedLine : rawLine[..separatorIndex].Trim();
             if (
-                TryParseRegistryAuthSelector(key, out string registry)
-                && string.Equals(registry, plannedRegistry, StringComparison.Ordinal)
+                TryParseRegistryAuthSelector(key, out Uri? registry)
+                && IsSameOrDescendantRegistry(plannedRegistry, registry)
             )
             {
                 throw new InvalidOperationException(
@@ -289,40 +289,42 @@ public sealed class NpmPhase12VerticalSliceService
         }
     }
 
-    private static bool TryParseRegistryAuthSelector(string key, out string registry)
+    private static bool TryParseRegistryAuthSelector(
+        string key,
+        [NotNullWhen(true)] out Uri? registry
+    )
     {
-        registry = string.Empty;
-        int separator = key.LastIndexOf("/:", StringComparison.Ordinal);
-        if (separator <= 1)
+        registry = null;
+        string? registryText = null;
+        foreach (string leaf in new[] { "_authToken", "_auth", "username", "_password" })
         {
-            return false;
+            string suffix = ":" + leaf;
+            if (key.EndsWith(suffix, StringComparison.Ordinal))
+            {
+                registryText = key[..^suffix.Length];
+                break;
+            }
         }
 
-        string leaf = key[(separator + 2)..];
         if (
-            leaf
-                is not (
-                    "_authToken"
-                    or "_auth"
-                    or "username"
-                    or "_password"
-                )
+            string.IsNullOrEmpty(registryText)
+            || !registryText.StartsWith("//", StringComparison.Ordinal)
+            || !Uri.TryCreate("https:" + registryText, UriKind.Absolute, out registry)
         )
         {
+            registry = null;
             return false;
         }
 
-        string registryText = key[..(separator + 1)];
-        if (
-            !registryText.StartsWith("//", StringComparison.Ordinal)
-            || !Uri.TryCreate("https:" + registryText, UriKind.Absolute, out Uri? registryUri)
-        )
-        {
-            return false;
-        }
-
-        registry = NormalizeRegistryUrl(registryUri);
         return true;
+    }
+
+    private static bool IsSameOrDescendantRegistry(Uri plannedRegistry, Uri candidateRegistry)
+    {
+        string planned = NormalizeRegistryUrl(plannedRegistry);
+        string candidate = NormalizeRegistryUrl(candidateRegistry);
+        return string.Equals(candidate, planned, StringComparison.Ordinal)
+            || candidate.StartsWith(planned + "/", StringComparison.Ordinal);
     }
 
     private static string NormalizeRegistryUrl(Uri registryUrl) =>
@@ -528,18 +530,6 @@ public sealed class NpmPhase12VerticalSliceService
                 feed = projectFeedName;
             }
         }
-        else if (string.Equals(host, "dev.azure.com", StringComparison.OrdinalIgnoreCase))
-        {
-            if (
-                segments
-                is [var org, var projectName, "_packaging", var feedName, "npm", "registry"]
-            )
-            {
-                organization = org;
-                project = projectName;
-                feed = feedName;
-            }
-        }
         else if (TryGetLegacyVisualStudioOrganization(host, out string? legacyOrganization))
         {
             organization = legacyOrganization;
@@ -577,41 +567,27 @@ public sealed class NpmPhase12VerticalSliceService
     {
         project = null;
         feed = null;
-        if (host.EndsWith(".pkgs.visualstudio.com", StringComparison.OrdinalIgnoreCase))
+        if (!host.EndsWith(".pkgs.visualstudio.com", StringComparison.OrdinalIgnoreCase))
         {
-            if (segments is ["_packaging", var feedName, "npm", "registry"])
-            {
-                feed = feedName;
-                return true;
-            }
-
-            if (
-                segments
-                is ["DefaultCollection", "_packaging", var collectionFeedName, "npm", "registry"]
-            )
-            {
-                feed = collectionFeedName;
-                return true;
-            }
+            return false;
         }
-        else if (host.EndsWith(".visualstudio.com", StringComparison.OrdinalIgnoreCase))
+
+        string[] resourceSegments =
+            segments is ["DefaultCollection", .. var remaining] ? remaining : segments;
+        if (resourceSegments is ["_packaging", var feedName, "npm", "registry"])
         {
-            if (
-                segments
-                is [
-                    "DefaultCollection",
-                    var projectName,
-                    "_packaging",
-                    var feedName,
-                    "npm",
-                    "registry",
-                ]
-            )
-            {
-                project = projectName;
-                feed = feedName;
-                return true;
-            }
+            feed = feedName;
+            return true;
+        }
+
+        if (
+            resourceSegments
+            is [var projectName, "_packaging", var projectFeedName, "npm", "registry"]
+        )
+        {
+            project = projectName;
+            feed = projectFeedName;
+            return true;
         }
 
         return false;
@@ -735,18 +711,25 @@ public sealed class NpmPhase12VerticalSliceService
                     "feed"
                 )
                 && EndpointCanonicalizes(
-                    "https://dev.azure.com/org/project/_packaging/feed/npm/registry/",
-                    "org",
-                    "project",
-                    "feed"
-                )
-                && EndpointCanonicalizes(
                     "https://org.pkgs.visualstudio.com/_packaging/feed/npm/registry/",
                     "org",
                     project: null,
                     feed: "feed"
                 )
                 && EndpointCanonicalizes(
+                    "https://org.pkgs.visualstudio.com/DefaultCollection/project/"
+                        + "_packaging/feed/npm/registry/",
+                    "org",
+                    "project",
+                    "feed"
+                )
+                && !EndpointCanonicalizes(
+                    "https://dev.azure.com/org/project/_packaging/feed/npm/registry/",
+                    "org",
+                    "project",
+                    "feed"
+                )
+                && !EndpointCanonicalizes(
                     "https://org.visualstudio.com/DefaultCollection/project/"
                         + "_packaging/feed/npm/registry/",
                     "org",

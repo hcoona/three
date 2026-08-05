@@ -117,8 +117,7 @@ public sealed class YarnPhase13VerticalSliceService
 
     public IReadOnlyList<YarnPhase13RegistryDeclaration> DiscoverRegistryDeclarations()
     {
-        string? workspaceYarnrcPath = GetWorkspaceYarnrcPath();
-        if (workspaceYarnrcPath is not null && fileSystem.FileExists(workspaceYarnrcPath))
+        foreach (string workspaceYarnrcPath in GetReadableWorkspaceYarnrcPaths())
         {
             YarnPhase13RegistryDeclaration[] workspaceDeclarations = ReadRegistryDeclarations(
                 workspaceYarnrcPath
@@ -329,37 +328,17 @@ public sealed class YarnPhase13VerticalSliceService
         string targetYarnrcPath
     )
     {
-        string? workspaceYarnrcPath = GetWorkspaceYarnrcPath();
-        if (
-            workspaceYarnrcPath is null
-            || !fileSystem.FileExists(workspaceYarnrcPath)
-            || PathsEqual(workspaceYarnrcPath, targetYarnrcPath)
-        )
-        {
-            return;
-        }
-
         string plannedRegistry = NormalizeComparableRegistryKey(declaration.NpmRegistriesKey);
-        bool userScopedDeclaration =
-            declaration.Scope is not null
-            && PathsEqual(declaration.SourcePath, ResolveUserYarnrcPath());
-        YarnProjectAuthBlock? shadow = ReadProjectAuthBlocks(workspaceYarnrcPath)
+        YarnProjectAuthBlock? shadow = GetReadableWorkspaceYarnrcPaths()
+            .Where(path => !PathsEqual(path, targetYarnrcPath))
+            .SelectMany(ReadProjectAuthBlocks)
             .FirstOrDefault(block =>
                 block.ShadowingSelector is not null
-                && (
-                    block.RegistryKey is not null
-                        ? string.Equals(
-                            NormalizeComparableRegistryKey(block.RegistryKey),
-                            plannedRegistry,
-                            StringComparison.Ordinal
-                        )
-                        : userScopedDeclaration
-                            && block.AuthenticationSelector is not null
-                            && string.Equals(
-                                block.Scope,
-                                NormalizeScopeName(declaration.Scope!),
-                                StringComparison.Ordinal
-                            )
+                && ResolveEffectiveProjectAuthRegistry(block) is { } effectiveRegistry
+                && string.Equals(
+                    NormalizeComparableRegistryKey(effectiveRegistry),
+                    plannedRegistry,
+                    StringComparison.Ordinal
                 )
             );
         if (shadow is not null)
@@ -374,6 +353,40 @@ public sealed class YarnPhase13VerticalSliceService
                     + " would shadow the planned user or CI credential."
             );
         }
+    }
+
+    private string? ResolveEffectiveProjectAuthRegistry(YarnProjectAuthBlock block)
+    {
+        if (block.RegistryKey is not null)
+        {
+            return block.RegistryKey;
+        }
+
+        if (block.Scope is null || block.AuthenticationSelector is null)
+        {
+            return null;
+        }
+
+        foreach (string yarnrcPath in GetReadableYarnrcPaths())
+        {
+            YarnPhase13RegistryDeclaration? scopedDeclaration = ReadRegistryDeclarations(
+                yarnrcPath
+            )
+                .FirstOrDefault(declaration =>
+                    declaration.Scope is not null
+                    && string.Equals(
+                        NormalizeScopeName(declaration.Scope),
+                        block.Scope,
+                        StringComparison.Ordinal
+                    )
+                );
+            if (scopedDeclaration is not null)
+            {
+                return scopedDeclaration.NpmRegistriesKey;
+            }
+        }
+
+        return null;
     }
 
     private static bool AuthIdentConflictAppliesToDeclaration(
@@ -823,19 +836,54 @@ public sealed class YarnPhase13VerticalSliceService
 
     private IEnumerable<string> GetReadableYarnrcPaths()
     {
-        string? workspaceYarnrcPath = GetWorkspaceYarnrcPath();
-        if (workspaceYarnrcPath is not null && fileSystem.FileExists(workspaceYarnrcPath))
+        var seenPaths = new List<string>();
+        foreach (string workspaceYarnrcPath in GetReadableWorkspaceYarnrcPaths())
         {
+            seenPaths.Add(workspaceYarnrcPath);
             yield return workspaceYarnrcPath;
         }
 
         string userPath = ResolveUserYarnrcPath();
         if (
             fileSystem.FileExists(userPath)
-            && (workspaceYarnrcPath is null || !PathsEqual(workspaceYarnrcPath, userPath))
+            && !seenPaths.Any(workspacePath => PathsEqual(workspacePath, userPath))
         )
         {
             yield return userPath;
+        }
+    }
+
+    private IEnumerable<string> GetReadableWorkspaceYarnrcPaths()
+    {
+        if (workspaceDirectoryPath is null)
+        {
+            yield break;
+        }
+
+        var seenPaths = new List<string>();
+        string? directoryPath = workspaceDirectoryPath;
+        while (directoryPath is not null)
+        {
+            string yarnrcPath = ResolveYarnrcPath(directoryPath);
+            if (
+                !seenPaths.Any(seenPath => PathsEqual(seenPath, yarnrcPath))
+                && fileSystem.FileExists(yarnrcPath)
+            )
+            {
+                seenPaths.Add(yarnrcPath);
+                yield return yarnrcPath;
+            }
+
+            string? parentPath = Path.GetDirectoryName(directoryPath);
+            if (
+                string.IsNullOrEmpty(parentPath)
+                || string.Equals(parentPath, directoryPath, StringComparison.Ordinal)
+            )
+            {
+                yield break;
+            }
+
+            directoryPath = parentPath;
         }
     }
 
@@ -952,7 +1000,7 @@ public sealed class YarnPhase13VerticalSliceService
                     "project",
                     "feed"
                 )
-                && EndpointCanonicalizes(
+                && !EndpointCanonicalizes(
                     "https://dev.azure.com/org/project/_packaging/feed/npm/registry/",
                     "org",
                     "project",

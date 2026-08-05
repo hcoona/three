@@ -2394,7 +2394,9 @@ public sealed class CredentialCoreServiceTests
                     CredentialEcosystem.Python => new Uri(
                         "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple"
                     ),
-                    _ => new Uri("https://pkgs.dev.azure.com/org/_packaging/feed/npm"),
+                    _ => new Uri(
+                        "https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry"
+                    ),
                 },
                 feed: "feed"
             ),

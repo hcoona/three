@@ -2735,19 +2735,12 @@ public sealed class ContractFreezeTests
 
     [Theory]
     [InlineData(
-        "dev.azure.com",
-        "https://dev.azure.com/org/proj/_packaging/feed/npm/registry",
-        "proj",
-        "//dev.azure.com/org/proj/_packaging/feed/npm/registry/:_authToken",
-        "npmRegistries[\"https://dev.azure.com/org/proj/_packaging/feed/npm/registry\"]"
-            + ".npmAuthToken"
-    )]
-    [InlineData(
         "pkgs.dev.azure.com",
-        "https://pkgs.dev.azure.com/org/_packaging/feed/npm/",
+        "https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/",
         null,
-        "//pkgs.dev.azure.com/org/_packaging/feed/npm/:_authToken",
-        "npmRegistries[\"https://pkgs.dev.azure.com/org/_packaging/feed/npm\"].npmAuthToken"
+        "//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:_authToken",
+        "npmRegistries[\"https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry\"]"
+            + ".npmAuthToken"
     )]
     [InlineData(
         "org.pkgs.visualstudio.com",
@@ -2844,6 +2837,34 @@ public sealed class ContractFreezeTests
         Assert.Throws<ArgumentException>(() =>
             NpmCompatibleAuthSelectorPolicy.Create(nugetResource)
         );
+    }
+
+    [Theory]
+    [InlineData(
+        "dev.azure.com",
+        "https://dev.azure.com/org/proj/_packaging/feed/npm/registry",
+        "proj"
+    )]
+    [InlineData(
+        "org.visualstudio.com",
+        "https://org.visualstudio.com/DefaultCollection/project/_packaging/feed/npm/registry",
+        "project"
+    )]
+    public void NpmCompatibleAuthSelectorsRejectNonRegistryWebEndpoints(
+        string host,
+        string serviceEndpoint,
+        string project
+    )
+    {
+        CanonicalResourceIdentity resource = CanonicalResourceIdentity.Create(
+            host,
+            "org",
+            new Uri(serviceEndpoint),
+            project: project,
+            feed: "feed"
+        );
+
+        Assert.Throws<ArgumentException>(() => NpmCompatibleAuthSelectorPolicy.Create(resource));
     }
 
     [Theory]
@@ -11021,7 +11042,9 @@ public sealed class ContractFreezeTests
                     CredentialEcosystem.Python => new Uri(
                         "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple"
                     ),
-                    _ => new Uri("https://pkgs.dev.azure.com/org/_packaging/feed/npm"),
+                    _ => new Uri(
+                        "https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry"
+                    ),
                 },
                 feed: "feed"
             ),
@@ -11037,26 +11060,38 @@ public sealed class ContractFreezeTests
     private static CredentialRequest CreateProjectScopedPackageRequest(
         CredentialEcosystem ecosystem,
         CredentialKind kind
-    ) =>
-        CreatePackageRequest(ecosystem, kind) with
+    )
+    {
+        bool npmCompatible =
+            ecosystem
+            is CredentialEcosystem.Npm
+                or CredentialEcosystem.Pnpm
+                or CredentialEcosystem.Yarn;
+        string host = npmCompatible ? "pkgs.dev.azure.com" : "dev.azure.com";
+        Uri endpoint = ecosystem switch
+        {
+            CredentialEcosystem.NuGet => new Uri(
+                "https://dev.azure.com/org/project/_packaging/feed/nuget/v3/index.json"
+            ),
+            CredentialEcosystem.Python => new Uri(
+                "https://dev.azure.com/org/project/_packaging/feed/pypi/simple"
+            ),
+            _ => new Uri(
+                "https://pkgs.dev.azure.com/org/project/_packaging/feed/npm/registry"
+            ),
+        };
+
+        return CreatePackageRequest(ecosystem, kind) with
         {
             Resource = CanonicalResourceIdentity.Create(
-                "dev.azure.com",
+                host,
                 "org",
-                ecosystem switch
-                {
-                    CredentialEcosystem.NuGet => new Uri(
-                        "https://dev.azure.com/org/project/_packaging/feed/nuget/v3/index.json"
-                    ),
-                    CredentialEcosystem.Python => new Uri(
-                        "https://dev.azure.com/org/project/_packaging/feed/pypi/simple"
-                    ),
-                    _ => new Uri("https://dev.azure.com/org/project/_packaging/feed/npm"),
-                },
+                endpoint,
                 project: "project",
                 feed: "feed"
             ),
         };
+    }
 
     private static string CreateCredentialRequestJson(
         string ecosystemProperty,

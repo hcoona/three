@@ -213,11 +213,14 @@ writes. Version 1 explicitly carries:
 - `create`, `update`, `refresh`, and `remove` operations;
 - npm and pnpm `_authToken` entries derived from the accepted npm registry
   endpoint host and path, not from a hard-coded package host. For example,
-  `https://dev.azure.com/{org}/{project}/_packaging/{feed}/npm/registry`,
-  `https://pkgs.dev.azure.com/{org}/_packaging/{feed}/npm`, and
+  `https://pkgs.dev.azure.com/{org}/_packaging/{feed}/npm/registry`,
+  `https://pkgs.dev.azure.com/{org}/{project}/_packaging/{feed}/npm/registry`,
+  and
   `https://{org}.pkgs.visualstudio.com/_packaging/{feed}/npm/registry` map to
   `//<host>/<path>/:_authToken` after removing one terminal slash from accepted
-  npm registry endpoints;
+  npm registry endpoints. Web URLs under `dev.azure.com` or
+  `{org}.visualstudio.com` are not npm registry endpoints and are rejected
+  rather than rewritten;
 - the intended success surface for npm, pnpm, and Yarn configuration. These
   package managers do not consume credential-provider stdout, so
   `NpmConfiguration` success validates bearer material but leaves protocol stdout

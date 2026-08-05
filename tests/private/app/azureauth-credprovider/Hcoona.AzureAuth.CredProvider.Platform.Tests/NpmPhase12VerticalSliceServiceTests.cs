@@ -60,7 +60,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         fileSystem.WriteAllText("/workspace/.npmrc", "registry=https://registry.npmjs.org/\n");
         fileSystem.WriteAllText(
             "/home/alice/.npmrc",
-            "registry=https://dev.azure.com/org/project/_packaging/feed/npm/registry/\n"
+            "registry=https://pkgs.dev.azure.com/org/project/_packaging/feed/npm/registry/\n"
         );
         var service = new NpmPhase12VerticalSliceService(
             new NpmPhase12VerticalSliceOptions
@@ -174,7 +174,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         CreateDirectory(fileSystem, "/workspace");
         fileSystem.WriteAllText(
             "/workspace/.npmrc",
-            "registry=https://org.visualstudio.com/DefaultCollection/project/"
+            "registry=https://org.pkgs.visualstudio.com/DefaultCollection/project/"
                 + "_packaging/feed/npm/registry/\n"
         );
         var service = new NpmPhase12VerticalSliceService(
@@ -193,6 +193,28 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         Assert.Equal("org", declaration.ResourceIdentity.Organization);
         Assert.Equal("project", declaration.ResourceIdentity.Project);
         Assert.Equal("feed", declaration.ResourceIdentity.Feed);
+    }
+
+    [Theory]
+    [InlineData("https://dev.azure.com/org/project/_packaging/feed/npm/registry/")]
+    [InlineData(
+        "https://org.visualstudio.com/DefaultCollection/project/_packaging/feed/npm/registry/"
+    )]
+    public void DiscoverRegistryDeclarationsRejectsNonRegistryWebEndpoints(string registry)
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        fileSystem.WriteAllText("/workspace/.npmrc", "registry=" + registry + "\n");
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+
+        Assert.Empty(service.DiscoverRegistryDeclarations());
     }
 
     [Fact]
@@ -615,6 +637,80 @@ public sealed class NpmPhase12VerticalSliceServiceTests
 
         Assert.Contains("Project-local npm authentication", exception.Message);
         Assert.DoesNotContain(ProjectSecret, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(
+        "//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/@scope/package/:_authToken"
+    )]
+    [InlineData(
+        "//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/@scope/package:_authToken"
+    )]
+    public void CreateUserCredentialPlanRejectsDescendantPackageAuthSelectors(string selector)
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/workspace/.npmrc",
+            "registry=https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
+                + selector
+                + "=project-secret-value\n"
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            service.CreateUserCredentialPlan(
+                new NpmPhase12CredentialPlanRequest
+                {
+                    Declaration = Assert.Single(service.DiscoverRegistryDeclarations()),
+                    AuthToken = "short-lived-token",
+                }
+            )
+        );
+
+        Assert.Contains("Project-local npm authentication", exception.Message);
+        Assert.DoesNotContain("project-secret-value", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CreateUserCredentialPlanAllowsUnrelatedRegistryPathPrefix()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/workspace/.npmrc",
+            """
+            registry=https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/
+            //pkgs.dev.azure.com/org/_packaging/feed/npm/registry-other:_authToken=unrelated
+            """
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+
+        ConfigurationChangePlan plan = service.CreateUserCredentialPlan(
+            new NpmPhase12CredentialPlanRequest
+            {
+                Declaration = Assert.Single(service.DiscoverRegistryDeclarations()),
+                AuthToken = "short-lived-token",
+            }
+        );
+
+        Assert.Single(plan.Changes);
     }
 
     [Fact]

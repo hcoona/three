@@ -121,7 +121,8 @@ public static class CanonicalResourceIdentityPolicy
             CredentialEcosystem.Python => endpointShape.Components?.FeedKind
                 == FeedEndpointKind.Python,
             CredentialEcosystem.Npm or CredentialEcosystem.Pnpm or CredentialEcosystem.Yarn =>
-                endpointShape.Components?.FeedKind == FeedEndpointKind.Npm,
+                endpointShape.Components?.FeedKind == FeedEndpointKind.Npm
+                && IsNpmRegistryEndpoint(serviceEndpoint),
             _ => false,
         };
     }
@@ -652,6 +653,28 @@ public static class CanonicalResourceIdentityPolicy
         || (
             host.EndsWith(".visualstudio.com", StringComparison.OrdinalIgnoreCase)
             && !host.EndsWith(".pkgs.visualstudio.com", StringComparison.OrdinalIgnoreCase)
+        );
+
+    private static bool IsNpmRegistryEndpoint(Uri serviceEndpoint) =>
+        (
+            string.Equals(
+                serviceEndpoint.IdnHost,
+                "pkgs.dev.azure.com",
+                StringComparison.OrdinalIgnoreCase
+            )
+            || (
+                serviceEndpoint.IdnHost.EndsWith(
+                    ".pkgs.visualstudio.com",
+                    StringComparison.OrdinalIgnoreCase
+                )
+                && TryGetLegacyVisualStudioOrganization(serviceEndpoint.IdnHost) is not null
+            )
+        )
+        && (
+            serviceEndpoint.AbsolutePath.TrimEnd('/').EndsWith(
+                "/npm/registry",
+                StringComparison.OrdinalIgnoreCase
+            )
         );
 
     private static string? TryGetLegacyVisualStudioOrganization(string host)
