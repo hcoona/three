@@ -15,6 +15,8 @@ public sealed record GitPhase8VerticalSliceOptions
 {
     public string? StateDirectoryPath { get; init; }
 
+    internal IFileSystem? FileSystem { get; init; }
+
     public string? UserHomeDirectoryPath { get; init; }
 
     public string? XdgConfigHomeDirectoryPath { get; init; }
@@ -138,7 +140,7 @@ public sealed class GitPhase8VerticalSliceService
     private static readonly Uri GitServiceEndpoint = new("https://dev.azure.com/org");
     private static readonly Uri GitConfigurationProbeUrl =
         new("https://dev.azure.com/org/project/_git/repository");
-    private readonly SystemFileSystem fileSystem;
+    private readonly IFileSystem fileSystem;
     private readonly GitUserGlobalConfigActivation gitActivation;
     private readonly string gitExecutablePath;
     private readonly bool localShellGitDiscoverySupported;
@@ -156,7 +158,7 @@ public sealed class GitPhase8VerticalSliceService
         bool configurationOnly
     )
     {
-        fileSystem = new SystemFileSystem();
+        fileSystem = options?.FileSystem ?? new SystemFileSystem();
         gitActivation = new GitUserGlobalConfigActivation(fileSystem);
         paths = ResolvePaths(options);
         processRunner = options?.ProcessRunner ?? new SystemProcessRunner();
@@ -425,7 +427,11 @@ public sealed class GitPhase8VerticalSliceService
         try
         {
             ConfigurationManager manager = CreateManager();
-            ThrowIfAppliedGitConfigurationIsNotCurrent(manager, cancellationToken);
+            ThrowIfAppliedGitConfigurationIsNotCurrent(
+                manager,
+                manifest,
+                cancellationToken
+            );
             GitUserGlobalConfigActivationState activationState = gitActivation.Inspect(
                 paths.UserGitConfigPath,
                 paths.GitConfigPath
@@ -476,7 +482,11 @@ public sealed class GitPhase8VerticalSliceService
         try
         {
             ConfigurationManager manager = CreateManager();
-            ThrowIfAppliedGitConfigurationIsNotCurrent(manager, cancellationToken);
+            ThrowIfAppliedGitConfigurationIsNotCurrent(
+                manager,
+                manifest,
+                cancellationToken
+            );
             _ = gitActivation.Inspect(paths.UserGitConfigPath, paths.GitConfigPath);
             await manager.DryRunAsync(CreateUnconfigurePlan(manifest), cancellationToken);
         }
@@ -1446,15 +1456,30 @@ public sealed class GitPhase8VerticalSliceService
 
     private void ThrowIfAppliedGitConfigurationIsNotCurrent(
         ConfigurationManager manager,
+        ConfigurationOwnershipManifest manifest,
         CancellationToken cancellationToken
     )
     {
-        if (!manager.IsAppliedStateCurrent(CreateConfigurePlan(), cancellationToken))
+        if (manager.IsAppliedStateCurrent(CreateConfigurePlan(), cancellationToken))
         {
-            throw new GitPhase8UnrecognizedStateException(
-                "The Phase 8 Git configuration state is not recognized."
-            );
+            return;
         }
+
+        GitUserGlobalConfigActivationState activationState = gitActivation.Inspect(
+            paths.UserGitConfigPath,
+            paths.GitConfigPath
+        );
+        if (
+            activationState == GitUserGlobalConfigActivationState.Absent
+            && manager.IsAppliedStateCurrent(CreateUnconfigurePlan(manifest), cancellationToken)
+        )
+        {
+            return;
+        }
+
+        throw new GitPhase8UnrecognizedStateException(
+            "The Phase 8 Git configuration state is not recognized."
+        );
     }
 
     private bool TryInspectOwnedGitActivation()

@@ -1,5 +1,7 @@
 using Hcoona.AzureAuth.CredProvider.Platform.AdapterHost;
 using Hcoona.AzureAuth.CredProvider.Platform.Composition;
+using Hcoona.AzureAuth.CredProvider.Platform.Configuration;
+using Hcoona.AzureAuth.CredProvider.Platform.FileSystem;
 using Hcoona.AzureAuth.CredProvider.Platform.Processes;
 using Hcoona.AzureAuth.CredProvider.Platform.VerticalSlice;
 using Xunit;
@@ -47,6 +49,45 @@ public sealed class GitPhase8DoctorTests
                 startSpec.Environment["HOME"]
             );
             Assert.True(processRunner.HelperAliasWasPresent);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UnconfigureRejectsActiveActivationWhenOwnedSelectorsAreAbsent(bool dryRun)
+    {
+        string stateDirectory = CreateTestDirectory();
+        GitPhase8VerticalSliceService service = CreateRealGitService(stateDirectory);
+
+        try
+        {
+            await service.ConfigureAsync(TestContext.Current.CancellationToken);
+            File.WriteAllText(service.Paths.GitConfigPath, string.Empty);
+            byte[] activation = File.ReadAllBytes(service.Paths.UserGitConfigPath);
+            byte[] manifest = File.ReadAllBytes(service.Paths.OwnershipManifestPath);
+
+            await Assert.ThrowsAsync<GitPhase8UnrecognizedStateException>(async () =>
+            {
+                if (dryRun)
+                {
+                    await service.ValidateUnconfigureDryRunAsync(
+                        TestContext.Current.CancellationToken
+                    );
+                }
+                else
+                {
+                    await service.UnconfigureAsync(TestContext.Current.CancellationToken);
+                }
+            });
+
+            Assert.Equal(activation, File.ReadAllBytes(service.Paths.UserGitConfigPath));
+            Assert.Empty(File.ReadAllText(service.Paths.GitConfigPath));
+            Assert.Equal(manifest, File.ReadAllBytes(service.Paths.OwnershipManifestPath));
         }
         finally
         {
@@ -765,7 +806,8 @@ public sealed class GitPhase8DoctorTests
     private static GitPhase8VerticalSliceService CreateRealGitService(
         string stateDirectory,
         string? homeDirectory = null,
-        Action? afterOwnedGitActivationRemoved = null
+        Action? afterOwnedGitActivationRemoved = null,
+        IFileSystem? fileSystem = null
     ) =>
         new(
             new GitPhase8VerticalSliceOptions
@@ -777,6 +819,7 @@ public sealed class GitPhase8DoctorTests
                 LocalShellGitDiscoverySupported = true,
                 ProductExecutablePath = CreateFakeProductExecutable(stateDirectory),
                 AfterOwnedGitActivationRemoved = afterOwnedGitActivationRemoved,
+                FileSystem = fileSystem,
             }
         );
 
@@ -1131,5 +1174,259 @@ public sealed class GitPhase8DoctorTests
         {
             DeleteDirectoryIfExists(stateDirectory);
         }
+    }
+
+    [Fact]
+    public async Task UnconfigureManifestDeletionFailureRetainsRetryableStateAndRetryConverges()
+    {
+        string stateDirectory = CreateTestDirectory();
+        var fileSystem = new OneShotManifestDeleteFailureFileSystem();
+        GitPhase8VerticalSliceService service = CreateRealGitService(
+            stateDirectory,
+            fileSystem: fileSystem
+        );
+
+        try
+        {
+            await service.ConfigureAsync(TestContext.Current.CancellationToken);
+            Assert.True(File.Exists(service.Paths.OwnershipManifestPath));
+            fileSystem.ArmDeleteFailure(service.Paths.OwnershipManifestPath);
+
+            GitPhase8UnrecognizedStateException firstFailure =
+                await Assert.ThrowsAsync<GitPhase8UnrecognizedStateException>(async () =>
+                    await service.UnconfigureAsync(TestContext.Current.CancellationToken)
+                );
+
+            IOException injectedFailure = Assert.IsType<IOException>(
+                firstFailure.InnerException
+            );
+            Assert.Equal(
+                OneShotManifestDeleteFailureFileSystem.InjectedFailureMessage,
+                injectedFailure.Message
+            );
+            Assert.Equal(1, fileSystem.MatchingDeleteAttempts);
+            Assert.Equal(1, fileSystem.InjectedFailureCount);
+            AssertOwnedGitActivationAbsent(service);
+            await AssertGitSelectorAbsentAsync(
+                service.Paths.GitConfigPath,
+                GitPhase8VerticalSliceService.GitCredentialHelperKey
+            );
+            await AssertGitSelectorAbsentAsync(
+                service.Paths.GitConfigPath,
+                GitPhase8VerticalSliceService.GitUseHttpPathKey
+            );
+
+            Assert.True(File.Exists(service.Paths.OwnershipManifestPath));
+            string retainedManifestContents = File.ReadAllText(
+                service.Paths.OwnershipManifestPath
+            );
+            ConfigurationOwnershipManifest manifest =
+                ConfigurationOwnershipManifestSerializer.Deserialize(retainedManifestContents);
+            Assert.True(ConfigurationOwnershipManifestPolicy.IsValid(manifest));
+            Assert.Collection(
+                manifest.Entries,
+                entry =>
+                {
+                    Assert.Equal(1, entry.Sequence);
+                    Assert.Equal(
+                        Hcoona.AzureAuth.CredProvider.Contracts.ConfigurationTargetKind.GitConfig,
+                        entry.TargetKind
+                    );
+                    Assert.Equal(service.Paths.GitConfigPath, entry.TargetPathOrName);
+                    Assert.Equal(
+                        GitPhase8VerticalSliceService.GitCredentialHelperKey,
+                        entry.Key
+                    );
+                },
+                entry =>
+                {
+                    Assert.Equal(2, entry.Sequence);
+                    Assert.Equal(
+                        Hcoona.AzureAuth.CredProvider.Contracts.ConfigurationTargetKind.GitConfig,
+                        entry.TargetKind
+                    );
+                    Assert.Equal(service.Paths.GitConfigPath, entry.TargetPathOrName);
+                    Assert.Equal(
+                        GitPhase8VerticalSliceService.GitUseHttpPathKey,
+                        entry.Key
+                    );
+                }
+            );
+
+            await service.ValidateUnconfigureDryRunAsync(
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Equal(
+                retainedManifestContents,
+                File.ReadAllText(service.Paths.OwnershipManifestPath)
+            );
+            Assert.Equal(1, fileSystem.MatchingDeleteAttempts);
+            Assert.Equal(1, fileSystem.InjectedFailureCount);
+
+            GitPhase8UnconfigureResult retryResult = await service.UnconfigureAsync(
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.True(retryResult.HadOwnedConfiguration);
+            Assert.False(retryResult.OwnedGitEntriesPresent);
+            Assert.False(retryResult.OwnershipManifestPresent);
+            Assert.Equal(2, fileSystem.MatchingDeleteAttempts);
+            Assert.Equal(1, fileSystem.InjectedFailureCount);
+            Assert.False(File.Exists(service.Paths.OwnershipManifestPath));
+            AssertOwnedGitActivationAbsent(service);
+            await AssertGitSelectorAbsentAsync(
+                service.Paths.GitConfigPath,
+                GitPhase8VerticalSliceService.GitCredentialHelperKey
+            );
+            await AssertGitSelectorAbsentAsync(
+                service.Paths.GitConfigPath,
+                GitPhase8VerticalSliceService.GitUseHttpPathKey
+            );
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    private static void AssertOwnedGitActivationAbsent(
+        GitPhase8VerticalSliceService service
+    )
+    {
+        Assert.DoesNotContain(
+            "# BEGIN azureauth-credprovider managed include",
+            File.ReadAllText(service.Paths.UserGitConfigPath),
+            StringComparison.Ordinal
+        );
+    }
+
+    private static async Task AssertGitSelectorAbsentAsync(
+        string gitConfigPath,
+        string selector
+    )
+    {
+        ProcessResult result = await new SystemProcessRunner()
+            .RunAsync(
+                new ProcessStartSpec(
+                    "git",
+                    ["config", "--file", gitConfigPath, "--get-all", selector]
+                ),
+                TestContext.Current.CancellationToken
+            );
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Empty(result.StandardOutput);
+    }
+
+    private sealed class OneShotManifestDeleteFailureFileSystem
+        : IFileSystem,
+            IFileSystemMutationLock,
+            IFileSystemLinkResolver
+    {
+        internal const string InjectedFailureMessage =
+            "Injected ownership manifest deletion failure.";
+
+        private readonly SystemFileSystem inner = new();
+        private string? deleteFailurePath;
+
+        public int MatchingDeleteAttempts { get; private set; }
+
+        public int InjectedFailureCount { get; private set; }
+
+        public void ArmDeleteFailure(string path)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(path);
+            Assert.Null(deleteFailurePath);
+            deleteFailurePath = inner.GetFullPath(path);
+        }
+
+        public bool FileExists(string path) => inner.FileExists(path);
+
+        public bool IsExecutableFile(string path) => inner.IsExecutableFile(path);
+
+        public bool DirectoryExists(string path) => inner.DirectoryExists(path);
+
+        public string GetFullPath(string path) => inner.GetFullPath(path);
+
+        public bool IsPathFullyQualified(string path) => inner.IsPathFullyQualified(path);
+
+        public string ReadAllText(string path, System.Text.Encoding? encoding = null) =>
+            inner.ReadAllText(path, encoding);
+
+        public byte[] ReadAllBytes(string path) => inner.ReadAllBytes(path);
+
+        public long GetFileLength(string path) => inner.GetFileLength(path);
+
+        public void WriteAllText(
+            string path,
+            string contents,
+            System.Text.Encoding? encoding = null
+        ) => inner.WriteAllText(path, contents, encoding);
+
+        public void AtomicWriteAllText(
+            string path,
+            string contents,
+            System.Text.Encoding? encoding = null,
+            AtomicWriteOptions options = AtomicWriteOptions.None
+        ) => inner.AtomicWriteAllText(path, contents, encoding, options);
+
+        public void AtomicWriteAllBytes(
+            string path,
+            byte[] contents,
+            AtomicWriteOptions options = AtomicWriteOptions.None
+        ) => inner.AtomicWriteAllBytes(path, contents, options);
+
+        public UnixFileMode GetUnixFileMode(string path) => inner.GetUnixFileMode(path);
+
+        public void SetUnixFileMode(string path, UnixFileMode mode) =>
+            inner.SetUnixFileMode(path, mode);
+
+        public void CreateDirectory(string path) => inner.CreateDirectory(path);
+
+        public void DeleteFile(string path)
+        {
+            if (
+                deleteFailurePath is not null
+                && string.Equals(
+                    inner.GetFullPath(path),
+                    deleteFailurePath,
+                    OperatingSystem.IsWindows()
+                        ? StringComparison.OrdinalIgnoreCase
+                        : StringComparison.Ordinal
+                )
+            )
+            {
+                MatchingDeleteAttempts++;
+                if (InjectedFailureCount == 0)
+                {
+                    InjectedFailureCount++;
+                    throw new IOException(InjectedFailureMessage);
+                }
+            }
+
+            inner.DeleteFile(path);
+        }
+
+        public void DeleteDirectory(string path, bool recursive = false) =>
+            inner.DeleteDirectory(path, recursive);
+
+        public IEnumerable<string> EnumerateFiles(
+            string path,
+            string searchPattern = "*",
+            SearchOption searchOption = SearchOption.TopDirectoryOnly
+        ) => inner.EnumerateFiles(path, searchPattern, searchOption);
+
+        public IEnumerable<string> EnumerateDirectories(
+            string path,
+            string searchPattern = "*",
+            SearchOption searchOption = SearchOption.TopDirectoryOnly
+        ) => inner.EnumerateDirectories(path, searchPattern, searchOption);
+
+        IDisposable IFileSystemMutationLock.AcquireMutationLock(string directory) =>
+            ((IFileSystemMutationLock)inner).AcquireMutationLock(directory);
+
+        string IFileSystemLinkResolver.ResolveFilePathForWrite(string path) =>
+            ((IFileSystemLinkResolver)inner).ResolveFilePathForWrite(path);
     }
 }
