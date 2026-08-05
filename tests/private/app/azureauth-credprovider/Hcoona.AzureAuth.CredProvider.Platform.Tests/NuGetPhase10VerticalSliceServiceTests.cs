@@ -159,7 +159,7 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
             {
                 StateDirectoryPath = "/state/azureauth-credprovider/phase10",
                 FileSystem = fileSystem,
-                EnvironmentVariableReader = environmentVariableReader,
+                EnvironmentVariableReader = environmentVariableReader ?? (_ => null),
             }
         );
 }

@@ -192,6 +192,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
     private readonly Func<string, string?> environmentVariableReader;
     private readonly IFileSystem fileSystem;
     private readonly string? jobScopeId;
+    private readonly ConfigurationLayoutPlatform layoutPlatform;
     private readonly string? rawJobScopeId;
     private readonly ConfigurationPhase14ResolvedPaths paths;
     private readonly Dictionary<CredentialEcosystem, Uri> registryUrls;
@@ -205,6 +206,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
     {
         options ??= new ConfigurationPhase14VerticalSliceOptions();
         fileSystem = options.FileSystem ?? new SystemFileSystem();
+        layoutPlatform = GetLayoutPlatform(fileSystem);
         credentialAcquisition = new Lazy<BoundedCredentialAcquisitionAdapter>(
             () =>
                 options.CredentialAcquisition
@@ -228,7 +230,12 @@ public sealed class ConfigurationPhase14VerticalSliceService
             options.AzurePipelinesJobScopeId
             ?? environmentVariableReader(AzurePipelinesJobScopeIdVariable);
         jobScopeId = IsValidJobScopeId(rawJobScopeId) ? rawJobScopeId : null;
-        paths = ResolvePaths(options, fileSystem, jobScopeId, environmentVariableReader);
+        paths = ResolvePaths(
+            options,
+            fileSystem,
+            jobScopeId,
+            environmentVariableReader
+        );
         registryUrls = ValidateRegistryUrls(options.RegistryUrls);
         timeProvider = options.TimeProvider ?? TimeProvider.System;
         expiryPolicy = new RegistryCredentialExpiryPolicy(timeProvider, options.ExpiryPolicy);
@@ -941,7 +948,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
             backendProjection.TargetPath,
             CreatePythonBackendManifestValue(GetRequiredProductExecutablePath())
         );
-        if (OperatingSystem.IsWindows())
+        if (layoutPlatform == ConfigurationLayoutPlatform.Windows)
         {
             ConfigurationChangePlan? obsoleteShimRemovalPlan =
                 CreateObsoleteWindowsPythonShimRemovalPlan(scope, backendProjection.TargetPath);
@@ -1103,7 +1110,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
             return false;
         }
 
-        if (OperatingSystem.IsWindows() && manifest.Entries.Count == 1)
+        if (layoutPlatform == ConfigurationLayoutPlatform.Windows && manifest.Entries.Count == 1)
         {
             layout = PythonOwnershipManifestLayout.Current;
             return true;
@@ -1122,7 +1129,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
             return false;
         }
 
-        layout = OperatingSystem.IsWindows()
+        layout = layoutPlatform == ConfigurationLayoutPlatform.Windows
             ? PythonOwnershipManifestLayout.LegacyWindows
             : PythonOwnershipManifestLayout.Current;
         return true;
@@ -1264,7 +1271,8 @@ public sealed class ConfigurationPhase14VerticalSliceService
                     {
                         Operation = ConfigurationChangeOperation.Set,
                         TargetKind = ConfigurationTargetKind.Yarnrc,
-                        TargetPathOrName = Path.Combine(
+                        TargetPathOrName = FileSystemPathSemantics.Combine(
+                            fileSystem,
                             paths.YarnCiTemporaryHomePath,
                             ".yarnrc.yml"
                         ),
@@ -1867,9 +1875,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
         string.Equals(
             path,
             NormalizePath(path),
-            OperatingSystem.IsWindows()
-                ? StringComparison.OrdinalIgnoreCase
-                : StringComparison.Ordinal
+            FileSystemPathSemantics.GetComparison(fileSystem)
         );
 
     private bool OwnershipManifestMatchesExpectedBaseState(
@@ -2201,7 +2207,11 @@ public sealed class ConfigurationPhase14VerticalSliceService
     {
         if (ecosystem == CredentialEcosystem.Yarn)
         {
-            string yarnrcPath = Path.Combine(paths.YarnCiTemporaryHomePath, ".yarnrc.yml");
+            string yarnrcPath = FileSystemPathSemantics.Combine(
+                fileSystem,
+                paths.YarnCiTemporaryHomePath,
+                ".yarnrc.yml"
+            );
             if (
                 fileSystem.FileExists(yarnrcPath)
                 && string.IsNullOrWhiteSpace(fileSystem.ReadAllText(yarnrcPath))
@@ -2775,11 +2785,13 @@ public sealed class ConfigurationPhase14VerticalSliceService
         new()
         {
             Platform =
-                OperatingSystem.IsWindows() ? ConfigurationLayoutPlatform.Windows
-                : OperatingSystem.IsMacOS() ? ConfigurationLayoutPlatform.MacOs
-                : ConfigurationLayoutPlatform.Linux,
-            HomeDirectory = GetHomeDirectory(),
-            LocalAppDataDirectory = GetLocalAppDataDirectory(),
+                layoutPlatform,
+            HomeDirectory = ResolveUserHomeDirectory(fileSystem, environmentVariableReader),
+            LocalAppDataDirectory = ResolveLocalAppDataDirectory(
+                fileSystem,
+                layoutPlatform,
+                environmentVariableReader
+            ),
             XdgDataHomeDirectory = environmentVariableReader("XDG_DATA_HOME"),
             XdgConfigHomeDirectory = environmentVariableReader("XDG_CONFIG_HOME"),
             FileExists = fileSystem.FileExists,
@@ -2819,7 +2831,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
             },
         };
 
-    private static string CreatePythonBackendManifestValue(string helperPath) =>
+    private string CreatePythonBackendManifestValue(string helperPath) =>
         "{\"contractMajor\":2,\"productId\":\"azureauth-credprovider\","
         + "\"absoluteHelperPath\":\""
         + JsonEncodedText.Encode(helperPath)
@@ -2837,33 +2849,36 @@ public sealed class ConfigurationPhase14VerticalSliceService
                 + "azureauth-credprovider executable path."
         );
 
-    private static string GetPythonHelperPlatform() =>
-        OperatingSystem.IsWindows() ? "windows"
-        : OperatingSystem.IsLinux() ? "linux"
-        : OperatingSystem.IsMacOS() ? "macOs"
-        : throw new PlatformNotSupportedException(
-            "Python keyring configuration requires Windows, Linux, or macOS."
-        );
+    private string GetPythonHelperPlatform() =>
+        layoutPlatform switch
+        {
+            ConfigurationLayoutPlatform.Windows => "windows",
+            ConfigurationLayoutPlatform.Linux => "linux",
+            ConfigurationLayoutPlatform.MacOs => "macOs",
+            _ => throw new PlatformNotSupportedException(
+                "Python keyring configuration requires Windows, Linux, or macOS."
+            ),
+        };
 
-    private static string? ResolveProductExecutablePath(string? configuredPath)
+    private string? ResolveProductExecutablePath(string? configuredPath)
     {
         string? candidate = string.IsNullOrWhiteSpace(configuredPath)
             ? Environment.ProcessPath
             : configuredPath;
-        if (
-            string.IsNullOrWhiteSpace(candidate)
-            || !Path.IsPathFullyQualified(candidate)
-            || !string.Equals(
-                Path.GetFileNameWithoutExtension(candidate),
-                ProductId,
-                StringComparison.OrdinalIgnoreCase
-            )
-        )
+        if (string.IsNullOrWhiteSpace(candidate) || !fileSystem.IsPathFullyQualified(candidate))
         {
             return null;
         }
 
-        return Path.GetFullPath(candidate);
+        string fullPath = fileSystem.GetFullPath(candidate);
+        string fileName = fullPath.Replace('\\', '/').TrimEnd('/').Split('/')[^1];
+        return string.Equals(
+            Path.GetFileNameWithoutExtension(fileName),
+            ProductId,
+            StringComparison.OrdinalIgnoreCase
+        )
+            ? fullPath
+            : null;
     }
 
     private NpmPhase12RegistryDeclaration CreateNpmDeclaration(CredentialEcosystem ecosystem)
@@ -2892,8 +2907,11 @@ public sealed class ConfigurationPhase14VerticalSliceService
         Uri registryUrl = resource.ServiceEndpoint;
         return new NpmPhase12RegistryDeclaration
         {
-            SourcePath = fileSystem.GetFullPath(
-                Path.Combine(paths.StateDirectoryPath, "npm", "explicit-registry-declaration.npmrc")
+            SourcePath = FileSystemPathSemantics.Combine(
+                fileSystem,
+                paths.StateDirectoryPath,
+                "npm",
+                "explicit-registry-declaration.npmrc"
             ),
             Key = "registry",
             RegistryUrl = registryUrl,
@@ -2925,12 +2943,11 @@ public sealed class ConfigurationPhase14VerticalSliceService
         Uri registryUrl = resource.ServiceEndpoint;
         return new YarnPhase13RegistryDeclaration
         {
-            SourcePath = fileSystem.GetFullPath(
-                Path.Combine(
-                    paths.StateDirectoryPath,
-                    "yarn",
-                    "explicit-registry-declaration.yarnrc.yml"
-                )
+            SourcePath = FileSystemPathSemantics.Combine(
+                fileSystem,
+                paths.StateDirectoryPath,
+                "yarn",
+                "explicit-registry-declaration.yarnrc.yml"
             ),
             Key = "npmRegistryServer",
             RegistryUrl = registryUrl,
@@ -3026,7 +3043,11 @@ public sealed class ConfigurationPhase14VerticalSliceService
             ?? (
                 options.StateDirectoryPath is null
                     ? GetDefaultCiTemporaryProductRootPath()
-                    : Path.Combine(stateDirectoryPath, "ci-jobs")
+                    : FileSystemPathSemantics.Combine(
+                        fileSystem,
+                        stateDirectoryPath,
+                        "ci-jobs"
+                    )
             );
         RequireFullyQualifiedPath(
             fileSystem,
@@ -3034,36 +3055,61 @@ public sealed class ConfigurationPhase14VerticalSliceService
             "CI temporary product root"
         );
         string ciTemporaryProductRootPath = fileSystem.GetFullPath(ciTemporaryProductRootInput);
-        string ciTemporaryRootPath = fileSystem.GetFullPath(
+        string ciTemporaryRootPath =
             jobScopeId is null
                 ? ciTemporaryProductRootPath
-                : Path.Combine(ciTemporaryProductRootPath, jobScopeId)
+                : FileSystemPathSemantics.Combine(
+                    fileSystem,
+                    ciTemporaryProductRootPath,
+                    jobScopeId
+                );
+        string npmUserConfigPath = ResolveNpmUserConfigPath(
+            fileSystem,
+            environmentVariableReader
         );
-        string npmUserConfigPath = ResolveNpmUserConfigPath(fileSystem, environmentVariableReader);
         return new ConfigurationPhase14ResolvedPaths
         {
             StateDirectoryPath = stateDirectoryPath,
-            ManifestDirectoryPath = fileSystem.GetFullPath(
-                Path.Combine(stateDirectoryPath, "manifests")
+            ManifestDirectoryPath = FileSystemPathSemantics.Combine(
+                fileSystem,
+                stateDirectoryPath,
+                "manifests"
             ),
             CiTemporaryRootPath = ciTemporaryRootPath,
-            CiTemporaryManifestDirectoryPath = fileSystem.GetFullPath(
-                Path.Combine(ciTemporaryRootPath, "manifests")
+            CiTemporaryManifestDirectoryPath = FileSystemPathSemantics.Combine(
+                fileSystem,
+                ciTemporaryRootPath,
+                "manifests"
             ),
-            OwnershipManifestPath = fileSystem.GetFullPath(
-                Path.Combine(stateDirectoryPath, "manifests", "python-user-ownership-manifest.json")
+            OwnershipManifestPath = FileSystemPathSemantics.Combine(
+                fileSystem,
+                stateDirectoryPath,
+                "manifests",
+                "python-user-ownership-manifest.json"
             ),
             NpmUserNpmrcPath = npmUserConfigPath,
             PnpmUserNpmrcPath = npmUserConfigPath,
-            NpmCiTemporaryNpmrcPath = fileSystem.GetFullPath(
-                Path.Combine(ciTemporaryRootPath, "npm", "userconfig.npmrc")
+            NpmCiTemporaryNpmrcPath = FileSystemPathSemantics.Combine(
+                fileSystem,
+                ciTemporaryRootPath,
+                "npm",
+                "userconfig.npmrc"
             ),
-            PnpmCiTemporaryNpmrcPath = fileSystem.GetFullPath(
-                Path.Combine(ciTemporaryRootPath, "npm", "userconfig.npmrc")
+            PnpmCiTemporaryNpmrcPath = FileSystemPathSemantics.Combine(
+                fileSystem,
+                ciTemporaryRootPath,
+                "npm",
+                "userconfig.npmrc"
             ),
-            YarnUserYarnrcPath = ResolveYarnUserConfigPath(fileSystem, environmentVariableReader),
-            YarnCiTemporaryHomePath = fileSystem.GetFullPath(
-                Path.Combine(ciTemporaryRootPath, "yarn", "home")
+            YarnUserYarnrcPath = ResolveYarnUserConfigPath(
+                fileSystem,
+                environmentVariableReader
+            ),
+            YarnCiTemporaryHomePath = FileSystemPathSemantics.Combine(
+                fileSystem,
+                ciTemporaryRootPath,
+                "yarn",
+                "home"
             ),
         };
     }
@@ -3106,12 +3152,37 @@ public sealed class ConfigurationPhase14VerticalSliceService
             );
     }
 
-    private static string? GetLocalAppDataDirectory()
+    private static ConfigurationLayoutPlatform GetLayoutPlatform(IFileSystem fileSystem) =>
+        FileSystemPathSemantics.UsesWindowsPaths(fileSystem)
+            ? ConfigurationLayoutPlatform.Windows
+            : OperatingSystem.IsMacOS()
+                ? ConfigurationLayoutPlatform.MacOs
+                : ConfigurationLayoutPlatform.Linux;
+
+    private static string? ResolveLocalAppDataDirectory(
+        IFileSystem fileSystem,
+        ConfigurationLayoutPlatform layoutPlatform,
+        Func<string, string?> environmentVariableReader
+    )
     {
+        if (layoutPlatform != ConfigurationLayoutPlatform.Windows)
+        {
+            return null;
+        }
+
+        string? configured = NullIfWhiteSpace(environmentVariableReader("LOCALAPPDATA"));
+        if (configured is not null && fileSystem.IsPathFullyQualified(configured))
+        {
+            return fileSystem.GetFullPath(configured);
+        }
+
         string localApplicationData = Environment.GetFolderPath(
             Environment.SpecialFolder.LocalApplicationData
         );
-        return string.IsNullOrWhiteSpace(localApplicationData) ? null : localApplicationData;
+        return !string.IsNullOrWhiteSpace(localApplicationData)
+            && fileSystem.IsPathFullyQualified(localApplicationData)
+            ? fileSystem.GetFullPath(localApplicationData)
+            : null;
     }
 
     private static string ResolveNpmUserConfigPath(
@@ -3145,9 +3216,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
             && !string.Equals(
                 uppercasePath,
                 lowercasePath,
-                OperatingSystem.IsWindows()
-                    ? StringComparison.OrdinalIgnoreCase
-                    : StringComparison.Ordinal
+                FileSystemPathSemantics.GetComparison(fileSystem)
             )
         )
         {
@@ -3159,14 +3228,10 @@ public sealed class ConfigurationPhase14VerticalSliceService
 
         return uppercasePath
             ?? lowercasePath
-            ?? fileSystem.GetFullPath(
-                Path.Combine(
-                    ResolveUserHomeDirectory(
-                        environmentVariableReader,
-                        OperatingSystem.IsWindows()
-                    ),
-                    ".npmrc"
-                )
+            ?? FileSystemPathSemantics.Combine(
+                fileSystem,
+                ResolveUserHomeDirectory(fileSystem, environmentVariableReader),
+                ".npmrc"
             );
     }
 
@@ -3174,26 +3239,36 @@ public sealed class ConfigurationPhase14VerticalSliceService
         string.IsNullOrWhiteSpace(value) ? null : value;
 
     private static string ResolveUserHomeDirectory(
-        Func<string, string?> environmentVariableReader,
-        bool useWindowsConventions
+        IFileSystem fileSystem,
+        Func<string, string?> environmentVariableReader
     )
     {
-        string? home = useWindowsConventions
-            ? environmentVariableReader("USERPROFILE")
-            : environmentVariableReader("HOME");
-        if (useWindowsConventions && string.IsNullOrWhiteSpace(home))
+        bool useWindowsConventions = FileSystemPathSemantics.UsesWindowsPaths(fileSystem);
+        string? first = environmentVariableReader(
+            useWindowsConventions ? "USERPROFILE" : "HOME"
+        );
+        string? second = environmentVariableReader(
+            useWindowsConventions ? "HOME" : "USERPROFILE"
+        );
+        foreach (string? candidate in new[] { first, second })
         {
-            home = environmentVariableReader("HOME");
+            if (
+                !string.IsNullOrWhiteSpace(candidate)
+                && fileSystem.IsPathFullyQualified(candidate)
+            )
+            {
+                return fileSystem.GetFullPath(candidate);
+            }
         }
 
-        string resolved = string.IsNullOrWhiteSpace(home) ? GetHomeDirectory() : home;
-        if (!Path.IsPathFullyQualified(resolved))
+        string resolved = GetHomeDirectory();
+        if (!fileSystem.IsPathFullyQualified(resolved))
         {
             throw new InvalidOperationException(
                 "The effective user home directory must be fully qualified."
             );
         }
-        return resolved;
+        return fileSystem.GetFullPath(resolved);
     }
 
     private static string ResolveYarnUserConfigPath(
@@ -3201,10 +3276,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
         Func<string, string?> environmentVariableReader
     )
     {
-        string home = ResolveUserHomeDirectory(
-            environmentVariableReader,
-            OperatingSystem.IsWindows()
-        );
+        string home = ResolveUserHomeDirectory(fileSystem, environmentVariableReader);
         string? configuredFilename = environmentVariableReader(YarnRcFilenameEnvironmentVariable);
         if (
             !string.IsNullOrWhiteSpace(configuredFilename)
@@ -3216,7 +3288,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
             );
         }
         string filename = NullIfWhiteSpace(configuredFilename) ?? ".yarnrc.yml";
-        return fileSystem.GetFullPath(Path.Combine(home, filename));
+        return FileSystemPathSemantics.Combine(fileSystem, home, filename);
     }
 
     private static void RequireFullyQualifiedPath(
@@ -3269,7 +3341,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
             scope == ConfigurationPhase14Scope.CiTemporary
                 ? paths.CiTemporaryManifestDirectoryPath
                 : paths.ManifestDirectoryPath;
-        return fileSystem.GetFullPath(Path.Combine(manifestDirectory, fileName));
+        return FileSystemPathSemantics.Combine(fileSystem, manifestDirectory, fileName);
     }
 
     private void EnsureCiJobScope(ConfigurationPhase14Scope scope)
@@ -3345,11 +3417,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
     {
         string[] paths = values.Select(NormalizePath).ToArray();
         return paths
-            .Distinct(
-                OperatingSystem.IsWindows()
-                    ? StringComparer.OrdinalIgnoreCase
-                    : StringComparer.Ordinal
-            )
+            .Distinct(FileSystemPathSemantics.GetComparer(fileSystem))
             .SingleOrDefault();
     }
 
@@ -3359,9 +3427,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
         string.Equals(
             NormalizePath(left),
             NormalizePath(right),
-            OperatingSystem.IsWindows()
-                ? StringComparison.OrdinalIgnoreCase
-                : StringComparison.Ordinal
+            FileSystemPathSemantics.GetComparison(fileSystem)
         );
 }
 

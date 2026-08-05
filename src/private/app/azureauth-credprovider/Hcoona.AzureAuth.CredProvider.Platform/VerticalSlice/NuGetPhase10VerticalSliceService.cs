@@ -142,7 +142,7 @@ public sealed class NuGetPhase10VerticalSliceService
         fileSystem = options.FileSystem ?? new SystemFileSystem();
         environmentVariableReader =
             options.EnvironmentVariableReader ?? Environment.GetEnvironmentVariable;
-        paths = ResolvePaths(options, fileSystem);
+        paths = ResolvePaths(options, fileSystem, environmentVariableReader);
         if (!configurationOnly)
         {
             credentialAcquisition = new Lazy<BoundedCredentialAcquisitionAdapter>(
@@ -781,20 +781,20 @@ public sealed class NuGetPhase10VerticalSliceService
 
     private static NuGetPhase10VerticalSliceResolvedPaths ResolvePaths(
         NuGetPhase10VerticalSliceOptions options,
-        IFileSystem fileSystem
+        IFileSystem fileSystem,
+        Func<string, string?> environmentVariableReader
     )
     {
         string stateDirectoryPath = fileSystem.GetFullPath(
             options.StateDirectoryPath ?? GetDefaultStateDirectoryPath()
         );
-        string ownershipManifestPath = fileSystem.GetFullPath(
-            Path.Combine(
-                stateDirectoryPath,
-                "manifests",
-                "nuget-plugin-layout-ownership-manifest.json"
-            )
+        string ownershipManifestPath = FileSystemPathSemantics.Combine(
+            fileSystem,
+            stateDirectoryPath,
+            "manifests",
+            "nuget-plugin-layout-ownership-manifest.json"
         );
-        string homeDirectory = GetCurrentUserProfileDirectory();
+        string homeDirectory = GetCurrentUserProfileDirectory(environmentVariableReader);
         if (string.IsNullOrWhiteSpace(homeDirectory))
         {
             throw new InvalidOperationException(
@@ -808,14 +808,21 @@ public sealed class NuGetPhase10VerticalSliceService
                 {
                     Platform = GetCurrentLayoutPlatform(),
                     HomeDirectory = homeDirectory,
+                    LocalAppDataDirectory = GetCurrentLocalApplicationDataDirectory(
+                        environmentVariableReader
+                    ),
                 }
             );
         string pluginTargetRootPath = fileSystem.GetFullPath(projection.TargetPath);
-        string pluginEntrypointPath = fileSystem.GetFullPath(
-            Path.Combine(pluginTargetRootPath, "azureauth-credprovider.dll")
+        string pluginEntrypointPath = FileSystemPathSemantics.Combine(
+            fileSystem,
+            pluginTargetRootPath,
+            "azureauth-credprovider.dll"
         );
-        string pluginLayoutMarkerPath = fileSystem.GetFullPath(
-            Path.Combine(pluginTargetRootPath, MarkerFileName)
+        string pluginLayoutMarkerPath = FileSystemPathSemantics.Combine(
+            fileSystem,
+            pluginTargetRootPath,
+            MarkerFileName
         );
 
         return new NuGetPhase10VerticalSliceResolvedPaths
@@ -847,7 +854,9 @@ public sealed class NuGetPhase10VerticalSliceService
         return Path.Combine(Path.GetTempPath(), ProductId, "phase10");
     }
 
-    private static string GetCurrentUserProfileDirectory()
+    private static string GetCurrentUserProfileDirectory(
+        Func<string, string?> environmentVariableReader
+    )
     {
         string? userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         if (!string.IsNullOrWhiteSpace(userProfile))
@@ -857,14 +866,14 @@ public sealed class NuGetPhase10VerticalSliceService
 
         if (OperatingSystem.IsWindows())
         {
-            string? windowsUserProfile = Environment.GetEnvironmentVariable("USERPROFILE");
+            string? windowsUserProfile = environmentVariableReader("USERPROFILE");
             if (!string.IsNullOrWhiteSpace(windowsUserProfile))
             {
                 return Path.TrimEndingDirectorySeparator(windowsUserProfile);
             }
 
-            string? homeDrive = Environment.GetEnvironmentVariable("HOMEDRIVE");
-            string? homePath = Environment.GetEnvironmentVariable("HOMEPATH");
+            string? homeDrive = environmentVariableReader("HOMEDRIVE");
+            string? homePath = environmentVariableReader("HOMEPATH");
             if (!string.IsNullOrWhiteSpace(homeDrive) && !string.IsNullOrWhiteSpace(homePath))
             {
                 return Path.TrimEndingDirectorySeparator(homeDrive + homePath);
@@ -872,7 +881,7 @@ public sealed class NuGetPhase10VerticalSliceService
         }
         else
         {
-            string? home = Environment.GetEnvironmentVariable("HOME");
+            string? home = environmentVariableReader("HOME");
             if (!string.IsNullOrWhiteSpace(home))
             {
                 return Path.TrimEndingDirectorySeparator(home);
@@ -880,6 +889,24 @@ public sealed class NuGetPhase10VerticalSliceService
         }
 
         return string.Empty;
+    }
+
+    private static string? GetCurrentLocalApplicationDataDirectory(
+        Func<string, string?> environmentVariableReader
+    )
+    {
+        string localApplicationData = Environment.GetFolderPath(
+            Environment.SpecialFolder.LocalApplicationData
+        );
+        if (!string.IsNullOrWhiteSpace(localApplicationData))
+        {
+            return Path.TrimEndingDirectorySeparator(localApplicationData);
+        }
+
+        string? configured = environmentVariableReader("LOCALAPPDATA");
+        return string.IsNullOrWhiteSpace(configured)
+            ? null
+            : Path.TrimEndingDirectorySeparator(configured);
     }
 
     private static ConfigurationLayoutPlatform GetCurrentLayoutPlatform() =>

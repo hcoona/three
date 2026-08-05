@@ -28,7 +28,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
                 {
                     FileSystem = fileSystem,
                     StateDirectoryPath = "/state/production",
-                    EnvironmentVariableReader = _ => null,
+                    EnvironmentVariableReader = ReadPosixHomeEnvironment,
                 },
             }
         );
@@ -68,7 +68,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
                 CredentialAcquisition = new BoundedCredentialAcquisitionAdapter(
                     new SilentTestAcquisitionService()
                 ),
-                EnvironmentVariableReader = _ => null,
+                EnvironmentVariableReader = ReadPosixHomeEnvironment,
                 RegistryUrls = new Dictionary<CredentialEcosystem, Uri>
                 {
                     [CredentialEcosystem.Npm] = registryUrl,
@@ -1355,6 +1355,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
             Path.GetDirectoryName(backend.TargetPathOrName)!
         )!;
         string legacyShimPath = Path.Combine(productRoot, "keyring-shim", "keyring.exe");
+        fileSystem.CreateDirectory(Path.GetDirectoryName(legacyShimPath)!);
         fileSystem.WriteAllText(legacyShimPath, "legacy product-owned shim");
         fileSystem.WriteAllText(
             service.Paths.OwnershipManifestPath,
@@ -1492,7 +1493,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
             TestContext.Current.CancellationToken
         );
 
-        int expectedChangeCount = OperatingSystem.IsWindows() ? 1 : 2;
+        int expectedChangeCount = UsesWindowsPaths(fileSystem) ? 1 : 2;
         Assert.Equal(expectedChangeCount, result.PlanResults.Count);
         Assert.Equal(expectedChangeCount, result.ChangeCount);
         Assert.All(
@@ -1507,11 +1508,11 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         Assert.Equal(2, root.GetProperty("contractMajor").GetInt32());
         Assert.Equal("azureauth-credprovider", root.GetProperty("productId").GetString());
         Assert.Equal(
-            GetTestProductExecutablePath(),
+            GetTestProductExecutablePath(fileSystem),
             root.GetProperty("absoluteHelperPath").GetString()
         );
-        Assert.Equal(GetTestProductPlatform(), root.GetProperty("platform").GetString());
-        if (!OperatingSystem.IsWindows())
+        Assert.Equal(GetTestProductPlatform(fileSystem), root.GetProperty("platform").GetString());
+        if (!UsesWindowsPaths(fileSystem))
         {
             ConfigurationPlannedChange shimChange = Assert.Single(result.PlanResults[1].Changes);
             Assert.Equal(
@@ -1546,9 +1547,12 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
                 fileSystem.ReadAllText(manifestPath)
             );
         ConfigurationOwnershipManifestEntry backendEntry = Assert.Single(manifest.Entries);
-        const string ObsoleteShimPath =
-            @"C:\Users\alice\AppData\Local\AzureAuth\CredProvider\keyring-shim\keyring.exe";
-        fileSystem.WriteAllText(ObsoleteShimPath, "obsolete placeholder");
+        string productRoot = Path.GetDirectoryName(
+            Path.GetDirectoryName(backendEntry.TargetPathOrName)!
+        )!;
+        string obsoleteShimPath = Path.Combine(productRoot, "keyring-shim", "keyring.exe");
+        fileSystem.CreateDirectory(Path.GetDirectoryName(obsoleteShimPath)!);
+        fileSystem.WriteAllText(obsoleteShimPath, "obsolete placeholder");
         fileSystem.WriteAllText(
             manifestPath,
             ConfigurationOwnershipManifestSerializer.Serialize(
@@ -1561,7 +1565,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
                         {
                             Sequence = backendEntry.Sequence + 1,
                             TargetKind = ConfigurationTargetKind.KeyringShim,
-                            TargetPathOrName = ObsoleteShimPath,
+                            TargetPathOrName = obsoleteShimPath,
                         },
                     ],
                 }
@@ -1577,7 +1581,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         Assert.Equal(2, result.ChangeCount);
         Assert.Equal(ConfigurationPlanOperation.Remove, result.PlanResults[0].Operation);
         Assert.Equal(ConfigurationPlanOperation.Apply, result.PlanResults[1].Operation);
-        Assert.False(fileSystem.FileExists(ObsoleteShimPath));
+        Assert.False(fileSystem.FileExists(obsoleteShimPath));
         ConfigurationOwnershipManifest reconciled =
             ConfigurationOwnershipManifestSerializer.Deserialize(
                 fileSystem.ReadAllText(manifestPath)
@@ -1614,6 +1618,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
                 fileSystem.ReadAllText(manifestPath)
             );
         ConfigurationOwnershipManifestEntry backendEntry = Assert.Single(manifest.Entries);
+        fileSystem.CreateDirectory(@"C:\unrelated");
         fileSystem.WriteAllText(UnrelatedShimPath, UnrelatedContents);
         fileSystem.WriteAllText(
             manifestPath,
@@ -1668,7 +1673,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
             TestContext.Current.CancellationToken
         );
 
-        int expectedChangeCount = OperatingSystem.IsWindows() ? 1 : 2;
+        int expectedChangeCount = UsesWindowsPaths(fileSystem) ? 1 : 2;
         Assert.Equal(expectedChangeCount, result.PlanResults.Count);
         Assert.Equal(expectedChangeCount, result.ChangeCount);
         Assert.False(result.OwnershipManifestPresent);
@@ -1710,7 +1715,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
             TestContext.Current.CancellationToken
         );
 
-        Assert.Equal(OperatingSystem.IsWindows() ? 1 : 2, pythonResult.ChangeCount);
+        Assert.Equal(UsesWindowsPaths(fileSystem) ? 1 : 2, pythonResult.ChangeCount);
         Assert.Equal(1, npmResult.ChangeCount);
         Assert.Equal(1, pnpmResult.ChangeCount);
         Assert.Equal(2, yarnResult.ChangeCount);
@@ -2512,13 +2517,13 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         var service = new ConfigurationPhase14VerticalSliceService(
             new ConfigurationPhase14VerticalSliceOptions
             {
-                FileSystem = new InMemoryFileSystem(),
+                FileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix),
                 StateDirectoryPath = "/state/phase14-dry-run",
                 AzurePipelinesJobScopeId = jobScopeId,
                 CredentialAcquisition = new BoundedCredentialAcquisitionAdapter(
                     new SilentTestAcquisitionService()
                 ),
-                EnvironmentVariableReader = _ => null,
+                EnvironmentVariableReader = ReadPosixHomeEnvironment,
                 RegistryUrls = new Dictionary<CredentialEcosystem, Uri>
                 {
                     [CredentialEcosystem.Npm] = new(
@@ -2548,13 +2553,13 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         var service = new ConfigurationPhase14VerticalSliceService(
             new ConfigurationPhase14VerticalSliceOptions
             {
-                FileSystem = new InMemoryFileSystem(),
+                FileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix),
                 StateDirectoryPath = "/state/phase14-dry-run",
                 AzurePipelinesJobScopeId = "job-1",
                 CredentialAcquisition = new BoundedCredentialAcquisitionAdapter(
                     new SilentTestAcquisitionService()
                 ),
-                EnvironmentVariableReader = _ => null,
+                EnvironmentVariableReader = ReadPosixHomeEnvironment,
             }
         );
 
@@ -2730,9 +2735,12 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
                 AzurePipelinesJobScopeId = "phase14-v2-ci-job",
                 CredentialAcquisition = new BoundedCredentialAcquisitionAdapter(acquisition),
                 EnvironmentVariableReader = name =>
-                    string.Equals(name, "SYSTEM_ACCESSTOKEN", StringComparison.Ordinal)
-                        ? SystemToken
-                        : null,
+                    name switch
+                    {
+                        "SYSTEM_ACCESSTOKEN" => SystemToken,
+                        "HOME" => "/home/test",
+                        _ => null,
+                    },
                 RegistryUrls = new Dictionary<CredentialEcosystem, Uri>
                 {
                     [CredentialEcosystem.Npm] = new(TestRegistryUrl),
@@ -2776,7 +2784,9 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
             new ConfigurationPhase14VerticalSliceOptions
             {
                 FileSystem = fileSystem,
-                StateDirectoryPath = "/state/phase14",
+                StateDirectoryPath = UsesWindowsPaths(fileSystem)
+                    ? @"C:\state\phase14"
+                    : "/state/phase14",
                 AzurePipelinesJobScopeId = "phase14-test-job",
                 CredentialAcquisition = identityProvider is null
                     ? new BoundedCredentialAcquisitionAdapter(
@@ -2786,8 +2796,11 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
                 CredentialCoreService = identityProvider is null
                     ? null
                     : new CredentialCoreService(identityProvider),
-                EnvironmentVariableReader = environmentVariableReader ?? (_ => null),
-                ProductExecutablePath = GetTestProductExecutablePath(),
+                EnvironmentVariableReader = CreateTestEnvironmentReader(
+                    fileSystem,
+                    environmentVariableReader
+                ),
+                ProductExecutablePath = GetTestProductExecutablePath(fileSystem),
                 TimeProvider = timeProvider,
                 RegistryUrls = new Dictionary<CredentialEcosystem, Uri>
                 {
@@ -2867,15 +2880,37 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
                 && result.Scope == ConfigurationPhase14Scope.User
         );
 
-    private static string GetTestProductExecutablePath() =>
-        OperatingSystem.IsWindows()
+    private static string GetTestProductExecutablePath(InMemoryFileSystem fileSystem) =>
+        UsesWindowsPaths(fileSystem)
             ? @"C:\Program Files\AzureAuth\CredProvider\azureauth-credprovider.exe"
             : "/opt/azureauth-credprovider/azureauth-credprovider";
 
-    private static string GetTestProductPlatform() =>
-        OperatingSystem.IsWindows() ? "windows"
+    private static string GetTestProductPlatform(InMemoryFileSystem fileSystem) =>
+        UsesWindowsPaths(fileSystem) ? "windows"
         : OperatingSystem.IsMacOS() ? "macOs"
         : "linux";
+
+    private static Func<string, string?> CreateTestEnvironmentReader(
+        InMemoryFileSystem fileSystem,
+        Func<string, string?>? configuredReader
+    ) =>
+        name =>
+            configuredReader?.Invoke(name)
+            ?? (
+                UsesWindowsPaths(fileSystem)
+                    ? name switch
+                    {
+                        "LOCALAPPDATA" => @"C:\Users\Test\AppData\Local",
+                        "USERPROFILE" => @"C:\Users\Test",
+                        _ => null,
+                    }
+                    : name == "HOME"
+                        ? "/home/test"
+                        : null
+            );
+
+    private static bool UsesWindowsPaths(InMemoryFileSystem fileSystem) =>
+        fileSystem.IsPathFullyQualified(@"C:\");
 
     private static Func<string, string?> CreatePackagePathEnvironmentReader(
         CredentialEcosystem ecosystem,
@@ -2909,7 +2944,15 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         );
 
     private static string? ReadCiEnvironment(string name) =>
-        string.Equals(name, "SYSTEM_ACCESSTOKEN", StringComparison.Ordinal) ? "system-token" : null;
+        name switch
+        {
+            "SYSTEM_ACCESSTOKEN" => "system-token",
+            "HOME" => "/home/test",
+            _ => null,
+        };
+
+    private static string? ReadPosixHomeEnvironment(string name) =>
+        string.Equals(name, "HOME", StringComparison.Ordinal) ? "/home/test" : null;
 
     private static string CreateKnownCiContainer(
         InMemoryFileSystem fileSystem,

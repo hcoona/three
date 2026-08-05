@@ -108,12 +108,13 @@ internal sealed class NuGetPluginLayoutPhysicalTargetWriter(IFileSystem fileSyst
             : null;
     }
 
-    internal static string? GetTargetRootPathValidationViolation(string targetRootPath) =>
-        string.IsNullOrWhiteSpace(targetRootPath) || !Path.IsPathFullyQualified(targetRootPath)
+    private string? GetTargetRootPathValidationViolation(string targetRootPath) =>
+        string.IsNullOrWhiteSpace(targetRootPath)
+        || !fileSystem.IsPathFullyQualified(targetRootPath)
             ? "The NuGet plugin layout target must be fully qualified."
             : null;
 
-    private static void ValidateRequest(ConfigurationPhysicalTargetWriterRequest request)
+    private void ValidateRequest(ConfigurationPhysicalTargetWriterRequest request)
     {
         if (
             request.TargetKind != ConfigurationTargetKind.NuGetPluginLayout
@@ -140,13 +141,13 @@ internal sealed class NuGetPluginLayoutPhysicalTargetWriter(IFileSystem fileSyst
         bool remove =
             request.PlanOperation == ConfigurationPlanOperation.Remove
             || request.Change.Operation == ConfigurationChangeOperation.Remove;
-        if (remove && !request.IsOwned(request.Change))
+        if (remove && !request.IsOwned(request.Change, fileSystem))
         {
             throw new InvalidOperationException(
                 "NuGet plugin layout removal requires recognized ownership."
             );
         }
-        if (!remove && exists && !request.IsOwned(request.Change))
+        if (!remove && exists && !request.IsOwned(request.Change, fileSystem))
         {
             throw new InvalidOperationException(
                 "The NuGet plugin layout marker exists without recognized ownership."
@@ -155,5 +156,5 @@ internal sealed class NuGetPluginLayoutPhysicalTargetWriter(IFileSystem fileSyst
     }
 
     private string GetMarkerPath(string targetRootPath) =>
-        fileSystem.GetFullPath(Path.Combine(targetRootPath, MarkerFileName));
+        FileSystemPathSemantics.Combine(fileSystem, targetRootPath, MarkerFileName);
 }

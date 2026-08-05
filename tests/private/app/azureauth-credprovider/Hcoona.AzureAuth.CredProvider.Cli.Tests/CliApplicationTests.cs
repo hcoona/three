@@ -1216,67 +1216,84 @@ public sealed class CliApplicationTests
     [InlineData("../unsafe")]
     public void Phase14DryRunRejectsMissingOrInvalidAzurePipelinesJob(string? jobScopeId)
     {
-        var runtime = new CliRuntimeOptions
+        string stateDirectory = CreateTestDirectory();
+        try
         {
-            CompositionRoot = CreateTestCompositionRoot(),
-            ConfigurationPhase14Options = new ConfigurationPhase14VerticalSliceOptions
+            var runtime = new CliRuntimeOptions
             {
-                StateDirectoryPath = "/state/phase14-cli-dry-run",
-                AzurePipelinesJobScopeId = jobScopeId,
-                EnvironmentVariableReader = _ => null,
-            },
-        };
+                CompositionRoot = CreateTestCompositionRoot(),
+                ConfigurationPhase14Options = new ConfigurationPhase14VerticalSliceOptions
+                {
+                    StateDirectoryPath = Path.Combine(
+                        stateDirectory,
+                        "phase14-cli-dry-run"
+                    ),
+                    AzurePipelinesJobScopeId = jobScopeId,
+                    EnvironmentVariableReader = _ => null,
+                },
+            };
 
-        CommandResult configure = InvokeWithRuntime(
-            runtime,
-            "configure",
-            "npm",
-            "--dry-run",
-            "--ci",
-            "azure-pipelines",
-            "--registry-url",
-            "https://pkgs.dev.azure.com/test-org/_packaging/test-feed/npm/registry/"
-        );
-        CommandResult unconfigure = InvokeWithRuntime(
-            runtime,
-            "unconfigure",
-            "npm",
-            "--dry-run",
-            "--ci",
-            "azure-pipelines"
-        );
+            CommandResult configure = InvokeWithRuntime(
+                runtime,
+                "configure",
+                "npm",
+                "--dry-run",
+                "--ci",
+                "azure-pipelines",
+                "--registry-url",
+                "https://pkgs.dev.azure.com/test-org/_packaging/test-feed/npm/registry/"
+            );
+            CommandResult unconfigure = InvokeWithRuntime(
+                runtime,
+                "unconfigure",
+                "npm",
+                "--dry-run",
+                "--ci",
+                "azure-pipelines"
+            );
 
-        Assert.Equal(1, configure.ExitCode);
-        Assert.Equal(string.Empty, configure.StdOut);
-        Assert.Contains("SYSTEM_JOBID", configure.StdErr, StringComparison.Ordinal);
-        Assert.Equal(1, unconfigure.ExitCode);
-        Assert.Equal(string.Empty, unconfigure.StdOut);
-        Assert.Contains("SYSTEM_JOBID", unconfigure.StdErr, StringComparison.Ordinal);
+            Assert.Equal(1, configure.ExitCode);
+            Assert.Equal(string.Empty, configure.StdOut);
+            Assert.Contains("SYSTEM_JOBID", configure.StdErr, StringComparison.Ordinal);
+            Assert.Equal(1, unconfigure.ExitCode);
+            Assert.Equal(string.Empty, unconfigure.StdOut);
+            Assert.Contains("SYSTEM_JOBID", unconfigure.StdErr, StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
     }
 
     [Fact]
     public void Phase14DryRunRejectsUnsupportedPythonCiScope()
     {
-        var runtime = new CliRuntimeOptions
+        string stateDirectory = CreateTestDirectory();
+        try
         {
-            CompositionRoot = CreateTestCompositionRoot(),
-            ConfigurationPhase14Options = CreateConfigurationPhase14Options(
-                "/state/phase14-cli-dry-run"
-            ),
-        };
+            var runtime = new CliRuntimeOptions
+            {
+                CompositionRoot = CreateTestCompositionRoot(),
+                ConfigurationPhase14Options = CreateConfigurationPhase14Options(stateDirectory),
+            };
 
-        CommandResult result = InvokeWithRuntime(
-            runtime,
-            "configure",
-            "python",
-            "--dry-run",
-            "--ci",
-            "azure-pipelines"
-        );
+            CommandResult result = InvokeWithRuntime(
+                runtime,
+                "configure",
+                "python",
+                "--dry-run",
+                "--ci",
+                "azure-pipelines"
+            );
 
-        Assert.Equal(1, result.ExitCode);
-        Assert.Equal(string.Empty, result.StdOut);
-        Assert.Contains("supports Python user scope", result.StdErr, StringComparison.Ordinal);
+            Assert.Equal(1, result.ExitCode);
+            Assert.Equal(string.Empty, result.StdOut);
+            Assert.Contains("supports Python user scope", result.StdErr, StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
     }
 
     [Fact]
@@ -2902,25 +2919,33 @@ public sealed class CliApplicationTests
     [Fact]
     public void RefreshCancellationReturnsCanceledExitCode()
     {
+        string stateDirectory = CreateTestDirectory();
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
-        CliRuntimeOptions runtimeOptions = CreateConfigurationRuntime("/state/canceled") with
+        CliRuntimeOptions runtimeOptions = CreateConfigurationRuntime(stateDirectory) with
         {
             CancellationToken = cancellation.Token,
         };
 
-        CommandResult result = InvokeWithRuntime(
-            runtimeOptions,
-            "refresh",
-            "npm",
-            "--dry-run",
-            "--registry-url",
-            "https://pkgs.dev.azure.com/test-org/_packaging/test-feed/npm/registry/"
-        );
+        try
+        {
+            CommandResult result = InvokeWithRuntime(
+                runtimeOptions,
+                "refresh",
+                "npm",
+                "--dry-run",
+                "--registry-url",
+                "https://pkgs.dev.azure.com/test-org/_packaging/test-feed/npm/registry/"
+            );
 
-        Assert.Equal(130, result.ExitCode);
-        Assert.Equal(string.Empty, result.StdOut);
-        Assert.Equal("error: operation canceled.\n", result.StdErr);
+            Assert.Equal(130, result.ExitCode);
+            Assert.Equal(string.Empty, result.StdOut);
+            Assert.Equal("error: operation canceled.\n", result.StdErr);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
     }
 
     [Theory]
@@ -5565,9 +5590,12 @@ public sealed class CliApplicationTests
                 LocalShellGitDiscoverySupported = true,
                 ProductExecutablePath = CreateFakeProductExecutable(rootPath),
             };
-            gitDiscoveryRunner.ExpectedHelperCommand = new GitPhase8VerticalSliceService(gitOptions)
+            string expectedHelperCommand = new GitPhase8VerticalSliceService(gitOptions)
                 .Paths
                 .GitHelperPath;
+            gitDiscoveryRunner.ExpectedHelperCommand = OperatingSystem.IsWindows()
+                ? expectedHelperCommand.Replace('\\', '/')
+                : expectedHelperCommand;
             var runtime = new CliRuntimeOptions
             {
                 CompositionRoot = root,

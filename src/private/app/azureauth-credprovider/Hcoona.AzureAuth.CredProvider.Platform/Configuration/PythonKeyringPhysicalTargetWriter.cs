@@ -57,7 +57,7 @@ internal sealed class PythonKeyringPhysicalTargetWriter(IFileSystem fileSystem)
 
         if (
             request.TargetKind == ConfigurationTargetKind.KeyringShim
-            && !OperatingSystem.IsWindows()
+            && !FileSystemPathSemantics.UsesWindowsPaths(fileSystem)
             && fileSystem.GetUnixFileMode(targetPath) != ExecutableOwnerMode
         )
         {
@@ -122,7 +122,7 @@ internal sealed class PythonKeyringPhysicalTargetWriter(IFileSystem fileSystem)
             : null;
     }
 
-    internal static string? GetTargetPathValidationViolation(
+    private string? GetTargetPathValidationViolation(
         string targetPathOrName,
         ConfigurationTargetKind targetKind
     ) =>
@@ -131,12 +131,12 @@ internal sealed class PythonKeyringPhysicalTargetWriter(IFileSystem fileSystem)
                 or ConfigurationTargetKind.KeyringShim
         && (
             string.IsNullOrWhiteSpace(targetPathOrName)
-            || !Path.IsPathFullyQualified(targetPathOrName)
+            || !fileSystem.IsPathFullyQualified(targetPathOrName)
         )
             ? "The Python keyring target path must be fully qualified."
             : null;
 
-    private static void ValidateRequest(ConfigurationPhysicalTargetWriterRequest request)
+    private void ValidateRequest(ConfigurationPhysicalTargetWriterRequest request)
     {
         if (
             request.TargetKind
@@ -173,13 +173,13 @@ internal sealed class PythonKeyringPhysicalTargetWriter(IFileSystem fileSystem)
         bool remove =
             request.PlanOperation == ConfigurationPlanOperation.Remove
             || request.Change.Operation == ConfigurationChangeOperation.Remove;
-        if (remove && !request.IsOwned(request.Change))
+        if (remove && !request.IsOwned(request.Change, fileSystem))
         {
             throw new InvalidOperationException(
                 "Python keyring target removal requires recognized ownership."
             );
         }
-        if (!remove && exists && !request.IsOwned(request.Change))
+        if (!remove && exists && !request.IsOwned(request.Change, fileSystem))
         {
             throw new InvalidOperationException(
                 "The Python keyring target exists without recognized ownership."

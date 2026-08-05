@@ -45,7 +45,7 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
             if (
                 containsSecret
                 && fileSystem.FileExists(targetPath)
-                && !OperatingSystem.IsWindows()
+                && !FileSystemPathSemantics.UsesWindowsPaths(fileSystem)
                 && fileSystem.GetUnixFileMode(targetPath) != OwnerOnlyMode
             )
             {
@@ -242,11 +242,7 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
                 }
                 return fileSystem.GetFullPath(change.TargetPathOrName);
             })
-            .Distinct(
-                OperatingSystem.IsWindows()
-                    ? StringComparer.OrdinalIgnoreCase
-                    : StringComparer.Ordinal
-            )
+            .Distinct(FileSystemPathSemantics.GetComparer(fileSystem))
             .ToArray();
         return paths.Length == 1
             ? paths[0]
@@ -269,7 +265,7 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
         return YarnDocument.Parse(fileSystem.ReadAllBytes(targetPath));
     }
 
-    private static string Apply(
+    private string Apply(
         YarnDocument document,
         ConfigurationPhysicalTargetWriterRequest request,
         bool mutate
@@ -284,7 +280,7 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
                 || change.Operation == ConfigurationChangeOperation.Remove;
             if (remove)
             {
-                if (!request.IsOwned(change))
+                if (!request.IsOwned(change, fileSystem))
                 {
                     throw new InvalidOperationException(
                         "Yarn configuration removal requires a recognized owned selector."
@@ -294,7 +290,7 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
                 continue;
             }
 
-            if (existing is not null && !request.IsOwned(change))
+            if (existing is not null && !request.IsOwned(change, fileSystem))
             {
                 throw new InvalidOperationException(
                     "The Yarn selector already exists without recognized ownership."
@@ -381,7 +377,7 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
         public string Text => Render();
 
         public static YarnDocument Missing() =>
-            new([], hadBom: false, Environment.NewLine, trailingNewLine: true);
+            new([], hadBom: false, "\n", trailingNewLine: true);
 
         public static YarnDocument Parse(byte[] bytes)
         {

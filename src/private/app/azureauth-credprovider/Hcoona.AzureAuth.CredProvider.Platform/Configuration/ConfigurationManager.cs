@@ -403,7 +403,7 @@ public sealed class ConfigurationManager : IConfigurationManager
                     NormalizePathForComparison(change.TargetPathOrName),
                     CanonicalizeKey(change)
                 ),
-                TargetGroupKeyComparer.Instance
+                new TargetGroupKeyComparer(GetPathComparer())
             )
             .Any(group => group.Count() > 1);
         return duplicate ? "A configuration plan contains duplicate physical selectors." : null;
@@ -505,7 +505,7 @@ public sealed class ConfigurationManager : IConfigurationManager
                 NormalizePathForComparison(change.TargetPathOrName),
                 string.Empty
             ),
-            TargetGroupKeyComparer.Instance
+            new TargetGroupKeyComparer(GetPathComparer())
         );
 
     private void ValidateGenericChanges(
@@ -831,12 +831,25 @@ public sealed class ConfigurationManager : IConfigurationManager
         string.Equals(
             NormalizePathForComparison(left),
             NormalizePathForComparison(right),
-            OperatingSystem.IsWindows()
-                ? StringComparison.OrdinalIgnoreCase
-                : StringComparison.Ordinal
+            fileSystem is null
+                ? (
+                    OperatingSystem.IsWindows()
+                        ? StringComparison.OrdinalIgnoreCase
+                        : StringComparison.Ordinal
+                )
+                : FileSystemPathSemantics.GetComparison(fileSystem)
         );
 
     private string NormalizePathForComparison(string path) => fileSystem?.GetFullPath(path) ?? path;
+
+    private StringComparer GetPathComparer() =>
+        fileSystem is null
+            ? (
+                OperatingSystem.IsWindows()
+                    ? StringComparer.OrdinalIgnoreCase
+                    : StringComparer.Ordinal
+            )
+            : FileSystemPathSemantics.GetComparer(fileSystem);
 
     private static string CanonicalizeKey(ConfigurationChange change) =>
         change.TargetKind == ConfigurationTargetKind.GitConfig
@@ -874,34 +887,22 @@ public sealed class ConfigurationManager : IConfigurationManager
         string Key
     );
 
-    private sealed class TargetGroupKeyComparer : IEqualityComparer<TargetGroupKey>
+    private sealed class TargetGroupKeyComparer(StringComparer pathComparer)
+        : IEqualityComparer<TargetGroupKey>
     {
-        public static TargetGroupKeyComparer Instance { get; } = new();
-
         public bool Equals(TargetGroupKey? left, TargetGroupKey? right) =>
             left is not null
             && right is not null
             && left.TargetKind == right.TargetKind
             && string.Equals(left.Key, right.Key, StringComparison.Ordinal)
-            && string.Equals(
-                left.TargetPath,
-                right.TargetPath,
-                OperatingSystem.IsWindows()
-                    ? StringComparison.OrdinalIgnoreCase
-                    : StringComparison.Ordinal
-            );
+            && pathComparer.Equals(left.TargetPath, right.TargetPath);
 
-        public int GetHashCode(TargetGroupKey value)
-        {
-            StringComparer pathComparer = OperatingSystem.IsWindows()
-                ? StringComparer.OrdinalIgnoreCase
-                : StringComparer.Ordinal;
-            return HashCode.Combine(
+        public int GetHashCode(TargetGroupKey value) =>
+            HashCode.Combine(
                 value.TargetKind,
                 pathComparer.GetHashCode(value.TargetPath),
                 StringComparer.Ordinal.GetHashCode(value.Key)
             );
-        }
     }
 
     private sealed class NullDisposable : IDisposable

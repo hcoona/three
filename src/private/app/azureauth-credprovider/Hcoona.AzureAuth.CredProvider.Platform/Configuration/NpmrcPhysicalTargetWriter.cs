@@ -39,7 +39,7 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
             if (
                 containsSecret
                 && fileSystem.FileExists(targetPath)
-                && !OperatingSystem.IsWindows()
+                && !FileSystemPathSemantics.UsesWindowsPaths(fileSystem)
                 && fileSystem.GetUnixFileMode(targetPath) != OwnerOnlyMode
             )
             {
@@ -189,11 +189,7 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
                 }
                 return fileSystem.GetFullPath(change.TargetPathOrName);
             })
-            .Distinct(
-                OperatingSystem.IsWindows()
-                    ? StringComparer.OrdinalIgnoreCase
-                    : StringComparer.Ordinal
-            )
+            .Distinct(FileSystemPathSemantics.GetComparer(fileSystem))
             .ToArray();
         return paths.Length == 1
             ? paths[0]
@@ -214,7 +210,7 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
         return NpmrcDocument.Parse(fileSystem.ReadAllBytes(targetPath));
     }
 
-    private static string Apply(
+    private string Apply(
         NpmrcDocument document,
         ConfigurationPhysicalTargetWriterRequest request,
         bool mutate
@@ -229,7 +225,7 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
                 || change.Operation == ConfigurationChangeOperation.Remove;
             if (remove)
             {
-                if (!request.IsOwned(change))
+                if (!request.IsOwned(change, fileSystem))
                 {
                     throw new InvalidOperationException(
                         "npmrc removal requires a recognized owned selector."
@@ -239,7 +235,7 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
                 continue;
             }
 
-            if (existing is not null && !request.IsOwned(change))
+            if (existing is not null && !request.IsOwned(change, fileSystem))
             {
                 throw new InvalidOperationException(
                     "The npmrc selector already exists without recognized ownership."
@@ -274,7 +270,7 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
         public string Text => Render();
 
         public static NpmrcDocument Missing() =>
-            new([], hadBom: false, Environment.NewLine, trailingNewLine: true);
+            new([], hadBom: false, "\n", trailingNewLine: true);
 
         public static NpmrcDocument Parse(byte[] bytes)
         {

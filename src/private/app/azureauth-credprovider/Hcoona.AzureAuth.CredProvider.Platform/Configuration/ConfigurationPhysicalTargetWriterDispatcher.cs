@@ -147,8 +147,9 @@ internal sealed record ConfigurationPhysicalTargetWriterRequest
                 "The physical writer request contains multiple changes."
             );
 
-    public bool IsOwned(ConfigurationChange change)
+    public bool IsOwned(ConfigurationChange change, IFileSystem fileSystem)
     {
+        ArgumentNullException.ThrowIfNull(fileSystem);
         string key =
             change.TargetKind == ConfigurationTargetKind.GitConfig
                 ? GitConfigPhysicalTargetWriter.CanonicalizeSupportedConfigurationKey(change.Key)
@@ -156,11 +157,9 @@ internal sealed record ConfigurationPhysicalTargetWriterRequest
         return ExistingOwnershipEntries.Any(entry =>
             entry.TargetKind == change.TargetKind
             && string.Equals(
-                Path.GetFullPath(entry.TargetPathOrName),
-                Path.GetFullPath(change.TargetPathOrName),
-                OperatingSystem.IsWindows()
-                    ? StringComparison.OrdinalIgnoreCase
-                    : StringComparison.Ordinal
+                fileSystem.GetFullPath(entry.TargetPathOrName),
+                fileSystem.GetFullPath(change.TargetPathOrName),
+                FileSystemPathSemantics.GetComparison(fileSystem)
             )
             && string.Equals(
                 entry.TargetKind == ConfigurationTargetKind.GitConfig
@@ -386,11 +385,7 @@ internal sealed class GitConfigPhysicalTargetWriter(IFileSystem fileSystem)
     {
         string[] paths = request
             .Changes.Select(change => fileSystem.GetFullPath(change.TargetPathOrName))
-            .Distinct(
-                OperatingSystem.IsWindows()
-                    ? StringComparer.OrdinalIgnoreCase
-                    : StringComparer.Ordinal
-            )
+            .Distinct(FileSystemPathSemantics.GetComparer(fileSystem))
             .ToArray();
         return paths.Length == 1
             ? paths[0]
@@ -411,7 +406,7 @@ internal sealed class GitConfigPhysicalTargetWriter(IFileSystem fileSystem)
         return GitDocument.Parse(fileSystem.ReadAllBytes(path));
     }
 
-    private static string Apply(
+    private string Apply(
         GitDocument document,
         ConfigurationPhysicalTargetWriterRequest request,
         bool mutate
@@ -427,7 +422,7 @@ internal sealed class GitConfigPhysicalTargetWriter(IFileSystem fileSystem)
                 || change.Operation == ConfigurationChangeOperation.Remove;
             if (remove)
             {
-                if (!request.IsOwned(change))
+                if (!request.IsOwned(change, fileSystem))
                 {
                     throw new InvalidOperationException(
                         "Git configuration removal requires recognized ownership."
@@ -437,7 +432,7 @@ internal sealed class GitConfigPhysicalTargetWriter(IFileSystem fileSystem)
                 continue;
             }
 
-            if (existing is not null && !request.IsOwned(change))
+            if (existing is not null && !request.IsOwned(change, fileSystem))
             {
                 throw new InvalidOperationException(
                     "The Git configuration selector already exists without recognized ownership."
@@ -478,7 +473,7 @@ internal sealed class GitConfigPhysicalTargetWriter(IFileSystem fileSystem)
         public string Text => Render();
 
         public static GitDocument Missing() =>
-            new([], hadBom: false, Environment.NewLine, trailingNewLine: true);
+            new([], hadBom: false, "\n", trailingNewLine: true);
 
         public static GitDocument Parse(byte[] bytes)
         {

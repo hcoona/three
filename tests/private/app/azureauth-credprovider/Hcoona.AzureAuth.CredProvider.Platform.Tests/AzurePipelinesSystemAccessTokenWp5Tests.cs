@@ -348,10 +348,7 @@ public sealed class AzurePipelinesSystemAccessTokenWp5Tests
                 AzurePipelinesJobScopeId = "job-a",
                 CredentialCoreService = new CredentialCoreService(identityProvider),
                 RegistryUrls = CreateTestRegistryUrls(),
-                EnvironmentVariableReader = name =>
-                    name == AuthPhase14VerticalSliceService.AzurePipelinesSystemAccessTokenVariable
-                        ? Secret
-                        : null,
+                EnvironmentVariableReader = ReadCiEnvironment,
             }
         );
 
@@ -414,10 +411,7 @@ public sealed class AzurePipelinesSystemAccessTokenWp5Tests
                 StateDirectoryPath = "/state/wp5-cleanup",
                 AzurePipelinesJobScopeId = "job-cleanup",
                 RegistryUrls = CreateTestRegistryUrls(),
-                EnvironmentVariableReader = name =>
-                    name == AuthPhase14VerticalSliceService.AzurePipelinesSystemAccessTokenVariable
-                        ? Secret
-                        : null,
+                EnvironmentVariableReader = ReadCiEnvironment,
             }
         );
         await service.ConfigureAsync(
@@ -450,10 +444,7 @@ public sealed class AzurePipelinesSystemAccessTokenWp5Tests
                 StateDirectoryPath = "/state/wp5-logout",
                 AzurePipelinesJobScopeId = "job-logout",
                 RegistryUrls = CreateTestRegistryUrls(),
-                EnvironmentVariableReader = name =>
-                    name == AuthPhase14VerticalSliceService.AzurePipelinesSystemAccessTokenVariable
-                        ? Secret
-                        : null,
+                EnvironmentVariableReader = ReadCiEnvironment,
             }
         );
         foreach (
@@ -536,10 +527,7 @@ public sealed class AzurePipelinesSystemAccessTokenWp5Tests
                 StateDirectoryPath = "/state/wp5-job-validation",
                 AzurePipelinesJobScopeId = jobScopeId,
                 RegistryUrls = CreateTestRegistryUrls(),
-                EnvironmentVariableReader = name =>
-                    name == AuthPhase14VerticalSliceService.AzurePipelinesSystemAccessTokenVariable
-                        ? Secret
-                        : null,
+                EnvironmentVariableReader = ReadCiEnvironment,
             }
         );
 
@@ -596,12 +584,17 @@ public sealed class AzurePipelinesSystemAccessTokenWp5Tests
                 CiTemporaryProductRootPath = "/product-temp/azureauth-credprovider/ci-jobs",
                 AzurePipelinesJobScopeId = jobScopeId,
                 RegistryUrls = CreateTestRegistryUrls(),
-                EnvironmentVariableReader = name =>
-                    name == AuthPhase14VerticalSliceService.AzurePipelinesSystemAccessTokenVariable
-                        ? Secret
-                        : null,
+                EnvironmentVariableReader = ReadCiEnvironment,
             }
         );
+
+    private static string? ReadCiEnvironment(string name) =>
+        name switch
+        {
+            AuthPhase14VerticalSliceService.AzurePipelinesSystemAccessTokenVariable => Secret,
+            "HOME" => "/home/test",
+            _ => null,
+        };
 
     private static Dictionary<CredentialEcosystem, Uri> CreateTestRegistryUrls() =>
         new()
