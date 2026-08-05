@@ -211,7 +211,7 @@ function Write-ArchiveEntryFromByteArray {
     }
 }
 
-function New-ArtifactSnapshot {
+function Copy-ArtifactSnapshot {
     param(
         [Parameter(Mandatory = $true)][string]$SourcePath,
         [Parameter(Mandatory = $true)][string]$SnapshotPath
@@ -361,7 +361,7 @@ try {
     $snapshotIndex = 0
     foreach ($file in ($artifactCandidates | Sort-Object path)) {
         $snapshotPath = Join-Path $snapshotRoot ('{0:D8}.snapshot' -f $snapshotIndex)
-        $snapshot = New-ArtifactSnapshot -SourcePath $file.sourcePath -SnapshotPath $snapshotPath
+        $snapshot = Copy-ArtifactSnapshot -SourcePath $file.sourcePath -SnapshotPath $snapshotPath
         $artifactFiles.Add([pscustomobject][ordered]@{
                 path           = $file.path
                 length         = $snapshot.length
