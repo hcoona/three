@@ -182,14 +182,17 @@ jobs:
             build-runner: windows-latest
             target-os: Windows
             target-rid: win-x64
+            run-host-tests: false
           - build-os: Linux
             build-runner: ubuntu-latest
             target-os: Linux
             target-rid: linux-x64
+            run-host-tests: true
           - build-os: macOS
             build-runner: macos-latest
             target-os: macOS
             target-rid: osx-x64
+            run-host-tests: true
 
     env:
       NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
@@ -208,6 +211,23 @@ jobs:
           cache-dependency-path: |
             src/private/app/azureauth-credprovider/Hcoona.AzureAuth.CredProvider.Contracts/packages.lock.json
             src/private/app/azureauth-credprovider/Hcoona.AzureAuth.CredProvider.Platform/packages.lock.json
+            tests/private/app/azureauth-credprovider/Hcoona.AzureAuth.CredProvider.Platform.Tests/packages.lock.json
+
+      - name: Test AzureAuth host OS behavior
+        if: matrix.run-host-tests
+        shell: pwsh
+        run: |
+          dotnet test `
+            --project tests/private/app/azureauth-credprovider/Hcoona.AzureAuth.CredProvider.Platform.Tests/Hcoona.AzureAuth.CredProvider.Platform.Tests.csproj `
+            --configuration Release `
+            --filter-class `
+              Hcoona.AzureAuth.CredProvider.Platform.Tests.SystemFileSystemTests `
+              Hcoona.AzureAuth.CredProvider.Platform.Tests.SystemProcessRunnerTests `
+            -p:RestoreLockedMode=true
+
+      - name: Test foundation artifact script
+        shell: pwsh
+        run: ./tests/private/app/azureauth-credprovider/New-FoundationArtifact.Tests.ps1
 
       - name: Create internal foundation artifact
         shell: pwsh
