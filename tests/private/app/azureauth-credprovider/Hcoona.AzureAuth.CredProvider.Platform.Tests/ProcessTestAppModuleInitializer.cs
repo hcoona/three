@@ -65,6 +65,9 @@ internal static class ProcessTestAppModuleInitializer
             case "adapter-host-proof":
                 AdapterHostProofProcess.Run(helperArguments.Skip(1).ToArray());
                 break;
+            case NuGetPluginProtocolTestProcess.Command:
+                NuGetPluginProtocolTestProcess.Run();
+                break;
             default:
                 ExitHelperDispatchFailure(
                     $"Unknown process helper command '{helperArguments[0]}'."

@@ -26,8 +26,7 @@ public sealed class NuGetPluginAdapter
             credentialCore is null
                 ? CredentialProviderCompositionRoot.CreateProduction().AcquisitionService
                 : new LegacyV1CredentialAcquisitionService(credentialCore)
-        )
-    { }
+        ) { }
 
     public NuGetPluginAdapter(ICredentialAcquisitionService credentialAcquisition)
         : this(new BoundedCredentialAcquisitionAdapter(credentialAcquisition)) { }
@@ -64,6 +63,13 @@ public sealed class NuGetPluginAdapter
     public async Task<int> RunPluginAsync(CancellationToken cancellationToken = default)
     {
         RequestHandlers requestHandlers = CreateRequestHandlers();
+        using var lifetime = new PluginLifetimeCoordinator();
+        AddRequestHandler(requestHandlers, MessageMethod.Close, lifetime.CloseRequestHandler);
+        AddRequestHandler(
+            requestHandlers,
+            MessageMethod.MonitorNuGetProcessExit,
+            lifetime.MonitorNuGetProcessExitRequestHandler
+        );
         using IPlugin plugin = await PluginFactory
             .CreateFromCurrentProcessAsync(
                 requestHandlers,
@@ -72,7 +78,8 @@ public sealed class NuGetPluginAdapter
             )
             .ConfigureAwait(false);
 
-        await WaitForPluginCloseAsync(plugin, cancellationToken).ConfigureAwait(false);
+        lifetime.Attach(plugin);
+        await lifetime.WaitForCloseAsync(cancellationToken).ConfigureAwait(false);
         return (int)AdapterHostExitCode.Success;
     }
 
@@ -101,11 +108,10 @@ public sealed class NuGetPluginAdapter
             .GetAwaiter()
             .GetResult();
 
-    internal async ValueTask<GetAuthenticationCredentialsResponse>
-        HandleGetAuthenticationCredentialsAsync(
-            GetAuthenticationCredentialsRequest request,
-            CancellationToken cancellationToken
-        )
+    internal async ValueTask<GetAuthenticationCredentialsResponse> HandleGetAuthenticationCredentialsAsync(
+        GetAuthenticationCredentialsRequest request,
+        CancellationToken cancellationToken
+    )
     {
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
@@ -216,37 +222,165 @@ public sealed class NuGetPluginAdapter
         );
     }
 
-    private static async Task WaitForPluginCloseAsync(
-        IPlugin plugin,
-        CancellationToken cancellationToken
-    )
+    private sealed class PluginLifetimeCoordinator : IDisposable
     {
-        var beginClose = new TaskCompletionSource(
+        private readonly TaskCompletionSource beginClose = new(
             TaskCreationOptions.RunContinuationsAsynchronously
         );
-        var endClose = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        using CancellationTokenRegistration cancellationRegistration = cancellationToken.Register(
-            () =>
-            {
-                beginClose.TrySetCanceled(cancellationToken);
-                endClose.TrySetCanceled(cancellationToken);
-            }
+        private readonly TaskCompletionSource endClose = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
         );
+        private readonly TaskCompletionSource<IPlugin> pluginReady = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private readonly CloseHandler closeRequestHandler;
+        private readonly MonitorHandler monitorNuGetProcessExitRequestHandler;
+        private IPlugin? plugin;
 
-        plugin.BeforeClose += (_, _) => beginClose.TrySetResult();
-        plugin.Closed += (_, _) =>
+        public PluginLifetimeCoordinator()
+        {
+            closeRequestHandler = new CloseHandler(pluginReady.Task);
+            monitorNuGetProcessExitRequestHandler = new MonitorHandler(pluginReady.Task);
+        }
+
+        public IRequestHandler CloseRequestHandler => closeRequestHandler;
+
+        public IRequestHandler MonitorNuGetProcessExitRequestHandler =>
+            monitorNuGetProcessExitRequestHandler;
+
+        public void Attach(IPlugin value)
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            if (Interlocked.CompareExchange(ref plugin, value, comparand: null) is not null)
+            {
+                throw new InvalidOperationException("A NuGet plugin is already attached.");
+            }
+
+            value.BeforeClose += OnBeforeClose;
+            value.Closed += OnClosed;
+
+            if (
+                value.Connection is Connection connection
+                && connection.State is ConnectionState.Closing or ConnectionState.Closed
+            )
+            {
+                beginClose.TrySetResult();
+                if (connection.State == ConnectionState.Closed)
+                {
+                    endClose.TrySetResult();
+                }
+            }
+
+            pluginReady.TrySetResult(value);
+        }
+
+        public async Task WaitForCloseAsync(CancellationToken cancellationToken)
+        {
+            using CancellationTokenRegistration cancellationRegistration =
+                cancellationToken.Register(() =>
+                {
+                    beginClose.TrySetCanceled(cancellationToken);
+                    endClose.TrySetCanceled(cancellationToken);
+                });
+
+            await beginClose.Task.ConfigureAwait(false);
+            using var shutdownTimeout = new CancellationTokenSource(PluginShutdownTimeout);
+            using CancellationTokenRegistration shutdownRegistration =
+                shutdownTimeout.Token.Register(() =>
+                    endClose.TrySetCanceled(shutdownTimeout.Token)
+                );
+            await endClose.Task.ConfigureAwait(false);
+        }
+
+        public void Dispose()
+        {
+            pluginReady.TrySetCanceled();
+            IPlugin? attachedPlugin = plugin;
+            if (attachedPlugin is not null)
+            {
+                attachedPlugin.BeforeClose -= OnBeforeClose;
+                attachedPlugin.Closed -= OnClosed;
+            }
+
+            monitorNuGetProcessExitRequestHandler.Dispose();
+        }
+
+        private void OnBeforeClose(object? sender, EventArgs eventArgs) =>
+            beginClose.TrySetResult();
+
+        private void OnClosed(object? sender, EventArgs eventArgs)
         {
             beginClose.TrySetResult();
             endClose.TrySetResult();
-        };
+        }
 
-        await beginClose.Task.ConfigureAwait(false);
-        using var shutdownTimeout = new CancellationTokenSource(PluginShutdownTimeout);
-        using CancellationTokenRegistration shutdownRegistration = shutdownTimeout.Token.Register(
-            () =>
-                endClose.TrySetCanceled(shutdownTimeout.Token)
-        );
-        await endClose.Task.ConfigureAwait(false);
+        private sealed class CloseHandler(Task<IPlugin> pluginReady) : IRequestHandler
+        {
+            public CancellationToken CancellationToken => CancellationToken.None;
+
+            public async Task HandleResponseAsync(
+                IConnection connection,
+                Message request,
+                IResponseHandler responseHandler,
+                CancellationToken cancellationToken
+            )
+            {
+                ArgumentNullException.ThrowIfNull(connection);
+                ArgumentNullException.ThrowIfNull(request);
+                ArgumentNullException.ThrowIfNull(responseHandler);
+                cancellationToken.ThrowIfCancellationRequested();
+
+                IPlugin plugin = await pluginReady
+                    .WaitAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                plugin.Close();
+            }
+        }
+
+        private sealed class MonitorHandler(Task<IPlugin> pluginReady)
+            : IRequestHandler,
+                IDisposable
+        {
+            private readonly object sync = new();
+            private MonitorNuGetProcessExitRequestHandler? handler;
+
+            public CancellationToken CancellationToken => CancellationToken.None;
+
+            public async Task HandleResponseAsync(
+                IConnection connection,
+                Message request,
+                IResponseHandler responseHandler,
+                CancellationToken cancellationToken
+            )
+            {
+                ArgumentNullException.ThrowIfNull(connection);
+                ArgumentNullException.ThrowIfNull(request);
+                ArgumentNullException.ThrowIfNull(responseHandler);
+                cancellationToken.ThrowIfCancellationRequested();
+
+                IPlugin plugin = await pluginReady
+                    .WaitAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                MonitorNuGetProcessExitRequestHandler resolvedHandler;
+                lock (sync)
+                {
+                    resolvedHandler = handler ??= new MonitorNuGetProcessExitRequestHandler(plugin);
+                }
+
+                await resolvedHandler
+                    .HandleResponseAsync(connection, request, responseHandler, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            public void Dispose()
+            {
+                lock (sync)
+                {
+                    handler?.Dispose();
+                    handler = null;
+                }
+            }
+        }
     }
 
     private static CredentialRequestV2 CreateCredentialRequest(
@@ -558,6 +692,9 @@ public sealed class NuGetPluginAdapter
             GetAuthenticationCredentialsRequest request,
             CancellationToken cancellationToken
         ) => adapter.HandleGetAuthenticationCredentialsAsync(request, cancellationToken);
+
+        protected override bool ShouldReportProgress(GetAuthenticationCredentialsRequest request) =>
+            !request.IsNonInteractive && request.CanShowDialog;
     }
 
     private sealed class SetCredentialsHandler
@@ -596,13 +733,31 @@ public sealed class NuGetPluginAdapter
             cancellationToken.ThrowIfCancellationRequested();
 
             TRequest payload = MessageUtilities.DeserializePayload<TRequest>(request);
-            TResponse response = await HandleRequestAsync(payload, cancellationToken)
-                .ConfigureAwait(false);
+            TResponse response;
+            if (ShouldReportProgress(payload))
+            {
+                using AutomaticProgressReporter progressReporter = AutomaticProgressReporter.Create(
+                    connection,
+                    request,
+                    PluginConstants.ProgressInterval,
+                    cancellationToken
+                );
+                response = await HandleRequestAsync(payload, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                response = await HandleRequestAsync(payload, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             cancellationToken.ThrowIfCancellationRequested();
             await responseHandler
                 .SendResponseAsync(request, response, CancellationToken.None)
                 .ConfigureAwait(false);
         }
+
+        protected virtual bool ShouldReportProgress(TRequest request) => false;
 
         protected abstract ValueTask<TResponse> HandleRequestAsync(
             TRequest request,

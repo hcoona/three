@@ -5,6 +5,7 @@ using Hcoona.AzureAuth.CredProvider.Platform.AdapterHost;
 using Hcoona.AzureAuth.CredProvider.Platform.Composition;
 using Hcoona.AzureAuth.CredProvider.Platform.Configuration;
 using Hcoona.AzureAuth.CredProvider.Platform.FileSystem;
+using Hcoona.AzureAuth.CredProvider.Platform.TokenMaterialization;
 using Newtonsoft.Json.Linq;
 using NuGet.Common;
 using NuGet.Protocol.Plugins;
@@ -319,8 +320,9 @@ public sealed class NuGetPhase10VerticalSliceService
             PluginModeEntrypointResolvable = pluginModeEntrypointResolvable,
             AzureArtifactsSourceCanonicalizationSuccess =
                 await TryValidateAzureArtifactsSourceCanonicalizationAsync(cancellationToken),
-            InteractivePolicyGuidanceSuccess =
-                await TryValidateInteractivePolicyGuidanceAsync(cancellationToken),
+            InteractivePolicyGuidanceSuccess = await TryValidateInteractivePolicyGuidanceAsync(
+                cancellationToken
+            ),
             OptionalEnvironmentOverridesAbsent = OptionalEnvironmentOverridesAreAbsent(),
         };
     }
@@ -682,9 +684,21 @@ public sealed class NuGetPhase10VerticalSliceService
                 ),
                 cancellationToken
             );
+        return IsProductionCredentialResponse(response);
+    }
+
+    internal static bool IsProductionCredentialResponse(
+        GetAuthenticationCredentialsResponse response
+    )
+    {
+        ArgumentNullException.ThrowIfNull(response);
         return response.ResponseCode == MessageResponseCode.Success
-            && string.Equals(response.Username, "AzureDevOps", StringComparison.Ordinal)
-            && response.Password?.StartsWith("fake-secret-", StringComparison.Ordinal) == true
+            && string.Equals(
+                response.Username,
+                CredentialFormPolicy.NuGetSessionTokenUsername,
+                StringComparison.Ordinal
+            )
+            && !string.IsNullOrWhiteSpace(response.Password)
             && response.AuthenticationTypes is ["Basic"];
     }
 
