@@ -302,7 +302,11 @@ public sealed class ConfigurationManagerTests
             TestContext.Current.CancellationToken
         );
 
-        Assert.Contains(retainedSelector, fileSystem.ReadAllText(TargetPath), StringComparison.Ordinal);
+        Assert.Contains(
+            retainedSelector,
+            fileSystem.ReadAllText(TargetPath),
+            StringComparison.Ordinal
+        );
         ConfigurationOwnershipManifestEntry entry = Assert.Single(
             LoadManifest(fileSystem).Entries
         );
@@ -486,7 +490,11 @@ public sealed class ConfigurationManagerTests
         ConfigurationOwnershipManifest manifest = LoadManifest(fileSystem);
         ConfigurationOwnershipManifestEntry entry = Assert.Single(manifest.Entries);
         Assert.Equal(replacementSelector, entry.Key);
-        Assert.DoesNotContain(Secret, fileSystem.ReadAllText(ManifestPath), StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            Secret,
+            fileSystem.ReadAllText(ManifestPath),
+            StringComparison.Ordinal
+        );
     }
 
     private static ConfigurationChangePlan CreateNpmPlanForFeed(
@@ -574,7 +582,11 @@ public sealed class ConfigurationManagerTests
             _ => throw new ArgumentOutOfRangeException(nameof(failurePoint)),
         };
         Assert.Equal(expectedOwnership, manifest.Entries.Select(entry => entry.Key));
-        Assert.DoesNotContain(Secret, fileSystem.ReadAllText(ManifestPath), StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            Secret,
+            fileSystem.ReadAllText(ManifestPath),
+            StringComparison.Ordinal
+        );
 
         if (failurePoint == ReplacementFailurePoint.RemoveTarget)
         {
@@ -600,7 +612,11 @@ public sealed class ConfigurationManagerTests
         ConfigurationOwnershipManifest manifest = LoadManifest(fileSystem);
         ConfigurationOwnershipManifestEntry entry = Assert.Single(manifest.Entries);
         Assert.Equal(selector, entry.Key);
-        Assert.DoesNotContain(Secret, fileSystem.ReadAllText(ManifestPath), StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            Secret,
+            fileSystem.ReadAllText(ManifestPath),
+            StringComparison.Ordinal
+        );
     }
 
     private static ConfigurationOwnershipManifest LoadManifest(InMemoryFileSystem fileSystem) =>

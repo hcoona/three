@@ -8821,7 +8821,10 @@ public sealed class ContractFreezeTests
                         .Select(name =>
                             string.Create(
                                 CultureInfo.InvariantCulture,
-                                $"{name}={Convert.ToInt32(Enum.Parse(pair.Key, name), CultureInfo.InvariantCulture)}"
+                                $"{name}={Convert.ToInt32(
+                                    Enum.Parse(pair.Key, name),
+                                    CultureInfo.InvariantCulture
+                                )}"
                             )
                         )
                 );

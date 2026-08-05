@@ -424,7 +424,7 @@ public sealed class NuGetPluginAdapterTests
     }
 
     [Fact]
-    public async Task AuthenticationRequestCancellationWhileResponsePendingAndSendFailsPreservesFailure()
+    public async Task PendingResponseCancellationAndSendFailurePreservesFailure()
     {
         var adapter = new NuGetPluginAdapter(new RequestTokenCapturingAcquisitionService());
         IRequestHandler handler = GetAuthenticationCredentialsHandler(adapter);

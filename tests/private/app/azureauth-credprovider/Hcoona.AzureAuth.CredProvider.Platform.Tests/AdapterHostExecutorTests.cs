@@ -68,7 +68,7 @@ public sealed class AdapterHostExecutorTests
     }
 
     [Fact]
-    public async Task ExecuteProtocolCancellationWhileWritePendingAndFailureBeforeFirstByteReturnsFatal()
+    public async Task ExecuteCancellationWithPreWriteFailureReturnsFatal()
     {
         var protocolOutput = new StringBuilder();
         var coordinator = new CoordinatedSharedStringWriterCoordinator();

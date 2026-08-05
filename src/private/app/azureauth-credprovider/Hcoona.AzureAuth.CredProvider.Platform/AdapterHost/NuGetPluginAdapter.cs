@@ -101,10 +101,11 @@ public sealed class NuGetPluginAdapter
             .GetAwaiter()
             .GetResult();
 
-    internal async ValueTask<GetAuthenticationCredentialsResponse> HandleGetAuthenticationCredentialsAsync(
-        GetAuthenticationCredentialsRequest request,
-        CancellationToken cancellationToken
-    )
+    internal async ValueTask<GetAuthenticationCredentialsResponse>
+        HandleGetAuthenticationCredentialsAsync(
+            GetAuthenticationCredentialsRequest request,
+            CancellationToken cancellationToken
+        )
     {
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();

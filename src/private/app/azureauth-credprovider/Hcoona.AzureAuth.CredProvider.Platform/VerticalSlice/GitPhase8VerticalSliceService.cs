@@ -928,9 +928,8 @@ public sealed class GitPhase8VerticalSliceService
         return (success, payloadCaptured);
     }
 
-    private async ValueTask<GitEffectiveConfigurationInspection> InspectEffectiveGitConfigurationAsync(
-        CancellationToken cancellationToken
-    )
+    private async ValueTask<GitEffectiveConfigurationInspection>
+        InspectEffectiveGitConfigurationAsync(CancellationToken cancellationToken)
     {
         if (!localShellGitDiscoverySupported)
         {

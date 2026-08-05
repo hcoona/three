@@ -914,7 +914,9 @@ public sealed class GitPhase8DoctorTests
                 if (File.Exists(userGitConfig))
                 {
                     string includeLine = File.ReadLines(userGitConfig)
-                        .Single(line => line.TrimStart().StartsWith("path =", StringComparison.Ordinal));
+                        .Single(line =>
+                            line.TrimStart().StartsWith("path =", StringComparison.Ordinal)
+                        );
                     string includedPath = includeLine[(includeLine.IndexOf('=') + 1)..]
                         .Trim()
                         .Trim('"');

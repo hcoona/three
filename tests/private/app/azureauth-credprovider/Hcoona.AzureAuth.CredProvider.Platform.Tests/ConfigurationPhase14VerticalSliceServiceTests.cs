@@ -1206,7 +1206,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     }
 
     [Fact]
-    public async Task PythonManifestWithForgedArbitraryTargetNeverAuthorizesDeletionAndReportsIncomplete()
+    public async Task ForgedPythonTargetIsNotDeletedAndReportsIncomplete()
     {
         const string ForgedPath = "/arbitrary/forged-python-target";
         byte[] forgedBytes = [0, 1, 2, 3, 255, 13, 10];
@@ -1292,7 +1292,10 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
                 )
         );
 
-        Assert.Equal("The existing Python ownership manifest is not recognized.", exception.Message);
+        Assert.Equal(
+            "The existing Python ownership manifest is not recognized.",
+            exception.Message
+        );
         Assert.Equal(forgedManifest, fileSystem.ReadAllText(service.Paths.OwnershipManifestPath));
         Assert.Equal(forgedBytes, fileSystem.ReadAllBytes(ForgedPath));
         foreach ((string path, byte[] bytes) in originalTargets)
