@@ -639,7 +639,8 @@ public sealed class CredentialProviderIdentityConfigurationServiceTests
             return AzureAuthInstallation.Available(
                 @"C:\AzureAuth\azureauth.exe",
                 "/mnt/c/AzureAuth/azureauth.exe",
-                AzureAuthProviderConfig.SupportedAzureAuthVersion
+                AzureAuthProviderConfig.SupportedAzureAuthVersion,
+                AzureAuthHostPlatform.Wsl
             );
         }
     }

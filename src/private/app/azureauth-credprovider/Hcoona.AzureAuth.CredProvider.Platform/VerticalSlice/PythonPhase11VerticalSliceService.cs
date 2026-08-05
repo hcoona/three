@@ -147,12 +147,13 @@ public sealed class PythonPhase11VerticalSliceService
         );
         pythonExecutablePath = NullIfWhiteSpace(options.PythonExecutablePath);
         pathListSeparator = options.PathListSeparator ?? Path.PathSeparator;
-        keyringExecutableFileName =
-            NullIfWhiteSpace(options.KeyringExecutableFileName)
-            ?? (OperatingSystem.IsWindows() ? "keyring.exe" : "keyring");
         ExpectedKeyringShimPath =
             NullIfWhiteSpace(options.ExpectedKeyringShimPath)
             ?? ResolveCurrentLayoutKeyringShimPath(fileSystem, environmentVariableReader);
+        keyringExecutableFileName =
+            NullIfWhiteSpace(options.KeyringExecutableFileName)
+            ?? NullIfWhiteSpace(GetFileName(ExpectedKeyringShimPath))
+            ?? (OperatingSystem.IsWindows() ? "keyring.exe" : "keyring");
     }
 
     public string ExpectedKeyringShimPath { get; }
@@ -249,7 +250,7 @@ public sealed class PythonPhase11VerticalSliceService
                 probes,
                 PythonPhase11EnvironmentKind.PipxTwine,
                 PipxHomeVariableName + "/venvs/twine",
-                Path.Combine(pipxHome, "venvs", "twine")
+                fileSystem.GetFullPath($"{pipxHome}/venvs/twine")
             );
         }
 
@@ -260,7 +261,9 @@ public sealed class PythonPhase11VerticalSliceService
                 probes,
                 PythonPhase11EnvironmentKind.PipxTwine,
                 PipxBinDirVariableName + "/twine",
-                Path.Combine(pipxBinDir, GetExecutableFileName(TwineExecutableFileName))
+                fileSystem.GetFullPath(
+                    $"{pipxBinDir}/{GetExecutableFileName(TwineExecutableFileName)}"
+                )
             );
         }
     }
@@ -280,10 +283,12 @@ public sealed class PythonPhase11VerticalSliceService
         string? firstKeyringExecutablePath = null;
         foreach (string directory in pathDirectories)
         {
-            string candidatePath = Path.Combine(directory, keyringExecutableFileName);
+            string candidatePath = fileSystem.GetFullPath(
+                $"{directory}/{keyringExecutableFileName}"
+            );
             if (fileSystem.IsExecutableFile(candidatePath))
             {
-                firstKeyringExecutablePath = fileSystem.GetFullPath(candidatePath);
+                firstKeyringExecutablePath = candidatePath;
                 break;
             }
         }
@@ -481,7 +486,7 @@ public sealed class PythonPhase11VerticalSliceService
                     ? currentDirectoryPath
                     : fileSystem.IsPathFullyQualified(segment)
                         ? fileSystem.GetFullPath(segment)
-                        : fileSystem.GetFullPath(Path.Combine(currentDirectoryPath, segment))
+                        : fileSystem.GetFullPath($"{currentDirectoryPath}/{segment}")
             )
             .ToArray();
     }
@@ -626,8 +631,16 @@ public sealed class PythonPhase11VerticalSliceService
         return null;
     }
 
-    private static string GetExecutableFileName(string commandName) =>
-        OperatingSystem.IsWindows() ? commandName + ".exe" : commandName;
+    private string GetExecutableFileName(string commandName) =>
+        keyringExecutableFileName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            ? commandName + ".exe"
+            : commandName;
+
+    private static string GetFileName(string path)
+    {
+        int separatorIndex = path.LastIndexOfAny(['/', '\\']);
+        return separatorIndex < 0 ? path : path[(separatorIndex + 1)..];
+    }
 
     private static bool PathHasSegment(string? path, string segment)
     {

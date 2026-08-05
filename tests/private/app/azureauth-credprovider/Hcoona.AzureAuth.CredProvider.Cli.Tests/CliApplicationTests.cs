@@ -1608,7 +1608,7 @@ public sealed class CliApplicationTests
 
             string gitConfig = File.ReadAllText(service.Paths.GitConfigPath);
             Assert.Contains(
-                $"helper = \"{service.Paths.GitHelperPath}\"",
+                $"helper = \"{GetSerializedGitHelperPath(service.Paths.GitHelperPath)}\"",
                 gitConfig,
                 StringComparison.Ordinal
             );
@@ -1644,7 +1644,7 @@ public sealed class CliApplicationTests
             Assert.Equal(0, result.ExitCode);
             Assert.Equal(string.Empty, result.StdErr);
             Assert.Contains(
-                $"helper = \"\\\"{service.Paths.GitHelperPath}\\\"\"",
+                $"helper = \"\\\"{GetSerializedGitHelperPath(service.Paths.GitHelperPath)}\\\"\"",
                 File.ReadAllText(service.Paths.GitConfigPath),
                 StringComparison.Ordinal
             );
@@ -1980,7 +1980,7 @@ public sealed class CliApplicationTests
             Assert.Equal(0, configureResult.ExitCode);
             string tamperedGitConfig = File.ReadAllText(service.Paths.GitConfigPath)
                 .Replace(
-                    $"helper = \"{service.Paths.GitHelperPath}\"",
+                    $"helper = \"{GetSerializedGitHelperPath(service.Paths.GitHelperPath)}\"",
                     "helper = \"foreign\"",
                     StringComparison.Ordinal
                 );
@@ -2004,6 +2004,8 @@ public sealed class CliApplicationTests
             DeleteDirectoryIfExists(stateDirectory);
         }
     }
+
+    private static string GetSerializedGitHelperPath(string path) => path.Replace('\\', '/');
 
     [Fact]
     public void UnconfigureGitResumesInactiveOwnedCleanup()
@@ -5330,8 +5332,12 @@ public sealed class CliApplicationTests
         AzureAuthHostPlatform hostPlatform
     ) =>
         AzureAuthInstallation.Available(
-            "/opt/azureauth/azureauth",
-            "/opt/azureauth/azureauth",
+            hostPlatform == AzureAuthHostPlatform.Windows
+                ? @"C:\Program Files\AzureAuth\azureauth.exe"
+                : "/opt/azureauth/azureauth",
+            hostPlatform == AzureAuthHostPlatform.Windows
+                ? @"C:\Program Files\AzureAuth\azureauth.exe"
+                : "/opt/azureauth/azureauth",
             "0.9.5",
             hostPlatform
         );

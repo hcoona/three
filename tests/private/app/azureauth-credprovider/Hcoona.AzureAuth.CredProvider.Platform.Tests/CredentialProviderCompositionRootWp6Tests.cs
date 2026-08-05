@@ -300,7 +300,8 @@ public sealed class CredentialProviderCompositionRootWp6Tests
                 AzureAuthInstallation.Available(
                     @"C:\AzureAuth\azureauth.exe",
                     "/mnt/c/AzureAuth/azureauth.exe",
-                    "0.9.5"
+                    "0.9.5",
+                    AzureAuthHostPlatform.Wsl
                 )
             );
             CredentialProviderCompositionRoot root =

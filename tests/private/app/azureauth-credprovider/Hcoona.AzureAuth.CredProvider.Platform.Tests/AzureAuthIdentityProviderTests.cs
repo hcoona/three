@@ -368,13 +368,22 @@ public sealed class AzureAuthIdentityProviderTests
         new()
         {
             ExecutablePath =
-                hostPlatform == AzureAuthHostPlatform.NativeLinux
-                    ? "/usr/lib/azureauth/azureauth"
-                    : "/mnt/c/Users/User/AppData/Local/Programs/AzureAuth/0.9.5/azureauth.exe",
+                hostPlatform switch
+                {
+                    AzureAuthHostPlatform.Windows =>
+                        @"C:\Users\User\AppData\Local\Programs\AzureAuth\0.9.5\azureauth.exe",
+                    AzureAuthHostPlatform.NativeLinux => "/usr/lib/azureauth/azureauth",
+                    _ =>
+                        "/mnt/c/Users/User/AppData/Local/Programs/AzureAuth/0.9.5/azureauth.exe",
+                },
             WorkingDirectory =
-                hostPlatform == AzureAuthHostPlatform.NativeLinux
-                    ? "/usr/lib/azureauth"
-                    : "/mnt/c/Users/User/AppData/Local/Programs/AzureAuth/0.9.5",
+                hostPlatform switch
+                {
+                    AzureAuthHostPlatform.Windows =>
+                        @"C:\Users\User\AppData\Local\Programs\AzureAuth\0.9.5",
+                    AzureAuthHostPlatform.NativeLinux => "/usr/lib/azureauth",
+                    _ => "/mnt/c/Users/User/AppData/Local/Programs/AzureAuth/0.9.5",
+                },
             HostPlatform = hostPlatform,
         };
 
