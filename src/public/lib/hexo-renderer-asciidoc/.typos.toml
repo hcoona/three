@@ -8,7 +8,7 @@ extend-ignore-re = ["(?i)asciidoc", "(?i)asciidoctor", "(?i)hexo"]
 [files]
 extend-exclude = [
   "pnpm-lock.yaml",
-  ".mise.lock",
+  "mise.lock",
   "node_modules/**",
   "coverage/**",
   "dist/**",

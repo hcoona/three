@@ -8,7 +8,7 @@ Routes batched formatting requests to Invoke-Formatter with uniform check/fix se
 
 .DESCRIPTION
 Invoke-Formatter emits formatted text without touching source files. This wrapper accepts the
-same file list that hk/pre-commit tooling would pass (for example via xargs) and either checks
+same file list that HK tooling would pass (for example via xargs) and either checks
 for formatting drift or rewrites files in-place. Check mode reports every file that would be
 changed and returns a non-zero exit code. Fix mode updates the files and exits successfully.
 #>

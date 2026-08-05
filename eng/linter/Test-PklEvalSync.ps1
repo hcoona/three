@@ -14,8 +14,8 @@
     Uses git diff --no-index for cross-platform comparison.
 
 .EXAMPLE
-    Test-PreCommitConfigSync.ps1 -Source .pre-commit-config.pkl -Target .pre-commit-config.yaml -Format yaml
-    Test-PreCommitConfigSync.ps1 -Source .pre-commit-config.pkl -Target .pre-commit-config.yaml -Format yaml -Fix
+    Test-PklEvalSync.ps1 -Source global.pkl -Target global.json -Format json
+    Test-PklEvalSync.ps1 -Source global.pkl -Target global.json -Format json -Fix
 
 .NOTES
     This script requires pkl and git to be installed.
