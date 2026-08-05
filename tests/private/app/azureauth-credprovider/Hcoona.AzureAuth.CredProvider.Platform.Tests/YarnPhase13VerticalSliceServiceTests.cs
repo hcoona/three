@@ -978,6 +978,9 @@ public sealed class YarnPhase13VerticalSliceServiceTests
         );
         Assert.Equal("/home/alice/.yarnrc.yml", declaration.SourcePath);
         Assert.Equal("azure", declaration.Scope);
+        const string expectedRegistry =
+            "https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry";
+        string expectedSelectorPrefix = $"""npmRegistries["{expectedRegistry}"]""";
 
         ConfigurationChangePlan plan = service.CreateUserCredentialPlan(
             new YarnPhase13CredentialPlanRequest
@@ -999,7 +1002,7 @@ public sealed class YarnPhase13VerticalSliceServiceTests
             static change => !change.IsSecretValue
         );
         Assert.Equal(
-            """npmRegistries["https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry"].npmAlwaysAuth""",
+            expectedSelectorPrefix + ".npmAlwaysAuth",
             alwaysAuthChange.Key
         );
         Assert.Equal("true", alwaysAuthChange.Value);
@@ -1009,13 +1012,13 @@ public sealed class YarnPhase13VerticalSliceServiceTests
             static change => change.IsSecretValue
         );
         Assert.Equal(
-            """npmRegistries["https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry"].npmAuthToken""",
+            expectedSelectorPrefix + ".npmAuthToken",
             authTokenChange.Key
         );
         Assert.Equal("short-lived-token", authTokenChange.Value);
         Assert.True(authTokenChange.IsSecretValue);
         Assert.Equal(
-            """npmRegistries["https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry"].npmAuthToken""",
+            expectedSelectorPrefix + ".npmAuthToken",
             plan.Manifest.EntrySelector
         );
         Assert.DoesNotContain(
