@@ -18,6 +18,8 @@ public sealed class SystemProcessRunner : IProcessRunner
     private readonly TimeSpan processCleanupTimeout;
     private readonly IProcessStartStrategy processStart;
 
+    internal static bool IsUnixSessionLauncherAvailable => UnixSessionLauncherPath is not null;
+
     public SystemProcessRunner()
         : this(
             SystemProcessCleanupStrategy.Instance,
@@ -443,10 +445,13 @@ public sealed class SystemProcessRunner : IProcessRunner
             }
 
             int error = Marshal.GetLastPInvokeError();
-            if (error != noSuchProcessError)
+            if (error == noSuchProcessError)
             {
-                throw new Win32Exception(error);
+                process.Kill(entireProcessTree: true);
+                return;
             }
+
+            throw new Win32Exception(error);
         }
 
         public Task WaitForExitAsync(Process process, CancellationToken cancellationToken) =>

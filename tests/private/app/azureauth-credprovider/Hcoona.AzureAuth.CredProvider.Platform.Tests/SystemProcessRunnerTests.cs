@@ -237,7 +237,14 @@ public sealed class SystemProcessRunnerTests
     [Fact]
     public async Task RunAsyncCancellationKillsContainedDescendantAfterImmediateParentExits()
     {
-        if (OperatingSystem.IsWindows() || !File.Exists("/bin/sh"))
+        if (
+            OperatingSystem.IsWindows()
+            || !File.Exists("/bin/sh")
+            || (
+                OperatingSystem.IsMacOS()
+                && !SystemProcessRunner.IsUnixSessionLauncherAvailable
+            )
+        )
         {
             return;
         }
@@ -282,7 +289,14 @@ public sealed class SystemProcessRunnerTests
     [Fact]
     public async Task RunAsyncTimeoutKillsContainedDescendantAfterImmediateParentExits()
     {
-        if (OperatingSystem.IsWindows() || !File.Exists("/bin/sh"))
+        if (
+            OperatingSystem.IsWindows()
+            || !File.Exists("/bin/sh")
+            || (
+                OperatingSystem.IsMacOS()
+                && !SystemProcessRunner.IsUnixSessionLauncherAvailable
+            )
+        )
         {
             return;
         }
@@ -1477,5 +1491,364 @@ public sealed class SystemProcessRunnerTests
         Assert.Empty(result.StandardOutput);
         Assert.Empty(result.StandardError);
         Assert.Equal(string.Empty, standardErrorTee.ToString());
+    }
+
+    [Fact]
+    public async Task RunAsyncCancellationFallsBackToLauncherTreeWhenProcessGroupSignalReturnsEsrch()
+    {
+        string? sessionLauncher = FindProductionUnixSessionLauncher();
+        string? compiler = FindExecutableOnPath("cc");
+        if (!OperatingSystem.IsLinux() || sessionLauncher is null || compiler is null)
+        {
+            return;
+        }
+
+        string testDirectory = CreateTestDirectory("setsid-esrch-cancellation");
+        string pidFile = Path.Combine(testDirectory, "processes.pid");
+        string preloadLibrary = await BuildSetsidBarrierLibraryAsync(
+            compiler,
+            testDirectory,
+            TestContext.Current.CancellationToken
+        );
+        var processStart = new RecordingProcessStartStrategy();
+        var runner = new SystemProcessRunner(processStart);
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken
+        );
+        int launcherProcessId = 0;
+        int descendantProcessId = 0;
+
+        try
+        {
+            Task<ProcessResult> runTask = runner.RunAsync(
+                SetsidBarrierStartSpec(pidFile, preloadLibrary, TimeSpan.FromSeconds(30)),
+                cancellation.Token
+            );
+            (launcherProcessId, descendantProcessId) = await WaitForProcessIdsAsync(
+                pidFile,
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Equal(sessionLauncher, processStart.FileName);
+            Assert.Equal(processStart.ProcessId, launcherProcessId);
+            AssertProcessIsRunning(launcherProcessId);
+            AssertProcessIsRunning(descendantProcessId);
+            Assert.False(runTask.IsCompleted);
+            AssertUnixProcessGroupKillReturnsEsrch(launcherProcessId);
+
+            cancellation.Cancel();
+
+            OperationCanceledException exception =
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+                    await runTask.WaitAsync(
+                        TimeSpan.FromSeconds(10),
+                        TestContext.Current.CancellationToken
+                    )
+                );
+
+            Assert.Equal(cancellation.Token, exception.CancellationToken);
+            await AssertLauncherAndDescendantExitAsync(
+                processStart,
+                launcherProcessId,
+                descendantProcessId,
+                TestContext.Current.CancellationToken
+            );
+        }
+        finally
+        {
+            cancellation.Cancel();
+            EmergencyKillProcessTree(processStart.ProcessId);
+            EmergencyKillProcessTree(launcherProcessId);
+            EmergencyKillProcessTree(descendantProcessId);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsyncTimeoutFallsBackToLauncherTreeWhenProcessGroupSignalReturnsEsrch()
+    {
+        string? sessionLauncher = FindProductionUnixSessionLauncher();
+        string? compiler = FindExecutableOnPath("cc");
+        if (!OperatingSystem.IsLinux() || sessionLauncher is null || compiler is null)
+        {
+            return;
+        }
+
+        string testDirectory = CreateTestDirectory("setsid-esrch-timeout");
+        string pidFile = Path.Combine(testDirectory, "processes.pid");
+        string preloadLibrary = await BuildSetsidBarrierLibraryAsync(
+            compiler,
+            testDirectory,
+            TestContext.Current.CancellationToken
+        );
+        var processStart = new RecordingProcessStartStrategy();
+        var runner = new SystemProcessRunner(processStart);
+        int launcherProcessId = 0;
+        int descendantProcessId = 0;
+
+        try
+        {
+            Task<ProcessResult> runTask = runner.RunAsync(
+                SetsidBarrierStartSpec(pidFile, preloadLibrary, TimeSpan.FromSeconds(2)),
+                TestContext.Current.CancellationToken
+            );
+            (launcherProcessId, descendantProcessId) = await WaitForProcessIdsAsync(
+                pidFile,
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Equal(sessionLauncher, processStart.FileName);
+            Assert.Equal(processStart.ProcessId, launcherProcessId);
+            AssertProcessIsRunning(launcherProcessId);
+            AssertProcessIsRunning(descendantProcessId);
+            Assert.False(runTask.IsCompleted);
+            AssertUnixProcessGroupKillReturnsEsrch(launcherProcessId);
+
+            ProcessResult result = await runTask.WaitAsync(
+                TimeSpan.FromSeconds(10),
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Equal(ProcessExecutionStatus.TimedOut, result.Status);
+            Assert.False(result.Succeeded);
+            await AssertLauncherAndDescendantExitAsync(
+                processStart,
+                launcherProcessId,
+                descendantProcessId,
+                TestContext.Current.CancellationToken
+            );
+        }
+        finally
+        {
+            EmergencyKillProcessTree(processStart.ProcessId);
+            EmergencyKillProcessTree(launcherProcessId);
+            EmergencyKillProcessTree(descendantProcessId);
+        }
+    }
+
+    private static ProcessStartSpec SetsidBarrierStartSpec(
+        string pidFile,
+        string preloadLibrary,
+        TimeSpan timeout
+    )
+    {
+        return new ProcessStartSpec(
+            "/bin/sh",
+            ["-c", "exit 0"],
+            environment: new Dictionary<string, string?>
+            {
+                ["LD_PRELOAD"] = preloadLibrary,
+                ["AZUREAUTH_TEST_SETSID_PID_FILE"] = pidFile,
+            },
+            timeout: timeout
+        );
+    }
+
+    private static async Task<string> BuildSetsidBarrierLibraryAsync(
+        string compiler,
+        string testDirectory,
+        CancellationToken cancellationToken
+    )
+    {
+        const string source = """
+            #define _GNU_SOURCE
+            #include <fcntl.h>
+            #include <signal.h>
+            #include <stdio.h>
+            #include <stdlib.h>
+            #include <sys/types.h>
+            #include <unistd.h>
+
+            static void setsid_barrier(void) __attribute__((constructor));
+
+            static void setsid_barrier(void)
+            {
+                const char *pid_file = getenv("AZUREAUTH_TEST_SETSID_PID_FILE");
+                pid_t child = fork();
+                if (child == 0)
+                {
+                    for (;;)
+                    {
+                        pause();
+                    }
+                }
+
+                if (pid_file != NULL)
+                {
+                    int fd = open(pid_file, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+                    if (fd >= 0)
+                    {
+                        char pids[96];
+                        int length = snprintf(
+                            pids,
+                            sizeof(pids),
+                            "%ld %ld",
+                            (long)getpid(),
+                            (long)child
+                        );
+                        if (length > 0)
+                        {
+                            (void)write(fd, pids, (size_t)length);
+                        }
+                        (void)close(fd);
+                    }
+                }
+
+                (void)raise(SIGSTOP);
+            }
+            """;
+        string sourcePath = Path.Combine(testDirectory, "setsid-barrier.c");
+        string libraryPath = Path.Combine(testDirectory, "setsid-barrier.so");
+        await File.WriteAllTextAsync(sourcePath, source, cancellationToken);
+
+        using var compilerProcess = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = compiler,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+            },
+        };
+        compilerProcess.StartInfo.ArgumentList.Add("-shared");
+        compilerProcess.StartInfo.ArgumentList.Add("-fPIC");
+        compilerProcess.StartInfo.ArgumentList.Add("-O2");
+        compilerProcess.StartInfo.ArgumentList.Add("-o");
+        compilerProcess.StartInfo.ArgumentList.Add(libraryPath);
+        compilerProcess.StartInfo.ArgumentList.Add(sourcePath);
+
+        Assert.True(compilerProcess.Start(), "The native test compiler did not start.");
+        string standardOutput = await compilerProcess.StandardOutput.ReadToEndAsync(
+            cancellationToken
+        );
+        string standardError = await compilerProcess.StandardError.ReadToEndAsync(
+            cancellationToken
+        );
+        await compilerProcess.WaitForExitAsync(cancellationToken);
+
+        Assert.True(
+            compilerProcess.ExitCode == 0,
+            $"Native test fixture compilation failed.{Environment.NewLine}"
+                + $"stdout: {standardOutput}{Environment.NewLine}stderr: {standardError}"
+        );
+        Assert.True(File.Exists(libraryPath));
+        return libraryPath;
+    }
+
+    private static async Task AssertLauncherAndDescendantExitAsync(
+        RecordingProcessStartStrategy processStart,
+        int launcherProcessId,
+        int descendantProcessId,
+        CancellationToken cancellationToken
+    )
+    {
+        Assert.True(
+            processStart.Exited.IsCompleted,
+            "The runner returned before verifying that the launcher exited."
+        );
+        await Task.WhenAll(
+            AssertProcessExitsAsync(launcherProcessId, cancellationToken),
+            AssertProcessExitsAsync(descendantProcessId, cancellationToken)
+        );
+    }
+
+    private static void AssertUnixProcessGroupKillReturnsEsrch(int launcherProcessId)
+    {
+        const int noSuchProcessError = 3;
+        const int sigkill = 9;
+
+        int result = UnixKill(-launcherProcessId, sigkill);
+        int error = Marshal.GetLastPInvokeError();
+
+        Assert.Equal(-1, result);
+        Assert.Equal(noSuchProcessError, error);
+    }
+
+    private static string? FindProductionUnixSessionLauncher()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return null;
+        }
+
+        foreach (string candidate in new[] { "/usr/bin/setsid", "/bin/setsid" })
+        {
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? FindExecutableOnPath(string executable)
+    {
+        string? searchPath = Environment.GetEnvironmentVariable("PATH");
+        if (searchPath is null)
+        {
+            return null;
+        }
+
+        foreach (string directory in searchPath.Split(Path.PathSeparator))
+        {
+            string candidate = Path.Combine(directory, executable);
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    private static void EmergencyKillProcessTree(int processId)
+    {
+        if (processId <= 0)
+        {
+            return;
+        }
+
+        try
+        {
+            using Process process = Process.GetProcessById(processId);
+            process.Kill(entireProcessTree: true);
+            process.WaitForExit(milliseconds: 5_000);
+        }
+        catch (ArgumentException) { }
+        catch (InvalidOperationException) { }
+        catch (Win32Exception) { }
+    }
+
+    [DllImport("libc", EntryPoint = "kill", SetLastError = true)]
+    private static extern int UnixKill(int processId, int signal);
+
+    private sealed class RecordingProcessStartStrategy
+        : SystemProcessRunner.IProcessStartStrategy
+    {
+        private readonly TaskCompletionSource exited = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+
+        public Task Exited => exited.Task;
+
+        public string? FileName { get; private set; }
+
+        public int ProcessId { get; private set; }
+
+        public bool Start(Process process)
+        {
+            FileName = process.StartInfo.FileName;
+            process.EnableRaisingEvents = true;
+            process.Exited += (_, _) => exited.TrySetResult();
+            bool started = process.Start();
+            if (started)
+            {
+                ProcessId = process.Id;
+            }
+
+            return started;
+        }
     }
 }

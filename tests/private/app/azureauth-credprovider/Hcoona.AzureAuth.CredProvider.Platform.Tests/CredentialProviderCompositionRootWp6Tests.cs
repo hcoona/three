@@ -134,6 +134,7 @@ public sealed class CredentialProviderCompositionRootWp6Tests
     [Theory]
     [InlineData(AzureAuthInstallationStatus.Missing, "AzureAuthInstallationMissing")]
     [InlineData(AzureAuthInstallationStatus.WrongVersion, "AzureAuthVersionMismatch")]
+    [InlineData(AzureAuthInstallationStatus.Unavailable, "AzureAuthProcessLaunchFailed")]
     public void InstallationFailuresAreInteractiveBlockers(
         AzureAuthInstallationStatus status,
         string code

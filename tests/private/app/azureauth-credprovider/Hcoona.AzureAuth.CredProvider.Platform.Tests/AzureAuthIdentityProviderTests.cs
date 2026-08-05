@@ -104,6 +104,42 @@ public sealed class AzureAuthIdentityProviderTests
         Assert.DoesNotContain("cache miss", result.SafeMessage, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(
+        AzureAuthHostPlatform.Windows,
+        AcquisitionMode.InteractionAllowed,
+        InteractivePolicy.UserAllowed
+    )]
+    [InlineData(
+        AzureAuthHostPlatform.Wsl,
+        AcquisitionMode.InteractionAllowed,
+        InteractivePolicy.UserAllowed
+    )]
+    [InlineData(
+        AzureAuthHostPlatform.NativeLinux,
+        AcquisitionMode.SilentOnly,
+        InteractivePolicy.Never
+    )]
+    public async Task LaunchFailureIsNotMappedAsAnOrdinaryAzureAuthExit(
+        AzureAuthHostPlatform hostPlatform,
+        AcquisitionMode acquisitionMode,
+        InteractivePolicy interactivePolicy
+    )
+    {
+        var runner = new RecordingRunner(ProcessResult.LaunchFailure());
+        AzureAuthIdentityProvider provider = CreateProvider(runner, hostPlatform);
+
+        AcquiredAccessTokenResult result = await provider.AcquireAccessTokenAsync(
+            CreateRequest(acquisitionMode, interactivePolicy: interactivePolicy),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(AcquiredAccessTokenStatus.ProcessFailed, result.Status);
+        Assert.Equal("AzureAuthProcessLaunchFailed", result.Code);
+        Assert.NotEqual("AzureAuthSilentTokenUnavailable", result.Code);
+        Assert.Equal("AzureAuth process launch failed.", result.SafeMessage);
+    }
+
     [Fact]
     public async Task DeviceCodeRemainsUnavailableWithoutLaunching()
     {

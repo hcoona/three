@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -119,6 +120,9 @@ public sealed record SystemAzureAuthInstallationDiscoveryOptions
     internal Func<string, LinuxExecuteAccessResult> LinuxExecuteAccessChecker { get; init; } =
         HasLinuxEffectiveExecuteAccess;
 
+    internal Func<string, string, bool> UnixExecutableLaunchChecker { get; init; } =
+        CanLaunchUnixExecutable;
+
     public TimeSpan Timeout { get; init; } = TimeSpan.FromSeconds(15);
 
     public int MaximumOutputBytes { get; init; } = 8 * 1024;
@@ -150,6 +154,50 @@ public sealed record SystemAzureAuthInstallationDiscoveryOptions
             )
         {
             return LinuxExecuteAccessResult.Unavailable;
+        }
+    }
+
+    private static bool CanLaunchUnixExecutable(string path, string workingDirectory)
+    {
+        using var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = path,
+                WorkingDirectory = workingDirectory,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+            },
+        };
+        process.StartInfo.ArgumentList.Add("--version");
+        process.StartInfo.Environment["AZUREAUTH_NO_USER"] = "1";
+        process.StartInfo.Environment["Corext_NonInteractive"] = "1";
+
+        try
+        {
+            if (!process.Start())
+            {
+                return false;
+            }
+
+            if (process.WaitForExit(milliseconds: 2_000))
+            {
+                return true;
+            }
+
+            process.Kill(entireProcessTree: true);
+            return process.WaitForExit(milliseconds: 2_000);
+        }
+        catch (Exception exception)
+            when (exception
+                    is Win32Exception
+                        or InvalidOperationException
+                        or NotSupportedException
+            )
+        {
+            return false;
         }
     }
 
@@ -312,14 +360,21 @@ public sealed class SystemAzureAuthInstallationDiscovery : IAzureAuthInstallatio
             return Missing();
         }
 
-        return IsSupportedVersion(output.FileVersion)
+        if (!IsSupportedVersion(output.FileVersion))
+        {
+            return WrongVersion(output.FileVersion);
+        }
+
+        string? workingDirectory = Path.GetDirectoryName(hostPath);
+        return workingDirectory is not null
+            && options.UnixExecutableLaunchChecker(hostPath, workingDirectory)
             ? AzureAuthInstallation.Available(
                 windowsPath,
                 hostPath,
                 AzureAuthProviderConfig.SupportedAzureAuthVersion,
                 AzureAuthHostPlatform.Wsl
             )
-            : WrongVersion(output.FileVersion);
+            : LaunchFailure();
     }
 
     private AzureAuthInstallation DiscoverNativeLinux()
@@ -402,14 +457,19 @@ public sealed class SystemAzureAuthInstallationDiscovery : IAzureAuthInstallatio
             );
         }
 
-        return IsSupportedVersion(version)
+        if (!IsSupportedVersion(version))
+        {
+            return WrongVersion(version);
+        }
+
+        return options.UnixExecutableLaunchChecker(path, directory)
             ? AzureAuthInstallation.Available(
                 path,
                 path,
                 AzureAuthProviderConfig.SupportedAzureAuthVersion,
                 AzureAuthHostPlatform.NativeLinux
             )
-            : WrongVersion(version);
+            : LaunchFailure();
     }
 
     private static AzureAuthInstallation InspectNativeInstallation(string localApplicationData)
@@ -497,6 +557,13 @@ public sealed class SystemAzureAuthInstallationDiscovery : IAzureAuthInstallatio
                 ? "The installed AzureAuth executable has no readable version."
                 : $"The installed AzureAuth version '{version}' is unsupported; "
                     + "version 0.9.5 is required."
+        );
+
+    private static AzureAuthInstallation LaunchFailure() =>
+        AzureAuthInstallation.Failure(
+            AzureAuthInstallationStatus.Unavailable,
+            "AzureAuthProcessLaunchFailed",
+            "AzureAuth process launch failed."
         );
 
     private static string? MapWindowsPath(string windowsPath, string mountRoot)
