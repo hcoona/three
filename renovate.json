@@ -27,7 +27,7 @@
     "commitMessageTopic": "Dependency Lock Files"
   },
   "postUpgradeTasks": {
-    "commands": ["mise install pnpm", "mise run --skip-tools --force update-pnpm-lockfiles"],
+    "commands": ["mise install --locked pnpm", "mise run --skip-tools --force update-pnpm-lockfiles"],
     "fileFilters": ["pnpm-lock.yaml", "**/pnpm-lock.yaml"],
     "executionMode": "branch"
   },
@@ -491,8 +491,8 @@
       "matchManagers": ["mise"],
       "matchDepNames": ["pnpm"],
       "postUpgradeTasks": {
-        "commands": ["mise install pnpm", "mise run --skip-tools --force update-pnpm-lockfiles"],
-        "fileFilters": ["mise.lock", "**/mise.lock", "**/.mise.lock", "pnpm-lock.yaml", "**/pnpm-lock.yaml"],
+        "commands": ["mise install --locked pnpm", "mise run --skip-tools --force update-pnpm-lockfiles"],
+        "fileFilters": ["mise.lock", "**/mise.lock", "pnpm-lock.yaml", "**/pnpm-lock.yaml"],
         "executionMode": "branch"
       },
       "automerge": true
@@ -510,7 +510,7 @@
       "matchDepNames": ["uv"],
       "groupName": "Mise uv",
       "postUpgradeTasks": {
-        "commands": ["mise install uv", "mise run --skip-tools --force update-uv-lock"],
+        "commands": ["mise install --locked uv", "mise run --skip-tools --force update-uv-lock"],
         "fileFilters": ["uv.lock"],
         "executionMode": "branch"
       },

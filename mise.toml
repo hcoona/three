@@ -6,7 +6,10 @@ monorepo_root = true
 experimental = true
 
 [monorepo]
-config_roots = ["src/private/app/factorio-cycle-calculator"]
+config_roots = [
+  "src/private/app/factorio-cycle-calculator",
+  "src/public/lib/hexo-renderer-asciidoc",
+]
 
 [tools]
 # Runtimes

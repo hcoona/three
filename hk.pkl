@@ -35,7 +35,8 @@ local general_exclude_list =
     "pnpm-lock.yaml",
     "**/pnpm-lock.yaml",
     "uv.lock",
-    ".mise.lock",
+    "mise.lock",
+    "**/mise.lock",
     "**/.github/**",
     "**/.specify/**",
     "**/specs/**/*.md",
@@ -177,9 +178,9 @@ local pwsh_linters = new Mapping<String, Step> {
       ["HK_EXEC_PER_FILE"] = "0"
     }
     check =
-      "python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-FormatterWrapper.ps1 -Mode Check -Path -- {{files}}"
+      "python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/linter/Invoke-FormatterWrapper.ps1 -Mode Check -Path -- {{files}}"
     fix =
-      "python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-FormatterWrapper.ps1 -Mode Fix -Path -- {{files}}"
+      "python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/linter/Invoke-FormatterWrapper.ps1 -Mode Fix -Path -- {{files}}"
   }
 
   ["pwsh-script-analyzer"] {
@@ -192,9 +193,9 @@ local pwsh_linters = new Mapping<String, Step> {
       ["HK_EXEC_PER_FILE"] = "0"
     }
     check =
-      "python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-ScriptAnalyzerWrapper.ps1 -Mode Check -Path -- {{files}}"
+      "python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/linter/Invoke-ScriptAnalyzerWrapper.ps1 -Mode Check -Path -- {{files}}"
     fix =
-      "python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-ScriptAnalyzerWrapper.ps1 -Mode Fix -Path -- {{files}}"
+      "python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/linter/Invoke-ScriptAnalyzerWrapper.ps1 -Mode Fix -Path -- {{files}}"
   }
 }
 
@@ -278,7 +279,7 @@ local function getTestPklEvalSyncCommand(
       "-NoProfile",
       if (ci) "-NonInteractive" else "",
       "-File",
-      "eng/pre-commit/Test-PklEvalSync.ps1",
+      "eng/linter/Test-PklEvalSync.ps1",
       "-Source",
       source,
       "-Target",
