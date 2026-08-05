@@ -3308,6 +3308,20 @@ public sealed class CliApplicationTests
             );
             Assert.Equal(0, executed.ExitCode);
             Assert.Contains("mutates-state: no\n", executed.StdOut);
+            Assert.Equal(string.Empty, executed.StdErr);
+
+            string[] executedLines = Normalize(executed.StdOut)
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            string ciModeLine = Assert.Single(
+                executedLines,
+                static line => line.StartsWith("ci-mode: ", StringComparison.Ordinal)
+            );
+            string scopeLine = Assert.Single(
+                executedLines,
+                static line => line.StartsWith("scope: ", StringComparison.Ordinal)
+            );
+            Assert.Equal("ci-mode: azure-pipelines", ciModeLine);
+            Assert.Equal("scope: ci-temporary", scopeLine);
         }
         finally
         {
@@ -4092,7 +4106,7 @@ public sealed class CliApplicationTests
                 Usage:
                 """
                     + "\n  azureauth-credprovider cleanup [<ecosystem>|all] [--dry-run] "
-                    + "[--ci <mode>] [--help]\n"
+                    + "--ci azure-pipelines [--help]\n"
                     + """
 
                     Ecosystems:
@@ -4106,10 +4120,7 @@ public sealed class CliApplicationTests
 
                     Options:
                       --dry-run                    Render cleanup actions without mutating files.
-                    """
-                    + "\n  --ci <mode>                  Select CI mode explicitly: "
-                    + "none | azure-pipelines.\n"
-                    + """
+                      --ci azure-pipelines         Required; clean Azure Pipelines temporary state.
                       -h, --help                   Show help.
                     """,
                 "acceptance" => """
@@ -4319,6 +4330,10 @@ public sealed class CliApplicationTests
                     "nuget-azure-artifacts-source: pass",
                     "nuget-interactive-policy: fail",
                     "nuget-environment-overrides: absent",
+                    "python-keyring-shim-exists: fail",
+                    "python-keyring-shim-first-on-path: fail",
+                    "python-keyring-module: fail",
+                    "python-azure-artifacts-endpoint-canonicalization: pass",
                     "configuration-aggregation: pass",
                     "npm-user-configuration-plan: pass",
                     "npm-user-owned-targets: absent",
@@ -4347,6 +4362,7 @@ public sealed class CliApplicationTests
                         + "azureauth-credprovider cleanup --ci azure-pipelines",
                     "ci-guidance: set SYSTEM_ACCESSTOKEN and use --ci azure-pipelines in CI",
                     "persistent-derived-credential-cache: disabled",
+                    "doctor-aggregation: fail",
                 ]
             )
         );
@@ -5650,7 +5666,8 @@ public sealed class CliApplicationTests
     {
         const string PrivateToken = "doctor-private-auth-token";
         const string PrivateDiagnostic = "doctor-private-auth-diagnostic";
-        string rootPath = CreateTestDirectory();
+        using var pythonFixture = new PythonDoctorFixture(PythonDoctorFixtureMode.Healthy);
+        string rootPath = pythonFixture.RootPath;
         var promptWriter = new StringWriter();
         var authenticationRunner = new PromptingResultProcessRunner(
             new ProcessResult(0, PrivateToken, PrivateDiagnostic),
@@ -5703,6 +5720,7 @@ public sealed class CliApplicationTests
                 CompositionRoot = root,
                 GitPhase8Options = gitOptions,
                 NuGetPhase10Options = CreateIsolatedNuGetPhase10Options(),
+                PythonPhase11Options = pythonFixture.Options,
                 ConfigurationPhase14Options = CreateConfigurationPhase14Options(rootPath),
             };
             CommandResult configureGit = InvokeWithRuntime(runtime, "configure", "git");
@@ -5712,6 +5730,7 @@ public sealed class CliApplicationTests
             Assert.Equal(0, configureGit.ExitCode);
             Assert.Equal(string.Empty, configureGit.StdErr);
             Assert.Equal(0, doctor.ExitCode);
+            Assert.True(pythonFixture.PathWasRequested);
             Assert.Contains(
                 "composition-mode: Production\n",
                 doctor.StdOut,
@@ -5785,10 +5804,22 @@ public sealed class CliApplicationTests
                 StringComparison.Ordinal
             );
             Assert.Contains(
+                "python-keyring-shim-exists: pass\n",
+                doctor.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains(
+                "python-keyring-shim-first-on-path: pass\n",
+                doctor.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains("python-keyring-module: pass\n", doctor.StdOut, StringComparison.Ordinal);
+            Assert.Contains(
                 "configuration-aggregation: pass\n",
                 doctor.StdOut,
                 StringComparison.Ordinal
             );
+            Assert.Contains("doctor-aggregation: pass\n", doctor.StdOut, StringComparison.Ordinal);
             Assert.Contains(
                 "auth-accepted-identity-flows: browser, device-code, azure-pipelines\n",
                 doctor.StdOut,
@@ -5911,4 +5942,236 @@ public sealed class CliApplicationTests
             );
         }
     }
+
+    [Theory]
+    [InlineData("cleanup")]
+    [InlineData("cleanup", "npm")]
+    [InlineData("cleanup", "--ci", "none")]
+    [InlineData("cleanup", "npm", "--ci", "none")]
+    public void CleanupRequiresExplicitAzurePipelinesCiMode(params string[] args)
+    {
+        const string ExpectedCleanupCiRequiredDiagnostic =
+            "error: cleanup requires '--ci azure-pipelines'. "
+            + "Run 'azureauth-credprovider cleanup --help' for usage.\n";
+
+        CommandResult result = Invoke(args);
+
+        Assert.Equal(2, result.ExitCode);
+        Assert.Equal(string.Empty, result.StdOut);
+        Assert.Equal(ExpectedCleanupCiRequiredDiagnostic, Normalize(result.StdErr));
+    }
+
+    private static CliRuntimeOptions CreateHealthyDoctorRuntimeOptions(
+        PythonDoctorFixture pythonFixture
+    )
+    {
+        var promptWriter = new StringWriter();
+        var authenticationRunner = new PromptingResultProcessRunner(
+            new ProcessResult(0, "unused-private-token", "unused-private-diagnostic"),
+            streamPrompt: false
+        );
+        CredentialProviderCompositionRoot productionRoot = CreatePhase2ProductionRoot(
+            pythonFixture.RootPath,
+            CreatePhase2Installation(AzureAuthHostPlatform.NativeLinux),
+            authenticationRunner,
+            promptWriter
+        );
+        System.Reflection.ConstructorInfo rootConstructor = Assert.Single(
+            typeof(CredentialProviderCompositionRoot).GetConstructors(
+                System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.NonPublic
+            )
+        );
+        var acquisitionService = new HealthyDoctorAcquisitionService();
+        CredentialProviderCompositionRoot root = Assert.IsType<CredentialProviderCompositionRoot>(
+            rootConstructor.Invoke([
+                CredentialProviderCompositionMode.Production,
+                productionRoot.ProviderConfig,
+                productionRoot.BindingRecord,
+                productionRoot.Installation,
+                acquisitionService,
+                productionRoot.Readiness,
+                productionRoot.ProductionOptions,
+            ])
+        );
+        var gitDiscoveryRunner = new HealthyDoctorGitDiscoveryProcessRunner();
+        var gitOptions = new GitPhase8VerticalSliceOptions
+        {
+            StateDirectoryPath = pythonFixture.RootPath,
+            ProcessRunner = gitDiscoveryRunner,
+            GitExecutablePath = "fake-git",
+            LocalShellGitDiscoverySupported = true,
+            ProductExecutablePath = CreateFakeProductExecutable(pythonFixture.RootPath),
+        };
+        string expectedHelperCommand = new GitPhase8VerticalSliceService(gitOptions)
+            .Paths
+            .GitHelperPath;
+        gitDiscoveryRunner.ExpectedHelperCommand = OperatingSystem.IsWindows()
+            ? expectedHelperCommand.Replace('\\', '/')
+            : expectedHelperCommand;
+        return new CliRuntimeOptions
+        {
+            CompositionRoot = root,
+            GitPhase8Options = gitOptions,
+            NuGetPhase10Options = CreateIsolatedNuGetPhase10Options(),
+            PythonPhase11Options = pythonFixture.Options,
+            ConfigurationPhase14Options = CreateConfigurationPhase14Options(
+                pythonFixture.RootPath
+            ),
+        };
+    }
+
+    private static void AssertDoctorCheck(string output, string key, string expectedValue)
+    {
+        string line = Assert.Single(
+            Normalize(output).Split('\n', StringSplitOptions.RemoveEmptyEntries),
+            candidate => candidate.StartsWith(key + ": ", StringComparison.Ordinal)
+        );
+        Assert.Equal($"{key}: {expectedValue}", line);
+    }
+
+    private enum PythonDoctorFixtureMode
+    {
+        Healthy,
+        MissingKeyringModule,
+        ShadowedExpectedShim,
+    }
+
+    private sealed class PythonDoctorFixture : IDisposable
+    {
+        private string modeledPath;
+
+        public PythonDoctorFixture(PythonDoctorFixtureMode mode)
+        {
+            RootPath = CreateTestDirectory();
+            string shimDirectory = Path.Combine(RootPath, "python-keyring-shim");
+            CreateOwnerOnlyDirectory(shimDirectory);
+            string keyringExecutableFileName = OperatingSystem.IsWindows()
+                ? "keyring.exe"
+                : "keyring";
+            string expectedKeyringShimPath = Path.Combine(
+                shimDirectory,
+                keyringExecutableFileName
+            );
+            WriteExecutable(expectedKeyringShimPath);
+
+            string environmentRoot = Path.Combine(RootPath, "python-environment");
+            string scriptsDirectory = Path.Combine(
+                environmentRoot,
+                OperatingSystem.IsWindows() ? "Scripts" : "bin"
+            );
+            CreateOwnerOnlyDirectory(scriptsDirectory);
+            string pythonExecutablePath = Path.Combine(
+                scriptsDirectory,
+                OperatingSystem.IsWindows() ? "python.exe" : "python"
+            );
+            WriteExecutable(pythonExecutablePath);
+            string sitePackagesPath = OperatingSystem.IsWindows()
+                ? Path.Combine(environmentRoot, "Lib", "site-packages")
+                : Path.Combine(environmentRoot, "lib", "python3.11", "site-packages");
+            CreateOwnerOnlyDirectory(sitePackagesPath);
+            CreateOwnerOnlyDirectory(Path.Combine(sitePackagesPath, "keyring"));
+
+            modeledPath = shimDirectory;
+            if (mode == PythonDoctorFixtureMode.MissingKeyringModule)
+            {
+                DeleteDirectoryIfExists(Path.Combine(sitePackagesPath, "keyring"));
+            }
+            else if (mode == PythonDoctorFixtureMode.ShadowedExpectedShim)
+            {
+                string shadowDirectory = Path.Combine(RootPath, "path-shadow");
+                CreateOwnerOnlyDirectory(shadowDirectory);
+                WriteExecutable(
+                    Path.Combine(shadowDirectory, Path.GetFileName(expectedKeyringShimPath))
+                );
+                modeledPath =
+                    shadowDirectory
+                    + Path.PathSeparator
+                    + Path.GetDirectoryName(expectedKeyringShimPath);
+            }
+
+            Options = new PythonPhase11VerticalSliceOptions
+            {
+                FileSystem = new SystemFileSystem(),
+                EnvironmentVariableReader = ReadEnvironmentVariable,
+                ExpectedKeyringShimPath = expectedKeyringShimPath,
+                PythonExecutablePath = pythonExecutablePath,
+                CurrentDirectoryPath = RootPath,
+                PathListSeparator = Path.PathSeparator,
+                KeyringExecutableFileName = keyringExecutableFileName,
+            };
+        }
+
+        public string RootPath { get; }
+
+        public bool PathWasRequested { get; private set; }
+
+        public PythonPhase11VerticalSliceOptions Options { get; }
+
+        public void Dispose() => DeleteDirectoryIfExists(RootPath);
+
+        private string? ReadEnvironmentVariable(string name)
+        {
+            if (string.Equals(name, "PATH", StringComparison.Ordinal))
+            {
+                PathWasRequested = true;
+                return modeledPath;
+            }
+
+            return null;
+        }
+
+        private static void WriteExecutable(string path)
+        {
+            WriteOwnerOnlyText(path, "#!/usr/bin/env python\n");
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(
+                    path,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+                );
+            }
+        }
+    }
+
+    [Fact]
+    public void DoctorMissingPythonKeyringModuleRendersFailureAndReturnsNonZero() =>
+        AssertDoctorPythonFailure(PythonDoctorFixtureMode.MissingKeyringModule);
+
+    [Fact]
+    public void DoctorPathShadowedPythonKeyringShimRendersFailureAndReturnsNonZero() =>
+        AssertDoctorPythonFailure(PythonDoctorFixtureMode.ShadowedExpectedShim);
+
+    private static void AssertDoctorPythonFailure(PythonDoctorFixtureMode mode)
+    {
+        using var pythonFixture = new PythonDoctorFixture(mode);
+        CliRuntimeOptions runtime = CreateHealthyDoctorRuntimeOptions(pythonFixture);
+
+        CommandResult configureGit = InvokeWithRuntime(runtime, "configure", "git");
+        CommandResult doctor = InvokeWithRuntime(runtime, "doctor");
+
+        Assert.Equal(0, configureGit.ExitCode);
+        Assert.Equal(string.Empty, configureGit.StdErr);
+        Assert.Equal(1, doctor.ExitCode);
+        AssertDoctorCheck(doctor.StdOut, "python-keyring-shim-exists", "pass");
+        AssertDoctorCheck(
+            doctor.StdOut,
+            "python-keyring-shim-first-on-path",
+            mode == PythonDoctorFixtureMode.ShadowedExpectedShim ? "fail" : "pass"
+        );
+        AssertDoctorCheck(
+            doctor.StdOut,
+            "python-keyring-module",
+            mode == PythonDoctorFixtureMode.MissingKeyringModule ? "fail" : "pass"
+        );
+        AssertDoctorCheck(
+            doctor.StdOut,
+            "python-azure-artifacts-endpoint-canonicalization",
+            "pass"
+        );
+        AssertDoctorCheck(doctor.StdOut, "doctor-aggregation", "fail");
+        Assert.Equal(string.Empty, doctor.StdErr);
+        Assert.True(pythonFixture.PathWasRequested);
+    }
+
 }

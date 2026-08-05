@@ -794,6 +794,13 @@ internal static class CliApplication
             .AsTask()
             .GetAwaiter()
             .GetResult();
+        PythonPhase11DoctorResult pythonDoctorResult = CreatePythonPhase11VerticalSliceService(
+                runtimeOptions
+            )
+            .RunDoctorAsync(cancellationToken)
+            .AsTask()
+            .GetAwaiter()
+            .GetResult();
         ConfigurationPhase14DoctorResult configurationDoctorResult =
             CreateConfigurationPhase14VerticalSliceService(
                     runtimeOptions,
@@ -803,24 +810,26 @@ internal static class CliApplication
                 .AsTask()
                 .GetAwaiter()
                 .GetResult();
+        bool doctorSuccess =
+            IsGitDoctorSuccess(doctorResult)
+            && IsNuGetDoctorSuccess(nuGetDoctorResult)
+            && IsPythonDoctorSuccess(pythonDoctorResult)
+            && IsConfigurationPhase14DoctorSuccess(configurationDoctorResult)
+            && readiness.IsReady;
         WriteText(
             stdout,
             BuildDoctorOutput(
                 invocation,
                 doctorResult,
                 nuGetDoctorResult,
+                pythonDoctorResult,
                 configurationDoctorResult,
                 root,
-                readiness
+                readiness,
+                doctorSuccess
             )
         );
-        return
-            IsGitDoctorSuccess(doctorResult)
-            && IsNuGetDoctorSuccess(nuGetDoctorResult)
-            && IsConfigurationPhase14DoctorSuccess(configurationDoctorResult)
-            && readiness.IsReady
-            ? SuccessExitCode
-            : NotImplementedExitCode;
+        return doctorSuccess ? SuccessExitCode : NotImplementedExitCode;
     }
 
     private static int HandleAcceptance(CliInvocation invocation, TextWriter stdout)
@@ -1565,6 +1574,14 @@ internal static class CliApplication
             );
         }
 
+        if (!ciSpecified || ciMode != CliCiMode.AzurePipelines)
+        {
+            throw CreateUsageError(
+                $"error: cleanup requires '--ci azure-pipelines'. "
+                    + $"Run '{CommandName} cleanup --help' for usage."
+            );
+        }
+
         return new CliInvocation(CliCommand.Cleanup, ecosystem, ciMode, dryRun, HelpText: null);
     }
 
@@ -2127,7 +2144,8 @@ internal static class CliApplication
         return JoinLines(
             $"{CommandName} cleanup",
             "Usage:",
-            $"  {CommandName} cleanup [<ecosystem>|all] [--dry-run] [--ci <mode>] [--help]",
+            $"  {CommandName} cleanup [<ecosystem>|all] [--dry-run] "
+                + "--ci azure-pipelines [--help]",
             string.Empty,
             "Ecosystems:",
             "  npm",
@@ -2140,7 +2158,7 @@ internal static class CliApplication
             string.Empty,
             "Options:",
             "  --dry-run                    Render cleanup actions without mutating files.",
-            "  --ci <mode>                  Select CI mode explicitly: none | azure-pipelines.",
+            "  --ci azure-pipelines         Required; clean Azure Pipelines temporary state.",
             "  -h, --help                   Show help."
         );
     }
@@ -2876,13 +2894,16 @@ internal static class CliApplication
         CliInvocation invocation,
         GitPhase8DoctorResult doctorResult,
         NuGetPhase10DoctorResult nuGetDoctorResult,
+        PythonPhase11DoctorResult pythonDoctorResult,
         ConfigurationPhase14DoctorResult configurationDoctorResult,
         CredentialProviderCompositionRoot root,
-        CredentialProviderReadiness readiness
+        CredentialProviderReadiness readiness,
+        bool doctorSuccess
     )
     {
         ArgumentNullException.ThrowIfNull(doctorResult);
         ArgumentNullException.ThrowIfNull(nuGetDoctorResult);
+        ArgumentNullException.ThrowIfNull(pythonDoctorResult);
         ArgumentNullException.ThrowIfNull(configurationDoctorResult);
 
         bool deviceCodeReady = IsDeviceCodeReady(root, readiness);
@@ -2933,7 +2954,11 @@ internal static class CliApplication
         }
 
         lines.AddRange(BuildNuGetDoctorLines(nuGetDoctorResult));
+        lines.AddRange(BuildPythonDoctorLines(pythonDoctorResult));
         lines.AddRange(BuildConfigurationPhase14DoctorLines(configurationDoctorResult));
+        lines.Add(
+            "doctor-aggregation: " + GetCheckStatusText(doctorSuccess)
+        );
 
         return JoinLines(lines);
     }
@@ -2965,6 +2990,26 @@ internal static class CliApplication
                 + GetCheckStatusText(doctorResult.InteractivePolicyGuidanceSuccess),
             "nuget-environment-overrides: "
                 + (doctorResult.OptionalEnvironmentOverridesAbsent ? "absent" : "present"),
+        ];
+    }
+
+    private static IEnumerable<string> BuildPythonDoctorLines(
+        PythonPhase11DoctorResult doctorResult
+    )
+    {
+        ArgumentNullException.ThrowIfNull(doctorResult);
+        return
+        [
+            "python-keyring-shim-exists: "
+                + GetCheckStatusText(doctorResult.KeyringShim.ExpectedShimExists),
+            "python-keyring-shim-first-on-path: "
+                + GetCheckStatusText(doctorResult.KeyringShim.ExpectedShimFirstOnPath),
+            "python-keyring-module: "
+                + GetCheckStatusText(doctorResult.KeyringModuleProbe.KeyringModuleResolvable),
+            "python-azure-artifacts-endpoint-canonicalization: "
+                + GetCheckStatusText(
+                    doctorResult.AzureArtifactsPythonEndpointCanonicalizationSuccess
+                ),
         ];
     }
 
@@ -3124,6 +3169,10 @@ internal static class CliApplication
             .CreateNuGetService(runtimeOptions?.NuGetPhase10Options);
     }
 
+    private static PythonPhase11VerticalSliceService CreatePythonPhase11VerticalSliceService(
+        CliRuntimeOptions? runtimeOptions
+    ) => new(runtimeOptions?.PythonPhase11Options);
+
     private static GitPhase8VerticalSliceService CreateGitPhase8ConfigurationService(
         CliRuntimeOptions? runtimeOptions
     ) => GitPhase8VerticalSliceService.CreateConfigurationOnly(runtimeOptions?.GitPhase8Options);
@@ -3269,6 +3318,16 @@ internal static class CliApplication
         !doctorResult.PluginLayoutMarkerPresent
         && !doctorResult.OwnershipManifestPresent
         && !doctorResult.NetCorePluginEntrypointPresent;
+
+    private static bool IsPythonDoctorSuccess(PythonPhase11DoctorResult doctorResult)
+    {
+        ArgumentNullException.ThrowIfNull(doctorResult);
+
+        return doctorResult.KeyringShim.ExpectedShimExists
+            && doctorResult.KeyringShim.ExpectedShimFirstOnPath
+            && doctorResult.KeyringModuleProbe.KeyringModuleResolvable
+            && doctorResult.AzureArtifactsPythonEndpointCanonicalizationSuccess;
+    }
 
     private static bool IsConfigurationPhase14DoctorSuccess(
         ConfigurationPhase14DoctorResult doctorResult
@@ -3872,6 +3931,8 @@ internal sealed record CliRuntimeOptions
     public GitPhase8VerticalSliceOptions? GitPhase8Options { get; init; }
 
     public NuGetPhase10VerticalSliceOptions? NuGetPhase10Options { get; init; }
+
+    public PythonPhase11VerticalSliceOptions? PythonPhase11Options { get; init; }
 
     public AuthPhase14VerticalSliceOptions? AuthPhase14Options { get; init; }
 
