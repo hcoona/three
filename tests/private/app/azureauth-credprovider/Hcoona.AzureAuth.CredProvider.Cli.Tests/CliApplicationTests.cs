@@ -2543,7 +2543,7 @@ public sealed class CliApplicationTests
             };
             string expectedPath =
                 ecosystem == "yarn"
-                    ? Path.Combine(home, environmentSelected ? SelectedYarnFilename : ".yarnrc.yml")
+                    ? Path.Combine(home, ".yarnrc.yml")
                 : environmentSelected ? selectedNpmrc
                 : Path.Combine(home, ".npmrc");
 
@@ -4327,7 +4327,7 @@ public sealed class CliApplicationTests
                     "nuget-ownership-manifest: absent",
                     "nuget-netcore-plugin-entrypoint: fail",
                     "nuget-plugin-mode-entrypoint: fail",
-                    "nuget-azure-artifacts-source: pass",
+                    "nuget-azure-artifacts-source: fail",
                     "nuget-interactive-policy: fail",
                     "nuget-environment-overrides: absent",
                     "python-keyring-shim-exists: fail",
@@ -5904,8 +5904,14 @@ public sealed class CliApplicationTests
                 new CredentialResult
                 {
                     Status = CredentialResultStatus.Success,
-                    Username = "AzureDevOps",
-                    Password = "fake-secret-healthy-doctor",
+                    Username =
+                        request.Ecosystem == CredentialEcosystem.NuGet
+                            ? "VssSessionToken"
+                            : "AzureDevOps",
+                    Password =
+                        request.Ecosystem == CredentialEcosystem.NuGet
+                            ? "opaque-session-token-healthy-doctor"
+                            : "fake-secret-healthy-doctor",
                     Account = request.AccountHint ?? "unbound",
                     Tenant = request.TenantHint ?? "unbound",
                     DiagnosticsCorrelationId = "healthy-doctor-success",
