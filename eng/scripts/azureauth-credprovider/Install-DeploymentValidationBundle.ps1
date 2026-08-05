@@ -188,6 +188,30 @@ function Copy-DirectoryContent {
     }
 }
 
+function Get-SiblingDeploymentPath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$LiteralPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Purpose
+    )
+
+    $trimmedPath = $LiteralPath.TrimEnd(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar
+    )
+    $parentPath = [System.IO.Path]::GetDirectoryName($trimmedPath)
+    $leafName = [System.IO.Path]::GetFileName($trimmedPath)
+    do {
+        $candidatePath = Join-Path $parentPath (
+            ".$leafName.$Purpose.$([System.Guid]::NewGuid().ToString('N'))"
+        )
+    } while (Test-Path -LiteralPath $candidatePath)
+
+    return $candidatePath
+}
+
 $existingReceipt = $null
 if (Test-Path -LiteralPath $InstallRoot) {
     if (-not $Force) {
@@ -245,24 +269,36 @@ if (Test-Path -LiteralPath $NuGetPluginRoot) {
     }
 }
 
-foreach ($path in @($NuGetPluginRoot, $InstallRoot)) {
-    if (Test-Path -LiteralPath $path) {
-        Remove-Item -LiteralPath $path -Recurse -Force
-    }
-}
+$stagedInstallRoot = Get-SiblingDeploymentPath -LiteralPath $InstallRoot -Purpose 'installing'
+$stagedNuGetPluginRoot = Get-SiblingDeploymentPath `
+    -LiteralPath $NuGetPluginRoot `
+    -Purpose 'installing'
+$backupInstallRoot = Get-SiblingDeploymentPath -LiteralPath $InstallRoot -Purpose 'backup'
+$backupNuGetPluginRoot = Get-SiblingDeploymentPath `
+    -LiteralPath $NuGetPluginRoot `
+    -Purpose 'backup'
+$stagedApplicationRoot = Join-Path $stagedInstallRoot 'app'
+$stagedBinRoot = Join-Path $stagedInstallRoot 'bin'
+$stagedPythonRoot = Join-Path $stagedInstallRoot 'python'
 
-$installRootCreated = $true
-$nugetPluginRootCreated = $true
 try {
-    New-Item -ItemType Directory -Path $applicationRoot -Force | Out-Null
-    New-Item -ItemType Directory -Path $binRoot -Force | Out-Null
-    New-Item -ItemType Directory -Path $pythonRoot -Force | Out-Null
-    New-Item -ItemType Directory -Path $NuGetPluginRoot -Force | Out-Null
+    New-Item -ItemType Directory -Path $stagedApplicationRoot -Force | Out-Null
+    New-Item -ItemType Directory -Path $stagedBinRoot -Force | Out-Null
+    New-Item -ItemType Directory -Path $stagedPythonRoot -Force | Out-Null
+    New-Item -ItemType Directory -Path $stagedNuGetPluginRoot -Force | Out-Null
 
-    Copy-DirectoryContent -Source (Join-Path $bundleRoot 'app') -Destination $applicationRoot
-    Copy-DirectoryContent -Source (Join-Path $bundleRoot 'app') -Destination $NuGetPluginRoot
-    Copy-DirectoryContent -Source (Join-Path $bundleRoot 'launchers') -Destination $binRoot
-    Copy-DirectoryContent -Source (Join-Path $bundleRoot 'python') -Destination $pythonRoot
+    Copy-DirectoryContent `
+        -Source (Join-Path $bundleRoot 'app') `
+        -Destination $stagedApplicationRoot
+    Copy-DirectoryContent `
+        -Source (Join-Path $bundleRoot 'app') `
+        -Destination $stagedNuGetPluginRoot
+    Copy-DirectoryContent `
+        -Source (Join-Path $bundleRoot 'launchers') `
+        -Destination $stagedBinRoot
+    Copy-DirectoryContent `
+        -Source (Join-Path $bundleRoot 'python') `
+        -Destination $stagedPythonRoot
 
     $productExecutableName = if ($runningOnWindows) {
         'azureauth-credprovider.exe'
@@ -270,12 +306,12 @@ try {
     else {
         'azureauth-credprovider'
     }
-    $productExecutablePath = Join-Path $applicationRoot $productExecutableName
+    $productExecutablePath = Join-Path $stagedApplicationRoot $productExecutableName
     if (-not (Test-Path -LiteralPath $productExecutablePath -PathType Leaf)) {
         throw 'The installed application payload is incomplete.'
     }
 
-    $nugetEntrypointPath = Join-Path $NuGetPluginRoot 'azureauth-credprovider.dll'
+    $nugetEntrypointPath = Join-Path $stagedNuGetPluginRoot 'azureauth-credprovider.dll'
     if (-not (Test-Path -LiteralPath $nugetEntrypointPath -PathType Leaf)) {
         throw 'The installed NuGet plugin payload is incomplete.'
     }
@@ -290,7 +326,7 @@ try {
         [System.IO.UnixFileMode]::OtherRead -bor
         [System.IO.UnixFileMode]::OtherExecute
         [System.IO.File]::SetUnixFileMode($productExecutablePath, $executableMode)
-        foreach ($launcher in Get-ChildItem -LiteralPath $binRoot -File) {
+        foreach ($launcher in Get-ChildItem -LiteralPath $stagedBinRoot -File) {
             [System.IO.File]::SetUnixFileMode($launcher.FullName, $executableMode)
         }
     }
@@ -305,16 +341,116 @@ try {
         nugetPluginRoot = $NuGetPluginRoot
     }
     $receipt | ConvertTo-Json -Depth 5 |
-        Set-Content -LiteralPath (Join-Path $InstallRoot 'installation.json') -Encoding utf8
+        Set-Content `
+            -LiteralPath (Join-Path $stagedInstallRoot 'installation.json') `
+            -Encoding utf8
 }
 catch {
-    if ($nugetPluginRootCreated -and (Test-Path -LiteralPath $NuGetPluginRoot)) {
-        Remove-Item -LiteralPath $NuGetPluginRoot -Recurse -Force
-    }
-    if ($installRootCreated -and (Test-Path -LiteralPath $InstallRoot)) {
-        Remove-Item -LiteralPath $InstallRoot -Recurse -Force
+    foreach ($path in @($stagedNuGetPluginRoot, $stagedInstallRoot)) {
+        if (Test-Path -LiteralPath $path) {
+            Remove-Item -LiteralPath $path -Recurse -Force
+        }
     }
     throw
+}
+
+$installBackupCreated = $false
+$nugetPluginBackupCreated = $false
+$installRootActivated = $false
+$nugetPluginRootActivated = $false
+try {
+    if (Test-Path -LiteralPath $InstallRoot) {
+        Move-Item -LiteralPath $InstallRoot -Destination $backupInstallRoot
+        $installBackupCreated = $true
+    }
+    if (Test-Path -LiteralPath $NuGetPluginRoot) {
+        Move-Item -LiteralPath $NuGetPluginRoot -Destination $backupNuGetPluginRoot
+        $nugetPluginBackupCreated = $true
+    }
+
+    Move-Item -LiteralPath $stagedInstallRoot -Destination $InstallRoot
+    $installRootActivated = $true
+    Move-Item -LiteralPath $stagedNuGetPluginRoot -Destination $NuGetPluginRoot
+    $nugetPluginRootActivated = $true
+}
+catch {
+    $switchFailure = $_
+    $rollbackFailures = [System.Collections.Generic.List[System.Exception]]::new()
+
+    foreach ($replacement in @(
+            @{
+                Activated = $nugetPluginRootActivated
+                Path      = $NuGetPluginRoot
+            },
+            @{
+                Activated = $installRootActivated
+                Path      = $InstallRoot
+            }
+        )) {
+        if ($replacement.Activated -and (Test-Path -LiteralPath $replacement.Path)) {
+            try {
+                Remove-Item -LiteralPath $replacement.Path -Recurse -Force
+            }
+            catch {
+                $rollbackFailures.Add($_.Exception)
+            }
+        }
+    }
+
+    foreach ($backup in @(
+            @{
+                Created     = $nugetPluginBackupCreated
+                BackupPath  = $backupNuGetPluginRoot
+                RestorePath = $NuGetPluginRoot
+            },
+            @{
+                Created     = $installBackupCreated
+                BackupPath  = $backupInstallRoot
+                RestorePath = $InstallRoot
+            }
+        )) {
+        if ($backup.Created -and (Test-Path -LiteralPath $backup.BackupPath)) {
+            try {
+                Move-Item `
+                    -LiteralPath $backup.BackupPath `
+                    -Destination $backup.RestorePath
+            }
+            catch {
+                $rollbackFailures.Add($_.Exception)
+            }
+        }
+    }
+
+    foreach ($path in @($stagedNuGetPluginRoot, $stagedInstallRoot)) {
+        if (Test-Path -LiteralPath $path) {
+            try {
+                Remove-Item -LiteralPath $path -Recurse -Force
+            }
+            catch {
+                $rollbackFailures.Add($_.Exception)
+            }
+        }
+    }
+
+    if ($rollbackFailures.Count -gt 0) {
+        $failures = [System.Collections.Generic.List[System.Exception]]::new()
+        $failures.Add($switchFailure.Exception)
+        foreach ($failure in $rollbackFailures) {
+            $failures.Add($failure)
+        }
+        throw [System.AggregateException]::new(
+            'Deployment replacement failed and the previous installation could not be fully restored.',
+            $failures
+        )
+    }
+
+    throw $switchFailure
+}
+
+foreach ($path in @($backupNuGetPluginRoot, $backupInstallRoot)) {
+    if (Test-Path -LiteralPath $path) {
+        Remove-Item -LiteralPath $path -Recurse -Force
+    }
 }
 
 Write-Output "Installed internal deployment validation payload: $InstallRoot"
