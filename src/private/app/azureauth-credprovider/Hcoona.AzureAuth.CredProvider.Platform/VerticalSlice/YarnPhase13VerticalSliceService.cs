@@ -354,6 +354,7 @@ public sealed class YarnPhase13VerticalSliceService
                             StringComparison.Ordinal
                         )
                         : userScopedDeclaration
+                            && block.AuthenticationSelector is not null
                             && string.Equals(
                                 block.Scope,
                                 NormalizeScopeName(declaration.Scope!),
@@ -363,9 +364,13 @@ public sealed class YarnPhase13VerticalSliceService
             );
         if (shadow is not null)
         {
+            string shadowingSelector =
+                shadow.RegistryKey is null
+                    ? shadow.AuthenticationSelector!
+                    : shadow.ShadowingSelector!;
             throw new InvalidOperationException(
                 "Project-local Yarn selector "
-                    + shadow.ShadowingSelector
+                    + shadowingSelector
                     + " would shadow the planned user or CI credential."
             );
         }
@@ -1225,6 +1230,8 @@ public sealed class YarnPhase13VerticalSliceService
 
         public string? Scope { get; } = scope;
 
+        public string? AuthenticationSelector { get; private set; }
+
         public string? ShadowingSelector { get; private set; }
 
         public void RecordAuthSetting(string key, string? value)
@@ -1241,10 +1248,16 @@ public sealed class YarnPhase13VerticalSliceService
                     "false",
                     StringComparison.OrdinalIgnoreCase
                 );
+            string selector =
+                (Scope is null ? "npmRegistries[registry]" : "npmScopes." + Scope) + "." + key;
+            if (authValuePresent && AuthenticationSelector is null)
+            {
+                AuthenticationSelector = selector;
+            }
+
             if (ShadowingSelector is null && (authValuePresent || alwaysAuthDisabled))
             {
-                ShadowingSelector =
-                    (Scope is null ? "npmRegistries[registry]" : "npmScopes." + Scope) + "." + key;
+                ShadowingSelector = selector;
             }
         }
     }

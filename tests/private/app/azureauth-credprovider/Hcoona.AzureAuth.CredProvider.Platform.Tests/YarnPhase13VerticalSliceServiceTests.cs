@@ -944,6 +944,89 @@ public sealed class YarnPhase13VerticalSliceServiceTests
     }
 
     [Fact]
+    public void CreateUserCredentialPlanAllowsSameScopeProjectAlwaysAuthFalseWithoutRegistry()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/workspace/.yarnrc.yml",
+            """
+            npmScopes:
+              azure:
+                npmAlwaysAuth: false
+            """
+        );
+        fileSystem.WriteAllText(
+            "/home/alice/.yarnrc.yml",
+            """
+            npmScopes:
+              azure:
+                npmRegistryServer: https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/
+            """
+        );
+        var service = new YarnPhase13VerticalSliceService(
+            new YarnPhase13VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+        YarnPhase13RegistryDeclaration declaration = Assert.Single(
+            service.DiscoverRegistryDeclarations()
+        );
+        Assert.Equal("/home/alice/.yarnrc.yml", declaration.SourcePath);
+        Assert.Equal("azure", declaration.Scope);
+
+        ConfigurationChangePlan plan = service.CreateUserCredentialPlan(
+            new YarnPhase13CredentialPlanRequest
+            {
+                Declaration = declaration,
+                AuthToken = "short-lived-token",
+            }
+        );
+
+        Assert.Equal(ConfigurationScope.User, plan.Scope);
+        Assert.Equal(2, plan.Changes.Count);
+        Assert.All(
+            plan.Changes,
+            static change =>
+                Assert.Equal("/home/alice/.yarnrc.yml", change.TargetPathOrName)
+        );
+        ConfigurationChange alwaysAuthChange = Assert.Single(
+            plan.Changes,
+            static change => !change.IsSecretValue
+        );
+        Assert.Equal(
+            """npmRegistries["https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry"].npmAlwaysAuth""",
+            alwaysAuthChange.Key
+        );
+        Assert.Equal("true", alwaysAuthChange.Value);
+        Assert.False(alwaysAuthChange.IsSecretValue);
+        ConfigurationChange authTokenChange = Assert.Single(
+            plan.Changes,
+            static change => change.IsSecretValue
+        );
+        Assert.Equal(
+            """npmRegistries["https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry"].npmAuthToken""",
+            authTokenChange.Key
+        );
+        Assert.Equal("short-lived-token", authTokenChange.Value);
+        Assert.True(authTokenChange.IsSecretValue);
+        Assert.Equal(
+            """npmRegistries["https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry"].npmAuthToken""",
+            plan.Manifest.EntrySelector
+        );
+        Assert.DoesNotContain(
+            plan.Changes,
+            static change => change.Key.StartsWith("npmScopes.", StringComparison.Ordinal)
+        );
+        Assert.True(ConfigurationChangePlanPolicy.IsValid(plan));
+        Assert.True(new ConfigurationManager().ValidatePlan(plan).IsValid);
+    }
+
+    [Fact]
     public void CreateUserCredentialPlanAllowsUnrelatedProjectScopeAuthWithoutRegistry()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
