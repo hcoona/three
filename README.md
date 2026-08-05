@@ -56,6 +56,41 @@ Development flow:
 
 The root `pyproject.toml` is the source of truth for the repository's Python workspace membership. The current workspace is rooted under `src/`; there is no separate top-level `OnePython/` tree in this checkout.
 
+## Repository toolchain
+
+Install the tool versions recorded in `mise.lock` from the repository root:
+
+```bash
+mise install --locked
+```
+
+The repository validates Linux x64 and Windows x64 lock entries. When tool
+versions change, refresh both mise configuration roots instead of running an
+unlocked platform-specific install:
+
+```bash
+mise lock --platform linux-x64,windows-x64
+mise -C src/public/lib/hexo-renderer-asciidoc lock --platform linux-x64,windows-x64
+```
+
+MISE 2026.7.17 and later provide the built-in `core:dotnet` backend used by this
+repository. Do not install `version-fox/vfox-dotnet` manually. If that legacy
+plugin is already installed, remove it before installing the repository tools:
+
+```bash
+mise plugins uninstall dotnet
+mise install --locked
+```
+
+HK is the sole Git hook and lint runner; the former prek-generated pre-commit
+configuration is no longer maintained.
+
+Install the repository-managed Git hooks after installing the toolchain:
+
+```bash
+mise exec -- hk install --mise
+```
+
 ## .NET traversal
 
 The root `dirs.proj` is now the only active C# traversal for this repository.

@@ -4,7 +4,7 @@
 
 <#
 .SYNOPSIS
-Provides a consistent check/fix surface for Invoke-ScriptAnalyzer so hk/pre-commit tooling
+Provides a consistent check/fix surface for Invoke-ScriptAnalyzer so HK tooling
 can batch PowerShell diagnostics.
 
 .DESCRIPTION

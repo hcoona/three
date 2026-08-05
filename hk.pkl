@@ -1,9 +1,10 @@
-amends "@hk/Config.pkl"
-import "@hk/Builtins.pkl"
+amends "src/private/lib/hk/Config.pkl"
+
+import "package://github.com/jdx/hk/releases/download/v1.53.0/hk@1.53.0#/Builtins.pkl"
 
 import "src/private/lib/hk/Steps.pkl"
 
-min_hk_version = "1.20.0"
+min_hk_version = "1.53.0"
 display_skip_reasons =
   List(
     "profile-not-enabled",
@@ -26,7 +27,6 @@ local apm_generated_output_list =
 
 local general_exclude_list =
   List(
-    ".pre-commit-config.yaml",
     "**/packages.lock.json",
     "global.json",
     "project.assets.json",
@@ -35,7 +35,8 @@ local general_exclude_list =
     "pnpm-lock.yaml",
     "**/pnpm-lock.yaml",
     "uv.lock",
-    ".mise.lock",
+    "mise.lock",
+    "**/mise.lock",
     "**/.github/**",
     "**/.specify/**",
     "**/specs/**/*.md",
@@ -68,8 +69,8 @@ local markdown_linters = new Mapping<String, Step> {
     profiles = List("small")
     exclude = general_exclude_list
     batch = true
-    glob = "*.md"
-    stage = "*.md"
+    glob = List("*.md")
+    stage = List("*.md")
     check = "python eng/scripts/hk_exec.py pnpm exec -- markdownlint-cli2 -- {{files}}"
     fix = "python eng/scripts/hk_exec.py pnpm exec -- markdownlint-cli2 --fix -- {{files}}"
   }
@@ -77,8 +78,8 @@ local markdown_linters = new Mapping<String, Step> {
   ["markdown-prettier"] {
     profiles = List("small")
     exclude = general_exclude_list
-    glob = "*.md"
-    stage = "*.md"
+    glob = List("*.md")
+    stage = List("*.md")
     check = "python eng/scripts/hk_exec.py pnpm exec -- prettier --check -- {{files}}"
     fix = "python eng/scripts/hk_exec.py pnpm exec -- prettier --write -- {{files}}"
   }
@@ -122,15 +123,15 @@ local toml_linters = new Mapping<String, Step> {
   ["toml-taplo-check"] {
     profiles = List("small")
     exclude = general_exclude_list
-    glob = "**/*.toml"
+    glob = List("**/*.toml")
     check = "python eng/scripts/hk_exec.py pnpm exec -- taplo check -- {{files}}"
   }
 
   ["toml-taplo-format"] {
     profiles = List("small")
     exclude = general_exclude_list
-    glob = "**/*.toml"
-    stage = "<JOB_FILES>"
+    glob = List("**/*.toml")
+    stage = List("<JOB_FILES>")
     check = "python eng/scripts/hk_exec.py pnpm exec -- taplo format --check -- {{files}}"
     check_diff =
       "python eng/scripts/hk_exec.py pnpm exec -- taplo format --check --diff -- {{files}}"
@@ -177,9 +178,9 @@ local pwsh_linters = new Mapping<String, Step> {
       ["HK_EXEC_PER_FILE"] = "0"
     }
     check =
-      "python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-FormatterWrapper.ps1 -Mode Check -Path -- {{files}}"
+      "python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/linter/Invoke-FormatterWrapper.ps1 -Mode Check -Path -- {{files}}"
     fix =
-      "python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-FormatterWrapper.ps1 -Mode Fix -Path -- {{files}}"
+      "python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/linter/Invoke-FormatterWrapper.ps1 -Mode Fix -Path -- {{files}}"
   }
 
   ["pwsh-script-analyzer"] {
@@ -192,9 +193,9 @@ local pwsh_linters = new Mapping<String, Step> {
       ["HK_EXEC_PER_FILE"] = "0"
     }
     check =
-      "python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-ScriptAnalyzerWrapper.ps1 -Mode Check -Path -- {{files}}"
+      "python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/linter/Invoke-ScriptAnalyzerWrapper.ps1 -Mode Check -Path -- {{files}}"
     fix =
-      "python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-ScriptAnalyzerWrapper.ps1 -Mode Fix -Path -- {{files}}"
+      "python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/linter/Invoke-ScriptAnalyzerWrapper.ps1 -Mode Fix -Path -- {{files}}"
   }
 }
 
@@ -324,7 +325,7 @@ local function getTestPklEvalSyncCommand(
       "-NoProfile",
       if (ci) "-NonInteractive" else "",
       "-File",
-      "eng/pre-commit/Test-PklEvalSync.ps1",
+      "eng/linter/Test-PklEvalSync.ps1",
       "-Source",
       source,
       "-Target",
@@ -354,29 +355,6 @@ local code_generation_guard = new Mapping<String, Step> {
         List(),
       )
     fix = "pkl eval -f json global.pkl -o global.json"
-  }
-
-  ["pre-commit-config"] {
-    local file_list =
-      List(
-        ".pre-commit-config.pkl",
-        ".pre-commit-config.yaml",
-        "hk.pkl",
-        "src/private/hk/**/*.pkl",
-        "PklProject",
-        "PklProject.deps.json",
-      )
-    profiles = List("small")
-    glob = file_list
-    stage = file_list
-    check =
-      getTestPklEvalSyncCommand(
-        ".pre-commit-config.pkl",
-        ".pre-commit-config.yaml",
-        "yaml",
-        List(),
-      )
-    fix = "pkl eval -f yaml .pre-commit-config.pkl -o .pre-commit-config.yaml"
   }
 }
 
