@@ -290,8 +290,8 @@ public sealed class AzureDevOpsSpsTokenExchange : ITokenExchange, IDisposable
         string finalPath;
         if (
             (
-                string.Equals(host, "vssps.dev.azure.com", StringComparison.OrdinalIgnoreCase)
-                || host.EndsWith(".vssps.dev.azure.com", StringComparison.OrdinalIgnoreCase)
+                IsHostInFamily(host, "vssps.dev.azure.com")
+                || HostEquals(host, "vsspsext.dev.azure.com")
             )
             && string.Equals(
                 basePath,
@@ -304,12 +304,8 @@ public sealed class AzureDevOpsSpsTokenExchange : ITokenExchange, IDisposable
         }
         else if (
             (
-                string.Equals(host, "vssps.visualstudio.com", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(
-                    host,
-                    organization + ".vssps.visualstudio.com",
-                    StringComparison.OrdinalIgnoreCase
-                )
+                IsHostInFamily(host, "vssps.visualstudio.com")
+                || HostEquals(host, "vsspsext.visualstudio.com")
             )
             && basePath.Length == 0
         )
@@ -325,6 +321,13 @@ public sealed class AzureDevOpsSpsTokenExchange : ITokenExchange, IDisposable
         endpoint = builder.Uri;
         return true;
     }
+
+    private static bool IsHostInFamily(string host, string family) =>
+        HostEquals(host, family)
+        || host.EndsWith("." + family, StringComparison.OrdinalIgnoreCase);
+
+    private static bool HostEquals(string host, string expected) =>
+        string.Equals(host, expected, StringComparison.OrdinalIgnoreCase);
 
     private async Task<byte[]?> ReadBoundedBodyAsync(
         HttpContent content,

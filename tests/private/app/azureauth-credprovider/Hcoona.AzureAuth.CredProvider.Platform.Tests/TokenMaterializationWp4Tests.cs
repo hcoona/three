@@ -750,12 +750,24 @@ public sealed class TokenMaterializationWp4Tests
         "https://vssps.dev.azure.com/org/_apis/Token/SessionTokens?tokenType=SelfDescribing&api-version=5.0-preview.1"
     )]
     [InlineData(
-        "https://app.vssps.dev.azure.com/org/",
-        "https://app.vssps.dev.azure.com/org/_apis/Token/SessionTokens?tokenType=SelfDescribing&api-version=5.0-preview.1"
+        "https://wcus0.app.vssps.dev.azure.com/org/",
+        "https://wcus0.app.vssps.dev.azure.com/org/_apis/Token/SessionTokens?tokenType=SelfDescribing&api-version=5.0-preview.1"
     )]
     [InlineData(
-        "https://spsprodweu5.vssps.dev.azure.com/org/",
-        "https://spsprodweu5.vssps.dev.azure.com/org/_apis/Token/SessionTokens?tokenType=SelfDescribing&api-version=5.0-preview.1"
+        "https://vssps.visualstudio.com/",
+        "https://vssps.visualstudio.com/_apis/Token/SessionTokens?tokenType=SelfDescribing&api-version=5.0-preview.1"
+    )]
+    [InlineData(
+        "https://wcus0.app.vssps.visualstudio.com/",
+        "https://wcus0.app.vssps.visualstudio.com/_apis/Token/SessionTokens?tokenType=SelfDescribing&api-version=5.0-preview.1"
+    )]
+    [InlineData(
+        "https://vsspsext.dev.azure.com/org/",
+        "https://vsspsext.dev.azure.com/org/_apis/Token/SessionTokens?tokenType=SelfDescribing&api-version=5.0-preview.1"
+    )]
+    [InlineData(
+        "https://VSSPSEXT.VISUALSTUDIO.COM/",
+        "https://vsspsext.visualstudio.com/_apis/Token/SessionTokens?tokenType=SelfDescribing&api-version=5.0-preview.1"
     )]
     public void SpsSessionEndpointAcceptsOfficialAzureDevOpsHosts(
         string baseEndpoint,
@@ -775,11 +787,23 @@ public sealed class TokenMaterializationWp4Tests
     [Theory]
     [InlineData("https://evilvssps.dev.azure.com/org/")]
     [InlineData("https://vssps.dev.azure.com.evil.example/org/")]
+    [InlineData("https://evilvssps.visualstudio.com/")]
+    [InlineData("https://vssps.visualstudio.com.evil.example/")]
+    [InlineData("https://app.vsspsext.dev.azure.com/org/")]
+    [InlineData("https://vsspsext.dev.azure.com.evil.example/org/")]
+    [InlineData("https://app.vsspsext.visualstudio.com/")]
+    [InlineData("https://vsspsext.visualstudio.com.evil.example/")]
+    [InlineData("https://vssps.devppe.azure.com/org/")]
+    [InlineData("https://app.vssps.vsallin.net/")]
     [InlineData("http://vssps.dev.azure.com/org/")]
     [InlineData("https://vssps.dev.azure.com:444/org/")]
     [InlineData("https://user@vssps.dev.azure.com/org/")]
     [InlineData("https://vssps.dev.azure.com/other/")]
     [InlineData("https://vssps.dev.azure.com/org/wrong")]
+    [InlineData("https://vsspsext.dev.azure.com/other/")]
+    [InlineData("https://vsspsext.dev.azure.com/org/wrong")]
+    [InlineData("https://vssps.visualstudio.com/org/")]
+    [InlineData("https://vsspsext.visualstudio.com/org/")]
     [InlineData("https://vssps.dev.azure.com/org/?unsafe=true")]
     [InlineData("https://vssps.dev.azure.com/org/#unsafe")]
     public void SpsSessionEndpointRejectsLookalikeOrUnsafeUris(string baseEndpoint)

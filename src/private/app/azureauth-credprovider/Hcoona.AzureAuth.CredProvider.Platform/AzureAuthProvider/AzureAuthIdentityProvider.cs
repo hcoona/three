@@ -163,18 +163,16 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
             "--scope",
             AzureDevOpsDefaultScope,
         };
-        Dictionary<string, string?>? environment = null;
+        var environment = new Dictionary<string, string?>
+        {
+            ["AZUREAUTH_MODE"] = null,
+            ["AZUREAUTH_NO_USER"] = null,
+            ["Corext_NonInteractive"] = null,
+        };
         if (launchOptions.HostPlatform == AzureAuthHostPlatform.NativeLinux)
         {
             arguments.Add("--mode");
             arguments.Add(request.IdentityFlow == IdentityFlow.DeviceCode ? "devicecode" : "web");
-            environment = new Dictionary<string, string?>
-            {
-                ["AZUREAUTH_MODE"] = null,
-                ["AZUREAUTH_NO_USER"] =
-                    request.AcquisitionMode == AcquisitionMode.SilentOnly ? "1" : null,
-                ["Corext_NonInteractive"] = null,
-            };
         }
 
         string? domain = TryGetAccountDomain(binding.AccountId);

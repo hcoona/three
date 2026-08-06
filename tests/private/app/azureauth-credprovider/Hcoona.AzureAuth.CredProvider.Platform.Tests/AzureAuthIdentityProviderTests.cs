@@ -26,7 +26,7 @@ public sealed class AzureAuthIdentityProviderTests
     }
 
     [Fact]
-    public async Task NativeLinuxSilentOnlyUsesCacheOnlyEnvironmentAndExplicitWebMode()
+    public async Task NativeLinuxSilentOnlyClearsAmbientControlsAndUsesExplicitWebMode()
     {
         var runner = new RecordingRunner(new ProcessResult(0, CreateToken(), ""));
         AzureAuthIdentityProvider provider = CreateProvider(
@@ -59,7 +59,7 @@ public sealed class AzureAuthIdentityProviderTests
             ],
             start.Arguments
         );
-        Assert.Equal("1", start.Environment["AZUREAUTH_NO_USER"]);
+        Assert.Null(start.Environment["AZUREAUTH_NO_USER"]);
         Assert.Null(start.Environment["AZUREAUTH_MODE"]);
         Assert.Null(start.Environment["Corext_NonInteractive"]);
     }
@@ -157,7 +157,7 @@ public sealed class AzureAuthIdentityProviderTests
     }
 
     [Fact]
-    public async Task InteractiveLaunchUsesExactArgvDomainAndInheritedEnvironment()
+    public async Task WslInteractiveLaunchUsesExactArgvDomainAndClearsAmbientControls()
     {
         var runner = new RecordingRunner(new ProcessResult(0, CreateToken() + "\n", ""));
         AzureAuthIdentityProvider provider = CreateProvider(runner);
@@ -189,7 +189,10 @@ public sealed class AzureAuthIdentityProviderTests
             ],
             start.Arguments
         );
-        Assert.Empty(start.Environment);
+        Assert.Equal(3, start.Environment.Count);
+        Assert.Null(start.Environment["AZUREAUTH_MODE"]);
+        Assert.Null(start.Environment["AZUREAUTH_NO_USER"]);
+        Assert.Null(start.Environment["Corext_NonInteractive"]);
         Assert.DoesNotContain(
             "OEAUTH_MSAL_DISABLE_CACHE",
             start.Environment.Keys,
@@ -201,6 +204,29 @@ public sealed class AzureAuthIdentityProviderTests
         );
         Assert.Null(result.AccessToken!.AccountId);
         Assert.Equal("tenant-1", result.AccessToken.TenantId);
+    }
+
+    [Fact]
+    public async Task WindowsInteractiveLaunchKeepsBrokerDefaultAndClearsAmbientControls()
+    {
+        var runner = new RecordingRunner(new ProcessResult(0, CreateToken(), ""));
+        AzureAuthIdentityProvider provider = CreateProvider(
+            runner,
+            AzureAuthHostPlatform.Windows
+        );
+
+        AcquiredAccessTokenResult result = await provider.AcquireAccessTokenAsync(
+            CreateRequest(),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(AcquiredAccessTokenStatus.Success, result.Status);
+        ProcessStartSpec start = Assert.IsType<ProcessStartSpec>(runner.StartSpec);
+        Assert.DoesNotContain("--mode", start.Arguments);
+        Assert.Equal(3, start.Environment.Count);
+        Assert.Null(start.Environment["AZUREAUTH_MODE"]);
+        Assert.Null(start.Environment["AZUREAUTH_NO_USER"]);
+        Assert.Null(start.Environment["Corext_NonInteractive"]);
     }
 
     [Theory]
@@ -819,7 +845,7 @@ public sealed class AzureAuthIdentityProviderTests
         ProcessStartSpec start = Assert.IsType<ProcessStartSpec>(runner.StartSpec);
         Assert.Null(start.StandardErrorTee);
         Assert.Equal(["--mode", "web"], start.Arguments.Skip(7).Take(2));
-        Assert.Equal("1", start.Environment["AZUREAUTH_NO_USER"]);
+        Assert.Null(start.Environment["AZUREAUTH_NO_USER"]);
         Assert.Null(start.Environment["AZUREAUTH_MODE"]);
         Assert.Null(start.Environment["Corext_NonInteractive"]);
         Assert.Equal(Token, result.AccessToken?.Token.Value);
