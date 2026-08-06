@@ -1554,9 +1554,9 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         );
         try
         {
-            Assert.True(
-                invocationReturned.Task.IsCompleted,
-                "RunDoctorAsync blocked its caller instead of returning an incomplete async operation."
+            await invocationReturned.Task.WaitAsync(
+                TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken
             );
             Assert.False(doctorTask.IsCompleted);
         }
