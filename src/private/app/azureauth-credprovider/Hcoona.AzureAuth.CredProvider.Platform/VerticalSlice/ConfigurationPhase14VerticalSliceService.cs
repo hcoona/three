@@ -82,7 +82,8 @@ public sealed record ConfigurationPhase14PlanResult
     public bool PythonPreflightSucceeded =>
         PythonPreflight?.IsConfigurationPreflightReady ?? true;
 
-    public ConfigurationPlanResult PlanResult => PlanResults[^1];
+    public ConfigurationPlanResult? PlanResult =>
+        PlanResults.Count == 0 ? null : PlanResults[^1];
 
     public int ChangeCount => PlanResults.Sum(static result => result.Changes.Count);
 

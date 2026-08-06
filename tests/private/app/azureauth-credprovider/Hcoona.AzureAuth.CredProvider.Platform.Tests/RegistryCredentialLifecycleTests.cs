@@ -199,7 +199,7 @@ public sealed class RegistryCredentialLifecycleTests
             ConfigurationPhase14Scope.User,
             TestContext.Current.CancellationToken
         );
-        Assert.NotEqual(ConfigurationPlanOperation.DryRun, refreshed.PlanResult.Operation);
+        Assert.NotEqual(ConfigurationPlanOperation.DryRun, refreshed.PlanResult!.Operation);
 
         ConfigurationOwnershipManifest reconciled =
             ConfigurationOwnershipManifestSerializer.Deserialize(

@@ -1,3 +1,4 @@
+using System.Text;
 using Hcoona.AzureAuth.CredProvider.Platform.Processes;
 using Hcoona.AzureAuth.CredProvider.Platform.Tests.TestDoubles;
 using Hcoona.AzureAuth.CredProvider.Platform.VerticalSlice;
@@ -114,6 +115,71 @@ public sealed class PythonPhase11ProductDoctorTests
         );
         Assert.True(result.ProductProbe.BackendLoadable);
         Assert.Null(result.ProductProbe.FailureMessage);
+    }
+
+    [Fact]
+    public async Task RunDoctorRejectsExactEntrypointAbstractSubclassWithoutInstantiation()
+    {
+        (_, FakeProcessRunner runner, _) = await RunPosixDoctorAsync(ProductHealthyResult());
+        string productProbeScript = Assert.IsType<string>(runner.StartSpecs[1].Arguments[1]);
+        string harness =
+            """
+            import abc,importlib.metadata,sys,types
+            keyring_module=types.ModuleType('keyring')
+            backend_module=types.ModuleType('keyring.backend')
+            class KeyringBackend(abc.ABC):
+                @property
+                @abc.abstractmethod
+                def priority(self):
+                    raise NotImplementedError
+            backend_module.KeyringBackend=KeyringBackend
+            keyring_module.backend=backend_module
+            sys.modules['keyring']=keyring_module
+            sys.modules['keyring.backend']=backend_module
+            product_module=types.ModuleType('azureauth_credprovider_keyring.backend')
+            class AzureAuthKeyringBackend(KeyringBackend):
+                def get_password(self,*args): return None
+                def get_credential(self,*args): return None
+                def set_password(self,*args): return None
+                def delete_password(self,*args): return None
+            AzureAuthKeyringBackend.__module__='azureauth_credprovider_keyring.backend'
+            product_module.AzureAuthKeyringBackend=AzureAuthKeyringBackend
+            sys.modules['azureauth_credprovider_keyring.backend']=product_module
+            class EntryPoint:
+                group='keyring.backends'
+                name='azureauth'
+                value='azureauth_credprovider_keyring.backend:AzureAuthKeyringBackend'
+                def load(self): return AzureAuthKeyringBackend
+            class Distribution:
+                entry_points=[EntryPoint()]
+            importlib.metadata.distribution=lambda name: Distribution()
+            import base64
+            exec(base64.b64decode(
+            """
+            + "'"
+            + Convert.ToBase64String(Encoding.UTF8.GetBytes(productProbeScript))
+            + "'))";
+        string pythonCommand = OperatingSystem.IsWindows() ? "python" : "python3";
+        ProcessResult result = await new SystemProcessRunner()
+            .RunAsync(
+                new ProcessStartSpec(
+                    pythonCommand,
+                    ["-c", harness],
+                    timeout: TimeSpan.FromSeconds(10)
+                ),
+                TestContext.Current.CancellationToken
+            );
+        Assert.SkipWhen(
+            result.Status == ProcessExecutionStatus.LaunchFailure,
+            $"The {pythonCommand} command is required for this integration test."
+        );
+
+        Assert.Equal(33, result.ExitCode);
+        Assert.Equal(LoadFailureMarker + "\n", result.StandardOutput);
+        Assert.Equal(string.Empty, result.StandardError);
+        Assert.Contains("import importlib.metadata,inspect,sys", productProbeScript);
+        Assert.Contains("not inspect.isabstract(backend_type)", productProbeScript);
+        Assert.DoesNotContain("backend_type()", productProbeScript, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -250,6 +316,46 @@ public sealed class PythonPhase11ProductDoctorTests
         Assert.False(result.IsReady);
     }
 
+    [Theory]
+    [InlineData(@"C:\Users\Alice\AppData\Local\azureauth\keyring.exe")]
+    [InlineData(@"\\server\share\azureauth\keyring.exe")]
+    [InlineData(@"\\?\C:\Users\Alice\AppData\Local\azureauth\keyring.exe")]
+    public async Task RunDoctorUsesWindowsFileSystemSemanticsForShimAndHelperApplicability(
+        string expectedShimPath
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Windows);
+        CreateDirectory(fileSystem, @"C:\venv\Scripts");
+        WriteExecutable(fileSystem, @"C:\venv\Scripts\python.exe");
+        var service = new PythonPhase11VerticalSliceService(
+            new PythonPhase11VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                ProcessRunner = HealthyGenericRunner(ProductHealthyResult()),
+                EnvironmentVariableReader = name =>
+                    name == "PATH" ? @"C:\venv\Scripts;C:\Windows\System32" : null,
+                ExpectedKeyringShimPath = expectedShimPath,
+                PythonExecutablePath = @"C:\venv\Scripts\python.exe",
+                CurrentDirectoryPath = @"C:\workspace",
+                PathListSeparator = ';',
+                KeyringExecutableFileName = "keyring.exe",
+                EnableProductProbe = true,
+            }
+        );
+
+        PythonPhase11DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.False(result.KeyringShim.Applicable);
+        Assert.False(result.AzureAuthKeyringHelper.Applicable);
+        Assert.Equal(
+            PythonPhase11AzureAuthKeyringHelperProbeStatus.NotApplicable,
+            result.AzureAuthKeyringHelper.Status
+        );
+        Assert.True(result.IsConfigurationPreflightReady);
+    }
+
     [Fact]
     public async Task RunDoctorOnPosixReportsConcreteShimAndHelperPathsWithoutExecutingHelper()
     {
@@ -285,6 +391,120 @@ public sealed class PythonPhase11ProductDoctorTests
         Assert.Null(result.AzureAuthKeyringHelper.ResolvedExecutablePath);
         Assert.False(result.IsReady);
         Assert.Equal(2, runner.StartSpecs.Count);
+    }
+
+    [Fact]
+    public async Task RunDoctorOnPosixRejectsDifferentFirstPathResolvedHelper()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string differentHelperPath = "/other/bin/azureauth-keyring";
+        CreateDirectory(fileSystem, "/workspace/.venv/bin");
+        CreateDirectory(fileSystem, "/other/bin");
+        CreateDirectory(
+            fileSystem,
+            "/home/alice/.local/share/azureauth-credprovider/keyring-shim"
+        );
+        WriteExecutable(fileSystem, SelectedPythonPath);
+        WriteExecutable(fileSystem, ExpectedHelperPath);
+        WriteExecutable(fileSystem, differentHelperPath);
+        WriteExecutable(fileSystem, ExpectedShimPath);
+        var service = new PythonPhase11VerticalSliceService(
+            new PythonPhase11VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                ProcessRunner = HealthyGenericRunner(ProductHealthyResult()),
+                EnvironmentVariableReader = name =>
+                    name == "PATH"
+                        ? "/other/bin:/workspace/.venv/bin:/home/alice/.local/share/azureauth-credprovider/keyring-shim"
+                        : null,
+                ExpectedKeyringShimPath = ExpectedShimPath,
+                PythonExecutablePath = SelectedPythonPath,
+                CurrentDirectoryPath = "/workspace",
+                PathListSeparator = ':',
+                EnableProductProbe = true,
+            }
+        );
+
+        PythonPhase11DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(ExpectedHelperPath, result.AzureAuthKeyringHelper.ExpectedExecutablePath);
+        Assert.Equal(differentHelperPath, result.AzureAuthKeyringHelper.ResolvedExecutablePath);
+        Assert.Equal(
+            PythonPhase11AzureAuthKeyringHelperProbeStatus.Missing,
+            result.AzureAuthKeyringHelper.Status
+        );
+        Assert.False(result.IsConfigurationPreflightReady);
+    }
+
+    [Fact]
+    [System.Runtime.Versioning.SupportedOSPlatform("linux")]
+    public async Task RunDoctorOnPosixAcceptsFirstPathResolvedHelperSymlinkToExpectedHelper()
+    {
+        Assert.SkipUnless(
+            OperatingSystem.IsLinux() && File.Exists("/bin/sh"),
+            "This integration test requires Linux and /bin/sh."
+        );
+        string directory = Path.Combine(
+            AppContext.BaseDirectory,
+            "python-helper-same-file-integration",
+            Guid.NewGuid().ToString("N")
+        );
+        string selectedDirectory = Path.Combine(directory, "selected");
+        string aliasDirectory = Path.Combine(directory, "alias");
+        Directory.CreateDirectory(selectedDirectory);
+        Directory.CreateDirectory(aliasDirectory);
+        try
+        {
+            string pythonPath = Path.Combine(selectedDirectory, "python");
+            WriteShellExecutable(
+                pythonPath,
+                "#!/bin/sh\n"
+                    + "case \"$2\" in\n"
+                    + "  *\"importlib.util.find_spec('keyring')\"*) "
+                    + $"printf '%s\\n' '{GenericFoundMarker}'; exit 0 ;;\n"
+                    + "  *\"importlib.metadata.distribution('azureauth-credprovider-keyring')\"*) "
+                    + $"printf '%s\\n' '{ProductHealthyMarker}'; exit 0 ;;\n"
+                    + "  *) exit 99 ;;\n"
+                    + "esac\n"
+            );
+            string expectedHelperPath = Path.Combine(selectedDirectory, "azureauth-keyring");
+            WriteShellExecutable(expectedHelperPath, "#!/bin/sh\nexit 97\n");
+            string helperAliasPath = Path.Combine(aliasDirectory, "azureauth-keyring");
+            File.CreateSymbolicLink(helperAliasPath, expectedHelperPath);
+            string shimPath = Path.Combine(directory, "keyring");
+            WriteShellExecutable(shimPath, "#!/bin/sh\nexit 98\n");
+            var service = new PythonPhase11VerticalSliceService(
+                new PythonPhase11VerticalSliceOptions
+                {
+                    ProcessRunner = new SystemProcessRunner(),
+                    EnvironmentVariableReader = name =>
+                        name == "PATH"
+                            ? string.Join(Path.PathSeparator, aliasDirectory, selectedDirectory)
+                            : null,
+                    ExpectedKeyringShimPath = shimPath,
+                    PythonExecutablePath = pythonPath,
+                    CurrentDirectoryPath = directory,
+                    EnableProductProbe = true,
+                }
+            );
+
+            PythonPhase11DoctorResult result = await service.RunDoctorAsync(
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Equal(helperAliasPath, result.AzureAuthKeyringHelper.ResolvedExecutablePath);
+            Assert.Equal(
+                PythonPhase11AzureAuthKeyringHelperProbeStatus.Found,
+                result.AzureAuthKeyringHelper.Status
+            );
+            Assert.True(result.IsConfigurationPreflightReady);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
     }
 
     [Fact]
@@ -537,7 +757,7 @@ public sealed class PythonPhase11ProductDoctorTests
             StringComparison.Ordinal
         );
         const string completePredicate =
-            "valid=(isinstance(backend_type,type) and issubclass(backend_type,KeyringBackend) and backend_type.__name__ == 'AzureAuthKeyringBackend' and backend_type.__module__ == 'azureauth_credprovider_keyring.backend' and all(callable(getattr(backend_type,method,None)) for method in contract_methods))";
+            "valid=(isinstance(backend_type,type) and issubclass(backend_type,KeyringBackend) and not inspect.isabstract(backend_type) and backend_type.__name__ == 'AzureAuthKeyringBackend' and backend_type.__module__ == 'azureauth_credprovider_keyring.backend' and all(callable(getattr(backend_type,method,None)) for method in contract_methods))";
         Assert.Contains(completePredicate, script, StringComparison.Ordinal);
         Assert.Contains("if not valid:", script, StringComparison.Ordinal);
         Assert.Equal(PythonPhase11ProductProbeStatus.Healthy, result.ProductProbe.Status);

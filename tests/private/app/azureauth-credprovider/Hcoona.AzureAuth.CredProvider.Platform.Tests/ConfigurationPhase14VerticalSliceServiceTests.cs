@@ -245,10 +245,10 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
             TestContext.Current.CancellationToken
         );
 
-        Assert.NotEqual(ConfigurationPlanOperation.DryRun, configureResult.PlanResult.Operation);
+        Assert.NotEqual(ConfigurationPlanOperation.DryRun, configureResult.PlanResult!.Operation);
         Assert.Equal(1, configureResult.ChangeCount);
         Assert.Contains("_authToken=fake-token-", configuredNpmrc, StringComparison.Ordinal);
-        Assert.NotEqual(ConfigurationPlanOperation.DryRun, unconfigureResult.PlanResult.Operation);
+        Assert.NotEqual(ConfigurationPlanOperation.DryRun, unconfigureResult.PlanResult!.Operation);
         Assert.Equal(1, unconfigureResult.ChangeCount);
         Assert.DoesNotContain(
             "fake-token-",
@@ -948,7 +948,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
             ConfigurationPhase14Scope.User,
             TestContext.Current.CancellationToken
         );
-        Assert.NotEqual(ConfigurationPlanOperation.DryRun, refreshed.PlanResult.Operation);
+        Assert.NotEqual(ConfigurationPlanOperation.DryRun, refreshed.PlanResult!.Operation);
         Assert.Equal(configured, fileSystem.ReadAllText(configurationPath));
     }
 
@@ -984,7 +984,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         );
 
         Assert.Equal(0, repeated.AppliedChangeCount);
-        Assert.NotEqual(ConfigurationPlanOperation.DryRun, refreshed.PlanResult.Operation);
+        Assert.NotEqual(ConfigurationPlanOperation.DryRun, refreshed.PlanResult!.Operation);
         Assert.Equal(configured, fileSystem.ReadAllText(configurationPath));
     }
 
@@ -1770,12 +1770,12 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
 
         Assert.True(dryRun.OwnershipManifestCleanupIncomplete);
         Assert.True(executed.OwnershipManifestCleanupIncomplete);
-        Assert.Equal(ConfigurationPlanOperation.DryRun, dryRun.PlanResult.Operation);
-        Assert.Equal(ConfigurationPlanOperation.Remove, executed.PlanResult.Operation);
-        Assert.Equal(ConfigurationPlanOperation.DryRun, dryRun.PlanResult.Operation);
-        Assert.NotEqual(ConfigurationPlanOperation.DryRun, executed.PlanResult.Operation);
-        Assert.Empty(dryRun.PlanResult.Changes);
-        Assert.Empty(executed.PlanResult.Changes);
+        Assert.Equal(ConfigurationPlanOperation.DryRun, dryRun.PlanResult!.Operation);
+        Assert.Equal(ConfigurationPlanOperation.Remove, executed.PlanResult!.Operation);
+        Assert.Equal(ConfigurationPlanOperation.DryRun, dryRun.PlanResult!.Operation);
+        Assert.NotEqual(ConfigurationPlanOperation.DryRun, executed.PlanResult!.Operation);
+        Assert.Empty(dryRun.PlanResult!.Changes);
+        Assert.Empty(executed.PlanResult!.Changes);
         Assert.Equal(0, dryRun.ChangeCount);
         Assert.Equal(0, dryRun.AppliedChangeCount);
         Assert.Equal(0, executed.AppliedChangeCount);
@@ -1798,7 +1798,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         );
 
         string yarnrc = fileSystem.ReadAllText(service.Paths.YarnUserYarnrcPath);
-        Assert.NotEqual(ConfigurationPlanOperation.DryRun, result.PlanResult.Operation);
+        Assert.NotEqual(ConfigurationPlanOperation.DryRun, result.PlanResult!.Operation);
         Assert.Equal(2, result.ChangeCount);
         Assert.Contains("npmAlwaysAuth: true", yarnrc);
         Assert.Contains("npmAuthToken: 'fake-token-", yarnrc);
@@ -2091,9 +2091,9 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         );
 
         Assert.Empty(identityProvider.Requests);
-        Assert.NotEqual(ConfigurationPlanOperation.DryRun, result.PlanResult.Operation);
-        Assert.Equal(ConfigurationScope.CiTemporary, result.PlanResult.Plan.Scope);
-        Assert.True(result.PlanResult.Plan.ContainsCredentialMaterial);
+        Assert.NotEqual(ConfigurationPlanOperation.DryRun, result.PlanResult!.Operation);
+        Assert.Equal(ConfigurationScope.CiTemporary, result.PlanResult!.Plan.Scope);
+        Assert.True(result.PlanResult!.Plan.ContainsCredentialMaterial);
         Assert.Contains(
             "system-token",
             fileSystem.ReadAllText(service.Paths.NpmCiTemporaryNpmrcPath),
@@ -2120,7 +2120,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
             TestContext.Current.CancellationToken
         );
 
-        Assert.NotEqual(ConfigurationPlanOperation.DryRun, result.PlanResult.Operation);
+        Assert.NotEqual(ConfigurationPlanOperation.DryRun, result.PlanResult!.Operation);
         Assert.False(fileSystem.FileExists(service.Paths.NpmCiTemporaryNpmrcPath));
         Assert.False(result.OwnershipManifestPresent);
     }
@@ -2172,7 +2172,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
             TestContext.Current.CancellationToken
         );
 
-        Assert.NotEqual(ConfigurationPlanOperation.DryRun, result.PlanResult.Operation);
+        Assert.NotEqual(ConfigurationPlanOperation.DryRun, result.PlanResult!.Operation);
         Assert.False(fileSystem.DirectoryExists(service.Paths.YarnCiTemporaryHomePath));
         Assert.False(result.OwnershipManifestPresent);
     }
@@ -2487,11 +2487,11 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
 
         ConfigurationTemporaryContainer initialContainer =
             Assert.IsType<ConfigurationTemporaryContainer>(
-                initial.PlanResult.Plan.TemporaryContainer
+                initial.PlanResult!.Plan.TemporaryContainer
             );
         ConfigurationTemporaryContainer repeatedContainer =
             Assert.IsType<ConfigurationTemporaryContainer>(
-                repeated.PlanResult.Plan.TemporaryContainer
+                repeated.PlanResult!.Plan.TemporaryContainer
             );
         Assert.Equal(0, repeated.AppliedChangeCount);
         Assert.Equal(initialContainer.Kind, repeatedContainer.Kind);
@@ -2509,14 +2509,14 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
             repeatedContainer.ActivationEnvironment.ClearVariables
         );
         Assert.Equal(
-            initial.PlanResult.Plan.Manifest.ResourceIdentity,
-            repeated.PlanResult.Plan.Manifest.ResourceIdentity
+            initial.PlanResult!.Plan.Manifest.ResourceIdentity,
+            repeated.PlanResult!.Plan.Manifest.ResourceIdentity
         );
         Assert.Equal(
-            initial.PlanResult.Plan.Manifest.EntrySelector,
-            repeated.PlanResult.Plan.Manifest.EntrySelector
+            initial.PlanResult!.Plan.Manifest.EntrySelector,
+            repeated.PlanResult!.Plan.Manifest.EntrySelector
         );
-        Assert.Equal(persisted.SafeMetadata, repeated.PlanResult.Plan.Manifest.SafeMetadata);
+        Assert.Equal(persisted.SafeMetadata, repeated.PlanResult!.Plan.Manifest.SafeMetadata);
         Assert.Equal(manifestBefore, fileSystem.ReadAllText(manifestPath));
         Assert.Equal(configurationBefore, fileSystem.ReadAllText(configurationPath));
         Assert.Contains(TestRegistryUrl, configurationBefore, StringComparison.Ordinal);
@@ -2550,9 +2550,9 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
             );
         }
 
-        Assert.NotEqual("phase14-python-keyring", repeated.PlanResult.Plan.Manifest.ManifestId);
+        Assert.NotEqual("phase14-python-keyring", repeated.PlanResult!.Plan.Manifest.ManifestId);
         Assert.DoesNotContain(
-            repeated.PlanResult.Plan.Manifest.SafeMetadata,
+            repeated.PlanResult!.Plan.Manifest.SafeMetadata,
             pair => pair.Value == "python"
         );
     }
@@ -2585,11 +2585,11 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         Assert.Equal(3, dryRun.ChangeCount);
         Assert.Equal(dryRun.ChangeCount, applied.ChangeCount);
         Assert.Equal(
-            dryRun.PlanResult.Plan.Changes.Select(static change => change.Key),
-            applied.PlanResult.Plan.Changes.Select(static change => change.Key)
+            dryRun.PlanResult!.Plan.Changes.Select(static change => change.Key),
+            applied.PlanResult!.Plan.Changes.Select(static change => change.Key)
         );
         Assert.Contains(
-            dryRun.PlanResult.Plan.Changes,
+            dryRun.PlanResult!.Plan.Changes,
             change => string.Equals(change.Key, "npmRegistryServer", StringComparison.Ordinal)
         );
         Assert.False(
@@ -2629,7 +2629,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
 
         ConfigurationActivationEnvironment activation =
             Assert.IsType<ConfigurationActivationEnvironment>(
-                result.PlanResult.Plan.TemporaryContainer!.ActivationEnvironment
+                result.PlanResult!.Plan.TemporaryContainer!.ActivationEnvironment
             );
         Assert.Equal(service.Paths.YarnCiTemporaryHomePath, activation.SetVariables["HOME"]);
         Assert.Equal(["YARN_RC_FILENAME"], activation.ClearVariables);
@@ -2655,7 +2655,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
 
         Assert.True(
             RegistryCredentialLifecycleMetadataCodec.TryRead(
-                result.PlanResult.Plan.Manifest.SafeMetadata,
+                result.PlanResult!.Plan.Manifest.SafeMetadata,
                 out RegistryCredentialLifecycleMetadata? lifecycle
             )
         );

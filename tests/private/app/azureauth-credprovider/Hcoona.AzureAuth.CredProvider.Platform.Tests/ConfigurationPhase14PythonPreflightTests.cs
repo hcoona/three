@@ -101,6 +101,7 @@ public sealed class ConfigurationPhase14PythonPreflightTests
             result.PythonPreflight!.ProductProbe.Status
         );
         Assert.Empty(result.PlanResults);
+        Assert.Null(result.PlanResult);
         Assert.Equal(0, result.ChangeCount);
         Assert.Equal(0, result.AppliedChangeCount);
         Assert.Equal(filesBefore, fileSystem.Files);
@@ -133,6 +134,7 @@ public sealed class ConfigurationPhase14PythonPreflightTests
 
         Assert.False(result.PythonPreflightSucceeded);
         Assert.Empty(result.PlanResults);
+        Assert.Null(result.PlanResult);
         Assert.Equal(0, result.ChangeCount);
         Assert.Equal(filesBefore, fileSystem.Files);
         Assert.Equal(directoriesBefore, fileSystem.Directories);
@@ -168,6 +170,7 @@ public sealed class ConfigurationPhase14PythonPreflightTests
 
         Assert.False(result.PythonPreflightSucceeded);
         Assert.Empty(result.PlanResults);
+        Assert.Null(result.PlanResult);
         Assert.All(
             runner.StartSpecs,
             spec =>
@@ -487,6 +490,7 @@ public sealed class ConfigurationPhase14PythonPreflightTests
             StringComparison.Ordinal
         );
         Assert.Empty(result.PlanResults);
+        Assert.Null(result.PlanResult);
         Assert.Equal(0, result.ChangeCount);
         Assert.Equal(filesBefore, fileSystem.Files);
         Assert.Equal(directoriesBefore, fileSystem.Directories);

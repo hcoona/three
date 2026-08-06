@@ -7735,8 +7735,11 @@ public sealed class CliApplicationTests
         );
         Assert.Contains(
             "bootstrap-command: "
-                + Phase3ShellQuote(fixture.PythonExecutablePath)
-                + " -m pip install azureauth-credprovider-keyring\n",
+                + Phase3BootstrapCommand(
+                    fixture.PythonExecutablePath,
+                    "azureauth-credprovider-keyring"
+                )
+                + "\n",
             Normalize(result.StdErr),
             StringComparison.Ordinal
         );
@@ -7748,6 +7751,164 @@ public sealed class CliApplicationTests
             fixture.Runner.StartSpecs,
             spec => Assert.DoesNotContain("-m", spec.Arguments)
         );
+    }
+
+    [Fact]
+    public void HandleConfigure_WhenGenericKeyringModuleIsMissing_InstallsKeyringAndProduct()
+    {
+        using var fixture = new Phase3ConfigureFixture(
+            productHealthy: false,
+            processResults:
+            [
+                new ProcessResult(
+                    20,
+                    "ACP_KEYRING_PROBE_V1:NOT_FOUND\n",
+                    string.Empty
+                ),
+            ]
+        );
+
+        CommandResult result = InvokeWithRuntime(fixture.Runtime, "configure", "python");
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Contains(
+            "bootstrap-command: "
+                + Phase3BootstrapCommand(
+                    fixture.PythonExecutablePath,
+                    "keyring azureauth-credprovider-keyring"
+                )
+                + "\n",
+            Normalize(result.StdErr),
+            StringComparison.Ordinal
+        );
+    }
+
+    [Theory]
+    [InlineData(31, "ACP_AZUREAUTH_PRODUCT_PROBE_V1:ENTRY_POINT_MISSING")]
+    [InlineData(32, "ACP_AZUREAUTH_PRODUCT_PROBE_V1:ENTRY_POINT_MISMATCH")]
+    [InlineData(33, "ACP_AZUREAUTH_PRODUCT_PROBE_V1:LOAD_FAILURE")]
+    public void HandleConfigure_WhenProductContractFails_SuggestsProductReinstall(
+        int exitCode,
+        string marker
+    )
+    {
+        using var fixture = new Phase3ConfigureFixture(
+            productHealthy: false,
+            processResults:
+            [
+                new ProcessResult(0, KeyringModuleFoundOutput, string.Empty),
+                new ProcessResult(exitCode, marker + "\n", string.Empty),
+            ]
+        );
+
+        CommandResult result = InvokeWithRuntime(fixture.Runtime, "configure", "python");
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Contains(
+            "bootstrap-command: "
+                + Phase3BootstrapCommand(
+                    fixture.PythonExecutablePath,
+                    "--force-reinstall azureauth-credprovider-keyring"
+                )
+                + "\n",
+            Normalize(result.StdErr),
+            StringComparison.Ordinal
+        );
+    }
+
+    [Fact]
+    public void HandleConfigure_WhenPosixHelperIsMissing_SuggestsProductReinstall()
+    {
+        Assert.SkipWhen(
+            OperatingSystem.IsWindows(),
+            "The Python helper preflight is POSIX-only."
+        );
+        using var fixture = new Phase3ConfigureFixture(
+            productHealthy: true,
+            helperPresent: false
+        );
+
+        CommandResult result = InvokeWithRuntime(fixture.Runtime, "configure", "python");
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Contains(
+            "bootstrap-command: "
+                + Phase3BootstrapCommand(
+                    fixture.PythonExecutablePath,
+                    "--force-reinstall azureauth-credprovider-keyring"
+                )
+                + "\n",
+            Normalize(result.StdErr),
+            StringComparison.Ordinal
+        );
+    }
+
+    [Theory]
+    [MemberData(nameof(PythonProbeFailuresWithoutInstallGuidance))]
+    public void HandleConfigure_WhenProbeCannotDiagnoseDependency_OmitsInstallCommand(
+        ProcessResult firstResult,
+        ProcessResult? secondResult
+    )
+    {
+        List<ProcessResult> processResults = [firstResult];
+        if (secondResult is not null)
+        {
+            processResults.Add(secondResult);
+        }
+        using var fixture = new Phase3ConfigureFixture(
+            productHealthy: false,
+            processResults: processResults
+        );
+
+        CommandResult result = InvokeWithRuntime(fixture.Runtime, "configure", "python");
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Contains("guidance: ", result.StdErr, StringComparison.Ordinal);
+        Assert.DoesNotContain("bootstrap-command:", result.StdErr, StringComparison.Ordinal);
+        Assert.DoesNotContain("pip install", result.StdErr, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static TheoryData<ProcessResult, ProcessResult?>
+        PythonProbeFailuresWithoutInstallGuidance =>
+            new()
+            {
+                { ProcessResult.LaunchFailure(), null },
+                { ProcessResult.TimedOut(string.Empty, string.Empty), null },
+                { new ProcessResult(0, "malformed\n", string.Empty), null },
+                {
+                    new ProcessResult(0, KeyringModuleFoundOutput, string.Empty),
+                    ProcessResult.LaunchFailure()
+                },
+                {
+                    new ProcessResult(0, KeyringModuleFoundOutput, string.Empty),
+                    ProcessResult.TimedOut(string.Empty, string.Empty)
+                },
+                {
+                    new ProcessResult(0, KeyringModuleFoundOutput, string.Empty),
+                    new ProcessResult(0, "malformed\n", string.Empty)
+                },
+            };
+
+    [Fact]
+    public void HandleConfigure_WhenInterpreterCannotBeResolved_OmitsInstallCommand()
+    {
+        using var fixture = new Phase3ConfigureFixture(
+            productHealthy: false,
+            processResults:
+            [
+                ProcessResult.LaunchFailure(),
+                ProcessResult.LaunchFailure(),
+            ],
+            useExplicitPythonExecutable: false
+        );
+
+        CommandResult result = InvokeWithRuntime(fixture.Runtime, "configure", "python");
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Contains("selected-python: not-found", result.StdErr, StringComparison.Ordinal);
+        Assert.Contains("guidance: ", result.StdErr, StringComparison.Ordinal);
+        Assert.DoesNotContain("bootstrap-command:", result.StdErr, StringComparison.Ordinal);
+        Assert.DoesNotContain("pip install", result.StdErr, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -8104,6 +8265,14 @@ public sealed class CliApplicationTests
     private static string Phase3ShellQuote(string value) =>
         "'" + value.Replace("'", "'\"'\"'", StringComparison.Ordinal) + "'";
 
+    private static string Phase3BootstrapCommand(string pythonPath, string installArguments) =>
+        OperatingSystem.IsWindows()
+            ? "& '"
+                + pythonPath.Replace("'", "''", StringComparison.Ordinal)
+                + "' -m pip install "
+                + installArguments
+            : Phase3ShellQuote(pythonPath) + " -m pip install " + installArguments;
+
     private static void WritePhase3Executable(string path, string contents)
     {
         WriteOwnerOnlyText(path, contents);
@@ -8120,7 +8289,10 @@ public sealed class CliApplicationTests
     {
         public Phase3ConfigureFixture(
             bool productHealthy,
-            string homeDirectoryName = "home"
+            string homeDirectoryName = "home",
+            IReadOnlyList<ProcessResult>? processResults = null,
+            bool helperPresent = true,
+            bool useExplicitPythonExecutable = true
         )
         {
             RootPath = CreateTestDirectory();
@@ -8131,24 +8303,32 @@ public sealed class CliApplicationTests
             PythonExecutablePath = Path.Combine(pythonDirectory, "python");
             WritePhase3Executable(PythonExecutablePath, "#!/bin/sh\nexit 91\n");
             string helperPath = Path.Combine(pythonDirectory, "azureauth-keyring");
-            WritePhase3Executable(helperPath, "#!/bin/sh\nexit 92\n");
+            if (helperPresent)
+            {
+                WritePhase3Executable(helperPath, "#!/bin/sh\nexit 92\n");
+            }
             Runner = new RecordingPythonResolutionProcessRunner();
-            Runner.EnqueueResult(
-                new ProcessResult(0, KeyringModuleFoundOutput, string.Empty)
-            );
-            Runner.EnqueueResult(
-                productHealthy
-                    ? new ProcessResult(
-                        0,
-                        "ACP_AZUREAUTH_PRODUCT_PROBE_V1:HEALTHY\n",
-                        string.Empty
-                    )
-                    : new ProcessResult(
-                        30,
-                        "ACP_AZUREAUTH_PRODUCT_PROBE_V1:DISTRIBUTION_MISSING\n",
-                        "Traceback: bootstrap-private-secret"
-                    )
-            );
+            IReadOnlyList<ProcessResult> effectiveProcessResults =
+                processResults
+                ??
+                [
+                    new ProcessResult(0, KeyringModuleFoundOutput, string.Empty),
+                    productHealthy
+                        ? new ProcessResult(
+                            0,
+                            "ACP_AZUREAUTH_PRODUCT_PROBE_V1:HEALTHY\n",
+                            string.Empty
+                        )
+                        : new ProcessResult(
+                            30,
+                            "ACP_AZUREAUTH_PRODUCT_PROBE_V1:DISTRIBUTION_MISSING\n",
+                            string.Empty
+                        ),
+                ];
+            foreach (ProcessResult processResult in effectiveProcessResults)
+            {
+                Runner.EnqueueResult(processResult);
+            }
             var pythonDoctor = new PythonPhase11VerticalSliceService(
                 new PythonPhase11VerticalSliceOptions
                 {
@@ -8163,7 +8343,8 @@ public sealed class CliApplicationTests
                         "not-yet-generated",
                         "keyring"
                     ),
-                    PythonExecutablePath = PythonExecutablePath,
+                    PythonExecutablePath =
+                        useExplicitPythonExecutable ? PythonExecutablePath : null,
                     CurrentDirectoryPath = RootPath,
                     EnableProductProbe = true,
                 }

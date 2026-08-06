@@ -367,23 +367,23 @@ public sealed class AzurePipelinesSystemAccessTokenWp5Tests
                 TestContext.Current.CancellationToken
             );
 
-            Assert.Equal(ConfigurationScope.CiTemporary, result.PlanResult.Plan.Scope);
-            Assert.Null(result.PlanResult.Plan.ExpiresAt);
-            Assert.NotNull(result.PlanResult.Plan.TemporaryContainer);
+            Assert.Equal(ConfigurationScope.CiTemporary, result.PlanResult!.Plan.Scope);
+            Assert.Null(result.PlanResult!.Plan.ExpiresAt);
+            Assert.NotNull(result.PlanResult!.Plan.TemporaryContainer);
             if (ecosystem == CredentialEcosystem.Pnpm)
             {
-                Assert.False(result.PlanResult.Plan.ContainsCredentialMaterial);
-                Assert.Empty(result.PlanResult.Changes);
+                Assert.False(result.PlanResult!.Plan.ContainsCredentialMaterial);
+                Assert.Empty(result.PlanResult!.Changes);
                 continue;
             }
 
-            Assert.True(result.PlanResult.Plan.ContainsCredentialMaterial);
+            Assert.True(result.PlanResult!.Plan.ContainsCredentialMaterial);
             ConfigurationPlannedChange secretChange = Assert.Single(
-                result.PlanResult.Changes,
+                result.PlanResult!.Changes,
                 change => change.IsSecretValue
             );
             Assert.True(secretChange.HasPlannedValue);
-            Assert.DoesNotContain(Secret, result.PlanResult.ToString(), StringComparison.Ordinal);
+            Assert.DoesNotContain(Secret, result.PlanResult!.ToString(), StringComparison.Ordinal);
 
             string manifestPath = Path.Combine(
                 service.Paths.CiTemporaryManifestDirectoryPath,

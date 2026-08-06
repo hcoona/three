@@ -2488,6 +2488,11 @@ internal static class CliApplication
         ConfigurationPhase14PlanResult result
     )
     {
+        ConfigurationPlanResult planResult =
+            result.PlanResult
+            ?? throw new InvalidOperationException(
+                "A successful configuration result must contain a plan result."
+            );
         string changeCountLabel = invocation.Command is CliCommand.Configure or CliCommand.Refresh
             ? "applied-change-count"
             : "removed-change-count";
@@ -2500,7 +2505,7 @@ internal static class CliApplication
             $"scope: {GetScopeText(invocation.CiMode)}",
             "mutates-state: "
                 + (result.AppliedChangeCount > 0 || result.LifecycleStateMutated ? "yes" : "no"),
-            $"plan-operation: {GetPlanOperationText(result.PlanResult.Operation)}",
+            $"plan-operation: {GetPlanOperationText(planResult.Operation)}",
             $"{changeCountLabel}: {result.AppliedChangeCount}",
             "ownership-manifest: " + GetPresenceText(result.OwnershipManifestPresent),
             "credential-material: not-printed",
@@ -2509,7 +2514,7 @@ internal static class CliApplication
         bool temporaryContainerEmitted = AddTemporaryContainerOutput(
             lines,
             invocation,
-            result.PlanResult.Plan
+            planResult.Plan
         );
         if (
             !temporaryContainerEmitted
@@ -2565,26 +2570,117 @@ internal static class CliApplication
         ConfigurationPhase14PlanResult result
     )
     {
-        string? selectedPython =
-            result.PythonPreflight?.KeyringModuleProbe.PythonExecutablePath;
+        PythonPhase11DoctorResult preflight =
+            result.PythonPreflight
+            ?? throw new InvalidOperationException(
+                "A failed Python preflight result must contain probe details."
+            );
+        PythonPhase11KeyringModuleProbe moduleProbe = preflight.KeyringModuleProbe;
+        PythonPhase11ProductProbe productProbe = preflight.ProductProbe;
+        string? selectedPython = moduleProbe.PythonExecutablePath;
         string selectedPythonText =
             selectedPython is null
                 ? "not-found"
                 : EscapeNonPrintingCharacters(selectedPython);
-        string bootstrapExecutable =
-            selectedPython is null ? "python" : selectedPython;
-        TryWriteDiagnosticText(
-            stderr,
-            "error: Python preflight failed; the selected interpreter is missing "
-                + "the required AzureAuth keyring backend or helper.\n"
-                + "selected-python: "
-                + selectedPythonText
-                + "\n"
-                + "bootstrap-command: "
-                + QuotePosixShellArgument(bootstrapExecutable)
-                + " -m pip install azureauth-credprovider-keyring"
-        );
+        var lines = new List<string>
+        {
+            "error: Python preflight failed.",
+            "selected-python: " + selectedPythonText,
+        };
+
+        string? installArguments = GetPythonPreflightInstallArguments(preflight);
+        if (selectedPython is not null && installArguments is not null)
+        {
+            lines.Add(
+                "bootstrap-command: "
+                    + BuildPythonBootstrapCommand(selectedPython, installArguments)
+            );
+        }
+        else
+        {
+            lines.Add(
+                "guidance: "
+                    + GetPythonPreflightDiagnosticGuidance(moduleProbe, productProbe)
+            );
+        }
+
+        TryWriteDiagnosticText(stderr, string.Join('\n', lines));
     }
+
+    private static string? GetPythonPreflightInstallArguments(
+        PythonPhase11DoctorResult preflight
+    )
+    {
+        if (
+            preflight.KeyringModuleProbe.Status
+            == PythonPhase11KeyringModuleProbeStatus.ModuleNotFound
+        )
+        {
+            return "keyring azureauth-credprovider-keyring";
+        }
+
+        return preflight.ProductProbe.Status switch
+        {
+            PythonPhase11ProductProbeStatus.DistributionMissing =>
+                "azureauth-credprovider-keyring",
+            PythonPhase11ProductProbeStatus.EntryPointMissing
+            or PythonPhase11ProductProbeStatus.EntryPointMismatch
+            or PythonPhase11ProductProbeStatus.LoadFailure =>
+                "--force-reinstall azureauth-credprovider-keyring",
+            PythonPhase11ProductProbeStatus.Healthy
+                when preflight.AzureAuthKeyringHelper.Status
+                    == PythonPhase11AzureAuthKeyringHelperProbeStatus.Missing =>
+                "--force-reinstall azureauth-credprovider-keyring",
+            _ => null,
+        };
+    }
+
+    private static string BuildPythonBootstrapCommand(
+        string selectedPython,
+        string installArguments
+    ) =>
+        OperatingSystem.IsWindows()
+            ? "& "
+                + QuotePowerShellArgument(selectedPython)
+                + " -m pip install "
+                + installArguments
+            : QuotePosixShellArgument(selectedPython)
+                + " -m pip install "
+                + installArguments;
+
+    private static string QuotePowerShellArgument(string value) =>
+        "'" + value.Replace("'", "''", StringComparison.Ordinal) + "'";
+
+    private static string GetPythonPreflightDiagnosticGuidance(
+        PythonPhase11KeyringModuleProbe moduleProbe,
+        PythonPhase11ProductProbe productProbe
+    ) =>
+        moduleProbe.Status switch
+        {
+            PythonPhase11KeyringModuleProbeStatus.InterpreterNotFound =>
+                "activate or select an available Python interpreter, then retry.",
+            PythonPhase11KeyringModuleProbeStatus.LaunchFailure =>
+                "verify that the selected Python interpreter can be launched, then retry.",
+            PythonPhase11KeyringModuleProbeStatus.TimedOut =>
+                "verify that the selected Python interpreter starts promptly, then retry.",
+            PythonPhase11KeyringModuleProbeStatus.UnexpectedNonZeroExit
+            or PythonPhase11KeyringModuleProbeStatus.OutputTooLarge
+            or PythonPhase11KeyringModuleProbeStatus.InvalidOutput
+            or PythonPhase11KeyringModuleProbeStatus.ModuleFinderError =>
+                "run the selected Python interpreter directly and resolve the reported probe failure, then retry.",
+            _ => productProbe.Status switch
+            {
+                PythonPhase11ProductProbeStatus.LaunchFailure =>
+                    "verify that the selected Python interpreter can launch the product probe, then retry.",
+                PythonPhase11ProductProbeStatus.TimedOut =>
+                    "verify that the selected Python interpreter can complete the product probe promptly, then retry.",
+                PythonPhase11ProductProbeStatus.UnexpectedNonZeroExit
+                or PythonPhase11ProductProbeStatus.OutputTooLarge
+                or PythonPhase11ProductProbeStatus.InvalidOutput =>
+                    "run the selected Python interpreter directly and resolve the reported product probe failure, then retry.",
+                _ => "review the Python doctor output, correct the failed dependency, then retry.",
+            },
+        };
 
     private static bool AddTemporaryContainerOutput(
         List<string> lines,
@@ -2765,6 +2861,11 @@ internal static class CliApplication
         ConfigurationPhase14PlanResult dryRunResult
     )
     {
+        ConfigurationPlanResult planResult =
+            dryRunResult.PlanResult
+            ?? throw new InvalidOperationException(
+                "A successful configuration dry run must contain a plan result."
+            );
         CredentialEcosystem ecosystem =
             invocation.Ecosystem
             ?? throw new InvalidOperationException("Dry-run commands require an ecosystem.");
@@ -2791,7 +2892,7 @@ internal static class CliApplication
         bool temporaryContainerEmitted = AddTemporaryContainerOutput(
             lines,
             invocation,
-            dryRunResult.PlanResult.Plan
+            planResult.Plan
         );
         if (
             !temporaryContainerEmitted

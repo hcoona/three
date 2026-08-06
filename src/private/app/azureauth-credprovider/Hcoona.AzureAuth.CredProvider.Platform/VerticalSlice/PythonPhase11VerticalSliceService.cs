@@ -258,7 +258,7 @@ public sealed class PythonPhase11VerticalSliceService
     private const int ProductProbeEntryPointMismatchExitCode = 32;
     private const int ProductProbeLoadFailureExitCode = 33;
     private const string ProductProbeScript =
-        "import importlib.metadata,sys\n"
+        "import importlib.metadata,inspect,sys\n"
         + "try:\n"
         + "    distribution=importlib.metadata.distribution('azureauth-credprovider-keyring')\n"
         + "except importlib.metadata.PackageNotFoundError:\n"
@@ -282,7 +282,7 @@ public sealed class PythonPhase11VerticalSliceService
         + "    from keyring.backend import KeyringBackend\n"
         + "    backend_type=entry_point.load()\n"
         + "    contract_methods=('get_password','get_credential','set_password','delete_password')\n"
-        + "    valid=(isinstance(backend_type,type) and issubclass(backend_type,KeyringBackend) and backend_type.__name__ == 'AzureAuthKeyringBackend' and backend_type.__module__ == 'azureauth_credprovider_keyring.backend' and all(callable(getattr(backend_type,method,None)) for method in contract_methods))\n"
+        + "    valid=(isinstance(backend_type,type) and issubclass(backend_type,KeyringBackend) and not inspect.isabstract(backend_type) and backend_type.__name__ == 'AzureAuthKeyringBackend' and backend_type.__module__ == 'azureauth_credprovider_keyring.backend' and all(callable(getattr(backend_type,method,None)) for method in contract_methods))\n"
         + "except BaseException:\n"
         + "    valid=False\n"
         + "if not valid:\n"
@@ -306,12 +306,14 @@ public sealed class PythonPhase11VerticalSliceService
     private readonly IProcessRunner processRunner;
     private readonly bool productProbeEnabled;
     private readonly string? pythonExecutablePath;
+    private readonly bool usesWindowsPaths;
 
     public PythonPhase11VerticalSliceService(PythonPhase11VerticalSliceOptions? options = null)
     {
         bool useDefaultOptions = options is null;
         options ??= new PythonPhase11VerticalSliceOptions();
         fileSystem = options.FileSystem ?? new SystemFileSystem();
+        usesWindowsPaths = FileSystemPathSemantics.UsesWindowsPaths(fileSystem);
         processRunner = options.ProcessRunner ?? new SystemProcessRunner();
         environmentVariableReader =
             options.EnvironmentVariableReader ?? Environment.GetEnvironmentVariable;
@@ -481,7 +483,7 @@ public sealed class PythonPhase11VerticalSliceService
 
         return new PythonPhase11KeyringShimProbe
         {
-            Applicable = !LooksLikeWindowsPath(expectedShimPath),
+            Applicable = !usesWindowsPaths,
             ExpectedShimPath = expectedShimPath,
             ExpectedShimDirectoryPath = fileSystem.GetFullPath(expectedShimDirectoryPath),
             ExpectedShimExists = expectedShimExists,
@@ -672,7 +674,7 @@ public sealed class PythonPhase11VerticalSliceService
         string? selectedPythonExecutablePath
     )
     {
-        if (LooksLikeWindowsPath(ExpectedKeyringShimPath))
+        if (usesWindowsPaths)
         {
             return new PythonPhase11AzureAuthKeyringHelperProbe
             {
@@ -703,13 +705,17 @@ public sealed class PythonPhase11VerticalSliceService
             }
         }
 
+        bool expectedHelperResolved =
+            expectedExecutablePath is not null
+            && resolvedExecutablePath is not null
+            && SameFile(expectedExecutablePath, resolvedExecutablePath);
         return new PythonPhase11AzureAuthKeyringHelperProbe
         {
             Applicable = true,
             ExpectedExecutablePath = expectedExecutablePath,
             ResolvedExecutablePath = resolvedExecutablePath,
             Status =
-                resolvedExecutablePath is null
+                !expectedHelperResolved
                     ? PythonPhase11AzureAuthKeyringHelperProbeStatus.Missing
                     : PythonPhase11AzureAuthKeyringHelperProbeStatus.Found,
         };
@@ -942,9 +948,7 @@ public sealed class PythonPhase11VerticalSliceService
 
     private IEnumerable<string> GetVirtualEnvPythonCandidatePaths(string virtualEnv)
     {
-        bool preferWindowsLayout =
-            keyringExecutableFileName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
-            || LooksLikeWindowsPath(virtualEnv);
+        bool preferWindowsLayout = usesWindowsPaths;
         if (preferWindowsLayout)
         {
             yield return $"{virtualEnv}/Scripts/python.exe";
@@ -1318,17 +1322,27 @@ public sealed class PythonPhase11VerticalSliceService
             .Any(part => string.Equals(part, segment, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static bool LooksLikeWindowsPath(string path) =>
-        path.Length >= 2 && char.IsAsciiLetter(path[0]) && path[1] == ':';
-
     private bool SamePath(string left, string right) =>
         string.Equals(
             fileSystem.GetFullPath(left),
             fileSystem.GetFullPath(right),
-            OperatingSystem.IsWindows()
-                ? StringComparison.OrdinalIgnoreCase
-                : StringComparison.Ordinal
+            FileSystemPathSemantics.GetComparison(fileSystem)
         );
+
+    private bool SameFile(string left, string right)
+    {
+        if (SamePath(left, right))
+        {
+            return true;
+        }
+
+        return fileSystem is IFileSystemLinkResolver linkResolver
+            && string.Equals(
+                linkResolver.ResolveFilePathForWrite(left),
+                linkResolver.ResolveFilePathForWrite(right),
+                FileSystemPathSemantics.GetComparison(fileSystem)
+            );
+    }
 
     private static string? NullIfWhiteSpace(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value;
