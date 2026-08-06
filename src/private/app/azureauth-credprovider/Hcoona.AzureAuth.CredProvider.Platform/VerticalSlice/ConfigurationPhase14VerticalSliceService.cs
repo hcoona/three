@@ -36,6 +36,8 @@ public sealed record ConfigurationPhase14VerticalSliceOptions
     public TimeProvider? TimeProvider { get; init; }
 
     public RegistryCredentialExpiryPolicyOptions? ExpiryPolicy { get; init; }
+
+    public PythonPhase11VerticalSliceService? PythonDoctorService { get; init; }
 }
 
 public sealed record ConfigurationPhase14ResolvedPaths
@@ -71,9 +73,14 @@ public sealed record ConfigurationPhase14PlanResult
 
     public required bool OwnershipManifestPresent { get; init; }
 
+    public PythonPhase11DoctorResult? PythonPreflight { get; init; }
+
     public bool OwnershipManifestCleanupIncomplete { get; init; }
 
     public bool LifecycleStateMutated { get; init; }
+
+    public bool PythonPreflightSucceeded =>
+        PythonPreflight?.IsConfigurationPreflightReady ?? true;
 
     public ConfigurationPlanResult PlanResult => PlanResults[^1];
 
@@ -350,6 +357,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
     private readonly RegistryCredentialExpiryPolicy expiryPolicy;
     private readonly TimeProvider timeProvider;
     private readonly string? productExecutablePath;
+    private readonly PythonPhase11VerticalSliceService? pythonDoctorService;
     private readonly string workspaceDirectoryPath;
 
     public ConfigurationPhase14VerticalSliceService(
@@ -393,6 +401,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
         timeProvider = options.TimeProvider ?? TimeProvider.System;
         expiryPolicy = new RegistryCredentialExpiryPolicy(timeProvider, options.ExpiryPolicy);
         productExecutablePath = ResolveProductExecutablePath(options.ProductExecutablePath);
+        pythonDoctorService = options.PythonDoctorService;
     }
 
     public ConfigurationPhase14ResolvedPaths Paths => paths;
@@ -524,6 +533,18 @@ public sealed class ConfigurationPhase14VerticalSliceService
         }
 
         string ownershipManifestPath = GetOwnershipManifestPath(ecosystem, scope);
+        PythonPhase11DoctorResult? pythonPreflight = null;
+        if (pythonDoctorService is not null)
+        {
+            pythonPreflight = await pythonDoctorService
+                .RunDoctorAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (!pythonPreflight.IsConfigurationPreflightReady)
+            {
+                return CreatePythonPreflightFailureResult(pythonPreflight);
+            }
+        }
+
         EnsureRecognizedPythonManifestIfPresent(scope, ownershipManifestPath);
         IReadOnlyList<ConfigurationChangePlan> plans = CreatePythonPlans(scope);
         List<ConfigurationPlanResult> previewResults = [];
@@ -536,7 +557,11 @@ public sealed class ConfigurationPhase14VerticalSliceService
 
         if (!execute)
         {
-            return CreateResult(previewResults, ownershipManifestPath);
+            return CreateResult(
+                previewResults,
+                ownershipManifestPath,
+                pythonPreflight: pythonPreflight
+            );
         }
 
         (ConfigurationChangePlan Plan, ConfigurationPlanOperation Operation)[] operations = plans
@@ -556,7 +581,11 @@ public sealed class ConfigurationPhase14VerticalSliceService
         List<ConfigurationPlanResult> appliedResults = executed
             .Select((result, index) => result with { Plan = previewResults[index].Plan })
             .ToList();
-        return CreateResult(appliedResults, ownershipManifestPath);
+        return CreateResult(
+            appliedResults,
+            ownershipManifestPath,
+            pythonPreflight: pythonPreflight
+        );
     }
 
     public Uri ResolvePersistedRegistryUrl(
@@ -2992,7 +3021,8 @@ public sealed class ConfigurationPhase14VerticalSliceService
         string ownershipManifestPath,
         bool ownershipManifestCleanupIncomplete = false,
         bool? ownershipManifestPresent = null,
-        bool lifecycleStateMutated = false
+        bool lifecycleStateMutated = false,
+        PythonPhase11DoctorResult? pythonPreflight = null
     )
     {
         return new()
@@ -3003,8 +3033,20 @@ public sealed class ConfigurationPhase14VerticalSliceService
                 ownershipManifestPresent ?? fileSystem.FileExists(ownershipManifestPath),
             OwnershipManifestCleanupIncomplete = ownershipManifestCleanupIncomplete,
             LifecycleStateMutated = lifecycleStateMutated,
+            PythonPreflight = pythonPreflight,
         };
     }
+
+    private ConfigurationPhase14PlanResult CreatePythonPreflightFailureResult(
+        PythonPhase11DoctorResult pythonPreflight
+    ) =>
+        new()
+        {
+            Paths = paths,
+            PlanResults = [],
+            OwnershipManifestPresent = false,
+            PythonPreflight = pythonPreflight,
+        };
 
     private static ConfigurationPlanResult CreateNoOpPlanResult(
         ConfigurationPlanOperation operation,

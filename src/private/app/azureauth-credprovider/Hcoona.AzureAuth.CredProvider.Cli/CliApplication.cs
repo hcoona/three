@@ -394,6 +394,12 @@ internal static class CliApplication
                     return NotImplementedExitCode;
                 }
 
+                if (!dryRunResult.PythonPreflightSucceeded)
+                {
+                    WritePythonPreflightFailure(stderr, dryRunResult);
+                    return NotImplementedExitCode;
+                }
+
                 WriteText(stdout, BuildConfigurationPhase14DryRunOutput(invocation, dryRunResult));
                 return SuccessExitCode;
             }
@@ -481,6 +487,12 @@ internal static class CliApplication
                 )
             {
                 TryWriteDiagnosticText(stderr, "error: " + exception.Message);
+                return NotImplementedExitCode;
+            }
+
+            if (!configureResult.PythonPreflightSucceeded)
+            {
+                WritePythonPreflightFailure(stderr, configureResult);
                 return NotImplementedExitCode;
             }
 
@@ -2512,7 +2524,66 @@ internal static class CliApplication
             );
         }
 
+        if (
+            invocation.Command == CliCommand.Configure
+            && invocation.Ecosystem == CredentialEcosystem.Python
+            && invocation.CiMode == CliCiMode.None
+            && TryGetAppliedPythonShimDirectory(result, out string? shimDirectory)
+        )
+        {
+            lines.Add(
+                "export PATH=" + QuotePosixShellArgument(shimDirectory) + ":\"$PATH\""
+            );
+        }
+
         return JoinLines(lines);
+    }
+
+    private static bool TryGetAppliedPythonShimDirectory(
+        ConfigurationPhase14PlanResult result,
+        [NotNullWhen(true)] out string? shimDirectory
+    )
+    {
+        string? shimPath = result
+            .PlanResults.Where(static planResult =>
+                planResult.Operation != ConfigurationPlanOperation.DryRun
+            )
+            .SelectMany(static planResult => planResult.Plan.Changes)
+            .Where(static change => change.TargetKind == ConfigurationTargetKind.KeyringShim)
+            .Select(static change => change.TargetPathOrName)
+            .LastOrDefault();
+        shimDirectory =
+            shimPath is null ? null : Path.GetDirectoryName(shimPath);
+        return !string.IsNullOrWhiteSpace(shimDirectory);
+    }
+
+    private static string QuotePosixShellArgument(string value) =>
+        "'" + value.Replace("'", "'\"'\"'", StringComparison.Ordinal) + "'";
+
+    private static void WritePythonPreflightFailure(
+        TextWriter stderr,
+        ConfigurationPhase14PlanResult result
+    )
+    {
+        string? selectedPython =
+            result.PythonPreflight?.KeyringModuleProbe.PythonExecutablePath;
+        string selectedPythonText =
+            selectedPython is null
+                ? "not-found"
+                : EscapeNonPrintingCharacters(selectedPython);
+        string bootstrapExecutable =
+            selectedPython is null ? "python" : selectedPython;
+        TryWriteDiagnosticText(
+            stderr,
+            "error: Python preflight failed; the selected interpreter is missing "
+                + "the required AzureAuth keyring backend or helper.\n"
+                + "selected-python: "
+                + selectedPythonText
+                + "\n"
+                + "bootstrap-command: "
+                + QuotePosixShellArgument(bootstrapExecutable)
+                + " -m pip install azureauth-credprovider-keyring"
+        );
     }
 
     private static bool AddTemporaryContainerOutput(
@@ -3039,17 +3110,23 @@ internal static class CliApplication
         ];
     }
 
-    private static IEnumerable<string> BuildPythonDoctorLines(
+    private static List<string> BuildPythonDoctorLines(
         PythonPhase11DoctorResult doctorResult
     )
     {
         ArgumentNullException.ThrowIfNull(doctorResult);
-        return
+        List<string> lines =
         [
             "python-keyring-shim-exists: "
-                + GetCheckStatusText(doctorResult.KeyringShim.ExpectedShimExists),
+                + GetApplicableCheckStatusText(
+                    doctorResult.KeyringShim.Applicable,
+                    doctorResult.KeyringShim.ExpectedShimExists
+                ),
             "python-keyring-shim-first-on-path: "
-                + GetCheckStatusText(doctorResult.KeyringShim.ExpectedShimFirstOnPath),
+                + GetApplicableCheckStatusText(
+                    doctorResult.KeyringShim.Applicable,
+                    doctorResult.KeyringShim.ExpectedShimFirstOnPath
+                ),
             "python-interpreter: "
                 + (
                     doctorResult.KeyringModuleProbe.PythonExecutablePath is null
@@ -3064,12 +3141,87 @@ internal static class CliApplication
                 + GetPythonKeyringModuleProbeStatusText(
                     doctorResult.KeyringModuleProbe.Status
                 ),
+        ];
+        lines.Add(
+            "python-azureauth-keyring-backend: "
+                + GetApplicableCheckStatusText(
+                    doctorResult.ProductProbe.Attempted,
+                    doctorResult.ProductProbe.BackendLoadable
+                )
+        );
+        lines.Add(
+            "python-azureauth-keyring-backend-probe: "
+                + GetPythonProductProbeStatusText(doctorResult.ProductProbe.Status)
+        );
+        lines.Add(
+            "python-azureauth-keyring-helper: "
+                + GetApplicableCheckStatusText(
+                    doctorResult.ProductProbe.Attempted
+                        && doctorResult.AzureAuthKeyringHelper.Applicable,
+                    doctorResult.AzureAuthKeyringHelper.Status
+                        == PythonPhase11AzureAuthKeyringHelperProbeStatus.Found
+                )
+        );
+        lines.Add(
+            "python-azureauth-keyring-helper-expected: "
+                + GetPythonHelperPathText(
+                    doctorResult.ProductProbe.Attempted
+                        && doctorResult.AzureAuthKeyringHelper.Applicable,
+                    doctorResult.AzureAuthKeyringHelper.ExpectedExecutablePath
+                )
+        );
+        lines.Add(
+            "python-azureauth-keyring-helper-resolved: "
+                + GetPythonHelperPathText(
+                    doctorResult.ProductProbe.Attempted
+                        && doctorResult.AzureAuthKeyringHelper.Applicable,
+                    doctorResult.AzureAuthKeyringHelper.ResolvedExecutablePath
+                )
+        );
+
+        lines.Add(
             "python-azure-artifacts-endpoint-canonicalization: "
                 + GetCheckStatusText(
                     doctorResult.AzureArtifactsPythonEndpointCanonicalizationSuccess
-                ),
-        ];
+                )
+        );
+        return lines;
     }
+
+    private static string GetApplicableCheckStatusText(bool applicable, bool succeeded) =>
+        applicable ? GetCheckStatusText(succeeded) : "N/A";
+
+    private static string GetPythonHelperPathText(bool applicable, string? path) =>
+        !applicable
+            ? "N/A"
+            : path is null
+                ? "not-found"
+                : EscapeNonPrintingCharacters(path);
+
+    private static string GetPythonProductProbeStatusText(
+        PythonPhase11ProductProbeStatus status
+    ) =>
+        status switch
+        {
+            PythonPhase11ProductProbeStatus.NotAttempted => "N/A",
+            PythonPhase11ProductProbeStatus.Healthy => "healthy",
+            PythonPhase11ProductProbeStatus.DistributionMissing =>
+                "distribution-missing",
+            PythonPhase11ProductProbeStatus.EntryPointMissing =>
+                "entry-point-missing",
+            PythonPhase11ProductProbeStatus.EntryPointMismatch =>
+                "entry-point-mismatch",
+            PythonPhase11ProductProbeStatus.LoadFailure => "load-failed",
+            PythonPhase11ProductProbeStatus.LaunchFailure => "launch-failed",
+            PythonPhase11ProductProbeStatus.TimedOut => "timed-out",
+            PythonPhase11ProductProbeStatus.UnexpectedNonZeroExit =>
+                "unexpected-nonzero-exit",
+            PythonPhase11ProductProbeStatus.OutputTooLarge => "output-too-large",
+            PythonPhase11ProductProbeStatus.InvalidOutput => "invalid-output",
+            _ => throw new InvalidOperationException(
+                "Unsupported Python product probe status."
+            ),
+        };
 
     private static string GetPythonKeyringModuleProbeStatusText(
         PythonPhase11KeyringModuleProbeStatus status
@@ -3331,7 +3483,16 @@ internal static class CliApplication
 
     private static PythonPhase11VerticalSliceService CreatePythonPhase11VerticalSliceService(
         CliRuntimeOptions? runtimeOptions
-    ) => new(runtimeOptions?.PythonPhase11Options);
+    )
+    {
+        PythonPhase11VerticalSliceOptions options =
+            (runtimeOptions?.PythonPhase11Options ?? new PythonPhase11VerticalSliceOptions())
+            with
+            {
+                EnableProductProbe = true,
+            };
+        return new PythonPhase11VerticalSliceService(options);
+    }
 
     private static NpmPhase12VerticalSliceService CreateNpmPhase12VerticalSliceService(
         CliRuntimeOptions? runtimeOptions
@@ -3415,6 +3576,16 @@ internal static class CliApplication
             options = (options ?? new ConfigurationPhase14VerticalSliceOptions()) with
             {
                 RegistryUrls = registryUrls,
+            };
+        }
+
+        if (registryEcosystem == CredentialEcosystem.Python)
+        {
+            options = (options ?? new ConfigurationPhase14VerticalSliceOptions()) with
+            {
+                PythonDoctorService =
+                    options?.PythonDoctorService
+                    ?? CreatePythonPhase11VerticalSliceService(runtimeOptions),
             };
         }
 
@@ -3523,9 +3694,21 @@ internal static class CliApplication
     {
         ArgumentNullException.ThrowIfNull(doctorResult);
 
-        return doctorResult.KeyringShim.ExpectedShimExists
-            && doctorResult.KeyringShim.ExpectedShimFirstOnPath
+        return (
+                !doctorResult.KeyringShim.Applicable
+                || (
+                    doctorResult.KeyringShim.ExpectedShimExists
+                    && doctorResult.KeyringShim.ExpectedShimFirstOnPath
+                )
+            )
             && doctorResult.KeyringModuleProbe.KeyringModuleResolvable
+            && doctorResult.ProductProbe.Attempted
+            && doctorResult.ProductProbe.BackendLoadable
+            && (
+                !doctorResult.AzureAuthKeyringHelper.Applicable
+                || doctorResult.AzureAuthKeyringHelper.Status
+                    == PythonPhase11AzureAuthKeyringHelperProbeStatus.Found
+            )
             && doctorResult.AzureArtifactsPythonEndpointCanonicalizationSuccess;
     }
 

@@ -284,8 +284,21 @@ public sealed class CliApplicationTests
 
             if (handlers.Count == 0)
             {
+                string script =
+                    startSpec.Arguments.Count > 1
+                        ? startSpec.Arguments[1]
+                        : string.Empty;
                 return Task.FromResult(
-                    new ProcessResult(0, KeyringModuleFoundOutput, string.Empty)
+                    new ProcessResult(
+                        0,
+                        script.Contains(
+                            "ACP_AZUREAUTH_PRODUCT_PROBE_V1",
+                            StringComparison.Ordinal
+                        )
+                            ? "ACP_AZUREAUTH_PRODUCT_PROBE_V1:HEALTHY\n"
+                            : KeyringModuleFoundOutput,
+                        string.Empty
+                    )
                 );
             }
 
@@ -1444,8 +1457,12 @@ public sealed class CliApplicationTests
     {
         string parentPath = CreateTestDirectory();
         string statePath = Path.Combine(parentPath, "phase14-cli-real-dry-run");
+        using var pythonFixture = new PythonDoctorFixture(
+            PythonDoctorFixtureMode.Healthy
+        );
         var runtime = new CliRuntimeOptions
         {
+            PythonPhase11Options = pythonFixture.Options,
             ConfigurationPhase14Options = new ConfigurationPhase14VerticalSliceOptions
             {
                 StateDirectoryPath = statePath,
@@ -4728,6 +4745,11 @@ public sealed class CliApplicationTests
                     "python-interpreter: not-found",
                     "python-keyring-module: fail",
                     "python-keyring-module-probe: interpreter-not-found",
+                    "python-azureauth-keyring-backend: N/A",
+                    "python-azureauth-keyring-backend-probe: N/A",
+                    "python-azureauth-keyring-helper: N/A",
+                    "python-azureauth-keyring-helper-expected: N/A",
+                    "python-azureauth-keyring-helper-resolved: N/A",
                     "python-azure-artifacts-endpoint-canonicalization: pass",
                     "npm-workspace-resolution-status: NotRequired",
                     "npm-workspace-npmrc: absent",
@@ -6808,7 +6830,15 @@ public sealed class CliApplicationTests
                 OperatingSystem.IsWindows() ? "python.exe" : "python"
             );
             WriteExecutable(PythonExecutablePath);
-            modeledPath = shimDirectory;
+            string helperPath = Path.Combine(
+                scriptsDirectory,
+                OperatingSystem.IsWindows()
+                    ? "azureauth-keyring.exe"
+                    : "azureauth-keyring"
+            );
+            WriteExecutable(helperPath);
+            modeledPath =
+                shimDirectory + Path.PathSeparator + scriptsDirectory;
             ResolutionProcessRunner = new RecordingPythonResolutionProcessRunner();
             bool useExplicitPythonExecutablePath = true;
             if (mode == PythonDoctorFixtureMode.MissingKeyringModule)
@@ -6948,10 +6978,17 @@ public sealed class CliApplicationTests
         AssertDoctorCheck(doctor.StdOut, "python-keyring-module", "pass");
         AssertDoctorCheck(doctor.StdOut, "python-keyring-module-probe", "module-found");
         AssertDoctorCheck(doctor.StdOut, "doctor-aggregation", "pass");
-        ProcessStartSpec startSpec = Assert.Single(
-            pythonFixture.ResolutionProcessRunner.StartSpecs
+        Assert.Collection(
+            pythonFixture.ResolutionProcessRunner.StartSpecs,
+            startSpec => Assert.Equal(
+                pythonFixture.PythonExecutablePath,
+                startSpec.FileName
+            ),
+            startSpec => Assert.Equal(
+                pythonFixture.PythonExecutablePath,
+                startSpec.FileName
+            )
         );
-        Assert.Equal(pythonFixture.PythonExecutablePath, startSpec.FileName);
         Assert.True(pythonFixture.PathWasRequested);
         Assert.DoesNotContain("machine-wide", doctor.StdOut, StringComparison.OrdinalIgnoreCase);
     }
@@ -7564,5 +7601,822 @@ public sealed class CliApplicationTests
             "module-finder-error"
         );
     }
+
+#pragma warning disable CA1707, CA1861
+    [Fact]
+    public void HandleDoctor_RendersGenericBackendHelperShimAndFirstPathRows()
+    {
+        using var pythonFixture = new PythonDoctorFixture(PythonDoctorFixtureMode.Healthy);
+        CliRuntimeOptions runtime = CreatePhase3ProductDoctorRuntime(
+            pythonFixture,
+            new ProcessResult(
+                0,
+                "ACP_AZUREAUTH_PRODUCT_PROBE_V1:HEALTHY\n",
+                string.Empty
+            )
+        );
+
+        Assert.Equal(0, InvokeWithRuntime(runtime, "configure", "git").ExitCode);
+        CommandResult doctor = InvokeWithRuntime(runtime, "doctor");
+
+        Assert.Equal(0, doctor.ExitCode);
+        AssertDoctorCheck(doctor.StdOut, "python-keyring-module", "pass");
+        AssertDoctorCheck(doctor.StdOut, "python-azureauth-keyring-backend", "pass");
+        AssertDoctorCheck(
+            doctor.StdOut,
+            "python-azureauth-keyring-backend-probe",
+            "healthy"
+        );
+        AssertDoctorCheck(doctor.StdOut, "python-azureauth-keyring-helper", "pass");
+        AssertDoctorCheck(doctor.StdOut, "python-keyring-shim-exists", "pass");
+        AssertDoctorCheck(doctor.StdOut, "python-keyring-shim-first-on-path", "pass");
+        AssertDoctorCheck(doctor.StdOut, "doctor-aggregation", "pass");
+        Assert.Equal(string.Empty, doctor.StdErr);
+    }
+
+    [Fact]
+    public void HandleDoctor_OnWindows_RendersShimRowsAsExplicitNotApplicable()
+    {
+        PythonPhase11DoctorResult result = CreatePhase3DoctorResult(
+            shimApplicable: false,
+            helperApplicable: false
+        );
+
+        string[] lines = InvokePhase3PythonDoctorLines(result);
+
+        Assert.Contains("python-keyring-shim-exists: N/A", lines);
+        Assert.Contains("python-keyring-shim-first-on-path: N/A", lines);
+        Assert.Contains("python-azureauth-keyring-helper: N/A", lines);
+        Assert.DoesNotContain("python-keyring-shim-exists: fail", lines);
+        Assert.DoesNotContain("python-keyring-shim-first-on-path: fail", lines);
+    }
+
+    [Fact]
+    public void HandleDoctor_ExcludesNotApplicableRowsFromSuccessAggregation()
+    {
+        PythonPhase11DoctorResult result = CreatePhase3DoctorResult(
+            shimApplicable: false,
+            helperApplicable: false,
+            shimExists: false,
+            shimFirstOnPath: false
+        );
+
+        bool success = InvokePhase3PythonDoctorSuccess(result);
+
+        Assert.True(success);
+        Assert.False(result.KeyringShim.Applicable);
+        Assert.False(result.AzureAuthKeyringHelper.Applicable);
+        Assert.True(result.ProductProbe.BackendLoadable);
+    }
+
+    [Theory]
+    [InlineData("backend")]
+    [InlineData("helper")]
+    public void HandleDoctor_WhenRequiredBackendOrHelperFails_ReturnsNonzero(string failure)
+    {
+        PythonPhase11DoctorResult result = CreatePhase3DoctorResult(
+            backendLoadable: !string.Equals(failure, "backend", StringComparison.Ordinal),
+            helperFound: !string.Equals(failure, "helper", StringComparison.Ordinal)
+        );
+
+        bool success = InvokePhase3PythonDoctorSuccess(result);
+
+        Assert.False(success);
+        Assert.True(result.KeyringShim.Applicable);
+        Assert.True(result.AzureAuthKeyringHelper.Applicable);
+    }
+
+    [Fact]
+    public void HandleDoctor_DoesNotRenderRawProbeOutput()
+    {
+        const string SensitiveOutput =
+            "Traceback: AZURE_CLIENT_SECRET=doctor-secret arbitrary backend exception";
+        using var pythonFixture = new PythonDoctorFixture(PythonDoctorFixtureMode.Healthy);
+        CliRuntimeOptions runtime = CreatePhase3ProductDoctorRuntime(
+            pythonFixture,
+            new ProcessResult(
+                33,
+                "ACP_AZUREAUTH_PRODUCT_PROBE_V1:LOAD_FAILURE\n",
+                SensitiveOutput
+            )
+        );
+
+        Assert.Equal(0, InvokeWithRuntime(runtime, "configure", "git").ExitCode);
+        CommandResult doctor = InvokeWithRuntime(runtime, "doctor");
+
+        Assert.Equal(1, doctor.ExitCode);
+        AssertDoctorCheck(doctor.StdOut, "python-azureauth-keyring-backend", "fail");
+        AssertDoctorCheck(
+            doctor.StdOut,
+            "python-azureauth-keyring-backend-probe",
+            "invalid-output"
+        );
+        AssertDoctorCheck(doctor.StdOut, "doctor-aggregation", "fail");
+        Assert.DoesNotContain(SensitiveOutput, doctor.StdOut, StringComparison.Ordinal);
+        Assert.DoesNotContain(SensitiveOutput, doctor.StdErr, StringComparison.Ordinal);
+        Assert.DoesNotContain("doctor-secret", doctor.StdOut, StringComparison.Ordinal);
+        Assert.DoesNotContain("doctor-secret", doctor.StdErr, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void HandleConfigure_WhenPythonPreflightFails_ReturnsNonzeroWithSelectedInterpreterBootstrapGuidance()
+    {
+        using var fixture = new Phase3ConfigureFixture(productHealthy: false);
+        string[] before = fixture.GetFileSystemEntries();
+
+        CommandResult result = InvokeWithRuntime(fixture.Runtime, "configure", "python");
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Equal(string.Empty, result.StdOut);
+        Assert.Contains(
+            $"selected-python: {fixture.PythonExecutablePath}\n",
+            Normalize(result.StdErr),
+            StringComparison.Ordinal
+        );
+        Assert.Contains(
+            "bootstrap-command: "
+                + Phase3ShellQuote(fixture.PythonExecutablePath)
+                + " -m pip install azureauth-credprovider-keyring\n",
+            Normalize(result.StdErr),
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain("planned-change", result.StdErr, StringComparison.Ordinal);
+        Assert.DoesNotContain("export PATH=", result.StdErr, StringComparison.Ordinal);
+        Assert.Equal(before, fixture.GetFileSystemEntries());
+        Assert.Equal(2, fixture.Runner.StartSpecs.Count);
+        Assert.All(
+            fixture.Runner.StartSpecs,
+            spec => Assert.DoesNotContain("-m", spec.Arguments)
+        );
+    }
+
+    [Fact]
+    public void HandleConfigure_DryRunWhenPythonPreflightFails_ReturnsNonzeroWithoutPlannedWrites()
+    {
+        using var fixture = new Phase3ConfigureFixture(productHealthy: false);
+        string[] before = fixture.GetFileSystemEntries();
+
+        CommandResult result = InvokeWithRuntime(
+            fixture.Runtime,
+            "configure",
+            "python",
+            "--dry-run"
+        );
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Equal(string.Empty, result.StdOut);
+        Assert.Contains("python preflight failed", result.StdErr, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("planned-actions", result.StdErr, StringComparison.Ordinal);
+        Assert.DoesNotContain("planned-change-count", result.StdErr, StringComparison.Ordinal);
+        Assert.DoesNotContain("export PATH=", result.StdErr, StringComparison.Ordinal);
+        Assert.Equal(before, fixture.GetFileSystemEntries());
+        Assert.Equal(2, fixture.Runner.StartSpecs.Count);
+    }
+
+    [Theory]
+    [InlineData("home with spaces")]
+    [InlineData("home-with-'quote")]
+    public void HandleConfigure_OnPosixSuccess_PrintsSafelyQuotedProcessScopedPathExport(
+        string homeDirectoryName
+    )
+    {
+        using var fixture = new Phase3ConfigureFixture(
+            productHealthy: true,
+            homeDirectoryName
+        );
+        string expectedShimDirectory = OperatingSystem.IsMacOS()
+            ? Path.Combine(
+                fixture.HomePath,
+                "Library",
+                "Application Support",
+                "AzureAuth",
+                "CredProvider",
+                "keyring-shim"
+            )
+            : Path.Combine(
+                fixture.HomePath,
+                ".local",
+                "share",
+                "azureauth-credprovider",
+                "keyring-shim"
+            );
+
+        CommandResult result = InvokeWithRuntime(fixture.Runtime, "configure", "python");
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(string.Empty, result.StdErr);
+        string exportLine = Assert.Single(
+            Normalize(result.StdOut).Split('\n', StringSplitOptions.RemoveEmptyEntries),
+            line => line.StartsWith("export PATH=", StringComparison.Ordinal)
+        );
+        Assert.Equal(
+            "export PATH=" + Phase3ShellQuote(expectedShimDirectory) + ":\"$PATH\"",
+            exportLine
+        );
+        Assert.DoesNotContain(">>", result.StdOut, StringComparison.Ordinal);
+        Assert.DoesNotContain("source ", result.StdOut, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task HandleConfigure_OnWindowsSuccess_DoesNotPrintPathExport()
+    {
+        using var fixture = new Phase3ConfigureFixture(productHealthy: true);
+        var service = new ConfigurationPhase14VerticalSliceService(
+            fixture.ConfigurationOptions
+        );
+        ConfigurationPhase14PlanResult posixResult = await service.DryRunConfigureAsync(
+            CredentialEcosystem.Python,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+        ConfigurationPhase14PlanResult backendOnlyResult = posixResult with
+        {
+            PlanResults = posixResult
+                .PlanResults.Where(planResult =>
+                    planResult.Plan.Changes.All(change =>
+                        change.TargetKind != ConfigurationTargetKind.KeyringShim
+                    )
+                )
+                .ToArray(),
+        };
+
+        string output = InvokePhase3ConfigurationOutput(backendOnlyResult);
+
+        Assert.DoesNotContain("export PATH=", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("profile", output, StringComparison.OrdinalIgnoreCase);
+        Assert.NotEmpty(backendOnlyResult.PlanResults);
+        Assert.All(
+            backendOnlyResult.PlanResults.SelectMany(result => result.Plan.Changes),
+            change => Assert.NotEqual(ConfigurationTargetKind.KeyringShim, change.TargetKind)
+        );
+    }
+
+    [Fact]
+    public void HandleConfigure_OnPosixSuccess_DoesNotMutateShellProfileOrParentPath()
+    {
+        using var fixture = new Phase3ConfigureFixture(productHealthy: true);
+        string? originalPath = Environment.GetEnvironmentVariable("PATH");
+
+        CommandResult result = InvokeWithRuntime(fixture.Runtime, "configure", "python");
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(originalPath, Environment.GetEnvironmentVariable("PATH"));
+        Assert.False(File.Exists(Path.Combine(fixture.HomePath, ".profile")));
+        Assert.False(File.Exists(Path.Combine(fixture.HomePath, ".bashrc")));
+        Assert.False(File.Exists(Path.Combine(fixture.HomePath, ".zshrc")));
+        Assert.Contains("export PATH=", result.StdOut, StringComparison.Ordinal);
+        Assert.DoesNotContain("shell profile", result.StdOut, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact(
+        Skip = "POSIX protocol-wrapper integration is unsupported on Windows.",
+        SkipWhen = nameof(IsWindows)
+    )]
+    public void Run_DoctorWithProductionProcessRunnerAndProtocolWrapper_RendersHealthyProductChecksWithoutPython()
+    {
+        using var pythonFixture = new PythonDoctorFixture(PythonDoctorFixtureMode.Healthy);
+        string invocationLog = Path.Combine(pythonFixture.RootPath, "wrapper-invocations");
+        string forbiddenInvocation = Path.Combine(pythonFixture.RootPath, "forbidden-invocation");
+        string selectedWrapper = Path.Combine(
+            Path.GetDirectoryName(pythonFixture.PythonExecutablePath)!,
+            "selected-interpreter"
+        );
+        WritePhase3Executable(
+            selectedWrapper,
+            $$"""
+            #!/bin/sh
+            printf x >> {{Phase3ShellQuote(invocationLog)}}
+            case "$2" in
+              *"importlib.metadata.distribution"*)
+                printf '%s\n' 'ACP_AZUREAUTH_PRODUCT_PROBE_V1:HEALTHY'
+                exit 0
+                ;;
+              *"find_spec('keyring')"*)
+                printf '%s\n' 'ACP_KEYRING_PROBE_V1:FOUND'
+                exit 0
+                ;;
+              *)
+                exit 97
+                ;;
+            esac
+            """
+        );
+        CliRuntimeOptions runtime = CreatePhase3ProductDoctorRuntime(
+            pythonFixture,
+            new SystemProcessRunner()
+        );
+        foreach (
+            string forbiddenExecutable in new[]
+            {
+                pythonFixture.PythonExecutablePath,
+                Path.Combine(Path.GetDirectoryName(selectedWrapper)!, "python3"),
+                Path.Combine(Path.GetDirectoryName(selectedWrapper)!, "uv"),
+                Path.Combine(Path.GetDirectoryName(selectedWrapper)!, "pip"),
+                Path.Combine(Path.GetDirectoryName(selectedWrapper)!, "azureauth-keyring"),
+                pythonFixture.Options.ExpectedKeyringShimPath!,
+            }
+        )
+        {
+            WritePhase3Executable(
+                forbiddenExecutable,
+                $$"""
+                #!/bin/sh
+                printf '%s\n' "$0" >> {{Phase3ShellQuote(forbiddenInvocation)}}
+                exit 96
+                """
+            );
+        }
+        runtime = runtime with
+        {
+            PythonPhase11Options = runtime.PythonPhase11Options! with
+            {
+                PythonExecutablePath = selectedWrapper,
+            },
+        };
+
+        Assert.Equal(0, InvokeWithRuntime(runtime, "configure", "git").ExitCode);
+        CommandResult doctor = InvokeWithRuntime(runtime, "doctor");
+
+        Assert.Equal(0, doctor.ExitCode);
+        AssertDoctorCheck(doctor.StdOut, "python-keyring-module", "pass");
+        AssertDoctorCheck(doctor.StdOut, "python-azureauth-keyring-backend", "pass");
+        AssertDoctorCheck(doctor.StdOut, "python-azureauth-keyring-helper", "pass");
+        AssertDoctorCheck(doctor.StdOut, "doctor-aggregation", "pass");
+        Assert.Equal("xx", File.ReadAllText(invocationLog));
+        Assert.False(File.Exists(forbiddenInvocation));
+        Assert.DoesNotContain("/usr/bin/python", doctor.StdOut, StringComparison.Ordinal);
+        Assert.DoesNotContain("python3", doctor.StdOut, StringComparison.Ordinal);
+        Assert.DoesNotContain("uv ", doctor.StdOut, StringComparison.Ordinal);
+        Assert.DoesNotContain("pip install", doctor.StdOut, StringComparison.Ordinal);
+    }
+
+    private static CliRuntimeOptions CreatePhase3ProductDoctorRuntime(
+        PythonDoctorFixture fixture,
+        ProcessResult productResult
+    )
+    {
+        var runner = new RecordingPythonResolutionProcessRunner();
+        runner.EnqueueResult(new ProcessResult(0, KeyringModuleFoundOutput, string.Empty));
+        runner.EnqueueResult(productResult);
+        return CreatePhase3ProductDoctorRuntime(fixture, runner);
+    }
+
+    private static CliRuntimeOptions CreatePhase3ProductDoctorRuntime(
+        PythonDoctorFixture fixture,
+        IProcessRunner runner
+    )
+    {
+        string pythonDirectory = Path.GetDirectoryName(fixture.PythonExecutablePath)!;
+        string helperPath = Path.Combine(
+            pythonDirectory,
+            OperatingSystem.IsWindows() ? "azureauth-keyring.exe" : "azureauth-keyring"
+        );
+        WritePhase3Executable(
+            helperPath,
+            OperatingSystem.IsWindows() ? string.Empty : "#!/bin/sh\nexit 89\n"
+        );
+        string shimDirectory = Path.GetDirectoryName(
+            fixture.Options.ExpectedKeyringShimPath!
+        )!;
+        string modeledPath =
+            shimDirectory + Path.PathSeparator + pythonDirectory;
+        Func<string, string?> originalEnvironmentReader =
+            fixture.Options.EnvironmentVariableReader!;
+        PythonPhase11VerticalSliceOptions pythonOptions = fixture.Options with
+        {
+            ProcessRunner = runner,
+            EnableProductProbe = true,
+            EnvironmentVariableReader = name =>
+                string.Equals(name, "PATH", StringComparison.Ordinal)
+                    ? modeledPath
+                    : originalEnvironmentReader(name),
+        };
+        return CreateHealthyDoctorRuntimeOptions(fixture) with
+        {
+            PythonPhase11Options = pythonOptions,
+        };
+    }
+
+    private static PythonPhase11DoctorResult CreatePhase3DoctorResult(
+        bool shimApplicable = true,
+        bool helperApplicable = true,
+        bool shimExists = true,
+        bool shimFirstOnPath = true,
+        bool backendLoadable = true,
+        bool helperFound = true
+    ) =>
+        new()
+        {
+            KeyringShim = new PythonPhase11KeyringShimProbe
+            {
+                Applicable = shimApplicable,
+                ExpectedShimPath = "/home/test/.local/share/azureauth/keyring",
+                ExpectedShimDirectoryPath = "/home/test/.local/share/azureauth",
+                ExpectedShimExists = shimExists,
+                FirstKeyringExecutablePath =
+                    shimFirstOnPath ? "/home/test/.local/share/azureauth/keyring" : null,
+                AnyKeyringExecutableOnPath = shimFirstOnPath,
+                ExpectedShimFirstOnPath = shimFirstOnPath,
+                PathDirectories = ["/home/test/.local/share/azureauth"],
+            },
+            EnvironmentProbes = [],
+            KeyringModuleProbe = new PythonPhase11KeyringModuleProbe
+            {
+                PythonExecutablePath = "/workspace/.venv/bin/python",
+                PythonExecutableExists = true,
+                Attempted = true,
+                KeyringModuleResolvable = true,
+                Status = PythonPhase11KeyringModuleProbeStatus.ModuleFound,
+            },
+            ProductProbe = new PythonPhase11ProductProbe
+            {
+                PythonExecutablePath = "/workspace/.venv/bin/python",
+                Attempted = true,
+                BackendLoadable = backendLoadable,
+                Status = backendLoadable
+                    ? PythonPhase11ProductProbeStatus.Healthy
+                    : PythonPhase11ProductProbeStatus.LoadFailure,
+            },
+            AzureAuthKeyringHelper = new PythonPhase11AzureAuthKeyringHelperProbe
+            {
+                Applicable = helperApplicable,
+                ExpectedExecutablePath =
+                    helperApplicable ? "/workspace/.venv/bin/azureauth-keyring" : null,
+                ResolvedExecutablePath =
+                    helperApplicable && helperFound
+                        ? "/workspace/.venv/bin/azureauth-keyring"
+                        : null,
+                Status = !helperApplicable
+                    ? PythonPhase11AzureAuthKeyringHelperProbeStatus.NotApplicable
+                    : helperFound
+                        ? PythonPhase11AzureAuthKeyringHelperProbeStatus.Found
+                        : PythonPhase11AzureAuthKeyringHelperProbeStatus.Missing,
+            },
+            AzureArtifactsPythonEndpointCanonicalizationSuccess = true,
+        };
+
+    private static string[] InvokePhase3PythonDoctorLines(
+        PythonPhase11DoctorResult result
+    )
+    {
+        MethodInfo? method = typeof(CliApplication).GetMethod(
+            "BuildPythonDoctorLines",
+            BindingFlags.Static | BindingFlags.NonPublic
+        );
+        Assert.NotNull(method);
+        return Assert
+            .IsAssignableFrom<IEnumerable<string>>(method.Invoke(null, [result]))
+            .ToArray();
+    }
+
+    private static bool InvokePhase3PythonDoctorSuccess(PythonPhase11DoctorResult result)
+    {
+        MethodInfo? method = typeof(CliApplication).GetMethod(
+            "IsPythonDoctorSuccess",
+            BindingFlags.Static | BindingFlags.NonPublic
+        );
+        Assert.NotNull(method);
+        return Assert.IsType<bool>(method.Invoke(null, [result]));
+    }
+
+    private static string InvokePhase3ConfigurationOutput(
+        ConfigurationPhase14PlanResult result
+    )
+    {
+        MethodInfo? parseMethod = typeof(CliApplication).GetMethod(
+            "Parse",
+            BindingFlags.Static | BindingFlags.NonPublic
+        );
+        Assert.NotNull(parseMethod);
+        object? invocation = parseMethod.Invoke(
+            null,
+            [new[] { "configure", "python" }]
+        );
+        Assert.NotNull(invocation);
+        MethodInfo? outputMethod = typeof(CliApplication).GetMethod(
+            "BuildConfigurationPhase14Output",
+            BindingFlags.Static | BindingFlags.NonPublic
+        );
+        Assert.NotNull(outputMethod);
+        return Assert.IsType<string>(outputMethod.Invoke(null, [invocation, result]));
+    }
+
+    private static string Phase3ShellQuote(string value) =>
+        "'" + value.Replace("'", "'\"'\"'", StringComparison.Ordinal) + "'";
+
+    private static void WritePhase3Executable(string path, string contents)
+    {
+        WriteOwnerOnlyText(path, contents);
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(
+                path,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+            );
+        }
+    }
+
+    private sealed class Phase3ConfigureFixture : IDisposable
+    {
+        public Phase3ConfigureFixture(
+            bool productHealthy,
+            string homeDirectoryName = "home"
+        )
+        {
+            RootPath = CreateTestDirectory();
+            HomePath = Path.Combine(RootPath, homeDirectoryName);
+            Directory.CreateDirectory(HomePath);
+            string pythonDirectory = Path.Combine(RootPath, "selected environment", "bin");
+            Directory.CreateDirectory(pythonDirectory);
+            PythonExecutablePath = Path.Combine(pythonDirectory, "python");
+            WritePhase3Executable(PythonExecutablePath, "#!/bin/sh\nexit 91\n");
+            string helperPath = Path.Combine(pythonDirectory, "azureauth-keyring");
+            WritePhase3Executable(helperPath, "#!/bin/sh\nexit 92\n");
+            Runner = new RecordingPythonResolutionProcessRunner();
+            Runner.EnqueueResult(
+                new ProcessResult(0, KeyringModuleFoundOutput, string.Empty)
+            );
+            Runner.EnqueueResult(
+                productHealthy
+                    ? new ProcessResult(
+                        0,
+                        "ACP_AZUREAUTH_PRODUCT_PROBE_V1:HEALTHY\n",
+                        string.Empty
+                    )
+                    : new ProcessResult(
+                        30,
+                        "ACP_AZUREAUTH_PRODUCT_PROBE_V1:DISTRIBUTION_MISSING\n",
+                        "Traceback: bootstrap-private-secret"
+                    )
+            );
+            var pythonDoctor = new PythonPhase11VerticalSliceService(
+                new PythonPhase11VerticalSliceOptions
+                {
+                    FileSystem = new SystemFileSystem(),
+                    ProcessRunner = Runner,
+                    EnvironmentVariableReader = name =>
+                        string.Equals(name, "PATH", StringComparison.Ordinal)
+                            ? pythonDirectory
+                            : null,
+                    ExpectedKeyringShimPath = Path.Combine(
+                        RootPath,
+                        "not-yet-generated",
+                        "keyring"
+                    ),
+                    PythonExecutablePath = PythonExecutablePath,
+                    CurrentDirectoryPath = RootPath,
+                    EnableProductProbe = true,
+                }
+            );
+            ConfigurationOptions = CreateConfigurationPhase14Options(RootPath) with
+            {
+                StateDirectoryPath = Path.Combine(RootPath, "configuration-state"),
+                EnvironmentVariableReader = name =>
+                    string.Equals(name, "HOME", StringComparison.Ordinal)
+                        ? HomePath
+                        : null,
+                PythonDoctorService = pythonDoctor,
+            };
+            Runtime = new CliRuntimeOptions
+            {
+                CompositionRoot = CreateTestCompositionRoot(),
+                ConfigurationPhase14Options = ConfigurationOptions,
+            };
+        }
+
+        public ConfigurationPhase14VerticalSliceOptions ConfigurationOptions { get; }
+
+        public string HomePath { get; }
+
+        public string PythonExecutablePath { get; }
+
+        public RecordingPythonResolutionProcessRunner Runner { get; }
+
+        public string RootPath { get; }
+
+        public CliRuntimeOptions Runtime { get; }
+
+        public void Dispose() => DeleteDirectoryIfExists(RootPath);
+
+        public string[] GetFileSystemEntries() =>
+            Directory
+                .EnumerateFileSystemEntries(
+                    RootPath,
+                    "*",
+                    SearchOption.AllDirectories
+                )
+                .Order(StringComparer.Ordinal)
+                .ToArray();
+    }
+
+    [Fact]
+    public void HandleConfigure_WithRegistryUrlAndFailingProductPreflight_DoesNotWrite()
+    {
+        string rootPath = CreateTestDirectory();
+        try
+        {
+            string homePath = Path.Combine(rootPath, "home");
+            string pythonDirectory = Path.Combine(rootPath, "selected-environment", "bin");
+            Directory.CreateDirectory(homePath);
+            Directory.CreateDirectory(pythonDirectory);
+            string pythonPath = Path.Combine(pythonDirectory, "python");
+            string helperPath = Path.Combine(pythonDirectory, "azureauth-keyring");
+            WritePhase3Executable(pythonPath, "#!/bin/sh\nexit 91\n");
+            WritePhase3Executable(helperPath, "#!/bin/sh\nexit 92\n");
+            var runner = new RecordingPythonResolutionProcessRunner();
+            runner.EnqueueResult(
+                new ProcessResult(0, KeyringModuleFoundOutput, string.Empty)
+            );
+            runner.EnqueueResult(
+                new ProcessResult(
+                    30,
+                    "ACP_AZUREAUTH_PRODUCT_PROBE_V1:DISTRIBUTION_MISSING\n",
+                    string.Empty
+                )
+            );
+            ConfigurationPhase14VerticalSliceOptions configurationOptions =
+                CreateConfigurationPhase14Options(rootPath) with
+                {
+                    StateDirectoryPath = Path.Combine(rootPath, "configuration-state"),
+                    EnvironmentVariableReader = name =>
+                        string.Equals(name, "HOME", StringComparison.Ordinal)
+                            ? homePath
+                            : null,
+                    RegistryUrls = new Dictionary<CredentialEcosystem, Uri>
+                    {
+                        [CredentialEcosystem.Npm] = new Uri(
+                            TestRegistryUrl,
+                            UriKind.Absolute
+                        ),
+                    },
+                    PythonDoctorService = null,
+                };
+            var runtime = new CliRuntimeOptions
+            {
+                CompositionRoot = CreateTestCompositionRoot(),
+                ConfigurationPhase14Options = configurationOptions,
+                PythonPhase11Options = new PythonPhase11VerticalSliceOptions
+                {
+                    FileSystem = new SystemFileSystem(),
+                    ProcessRunner = runner,
+                    EnvironmentVariableReader = name =>
+                        string.Equals(name, "PATH", StringComparison.Ordinal)
+                            ? pythonDirectory
+                            : null,
+                    ExpectedKeyringShimPath = Path.Combine(
+                        rootPath,
+                        "not-yet-generated",
+                        "keyring"
+                    ),
+                    PythonExecutablePath = pythonPath,
+                    CurrentDirectoryPath = rootPath,
+                    EnableProductProbe = true,
+                },
+            };
+            string[] before = Directory
+                .EnumerateFileSystemEntries(rootPath, "*", SearchOption.AllDirectories)
+                .Order(StringComparer.Ordinal)
+                .ToArray();
+
+            CommandResult result = InvokeWithRuntime(
+                runtime,
+                "configure",
+                "python"
+            );
+
+            Assert.Equal(1, result.ExitCode);
+            Assert.Equal(string.Empty, result.StdOut);
+            Assert.Contains(
+                "python preflight failed",
+                result.StdErr,
+                StringComparison.OrdinalIgnoreCase
+            );
+            Assert.Equal(2, runner.StartSpecs.Count);
+            Assert.All(runner.StartSpecs, spec => Assert.Equal(pythonPath, spec.FileName));
+            Assert.DoesNotContain("planned-change", result.StdErr, StringComparison.Ordinal);
+            Assert.Equal(
+                before,
+                Directory
+                    .EnumerateFileSystemEntries(
+                        rootPath,
+                        "*",
+                        SearchOption.AllDirectories
+                    )
+                    .Order(StringComparer.Ordinal)
+                    .ToArray()
+            );
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(rootPath);
+        }
+    }
+
+    [Fact]
+    public void HandleDoctor_WhenProductNotAttempted_RendersExplicitNotApplicableRows()
+    {
+        PythonPhase11DoctorResult baseline = CreatePhase3DoctorResult();
+        PythonPhase11DoctorResult result = baseline with
+        {
+            KeyringModuleProbe = baseline.KeyringModuleProbe with
+            {
+                KeyringModuleResolvable = false,
+                Status = PythonPhase11KeyringModuleProbeStatus.ModuleNotFound,
+            },
+            ProductProbe = baseline.ProductProbe with
+            {
+                Enabled = true,
+                Attempted = false,
+                BackendLoadable = false,
+                Status = PythonPhase11ProductProbeStatus.NotAttempted,
+            },
+        };
+
+        string[] lines = InvokePhase3PythonDoctorLines(result);
+
+        Assert.Contains("python-azureauth-keyring-backend: N/A", lines);
+        Assert.Contains("python-azureauth-keyring-backend-probe: N/A", lines);
+        Assert.Contains("python-azureauth-keyring-helper: N/A", lines);
+        Assert.Contains("python-azureauth-keyring-helper-expected: N/A", lines);
+        Assert.Contains("python-azureauth-keyring-helper-resolved: N/A", lines);
+    }
+
+    [Fact]
+    public void HandleDoctor_RendersDistinctExpectedAndResolvedHelperPaths()
+    {
+        const string expectedPath = "/selected environment/bin/azureauth-keyring";
+        const string resolvedPath = "/terminal/bin/azureauth-keyring";
+        PythonPhase11DoctorResult baseline = CreatePhase3DoctorResult();
+        PythonPhase11DoctorResult result = baseline with
+        {
+            AzureAuthKeyringHelper = baseline.AzureAuthKeyringHelper with
+            {
+                ExpectedExecutablePath = expectedPath,
+                ResolvedExecutablePath = resolvedPath,
+            },
+        };
+
+        string[] lines = InvokePhase3PythonDoctorLines(result);
+
+        Assert.Contains(
+            "python-azureauth-keyring-helper-expected: " + expectedPath,
+            lines
+        );
+        Assert.Contains(
+            "python-azureauth-keyring-helper-resolved: " + resolvedPath,
+            lines
+        );
+        Assert.NotEqual(expectedPath, resolvedPath);
+    }
+
+    [Theory]
+    [InlineData(PythonPhase11ProductProbeStatus.NotAttempted, false, "N/A")]
+    [InlineData(PythonPhase11ProductProbeStatus.Healthy, true, "healthy")]
+    [InlineData(PythonPhase11ProductProbeStatus.DistributionMissing, true, "distribution-missing")]
+    [InlineData(PythonPhase11ProductProbeStatus.EntryPointMissing, true, "entry-point-missing")]
+    [InlineData(PythonPhase11ProductProbeStatus.EntryPointMismatch, true, "entry-point-mismatch")]
+    [InlineData(PythonPhase11ProductProbeStatus.LoadFailure, true, "load-failed")]
+    [InlineData(PythonPhase11ProductProbeStatus.LaunchFailure, true, "launch-failed")]
+    [InlineData(PythonPhase11ProductProbeStatus.TimedOut, true, "timed-out")]
+    [InlineData(PythonPhase11ProductProbeStatus.UnexpectedNonZeroExit, true, "unexpected-nonzero-exit")]
+    [InlineData(PythonPhase11ProductProbeStatus.OutputTooLarge, true, "output-too-large")]
+    [InlineData(PythonPhase11ProductProbeStatus.InvalidOutput, true, "invalid-output")]
+    public void HandleDoctor_ProductProbeStatusTextMappings(
+        PythonPhase11ProductProbeStatus status,
+        bool attempted,
+        string expectedText
+    )
+    {
+        PythonPhase11DoctorResult baseline = CreatePhase3DoctorResult();
+        PythonPhase11DoctorResult result = baseline with
+        {
+            ProductProbe = baseline.ProductProbe with
+            {
+                Enabled = attempted || status == PythonPhase11ProductProbeStatus.NotAttempted,
+                Attempted = attempted,
+                BackendLoadable = status == PythonPhase11ProductProbeStatus.Healthy,
+                Status = status,
+            },
+        };
+
+        string[] lines = InvokePhase3PythonDoctorLines(result);
+
+        Assert.Contains(
+            "python-azureauth-keyring-backend-probe: " + expectedText,
+            lines
+        );
+        Assert.Contains(
+            "python-azureauth-keyring-backend: "
+                + (
+                    !attempted
+                        ? "N/A"
+                        : status == PythonPhase11ProductProbeStatus.Healthy
+                            ? "pass"
+                            : "fail"
+                ),
+            lines
+        );
+    }
+#pragma warning restore CA1707, CA1861
 
 }

@@ -22,6 +22,8 @@ public sealed record PythonPhase11VerticalSliceOptions
     public char? PathListSeparator { get; init; }
 
     public string? KeyringExecutableFileName { get; init; }
+
+    public bool? EnableProductProbe { get; init; }
 }
 
 public sealed record PythonPhase11DoctorResult
@@ -32,7 +34,30 @@ public sealed record PythonPhase11DoctorResult
 
     public required PythonPhase11KeyringModuleProbe KeyringModuleProbe { get; init; }
 
+    public required PythonPhase11ProductProbe ProductProbe { get; init; }
+
+    public required PythonPhase11AzureAuthKeyringHelperProbe AzureAuthKeyringHelper { get; init; }
+
     public required bool AzureArtifactsPythonEndpointCanonicalizationSuccess { get; init; }
+
+    public bool IsConfigurationPreflightReady =>
+        KeyringModuleProbe.KeyringModuleResolvable
+        && ProductProbe.BackendLoadable
+        && (
+            !AzureAuthKeyringHelper.Applicable
+            || AzureAuthKeyringHelper.Status
+                == PythonPhase11AzureAuthKeyringHelperProbeStatus.Found
+        );
+
+    public bool IsReady =>
+        IsConfigurationPreflightReady
+        && (
+            !KeyringShim.Applicable
+            || (
+                KeyringShim.ExpectedShimExists
+                && KeyringShim.ExpectedShimFirstOnPath
+            )
+        );
 
     public bool ActiveVirtualEnvironmentDetected =>
         EnvironmentProbes.Any(static probe =>
@@ -60,6 +85,8 @@ public sealed record PythonPhase11DoctorResult
 
 public sealed record PythonPhase11KeyringShimProbe
 {
+    public required bool Applicable { get; init; }
+
     public required string ExpectedShimPath { get; init; }
 
     public required string ExpectedShimDirectoryPath { get; init; }
@@ -73,6 +100,54 @@ public sealed record PythonPhase11KeyringShimProbe
     public required bool ExpectedShimFirstOnPath { get; init; }
 
     public required IReadOnlyList<string> PathDirectories { get; init; }
+}
+
+public sealed record PythonPhase11ProductProbe
+{
+    public required string? PythonExecutablePath { get; init; }
+
+    public bool Enabled { get; init; }
+
+    public required bool Attempted { get; init; }
+
+    public required bool BackendLoadable { get; init; }
+
+    public required PythonPhase11ProductProbeStatus Status { get; init; }
+
+    public string? FailureMessage { get; init; }
+}
+
+public enum PythonPhase11ProductProbeStatus
+{
+    NotAttempted,
+    Healthy,
+    DistributionMissing,
+    EntryPointMissing,
+    EntryPointMismatch,
+    LoadFailure,
+    LaunchFailure,
+    TimedOut,
+    UnexpectedNonZeroExit,
+    OutputTooLarge,
+    InvalidOutput,
+}
+
+public sealed record PythonPhase11AzureAuthKeyringHelperProbe
+{
+    public required bool Applicable { get; init; }
+
+    public required string? ExpectedExecutablePath { get; init; }
+
+    public required string? ResolvedExecutablePath { get; init; }
+
+    public required PythonPhase11AzureAuthKeyringHelperProbeStatus Status { get; init; }
+}
+
+public enum PythonPhase11AzureAuthKeyringHelperProbeStatus
+{
+    NotApplicable,
+    Found,
+    Missing,
 }
 
 public sealed record PythonPhase11EnvironmentProbe
@@ -143,6 +218,7 @@ public sealed class PythonPhase11VerticalSliceService
     private const string UvToolDirVariableName = "UV_TOOL_DIR";
     private const string PathVariableName = "PATH";
     private const string TwineExecutableFileName = "twine";
+    private const string AzureAuthKeyringExecutableFileName = "azureauth-keyring";
     private const string PythonExecutableResolutionScript =
         "import os,sys; print(os.path.abspath(sys.executable))";
     private const string KeyringModuleFoundMarker =
@@ -166,6 +242,54 @@ public sealed class PythonPhase11VerticalSliceService
         + "    sys.exit(20)\n"
         + "print('ACP_KEYRING_PROBE_V1:FOUND')\n"
         + "sys.exit(0)";
+    private const string ProductProbeHealthyMarker =
+        "ACP_AZUREAUTH_PRODUCT_PROBE_V1:HEALTHY";
+    private const string ProductProbeDistributionMissingMarker =
+        "ACP_AZUREAUTH_PRODUCT_PROBE_V1:DISTRIBUTION_MISSING";
+    private const string ProductProbeEntryPointMissingMarker =
+        "ACP_AZUREAUTH_PRODUCT_PROBE_V1:ENTRY_POINT_MISSING";
+    private const string ProductProbeEntryPointMismatchMarker =
+        "ACP_AZUREAUTH_PRODUCT_PROBE_V1:ENTRY_POINT_MISMATCH";
+    private const string ProductProbeLoadFailureMarker =
+        "ACP_AZUREAUTH_PRODUCT_PROBE_V1:LOAD_FAILURE";
+    private const int ProductProbeHealthyExitCode = 0;
+    private const int ProductProbeDistributionMissingExitCode = 30;
+    private const int ProductProbeEntryPointMissingExitCode = 31;
+    private const int ProductProbeEntryPointMismatchExitCode = 32;
+    private const int ProductProbeLoadFailureExitCode = 33;
+    private const string ProductProbeScript =
+        "import importlib.metadata,sys\n"
+        + "try:\n"
+        + "    distribution=importlib.metadata.distribution('azureauth-credprovider-keyring')\n"
+        + "except importlib.metadata.PackageNotFoundError:\n"
+        + "    print('ACP_AZUREAUTH_PRODUCT_PROBE_V1:DISTRIBUTION_MISSING')\n"
+        + "    sys.exit(30)\n"
+        + "except BaseException:\n"
+        + "    print('ACP_AZUREAUTH_PRODUCT_PROBE_V1:LOAD_FAILURE')\n"
+        + "    sys.exit(33)\n"
+        + "backend_entry_points=[entry_point for entry_point in distribution.entry_points if entry_point.group == 'keyring.backends']\n"
+        + "if not backend_entry_points:\n"
+        + "    print('ACP_AZUREAUTH_PRODUCT_PROBE_V1:ENTRY_POINT_MISSING')\n"
+        + "    sys.exit(31)\n"
+        + "if len(backend_entry_points) != 1:\n"
+        + "    print('ACP_AZUREAUTH_PRODUCT_PROBE_V1:ENTRY_POINT_MISMATCH')\n"
+        + "    sys.exit(32)\n"
+        + "entry_point=backend_entry_points[0]\n"
+        + "if entry_point.name != 'azureauth' or entry_point.value != 'azureauth_credprovider_keyring.backend:AzureAuthKeyringBackend':\n"
+        + "    print('ACP_AZUREAUTH_PRODUCT_PROBE_V1:ENTRY_POINT_MISMATCH')\n"
+        + "    sys.exit(32)\n"
+        + "try:\n"
+        + "    from keyring.backend import KeyringBackend\n"
+        + "    backend_type=entry_point.load()\n"
+        + "    contract_methods=('get_password','get_credential','set_password','delete_password')\n"
+        + "    valid=(isinstance(backend_type,type) and issubclass(backend_type,KeyringBackend) and backend_type.__name__ == 'AzureAuthKeyringBackend' and backend_type.__module__ == 'azureauth_credprovider_keyring.backend' and all(callable(getattr(backend_type,method,None)) for method in contract_methods))\n"
+        + "except BaseException:\n"
+        + "    valid=False\n"
+        + "if not valid:\n"
+        + "    print('ACP_AZUREAUTH_PRODUCT_PROBE_V1:LOAD_FAILURE')\n"
+        + "    sys.exit(33)\n"
+        + "print('ACP_AZUREAUTH_PRODUCT_PROBE_V1:HEALTHY')\n"
+        + "sys.exit(0)";
     private static readonly TimeSpan PythonProbeTimeout = TimeSpan.FromSeconds(5);
     private static readonly ProcessOutputCaptureOptions PythonProbeOutputCaptureOptions =
         new()
@@ -180,10 +304,12 @@ public sealed class PythonPhase11VerticalSliceService
     private readonly string keyringExecutableFileName;
     private readonly char pathListSeparator;
     private readonly IProcessRunner processRunner;
+    private readonly bool productProbeEnabled;
     private readonly string? pythonExecutablePath;
 
     public PythonPhase11VerticalSliceService(PythonPhase11VerticalSliceOptions? options = null)
     {
+        bool useDefaultOptions = options is null;
         options ??= new PythonPhase11VerticalSliceOptions();
         fileSystem = options.FileSystem ?? new SystemFileSystem();
         processRunner = options.ProcessRunner ?? new SystemProcessRunner();
@@ -193,6 +319,7 @@ public sealed class PythonPhase11VerticalSliceService
             NullIfWhiteSpace(options.CurrentDirectoryPath) ?? Environment.CurrentDirectory
         );
         pythonExecutablePath = NullIfWhiteSpace(options.PythonExecutablePath);
+        productProbeEnabled = options.EnableProductProbe ?? useDefaultOptions;
         pathListSeparator = options.PathListSeparator ?? Path.PathSeparator;
         ExpectedKeyringShimPath =
             NullIfWhiteSpace(options.ExpectedKeyringShimPath)
@@ -217,12 +344,23 @@ public sealed class PythonPhase11VerticalSliceService
                 cancellationToken
             )
             .ConfigureAwait(false);
+        PythonPhase11ProductProbe productProbe =
+            productProbeEnabled && keyringModuleProbe.KeyringModuleResolvable
+            ? await ProbeProductAsync(keyringModuleProbe, cancellationToken).ConfigureAwait(false)
+            : CreateProductProbeNotAttempted(
+                keyringModuleProbe.PythonExecutablePath,
+                productProbeEnabled
+            );
+        PythonPhase11AzureAuthKeyringHelperProbe helperProbe =
+            ProbeAzureAuthKeyringHelper(keyringModuleProbe.PythonExecutablePath);
 
         return new PythonPhase11DoctorResult
         {
             KeyringShim = keyringShim,
             EnvironmentProbes = environmentProbes,
             KeyringModuleProbe = keyringModuleProbe,
+            ProductProbe = productProbe,
+            AzureAuthKeyringHelper = helperProbe,
             AzureArtifactsPythonEndpointCanonicalizationSuccess =
                 CheckAzureArtifactsPythonEndpointCanonicalization(),
         };
@@ -343,6 +481,7 @@ public sealed class PythonPhase11VerticalSliceService
 
         return new PythonPhase11KeyringShimProbe
         {
+            Applicable = !LooksLikeWindowsPath(expectedShimPath),
             ExpectedShimPath = expectedShimPath,
             ExpectedShimDirectoryPath = fileSystem.GetFullPath(expectedShimDirectoryPath),
             ExpectedShimExists = expectedShimExists,
@@ -352,6 +491,227 @@ public sealed class PythonPhase11VerticalSliceService
                 firstKeyringExecutablePath is not null
                 && SamePath(firstKeyringExecutablePath, expectedShimPath),
             PathDirectories = pathDirectories,
+        };
+    }
+
+    private async ValueTask<PythonPhase11ProductProbe> ProbeProductAsync(
+        PythonPhase11KeyringModuleProbe keyringModuleProbe,
+        CancellationToken cancellationToken
+    )
+    {
+        string pythonExecutablePath =
+            keyringModuleProbe.PythonExecutablePath
+            ?? throw new InvalidOperationException(
+                "A successful keyring module probe must identify its Python interpreter."
+            );
+        ProcessResult result = await processRunner
+            .RunAsync(
+                CreatePythonProbeStartSpec(pythonExecutablePath, ProductProbeScript),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (
+            result.Status
+            is ProcessExecutionStatus.Success or ProcessExecutionStatus.NonZeroExit
+        )
+        {
+            if (
+                result.ExitCode == ProductProbeHealthyExitCode
+                && HasExactProtocolOutput(result, ProductProbeHealthyMarker)
+            )
+            {
+                return CreateProductProbe(
+                    pythonExecutablePath,
+                    PythonPhase11ProductProbeStatus.Healthy,
+                    backendLoadable: true
+                );
+            }
+
+            if (
+                result.ExitCode == ProductProbeDistributionMissingExitCode
+                && HasExactProtocolOutput(result, ProductProbeDistributionMissingMarker)
+            )
+            {
+                return CreateProductProbe(
+                    pythonExecutablePath,
+                    PythonPhase11ProductProbeStatus.DistributionMissing,
+                    backendLoadable: false,
+                    "The selected Python interpreter does not contain the azureauth-credprovider-keyring distribution."
+                );
+            }
+
+            if (
+                result.ExitCode == ProductProbeEntryPointMissingExitCode
+                && HasExactProtocolOutput(result, ProductProbeEntryPointMissingMarker)
+            )
+            {
+                return CreateProductProbe(
+                    pythonExecutablePath,
+                    PythonPhase11ProductProbeStatus.EntryPointMissing,
+                    backendLoadable: false,
+                    "The AzureAuth keyring backend entry point is missing."
+                );
+            }
+
+            if (
+                result.ExitCode == ProductProbeEntryPointMismatchExitCode
+                && HasExactProtocolOutput(result, ProductProbeEntryPointMismatchMarker)
+            )
+            {
+                return CreateProductProbe(
+                    pythonExecutablePath,
+                    PythonPhase11ProductProbeStatus.EntryPointMismatch,
+                    backendLoadable: false,
+                    "The AzureAuth keyring backend entry point does not match the required target."
+                );
+            }
+
+            if (
+                result.ExitCode == ProductProbeLoadFailureExitCode
+                && HasExactProtocolOutput(result, ProductProbeLoadFailureMarker)
+            )
+            {
+                return CreateProductProbe(
+                    pythonExecutablePath,
+                    PythonPhase11ProductProbeStatus.LoadFailure,
+                    backendLoadable: false,
+                    "The AzureAuth keyring backend could not be loaded or did not satisfy its required contract."
+                );
+            }
+
+            if (
+                result.Status == ProcessExecutionStatus.NonZeroExit
+                && result.ExitCode
+                    is not ProductProbeDistributionMissingExitCode
+                        and not ProductProbeEntryPointMissingExitCode
+                        and not ProductProbeEntryPointMismatchExitCode
+                        and not ProductProbeLoadFailureExitCode
+            )
+            {
+                return CreateProductProbe(
+                    pythonExecutablePath,
+                    PythonPhase11ProductProbeStatus.UnexpectedNonZeroExit,
+                    backendLoadable: false,
+                    $"The AzureAuth keyring product probe exited unexpectedly with code {result.ExitCode}."
+                );
+            }
+
+            return CreateProductProbe(
+                pythonExecutablePath,
+                PythonPhase11ProductProbeStatus.InvalidOutput,
+                backendLoadable: false,
+                "The AzureAuth keyring product probe did not produce a recognized marker and exit-code pair."
+            );
+        }
+
+        return result.Status switch
+        {
+            ProcessExecutionStatus.LaunchFailure => CreateProductProbe(
+                pythonExecutablePath,
+                PythonPhase11ProductProbeStatus.LaunchFailure,
+                backendLoadable: false,
+                "The selected Python interpreter could not be launched for the AzureAuth keyring product probe."
+            ),
+            ProcessExecutionStatus.TimedOut => CreateProductProbe(
+                pythonExecutablePath,
+                PythonPhase11ProductProbeStatus.TimedOut,
+                backendLoadable: false,
+                "The AzureAuth keyring product probe timed out."
+            ),
+            ProcessExecutionStatus.OutputTooLarge => CreateProductProbe(
+                pythonExecutablePath,
+                PythonPhase11ProductProbeStatus.OutputTooLarge,
+                backendLoadable: false,
+                "The AzureAuth keyring product probe exceeded its output limit."
+            ),
+            ProcessExecutionStatus.InvalidOutput => CreateProductProbe(
+                pythonExecutablePath,
+                PythonPhase11ProductProbeStatus.InvalidOutput,
+                backendLoadable: false,
+                "The AzureAuth keyring product probe produced invalid output."
+            ),
+            _ => throw new InvalidOperationException(
+                $"Unsupported Python product probe process status: {result.Status}."
+            ),
+        };
+    }
+
+    private static PythonPhase11ProductProbe CreateProductProbe(
+        string pythonExecutablePath,
+        PythonPhase11ProductProbeStatus status,
+        bool backendLoadable,
+        string? failureMessage = null
+    ) =>
+        new()
+        {
+            PythonExecutablePath = pythonExecutablePath,
+            Enabled = true,
+            Attempted = true,
+            BackendLoadable = backendLoadable,
+            Status = status,
+            FailureMessage = failureMessage,
+        };
+
+    private static PythonPhase11ProductProbe CreateProductProbeNotAttempted(
+        string? pythonExecutablePath,
+        bool enabled
+    ) =>
+        new()
+        {
+            PythonExecutablePath = pythonExecutablePath,
+            Enabled = enabled,
+            Attempted = false,
+            BackendLoadable = false,
+            Status = PythonPhase11ProductProbeStatus.NotAttempted,
+            FailureMessage =
+                "The AzureAuth keyring product probe was not attempted because the keyring module is unavailable.",
+        };
+
+    private PythonPhase11AzureAuthKeyringHelperProbe ProbeAzureAuthKeyringHelper(
+        string? selectedPythonExecutablePath
+    )
+    {
+        if (LooksLikeWindowsPath(ExpectedKeyringShimPath))
+        {
+            return new PythonPhase11AzureAuthKeyringHelperProbe
+            {
+                Applicable = false,
+                ExpectedExecutablePath = null,
+                ResolvedExecutablePath = null,
+                Status = PythonPhase11AzureAuthKeyringHelperProbeStatus.NotApplicable,
+            };
+        }
+
+        string helperFileName = GetExecutableFileName(AzureAuthKeyringExecutableFileName);
+        string? selectedPythonDirectory =
+            selectedPythonExecutablePath is null
+                ? null
+                : GetDirectoryPath(fileSystem.GetFullPath(selectedPythonExecutablePath));
+        string? expectedExecutablePath =
+            selectedPythonDirectory is null
+                ? null
+                : fileSystem.GetFullPath($"{selectedPythonDirectory}/{helperFileName}");
+        string? resolvedExecutablePath = null;
+        foreach (string directory in SplitPathDirectories(environmentVariableReader(PathVariableName)))
+        {
+            string candidatePath = fileSystem.GetFullPath($"{directory}/{helperFileName}");
+            if (fileSystem.IsExecutableFile(candidatePath))
+            {
+                resolvedExecutablePath = candidatePath;
+                break;
+            }
+        }
+
+        return new PythonPhase11AzureAuthKeyringHelperProbe
+        {
+            Applicable = true,
+            ExpectedExecutablePath = expectedExecutablePath,
+            ResolvedExecutablePath = resolvedExecutablePath,
+            Status =
+                resolvedExecutablePath is null
+                    ? PythonPhase11AzureAuthKeyringHelperProbeStatus.Missing
+                    : PythonPhase11AzureAuthKeyringHelperProbeStatus.Found,
         };
     }
 
