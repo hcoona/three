@@ -143,7 +143,7 @@ public sealed class YarnPhase13VerticalSliceService
         string targetYarnrcPath = fileSystem.GetFullPath(
             NullIfWhiteSpace(request.TargetYarnrcPath) ?? ResolveUserYarnrcPath()
         );
-        ThrowIfRepositoryLocalCredentialTarget(targetYarnrcPath);
+        ThrowIfRepositoryCredentialTarget(targetYarnrcPath);
         ThrowIfProjectAuthWouldShadowPlan(request.Declaration, targetYarnrcPath);
         ThrowIfForbiddenAuthIdentConflictExists(request.Declaration, targetYarnrcPath);
 
@@ -161,7 +161,6 @@ public sealed class YarnPhase13VerticalSliceService
     )
     {
         ValidateCredentialPlanRequest(request);
-        ThrowIfCiTemporaryPlanWouldHideRegistryDeclaration(request.Declaration);
         string temporaryHomePath =
             NullIfWhiteSpace(request.TemporaryHomePath)
             ?? throw new ArgumentException(
@@ -172,6 +171,8 @@ public sealed class YarnPhase13VerticalSliceService
         string targetYarnrcPath = fileSystem.GetFullPath(
             Path.Combine(temporaryHomePath, WorkspaceYarnrcFileName)
         );
+        ThrowIfRepositoryCredentialTarget(targetYarnrcPath);
+        ThrowIfCiTemporaryPlanWouldHideRegistryDeclaration(request.Declaration);
         ThrowIfProjectAuthWouldShadowPlan(request.Declaration, targetYarnrcPath);
         ThrowIfForbiddenAuthIdentConflictExists(request.Declaration, targetYarnrcPath);
         var temporaryContainer = new ConfigurationTemporaryContainer
@@ -399,59 +400,30 @@ public sealed class YarnPhase13VerticalSliceService
         }
     }
 
-    private void ThrowIfRepositoryLocalCredentialTarget(string targetYarnrcPath)
+    private void ThrowIfRepositoryCredentialTarget(string targetYarnrcPath)
     {
-        if (workspaceDirectoryPath is null)
+        if (IsRepositoryCredentialTarget(fileSystem, targetYarnrcPath))
         {
-            return;
-        }
-
-        List<string> repositoryRootPaths = GetRepositoryRootPaths();
-        if (repositoryRootPaths.Count > 0)
-        {
-            if (
-                repositoryRootPaths.Any(repositoryRootPath =>
-                    FileSystemPathSemantics.IsSameOrDescendant(
-                        fileSystem,
-                        targetYarnrcPath,
-                        repositoryRootPath
-                    )
-                )
-            )
-            {
-                throw new InvalidOperationException(
-                    "Repository-local Yarn configuration cannot store credential material."
-                );
-            }
-
-            return;
-        }
-
-        string? targetDirectory = FileSystemPathSemantics.GetParentDirectory(
-            fileSystem,
-            targetYarnrcPath
-        );
-        for (
-            string? directory = workspaceDirectoryPath;
-            directory is not null;
-            directory = FileSystemPathSemantics.GetParentDirectory(fileSystem, directory)
-        )
-        {
-            if (targetDirectory is not null && PathsEqual(targetDirectory, directory))
-            {
-                throw new InvalidOperationException(
-                    "Repository-local Yarn configuration cannot store credential material."
-                );
-            }
+            throw new InvalidOperationException(
+                "Repository-local Yarn configuration cannot store credential material."
+            );
         }
     }
 
-    private List<string> GetRepositoryRootPaths()
+    internal static bool IsRepositoryCredentialTarget(
+        IFileSystem fileSystem,
+        string targetYarnrcPath
+    )
     {
-        var gitRepositoryRootPaths = new List<string>();
-        string? inferredRepositoryRootPath = null;
+        string resolvedTargetPath =
+            fileSystem is IFileSystemLinkResolver linkResolver
+                ? linkResolver.ResolveFilePathForWrite(targetYarnrcPath)
+                : targetYarnrcPath;
         for (
-            string? directory = workspaceDirectoryPath;
+            string? directory = FileSystemPathSemantics.GetParentDirectory(
+                fileSystem,
+                resolvedTargetPath
+            );
             directory is not null;
             directory = FileSystemPathSemantics.GetParentDirectory(fileSystem, directory)
         )
@@ -466,28 +438,11 @@ public sealed class YarnPhase13VerticalSliceService
                 || fileSystem.FileExists(gitMarkerPath)
             )
             {
-                gitRepositoryRootPaths.Add(directory);
-            }
-
-            if (
-                fileSystem.FileExists(
-                    FileSystemPathSemantics.Combine(fileSystem, directory, "package.json")
-                )
-                || fileSystem.FileExists(
-                    FileSystemPathSemantics.Combine(fileSystem, directory, "yarn.lock")
-                )
-            )
-            {
-                inferredRepositoryRootPath = directory;
+                return true;
             }
         }
 
-        if (gitRepositoryRootPaths.Count > 0)
-        {
-            return gitRepositoryRootPaths;
-        }
-
-        return inferredRepositoryRootPath is null ? [] : [inferredRepositoryRootPath];
+        return false;
     }
 
     private string? ResolveEffectiveProjectAuthRegistry(YarnProjectAuthBlock block)

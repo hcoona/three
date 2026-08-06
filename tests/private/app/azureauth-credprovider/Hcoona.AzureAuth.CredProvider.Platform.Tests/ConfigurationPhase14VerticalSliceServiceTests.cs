@@ -2625,18 +2625,19 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     public async Task YarnAbsoluteFilenameOverrideRejectsRepositoryCredentialTarget()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
-        CreateDirectoryTree(fileSystem, "/workspace/config");
-        CreateDirectoryTree(fileSystem, "/workspace/packages/app");
-        fileSystem.WriteAllText("/workspace/package.json", """{"name":"workspace"}""");
+        CreateDirectoryTree(fileSystem, "/repos/a/packages/app");
+        CreateDirectoryTree(fileSystem, "/repos/a/.git");
+        CreateDirectoryTree(fileSystem, "/repos/b/config");
+        CreateDirectoryTree(fileSystem, "/repos/b/.git");
         ConfigurationPhase14VerticalSliceService service = CreateService(
             fileSystem,
             environmentVariableReader: name =>
                 name switch
                 {
-                    "YARN_RC_FILENAME" => "/workspace/config/team.yarnrc.yml",
+                    "YARN_RC_FILENAME" => "/repos/b/config/team.yarnrc.yml",
                     _ => null,
                 },
-            workspaceDirectoryPath: "/workspace/packages/app"
+            workspaceDirectoryPath: "/repos/a/packages/app"
         );
 
         InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -2650,6 +2651,56 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
 
         Assert.Contains("Repository-local Yarn", exception.Message, StringComparison.Ordinal);
         Assert.False(fileSystem.FileExists(service.Paths.YarnUserYarnrcPath));
+    }
+
+    [Fact]
+    public async Task YarnCiTemporaryRootUnderCheckoutIsRejected()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectoryTree(fileSystem, "/checkout/.git");
+        CreateDirectoryTree(fileSystem, "/checkout/artifacts");
+        ConfigurationPhase14VerticalSliceService service = CreateService(
+            fileSystem,
+            ciTemporaryProductRootPath: "/checkout/artifacts/azureauth"
+        );
+
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            async () =>
+                await service.ConfigureAsync(
+                    CredentialEcosystem.Yarn,
+                    ConfigurationPhase14Scope.CiTemporary,
+                    TestContext.Current.CancellationToken
+                )
+        );
+
+        Assert.Contains("Repository-local Yarn", exception.Message, StringComparison.Ordinal);
+        Assert.False(fileSystem.DirectoryExists(service.Paths.YarnCiTemporaryHomePath));
+    }
+
+    [Fact]
+    public async Task YarnDoctorMarksManifestInvalidWhenHomeBecomesRepository()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        ConfigurationPhase14VerticalSliceService service = CreateService(fileSystem);
+        await service.ConfigureAsync(
+            CredentialEcosystem.Yarn,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+        Assert.True(fileSystem.FileExists(service.Paths.YarnUserYarnrcPath));
+        fileSystem.CreateDirectory("/home/test/.git");
+
+        ConfigurationPhase14DoctorResult doctor = await service.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+        ConfigurationPhase14EcosystemDoctorResult yarn = Assert.Single(
+            doctor.Ecosystems,
+            result =>
+                result.Ecosystem == CredentialEcosystem.Yarn
+                && result.Scope == ConfigurationPhase14Scope.User
+        );
+
+        Assert.False(yarn.ConfigurationPlanValid);
     }
 
     [Fact]
@@ -3045,7 +3096,8 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         TimeProvider? timeProvider = null,
         Uri? registryUrl = null,
         ICredentialAcquisitionService? credentialAcquisition = null,
-        string? workspaceDirectoryPath = null
+        string? workspaceDirectoryPath = null,
+        string? ciTemporaryProductRootPath = null
     ) =>
         new(
             new ConfigurationPhase14VerticalSliceOptions
@@ -3054,6 +3106,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
                 StateDirectoryPath = UsesWindowsPaths(fileSystem)
                     ? @"C:\state\phase14"
                     : "/state/phase14",
+                CiTemporaryProductRootPath = ciTemporaryProductRootPath,
                 AzurePipelinesJobScopeId = "phase14-test-job",
                 CredentialAcquisition = identityProvider is null
                     ? new BoundedCredentialAcquisitionAdapter(

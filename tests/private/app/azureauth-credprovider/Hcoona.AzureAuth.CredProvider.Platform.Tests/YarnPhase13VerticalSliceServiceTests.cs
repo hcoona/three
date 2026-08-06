@@ -1678,28 +1678,24 @@ public sealed class YarnPhase13VerticalSliceServiceTests
             variables.TryGetValue(name, out string? value) ? value : null;
     }
 
-    [Theory]
-    [InlineData("/repo/apps/inner/.yarnrc.yml")]
-    [InlineData("/repo/shared/.yarnrc.yml")]
-    public void CreateUserCredentialPlanRejectsTargetInsideAnyEnclosingGitRepository(
-        string targetPath
-    )
+    [Fact]
+    public void CreateUserCredentialPlanRejectsTargetInDifferentRepositoryFromWorkspace()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
-        CreateDirectory(fileSystem, "/repo/apps/inner/package");
-        CreateDirectory(fileSystem, "/repo/apps/inner/.git");
-        CreateDirectory(fileSystem, "/repo/.git");
-        CreateDirectory(fileSystem, "/outside/user");
+        CreateDirectory(fileSystem, "/repos/a/package");
+        CreateDirectory(fileSystem, "/repos/a/.git");
+        CreateDirectory(fileSystem, "/repos/b/config");
+        CreateDirectory(fileSystem, "/repos/b/.git");
         fileSystem.WriteAllText(
-            "/repo/apps/inner/package/.yarnrc.yml",
+            "/repos/a/package/.yarnrc.yml",
             "npmRegistryServer: https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
         );
         var service = new YarnPhase13VerticalSliceService(
             new YarnPhase13VerticalSliceOptions
             {
                 FileSystem = fileSystem,
-                WorkspaceDirectoryPath = "/repo/apps/inner/package",
-                UserHomeDirectoryPath = "/outside/user",
+                WorkspaceDirectoryPath = "/repos/a/package",
+                UserHomeDirectoryPath = "/home/alice",
             }
         );
         YarnPhase13RegistryDeclaration declaration = Assert.Single(
@@ -1713,7 +1709,7 @@ public sealed class YarnPhase13VerticalSliceServiceTests
                 {
                     Declaration = declaration,
                     AuthToken = "short-lived-token",
-                    TargetYarnrcPath = targetPath,
+                    TargetYarnrcPath = "/repos/b/config/.yarnrc.yml",
                 }
             )
         );
@@ -1727,29 +1723,22 @@ public sealed class YarnPhase13VerticalSliceServiceTests
         AssertNoFilesystemMutationCalls(fileSystem.Calls);
     }
 
-    [Theory]
-    [InlineData("/repo/.git", "/repo/shared/.yarnrc.yml")]
-    [InlineData("/repo/apps/inner/.git", "/repo/apps/inner/.yarnrc.yml")]
-    public void CreateUserCredentialPlanRejectsTargetInsideRepositoryWithGitFileMarker(
-        string gitMarkerPath,
-        string targetPath
-    )
+    [Fact]
+    public void CreateUserCredentialPlanRejectsRepositoryTargetWithoutWorkspace()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
-        CreateDirectory(fileSystem, "/repo/apps/inner/package");
-        CreateDirectory(fileSystem, "/outside/user");
-        const string GitFileContents = "gitdir: /worktrees/repo";
-        fileSystem.WriteAllText(gitMarkerPath, GitFileContents);
+        CreateDirectory(fileSystem, "/declarations");
+        CreateDirectory(fileSystem, "/repo/config");
+        CreateDirectory(fileSystem, "/repo/.git");
         fileSystem.WriteAllText(
-            "/repo/apps/inner/package/.yarnrc.yml",
+            "/declarations/.yarnrc.yml",
             "npmRegistryServer: https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
         );
         var service = new YarnPhase13VerticalSliceService(
             new YarnPhase13VerticalSliceOptions
             {
                 FileSystem = fileSystem,
-                WorkspaceDirectoryPath = "/repo/apps/inner/package",
-                UserHomeDirectoryPath = "/outside/user",
+                UserHomeDirectoryPath = "/declarations",
             }
         );
         YarnPhase13RegistryDeclaration declaration = Assert.Single(
@@ -1763,7 +1752,51 @@ public sealed class YarnPhase13VerticalSliceServiceTests
                 {
                     Declaration = declaration,
                     AuthToken = "short-lived-token",
-                    TargetYarnrcPath = targetPath,
+                    TargetYarnrcPath = "/repo/config/.yarnrc.yml",
+                }
+            )
+        );
+
+        Assert.Contains(
+            "Repository-local Yarn configuration cannot store credential material.",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain("short-lived-token", exception.Message, StringComparison.Ordinal);
+        AssertNoFilesystemMutationCalls(fileSystem.Calls);
+    }
+
+    [Fact]
+    public void CreateUserCredentialPlanRejectsRepositoryWithGitFileMarker()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/declarations");
+        CreateDirectory(fileSystem, "/worktree/config");
+        const string GitFileContents = "gitdir: /worktrees/repo";
+        fileSystem.WriteAllText("/worktree/.git", GitFileContents);
+        fileSystem.WriteAllText(
+            "/declarations/.yarnrc.yml",
+            "npmRegistryServer: https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
+        );
+        var service = new YarnPhase13VerticalSliceService(
+            new YarnPhase13VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                UserHomeDirectoryPath = "/declarations",
+            }
+        );
+        YarnPhase13RegistryDeclaration declaration = Assert.Single(
+            service.DiscoverRegistryDeclarations()
+        );
+        fileSystem.Calls.Clear();
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            service.CreateUserCredentialPlan(
+                new YarnPhase13CredentialPlanRequest
+                {
+                    Declaration = declaration,
+                    AuthToken = "short-lived-token",
+                    TargetYarnrcPath = "/worktree/config/.yarnrc.yml",
                 }
             )
         );
@@ -1779,73 +1812,55 @@ public sealed class YarnPhase13VerticalSliceServiceTests
     }
 
     [Fact]
-    public void CreateUserCredentialPlanAllowsAbsoluteTargetOutsideAllEnclosingGitRepositories()
+    public void CreateUserCredentialPlanAllowsDefaultHomeTargetWithDescendantRepository()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
-        CreateDirectory(fileSystem, "/repo/apps/inner/package");
-        CreateDirectory(fileSystem, "/repo/apps/inner/.git");
-        CreateDirectory(fileSystem, "/repo/.git");
-        CreateDirectory(fileSystem, "/outside/user");
+        CreateDirectory(fileSystem, "/home/alice/project/.git");
         fileSystem.WriteAllText(
-            "/repo/apps/inner/package/.yarnrc.yml",
+            "/home/alice/.yarnrc.yml",
             "npmRegistryServer: https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
         );
         var service = new YarnPhase13VerticalSliceService(
             new YarnPhase13VerticalSliceOptions
             {
                 FileSystem = fileSystem,
-                WorkspaceDirectoryPath = "/repo/apps/inner/package",
-                UserHomeDirectoryPath = "/outside/user",
+                UserHomeDirectoryPath = "/home/alice",
             }
-        );
-        YarnPhase13RegistryDeclaration declaration = Assert.Single(
-            service.DiscoverRegistryDeclarations()
         );
 
         ConfigurationChangePlan plan = service.CreateUserCredentialPlan(
             new YarnPhase13CredentialPlanRequest
             {
-                Declaration = declaration,
+                Declaration = Assert.Single(service.DiscoverRegistryDeclarations()),
                 AuthToken = "short-lived-token",
-                TargetYarnrcPath = "/outside/user/.yarnrc.yml",
             }
         );
 
-        NpmCompatibleAuthSelectors selectors = NpmCompatibleAuthSelectorPolicy.Create(
-            declaration.ResourceIdentity
-        );
-        Assert.Equal(2, plan.Changes.Count);
         Assert.All(
             plan.Changes,
-            static change =>
-            {
-                Assert.Equal("/outside/user/.yarnrc.yml", change.TargetPathOrName);
-                Assert.False(
-                    change.TargetPathOrName.StartsWith("/repo", StringComparison.Ordinal)
-                );
-            }
+            static change => Assert.Equal("/home/alice/.yarnrc.yml", change.TargetPathOrName)
         );
-        Assert.Contains(plan.Changes, change => change.Key == selectors.YarnAuthTokenKey);
-        Assert.Contains(plan.Changes, change => change.Key == selectors.YarnAlwaysAuthKey);
         Assert.True(ConfigurationChangePlanPolicy.IsValid(plan));
     }
 
-    [Fact]
-    public void CreateUserCredentialPlanRejectsDefaultUserTargetInsideEnclosingGitRepository()
+    [Theory]
+    [InlineData(null)]
+    [InlineData("relative.yarnrc.yml")]
+    public void CreateUserCredentialPlanRejectsHomeThatIsRepository(string? yarnRcFilename)
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
-        CreateDirectory(fileSystem, "/repo/package");
-        CreateDirectory(fileSystem, "/repo/.git");
+        CreateDirectory(fileSystem, "/home/alice/.git");
         fileSystem.WriteAllText(
-            "/repo/package/.yarnrc.yml",
+            "/home/alice/.yarnrc.yml",
             "npmRegistryServer: https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
         );
         var service = new YarnPhase13VerticalSliceService(
             new YarnPhase13VerticalSliceOptions
             {
                 FileSystem = fileSystem,
-                WorkspaceDirectoryPath = "/repo/package",
-                UserHomeDirectoryPath = "/repo",
+                EnvironmentVariableReader = name =>
+                    name == "YARN_RC_FILENAME" ? yarnRcFilename : null,
+                UserHomeDirectoryPath = "/home/alice",
             }
         );
 
@@ -1859,12 +1874,150 @@ public sealed class YarnPhase13VerticalSliceServiceTests
             )
         );
 
-        Assert.Contains(
-            "Repository-local Yarn configuration cannot store credential material.",
-            exception.Message,
-            StringComparison.Ordinal
+        Assert.Contains("Repository-local Yarn", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CreateUserCredentialPlanRejectsAbsoluteYarnRcFilenameInRepository()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/repo/config");
+        CreateDirectory(fileSystem, "/repo/.git");
+        fileSystem.WriteAllText(
+            "/repo/config/team.yarnrc.yml",
+            "npmRegistryServer: https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
         );
-        Assert.DoesNotContain("short-lived-token", exception.Message, StringComparison.Ordinal);
+        var service = new YarnPhase13VerticalSliceService(
+            new YarnPhase13VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                EnvironmentVariableReader = name =>
+                    name == "YARN_RC_FILENAME" ? "/repo/config/team.yarnrc.yml" : null,
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            service.CreateUserCredentialPlan(
+                new YarnPhase13CredentialPlanRequest
+                {
+                    Declaration = Assert.Single(service.DiscoverRegistryDeclarations()),
+                    AuthToken = "short-lived-token",
+                }
+            )
+        );
+
+        Assert.Contains("Repository-local Yarn", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CreateCiTemporaryCredentialPlanRejectsRootUnderCheckout()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/declarations");
+        CreateDirectory(fileSystem, "/checkout/.git");
+        CreateDirectory(fileSystem, "/checkout/artifacts");
+        fileSystem.WriteAllText(
+            "/declarations/.yarnrc.yml",
+            "npmRegistryServer: https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
+        );
+        var service = new YarnPhase13VerticalSliceService(
+            new YarnPhase13VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                UserHomeDirectoryPath = "/declarations",
+            }
+        );
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            service.CreateCiTemporaryCredentialPlan(
+                new YarnPhase13CredentialPlanRequest
+                {
+                    Declaration = Assert.Single(service.DiscoverRegistryDeclarations()),
+                    AuthToken = "short-lived-token",
+                    TemporaryHomePath = "/checkout/artifacts/yarn-home",
+                }
+            )
+        );
+
+        Assert.Contains("Repository-local Yarn", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("/links/.yarnrc.yml", "/repo/config/actual.yarnrc.yml")]
+    [InlineData("/links/config/.yarnrc.yml", "/repo/config/.yarnrc.yml")]
+    public void CreateUserCredentialPlanRejectsResolvedLinkTargetInRepository(
+        string linkPath,
+        string resolvedPath
+    )
+    {
+        var fileSystem = new RevalidatingLinkFileSystem(
+            linkPath,
+            resolvedPath,
+            resolvedPath
+        );
+        CreateDirectory(fileSystem.Inner, "/declarations");
+        CreateDirectory(fileSystem.Inner, "/repo/config");
+        CreateDirectory(fileSystem.Inner, "/repo/.git");
+        fileSystem.Inner.WriteAllText(
+            "/declarations/.yarnrc.yml",
+            "npmRegistryServer: https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
+        );
+        var service = new YarnPhase13VerticalSliceService(
+            new YarnPhase13VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                UserHomeDirectoryPath = "/declarations",
+            }
+        );
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            service.CreateUserCredentialPlan(
+                new YarnPhase13CredentialPlanRequest
+                {
+                    Declaration = Assert.Single(service.DiscoverRegistryDeclarations()),
+                    AuthToken = "short-lived-token",
+                    TargetYarnrcPath = linkPath,
+                }
+            )
+        );
+
+        Assert.Contains("Repository-local Yarn", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(1, fileSystem.ResolutionCount);
+    }
+
+    [Fact]
+    public void CreateUserCredentialPlanAllowsExplicitTargetOutsideRepositories()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/declarations");
+        CreateDirectory(fileSystem, "/outside/config");
+        fileSystem.WriteAllText(
+            "/declarations/.yarnrc.yml",
+            "npmRegistryServer: https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
+        );
+        var service = new YarnPhase13VerticalSliceService(
+            new YarnPhase13VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                UserHomeDirectoryPath = "/declarations",
+            }
+        );
+
+        ConfigurationChangePlan plan = service.CreateUserCredentialPlan(
+            new YarnPhase13CredentialPlanRequest
+            {
+                Declaration = Assert.Single(service.DiscoverRegistryDeclarations()),
+                AuthToken = "short-lived-token",
+                TargetYarnrcPath = "/outside/config/.yarnrc.yml",
+            }
+        );
+
+        Assert.All(
+            plan.Changes,
+            static change => Assert.Equal("/outside/config/.yarnrc.yml", change.TargetPathOrName)
+        );
+        Assert.True(ConfigurationChangePlanPolicy.IsValid(plan));
     }
 
     [Theory]

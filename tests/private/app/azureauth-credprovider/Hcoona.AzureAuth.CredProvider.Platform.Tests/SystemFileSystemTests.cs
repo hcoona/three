@@ -252,6 +252,34 @@ public sealed class SystemFileSystemTests
     }
 
     [Fact]
+    public void ResolveFilePathForWriteResolvesExistingParentDirectoryLink()
+    {
+        string root = CreateTestDirectory();
+        string physicalParent = Path.Combine(root, "physical", "config");
+        string linkedParent = Path.Combine(root, "linked");
+        Directory.CreateDirectory(physicalParent);
+        if (!TryCreateDirectorySymbolicLink(linkedParent, Path.Combine(root, "physical")))
+        {
+            DeleteDirectoryIfExists(root);
+            return;
+        }
+
+        try
+        {
+            string resolved = ((IFileSystemLinkResolver)new SystemFileSystem())
+                .ResolveFilePathForWrite(
+                    Path.Combine(linkedParent, "config", ".yarnrc.yml")
+                );
+
+            Assert.Equal(Path.Combine(physicalParent, ".yarnrc.yml"), resolved);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(root);
+        }
+    }
+
+    [Fact]
     public void MutationLockSerializesCooperativeUsers()
     {
         string root = CreateTestDirectory();
@@ -275,7 +303,7 @@ public sealed class SystemFileSystemTests
     private static string CreateTestDirectory()
     {
         string path = Path.Combine(
-            Path.GetTempPath(),
+            AppContext.BaseDirectory,
             "azureauth-credprovider-filesystem-tests",
             Guid.NewGuid().ToString("N")
         );
@@ -288,6 +316,27 @@ public sealed class SystemFileSystemTests
         if (Directory.Exists(path))
         {
             Directory.Delete(path, recursive: true);
+        }
+    }
+
+    private static bool TryCreateDirectorySymbolicLink(string path, string targetPath)
+    {
+        try
+        {
+            Directory.CreateSymbolicLink(path, targetPath);
+            return true;
+        }
+        catch (PlatformNotSupportedException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+        catch (IOException) when (OperatingSystem.IsWindows())
+        {
+            return false;
         }
     }
 }

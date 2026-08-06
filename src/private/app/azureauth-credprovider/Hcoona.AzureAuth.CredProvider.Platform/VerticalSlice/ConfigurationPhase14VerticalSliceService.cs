@@ -1621,8 +1621,23 @@ public sealed class ConfigurationPhase14VerticalSliceService
         ConfigurationOwnershipManifest manifest,
         CredentialEcosystem ecosystem,
         ConfigurationPhase14Scope scope
-    ) =>
-        ecosystem == CredentialEcosystem.Python
+    )
+    {
+        if (
+            ecosystem == CredentialEcosystem.Yarn
+            && manifest.Entries.Any(entry =>
+                entry.TargetKind == ConfigurationTargetKind.Yarnrc
+                && YarnPhase13VerticalSliceService.IsRepositoryCredentialTarget(
+                    fileSystem,
+                    entry.TargetPathOrName
+                )
+            )
+        )
+        {
+            return false;
+        }
+
+        return ecosystem == CredentialEcosystem.Python
             ? TryRecognizePythonOwnershipManifest(manifest, scope, out _)
             : OwnershipManifestMatchesExpectedBaseState(manifest, ecosystem, scope)
                 || PackageOwnershipIntentMatchesExpectedState(
@@ -1631,6 +1646,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
                     scope,
                     requestedPlan: null
                 );
+    }
 
     private bool PackageOwnershipIntentMatchesExpectedState(
         ConfigurationOwnershipManifest manifest,

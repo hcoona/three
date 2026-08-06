@@ -231,12 +231,12 @@ public sealed class SystemFileSystem
                     throw new IOException($"The file path '{fullPath}' is a directory.");
                 }
 
-                return fullPath;
+                return ResolvePhysicalParentPath(fullPath);
             }
 
             if ((file.Attributes & FileAttributes.ReparsePoint) == 0)
             {
-                return fullPath;
+                return ResolvePhysicalParentPath(fullPath);
             }
         }
 
@@ -248,13 +248,69 @@ public sealed class SystemFileSystem
             );
         }
 
-        return resolvedFile.FullName;
+        return ResolvePhysicalParentPath(resolvedFile.FullName);
     }
 
     IGitConfigLockFile IFileSystemGitConfigLock.AcquireGitConfigLock(string targetPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(targetPath);
         return new GitConfigLockFile(targetPath);
+    }
+
+    private static string ResolvePhysicalParentPath(string path)
+    {
+        string fullPath = Path.GetFullPath(path);
+        string parentPath =
+            Path.GetDirectoryName(fullPath)
+            ?? throw new IOException($"The file path '{fullPath}' has no parent directory.");
+        string rootPath =
+            Path.GetPathRoot(parentPath)
+            ?? throw new IOException($"The directory path '{parentPath}' has no root.");
+        string currentPath = rootPath;
+        string relativePath = Path.GetRelativePath(rootPath, parentPath);
+        if (!string.Equals(relativePath, ".", StringComparison.Ordinal))
+        {
+            foreach (
+                string segment in relativePath.Split(
+                    [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+                    StringSplitOptions.RemoveEmptyEntries
+                )
+            )
+            {
+                string candidatePath = Path.Combine(currentPath, segment);
+                var directory = new DirectoryInfo(candidatePath);
+                string? linkTarget = directory.LinkTarget;
+                if (
+                    linkTarget is not null
+                    || (
+                        directory.Exists
+                        && (directory.Attributes & FileAttributes.ReparsePoint) != 0
+                    )
+                )
+                {
+                    FileSystemInfo? resolvedTarget = directory.ResolveLinkTarget(
+                        returnFinalTarget: true
+                    );
+                    if (
+                        resolvedTarget is not DirectoryInfo resolvedDirectory
+                        || !resolvedDirectory.Exists
+                    )
+                    {
+                        throw new IOException(
+                            $"The directory link '{candidatePath}' does not resolve to an existing directory."
+                        );
+                    }
+
+                    currentPath = resolvedDirectory.FullName;
+                }
+                else
+                {
+                    currentPath = candidatePath;
+                }
+            }
+        }
+
+        return Path.Combine(currentPath, Path.GetFileName(fullPath));
     }
 
     private void AtomicWrite(
