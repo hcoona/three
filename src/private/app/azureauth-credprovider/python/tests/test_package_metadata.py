@@ -105,6 +105,9 @@ def test_project_version_policy_inherits_repository_defaults_and_filters(
         "pathFilters": [
             ".",
             ":^python/tests",
+            ":/Directory.Build.props",
+            ":/src/Directory.Build.props",
+            ":/src/private/app/Directory.Build.props",
             ":/eng/scripts/azureauth-credprovider",
         ],
         "inherit": True,
@@ -137,6 +140,9 @@ def test_project_version_policy_inherits_repository_defaults_and_filters(
             False,
             True,
         ),
+        ("Directory.Build.props", True, False),
+        ("src/Directory.Build.props", True, False),
+        ("src/private/app/Directory.Build.props", True, False),
         ("eng/scripts/azureauth-credprovider", True, False),
     ]
 
@@ -182,6 +188,9 @@ def test_all_azureauth_csharp_projects_select_project_version_root(
             "src/private/app/azureauth-credprovider/python/src/"
             "azureauth_credprovider_keyring/backend.py"
         ),
+        "Directory.Build.props",
+        "src/Directory.Build.props",
+        "src/private/app/Directory.Build.props",
         (
             "eng/scripts/azureauth-credprovider/"
             "New-DeploymentValidationBundle.ps1"
@@ -201,6 +210,9 @@ def test_all_azureauth_csharp_projects_select_project_version_root(
         "docs",
         "python-metadata",
         "python-source",
+        "root-build-props",
+        "source-build-props",
+        "private-app-build-props",
         "bundle-builder",
         "foundation-builder",
         "bundle-installer",
@@ -236,12 +248,20 @@ def test_azureauth_product_changes_advance_public_wheel_identity(
             "src/private/app/azureauth-credprovider/python/tests/"
             "test_version_only.py"
         ),
+        "Directory.Packages.props",
+        "global.json",
+        "tests/Directory.Build.props",
+        "src/public/Directory.Build.props",
         ".github/workflows/azureauth-ci.yml",
     ],
     ids=[
         "unrelated-product",
         "csharp-tests",
         "python-tests",
+        "central-packages",
+        "tool-manifest",
+        "test-build-props",
+        "unrelated-build-props",
         "ci",
     ],
 )

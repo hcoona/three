@@ -4,6 +4,9 @@
   "pathFilters": [
     ".",
     ":^python/tests",
+    ":/Directory.Build.props",
+    ":/src/Directory.Build.props",
+    ":/src/private/app/Directory.Build.props",
     ":/eng/scripts/azureauth-credprovider"
   ],
   "inherit": true
