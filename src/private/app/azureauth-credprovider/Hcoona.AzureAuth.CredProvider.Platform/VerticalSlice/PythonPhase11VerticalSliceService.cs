@@ -144,8 +144,27 @@ public sealed class PythonPhase11VerticalSliceService
     private const string TwineExecutableFileName = "twine";
     private const string PythonExecutableResolutionScript =
         "import os,sys; print(os.path.abspath(sys.executable))";
+    private const string KeyringModuleFoundMarker =
+        "ACP_KEYRING_PROBE_V1:FOUND";
+    private const string KeyringModuleNotFoundMarker =
+        "ACP_KEYRING_PROBE_V1:NOT_FOUND";
+    private const string KeyringModuleProbeFailureMarker =
+        "ACP_KEYRING_PROBE_V1:ERROR";
+    private const int KeyringModuleFoundExitCode = 0;
+    private const int KeyringModuleNotFoundExitCode = 20;
+    private const int KeyringModuleProbeFailureExitCode = 21;
     private const string KeyringModuleProbeScript =
-        "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('keyring') is not None else 1)";
+        "import importlib.util,sys\n"
+        + "try:\n"
+        + "    keyring_spec=importlib.util.find_spec('keyring')\n"
+        + "except BaseException:\n"
+        + "    print('ACP_KEYRING_PROBE_V1:ERROR')\n"
+        + "    sys.exit(21)\n"
+        + "if keyring_spec is None:\n"
+        + "    print('ACP_KEYRING_PROBE_V1:NOT_FOUND')\n"
+        + "    sys.exit(20)\n"
+        + "print('ACP_KEYRING_PROBE_V1:FOUND')\n"
+        + "sys.exit(0)";
     private static readonly TimeSpan PythonProbeTimeout = TimeSpan.FromSeconds(5);
     private static readonly ProcessOutputCaptureOptions PythonProbeOutputCaptureOptions =
         new()
@@ -373,29 +392,82 @@ public sealed class PythonPhase11VerticalSliceService
             )
             .ConfigureAwait(false);
 
-        return result.Status switch
+        if (
+            result.Status
+            is ProcessExecutionStatus.Success or ProcessExecutionStatus.NonZeroExit
+        )
         {
-            ProcessExecutionStatus.Success => CreateKeyringModuleProbe(
-                normalizedPythonExecutablePath,
-                pythonExecutableExists,
-                PythonPhase11KeyringModuleProbeStatus.ModuleFound,
-                keyringModuleResolvable: true
-            ),
-            ProcessExecutionStatus.NonZeroExit when result.ExitCode == 1 =>
-                CreateKeyringModuleProbe(
+            if (
+                result.ExitCode == KeyringModuleFoundExitCode
+                && HasExactProtocolOutput(result, KeyringModuleFoundMarker)
+            )
+            {
+                return CreateKeyringModuleProbe(
+                    normalizedPythonExecutablePath,
+                    pythonExecutableExists,
+                    PythonPhase11KeyringModuleProbeStatus.ModuleFound,
+                    keyringModuleResolvable: true
+                );
+            }
+
+            if (
+                result.ExitCode == KeyringModuleNotFoundExitCode
+                && HasExactProtocolOutput(result, KeyringModuleNotFoundMarker)
+            )
+            {
+                return CreateKeyringModuleProbe(
                     normalizedPythonExecutablePath,
                     pythonExecutableExists,
                     PythonPhase11KeyringModuleProbeStatus.ModuleNotFound,
                     keyringModuleResolvable: false,
                     "The selected Python interpreter cannot resolve the keyring module."
-                ),
-            ProcessExecutionStatus.NonZeroExit => CreateKeyringModuleProbe(
+                );
+            }
+
+            if (
+                result.ExitCode == KeyringModuleProbeFailureExitCode
+                && HasExactProtocolOutput(
+                    result,
+                    KeyringModuleProbeFailureMarker
+                )
+            )
+            {
+                return CreateKeyringModuleProbe(
+                    normalizedPythonExecutablePath,
+                    pythonExecutableExists,
+                    PythonPhase11KeyringModuleProbeStatus.UnexpectedNonZeroExit,
+                    keyringModuleResolvable: false,
+                    "The keyring module finder raised an exception."
+                );
+            }
+
+            if (
+                result.Status == ProcessExecutionStatus.NonZeroExit
+                && result.ExitCode
+                    is not KeyringModuleNotFoundExitCode
+                        and not KeyringModuleProbeFailureExitCode
+            )
+            {
+                return CreateKeyringModuleProbe(
+                    normalizedPythonExecutablePath,
+                    pythonExecutableExists,
+                    PythonPhase11KeyringModuleProbeStatus.UnexpectedNonZeroExit,
+                    keyringModuleResolvable: false,
+                    $"The keyring module probe exited unexpectedly with code {result.ExitCode}."
+                );
+            }
+
+            return CreateKeyringModuleProbe(
                 normalizedPythonExecutablePath,
                 pythonExecutableExists,
-                PythonPhase11KeyringModuleProbeStatus.UnexpectedNonZeroExit,
+                PythonPhase11KeyringModuleProbeStatus.InvalidOutput,
                 keyringModuleResolvable: false,
-                $"The keyring module probe exited unexpectedly with code {result.ExitCode}."
-            ),
+                "The keyring module probe did not produce a recognized marker and exit-code pair."
+            );
+        }
+
+        return result.Status switch
+        {
             ProcessExecutionStatus.LaunchFailure => CreateKeyringModuleProbe(
                 normalizedPythonExecutablePath,
                 pythonExecutableExists,
@@ -430,6 +502,14 @@ public sealed class PythonPhase11VerticalSliceService
         };
     }
 
+    private static bool HasExactProtocolOutput(ProcessResult result, string marker) =>
+        result.StandardError.Length == 0
+        && (
+            string.Equals(result.StandardOutput, marker, StringComparison.Ordinal)
+            || string.Equals(result.StandardOutput, marker + "\n", StringComparison.Ordinal)
+            || string.Equals(result.StandardOutput, marker + "\r\n", StringComparison.Ordinal)
+        );
+
     private static PythonPhase11KeyringModuleProbe CreateKeyringModuleProbe(
         string pythonExecutablePath,
         bool pythonExecutableExists,
@@ -458,18 +538,26 @@ public sealed class PythonPhase11VerticalSliceService
             return virtualEnvPython;
         }
 
-        string? python3Path = await TryResolvePythonCommandExecutablePathAsync(
+        PythonCommandResolution python3Resolution =
+            await TryResolvePythonCommandExecutablePathAsync(
                 "python3",
                 cancellationToken
             )
             .ConfigureAwait(false);
-        if (python3Path is not null)
+        if (python3Resolution.ExecutablePath is not null)
         {
-            return python3Path;
+            return python3Resolution.ExecutablePath;
         }
 
-        return await TryResolvePythonCommandExecutablePathAsync("python", cancellationToken)
-            .ConfigureAwait(false);
+        if (python3Resolution.TerminationReason != ProcessTerminationReason.LaunchFailure)
+        {
+            return null;
+        }
+
+        PythonCommandResolution pythonResolution =
+            await TryResolvePythonCommandExecutablePathAsync("python", cancellationToken)
+                .ConfigureAwait(false);
+        return pythonResolution.ExecutablePath;
     }
 
     private string? TryResolveVirtualEnvPythonExecutablePath(string? virtualEnv)
@@ -505,7 +593,7 @@ public sealed class PythonPhase11VerticalSliceService
         yield return $"{virtualEnv}/bin/python";
     }
 
-    private async ValueTask<string?> TryResolvePythonCommandExecutablePathAsync(
+    private async ValueTask<PythonCommandResolution> TryResolvePythonCommandExecutablePathAsync(
         string commandName,
         CancellationToken cancellationToken
     )
@@ -523,17 +611,44 @@ public sealed class PythonPhase11VerticalSliceService
 
         if (!result.Succeeded)
         {
-            return null;
+            return new PythonCommandResolution(null, result.TerminationReason);
         }
 
-        string? resolvedPath = result.StandardOutput.Split(
-                ['\r', '\n'],
-                StringSplitOptions.RemoveEmptyEntries
-            )
-            .Select(static line => line.Trim())
-            .FirstOrDefault(static line => line.Length > 0);
-        return resolvedPath is null ? null : fileSystem.GetFullPath(resolvedPath);
+        string? resolvedPath = TryReadSingleOutputLine(result.StandardOutput);
+        if (resolvedPath is null || !fileSystem.IsPathFullyQualified(resolvedPath))
+        {
+            return new PythonCommandResolution(
+                null,
+                ProcessTerminationReason.InvalidOutput
+            );
+        }
+
+        return new PythonCommandResolution(
+            fileSystem.GetFullPath(resolvedPath),
+            result.TerminationReason
+        );
     }
+
+    private static string? TryReadSingleOutputLine(string output)
+    {
+        string content = output.EndsWith("\r\n", StringComparison.Ordinal)
+            ? output[..^2]
+            : output.EndsWith('\n')
+                ? output[..^1]
+                : output;
+        return content.Length > 0
+            && !string.IsNullOrWhiteSpace(content)
+            && !content.Contains('\r')
+            && !content.Contains('\n')
+            && string.Equals(content, content.Trim(), StringComparison.Ordinal)
+                ? content
+                : null;
+    }
+
+    private sealed record PythonCommandResolution(
+        string? ExecutablePath,
+        ProcessTerminationReason TerminationReason
+    );
 
     private static ProcessStartSpec CreatePythonProbeStartSpec(
         string pythonExecutable,

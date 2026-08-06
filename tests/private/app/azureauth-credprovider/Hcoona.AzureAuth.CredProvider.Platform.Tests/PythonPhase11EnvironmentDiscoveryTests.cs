@@ -247,7 +247,7 @@ public sealed class PythonPhase11EnvironmentDiscoveryTests
         CreateDirectory(fileSystem, "/workspace/.venv/bin");
         WriteExecutable(fileSystem, "/workspace/.venv/bin/python");
         var processRunner = new FakeProcessRunner();
-        processRunner.EnqueueResult(new ProcessResult(0, string.Empty, string.Empty));
+        processRunner.EnqueueResult(new ProcessResult(0, KeyringModuleFoundOutput, string.Empty));
         var environment = new EnvironmentVariables(
             new Dictionary<string, string?> { ["HOME"] = "/home/alice" }
         );
@@ -279,7 +279,7 @@ public sealed class PythonPhase11EnvironmentDiscoveryTests
         Assert.Equal(
             [
                 "-c",
-                "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('keyring') is not None else 1)",
+                KeyringModuleProbeScript,
             ],
             startSpec.Arguments
         );
@@ -296,7 +296,7 @@ public sealed class PythonPhase11EnvironmentDiscoveryTests
         CreateDirectory(fileSystem, "/workspace/.venv/bin");
         WriteExecutable(fileSystem, "/workspace/.venv/bin/python");
         var processRunner = new FakeProcessRunner();
-        processRunner.EnqueueResult(new ProcessResult(0, string.Empty, string.Empty));
+        processRunner.EnqueueResult(new ProcessResult(0, KeyringModuleFoundOutput, string.Empty));
         var environment = new EnvironmentVariables(
             new Dictionary<string, string?>
             {
@@ -374,7 +374,7 @@ public sealed class PythonPhase11EnvironmentDiscoveryTests
         CreateDirectory(fileSystem, "C:/workspace/.venv/Scripts");
         fileSystem.WriteAllText("C:/workspace/.venv/Scripts/python.exe", "@echo off\r\n");
         var processRunner = new FakeProcessRunner();
-        processRunner.EnqueueResult(new ProcessResult(0, string.Empty, string.Empty));
+        processRunner.EnqueueResult(new ProcessResult(0, KeyringModuleFoundOutput, string.Empty));
         var environment = new EnvironmentVariables(
             new Dictionary<string, string?>
             {
@@ -459,7 +459,7 @@ public sealed class PythonPhase11EnvironmentDiscoveryTests
         processRunner.EnqueueResult(
             new ProcessResult(0, "/workspace/.venv/bin/python3\n", string.Empty)
         );
-        processRunner.EnqueueResult(new ProcessResult(0, string.Empty, string.Empty));
+        processRunner.EnqueueResult(new ProcessResult(0, KeyringModuleFoundOutput, string.Empty));
         var environment = new EnvironmentVariables(
             new Dictionary<string, string?>
             {
@@ -519,7 +519,7 @@ public sealed class PythonPhase11EnvironmentDiscoveryTests
         WriteExecutable(fileSystem, "/resolved/python3/bin/python3");
         var processRunner = new FakeProcessRunner();
         processRunner.EnqueueResult(new ProcessResult(0, "/resolved/python3/bin/python3\n", ""));
-        processRunner.EnqueueResult(new ProcessResult(0, string.Empty, string.Empty));
+        processRunner.EnqueueResult(new ProcessResult(0, KeyringModuleFoundOutput, string.Empty));
         var environment = new EnvironmentVariables(
             new Dictionary<string, string?>
             {
@@ -560,7 +560,7 @@ public sealed class PythonPhase11EnvironmentDiscoveryTests
         processRunner.EnqueueResult(
             new ProcessResult(0, "C:/Python312/python.exe\r\n", string.Empty)
         );
-        processRunner.EnqueueResult(new ProcessResult(0, string.Empty, string.Empty));
+        processRunner.EnqueueResult(new ProcessResult(0, KeyringModuleFoundOutput, string.Empty));
         var environment = new EnvironmentVariables(
             new Dictionary<string, string?>
             {
@@ -614,7 +614,7 @@ public sealed class PythonPhase11EnvironmentDiscoveryTests
         WriteExecutable(fileSystem, "/usr/bin/python3");
         CreateDirectory(fileSystem, unconventionalModulePath);
         var processRunner = new FakeProcessRunner();
-        processRunner.EnqueueResult(new ProcessResult(0, string.Empty, string.Empty));
+        processRunner.EnqueueResult(new ProcessResult(0, KeyringModuleFoundOutput, string.Empty));
         var environment = new EnvironmentVariables(
             new Dictionary<string, string?>
             {
@@ -658,7 +658,13 @@ public sealed class PythonPhase11EnvironmentDiscoveryTests
         CreateDirectory(fileSystem, "/workspace/.venv/bin");
         WriteExecutable(fileSystem, "/workspace/.venv/bin/python");
         var processRunner = new FakeProcessRunner();
-        processRunner.EnqueueResult(new ProcessResult(1, string.Empty, string.Empty));
+        processRunner.EnqueueResult(
+            new ProcessResult(
+                KeyringModuleNotFoundExitCode,
+                KeyringModuleNotFoundOutput,
+                string.Empty
+            )
+        );
         var environment = new EnvironmentVariables(
             new Dictionary<string, string?>
             {
@@ -923,5 +929,670 @@ public sealed class PythonPhase11EnvironmentDiscoveryTests
 
         public string? Get(string name) =>
             variables.TryGetValue(name, out string? value) ? value : null;
+    }
+
+    [Fact]
+    public async Task DoctorDoesNotFallBackToPythonWhenPython3ResolutionTimesOut()
+    {
+        var fileSystem = CreatePosixFileSystemWithResolvedPython3();
+        var processRunner = new FakeProcessRunner();
+        processRunner.EnqueueResult(ProcessResult.TimedOut(string.Empty, "timed out"));
+        var service = CreatePathResolvingService(fileSystem, processRunner);
+
+        PythonPhase11DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        AssertInterpreterResolutionFailure(result);
+        ProcessStartSpec resolutionSpec = Assert.Single(processRunner.StartSpecs);
+        AssertPythonResolutionSpec(resolutionSpec, "python3");
+    }
+
+    [Fact]
+    public async Task DoctorDoesNotFallBackToPythonWhenPython3ResolutionExitsNonzero()
+    {
+        var fileSystem = CreatePosixFileSystemWithResolvedPython3();
+        var processRunner = new FakeProcessRunner();
+        var nonzeroResult = new ProcessResult(17, string.Empty, "startup failed");
+        processRunner.EnqueueResult(nonzeroResult);
+        var service = CreatePathResolvingService(fileSystem, processRunner);
+
+        PythonPhase11DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(ProcessTerminationReason.Exited, nonzeroResult.TerminationReason);
+        AssertInterpreterResolutionFailure(result);
+        ProcessStartSpec resolutionSpec = Assert.Single(processRunner.StartSpecs);
+        AssertPythonResolutionSpec(resolutionSpec, "python3");
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("/resolved/python3/bin/python3\n/other/python3\n")]
+    [InlineData("prefix /resolved/python3/bin/python3 suffix\n")]
+    [InlineData("relative/python3\n")]
+    public async Task DoctorDoesNotFallBackToPythonWhenPython3ResolutionOutputIsMalformed(
+        string standardOutput
+    )
+    {
+        var fileSystem = CreatePosixFileSystemWithResolvedPython3();
+        var processRunner = new FakeProcessRunner();
+        processRunner.EnqueueResult(new ProcessResult(0, standardOutput, string.Empty));
+        var service = CreatePathResolvingService(fileSystem, processRunner);
+
+        PythonPhase11DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        AssertInterpreterResolutionFailure(result);
+        ProcessStartSpec resolutionSpec = Assert.Single(processRunner.StartSpecs);
+        AssertPythonResolutionSpec(resolutionSpec, "python3");
+    }
+
+    [Fact]
+    public async Task DoctorDoesNotFallBackToPythonWhenPython3ResolutionExceedsOutputLimit()
+    {
+        var fileSystem = CreatePosixFileSystemWithResolvedPython3();
+        var processRunner = new FakeProcessRunner();
+        processRunner.EnqueueResult(
+            ProcessResult.OutputTooLarge("/resolved/python3/bin/python3\n", string.Empty)
+        );
+        var service = CreatePathResolvingService(fileSystem, processRunner);
+
+        PythonPhase11DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        AssertInterpreterResolutionFailure(result);
+        ProcessStartSpec resolutionSpec = Assert.Single(processRunner.StartSpecs);
+        AssertPythonResolutionSpec(resolutionSpec, "python3");
+    }
+
+    [Fact]
+    public async Task DoctorDoesNotFallBackToPythonWhenPython3ResolutionHasInvalidOutput()
+    {
+        var fileSystem = CreatePosixFileSystemWithResolvedPython3();
+        var processRunner = new FakeProcessRunner();
+        processRunner.EnqueueResult(
+            ProcessResult.InvalidOutput("/resolved/python3/bin/python3\n", string.Empty)
+        );
+        var service = CreatePathResolvingService(fileSystem, processRunner);
+
+        PythonPhase11DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        AssertInterpreterResolutionFailure(result);
+        ProcessStartSpec resolutionSpec = Assert.Single(processRunner.StartSpecs);
+        AssertPythonResolutionSpec(resolutionSpec, "python3");
+    }
+
+    [Fact]
+    public async Task DoctorFallsBackToPythonWhenPython3ResolutionTerminationReasonIsLaunchFailure()
+    {
+        var fileSystem = CreatePosixFileSystemWithResolvedPython3();
+        CreateDirectory(fileSystem, "/resolved/python/bin");
+        WriteExecutable(fileSystem, "/resolved/python/bin/python");
+        var processRunner = new FakeProcessRunner();
+        var launchFailure = ProcessResult.LaunchFailure(standardError: "not found");
+        processRunner.EnqueueResult(launchFailure);
+        processRunner.EnqueueResult(
+            new ProcessResult(0, "/resolved/python/bin/python\n", string.Empty)
+        );
+        processRunner.EnqueueResult(new ProcessResult(0, KeyringModuleFoundOutput, string.Empty));
+        var service = CreatePathResolvingService(fileSystem, processRunner);
+
+        PythonPhase11DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(ProcessTerminationReason.LaunchFailure, launchFailure.TerminationReason);
+        Assert.Equal("/resolved/python/bin/python", result.KeyringModuleProbe.PythonExecutablePath);
+        Assert.True(result.KeyringModuleProbe.Attempted);
+        Assert.Collection(
+            processRunner.StartSpecs,
+            python3ResolutionSpec => AssertPythonResolutionSpec(
+                python3ResolutionSpec,
+                "python3"
+            ),
+            pythonResolutionSpec => AssertPythonResolutionSpec(
+                pythonResolutionSpec,
+                "python"
+            ),
+            moduleProbeSpec => Assert.Equal(
+                "/resolved/python/bin/python",
+                moduleProbeSpec.FileName
+            )
+        );
+    }
+
+    [Fact]
+    public async Task DoctorDoesNotFallBackAfterSelectingPython3WhenModuleProbeFails()
+    {
+        var fileSystem = CreatePosixFileSystemWithResolvedPython3();
+        var processRunner = new FakeProcessRunner();
+        processRunner.EnqueueResult(
+            new ProcessResult(0, "/resolved/python3/bin/python3\n", string.Empty)
+        );
+        processRunner.EnqueueResult(
+            new ProcessResult(1, string.Empty, "Fatal Python error")
+        );
+        var service = CreatePathResolvingService(fileSystem, processRunner);
+
+        PythonPhase11DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(
+            PythonPhase11KeyringModuleProbeStatus.UnexpectedNonZeroExit,
+            result.KeyringModuleProbe.Status
+        );
+        Assert.Collection(
+            processRunner.StartSpecs,
+            resolutionSpec => AssertPythonResolutionSpec(resolutionSpec, "python3"),
+            moduleProbeSpec =>
+                Assert.Equal("/resolved/python3/bin/python3", moduleProbeSpec.FileName)
+        );
+    }
+
+    private static InMemoryFileSystem CreatePosixFileSystemWithResolvedPython3()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/resolved/python3/bin");
+        WriteExecutable(fileSystem, "/resolved/python3/bin/python3");
+        return fileSystem;
+    }
+
+    private static PythonPhase11VerticalSliceService CreatePathResolvingService(
+        InMemoryFileSystem fileSystem,
+        FakeProcessRunner processRunner
+    )
+    {
+        var environment = new EnvironmentVariables(
+            new Dictionary<string, string?>
+            {
+                ["HOME"] = "/home/alice",
+                ["PATH"] = "/preferred/bin:/fallback/bin",
+            }
+        );
+        return new PythonPhase11VerticalSliceService(
+            new PythonPhase11VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                ProcessRunner = processRunner,
+                EnvironmentVariableReader = environment.Get,
+                ExpectedKeyringShimPath = ExpectedShimPath,
+                PathListSeparator = ':',
+            }
+        );
+    }
+
+    private static void AssertInterpreterResolutionFailure(PythonPhase11DoctorResult result)
+    {
+        Assert.Null(result.KeyringModuleProbe.PythonExecutablePath);
+        Assert.False(result.KeyringModuleProbe.PythonExecutableExists);
+        Assert.False(result.KeyringModuleProbe.Attempted);
+        Assert.False(result.KeyringModuleProbe.KeyringModuleResolvable);
+        Assert.Equal(
+            PythonPhase11KeyringModuleProbeStatus.InterpreterNotFound,
+            result.KeyringModuleProbe.Status
+        );
+        Assert.Equal(
+            "Current-terminal Python interpreter could not be resolved.",
+            result.KeyringModuleProbe.FailureMessage
+        );
+    }
+
+    private static void AssertPythonResolutionSpec(
+        ProcessStartSpec startSpec,
+        string expectedFileName
+    )
+    {
+        Assert.Equal(expectedFileName, startSpec.FileName);
+        Assert.Equal(
+            ["-c", "import os,sys; print(os.path.abspath(sys.executable))"],
+            startSpec.Arguments
+        );
+        Assert.Equal("/preferred/bin:/fallback/bin", startSpec.Environment["PATH"]);
+        Assert.Equal(TimeSpan.FromSeconds(5), startSpec.Timeout);
+        Assert.Equal(4096, startSpec.OutputCaptureOptions.StandardOutputByteLimit);
+        Assert.Equal(4096, startSpec.OutputCaptureOptions.StandardErrorByteLimit);
+    }
+
+    [Fact]
+    public async Task DoctorDoesNotReportModuleNotFoundWhenKeyringProbeExitsOneWithoutProtocolMarker()
+    {
+        var fileSystem = CreatePosixFileSystemWithSelectedPython();
+        var processRunner = new FakeProcessRunner();
+        processRunner.EnqueueResult(
+            new ProcessResult(1, string.Empty, "Fatal Python error: init_fs_encoding")
+        );
+        var service = CreateKeyringProbeService(fileSystem, processRunner);
+
+        PythonPhase11DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.True(result.KeyringModuleProbe.Attempted);
+        Assert.False(result.KeyringModuleProbe.KeyringModuleResolvable);
+        Assert.Equal(
+            PythonPhase11KeyringModuleProbeStatus.UnexpectedNonZeroExit,
+            result.KeyringModuleProbe.Status
+        );
+        Assert.Equal(
+            "The keyring module probe exited unexpectedly with code 1.",
+            result.KeyringModuleProbe.FailureMessage
+        );
+        Assert.DoesNotContain(
+            "Fatal Python error",
+            result.KeyringModuleProbe.FailureMessage,
+            StringComparison.Ordinal
+        );
+        AssertKeyringProbeSpec(Assert.Single(processRunner.StartSpecs));
+    }
+
+    [Fact]
+    public async Task DoctorRejectsKeyringProbeFailureReportedOnlyOnStandardError()
+    {
+        var fileSystem = CreatePosixFileSystemWithSelectedPython();
+        var processRunner = new FakeProcessRunner();
+        processRunner.EnqueueResult(
+            new ProcessResult(
+                KeyringModuleProbeFailureExitCode,
+                string.Empty,
+                KeyringModuleProbeFailureMarker
+            )
+        );
+        var service = CreateKeyringProbeService(fileSystem, processRunner);
+
+        PythonPhase11DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        AssertInvalidKeyringProtocol(result);
+        AssertKeyringProbeSpec(Assert.Single(processRunner.StartSpecs));
+    }
+
+    [Fact]
+    public async Task DoctorBuildsKeyringProbeThatMapsFinderBaseExceptionToProbeFailure()
+    {
+        var fileSystem = CreatePosixFileSystemWithSelectedPython();
+        var processRunner = new FakeProcessRunner();
+        processRunner.EnqueueResult(
+            new ProcessResult(
+                KeyringModuleProbeFailureExitCode,
+                KeyringModuleProbeFailureOutput,
+                string.Empty
+            )
+        );
+        var service = CreateKeyringProbeService(fileSystem, processRunner);
+
+        PythonPhase11DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.True(result.KeyringModuleProbe.Attempted);
+        Assert.False(result.KeyringModuleProbe.KeyringModuleResolvable);
+        Assert.Equal(
+            PythonPhase11KeyringModuleProbeStatus.UnexpectedNonZeroExit,
+            result.KeyringModuleProbe.Status
+        );
+        Assert.Equal(
+            "The keyring module finder raised an exception.",
+            result.KeyringModuleProbe.FailureMessage
+        );
+        ProcessStartSpec probeSpec = Assert.Single(processRunner.StartSpecs);
+        AssertKeyringProbeSpec(probeSpec);
+        string script = Assert.Single(probeSpec.Arguments.Skip(1));
+        Assert.DoesNotContain("import keyring", script, StringComparison.Ordinal);
+        Assert.Contains("except BaseException:", script, StringComparison.Ordinal);
+        Assert.Contains(
+            $"print('{KeyringModuleProbeFailureMarker}')",
+            script,
+            StringComparison.Ordinal
+        );
+        Assert.Contains(
+            $"sys.exit({KeyringModuleProbeFailureExitCode})",
+            script,
+            StringComparison.Ordinal
+        );
+    }
+
+    [Theory]
+    [InlineData(KeyringModuleFoundMarker, KeyringModuleNotFoundExitCode)]
+    [InlineData(KeyringModuleFoundMarker, KeyringModuleProbeFailureExitCode)]
+    [InlineData(KeyringModuleNotFoundMarker, KeyringModuleFoundExitCode)]
+    [InlineData(KeyringModuleNotFoundMarker, KeyringModuleProbeFailureExitCode)]
+    [InlineData(KeyringModuleProbeFailureMarker, KeyringModuleFoundExitCode)]
+    [InlineData(KeyringModuleProbeFailureMarker, KeyringModuleNotFoundExitCode)]
+    public async Task DoctorRejectsMismatchedKeyringMarkerAndExitCode(
+        string marker,
+        int exitCode
+    )
+    {
+        var fileSystem = CreatePosixFileSystemWithSelectedPython();
+        var processRunner = new FakeProcessRunner();
+        processRunner.EnqueueResult(new ProcessResult(exitCode, marker + "\n", string.Empty));
+        var service = CreateKeyringProbeService(fileSystem, processRunner);
+
+        PythonPhase11DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        AssertInvalidKeyringProtocol(result);
+        AssertKeyringProbeSpec(Assert.Single(processRunner.StartSpecs));
+    }
+
+    [Theory]
+    [InlineData(
+        KeyringModuleFoundExitCode,
+        KeyringModuleFoundMarker,
+        PythonPhase11KeyringModuleProbeStatus.ModuleFound
+    )]
+    [InlineData(
+        KeyringModuleNotFoundExitCode,
+        KeyringModuleNotFoundMarker,
+        PythonPhase11KeyringModuleProbeStatus.ModuleNotFound
+    )]
+    [InlineData(
+        KeyringModuleProbeFailureExitCode,
+        KeyringModuleProbeFailureMarker,
+        PythonPhase11KeyringModuleProbeStatus.UnexpectedNonZeroExit
+    )]
+    public async Task DoctorAcceptsExactKeyringProtocolWithWindowsLineEnding(
+        int exitCode,
+        string marker,
+        PythonPhase11KeyringModuleProbeStatus expectedStatus
+    )
+    {
+        var fileSystem = CreatePosixFileSystemWithSelectedPython();
+        var processRunner = new FakeProcessRunner();
+        processRunner.EnqueueResult(
+            new ProcessResult(exitCode, marker + "\r\n", string.Empty)
+        );
+        var service = CreateKeyringProbeService(fileSystem, processRunner);
+
+        PythonPhase11DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(expectedStatus, result.KeyringModuleProbe.Status);
+        AssertKeyringProbeSpec(Assert.Single(processRunner.StartSpecs));
+    }
+
+    [Theory]
+    [InlineData("", KeyringModuleFoundExitCode)]
+    [InlineData("   \n", KeyringModuleFoundExitCode)]
+    [InlineData("", KeyringModuleNotFoundExitCode)]
+    [InlineData("\t\r\n", KeyringModuleNotFoundExitCode)]
+    public async Task DoctorRejectsKeyringProbeWithMissingOutput(
+        string standardOutput,
+        int exitCode
+    )
+    {
+        var fileSystem = CreatePosixFileSystemWithSelectedPython();
+        var processRunner = new FakeProcessRunner();
+        processRunner.EnqueueResult(
+            new ProcessResult(exitCode, standardOutput, string.Empty)
+        );
+        var service = CreateKeyringProbeService(fileSystem, processRunner);
+
+        PythonPhase11DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        AssertInvalidKeyringProtocol(result);
+        AssertKeyringProbeSpec(Assert.Single(processRunner.StartSpecs));
+    }
+
+    [Theory]
+    [InlineData(
+        KeyringModuleFoundMarker + "\nadditional output\n",
+        KeyringModuleFoundExitCode
+    )]
+    [InlineData(
+        "additional output\n" + KeyringModuleFoundMarker + "\n",
+        KeyringModuleFoundExitCode
+    )]
+    [InlineData(
+        "prefix " + KeyringModuleFoundMarker + " suffix\n",
+        KeyringModuleFoundExitCode
+    )]
+    [InlineData(
+        KeyringModuleNotFoundMarker + "\nadditional output\n",
+        KeyringModuleNotFoundExitCode
+    )]
+    [InlineData(
+        "additional output\n" + KeyringModuleNotFoundMarker + "\n",
+        KeyringModuleNotFoundExitCode
+    )]
+    [InlineData(
+        "prefix " + KeyringModuleNotFoundMarker + " suffix\n",
+        KeyringModuleNotFoundExitCode
+    )]
+    public async Task DoctorRejectsKeyringProbeWithExtraOutput(
+        string standardOutput,
+        int exitCode
+    )
+    {
+        var fileSystem = CreatePosixFileSystemWithSelectedPython();
+        var processRunner = new FakeProcessRunner();
+        processRunner.EnqueueResult(
+            new ProcessResult(exitCode, standardOutput, string.Empty)
+        );
+        var service = CreateKeyringProbeService(fileSystem, processRunner);
+
+        PythonPhase11DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        AssertInvalidKeyringProtocol(result);
+        AssertKeyringProbeSpec(Assert.Single(processRunner.StartSpecs));
+    }
+
+    [Theory]
+    [InlineData(
+        "Error processing line 1 of site-packages.pth\n"
+            + KeyringModuleFoundMarker
+            + "\n",
+        KeyringModuleFoundExitCode
+    )]
+    [InlineData(
+        "sitecustomize loaded\n" + KeyringModuleNotFoundMarker + "\n",
+        KeyringModuleNotFoundExitCode
+    )]
+    [InlineData(
+        "UserWarning: startup customization\n"
+            + KeyringModuleFoundMarker
+            + "\ntelemetry enabled\n",
+        KeyringModuleFoundExitCode
+    )]
+    public async Task DoctorRejectsKeyringProbeWithContaminatedOutput(
+        string standardOutput,
+        int exitCode
+    )
+    {
+        var fileSystem = CreatePosixFileSystemWithSelectedPython();
+        var processRunner = new FakeProcessRunner();
+        processRunner.EnqueueResult(
+            new ProcessResult(exitCode, standardOutput, string.Empty)
+        );
+        var service = CreateKeyringProbeService(fileSystem, processRunner);
+
+        PythonPhase11DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        AssertInvalidKeyringProtocol(result);
+        AssertKeyringProbeSpec(Assert.Single(processRunner.StartSpecs));
+    }
+
+    [Fact]
+    public async Task DoctorRejectsKeyringProbeWithStandardErrorContamination()
+    {
+        var fileSystem = CreatePosixFileSystemWithSelectedPython();
+        var processRunner = new FakeProcessRunner();
+        processRunner.EnqueueResult(
+            new ProcessResult(
+                KeyringModuleFoundExitCode,
+                KeyringModuleFoundOutput,
+                "startup warning"
+            )
+        );
+        var service = CreateKeyringProbeService(fileSystem, processRunner);
+
+        PythonPhase11DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        AssertInvalidKeyringProtocol(result);
+        AssertKeyringProbeSpec(Assert.Single(processRunner.StartSpecs));
+    }
+
+    [Fact]
+    public async Task DoctorReportsModuleFoundOnlyForExactFoundMarkerAndExitCode()
+    {
+        var fileSystem = CreatePosixFileSystemWithSelectedPython();
+        var processRunner = new FakeProcessRunner();
+        processRunner.EnqueueResult(
+            new ProcessResult(
+                KeyringModuleFoundExitCode,
+                KeyringModuleFoundOutput,
+                string.Empty
+            )
+        );
+        var service = CreateKeyringProbeService(fileSystem, processRunner);
+
+        PythonPhase11DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(SelectedPythonPath, result.KeyringModuleProbe.PythonExecutablePath);
+        Assert.True(result.KeyringModuleProbe.PythonExecutableExists);
+        Assert.True(result.KeyringModuleProbe.Attempted);
+        Assert.True(result.KeyringModuleProbe.KeyringModuleResolvable);
+        Assert.Equal(
+            PythonPhase11KeyringModuleProbeStatus.ModuleFound,
+            result.KeyringModuleProbe.Status
+        );
+        Assert.Null(result.KeyringModuleProbe.FailureMessage);
+        AssertKeyringProbeSpec(Assert.Single(processRunner.StartSpecs));
+    }
+
+    [Fact]
+    public async Task DoctorReportsModuleNotFoundOnlyForExactNotFoundMarkerAndExitCode()
+    {
+        var fileSystem = CreatePosixFileSystemWithSelectedPython();
+        var processRunner = new FakeProcessRunner();
+        processRunner.EnqueueResult(
+            new ProcessResult(
+                KeyringModuleNotFoundExitCode,
+                KeyringModuleNotFoundOutput,
+                string.Empty
+            )
+        );
+        var service = CreateKeyringProbeService(fileSystem, processRunner);
+
+        PythonPhase11DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(SelectedPythonPath, result.KeyringModuleProbe.PythonExecutablePath);
+        Assert.True(result.KeyringModuleProbe.PythonExecutableExists);
+        Assert.True(result.KeyringModuleProbe.Attempted);
+        Assert.False(result.KeyringModuleProbe.KeyringModuleResolvable);
+        Assert.Equal(
+            PythonPhase11KeyringModuleProbeStatus.ModuleNotFound,
+            result.KeyringModuleProbe.Status
+        );
+        Assert.Equal(
+            "The selected Python interpreter cannot resolve the keyring module.",
+            result.KeyringModuleProbe.FailureMessage
+        );
+        AssertKeyringProbeSpec(Assert.Single(processRunner.StartSpecs));
+    }
+
+    private const string SelectedPythonPath = "/workspace/.venv/bin/python";
+    private const string KeyringModuleFoundMarker =
+        "ACP_KEYRING_PROBE_V1:FOUND";
+    private const string KeyringModuleNotFoundMarker =
+        "ACP_KEYRING_PROBE_V1:NOT_FOUND";
+    private const string KeyringModuleProbeFailureMarker =
+        "ACP_KEYRING_PROBE_V1:ERROR";
+    private const int KeyringModuleFoundExitCode = 0;
+    private const int KeyringModuleNotFoundExitCode = 20;
+    private const int KeyringModuleProbeFailureExitCode = 21;
+    private const string KeyringModuleFoundOutput = KeyringModuleFoundMarker + "\n";
+    private const string KeyringModuleNotFoundOutput =
+        KeyringModuleNotFoundMarker + "\n";
+    private const string KeyringModuleProbeFailureOutput =
+        KeyringModuleProbeFailureMarker + "\n";
+    private const string KeyringModuleProbeScript =
+        "import importlib.util,sys\n"
+        + "try:\n"
+        + "    keyring_spec=importlib.util.find_spec('keyring')\n"
+        + "except BaseException:\n"
+        + "    print('ACP_KEYRING_PROBE_V1:ERROR')\n"
+        + "    sys.exit(21)\n"
+        + "if keyring_spec is None:\n"
+        + "    print('ACP_KEYRING_PROBE_V1:NOT_FOUND')\n"
+        + "    sys.exit(20)\n"
+        + "print('ACP_KEYRING_PROBE_V1:FOUND')\n"
+        + "sys.exit(0)";
+
+    private static InMemoryFileSystem CreatePosixFileSystemWithSelectedPython()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace/.venv/bin");
+        WriteExecutable(fileSystem, SelectedPythonPath);
+        return fileSystem;
+    }
+
+    private static PythonPhase11VerticalSliceService CreateKeyringProbeService(
+        InMemoryFileSystem fileSystem,
+        FakeProcessRunner processRunner
+    )
+    {
+        var environment = new EnvironmentVariables(
+            new Dictionary<string, string?> { ["HOME"] = "/home/alice" }
+        );
+        return new PythonPhase11VerticalSliceService(
+            new PythonPhase11VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                ProcessRunner = processRunner,
+                EnvironmentVariableReader = environment.Get,
+                ExpectedKeyringShimPath = ExpectedShimPath,
+                PythonExecutablePath = SelectedPythonPath,
+            }
+        );
+    }
+
+    private static void AssertInvalidKeyringProtocol(PythonPhase11DoctorResult result)
+    {
+        Assert.Equal(SelectedPythonPath, result.KeyringModuleProbe.PythonExecutablePath);
+        Assert.True(result.KeyringModuleProbe.PythonExecutableExists);
+        Assert.True(result.KeyringModuleProbe.Attempted);
+        Assert.False(result.KeyringModuleProbe.KeyringModuleResolvable);
+        Assert.Equal(
+            PythonPhase11KeyringModuleProbeStatus.InvalidOutput,
+            result.KeyringModuleProbe.Status
+        );
+        Assert.Equal(
+            "The keyring module probe did not produce a recognized marker and exit-code pair.",
+            result.KeyringModuleProbe.FailureMessage
+        );
+    }
+
+    private static void AssertKeyringProbeSpec(ProcessStartSpec startSpec)
+    {
+        Assert.Equal(SelectedPythonPath, startSpec.FileName);
+        Assert.Equal(["-c", KeyringModuleProbeScript], startSpec.Arguments);
+        Assert.Empty(startSpec.Environment);
+        Assert.Equal(TimeSpan.FromSeconds(5), startSpec.Timeout);
+        Assert.Equal(4096, startSpec.OutputCaptureOptions.StandardOutputByteLimit);
+        Assert.Equal(4096, startSpec.OutputCaptureOptions.StandardErrorByteLimit);
     }
 }

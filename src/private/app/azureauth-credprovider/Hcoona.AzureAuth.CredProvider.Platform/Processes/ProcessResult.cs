@@ -1,5 +1,15 @@
 namespace Hcoona.AzureAuth.CredProvider.Platform.Processes;
 
+public enum ProcessTerminationReason
+{
+    Unspecified = 0,
+    Exited = 1,
+    LaunchFailure = 2,
+    TimedOut = 3,
+    OutputTooLarge = 4,
+    InvalidOutput = 5,
+}
+
 public sealed class ProcessResult
 {
     public ProcessResult(int exitCode, string standardOutput, string standardError)
@@ -23,6 +33,16 @@ public sealed class ProcessResult
         ArgumentNullException.ThrowIfNull(standardError);
 
         Status = status;
+        TerminationReason = status switch
+        {
+            ProcessExecutionStatus.Success or ProcessExecutionStatus.NonZeroExit =>
+                ProcessTerminationReason.Exited,
+            ProcessExecutionStatus.LaunchFailure => ProcessTerminationReason.LaunchFailure,
+            ProcessExecutionStatus.TimedOut => ProcessTerminationReason.TimedOut,
+            ProcessExecutionStatus.OutputTooLarge => ProcessTerminationReason.OutputTooLarge,
+            ProcessExecutionStatus.InvalidOutput => ProcessTerminationReason.InvalidOutput,
+            _ => ProcessTerminationReason.Unspecified,
+        };
         ExitCode = exitCode;
         HasExitCode = hasExitCode;
         StandardOutput = standardOutput;
@@ -30,6 +50,8 @@ public sealed class ProcessResult
     }
 
     public ProcessExecutionStatus Status { get; }
+
+    public ProcessTerminationReason TerminationReason { get; }
 
     public int ExitCode { get; }
 

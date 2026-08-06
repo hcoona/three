@@ -251,6 +251,10 @@ public sealed class CliApplicationTests
         }
     }
 
+    private const string KeyringModuleFoundOutput = "ACP_KEYRING_PROBE_V1:FOUND\n";
+    private const string KeyringModuleNotFoundOutput =
+        "ACP_KEYRING_PROBE_V1:NOT_FOUND\n";
+
     private sealed class RecordingPythonResolutionProcessRunner : IProcessRunner
     {
         private readonly Queue<Func<ProcessStartSpec, ProcessResult>> handlers = [];
@@ -280,7 +284,9 @@ public sealed class CliApplicationTests
 
             if (handlers.Count == 0)
             {
-                return Task.FromResult(new ProcessResult(0, string.Empty, string.Empty));
+                return Task.FromResult(
+                    new ProcessResult(0, KeyringModuleFoundOutput, string.Empty)
+                );
             }
 
             return Task.FromResult(handlers.Dequeue()(startSpec));
@@ -6381,7 +6387,11 @@ public sealed class CliApplicationTests
             if (mode == PythonDoctorFixtureMode.MissingKeyringModule)
             {
                 ResolutionProcessRunner.EnqueueResult(
-                    new ProcessResult(1, string.Empty, string.Empty)
+                    new ProcessResult(
+                        20,
+                        KeyringModuleNotFoundOutput,
+                        string.Empty
+                    )
                 );
             }
             else if (mode == PythonDoctorFixtureMode.ShadowedExpectedShim)
@@ -6406,7 +6416,11 @@ public sealed class CliApplicationTests
                 useExplicitPythonExecutablePath = false;
                 environmentVariables["VIRTUAL_ENV"] = environmentRoot;
                 ResolutionProcessRunner.EnqueueResult(
-                    new ProcessResult(1, string.Empty, string.Empty)
+                    new ProcessResult(
+                        20,
+                        KeyringModuleNotFoundOutput,
+                        string.Empty
+                    )
                 );
             }
             else if (mode == PythonDoctorFixtureMode.ResolvedInterpreterProbeLaunchFailure)
