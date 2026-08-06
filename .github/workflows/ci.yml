@@ -183,16 +183,19 @@ jobs:
             target-os: Windows
             target-rid: win-x64
             run-host-tests: false
+            run-deployment-validation: true
           - build-os: Linux
             build-runner: ubuntu-latest
             target-os: Linux
             target-rid: linux-x64
             run-host-tests: true
+            run-deployment-validation: true
           - build-os: macOS
             build-runner: macos-latest
             target-os: macOS
             target-rid: osx-x64
             run-host-tests: true
+            run-deployment-validation: false
 
     env:
       NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
@@ -246,6 +249,41 @@ jobs:
           path: artifacts/azureauth-credprovider/foundation/azureauth-credprovider-foundation-internal-${{ matrix.build-os }}-${{ matrix.target-rid }}.zip
           if-no-files-found: error
           retention-days: 7
+
+      - name: Setup Python 3.14 for deployment validation
+        if: matrix.run-deployment-validation
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+
+      - name: Install uv for deployment validation
+        if: matrix.run-deployment-validation
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: '3.14'
+          enable-cache: false
+
+      - name: Create deployment validation bundle
+        if: matrix.run-deployment-validation
+        shell: pwsh
+        run: |
+          ./eng/scripts/azureauth-credprovider/New-DeploymentValidationBundle.ps1 `
+            -BuildOs '${{ matrix.build-os }}' `
+            -TargetRid '${{ matrix.target-rid }}' `
+            -Configuration Release `
+            -ProductVersion '0.0.0-internal' `
+            -SourceRevision '${{ github.sha }}'
+
+      - name: Test deployment validation lifecycle
+        if: matrix.run-deployment-validation
+        shell: pwsh
+        run: |
+          ./tests/private/app/azureauth-credprovider/Install-DeploymentValidationBundle.Tests.ps1 `
+            -BundlePath (
+              'artifacts/azureauth-credprovider/deployment-validation/' +
+              'azureauth-credprovider-deployment-validation-internal-' +
+              '${{ matrix.build-os }}-${{ matrix.target-rid }}.zip'
+            )
 
   node-tests:
     name: Test & Build (Node.js ${{ matrix.node-version }})

@@ -107,10 +107,27 @@ if (-not $SkipConfigurationCleanup) {
         )
     }
 
-    foreach ($ecosystem in @('git', 'nuget', 'python')) {
+    foreach ($ecosystem in @('git', 'nuget', 'python', 'npm', 'pnpm', 'yarn')) {
         & $productExecutablePath unconfigure $ecosystem
         if ($LASTEXITCODE -ne 0) {
             throw "Configuration cleanup failed for $ecosystem with exit code $LASTEXITCODE."
+        }
+    }
+
+    $azurePipelinesJobId = [string]$env:SYSTEM_JOBID
+    $isAzurePipelinesJob = $env:TF_BUILD -ieq 'True' -and
+        -not [string]::IsNullOrWhiteSpace($azurePipelinesJobId) -and
+        $azurePipelinesJobId.Length -le 128 -and
+        $azurePipelinesJobId -ne '.' -and
+        $azurePipelinesJobId -ne '..' -and
+        $azurePipelinesJobId -match '^[A-Za-z0-9._-]+$'
+    if ($isAzurePipelinesJob) {
+        & $productExecutablePath cleanup --ci azure-pipelines
+        if ($LASTEXITCODE -ne 0) {
+            throw (
+                'Azure Pipelines job configuration cleanup failed with exit code ' +
+                "$LASTEXITCODE."
+            )
         }
     }
 }

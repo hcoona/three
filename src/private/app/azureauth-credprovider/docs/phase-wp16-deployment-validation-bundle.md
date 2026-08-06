@@ -77,7 +77,14 @@ By default, uninstallation invokes:
 azureauth-credprovider unconfigure git
 azureauth-credprovider unconfigure nuget
 azureauth-credprovider unconfigure python
+azureauth-credprovider unconfigure npm
+azureauth-credprovider unconfigure pnpm
+azureauth-credprovider unconfigure yarn
 ```
+
+In an identified Azure Pipelines job, uninstallation also runs
+`cleanup --ci azure-pipelines` for the current `SYSTEM_JOBID`; it does not scan
+or remove state for other jobs.
 
 It then removes only the product and NuGet plugin roots recorded in the install
 receipt. `-SkipConfigurationCleanup` is an explicit escape hatch for damaged or

@@ -19,7 +19,15 @@ param(
     [string]$SourceRevision = 'unknown',
 
     [ValidateNotNullOrEmpty()]
-    [string]$OutputRoot = 'artifacts/azureauth-credprovider/deployment-validation'
+    [string]$OutputRoot = 'artifacts/azureauth-credprovider/deployment-validation',
+
+    [switch]$NoBuild,
+
+    [Parameter(DontShow = $true)]
+    [scriptblock]$BeforeArchiveEntry,
+
+    [Parameter(DontShow = $true)]
+    [scriptblock]$BeforePackageReplace
 )
 
 Set-StrictMode -Version Latest
@@ -67,40 +75,49 @@ $pythonRoot = Join-Path $stagingRoot 'python'
 $packagePath = Join-Path $outputRootPath (
     "azureauth-credprovider-deployment-validation-internal-$BuildOs-$TargetRid.zip"
 )
+$temporaryPackagePath = "$packagePath.$([System.Guid]::NewGuid().ToString('N')).tmp"
 
-if (Test-Path -LiteralPath $stagingRoot) {
-    Remove-Item -LiteralPath $stagingRoot -Recurse -Force
-}
-New-Item -ItemType Directory -Path $appRoot -Force | Out-Null
-New-Item -ItemType Directory -Path $launcherRoot -Force | Out-Null
-New-Item -ItemType Directory -Path $pythonRoot -Force | Out-Null
 New-Item -ItemType Directory -Path $outputRootPath -Force | Out-Null
 
 try {
-    dotnet publish $projectPath `
-        -c $Configuration `
-        -r $TargetRid `
-        --self-contained false `
-        -o $appRoot `
-        -p:ContinuousIntegrationBuild=true `
-        -p:Deterministic=true
-    if ($LASTEXITCODE -ne 0) {
-        exit $LASTEXITCODE
-    }
+    if (-not $NoBuild) {
+        if (Test-Path -LiteralPath $stagingRoot) {
+            Remove-Item -LiteralPath $stagingRoot -Recurse -Force
+        }
+        New-Item -ItemType Directory -Path $appRoot -Force | Out-Null
+        New-Item -ItemType Directory -Path $pythonRoot -Force | Out-Null
 
-    Push-Location $repoRoot
-    try {
-        uv build `
-            --package azureauth-credprovider-keyring `
-            --wheel `
-            --out-dir $pythonRoot
+        dotnet publish $projectPath `
+            -c $Configuration `
+            -r $TargetRid `
+            --self-contained false `
+            -o $appRoot `
+            -p:RestoreLockedMode=true `
+            -p:ContinuousIntegrationBuild=true `
+            -p:Deterministic=true
         if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
         }
+
+        Push-Location $repoRoot
+        try {
+            uv build `
+                --package azureauth-credprovider-keyring `
+                --wheel `
+                --out-dir $pythonRoot
+            if ($LASTEXITCODE -ne 0) {
+                exit $LASTEXITCODE
+            }
+        }
+        finally {
+            Pop-Location
+        }
     }
-    finally {
-        Pop-Location
+    elseif (-not (Test-Path -LiteralPath $stagingRoot -PathType Container)) {
+        throw "Canonical staging directory '$stagingRoot' does not exist. Run without -NoBuild first."
     }
+
+    New-Item -ItemType Directory -Path $launcherRoot -Force | Out-Null
 
     $productExecutableName = if ($BuildOs -eq 'Windows') {
         'azureauth-credprovider.exe'
@@ -203,11 +220,12 @@ exec "$script_dir/../app/azureauth-credprovider" git credential-helper "$@"
     $manifest | ConvertTo-Json -Depth 10 -Compress |
         Set-Content -LiteralPath (Join-Path $stagingRoot 'manifest.json') -Encoding utf8
 
-    if (Test-Path -LiteralPath $packagePath) {
-        Remove-Item -LiteralPath $packagePath -Force
-    }
-
-    $packageStream = [System.IO.File]::Create($packagePath)
+    $packageStream = [System.IO.File]::Open(
+        $temporaryPackagePath,
+        [System.IO.FileMode]::CreateNew,
+        [System.IO.FileAccess]::Write,
+        [System.IO.FileShare]::None
+    )
     try {
         $archive = [System.IO.Compression.ZipArchive]::new(
             $packageStream,
@@ -220,6 +238,9 @@ exec "$script_dir/../app/azureauth-credprovider" git credential-helper "$@"
                     $stagingRoot,
                     $file.FullName
                 ).Replace('\', '/')
+                if ($null -ne $BeforeArchiveEntry) {
+                    & $BeforeArchiveEntry $entryName
+                }
                 $entry = $archive.CreateEntry(
                     $entryName,
                     [System.IO.Compression.CompressionLevel]::NoCompression
@@ -255,9 +276,34 @@ exec "$script_dir/../app/azureauth-credprovider" git credential-helper "$@"
     finally {
         $packageStream.Dispose()
     }
+
+    $validationArchive = [System.IO.Compression.ZipFile]::OpenRead($temporaryPackagePath)
+    try {
+        foreach ($entry in $validationArchive.Entries) {
+            $source = $entry.Open()
+            try {
+                $source.CopyTo([System.IO.Stream]::Null)
+            }
+            finally {
+                $source.Dispose()
+            }
+        }
+    }
+    finally {
+        $validationArchive.Dispose()
+    }
+
+    if ($null -ne $BeforePackageReplace) {
+        & $BeforePackageReplace $temporaryPackagePath $packagePath
+    }
+
+    [System.IO.File]::Move($temporaryPackagePath, $packagePath, $true)
 }
 finally {
-    if (Test-Path -LiteralPath $stagingRoot) {
+    if (Test-Path -LiteralPath $temporaryPackagePath) {
+        Remove-Item -LiteralPath $temporaryPackagePath -Force
+    }
+    if (-not $NoBuild -and (Test-Path -LiteralPath $stagingRoot)) {
         Remove-Item -LiteralPath $stagingRoot -Recurse -Force
     }
 }

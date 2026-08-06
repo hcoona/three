@@ -447,10 +447,37 @@ catch {
     throw $switchFailure
 }
 
+$undeletedBackupPaths = [System.Collections.Generic.List[string]]::new()
 foreach ($path in @($backupNuGetPluginRoot, $backupInstallRoot)) {
     if (Test-Path -LiteralPath $path) {
-        Remove-Item -LiteralPath $path -Recurse -Force
+        try {
+            Remove-Item -LiteralPath $path -Recurse -Force
+        }
+        catch {
+            if (Test-Path -LiteralPath $path) {
+                $undeletedBackupPaths.Add($path)
+                Write-Warning (
+                    "Post-commit cleanup could not completely remove deployment backup data at " +
+                    "'$path': $($_.Exception.Message) The active installation remains committed; " +
+                    'data left at this path may be incomplete and must not be treated as a fully ' +
+                    'recoverable backup.'
+                )
+            }
+            else {
+                Write-Warning (
+                    "Post-commit cleanup reported a failure after removing deployment backup " +
+                    "data at '$path': $($_.Exception.Message) The active installation remains committed."
+                )
+            }
+        }
     }
+}
+
+if ($undeletedBackupPaths.Count -gt 0) {
+    Write-Warning (
+        'Undeleted post-commit backup paths: ' +
+        ($undeletedBackupPaths -join [System.Environment]::NewLine)
+    )
 }
 
 Write-Output "Installed internal deployment validation payload: $InstallRoot"
