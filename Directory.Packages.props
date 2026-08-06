@@ -31,7 +31,7 @@
     <!-- MSTest.Sdk owns these versions for SDK-style MSTest projects. -->
     <PackageVersion Include="Microsoft.Testing.Extensions.CodeCoverage" Version="18.9.0" Condition="'$(UsingMSTestSdk)' != 'true'" />
     <PackageVersion Include="Microsoft.Testing.Extensions.TrxReport" Version="2.3.3" Condition="'$(UsingMSTestSdk)' != 'true'" />
-    <PackageVersion Include="Microsoft.Web.WebView2" Version="1.0.4078.44" />
+    <PackageVersion Include="Microsoft.Web.WebView2" Version="1.0.4129.50" />
     <PackageVersion Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2526" />
     <PackageVersion Include="Microsoft.WindowsAppSDK" Version="2.3.1" />
     <PackageVersion Include="Nito.Guids" Version="1.1.1" />
