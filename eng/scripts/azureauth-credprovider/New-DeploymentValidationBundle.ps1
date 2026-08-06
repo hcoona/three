@@ -175,6 +175,11 @@ exec "$script_dir/../app/azureauth-credprovider" git credential-helper "$@"
         Join-Path $scriptRoot 'Uninstall-DeploymentValidationBundle.ps1'
     ) -Destination (Join-Path $stagingRoot 'uninstall.ps1')
 
+    $manifestPath = Join-Path $stagingRoot 'manifest.json'
+    if (Test-Path -LiteralPath $manifestPath) {
+        Remove-Item -LiteralPath $manifestPath -Force
+    }
+
     $files = @(
         Get-ChildItem -LiteralPath $stagingRoot -File -Recurse -Force |
             ForEach-Object {
@@ -218,7 +223,7 @@ exec "$script_dir/../app/azureauth-credprovider" git credential-helper "$@"
         files           = $files
     }
     $manifest | ConvertTo-Json -Depth 10 -Compress |
-        Set-Content -LiteralPath (Join-Path $stagingRoot 'manifest.json') -Encoding utf8
+        Set-Content -LiteralPath $manifestPath -Encoding utf8
 
     $packageStream = [System.IO.File]::Open(
         $temporaryPackagePath,

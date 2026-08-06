@@ -340,6 +340,7 @@ function Assert-PreviousInstallationRestored {
 }
 
 function Invoke-Installer {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
         [string]$BundleRoot,
@@ -351,10 +352,16 @@ function Invoke-Installer {
         [string]$NuGetPluginRoot
     )
 
-    & (Join-Path $BundleRoot 'install.ps1') `
-        -InstallRoot $InstallRoot `
-        -NuGetPluginRoot $NuGetPluginRoot `
-        -Force | Out-Null
+    $parameters = @{
+        InstallRoot     = $InstallRoot
+        NuGetPluginRoot = $NuGetPluginRoot
+        Force           = $true
+    }
+    if ($PSBoundParameters.ContainsKey('WarningAction')) {
+        $parameters.WarningAction = $PSBoundParameters.WarningAction
+    }
+
+    & (Join-Path $BundleRoot 'install.ps1') @parameters | Out-Null
 }
 
 function Assert-ReplacementInstallationActive {
@@ -562,6 +569,37 @@ try {
     finally {
         $generatorArchive.Dispose()
     }
+
+    Invoke-DeploymentGenerator -OutputRoot $generatorSuccessOutput
+    $twiceNoBuildBundleRoot = Join-Path $testRoot 'twice-no-build-bundle'
+    [System.IO.Compression.ZipFile]::ExtractToDirectory(
+        $generatorSuccessPackage,
+        $twiceNoBuildBundleRoot
+    )
+    $twiceNoBuildInstallRoot = Join-Path $testRoot 'twice-no-build-install'
+    $twiceNoBuildPluginRoot = Join-Path $testRoot 'twice-no-build-plugin'
+    Invoke-Installer `
+        -BundleRoot $twiceNoBuildBundleRoot `
+        -InstallRoot $twiceNoBuildInstallRoot `
+        -NuGetPluginRoot $twiceNoBuildPluginRoot
+    Assert-True (
+        Test-Path -LiteralPath (
+            Join-Path $twiceNoBuildInstallRoot "app/$productExecutableName"
+        ) -PathType Leaf
+    ) 'The twice-NoBuild bundle did not install its product payload.'
+    Assert-True (
+        Test-Path -LiteralPath (
+            Join-Path $twiceNoBuildPluginRoot 'azureauth-credprovider.dll'
+        ) -PathType Leaf
+    ) 'The twice-NoBuild bundle did not install its NuGet plugin payload.'
+    $twiceNoBuildReceipt = Get-Content -LiteralPath (
+        Join-Path $twiceNoBuildInstallRoot 'installation.json'
+    ) -Raw | ConvertFrom-Json
+    Assert-Equal `
+        -Expected 'generator-test' `
+        -Actual $twiceNoBuildReceipt.sourceRevision `
+        -Message 'The twice-NoBuild bundle installed an unexpected receipt.'
+
     Assert-NoTemporaryDeploymentPackage `
         -OutputRoot $generatorSuccessOutput `
         -Context 'successful replacement'
@@ -743,14 +781,18 @@ try {
         }
     }
     try {
+        $savedWarningPreference = $WarningPreference
+        $WarningPreference = 'Stop'
         $cleanupWarnings = @(
             Invoke-Installer `
                 -BundleRoot $bundleRoot `
                 -InstallRoot $cleanupFailureInstallRoot `
-                -NuGetPluginRoot $cleanupFailurePluginRoot 3>&1
+                -NuGetPluginRoot $cleanupFailurePluginRoot `
+                -WarningAction Stop 3>&1
         )
     }
     finally {
+        $WarningPreference = $savedWarningPreference
         Microsoft.PowerShell.Management\Remove-Item `
             -LiteralPath Function:\Remove-Item `
             -Force
