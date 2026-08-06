@@ -4459,6 +4459,7 @@ public sealed class CliApplicationTests
                     "python-keyring-module: fail",
                     "python-keyring-module-probe: interpreter-not-found",
                     "python-azure-artifacts-endpoint-canonicalization: pass",
+                    "npm-workspace-resolution-status: NotRequired",
                     "npm-workspace-npmrc: absent",
                     "npm-effective-user-npmrc: absent",
                     "npm-userconfig-environment-override: absent",
@@ -6668,5 +6669,424 @@ public sealed class CliApplicationTests
         Assert.Equal(string.Empty, doctor.StdErr);
         Assert.True(pythonFixture.PathWasRequested);
     }
+
+#pragma warning disable CA1707
+    [Fact]
+    public async Task Doctor_ContinuesAggregationAfterExpectedNpmResolutionFailure()
+    {
+        const string SensitiveDiagnostic = "_authToken=phase3-secret";
+        string stateDirectory = CreateTestDirectory();
+        var callOrder = new List<string>();
+        var npmRunner = new Phase3NpmProcessRunner(
+            () =>
+            {
+                callOrder.Add("npm");
+                return ProcessResult.TimedOut(string.Empty, SensitiveDiagnostic);
+            }
+        );
+
+        try
+        {
+            string invocationDirectory = CreatePhase3NpmWorkspace(stateDirectory);
+            File.WriteAllText(
+                Path.Combine(stateDirectory, ".yarnrc.yml"),
+                $"npmRegistryServer: \"{TestRegistryUrl}\"\n"
+            );
+            var expectedYarnObservations = 0;
+            YarnPhase13VerticalSliceOptions referenceYarnOptions =
+                CreatePhase3YarnOptions(stateDirectory, () => expectedYarnObservations++);
+            _ = await new YarnPhase13VerticalSliceService(referenceYarnOptions)
+                .RunDoctorAsync(TestContext.Current.CancellationToken);
+            var expectedConfigurationObservations = 0;
+            ConfigurationPhase14VerticalSliceOptions referenceConfigurationOptions =
+                CreateConfigurationPhase14Options(stateDirectory) with
+                {
+                    EnvironmentVariableReader = _ =>
+                    {
+                        expectedConfigurationObservations++;
+                        return null;
+                    },
+                };
+            _ = await new ConfigurationPhase14VerticalSliceService(
+                referenceConfigurationOptions
+            )
+                .DoctorAsync(TestContext.Current.CancellationToken);
+            var yarnObservations = 0;
+            var configurationObservations = 0;
+            CliRuntimeOptions runtime = CreateGitPhase8RuntimeOptions(stateDirectory) with
+            {
+                NpmPhase12Options = CreatePhase3NpmOptions(
+                    invocationDirectory,
+                    stateDirectory,
+                    npmRunner
+                ),
+                YarnPhase13Options = CreatePhase3YarnOptions(
+                    stateDirectory,
+                    () =>
+                    {
+                        yarnObservations++;
+                        callOrder.Add("yarn");
+                    }
+                ),
+                ConfigurationPhase14Options = CreateConfigurationPhase14Options(
+                    stateDirectory
+                ) with
+                {
+                    EnvironmentVariableReader = _ =>
+                    {
+                        configurationObservations++;
+                        callOrder.Add("configuration");
+                        return null;
+                    },
+                },
+            };
+
+            CommandResult doctor = InvokeWithRuntime(runtime, "doctor");
+
+            Assert.Equal(1, doctor.ExitCode);
+            AssertDoctorCheck(
+                doctor.StdOut,
+                "npm-workspace-resolution-status",
+                "TimedOut"
+            );
+            AssertDoctorCheck(doctor.StdOut, "npm-workspace-npmrc", "fail");
+            AssertDoctorCheck(doctor.StdOut, "npm-registry-declaration", "skipped");
+            AssertDoctorCheck(doctor.StdOut, "npm-user-credential-plan", "skipped");
+            AssertDoctorCheck(doctor.StdOut, "pnpm-user-credential-plan", "skipped");
+            AssertDoctorCheck(
+                doctor.StdOut,
+                "npm-ci-temporary-credential-plan",
+                "skipped"
+            );
+            AssertDoctorCheck(doctor.StdOut, "yarn-registry-declaration", "present");
+            AssertDoctorCheck(doctor.StdOut, "yarn-writes", "pass");
+            AssertDoctorCheck(doctor.StdOut, "configuration-aggregation", "pass");
+            AssertDoctorCheck(doctor.StdOut, "doctor-aggregation", "fail");
+            Assert.Equal(string.Empty, doctor.StdErr);
+            Assert.DoesNotContain(SensitiveDiagnostic, doctor.StdOut, StringComparison.Ordinal);
+            Assert.Single(npmRunner.StartSpecs);
+            int npmCall = callOrder.IndexOf("npm");
+            int yarnCall = callOrder.IndexOf("yarn");
+            int configurationCall = callOrder.IndexOf("configuration");
+            Assert.True(npmCall >= 0);
+            Assert.True(yarnCall > npmCall);
+            Assert.True(configurationCall > yarnCall);
+            Assert.True(expectedYarnObservations > 0);
+            Assert.True(expectedConfigurationObservations > 0);
+            Assert.Equal(expectedYarnObservations, yarnObservations);
+            Assert.Equal(
+                expectedConfigurationObservations,
+                configurationObservations
+            );
+            Assert.Equal(
+                1,
+                Normalize(doctor.StdOut)
+                    .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                    .Count(line =>
+                        line.StartsWith(
+                            "yarn-registry-declaration: ",
+                            StringComparison.Ordinal
+                        )
+                    )
+            );
+            Assert.Equal(
+                1,
+                Normalize(doctor.StdOut)
+                    .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                    .Count(line =>
+                        line.StartsWith(
+                            "configuration-aggregation: ",
+                            StringComparison.Ordinal
+                        )
+                    )
+            );
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public void Doctor_UsesCapturedCurrentDirectoryForDefaultNpmAndYarnOptions()
+    {
+        string stateDirectory = CreateTestDirectory();
+        string firstDirectory = Path.Combine(stateDirectory, "first-capture");
+        Directory.CreateDirectory(firstDirectory);
+        File.WriteAllText(
+            Path.Combine(firstDirectory, ".npmrc"),
+            $"registry={TestRegistryUrl}\n"
+        );
+        File.WriteAllText(
+            Path.Combine(firstDirectory, ".yarnrc.yml"),
+            $"npmRegistryServer: \"{TestRegistryUrl}\"\n"
+        );
+        string userNpmrcPath = Path.Combine(stateDirectory, "injected-user.npmrc");
+        string userYarnrcPath = Path.Combine(stateDirectory, "injected-user.yarnrc.yml");
+        File.WriteAllText(userNpmrcPath, "fund=false\n");
+        File.WriteAllText(userYarnrcPath, "enableTelemetry: false\n");
+        var npmRunner = new Phase3NpmProcessRunner(
+            () => throw new InvalidOperationException("npm prefix was not expected")
+        );
+        var npmOptionObservations = 0;
+        var yarnOptionObservations = 0;
+
+        try
+        {
+            CliRuntimeOptions runtime = CreateGitPhase8RuntimeOptions(stateDirectory) with
+            {
+                NpmPhase12Options = new NpmPhase12VerticalSliceOptions
+                {
+                    ProcessRunner = npmRunner,
+                    WorkspaceDirectoryPath = null,
+                    UserHomeDirectoryPath = stateDirectory,
+                    UserNpmrcPath = userNpmrcPath,
+                    CiTemporaryNpmrcPath = Path.Combine(stateDirectory, "ci", ".npmrc"),
+                    EnvironmentVariableReader = _ =>
+                    {
+                        npmOptionObservations++;
+                        return null;
+                    },
+                },
+                YarnPhase13Options = new YarnPhase13VerticalSliceOptions
+                {
+                    WorkspaceDirectoryPath = null,
+                    UserHomeDirectoryPath = stateDirectory,
+                    UserYarnrcPath = userYarnrcPath,
+                    EnvironmentVariableReader = _ =>
+                    {
+                        yarnOptionObservations++;
+                        return null;
+                    },
+                },
+            };
+            CommandResult doctor = InvokeWithRuntimeFromDirectory(
+                firstDirectory,
+                runtime,
+                "doctor"
+            );
+
+            Assert.Equal(1, doctor.ExitCode);
+            Assert.Equal(string.Empty, doctor.StdErr);
+            AssertDoctorCheck(doctor.StdOut, "npm-workspace-npmrc", "present");
+            AssertDoctorCheck(doctor.StdOut, "yarn-workspace-yarnrc", "present");
+            AssertDoctorCheck(doctor.StdOut, "npm-registry-declaration", "present");
+            AssertDoctorCheck(doctor.StdOut, "yarn-registry-declaration", "present");
+            AssertDoctorCheck(doctor.StdOut, "npm-effective-user-npmrc", "present");
+            AssertDoctorCheck(doctor.StdOut, "yarn-effective-user-yarnrc", "present");
+            Assert.True(npmOptionObservations > 0);
+            Assert.True(yarnOptionObservations > 0);
+            Assert.Empty(npmRunner.StartSpecs);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public void Doctor_PreservesExplicitNpmAndYarnWorkspaceDirectories()
+    {
+        string stateDirectory = CreateTestDirectory();
+        string defaultDirectory = Path.Combine(stateDirectory, "captured-default");
+        string npmDirectory = Path.Combine(stateDirectory, "explicit-npm");
+        string yarnDirectory = Path.Combine(stateDirectory, "explicit-yarn");
+        Directory.CreateDirectory(defaultDirectory);
+        Directory.CreateDirectory(npmDirectory);
+        Directory.CreateDirectory(yarnDirectory);
+        File.WriteAllText(
+            Path.Combine(npmDirectory, ".npmrc"),
+            $"registry={TestRegistryUrl}\n"
+        );
+        File.WriteAllText(
+            Path.Combine(yarnDirectory, ".yarnrc.yml"),
+            $"npmRegistryServer: \"{TestRegistryUrl}\"\n"
+        );
+        var npmRunner = new Phase3NpmProcessRunner(
+            () => throw new InvalidOperationException("npm prefix was not expected")
+        );
+        var npmOptionObservations = 0;
+        var yarnOptionObservations = 0;
+
+        try
+        {
+            CliRuntimeOptions runtime = CreateGitPhase8RuntimeOptions(stateDirectory) with
+            {
+                NpmPhase12Options = CreatePhase3NpmOptions(
+                        npmDirectory,
+                        stateDirectory,
+                        npmRunner
+                    ) with
+                {
+                    EnvironmentVariableReader = _ =>
+                    {
+                        npmOptionObservations++;
+                        return null;
+                    },
+                },
+                YarnPhase13Options = new YarnPhase13VerticalSliceOptions
+                {
+                    WorkspaceDirectoryPath = yarnDirectory,
+                    UserHomeDirectoryPath = stateDirectory,
+                    UserYarnrcPath = Path.Combine(stateDirectory, "user.yarnrc.yml"),
+                    EnvironmentVariableReader = _ =>
+                    {
+                        yarnOptionObservations++;
+                        return null;
+                    },
+                },
+            };
+            CommandResult doctor = InvokeWithRuntimeFromDirectory(
+                defaultDirectory,
+                runtime,
+                "doctor"
+            );
+
+            Assert.Equal(1, doctor.ExitCode);
+            Assert.Equal(string.Empty, doctor.StdErr);
+            AssertDoctorCheck(doctor.StdOut, "npm-workspace-npmrc", "present");
+            AssertDoctorCheck(doctor.StdOut, "yarn-workspace-yarnrc", "present");
+            AssertDoctorCheck(doctor.StdOut, "npm-registry-declaration", "present");
+            AssertDoctorCheck(doctor.StdOut, "yarn-registry-declaration", "present");
+            Assert.True(npmOptionObservations > 0);
+            Assert.True(yarnOptionObservations > 0);
+            Assert.Empty(npmRunner.StartSpecs);
+            Assert.DoesNotContain(defaultDirectory, doctor.StdOut, StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public void Doctor_DoesNotReclassifyUnexpectedNpmExceptionAsExpectedResolutionFailure()
+    {
+        const string SensitiveMessage = "unexpected phase3 sentinel secret";
+        string stateDirectory = CreateTestDirectory();
+        var callOrder = new List<string>();
+        var sentinel = new InvalidOperationException(SensitiveMessage);
+        var npmRunner = new Phase3NpmProcessRunner(() =>
+        {
+            callOrder.Add("npm");
+            throw sentinel;
+        });
+
+        try
+        {
+            string invocationDirectory = CreatePhase3NpmWorkspace(stateDirectory);
+            CliRuntimeOptions runtime = CreateGitPhase8RuntimeOptions(stateDirectory) with
+            {
+                NpmPhase12Options = CreatePhase3NpmOptions(
+                    invocationDirectory,
+                    stateDirectory,
+                    npmRunner
+                ),
+                YarnPhase13Options = new YarnPhase13VerticalSliceOptions
+                {
+                    WorkspaceDirectoryPath = stateDirectory,
+                    UserHomeDirectoryPath = stateDirectory,
+                    UserYarnrcPath = Path.Combine(stateDirectory, "user.yarnrc.yml"),
+                    EnvironmentVariableReader = _ =>
+                    {
+                        callOrder.Add("yarn");
+                        return null;
+                    },
+                },
+                ConfigurationPhase14Options = CreateConfigurationPhase14Options(
+                    stateDirectory
+                ) with
+                {
+                    EnvironmentVariableReader = _ =>
+                    {
+                        callOrder.Add("configuration");
+                        return null;
+                    },
+                },
+            };
+
+            CommandResult doctor = InvokeWithRuntime(runtime, "doctor");
+
+            Assert.Equal(70, doctor.ExitCode);
+            Assert.Equal(string.Empty, doctor.StdOut);
+            Assert.Equal("error: unexpected fatal failure.\n", doctor.StdErr);
+            Assert.Equal(["npm"], callOrder);
+            Assert.Single(npmRunner.StartSpecs);
+            Assert.DoesNotContain("TimedOut", doctor.StdErr, StringComparison.Ordinal);
+            Assert.DoesNotContain(SensitiveMessage, doctor.StdErr, StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    private static string CreatePhase3NpmWorkspace(string rootPath)
+    {
+        string invocationDirectory = Path.Combine(rootPath, "packages", "member");
+        Directory.CreateDirectory(invocationDirectory);
+        File.WriteAllText(
+            Path.Combine(rootPath, "package.json"),
+            """{"name":"phase3-root","private":true,"workspaces":["packages/*"]}"""
+        );
+        File.WriteAllText(
+            Path.Combine(invocationDirectory, "package.json"),
+            """{"name":"phase3-member"}"""
+        );
+        File.WriteAllText(
+            Path.Combine(rootPath, ".npmrc"),
+            $"registry={TestRegistryUrl}\n"
+        );
+        return invocationDirectory;
+    }
+
+    private static NpmPhase12VerticalSliceOptions CreatePhase3NpmOptions(
+        string workspaceDirectory,
+        string stateDirectory,
+        IProcessRunner processRunner
+    ) =>
+        new()
+        {
+            ProcessRunner = processRunner,
+            WorkspaceDirectoryPath = workspaceDirectory,
+            UserHomeDirectoryPath = stateDirectory,
+            UserNpmrcPath = Path.Combine(stateDirectory, "user.npmrc"),
+            CiTemporaryNpmrcPath = Path.Combine(stateDirectory, "ci", ".npmrc"),
+            EnvironmentVariableReader = _ => null,
+        };
+
+    private static YarnPhase13VerticalSliceOptions CreatePhase3YarnOptions(
+        string workspaceDirectory,
+        Action environmentObservation
+    ) =>
+        new()
+        {
+            WorkspaceDirectoryPath = workspaceDirectory,
+            UserHomeDirectoryPath = workspaceDirectory,
+            UserYarnrcPath = Path.Combine(workspaceDirectory, "user.yarnrc.yml"),
+            EnvironmentVariableReader = _ =>
+            {
+                environmentObservation();
+                return null;
+            },
+        };
+
+    private sealed class Phase3NpmProcessRunner(Func<ProcessResult> resultFactory)
+        : IProcessRunner
+    {
+        public List<ProcessStartSpec> StartSpecs { get; } = [];
+
+        public Task<ProcessResult> RunAsync(
+            ProcessStartSpec startSpec,
+            CancellationToken cancellationToken = default
+        )
+        {
+            ArgumentNullException.ThrowIfNull(startSpec);
+            cancellationToken.ThrowIfCancellationRequested();
+            StartSpecs.Add(startSpec);
+            return Task.FromResult(resultFactory());
+        }
+    }
+#pragma warning restore CA1707
 
 }

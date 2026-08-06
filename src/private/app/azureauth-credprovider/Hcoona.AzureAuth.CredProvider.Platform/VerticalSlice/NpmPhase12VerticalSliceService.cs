@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.ComponentModel;
 using System.Text.Json;
 using Hcoona.AzureAuth.CredProvider.Contracts;
 using Hcoona.AzureAuth.CredProvider.Platform.FileSystem;
@@ -21,6 +22,67 @@ public sealed record NpmPhase12VerticalSliceOptions
     public string? UserNpmrcPath { get; init; }
 
     public string? CiTemporaryNpmrcPath { get; init; }
+
+    public string? NpmExecutablePath { get; init; }
+}
+
+public enum NpmWorkspaceResolutionStatus
+{
+    Succeeded = 0,
+    NotRequired = 1,
+    LaunchFailure = 2,
+    TimedOut = 3,
+    NonZeroExit = 4,
+    OutputTooLarge = 5,
+    InvalidOutput = 6,
+}
+
+public sealed record NpmWorkspaceResolutionResult
+{
+    public required NpmWorkspaceResolutionStatus Status { get; init; }
+
+    public string? WorkspaceRootPath { get; init; }
+
+    public string? FailureDetail { get; init; }
+
+    public bool Succeeded =>
+        Status
+        is NpmWorkspaceResolutionStatus.Succeeded
+            or NpmWorkspaceResolutionStatus.NotRequired;
+}
+
+public sealed class NpmWorkspaceResolutionException : InvalidOperationException
+{
+    public NpmWorkspaceResolutionException(NpmWorkspaceResolutionResult resolution)
+        : base(
+            resolution?.FailureDetail
+                ?? throw new ArgumentNullException(nameof(resolution))
+        )
+    {
+        Resolution = resolution;
+    }
+
+    public NpmWorkspaceResolutionResult Resolution { get; }
+
+    public NpmWorkspaceResolutionStatus Status => Resolution.Status;
+}
+
+internal enum NpmExecutableResolutionStatus
+{
+    Succeeded = 0,
+    MissingCandidate = 1,
+    InvalidCandidate = 2,
+}
+
+internal sealed record NpmExecutableResolutionResult
+{
+    public required NpmExecutableResolutionStatus Status { get; init; }
+
+    public string? FileName { get; init; }
+
+    public IReadOnlyList<string> Arguments { get; init; } = [];
+
+    public string? FailureDetail { get; init; }
 }
 
 public sealed record NpmPhase12RegistryDeclaration
@@ -49,6 +111,10 @@ public sealed record NpmPhase12CredentialPlanRequest
 
 public sealed record NpmPhase12DoctorResult
 {
+    public required NpmWorkspaceResolutionStatus WorkspaceResolutionStatus { get; init; }
+
+    public required bool WorkspaceResolutionSucceeded { get; init; }
+
     public required string? WorkspaceNpmrcPath { get; init; }
 
     public required bool WorkspaceNpmrcExists { get; init; }
@@ -101,6 +167,7 @@ public sealed class NpmPhase12VerticalSliceService
     private readonly string? userHomeDirectoryPath;
     private readonly string? userNpmrcPath;
     private readonly string? ciTemporaryNpmrcPath;
+    private readonly string? npmExecutablePath;
 
     public NpmPhase12VerticalSliceService(NpmPhase12VerticalSliceOptions? options = null)
     {
@@ -113,11 +180,24 @@ public sealed class NpmPhase12VerticalSliceService
         userHomeDirectoryPath = NormalizeOptionalPath(options.UserHomeDirectoryPath);
         userNpmrcPath = NormalizeOptionalPath(options.UserNpmrcPath);
         ciTemporaryNpmrcPath = NormalizeOptionalPath(options.CiTemporaryNpmrcPath);
+        npmExecutablePath = NormalizeOptionalPath(options.NpmExecutablePath);
     }
 
     public IReadOnlyList<NpmPhase12RegistryDeclaration> DiscoverRegistryDeclarations()
     {
-        string? workspaceNpmrcPath = GetWorkspaceNpmrcPath();
+        NpmWorkspaceResolutionResult resolution =
+            ResolveWorkspaceForSynchronousOperation(CredentialEcosystem.Npm);
+        return DiscoverRegistryDeclarations(resolution);
+    }
+
+    private NpmPhase12RegistryDeclaration[] DiscoverRegistryDeclarations(
+        NpmWorkspaceResolutionResult resolution
+    )
+    {
+        string? workspaceNpmrcPath = GetWorkspaceNpmrcPath(
+            CredentialEcosystem.Npm,
+            resolution
+        );
         if (workspaceNpmrcPath is not null && fileSystem.FileExists(workspaceNpmrcPath))
         {
             NpmPhase12RegistryDeclaration[] workspaceDeclarations = ReadRegistryDeclarations(
@@ -135,56 +215,83 @@ public sealed class NpmPhase12VerticalSliceService
             : [];
     }
 
-    public ValueTask<NpmPhase12DoctorResult> RunDoctorAsync(
+    public async ValueTask<NpmPhase12DoctorResult> RunDoctorAsync(
         CancellationToken cancellationToken = default
     )
     {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        string? workspaceNpmrcPath = GetWorkspaceNpmrcPath();
+        NpmWorkspaceResolutionResult resolution = await ResolveWorkspaceAsync(
+                CredentialEcosystem.Npm,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        bool workspaceResolutionSucceeded = resolution.Succeeded;
+        string? workspaceNpmrcPath = workspaceResolutionSucceeded
+            ? GetWorkspaceNpmrcPath(CredentialEcosystem.Npm, resolution)
+            : null;
         string effectiveUserNpmrcPath = ResolveUserNpmrcPath();
         string resolvedCiTemporaryNpmrcPath = ResolveCiTemporaryNpmrcPath();
-        IReadOnlyList<NpmPhase12RegistryDeclaration> declarations = DiscoverRegistryDeclarations();
+        NpmPhase12RegistryDeclaration[] declarations =
+            workspaceResolutionSucceeded ? DiscoverRegistryDeclarations(resolution) : [];
         NpmPhase12RegistryDeclaration? firstDeclaration =
-            declarations.Count == 0 ? null : declarations[0];
+            declarations.Length == 0 ? null : declarations[0];
 
-        return ValueTask.FromResult(
-            new NpmPhase12DoctorResult
-            {
-                WorkspaceNpmrcPath = workspaceNpmrcPath,
-                WorkspaceNpmrcExists =
-                    workspaceNpmrcPath is not null && fileSystem.FileExists(workspaceNpmrcPath),
-                EffectiveUserNpmrcPath = effectiveUserNpmrcPath,
-                EffectiveUserNpmrcExists = fileSystem.FileExists(effectiveUserNpmrcPath),
-                CiTemporaryNpmrcPath = resolvedCiTemporaryNpmrcPath,
-                UppercaseUserConfigEnvironmentOverridePresent =
-                    NullIfWhiteSpace(environmentVariableReader(NpmUserConfigEnvironmentVariable))
-                        is not null,
-                LowercaseUserConfigEnvironmentOverridePresent =
-                    NullIfWhiteSpace(
-                        environmentVariableReader(LowercaseNpmUserConfigEnvironmentVariable)
-                    )
-                        is not null,
-                RegistryDeclarations = declarations,
-                AzureArtifactsNpmEndpointCanonicalizationSuccess =
-                    CheckAzureArtifactsNpmEndpointCanonicalization(),
-                NpmUserCredentialPlanValid = TryValidateUserCredentialPlan(
+        return new NpmPhase12DoctorResult
+        {
+            WorkspaceResolutionStatus = resolution.Status,
+            WorkspaceResolutionSucceeded = workspaceResolutionSucceeded,
+            WorkspaceNpmrcPath = workspaceNpmrcPath,
+            WorkspaceNpmrcExists =
+                workspaceNpmrcPath is not null && fileSystem.FileExists(workspaceNpmrcPath),
+            EffectiveUserNpmrcPath = effectiveUserNpmrcPath,
+            EffectiveUserNpmrcExists = fileSystem.FileExists(effectiveUserNpmrcPath),
+            CiTemporaryNpmrcPath = resolvedCiTemporaryNpmrcPath,
+            UppercaseUserConfigEnvironmentOverridePresent =
+                NullIfWhiteSpace(environmentVariableReader(NpmUserConfigEnvironmentVariable))
+                    is not null,
+            LowercaseUserConfigEnvironmentOverridePresent =
+                NullIfWhiteSpace(
+                    environmentVariableReader(LowercaseNpmUserConfigEnvironmentVariable)
+                )
+                    is not null,
+            RegistryDeclarations = declarations,
+            AzureArtifactsNpmEndpointCanonicalizationSuccess =
+                CheckAzureArtifactsNpmEndpointCanonicalization(),
+            NpmUserCredentialPlanValid =
+                workspaceResolutionSucceeded
+                && TryValidateUserCredentialPlan(
                     firstDeclaration,
-                    CredentialEcosystem.Npm
+                    CredentialEcosystem.Npm,
+                    resolution
                 ),
-                PnpmUserCredentialPlanValid = TryValidateUserCredentialPlan(
+            PnpmUserCredentialPlanValid =
+                workspaceResolutionSucceeded
+                && TryValidateUserCredentialPlan(
                     firstDeclaration,
-                    CredentialEcosystem.Pnpm
+                    CredentialEcosystem.Pnpm,
+                    resolution
                 ),
-                CiTemporaryCredentialPlanValid = TryValidateCiTemporaryCredentialPlan(
+            CiTemporaryCredentialPlanValid =
+                workspaceResolutionSucceeded
+                && TryValidateCiTemporaryCredentialPlan(
                     firstDeclaration,
-                    resolvedCiTemporaryNpmrcPath
+                    resolvedCiTemporaryNpmrcPath,
+                    resolution
                 ),
-            }
-        );
+        };
     }
 
     public ConfigurationChangePlan CreateUserCredentialPlan(NpmPhase12CredentialPlanRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        NpmWorkspaceResolutionResult resolution =
+            ResolveWorkspaceForSynchronousOperation(request.Ecosystem);
+        return CreateUserCredentialPlan(request, resolution);
+    }
+
+    private ConfigurationChangePlan CreateUserCredentialPlan(
+        NpmPhase12CredentialPlanRequest request,
+        NpmWorkspaceResolutionResult resolution
+    )
     {
         ValidateCredentialPlanRequest(request);
         string targetNpmrcPath = fileSystem.GetFullPath(
@@ -193,7 +300,8 @@ public sealed class NpmPhase12VerticalSliceService
         ThrowIfProjectAuthWouldShadowPlan(
             request.Declaration,
             request.Ecosystem,
-            targetNpmrcPath
+            targetNpmrcPath,
+            resolution
         );
 
         return CreateCredentialPlan(
@@ -209,6 +317,17 @@ public sealed class NpmPhase12VerticalSliceService
         NpmPhase12CredentialPlanRequest request
     )
     {
+        ArgumentNullException.ThrowIfNull(request);
+        NpmWorkspaceResolutionResult resolution =
+            ResolveWorkspaceForSynchronousOperation(request.Ecosystem);
+        return CreateCiTemporaryCredentialPlan(request, resolution);
+    }
+
+    private ConfigurationChangePlan CreateCiTemporaryCredentialPlan(
+        NpmPhase12CredentialPlanRequest request,
+        NpmWorkspaceResolutionResult resolution
+    )
+    {
         ValidateCredentialPlanRequest(request);
         ThrowIfCiTemporaryPlanWouldHideRegistryDeclaration(request.Declaration);
         string targetNpmrcPath =
@@ -221,7 +340,8 @@ public sealed class NpmPhase12VerticalSliceService
         ThrowIfProjectAuthWouldShadowPlan(
             request.Declaration,
             request.Ecosystem,
-            targetNpmrcPath
+            targetNpmrcPath,
+            resolution
         );
         string platform = InferActivationPlatform(targetNpmrcPath);
         var activationEnvironment = new ConfigurationActivationEnvironment
@@ -264,10 +384,11 @@ public sealed class NpmPhase12VerticalSliceService
     private void ThrowIfProjectAuthWouldShadowPlan(
         NpmPhase12RegistryDeclaration declaration,
         CredentialEcosystem ecosystem,
-        string targetNpmrcPath
+        string targetNpmrcPath,
+        NpmWorkspaceResolutionResult resolution
     )
     {
-        string? workspaceNpmrcPath = GetWorkspaceNpmrcPath(ecosystem);
+        string? workspaceNpmrcPath = GetWorkspaceNpmrcPath(ecosystem, resolution);
         if (
             workspaceNpmrcPath is null
             || !fileSystem.FileExists(workspaceNpmrcPath)
@@ -628,7 +749,8 @@ public sealed class NpmPhase12VerticalSliceService
     }
 
     private string? GetWorkspaceNpmrcPath(
-        CredentialEcosystem ecosystem = CredentialEcosystem.Npm
+        CredentialEcosystem ecosystem,
+        NpmWorkspaceResolutionResult resolution
     )
     {
         if (workspaceDirectoryPath is null)
@@ -699,7 +821,10 @@ public sealed class NpmPhase12VerticalSliceService
 
         if (ecosystem == CredentialEcosystem.Npm && npmWorkspaceDeclarationFound)
         {
-            string npmWorkspaceRoot = ResolveNpmWorkspaceRoot();
+            string npmWorkspaceRoot =
+                resolution.Status == NpmWorkspaceResolutionStatus.Succeeded
+                    ? resolution.WorkspaceRootPath!
+                    : throw new NpmWorkspaceResolutionException(resolution);
             return FileSystemPathSemantics.Combine(
                 fileSystem,
                 npmWorkspaceRoot,
@@ -724,16 +849,42 @@ public sealed class NpmPhase12VerticalSliceService
         }
     }
 
-    private string ResolveNpmWorkspaceRoot()
+    public async ValueTask<NpmWorkspaceResolutionResult> ResolveWorkspaceAsync(
+        CredentialEcosystem ecosystem = CredentialEcosystem.Npm,
+        CancellationToken cancellationToken = default
+    )
     {
-        ProcessResult result;
+        cancellationToken.ThrowIfCancellationRequested();
+        if (
+            ecosystem != CredentialEcosystem.Npm
+            || workspaceDirectoryPath is null
+            || !RequiresNpmWorkspaceResolution()
+        )
+        {
+            return new NpmWorkspaceResolutionResult
+            {
+                Status = NpmWorkspaceResolutionStatus.NotRequired,
+            };
+        }
+
+        NpmExecutableResolutionResult executable = ResolveNpmExecutable();
+        if (executable.Status != NpmExecutableResolutionStatus.Succeeded)
+        {
+            return CreateWorkspaceResolutionFailure(
+                NpmWorkspaceResolutionStatus.LaunchFailure,
+                executable.FailureDetail
+                    ?? "npm could not be resolved. Install npm and ensure it is available on PATH."
+            );
+        }
+
+        ProcessResult processResult;
         try
         {
-            result = processRunner
+            processResult = await processRunner
                 .RunAsync(
                     new ProcessStartSpec(
-                        "npm",
-                        ["prefix"],
+                        executable.FileName!,
+                        executable.Arguments,
                         workspaceDirectoryPath,
                         timeout: NpmPrefixTimeout,
                         outputCaptureOptions: new ProcessOutputCaptureOptions
@@ -741,50 +892,53 @@ public sealed class NpmPhase12VerticalSliceService
                             StandardOutputByteLimit = NpmPrefixOutputByteLimit,
                             StandardErrorByteLimit = NpmPrefixOutputByteLimit,
                         }
-                    )
+                    ),
+                    cancellationToken
                 )
-                .ConfigureAwait(false)
-                .GetAwaiter()
-                .GetResult();
+                .ConfigureAwait(false);
         }
-        catch (Exception)
+        catch (OperationCanceledException)
         {
-            throw CreateNpmWorkspaceResolutionFailure(
-                "could not start npm",
-                "Install npm and ensure it is available on PATH."
+            throw;
+        }
+        catch (Exception exception) when (IsExpectedNpmLaunchException(exception))
+        {
+            return CreateWorkspaceResolutionFailure(
+                NpmWorkspaceResolutionStatus.LaunchFailure,
+                "npm could not be started. Install npm and ensure it is available on PATH."
             );
         }
 
-        if (!result.Succeeded)
+        if (!processResult.Succeeded)
         {
-            throw result.Status switch
+            return processResult.Status switch
             {
-                ProcessExecutionStatus.LaunchFailure => CreateNpmWorkspaceResolutionFailure(
-                    "could not start npm",
-                    "Install npm and ensure it is available on PATH."
+                ProcessExecutionStatus.LaunchFailure => CreateWorkspaceResolutionFailure(
+                    NpmWorkspaceResolutionStatus.LaunchFailure,
+                    "npm could not be started. Install npm and ensure it is available on PATH."
                 ),
-                ProcessExecutionStatus.TimedOut => CreateNpmWorkspaceResolutionFailure(
-                    "timed out",
-                    "Run `npm prefix` from the workspace directory and resolve the delay."
+                ProcessExecutionStatus.TimedOut => CreateWorkspaceResolutionFailure(
+                    NpmWorkspaceResolutionStatus.TimedOut,
+                    "npm workspace discovery timed out. Run `npm prefix` from the workspace directory and resolve the delay."
                 ),
-                ProcessExecutionStatus.OutputTooLarge => CreateNpmWorkspaceResolutionFailure(
-                    "produced too much output",
-                    "Run `npm prefix` from the workspace directory and resolve the npm configuration."
+                ProcessExecutionStatus.OutputTooLarge => CreateWorkspaceResolutionFailure(
+                    NpmWorkspaceResolutionStatus.OutputTooLarge,
+                    "npm workspace discovery produced too much output. Run `npm prefix` and resolve the npm configuration."
                 ),
-                ProcessExecutionStatus.InvalidOutput => CreateNpmWorkspaceResolutionFailure(
-                    "returned invalid process output",
-                    "Run `npm prefix` from the workspace directory and verify npm succeeds."
+                ProcessExecutionStatus.InvalidOutput => CreateWorkspaceResolutionFailure(
+                    NpmWorkspaceResolutionStatus.InvalidOutput,
+                    "npm workspace discovery returned invalid process output. Run `npm prefix` and verify npm succeeds."
                 ),
-                _ => CreateNpmWorkspaceResolutionFailure(
-                    result.HasExitCode
-                        ? $"failed with exit code {result.ExitCode}"
-                        : "failed",
-                    "Run `npm prefix` from the workspace directory and resolve the npm error."
+                _ => CreateWorkspaceResolutionFailure(
+                    NpmWorkspaceResolutionStatus.NonZeroExit,
+                    processResult.HasExitCode
+                        ? $"npm workspace discovery failed with exit code {processResult.ExitCode}. Run `npm prefix` and resolve the npm error."
+                        : "npm workspace discovery failed. Run `npm prefix` and resolve the npm error."
                 ),
             };
         }
 
-        string output = result.StandardOutput.Trim();
+        string output = processResult.StandardOutput.Trim();
         if (
             output.Length == 0
             || output.Contains('\r')
@@ -792,7 +946,7 @@ public sealed class NpmPhase12VerticalSliceService
             || !IsAbsolutePath(output)
         )
         {
-            throw CreateInvalidNpmWorkspaceRootFailure();
+            return CreateInvalidWorkspaceResolution();
         }
 
         try
@@ -802,39 +956,293 @@ public sealed class NpmPhase12VerticalSliceService
                 fileSystem.DirectoryExists(root)
                 && FileSystemPathSemantics.IsSameOrDescendant(
                     fileSystem,
-                    workspaceDirectoryPath!,
+                    workspaceDirectoryPath,
                     root
                 )
             )
             {
-                return root;
+                return new NpmWorkspaceResolutionResult
+                {
+                    Status = NpmWorkspaceResolutionStatus.Succeeded,
+                    WorkspaceRootPath = root,
+                };
             }
         }
-        catch (Exception)
+        catch (Exception exception) when (IsExpectedPathResolutionException(exception))
         {
-            throw CreateInvalidNpmWorkspaceRootFailure();
+            return CreateInvalidWorkspaceResolution();
         }
 
-        throw CreateInvalidNpmWorkspaceRootFailure();
+        return CreateInvalidWorkspaceResolution();
     }
 
-    private static InvalidOperationException CreateInvalidNpmWorkspaceRootFailure() =>
-        CreateNpmWorkspaceResolutionFailure(
-            "returned an invalid workspace root",
-            "Run `npm prefix` from the workspace directory and verify it returns one existing absolute ancestor path."
+    private bool RequiresNpmWorkspaceResolution()
+    {
+        for (
+            string? directory = workspaceDirectoryPath;
+            directory is not null;
+            directory = FileSystemPathSemantics.GetParentDirectory(fileSystem, directory)
+        )
+        {
+            string packageJsonPath = FileSystemPathSemantics.Combine(
+                fileSystem,
+                directory,
+                "package.json"
+            );
+            if (
+                fileSystem.FileExists(packageJsonPath)
+                && DeclaresNpmWorkspaces(packageJsonPath)
+            )
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private NpmWorkspaceResolutionResult ResolveWorkspaceForSynchronousOperation(
+        CredentialEcosystem ecosystem
+    )
+    {
+        NpmWorkspaceResolutionResult resolution = ResolveWorkspaceAsync(ecosystem)
+            .AsTask()
+            .GetAwaiter()
+            .GetResult();
+        return resolution.Succeeded
+            ? resolution
+            : throw new NpmWorkspaceResolutionException(resolution);
+    }
+
+    private NpmExecutableResolutionResult ResolveNpmExecutable()
+    {
+        bool useWindowsLaunch =
+            OperatingSystem.IsWindows()
+            || (
+                workspaceDirectoryPath is not null
+                && IsWindowsLikePath(workspaceDirectoryPath)
+            )
+            || (npmExecutablePath is not null && IsWindowsLikePath(npmExecutablePath));
+        if (!useWindowsLaunch)
+        {
+            return new NpmExecutableResolutionResult
+            {
+                Status = NpmExecutableResolutionStatus.Succeeded,
+                FileName = "npm",
+                Arguments = ["prefix"],
+            };
+        }
+
+        if (npmExecutablePath is not null)
+        {
+            return ResolveWindowsNpmCandidate(npmExecutablePath);
+        }
+
+        string? pathValue =
+            NullIfWhiteSpace(environmentVariableReader("PATH"))
+            ?? NullIfWhiteSpace(environmentVariableReader("Path"));
+        if (pathValue is null)
+        {
+            return CreateMissingNpmExecutable(
+                "npm was not found because PATH is unavailable."
+            );
+        }
+
+        string[] directories = pathValue
+            .Split(';', StringSplitOptions.RemoveEmptyEntries)
+            .Select(static value => value.Trim().Trim('"'))
+            .Where(static value => value.Length > 0)
+            .ToArray();
+        foreach (string directory in directories)
+        {
+            string candidate = FileSystemPathSemantics.Combine(
+                fileSystem,
+                directory,
+                "npm.exe"
+            );
+            if (fileSystem.IsExecutableFile(candidate))
+            {
+                return new NpmExecutableResolutionResult
+                {
+                    Status = NpmExecutableResolutionStatus.Succeeded,
+                    FileName = fileSystem.GetFullPath(candidate),
+                    Arguments = ["prefix"],
+                };
+            }
+        }
+
+        NpmExecutableResolutionResult? firstShimFailure = null;
+        foreach (string directory in directories)
+        {
+            string candidate = FileSystemPathSemantics.Combine(
+                fileSystem,
+                directory,
+                "npm.cmd"
+            );
+            if (!fileSystem.FileExists(candidate))
+            {
+                continue;
+            }
+
+            NpmExecutableResolutionResult resolution = ResolveWindowsNpmCandidate(candidate);
+            if (resolution.Status == NpmExecutableResolutionStatus.Succeeded)
+            {
+                return resolution;
+            }
+
+            firstShimFailure ??= resolution;
+        }
+
+        return firstShimFailure
+            ?? CreateMissingNpmExecutable(
+                "npm was not found on PATH. Install Node.js with npm or add npm.exe to PATH."
+            );
+    }
+
+    private NpmExecutableResolutionResult ResolveWindowsNpmCandidate(string candidatePath)
+    {
+        string candidate;
+        try
+        {
+            candidate = fileSystem.GetFullPath(candidatePath);
+        }
+        catch (Exception exception) when (IsExpectedPathResolutionException(exception))
+        {
+            return new NpmExecutableResolutionResult
+            {
+                Status = NpmExecutableResolutionStatus.InvalidCandidate,
+                FailureDetail = "The configured npm path is invalid.",
+            };
+        }
+
+        if (candidate.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            return fileSystem.IsExecutableFile(candidate)
+                ? new NpmExecutableResolutionResult
+                {
+                    Status = NpmExecutableResolutionStatus.Succeeded,
+                    FileName = candidate,
+                    Arguments = ["prefix"],
+                }
+                : CreateMissingNpmExecutable(
+                    "The configured npm executable does not exist or is not launchable."
+                );
+        }
+
+        if (!candidate.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase))
+        {
+            return new NpmExecutableResolutionResult
+            {
+                Status = NpmExecutableResolutionStatus.InvalidCandidate,
+                FailureDetail =
+                    "The configured npm path must identify npm.exe or a standard npm.cmd shim.",
+            };
+        }
+
+        if (!fileSystem.FileExists(candidate))
+        {
+            return CreateMissingNpmExecutable(
+                "The configured npm.cmd shim does not exist."
+            );
+        }
+
+        string? directory = FileSystemPathSemantics.GetParentDirectory(
+            fileSystem,
+            candidate
+        );
+        if (directory is null)
+        {
+            return new NpmExecutableResolutionResult
+            {
+                Status = NpmExecutableResolutionStatus.InvalidCandidate,
+                FailureDetail = "The configured npm.cmd shim has no parent directory.",
+            };
+        }
+
+        string nodeExecutable = FileSystemPathSemantics.Combine(
+            fileSystem,
+            directory,
+            "node.exe"
+        );
+        string npmCliScript = FileSystemPathSemantics.Combine(
+            fileSystem,
+            directory,
+            "node_modules",
+            "npm",
+            "bin",
+            "npm-cli.js"
+        );
+        bool nodeExists = fileSystem.IsExecutableFile(nodeExecutable);
+        bool npmCliExists = fileSystem.FileExists(npmCliScript);
+        if (!nodeExists && !npmCliExists)
+        {
+            return new NpmExecutableResolutionResult
+            {
+                Status = NpmExecutableResolutionStatus.InvalidCandidate,
+                FailureDetail =
+                    "The npm.cmd shim is not in a standard Node.js npm layout.",
+            };
+        }
+
+        if (!nodeExists)
+        {
+            return CreateMissingNpmExecutable(
+                "The node.exe sibling required by npm.cmd is unavailable."
+            );
+        }
+
+        if (!npmCliExists)
+        {
+            return CreateMissingNpmExecutable(
+                "The npm CLI script required by npm.cmd is unavailable."
+            );
+        }
+
+        return new NpmExecutableResolutionResult
+        {
+            Status = NpmExecutableResolutionStatus.Succeeded,
+            FileName = fileSystem.GetFullPath(nodeExecutable),
+            Arguments = [fileSystem.GetFullPath(npmCliScript), "prefix"],
+        };
+    }
+
+    private static NpmExecutableResolutionResult CreateMissingNpmExecutable(string detail) =>
+        new()
+        {
+            Status = NpmExecutableResolutionStatus.MissingCandidate,
+            FailureDetail = detail,
+        };
+
+    private static NpmWorkspaceResolutionResult CreateInvalidWorkspaceResolution() =>
+        CreateWorkspaceResolutionFailure(
+            NpmWorkspaceResolutionStatus.InvalidOutput,
+            "npm workspace discovery returned an invalid root. Run `npm prefix` and verify it returns one existing absolute ancestor path."
         );
 
-    private static InvalidOperationException CreateNpmWorkspaceResolutionFailure(
-        string failure,
-        string action
+    private static NpmWorkspaceResolutionResult CreateWorkspaceResolutionFailure(
+        NpmWorkspaceResolutionStatus status,
+        string detail
     ) =>
-        new(
-            "npm workspace-root discovery "
-                + failure
-                + ". "
-                + action
-                + " npm is required to resolve npm workspace semantics."
-        );
+        new()
+        {
+            Status = status,
+            FailureDetail = detail,
+        };
+
+    private static bool IsExpectedNpmLaunchException(Exception exception) =>
+        exception
+            is Win32Exception
+                or IOException
+                or NotSupportedException
+                or PlatformNotSupportedException
+                or UnauthorizedAccessException;
+
+    private static bool IsExpectedPathResolutionException(Exception exception) =>
+        exception
+            is ArgumentException
+                or IOException
+                or NotSupportedException
+                or UnauthorizedAccessException;
 
     private string GetHomeDirectory()
     {
@@ -861,7 +1269,8 @@ public sealed class NpmPhase12VerticalSliceService
 
     private bool TryValidateUserCredentialPlan(
         NpmPhase12RegistryDeclaration? declaration,
-        CredentialEcosystem ecosystem
+        CredentialEcosystem ecosystem,
+        NpmWorkspaceResolutionResult resolution
     )
     {
         if (declaration is null)
@@ -877,7 +1286,8 @@ public sealed class NpmPhase12VerticalSliceService
                     Declaration = declaration,
                     AuthToken = "doctor-token",
                     Ecosystem = ecosystem,
-                }
+                },
+                resolution
             );
             return ConfigurationChangePlanPolicy.IsValid(plan);
         }
@@ -889,7 +1299,8 @@ public sealed class NpmPhase12VerticalSliceService
 
     private bool TryValidateCiTemporaryCredentialPlan(
         NpmPhase12RegistryDeclaration? declaration,
-        string targetNpmrcPath
+        string targetNpmrcPath,
+        NpmWorkspaceResolutionResult resolution
     )
     {
         if (declaration is null)
@@ -905,7 +1316,8 @@ public sealed class NpmPhase12VerticalSliceService
                     Declaration = declaration,
                     AuthToken = "doctor-token",
                     TargetNpmrcPath = targetNpmrcPath,
-                }
+                },
+                resolution
             );
             return ConfigurationChangePlanPolicy.IsValid(plan);
         }

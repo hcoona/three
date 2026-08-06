@@ -788,6 +788,7 @@ internal static class CliApplication
     {
         CredentialProviderCompositionRoot root = GetCompositionRoot(runtimeOptions);
         CancellationToken cancellationToken = GetCancellationToken(runtimeOptions);
+        string currentDirectory = Environment.CurrentDirectory;
         CredentialProviderReadiness readiness = root.GetReadiness(cancellationToken);
         AzureAuthHealthProbeResult azureAuthHealthProbe = root
             .RunProviderHealthProbeAsync(cancellationToken)
@@ -813,13 +814,17 @@ internal static class CliApplication
             .AsTask()
             .GetAwaiter()
             .GetResult();
-        NpmPhase12DoctorResult npmDoctorResult = CreateNpmPhase12VerticalSliceService(runtimeOptions)
+        NpmPhase12DoctorResult npmDoctorResult = CreateNpmPhase12DoctorService(
+                runtimeOptions,
+                currentDirectory
+            )
             .RunDoctorAsync(cancellationToken)
             .AsTask()
             .GetAwaiter()
             .GetResult();
-        YarnPhase13DoctorResult yarnDoctorResult = CreateYarnPhase13VerticalSliceService(
-                runtimeOptions
+        YarnPhase13DoctorResult yarnDoctorResult = CreateYarnPhase13DoctorService(
+                runtimeOptions,
+                currentDirectory
             )
             .RunDoctorAsync(cancellationToken)
             .AsTask()
@@ -3089,33 +3094,56 @@ internal static class CliApplication
     private static IEnumerable<string> BuildNpmDoctorLines(NpmPhase12DoctorResult doctorResult)
     {
         ArgumentNullException.ThrowIfNull(doctorResult);
+        bool resolutionFailed = !doctorResult.WorkspaceResolutionSucceeded;
         return
         [
-            "npm-workspace-npmrc: " + GetPresenceText(doctorResult.WorkspaceNpmrcExists),
+            "npm-workspace-resolution-status: " + doctorResult.WorkspaceResolutionStatus,
+            "npm-workspace-npmrc: "
+                + (
+                    resolutionFailed
+                        ? "fail"
+                        : GetPresenceText(doctorResult.WorkspaceNpmrcExists)
+                ),
             "npm-effective-user-npmrc: "
                 + GetPresenceText(doctorResult.EffectiveUserNpmrcExists),
             "npm-userconfig-environment-override: "
                 + GetPresenceText(doctorResult.EffectiveUserConfigEnvironmentOverridePresent),
             "npm-registry-declaration: "
-                + GetPresenceText(doctorResult.RegistryDeclarationDiscovered),
+                + (
+                    resolutionFailed
+                        ? "skipped"
+                        : GetPresenceText(doctorResult.RegistryDeclarationDiscovered)
+                ),
             "npm-azure-artifacts-endpoint-canonicalization: "
                 + GetCheckStatusText(
                     doctorResult.AzureArtifactsNpmEndpointCanonicalizationSuccess
                 ),
             "npm-user-credential-plan: "
-                + GetRegistryPlanStatusText(
-                    doctorResult.RegistryDeclarationDiscovered,
-                    doctorResult.NpmUserCredentialPlanValid
+                + (
+                    resolutionFailed
+                        ? "skipped"
+                        : GetRegistryPlanStatusText(
+                            doctorResult.RegistryDeclarationDiscovered,
+                            doctorResult.NpmUserCredentialPlanValid
+                        )
                 ),
             "pnpm-user-credential-plan: "
-                + GetRegistryPlanStatusText(
-                    doctorResult.RegistryDeclarationDiscovered,
-                    doctorResult.PnpmUserCredentialPlanValid
+                + (
+                    resolutionFailed
+                        ? "skipped"
+                        : GetRegistryPlanStatusText(
+                            doctorResult.RegistryDeclarationDiscovered,
+                            doctorResult.PnpmUserCredentialPlanValid
+                        )
                 ),
             "npm-ci-temporary-credential-plan: "
-                + GetRegistryPlanStatusText(
-                    doctorResult.RegistryDeclarationDiscovered,
-                    doctorResult.CiTemporaryCredentialPlanValid
+                + (
+                    resolutionFailed
+                        ? "skipped"
+                        : GetRegistryPlanStatusText(
+                            doctorResult.RegistryDeclarationDiscovered,
+                            doctorResult.CiTemporaryCredentialPlanValid
+                        )
                 ),
         ];
     }
@@ -3307,9 +3335,41 @@ internal static class CliApplication
         CliRuntimeOptions? runtimeOptions
     ) => new(runtimeOptions?.NpmPhase12Options);
 
+    private static NpmPhase12VerticalSliceService CreateNpmPhase12DoctorService(
+        CliRuntimeOptions? runtimeOptions,
+        string currentDirectory
+    )
+    {
+        NpmPhase12VerticalSliceOptions? options = runtimeOptions?.NpmPhase12Options;
+        options =
+            options?.WorkspaceDirectoryPath is null
+                ? (options ?? new NpmPhase12VerticalSliceOptions()) with
+                {
+                    WorkspaceDirectoryPath = currentDirectory,
+                }
+                : options;
+        return new NpmPhase12VerticalSliceService(options);
+    }
+
     private static YarnPhase13VerticalSliceService CreateYarnPhase13VerticalSliceService(
         CliRuntimeOptions? runtimeOptions
     ) => new(runtimeOptions?.YarnPhase13Options);
+
+    private static YarnPhase13VerticalSliceService CreateYarnPhase13DoctorService(
+        CliRuntimeOptions? runtimeOptions,
+        string currentDirectory
+    )
+    {
+        YarnPhase13VerticalSliceOptions? options = runtimeOptions?.YarnPhase13Options;
+        options =
+            options?.WorkspaceDirectoryPath is null
+                ? (options ?? new YarnPhase13VerticalSliceOptions()) with
+                {
+                    WorkspaceDirectoryPath = currentDirectory,
+                }
+                : options;
+        return new YarnPhase13VerticalSliceService(options);
+    }
 
     private static GitPhase8VerticalSliceService CreateGitPhase8ConfigurationService(
         CliRuntimeOptions? runtimeOptions
@@ -3471,7 +3531,8 @@ internal static class CliApplication
     {
         ArgumentNullException.ThrowIfNull(doctorResult);
 
-        return doctorResult.AzureArtifactsNpmEndpointCanonicalizationSuccess
+        return doctorResult.WorkspaceResolutionSucceeded
+            && doctorResult.AzureArtifactsNpmEndpointCanonicalizationSuccess
             && (
                 !doctorResult.RegistryDeclarationDiscovered
                 || (

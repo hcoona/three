@@ -795,7 +795,8 @@ public sealed class NpmPhase12VerticalSliceServiceTests
             out FakeProcessRunner processRunner
         );
 
-        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+        NpmWorkspaceResolutionException exception =
+            Assert.Throws<NpmWorkspaceResolutionException>(
             service.DiscoverRegistryDeclarations
         );
 
@@ -810,7 +811,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
     }
 
     [Fact]
-    public async Task RunDoctorFailsActionablyWhenNpmIsUnavailable()
+    public async Task RunDoctorReportsLaunchFailureWhenNpmIsUnavailable()
     {
         NpmPhase12VerticalSliceService service = CreateNpmWorkspaceProcessFixture(
             ProcessResult.LaunchFailure(),
@@ -818,12 +819,17 @@ public sealed class NpmPhase12VerticalSliceServiceTests
             out FakeProcessRunner processRunner
         );
 
-        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
-            async () => await service.RunDoctorAsync(TestContext.Current.CancellationToken)
+        NpmPhase12DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
         );
 
-        AssertNpmWorkspaceResolutionFailure(exception, processRunner);
-        Assert.Contains("available on PATH", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(
+            NpmWorkspaceResolutionStatus.LaunchFailure,
+            result.WorkspaceResolutionStatus
+        );
+        Assert.False(result.WorkspaceResolutionSucceeded);
+        Assert.Empty(result.RegistryDeclarations);
+        AssertNpmPrefixStartSpec(Assert.Single(processRunner.RecordedStartSpecs));
     }
 
     [Fact]
@@ -835,7 +841,8 @@ public sealed class NpmPhase12VerticalSliceServiceTests
             out FakeProcessRunner processRunner
         );
 
-        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+        NpmWorkspaceResolutionException exception =
+            Assert.Throws<NpmWorkspaceResolutionException>(() =>
             service.CreateUserCredentialPlan(
                 new NpmPhase12CredentialPlanRequest
                 {
@@ -859,7 +866,8 @@ public sealed class NpmPhase12VerticalSliceServiceTests
             out FakeProcessRunner processRunner
         );
 
-        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+        NpmWorkspaceResolutionException exception =
+            Assert.Throws<NpmWorkspaceResolutionException>(
             service.DiscoverRegistryDeclarations
         );
 
@@ -882,7 +890,8 @@ public sealed class NpmPhase12VerticalSliceServiceTests
             out FakeProcessRunner processRunner
         );
 
-        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+        NpmWorkspaceResolutionException exception =
+            Assert.Throws<NpmWorkspaceResolutionException>(
             service.DiscoverRegistryDeclarations
         );
 
@@ -900,7 +909,8 @@ public sealed class NpmPhase12VerticalSliceServiceTests
             out FakeProcessRunner processRunner
         );
 
-        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+        NpmWorkspaceResolutionException exception =
+            Assert.Throws<NpmWorkspaceResolutionException>(
             service.DiscoverRegistryDeclarations
         );
 
@@ -933,7 +943,8 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         );
         CreateDirectory(fileSystem, "/outside/workspace");
 
-        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+        NpmWorkspaceResolutionException exception =
+            Assert.Throws<NpmWorkspaceResolutionException>(
             service.DiscoverRegistryDeclarations
         );
 
@@ -1107,7 +1118,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
     }
 
     private static void AssertNpmWorkspaceResolutionFailure(
-        InvalidOperationException exception,
+        NpmWorkspaceResolutionException exception,
         FakeProcessRunner processRunner
     )
     {
@@ -1115,8 +1126,8 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         Assert.Equal("npm", startSpec.FileName);
         Assert.Equal(["prefix"], startSpec.Arguments);
         Assert.Equal("/repo/packages/apple", startSpec.WorkingDirectory);
-        Assert.Contains("npm workspace-root discovery", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("npm is required", exception.Message, StringComparison.Ordinal);
+        Assert.False(exception.Resolution.Succeeded);
+        Assert.NotEmpty(exception.Message);
     }
 
     private sealed class EnvironmentVariables
@@ -1129,4 +1140,968 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         public string? Get(string name) =>
             variables.TryGetValue(name, out string? value) ? value : null;
     }
+
+#pragma warning disable CA1707 // Test names mirror the behavior names in the approved phase plan.
+    [Fact]
+    public async Task ResolveWorkspaceAsync_ReturnsSucceeded_ForZeroExitWithValidPrefix()
+    {
+        NpmPhase12VerticalSliceService service = CreateNpmWorkspaceProcessFixture(
+            new ProcessResult(0, "/repo/\n", string.Empty),
+            out _,
+            out FakeProcessRunner processRunner
+        );
+
+        object result = await InvokeResolveWorkspaceAsync(
+            service,
+            TestContext.Current.CancellationToken
+        );
+
+        AssertResolution(result, "Succeeded", "/repo", expectedFailureDetail: null);
+        AssertNpmPrefixStartSpec(Assert.Single(processRunner.RecordedStartSpecs));
+    }
+
+    [Fact]
+    public async Task ResolveWorkspaceAsync_ReturnsNotRequired_WhenRegistryDoesNotRequireNpmResolution()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/repo/package");
+        fileSystem.WriteAllText("/repo/package/package.json", """{"name":"package"}""");
+        var processRunner = new FakeProcessRunner();
+        var service = CreateService(fileSystem, processRunner, "/repo/package");
+
+        object result = await InvokeResolveWorkspaceAsync(
+            service,
+            TestContext.Current.CancellationToken
+        );
+
+        AssertResolution(result, "NotRequired", expectedWorkspaceRoot: null, expectedFailureDetail: null);
+        Assert.Empty(processRunner.RecordedStartSpecs);
+    }
+
+    [Fact]
+    public async Task ResolveWorkspaceAsync_ReturnsLaunchFailure_WhenProcessCannotLaunch()
+    {
+        const string SensitiveError = "_authToken=launch-secret";
+        NpmPhase12VerticalSliceService service = CreateNpmWorkspaceProcessFixture(
+            ProcessResult.LaunchFailure(standardError: SensitiveError),
+            out _,
+            out FakeProcessRunner processRunner
+        );
+
+        object result = await InvokeResolveWorkspaceAsync(
+            service,
+            TestContext.Current.CancellationToken
+        );
+
+        AssertFailureResolution(result, "LaunchFailure", SensitiveError);
+        AssertNpmPrefixStartSpec(Assert.Single(processRunner.RecordedStartSpecs));
+    }
+
+    [Fact]
+    public async Task ResolveWorkspaceAsync_ReturnsTimedOut_WhenNpmPrefixTimesOut()
+    {
+        const string SensitiveError = "timeout-secret";
+        NpmPhase12VerticalSliceService service = CreateNpmWorkspaceProcessFixture(
+            ProcessResult.TimedOut("/repo\n", SensitiveError),
+            out _,
+            out FakeProcessRunner processRunner
+        );
+
+        object result = await InvokeResolveWorkspaceAsync(
+            service,
+            TestContext.Current.CancellationToken
+        );
+
+        AssertFailureResolution(result, "TimedOut", SensitiveError);
+        AssertNpmPrefixStartSpec(Assert.Single(processRunner.RecordedStartSpecs));
+    }
+
+    [Fact]
+    public async Task ResolveWorkspaceAsync_ReturnsNonZeroExit_WhenNpmPrefixExitsNonZero()
+    {
+        const string SensitiveError = "_authToken=nonzero-secret";
+        NpmPhase12VerticalSliceService service = CreateNpmWorkspaceProcessFixture(
+            new ProcessResult(23, string.Empty, SensitiveError),
+            out _,
+            out FakeProcessRunner processRunner
+        );
+
+        object result = await InvokeResolveWorkspaceAsync(
+            service,
+            TestContext.Current.CancellationToken
+        );
+
+        AssertFailureResolution(result, "NonZeroExit", SensitiveError);
+        AssertNpmPrefixStartSpec(Assert.Single(processRunner.RecordedStartSpecs));
+    }
+
+    [Fact]
+    public async Task ResolveWorkspaceAsync_ReturnsOutputTooLarge_WhenNpmPrefixExceedsLimit()
+    {
+        const string SensitiveOutput = "/repo/partial-secret";
+        NpmPhase12VerticalSliceService service = CreateNpmWorkspaceProcessFixture(
+            ProcessResult.OutputTooLarge(SensitiveOutput, "stderr-secret"),
+            out _,
+            out FakeProcessRunner processRunner
+        );
+
+        object result = await InvokeResolveWorkspaceAsync(
+            service,
+            TestContext.Current.CancellationToken
+        );
+
+        AssertFailureResolution(result, "OutputTooLarge", SensitiveOutput, "stderr-secret");
+        AssertNpmPrefixStartSpec(Assert.Single(processRunner.RecordedStartSpecs));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   \r\n")]
+    [InlineData("/repo\n/repo/packages/apple\n")]
+    [InlineData("relative/workspace\n")]
+    [InlineData("/repo/missing\n")]
+    public async Task ResolveWorkspaceAsync_ReturnsInvalidOutput_WhenNpmPrefixOutputIsNotOneValidDirectory(
+        string standardOutput
+    )
+    {
+        NpmPhase12VerticalSliceService service = CreateNpmWorkspaceProcessFixture(
+            new ProcessResult(0, standardOutput, "invalid-output-secret"),
+            out _,
+            out FakeProcessRunner processRunner
+        );
+
+        object result = await InvokeResolveWorkspaceAsync(
+            service,
+            TestContext.Current.CancellationToken
+        );
+
+        AssertFailureResolution(result, "InvalidOutput", standardOutput, "invalid-output-secret");
+        AssertNpmPrefixStartSpec(Assert.Single(processRunner.RecordedStartSpecs));
+    }
+
+    [Theory]
+    [InlineData("LaunchFailure")]
+    [InlineData("TimedOut")]
+    [InlineData("NonZeroExit")]
+    [InlineData("OutputTooLarge")]
+    [InlineData("InvalidOutput")]
+    public void ConfigurePath_ThrowsNpmWorkspaceResolutionException_WithResolutionStatus(
+        string expectedStatus
+    )
+    {
+        const string SensitiveError = "_authToken=configure-secret";
+        NpmPhase12VerticalSliceService service = CreateNpmWorkspaceProcessFixture(
+            CreateResolutionFailureProcessResult(expectedStatus, SensitiveError),
+            out _,
+            out FakeProcessRunner processRunner
+        );
+
+        Exception exception = Assert.ThrowsAny<Exception>(
+            service.DiscoverRegistryDeclarations
+        );
+
+        AssertTypedWorkspaceResolutionException(exception, expectedStatus, SensitiveError);
+        AssertNpmPrefixStartSpec(Assert.Single(processRunner.RecordedStartSpecs));
+    }
+
+    [Theory]
+    [InlineData("LaunchFailure")]
+    [InlineData("TimedOut")]
+    [InlineData("NonZeroExit")]
+    [InlineData("OutputTooLarge")]
+    [InlineData("InvalidOutput")]
+    public void PlanPath_ThrowsNpmWorkspaceResolutionException_WithResolutionStatus(
+        string expectedStatus
+    )
+    {
+        const string SensitiveError = "_authToken=plan-secret";
+        NpmPhase12VerticalSliceService service = CreateNpmWorkspaceProcessFixture(
+            CreateResolutionFailureProcessResult(expectedStatus, SensitiveError),
+            out _,
+            out FakeProcessRunner processRunner
+        );
+
+        Exception exception = Assert.ThrowsAny<Exception>(() =>
+            service.CreateUserCredentialPlan(
+                new NpmPhase12CredentialPlanRequest
+                {
+                    Declaration = CreateNpmDeclaration("/repo/.npmrc", "root"),
+                    AuthToken = "short-lived-token",
+                }
+            )
+        );
+
+        AssertTypedWorkspaceResolutionException(exception, expectedStatus, SensitiveError);
+        AssertNpmPrefixStartSpec(Assert.Single(processRunner.RecordedStartSpecs));
+    }
+
+    [Fact]
+    public void ResolveNpmExecutable_ReturnsDirectExecutable_WhenConfiguredPathIsLaunchable()
+    {
+        const string NpmExecutable = @"C:\tools\npm.exe";
+        NpmPhase12VerticalSliceService service = CreateWindowsExecutableFixture(
+            NpmExecutable,
+            [NpmExecutable]
+        );
+
+        object result = InvokeResolveNpmExecutable(service);
+
+        Assert.Equal("Succeeded", GetStatusText(result));
+        Assert.Equal(NpmExecutable, GetRequiredString(result, "FileName", "ExecutablePath"));
+        Assert.Equal(["prefix"], GetRequiredStringList(result, "Arguments"));
+        Assert.Null(GetOptionalString(result, "FailureDetail"));
+    }
+
+    [Fact]
+    public void ResolveNpmExecutable_ReturnsNodeAndNpmCliScript_ForStandardWindowsShimLayout()
+    {
+        const string NpmShim = @"C:\Program Files\nodejs\npm.cmd";
+        const string NodeExecutable = @"C:\Program Files\nodejs\node.exe";
+        const string NpmCliScript =
+            @"C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js";
+        NpmPhase12VerticalSliceService service = CreateWindowsExecutableFixture(
+            NpmShim,
+            [NpmShim, NodeExecutable, NpmCliScript]
+        );
+
+        object result = InvokeResolveNpmExecutable(service);
+
+        Assert.Equal("Succeeded", GetStatusText(result));
+        Assert.Equal(NodeExecutable, GetRequiredString(result, "FileName", "ExecutablePath"));
+        Assert.Equal(
+            [NpmCliScript, "prefix"],
+            GetRequiredStringList(result, "Arguments")
+        );
+        Assert.Null(GetOptionalString(result, "FailureDetail"));
+    }
+
+    [Fact]
+    public void ResolveNpmExecutable_PrefersNpmExeAcrossWindowsPath()
+    {
+        const string NpmShim = @"C:\first\npm.cmd";
+        const string NodeExecutable = @"C:\first\node.exe";
+        const string NpmCliScript = @"C:\first\node_modules\npm\bin\npm-cli.js";
+        const string NpmExecutable = @"C:\second\npm.exe";
+        NpmPhase12VerticalSliceService service = CreateWindowsPathFixture(
+            @"""C:\first"";C:\second",
+            [NpmShim, NodeExecutable, NpmCliScript, NpmExecutable]
+        );
+
+        object result = InvokeResolveNpmExecutable(service);
+
+        Assert.Equal("Succeeded", GetStatusText(result));
+        Assert.Equal(NpmExecutable, GetRequiredString(result, "FileName"));
+        Assert.Equal(["prefix"], GetRequiredStringList(result, "Arguments"));
+    }
+
+    [Fact]
+    public void ResolveNpmExecutable_UsesFirstValidStandardShimOnWindowsPath()
+    {
+        const string FirstShim = @"C:\first\npm.cmd";
+        const string SecondShim = @"C:\second\npm.cmd";
+        const string NodeExecutable = @"C:\second\node.exe";
+        const string NpmCliScript = @"C:\second\node_modules\npm\bin\npm-cli.js";
+        NpmPhase12VerticalSliceService service = CreateWindowsPathFixture(
+            @"C:\first;C:\second",
+            [FirstShim, SecondShim, NodeExecutable, NpmCliScript]
+        );
+
+        object result = InvokeResolveNpmExecutable(service);
+
+        Assert.Equal("Succeeded", GetStatusText(result));
+        Assert.Equal(NodeExecutable, GetRequiredString(result, "FileName"));
+        Assert.Equal(
+            [NpmCliScript, "prefix"],
+            GetRequiredStringList(result, "Arguments")
+        );
+    }
+
+    [Fact]
+    public void ResolveNpmExecutable_ReturnsMissingCandidateFailure_WhenDirectExecutableIsAbsent()
+    {
+        const string NpmExecutable = @"C:\tools\npm.exe";
+        NpmPhase12VerticalSliceService service = CreateWindowsExecutableFixture(
+            NpmExecutable,
+            []
+        );
+
+        object result = InvokeResolveNpmExecutable(service);
+
+        Assert.Equal("MissingCandidate", GetStatusText(result));
+        Assert.Contains("npm", GetFailureDetail(result), StringComparison.OrdinalIgnoreCase);
+        Assert.Null(GetOptionalString(result, "FileName", "ExecutablePath"));
+        Assert.Empty(GetRequiredStringList(result, "Arguments"));
+    }
+
+    [Fact]
+    public void ResolveNpmExecutable_ReturnsMissingCandidateFailure_WhenNodeExecutableIsAbsent()
+    {
+        const string NpmShim = @"C:\Program Files\nodejs\npm.cmd";
+        const string NpmCliScript =
+            @"C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js";
+        NpmPhase12VerticalSliceService service = CreateWindowsExecutableFixture(
+            NpmShim,
+            [NpmShim, NpmCliScript]
+        );
+
+        object result = InvokeResolveNpmExecutable(service);
+
+        Assert.Equal("MissingCandidate", GetStatusText(result));
+        Assert.Contains("node", GetFailureDetail(result), StringComparison.OrdinalIgnoreCase);
+        Assert.Null(GetOptionalString(result, "FileName", "ExecutablePath"));
+        Assert.Empty(GetRequiredStringList(result, "Arguments"));
+    }
+
+    [Fact]
+    public void ResolveNpmExecutable_ReturnsMissingCandidateFailure_WhenNpmCliScriptIsAbsent()
+    {
+        const string NpmShim = @"C:\Program Files\nodejs\npm.cmd";
+        const string NodeExecutable = @"C:\Program Files\nodejs\node.exe";
+        NpmPhase12VerticalSliceService service = CreateWindowsExecutableFixture(
+            NpmShim,
+            [NpmShim, NodeExecutable]
+        );
+
+        object result = InvokeResolveNpmExecutable(service);
+
+        Assert.Equal("MissingCandidate", GetStatusText(result));
+        Assert.Contains("npm", GetFailureDetail(result), StringComparison.OrdinalIgnoreCase);
+        Assert.Null(GetOptionalString(result, "FileName", "ExecutablePath"));
+        Assert.Empty(GetRequiredStringList(result, "Arguments"));
+    }
+
+    [Fact]
+    public void ResolveNpmExecutable_ReturnsInvalidCandidateFailure_WhenCandidateLayoutIsUnsupported()
+    {
+        const string UnsupportedNpmShim = @"C:\custom-layout\npm.cmd";
+        NpmPhase12VerticalSliceService service = CreateWindowsExecutableFixture(
+            UnsupportedNpmShim,
+            [UnsupportedNpmShim, @"C:\custom-layout\unrelated.js"]
+        );
+
+        object result = InvokeResolveNpmExecutable(service);
+
+        Assert.Equal("InvalidCandidate", GetStatusText(result));
+        Assert.NotEmpty(GetFailureDetail(result));
+        Assert.Null(GetOptionalString(result, "FileName", "ExecutablePath"));
+        Assert.Empty(GetRequiredStringList(result, "Arguments"));
+    }
+
+    [Fact]
+    public async Task ResolveWorkspaceAsync_ReturnsLaunchFailure_WhenResolvedWindowsCommandCannotLaunch()
+    {
+        const string NpmShim = @"C:\Program Files\nodejs\npm.cmd";
+        const string NodeExecutable = @"C:\Program Files\nodejs\node.exe";
+        const string NpmCliScript =
+            @"C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js";
+        var processRunner = new FakeProcessRunner();
+        processRunner.EnqueueResult(
+            ProcessResult.LaunchFailure(standardError: "windows-launch-secret")
+        );
+        NpmPhase12VerticalSliceService service = CreateWindowsExecutableFixture(
+            NpmShim,
+            [NpmShim, NodeExecutable, NpmCliScript],
+            processRunner
+        );
+
+        object result = await InvokeResolveWorkspaceAsync(
+            service,
+            TestContext.Current.CancellationToken
+        );
+
+        AssertFailureResolution(result, "LaunchFailure", "windows-launch-secret");
+        ProcessStartSpec startSpec = Assert.Single(processRunner.RecordedStartSpecs);
+        Assert.Equal(NodeExecutable, startSpec.FileName);
+        Assert.Equal([NpmCliScript, "prefix"], startSpec.Arguments);
+        Assert.Equal(@"C:\repo\packages\apple", startSpec.WorkingDirectory);
+        Assert.Equal(TimeSpan.FromSeconds(5), startSpec.Timeout);
+        Assert.Equal(4096, startSpec.OutputCaptureOptions.StandardOutputByteLimit);
+        Assert.Equal(4096, startSpec.OutputCaptureOptions.StandardErrorByteLimit);
+    }
+
+    [Fact]
+    public async Task RunDoctorAsync_RemainsIncomplete_WhileResolutionProbeIsPending()
+    {
+        var probe = new TaskCompletionSource<ProcessResult>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        var runnerEntered = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        var invocationReturned = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        NpmPhase12VerticalSliceService service = CreateNpmWorkspacePendingFixture(
+            async (_, _) =>
+            {
+                runnerEntered.TrySetResult();
+                return await probe.Task.ConfigureAwait(false);
+            },
+            out FakeProcessRunner processRunner
+        );
+        Task<NpmPhase12DoctorResult> doctorTask = Task.Run(async () =>
+        {
+            ValueTask<NpmPhase12DoctorResult> invocation = service.RunDoctorAsync(
+                TestContext.Current.CancellationToken
+            );
+            invocationReturned.TrySetResult();
+            return await invocation.ConfigureAwait(false);
+        });
+
+        await runnerEntered.Task.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken
+        );
+        try
+        {
+            Assert.True(
+                invocationReturned.Task.IsCompleted,
+                "RunDoctorAsync blocked its caller instead of returning an incomplete async operation."
+            );
+            Assert.False(doctorTask.IsCompleted);
+        }
+        finally
+        {
+            probe.TrySetResult(new ProcessResult(0, "/repo\n", string.Empty));
+            await doctorTask;
+        }
+
+        AssertNpmPrefixStartSpec(Assert.Single(processRunner.RecordedStartSpecs));
+    }
+
+    [Fact]
+    public async Task RunDoctorAsync_ForwardsCallerCancellationToResolutionProbe()
+    {
+        using var cancellationSource = new CancellationTokenSource();
+        var probe = new TaskCompletionSource<ProcessResult>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        var runnerEntered = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        CancellationToken observedToken = default;
+        NpmPhase12VerticalSliceService service = CreateNpmWorkspacePendingFixture(
+            async (_, cancellationToken) =>
+            {
+                observedToken = cancellationToken;
+                runnerEntered.TrySetResult();
+                return await probe.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            },
+            out FakeProcessRunner processRunner
+        );
+        Task<NpmPhase12DoctorResult> doctorTask = Task.Run(async () =>
+            await service.RunDoctorAsync(cancellationSource.Token).ConfigureAwait(false)
+        );
+
+        await runnerEntered.Task.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken
+        );
+        cancellationSource.Cancel();
+        try
+        {
+            Assert.Equal(cancellationSource.Token, observedToken);
+            Assert.True(observedToken.IsCancellationRequested);
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+                await doctorTask.ConfigureAwait(false)
+            );
+            AssertNpmPrefixStartSpec(Assert.Single(processRunner.RecordedStartSpecs));
+        }
+        finally
+        {
+            probe.TrySetResult(new ProcessResult(0, "/repo\n", string.Empty));
+            if (!doctorTask.IsCompleted)
+            {
+                await doctorTask;
+            }
+        }
+    }
+
+    [Fact]
+    public async Task RunDoctorAsync_ReusesOneResolutionProbeAcrossDeclarationAndPlanChecks()
+    {
+        NpmPhase12VerticalSliceService service = CreateNpmWorkspaceProcessFixture(
+            new ProcessResult(0, "/repo\n", string.Empty),
+            out _,
+            out FakeProcessRunner processRunner
+        );
+        for (int index = 0; index < 9; index++)
+        {
+            processRunner.EnqueueResult(new ProcessResult(0, "/repo\n", string.Empty));
+        }
+
+        NpmPhase12DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        AssertNpmPrefixStartSpec(Assert.Single(processRunner.RecordedStartSpecs));
+        Assert.Equal("/repo/.npmrc", result.WorkspaceNpmrcPath);
+        Assert.Equal("/repo/.npmrc", Assert.Single(result.RegistryDeclarations).SourcePath);
+        Assert.True(result.NpmUserCredentialPlanValid);
+        Assert.True(result.PnpmUserCredentialPlanValid);
+        Assert.True(result.CiTemporaryCredentialPlanValid);
+    }
+
+    [Fact]
+    public async Task RunDoctorAsync_DoesNotCacheResolutionAcrossCalls()
+    {
+        NpmPhase12VerticalSliceService service = CreateNpmWorkspaceProcessFixture(
+            new ProcessResult(0, "/repo\n", string.Empty),
+            out InMemoryFileSystem fileSystem,
+            out FakeProcessRunner processRunner
+        );
+        CreateDirectory(fileSystem, "/repo/packages");
+        fileSystem.WriteAllText(
+            "/repo/packages/.npmrc",
+            "@scope:registry=https://pkgs.dev.azure.com/org/_packaging/second/npm/registry/\n"
+        );
+        for (int index = 0; index < 9; index++)
+        {
+            processRunner.EnqueueResult(new ProcessResult(0, "/repo/packages\n", string.Empty));
+        }
+
+        NpmPhase12DoctorResult first = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+        NpmPhase12DoctorResult second = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(2, processRunner.RecordedStartSpecs.Count);
+        Assert.All(processRunner.RecordedStartSpecs, AssertNpmPrefixStartSpec);
+        Assert.Equal("/repo/.npmrc", first.WorkspaceNpmrcPath);
+        Assert.Equal("/repo/packages/.npmrc", second.WorkspaceNpmrcPath);
+    }
+
+    [Theory]
+    [InlineData("LaunchFailure")]
+    [InlineData("TimedOut")]
+    [InlineData("NonZeroExit")]
+    [InlineData("OutputTooLarge")]
+    [InlineData("InvalidOutput")]
+    public async Task RunDoctorAsync_MapsExpectedResolutionFailureToTypedDoctorResult(
+        string expectedStatus
+    )
+    {
+        const string SensitiveError = "_authToken=doctor-secret";
+        NpmPhase12VerticalSliceService service = CreateNpmWorkspaceProcessFixture(
+            CreateResolutionFailureProcessResult(expectedStatus, SensitiveError),
+            out _,
+            out FakeProcessRunner processRunner
+        );
+
+        NpmPhase12DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(expectedStatus, GetDoctorResolutionStatus(result));
+        Assert.False(result.WorkspaceResolutionSucceeded);
+        Assert.Null(result.WorkspaceNpmrcPath);
+        Assert.False(result.WorkspaceNpmrcExists);
+        Assert.Empty(result.RegistryDeclarations);
+        Assert.False(result.RegistryDeclarationDiscovered);
+        Assert.False(result.NpmUserCredentialPlanValid);
+        Assert.False(result.PnpmUserCredentialPlanValid);
+        Assert.False(result.CiTemporaryCredentialPlanValid);
+        Assert.DoesNotContain(
+            SensitiveError,
+            result.ToString(),
+            StringComparison.Ordinal
+        );
+        AssertNpmPrefixStartSpec(Assert.Single(processRunner.RecordedStartSpecs));
+    }
+
+    [Fact]
+    public async Task RunDoctorAsync_PropagatesUnexpectedResolutionException()
+    {
+        var sentinel = new InvalidOperationException("unexpected sentinel");
+        var processRunner = new FakeProcessRunner();
+        processRunner.EnqueueFailure(sentinel);
+        NpmPhase12VerticalSliceService service = CreateNpmWorkspaceFixture(processRunner, out _);
+
+        Exception? exception = await Record.ExceptionAsync(async () =>
+            await service.RunDoctorAsync(TestContext.Current.CancellationToken)
+        );
+
+        Assert.Same(sentinel, exception);
+        AssertNpmPrefixStartSpec(Assert.Single(processRunner.RecordedStartSpecs));
+    }
+
+    private static NpmPhase12VerticalSliceService CreateService(
+        InMemoryFileSystem fileSystem,
+        FakeProcessRunner processRunner,
+        string workspaceDirectory
+    ) =>
+        new(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                ProcessRunner = processRunner,
+                WorkspaceDirectoryPath = workspaceDirectory,
+                UserNpmrcPath = "/home/alice/.npmrc",
+            }
+        );
+
+    private static NpmPhase12VerticalSliceService CreateNpmWorkspaceFixture(
+        FakeProcessRunner processRunner,
+        out InMemoryFileSystem fileSystem
+    )
+    {
+        fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/repo/packages/apple");
+        fileSystem.WriteAllText(
+            "/repo/package.json",
+            """{"name":"root","private":true,"workspaces":["packages/*"]}"""
+        );
+        fileSystem.WriteAllText(
+            "/repo/packages/apple/package.json",
+            """{"name":"apple"}"""
+        );
+        fileSystem.WriteAllText(
+            "/repo/.npmrc",
+            "registry=https://pkgs.dev.azure.com/org/_packaging/root/npm/registry/\n"
+        );
+        return CreateService(fileSystem, processRunner, "/repo/packages/apple");
+    }
+
+    private static NpmPhase12VerticalSliceService CreateNpmWorkspacePendingFixture(
+        Func<ProcessStartSpec, CancellationToken, Task<ProcessResult>> handler,
+        out FakeProcessRunner processRunner
+    )
+    {
+        processRunner = new FakeProcessRunner();
+        processRunner.EnqueueHandler(handler);
+        for (int index = 0; index < 9; index++)
+        {
+            processRunner.EnqueueResult(new ProcessResult(0, "/repo\n", string.Empty));
+        }
+
+        return CreateNpmWorkspaceFixture(processRunner, out _);
+    }
+
+    private static NpmPhase12VerticalSliceService CreateWindowsExecutableFixture(
+        string configuredNpmPath,
+        IReadOnlyList<string> existingFiles,
+        FakeProcessRunner? processRunner = null
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Windows);
+        fileSystem.CreateDirectory(@"C:\repo\packages\apple");
+        fileSystem.WriteAllText(
+            @"C:\repo\package.json",
+            """{"name":"root","private":true,"workspaces":["packages/*"]}"""
+        );
+        fileSystem.WriteAllText(
+            @"C:\repo\packages\apple\package.json",
+            """{"name":"apple"}"""
+        );
+        fileSystem.WriteAllText(
+            @"C:\repo\.npmrc",
+            "registry=https://pkgs.dev.azure.com/org/_packaging/root/npm/registry/\r\n"
+        );
+        foreach (string file in existingFiles)
+        {
+            int separatorIndex = file.LastIndexOf('\\');
+            Assert.True(separatorIndex > 2);
+            string directory = file[..separatorIndex];
+            fileSystem.CreateDirectory(directory);
+            fileSystem.WriteAllText(file, "fixture");
+        }
+
+        var options = new NpmPhase12VerticalSliceOptions
+        {
+            FileSystem = fileSystem,
+            ProcessRunner = processRunner ?? new FakeProcessRunner(),
+            WorkspaceDirectoryPath = @"C:\repo\packages\apple",
+            UserNpmrcPath = @"C:\Users\alice\.npmrc",
+        };
+        System.Reflection.PropertyInfo? configuredPathProperty = options
+            .GetType()
+            .GetProperty("NpmExecutablePath");
+        Assert.NotNull(configuredPathProperty);
+        configuredPathProperty.SetValue(options, configuredNpmPath);
+        return new NpmPhase12VerticalSliceService(options);
+    }
+
+    private static NpmPhase12VerticalSliceService CreateWindowsPathFixture(
+        string pathValue,
+        IReadOnlyList<string> existingFiles
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Windows);
+        fileSystem.CreateDirectory(@"C:\repo\packages\apple");
+        foreach (string file in existingFiles)
+        {
+            int separatorIndex = file.LastIndexOf('\\');
+            Assert.True(separatorIndex > 2);
+            fileSystem.CreateDirectory(file[..separatorIndex]);
+            fileSystem.WriteAllText(file, "fixture");
+        }
+
+        return new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                ProcessRunner = new FakeProcessRunner(),
+                WorkspaceDirectoryPath = @"C:\repo\packages\apple",
+                UserNpmrcPath = @"C:\Users\alice\.npmrc",
+                EnvironmentVariableReader = name =>
+                    string.Equals(name, "PATH", StringComparison.Ordinal)
+                        ? pathValue
+                        : null,
+            }
+        );
+    }
+
+    private static ProcessResult CreateResolutionFailureProcessResult(
+        string status,
+        string sensitiveError
+    ) =>
+        status switch
+        {
+            "LaunchFailure" => ProcessResult.LaunchFailure(standardError: sensitiveError),
+            "TimedOut" => ProcessResult.TimedOut("/repo\n", sensitiveError),
+            "NonZeroExit" => new ProcessResult(19, string.Empty, sensitiveError),
+            "OutputTooLarge" => ProcessResult.OutputTooLarge("/repo/partial", sensitiveError),
+            "InvalidOutput" => new ProcessResult(0, "relative/workspace\n", sensitiveError),
+            _ => throw new ArgumentOutOfRangeException(nameof(status), status, null),
+        };
+
+    private static async Task<object> InvokeResolveWorkspaceAsync(
+        NpmPhase12VerticalSliceService service,
+        CancellationToken cancellationToken
+    )
+    {
+        System.Reflection.MethodInfo? method = service
+            .GetType()
+            .GetMethods(
+                System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.Public
+                    | System.Reflection.BindingFlags.NonPublic
+            )
+            .SingleOrDefault(candidate =>
+                string.Equals(
+                    candidate.Name,
+                    "ResolveWorkspaceAsync",
+                    StringComparison.Ordinal
+                )
+            );
+        Assert.NotNull(method);
+        object? invocation = method.Invoke(
+            service,
+            CreateInvocationArguments(method, cancellationToken)
+        );
+        return await AwaitInvocationResultAsync(invocation).ConfigureAwait(false);
+    }
+
+    private static object InvokeResolveNpmExecutable(NpmPhase12VerticalSliceService service)
+    {
+        System.Reflection.MethodInfo? method = service
+            .GetType()
+            .GetMethods(
+                System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.Public
+                    | System.Reflection.BindingFlags.NonPublic
+            )
+            .SingleOrDefault(candidate =>
+                string.Equals(
+                    candidate.Name,
+                    "ResolveNpmExecutable",
+                    StringComparison.Ordinal
+                )
+            );
+        Assert.NotNull(method);
+        object? result = method.Invoke(
+            service,
+            CreateInvocationArguments(method, TestContext.Current.CancellationToken)
+        );
+        Assert.NotNull(result);
+        return result;
+    }
+
+    private static object?[] CreateInvocationArguments(
+        System.Reflection.MethodInfo method,
+        CancellationToken cancellationToken
+    ) =>
+        method
+            .GetParameters()
+            .Select(parameter =>
+            {
+                if (parameter.ParameterType == typeof(CancellationToken))
+                {
+                    return (object)cancellationToken;
+                }
+
+                if (parameter.ParameterType == typeof(CredentialEcosystem))
+                {
+                    return CredentialEcosystem.Npm;
+                }
+
+                if (parameter.HasDefaultValue)
+                {
+                    return parameter.DefaultValue;
+                }
+
+                Assert.Fail(
+                    $"Unsupported {method.Name} parameter '{parameter.Name}' of type "
+                        + $"'{parameter.ParameterType.FullName}'."
+                );
+                return null;
+            })
+            .ToArray();
+
+    private static async Task<object> AwaitInvocationResultAsync(object? invocation)
+    {
+        Assert.NotNull(invocation);
+        Task task;
+        if (invocation is Task directTask)
+        {
+            task = directTask;
+        }
+        else
+        {
+            System.Reflection.MethodInfo? asTask = invocation
+                .GetType()
+                .GetMethod("AsTask", Type.EmptyTypes);
+            Assert.NotNull(asTask);
+            task = Assert.IsAssignableFrom<Task>(asTask.Invoke(invocation, null));
+        }
+
+        await task.ConfigureAwait(false);
+        System.Reflection.PropertyInfo? resultProperty = task
+            .GetType()
+            .GetProperty("Result");
+        Assert.NotNull(resultProperty);
+        object? result = resultProperty.GetValue(task);
+        Assert.NotNull(result);
+        return result;
+    }
+
+    private static void AssertResolution(
+        object result,
+        string expectedStatus,
+        string? expectedWorkspaceRoot,
+        string? expectedFailureDetail
+    )
+    {
+        Assert.Equal(expectedStatus, GetStatusText(result));
+        Assert.Equal(
+            expectedWorkspaceRoot,
+            GetOptionalString(result, "WorkspaceRootPath", "WorkspaceRoot")
+        );
+        Assert.Equal(expectedFailureDetail, GetOptionalString(result, "FailureDetail"));
+    }
+
+    private static void AssertFailureResolution(
+        object result,
+        string expectedStatus,
+        params string[] sensitiveValues
+    )
+    {
+        Assert.Equal(expectedStatus, GetStatusText(result));
+        Assert.Null(GetOptionalString(result, "WorkspaceRootPath", "WorkspaceRoot"));
+        string detail = GetFailureDetail(result);
+        Assert.InRange(detail.Length, 1, 300);
+        foreach (string sensitiveValue in sensitiveValues.Where(value => value.Length > 0))
+        {
+            Assert.DoesNotContain(sensitiveValue, detail, StringComparison.Ordinal);
+            Assert.DoesNotContain(sensitiveValue, result.ToString(), StringComparison.Ordinal);
+        }
+    }
+
+    private static void AssertTypedWorkspaceResolutionException(
+        Exception exception,
+        string expectedStatus,
+        string sensitiveValue
+    )
+    {
+        Assert.Equal("NpmWorkspaceResolutionException", exception.GetType().Name);
+        Assert.Equal(expectedStatus, GetStatusText(exception));
+        Assert.InRange(exception.Message.Length, 1, 300);
+        Assert.DoesNotContain(sensitiveValue, exception.ToString(), StringComparison.Ordinal);
+    }
+
+    private static void AssertNpmPrefixStartSpec(ProcessStartSpec startSpec)
+    {
+        Assert.Equal("npm", startSpec.FileName);
+        Assert.Equal(["prefix"], startSpec.Arguments);
+        Assert.Equal("/repo/packages/apple", startSpec.WorkingDirectory);
+        Assert.Equal(TimeSpan.FromSeconds(5), startSpec.Timeout);
+        Assert.Equal(4096, startSpec.OutputCaptureOptions.StandardOutputByteLimit);
+        Assert.Equal(4096, startSpec.OutputCaptureOptions.StandardErrorByteLimit);
+    }
+
+    private static string GetDoctorResolutionStatus(NpmPhase12DoctorResult result)
+    {
+        object? directStatus = GetOptionalProperty(result, "WorkspaceResolutionStatus");
+        if (directStatus is not null)
+        {
+            return directStatus.ToString() ?? string.Empty;
+        }
+
+        object resolution = GetRequiredProperty(result, "WorkspaceResolution");
+        return GetStatusText(resolution);
+    }
+
+    private static string GetStatusText(object value) =>
+        GetRequiredProperty(value, "Status").ToString() ?? string.Empty;
+
+    private static string GetFailureDetail(object value) =>
+        GetRequiredString(value, "FailureDetail");
+
+    private static bool GetRequiredBoolean(object value, params string[] propertyNames)
+    {
+        object propertyValue = GetRequiredProperty(value, propertyNames);
+        return Assert.IsType<bool>(propertyValue);
+    }
+
+    private static string GetRequiredString(object value, params string[] propertyNames)
+    {
+        object propertyValue = GetRequiredProperty(value, propertyNames);
+        return Assert.IsType<string>(propertyValue);
+    }
+
+    private static IReadOnlyList<string> GetRequiredStringList(
+        object value,
+        params string[] propertyNames
+    )
+    {
+        object propertyValue = GetRequiredProperty(value, propertyNames);
+        return Assert.IsAssignableFrom<IReadOnlyList<string>>(propertyValue);
+    }
+
+    private static string? GetOptionalString(object value, params string[] propertyNames)
+    {
+        object? propertyValue = GetOptionalProperty(value, propertyNames);
+        return propertyValue is null ? null : Assert.IsType<string>(propertyValue);
+    }
+
+    private static object GetRequiredProperty(object value, params string[] propertyNames)
+    {
+        object? propertyValue = GetOptionalProperty(value, propertyNames);
+        Assert.NotNull(propertyValue);
+        return propertyValue;
+    }
+
+    private static object? GetOptionalProperty(object value, params string[] propertyNames)
+    {
+        foreach (string propertyName in propertyNames)
+        {
+            System.Reflection.PropertyInfo? property = value
+                .GetType()
+                .GetProperty(
+                    propertyName,
+                    System.Reflection.BindingFlags.Instance
+                        | System.Reflection.BindingFlags.Public
+                        | System.Reflection.BindingFlags.NonPublic
+                );
+            if (property is not null)
+            {
+                return property.GetValue(value);
+            }
+        }
+
+        return null;
+    }
+#pragma warning restore CA1707
 }
