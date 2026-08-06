@@ -20,7 +20,7 @@ azureauth = "azureauth_credprovider_keyring.backend:AzureAuthKeyringBackend"
 azureauth-keyring = "azureauth_credprovider_keyring.shim:main"
 
 [dependency-groups]
-dev = ["pytest>=8.3.4"]
+dev = ["keyring>=25.6.0", "pytest>=8.3.4"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/azureauth_credprovider_keyring"]

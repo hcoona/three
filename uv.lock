@@ -339,13 +339,17 @@ source = { editable = "src/private/app/azureauth-credprovider/python" }
 
 [package.dev-dependencies]
 dev = [
+    { name = "keyring" },
     { name = "pytest" },
 ]
 
 [package.metadata]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8.3.4" }]
+dev = [
+    { name = "keyring", specifier = ">=25.6.0" },
+    { name = "pytest", specifier = ">=8.3.4" },
+]
 
 [[package]]
 name = "beautifulsoup4"
