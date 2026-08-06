@@ -250,7 +250,8 @@ public sealed class ConfigurationPhase14VerticalSliceService
             IFileSystem fileSystem,
             CredentialEcosystem ecosystem,
             ConfigurationScope scope,
-            string logicalTargetPath
+            string logicalTargetPath,
+            string yarnCiTemporaryHomePath
         )
         {
             if (scope != ConfigurationScope.CiTemporary)
@@ -288,27 +289,22 @@ public sealed class ConfigurationPhase14VerticalSliceService
                 throw new ArgumentOutOfRangeException(nameof(ecosystem), ecosystem, null);
             }
 
-            string temporaryHomePath =
-                FileSystemPathSemantics.GetParentDirectory(fileSystem, logicalTargetPath)
-                ?? throw new InvalidOperationException(
-                    "The CI temporary Yarn target must have a product-owned HOME directory."
-                );
             return new ConfigurationTemporaryContainer
             {
                 Kind = ConfigurationTemporaryContainerKind.TemporaryHome,
-                ProductOwnedPath = temporaryHomePath,
+                ProductOwnedPath = yarnCiTemporaryHomePath,
                 ActivationEnvironment = new ConfigurationActivationEnvironment
                 {
                     Platform = windows ? "windows" : "posix",
                     SetVariables = windows
                         ? new Dictionary<string, string>(StringComparer.Ordinal)
                         {
-                            ["USERPROFILE"] = temporaryHomePath,
-                            ["HOME"] = temporaryHomePath,
+                            ["USERPROFILE"] = yarnCiTemporaryHomePath,
+                            ["HOME"] = yarnCiTemporaryHomePath,
                         }
                         : new Dictionary<string, string>(StringComparer.Ordinal)
                         {
-                            ["HOME"] = temporaryHomePath,
+                            ["HOME"] = yarnCiTemporaryHomePath,
                         },
                     ClearVariables = windows
                         ? ["HOMEDRIVE", "HOMEPATH", YarnRcFilenameEnvironmentVariable]
@@ -1862,6 +1858,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
         if (
             !IsPackageEcosystem(ecosystem)
             || !ManifestMatchesExpectedOwnership(manifest, scope)
+            || !PackageManifestTargetsConfiguredCiPath(manifest, ecosystem, scope)
             || !TryValidateLifecycleManifest(manifest, scope, out _)
             || manifest.ResourceIdentity is not { } requestedResource
             || manifest.Entries.Any(entry => !IsCanonicalPath(entry.TargetPathOrName))
@@ -2072,6 +2069,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
     {
         if (
             !ManifestMatchesExpectedOwnership(manifest, scope)
+            || !PackageManifestTargetsConfiguredCiPath(manifest, ecosystem, scope)
             || !PackageManifestEntriesMatchExpectedState(manifest, ecosystem, scope)
             || manifest.ResourceIdentity?.ServiceEndpoint is not { } registryUrl
             || !NpmPhase12VerticalSliceService.TryCreateAzureArtifactsNpmResourceIdentity(
@@ -2088,6 +2086,40 @@ public sealed class ConfigurationPhase14VerticalSliceService
             ? NpmCompatibleAuthSelectorPolicy.Create(expectedResource).NpmAuthTokenKey
             : NpmCompatibleAuthSelectorPolicy.Create(expectedResource).YarnAuthTokenKey;
         return string.Equals(manifest.EntrySelector, expectedSelector, StringComparison.Ordinal);
+    }
+
+    private bool PackageManifestTargetsConfiguredCiPath(
+        ConfigurationOwnershipManifest manifest,
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope
+    )
+    {
+        if (
+            scope != ConfigurationPhase14Scope.CiTemporary
+            || !IsPackageEcosystem(ecosystem)
+        )
+        {
+            return true;
+        }
+
+        (ConfigurationTargetKind targetKind, string expectedPath) = ecosystem switch
+        {
+            CredentialEcosystem.Npm or CredentialEcosystem.Pnpm =>
+                (ConfigurationTargetKind.Npmrc, GetNpmTargetPath(ecosystem, scope)),
+            CredentialEcosystem.Yarn =>
+                (
+                    ConfigurationTargetKind.Yarnrc,
+                    FileSystemPathSemantics.Combine(
+                        fileSystem,
+                        paths.YarnCiTemporaryHomePath,
+                        ".yarnrc.yml"
+                    )
+                ),
+            _ => throw new NotSupportedException("Unsupported package ecosystem."),
+        };
+        return manifest
+            .Entries.Where(entry => entry.TargetKind == targetKind)
+            .All(entry => PathEquals(entry.TargetPathOrName, expectedPath));
     }
 
     private bool PackageManifestEntriesMatchExpectedState(
@@ -2892,7 +2924,8 @@ public sealed class ConfigurationPhase14VerticalSliceService
             fileSystem,
             ecosystem,
             ToConfigurationScope(scope),
-            targetPath
+            targetPath,
+            paths.YarnCiTemporaryHomePath
         );
     }
 

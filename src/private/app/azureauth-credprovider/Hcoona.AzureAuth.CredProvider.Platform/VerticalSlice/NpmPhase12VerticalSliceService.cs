@@ -1236,9 +1236,15 @@ public sealed class NpmPhase12VerticalSliceService
                 .Where(static value => value.Length > 0)
         )
         {
+            string? normalizedDirectory = NormalizeWindowsPathDirectory(directory);
+            if (normalizedDirectory is null)
+            {
+                continue;
+            }
+
             string candidate = FileSystemPathSemantics.Combine(
                 fileSystem,
-                directory,
+                normalizedDirectory,
                 "node.exe"
             );
             if (fileSystem.IsExecutableFile(candidate))
@@ -1248,6 +1254,38 @@ public sealed class NpmPhase12VerticalSliceService
         }
 
         return null;
+    }
+
+    private string? NormalizeWindowsPathDirectory(string directory)
+    {
+        if (IsWindowsDriveRelativePath(directory))
+        {
+            return null;
+        }
+
+        try
+        {
+            string path = directory;
+            if (!IsAbsolutePath(path))
+            {
+                if (workspaceDirectoryPath is null)
+                {
+                    return null;
+                }
+
+                path = FileSystemPathSemantics.Combine(
+                    fileSystem,
+                    workspaceDirectoryPath,
+                    path
+                );
+            }
+
+            return fileSystem.GetFullPath(path);
+        }
+        catch (Exception exception) when (IsExpectedPathResolutionException(exception))
+        {
+            return null;
+        }
     }
 
     private bool WindowsPathExtContainsExecutableExtension()
@@ -1486,6 +1524,12 @@ public sealed class NpmPhase12VerticalSliceService
         && path[1] == ':'
         && (path[2] == '\\' || path[2] == '/')
         && char.IsAsciiLetter(path[0]);
+
+    private static bool IsWindowsDriveRelativePath(string path) =>
+        path.Length >= 2
+        && path[1] == ':'
+        && char.IsAsciiLetter(path[0])
+        && (path.Length == 2 || (path[2] != '\\' && path[2] != '/'));
 
     private static bool IsWindowsUncPath(string path) =>
         path.StartsWith(@"\\", StringComparison.Ordinal)

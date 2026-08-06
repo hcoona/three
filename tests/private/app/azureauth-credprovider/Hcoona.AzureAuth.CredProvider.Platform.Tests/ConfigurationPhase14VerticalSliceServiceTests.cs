@@ -3488,6 +3488,579 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
             StringComparison.Ordinal
         );
     }
+
+    [Fact]
+    public async Task CleanupCiTemporaryEcosystemAsync_WhenYarnBaseManifestTargetsDifferentLogicalPath_DryRunFailsClosedAndPreservesFiles()
+    {
+        await AssertYarnCiManifestTargetMismatchFailsClosedAsync(
+            transitional: false,
+            execute: false
+        );
+    }
+
+    [Fact]
+    public async Task CleanupCiTemporaryEcosystemAsync_WhenYarnBaseManifestTargetsDifferentLogicalPath_ExecutionFailsClosedAndPreservesFiles()
+    {
+        await AssertYarnCiManifestTargetMismatchFailsClosedAsync(
+            transitional: false,
+            execute: true
+        );
+    }
+
+    [Fact]
+    public async Task CleanupCiTemporaryEcosystemAsync_WhenYarnTransitionalManifestTargetsDifferentLogicalPath_DryRunFailsClosedAndPreservesFiles()
+    {
+        await AssertYarnCiManifestTargetMismatchFailsClosedAsync(
+            transitional: true,
+            execute: false
+        );
+    }
+
+    [Fact]
+    public async Task CleanupCiTemporaryEcosystemAsync_WhenYarnTransitionalManifestTargetsDifferentLogicalPath_ExecutionFailsClosedAndPreservesFiles()
+    {
+        await AssertYarnCiManifestTargetMismatchFailsClosedAsync(
+            transitional: true,
+            execute: true
+        );
+    }
+
+    [Fact]
+    public async Task CleanupCiTemporaryEcosystemAsync_WhenYarnManifestTargetsResolvedPhysicalPathInsteadOfConfiguredLogicalPath_FailsClosed()
+    {
+        string root = CreateNonRepositoryTestDirectory("phase14-yarn-ci-physical-manifest");
+        string physicalProductRoot = Path.Combine(root, "physical");
+        string logicalProductRoot = Path.Combine(root, "logical");
+        Directory.CreateDirectory(physicalProductRoot);
+        if (!TryCreateDirectorySymbolicLink(logicalProductRoot, physicalProductRoot))
+        {
+            Directory.Delete(root, recursive: true);
+            return;
+        }
+
+        ConfigurationPhase14VerticalSliceService service = CreatePhysicalCiYarnService(
+            root,
+            logicalProductRoot
+        );
+
+        try
+        {
+            await service.ConfigureAsync(
+                CredentialEcosystem.Yarn,
+                ConfigurationPhase14Scope.CiTemporary,
+                TestContext.Current.CancellationToken
+            );
+            string manifestPath = GetYarnCiManifestPath(service);
+            string logicalTargetPath = Path.Combine(
+                service.Paths.YarnCiTemporaryHomePath,
+                ".yarnrc.yml"
+            );
+            string physicalTargetPath = Path.Combine(
+                physicalProductRoot,
+                "phase14-ci-symlink-job",
+                "yarn",
+                "home",
+                ".yarnrc.yml"
+            );
+            ConfigurationOwnershipManifest manifest =
+                ConfigurationOwnershipManifestSerializer.Deserialize(
+                    File.ReadAllText(manifestPath)
+                );
+            string forgedManifest = SerializeManifest(
+                manifest with
+                {
+                    Entries =
+                    [
+                        .. manifest.Entries.Select(entry => entry with
+                        {
+                            TargetPathOrName = physicalTargetPath,
+                        }),
+                    ],
+                }
+            );
+            File.WriteAllText(manifestPath, forgedManifest);
+            byte[] targetBefore = File.ReadAllBytes(physicalTargetPath);
+
+            ConfigurationPhase14CleanupResult result = await service.CleanupAsync(
+                CredentialEcosystem.Yarn,
+                ConfigurationPhase14Scope.CiTemporary,
+                TestContext.Current.CancellationToken
+            );
+
+            ConfigurationPhase14CleanupEcosystemResult cleanup = Assert.Single(result.Ecosystems);
+            Assert.NotEqual(logicalTargetPath, physicalTargetPath);
+            Assert.Equal("incomplete", cleanup.State);
+            Assert.Equal(0, cleanup.ChangeCount);
+            Assert.Equal(0, cleanup.AppliedChangeCount);
+            Assert.True(cleanup.OwnershipManifestPresent);
+            Assert.True(cleanup.TemporaryContainerPresent);
+            Assert.Equal(forgedManifest, File.ReadAllText(manifestPath));
+            Assert.Equal(targetBefore, File.ReadAllBytes(physicalTargetPath));
+            Assert.True(File.Exists(logicalTargetPath));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CleanupCiTemporaryEcosystemAsync_WhenYarnManifestTargetsConfiguredLogicalSymlinkPath_CleansSuccessfully()
+    {
+        string root = CreateNonRepositoryTestDirectory("phase14-yarn-ci-logical-manifest");
+        string physicalProductRoot = Path.Combine(root, "physical");
+        string logicalProductRoot = Path.Combine(root, "logical");
+        Directory.CreateDirectory(physicalProductRoot);
+        if (!TryCreateDirectorySymbolicLink(logicalProductRoot, physicalProductRoot))
+        {
+            Directory.Delete(root, recursive: true);
+            return;
+        }
+
+        ConfigurationPhase14VerticalSliceService service = CreatePhysicalCiYarnService(
+            root,
+            logicalProductRoot
+        );
+
+        try
+        {
+            await service.ConfigureAsync(
+                CredentialEcosystem.Yarn,
+                ConfigurationPhase14Scope.CiTemporary,
+                TestContext.Current.CancellationToken
+            );
+            string manifestPath = GetYarnCiManifestPath(service);
+            string logicalTargetPath = Path.Combine(
+                service.Paths.YarnCiTemporaryHomePath,
+                ".yarnrc.yml"
+            );
+            ConfigurationOwnershipManifest manifest =
+                ConfigurationOwnershipManifestSerializer.Deserialize(
+                    File.ReadAllText(manifestPath)
+                );
+            Assert.All(
+                manifest.Entries,
+                entry => Assert.Equal(logicalTargetPath, entry.TargetPathOrName)
+            );
+
+            ConfigurationPhase14CleanupResult result = await service.CleanupAsync(
+                CredentialEcosystem.Yarn,
+                ConfigurationPhase14Scope.CiTemporary,
+                TestContext.Current.CancellationToken
+            );
+
+            ConfigurationPhase14CleanupEcosystemResult cleanup = Assert.Single(result.Ecosystems);
+            Assert.Equal("removed", cleanup.State);
+            Assert.Equal(3, cleanup.ChangeCount);
+            Assert.Equal(3, cleanup.AppliedChangeCount);
+            Assert.False(cleanup.OwnershipManifestPresent);
+            Assert.False(cleanup.TemporaryContainerPresent);
+            Assert.False(File.Exists(manifestPath));
+            Assert.False(File.Exists(logicalTargetPath));
+            Assert.True(Directory.Exists(logicalProductRoot));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CleanupCiTemporaryEcosystemAsync_WhenYarnManifestTargetsConfiguredLogicalPath_CleansSuccessfully(
+        bool transitional
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        ConfigurationPhase14VerticalSliceService service = await CreateConfiguredYarnCiServiceAsync(
+            fileSystem,
+            transitional
+        );
+        string manifestPath = GetYarnCiManifestPath(service);
+
+        ConfigurationPhase14CleanupResult result = await service.CleanupAsync(
+            CredentialEcosystem.Yarn,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken
+        );
+
+        ConfigurationPhase14CleanupEcosystemResult cleanup = Assert.Single(result.Ecosystems);
+        int expectedChangeCount = transitional ? 5 : 3;
+        Assert.Equal("removed", cleanup.State);
+        Assert.Equal(expectedChangeCount, cleanup.ChangeCount);
+        Assert.Equal(expectedChangeCount, cleanup.AppliedChangeCount);
+        Assert.False(cleanup.OwnershipManifestPresent);
+        Assert.False(cleanup.TemporaryContainerPresent);
+        Assert.False(fileSystem.FileExists(manifestPath));
+        Assert.False(fileSystem.DirectoryExists(service.Paths.YarnCiTemporaryHomePath));
+    }
+
+    [Theory]
+    [InlineData(CredentialEcosystem.Npm)]
+    [InlineData(CredentialEcosystem.Pnpm)]
+    public async Task CleanupCiTemporaryEcosystemAsync_WhenNpmCompatibleBaseManifestTargetsDifferentLogicalPath_DryRunFailsClosedAndPreservesFiles(
+        CredentialEcosystem ecosystem
+    )
+    {
+        await AssertNpmCompatibleCiManifestTargetMismatchFailsClosedAsync(
+            ecosystem,
+            transitional: false,
+            execute: false
+        );
+    }
+
+    [Theory]
+    [InlineData(CredentialEcosystem.Npm)]
+    [InlineData(CredentialEcosystem.Pnpm)]
+    public async Task CleanupCiTemporaryEcosystemAsync_WhenNpmCompatibleBaseManifestTargetsDifferentLogicalPath_ExecutionFailsClosedAndPreservesFiles(
+        CredentialEcosystem ecosystem
+    )
+    {
+        await AssertNpmCompatibleCiManifestTargetMismatchFailsClosedAsync(
+            ecosystem,
+            transitional: false,
+            execute: true
+        );
+    }
+
+    [Theory]
+    [InlineData(CredentialEcosystem.Npm)]
+    [InlineData(CredentialEcosystem.Pnpm)]
+    public async Task CleanupCiTemporaryEcosystemAsync_WhenNpmCompatibleTransitionalManifestTargetsDifferentLogicalPath_DryRunFailsClosedAndPreservesFiles(
+        CredentialEcosystem ecosystem
+    )
+    {
+        await AssertNpmCompatibleCiManifestTargetMismatchFailsClosedAsync(
+            ecosystem,
+            transitional: true,
+            execute: false
+        );
+    }
+
+    [Theory]
+    [InlineData(CredentialEcosystem.Npm)]
+    [InlineData(CredentialEcosystem.Pnpm)]
+    public async Task CleanupCiTemporaryEcosystemAsync_WhenNpmCompatibleTransitionalManifestTargetsDifferentLogicalPath_ExecutionFailsClosedAndPreservesFiles(
+        CredentialEcosystem ecosystem
+    )
+    {
+        await AssertNpmCompatibleCiManifestTargetMismatchFailsClosedAsync(
+            ecosystem,
+            transitional: true,
+            execute: true
+        );
+    }
+
+    [Theory]
+    [InlineData(CredentialEcosystem.Npm, false)]
+    [InlineData(CredentialEcosystem.Npm, true)]
+    [InlineData(CredentialEcosystem.Pnpm, false)]
+    [InlineData(CredentialEcosystem.Pnpm, true)]
+    public async Task CleanupCiTemporaryEcosystemAsync_WhenNpmCompatibleManifestTargetsConfiguredPath_CleansSuccessfully(
+        CredentialEcosystem ecosystem,
+        bool transitional
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        ConfigurationPhase14VerticalSliceService service =
+            await CreateConfiguredNpmCompatibleCiServiceAsync(
+                fileSystem,
+                ecosystem,
+                transitional
+            );
+        string configuredTargetPath = GetNpmCompatibleCiTargetPath(service, ecosystem);
+        string manifestPath = GetNpmCompatibleCiManifestPath(service);
+
+        ConfigurationPhase14CleanupResult result = await service.CleanupAsync(
+            ecosystem,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken
+        );
+
+        ConfigurationPhase14CleanupEcosystemResult cleanup = Assert.Single(result.Ecosystems);
+        int expectedChangeCount = transitional ? 3 : 2;
+        Assert.Equal("removed", cleanup.State);
+        Assert.Equal(expectedChangeCount, cleanup.ChangeCount);
+        Assert.Equal(expectedChangeCount, cleanup.AppliedChangeCount);
+        Assert.False(cleanup.OwnershipManifestPresent);
+        Assert.False(cleanup.TemporaryContainerPresent);
+        Assert.False(fileSystem.FileExists(manifestPath));
+        Assert.False(fileSystem.FileExists(configuredTargetPath));
+    }
+
+    [Fact]
+    public async Task CleanupCiTemporaryEcosystemAsync_WhenNpmAndPnpmShareConfiguredTarget_PreservesSharedStateUntilBothOwnersAreRemoved()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        ConfigurationPhase14VerticalSliceService service = CreateService(
+            fileSystem,
+            environmentVariableReader: ReadCiEnvironment
+        );
+        await service.ConfigureAsync(
+            CredentialEcosystem.Npm,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken
+        );
+        await service.ConfigureAsync(
+            CredentialEcosystem.Pnpm,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken
+        );
+        string npmTargetPath = GetNpmCompatibleCiTargetPath(
+            service,
+            CredentialEcosystem.Npm
+        );
+        string pnpmTargetPath = GetNpmCompatibleCiTargetPath(
+            service,
+            CredentialEcosystem.Pnpm
+        );
+        string manifestPath = GetNpmCompatibleCiManifestPath(service);
+        byte[] targetBefore = fileSystem.ReadAllBytes(npmTargetPath);
+        byte[] manifestBefore = fileSystem.ReadAllBytes(manifestPath);
+
+        ConfigurationPhase14CleanupResult firstOwnerInspection =
+            await service.DryRunCleanupAsync(
+                CredentialEcosystem.Npm,
+                ConfigurationPhase14Scope.CiTemporary,
+                TestContext.Current.CancellationToken
+            );
+
+        ConfigurationPhase14CleanupEcosystemResult planned = Assert.Single(
+            firstOwnerInspection.Ecosystems
+        );
+        Assert.Equal(npmTargetPath, pnpmTargetPath);
+        Assert.Equal("removed", planned.State);
+        Assert.Equal(2, planned.ChangeCount);
+        Assert.Equal(0, planned.AppliedChangeCount);
+        Assert.Equal(targetBefore, fileSystem.ReadAllBytes(pnpmTargetPath));
+        Assert.Equal(manifestBefore, fileSystem.ReadAllBytes(manifestPath));
+
+        ConfigurationPhase14CleanupResult finalOwnerCleanup = await service.CleanupAsync(
+            CredentialEcosystem.Pnpm,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken
+        );
+
+        ConfigurationPhase14CleanupEcosystemResult removed = Assert.Single(
+            finalOwnerCleanup.Ecosystems
+        );
+        Assert.Equal("removed", removed.State);
+        Assert.Equal(2, removed.ChangeCount);
+        Assert.Equal(2, removed.AppliedChangeCount);
+        Assert.False(removed.OwnershipManifestPresent);
+        Assert.False(removed.TemporaryContainerPresent);
+        Assert.False(fileSystem.FileExists(npmTargetPath));
+        Assert.False(fileSystem.FileExists(manifestPath));
+    }
+
+    [Theory]
+    [InlineData(CredentialEcosystem.Npm)]
+    [InlineData(CredentialEcosystem.Pnpm)]
+    [InlineData(CredentialEcosystem.Yarn)]
+    public async Task CleanupCiTemporaryEcosystemAsync_WhenConfiguredWindowsTargetDiffersOnlyByCase_CleansSuccessfully(
+        CredentialEcosystem ecosystem
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Windows);
+        ConfigurationPhase14VerticalSliceService service = CreateService(
+            fileSystem,
+            environmentVariableReader: ReadCiEnvironment
+        );
+        await service.ConfigureAsync(
+            ecosystem,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken
+        );
+        string configuredTargetPath = ecosystem == CredentialEcosystem.Yarn
+            ? FileSystemPathSemantics.Combine(
+                fileSystem,
+                service.Paths.YarnCiTemporaryHomePath,
+                ".yarnrc.yml"
+            )
+            : GetNpmCompatibleCiTargetPath(service, ecosystem);
+        string manifestPath = ecosystem == CredentialEcosystem.Yarn
+            ? GetYarnCiManifestPath(service)
+            : GetNpmCompatibleCiManifestPath(service);
+        ConfigurationOwnershipManifest manifest =
+            ConfigurationOwnershipManifestSerializer.Deserialize(
+                fileSystem.ReadAllText(manifestPath)
+            );
+        string caseVariantTargetPath = configuredTargetPath.ToUpperInvariant();
+        Assert.NotEqual(configuredTargetPath, caseVariantTargetPath);
+        ConfigurationOwnershipManifest caseVariantManifest = manifest with
+        {
+            Entries =
+            [
+                .. manifest.Entries.Select(entry => entry with
+                {
+                    TargetPathOrName = caseVariantTargetPath,
+                }),
+            ],
+        };
+        fileSystem.WriteAllText(manifestPath, SerializeManifest(caseVariantManifest));
+
+        ConfigurationPhase14CleanupResult result = await service.CleanupAsync(
+            ecosystem,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken
+        );
+
+        ConfigurationPhase14CleanupEcosystemResult cleanup = Assert.Single(result.Ecosystems);
+        int expectedChangeCount = ecosystem == CredentialEcosystem.Yarn ? 3 : 2;
+        Assert.Equal("removed", cleanup.State);
+        Assert.Equal(expectedChangeCount, cleanup.ChangeCount);
+        Assert.Equal(expectedChangeCount, cleanup.AppliedChangeCount);
+        Assert.False(cleanup.OwnershipManifestPresent);
+        Assert.False(cleanup.TemporaryContainerPresent);
+        Assert.False(fileSystem.FileExists(manifestPath));
+        Assert.False(fileSystem.FileExists(configuredTargetPath));
+    }
+
+    private static async Task AssertNpmCompatibleCiManifestTargetMismatchFailsClosedAsync(
+        CredentialEcosystem ecosystem,
+        bool transitional,
+        bool execute
+    )
+    {
+        const string VictimPath = "/victim/redirected.npmrc";
+        const string UnrelatedPath = "/unrelated/preserved-npm.txt";
+        const string UnrelatedContents = "unrelated-npm-marker\n";
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        ConfigurationPhase14VerticalSliceService service =
+            await CreateConfiguredNpmCompatibleCiServiceAsync(
+                fileSystem,
+                ecosystem,
+                transitional
+            );
+        string configuredTargetPath = GetNpmCompatibleCiTargetPath(service, ecosystem);
+        string manifestPath = GetNpmCompatibleCiManifestPath(service);
+        byte[] configuredTargetBefore = fileSystem.ReadAllBytes(configuredTargetPath);
+        fileSystem.CreateDirectory(Path.GetDirectoryName(VictimPath)!);
+        fileSystem.AtomicWriteAllBytes(VictimPath, configuredTargetBefore);
+        fileSystem.CreateDirectory(Path.GetDirectoryName(UnrelatedPath)!);
+        fileSystem.WriteAllText(UnrelatedPath, UnrelatedContents);
+        ConfigurationOwnershipManifest manifest =
+            ConfigurationOwnershipManifestSerializer.Deserialize(
+                fileSystem.ReadAllText(manifestPath)
+            );
+        ConfigurationOwnershipManifest forged = manifest with
+        {
+            Entries =
+            [
+                .. manifest.Entries.Select(entry => entry with
+                {
+                    TargetPathOrName = VictimPath,
+                }),
+            ],
+        };
+        Assert.Equal(transitional ? 3 : 2, forged.Entries.Count);
+        Assert.All(forged.Entries, entry => Assert.Equal(VictimPath, entry.TargetPathOrName));
+        string forgedManifest = SerializeManifest(forged);
+        fileSystem.WriteAllText(manifestPath, forgedManifest);
+        byte[] manifestBefore = fileSystem.ReadAllBytes(manifestPath);
+        byte[] victimBefore = fileSystem.ReadAllBytes(VictimPath);
+        byte[] unrelatedBefore = fileSystem.ReadAllBytes(UnrelatedPath);
+
+        ConfigurationPhase14CleanupResult result = execute
+            ? await service.CleanupAsync(
+                ecosystem,
+                ConfigurationPhase14Scope.CiTemporary,
+                TestContext.Current.CancellationToken
+            )
+            : await service.DryRunCleanupAsync(
+                ecosystem,
+                ConfigurationPhase14Scope.CiTemporary,
+                TestContext.Current.CancellationToken
+            );
+
+        ConfigurationPhase14CleanupEcosystemResult cleanup = Assert.Single(result.Ecosystems);
+        Assert.Equal("incomplete", cleanup.State);
+        Assert.Equal(0, cleanup.ChangeCount);
+        Assert.Equal(0, cleanup.AppliedChangeCount);
+        Assert.True(cleanup.OwnershipManifestPresent);
+        Assert.True(cleanup.TemporaryContainerPresent);
+        Assert.Equal(manifestBefore, fileSystem.ReadAllBytes(manifestPath));
+        Assert.Equal(victimBefore, fileSystem.ReadAllBytes(VictimPath));
+        Assert.Equal(configuredTargetBefore, fileSystem.ReadAllBytes(configuredTargetPath));
+        Assert.Equal(unrelatedBefore, fileSystem.ReadAllBytes(UnrelatedPath));
+        Assert.True(fileSystem.FileExists(configuredTargetPath));
+    }
+
+    private static async Task<ConfigurationPhase14VerticalSliceService> CreateConfiguredNpmCompatibleCiServiceAsync(
+        InMemoryFileSystem fileSystem,
+        CredentialEcosystem ecosystem,
+        bool transitional
+    )
+    {
+        ConfigurationPhase14VerticalSliceService service = CreateService(
+            fileSystem,
+            environmentVariableReader: ReadCiEnvironment
+        );
+        await service.ConfigureAsync(
+            ecosystem,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken
+        );
+        if (!transitional)
+        {
+            return service;
+        }
+
+        ConfigurationPhase14VerticalSliceService replacement = CreateService(
+            fileSystem,
+            environmentVariableReader: ReadCiEnvironment,
+            registryUrl: new Uri(
+                "https://pkgs.dev.azure.com/test-org/_packaging/replacement-feed/npm/registry/"
+            )
+        );
+        string targetPath = GetNpmCompatibleCiTargetPath(replacement, ecosystem);
+        string manifestPath = GetNpmCompatibleCiManifestPath(replacement);
+        byte[] targetBefore = fileSystem.ReadAllBytes(targetPath);
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken
+        );
+        InjectPackageReplacementFailure(
+            fileSystem,
+            targetPath,
+            manifestPath,
+            PackageReplacementFailurePoint.TargetWriteAfterIntent,
+            cancellation
+        );
+        await Assert.ThrowsAsync<IOException>(async () =>
+            await replacement.ConfigureAsync(
+                ecosystem,
+                ConfigurationPhase14Scope.CiTemporary,
+                cancellation.Token
+            )
+        );
+        if (!fileSystem.FileExists(targetPath))
+        {
+            fileSystem.CreateDirectory(Path.GetDirectoryName(targetPath)!);
+            fileSystem.AtomicWriteAllBytes(targetPath, targetBefore);
+        }
+
+        return replacement;
+    }
+
+    private static string GetNpmCompatibleCiTargetPath(
+        ConfigurationPhase14VerticalSliceService service,
+        CredentialEcosystem ecosystem
+    ) =>
+        ecosystem switch
+        {
+            CredentialEcosystem.Npm => service.Paths.NpmCiTemporaryNpmrcPath,
+            CredentialEcosystem.Pnpm => service.Paths.PnpmCiTemporaryNpmrcPath,
+            _ => throw new ArgumentOutOfRangeException(nameof(ecosystem)),
+        };
+
+    private static string GetNpmCompatibleCiManifestPath(
+        ConfigurationPhase14VerticalSliceService service
+    ) =>
+        Path.Combine(
+            service.Paths.CiTemporaryManifestDirectoryPath,
+            "npm-compatible-ci-temporary-ownership-manifest.json"
+        );
 #pragma warning restore CA1707
 
     private static ConfigurationPhase14VerticalSliceService CreateService(
@@ -3647,6 +4220,192 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
 
     private static string SerializeManifest(ConfigurationOwnershipManifest manifest) =>
         ConfigurationOwnershipManifestSerializer.Serialize(manifest);
+
+    private static async Task AssertYarnCiManifestTargetMismatchFailsClosedAsync(
+        bool transitional,
+        bool execute
+    )
+    {
+        const string VictimPath = "/victim/redirected.yarnrc.yml";
+        const string UnrelatedPath = "/victim/preserved.txt";
+        const string UnrelatedContents = "unrelated-marker\n";
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        ConfigurationPhase14VerticalSliceService service = await CreateConfiguredYarnCiServiceAsync(
+            fileSystem,
+            transitional
+        );
+        string configuredTargetPath = Path.Combine(
+            service.Paths.YarnCiTemporaryHomePath,
+            ".yarnrc.yml"
+        );
+        string manifestPath = GetYarnCiManifestPath(service);
+        byte[] configuredTargetBefore = fileSystem.ReadAllBytes(configuredTargetPath);
+        fileSystem.CreateDirectory(Path.GetDirectoryName(VictimPath)!);
+        fileSystem.AtomicWriteAllBytes(VictimPath, configuredTargetBefore);
+        fileSystem.CreateDirectory(Path.GetDirectoryName(UnrelatedPath)!);
+        fileSystem.WriteAllText(UnrelatedPath, UnrelatedContents);
+        ConfigurationOwnershipManifest manifest =
+            ConfigurationOwnershipManifestSerializer.Deserialize(
+                fileSystem.ReadAllText(manifestPath)
+            );
+        ConfigurationOwnershipManifest forged = manifest with
+        {
+            Entries =
+            [
+                .. manifest.Entries.Select(entry => entry with
+                {
+                    TargetPathOrName = VictimPath,
+                }),
+            ],
+        };
+        Assert.Equal(transitional ? 5 : 3, forged.Entries.Count);
+        Assert.All(forged.Entries, entry => Assert.Equal(VictimPath, entry.TargetPathOrName));
+        string forgedManifest = SerializeManifest(forged);
+        fileSystem.WriteAllText(manifestPath, forgedManifest);
+        byte[] manifestBefore = fileSystem.ReadAllBytes(manifestPath);
+        byte[] victimBefore = fileSystem.ReadAllBytes(VictimPath);
+        byte[] unrelatedBefore = fileSystem.ReadAllBytes(UnrelatedPath);
+
+        ConfigurationPhase14CleanupResult result = execute
+            ? await service.CleanupAsync(
+                CredentialEcosystem.Yarn,
+                ConfigurationPhase14Scope.CiTemporary,
+                TestContext.Current.CancellationToken
+            )
+            : await service.DryRunCleanupAsync(
+                CredentialEcosystem.Yarn,
+                ConfigurationPhase14Scope.CiTemporary,
+                TestContext.Current.CancellationToken
+            );
+
+        ConfigurationPhase14CleanupEcosystemResult cleanup = Assert.Single(result.Ecosystems);
+        Assert.Equal("incomplete", cleanup.State);
+        Assert.Equal(0, cleanup.ChangeCount);
+        Assert.Equal(0, cleanup.AppliedChangeCount);
+        Assert.True(cleanup.OwnershipManifestPresent);
+        Assert.True(cleanup.TemporaryContainerPresent);
+        Assert.Equal(manifestBefore, fileSystem.ReadAllBytes(manifestPath));
+        Assert.Equal(victimBefore, fileSystem.ReadAllBytes(VictimPath));
+        Assert.Equal(configuredTargetBefore, fileSystem.ReadAllBytes(configuredTargetPath));
+        Assert.Equal(unrelatedBefore, fileSystem.ReadAllBytes(UnrelatedPath));
+        Assert.True(fileSystem.DirectoryExists(service.Paths.YarnCiTemporaryHomePath));
+    }
+
+    private static async Task<ConfigurationPhase14VerticalSliceService> CreateConfiguredYarnCiServiceAsync(
+        InMemoryFileSystem fileSystem,
+        bool transitional
+    )
+    {
+        ConfigurationPhase14VerticalSliceService service = CreateService(
+            fileSystem,
+            environmentVariableReader: ReadCiEnvironment
+        );
+        await service.ConfigureAsync(
+            CredentialEcosystem.Yarn,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken
+        );
+        if (!transitional)
+        {
+            return service;
+        }
+
+        ConfigurationPhase14VerticalSliceService replacement = CreateService(
+            fileSystem,
+            environmentVariableReader: ReadCiEnvironment,
+            registryUrl: new Uri(
+                "https://pkgs.dev.azure.com/test-org/_packaging/replacement-feed/npm/registry/"
+            )
+        );
+        string manifestPath = GetYarnCiManifestPath(replacement);
+        string targetPath = Path.Combine(
+            replacement.Paths.YarnCiTemporaryHomePath,
+            ".yarnrc.yml"
+        );
+        byte[] targetBefore = fileSystem.ReadAllBytes(targetPath);
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken
+        );
+        InjectPackageReplacementFailure(
+            fileSystem,
+            targetPath,
+            manifestPath,
+            PackageReplacementFailurePoint.TargetWriteAfterIntent,
+            cancellation
+        );
+        await Assert.ThrowsAsync<IOException>(async () =>
+            await replacement.ConfigureAsync(
+                CredentialEcosystem.Yarn,
+                ConfigurationPhase14Scope.CiTemporary,
+                cancellation.Token
+            )
+        );
+        if (!fileSystem.FileExists(targetPath))
+        {
+            fileSystem.CreateDirectory(Path.GetDirectoryName(targetPath)!);
+            fileSystem.AtomicWriteAllBytes(targetPath, targetBefore);
+        }
+
+        return replacement;
+    }
+
+    private static string GetYarnCiManifestPath(
+        ConfigurationPhase14VerticalSliceService service
+    ) =>
+        Path.Combine(
+            service.Paths.CiTemporaryManifestDirectoryPath,
+            "yarn-ci-temporary-ownership-manifest.json"
+        );
+
+    private static ConfigurationPhase14VerticalSliceService CreatePhysicalCiYarnService(
+        string root,
+        string logicalProductRoot
+    ) =>
+        new(
+            new ConfigurationPhase14VerticalSliceOptions
+            {
+                FileSystem = new SystemFileSystem(),
+                StateDirectoryPath = Path.Combine(root, "state"),
+                CiTemporaryProductRootPath = logicalProductRoot,
+                AzurePipelinesJobScopeId = "phase14-ci-symlink-job",
+                CredentialAcquisition = new BoundedCredentialAcquisitionAdapter(
+                    new SilentTestAcquisitionService()
+                ),
+                EnvironmentVariableReader = name =>
+                    name switch
+                    {
+                        "SYSTEM_ACCESSTOKEN" => "system-token",
+                        "HOME" => root,
+                        _ => null,
+                    },
+                ProductExecutablePath = Path.Combine(root, "azureauth-credprovider"),
+                WorkspaceDirectoryPath = Path.Combine(root, "workspace"),
+                RegistryUrls = new Dictionary<CredentialEcosystem, Uri>
+                {
+                    [CredentialEcosystem.Yarn] = new(TestRegistryUrl),
+                },
+            }
+        );
+
+    private static bool TryCreateDirectorySymbolicLink(string path, string targetPath)
+    {
+        try
+        {
+            Directory.CreateSymbolicLink(path, targetPath);
+            return true;
+        }
+        catch (Exception exception)
+            when (
+                exception
+                    is IOException
+                        or UnauthorizedAccessException
+                        or PlatformNotSupportedException
+                        or NotSupportedException
+            )
+        {
+            return false;
+        }
+    }
 
     private static ConfigurationPhase14EcosystemDoctorResult GetPythonDoctorResult(
         ConfigurationPhase14DoctorResult doctor
