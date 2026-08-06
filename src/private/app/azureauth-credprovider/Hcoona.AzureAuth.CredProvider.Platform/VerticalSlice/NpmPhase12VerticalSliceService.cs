@@ -1,14 +1,16 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Hcoona.AzureAuth.CredProvider.Contracts;
 using Hcoona.AzureAuth.CredProvider.Platform.FileSystem;
+using Hcoona.AzureAuth.CredProvider.Platform.Processes;
 
 namespace Hcoona.AzureAuth.CredProvider.Platform.VerticalSlice;
 
 public sealed record NpmPhase12VerticalSliceOptions
 {
     public IFileSystem? FileSystem { get; init; }
+
+    public IProcessRunner? ProcessRunner { get; init; }
 
     public Func<string, string?>? EnvironmentVariableReader { get; init; }
 
@@ -89,9 +91,12 @@ public sealed class NpmPhase12VerticalSliceService
     private const string NpmUserConfigEnvironmentVariable = "NPM_CONFIG_USERCONFIG";
     private const string LowercaseNpmUserConfigEnvironmentVariable = "npm_config_userconfig";
     private const string WorkspaceNpmrcFileName = ".npmrc";
+    private const int NpmPrefixOutputByteLimit = 4096;
+    private static readonly TimeSpan NpmPrefixTimeout = TimeSpan.FromSeconds(5);
 
     private readonly Func<string, string?> environmentVariableReader;
     private readonly IFileSystem fileSystem;
+    private readonly IProcessRunner processRunner;
     private readonly string? workspaceDirectoryPath;
     private readonly string? userHomeDirectoryPath;
     private readonly string? userNpmrcPath;
@@ -101,6 +106,7 @@ public sealed class NpmPhase12VerticalSliceService
     {
         options ??= new NpmPhase12VerticalSliceOptions();
         fileSystem = options.FileSystem ?? new SystemFileSystem();
+        processRunner = options.ProcessRunner ?? new SystemProcessRunner();
         environmentVariableReader =
             options.EnvironmentVariableReader ?? Environment.GetEnvironmentVariable;
         workspaceDirectoryPath = NormalizeOptionalPath(options.WorkspaceDirectoryPath);
@@ -636,7 +642,7 @@ public sealed class NpmPhase12VerticalSliceService
             WorkspaceNpmrcFileName
         );
         string? nearestProjectNpmrcPath = null;
-        var descendantPackageDirectories = new List<string>();
+        bool npmWorkspaceDeclarationFound = false;
         for (
             string? directory = workspaceDirectoryPath;
             directory is not null;
@@ -684,236 +690,151 @@ public sealed class NpmPhase12VerticalSliceService
             if (
                 ecosystem == CredentialEcosystem.Npm
                 && packageJsonExists
-                && DeclaresNpmWorkspace(packageJsonPath, directory, descendantPackageDirectories)
+                && DeclaresNpmWorkspaces(packageJsonPath)
             )
             {
-                return npmrcPath;
+                npmWorkspaceDeclarationFound = true;
             }
+        }
 
-            if (packageJsonExists)
-            {
-                descendantPackageDirectories.Add(directory);
-            }
+        if (ecosystem == CredentialEcosystem.Npm && npmWorkspaceDeclarationFound)
+        {
+            string npmWorkspaceRoot = ResolveNpmWorkspaceRoot();
+            return FileSystemPathSemantics.Combine(
+                fileSystem,
+                npmWorkspaceRoot,
+                WorkspaceNpmrcFileName
+            );
         }
 
         return nearestProjectNpmrcPath ?? invocationNpmrcPath;
     }
 
-    private bool DeclaresNpmWorkspace(
-        string packageJsonPath,
-        string packageDirectory,
-        IReadOnlyList<string> descendantPackageDirectories
-    )
+    private bool DeclaresNpmWorkspaces(string packageJsonPath)
     {
-        string[] workspacePatterns;
         try
         {
             using JsonDocument document = JsonDocument.Parse(fileSystem.ReadAllText(packageJsonPath));
-            if (
-                document.RootElement.ValueKind != JsonValueKind.Object
-                || !document.RootElement.TryGetProperty("workspaces", out JsonElement workspaces)
-                || !TryGetNpmWorkspacePatterns(workspaces, out workspacePatterns)
-            )
-            {
-                return false;
-            }
+            return document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("workspaces", out _);
         }
         catch (JsonException)
         {
             return false;
         }
+    }
 
-        foreach (string descendantPackageDirectory in descendantPackageDirectories)
+    private string ResolveNpmWorkspaceRoot()
+    {
+        ProcessResult result;
+        try
         {
-            string? relativePath = GetDescendantRelativePath(
-                packageDirectory,
-                descendantPackageDirectory
+            result = processRunner
+                .RunAsync(
+                    new ProcessStartSpec(
+                        "npm",
+                        ["prefix"],
+                        workspaceDirectoryPath,
+                        timeout: NpmPrefixTimeout,
+                        outputCaptureOptions: new ProcessOutputCaptureOptions
+                        {
+                            StandardOutputByteLimit = NpmPrefixOutputByteLimit,
+                            StandardErrorByteLimit = NpmPrefixOutputByteLimit,
+                        }
+                    )
+                )
+                .ConfigureAwait(false)
+                .GetAwaiter()
+                .GetResult();
+        }
+        catch (Exception)
+        {
+            throw CreateNpmWorkspaceResolutionFailure(
+                "could not start npm",
+                "Install npm and ensure it is available on PATH."
             );
+        }
+
+        if (!result.Succeeded)
+        {
+            throw result.Status switch
+            {
+                ProcessExecutionStatus.LaunchFailure => CreateNpmWorkspaceResolutionFailure(
+                    "could not start npm",
+                    "Install npm and ensure it is available on PATH."
+                ),
+                ProcessExecutionStatus.TimedOut => CreateNpmWorkspaceResolutionFailure(
+                    "timed out",
+                    "Run `npm prefix` from the workspace directory and resolve the delay."
+                ),
+                ProcessExecutionStatus.OutputTooLarge => CreateNpmWorkspaceResolutionFailure(
+                    "produced too much output",
+                    "Run `npm prefix` from the workspace directory and resolve the npm configuration."
+                ),
+                ProcessExecutionStatus.InvalidOutput => CreateNpmWorkspaceResolutionFailure(
+                    "returned invalid process output",
+                    "Run `npm prefix` from the workspace directory and verify npm succeeds."
+                ),
+                _ => CreateNpmWorkspaceResolutionFailure(
+                    result.HasExitCode
+                        ? $"failed with exit code {result.ExitCode}"
+                        : "failed",
+                    "Run `npm prefix` from the workspace directory and resolve the npm error."
+                ),
+            };
+        }
+
+        string output = result.StandardOutput.Trim();
+        if (
+            output.Length == 0
+            || output.Contains('\r')
+            || output.Contains('\n')
+            || !IsAbsolutePath(output)
+        )
+        {
+            throw CreateInvalidNpmWorkspaceRootFailure();
+        }
+
+        try
+        {
+            string root = fileSystem.GetFullPath(output);
             if (
-                relativePath is not null
-                && MatchesNpmWorkspacePatterns(relativePath, workspacePatterns)
+                fileSystem.DirectoryExists(root)
+                && FileSystemPathSemantics.IsSameOrDescendant(
+                    fileSystem,
+                    workspaceDirectoryPath!,
+                    root
+                )
             )
             {
-                return true;
+                return root;
             }
         }
+        catch (Exception)
+        {
+            throw CreateInvalidNpmWorkspaceRootFailure();
+        }
 
-        return false;
+        throw CreateInvalidNpmWorkspaceRootFailure();
     }
 
-    private static bool TryGetNpmWorkspacePatterns(
-        JsonElement workspaces,
-        out string[] patterns
-    )
-    {
-        JsonElement packagePatterns = workspaces;
-        if (
-            workspaces.ValueKind == JsonValueKind.Object
-            && (
-                !workspaces.TryGetProperty("packages", out packagePatterns)
-                || packagePatterns.ValueKind != JsonValueKind.Array
-            )
-        )
-        {
-            patterns = [];
-            return false;
-        }
-
-        if (packagePatterns.ValueKind != JsonValueKind.Array)
-        {
-            patterns = [];
-            return false;
-        }
-
-        patterns = packagePatterns
-            .EnumerateArray()
-            .Where(static value => value.ValueKind == JsonValueKind.String)
-            .Select(static value => value.GetString())
-            .Where(static value => !string.IsNullOrWhiteSpace(value))
-            .Select(static value => value!.Trim())
-            .ToArray();
-        return patterns.Length > 0;
-    }
-
-    private string? GetDescendantRelativePath(string directory, string descendant)
-    {
-        string fullDirectory = fileSystem.GetFullPath(directory);
-        string fullDescendant = fileSystem.GetFullPath(descendant);
-        if (
-            !FileSystemPathSemantics.IsSameOrDescendant(
-                fileSystem,
-                fullDescendant,
-                fullDirectory
-            )
-            || PathsEqual(fullDirectory, fullDescendant)
-        )
-        {
-            return null;
-        }
-
-        char separator = FileSystemPathSemantics.UsesWindowsPaths(fileSystem) ? '\\' : '/';
-        string prefix = fullDirectory.EndsWith(separator)
-            ? fullDirectory
-            : fullDirectory + separator;
-        return fullDescendant[prefix.Length..].Replace('\\', '/').Trim('/');
-    }
-
-    private bool MatchesNpmWorkspacePatterns(string relativePath, IReadOnlyList<string> patterns)
-    {
-        bool included = false;
-        foreach (string configuredPattern in patterns)
-        {
-            bool excluded = configuredPattern.StartsWith('!');
-            string pattern = excluded ? configuredPattern[1..] : configuredPattern;
-            pattern = pattern.Replace('\\', '/').Trim();
-            while (pattern.StartsWith("./", StringComparison.Ordinal))
-            {
-                pattern = pattern[2..];
-            }
-
-            pattern = pattern.TrimStart('/').TrimEnd('/');
-            if (pattern.Length == 0)
-            {
-                continue;
-            }
-
-            foreach (string expandedPattern in ExpandWorkspacePatternBraces(pattern))
-            {
-                if (MatchesNpmWorkspacePattern(relativePath, expandedPattern))
-                {
-                    included = !excluded;
-                }
-            }
-        }
-
-        return included;
-    }
-
-    private bool MatchesNpmWorkspacePattern(string relativePath, string pattern)
-    {
-        var regex = new System.Text.StringBuilder("^");
-        for (int index = 0; index < pattern.Length; index++)
-        {
-            char current = pattern[index];
-            if (current == '*')
-            {
-                bool globStar = index + 1 < pattern.Length && pattern[index + 1] == '*';
-                if (globStar)
-                {
-                    index++;
-                    if (index + 1 < pattern.Length && pattern[index + 1] == '/')
-                    {
-                        index++;
-                        regex.Append("(?:.*/)?");
-                    }
-                    else
-                    {
-                        regex.Append(".*");
-                    }
-                }
-                else
-                {
-                    regex.Append("[^/]*");
-                }
-
-                continue;
-            }
-
-            if (current == '?')
-            {
-                regex.Append("[^/]");
-                continue;
-            }
-
-            regex.Append(Regex.Escape(current.ToString()));
-        }
-
-        regex.Append('$');
-        RegexOptions options = RegexOptions.CultureInvariant;
-        if (FileSystemPathSemantics.UsesWindowsPaths(fileSystem))
-        {
-            options |= RegexOptions.IgnoreCase;
-        }
-
-        return Regex.IsMatch(relativePath, regex.ToString(), options);
-    }
-
-    private static IEnumerable<string> ExpandWorkspacePatternBraces(string pattern)
-    {
-        int openBrace = pattern.IndexOf('{', StringComparison.Ordinal);
-        if (openBrace < 0)
-        {
-            yield return pattern;
-            yield break;
-        }
-
-        int closeBrace = pattern.IndexOf('}', openBrace + 1);
-        if (closeBrace < 0)
-        {
-            yield return pattern;
-            yield break;
-        }
-
-        string[] alternatives = pattern[(openBrace + 1)..closeBrace].Split(
-            ',',
-            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+    private static InvalidOperationException CreateInvalidNpmWorkspaceRootFailure() =>
+        CreateNpmWorkspaceResolutionFailure(
+            "returned an invalid workspace root",
+            "Run `npm prefix` from the workspace directory and verify it returns one existing absolute ancestor path."
         );
-        if (alternatives.Length == 0)
-        {
-            yield return pattern;
-            yield break;
-        }
 
-        foreach (string alternative in alternatives)
-        {
-            string expanded =
-                pattern[..openBrace] + alternative + pattern[(closeBrace + 1)..];
-            foreach (string nestedExpansion in ExpandWorkspacePatternBraces(expanded))
-            {
-                yield return nestedExpansion;
-            }
-        }
-    }
+    private static InvalidOperationException CreateNpmWorkspaceResolutionFailure(
+        string failure,
+        string action
+    ) =>
+        new(
+            "npm workspace-root discovery "
+                + failure
+                + ". "
+                + action
+                + " npm is required to resolve npm workspace semantics."
+        );
 
     private string GetHomeDirectory()
     {
@@ -1101,6 +1022,9 @@ public sealed class NpmPhase12VerticalSliceService
     private static bool IsWindowsUncPath(string path) =>
         path.StartsWith(@"\\", StringComparison.Ordinal)
         || path.StartsWith("//", StringComparison.Ordinal);
+
+    private static bool IsAbsolutePath(string path) =>
+        path.StartsWith('/') || IsWindowsDrivePath(path) || IsWindowsUncPath(path);
 
     private static string[] SplitLines(string contents) =>
         contents.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Split('\n');

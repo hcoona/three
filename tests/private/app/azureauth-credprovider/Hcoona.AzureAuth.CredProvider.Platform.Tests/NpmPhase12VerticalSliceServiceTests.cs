@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Hcoona.AzureAuth.CredProvider.Contracts;
 using Hcoona.AzureAuth.CredProvider.Platform.Configuration;
+using Hcoona.AzureAuth.CredProvider.Platform.Processes;
 using Hcoona.AzureAuth.CredProvider.Platform.Tests.TestDoubles;
 using Hcoona.AzureAuth.CredProvider.Platform.VerticalSlice;
 using Xunit;
@@ -79,87 +80,6 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         Assert.Equal("org", declaration.ResourceIdentity.Organization);
         Assert.Equal("project", declaration.ResourceIdentity.Project);
         Assert.Equal("feed", declaration.ResourceIdentity.Feed);
-    }
-
-    [Theory]
-    [InlineData("""["packages/*"]""", "/repo/packages/app/src")]
-    [InlineData("""{"packages":["{apps,packages}/**"]}""", "/repo/apps/group/app/src")]
-    public void DiscoverRegistryDeclarationsUsesMatchingAncestorNpmWorkspaceRoot(
-        string workspaces,
-        string invocationDirectory
-    )
-    {
-        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
-        string packageDirectory = invocationDirectory[..invocationDirectory.LastIndexOf("/src")];
-        CreateDirectory(fileSystem, invocationDirectory);
-        CreateDirectory(fileSystem, "/home/alice");
-        fileSystem.WriteAllText(
-            "/repo/package.json",
-            $$"""{"name":"root","private":true,"workspaces":{{workspaces}}}"""
-        );
-        fileSystem.WriteAllText(packageDirectory + "/package.json", """{"name":"nested"}""");
-        fileSystem.WriteAllText(
-            "/repo/.npmrc",
-            "registry=https://pkgs.dev.azure.com/org/_packaging/root/npm/registry/\n"
-        );
-        fileSystem.WriteAllText(
-            packageDirectory + "/.npmrc",
-            "registry=https://pkgs.dev.azure.com/org/_packaging/nested/npm/registry/\n"
-        );
-        var service = new NpmPhase12VerticalSliceService(
-            new NpmPhase12VerticalSliceOptions
-            {
-                FileSystem = fileSystem,
-                WorkspaceDirectoryPath = invocationDirectory,
-                UserHomeDirectoryPath = "/home/alice",
-            }
-        );
-
-        NpmPhase12RegistryDeclaration declaration = Assert.Single(
-            service.DiscoverRegistryDeclarations()
-        );
-
-        Assert.Equal("/repo/.npmrc", declaration.SourcePath);
-        Assert.Equal("root", declaration.ResourceIdentity.Feed);
-    }
-
-    [Fact]
-    public void DiscoverRegistryDeclarationsDoesNotTreatNonmatchingAncestorPackageAsWorkspaceRoot()
-    {
-        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
-        CreateDirectory(fileSystem, "/repo/packages/app/src");
-        CreateDirectory(fileSystem, "/home/alice");
-        fileSystem.WriteAllText(
-            "/repo/package.json",
-            """{"name":"root","workspaces":["tools/*"]}"""
-        );
-        fileSystem.WriteAllText(
-            "/repo/packages/app/package.json",
-            """{"name":"nested"}"""
-        );
-        fileSystem.WriteAllText(
-            "/repo/.npmrc",
-            "registry=https://pkgs.dev.azure.com/org/_packaging/root/npm/registry/\n"
-        );
-        fileSystem.WriteAllText(
-            "/repo/packages/app/.npmrc",
-            "registry=https://pkgs.dev.azure.com/org/_packaging/nested/npm/registry/\n"
-        );
-        var service = new NpmPhase12VerticalSliceService(
-            new NpmPhase12VerticalSliceOptions
-            {
-                FileSystem = fileSystem,
-                WorkspaceDirectoryPath = "/repo/packages/app/src",
-                UserHomeDirectoryPath = "/home/alice",
-            }
-        );
-
-        NpmPhase12RegistryDeclaration declaration = Assert.Single(
-            service.DiscoverRegistryDeclarations()
-        );
-
-        Assert.Equal("/repo/packages/app/.npmrc", declaration.SourcePath);
-        Assert.Equal("nested", declaration.ResourceIdentity.Feed);
     }
 
     [Fact]
@@ -831,6 +751,262 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         Assert.DoesNotContain(ProjectSecret, exception.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void DiscoverRegistryDeclarationsDelegatesNpmWorkspaceResolutionToProcessRunnerForSupportedCharacterClassGlob()
+    {
+        NpmPhase12VerticalSliceService service = CreateNpmWorkspaceProcessFixture(
+            new ProcessResult(0, "/repo\n", string.Empty),
+            out _,
+            out FakeProcessRunner processRunner
+        );
+
+        NpmPhase12RegistryDeclaration declaration = Assert.Single(
+            service.DiscoverRegistryDeclarations()
+        );
+
+        ProcessStartSpec startSpec = Assert.Single(processRunner.RecordedStartSpecs);
+        Assert.Equal("npm", startSpec.FileName);
+        Assert.Equal(["prefix"], startSpec.Arguments);
+        Assert.Equal("/repo/packages/apple", startSpec.WorkingDirectory);
+        Assert.InRange(
+            startSpec.Timeout,
+            TimeSpan.FromMilliseconds(1),
+            TimeSpan.FromSeconds(10)
+        );
+        Assert.Equal(4096, startSpec.OutputCaptureOptions.StandardOutputByteLimit);
+        Assert.Equal(4096, startSpec.OutputCaptureOptions.StandardErrorByteLimit);
+        Assert.Equal("/repo/.npmrc", declaration.SourcePath);
+        Assert.Equal("@scope:registry", declaration.Key);
+        Assert.Equal("root", declaration.ResourceIdentity.Feed);
+        Assert.Equal(
+            "//pkgs.dev.azure.com/org/_packaging/root/npm/registry/:_authToken",
+            declaration.AuthSelectors.NpmAuthTokenKey
+        );
+        Assert.DoesNotContain("credential", declaration.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void DiscoverRegistryDeclarationsFailsActionablyWhenNpmIsUnavailable()
+    {
+        const string SensitiveEnvironmentValue = "NPM_CONFIG_TOKEN=unavailable-secret";
+        NpmPhase12VerticalSliceService service = CreateNpmWorkspaceProcessFixture(
+            ProcessResult.LaunchFailure(standardError: SensitiveEnvironmentValue),
+            out _,
+            out FakeProcessRunner processRunner
+        );
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+            service.DiscoverRegistryDeclarations
+        );
+
+        AssertNpmWorkspaceResolutionFailure(exception, processRunner);
+        Assert.Contains("available on PATH", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            SensitiveEnvironmentValue,
+            exception.ToString(),
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain("unavailable-secret", exception.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RunDoctorFailsActionablyWhenNpmIsUnavailable()
+    {
+        NpmPhase12VerticalSliceService service = CreateNpmWorkspaceProcessFixture(
+            ProcessResult.LaunchFailure(),
+            out _,
+            out FakeProcessRunner processRunner
+        );
+
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await service.RunDoctorAsync(TestContext.Current.CancellationToken)
+        );
+
+        AssertNpmWorkspaceResolutionFailure(exception, processRunner);
+        Assert.Contains("available on PATH", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CreateUserCredentialPlanFailsActionablyWhenNpmIsUnavailable()
+    {
+        NpmPhase12VerticalSliceService service = CreateNpmWorkspaceProcessFixture(
+            ProcessResult.LaunchFailure(),
+            out _,
+            out FakeProcessRunner processRunner
+        );
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            service.CreateUserCredentialPlan(
+                new NpmPhase12CredentialPlanRequest
+                {
+                    Declaration = CreateNpmDeclaration("/repo/.npmrc", "root"),
+                    AuthToken = "short-lived-token",
+                }
+            )
+        );
+
+        AssertNpmWorkspaceResolutionFailure(exception, processRunner);
+        Assert.Contains("available on PATH", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DiscoverRegistryDeclarationsFailsActionablyWhenNpmReturnsNonZeroExit()
+    {
+        const string SensitiveStandardError = "_authToken=stderr-secret-value";
+        NpmPhase12VerticalSliceService service = CreateNpmWorkspaceProcessFixture(
+            new ProcessResult(17, string.Empty, SensitiveStandardError),
+            out _,
+            out FakeProcessRunner processRunner
+        );
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+            service.DiscoverRegistryDeclarations
+        );
+
+        AssertNpmWorkspaceResolutionFailure(exception, processRunner);
+        Assert.Contains("exit code 17", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            SensitiveStandardError,
+            exception.ToString(),
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain("stderr-secret-value", exception.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DiscoverRegistryDeclarationsFailsActionablyWhenNpmWorkspaceResolutionTimesOut()
+    {
+        NpmPhase12VerticalSliceService service = CreateNpmWorkspaceProcessFixture(
+            ProcessResult.TimedOut("/repo\n", "timeout-secret-value"),
+            out _,
+            out FakeProcessRunner processRunner
+        );
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+            service.DiscoverRegistryDeclarations
+        );
+
+        AssertNpmWorkspaceResolutionFailure(exception, processRunner);
+        Assert.Contains("timed out", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("timeout-secret-value", exception.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DiscoverRegistryDeclarationsFailsActionablyWhenNpmOutputExceedsBound()
+    {
+        NpmPhase12VerticalSliceService service = CreateNpmWorkspaceProcessFixture(
+            ProcessResult.OutputTooLarge("/repo\n", "oversized-secret-value"),
+            out _,
+            out FakeProcessRunner processRunner
+        );
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+            service.DiscoverRegistryDeclarations
+        );
+
+        AssertNpmWorkspaceResolutionFailure(exception, processRunner);
+        Assert.Contains("too much output", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("oversized-secret-value", exception.ToString(), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(ProcessExecutionStatus.InvalidOutput, "/repo\n")]
+    [InlineData(ProcessExecutionStatus.Success, "")]
+    [InlineData(ProcessExecutionStatus.Success, "relative/workspace\n")]
+    [InlineData(ProcessExecutionStatus.Success, "/repo/missing\n")]
+    [InlineData(ProcessExecutionStatus.Success, "/outside/workspace\n")]
+    [InlineData(ProcessExecutionStatus.Success, "/repo\n/repo/packages/apple\n")]
+    public void DiscoverRegistryDeclarationsFailsActionablyWhenNpmWorkspaceResolutionReturnsInvalidOutput(
+        ProcessExecutionStatus status,
+        string standardOutput
+    )
+    {
+        const string SensitiveStandardError = "invalid-output-secret-value";
+        ProcessResult processResult =
+            status == ProcessExecutionStatus.InvalidOutput
+                ? ProcessResult.InvalidOutput(standardOutput, SensitiveStandardError)
+                : new ProcessResult(0, standardOutput, SensitiveStandardError);
+        NpmPhase12VerticalSliceService service = CreateNpmWorkspaceProcessFixture(
+            processResult,
+            out InMemoryFileSystem fileSystem,
+            out FakeProcessRunner processRunner
+        );
+        CreateDirectory(fileSystem, "/outside/workspace");
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+            service.DiscoverRegistryDeclarations
+        );
+
+        AssertNpmWorkspaceResolutionFailure(exception, processRunner);
+        Assert.Contains("invalid", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            SensitiveStandardError,
+            exception.ToString(),
+            StringComparison.Ordinal
+        );
+    }
+
+    [Fact]
+    public void CreateUserCredentialPlanPreservesPnpmWorkspaceDiscoveryWithoutInvokingNpm()
+    {
+        const string Registry =
+            "https://pkgs.dev.azure.com/org/_packaging/root/npm/registry/";
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/repo/packages/apple");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText("/repo/pnpm-workspace.yaml", "packages:\n  - packages/*\n");
+        fileSystem.WriteAllText("/repo/.npmrc", "registry=" + Registry + "\n");
+        fileSystem.WriteAllText(
+            "/repo/packages/apple/.npmrc",
+            "//pkgs.dev.azure.com/org/_packaging/root/npm/registry/:_authToken=leaf-secret\n"
+        );
+        var processRunner = new FakeProcessRunner();
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                ProcessRunner = processRunner,
+                WorkspaceDirectoryPath = "/repo/packages/apple",
+                UserNpmrcPath = "/home/alice/.npmrc",
+            }
+        );
+        var registryUrl = new Uri(Registry, UriKind.Absolute);
+        CanonicalResourceIdentity resource = CanonicalResourceIdentity.Create(
+            "pkgs.dev.azure.com",
+            "org",
+            registryUrl,
+            feed: "root"
+        );
+        var declaration = new NpmPhase12RegistryDeclaration
+        {
+            SourcePath = "/repo/.npmrc",
+            Key = "registry",
+            RegistryUrl = registryUrl,
+            ResourceIdentity = resource,
+            AuthSelectors = NpmCompatibleAuthSelectorPolicy.Create(resource),
+        };
+
+        ConfigurationChangePlan plan = service.CreateUserCredentialPlan(
+            new NpmPhase12CredentialPlanRequest
+            {
+                Declaration = declaration,
+                AuthToken = "short-lived-token",
+                Ecosystem = CredentialEcosystem.Pnpm,
+                TargetNpmrcPath = "/repo/.npmrc",
+            }
+        );
+
+        ConfigurationChange change = Assert.Single(plan.Changes);
+        Assert.Equal("/repo/.npmrc", change.TargetPathOrName);
+        Assert.Equal(declaration.AuthSelectors.NpmAuthTokenKey, change.Key);
+        Assert.Equal("short-lived-token", change.Value);
+        Assert.True(change.IsSecretValue);
+        Assert.Equal("pnpm", plan.Manifest.SafeMetadata["ecosystem"]);
+        Assert.Equal(ConfigurationScope.User, plan.Scope);
+        Assert.True(ConfigurationChangePlanPolicy.IsValid(plan));
+        Assert.Empty(processRunner.RecordedStartSpecs);
+    }
+
     private static void CreateDirectory(InMemoryFileSystem fileSystem, string path)
     {
         string[] segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
@@ -865,6 +1041,82 @@ public sealed class NpmPhase12VerticalSliceServiceTests
     {
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(value));
         return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    private static NpmPhase12VerticalSliceService CreateNpmWorkspaceProcessFixture(
+        ProcessResult processResult,
+        out InMemoryFileSystem fileSystem,
+        out FakeProcessRunner processRunner
+    )
+    {
+        fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/repo/packages/apple");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/repo/package.json",
+            """{"name":"root","private":true,"workspaces":["packages/[a-z]*"]}"""
+        );
+        fileSystem.WriteAllText(
+            "/repo/packages/apple/package.json",
+            """{"name":"apple"}"""
+        );
+        fileSystem.WriteAllText(
+            "/repo/.npmrc",
+            "@scope:registry=https://pkgs.dev.azure.com/org/_packaging/root/npm/registry/\n"
+        );
+        fileSystem.WriteAllText(
+            "/repo/packages/apple/.npmrc",
+            "registry=https://pkgs.dev.azure.com/org/_packaging/apple/npm/registry/\n"
+        );
+        processRunner = new FakeProcessRunner();
+        processRunner.EnqueueResult(processResult);
+        return new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                ProcessRunner = processRunner,
+                WorkspaceDirectoryPath = "/repo/packages/apple",
+                UserNpmrcPath = "/home/alice/.npmrc",
+            }
+        );
+    }
+
+    private static NpmPhase12RegistryDeclaration CreateNpmDeclaration(
+        string sourcePath,
+        string feed
+    )
+    {
+        var registryUrl = new Uri(
+            "https://pkgs.dev.azure.com/org/_packaging/" + feed + "/npm/registry/",
+            UriKind.Absolute
+        );
+        CanonicalResourceIdentity resource = CanonicalResourceIdentity.Create(
+            "pkgs.dev.azure.com",
+            "org",
+            registryUrl,
+            feed: feed
+        );
+        return new NpmPhase12RegistryDeclaration
+        {
+            SourcePath = sourcePath,
+            Key = "registry",
+            RegistryUrl = registryUrl,
+            ResourceIdentity = resource,
+            AuthSelectors = NpmCompatibleAuthSelectorPolicy.Create(resource),
+        };
+    }
+
+    private static void AssertNpmWorkspaceResolutionFailure(
+        InvalidOperationException exception,
+        FakeProcessRunner processRunner
+    )
+    {
+        ProcessStartSpec startSpec = Assert.Single(processRunner.RecordedStartSpecs);
+        Assert.Equal("npm", startSpec.FileName);
+        Assert.Equal(["prefix"], startSpec.Arguments);
+        Assert.Equal("/repo/packages/apple", startSpec.WorkingDirectory);
+        Assert.Contains("npm workspace-root discovery", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("npm is required", exception.Message, StringComparison.Ordinal);
     }
 
     private sealed class EnvironmentVariables

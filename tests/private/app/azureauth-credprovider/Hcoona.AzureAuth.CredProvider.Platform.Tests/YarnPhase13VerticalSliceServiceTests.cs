@@ -1677,4 +1677,401 @@ public sealed class YarnPhase13VerticalSliceServiceTests
         public string? Get(string name) =>
             variables.TryGetValue(name, out string? value) ? value : null;
     }
+
+    [Theory]
+    [InlineData("/repo/apps/inner/.yarnrc.yml")]
+    [InlineData("/repo/shared/.yarnrc.yml")]
+    public void CreateUserCredentialPlanRejectsTargetInsideAnyEnclosingGitRepository(
+        string targetPath
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/repo/apps/inner/package");
+        CreateDirectory(fileSystem, "/repo/apps/inner/.git");
+        CreateDirectory(fileSystem, "/repo/.git");
+        CreateDirectory(fileSystem, "/outside/user");
+        fileSystem.WriteAllText(
+            "/repo/apps/inner/package/.yarnrc.yml",
+            "npmRegistryServer: https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
+        );
+        var service = new YarnPhase13VerticalSliceService(
+            new YarnPhase13VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/repo/apps/inner/package",
+                UserHomeDirectoryPath = "/outside/user",
+            }
+        );
+        YarnPhase13RegistryDeclaration declaration = Assert.Single(
+            service.DiscoverRegistryDeclarations()
+        );
+        fileSystem.Calls.Clear();
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            service.CreateUserCredentialPlan(
+                new YarnPhase13CredentialPlanRequest
+                {
+                    Declaration = declaration,
+                    AuthToken = "short-lived-token",
+                    TargetYarnrcPath = targetPath,
+                }
+            )
+        );
+
+        Assert.Contains(
+            "Repository-local Yarn configuration cannot store credential material.",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain("short-lived-token", exception.Message, StringComparison.Ordinal);
+        AssertNoFilesystemMutationCalls(fileSystem.Calls);
+    }
+
+    [Theory]
+    [InlineData("/repo/.git", "/repo/shared/.yarnrc.yml")]
+    [InlineData("/repo/apps/inner/.git", "/repo/apps/inner/.yarnrc.yml")]
+    public void CreateUserCredentialPlanRejectsTargetInsideRepositoryWithGitFileMarker(
+        string gitMarkerPath,
+        string targetPath
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/repo/apps/inner/package");
+        CreateDirectory(fileSystem, "/outside/user");
+        const string GitFileContents = "gitdir: /worktrees/repo";
+        fileSystem.WriteAllText(gitMarkerPath, GitFileContents);
+        fileSystem.WriteAllText(
+            "/repo/apps/inner/package/.yarnrc.yml",
+            "npmRegistryServer: https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
+        );
+        var service = new YarnPhase13VerticalSliceService(
+            new YarnPhase13VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/repo/apps/inner/package",
+                UserHomeDirectoryPath = "/outside/user",
+            }
+        );
+        YarnPhase13RegistryDeclaration declaration = Assert.Single(
+            service.DiscoverRegistryDeclarations()
+        );
+        fileSystem.Calls.Clear();
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            service.CreateUserCredentialPlan(
+                new YarnPhase13CredentialPlanRequest
+                {
+                    Declaration = declaration,
+                    AuthToken = "short-lived-token",
+                    TargetYarnrcPath = targetPath,
+                }
+            )
+        );
+
+        Assert.Contains(
+            "Repository-local Yarn configuration cannot store credential material.",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain(GitFileContents, exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("short-lived-token", exception.Message, StringComparison.Ordinal);
+        AssertNoFilesystemMutationCalls(fileSystem.Calls);
+    }
+
+    [Fact]
+    public void CreateUserCredentialPlanAllowsAbsoluteTargetOutsideAllEnclosingGitRepositories()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/repo/apps/inner/package");
+        CreateDirectory(fileSystem, "/repo/apps/inner/.git");
+        CreateDirectory(fileSystem, "/repo/.git");
+        CreateDirectory(fileSystem, "/outside/user");
+        fileSystem.WriteAllText(
+            "/repo/apps/inner/package/.yarnrc.yml",
+            "npmRegistryServer: https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
+        );
+        var service = new YarnPhase13VerticalSliceService(
+            new YarnPhase13VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/repo/apps/inner/package",
+                UserHomeDirectoryPath = "/outside/user",
+            }
+        );
+        YarnPhase13RegistryDeclaration declaration = Assert.Single(
+            service.DiscoverRegistryDeclarations()
+        );
+
+        ConfigurationChangePlan plan = service.CreateUserCredentialPlan(
+            new YarnPhase13CredentialPlanRequest
+            {
+                Declaration = declaration,
+                AuthToken = "short-lived-token",
+                TargetYarnrcPath = "/outside/user/.yarnrc.yml",
+            }
+        );
+
+        NpmCompatibleAuthSelectors selectors = NpmCompatibleAuthSelectorPolicy.Create(
+            declaration.ResourceIdentity
+        );
+        Assert.Equal(2, plan.Changes.Count);
+        Assert.All(
+            plan.Changes,
+            static change =>
+            {
+                Assert.Equal("/outside/user/.yarnrc.yml", change.TargetPathOrName);
+                Assert.False(
+                    change.TargetPathOrName.StartsWith("/repo", StringComparison.Ordinal)
+                );
+            }
+        );
+        Assert.Contains(plan.Changes, change => change.Key == selectors.YarnAuthTokenKey);
+        Assert.Contains(plan.Changes, change => change.Key == selectors.YarnAlwaysAuthKey);
+        Assert.True(ConfigurationChangePlanPolicy.IsValid(plan));
+    }
+
+    [Fact]
+    public void CreateUserCredentialPlanRejectsDefaultUserTargetInsideEnclosingGitRepository()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/repo/package");
+        CreateDirectory(fileSystem, "/repo/.git");
+        fileSystem.WriteAllText(
+            "/repo/package/.yarnrc.yml",
+            "npmRegistryServer: https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
+        );
+        var service = new YarnPhase13VerticalSliceService(
+            new YarnPhase13VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/repo/package",
+                UserHomeDirectoryPath = "/repo",
+            }
+        );
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            service.CreateUserCredentialPlan(
+                new YarnPhase13CredentialPlanRequest
+                {
+                    Declaration = Assert.Single(service.DiscoverRegistryDeclarations()),
+                    AuthToken = "short-lived-token",
+                }
+            )
+        );
+
+        Assert.Contains(
+            "Repository-local Yarn configuration cannot store credential material.",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain("short-lived-token", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("block", "null")]
+    [InlineData("block", "NULL")]
+    [InlineData("block", "Null")]
+    [InlineData("block", "~")]
+    [InlineData("flow", "null")]
+    [InlineData("flow", "NULL")]
+    [InlineData("flow", "Null")]
+    [InlineData("flow", "~")]
+    public void CreateUserCredentialPlanTreatsFailsafeNullSpellingsAsPresentAuth(
+        string mappingStyle,
+        string scalar
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/repo/apps/inner/package");
+        CreateDirectory(fileSystem, "/outside/user");
+        const string RegistryUrl =
+            "https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/";
+        string authMapping =
+            mappingStyle == "block"
+                ? "npmRegistries:\n"
+                    + "  '"
+                    + RegistryUrl
+                    + "':\n"
+                    + "    npmAuthToken: "
+                    + scalar
+                    + "\n"
+                : "npmRegistries: { '"
+                    + RegistryUrl
+                    + "': { npmAuthToken: "
+                    + scalar
+                    + " } }\n";
+        fileSystem.WriteAllText(
+            "/repo/apps/inner/package/.yarnrc.yml",
+            "npmRegistryServer: " + RegistryUrl + "\n" + authMapping
+        );
+        var service = new YarnPhase13VerticalSliceService(
+            new YarnPhase13VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/repo/apps/inner/package",
+                UserHomeDirectoryPath = "/outside/user",
+            }
+        );
+        YarnPhase13RegistryDeclaration declaration = Assert.Single(
+            service.DiscoverRegistryDeclarations(),
+            static candidate => candidate.Scope is null
+        );
+        fileSystem.Calls.Clear();
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            service.CreateUserCredentialPlan(
+                new YarnPhase13CredentialPlanRequest
+                {
+                    Declaration = declaration,
+                    AuthToken = "short-lived-token",
+                }
+            )
+        );
+
+        Assert.Contains(
+            "npmRegistries[registry].npmAuthToken",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain(scalar, exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("short-lived-token", exception.Message, StringComparison.Ordinal);
+        AssertNoFilesystemMutationCalls(fileSystem.Calls);
+    }
+
+    [Theory]
+    [InlineData("block", "")]
+    [InlineData("block", "''")]
+    [InlineData("block", "\"\"")]
+    [InlineData("flow", "")]
+    [InlineData("flow", "''")]
+    [InlineData("flow", "\"\"")]
+    public void CreateUserCredentialPlanTreatsOnlyActuallyEmptyAuthScalarsAsAbsent(
+        string mappingStyle,
+        string scalar
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/repo/apps/inner/package");
+        CreateDirectory(fileSystem, "/outside/user");
+        const string RegistryUrl =
+            "https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/";
+        string authMapping =
+            mappingStyle == "block"
+                ? "npmRegistries:\n"
+                    + "  '"
+                    + RegistryUrl
+                    + "':\n"
+                    + "    npmAuthToken: "
+                    + scalar
+                    + "\n"
+                : "npmRegistries: { '"
+                    + RegistryUrl
+                    + "': { npmAuthToken: "
+                    + scalar
+                    + " } }\n";
+        fileSystem.WriteAllText(
+            "/repo/apps/inner/package/.yarnrc.yml",
+            "npmRegistryServer: " + RegistryUrl + "\n" + authMapping
+        );
+        var service = new YarnPhase13VerticalSliceService(
+            new YarnPhase13VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/repo/apps/inner/package",
+                UserHomeDirectoryPath = "/outside/user",
+            }
+        );
+        YarnPhase13RegistryDeclaration declaration = Assert.Single(
+            service.DiscoverRegistryDeclarations(),
+            static candidate => candidate.Scope is null
+        );
+
+        ConfigurationChangePlan plan = service.CreateUserCredentialPlan(
+            new YarnPhase13CredentialPlanRequest
+            {
+                Declaration = declaration,
+                AuthToken = "short-lived-token",
+            }
+        );
+
+        NpmCompatibleAuthSelectors selectors = NpmCompatibleAuthSelectorPolicy.Create(
+            declaration.ResourceIdentity
+        );
+        Assert.Equal(2, plan.Changes.Count);
+        Assert.Equal(
+            [selectors.YarnAlwaysAuthKey, selectors.YarnAuthTokenKey],
+            plan.Changes.Select(static change => change.Key)
+        );
+        Assert.All(
+            plan.Changes,
+            static change =>
+            {
+                Assert.Equal("/outside/user/.yarnrc.yml", change.TargetPathOrName);
+                Assert.Equal(ConfigurationTargetKind.Yarnrc, change.TargetKind);
+                Assert.Equal(ConfigurationChangeOperation.Set, change.Operation);
+            }
+        );
+        Assert.Equal(selectors.YarnAuthTokenKey, plan.Manifest.EntrySelector);
+        Assert.True(ConfigurationChangePlanPolicy.IsValid(plan));
+    }
+
+    [Theory]
+    [InlineData("block", "null")]
+    [InlineData("block", "~")]
+    [InlineData("flow", "null")]
+    [InlineData("flow", "~")]
+    public void CreateUserCredentialPlanTreatsFailsafeNullAndTildeAsPresentAuthIdent(
+        string mappingStyle,
+        string scalar
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/repo/package");
+        CreateDirectory(fileSystem, "/outside/user");
+        const string RegistryUrl =
+            "https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/";
+        string authMapping =
+            mappingStyle == "block"
+                ? "npmRegistries:\n"
+                    + "  '"
+                    + RegistryUrl
+                    + "':\n"
+                    + "    npmAuthIdent: "
+                    + scalar
+                    + "\n"
+                : "npmRegistries: { '"
+                    + RegistryUrl
+                    + "': { npmAuthIdent: "
+                    + scalar
+                    + " } }\n";
+        fileSystem.WriteAllText(
+            "/repo/package/.yarnrc.yml",
+            "npmRegistryServer: " + RegistryUrl + "\n" + authMapping
+        );
+        var service = new YarnPhase13VerticalSliceService(
+            new YarnPhase13VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/repo/package",
+                UserHomeDirectoryPath = "/outside/user",
+            }
+        );
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            service.CreateUserCredentialPlan(
+                new YarnPhase13CredentialPlanRequest
+                {
+                    Declaration = Assert.Single(
+                        service.DiscoverRegistryDeclarations(),
+                        static declaration => declaration.Scope is null
+                    ),
+                    AuthToken = "short-lived-token",
+                }
+            )
+        );
+
+        Assert.Contains("npmAuthIdent", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(scalar, exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("short-lived-token", exception.Message, StringComparison.Ordinal);
+    }
 }

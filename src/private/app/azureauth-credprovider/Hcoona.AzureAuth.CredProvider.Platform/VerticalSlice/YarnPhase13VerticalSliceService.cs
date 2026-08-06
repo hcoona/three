@@ -401,22 +401,21 @@ public sealed class YarnPhase13VerticalSliceService
 
     private void ThrowIfRepositoryLocalCredentialTarget(string targetYarnrcPath)
     {
-        if (
-            workspaceDirectoryPath is null
-            || PathsEqual(targetYarnrcPath, ResolveDefaultUserYarnrcPath())
-        )
+        if (workspaceDirectoryPath is null)
         {
             return;
         }
 
-        string? repositoryRootPath = GetRepositoryRootPath();
-        if (repositoryRootPath is not null)
+        List<string> repositoryRootPaths = GetRepositoryRootPaths();
+        if (repositoryRootPaths.Count > 0)
         {
             if (
-                FileSystemPathSemantics.IsSameOrDescendant(
-                    fileSystem,
-                    targetYarnrcPath,
-                    repositoryRootPath
+                repositoryRootPaths.Any(repositoryRootPath =>
+                    FileSystemPathSemantics.IsSameOrDescendant(
+                        fileSystem,
+                        targetYarnrcPath,
+                        repositoryRootPath
+                    )
                 )
             )
             {
@@ -447,22 +446,27 @@ public sealed class YarnPhase13VerticalSliceService
         }
     }
 
-    private string? GetRepositoryRootPath()
+    private List<string> GetRepositoryRootPaths()
     {
-        string? repositoryRootPath = null;
+        var gitRepositoryRootPaths = new List<string>();
+        string? inferredRepositoryRootPath = null;
         for (
             string? directory = workspaceDirectoryPath;
             directory is not null;
             directory = FileSystemPathSemantics.GetParentDirectory(fileSystem, directory)
         )
         {
+            string gitMarkerPath = FileSystemPathSemantics.Combine(
+                fileSystem,
+                directory,
+                ".git"
+            );
             if (
-                fileSystem.DirectoryExists(
-                    FileSystemPathSemantics.Combine(fileSystem, directory, ".git")
-                )
+                fileSystem.DirectoryExists(gitMarkerPath)
+                || fileSystem.FileExists(gitMarkerPath)
             )
             {
-                return directory;
+                gitRepositoryRootPaths.Add(directory);
             }
 
             if (
@@ -474,11 +478,16 @@ public sealed class YarnPhase13VerticalSliceService
                 )
             )
             {
-                repositoryRootPath = directory;
+                inferredRepositoryRootPath = directory;
             }
         }
 
-        return repositoryRootPath;
+        if (gitRepositoryRootPaths.Count > 0)
+        {
+            return gitRepositoryRootPaths;
+        }
+
+        return inferredRepositoryRootPath is null ? [] : [inferredRepositoryRootPath];
     }
 
     private string? ResolveEffectiveProjectAuthRegistry(YarnProjectAuthBlock block)
@@ -744,7 +753,7 @@ public sealed class YarnPhase13VerticalSliceService
                         out string? topLevelValue
                     )
                     && string.Equals(topLevelKey, "npmAuthIdent", StringComparison.Ordinal)
-                    && !IsYamlNullOrEmpty(topLevelValue)
+                    && IsYamlAuthScalarPresent(topLevelValue)
                 )
                 {
                     conflicts.Add(CreateAuthIdentConflict(yarnrcPath, "<global>", "npmAuthIdent"));
@@ -770,7 +779,7 @@ public sealed class YarnPhase13VerticalSliceService
                         out string? registryAuthValue
                     )
                     && string.Equals(registryAuthKey, "npmAuthIdent", StringComparison.Ordinal)
-                    && !IsYamlNullOrEmpty(registryAuthValue)
+                    && IsYamlAuthScalarPresent(registryAuthValue)
                 )
                 {
                     conflicts.Add(
@@ -805,7 +814,7 @@ public sealed class YarnPhase13VerticalSliceService
                     out string? scopeAuthValue
                 )
                 && string.Equals(scopeAuthKey, "npmAuthIdent", StringComparison.Ordinal)
-                && !IsYamlNullOrEmpty(scopeAuthValue)
+                && IsYamlAuthScalarPresent(scopeAuthValue)
             )
             {
                 conflicts.Add(
@@ -1618,6 +1627,28 @@ public sealed class YarnPhase13VerticalSliceService
         path.StartsWith(@"\\", StringComparison.Ordinal)
         || path.StartsWith("//", StringComparison.Ordinal);
 
+    private static bool IsYamlAuthScalarPresent(string? value)
+    {
+        string? trimmed = NullIfWhiteSpace(value);
+        if (trimmed is null)
+        {
+            return false;
+        }
+
+        if (
+            trimmed.Length >= 2
+            && (
+                (trimmed[0] == '\'' && trimmed[^1] == '\'')
+                || (trimmed[0] == '"' && trimmed[^1] == '"')
+            )
+        )
+        {
+            return UnquoteYamlScalar(trimmed) is { Length: > 0 };
+        }
+
+        return true;
+    }
+
     private static bool IsYamlNullOrEmpty(string? value) =>
         UnquoteYamlScalar(value) is not { Length: > 0 };
 
@@ -1961,7 +1992,7 @@ public sealed class YarnPhase13VerticalSliceService
                 (
                     string.Equals(key, "npmAuthToken", StringComparison.Ordinal)
                     || string.Equals(key, "npmAuthIdent", StringComparison.Ordinal)
-                ) && !IsYamlNullOrEmpty(value);
+                ) && IsYamlAuthScalarPresent(value);
             bool alwaysAuthDisabled =
                 string.Equals(key, "npmAlwaysAuth", StringComparison.Ordinal)
                 && string.Equals(
