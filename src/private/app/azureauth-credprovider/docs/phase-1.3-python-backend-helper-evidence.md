@@ -912,6 +912,11 @@ Accepted implementation expectation:
   `keyring.backends`.
 - `configure python` and `doctor` must validate the exact Python environment that
   runs pip or twine, not only the globally installed primary CLI.
+- `doctor` treats the current terminal as authoritative: it selects
+  `VIRTUAL_ENV` before PATH `python3`/`python`, preserves the selected executable
+  path without dereferencing symlinks, and asks that interpreter whether
+  `importlib.util.find_spec("keyring")` succeeds under its ordinary startup
+  environment.
 - pipx, tox/nox, active virtual environments, and isolated CI environments remain
   explicit bootstrap targets because import-mode tools load backends from their
   own Python environment.

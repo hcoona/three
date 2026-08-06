@@ -3014,12 +3014,36 @@ internal static class CliApplication
                 ),
             "python-keyring-module: "
                 + GetCheckStatusText(doctorResult.KeyringModuleProbe.KeyringModuleResolvable),
+            "python-keyring-module-probe: "
+                + GetPythonKeyringModuleProbeStatusText(
+                    doctorResult.KeyringModuleProbe.Status
+                ),
             "python-azure-artifacts-endpoint-canonicalization: "
                 + GetCheckStatusText(
                     doctorResult.AzureArtifactsPythonEndpointCanonicalizationSuccess
                 ),
         ];
     }
+
+    private static string GetPythonKeyringModuleProbeStatusText(
+        PythonPhase11KeyringModuleProbeStatus status
+    ) =>
+        status switch
+        {
+            PythonPhase11KeyringModuleProbeStatus.InterpreterNotFound =>
+                "interpreter-not-found",
+            PythonPhase11KeyringModuleProbeStatus.ModuleFound => "module-found",
+            PythonPhase11KeyringModuleProbeStatus.ModuleNotFound => "module-not-found",
+            PythonPhase11KeyringModuleProbeStatus.LaunchFailure => "launch-failed",
+            PythonPhase11KeyringModuleProbeStatus.TimedOut => "timed-out",
+            PythonPhase11KeyringModuleProbeStatus.UnexpectedNonZeroExit =>
+                "unexpected-nonzero-exit",
+            PythonPhase11KeyringModuleProbeStatus.OutputTooLarge => "output-too-large",
+            PythonPhase11KeyringModuleProbeStatus.InvalidOutput => "invalid-output",
+            _ => throw new InvalidOperationException(
+                $"Unsupported Python keyring module probe status: {status}."
+            ),
+        };
 
     private static List<string> BuildConfigurationPhase14DoctorLines(
         ConfigurationPhase14DoctorResult doctorResult

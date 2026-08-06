@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using Hcoona.AzureAuth.CredProvider.Contracts;
 using Hcoona.AzureAuth.CredProvider.Platform.Configuration;
 using Hcoona.AzureAuth.CredProvider.Platform.FileSystem;
@@ -97,11 +96,23 @@ public sealed record PythonPhase11KeyringModuleProbe
 
     public required bool Attempted { get; init; }
 
-    public string? SitePackagesPath { get; init; }
-
     public required bool KeyringModuleResolvable { get; init; }
 
+    public required PythonPhase11KeyringModuleProbeStatus Status { get; init; }
+
     public string? FailureMessage { get; init; }
+}
+
+public enum PythonPhase11KeyringModuleProbeStatus
+{
+    InterpreterNotFound,
+    ModuleFound,
+    ModuleNotFound,
+    LaunchFailure,
+    TimedOut,
+    UnexpectedNonZeroExit,
+    OutputTooLarge,
+    InvalidOutput,
 }
 
 public enum PythonPhase11EnvironmentKind
@@ -131,6 +142,17 @@ public sealed class PythonPhase11VerticalSliceService
     private const string UvToolDirVariableName = "UV_TOOL_DIR";
     private const string PathVariableName = "PATH";
     private const string TwineExecutableFileName = "twine";
+    private const string PythonExecutableResolutionScript =
+        "import os,sys; print(os.path.abspath(sys.executable))";
+    private const string KeyringModuleProbeScript =
+        "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('keyring') is not None else 1)";
+    private static readonly TimeSpan PythonProbeTimeout = TimeSpan.FromSeconds(5);
+    private static readonly ProcessOutputCaptureOptions PythonProbeOutputCaptureOptions =
+        new()
+        {
+            StandardOutputByteLimit = 4096,
+            StandardErrorByteLimit = 4096,
+        };
 
     private readonly string currentDirectoryPath;
     private readonly Func<string, string?> environmentVariableReader;
@@ -334,44 +356,96 @@ public sealed class PythonPhase11VerticalSliceService
                 PythonExecutableExists = false,
                 Attempted = false,
                 KeyringModuleResolvable = false,
+                Status = PythonPhase11KeyringModuleProbeStatus.InterpreterNotFound,
                 FailureMessage = "Current-terminal Python interpreter could not be resolved.",
             };
         }
 
         string normalizedPythonExecutablePath = fileSystem.GetFullPath(effectivePythonExecutablePath);
         bool pythonExecutableExists = fileSystem.FileExists(normalizedPythonExecutablePath);
-        if (
-            !TryResolveSitePackagesPath(
-                normalizedPythonExecutablePath,
-                out string? sitePackagesPath
+        ProcessResult result = await processRunner
+            .RunAsync(
+                CreatePythonProbeStartSpec(
+                    normalizedPythonExecutablePath,
+                    KeyringModuleProbeScript
+                ),
+                cancellationToken
             )
-        )
-        {
-            return new PythonPhase11KeyringModuleProbe
-            {
-                PythonExecutablePath = normalizedPythonExecutablePath,
-                PythonExecutableExists = pythonExecutableExists,
-                Attempted = true,
-                KeyringModuleResolvable = false,
-                FailureMessage =
-                    "Could not resolve a site-packages directory from the Python path.",
-            };
-        }
+            .ConfigureAwait(false);
 
-        bool keyringPackagePresent =
-            fileSystem.DirectoryExists(Path.Combine(sitePackagesPath, "keyring"))
-            || fileSystem
-                .EnumerateDirectories(sitePackagesPath, "keyring-*.dist-info")
-                .Any();
-        return new PythonPhase11KeyringModuleProbe
+        return result.Status switch
         {
-            PythonExecutablePath = normalizedPythonExecutablePath,
-            PythonExecutableExists = pythonExecutableExists,
-            Attempted = true,
-            SitePackagesPath = sitePackagesPath,
-            KeyringModuleResolvable = pythonExecutableExists && keyringPackagePresent,
+            ProcessExecutionStatus.Success => CreateKeyringModuleProbe(
+                normalizedPythonExecutablePath,
+                pythonExecutableExists,
+                PythonPhase11KeyringModuleProbeStatus.ModuleFound,
+                keyringModuleResolvable: true
+            ),
+            ProcessExecutionStatus.NonZeroExit when result.ExitCode == 1 =>
+                CreateKeyringModuleProbe(
+                    normalizedPythonExecutablePath,
+                    pythonExecutableExists,
+                    PythonPhase11KeyringModuleProbeStatus.ModuleNotFound,
+                    keyringModuleResolvable: false,
+                    "The selected Python interpreter cannot resolve the keyring module."
+                ),
+            ProcessExecutionStatus.NonZeroExit => CreateKeyringModuleProbe(
+                normalizedPythonExecutablePath,
+                pythonExecutableExists,
+                PythonPhase11KeyringModuleProbeStatus.UnexpectedNonZeroExit,
+                keyringModuleResolvable: false,
+                $"The keyring module probe exited unexpectedly with code {result.ExitCode}."
+            ),
+            ProcessExecutionStatus.LaunchFailure => CreateKeyringModuleProbe(
+                normalizedPythonExecutablePath,
+                pythonExecutableExists,
+                PythonPhase11KeyringModuleProbeStatus.LaunchFailure,
+                keyringModuleResolvable: false,
+                "The selected Python interpreter could not be launched."
+            ),
+            ProcessExecutionStatus.TimedOut => CreateKeyringModuleProbe(
+                normalizedPythonExecutablePath,
+                pythonExecutableExists,
+                PythonPhase11KeyringModuleProbeStatus.TimedOut,
+                keyringModuleResolvable: false,
+                "The keyring module probe timed out."
+            ),
+            ProcessExecutionStatus.OutputTooLarge => CreateKeyringModuleProbe(
+                normalizedPythonExecutablePath,
+                pythonExecutableExists,
+                PythonPhase11KeyringModuleProbeStatus.OutputTooLarge,
+                keyringModuleResolvable: false,
+                "The keyring module probe exceeded its output limit."
+            ),
+            ProcessExecutionStatus.InvalidOutput => CreateKeyringModuleProbe(
+                normalizedPythonExecutablePath,
+                pythonExecutableExists,
+                PythonPhase11KeyringModuleProbeStatus.InvalidOutput,
+                keyringModuleResolvable: false,
+                "The keyring module probe produced invalid output."
+            ),
+            _ => throw new InvalidOperationException(
+                $"Unsupported Python probe process status: {result.Status}."
+            ),
         };
     }
+
+    private static PythonPhase11KeyringModuleProbe CreateKeyringModuleProbe(
+        string pythonExecutablePath,
+        bool pythonExecutableExists,
+        PythonPhase11KeyringModuleProbeStatus status,
+        bool keyringModuleResolvable,
+        string? failureMessage = null
+    ) =>
+        new()
+        {
+            PythonExecutablePath = pythonExecutablePath,
+            PythonExecutableExists = pythonExecutableExists,
+            Attempted = true,
+            KeyringModuleResolvable = keyringModuleResolvable,
+            Status = status,
+            FailureMessage = failureMessage,
+        };
 
     private async ValueTask<string?> ResolveCurrentTerminalPythonExecutablePathAsync(
         CancellationToken cancellationToken
@@ -436,27 +510,16 @@ public sealed class PythonPhase11VerticalSliceService
         CancellationToken cancellationToken
     )
     {
-        ProcessResult result;
-        try
-        {
-            result = await processRunner.RunAsync(
-                    new ProcessStartSpec(
-                        commandName,
-                        ["-c", "import os, sys; print(os.path.realpath(sys.executable))"],
-                        environment: BuildPythonCommandResolutionEnvironment()
-                    ),
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch
-        {
-            return null;
-        }
+        ProcessResult result = await processRunner
+            .RunAsync(
+                CreatePythonProbeStartSpec(
+                    commandName,
+                    PythonExecutableResolutionScript,
+                    BuildPythonCommandResolutionEnvironment()
+                ),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
         if (!result.Succeeded)
         {
@@ -471,6 +534,19 @@ public sealed class PythonPhase11VerticalSliceService
             .FirstOrDefault(static line => line.Length > 0);
         return resolvedPath is null ? null : fileSystem.GetFullPath(resolvedPath);
     }
+
+    private static ProcessStartSpec CreatePythonProbeStartSpec(
+        string pythonExecutable,
+        string script,
+        IReadOnlyDictionary<string, string?>? environment = null
+    ) =>
+        new(
+            pythonExecutable,
+            ["-c", script],
+            environment: environment,
+            timeout: PythonProbeTimeout,
+            outputCaptureOptions: PythonProbeOutputCaptureOptions
+        );
 
     private Dictionary<string, string?>? BuildPythonCommandResolutionEnvironment()
     {
@@ -612,60 +688,6 @@ public sealed class PythonPhase11VerticalSliceService
                         : fileSystem.GetFullPath($"{currentDirectoryPath}/{segment}")
             )
             .ToArray();
-    }
-
-    private bool TryResolveSitePackagesPath(
-        string pythonExecutablePath,
-        [NotNullWhen(true)] out string? sitePackagesPath
-    )
-    {
-        sitePackagesPath = null;
-        string? scriptsDirectory = GetDirectoryPath(pythonExecutablePath);
-        string? environmentRoot = scriptsDirectory is null ? null : GetDirectoryPath(scriptsDirectory);
-        if (
-            string.IsNullOrWhiteSpace(scriptsDirectory)
-            || string.IsNullOrWhiteSpace(environmentRoot)
-        )
-        {
-            return false;
-        }
-
-        string scriptsDirectoryName = GetFileName(scriptsDirectory);
-        if (string.Equals(scriptsDirectoryName, "Scripts", StringComparison.OrdinalIgnoreCase))
-        {
-            string windowsSitePackagesPath = $"{environmentRoot}/Lib/site-packages";
-            if (fileSystem.DirectoryExists(windowsSitePackagesPath))
-            {
-                sitePackagesPath = fileSystem.GetFullPath(windowsSitePackagesPath);
-                return true;
-            }
-
-            return false;
-        }
-
-        if (!string.Equals(scriptsDirectoryName, "bin", StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        string libDirectory = $"{environmentRoot}/lib";
-        if (!fileSystem.DirectoryExists(libDirectory))
-        {
-            return false;
-        }
-
-        sitePackagesPath = fileSystem
-            .EnumerateDirectories(libDirectory, "python*")
-            .Order(StringComparer.Ordinal)
-            .Select(pythonVersionDirectory => $"{pythonVersionDirectory}/site-packages")
-            .FirstOrDefault(fileSystem.DirectoryExists);
-        if (sitePackagesPath is null)
-        {
-            return false;
-        }
-
-        sitePackagesPath = fileSystem.GetFullPath(sitePackagesPath);
-        return true;
     }
 
     private static string ResolveCurrentLayoutKeyringShimPath(
