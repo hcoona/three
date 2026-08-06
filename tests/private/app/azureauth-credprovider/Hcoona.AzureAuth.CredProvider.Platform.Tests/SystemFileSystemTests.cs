@@ -324,6 +324,39 @@ public sealed class SystemFileSystemTests
         Skip = "Directory symbolic-link creation is unavailable.",
         SkipUnless = nameof(CanCreateDirectorySymbolicLinks)
     )]
+    public void ResolveFilePathForWriteAllowsValidLinkReentryWithDifferentRemainingSuffix()
+    {
+        string root = CreateTestDirectory();
+        string physical = Path.Combine(root, "physical");
+        string link = Path.Combine(root, "link");
+        string reentry = Path.Combine(physical, "reentry");
+        string finalDirectory = Path.Combine(physical, "final");
+        const string MissingFileName = "not-created.yml";
+
+        try
+        {
+            Directory.CreateDirectory(finalDirectory);
+            Directory.CreateSymbolicLink(link, physical);
+            Directory.CreateSymbolicLink(reentry, link);
+
+            string resolved = ((IFileSystemLinkResolver)new SystemFileSystem())
+                .ResolveFilePathForWrite(
+                    Path.Combine(link, "reentry", "final", MissingFileName)
+                );
+
+            Assert.Equal(Path.Combine(finalDirectory, MissingFileName), resolved);
+            Assert.False(File.Exists(resolved));
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(root);
+        }
+    }
+
+    [Fact(
+        Skip = "Directory symbolic-link creation is unavailable.",
+        SkipUnless = nameof(CanCreateDirectorySymbolicLinks)
+    )]
     public void ResolveFilePathForWriteRejectsAncestorLinkCycle()
     {
         string root = CreateTestDirectory();
@@ -335,6 +368,38 @@ public sealed class SystemFileSystemTests
         {
             Directory.CreateSymbolicLink(firstLink, secondLink);
             Directory.CreateSymbolicLink(secondLink, firstLink);
+
+            IOException exception = Assert.Throws<IOException>(() =>
+                ((IFileSystemLinkResolver)new SystemFileSystem())
+                    .ResolveFilePathForWrite(requestedPath)
+            );
+
+            Assert.False(string.IsNullOrWhiteSpace(exception.Message));
+            Assert.False(File.Exists(requestedPath));
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(root);
+        }
+    }
+
+    [Fact(
+        Skip = "Directory symbolic-link creation is unavailable.",
+        SkipUnless = nameof(CanCreateDirectorySymbolicLinks)
+    )]
+    public void ResolveFilePathForWriteRejectsRepeatedNormalizedTraversalState()
+    {
+        string root = CreateTestDirectory();
+        string physical = Path.Combine(root, "physical");
+        string link = Path.Combine(root, "link");
+        string reentry = Path.Combine(physical, "reentry");
+        string requestedPath = Path.Combine(link, "reentry", "not-created.yml");
+
+        try
+        {
+            Directory.CreateDirectory(physical);
+            Directory.CreateSymbolicLink(link, physical);
+            Directory.CreateSymbolicLink(reentry, Path.Combine(link, "reentry"));
 
             IOException exception = Assert.Throws<IOException>(() =>
                 ((IFileSystemLinkResolver)new SystemFileSystem())

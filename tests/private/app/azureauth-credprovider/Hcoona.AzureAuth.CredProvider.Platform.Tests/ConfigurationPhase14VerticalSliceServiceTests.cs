@@ -592,6 +592,163 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     }
 
     [Fact]
+    public async Task YarnTransitionalReplacementCleanupSucceedsAfterTargetBecomesRepository()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        ConfigurationPhase14VerticalSliceService original = CreateService(fileSystem);
+        await original.ConfigureAsync(
+            CredentialEcosystem.Yarn,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+        var replacementRegistry = new Uri(
+            "https://pkgs.dev.azure.com/test-org/_packaging/replacement-feed/npm/registry/"
+        );
+        ConfigurationPhase14VerticalSliceService replacement = CreateService(
+            fileSystem,
+            registryUrl: replacementRegistry
+        );
+        string targetPath = replacement.Paths.YarnUserYarnrcPath;
+        string manifestPath = GetPackageManifestPath(replacement, CredentialEcosystem.Yarn);
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken
+        );
+        InjectPackageReplacementFailure(
+            fileSystem,
+            targetPath,
+            manifestPath,
+            PackageReplacementFailurePoint.TargetWriteAfterIntent,
+            cancellation
+        );
+        await Assert.ThrowsAsync<IOException>(async () =>
+            await replacement.ConfigureAsync(
+                CredentialEcosystem.Yarn,
+                ConfigurationPhase14Scope.User,
+                cancellation.Token
+            )
+        );
+        ConfigurationOwnershipManifest transitional =
+            ConfigurationOwnershipManifestSerializer.Deserialize(
+                fileSystem.ReadAllText(manifestPath)
+            );
+        Assert.Equal(4, transitional.Entries.Count);
+        fileSystem.CreateDirectory(Path.Combine(Path.GetDirectoryName(targetPath)!, ".git"));
+
+        ConfigurationPhase14DoctorResult doctor = await replacement.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+        ConfigurationPhase14EcosystemDoctorResult yarn = Assert.Single(
+            doctor.Ecosystems,
+            result =>
+                result.Ecosystem == CredentialEcosystem.Yarn
+                && result.Scope == ConfigurationPhase14Scope.User
+        );
+        Assert.False(yarn.ConfigurationPlanValid);
+        InvalidOperationException configureException =
+            await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+                await replacement.ConfigureAsync(
+                    CredentialEcosystem.Yarn,
+                    ConfigurationPhase14Scope.User,
+                    TestContext.Current.CancellationToken
+                )
+            );
+        Assert.Contains(
+            "Repository-local Yarn",
+            configureException.Message,
+            StringComparison.Ordinal
+        );
+
+        ConfigurationPhase14PlanResult removed = await replacement.UnconfigureAsync(
+            CredentialEcosystem.Yarn,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(4, removed.ChangeCount);
+        Assert.Equal(4, removed.AppliedChangeCount);
+        Assert.False(removed.OwnershipManifestPresent);
+        Assert.False(fileSystem.FileExists(manifestPath));
+        Assert.DoesNotContain(
+            "npmAuthToken",
+            fileSystem.ReadAllText(targetPath),
+            StringComparison.Ordinal
+        );
+    }
+
+    [Fact]
+    public async Task YarnTransitionalCleanupRejectsForgedEntryWithoutMutation()
+    {
+        const string ForgedTarget = "/forged/cleanup-target.yml";
+        const string ForgedContents = "forged-marker\n";
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        ConfigurationPhase14VerticalSliceService original = CreateService(fileSystem);
+        await original.ConfigureAsync(
+            CredentialEcosystem.Yarn,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+        ConfigurationPhase14VerticalSliceService replacement = CreateService(
+            fileSystem,
+            registryUrl: new Uri(
+                "https://pkgs.dev.azure.com/test-org/_packaging/replacement-feed/npm/registry/"
+            )
+        );
+        string targetPath = replacement.Paths.YarnUserYarnrcPath;
+        string manifestPath = GetPackageManifestPath(replacement, CredentialEcosystem.Yarn);
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken
+        );
+        InjectPackageReplacementFailure(
+            fileSystem,
+            targetPath,
+            manifestPath,
+            PackageReplacementFailurePoint.TargetWriteAfterIntent,
+            cancellation
+        );
+        await Assert.ThrowsAsync<IOException>(async () =>
+            await replacement.ConfigureAsync(
+                CredentialEcosystem.Yarn,
+                ConfigurationPhase14Scope.User,
+                cancellation.Token
+            )
+        );
+        ConfigurationOwnershipManifest transitional =
+            ConfigurationOwnershipManifestSerializer.Deserialize(
+                fileSystem.ReadAllText(manifestPath)
+            );
+        string targetBefore = fileSystem.ReadAllText(targetPath);
+        fileSystem.CreateDirectory(Path.GetDirectoryName(ForgedTarget)!);
+        fileSystem.WriteAllText(ForgedTarget, ForgedContents);
+        ConfigurationOwnershipManifestEntry forged = transitional.Entries[0] with
+        {
+            Sequence = transitional.Entries.Count + 1,
+            TargetPathOrName = ForgedTarget,
+            Key = "npmRegistries[\"https://registry.example.test/\"].npmAlwaysAuth",
+        };
+        string forgedManifest = SerializeManifest(
+            transitional with
+            {
+                Entries = [.. transitional.Entries, forged],
+            }
+        );
+        fileSystem.WriteAllText(manifestPath, forgedManifest);
+
+        ConfigurationPhase14PlanResult removed = await replacement.UnconfigureAsync(
+            CredentialEcosystem.Yarn,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.True(removed.OwnershipManifestCleanupIncomplete);
+        Assert.True(removed.OwnershipManifestPresent);
+        Assert.Equal(0, removed.ChangeCount);
+        Assert.Equal(0, removed.AppliedChangeCount);
+        Assert.Equal(forgedManifest, fileSystem.ReadAllText(manifestPath));
+        Assert.Equal(targetBefore, fileSystem.ReadAllText(targetPath));
+        Assert.Equal(ForgedContents, fileSystem.ReadAllText(ForgedTarget));
+    }
+
+    [Fact]
     public async Task TransitionalPackageOwnershipCanBeUnconfiguredDirectly()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
@@ -2760,6 +2917,117 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     }
 
     [Fact]
+    public async Task YarnDanglingSymlinkCleanupRetainsManifestAndRetryEvidence()
+    {
+        string root = CreateNonRepositoryTestDirectory("phase14-yarn-dangling-cleanup");
+        string home = Path.Combine(root, "home");
+        string linkPath = Path.Combine(home, ".yarnrc.yml");
+        string targetPath = Path.Combine(home, "managed.yarnrc.yml");
+        Directory.CreateDirectory(home);
+        ConfigurationPhase14VerticalSliceService service = CreatePhysicalYarnService(root, home);
+
+        try
+        {
+            await service.ConfigureAsync(
+                CredentialEcosystem.Yarn,
+                ConfigurationPhase14Scope.User,
+                TestContext.Current.CancellationToken
+            );
+            string manifestPath = GetPackageManifestPath(service, CredentialEcosystem.Yarn);
+            string manifestBefore = File.ReadAllText(manifestPath);
+            File.Move(linkPath, targetPath);
+            if (
+                !ConfigurationPhysicalWriterSymlinkTestSupport.TryCreateFileSymbolicLink(
+                    linkPath,
+                    Path.GetFileName(targetPath)
+                )
+            )
+            {
+                return;
+            }
+            File.Delete(targetPath);
+
+            ConfigurationPhase14PlanResult removed = await service.UnconfigureAsync(
+                CredentialEcosystem.Yarn,
+                ConfigurationPhase14Scope.User,
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.True(removed.OwnershipManifestCleanupIncomplete);
+            Assert.True(removed.OwnershipManifestPresent);
+            Assert.Equal(0, removed.ChangeCount);
+            Assert.Equal(0, removed.AppliedChangeCount);
+            Assert.Equal(manifestBefore, File.ReadAllText(manifestPath));
+            Assert.Equal(Path.GetFileName(targetPath), new FileInfo(linkPath).LinkTarget);
+            Assert.False(File.Exists(targetPath));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task YarnResolvedCurrentSymlinkCleanupFollowsLogicalTargetWithoutPhysicalBinding()
+    {
+        string root = CreateNonRepositoryTestDirectory("phase14-yarn-resolved-cleanup");
+        string home = Path.Combine(root, "home");
+        string linkPath = Path.Combine(home, ".yarnrc.yml");
+        string targetPath = Path.Combine(home, "managed.yarnrc.yml");
+        Directory.CreateDirectory(home);
+        ConfigurationPhase14VerticalSliceService service = CreatePhysicalYarnService(root, home);
+
+        try
+        {
+            await service.ConfigureAsync(
+                CredentialEcosystem.Yarn,
+                ConfigurationPhase14Scope.User,
+                TestContext.Current.CancellationToken
+            );
+            string manifestPath = GetPackageManifestPath(service, CredentialEcosystem.Yarn);
+            ConfigurationOwnershipManifest manifest =
+                ConfigurationOwnershipManifestSerializer.Deserialize(
+                    File.ReadAllText(manifestPath)
+                );
+            Assert.All(
+                manifest.Entries,
+                entry => Assert.Equal(linkPath, entry.TargetPathOrName)
+            );
+            Assert.False(manifest.SafeMetadata.ContainsKey("physical-target"));
+            File.Move(linkPath, targetPath);
+            if (
+                !ConfigurationPhysicalWriterSymlinkTestSupport.TryCreateFileSymbolicLink(
+                    linkPath,
+                    Path.GetFileName(targetPath)
+                )
+            )
+            {
+                return;
+            }
+
+            ConfigurationPhase14PlanResult removed = await service.UnconfigureAsync(
+                CredentialEcosystem.Yarn,
+                ConfigurationPhase14Scope.User,
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.False(removed.OwnershipManifestCleanupIncomplete);
+            Assert.False(removed.OwnershipManifestPresent);
+            Assert.False(File.Exists(manifestPath));
+            Assert.Equal(Path.GetFileName(targetPath), new FileInfo(linkPath).LinkTarget);
+            Assert.DoesNotContain(
+                "npmAuthToken",
+                File.ReadAllText(targetPath),
+                StringComparison.Ordinal
+            );
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task YarnUnconfigureDoesNotTrustUnrecognizedManifest()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
@@ -2916,6 +3184,45 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         Assert.True(cleanupResult.ChangeCount > 0);
         Assert.False(cleanupResult.OwnershipManifestPresent);
         Assert.False(cleanupResult.TemporaryContainerPresent);
+        Assert.False(fileSystem.DirectoryExists(service.Paths.YarnCiTemporaryHomePath));
+    }
+
+    [Fact]
+    public async Task CleanupYarnCiTemporarySucceedsAfterRootBecomesRepository()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        ConfigurationPhase14VerticalSliceService service = CreateService(
+            fileSystem,
+            environmentVariableReader: ReadCiEnvironment
+        );
+        await service.ConfigureAsync(
+            CredentialEcosystem.Yarn,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken
+        );
+        fileSystem.CreateDirectory(Path.Combine(service.Paths.CiTemporaryRootPath, ".git"));
+
+        ConfigurationPhase14DoctorResult doctor = await service.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+        ConfigurationPhase14EcosystemDoctorResult yarn = Assert.Single(
+            doctor.Ecosystems,
+            result =>
+                result.Ecosystem == CredentialEcosystem.Yarn
+                && result.Scope == ConfigurationPhase14Scope.CiTemporary
+        );
+        Assert.False(yarn.ConfigurationPlanValid);
+
+        ConfigurationPhase14CleanupResult result = await service.CleanupAsync(
+            CredentialEcosystem.Yarn,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken
+        );
+
+        ConfigurationPhase14CleanupEcosystemResult cleanup = Assert.Single(result.Ecosystems);
+        Assert.Equal("removed", cleanup.State);
+        Assert.False(cleanup.OwnershipManifestPresent);
+        Assert.False(cleanup.TemporaryContainerPresent);
         Assert.False(fileSystem.DirectoryExists(service.Paths.YarnCiTemporaryHomePath));
     }
 
@@ -3225,6 +3532,49 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
                 },
             }
         );
+
+    private static ConfigurationPhase14VerticalSliceService CreatePhysicalYarnService(
+        string root,
+        string home
+    ) =>
+        new(
+            new ConfigurationPhase14VerticalSliceOptions
+            {
+                FileSystem = new SystemFileSystem(),
+                StateDirectoryPath = Path.Combine(root, "state"),
+                AzurePipelinesJobScopeId = "phase14-physical-yarn-test",
+                CredentialAcquisition = new BoundedCredentialAcquisitionAdapter(
+                    new SilentTestAcquisitionService()
+                ),
+                EnvironmentVariableReader = name =>
+                    string.Equals(name, "HOME", StringComparison.Ordinal) ? home : null,
+                ProductExecutablePath = Path.Combine(root, "azureauth-credprovider"),
+                WorkspaceDirectoryPath = Path.Combine(root, "workspace"),
+                RegistryUrls = new Dictionary<CredentialEcosystem, Uri>
+                {
+                    [CredentialEcosystem.Yarn] = new(TestRegistryUrl),
+                },
+            }
+        );
+
+    private static string CreateNonRepositoryTestDirectory(string name)
+    {
+        string baseDirectory = Environment.GetFolderPath(
+            Environment.SpecialFolder.LocalApplicationData
+        );
+        if (string.IsNullOrWhiteSpace(baseDirectory))
+        {
+            baseDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        }
+
+        string directory = Path.Combine(
+            baseDirectory,
+            "azureauth-credprovider-tests",
+            $"{name}-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(directory);
+        return directory;
+    }
 
     private static void CreateDirectoryTree(InMemoryFileSystem fileSystem, string path)
     {

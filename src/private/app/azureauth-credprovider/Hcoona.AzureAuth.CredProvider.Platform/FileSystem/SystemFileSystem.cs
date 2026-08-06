@@ -274,7 +274,7 @@ public sealed class SystemFileSystem
     {
         var pendingSegments = new Queue<string>();
         string currentPath = ResetPathTraversal(path, pendingSegments);
-        var visitedLinks = new HashSet<string>(
+        var visitedTraversalStates = new HashSet<string>(
             OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal
         );
         var traversalCount = 0;
@@ -297,9 +297,13 @@ public sealed class SystemFileSystem
             }
 
             string normalizedCandidatePath = Path.GetFullPath(candidatePath);
+            string remainingSuffix = pendingSegments.Count == 0
+                ? string.Empty
+                : Path.Combine(pendingSegments.ToArray());
+            string traversalState = normalizedCandidatePath + "\0" + remainingSuffix;
             if (
                 ++traversalCount > MaxLinkTraversalCount
-                || !visitedLinks.Add(normalizedCandidatePath)
+                || !visitedTraversalStates.Add(traversalState)
             )
             {
                 throw new IOException(
