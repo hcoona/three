@@ -1053,50 +1053,61 @@ public sealed class NpmPhase12VerticalSliceService
             .Select(static value => value.Trim().Trim('"'))
             .Where(static value => value.Length > 0)
             .ToArray();
+        IReadOnlyList<string> supportedExtensions = GetSupportedWindowsNpmExtensions();
         foreach (string directory in directories)
         {
-            string candidate = FileSystemPathSemantics.Combine(
-                fileSystem,
-                directory,
-                "npm.exe"
-            );
-            if (fileSystem.IsExecutableFile(candidate))
+            foreach (string extension in supportedExtensions)
             {
-                return new NpmExecutableResolutionResult
+                string candidate = FileSystemPathSemantics.Combine(
+                    fileSystem,
+                    directory,
+                    "npm" + extension
+                );
+                if (!fileSystem.FileExists(candidate))
                 {
-                    Status = NpmExecutableResolutionStatus.Succeeded,
-                    FileName = fileSystem.GetFullPath(candidate),
-                    Arguments = ["prefix"],
-                };
+                    continue;
+                }
+
+                return ResolveWindowsNpmCandidate(candidate);
             }
         }
 
-        NpmExecutableResolutionResult? firstShimFailure = null;
-        foreach (string directory in directories)
+        return CreateMissingNpmExecutable(
+            "npm was not found on PATH. Install Node.js with npm or add npm.exe or npm.cmd to PATH."
+        );
+    }
+
+    private List<string> GetSupportedWindowsNpmExtensions()
+    {
+        string? pathExtValue = NullIfWhiteSpace(environmentVariableReader("PATHEXT"));
+        if (pathExtValue is null)
         {
-            string candidate = FileSystemPathSemantics.Combine(
-                fileSystem,
-                directory,
-                "npm.cmd"
-            );
-            if (!fileSystem.FileExists(candidate))
-            {
-                continue;
-            }
-
-            NpmExecutableResolutionResult resolution = ResolveWindowsNpmCandidate(candidate);
-            if (resolution.Status == NpmExecutableResolutionStatus.Succeeded)
-            {
-                return resolution;
-            }
-
-            firstShimFailure ??= resolution;
+            return [".exe", ".cmd"];
         }
 
-        return firstShimFailure
-            ?? CreateMissingNpmExecutable(
-                "npm was not found on PATH. Install Node.js with npm or add npm.exe to PATH."
-            );
+        var supportedExtensions = new List<string>(capacity: 2);
+        foreach (string configuredExtension in pathExtValue.Split(';'))
+        {
+            string normalizedExtension = configuredExtension.Trim().Trim('"');
+            string? supportedExtension =
+                normalizedExtension.Equals(".exe", StringComparison.OrdinalIgnoreCase)
+                    ? ".exe"
+                : normalizedExtension.Equals(".cmd", StringComparison.OrdinalIgnoreCase)
+                    ? ".cmd"
+                    : null;
+            if (
+                supportedExtension is not null
+                && !supportedExtensions.Contains(
+                    supportedExtension,
+                    StringComparer.OrdinalIgnoreCase
+                )
+            )
+            {
+                supportedExtensions.Add(supportedExtension);
+            }
+        }
+
+        return supportedExtensions;
     }
 
     private NpmExecutableResolutionResult ResolveWindowsNpmCandidate(string candidatePath)

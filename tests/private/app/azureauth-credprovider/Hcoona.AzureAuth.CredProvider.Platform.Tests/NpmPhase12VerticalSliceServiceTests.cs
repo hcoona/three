@@ -1376,14 +1376,70 @@ public sealed class NpmPhase12VerticalSliceServiceTests
     }
 
     [Fact]
-    public void ResolveNpmExecutable_PrefersNpmExeAcrossWindowsPath()
+    public void ResolveNpmExecutable_UsesFirstPathDirectoryBeforeLaterExecutable()
     {
+        const string UnsupportedNpmBat = @"C:\first\npm.bat";
         const string NpmShim = @"C:\first\npm.cmd";
+        const string UnsupportedNpmCom = @"C:\first\npm.com";
         const string NodeExecutable = @"C:\first\node.exe";
         const string NpmCliScript = @"C:\first\node_modules\npm\bin\npm-cli.js";
         const string NpmExecutable = @"C:\second\npm.exe";
         NpmPhase12VerticalSliceService service = CreateWindowsPathFixture(
-            @"""C:\first"";C:\second",
+            @";;""C:\first"";;C:\second;",
+            @".BAT;.CmD;.EXE;.COM",
+            [
+                UnsupportedNpmBat,
+                NpmShim,
+                UnsupportedNpmCom,
+                NodeExecutable,
+                NpmCliScript,
+                NpmExecutable,
+            ]
+        );
+
+        object result = InvokeResolveNpmExecutable(service);
+
+        Assert.Equal("Succeeded", GetStatusText(result));
+        Assert.Equal(NodeExecutable, GetRequiredString(result, "FileName"));
+        Assert.Equal(
+            [NpmCliScript, "prefix"],
+            GetRequiredStringList(result, "Arguments")
+        );
+    }
+
+    [Fact]
+    public void ResolveNpmExecutable_HonorsCmdBeforeExeInPathextWithinDirectory()
+    {
+        const string NpmShim = @"C:\tools\npm.cmd";
+        const string NodeExecutable = @"C:\tools\node.exe";
+        const string NpmCliScript = @"C:\tools\node_modules\npm\bin\npm-cli.js";
+        const string NpmExecutable = @"C:\tools\npm.exe";
+        NpmPhase12VerticalSliceService service = CreateWindowsPathFixture(
+            @"C:\tools",
+            @".CMD;.EXE",
+            [NpmShim, NodeExecutable, NpmCliScript, NpmExecutable]
+        );
+
+        object result = InvokeResolveNpmExecutable(service);
+
+        Assert.Equal("Succeeded", GetStatusText(result));
+        Assert.Equal(NodeExecutable, GetRequiredString(result, "FileName"));
+        Assert.Equal(
+            [NpmCliScript, "prefix"],
+            GetRequiredStringList(result, "Arguments")
+        );
+    }
+
+    [Fact]
+    public void ResolveNpmExecutable_HonorsExeBeforeCmdInPathextWithinDirectory()
+    {
+        const string NpmShim = @"C:\tools\npm.cmd";
+        const string NodeExecutable = @"C:\tools\node.exe";
+        const string NpmCliScript = @"C:\tools\node_modules\npm\bin\npm-cli.js";
+        const string NpmExecutable = @"C:\tools\npm.exe";
+        NpmPhase12VerticalSliceService service = CreateWindowsPathFixture(
+            @"C:\tools",
+            @".EXE;.CMD",
             [NpmShim, NodeExecutable, NpmCliScript, NpmExecutable]
         );
 
@@ -1395,25 +1451,42 @@ public sealed class NpmPhase12VerticalSliceServiceTests
     }
 
     [Fact]
-    public void ResolveNpmExecutable_UsesFirstValidStandardShimOnWindowsPath()
+    public void ResolveNpmExecutable_UsesDefaultWindowsPathextOrderWhenAbsent()
     {
-        const string FirstShim = @"C:\first\npm.cmd";
-        const string SecondShim = @"C:\second\npm.cmd";
-        const string NodeExecutable = @"C:\second\node.exe";
-        const string NpmCliScript = @"C:\second\node_modules\npm\bin\npm-cli.js";
+        const string NpmShim = @"C:\tools\npm.cmd";
+        const string NodeExecutable = @"C:\tools\node.exe";
+        const string NpmCliScript = @"C:\tools\node_modules\npm\bin\npm-cli.js";
+        const string NpmExecutable = @"C:\tools\npm.exe";
         NpmPhase12VerticalSliceService service = CreateWindowsPathFixture(
-            @"C:\first;C:\second",
-            [FirstShim, SecondShim, NodeExecutable, NpmCliScript]
+            @"C:\tools",
+            pathExtValue: null,
+            [NpmShim, NodeExecutable, NpmCliScript, NpmExecutable]
         );
 
         object result = InvokeResolveNpmExecutable(service);
 
         Assert.Equal("Succeeded", GetStatusText(result));
-        Assert.Equal(NodeExecutable, GetRequiredString(result, "FileName"));
-        Assert.Equal(
-            [NpmCliScript, "prefix"],
-            GetRequiredStringList(result, "Arguments")
+        Assert.Equal(NpmExecutable, GetRequiredString(result, "FileName"));
+        Assert.Equal(["prefix"], GetRequiredStringList(result, "Arguments"));
+    }
+
+    [Fact]
+    public void ResolveNpmExecutable_FailsClosedWhenFirstPathCmdLayoutIsInvalid()
+    {
+        const string UnsupportedNpmShim = @"C:\first\npm.cmd";
+        const string LaterNpmExecutable = @"C:\second\npm.exe";
+        NpmPhase12VerticalSliceService service = CreateWindowsPathFixture(
+            @"C:\first;C:\second",
+            @".CMD;.EXE",
+            [UnsupportedNpmShim, LaterNpmExecutable]
         );
+
+        object result = InvokeResolveNpmExecutable(service);
+
+        Assert.Equal("InvalidCandidate", GetStatusText(result));
+        Assert.NotEmpty(GetFailureDetail(result));
+        Assert.Null(GetOptionalString(result, "FileName", "ExecutablePath"));
+        Assert.Empty(GetRequiredStringList(result, "Arguments"));
     }
 
     [Fact]
@@ -1825,6 +1898,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
 
     private static NpmPhase12VerticalSliceService CreateWindowsPathFixture(
         string pathValue,
+        string? pathExtValue,
         IReadOnlyList<string> existingFiles
     )
     {
@@ -1848,6 +1922,8 @@ public sealed class NpmPhase12VerticalSliceServiceTests
                 EnvironmentVariableReader = name =>
                     string.Equals(name, "PATH", StringComparison.Ordinal)
                         ? pathValue
+                    : string.Equals(name, "PATHEXT", StringComparison.Ordinal)
+                        ? pathExtValue
                         : null,
             }
         );

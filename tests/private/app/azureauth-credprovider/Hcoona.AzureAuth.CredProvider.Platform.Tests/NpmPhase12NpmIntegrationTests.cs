@@ -108,7 +108,10 @@ public sealed class NpmPhase12NpmIntegrationTests
             {
                 FileSystem = new SystemFileSystem(),
                 ProcessRunner = fixture.ProcessRunner,
-                EnvironmentVariableReader = static _ => null,
+                EnvironmentVariableReader = static name =>
+                    name is "PATH" or "Path" or "PATHEXT"
+                        ? Environment.GetEnvironmentVariable(name)
+                        : null,
                 WorkspaceDirectoryPath = fixture.InvocationPath,
                 UserNpmrcPath = Path.Combine(fixture.RootPath, "user", ".npmrc"),
             }
@@ -181,8 +184,8 @@ public sealed class NpmPhase12NpmIntegrationTests
             return false;
         }
 
-        string[] candidateNames = OperatingSystem.IsWindows()
-            ? ["npm.cmd", "npm.exe", "npm"]
+        IReadOnlyList<string> candidateNames = OperatingSystem.IsWindows()
+            ? GetSupportedWindowsNpmCandidateNames()
             : ["npm"];
         foreach (string directory in pathValue.Split(Path.PathSeparator))
         {
@@ -202,6 +205,36 @@ public sealed class NpmPhase12NpmIntegrationTests
         }
 
         return false;
+    }
+
+    private static List<string> GetSupportedWindowsNpmCandidateNames()
+    {
+        string? pathExtValue = Environment.GetEnvironmentVariable("PATHEXT");
+        if (string.IsNullOrWhiteSpace(pathExtValue))
+        {
+            return ["npm.exe", "npm.cmd"];
+        }
+
+        var candidateNames = new List<string>(capacity: 2);
+        foreach (string configuredExtension in pathExtValue.Split(';'))
+        {
+            string normalizedExtension = configuredExtension.Trim().Trim('"');
+            string? candidateName =
+                normalizedExtension.Equals(".exe", StringComparison.OrdinalIgnoreCase)
+                    ? "npm.exe"
+                : normalizedExtension.Equals(".cmd", StringComparison.OrdinalIgnoreCase)
+                    ? "npm.cmd"
+                    : null;
+            if (
+                candidateName is not null
+                && !candidateNames.Contains(candidateName, StringComparer.OrdinalIgnoreCase)
+            )
+            {
+                candidateNames.Add(candidateName);
+            }
+        }
+
+        return candidateNames;
     }
 
     private sealed class RecordingSystemProcessRunner : IProcessRunner
@@ -271,20 +304,9 @@ public sealed class NpmPhase12NpmIntegrationTests
             string invocationPackageName
         )
         {
-            DirectoryInfo? repositoryRoot = new(Environment.CurrentDirectory);
-            while (
-                repositoryRoot is not null
-                && !Directory.Exists(Path.Combine(repositoryRoot.FullName, ".testagent"))
-            )
-            {
-                repositoryRoot = repositoryRoot.Parent;
-            }
-
-            Assert.NotNull(repositoryRoot);
             string rootPath = Path.Combine(
-                repositoryRoot.FullName,
-                ".testagent",
-                "npm-prefix-" + Guid.NewGuid().ToString("N")
+                Path.GetTempPath(),
+                "azureauth-credprovider-npm-prefix-" + Guid.NewGuid().ToString("N")
             );
             string invocationPath = Path.Combine(
                 rootPath,
