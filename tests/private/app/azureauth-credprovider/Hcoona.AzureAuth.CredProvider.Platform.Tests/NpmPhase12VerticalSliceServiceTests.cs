@@ -1376,6 +1376,163 @@ public sealed class NpmPhase12VerticalSliceServiceTests
     }
 
     [Fact]
+    public async Task ResolveWorkspaceAsync_LaunchesAppDataNpmShimWithFirstQuotedPathNode()
+    {
+        const string NpmShim = @"C:\Users\alice\AppData\Roaming\npm\npm.cmd";
+        const string NpmCliScript =
+            @"C:\Users\alice\AppData\Roaming\npm\node_modules\npm\bin\npm-cli.js";
+        const string FirstNodeFile = @"C:\Node First\NODE.EXE";
+        const string FirstNodeExecutable = @"C:\Node First\node.exe";
+        const string LaterNodeExecutable = @"C:\Node Later\node.exe";
+        const string LaterNpmExecutable = @"C:\later\npm.exe";
+        var processRunner = new FakeProcessRunner();
+        processRunner.EnqueueResult(
+            ProcessResult.LaunchFailure(standardError: "expected-launch-failure")
+        );
+        NpmPhase12VerticalSliceService service = CreateWindowsPathFixture(
+            @"""C:\Users\alice\AppData\Roaming\npm"";""C:\Node First"";C:\Node Later;C:\later",
+            @""".cMd""; "".eXe""",
+            [
+                NpmShim,
+                NpmCliScript,
+                FirstNodeFile,
+                LaterNodeExecutable,
+                LaterNpmExecutable,
+            ],
+            processRunner
+        );
+
+        object result = await InvokeResolveWorkspaceAsync(
+            service,
+            TestContext.Current.CancellationToken
+        );
+
+        AssertFailureResolution(result, "LaunchFailure", "expected-launch-failure");
+        ProcessStartSpec startSpec = Assert.Single(processRunner.RecordedStartSpecs);
+        Assert.Equal(FirstNodeExecutable, startSpec.FileName);
+        Assert.Equal([NpmCliScript, "prefix"], startSpec.Arguments);
+        Assert.Equal(@"C:\repo\packages\apple", startSpec.WorkingDirectory);
+        Assert.Equal(TimeSpan.FromSeconds(5), startSpec.Timeout);
+        Assert.DoesNotContain(NpmShim, startSpec.Arguments);
+        Assert.DoesNotContain(LaterNpmExecutable, startSpec.Arguments);
+    }
+
+    [Fact]
+    public void ResolveNpmExecutable_PrefersSiblingNodeOverEarlierPathNode()
+    {
+        const string PathNodeExecutable = @"C:\Path Node\node.exe";
+        const string NpmShim = @"C:\Users\alice\AppData\Roaming\npm\npm.cmd";
+        const string SiblingNodeExecutable =
+            @"C:\Users\alice\AppData\Roaming\npm\node.exe";
+        const string NpmCliScript =
+            @"C:\Users\alice\AppData\Roaming\npm\node_modules\npm\bin\npm-cli.js";
+        NpmPhase12VerticalSliceService service = CreateWindowsPathFixture(
+            @"""C:\Path Node"";C:\Users\alice\AppData\Roaming\npm",
+            @".EXE;.CMD",
+            [PathNodeExecutable, NpmShim, SiblingNodeExecutable, NpmCliScript]
+        );
+
+        object result = InvokeResolveNpmExecutable(service);
+
+        Assert.Equal("Succeeded", GetStatusText(result));
+        Assert.Equal(
+            SiblingNodeExecutable,
+            GetRequiredString(result, "FileName", "ExecutablePath")
+        );
+        Assert.Equal(
+            [NpmCliScript, "prefix"],
+            GetRequiredStringList(result, "Arguments")
+        );
+        Assert.Null(GetOptionalString(result, "FailureDetail"));
+    }
+
+    [Fact]
+    public void ResolveNpmExecutable_DoesNotUseLaterNpmWhenAuthoritativeShimScriptIsMissing()
+    {
+        const string NpmShim = @"C:\Users\alice\AppData\Roaming\npm\npm.cmd";
+        const string SiblingNodeExecutable =
+            @"C:\Users\alice\AppData\Roaming\npm\node.exe";
+        const string LaterNpmExecutable = @"C:\later\npm.exe";
+        NpmPhase12VerticalSliceService service = CreateWindowsPathFixture(
+            @"C:\Users\alice\AppData\Roaming\npm;C:\later",
+            @".CMD;.EXE",
+            [NpmShim, SiblingNodeExecutable, LaterNpmExecutable]
+        );
+
+        object result = InvokeResolveNpmExecutable(service);
+
+        Assert.Equal("MissingCandidate", GetStatusText(result));
+        Assert.Contains(
+            "script",
+            GetFailureDetail(result),
+            StringComparison.OrdinalIgnoreCase
+        );
+        Assert.Null(GetOptionalString(result, "FileName", "ExecutablePath"));
+        Assert.Empty(GetRequiredStringList(result, "Arguments"));
+    }
+
+    [Fact]
+    public void ResolveNpmExecutable_DoesNotUseLaterNpmWhenAuthoritativeShimHasNoNode()
+    {
+        const string NpmShim = @"C:\Users\alice\AppData\Roaming\npm\npm.cmd";
+        const string NpmCliScript =
+            @"C:\Users\alice\AppData\Roaming\npm\node_modules\npm\bin\npm-cli.js";
+        const string LaterNpmExecutable = @"C:\later\npm.exe";
+        NpmPhase12VerticalSliceService service = CreateWindowsPathFixture(
+            @"C:\Users\alice\AppData\Roaming\npm;C:\later",
+            @".CMD;.EXE",
+            [NpmShim, NpmCliScript, LaterNpmExecutable]
+        );
+
+        object result = InvokeResolveNpmExecutable(service);
+
+        Assert.Equal("MissingCandidate", GetStatusText(result));
+        Assert.Contains(
+            "node.exe",
+            GetFailureDetail(result),
+            StringComparison.OrdinalIgnoreCase
+        );
+        Assert.Null(GetOptionalString(result, "FileName", "ExecutablePath"));
+        Assert.Empty(GetRequiredStringList(result, "Arguments"));
+    }
+
+    [Fact]
+    public void ResolveNpmExecutable_DoesNotTreatPathNodeAsExecutableWhenExeIsAbsentFromPathext()
+    {
+        const string NpmShim = @"C:\Users\alice\AppData\Roaming\npm\npm.cmd";
+        const string NpmCliScript =
+            @"C:\Users\alice\AppData\Roaming\npm\node_modules\npm\bin\npm-cli.js";
+        const string PathNodeExecutable = @"C:\Node\node.exe";
+        const string LaterNpmShim = @"C:\later\npm.cmd";
+        const string LaterNodeExecutable = @"C:\later\node.exe";
+        const string LaterNpmCliScript =
+            @"C:\later\node_modules\npm\bin\npm-cli.js";
+        NpmPhase12VerticalSliceService service = CreateWindowsPathFixture(
+            @"C:\Users\alice\AppData\Roaming\npm;C:\Node;C:\later",
+            @""".CmD""",
+            [
+                NpmShim,
+                NpmCliScript,
+                PathNodeExecutable,
+                LaterNpmShim,
+                LaterNodeExecutable,
+                LaterNpmCliScript,
+            ]
+        );
+
+        object result = InvokeResolveNpmExecutable(service);
+
+        Assert.Equal("MissingCandidate", GetStatusText(result));
+        Assert.Contains(
+            "node.exe",
+            GetFailureDetail(result),
+            StringComparison.OrdinalIgnoreCase
+        );
+        Assert.Null(GetOptionalString(result, "FileName", "ExecutablePath"));
+        Assert.Empty(GetRequiredStringList(result, "Arguments"));
+    }
+
+    [Fact]
     public void ResolveNpmExecutable_UsesFirstPathDirectoryBeforeLaterExecutable()
     {
         const string UnsupportedNpmBat = @"C:\first\npm.bat";
@@ -1899,11 +2056,20 @@ public sealed class NpmPhase12VerticalSliceServiceTests
     private static NpmPhase12VerticalSliceService CreateWindowsPathFixture(
         string pathValue,
         string? pathExtValue,
-        IReadOnlyList<string> existingFiles
+        IReadOnlyList<string> existingFiles,
+        FakeProcessRunner? processRunner = null
     )
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Windows);
         fileSystem.CreateDirectory(@"C:\repo\packages\apple");
+        fileSystem.WriteAllText(
+            @"C:\repo\package.json",
+            """{"name":"root","private":true,"workspaces":["packages/*"]}"""
+        );
+        fileSystem.WriteAllText(
+            @"C:\repo\packages\apple\package.json",
+            """{"name":"apple"}"""
+        );
         foreach (string file in existingFiles)
         {
             int separatorIndex = file.LastIndexOf('\\');
@@ -1916,7 +2082,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
             new NpmPhase12VerticalSliceOptions
             {
                 FileSystem = fileSystem,
-                ProcessRunner = new FakeProcessRunner(),
+                ProcessRunner = processRunner ?? new FakeProcessRunner(),
                 WorkspaceDirectoryPath = @"C:\repo\packages\apple",
                 UserNpmrcPath = @"C:\Users\alice\.npmrc",
                 EnvironmentVariableReader = name =>

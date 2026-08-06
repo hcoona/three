@@ -1170,11 +1170,6 @@ public sealed class NpmPhase12VerticalSliceService
             };
         }
 
-        string nodeExecutable = FileSystemPathSemantics.Combine(
-            fileSystem,
-            directory,
-            "node.exe"
-        );
         string npmCliScript = FileSystemPathSemantics.Combine(
             fileSystem,
             directory,
@@ -1183,9 +1178,16 @@ public sealed class NpmPhase12VerticalSliceService
             "bin",
             "npm-cli.js"
         );
-        bool nodeExists = fileSystem.IsExecutableFile(nodeExecutable);
+        string siblingNodeExecutable = FileSystemPathSemantics.Combine(
+            fileSystem,
+            directory,
+            "node.exe"
+        );
         bool npmCliExists = fileSystem.FileExists(npmCliScript);
-        if (!nodeExists && !npmCliExists)
+        string? nodeExecutable = fileSystem.IsExecutableFile(siblingNodeExecutable)
+            ? fileSystem.GetFullPath(siblingNodeExecutable)
+            : ResolveWindowsNodeExecutableFromPath();
+        if (!npmCliExists && nodeExecutable is null)
         {
             return new NpmExecutableResolutionResult
             {
@@ -1195,13 +1197,6 @@ public sealed class NpmPhase12VerticalSliceService
             };
         }
 
-        if (!nodeExists)
-        {
-            return CreateMissingNpmExecutable(
-                "The node.exe sibling required by npm.cmd is unavailable."
-            );
-        }
-
         if (!npmCliExists)
         {
             return CreateMissingNpmExecutable(
@@ -1209,12 +1204,62 @@ public sealed class NpmPhase12VerticalSliceService
             );
         }
 
+        if (nodeExecutable is null)
+        {
+            return CreateMissingNpmExecutable(
+                "No launchable node.exe was found beside npm.cmd or on PATH."
+            );
+        }
+
         return new NpmExecutableResolutionResult
         {
             Status = NpmExecutableResolutionStatus.Succeeded,
-            FileName = fileSystem.GetFullPath(nodeExecutable),
+            FileName = nodeExecutable,
             Arguments = [fileSystem.GetFullPath(npmCliScript), "prefix"],
         };
+    }
+
+    private string? ResolveWindowsNodeExecutableFromPath()
+    {
+        string? pathValue =
+            NullIfWhiteSpace(environmentVariableReader("PATH"))
+            ?? NullIfWhiteSpace(environmentVariableReader("Path"));
+        if (pathValue is null || !WindowsPathExtContainsExecutableExtension())
+        {
+            return null;
+        }
+
+        foreach (
+            string directory in pathValue
+                .Split(';', StringSplitOptions.RemoveEmptyEntries)
+                .Select(static value => value.Trim().Trim('"'))
+                .Where(static value => value.Length > 0)
+        )
+        {
+            string candidate = FileSystemPathSemantics.Combine(
+                fileSystem,
+                directory,
+                "node.exe"
+            );
+            if (fileSystem.IsExecutableFile(candidate))
+            {
+                return fileSystem.GetFullPath(candidate);
+            }
+        }
+
+        return null;
+    }
+
+    private bool WindowsPathExtContainsExecutableExtension()
+    {
+        string? pathExtValue = NullIfWhiteSpace(environmentVariableReader("PATHEXT"));
+        return pathExtValue is null
+            || pathExtValue
+                .Split(';', StringSplitOptions.RemoveEmptyEntries)
+                .Select(static value => value.Trim().Trim('"'))
+                .Any(static value =>
+                    value.Equals(".exe", StringComparison.OrdinalIgnoreCase)
+                );
     }
 
     private static NpmExecutableResolutionResult CreateMissingNpmExecutable(string detail) =>
