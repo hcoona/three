@@ -72,8 +72,6 @@ def invoke_helper(
             stdin=subprocess.DEVNULL,
             capture_output=True,
             check=False,
-            encoding="utf-8",
-            text=True,
         )
     except PermissionError as error:
         message = "Keyring helper execution was denied."
@@ -86,12 +84,14 @@ def invoke_helper(
         raise HelperExecutionError(EXIT_FATAL, message) from error
 
     if completed.returncode == 0:
-        return _parse_success_stdout(completed.stdout, mode)
+        stdout = _decode_success_stdout(completed.stdout)
+        return _parse_success_stdout(stdout, mode)
 
     if completed.returncode == EXIT_NO_CREDENTIAL:
         raise NoCredentialError()
 
-    safe_message = _safe_failure_message(completed.stderr)
+    stderr = _decode_failure_stderr(completed.stderr)
+    safe_message = _safe_failure_message(stderr)
     raise HelperExecutionError(completed.returncode or EXIT_FATAL, safe_message)
 
 
@@ -128,6 +128,22 @@ def _parse_success_stdout(stdout: str, mode: str) -> HelperCredential:
 
     fields = _split_exact_stdout(stdout, expected_field_count=2)
     return HelperCredential(username=fields[0], password=fields[1])
+
+
+def _decode_success_stdout(stdout: bytes) -> str:
+    try:
+        return stdout.decode("utf-8", errors="strict")
+    except UnicodeDecodeError:
+        message = "Keyring helper stdout is not valid UTF-8."
+        raise HelperProtocolError(message) from None
+
+
+def _decode_failure_stderr(stderr: bytes) -> str:
+    try:
+        return stderr.decode("utf-8", errors="strict")
+    except UnicodeDecodeError:
+        message = "Keyring helper stderr is not valid UTF-8."
+        raise HelperProtocolError(message) from None
 
 
 def _split_exact_stdout(

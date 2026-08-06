@@ -907,13 +907,13 @@ def test_invoke_helper_executes_shared_cli_argv_without_auth(
     def fake_run(
         args: list[str],
         **kwargs: object,
-    ) -> subprocess.CompletedProcess[str]:
+    ) -> subprocess.CompletedProcess[bytes]:
         subprocess_calls.append((args, kwargs))
         return subprocess.CompletedProcess(
             args,
             returncode=0,
-            stdout=f"AzureDevOps\n{TEST_TOKEN}\n",
-            stderr="",
+            stdout=f"AzureDevOps\n{TEST_TOKEN}\n".encode(),
+            stderr=b"",
         )
 
     monkeypatch.setattr(
@@ -951,8 +951,6 @@ def test_invoke_helper_executes_shared_cli_argv_without_auth(
                 "stdin": subprocess.DEVNULL,
                 "capture_output": True,
                 "check": False,
-                "encoding": "utf-8",
-                "text": True,
             },
         )
     ]

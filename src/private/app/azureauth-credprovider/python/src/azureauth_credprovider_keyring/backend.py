@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 from dataclasses import dataclass
+from importlib.util import find_spec
 from typing import cast
 
 from azureauth_credprovider_keyring.contracts import (
@@ -32,19 +33,28 @@ class _SimpleCredential:
 
 
 def _load_keyring_backend() -> type[_FallbackKeyringBackend]:
-    try:
-        module = importlib.import_module("keyring.backend")
-    except ImportError:
+    if find_spec("keyring") is None:
         return _FallbackKeyringBackend
 
-    keyring_backend = getattr(module, "KeyringBackend", None)
-    if not isinstance(keyring_backend, type):
-        return _FallbackKeyringBackend
-
-    return cast("type[_FallbackKeyringBackend]", keyring_backend)
+    module = importlib.import_module("keyring.backend")
+    return cast("type[_FallbackKeyringBackend]", module.KeyringBackend)
 
 
-class AzureAuthKeyringBackend(_load_keyring_backend()):
+def _load_keyring_credential(
+    keyring_backend: type[_FallbackKeyringBackend],
+) -> type[_SimpleCredential]:
+    if keyring_backend is _FallbackKeyringBackend:
+        return _SimpleCredential
+
+    module = importlib.import_module("keyring.credentials")
+    return cast("type[_SimpleCredential]", module.SimpleCredential)
+
+
+_KEYRING_BACKEND = _load_keyring_backend()
+_KEYRING_CREDENTIAL = _load_keyring_credential(_KEYRING_BACKEND)
+
+
+class AzureAuthKeyringBackend(_KEYRING_BACKEND):
     """Thin backend that delegates Azure Artifacts credentials to the helper."""
 
     priority = 9
@@ -79,7 +89,10 @@ class AzureAuthKeyringBackend(_load_keyring_backend()):
             message = "Keyring helper did not return a username."
             raise HelperProtocolError(message)
 
-        return _SimpleCredential(credential.username, credential.password)
+        return _KEYRING_CREDENTIAL(
+            credential.username,
+            credential.password,
+        )
 
     def set_password(self, service: str, username: str, password: str) -> None:
         """Reject credential writes so other backends can own them."""
