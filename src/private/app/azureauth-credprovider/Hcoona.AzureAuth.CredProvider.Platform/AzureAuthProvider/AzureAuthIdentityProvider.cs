@@ -173,6 +173,10 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
         {
             arguments.Add("--mode");
             arguments.Add(request.IdentityFlow == IdentityFlow.DeviceCode ? "devicecode" : "web");
+            if (request.AcquisitionMode == AcquisitionMode.SilentOnly)
+            {
+                environment["AZUREAUTH_NO_USER"] = "1";
+            }
         }
 
         string? domain = TryGetAccountDomain(binding.AccountId);

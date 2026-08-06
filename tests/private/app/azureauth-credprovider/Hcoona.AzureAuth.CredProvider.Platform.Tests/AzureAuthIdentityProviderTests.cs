@@ -26,7 +26,7 @@ public sealed class AzureAuthIdentityProviderTests
     }
 
     [Fact]
-    public async Task NativeLinuxSilentOnlyClearsAmbientControlsAndUsesExplicitWebMode()
+    public async Task NativeLinuxSilentOnlySanitizesAmbientControlsAndSetsNoUser()
     {
         var runner = new RecordingRunner(new ProcessResult(0, CreateToken(), ""));
         AzureAuthIdentityProvider provider = CreateProvider(
@@ -59,7 +59,7 @@ public sealed class AzureAuthIdentityProviderTests
             ],
             start.Arguments
         );
-        Assert.Null(start.Environment["AZUREAUTH_NO_USER"]);
+        Assert.Equal("1", start.Environment["AZUREAUTH_NO_USER"]);
         Assert.Null(start.Environment["AZUREAUTH_MODE"]);
         Assert.Null(start.Environment["Corext_NonInteractive"]);
     }
@@ -845,7 +845,7 @@ public sealed class AzureAuthIdentityProviderTests
         ProcessStartSpec start = Assert.IsType<ProcessStartSpec>(runner.StartSpec);
         Assert.Null(start.StandardErrorTee);
         Assert.Equal(["--mode", "web"], start.Arguments.Skip(7).Take(2));
-        Assert.Null(start.Environment["AZUREAUTH_NO_USER"]);
+        Assert.Equal("1", start.Environment["AZUREAUTH_NO_USER"]);
         Assert.Null(start.Environment["AZUREAUTH_MODE"]);
         Assert.Null(start.Environment["Corext_NonInteractive"]);
         Assert.Equal(Token, result.AccessToken?.Token.Value);
