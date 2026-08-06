@@ -113,6 +113,7 @@ public enum PythonPhase11KeyringModuleProbeStatus
     UnexpectedNonZeroExit,
     OutputTooLarge,
     InvalidOutput,
+    ModuleFinderError,
 }
 
 public enum PythonPhase11EnvironmentKind
@@ -435,7 +436,7 @@ public sealed class PythonPhase11VerticalSliceService
                 return CreateKeyringModuleProbe(
                     normalizedPythonExecutablePath,
                     pythonExecutableExists,
-                    PythonPhase11KeyringModuleProbeStatus.UnexpectedNonZeroExit,
+                    PythonPhase11KeyringModuleProbeStatus.ModuleFinderError,
                     keyringModuleResolvable: false,
                     "The keyring module finder raised an exception."
                 );
@@ -549,7 +550,7 @@ public sealed class PythonPhase11VerticalSliceService
             return python3Resolution.ExecutablePath;
         }
 
-        if (python3Resolution.TerminationReason != ProcessTerminationReason.LaunchFailure)
+        if (!python3Resolution.CandidateUnavailable)
         {
             return null;
         }
@@ -611,7 +612,10 @@ public sealed class PythonPhase11VerticalSliceService
 
         if (!result.Succeeded)
         {
-            return new PythonCommandResolution(null, result.TerminationReason);
+            return new PythonCommandResolution(
+                null,
+                IsUnavailablePathResolutionCandidate(result)
+            );
         }
 
         string? resolvedPath = TryReadSingleOutputLine(result.StandardOutput);
@@ -619,15 +623,24 @@ public sealed class PythonPhase11VerticalSliceService
         {
             return new PythonCommandResolution(
                 null,
-                ProcessTerminationReason.InvalidOutput
+                CandidateUnavailable: false
             );
         }
 
         return new PythonCommandResolution(
             fileSystem.GetFullPath(resolvedPath),
-            result.TerminationReason
+            CandidateUnavailable: false
         );
     }
+
+    private static bool IsUnavailablePathResolutionCandidate(ProcessResult result) =>
+        result.TerminationReason == ProcessTerminationReason.LaunchFailure
+        || (
+            !OperatingSystem.IsWindows()
+            && result.TerminationReason == ProcessTerminationReason.Exited
+            && result.HasExitCode
+            && result.ExitCode is 126 or 127
+        );
 
     private static string? TryReadSingleOutputLine(string output)
     {
@@ -647,7 +660,7 @@ public sealed class PythonPhase11VerticalSliceService
 
     private sealed record PythonCommandResolution(
         string? ExecutablePath,
-        ProcessTerminationReason TerminationReason
+        bool CandidateUnavailable
     );
 
     private static ProcessStartSpec CreatePythonProbeStartSpec(

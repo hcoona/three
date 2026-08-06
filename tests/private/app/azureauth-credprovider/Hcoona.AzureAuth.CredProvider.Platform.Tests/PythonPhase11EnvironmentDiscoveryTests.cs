@@ -936,7 +936,9 @@ public sealed class PythonPhase11EnvironmentDiscoveryTests
     {
         var fileSystem = CreatePosixFileSystemWithResolvedPython3();
         var processRunner = new FakeProcessRunner();
-        processRunner.EnqueueResult(ProcessResult.TimedOut(string.Empty, "timed out"));
+        processRunner.EnqueueResult(
+            ProcessResult.TimedOut(string.Empty, "timed out", exitCode: 126)
+        );
         var service = CreatePathResolvingService(fileSystem, processRunner);
 
         PythonPhase11DoctorResult result = await service.RunDoctorAsync(
@@ -997,7 +999,11 @@ public sealed class PythonPhase11EnvironmentDiscoveryTests
         var fileSystem = CreatePosixFileSystemWithResolvedPython3();
         var processRunner = new FakeProcessRunner();
         processRunner.EnqueueResult(
-            ProcessResult.OutputTooLarge("/resolved/python3/bin/python3\n", string.Empty)
+            ProcessResult.OutputTooLarge(
+                "/resolved/python3/bin/python3\n",
+                string.Empty,
+                exitCode: 127
+            )
         );
         var service = CreatePathResolvingService(fileSystem, processRunner);
 
@@ -1016,7 +1022,11 @@ public sealed class PythonPhase11EnvironmentDiscoveryTests
         var fileSystem = CreatePosixFileSystemWithResolvedPython3();
         var processRunner = new FakeProcessRunner();
         processRunner.EnqueueResult(
-            ProcessResult.InvalidOutput("/resolved/python3/bin/python3\n", string.Empty)
+            ProcessResult.InvalidOutput(
+                "/resolved/python3/bin/python3\n",
+                string.Empty,
+                exitCode: 126
+            )
         );
         var service = CreatePathResolvingService(fileSystem, processRunner);
 
@@ -1068,8 +1078,65 @@ public sealed class PythonPhase11EnvironmentDiscoveryTests
         );
     }
 
-    [Fact]
-    public async Task DoctorDoesNotFallBackAfterSelectingPython3WhenModuleProbeFails()
+    [Theory]
+    [InlineData(126)]
+    [InlineData(127)]
+    public async Task DoctorAppliesPosixUnavailableExitCodesOnlyOnNonWindows(
+        int exitCode
+    )
+    {
+        var fileSystem = CreatePosixFileSystemWithResolvedPython3();
+        CreateDirectory(fileSystem, "/resolved/python/bin");
+        WriteExecutable(fileSystem, "/resolved/python/bin/python");
+        var processRunner = new FakeProcessRunner();
+        processRunner.EnqueueResult(
+            new ProcessResult(exitCode, "resolution output", "resolution error")
+        );
+        processRunner.EnqueueResult(
+            new ProcessResult(0, "/resolved/python/bin/python\n", string.Empty)
+        );
+        processRunner.EnqueueResult(
+            new ProcessResult(0, KeyringModuleFoundOutput, string.Empty)
+        );
+        var service = CreatePathResolvingService(fileSystem, processRunner);
+
+        PythonPhase11DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        if (OperatingSystem.IsWindows())
+        {
+            AssertInterpreterResolutionFailure(result);
+            AssertPythonResolutionSpec(Assert.Single(processRunner.StartSpecs), "python3");
+            return;
+        }
+
+        Assert.Equal("/resolved/python/bin/python", result.KeyringModuleProbe.PythonExecutablePath);
+        Assert.Equal(
+            PythonPhase11KeyringModuleProbeStatus.ModuleFound,
+            result.KeyringModuleProbe.Status
+        );
+        Assert.Collection(
+            processRunner.StartSpecs,
+            python3ResolutionSpec => AssertPythonResolutionSpec(
+                python3ResolutionSpec,
+                "python3"
+            ),
+            pythonResolutionSpec => AssertPythonResolutionSpec(
+                pythonResolutionSpec,
+                "python"
+            ),
+            moduleProbeSpec =>
+                Assert.Equal("/resolved/python/bin/python", moduleProbeSpec.FileName)
+        );
+    }
+
+    [Theory]
+    [InlineData(126)]
+    [InlineData(127)]
+    public async Task DoctorDoesNotFallBackAfterSelectingPython3WhenModuleProbeFails(
+        int exitCode
+    )
     {
         var fileSystem = CreatePosixFileSystemWithResolvedPython3();
         var processRunner = new FakeProcessRunner();
@@ -1077,7 +1144,7 @@ public sealed class PythonPhase11EnvironmentDiscoveryTests
             new ProcessResult(0, "/resolved/python3/bin/python3\n", string.Empty)
         );
         processRunner.EnqueueResult(
-            new ProcessResult(1, string.Empty, "Fatal Python error")
+            new ProcessResult(exitCode, string.Empty, "Fatal Python error")
         );
         var service = CreatePathResolvingService(fileSystem, processRunner);
 
@@ -1236,7 +1303,7 @@ public sealed class PythonPhase11EnvironmentDiscoveryTests
         Assert.True(result.KeyringModuleProbe.Attempted);
         Assert.False(result.KeyringModuleProbe.KeyringModuleResolvable);
         Assert.Equal(
-            PythonPhase11KeyringModuleProbeStatus.UnexpectedNonZeroExit,
+            PythonPhase11KeyringModuleProbeStatus.ModuleFinderError,
             result.KeyringModuleProbe.Status
         );
         Assert.Equal(
@@ -1299,7 +1366,7 @@ public sealed class PythonPhase11EnvironmentDiscoveryTests
     [InlineData(
         KeyringModuleProbeFailureExitCode,
         KeyringModuleProbeFailureMarker,
-        PythonPhase11KeyringModuleProbeStatus.UnexpectedNonZeroExit
+        PythonPhase11KeyringModuleProbeStatus.ModuleFinderError
     )]
     public async Task DoctorAcceptsExactKeyringProtocolWithWindowsLineEnding(
         int exitCode,
@@ -1594,5 +1661,160 @@ public sealed class PythonPhase11EnvironmentDiscoveryTests
         Assert.Equal(TimeSpan.FromSeconds(5), startSpec.Timeout);
         Assert.Equal(4096, startSpec.OutputCaptureOptions.StandardOutputByteLimit);
         Assert.Equal(4096, startSpec.OutputCaptureOptions.StandardErrorByteLimit);
+    }
+
+    [Theory]
+    [InlineData(126)]
+    [InlineData(127)]
+    [System.Runtime.Versioning.SupportedOSPlatform("linux")]
+    public async Task DoctorWithSystemProcessRunnerFallsBackFromUnavailablePython3OnLinux(
+        int exitCode
+    )
+    {
+        AssertLinuxShellIntegrationAvailable();
+        string directory = CreateIntegrationTestDirectory();
+        try
+        {
+            WriteShellExecutable(
+                Path.Combine(directory, "python3"),
+                $"#!/bin/sh\nexit {exitCode}\n"
+            );
+            string pythonPath = Path.Combine(directory, "python");
+            WriteWorkingPythonWrapper(pythonPath);
+
+            PythonPhase11DoctorResult result =
+                await CreateSystemRunnerPathResolvingService(directory)
+                    .RunDoctorAsync(TestContext.Current.CancellationToken);
+
+            AssertSuccessfulSystemRunnerFallback(result, pythonPath);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    [System.Runtime.Versioning.SupportedOSPlatform("linux")]
+    public async Task DoctorWithSystemProcessRunnerFallsBackFromNonExecutablePython3OnLinux()
+    {
+        AssertLinuxShellIntegrationAvailable();
+        string directory = CreateIntegrationTestDirectory();
+        try
+        {
+            string python3Path = Path.Combine(directory, "python3");
+            File.WriteAllText(python3Path, "#!/bin/sh\nexit 99\n");
+            File.SetUnixFileMode(
+                python3Path,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite
+            );
+            string pythonPath = Path.Combine(directory, "python");
+            WriteWorkingPythonWrapper(pythonPath);
+
+            PythonPhase11DoctorResult result =
+                await CreateSystemRunnerPathResolvingService(directory)
+                    .RunDoctorAsync(TestContext.Current.CancellationToken);
+
+            AssertSuccessfulSystemRunnerFallback(result, pythonPath);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void PythonKeyringModuleProbeStatusPreservesNumericValues()
+    {
+        Assert.Equal(0, (int)PythonPhase11KeyringModuleProbeStatus.InterpreterNotFound);
+        Assert.Equal(1, (int)PythonPhase11KeyringModuleProbeStatus.ModuleFound);
+        Assert.Equal(2, (int)PythonPhase11KeyringModuleProbeStatus.ModuleNotFound);
+        Assert.Equal(3, (int)PythonPhase11KeyringModuleProbeStatus.LaunchFailure);
+        Assert.Equal(4, (int)PythonPhase11KeyringModuleProbeStatus.TimedOut);
+        Assert.Equal(5, (int)PythonPhase11KeyringModuleProbeStatus.UnexpectedNonZeroExit);
+        Assert.Equal(6, (int)PythonPhase11KeyringModuleProbeStatus.OutputTooLarge);
+        Assert.Equal(7, (int)PythonPhase11KeyringModuleProbeStatus.InvalidOutput);
+        Assert.Equal(8, (int)PythonPhase11KeyringModuleProbeStatus.ModuleFinderError);
+    }
+
+    private static void AssertLinuxShellIntegrationAvailable()
+    {
+        Assert.SkipUnless(
+            OperatingSystem.IsLinux() && File.Exists("/bin/sh"),
+            "This integration test requires Linux and /bin/sh."
+        );
+    }
+
+    private static string CreateIntegrationTestDirectory()
+    {
+        string path = Path.Combine(
+            AppContext.BaseDirectory,
+            "python-phase11-integration",
+            Guid.NewGuid().ToString("N")
+        );
+        Directory.CreateDirectory(path);
+        return path;
+    }
+
+    private static PythonPhase11VerticalSliceService CreateSystemRunnerPathResolvingService(
+        string directory
+    ) =>
+        new(
+            new PythonPhase11VerticalSliceOptions
+            {
+                ProcessRunner = new SystemProcessRunner(),
+                EnvironmentVariableReader = name =>
+                    name switch
+                    {
+                        "HOME" => directory,
+                        "PATH" => directory,
+                        _ => null,
+                    },
+                ExpectedKeyringShimPath = Path.Combine(directory, "keyring"),
+                CurrentDirectoryPath = directory,
+                PathListSeparator = Path.PathSeparator,
+            }
+        );
+
+    [System.Runtime.Versioning.SupportedOSPlatform("linux")]
+    private static void WriteWorkingPythonWrapper(string path)
+    {
+        string quotedPath = path.Replace("'", "'\"'\"'", StringComparison.Ordinal);
+        WriteShellExecutable(
+            path,
+            "#!/bin/sh\n"
+                + "if [ \"$2\" = 'import os,sys; print(os.path.abspath(sys.executable))' ]; then\n"
+                + $"  printf '%s\\n' '{quotedPath}'\n"
+                + "  exit 0\n"
+                + "fi\n"
+                + $"printf '%s\\n' '{KeyringModuleFoundMarker}'\n"
+                + "exit 0\n"
+        );
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("linux")]
+    private static void WriteShellExecutable(string path, string content)
+    {
+        File.WriteAllText(path, content);
+        File.SetUnixFileMode(
+            path,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+        );
+    }
+
+    private static void AssertSuccessfulSystemRunnerFallback(
+        PythonPhase11DoctorResult result,
+        string expectedPythonPath
+    )
+    {
+        Assert.Equal(expectedPythonPath, result.KeyringModuleProbe.PythonExecutablePath);
+        Assert.True(result.KeyringModuleProbe.PythonExecutableExists);
+        Assert.True(result.KeyringModuleProbe.Attempted);
+        Assert.True(result.KeyringModuleProbe.KeyringModuleResolvable);
+        Assert.Equal(
+            PythonPhase11KeyringModuleProbeStatus.ModuleFound,
+            result.KeyringModuleProbe.Status
+        );
+        Assert.Null(result.KeyringModuleProbe.FailureMessage);
     }
 }

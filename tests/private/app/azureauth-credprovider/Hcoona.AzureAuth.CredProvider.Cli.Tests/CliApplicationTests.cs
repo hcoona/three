@@ -7089,4 +7089,54 @@ public sealed class CliApplicationTests
     }
 #pragma warning restore CA1707
 
+    [Fact]
+    public void DoctorRendersPythonKeyringModuleFinderErrorWithoutLeakingDiagnostics()
+    {
+        const string SensitiveDiagnostic = "phase2-module-finder-secret";
+        const string RawProbeMarker = "ACP_KEYRING_PROBE_V1:ERROR";
+        using var pythonFixture = new PythonDoctorFixture(PythonDoctorFixtureMode.Healthy);
+        var processRunner = new RecordingPythonResolutionProcessRunner();
+        var processResult = new ProcessResult(21, RawProbeMarker + "\n", string.Empty);
+        processRunner.EnqueueResult(processResult);
+        Func<string, string?> environmentVariableReader =
+            pythonFixture.Options.EnvironmentVariableReader!;
+        CliRuntimeOptions runtime = CreateHealthyDoctorRuntimeOptions(pythonFixture) with
+        {
+            PythonPhase11Options = pythonFixture.Options with
+            {
+                ProcessRunner = processRunner,
+                EnvironmentVariableReader = name =>
+                    string.Equals(name, "PIPX_HOME", StringComparison.Ordinal)
+                        ? Path.Combine(pythonFixture.RootPath, SensitiveDiagnostic)
+                        : environmentVariableReader(name),
+            },
+        };
+
+        CommandResult configureGit = InvokeWithRuntime(runtime, "configure", "git");
+        CommandResult doctor = InvokeWithRuntime(runtime, "doctor");
+
+        Assert.Equal(0, configureGit.ExitCode);
+        Assert.Equal(string.Empty, configureGit.StdErr);
+        Assert.Equal(1, doctor.ExitCode);
+        AssertDoctorCheck(doctor.StdOut, "python-keyring-module", "fail");
+        AssertDoctorCheck(doctor.StdOut, "doctor-aggregation", "fail");
+        Assert.Equal(string.Empty, doctor.StdErr);
+        Assert.DoesNotContain(SensitiveDiagnostic, doctor.StdOut, StringComparison.Ordinal);
+        Assert.DoesNotContain(SensitiveDiagnostic, doctor.StdErr, StringComparison.Ordinal);
+        Assert.DoesNotContain(RawProbeMarker, doctor.StdOut, StringComparison.Ordinal);
+        Assert.DoesNotContain(RawProbeMarker, doctor.StdErr, StringComparison.Ordinal);
+        Assert.Equal(string.Empty, processResult.StandardError);
+        ProcessStartSpec startSpec = Assert.Single(processRunner.StartSpecs);
+        Assert.Equal(2, startSpec.Arguments.Count);
+        Assert.DoesNotContain(startSpec.Arguments[1], doctor.StdOut, StringComparison.Ordinal);
+        Assert.DoesNotContain(startSpec.Arguments[1], doctor.StdErr, StringComparison.Ordinal);
+
+        Assert.Equal(8, (int)PythonPhase11KeyringModuleProbeStatus.ModuleFinderError);
+        AssertDoctorCheck(
+            doctor.StdOut,
+            "python-keyring-module-probe",
+            "module-finder-error"
+        );
+    }
+
 }

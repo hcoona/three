@@ -3086,6 +3086,8 @@ internal static class CliApplication
                 "unexpected-nonzero-exit",
             PythonPhase11KeyringModuleProbeStatus.OutputTooLarge => "output-too-large",
             PythonPhase11KeyringModuleProbeStatus.InvalidOutput => "invalid-output",
+            PythonPhase11KeyringModuleProbeStatus.ModuleFinderError =>
+                "module-finder-error",
             _ => throw new InvalidOperationException(
                 $"Unsupported Python keyring module probe status: {status}."
             ),
