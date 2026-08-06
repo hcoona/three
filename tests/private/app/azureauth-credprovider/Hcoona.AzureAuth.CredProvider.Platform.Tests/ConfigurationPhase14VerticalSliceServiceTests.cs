@@ -3753,6 +3753,32 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     }
 
     [Theory]
+    [InlineData(CredentialEcosystem.Npm, false, false)]
+    [InlineData(CredentialEcosystem.Npm, false, true)]
+    [InlineData(CredentialEcosystem.Npm, true, false)]
+    [InlineData(CredentialEcosystem.Npm, true, true)]
+    [InlineData(CredentialEcosystem.Pnpm, false, false)]
+    [InlineData(CredentialEcosystem.Pnpm, false, true)]
+    [InlineData(CredentialEcosystem.Pnpm, true, false)]
+    [InlineData(CredentialEcosystem.Pnpm, true, true)]
+    [InlineData(CredentialEcosystem.Yarn, false, false)]
+    [InlineData(CredentialEcosystem.Yarn, false, true)]
+    [InlineData(CredentialEcosystem.Yarn, true, false)]
+    [InlineData(CredentialEcosystem.Yarn, true, true)]
+    public async Task UnconfigureCiTemporaryAsync_WhenManifestTargetContainsNul_FailsClosedAndPreservesFiles(
+        CredentialEcosystem ecosystem,
+        bool transitional,
+        bool execute
+    )
+    {
+        await AssertDirectCiManifestInvalidPathFailsClosedAsync(
+            ecosystem,
+            transitional,
+            execute
+        );
+    }
+
+    [Theory]
     [InlineData(CredentialEcosystem.Npm, false)]
     [InlineData(CredentialEcosystem.Npm, true)]
     [InlineData(CredentialEcosystem.Pnpm, false)]
@@ -3985,6 +4011,66 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         Assert.Equal(configuredTargetBefore, fileSystem.ReadAllBytes(configuredTargetPath));
         Assert.Equal(unrelatedBefore, fileSystem.ReadAllBytes(UnrelatedPath));
         Assert.True(fileSystem.FileExists(configuredTargetPath));
+    }
+
+    private static async Task AssertDirectCiManifestInvalidPathFailsClosedAsync(
+        CredentialEcosystem ecosystem,
+        bool transitional,
+        bool execute
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        ConfigurationPhase14VerticalSliceService service =
+            ecosystem == CredentialEcosystem.Yarn
+                ? await CreateConfiguredYarnCiServiceAsync(fileSystem, transitional)
+                : await CreateConfiguredNpmCompatibleCiServiceAsync(
+                    fileSystem,
+                    ecosystem,
+                    transitional
+                );
+        string configuredTargetPath =
+            ecosystem == CredentialEcosystem.Yarn
+                ? Path.Combine(service.Paths.YarnCiTemporaryHomePath, ".yarnrc.yml")
+                : GetNpmCompatibleCiTargetPath(service, ecosystem);
+        string manifestPath =
+            ecosystem == CredentialEcosystem.Yarn
+                ? GetYarnCiManifestPath(service)
+                : GetNpmCompatibleCiManifestPath(service);
+        byte[] configuredTargetBefore = fileSystem.ReadAllBytes(configuredTargetPath);
+        string validManifest = fileSystem.ReadAllText(manifestPath);
+        string forgedManifest = validManifest.Replace(
+            $"\"{configuredTargetPath}\"",
+            $"\"{configuredTargetPath}\\u0000forged\"",
+            StringComparison.Ordinal
+        );
+        Assert.NotEqual(validManifest, forgedManifest);
+        fileSystem.WriteAllText(manifestPath, forgedManifest);
+        byte[] manifestBefore = fileSystem.ReadAllBytes(manifestPath);
+
+        ConfigurationPhase14PlanResult result = execute
+            ? await service.UnconfigureAsync(
+                ecosystem,
+                ConfigurationPhase14Scope.CiTemporary,
+                TestContext.Current.CancellationToken
+            )
+            : await service.DryRunUnconfigureAsync(
+                ecosystem,
+                ConfigurationPhase14Scope.CiTemporary,
+                TestContext.Current.CancellationToken
+            );
+
+        Assert.True(result.OwnershipManifestCleanupIncomplete);
+        Assert.Equal(0, result.ChangeCount);
+        Assert.Equal(0, result.AppliedChangeCount);
+        Assert.True(result.OwnershipManifestPresent);
+        Assert.False(result.LifecycleStateMutated);
+        Assert.Equal(manifestBefore, fileSystem.ReadAllBytes(manifestPath));
+        Assert.Equal(configuredTargetBefore, fileSystem.ReadAllBytes(configuredTargetPath));
+        Assert.True(fileSystem.FileExists(configuredTargetPath));
+        if (ecosystem == CredentialEcosystem.Yarn)
+        {
+            Assert.True(fileSystem.DirectoryExists(service.Paths.YarnCiTemporaryHomePath));
+        }
     }
 
     private static async Task<ConfigurationPhase14VerticalSliceService> CreateConfiguredNpmCompatibleCiServiceAsync(

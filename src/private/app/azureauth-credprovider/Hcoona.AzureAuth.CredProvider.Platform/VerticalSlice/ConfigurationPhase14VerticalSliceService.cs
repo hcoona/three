@@ -2117,9 +2117,33 @@ public sealed class ConfigurationPhase14VerticalSliceService
                 ),
             _ => throw new NotSupportedException("Unsupported package ecosystem."),
         };
-        return manifest
-            .Entries.Where(entry => entry.TargetKind == targetKind)
-            .All(entry => PathEquals(entry.TargetPathOrName, expectedPath));
+        string normalizedExpectedPath = NormalizePath(expectedPath);
+        foreach (ConfigurationOwnershipManifestEntry entry in manifest.Entries)
+        {
+            string normalizedEntryPath;
+            try
+            {
+                normalizedEntryPath = NormalizePath(entry.TargetPathOrName);
+            }
+            catch (Exception exception) when (IsExpectedManifestPathFormatException(exception))
+            {
+                return false;
+            }
+
+            if (
+                entry.TargetKind == targetKind
+                && !string.Equals(
+                    normalizedEntryPath,
+                    normalizedExpectedPath,
+                    FileSystemPathSemantics.GetComparison(fileSystem)
+                )
+            )
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private bool PackageManifestEntriesMatchExpectedState(
@@ -2397,6 +2421,9 @@ public sealed class ConfigurationPhase14VerticalSliceService
                 or NotSupportedException
                 or ArgumentException
                 or System.Text.Json.JsonException;
+
+    private static bool IsExpectedManifestPathFormatException(Exception exception) =>
+        exception is ArgumentException or NotSupportedException or PathTooLongException;
 
     private void DeleteKnownCiTemporaryContainer(CredentialEcosystem ecosystem)
     {

@@ -2039,6 +2039,53 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         Assert.Null(GetOptionalString(result, "FailureDetail"));
     }
 
+    [Theory]
+    [InlineData(@"\tools")]
+    [InlineData("/tools")]
+    public void ResolveNpmExecutable_WhenNodePathIsRootRelative_ResolvesAgainstWorkspaceVolumeRoot(
+        string rootRelativePath
+    )
+    {
+        const string NpmShim = @"C:\Users\alice\AppData\Roaming\npm\npm.cmd";
+        const string NpmCliScript =
+            @"C:\Users\alice\AppData\Roaming\npm\node_modules\npm\bin\npm-cli.js";
+        const string ExpectedNodeExecutable = @"D:\tools\node.exe";
+        const string CurrentVolumeDecoy = @"C:\tools\node.exe";
+        const string WorkspaceRelativeDecoy = @"D:\repo\app\tools\node.exe";
+        NpmPhase12VerticalSliceService service = CreateWindowsPathFixture(
+            $@"C:\Users\alice\AppData\Roaming\npm;{rootRelativePath}",
+            @".CMD;.EXE",
+            [
+                NpmShim,
+                NpmCliScript,
+                ExpectedNodeExecutable,
+                CurrentVolumeDecoy,
+                WorkspaceRelativeDecoy,
+            ],
+            workspaceDirectoryPath: @"D:\repo\app"
+        );
+
+        object result = InvokeResolveNpmExecutable(service);
+
+        Assert.Equal("Succeeded", GetStatusText(result));
+        Assert.Equal(
+            ExpectedNodeExecutable,
+            GetRequiredString(result, "FileName", "ExecutablePath")
+        );
+        Assert.NotEqual(
+            CurrentVolumeDecoy,
+            GetRequiredString(result, "FileName", "ExecutablePath")
+        );
+        Assert.NotEqual(
+            WorkspaceRelativeDecoy,
+            GetRequiredString(result, "FileName", "ExecutablePath")
+        );
+        Assert.Equal(
+            [NpmCliScript, "prefix"],
+            GetRequiredStringList(result, "Arguments")
+        );
+    }
+
     [Fact]
     public void ResolveNpmExecutable_WhenNodePathIsDriveRelative_SkipsItAndUsesLaterValidDirectory()
     {
@@ -2360,17 +2407,19 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         string pathValue,
         string? pathExtValue,
         IReadOnlyList<string> existingFiles,
-        FakeProcessRunner? processRunner = null
+        FakeProcessRunner? processRunner = null,
+        string workspaceDirectoryPath = @"C:\repo\packages\apple"
     )
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Windows);
-        fileSystem.CreateDirectory(@"C:\repo\packages\apple");
+        fileSystem.CreateDirectory(workspaceDirectoryPath);
+        fileSystem.CreateDirectory(@"C:\repo");
         fileSystem.WriteAllText(
             @"C:\repo\package.json",
             """{"name":"root","private":true,"workspaces":["packages/*"]}"""
         );
         fileSystem.WriteAllText(
-            @"C:\repo\packages\apple\package.json",
+            workspaceDirectoryPath + @"\package.json",
             """{"name":"apple"}"""
         );
         foreach (string file in existingFiles)
@@ -2386,7 +2435,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
             {
                 FileSystem = fileSystem,
                 ProcessRunner = processRunner ?? new FakeProcessRunner(),
-                WorkspaceDirectoryPath = @"C:\repo\packages\apple",
+                WorkspaceDirectoryPath = workspaceDirectoryPath,
                 UserNpmrcPath = @"C:\Users\alice\.npmrc",
                 EnvironmentVariableReader = name =>
                     string.Equals(name, "PATH", StringComparison.Ordinal)

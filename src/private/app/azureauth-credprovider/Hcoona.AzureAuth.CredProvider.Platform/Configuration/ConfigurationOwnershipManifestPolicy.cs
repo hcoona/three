@@ -73,6 +73,7 @@ public static class ConfigurationOwnershipManifestPolicy
             if (
                 entry.Sequence != index + 1
                 || string.IsNullOrWhiteSpace(entry.TargetPathOrName)
+                || entry.TargetPathOrName.Contains('\0')
                 || string.IsNullOrWhiteSpace(entry.Key)
                 || entry.Key.Contains('\r')
                 || entry.Key.Contains('\n')

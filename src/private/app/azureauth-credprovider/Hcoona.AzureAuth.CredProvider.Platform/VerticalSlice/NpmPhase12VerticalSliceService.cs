@@ -1266,7 +1266,29 @@ public sealed class NpmPhase12VerticalSliceService
         try
         {
             string path = directory;
-            if (!IsAbsolutePath(path))
+            if (IsWindowsRootRelativePath(path))
+            {
+                if (
+                    workspaceDirectoryPath is null
+                    || IsWindowsUncPath(workspaceDirectoryPath)
+                    || !IsWindowsDrivePath(workspaceDirectoryPath)
+                )
+                {
+                    return null;
+                }
+
+                string workspaceVolumeRoot = workspaceDirectoryPath[..3];
+                string relativeToVolumeRoot = path.TrimStart('/', '\\');
+                path =
+                    relativeToVolumeRoot.Length == 0
+                        ? workspaceVolumeRoot
+                        : FileSystemPathSemantics.Combine(
+                            fileSystem,
+                            workspaceVolumeRoot,
+                            relativeToVolumeRoot
+                        );
+            }
+            else if (!IsAbsolutePath(path))
             {
                 if (workspaceDirectoryPath is null)
                 {
@@ -1534,6 +1556,11 @@ public sealed class NpmPhase12VerticalSliceService
     private static bool IsWindowsUncPath(string path) =>
         path.StartsWith(@"\\", StringComparison.Ordinal)
         || path.StartsWith("//", StringComparison.Ordinal);
+
+    private static bool IsWindowsRootRelativePath(string path) =>
+        path.Length > 0
+        && path[0] is '/' or '\\'
+        && (path.Length == 1 || path[1] is not ('/' or '\\'));
 
     private static bool IsAbsolutePath(string path) =>
         path.StartsWith('/') || IsWindowsDrivePath(path) || IsWindowsUncPath(path);
