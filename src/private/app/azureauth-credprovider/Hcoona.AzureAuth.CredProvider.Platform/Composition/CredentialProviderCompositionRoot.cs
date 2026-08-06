@@ -68,6 +68,7 @@ public sealed class CredentialProviderCompositionRoot
         AzureAuthProviderConfig providerConfig,
         AzureAuthPersistedRecord<AzureAuthBinding> bindingRecord,
         AzureAuthInstallation installation,
+        AzureAuthProcessLaunchOptions? launchOptions,
         ICredentialAcquisitionService acquisitionService,
         CredentialProviderReadiness readiness,
         CredentialProviderProductionOptions options
@@ -77,6 +78,7 @@ public sealed class CredentialProviderCompositionRoot
         ProviderConfig = providerConfig;
         BindingRecord = bindingRecord;
         Installation = installation;
+        LaunchOptions = launchOptions;
         AcquisitionService = acquisitionService;
         Readiness = readiness;
         ProductionOptions = options;
@@ -87,6 +89,7 @@ public sealed class CredentialProviderCompositionRoot
     public AzureAuthProviderConfig ProviderConfig { get; }
     public AzureAuthPersistedRecord<AzureAuthBinding> BindingRecord { get; }
     public AzureAuthInstallation Installation { get; }
+    private AzureAuthProcessLaunchOptions? LaunchOptions { get; }
     public ICredentialAcquisitionService AcquisitionService { get; }
     public CredentialProviderReadiness Readiness { get; }
     public CredentialProviderProductionOptions ProductionOptions { get; }
@@ -208,6 +211,7 @@ public sealed class CredentialProviderCompositionRoot
             config,
             bindingRecord,
             installation,
+            launchOptions,
             service,
             readiness,
             effectiveOptions
@@ -248,6 +252,7 @@ public sealed class CredentialProviderCompositionRoot
                 "TestScaffold",
                 "Installation discovery is not used by the test scaffold."
             ),
+            launchOptions: null,
             acquisitionService,
             new CredentialProviderReadiness
             {
@@ -322,6 +327,16 @@ public sealed class CredentialProviderCompositionRoot
         cancellationToken.ThrowIfCancellationRequested();
         return AzureAuthDoctor.Run(ProviderConfig, BindingRecord, Installation);
     }
+
+    public ValueTask<AzureAuthHealthProbeResult> RunProviderHealthProbeAsync(
+        CancellationToken cancellationToken = default
+    ) =>
+        AzureAuthHealthProbe.RunAsync(
+            ProviderConfig,
+            LaunchOptions,
+            ProductionOptions.ProcessRunner ?? new SystemProcessRunner(),
+            cancellationToken
+        );
 
     private static CredentialProviderReadiness CreateReadiness(
         AzureAuthProviderConfig config,

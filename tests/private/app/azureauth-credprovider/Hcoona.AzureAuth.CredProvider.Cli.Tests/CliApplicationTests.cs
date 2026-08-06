@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Reflection;
 using Hcoona.AzureAuth.CredProvider.Contracts;
 using Hcoona.AzureAuth.CredProvider.Platform.AzureAuthProvider;
 using Hcoona.AzureAuth.CredProvider.Platform.Composition;
@@ -62,6 +63,22 @@ public sealed class CliApplicationTests
             result.StdOut
         );
         // editorconfig-checker-enable
+        Assert.Equal(string.Empty, result.StdErr);
+    }
+
+    [Fact]
+    public void VersionUsesAssemblyInformationalVersion()
+    {
+        string informationalVersion = Assert.IsType<AssemblyInformationalVersionAttribute>(
+            typeof(CliApplication).Assembly.GetCustomAttribute<
+                AssemblyInformationalVersionAttribute
+            >()
+        ).InformationalVersion;
+
+        CommandResult result = Invoke("--version");
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal($"azureauth-credprovider {informationalVersion}\n", result.StdOut);
         Assert.Equal(string.Empty, result.StdErr);
     }
 
@@ -1736,6 +1753,66 @@ public sealed class CliApplicationTests
     }
 
     [Fact]
+    public void DoctorProductionCompositionIncludesNpmAndYarnDoctorResults()
+    {
+        string stateDirectory = CreateTestDirectory();
+        try
+        {
+            File.WriteAllText(
+                Path.Combine(stateDirectory, ".npmrc"),
+                $"registry={TestRegistryUrl}\n"
+            );
+            File.WriteAllText(
+                Path.Combine(stateDirectory, ".yarnrc.yml"),
+                $"npmRegistryServer: \"{TestRegistryUrl}\"\n"
+            );
+            var runtimeOptions = new CliRuntimeOptions
+            {
+                CompositionRootFactory = () =>
+                    CredentialProviderCompositionRoot.CreateProduction(
+                        new CredentialProviderProductionOptions
+                        {
+                            SecureStoreRootPath = stateDirectory,
+                            EnvironmentVariableReader = _ => null,
+                        }
+                    ),
+                GitPhase8Options = new GitPhase8VerticalSliceOptions
+                {
+                    StateDirectoryPath = stateDirectory,
+                    ProcessRunner = new PassingGitDiscoveryProcessRunner(),
+                    ProductExecutablePath = CreateFakeProductExecutable(stateDirectory),
+                },
+                NuGetPhase10Options = CreateIsolatedNuGetPhase10Options(),
+                NpmPhase12Options = CreateIsolatedNpmPhase12Options(stateDirectory),
+                YarnPhase13Options = CreateIsolatedYarnPhase13Options(stateDirectory),
+                ConfigurationPhase14Options = CreateConfigurationPhase14Options(stateDirectory),
+            };
+
+            CommandResult doctor = InvokeWithRuntime(runtimeOptions, "doctor");
+
+            Assert.Equal(1, doctor.ExitCode);
+            AssertDoctorCheck(doctor.StdOut, "composition-mode", "Production");
+            AssertDoctorCheck(doctor.StdOut, "npm-registry-declaration", "present");
+            AssertDoctorCheck(
+                doctor.StdOut,
+                "npm-azure-artifacts-endpoint-canonicalization",
+                "pass"
+            );
+            AssertDoctorCheck(doctor.StdOut, "yarn-registry-declaration", "present");
+            AssertDoctorCheck(
+                doctor.StdOut,
+                "yarn-azure-artifacts-endpoint-canonicalization",
+                "pass"
+            );
+            AssertDoctorCheck(doctor.StdOut, "yarn-writes", "pass");
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
     public void DoctorReportsDeferredLocalShellHelperShorthandAsUnsupportedMvp()
     {
         string stateDirectory = CreateTestDirectory();
@@ -1749,6 +1826,8 @@ public sealed class CliApplicationTests
                 ProductExecutablePath = CreateFakeProductExecutable(stateDirectory),
             },
             NuGetPhase10Options = CreateIsolatedNuGetPhase10Options(),
+            NpmPhase12Options = CreateIsolatedNpmPhase12Options(stateDirectory),
+            YarnPhase13Options = CreateIsolatedYarnPhase13Options(stateDirectory),
             ConfigurationPhase14Options = CreateConfigurationPhase14Options(stateDirectory),
         };
 
@@ -4340,6 +4419,8 @@ public sealed class CliApplicationTests
                     "silent-readiness-code: TestScaffold",
                     "silent-remediation: Explicit deterministic test scaffold; "
                         + "not production-ready.",
+                    "azureauth-version-probe: not-required",
+                    "azureauth-version-probe-code: AzureAuthVersionProbeNotRequired",
                     $"configuration-plan: {(configurationPlanValid ? "pass" : "fail")}",
                     $"owned-git-entries: {(ownedGitEntriesPresent ? "present" : "absent")}",
                     $"ownership-manifest: {(ownershipManifestPresent ? "present" : "absent")}",
@@ -4372,6 +4453,23 @@ public sealed class CliApplicationTests
                     "python-keyring-module: fail",
                     "python-keyring-module-probe: interpreter-not-found",
                     "python-azure-artifacts-endpoint-canonicalization: pass",
+                    "npm-workspace-npmrc: absent",
+                    "npm-effective-user-npmrc: absent",
+                    "npm-userconfig-environment-override: absent",
+                    "npm-registry-declaration: absent",
+                    "npm-azure-artifacts-endpoint-canonicalization: pass",
+                    "npm-user-credential-plan: not-applicable",
+                    "pnpm-user-credential-plan: not-applicable",
+                    "npm-ci-temporary-credential-plan: not-applicable",
+                    "yarn-workspace-yarnrc: absent",
+                    "yarn-effective-user-yarnrc: absent",
+                    "yarn-rc-filename-override: absent",
+                    "yarn-registry-declaration: absent",
+                    "yarn-forbidden-auth-ident-conflict: absent",
+                    "yarn-azure-artifacts-endpoint-canonicalization: pass",
+                    "yarn-writes: pass",
+                    "yarn-write-gate-status: "
+                        + "phase-1.4-accepted; writes-supported-by-phase-13b",
                     "configuration-aggregation: pass",
                     "npm-user-configuration-plan: pass",
                     "npm-user-owned-targets: absent",
@@ -4562,6 +4660,8 @@ public sealed class CliApplicationTests
                 ProductExecutablePath = CreateFakeProductExecutable(stateDirectory),
             },
             NuGetPhase10Options = CreateIsolatedNuGetPhase10Options(),
+            NpmPhase12Options = CreateIsolatedNpmPhase12Options(stateDirectory),
+            YarnPhase13Options = CreateIsolatedYarnPhase13Options(stateDirectory),
             PythonPhase11Options = new PythonPhase11VerticalSliceOptions
             {
                 FileSystem = new SystemFileSystem(),
@@ -4623,6 +4723,28 @@ public sealed class CliApplicationTests
         {
             StateDirectoryPath = "/state/azureauth-credprovider/phase10",
             FileSystem = new EmptyNuGetDryRunFileSystem(),
+        };
+
+    private static NpmPhase12VerticalSliceOptions CreateIsolatedNpmPhase12Options(
+        string rootPath
+    ) =>
+        new()
+        {
+            WorkspaceDirectoryPath = rootPath,
+            UserHomeDirectoryPath = rootPath,
+            UserNpmrcPath = Path.Combine(rootPath, "user.npmrc"),
+            CiTemporaryNpmrcPath = Path.Combine(rootPath, "ci", ".npmrc"),
+            EnvironmentVariableReader = _ => null,
+        };
+
+    private static YarnPhase13VerticalSliceOptions CreateIsolatedYarnPhase13Options(
+        string rootPath
+    ) =>
+        new()
+        {
+            WorkspaceDirectoryPath = rootPath,
+            UserHomeDirectoryPath = rootPath,
+            UserYarnrcPath = Path.Combine(rootPath, "user.yarnrc.yml"),
             EnvironmentVariableReader = _ => null,
         };
 
@@ -4991,7 +5113,7 @@ public sealed class CliApplicationTests
     private sealed record CommandResult(int ExitCode, string StdOut, string StdErr);
 
     [Fact]
-    public async Task LoginDeviceCodePassesExplicitModeAndStreamsPromptSafely()
+    public async Task LoginDeviceCodeLaunchesOnceWithoutVersionPreflightAndStreamsPromptSafely()
     {
         const string Token = "phase2-cli-private-token";
         string rootPath = CreateTestDirectory();
@@ -5052,6 +5174,7 @@ public sealed class CliApplicationTests
             Assert.Equal(1, runner.InvocationCount);
             ProcessStartSpec start = Assert.IsType<ProcessStartSpec>(runner.StartSpec);
             Assert.Same(stderr, start.StandardErrorTee);
+            Assert.DoesNotContain("--version", start.Arguments);
             Assert.Equal(
                 [
                     "aad",
@@ -5711,7 +5834,7 @@ public sealed class CliApplicationTests
     }
 
     [Fact]
-    public void DoctorFullyHealthyAggregateReturnsZeroWithoutAuthenticationOrSecretLeak()
+    public void DoctorFullyHealthyAggregateRunsOneHealthProbeWithoutSecretLeak()
     {
         const string PrivateToken = "doctor-private-auth-token";
         const string PrivateDiagnostic = "doctor-private-auth-diagnostic";
@@ -5744,6 +5867,9 @@ public sealed class CliApplicationTests
                         productionRoot.ProviderConfig,
                         productionRoot.BindingRecord,
                         productionRoot.Installation,
+                        AzureAuthProcessLaunchOptions.FromInstallation(
+                            productionRoot.Installation
+                        ),
                         acquisitionService,
                         productionRoot.Readiness,
                         productionRoot.ProductionOptions,
@@ -5769,6 +5895,8 @@ public sealed class CliApplicationTests
                 CompositionRoot = root,
                 GitPhase8Options = gitOptions,
                 NuGetPhase10Options = CreateIsolatedNuGetPhase10Options(),
+                NpmPhase12Options = CreateIsolatedNpmPhase12Options(rootPath),
+                YarnPhase13Options = CreateIsolatedYarnPhase13Options(rootPath),
                 PythonPhase11Options = pythonFixture.Options,
                 ConfigurationPhase14Options = CreateConfigurationPhase14Options(rootPath),
             };
@@ -5792,6 +5920,16 @@ public sealed class CliApplicationTests
             );
             Assert.Contains(
                 "silent-readiness: silent-ready\n",
+                doctor.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains(
+                "azureauth-version-probe: pass\n",
+                doctor.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains(
+                "azureauth-version-probe-code: AzureAuthVersionProbeSucceeded\n",
                 doctor.StdOut,
                 StringComparison.Ordinal
             );
@@ -5869,6 +6007,17 @@ public sealed class CliApplicationTests
                 StringComparison.Ordinal
             );
             Assert.Contains(
+                "npm-azure-artifacts-endpoint-canonicalization: pass\n",
+                doctor.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains(
+                "yarn-azure-artifacts-endpoint-canonicalization: pass\n",
+                doctor.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains("yarn-writes: pass\n", doctor.StdOut, StringComparison.Ordinal);
+            Assert.Contains(
                 "configuration-aggregation: pass\n",
                 doctor.StdOut,
                 StringComparison.Ordinal
@@ -5885,9 +6034,14 @@ public sealed class CliApplicationTests
                 StringComparison.Ordinal
             );
             Assert.Equal(string.Empty, doctor.StdErr);
-            Assert.Equal(0, authenticationRunner.InvocationCount);
-            Assert.Null(authenticationRunner.StartSpec);
-            Assert.Empty(authenticationRunner.StartSpecs);
+            Assert.Equal(1, authenticationRunner.InvocationCount);
+            ProcessStartSpec healthProbe = Assert.Single(authenticationRunner.StartSpecs);
+            Assert.Equal("/opt/azureauth/azureauth", healthProbe.FileName);
+            Assert.Equal(["--version"], healthProbe.Arguments);
+            Assert.Equal("/opt/azureauth", healthProbe.WorkingDirectory);
+            Assert.Equal(TimeSpan.FromSeconds(10), healthProbe.Timeout);
+            Assert.Empty(healthProbe.Environment);
+            Assert.Null(healthProbe.StandardErrorTee);
             Assert.NotEmpty(acquisitionService.Requests);
             Assert.All(
                 acquisitionService.Requests,
@@ -5974,6 +6128,82 @@ public sealed class CliApplicationTests
         }
     }
 
+    [Fact]
+    public void DoctorFailsWhenAzureAuthVersionProbeExitsNonzero() =>
+        AssertDoctorAzureAuthProbeFailure(
+            new ProcessResult(23, string.Empty, "private diagnostic"),
+            "AzureAuthVersionProbeExitNonZero"
+        );
+
+    [Fact]
+    public void DoctorFailsWhenAzureAuthVersionProbeTimesOut() =>
+        AssertDoctorAzureAuthProbeFailure(
+            ProcessResult.TimedOut(string.Empty, "private diagnostic"),
+            "AzureAuthVersionProbeTimedOut"
+        );
+
+    [Fact]
+    public void DoctorFailsWhenAzureAuthVersionProbeCannotLaunch() =>
+        AssertDoctorAzureAuthProbeFailure(
+            ProcessResult.LaunchFailure(standardError: "private diagnostic"),
+            "AzureAuthVersionProbeLaunchFailed"
+        );
+
+    [Fact]
+    public void DoctorNpmAndYarnFailuresAffectAggregateExitCode()
+    {
+        using var pythonFixture = new PythonDoctorFixture(PythonDoctorFixtureMode.Healthy);
+        string npmrcPath = Path.Combine(pythonFixture.RootPath, "user.npmrc");
+        File.WriteAllText(npmrcPath, $"registry={TestRegistryUrl}\n");
+        File.WriteAllText(
+            Path.Combine(pythonFixture.RootPath, ".yarnrc.yml"),
+            $$"""
+            npmRegistries:
+              '{{TestRegistryUrl}}':
+                npmAuthIdent: 'user:password'
+            """
+        );
+        CliRuntimeOptions runtime = CreateHealthyDoctorRuntimeOptions(pythonFixture) with
+        {
+            NpmPhase12Options = CreateIsolatedNpmPhase12Options(pythonFixture.RootPath),
+        };
+
+        CommandResult configureGit = InvokeWithRuntime(runtime, "configure", "git");
+        CommandResult doctor = InvokeWithRuntime(runtime, "doctor");
+
+        Assert.Equal(0, configureGit.ExitCode);
+        Assert.Equal(1, doctor.ExitCode);
+        AssertDoctorCheck(doctor.StdOut, "npm-ci-temporary-credential-plan", "fail");
+        AssertDoctorCheck(doctor.StdOut, "yarn-forbidden-auth-ident-conflict", "present");
+        AssertDoctorCheck(doctor.StdOut, "doctor-aggregation", "fail");
+    }
+
+    private static void AssertDoctorAzureAuthProbeFailure(
+        ProcessResult processResult,
+        string expectedCode
+    )
+    {
+        using var pythonFixture = new PythonDoctorFixture(PythonDoctorFixtureMode.Healthy);
+        CliRuntimeOptions runtime = CreateHealthyDoctorRuntimeOptions(
+            pythonFixture,
+            processResult,
+            out PromptingResultProcessRunner runner
+        );
+
+        CommandResult configureGit = InvokeWithRuntime(runtime, "configure", "git");
+        CommandResult doctor = InvokeWithRuntime(runtime, "doctor");
+
+        Assert.Equal(0, configureGit.ExitCode);
+        Assert.Equal(1, doctor.ExitCode);
+        AssertDoctorCheck(doctor.StdOut, "azureauth-version-probe", "fail");
+        AssertDoctorCheck(doctor.StdOut, "azureauth-version-probe-code", expectedCode);
+        AssertDoctorCheck(doctor.StdOut, "doctor-aggregation", "fail");
+        Assert.Single(runner.StartSpecs);
+        Assert.Equal(["--version"], runner.StartSpecs[0].Arguments);
+        Assert.DoesNotContain("private diagnostic", doctor.StdOut, StringComparison.Ordinal);
+        Assert.DoesNotContain("private diagnostic", doctor.StdErr, StringComparison.Ordinal);
+    }
+
     private sealed class HealthyDoctorGitDiscoveryProcessRunner : IProcessRunner
     {
         public string ExpectedHelperCommand { private get; set; } = null!;
@@ -6023,17 +6253,28 @@ public sealed class CliApplicationTests
 
     private static CliRuntimeOptions CreateHealthyDoctorRuntimeOptions(
         PythonDoctorFixture pythonFixture
+    ) =>
+        CreateHealthyDoctorRuntimeOptions(
+            pythonFixture,
+            new ProcessResult(0, "unused-private-token", "unused-private-diagnostic"),
+            out _
+        );
+
+    private static CliRuntimeOptions CreateHealthyDoctorRuntimeOptions(
+        PythonDoctorFixture pythonFixture,
+        ProcessResult healthProbeResult,
+        out PromptingResultProcessRunner healthProbeRunner
     )
     {
         var promptWriter = new StringWriter();
-        var authenticationRunner = new PromptingResultProcessRunner(
-            new ProcessResult(0, "unused-private-token", "unused-private-diagnostic"),
+        healthProbeRunner = new PromptingResultProcessRunner(
+            healthProbeResult,
             streamPrompt: false
         );
         CredentialProviderCompositionRoot productionRoot = CreatePhase2ProductionRoot(
             pythonFixture.RootPath,
             CreatePhase2Installation(AzureAuthHostPlatform.NativeLinux),
-            authenticationRunner,
+            healthProbeRunner,
             promptWriter
         );
         System.Reflection.ConstructorInfo rootConstructor = Assert.Single(
@@ -6049,6 +6290,7 @@ public sealed class CliApplicationTests
                 productionRoot.ProviderConfig,
                 productionRoot.BindingRecord,
                 productionRoot.Installation,
+                AzureAuthProcessLaunchOptions.FromInstallation(productionRoot.Installation),
                 acquisitionService,
                 productionRoot.Readiness,
                 productionRoot.ProductionOptions,
@@ -6074,6 +6316,8 @@ public sealed class CliApplicationTests
             CompositionRoot = root,
             GitPhase8Options = gitOptions,
             NuGetPhase10Options = CreateIsolatedNuGetPhase10Options(),
+            NpmPhase12Options = CreateIsolatedNpmPhase12Options(pythonFixture.RootPath),
+            YarnPhase13Options = CreateIsolatedYarnPhase13Options(pythonFixture.RootPath),
             PythonPhase11Options = pythonFixture.Options,
             ConfigurationPhase14Options = CreateConfigurationPhase14Options(
                 pythonFixture.RootPath

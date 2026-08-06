@@ -269,12 +269,6 @@ public sealed class Wp6ProductionAdapterTests
                         throw new InvalidOperationException(
                             "WSL discovery must not check Linux execute access."
                         ),
-                    UnixExecutableLaunchChecker = (path, workingDirectory) =>
-                    {
-                        Assert.Equal(executable, path);
-                        Assert.Equal(Path.GetDirectoryName(executable), workingDirectory);
-                        return true;
-                    },
                 }
             );
 
@@ -348,12 +342,6 @@ public sealed class Wp6ProductionAdapterTests
                         throw new InvalidOperationException(
                             "WSL discovery must not check Linux execute access."
                         ),
-                    UnixExecutableLaunchChecker = (path, workingDirectory) =>
-                    {
-                        Assert.Equal(executable, path);
-                        Assert.Equal(Path.GetDirectoryName(executable), workingDirectory);
-                        return true;
-                    },
                 }
             );
 
@@ -419,12 +407,6 @@ public sealed class Wp6ProductionAdapterTests
                         throw new InvalidOperationException(
                             "WSL discovery must not check Linux execute access."
                         ),
-                    UnixExecutableLaunchChecker = (path, workingDirectory) =>
-                    {
-                        Assert.Equal(executable, path);
-                        Assert.Equal(Path.GetDirectoryName(executable), workingDirectory);
-                        return true;
-                    },
                 }
             );
 
@@ -443,7 +425,7 @@ public sealed class Wp6ProductionAdapterTests
     }
 
     [Fact]
-    public void WslDiscoveryRejectsUnlaunchableAzureAuthPayload()
+    public void WslDiscoveryDoesNotLaunchAzureAuthPayload()
     {
         string root = CreateTestDirectory();
         try
@@ -463,22 +445,17 @@ public sealed class Wp6ProductionAdapterTests
             Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
             File.WriteAllText(powerShell, "");
             File.WriteAllText(executable, "damaged");
+            var runner = new DiscoveryRunner(
+                "{\"localApplicationData\":\"C:\\\\Users\\\\User\\\\AppData\\\\Local\","
+                    + "\"exists\":true,\"fileVersion\":\"0.9.5.0\"}"
+            );
             var discovery = new SystemAzureAuthInstallationDiscovery(
-                new DiscoveryRunner(
-                    "{\"localApplicationData\":\"C:\\\\Users\\\\User\\\\AppData\\\\Local\","
-                        + "\"exists\":true,\"fileVersion\":\"0.9.5.0\"}"
-                ),
+                runner,
                 new SystemAzureAuthInstallationDiscoveryOptions
                 {
                     ForcedHostPlatform = AzureAuthHostPlatform.Wsl,
                     WindowsMountRoot = root,
                     WindowsPowerShellPath = powerShell,
-                    UnixExecutableLaunchChecker = (path, workingDirectory) =>
-                    {
-                        Assert.Equal(executable, path);
-                        Assert.Equal(Path.GetDirectoryName(executable), workingDirectory);
-                        return false;
-                    },
                 }
             );
 
@@ -487,9 +464,10 @@ public sealed class Wp6ProductionAdapterTests
                 TestContext.Current.CancellationToken
             );
 
-            Assert.Equal(AzureAuthInstallationStatus.Unavailable, result.Status);
-            Assert.Equal("AzureAuthProcessLaunchFailed", result.Code);
-            Assert.False(result.IsAvailable);
+            Assert.Equal(AzureAuthInstallationStatus.Available, result.Status);
+            Assert.True(result.IsAvailable);
+            Assert.Equal(powerShell, runner.StartSpec!.FileName);
+            Assert.DoesNotContain("--version", runner.StartSpec.Arguments);
         }
         finally
         {
@@ -525,12 +503,6 @@ public sealed class Wp6ProductionAdapterTests
                             ? executable
                             : null,
                     LinuxExecuteAccessChecker = _ => LinuxExecuteAccessResult.Allowed,
-                    UnixExecutableLaunchChecker = (path, workingDirectory) =>
-                    {
-                        Assert.Equal(executable, path);
-                        Assert.Equal(root, workingDirectory);
-                        return true;
-                    },
                     ManagedAssemblyIdentityReader = path =>
                     {
                         Assert.Equal(Path.Combine(root, "azureauth.dll"), path);
@@ -595,8 +567,6 @@ public sealed class Wp6ProductionAdapterTests
                         Assert.Equal(executable, path);
                         return LinuxExecuteAccessResult.Denied;
                     },
-                    UnixExecutableLaunchChecker = (_, _) =>
-                        throw new InvalidOperationException("Launch must not be checked."),
                     ManagedAssemblyIdentityReader = _ =>
                         throw new InvalidOperationException("Version must not be read."),
                 }
@@ -631,8 +601,6 @@ public sealed class Wp6ProductionAdapterTests
                     ForcedHostPlatform = AzureAuthHostPlatform.NativeLinux,
                     NativeLinuxExecutablePath = executable,
                     LinuxExecuteAccessChecker = _ => LinuxExecuteAccessResult.Denied,
-                    UnixExecutableLaunchChecker = (_, _) =>
-                        throw new InvalidOperationException("Launch must not be checked."),
                     ManagedAssemblyIdentityReader = _ =>
                         throw new InvalidOperationException("Version must not be read."),
                 }
@@ -731,7 +699,7 @@ public sealed class Wp6ProductionAdapterTests
         try
         {
             string executable = Path.Combine(root, "azureauth");
-            File.WriteAllText(executable, "#!/bin/sh\nexit 127\n");
+            File.WriteAllText(executable, "#!/bin/sh\nexit 0\n");
             File.WriteAllText(Path.Combine(root, "azureauth.dll"), "");
             File.SetUnixFileMode(executable, UnixFileMode.UserRead | UnixFileMode.UserWrite);
             var discovery = new SystemAzureAuthInstallationDiscovery(
@@ -772,7 +740,7 @@ public sealed class Wp6ProductionAdapterTests
     }
 
     [Fact]
-    public void NativeLinuxDiscoveryRejectsExecutableButDamagedAzureAuthPayload()
+    public void NativeLinuxDiscoveryDoesNotLaunchExecutablePayload()
     {
         if (!OperatingSystem.IsLinux())
         {
@@ -790,8 +758,9 @@ public sealed class Wp6ProductionAdapterTests
                     | UnixFileMode.UserWrite
                     | UnixFileMode.UserExecute
             );
+            var runner = new DiscoveryRunner("must not be used");
             var discovery = new SystemAzureAuthInstallationDiscovery(
-                new DiscoveryRunner("must not be used"),
+                runner,
                 new SystemAzureAuthInstallationDiscoveryOptions
                 {
                     ForcedHostPlatform = AzureAuthHostPlatform.NativeLinux,
@@ -806,10 +775,9 @@ public sealed class Wp6ProductionAdapterTests
                 TestContext.Current.CancellationToken
             );
 
-            Assert.Equal(AzureAuthInstallationStatus.Unavailable, result.Status);
-            Assert.Equal("AzureAuthProcessLaunchFailed", result.Code);
-            Assert.Equal("AzureAuth process launch failed.", result.SafeMessage);
-            Assert.False(result.IsAvailable);
+            Assert.Equal(AzureAuthInstallationStatus.Available, result.Status);
+            Assert.True(result.IsAvailable);
+            Assert.Null(runner.StartSpec);
         }
         finally
         {

@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Reflection;
 using System.Text;
 using Hcoona.AzureAuth.CredProvider.Contracts;
 using Hcoona.AzureAuth.CredProvider.Platform.AdapterHost;
@@ -88,10 +89,7 @@ internal static class CliApplication
         {
             if (args.Count == 1 && string.Equals(args[0], "--version", StringComparison.Ordinal))
             {
-                WriteText(
-                    stdout,
-                    $"{CommandName} {typeof(CliApplication).Assembly.GetName().Version}"
-                );
+                WriteText(stdout, $"{CommandName} {GetProductVersion()}");
                 return SuccessExitCode;
             }
 
@@ -210,6 +208,15 @@ internal static class CliApplication
     private sealed class CredentialProviderConfigurationUnavailableException(
         Exception innerException
     ) : Exception("Credential provider configuration is unavailable.", innerException);
+
+    private static string GetProductVersion()
+    {
+        Assembly assembly = typeof(CliApplication).Assembly;
+        return assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+                ?.InformationalVersion
+            ?? assembly.GetName().Version?.ToString()
+            ?? "unknown";
+    }
 
     private static CredentialProviderCompositionRoot GetCompositionRoot(
         CliRuntimeOptions? runtimeOptions
@@ -782,6 +789,11 @@ internal static class CliApplication
         CredentialProviderCompositionRoot root = GetCompositionRoot(runtimeOptions);
         CancellationToken cancellationToken = GetCancellationToken(runtimeOptions);
         CredentialProviderReadiness readiness = root.GetReadiness(cancellationToken);
+        AzureAuthHealthProbeResult azureAuthHealthProbe = root
+            .RunProviderHealthProbeAsync(cancellationToken)
+            .AsTask()
+            .GetAwaiter()
+            .GetResult();
         GitPhase8DoctorResult doctorResult = CreateGitPhase8VerticalSliceService(runtimeOptions)
             .DoctorAsync(cancellationToken)
             .AsTask()
@@ -801,6 +813,18 @@ internal static class CliApplication
             .AsTask()
             .GetAwaiter()
             .GetResult();
+        NpmPhase12DoctorResult npmDoctorResult = CreateNpmPhase12VerticalSliceService(runtimeOptions)
+            .RunDoctorAsync(cancellationToken)
+            .AsTask()
+            .GetAwaiter()
+            .GetResult();
+        YarnPhase13DoctorResult yarnDoctorResult = CreateYarnPhase13VerticalSliceService(
+                runtimeOptions
+            )
+            .RunDoctorAsync(cancellationToken)
+            .AsTask()
+            .GetAwaiter()
+            .GetResult();
         ConfigurationPhase14DoctorResult configurationDoctorResult =
             CreateConfigurationPhase14VerticalSliceService(
                     runtimeOptions,
@@ -814,7 +838,10 @@ internal static class CliApplication
             IsGitDoctorSuccess(doctorResult)
             && IsNuGetDoctorSuccess(nuGetDoctorResult)
             && IsPythonDoctorSuccess(pythonDoctorResult)
+            && IsNpmDoctorSuccess(npmDoctorResult)
+            && IsYarnDoctorSuccess(yarnDoctorResult)
             && IsConfigurationPhase14DoctorSuccess(configurationDoctorResult)
+            && azureAuthHealthProbe.Succeeded
             && readiness.IsReady;
         WriteText(
             stdout,
@@ -823,9 +850,12 @@ internal static class CliApplication
                 doctorResult,
                 nuGetDoctorResult,
                 pythonDoctorResult,
+                npmDoctorResult,
+                yarnDoctorResult,
                 configurationDoctorResult,
                 root,
                 readiness,
+                azureAuthHealthProbe,
                 doctorSuccess
             )
         );
@@ -2895,16 +2925,22 @@ internal static class CliApplication
         GitPhase8DoctorResult doctorResult,
         NuGetPhase10DoctorResult nuGetDoctorResult,
         PythonPhase11DoctorResult pythonDoctorResult,
+        NpmPhase12DoctorResult npmDoctorResult,
+        YarnPhase13DoctorResult yarnDoctorResult,
         ConfigurationPhase14DoctorResult configurationDoctorResult,
         CredentialProviderCompositionRoot root,
         CredentialProviderReadiness readiness,
+        AzureAuthHealthProbeResult azureAuthHealthProbe,
         bool doctorSuccess
     )
     {
         ArgumentNullException.ThrowIfNull(doctorResult);
         ArgumentNullException.ThrowIfNull(nuGetDoctorResult);
         ArgumentNullException.ThrowIfNull(pythonDoctorResult);
+        ArgumentNullException.ThrowIfNull(npmDoctorResult);
+        ArgumentNullException.ThrowIfNull(yarnDoctorResult);
         ArgumentNullException.ThrowIfNull(configurationDoctorResult);
+        ArgumentNullException.ThrowIfNull(azureAuthHealthProbe);
 
         bool deviceCodeReady = IsDeviceCodeReady(root, readiness);
         List<string> lines =
@@ -2920,6 +2956,9 @@ internal static class CliApplication
                 + (readiness.Silent.IsReady ? "silent-ready" : "silent-unavailable"),
             $"silent-readiness-code: {readiness.Silent.Code}",
             $"silent-remediation: {readiness.Silent.SafeMessage}",
+            "azureauth-version-probe: "
+                + GetAzureAuthHealthProbeStatusText(azureAuthHealthProbe),
+            $"azureauth-version-probe-code: {azureAuthHealthProbe.Code}",
             $"configuration-plan: {GetCheckStatusText(doctorResult.ConfigurationPlanValid)}",
             $"owned-git-entries: {GetPresenceText(doctorResult.OwnedGitEntriesPresent)}",
             $"ownership-manifest: {GetPresenceText(doctorResult.OwnershipManifestPresent)}",
@@ -2955,6 +2994,8 @@ internal static class CliApplication
 
         lines.AddRange(BuildNuGetDoctorLines(nuGetDoctorResult));
         lines.AddRange(BuildPythonDoctorLines(pythonDoctorResult));
+        lines.AddRange(BuildNpmDoctorLines(npmDoctorResult));
+        lines.AddRange(BuildYarnDoctorLines(yarnDoctorResult));
         lines.AddRange(BuildConfigurationPhase14DoctorLines(configurationDoctorResult));
         lines.Add(
             "doctor-aggregation: " + GetCheckStatusText(doctorSuccess)
@@ -3044,6 +3085,63 @@ internal static class CliApplication
                 $"Unsupported Python keyring module probe status: {status}."
             ),
         };
+
+    private static IEnumerable<string> BuildNpmDoctorLines(NpmPhase12DoctorResult doctorResult)
+    {
+        ArgumentNullException.ThrowIfNull(doctorResult);
+        return
+        [
+            "npm-workspace-npmrc: " + GetPresenceText(doctorResult.WorkspaceNpmrcExists),
+            "npm-effective-user-npmrc: "
+                + GetPresenceText(doctorResult.EffectiveUserNpmrcExists),
+            "npm-userconfig-environment-override: "
+                + GetPresenceText(doctorResult.EffectiveUserConfigEnvironmentOverridePresent),
+            "npm-registry-declaration: "
+                + GetPresenceText(doctorResult.RegistryDeclarationDiscovered),
+            "npm-azure-artifacts-endpoint-canonicalization: "
+                + GetCheckStatusText(
+                    doctorResult.AzureArtifactsNpmEndpointCanonicalizationSuccess
+                ),
+            "npm-user-credential-plan: "
+                + GetRegistryPlanStatusText(
+                    doctorResult.RegistryDeclarationDiscovered,
+                    doctorResult.NpmUserCredentialPlanValid
+                ),
+            "pnpm-user-credential-plan: "
+                + GetRegistryPlanStatusText(
+                    doctorResult.RegistryDeclarationDiscovered,
+                    doctorResult.PnpmUserCredentialPlanValid
+                ),
+            "npm-ci-temporary-credential-plan: "
+                + GetRegistryPlanStatusText(
+                    doctorResult.RegistryDeclarationDiscovered,
+                    doctorResult.CiTemporaryCredentialPlanValid
+                ),
+        ];
+    }
+
+    private static IEnumerable<string> BuildYarnDoctorLines(YarnPhase13DoctorResult doctorResult)
+    {
+        ArgumentNullException.ThrowIfNull(doctorResult);
+        return
+        [
+            "yarn-workspace-yarnrc: " + GetPresenceText(doctorResult.WorkspaceYarnrcExists),
+            "yarn-effective-user-yarnrc: "
+                + GetPresenceText(doctorResult.EffectiveUserYarnrcExists),
+            "yarn-rc-filename-override: "
+                + GetPresenceText(doctorResult.YarnRcFilenameOverridePresent),
+            "yarn-registry-declaration: "
+                + GetPresenceText(doctorResult.RegistryDeclarationDiscovered),
+            "yarn-forbidden-auth-ident-conflict: "
+                + GetPresenceText(doctorResult.ForbiddenAuthIdentConflictDetected),
+            "yarn-azure-artifacts-endpoint-canonicalization: "
+                + GetCheckStatusText(
+                    doctorResult.AzureArtifactsYarnEndpointCanonicalizationSuccess
+                ),
+            "yarn-writes: " + GetCheckStatusText(doctorResult.WritesSupported),
+            $"yarn-write-gate-status: {doctorResult.WriteGateStatus}",
+        ];
+    }
 
     private static List<string> BuildConfigurationPhase14DoctorLines(
         ConfigurationPhase14DoctorResult doctorResult
@@ -3205,6 +3303,14 @@ internal static class CliApplication
         CliRuntimeOptions? runtimeOptions
     ) => new(runtimeOptions?.PythonPhase11Options);
 
+    private static NpmPhase12VerticalSliceService CreateNpmPhase12VerticalSliceService(
+        CliRuntimeOptions? runtimeOptions
+    ) => new(runtimeOptions?.NpmPhase12Options);
+
+    private static YarnPhase13VerticalSliceService CreateYarnPhase13VerticalSliceService(
+        CliRuntimeOptions? runtimeOptions
+    ) => new(runtimeOptions?.YarnPhase13Options);
+
     private static GitPhase8VerticalSliceService CreateGitPhase8ConfigurationService(
         CliRuntimeOptions? runtimeOptions
     ) => GitPhase8VerticalSliceService.CreateConfigurationOnly(runtimeOptions?.GitPhase8Options);
@@ -3359,6 +3465,30 @@ internal static class CliApplication
             && doctorResult.KeyringShim.ExpectedShimFirstOnPath
             && doctorResult.KeyringModuleProbe.KeyringModuleResolvable
             && doctorResult.AzureArtifactsPythonEndpointCanonicalizationSuccess;
+    }
+
+    private static bool IsNpmDoctorSuccess(NpmPhase12DoctorResult doctorResult)
+    {
+        ArgumentNullException.ThrowIfNull(doctorResult);
+
+        return doctorResult.AzureArtifactsNpmEndpointCanonicalizationSuccess
+            && (
+                !doctorResult.RegistryDeclarationDiscovered
+                || (
+                    doctorResult.NpmUserCredentialPlanValid
+                    && doctorResult.PnpmUserCredentialPlanValid
+                    && doctorResult.CiTemporaryCredentialPlanValid
+                )
+            );
+    }
+
+    private static bool IsYarnDoctorSuccess(YarnPhase13DoctorResult doctorResult)
+    {
+        ArgumentNullException.ThrowIfNull(doctorResult);
+
+        return doctorResult.AzureArtifactsYarnEndpointCanonicalizationSuccess
+            && doctorResult.WritesSupported
+            && !doctorResult.ForbiddenAuthIdentConflictDetected;
     }
 
     private static bool IsConfigurationPhase14DoctorSuccess(
@@ -3579,6 +3709,19 @@ internal static class CliApplication
     private static string GetCheckStatusText(bool value) => value ? "pass" : "fail";
 
     private static string GetPresenceText(bool value) => value ? "present" : "absent";
+
+    private static string GetRegistryPlanStatusText(bool applicable, bool valid) =>
+        applicable ? GetCheckStatusText(valid) : "not-applicable";
+
+    private static string GetAzureAuthHealthProbeStatusText(
+        AzureAuthHealthProbeResult result
+    ) =>
+        result.Status switch
+        {
+            AzureAuthHealthProbeStatus.NotRequired => "not-required",
+            AzureAuthHealthProbeStatus.Passed => "pass",
+            _ => "fail",
+        };
 
     private static string GetCommandName(CliCommand command)
     {
@@ -3965,6 +4108,10 @@ internal sealed record CliRuntimeOptions
     public NuGetPhase10VerticalSliceOptions? NuGetPhase10Options { get; init; }
 
     public PythonPhase11VerticalSliceOptions? PythonPhase11Options { get; init; }
+
+    public NpmPhase12VerticalSliceOptions? NpmPhase12Options { get; init; }
+
+    public YarnPhase13VerticalSliceOptions? YarnPhase13Options { get; init; }
 
     public AuthPhase14VerticalSliceOptions? AuthPhase14Options { get; init; }
 
