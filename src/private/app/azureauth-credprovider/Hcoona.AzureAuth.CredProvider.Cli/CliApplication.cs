@@ -320,7 +320,7 @@ internal static class CliApplication
                 GitPhase8ConfigureDryRunResult dryRunResult;
                 try
                 {
-                    dryRunResult = CreateGitPhase8VerticalSliceService(runtimeOptions)
+                    dryRunResult = CreateGitPhase8ConfigurationService(runtimeOptions)
                         .DryRunConfigureAsync(GetCancellationToken(runtimeOptions))
                         .AsTask()
                         .GetAwaiter()
@@ -344,7 +344,7 @@ internal static class CliApplication
                 NuGetPhase10ConfigureDryRunResult dryRunResult;
                 try
                 {
-                    dryRunResult = CreateNuGetPhase10VerticalSliceService(runtimeOptions)
+                    dryRunResult = CreateNuGetPhase10ConfigurationService(runtimeOptions)
                         .DryRunConfigureAsync(GetCancellationToken(runtimeOptions))
                         .AsTask()
                         .GetAwaiter()
@@ -407,7 +407,7 @@ internal static class CliApplication
             GitPhase8ConfigureResult configureResult;
             try
             {
-                configureResult = CreateGitPhase8VerticalSliceService(runtimeOptions)
+                configureResult = CreateGitPhase8ConfigurationService(runtimeOptions)
                     .ConfigureAsync(GetCancellationToken(runtimeOptions))
                     .AsTask()
                     .GetAwaiter()
@@ -431,7 +431,7 @@ internal static class CliApplication
             NuGetPhase10ConfigureResult configureResult;
             try
             {
-                configureResult = CreateNuGetPhase10VerticalSliceService(runtimeOptions)
+                configureResult = CreateNuGetPhase10ConfigurationService(runtimeOptions)
                     .ConfigureAsync(GetCancellationToken(runtimeOptions))
                     .AsTask()
                     .GetAwaiter()

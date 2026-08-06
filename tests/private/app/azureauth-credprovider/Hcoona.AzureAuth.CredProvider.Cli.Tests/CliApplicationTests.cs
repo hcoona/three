@@ -1195,6 +1195,90 @@ public sealed class CliApplicationTests
         }
     }
 
+    [Fact(
+        Skip = "System secure-store integration is Linux/WSL-specific.",
+        SkipWhen = nameof(IsWindows)
+    )]
+    public async Task AppHostConfigureAndDryRunIgnoreMalformedProviderRecord()
+    {
+        const string SecretMarker = "must-not-leak-malformed-configure-secret";
+        string rootPath = Path.Combine(
+            AppContext.BaseDirectory,
+            "malformed-configure-" + Guid.NewGuid().ToString("N")
+        );
+        CreateOwnerOnlyDirectory(rootPath);
+        string configurationHome = Path.Combine(rootPath, "configuration-home");
+        CreateOwnerOnlyDirectory(configurationHome);
+        try
+        {
+            var store = new SystemAzureAuthSecureRecordStore(rootPath);
+            Assert.Equal(
+                AzureAuthSecureRecordWriteStatus.Success,
+                store
+                    .CompareExchange(
+                        CredentialProviderCompositionRoot.ProviderConfigRecordName,
+                        AzureAuthSecureRecordStoreContract.MissingRevision,
+                        Encoding.UTF8.GetBytes(
+                            $$"""{"schemaVersion":1,"selection":"{{SecretMarker}}"}"""
+                        )
+                    )
+                    .Status
+            );
+            var environment = new Dictionary<string, string?>
+            {
+                [SystemAzureAuthSecureRecordStoreOptions.ConfigRootEnvironmentVariable] = rootPath,
+                ["HOME"] = configurationHome,
+            };
+            var runner = new SystemProcessRunner();
+
+            foreach (
+                (string ecosystem, bool dryRun) in new[]
+                {
+                    ("git", false),
+                    ("git", true),
+                    ("nuget", false),
+                    ("nuget", true),
+                }
+            )
+            {
+                string[] args = dryRun
+                    ? ["configure", ecosystem, "--dry-run"]
+                    : ["configure", ecosystem];
+                ProcessResult result = await runner.RunAsync(
+                    new ProcessStartSpec(CliAppHostPath(), args, environment: environment),
+                    TestContext.Current.CancellationToken
+                );
+
+                Assert.Equal(0, result.ExitCode);
+                Assert.Contains(
+                    "command: configure",
+                    result.StandardOutput,
+                    StringComparison.Ordinal
+                );
+                Assert.Contains(
+                    $"ecosystem: {ecosystem}",
+                    result.StandardOutput,
+                    StringComparison.Ordinal
+                );
+                Assert.Contains(
+                    dryRun ? "mutates-state: no" : "mutates-state: yes",
+                    result.StandardOutput,
+                    StringComparison.Ordinal
+                );
+                Assert.Equal(string.Empty, result.StandardError);
+                Assert.DoesNotContain(
+                    SecretMarker,
+                    result.StandardOutput,
+                    StringComparison.Ordinal
+                );
+            }
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(rootPath);
+        }
+    }
+
     [Fact(Skip = "Non-Windows helper symlink test.", SkipWhen = nameof(IsWindows))]
     public async Task GitCredentialHelperAppHostAcceptsHelperNamedSymlink()
     {
@@ -1654,6 +1738,113 @@ public sealed class CliApplicationTests
             Assert.Equal(0, result.ExitCode);
             Assert.Equal(string.Empty, result.StdErr);
             Assert.Equal(0, compositionFactoryCalls);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Theory]
+    [InlineData("git", false)]
+    [InlineData("git", true)]
+    [InlineData("nuget", false)]
+    [InlineData("nuget", true)]
+    public void ConfigureDoesNotLoadCredentialProviderCompositionWhenProviderRecordIsMalformed(
+        string ecosystem,
+        bool dryRun
+    )
+    {
+        string stateDirectory = CreateTestDirectory();
+        var compositionFactoryCalls = 0;
+        var nuGetFileSystem =
+            new EmptyNuGetDryRunFileSystem.RecordingNuGetConfigurationFileSystem();
+        var nuGetOptions = new NuGetPhase10VerticalSliceOptions
+        {
+            StateDirectoryPath = Path.Combine(stateDirectory, "nuget"),
+            FileSystem = nuGetFileSystem,
+            EnvironmentVariableReader = _ => null,
+        };
+        CliRuntimeOptions runtimeOptions = CreateGitPhase8RuntimeOptions(stateDirectory) with
+        {
+            CompositionRoot = null,
+            CompositionRootFactory = () =>
+            {
+                compositionFactoryCalls++;
+                throw new InvalidOperationException("Malformed provider record.");
+            },
+            NuGetPhase10Options = nuGetOptions,
+        };
+        GitPhase8VerticalSliceService gitService =
+            GitPhase8VerticalSliceService.CreateConfigurationOnly(
+                runtimeOptions.GitPhase8Options
+            );
+        NuGetPhase10VerticalSliceService nuGetService =
+            NuGetPhase10VerticalSliceService.CreateConfigurationOnly(nuGetOptions);
+        string[] args = dryRun
+            ? ["configure", ecosystem, "--dry-run"]
+            : ["configure", ecosystem];
+
+        try
+        {
+            CommandResult result = InvokeWithRuntime(runtimeOptions, args);
+
+            Assert.Equal(0, result.ExitCode);
+            Assert.Equal(
+                ecosystem == "git"
+                    ? dryRun
+                        ? GetExpectedGitConfigureDryRunOutput()
+                        : GetExpectedGitMutationOutput("configure", "apply", 2, true, true)
+                    : dryRun
+                        ? GetExpectedNuGetConfigureDryRunOutput()
+                        : GetExpectedNuGetConfigureOutput(),
+                result.StdOut
+            );
+            Assert.Equal(string.Empty, result.StdErr);
+            Assert.Equal(0, compositionFactoryCalls);
+
+            if (ecosystem == "git")
+            {
+                Assert.Equal(!dryRun, File.Exists(gitService.Paths.GitConfigPath));
+                Assert.Equal(!dryRun, File.Exists(gitService.Paths.OwnershipManifestPath));
+                Assert.Equal(!dryRun, File.Exists(gitService.Paths.GitHelperPath));
+                if (!dryRun)
+                {
+                    string gitConfig = File.ReadAllText(gitService.Paths.GitConfigPath);
+                    Assert.Contains(
+                        $"helper = \"{GetSerializedGitHelperPath(gitService.Paths.GitHelperPath)}\"",
+                        gitConfig,
+                        StringComparison.Ordinal
+                    );
+                    Assert.Contains("useHttpPath = \"true\"", gitConfig, StringComparison.Ordinal);
+                }
+            }
+            else
+            {
+                Assert.Equal(
+                    !dryRun,
+                    nuGetFileSystem.FileExists(nuGetService.Paths.PluginLayoutMarkerPath)
+                );
+                Assert.Equal(
+                    !dryRun,
+                    nuGetFileSystem.FileExists(nuGetService.Paths.OwnershipManifestPath)
+                );
+                if (!dryRun)
+                {
+                    Assert.Equal(
+                        "azureauth-credprovider nuget-plugin-layout\n"
+                            + "phase=10\n"
+                            + "runtime=netcore\n"
+                            + "entrypoint=azureauth-credprovider.dll\n",
+                        nuGetFileSystem.ReadAllText(nuGetService.Paths.PluginLayoutMarkerPath)
+                    );
+                    Assert.Contains(
+                        "phase10-nuget-plugin-layout",
+                        nuGetFileSystem.ReadAllText(nuGetService.Paths.OwnershipManifestPath),
+                        StringComparison.Ordinal
+                    );
+                }
+            }
         }
         finally
         {
@@ -3222,14 +3413,14 @@ public sealed class CliApplicationTests
     }
 
     [Fact]
-    public void NuGetDoctorPropagatesCancellationDuringCredentialProbe()
+    public void DoctorPropagatesCancellationDuringProductionHealthProbe()
     {
         string stateDirectory = CreateTestDirectory();
         using var cancellation = new CancellationTokenSource();
         var nuGetFileSystem = new EmptyNuGetDryRunFileSystem();
         var acquisition = new CancelingCredentialAcquisitionService(
             cancellation,
-            cancelOnInvocation: 3
+            cancelOnInvocation: 2
         );
         CliRuntimeOptions baseOptions = CreateGitPhase8RuntimeOptions(stateDirectory);
         CliRuntimeOptions runtimeOptions = baseOptions with
@@ -3248,9 +3439,9 @@ public sealed class CliApplicationTests
             CommandResult result = InvokeWithRuntime(runtimeOptions, "doctor");
 
             Assert.True(acquisition.RuntimeCancellationObserved);
-            Assert.Equal(3, acquisition.InvocationCount);
+            Assert.Equal(2, acquisition.InvocationCount);
             Assert.True(cancellation.IsCancellationRequested);
-            Assert.True(nuGetFileSystem.FileExistsInvocationCount > 0);
+            Assert.Equal(0, nuGetFileSystem.FileExistsInvocationCount);
             Assert.Equal(130, result.ExitCode);
             Assert.Equal(string.Empty, result.StdOut);
             Assert.Equal("error: operation canceled.\n", result.StdErr);
@@ -4427,6 +4618,25 @@ public sealed class CliApplicationTests
         );
     }
 
+    private static string GetExpectedNuGetConfigureOutput()
+    {
+        return Normalize(
+            """
+            command: configure
+            ecosystem: nuget
+            phase: 15-end-to-end-hardening
+            ci-mode: none
+            scope: user
+            mutates-state: yes
+            plan-operation: apply
+            applied-change-count: 1
+            nuget-plugin-layout-marker: present
+            ownership-manifest: present
+            note: credential material is not printed
+            """
+        );
+    }
+
     // editorconfig-checker-enable
     private static string GetExpectedGitMutationOutput(
         string command,
@@ -4510,8 +4720,8 @@ public sealed class CliApplicationTests
                     "nuget-ownership-manifest: absent",
                     "nuget-netcore-plugin-entrypoint: fail",
                     "nuget-plugin-mode-entrypoint: fail",
-                    "nuget-azure-artifacts-source: fail",
-                    "nuget-interactive-policy: fail",
+                    "nuget-azure-artifacts-source: pass",
+                    "nuget-interactive-policy: pass",
                     "nuget-environment-overrides: absent",
                     "python-keyring-shim-exists: fail",
                     "python-keyring-shim-first-on-path: fail",
@@ -5077,6 +5287,162 @@ public sealed class CliApplicationTests
         {
             FileExistsInvocationCount++;
             return false;
+        }
+
+        public sealed class RecordingNuGetConfigurationFileSystem : IFileSystem
+        {
+            private readonly Dictionary<string, byte[]> files = new(StringComparer.Ordinal);
+            private readonly HashSet<string> directories = new(StringComparer.Ordinal);
+
+            public bool FileExists(string path) => files.ContainsKey(GetFullPath(path));
+
+            public bool IsExecutableFile(string path) => FileExists(path);
+
+            public bool DirectoryExists(string path)
+            {
+                string fullPath = GetFullPath(path);
+                return directories.Contains(fullPath)
+                    || files.Keys.Any(file => IsDescendant(file, fullPath));
+            }
+
+            public string GetFullPath(string path) => Path.GetFullPath(path);
+
+            public bool IsPathFullyQualified(string path) => Path.IsPathFullyQualified(path);
+
+            public string ReadAllText(string path, Encoding? encoding = null) =>
+                (encoding ?? Encoding.UTF8).GetString(ReadAllBytes(path));
+
+            public byte[] ReadAllBytes(string path) =>
+                files.TryGetValue(GetFullPath(path), out byte[]? contents)
+                    ? contents.ToArray()
+                    : throw new FileNotFoundException("The file does not exist.", path);
+
+            public long GetFileLength(string path) => ReadAllBytes(path).LongLength;
+
+            public void WriteAllText(string path, string contents, Encoding? encoding = null) =>
+                AtomicWriteAllBytes(path, (encoding ?? Encoding.UTF8).GetBytes(contents));
+
+            public void AtomicWriteAllText(
+                string path,
+                string contents,
+                Encoding? encoding = null,
+                AtomicWriteOptions options = AtomicWriteOptions.None
+            ) => AtomicWriteAllBytes(path, (encoding ?? Encoding.UTF8).GetBytes(contents), options);
+
+            public void AtomicWriteAllBytes(
+                string path,
+                byte[] contents,
+                AtomicWriteOptions options = AtomicWriteOptions.None
+            )
+            {
+                string fullPath = GetFullPath(path);
+                string? directory = Path.GetDirectoryName(fullPath);
+                if (!string.IsNullOrEmpty(directory))
+                {
+                    CreateDirectory(directory);
+                }
+
+                files[fullPath] = contents.ToArray();
+            }
+
+            public UnixFileMode GetUnixFileMode(string path) =>
+                FileExists(path)
+                    ? UnixFileMode.UserRead | UnixFileMode.UserWrite
+                    : throw new FileNotFoundException("The file does not exist.", path);
+
+            public void SetUnixFileMode(string path, UnixFileMode mode)
+            {
+                _ = GetUnixFileMode(path);
+            }
+
+            public void CreateDirectory(string path)
+            {
+                string? current = GetFullPath(path);
+                while (!string.IsNullOrEmpty(current) && directories.Add(current))
+                {
+                    current = Path.GetDirectoryName(current);
+                }
+            }
+
+            public void DeleteFile(string path) => files.Remove(GetFullPath(path));
+
+            public void DeleteDirectory(string path, bool recursive = false)
+            {
+                string fullPath = GetFullPath(path);
+                if (
+                    !recursive
+                    && (
+                        files.Keys.Any(file => IsDescendant(file, fullPath))
+                        || directories.Any(directory => IsDescendant(directory, fullPath))
+                    )
+                )
+                {
+                    throw new IOException("The directory is not empty.");
+                }
+
+                foreach (string file in files.Keys.Where(file => IsDescendant(file, fullPath)).ToArray())
+                {
+                    files.Remove(file);
+                }
+                directories.RemoveWhere(directory =>
+                    string.Equals(directory, fullPath, StringComparison.Ordinal)
+                    || IsDescendant(directory, fullPath)
+                );
+            }
+
+            public IEnumerable<string> EnumerateFiles(
+                string path,
+                string searchPattern = "*",
+                SearchOption searchOption = SearchOption.TopDirectoryOnly
+            )
+            {
+                string fullPath = GetFullPath(path);
+                return files.Keys.Where(file =>
+                    MatchesDirectory(file, fullPath, searchOption)
+                    && System.IO.Enumeration.FileSystemName.MatchesSimpleExpression(
+                        searchPattern,
+                        Path.GetFileName(file),
+                        ignoreCase: false
+                    )
+                );
+            }
+
+            public IEnumerable<string> EnumerateDirectories(
+                string path,
+                string searchPattern = "*",
+                SearchOption searchOption = SearchOption.TopDirectoryOnly
+            )
+            {
+                string fullPath = GetFullPath(path);
+                return directories.Where(directory =>
+                    !string.Equals(directory, fullPath, StringComparison.Ordinal)
+                    && MatchesDirectory(directory, fullPath, searchOption)
+                    && System.IO.Enumeration.FileSystemName.MatchesSimpleExpression(
+                        searchPattern,
+                        Path.GetFileName(directory),
+                        ignoreCase: false
+                    )
+                );
+            }
+
+            private static bool MatchesDirectory(
+                string candidate,
+                string parent,
+                SearchOption searchOption
+            ) =>
+                searchOption == SearchOption.AllDirectories
+                    ? IsDescendant(candidate, parent)
+                    : string.Equals(
+                        Path.GetDirectoryName(candidate),
+                        parent,
+                        StringComparison.Ordinal
+                    );
+
+            private static bool IsDescendant(string candidate, string parent) =>
+                candidate.StartsWith(
+                    Path.TrimEndingDirectorySeparator(parent) + Path.DirectorySeparatorChar,
+                    StringComparison.Ordinal
+                );
         }
 
         public bool IsExecutableFile(string path) => false;
