@@ -387,9 +387,7 @@ public sealed class ConfigurationYarnrcPhysicalWriterTests
     [Fact]
     public void WriteConfigureAndUnconfigurePreserveOrdinaryYarnrcSymbolicLink()
     {
-        string directory = ConfigurationPhysicalWriterSymlinkTestSupport.CreateDirectory(
-            "yarnrc-link"
-        );
+        string directory = CreateNonRepositoryTestDirectory("yarnrc-link");
         string targetPath = System.IO.Path.Combine(directory, "actual.yarnrc.yml");
         string linkPath = System.IO.Path.Combine(directory, ".yarnrc.yml");
         const string Original = "nodeLinker: node-modules\n";
@@ -454,6 +452,25 @@ public sealed class ConfigurationYarnrcPhysicalWriterTests
         {
             Directory.Delete(directory, recursive: true);
         }
+    }
+
+    private static string CreateNonRepositoryTestDirectory(string name)
+    {
+        string baseDirectory = Environment.GetFolderPath(
+            Environment.SpecialFolder.LocalApplicationData
+        );
+        if (string.IsNullOrWhiteSpace(baseDirectory))
+        {
+            baseDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        }
+
+        string directory = System.IO.Path.Combine(
+            baseDirectory,
+            "azureauth-credprovider-tests",
+            $"{name}-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(directory);
+        return directory;
     }
 
     [Fact]

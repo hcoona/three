@@ -9,6 +9,7 @@ public sealed class SystemFileSystem
         IFileSystemLinkResolver,
         IFileSystemGitConfigLock
 {
+    private const int MaxLinkTraversalCount = 64;
     private const UnixFileMode OwnerOnlyFileMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
     private static readonly Encoding Utf8NoBom = new UTF8Encoding(
         encoderShouldEmitUTF8Identifier: false,
@@ -263,11 +264,81 @@ public sealed class SystemFileSystem
         string parentPath =
             Path.GetDirectoryName(fullPath)
             ?? throw new IOException($"The file path '{fullPath}' has no parent directory.");
+        return Path.Combine(
+            ResolvePhysicalDirectoryPath(parentPath),
+            Path.GetFileName(fullPath)
+        );
+    }
+
+    private static string ResolvePhysicalDirectoryPath(string path)
+    {
+        var pendingSegments = new Queue<string>();
+        string currentPath = ResetPathTraversal(path, pendingSegments);
+        var visitedLinks = new HashSet<string>(
+            OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal
+        );
+        var traversalCount = 0;
+
+        while (pendingSegments.TryDequeue(out string? segment))
+        {
+            string candidatePath = Path.Combine(currentPath, segment);
+            var directory = new DirectoryInfo(candidatePath);
+            string? linkTarget = directory.LinkTarget;
+            if (
+                linkTarget is null
+                && (
+                    !directory.Exists
+                    || (directory.Attributes & FileAttributes.ReparsePoint) == 0
+                )
+            )
+            {
+                currentPath = candidatePath;
+                continue;
+            }
+
+            string normalizedCandidatePath = Path.GetFullPath(candidatePath);
+            if (
+                ++traversalCount > MaxLinkTraversalCount
+                || !visitedLinks.Add(normalizedCandidatePath)
+            )
+            {
+                throw new IOException(
+                    $"The directory link '{candidatePath}' contains a cycle or exceeds the supported traversal depth."
+                );
+            }
+
+            FileSystemInfo? resolvedTarget = directory.ResolveLinkTarget(
+                returnFinalTarget: true
+            );
+            if (
+                resolvedTarget is not DirectoryInfo resolvedDirectory
+                || !resolvedDirectory.Exists
+            )
+            {
+                throw new IOException(
+                    $"The directory link '{candidatePath}' does not resolve to an existing directory."
+                );
+            }
+
+            string[] remainingSegments = pendingSegments.ToArray();
+            currentPath = ResetPathTraversal(resolvedDirectory.FullName, pendingSegments);
+            foreach (string remainingSegment in remainingSegments)
+            {
+                pendingSegments.Enqueue(remainingSegment);
+            }
+        }
+
+        return currentPath;
+    }
+
+    private static string ResetPathTraversal(string path, Queue<string> pendingSegments)
+    {
+        string fullPath = Path.GetFullPath(path);
         string rootPath =
-            Path.GetPathRoot(parentPath)
-            ?? throw new IOException($"The directory path '{parentPath}' has no root.");
-        string currentPath = rootPath;
-        string relativePath = Path.GetRelativePath(rootPath, parentPath);
+            Path.GetPathRoot(fullPath)
+            ?? throw new IOException($"The directory path '{fullPath}' has no root.");
+        pendingSegments.Clear();
+        string relativePath = Path.GetRelativePath(rootPath, fullPath);
         if (!string.Equals(relativePath, ".", StringComparison.Ordinal))
         {
             foreach (
@@ -277,40 +348,11 @@ public sealed class SystemFileSystem
                 )
             )
             {
-                string candidatePath = Path.Combine(currentPath, segment);
-                var directory = new DirectoryInfo(candidatePath);
-                string? linkTarget = directory.LinkTarget;
-                if (
-                    linkTarget is not null
-                    || (
-                        directory.Exists
-                        && (directory.Attributes & FileAttributes.ReparsePoint) != 0
-                    )
-                )
-                {
-                    FileSystemInfo? resolvedTarget = directory.ResolveLinkTarget(
-                        returnFinalTarget: true
-                    );
-                    if (
-                        resolvedTarget is not DirectoryInfo resolvedDirectory
-                        || !resolvedDirectory.Exists
-                    )
-                    {
-                        throw new IOException(
-                            $"The directory link '{candidatePath}' does not resolve to an existing directory."
-                        );
-                    }
-
-                    currentPath = resolvedDirectory.FullName;
-                }
-                else
-                {
-                    currentPath = candidatePath;
-                }
+                pendingSegments.Enqueue(segment);
             }
         }
 
-        return Path.Combine(currentPath, Path.GetFileName(fullPath));
+        return rootPath;
     }
 
     private void AtomicWrite(

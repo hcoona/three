@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using Hcoona.AzureAuth.CredProvider.Contracts;
+using Hcoona.AzureAuth.CredProvider.Platform.Configuration;
 using Hcoona.AzureAuth.CredProvider.Platform.FileSystem;
 
 namespace Hcoona.AzureAuth.CredProvider.Platform.VerticalSlice;
@@ -402,47 +403,11 @@ public sealed class YarnPhase13VerticalSliceService
 
     private void ThrowIfRepositoryCredentialTarget(string targetYarnrcPath)
     {
-        if (IsRepositoryCredentialTarget(fileSystem, targetYarnrcPath))
-        {
-            throw new InvalidOperationException(
-                "Repository-local Yarn configuration cannot store credential material."
-            );
-        }
-    }
-
-    internal static bool IsRepositoryCredentialTarget(
-        IFileSystem fileSystem,
-        string targetYarnrcPath
-    )
-    {
-        string resolvedTargetPath =
-            fileSystem is IFileSystemLinkResolver linkResolver
-                ? linkResolver.ResolveFilePathForWrite(targetYarnrcPath)
-                : targetYarnrcPath;
-        for (
-            string? directory = FileSystemPathSemantics.GetParentDirectory(
-                fileSystem,
-                resolvedTargetPath
-            );
-            directory is not null;
-            directory = FileSystemPathSemantics.GetParentDirectory(fileSystem, directory)
-        )
-        {
-            string gitMarkerPath = FileSystemPathSemantics.Combine(
-                fileSystem,
-                directory,
-                ".git"
-            );
-            if (
-                fileSystem.DirectoryExists(gitMarkerPath)
-                || fileSystem.FileExists(gitMarkerPath)
-            )
-            {
-                return true;
-            }
-        }
-
-        return false;
+        string writePath = YarnCredentialTargetPolicy.ResolveAuthoritativeWritePath(
+            fileSystem,
+            targetYarnrcPath
+        );
+        YarnCredentialTargetPolicy.ThrowIfRepositoryLocal(fileSystem, writePath);
     }
 
     private string? ResolveEffectiveProjectAuthRegistry(YarnProjectAuthBlock block)

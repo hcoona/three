@@ -637,7 +637,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
             );
         }
 
-        if (!OwnershipManifestMatchesExpectedState(manifest, ecosystem, scope))
+        if (!OwnershipManifestAuthorizesCleanup(manifest, ecosystem, scope))
         {
             return CreateResult(
                 [
@@ -1627,9 +1627,12 @@ public sealed class ConfigurationPhase14VerticalSliceService
             ecosystem == CredentialEcosystem.Yarn
             && manifest.Entries.Any(entry =>
                 entry.TargetKind == ConfigurationTargetKind.Yarnrc
-                && YarnPhase13VerticalSliceService.IsRepositoryCredentialTarget(
+                && YarnCredentialTargetPolicy.IsRepositoryLocalPath(
                     fileSystem,
-                    entry.TargetPathOrName
+                    YarnCredentialTargetPolicy.ResolveAuthoritativeWritePath(
+                        fileSystem,
+                        entry.TargetPathOrName
+                    )
                 )
             )
         )
@@ -1647,6 +1650,21 @@ public sealed class ConfigurationPhase14VerticalSliceService
                     requestedPlan: null
                 );
     }
+
+    private bool OwnershipManifestAuthorizesCleanup(
+        ConfigurationOwnershipManifest manifest,
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope
+    ) =>
+        ecosystem == CredentialEcosystem.Python
+            ? TryRecognizePythonOwnershipManifest(manifest, scope, out _)
+            : OwnershipManifestMatchesExpectedBaseState(manifest, ecosystem, scope)
+                || PackageOwnershipIntentMatchesExpectedState(
+                    manifest,
+                    ecosystem,
+                    scope,
+                    requestedPlan: null
+                );
 
     private bool PackageOwnershipIntentMatchesExpectedState(
         ConfigurationOwnershipManifest manifest,

@@ -3526,6 +3526,66 @@ public sealed class CliApplicationTests
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void YarnRepositoryTransitionCleanupPreservesUnrelatedYaml(bool logout)
+    {
+        const string UnrelatedYaml =
+            "nodeLinker: node-modules\n"
+            + "npmRegistries:\n"
+            + "  'https://registry.example.test/':\n"
+            + "    npmAlwaysAuth: true\n"
+            + "    npmAuthToken: preserved-marker\n";
+        string stateDirectory = CreateTestDirectory();
+        string homeDirectory = Path.Combine(stateDirectory, "yarn");
+        string yarnrcPath = Path.Combine(homeDirectory, ".yarnrc.yml");
+        string manifestPath = Path.Combine(
+            stateDirectory,
+            "manifests",
+            "yarn-user-ownership-manifest.json"
+        );
+        try
+        {
+            Directory.CreateDirectory(homeDirectory);
+            File.WriteAllText(yarnrcPath, UnrelatedYaml);
+            CliRuntimeOptions runtimeOptions = CreateConfigurationRuntime(stateDirectory);
+            CommandResult configured = InvokeWithRuntime(
+                runtimeOptions,
+                "configure",
+                "yarn",
+                "--registry-url",
+                TestRegistryUrl
+            );
+            Assert.Equal(0, configured.ExitCode);
+            Assert.True(File.Exists(manifestPath));
+            Assert.Contains(
+                "pkgs.dev.azure.com",
+                File.ReadAllText(yarnrcPath),
+                StringComparison.Ordinal
+            );
+            Directory.CreateDirectory(Path.Combine(homeDirectory, ".git"));
+
+            CommandResult doctor = InvokeWithRuntime(runtimeOptions, "doctor");
+            Assert.NotEqual(0, doctor.ExitCode);
+            Assert.Contains("yarn-user-configuration-plan: fail\n", doctor.StdOut);
+
+            CommandResult cleanup = logout
+                ? InvokeWithRuntime(runtimeOptions, "logout")
+                : InvokeWithRuntime(runtimeOptions, "unconfigure", "yarn");
+
+            Assert.Equal(0, cleanup.ExitCode);
+            Assert.Equal(UnrelatedYaml, File.ReadAllText(yarnrcPath));
+            Assert.False(File.Exists(manifestPath));
+            Assert.DoesNotContain("fake-token-", cleanup.StdOut, StringComparison.Ordinal);
+            Assert.DoesNotContain("fake-token-", cleanup.StdErr, StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
     [Fact]
     public void UnknownCommandReturnsDeterministicUsageError()
     {

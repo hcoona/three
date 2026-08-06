@@ -1,6 +1,9 @@
+using System.Text;
 using Hcoona.AzureAuth.CredProvider.Contracts;
 using Hcoona.AzureAuth.CredProvider.Platform.Configuration;
+using Hcoona.AzureAuth.CredProvider.Platform.FileSystem;
 using Hcoona.AzureAuth.CredProvider.Platform.Tests.TestDoubles;
+using Hcoona.AzureAuth.CredProvider.Platform.VerticalSlice;
 using Xunit;
 
 namespace Hcoona.AzureAuth.CredProvider.Platform.Tests;
@@ -12,6 +15,113 @@ public sealed class ConfigurationManagerTests
     private const string ManifestPath = "/state/npm.json";
     private const string TargetPath = "/home/user/.npmrc";
     private const string Secret = "secret-token-value";
+
+    [Theory]
+    [InlineData(ConfigurationChangeOperation.Set, false)]
+    [InlineData(ConfigurationChangeOperation.Refresh, false)]
+    [InlineData(ConfigurationChangeOperation.Set, true)]
+    public async Task YarnCredentialPlanRetargetedIntoRepositoryIsRejectedBeforeMutation(
+        ConfigurationChangeOperation operation,
+        bool ciTemporary
+    )
+    {
+        const string SafeTarget = "/safe/user.yarnrc.yml";
+        const string RepositoryTarget = "/repo/config/user.yarnrc.yml";
+        const string YarnManifestPath = "/state/yarn-ownership.json";
+        const string UnrelatedSafeYaml = "nodeLinker: node-modules\n";
+        const string UnrelatedRepositoryYaml = "enableScripts: false\n";
+        const string ContainerSentinel = "/ci/home/unrelated.txt";
+        var fileSystem = new RetargetableLinkFileSystem(
+            ciTemporary ? "/ci/home/.yarnrc.yml" : "/links/user.yarnrc.yml",
+            SafeTarget
+        );
+        CreateDirectoryTree(fileSystem.Inner, "/safe");
+        CreateDirectoryTree(fileSystem.Inner, "/repo/config");
+        CreateDirectoryTree(fileSystem.Inner, "/repo/.git");
+        CreateDirectoryTree(fileSystem.Inner, "/declarations");
+        CreateDirectoryTree(fileSystem.Inner, "/workspace");
+        fileSystem.Inner.WriteAllText(SafeTarget, UnrelatedSafeYaml);
+        fileSystem.Inner.WriteAllText(RepositoryTarget, UnrelatedRepositoryYaml);
+        if (ciTemporary)
+        {
+            CreateDirectoryTree(fileSystem.Inner, "/ci/home");
+            fileSystem.Inner.WriteAllText(ContainerSentinel, "preserve");
+        }
+
+        ConfigurationChangePlan plan = CreateYarnPlan(
+            fileSystem,
+            operation,
+            ciTemporary
+        );
+        var manager = new ConfigurationManager(fileSystem, YarnManifestPath);
+        Assert.True(manager.ValidatePlan(plan).IsValid);
+        ConfigurationPlanResult dryRun = await manager.DryRunAsync(
+            plan,
+            TestContext.Current.CancellationToken
+        );
+        Assert.Equal(ConfigurationPlanOperation.DryRun, dryRun.Operation);
+        Assert.False(fileSystem.Inner.FileExists(YarnManifestPath));
+
+        fileSystem.ResolvedPath = RepositoryTarget;
+
+        InvalidOperationException exception =
+            await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+                await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+            );
+
+        Assert.Contains("Repository-local Yarn", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("opaque-test-value", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(UnrelatedSafeYaml, fileSystem.Inner.ReadAllText(SafeTarget));
+        Assert.Equal(
+            UnrelatedRepositoryYaml,
+            fileSystem.Inner.ReadAllText(RepositoryTarget)
+        );
+        Assert.False(fileSystem.Inner.FileExists(YarnManifestPath));
+        Assert.False(fileSystem.Inner.FileExists(fileSystem.LinkPath));
+        if (ciTemporary)
+        {
+            Assert.Equal("preserve", fileSystem.Inner.ReadAllText(ContainerSentinel));
+        }
+    }
+
+    [Fact]
+    public async Task YarnCredentialWriteRevalidatesFinalLinkBindingBeforeMutation()
+    {
+        const string LinkPath = "/links/user.yarnrc.yml";
+        const string FirstTarget = "/safe/first.yarnrc.yml";
+        const string SecondTarget = "/safe/second.yarnrc.yml";
+        const string YarnManifestPath = "/state/yarn-ownership.json";
+        const string FirstYaml = "nodeLinker: node-modules\n";
+        const string SecondYaml = "enableScripts: false\n";
+        var fileSystem = new RetargetableLinkFileSystem(LinkPath, FirstTarget);
+        CreateDirectoryTree(fileSystem.Inner, "/safe");
+        CreateDirectoryTree(fileSystem.Inner, "/declarations");
+        CreateDirectoryTree(fileSystem.Inner, "/workspace");
+        fileSystem.Inner.WriteAllText(FirstTarget, FirstYaml);
+        fileSystem.Inner.WriteAllText(SecondTarget, SecondYaml);
+        ConfigurationChangePlan plan = CreateYarnPlan(
+            fileSystem,
+            ConfigurationChangeOperation.Set,
+            ciTemporary: false
+        );
+        var manager = new ConfigurationManager(fileSystem, YarnManifestPath);
+        await manager.DryRunAsync(plan, TestContext.Current.CancellationToken);
+        fileSystem.SetResolutionSequence(FirstTarget, FirstTarget, SecondTarget);
+
+        IOException exception = await Assert.ThrowsAsync<IOException>(async () =>
+            await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains(
+            "link changed while it was being updated",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain("opaque-test-value", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(3, fileSystem.SequenceResolutionCount);
+        Assert.Equal(FirstYaml, fileSystem.Inner.ReadAllText(FirstTarget));
+        Assert.Equal(SecondYaml, fileSystem.Inner.ReadAllText(SecondTarget));
+    }
 
     [Fact]
     public void ValidatePlanRejectsRelativeFilesystemTargets()
@@ -539,6 +649,58 @@ public sealed class ConfigurationManagerTests
         );
     }
 
+    private static ConfigurationChangePlan CreateYarnPlan(
+        RetargetableLinkFileSystem fileSystem,
+        ConfigurationChangeOperation operation,
+        bool ciTemporary
+    )
+    {
+        fileSystem.Inner.WriteAllText(
+            "/workspace/.yarnrc.yml",
+            "npmRegistryServer: https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
+        );
+        var service = new YarnPhase13VerticalSliceService(
+            new YarnPhase13VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/declarations",
+            }
+        );
+        var request = new YarnPhase13CredentialPlanRequest
+        {
+            Declaration = Assert.Single(service.DiscoverRegistryDeclarations()),
+            AuthToken = "opaque-test-value",
+            TargetYarnrcPath = ciTemporary ? null : fileSystem.LinkPath,
+            TemporaryHomePath = ciTemporary ? "/ci/home" : null,
+        };
+        ConfigurationChangePlan plan = ciTemporary
+            ? service.CreateCiTemporaryCredentialPlan(request)
+            : service.CreateUserCredentialPlan(request);
+        return operation == ConfigurationChangeOperation.Set
+            ? plan
+            : plan with
+            {
+                PlanId = plan.PlanId + "-refresh",
+                Changes = plan
+                    .Changes.Select(change => change with { Operation = operation })
+                    .ToArray(),
+            };
+    }
+
+    private static void CreateDirectoryTree(InMemoryFileSystem fileSystem, string path)
+    {
+        string current = string.Empty;
+        foreach (string segment in path.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            current += "/" + segment;
+            if (!fileSystem.DirectoryExists(current))
+            {
+                fileSystem.CreateDirectory(current);
+            }
+        }
+    }
+
     private static void InjectReplacementFailure(
         InMemoryFileSystem fileSystem,
         ReplacementFailurePoint failurePoint
@@ -630,5 +792,101 @@ public sealed class ConfigurationManagerTests
         OwnershipIntent,
         ApplyTarget,
         FinalOwnership,
+    }
+}
+
+internal sealed class RetargetableLinkFileSystem(
+    string linkPath,
+    string initialResolvedPath
+) : IFileSystem, IFileSystemLinkResolver
+{
+    private readonly Queue<string> resolutionSequence = [];
+
+    public InMemoryFileSystem Inner { get; } =
+        new(InMemoryPathSemantics.Posix);
+
+    public string LinkPath { get; } = linkPath;
+
+    public string ResolvedPath { get; set; } = initialResolvedPath;
+
+    public int SequenceResolutionCount { get; private set; }
+
+    public void SetResolutionSequence(params string[] paths)
+    {
+        resolutionSequence.Clear();
+        foreach (string path in paths)
+        {
+            resolutionSequence.Enqueue(path);
+        }
+        SequenceResolutionCount = 0;
+    }
+
+    public bool FileExists(string path) => Inner.FileExists(path);
+
+    public bool IsExecutableFile(string path) => Inner.IsExecutableFile(path);
+
+    public bool DirectoryExists(string path) => Inner.DirectoryExists(path);
+
+    public string GetFullPath(string path) => Inner.GetFullPath(path);
+
+    public bool IsPathFullyQualified(string path) => Inner.IsPathFullyQualified(path);
+
+    public string ReadAllText(string path, Encoding? encoding = null) =>
+        Inner.ReadAllText(path, encoding);
+
+    public byte[] ReadAllBytes(string path) => Inner.ReadAllBytes(path);
+
+    public long GetFileLength(string path) => Inner.GetFileLength(path);
+
+    public void WriteAllText(string path, string contents, Encoding? encoding = null) =>
+        Inner.WriteAllText(path, contents, encoding);
+
+    public void AtomicWriteAllText(
+        string path,
+        string contents,
+        Encoding? encoding = null,
+        AtomicWriteOptions options = AtomicWriteOptions.None
+    ) => Inner.AtomicWriteAllText(path, contents, encoding, options);
+
+    public void AtomicWriteAllBytes(
+        string path,
+        byte[] contents,
+        AtomicWriteOptions options = AtomicWriteOptions.None
+    ) => Inner.AtomicWriteAllBytes(path, contents, options);
+
+    public UnixFileMode GetUnixFileMode(string path) => Inner.GetUnixFileMode(path);
+
+    public void SetUnixFileMode(string path, UnixFileMode mode) =>
+        Inner.SetUnixFileMode(path, mode);
+
+    public void CreateDirectory(string path) => Inner.CreateDirectory(path);
+
+    public void DeleteFile(string path) => Inner.DeleteFile(path);
+
+    public void DeleteDirectory(string path, bool recursive = false) =>
+        Inner.DeleteDirectory(path, recursive);
+
+    public IEnumerable<string> EnumerateFiles(
+        string path,
+        string searchPattern = "*",
+        SearchOption searchOption = SearchOption.TopDirectoryOnly
+    ) => Inner.EnumerateFiles(path, searchPattern, searchOption);
+
+    public IEnumerable<string> EnumerateDirectories(
+        string path,
+        string searchPattern = "*",
+        SearchOption searchOption = SearchOption.TopDirectoryOnly
+    ) => Inner.EnumerateDirectories(path, searchPattern, searchOption);
+
+    string IFileSystemLinkResolver.ResolveFilePathForWrite(string path)
+    {
+        Assert.Equal(LinkPath, path);
+        if (resolutionSequence.Count == 0)
+        {
+            return ResolvedPath;
+        }
+
+        SequenceResolutionCount++;
+        return resolutionSequence.Dequeue();
     }
 }

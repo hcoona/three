@@ -25,6 +25,7 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
         cancellationToken.ThrowIfCancellationRequested();
         ValidateRequest(request);
         YarnDocument document = ReadDocument(GetTargetPath(request));
+        EnforceCredentialTargetPolicy(request, document.WritePath);
         _ = Apply(document, request, mutate: false);
     }
 
@@ -37,6 +38,7 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
         ValidateRequest(request);
         string targetPath = GetTargetPath(request);
         YarnDocument document = ReadDocument(targetPath);
+        EnforceCredentialTargetPolicy(request, document.WritePath);
         string original = document.Text;
         string updated = Apply(document, request, mutate: true);
         bool containsSecret = request.Changes.Any(change => change.IsSecretValue);
@@ -269,9 +271,24 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
     }
 
     private string ResolveWritePath(string targetPath) =>
-        fileSystem is IFileSystemLinkResolver linkResolver
-            ? linkResolver.ResolveFilePathForWrite(targetPath)
-            : targetPath;
+        YarnCredentialTargetPolicy.ResolveAuthoritativeWritePath(fileSystem, targetPath);
+
+    private void EnforceCredentialTargetPolicy(
+        ConfigurationPhysicalTargetWriterRequest request,
+        string authoritativeWritePath
+    )
+    {
+        if (
+            request.PlanOperation != ConfigurationPlanOperation.Remove
+            && request.Changes.Any(change => change.IsSecretValue)
+        )
+        {
+            YarnCredentialTargetPolicy.ThrowIfRepositoryLocal(
+                fileSystem,
+                authoritativeWritePath
+            );
+        }
+    }
 
     private void RevalidateWritePath(string targetPath, string writePath)
     {

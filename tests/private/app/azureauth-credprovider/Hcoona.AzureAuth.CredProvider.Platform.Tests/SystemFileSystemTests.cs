@@ -6,6 +6,8 @@ namespace Hcoona.AzureAuth.CredProvider.Platform.Tests;
 
 public sealed class SystemFileSystemTests
 {
+    private static readonly Lazy<bool> DirectorySymbolicLinkCapability =
+        new(ProbeDirectorySymbolicLinkCapability);
     private static readonly Encoding Utf8NoBom = new UTF8Encoding(false, true);
 
     [Fact]
@@ -279,6 +281,103 @@ public sealed class SystemFileSystemTests
         }
     }
 
+    [Fact(
+        Skip = "Directory symbolic-link creation is unavailable.",
+        SkipUnless = nameof(CanCreateDirectorySymbolicLinks)
+    )]
+    public void ResolveFilePathForWriteFullyCanonicalizesChainedAncestorLinksAndKeepsMissingFileName()
+    {
+        string root = CreateTestDirectory();
+        string physical = Path.Combine(root, "physical");
+        string physicalConfig = Path.Combine(physical, "deep", "config");
+        string innerLink = Path.Combine(root, "inner-link");
+        string outerLink = Path.Combine(root, "outer-link");
+        const string MissingFileName = "not-created.yarnrc.yml";
+
+        try
+        {
+            Directory.CreateDirectory(physicalConfig);
+            Directory.CreateSymbolicLink(innerLink, physical);
+            Directory.CreateSymbolicLink(outerLink, Path.Combine(innerLink, "deep"));
+
+            DirectoryInfo intermediate = Assert.IsType<DirectoryInfo>(
+                new DirectoryInfo(outerLink).ResolveLinkTarget(returnFinalTarget: true)
+            );
+            Assert.Equal(Path.Combine(innerLink, "deep"), intermediate.FullName);
+
+            string resolved = ((IFileSystemLinkResolver)new SystemFileSystem())
+                .ResolveFilePathForWrite(
+                    Path.Combine(outerLink, "config", MissingFileName)
+                );
+
+            Assert.Equal(Path.Combine(physicalConfig, MissingFileName), resolved);
+            Assert.Equal(MissingFileName, Path.GetFileName(resolved));
+            Assert.False(File.Exists(resolved));
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(root);
+        }
+    }
+
+    [Fact(
+        Skip = "Directory symbolic-link creation is unavailable.",
+        SkipUnless = nameof(CanCreateDirectorySymbolicLinks)
+    )]
+    public void ResolveFilePathForWriteRejectsAncestorLinkCycle()
+    {
+        string root = CreateTestDirectory();
+        string firstLink = Path.Combine(root, "first-link");
+        string secondLink = Path.Combine(root, "second-link");
+        string requestedPath = Path.Combine(firstLink, "not-created.yml");
+
+        try
+        {
+            Directory.CreateSymbolicLink(firstLink, secondLink);
+            Directory.CreateSymbolicLink(secondLink, firstLink);
+
+            IOException exception = Assert.Throws<IOException>(() =>
+                ((IFileSystemLinkResolver)new SystemFileSystem())
+                    .ResolveFilePathForWrite(requestedPath)
+            );
+
+            Assert.False(string.IsNullOrWhiteSpace(exception.Message));
+            Assert.False(File.Exists(requestedPath));
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(root);
+        }
+    }
+
+    [Fact(
+        Skip = "Windows directory-link creation is unavailable.",
+        SkipUnless = nameof(CanCreateWindowsDirectoryLinks)
+    )]
+    public void ResolveFilePathForWriteCanonicalizesWindowsDirectoryLink()
+    {
+        string root = CreateTestDirectory();
+        string physical = Path.Combine(root, "physical", "config");
+        string link = Path.Combine(root, "linked-config");
+        const string MissingFileName = "not-created.yml";
+
+        try
+        {
+            Directory.CreateDirectory(physical);
+            Directory.CreateSymbolicLink(link, physical);
+
+            string resolved = ((IFileSystemLinkResolver)new SystemFileSystem())
+                .ResolveFilePathForWrite(Path.Combine(link, MissingFileName));
+
+            Assert.Equal(Path.Combine(physical, MissingFileName), resolved);
+            Assert.False(File.Exists(resolved));
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(root);
+        }
+    }
+
     [Fact]
     public void MutationLockSerializesCooperativeUsers()
     {
@@ -297,6 +396,12 @@ public sealed class SystemFileSystemTests
             DeleteDirectoryIfExists(root);
         }
     }
+
+    public static bool CanCreateDirectorySymbolicLinks =>
+        DirectorySymbolicLinkCapability.Value;
+
+    public static bool CanCreateWindowsDirectoryLinks =>
+        OperatingSystem.IsWindows() && CanCreateDirectorySymbolicLinks;
 
     public static bool IsWindows => OperatingSystem.IsWindows();
 
@@ -337,6 +442,22 @@ public sealed class SystemFileSystemTests
         catch (IOException) when (OperatingSystem.IsWindows())
         {
             return false;
+        }
+    }
+
+    private static bool ProbeDirectorySymbolicLinkCapability()
+    {
+        string root = CreateTestDirectory();
+        string target = Path.Combine(root, "target");
+        string link = Path.Combine(root, "link");
+        try
+        {
+            Directory.CreateDirectory(target);
+            return TryCreateDirectorySymbolicLink(link, target);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(root);
         }
     }
 }
