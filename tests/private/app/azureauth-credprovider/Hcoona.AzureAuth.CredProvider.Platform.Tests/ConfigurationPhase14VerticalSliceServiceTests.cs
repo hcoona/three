@@ -4030,7 +4030,11 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
                 );
         string configuredTargetPath =
             ecosystem == CredentialEcosystem.Yarn
-                ? Path.Combine(service.Paths.YarnCiTemporaryHomePath, ".yarnrc.yml")
+                ? FileSystemPathSemantics.Combine(
+                    fileSystem,
+                    service.Paths.YarnCiTemporaryHomePath,
+                    ".yarnrc.yml"
+                )
                 : GetNpmCompatibleCiTargetPath(service, ecosystem);
         string manifestPath =
             ecosystem == CredentialEcosystem.Yarn
