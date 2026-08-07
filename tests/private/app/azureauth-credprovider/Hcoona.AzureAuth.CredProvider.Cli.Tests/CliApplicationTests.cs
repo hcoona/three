@@ -7663,10 +7663,7 @@ public sealed class CliApplicationTests
     }
 
 #pragma warning disable CA1707, CA1861
-    [Fact(
-        Skip = "POSIX Python keyring shim doctor behavior is unsupported on Windows.",
-        SkipWhen = nameof(IsWindows)
-    )]
+    [Fact]
     public void HandleDoctor_RendersGenericBackendHelperShimAndFirstPathRows()
     {
         using var pythonFixture = new PythonDoctorFixture(PythonDoctorFixtureMode.Healthy);
@@ -7690,9 +7687,22 @@ public sealed class CliApplicationTests
             "python-azureauth-keyring-backend-probe",
             "healthy"
         );
-        AssertDoctorCheck(doctor.StdOut, "python-azureauth-keyring-helper", "pass");
-        AssertDoctorCheck(doctor.StdOut, "python-keyring-shim-exists", "pass");
-        AssertDoctorCheck(doctor.StdOut, "python-keyring-shim-first-on-path", "pass");
+        string platformSpecificStatus = OperatingSystem.IsWindows() ? "N/A" : "pass";
+        AssertDoctorCheck(
+            doctor.StdOut,
+            "python-azureauth-keyring-helper",
+            platformSpecificStatus
+        );
+        AssertDoctorCheck(
+            doctor.StdOut,
+            "python-keyring-shim-exists",
+            platformSpecificStatus
+        );
+        AssertDoctorCheck(
+            doctor.StdOut,
+            "python-keyring-shim-first-on-path",
+            platformSpecificStatus
+        );
         AssertDoctorCheck(doctor.StdOut, "doctor-aggregation", "pass");
         Assert.Equal(string.Empty, doctor.StdErr);
     }
