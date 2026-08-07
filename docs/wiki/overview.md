@@ -51,26 +51,150 @@ for new v3 implementation work.
 - Required obligations feed the authoritative CI Finalizer. Advisory
   obligations use a separate non-authoritative Reporter and do not delay the
   stable required check.
-- Release starts only through manual dispatch on the exact target ref. One
+- Release starts only through manual dispatch on the exact target ref. A
+  candidate run branches to live Release or separately namespaced,
+  request-scoped simulation before live identity lookup or admission. One
   channel-specific Release Execution contains append-only whole-release
-  Attempts, while dry-run remains a separate simulation.
+  Attempts; simulation has no live identity, authorization, capability,
+  Receipt, or mutation. Separate requests
+  retain separate request and Intent records. Each admitted, non-coalesced
+  request for the same Release Execution Identity creates a distinct Attempt; a
+  replaced pending dispatch creates none. Official Product Identity is channel,
+  Release Unit, and canonical NBGV version; Official Execution Identity adds
+  target. Buddy Execution Identity is channel, Release Unit, and target.
+  Different targets create separate Executions even when destination
+  projections are the same. No permanent Product Identity-to-target ledger is
+  required; destination resource serialization and durable observation
+  determine absent, exact, or conflict.
+- Each live or simulation run attempt compiles exactly one same-revision,
+  purpose-bound request-local Repository Model Snapshot and reuses it throughout
+  the resulting Attempt or simulation pass. A replay or other new run attempt
+  compiles a new Snapshot even when request identity, run ID, and target remain.
+  Simulation Identity is derived only after its Snapshot validates;
+  cross-purpose and prior-attempt artifacts are rejected. Actual live mutation
+  actions, inputs, and complete key sets are frozen only in the Publication
+  Snapshot after build, qualification, and observation.
+- Capability groups require an Authorization Record created after successful
+  approval. The first-slice GitHub rejection surface cannot produce
+  attempt-bound Approval Outcome Evidence, so rejection is unknown, replayable
+  incomplete, and non-authorizing. Cancellation or
+  platform expiry while approval is pending may terminate the run before a
+  separate record or Finalizer outcome; when no capability group started, the
+  platform conclusion proves no side effect and leaves a replayable incomplete
+  Attempt, while possible capability execution requires reobservation.
+- Qualification only declares Capability requirements. Destination Capability
+  in the normal v3 live path may be requested only by an authorized side-effect
+  capability group after it validates the Authorization Record and exact
+  Publication Snapshot/action bindings.
 - Every Release builds the complete Release Unit variant set. Buddy and Official
   differ by identity and complete destination projections, not product subsets.
 - Publication uses one channel approval followed by parallel independent,
   destination-specific capability groups. Actions retain separate Receipts and
   projection-internal partial state requires reconciliation.
-- GitHub concurrency provides best-effort execution serialization and duplicate
-  coalescing; it is not a distributed lock or correctness authority.
+- GitHub concurrency coalesces duplicate requests by complete Release Execution
+  Identity. Every live Destination Adapter mutating action binds complete
+  deterministic resource keys, and overlapping actions serialize. Package keys
+  include the exact External Package Coordinate: channel, destination, package,
+  and version, plus any additional Adapter-required keys. GitHub equality groups
+  may conservatively over-serialize; the first-slice GitHub Packages group uses
+  physical destination plus npm package name while preserving the full
+  coordinate-plus-tag key set. Distinct Buddy or Official Releases never join
+  one Execution merely because they claim the same resource.
 - Release uses one logical Plan lineage with immutable Qualification and
   Publication snapshots.
-- Buddy is an isolated distributable preview channel. Official is canonical,
-  authoritative publication.
+- Buddy is an isolated distributable preview channel. For npm it uses the
+  frozen native NBGV `npmPackageVersion` unchanged; isolation from Official
+  comes from the complete channel, destination, package-coordinate, and
+  Capability boundary rather than an Intent-derived version.
+- The first live Buddy GitHub Packages slice is a bounded risk exception
+  reconfirmed before LLD on 2026-08-06. Any same-repository selected ref supplies
+  the complete same-revision workflow, Planner, Finalizer, Provider, Adapter,
+  compiler, client, catalog, capability-declaration, and publisher stack without
+  owner-reviewed eligibility. After exact Publication Snapshot creation, the
+  normal path uses dedicated Buddy Environment approval, keeps workflow-level
+  permissions empty or read-only, and declares `packages: write` only on the
+  `run-live-attempt` `uses`-only caller job as the reusable-workflow ceiling and
+  on the called Environment-referencing publisher job as effective capability.
+  `evaluate-live-eligibility` receives only `contents: read`; effective
+  `actions: read` is confined to history admission and explicit
+  `packages: read` to the observer. Every other job remains explicitly
+  least-privilege, the callee cannot elevate beyond the caller-job ceiling, and
+  no PAT or `id-token: write` exists. Every repository Write/Maintain/Admin actor
+  is inside the slice publisher TCB and can bypass the normal path with
+  alternate workflow YAML; Environment is a mistake/process control, not a
+  malicious-writer permission ceiling. The disposable package, isolated
+  destination, minimum normal-flow access, reviewer detail, no-consumer rule,
+  forbidden ordinary admin actions, and Break-Glass path bound accepted risk.
+  An untrusted Write/Maintain/Admin actor blocks the slice until that actor's
+  access is reduced below those roles or an independently enforced publisher
+  boundary makes package-write Capability and destination access unavailable to
+  writer-authored workflows; ref and workflow restrictions alone are
+  insufficient remediation. Official and future Buddy destinations do not
+  inherit the exception, and neither do production packages.
+- The first brief
+  [`hcoona-release-smoke-npm` LLD](./analyses/workflow-delivery/v3/hcoona-release-smoke-npm-lld.md)
+  was approved for implementation on 2026-08-06. It defines the clean v3 module
+  and workflow topology, shadow pull-request and manual `slice-validation` CI,
+  caller-held Release Execution concurrency and reusable-workflow permission
+  ceilings, strict record and capability-group bundle bindings, separate npm
+  tarball-content/install-import Evidence, immutable reviewer-summary linkage,
+  truthful cancellation/expiry handling, strict history-only Execution
+  admission, ID-only artifact transport, exact path-triggered root-HK v3 tests,
+  credential-free capability admission, diagnostic-only GitHub rejection,
+  caller-selected current/history admission including same-run prior-attempt
+  diagnostics, full-SHA action pins with the
+  current Renovate-selected Node-24-compatible major, isolated frozen-version
+  npm staging that updates and verifies the staged manifest `files` allowlist,
+  exact packed-tarball witness-path/content checks, SHA-512 remote exact proof,
+  explicit target-specific npm dist-tag projection, 45-day Release
+  retention, exact-target current-attempt Live Eligibility Decisions,
+  fixed-source protected-ref human TCB/access attestations with exact
+  `hcoona/three`/`refs/heads/main`/path policy fields, required boolean
+  `live_enabled`, `contents: read` fresh-source validation, and bounded
+  operational staleness, immediate pre-Capability
+  provenance/content freshness revalidation with new-Attempt recovery,
+  workflow-run-unique physical artifact names across reruns, platform-aware
+  history, complete CODEOWNERS triggers and exact final-match ownership for the
+  protected Governance document, permanent consumer policy and
+  Governance re-attestation, legacy Buddy test/topology cleanup, direct
+  repository-wide removal, disablement, and draining of both legacy Buddy
+  identities before a removable protected acceptance bootstrap with independent
+  `github.run_attempt == 1` probe guards, first-attempt terminal evidence capture
+  that survives dependency failure and classifies ambiguous mutation state for
+  reconciliation, and new-coordinate retry,
+  exact-target full-history/tag NBGV checkout with shallow-history rejection,
+  first-slice policy authoring, acceptance plan, and reviewable implementation
+  sequence. Failed acceptance leaves all Buddy publication disabled. No legacy
+  Buddy compatibility remains;
+  former projects are unsupported until migrated, while v1 Official and CI
+  assets remain unchanged. Legacy Buddy workflows, Buddy-specific tests and
+  matrices, and Buddy docs are excluded from that preservation and are retired
+  or rewritten. No coding or activation is authorized yet.
+- Repository Model compilation emits authoritative target-bound canonical and
+  native NBGV projections after the NBGV Provider remains pinned to the exact
+  target and proves complete ancestry and tags through `fetch-depth: 0` or an
+  equivalent guarantee. Shallow or incomplete history blocks compilation. CI
+  and Release Plans and Build Requests freeze the exact required value; Build
+  Adapters apply and verify it without NBGV recomputation, alternative
+  derivation, or fallback. Official business identity uses the canonical NBGV
+  version, while ecosystem publication and dry-run use the exact frozen native
+  projection unchanged.
 - Release retry uses whole-release replay and normal pre-side-effect
   Remote-State Observation.
-- Break-Glass Remediation is independently authorized and append-only.
+- Break-Glass Remediation is independently authorized and append-only and
+  reuses exactly the original action's complete frozen Adapter-declared
+  resource-key set.
 - Platform-native retention is used without assuming a permanent Release ledger.
+- An absent registry coordinate is legitimate initial-publication state and
+  requires no retained Intent lineage, tag witness, or binding index. Live
+  publication depends on atomic non-overwriting creation and durable exact-state
+  observation from the destination.
 - The first vertical slice is `hcoona-release-smoke-npm`: CI Qualification,
   live Buddy publication to GitHub Packages, and Official npmjs dry-run.
+- The Release MLD identity decision was reopened and reconfirmed before LLD on
+  2026-08-05.
+- The first-slice Buddy trust-risk exception was reopened and reconfirmed before
+  LLD on 2026-08-06.
 
 ## Implementation Direction
 
@@ -83,8 +207,10 @@ v3 will be built on a clean implementation line.
   plans for v3.
 - Start with one end-to-end vertical slice before expanding across ecosystems
   and destinations.
-- Keep v1 as the production compatibility baseline until v3 governance and
-  workflow identities are ready for atomic activation.
+- Keep v1 Official and CI as the production compatibility baseline. The
+  first-slice direct cutover removes, disables, and drains legacy Buddy before
+  acceptance; an intentional Buddy outage is allowed, and failed acceptance
+  leaves Buddy publication disabled rather than restoring v1 Buddy.
 
 Parallel implementation is acceptable. Parallel authoritative CI decisions or
 parallel live publishers are not.

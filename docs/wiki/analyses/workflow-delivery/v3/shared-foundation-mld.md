@@ -137,8 +137,12 @@ Record Primitives provide:
 
 - deterministic canonicalization;
 - content digest computation;
+- deterministic canonicalization and digesting of context-owned platform
+  serialization projections without defining their fields or concurrency
+  semantics;
 - strict parsing and unknown-field rejection;
 - immutable identity value types;
+- explicit context and purpose discriminators covered by identity and digest;
 - Git target, workflow run, attempt, job, and producer bindings;
 - definition, request, Plan, artifact, and result digest bindings;
 - timestamp and diagnostic-reference primitives; and
@@ -147,8 +151,34 @@ Record Primitives provide:
 They do not define one universal record envelope.
 
 CI Plan, CI Evidence, CI Decision, Release Snapshots, Release Evidence,
-Authorization Record, Observation Record, Receipt, Attempt Outcome,
-Reconciliation Record, and Remediation Record remain context-owned schemas.
+Authorization Record, Approval Outcome Evidence, Observation Record, Receipt,
+Attempt Outcome, Execution History Admission Snapshot, Reconciliation Record,
+and Remediation Record remain context-owned schemas.
+
+Foundation may provide strict primitives for admitting GitHub run/job
+conclusions and phase-state bindings. Release owns whether those facts prove
+pre-capability no-side-effect termination, indicate possible mutation, or
+require a context-owned Approval Outcome Evidence record. Foundation does not
+promise that a canceled or expired platform run can execute a downstream
+Finalizer.
+
+Foundation admission helpers accept a trusted caller-selected mode; serialized
+payloads cannot choose it. `current-authority` mechanically verifies exact
+current purpose, request, run, run attempt, Attempt, target, producer, control,
+artifact, and digest bindings and rejects prior attempts. `execution-history`
+mechanically binds only platform-exposed artifact ID/digest, source workflow run
+ID, head SHA, payload integrity, and available artifact/run metadata. Jobs and
+Run API helpers separately return run-attempt, job, conclusion, and phase facts.
+The source may be another run or an earlier attempt of the current run; same-run
+history requires separately queried existence of that earlier attempt.
+Producer-job, exact-run-attempt, reusable-workflow, purpose, and control claims
+inside a historical payload remain diagnostic self-assertions. Release alone
+may invoke history mode during pre-Attempt admission and owns correlation to the
+same Execution/live purpose/target, the history-only Snapshot, and the
+prohibition against satisfying current authority. Foundation does not claim
+strict historical workflow/attempt provenance without separately approved
+Artifact Attestations or OIDC; the first slice enables no `id-token`.
+The helpers never manufacture an artifact-to-attempt or artifact-to-job edge.
 
 ### Artifact and Provenance Primitives
 
@@ -165,8 +195,36 @@ Artifact primitives define:
 - internal provenance; and
 - artifact-set manifests.
 
+For package formats that require durable target attribution, Foundation may
+provide canonical target-witness encoding and parsing. The first-slice npm
+witness is `workflow-delivery/provenance.json` inside the tarball and binds
+target, Release Unit, canonical/native version facts, Build Definition,
+catalog/control digests, purpose, and schema while excluding run/Attempt IDs.
+Release and Build/Quality Adapters own when that witness is required and how it
+affects exact-state classification.
+
 The primitives do not decide whether an artifact is admissible for CI or
 Release.
+
+Actions artifact helpers treat names as non-authoritative metadata. Uploads use
+deterministic names unique across the complete workflow run and disable
+overwrite. Every physical name incorporates `github.run_attempt` directly or in
+the deterministic hash preimage. Helpers return artifact ID, digest, and URL.
+Downloads require an explicit ID and expose name, producer, run ID, run attempt,
+and digest for context-owned admission. They provide no name fallback or
+latest-artifact selection.
+
+Foundation also provides generic fixed-source freshness primitives for
+context-owned Governance checks. Given immutable repository, fully qualified
+ref, and path fields, the GitHub client verifies ref protection, resolves the
+ref, reads the blob, canonicalizes content, and returns resolved commit, blob
+OID, content digest, and observation time. A read-only live-state helper returns
+the current configured value without treating an earlier workflow-context value
+as fresh. Comparison helpers detect changed source fields, provenance, content,
+schema/binding validation facts, or expiry. Release owns the decision to block,
+require a new Attempt, and compare against a Live Eligibility Decision;
+Foundation creates no Governance authority, credential, service, or
+malicious-writer boundary.
 
 ### Repository Model Mechanisms
 
@@ -228,6 +286,12 @@ Execution primitives provide:
 They do not create jobs, Environments, permissions, credentials, matrices, or
 concurrency groups.
 
+When Release Delivery supplies a closed platform serialization projection,
+Foundation may canonicalize and digest that payload and validate exact
+round-trip binding. Foundation does not choose the projection, decide whether
+it safely covers mutable-resource overlap, or treat its digest as a substitute
+for the context-owned complete resource-key set.
+
 ## Shared Record Boundary
 
 ### No Universal Record Envelope
@@ -240,11 +304,17 @@ lifecycle semantics. For example:
 
 - CI Evidence belongs to one candidate and obligation;
 - Release Evidence belongs to one Release Attempt and obligation;
-- an Observation Record binds one Publication Snapshot and projection; and
+- an Observation Record binds one Release Attempt, logical projection,
+  immutable desired-state basis, and canonical remote response and observed
+  facts; and
 - a Receipt proves one authorized Release action.
 
 Shared value types and binding helpers prevent accidental inconsistency without
 claiming that these records are one domain type.
+
+An Observation Record cannot bind a future Publication Snapshot. Release later
+admits the Record and seals it, the resulting desired state, and any materialized
+actions into the Publication Snapshot.
 
 ### Strict Validation
 
@@ -256,6 +326,8 @@ Every Foundation parser or admission helper:
 - validates canonical encodings before digest comparison;
 - validates all required target, producer, definition, request, and artifact
   bindings;
+- rejects a record whose context or purpose discriminator does not match the
+  admitting execution, including live Release versus release simulation;
 - rejects conflicting duplicate records; and
 - returns a typed mechanical failure rather than silently defaulting.
 
@@ -453,8 +525,16 @@ It must run in an unprivileged discovery job that:
 - has no destination secret;
 - cannot write protected repository state;
 - receives the exact target;
-- receives a closed Provider request; and
+- receives a closed Provider request bound to request identity, explicit
+  purpose, `github.run_id` and `github.run_attempt`, target, producer, and control
+  identities; and
 - emits an immutable target-bound Fact Bundle wrapping its Provider Result.
+
+When a target-evaluating Provider owns NBGV facts whose version height depends
+on Git history, it must materialize the exact target with complete ancestry and
+tags, equivalent to `fetch-depth: 0`, verify that the checkout remains pinned to
+the exact target, and fail before NBGV invocation if the repository is shallow,
+required tags or ancestry are incomplete, or the guarantee cannot be proved.
 
 The authoritative Repository Model Compiler consumes the Fact Bundle only after
 strict admission.
@@ -464,12 +544,18 @@ strict admission.
 A Fact Bundle binds:
 
 - complete Provider Result payload and digest;
-- producer job and workflow attempt;
+- authoritative target-bound canonical and native NBGV projection facts when
+  the wrapped Provider Result owns version resolution;
+- request identity, explicit purpose, `github.run_id` and `github.run_attempt`,
+  target, producer job, and control identity;
 - request artifact and digest;
 - immutable transport identity; and
 - Fact Bundle digest.
 
 A Fact Bundle does not contain CI or Release policy.
+Strict admission requires its run-attempt binding to equal the current
+`github.run_attempt`; a prior-attempt Bundle is invalid even when its request
+identity, `github.run_id`, and target match.
 
 ### Provider Determinism
 
@@ -518,6 +604,10 @@ It consumes:
 
 It emits one immutable Repository Model Snapshot containing:
 
+- exact target, compilation purpose, caller request identity,
+  `github.run_id`, `github.run_attempt`, producer, and control bindings;
+- caller-selected channel and Release Unit binding when required by Release
+  simulation purpose;
 - Project Nodes;
 - dependency and reverse-dependency facts;
 - path ownership and global-input facts;
@@ -525,9 +615,32 @@ It emits one immutable Repository Model Snapshot containing:
 - Release Units and artifact variants;
 - Build Definition references;
 - build and declared-input closures;
-- NBGV canonical version facts;
+- target-bound NBGV canonical facts and required native ecosystem projections;
 - reverse indexes; and
 - explicit unresolved or conflicting model facts.
+
+Canonical Repository Model Snapshot serialization and its digest cover every
+binding above, including request identity, `github.run_id`,
+`github.run_attempt`, target, producer, and control identity.
+
+A ready Snapshot closes descriptor loading, Project Nodes and dependency graph,
+Build Definitions, modeled variants and outputs, canonical and required native
+NBGV facts, including `npmPackageVersion` where required, and complete build and
+artifact scope. The compiler emits blocking state rather than a partial ready
+Snapshot when any of those facts is missing, unknown, or conflicting.
+
+For each Release candidate run attempt, the live-release or release-simulation
+caller compiles exactly one authoritative Snapshot for its purpose and reuses it
+throughout the resulting live Attempt or simulation pass. A new
+`github.run_attempt` compiles a new Snapshot even when request identity,
+`github.run_id`, and target remain unchanged. Shared transport schemas may be
+reused across these purposes only when the purpose discriminator is explicit
+and digest-bound; admission rejects the other purpose.
+
+For simulation, the Repository Model Snapshot binds validated purpose, request,
+run, target, channel, Release Unit, version facts, producer, and control inputs;
+it does not bind a future Simulation Identity. Release derives that Identity
+only after Snapshot validation, and later simulation records may bind both.
 
 ### Provider Request Manifest
 
@@ -537,6 +650,9 @@ coordinator closes one Provider Request Manifest.
 The manifest binds:
 
 - exact target;
+- caller request identity, purpose, `github.run_id`, `github.run_attempt`,
+  producer, and control identities;
+- caller-selected channel and Release Unit when required by simulation purpose;
 - static catalog digest;
 - every expected Provider logical and implementation identity;
 - execution mode;
@@ -563,8 +679,21 @@ The compiler validates structure and closure but does not:
 - choose destination projections; or
 - authorize execution.
 
-CI and Release independently consume the same compiled technical model for
-different business purposes.
+CI and Release use the same compiler and Snapshot contract but independently
+compile context-bound Snapshot instances. Each Release candidate run attempt
+branches to live Release or release simulation and compiles exactly one
+same-revision, request-local Snapshot for that purpose before live Execution
+lookup, coalescing, or admission. Compilation failure creates no Attempt. The
+resulting live Attempt or simulation pass reuses that Snapshot without a second
+compilation. Live planning validates channel-selected variants and obligations,
+selects and freezes native projections, and then derives and validates
+destination projections and coordinates, Adapter and version bindings, logical
+operations, potential action and dependency schemas, capability policy, and
+deterministic complete mutable-resource-key derivation and enforceability basis.
+Actual live actions, inputs, and complete action key sets materialize only after
+build, qualification, and observation and freeze in the Publication Snapshot. A
+new run attempt compiles a new Snapshot. Cross-purpose, other-request, and
+prior-attempt Snapshots are rejected.
 
 ## Adapter Model
 
@@ -595,7 +724,7 @@ A Build Adapter receives a closed Build Invocation containing:
 - Release Unit and artifact variant identity;
 - Build Definition Snapshot and digest;
 - Build Request digest;
-- canonical or projected version input;
+- exact selected authoritative native NBGV projection and source fact binding;
 - dimensions;
 - declared toolchain;
 - declared inputs;
@@ -617,6 +746,16 @@ It emits a Build Result containing:
 - diagnostic reference.
 
 The Adapter does not decide whether the output satisfies CI or Release.
+
+The Adapter applies and verifies the exact frozen projection from the Build
+Invocation. It must not invoke NBGV to recompute the value, derive a substitute
+from another version field, or fall back to a manifest or ambient build-system
+version.
+
+For Official, the canonical NBGV version remains an Official Product Identity
+binding and immutable target completes Release Execution Identity. The Build
+Invocation still carries the exact frozen native ecosystem projection used by
+publication or dry-run.
 
 ### Quality Adapter
 
@@ -666,6 +805,8 @@ Shared Foundation may provide generic clients for:
 
 - authenticated or anonymous HTTP;
 - GitHub API and CLI invocation;
+- complete REST pagination and GraphQL cursor traversal with recorded query
+  basis;
 - registry API invocation;
 - retryable transport;
 - response canonicalization;
@@ -676,6 +817,12 @@ Shared Foundation may provide generic clients for:
 Generic clients expose remote facts and responses. They do not classify a
 Release projection, plan a publication action, decide replay safety, or emit a
 Receipt.
+
+GitHub clients may expose workflow run `node_id`, run attempt, jobs,
+deployments, and deployment-review facts. Deployment Review data is raw
+diagnostic material, not authoritative current-attempt denial Evidence: it lacks
+documented `run_attempt`/job binding and no review-ID delta helper may manufacture
+that authority. Release owns any future exact admission contract.
 
 ## Invocation Model
 
@@ -734,7 +881,8 @@ Every Provider or Adapter declares one execution class.
 
 Initial classes are:
 
-- `authoritative-pure`: trusted control code with no target execution;
+- `authoritative-pure`: same-revision control code with no target project/build
+  execution; its governance trust eligibility is context-owned;
 - `unprivileged-target-evaluation`: target-influenced discovery;
 - `unprivileged-target-execution`: build or quality execution;
 - `read-only-remote-observation`: remote reads with minimal read capability;
@@ -744,6 +892,15 @@ Initial classes are:
 Foundation declares the class and minimum capability requirements. The calling
 context and Delivery Governance create the actual job, Environment,
 permissions, OIDC trust, and credential grant.
+
+Release Qualification may bind declared Capability requirements into its
+Snapshot, but it cannot request, approve, or create live Capability. Only an
+authorized side-effect capability group in the normal v3 flow may request
+destination Capability after a credential-free context-owned admission decision
+validates the Authorization Record and exact Snapshot, summary, action,
+artifact, resource-key, and group bindings. The credential-bearing invocation
+also revalidates them. The first-slice writer-TCB exception is context-owned and
+does not change Foundation contracts for other destinations.
 
 ### Capability Consumption
 
@@ -927,6 +1084,7 @@ Release still:
 
 A cache hit does not import:
 
+- a CI, simulation, other-request, or prior-Attempt Repository Model Snapshot;
 - CI Artifact Reference identity;
 - CI Evidence;
 - CI producer identity;
@@ -957,8 +1115,18 @@ Pure Providers must not cross into target execution.
 Target-evaluating Providers, Build Adapters, and Quality Adapters run only in
 unprivileged execution classes.
 
-No runtime that evaluates or executes target-controlled content receives
-publication capability.
+No runtime that evaluates or executes target-defined product/build content
+receives publication capability. The context-owned, explicitly accepted
+`hcoona-release-smoke-npm` live Buddy GitHub Packages exception runs
+target-revision control and publisher code after dedicated Environment
+approval, but does not execute target-defined product/build code in that
+side-effect invocation. That target-revision publisher remains a
+`privileged-side-effect` invocation and validates exact bindings by contract,
+but is not an independent adversarial boundary. Every repository writer is
+inside the slice publisher TCB and may author alternate write-capable workflow
+jobs; Environment approval governs the normal flow rather than imposing a
+malicious-writer permission ceiling. Foundation does not generalize this
+exception to Official or another Buddy destination.
 
 ### Boundary Validation
 
@@ -1002,6 +1170,8 @@ Foundation processing fails closed when:
 - a Definition or request is malformed;
 - canonicalization or digest verification fails;
 - a target, producer, request, artifact, or result binding mismatches;
+- a Provider Request, Fact Bundle, or Repository Model Snapshot does not match
+  the current `github.run_attempt`, including reuse from a prior run attempt;
 - a pure Provider attempts a target-evaluating operation;
 - a target-evaluating Provider lacks an unprivileged execution boundary;
 - a Provider Request Manifest is absent or changes after isolated discovery
@@ -1014,6 +1184,8 @@ Foundation processing fails closed when:
 - an Adapter emits missing, extra, or conflicting outputs;
 - artifact content differs from its manifest or provenance;
 - a context attempts to admit another context's artifact or result;
+- a live Release or release simulation attempts to admit a Snapshot, Fact
+  Bundle, artifact, or record from the other purpose;
 - an untrusted cache writer or incomplete cache provenance is offered to a
   higher-trust consumer;
 - a capability requirement cannot be satisfied;
@@ -1157,10 +1329,15 @@ Every Foundation implementation requires:
 
 - strict contract parsing tests;
 - canonicalization and digest golden tests;
+- opaque platform-serialization-projection canonicalization and binding tests
+  that preserve, rather than replace, context-owned complete resource-key sets;
 - Provider fixture tests;
 - target-binding and producer-binding negative tests;
 - Repository Model compilation scenarios;
+- Repository Model ready-versus-blocked completeness-gate tests;
 - Build Adapter artifact-manifest tests;
+- Build Adapter frozen-version-projection tests that reject recomputation,
+  alternative derivation, and fallback;
 - Quality Adapter result-shape tests;
 - context-isolation tests proving CI outputs cannot satisfy Release;
 - cache-disabled equivalence scenarios;
@@ -1179,19 +1356,63 @@ The first Shared Foundation LLD must define:
 
 - logical package and executable decomposition;
 - exact canonicalization and digest algorithm;
+- opaque context-owned platform-serialization-projection canonicalization,
+  digest, and exact-binding fixtures without Foundation-owned lock semantics;
 - strict value-type and binding schemas;
 - family-specific Invocation and Result schemas;
-- Fact Bundle and Repository Model Snapshot transport;
+- Fact Bundle and Repository Model Snapshot transport, including authoritative
+  target-bound canonical and native NBGV projections and explicit
+  `github.run_id` and `github.run_attempt` bindings;
+- Repository Model Snapshot purpose, request identity, run ID, run attempt,
+  producer, control, and target bindings, plus Release pre-admission
+  compilation, exactly-once per-run-attempt reuse, and replay-recompilation
+  tests;
 - static catalog registration syntax;
 - Provider execution-mode declaration;
 - Provider Result, Fact Bundle, and Provider Request Manifest schemas;
+- NBGV-owning Provider checkout contracts and control fixtures proving exact
+  target pinning, `fetch-depth: 0` or equivalent complete ancestry/tag
+  availability, and fail-closed rejection of shallow or incomplete history
+  before canonical or native NBGV facts are compiled;
 - exact mechanical outcome and diagnostic codes;
 - Artifact Reference, artifact-set manifest, and provenance schemas;
+- Actions artifact upload results and ID-only download contracts, deterministic
+  workflow-run-unique physical naming with `github.run_attempt` directly or in
+  the deterministic hash preimage, overwrite disabled, and rejection of
+  prior-attempt ID, name-fallback, and latest-selection behavior;
+- generic protected-ref fixed-source and live-state freshness helpers, including
+  exact repository/ref/path input binding, uncached repeated observation,
+  commit/blob/content provenance comparison, current-time expiry evaluation,
+  and change/disablement fixtures without context-owned admission policy;
+- caller-selected current-authority versus execution-history helpers,
+  platform-limited historical artifact/run attribution, separate Jobs/Run phase
+  facts, and negative tests proving self-asserted producer/attempt/workflow
+  claims never become authority;
+- canonical package target-witness encoding/parsing and npm fixture coverage
+  without run/Attempt identity;
 - cache-key construction and cache namespace policy;
 - implementation and catalog digest calculation;
 - batch compatibility-key calculation;
 - generic GitHub and registry client surfaces;
+- complete REST/GraphQL pagination and query-basis capture, workflow
+  run/node/job response fixtures, diagnostic-only deployment-review fixtures,
+  and malformed, 403/404, timeout, and truncation handling;
 - cross-revision contract version and compatibility rules;
 - process-boundary validation entry points;
-- contract-test harnesses and fixtures; and
+- contract-test harnesses and fixtures;
+- negative binding tests rejecting mismatched and prior-attempt Provider
+  Requests, Fact Bundles, and Repository Model Snapshots, plus replay tests
+  proving `Re-run all jobs` recompiles for the new `github.run_attempt` and
+  rejects prior-attempt artifacts;
+- purpose-discriminator schema and admission tests proving live Release and
+  simulation may reuse mechanical shapes only while rejecting every
+  cross-purpose Snapshot, Fact Bundle, artifact, and record;
+- generic Approval Outcome Evidence binding helpers only for platforms with
+  documented exact attempt-bound proof, plus first-slice negative tests proving
+  GitHub Deployment Review data and review-ID deltas cannot create such Evidence
+  or grant Capability;
+- platform conclusion and phase-state binding helpers plus tests distinguishing
+  pre-capability no-side-effect cancellation/expiry from cancellation after a
+  capability job may have started, without requiring a distinction GitHub does
+  not expose;
 - acceptance tests for every scenario in this MLD.

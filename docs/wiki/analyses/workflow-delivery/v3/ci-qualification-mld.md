@@ -126,6 +126,27 @@ Full validation:
 Manual full validation cannot omit required scope through ad hoc operator
 selection.
 
+### First-Slice Transitional Modes
+
+The first `hcoona-release-smoke-npm` implementation does not expose the
+canonical full-validation mode above. During coexistence it exposes only:
+
+- a shadow pull-request incremental check for slice-relevant changes; and
+- a manually dispatched `slice-validation` purpose that validates the complete
+  first slice without changed-path pruning.
+
+Manual slice validation includes root HK plus the first-slice Project Node,
+project build, project tests, and Release Unit npm artifact build/pack. It is
+non-authoritative, is not a Ruleset required check, and must never be named or
+reported as repository-wide full validation. The shadow pull-request check also
+does not replace v1 required CI. v1 and v3 must not issue parallel authoritative
+Decisions during coexistence.
+
+Canonical explicit or scheduled full validation remains the complete-repository
+mode defined in the preceding section. Its implementation is deferred until the
+Repository Model and policies cover every active Project Node, Release Unit,
+repository path class, and repository obligation.
+
 ## Changed-Path Classification
 
 Every tracked changed path must receive at least one explicit interpretation.
@@ -212,6 +233,11 @@ Every affected Release Unit contributes all of its publishable artifact
 variants to the CI Plan. Changed-path optimization does not select a subset of
 publishable variants inside an affected Release Unit.
 
+For each selected variant, the CI Plan and Build Request select and freeze the
+exact required target-bound native NBGV projection from the Repository Model
+Snapshot. The Build Adapter applies and verifies that value; it does not
+recompute NBGV, derive another version, or use a fallback field.
+
 ### Repository-Only Scope
 
 A path may be classified as repository-conformance-only. Such a candidate still
@@ -243,6 +269,49 @@ The Planner does not know or select:
 HK internally plans and executes the steps needed to satisfy the composite
 definition. Its internal steps are not CI obligations and do not produce
 independent CI Evidence.
+
+### First-Slice v3 Control Tests
+
+The current root HK configuration does not yet run the new v3 control package
+pytest suite because that package does not exist. The implementation commit that
+adds the package also adds one HK-internal step.
+
+That step runs when the comparison includes:
+
+- `src/public/lib/three-workflow-delivery-v3/**`;
+- any addition, deletion, rename, or modification matching
+  `src/**/workflow-delivery.release-unit.yml`;
+- any addition, deletion, rename, or modification matching
+  `src/**/workflow-delivery.quality.yml`;
+- `eng/workflow-delivery/v3/policies/hcoona-release-smoke-npm.yml`;
+- `.github/workflow-delivery/governance/hcoona-release-smoke-npm.json`;
+- every v3 control, catalog, and test path;
+- every governed v3 workflow, action, and directly invoked script;
+- `.github/CODEOWNERS`;
+- root `pyproject.toml`, `uv.lock`, and other direct Python workspace inputs;
+  and
+- `hk.pkl`, imported HK configuration modules, and directly invoked HK helpers.
+
+Manual `slice-validation` forces the step to run regardless of changed paths.
+It remains part of the single `SourceTreeConformance` obligation and creates no
+separate CI obligation, Evidence record, or job. Unrelated product source alone
+does not select this control-test step. A policy-only change to the exact
+first-slice policy does.
+
+### Permanent Disposable-Package Consumer Policy
+
+Root HK permanently includes a repository-wide dependency-policy step for
+`@hcoona/hcoona-release-smoke-npm`. It scans dependency manifests, lockfiles,
+workflows, install/bootstrap scripts, package-manager configuration, and other
+cataloged dependency surfaces for normal developer, CI, or production
+consumption.
+
+Dependency-surface changes select the step. Manual `slice-validation` forces it
+to run regardless of changed paths. The smoke package's own declaration and
+explicit destination-acceptance fixtures are narrowly classified exceptions,
+not consumers. Any other consumption fails `SourceTreeConformance` and reopens
+the first-slice Governance exception. The step remains internal to root HK and
+does not create a separate CI obligation or Evidence record.
 
 ### Root Configuration Authority
 

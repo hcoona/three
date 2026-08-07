@@ -303,6 +303,43 @@ local workflow_release_validation = new Mapping<String, Step> {
   }
 }
 
+local workflow_delivery_v3_validation = new Mapping<String, Step> {
+  local workflow_delivery_v3_files =
+    List(
+      ".github/CODEOWNERS",
+      ".github/actions/workflow-delivery-v3-*/**",
+      ".github/actions/workflow-delivery-v3/**",
+      ".github/workflow-delivery/governance/hcoona-release-smoke-npm.json",
+      ".github/workflows/workflow-delivery-v3-*.yaml",
+      ".github/workflows/workflow-delivery-v3-*.yml",
+      ".python-version",
+      "conftest.py",
+      "eng/scripts/hk_exec.py",
+      "eng/scripts/workflow_delivery_v3_hk.py",
+      "eng/workflow-delivery/v3/**",
+      "hk.pkl",
+      "mise.lock",
+      "mise.toml",
+      "pyproject.toml",
+      "pyrefly.toml",
+      "pytest.ini",
+      "ruff.toml",
+      "src/**/workflow-delivery.quality.yml",
+      "src/**/workflow-delivery.release-unit.yml",
+      "src/private/lib/hk/**",
+      "src/public/lib/three-workflow-delivery-v3/**",
+      "uv.lock",
+      "uv.toml",
+    )
+
+  ["v3-control-pytest"] {
+    profiles = List("small")
+    glob = workflow_delivery_v3_files
+    check =
+      "python eng/scripts/hk_exec.py --timeout-seconds 300 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests"
+  }
+}
+
 local dotenv_linter = new Mapping<String, Step> {
   ["dotenv-linter"] = (Steps.dotenv_linter) {
     profiles = List("small")
@@ -377,6 +414,7 @@ local all_steps = new Mapping<String, Step> {
   ...javascript_typescript_linters
   ...python_linters
   ...workflow_release_validation
+  ...workflow_delivery_v3_validation
   ...dotenv_linter
   ...code_generation_guard
 }

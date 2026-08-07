@@ -1283,3 +1283,354 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   testing, HK validation, and multi-agent review with independent TP/FP triage.
 - Required future phase and slice changes to update the handoff and navigation
   pages without turning the handoff into a second normative architecture.
+
+## [2026-08-05] query | Reconfirm Buddy and Official release identity model
+
+- Reopened and reconfirmed the Release MLD identity decision before LLD.
+- Made frozen native NBGV ecosystem versions, including npm
+  `npmPackageVersion`, the unchanged published product versions.
+- Defined Buddy and Official isolation through complete channel, destination,
+  package-coordinate, and Capability boundaries rather than Intent-derived
+  version components.
+- Kept distinct admitted requests as separate Intent records while routing the
+  same Buddy channel, Release Unit, and target into new independent Attempts
+  within one Release Execution.
+- Made Buddy Release Execution Identity channel, Release Unit, and immutable
+  target. Different targets create separate Executions and serialize overlapping
+  live actions on complete Adapter-declared mutable-resource keys.
+- Distinguished Official Product Identity, Release Execution Identity, and
+  independently derived live-action resource keys. Package actions include
+  channel, destination, package, and version plus any additional
+  Adapter-required keys.
+- Defined Official Product Identity as channel, Release Unit, and canonical NBGV
+  version, with Official Release Execution Identity adding immutable target.
+  Different targets may share Product Identity but remain separate Executions.
+  Official ecosystem publication and dry-run use the exact frozen native NBGV
+  projection unchanged.
+- Defined Attempt identity as Release Execution Identity plus `github.run_id` and
+  `github.run_attempt`; originating Intent and request identity are required
+  immutable bindings, not additional identity components.
+- Clarified that replay preserves Product and Execution identities while
+  compiling a new request-local Repository Model Snapshot and creating new
+  Attempt-specific Qualification and Publication snapshots.
+- Required observation to compare each logical projection with snapshot-bound
+  desired projection state rather than Product or Execution Identity. Exact
+  state produces an approved no-op; conflicting, differently owned, or
+  unprovable package state fails closed without importing prior Attempt records.
+- Clarified that a coordinate is an external address rather than an Intent
+  reservation. No retained lineage plus destination absence is legitimate
+  initial-publication state, and pre-mutation failure burns nothing.
+- Required registry Adapters to prove atomic non-overwriting creation and
+  durable exact-state observation. An incapable GitHub Packages destination is
+  unsupported or blocked; no tag witness, binding index, application lock, or
+  permanent ledger substitutes for the destination contract.
+- Required every admitted, non-coalesced request to create a distinct Attempt.
+  A pending dispatch replaced or coalesced before execution is not admitted and
+  creates no Attempt.
+- Defined external package coordinate strictly as channel, destination, package,
+  and version and excludes Release Unit and target. Package serialization
+  includes that exact coordinate plus any additional Adapter-required keys.
+- Removed External Package Coordinate and projection-set digest from Buddy
+  business identity. Native NBGV version and the complete deterministic
+  destination projection set are Plan and Snapshot bindings derived from
+  target-controlled definitions.
+- Required every live Destination Adapter mutating action to declare complete
+  deterministic mutable-resource keys. Publication Snapshots and action
+  manifests bind the keys, overlapping actions serialize, package actions
+  include exact External Package Coordinate, non-package keys are
+  Adapter-defined, and remediation reuses exactly the complete frozen original
+  action key set without deriving it from Product or Execution Identity.
+- Made target-bound canonical NBGV facts and required native ecosystem
+  projections authoritative Repository Model outputs transported through
+  Provider Results and Fact Bundles. Plans and Build Requests select and freeze
+  the exact projection; Build Adapters apply and verify it without NBGV
+  recomputation, alternative derivation, or fallback.
+- Required every candidate run attempt to branch to live Release or release
+  simulation before live eligibility, identity lookup, coalescing, or admission.
+  Each branch compiles exactly one same-revision, purpose-bound request-local
+  Repository Model Snapshot and reuses it throughout the resulting live Attempt
+  or simulation pass. A replay or other new run attempt compiles a new Snapshot
+  even when request identity, run ID, and target remain unchanged. Cross-purpose
+  and prior-attempt artifacts are rejected.
+- Defined separately namespaced, request-scoped Simulation Identity and
+  purpose-discriminated Snapshot bindings. Simulation may emit hypothetical
+  requirements, actions, and an outcome but cannot contain or acquire live
+  Product, Execution, or Attempt identity, Authorization Record, capability,
+  Receipt, or mutation. The simulation-purpose Repository Model Snapshot binds
+  validated request/run, target, channel, Release Unit, version, producer, and
+  control facts before the Planner derives Simulation Identity; it never binds
+  that future Identity.
+- Assigned complete Official dry-run planning exclusively to Release simulation;
+  CI retains only artifact-shape and validation-only work without publication
+  authority.
+- Required successful approval before creating the Authorization Record consumed
+  by capability groups. Denied, canceled, or timed-out approval instead produces
+  platform-derived terminal Approval Outcome Evidence and no Capability. If
+  neither a valid Authorization Record nor admissible terminal Approval Outcome
+  Evidence exists, approval state is unknown and the outcome is
+  approval-contract failure.
+- Restricted Qualification to declaring Capability requirements. Only an
+  authorized side-effect capability group may request destination Capability
+  after validating the Authorization Record and exact Publication
+  Snapshot/action bindings.
+- Pre-admission compilation closes descriptors, technical graph, Build
+  Definitions, modeled variants/outputs, canonical/native NBGV facts, and
+  build/artifact scope; failure creates no Attempt. Live Attempt planning
+  selects and freezes native projections and deterministic publication basis in
+  the Qualification Snapshot. Actual actions, inputs, complete mutation key
+  sets, groups, capabilities, and Receipt contracts freeze in the Publication
+  Snapshot after build, qualification, and observation.
+- Clarified that Buddy Execution Identity ignores version even though
+  pre-admission compilation computes `npmPackageVersion`. Attempt planning
+  selects and freezes that authoritative Snapshot fact before deriving package
+  coordinates and projections.
+- Required remote observation to record artifact digests and stop when
+  destination state conflicts with the current Attempt's snapshot-bound desired
+  projection state rather than an identity-level comparison.
+- Rejected a permanent global Official Product Identity-to-target ledger.
+  Different target-specific Executions serialize on destination resource keys,
+  and durable destination state determines absent, exact, or conflict.
+
+## [2026-08-06] query | Accept bounded first-slice Buddy publisher risk
+
+- Reopened and reconfirmed the live Buddy trust decision before LLD for
+  `hcoona-release-smoke-npm` only.
+- Allowed any same-repository ref selected by `workflow_dispatch` to supply the
+  exact same-revision workflow, control, Planner, Finalizer, and publisher code
+  without protected-ref or CODEOWNERS eligibility.
+- Kept exact Publication Snapshot creation and dedicated protected Buddy
+  Environment approval mandatory before package-write Capability exists.
+- Bound the approved target-revision side-effect job to short-lived
+  `GITHUB_TOKEN` with minimum `packages: write`, no PAT fallback, and no
+  `id-token: write`.
+- Recorded that Environment approval is human trust elevation rather than
+  cryptographic or independent semantic validation and that no independent
+  protected publisher constrains malicious target code after approval.
+- Accepted bounded risk of arbitrary or malicious bytes, reachable namespace or
+  version squatting, registry clutter/cost, and package-operation abuse within
+  the token's repository/package permissions.
+- Required the exact disposable smoke package and isolated GitHub Packages
+  destination, separate Buddy Environment, minimum access, reviewer-visible
+  target/ref/coordinate/artifact/lifecycle/action details, self-review prevention
+  where available, no normal consumers, and Break-Glass delete/restore handling.
+- Preserved strict Official protected-ref, owner-review, Environment, and
+  destination-trust requirements. CI governance is unchanged, and future Buddy
+  destinations do not inherit this exception.
+- Kept activation conditional on proving that GitHub prevents selected-ref code
+  from obtaining `packages: write` outside the dedicated Environment-gated job;
+  otherwise the slice is blocked.
+
+## [2026-08-06] query | Finalize first-slice repository-writer publisher TCB
+
+- Superseded the earlier impossible Environment permission-ceiling assumption.
+  GitHub Environment remains mandatory for the normal live Buddy workflow after
+  exact Publication Snapshot creation, but does not prevent a malicious
+  repository writer from authoring alternate jobs with `packages: write`.
+- Placed every repository actor with Write, Maintain, or Admin access inside the
+  bounded first-slice Buddy trusted publisher TCB. External/fork contributors
+  and actors without repository write remain outside it and cannot normally
+  dispatch the live path.
+- Kept same-revision execution from any selected same-repository ref. The normal
+  capability job alone requests short-lived `GITHUB_TOKEN` with minimum
+  `packages: write`, no PAT, and no `id-token: write`.
+- Defined Environment approval as protection against mistakes, accidental
+  publication, and ordinary process violations rather than a malicious-writer
+  security boundary or independent semantic validation.
+- Allowed optional workflow-execution protections only as defense in depth, not
+  as a required dependency or per-job permission ceiling.
+- Forbade planned and ordinary delete, restore, permission, visibility, and
+  admin actions while acknowledging latent repository/package admin authority
+  as accepted trusted-writer misuse risk.
+- Added repository-writer membership revalidation. If any
+  Write/Maintain/Admin actor is not trusted to publish, the live slice blocks
+  until that actor's access is reduced below those roles or an independently
+  enforced publisher boundary makes package-write Capability and destination
+  access unavailable to writer-authored workflows. Ref narrowing, Environment
+  branch restrictions, CODEOWNERS, and workflow-execution protections alone
+  are insufficient remediation.
+- Preserved the disposable package, no-consumer policy, Official isolation,
+  no-PAT/no-OIDC constraints, and non-inheritance by future Buddy destinations
+  or production packages.
+
+## [2026-08-06] query | Draft first-slice Workflow Delivery v3 LLD
+
+- Added the brief `hcoona-release-smoke-npm` first-slice LLD as a draft awaiting
+  explicit user approval.
+- Defined clean v3 module and workflow decomposition, strict run-attempt and
+  purpose bindings, isolated frozen-version npm packing, SHA-512 remote exact
+  proof, first-slice policy authoring, failure/replay behavior, acceptance
+  scenarios, and dependency-ordered implementation commits.
+- Revised first-slice CI to shadow pull-request and non-authoritative manual
+  `slice-validation`, retaining v1 as required CI and deferring canonical v3
+  full validation.
+- Required one concurrency-scoped caller to hold Release Execution identity
+  while invoking the same-revision reusable Attempt through finalization, plus
+  exact capability-group result bundles.
+- Replaced the invented approval timeout with truthful platform handling:
+  first-slice GitHub rejection lacks authoritative attempt-bound denial Evidence
+  and remains unknown/replayable incomplete, while approval-pending cancellation
+  or expiry may end the run without a downstream record or Finalizer. When no
+  capability group started, that platform termination proves no side effect;
+  possible capability execution requires reobservation.
+- Defined caller/callee reusable-workflow permission ceilings, separate
+  tarball-content and install/import Evidence in one physical qualification
+  lane, and an immutable digest-bound reviewer-summary artifact linked through
+  the approval deployment URL and Authorization Record.
+- Added root-HK path-triggered v3 control-package pytest with unconditional
+  manual slice execution, while keeping it inside SourceTreeConformance.
+- Added history-only same-Execution run/artifact admission before current
+  Attempt binding, complete Actions API pagination, ID-only artifact transport,
+  and expiry fallback to current absent/exact observation or reconciliation.
+- Made `approval-finalizer` the credential-free capability admission gate before
+  publisher scheduling, retained publisher revalidation as defense in depth,
+  and treated Deployment Review data as diagnostic-only.
+- Expanded root-HK v3 pytest triggers to the exact control tree, first-slice
+  descriptors/policy, all v3 workflow consumers, direct Python workspace/lock
+  inputs, and HK configuration/helpers; added policy-only coverage.
+- Required Renovate-managed full 40-character action pins with version comments
+  and the current Renovate-selected Node-24-compatible action major, without
+  fixing an `upload-artifact` major in the LLD.
+- Defined caller-selected `current-authority` and `execution-history` admission
+  modes, strict current/history bindings, and payload inability to choose mode.
+- Added permanent root-HK disposable-package consumer policy, CODEOWNERS
+  final-match coverage/tests, and change-triggered plus 90-day human
+  writer-TCB/package-grant re-attestation with operator-driven live disablement
+  pending acceptance.
+- Added Release-owned exact-target pre-Attempt Live Eligibility Decisions and
+  fixed-source protected-ref human writer/access attestations. Runtime validates
+  ref/commit/blob/content provenance, schema, bindings, expiry, and live-enable
+  state without claiming unavailable writer or GitHub Packages grant
+  enumeration; human change response plus at-most-90-day expiry bounds
+  staleness.
+- Added canonical in-tarball npm target witness requirements and remote
+  extraction/validation so coordinate, ownership, immutable target, and bytes
+  are all required for exact state.
+- Relaxed history attribution to platform-exposed artifact/run facts with
+  separately queried job/run phase data; payload producer/attempt/workflow claims
+  are diagnostic and strict historical provenance remains unsupported without
+  separately approved attestations/OIDC.
+- Allowed same-run earlier-attempt artifacts as history-only diagnostics when
+  platform run-attempt existence and artifact integrity/correlation validate,
+  without claiming artifact-to-attempt or artifact-to-job provenance.
+- Added explicit target-specific npm routing tags
+  (`buddy-sha-<40-lowercase-target-sha>`), compound version-and-tag mutation
+  keys/Receipts, exact tag observation, and acceptance probes for syntax,
+  races, and GitHub Packages combined behavior. The in-package witness remains
+  provenance authority.
+- Expanded v3-control triggers to CODEOWNERS, all descriptor operations, v3
+  control/catalog/tests, governed workflows/actions/scripts, HK surfaces, and
+  root Python workspace inputs.
+- Expanded the direct cutover commit to remove/rewrite legacy Buddy tests and
+  node IDs, preserve Official/CI coverage, add no-route negatives, update active
+  topology/rollout docs and `MEMORY.md`, and require root HK success.
+- Recorded the final direct cutover: the implementation PR lands v3 disabled,
+  retires both `buddy.yml` and `release-buddy.yml` without a compatibility
+  route, drains old executions, verifies old-ref rejection, runs and removes the
+  acceptance bootstrap, and then enables only the smoke slice. Failed acceptance
+  leaves legacy Buddy retired; restoration requires a separate user-approved
+  rollback PR, and a brief Buddy outage is expected.
+- Retained bounded token-reach inspection to known and safely enumerated assets.
+- Kept live Buddy disabled until disposable-package destination tests and human
+  Governance inspection pass, and kept all coding blocked until LLD approval.
+- Corrected Governance freshness so the pre-Attempt Live Eligibility Decision
+  remains mandatory but cannot survive a later live disablement, attestation
+  expiry, fixed-source change, or invalidation. `approval-finalizer` now
+  re-reads live state and the fixed source immediately before Capability
+  Admission, requires provenance/content identity with the admitted Decision,
+  and forces a new Attempt after Governance restoration; publisher repetition
+  remains defense in depth only.
+- Fixed the immutable first-slice attestation source contract to repository
+  `hcoona/three`, ref `refs/heads/main`, and path
+  `.github/workflow-delivery/governance/hcoona-release-smoke-npm.json`, carried
+  by the concrete Release policy and bound by eligibility/provenance tests
+  without payload self-reference to Git provenance.
+- Corrected physical artifact naming to be deterministic and unique across the
+  complete workflow run by including `github.run_attempt` directly or in the
+  deterministic hash preimage, while preserving `overwrite: false`, ID-only
+  admission, and same-run prior-attempt history-only use.
+
+## [2026-08-06] lint | Apply adjudicated first-slice documentation fixes
+
+- Replaced the non-fresh repository-variable rollout switch with the required
+  boolean `live_enabled` field in the policy-fixed protected Governance
+  attestation. Pre-Attempt eligibility and immediate pre-Capability admission
+  now use `contents: read` to freshly resolve and read the protected source,
+  bind and compare enabled state plus commit/blob/content provenance, and force
+  a new Attempt after disablement, expiry, change, or invalidation.
+- Kept publisher repetition optional defense in depth, added no PAT, App,
+  service, OIDC, repository variable, or additional token permission, and
+  documented the truthful protected-review/merge/read latency of human
+  disablement and re-attestation.
+- Added explicit final-match CODEOWNERS coverage and ownership-contract tests
+  for
+  `/.github/workflow-delivery/governance/hcoona-release-smoke-npm.json`.
+- Corrected direct-cutover wording so unchanged preservation covers v2 and v1
+  Official/CI assets only. Legacy Buddy workflows, Buddy-specific
+  tests/matrices, and Buddy docs are retired or rewritten before destination
+  acceptance; an intentional Buddy outage is allowed, and acceptance failure
+  leaves all Buddy publication disabled.
+- Kept the first-slice LLD in Draft and made no source, workflow, test, or
+  activation change.
+
+## [2026-08-06] lint | Correct npm witness packaging and live permissions
+
+- Required isolated npm staging to preserve the source manifest while
+  deterministically adding `workflow-delivery/provenance.json` to the staged
+  `files` allowlist alongside existing intended package files.
+- Required artifact qualification to inspect the packed tarball, find the
+  witness at exact entry `package/workflow-delivery/provenance.json`, and match
+  its canonical bytes to the frozen witness input without changing frozen NBGV
+  version semantics.
+- Removed workflow-wide package write from the normal live dispatcher/caller
+  contract. `packages: write` now appears only on the `run-live-attempt`
+  `uses`-only caller job as the reusable-workflow ceiling and on the called
+  Environment-referencing publisher job as effective capability; all other jobs
+  remain explicitly least-privilege, and the callee cannot elevate beyond the
+  caller.
+- Kept approval and capability admission credential-free, retained the LLD in
+  Draft, and made no implementation, test, workflow, activation, or commit
+  change.
+
+## [2026-08-06] lint | Tighten permissions, bootstrap retries, and NBGV history
+
+- Restricted `evaluate-live-eligibility` to exactly `contents: read`, confined
+  effective Actions-history read to admission and explicit package read to the
+  observer, and aligned permission contracts and negative tests.
+- Required every one-time GitHub Packages probe and evidence-capture job to fail
+  closed unless `github.run_attempt == 1`; retry now requires a new reviewed
+  workflow invocation and disposable coordinate/version.
+- Required the NBGV Provider to remain pinned to the exact target while fetching
+  complete ancestry and tags through `fetch-depth: 0` or an equivalent
+  guarantee, reject shallow or incomplete history before compiling facts, and
+  added contract/control test expectations.
+- Kept the first-slice LLD in Draft and made no implementation, workflow, test,
+  activation, or commit change.
+
+## [2026-08-06] lint | Correct package serialization and bootstrap evidence
+
+- Replaced the first-slice complete-resource-set hash as the actual GitHub
+  concurrency group with a conservative physical-destination-plus-npm-package
+  projection. It intentionally serializes different versions and
+  target-derived tags because GitHub supports equality groups rather than
+  arbitrary set-overlap locks.
+- Preserved the complete frozen External Package Coordinate plus routing-tag key
+  set in Publication Snapshots, action bindings, Receipts, validation,
+  remediation, and future abstract overlap semantics without weakening
+  `WD-CON-004`.
+- Required terminal bootstrap evidence capture to run on the first attempt with
+  `always() && github.run_attempt == 1`, retain dependency failures and
+  ambiguous mutation evidence, and classify incomplete or unknown state for
+  reconciliation while every probe and evidence job still rejects reruns.
+- Kept the first-slice LLD in Draft and made no implementation, workflow, test,
+  activation, or commit change.
+
+## [2026-08-06] query | Approve the first-slice LLD
+
+- Recorded explicit user approval of the
+  `hcoona-release-smoke-npm` Workflow Delivery v3 first-slice LLD after the
+  GPT-5.6 Sol closure review reported no findings.
+- Advanced the checkpoint from design approval to dependency-ordered
+  implementation while retaining separate acceptance and live-activation
+  gates.
+- Kept GitHub Packages atomic behavior as an activation acceptance
+  classification rather than an open architecture decision.

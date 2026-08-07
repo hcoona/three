@@ -25,6 +25,13 @@ mono_crash.*
 [Dd]ebug/
 [Dd]ebugPublic/
 [Rr]elease/
+!src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/release/
+!src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/release/__init__.py
+!src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/release/eligibility.py
+!src/public/lib/three-workflow-delivery-v3/tests/release/
+!src/public/lib/three-workflow-delivery-v3/tests/release/test_eligibility.py
+!src/public/lib/three-workflow-delivery-v3/tests/fixtures/release/
+!src/public/lib/three-workflow-delivery-v3/tests/fixtures/release/governance-disabled.json
 !eng/release/
 eng/release/*
 !eng/release/buddy-target-refs.yml

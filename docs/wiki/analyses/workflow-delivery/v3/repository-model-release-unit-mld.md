@@ -4,7 +4,7 @@
 
 Architecture version: **v3**.
 
-Review state: **Confirmed on 2026-07-30**.
+Review state: **Confirmed; published version authority clarified on 2026-08-05**.
 
 This middle-level design defines how Workflow Delivery discovers technical
 repository facts, authors Release Units, resolves build semantics, and compiles
@@ -61,19 +61,21 @@ target Git tree
   |      -> Project Nodes / dependency facts / build capabilities
   |
   +-- NBGV version.json lineage
-         -> canonical version authority
+         -> canonical version and required native ecosystem projections
 
 Release Unit declarations
   + complete Provider Request Manifest
   + terminal Provider Results
-  + NBGV facts
+  + target-bound NBGV facts
   -> Repository Model Compiler
   -> immutable Repository Model Snapshot
 ```
 
-The compiled snapshot is the shared technical input to CI and Release. It
-contains no CI Plan, Release Plan, Evidence, authorization, or business
-verdict.
+The Repository Model contract and compiler are shared technical mechanisms for
+CI and Release. Runtime Snapshot instances remain context- and request-bound;
+live Release does not import a CI, simulation, other-request, or prior-Attempt
+Snapshot. A Snapshot contains no CI Plan, Release Plan, Evidence, authorization,
+or business verdict.
 
 The Repository Model Compiler and Provider contracts are Shared Foundation
 mechanisms. This MLD defines their repository and Release Unit semantics; the
@@ -135,7 +137,11 @@ Each Provider produces a target-bound Provider Result containing:
 - manifest and configuration input digests;
 - normalized Project Nodes;
 - dependency and known global-input facts;
-- build capabilities; and
+- build capabilities;
+- authoritative target-bound version facts and required native projections when
+  the Provider owns NBGV resolution;
+- exact-target checkout and complete-history/tag verification facts when NBGV
+  version height depends on Git ancestry;
 - explicit unresolved or conflicting facts;
 - mechanical outcome; and
 - diagnostic reference.
@@ -144,10 +150,16 @@ A pure Provider returns its Provider Result directly within authoritative
 compilation.
 
 A target-evaluating Provider wraps the same Provider Result in an immutable Fact
-Bundle that additionally binds producer job, workflow run and attempt, request
-artifact, and transport digest. Providers run without publication credentials.
-The Decision Zone consumes admitted Fact Bundles rather than evaluating
-target-controlled project systems directly.
+Bundle that additionally binds producer job, request identity, explicit
+purpose, `github.run_id` and `github.run_attempt`, target, producer and control
+identities, request artifact, and transport digest. Providers run without
+publication credentials. The Decision Zone consumes admitted Fact Bundles
+rather than evaluating target-controlled project systems directly.
+
+When NBGV resolution requires target evaluation, the canonical version facts
+and every required native ecosystem projection travel in that Provider Result
+and Fact Bundle. The transport does not reduce them to one generic version
+field.
 
 ## Repository Model Providers
 
@@ -243,6 +255,18 @@ build. It freezes:
 - declared root-external inputs; and
 - provenance requirements.
 
+For the first-slice npm Build Definition, provenance requirements include a
+canonical immutable package target witness at
+`workflow-delivery/provenance.json` inside the tarball. Its schema binds target
+commit, Release Unit, canonical and native NBGV facts, Build Definition,
+catalog/control digests, and purpose. It excludes run and Attempt IDs so the
+same target, definition, toolchain, and declared inputs remain reproducible
+across attempts. The witness is a package content requirement, not a detached
+sidecar. The first-slice npm pack contract may satisfy that requirement through
+deterministic isolated staging without mutating the source manifest. Its staged
+`package.json` `files` allowlist must preserve the existing intended entries and
+include `workflow-delivery/provenance.json`.
+
 A native build operation may emit multiple artifacts atomically. For example,
 one Python build can produce a wheel and source distribution. The definition
 records the complete output set rather than pretending that the tool performed
@@ -310,14 +334,40 @@ an explicit project/build concern rather than a Workflow Delivery assumption.
 NBGV is the sole canonical version authority for v3 Release Units in this
 repository.
 
+Before emitting NBGV facts, the NBGV-owning Provider must check out the exact
+target commit with credentials disabled and complete ancestry and tags,
+equivalent to `fetch-depth: 0`. It verifies that `HEAD` is still the exact target
+and rejects a shallow repository, missing required tags, incomplete ancestry, or
+any checkout that cannot establish the full-history guarantee. The Repository
+Model Compiler must not admit canonical or native NBGV facts from a Provider
+that did not establish this contract.
+
 The Repository Model Compiler:
 
 1. resolves the effective NBGV `version.json` lineage for each Build Definition
    entry point;
 2. requires all entry points in one Release Unit to resolve to one canonical
    lineage;
-3. computes the canonical version for the immutable target commit once; and
-4. freezes that value as an input to every Build Request.
+3. computes the canonical version facts and required native ecosystem
+   projections for the immutable target commit once;
+4. records those values as authoritative NBGV outputs in the Repository Model
+   Snapshot; and
+5. exposes them for exact selection and freezing by each CI or Release Plan and
+   Build Request.
+
+The ecosystem-native NBGV projections are authoritative published product
+versions, not downstream derivations. Required projections include
+`npmPackageVersion` for this npm slice. Release uses that frozen value
+unchanged. Channel, Release Intent, request, workflow, run, and Attempt
+identities must not append or otherwise derive additional published version
+components.
+
+Official Product Identity uses the canonical NBGV version fact. Official
+Release Execution Identity adds immutable target. The Product Identity field
+does not replace the native ecosystem projection: Official live publication
+and dry-run select and freeze the exact required native projection from the same
+target-bound fact set. Repository Model compilation does not create or require a
+global Product Identity-to-target binding.
 
 Release Unit descriptors do not select alternative version authorities.
 
@@ -333,20 +383,41 @@ The compiler combines Release Unit declarations, a closed Provider Request
 Manifest, terminal Provider Results, and NBGV facts into one immutable
 Repository Model Snapshot.
 
-The Provider Request Manifest binds every expected Provider request, execution
-mode, request digest, and expected result identity. Exactly one terminal
-Provider Result must exist for every request. Missing, duplicate, or unexpected
-results block model compilation.
+The Provider Request Manifest binds the caller request identity, purpose,
+`github.run_id`, `github.run_attempt`, target, producer and control identities,
+the caller-selected channel and Release Unit for simulation purpose, and every
+expected Provider request, execution mode, request digest, and expected result
+identity. Exactly one terminal Provider Result must exist for every request.
+Missing, duplicate, unexpected, or differently bound results block model
+compilation.
+
+The Repository Model Snapshot schema and digest bind that same request identity,
+purpose, `github.run_id`, `github.run_attempt`, target, producer, and control
+identity. Each candidate run attempt compiles exactly one authoritative Snapshot
+for its live-release or release-simulation purpose and reuses it throughout the
+resulting live Attempt or simulation pass. Before live Release Execution lookup,
+admission requires every Fact Bundle and the compiled Snapshot to match the
+current purpose and `github.run_attempt`; a Bundle or Snapshot from a prior run
+attempt or the other purpose is invalid even when request identity,
+`github.run_id`, and target are unchanged.
+
+For simulation purpose, the Snapshot binds request identity, run ID and attempt,
+target, channel, Release Unit, canonical and native version facts, producer, and
+control identity. It does not bind a Simulation Identity that does not yet
+exist. Release derives that separately namespaced Identity only after validating
+the Snapshot, then binds both into later simulation planning records.
 
 For each Release Unit, it:
 
 1. validates stable identity and descriptor-path rules;
 2. resolves every Build Definition entry point to a Project Node;
-3. validates that the selected Adapter supports the requested operation and
-   dimensions;
+3. validates that the selected Build Adapter supports the modeled build
+   operation and dimensions;
 4. computes the prerequisite Project Node and declared-input closure;
-5. resolves one NBGV lineage and canonical version authority;
-6. validates output identities and artifact variant uniqueness;
+5. resolves one NBGV lineage and its target-bound canonical and required native
+   projection facts;
+6. validates modeled variants, output identities, artifact variant uniqueness,
+   and complete build and artifact scope;
 7. creates the reverse index from Project Nodes to dependent Build Definitions
    and Release Units; and
 8. records unresolved facts as blocking model state.
@@ -384,6 +455,35 @@ Release ignores changed-path optimization. It selects one explicit Release Unit
 and uses the complete Project Node, declared-input, Build Definition, variant,
 and output closure compiled for that Release Unit.
 
+Each candidate Release request or run performs same-revision, request-local
+Repository Model compilation before Release Execution lookup, coalescing, or
+admission. The Snapshot is bound to that request, target, workflow run, and
+producer. Its canonical NBGV fact supplies Official Product Identity; its native
+facts remain authoritative later Attempt-planning selections.
+
+Compilation must close descriptors, Project Nodes and dependency graph, Build
+Definitions, modeled variants and outputs, canonical and native NBGV facts, and
+build and artifact scope. Failure ends the candidate before Execution lookup,
+coalescing, or admission and creates no Attempt.
+
+If the request is admitted, Attempt planning uses that same Snapshot to compile
+channel policy and validate policy-selected variants, obligations, and
+compatibility obligations. It selects and freezes required native projections
+from the Snapshot, then derives and validates destination projections and
+coordinates, Adapter and version bindings, logical operations, potential action
+and dependency schemas, capability policy, and deterministic complete
+mutable-resource-key derivation and enforceability basis. Actual actions,
+inputs, and complete action key sets materialize only after build,
+qualification, and observation and freeze in the Publication Snapshot. Live
+Attempt planning or simulation planning does not recompute the Repository Model
+within the run attempt. Whole-release replay compiles a new request-local
+Snapshot and never adopts one from an older Attempt. GitHub `Re-run all jobs`
+preserves request
+identity, `github.run_id`, and target but increments `github.run_attempt`, so
+the replay reruns Provider requests as applicable and compiles a new Snapshot
+bound to that new run attempt. Release simulation follows the same one-Snapshot
+rule for its simulation pass but never supplies that Snapshot to live admission.
+
 Release rebuilds from the immutable target commit and never consumes CI build
 outputs or Evidence.
 
@@ -394,12 +494,24 @@ Repository Model compilation is blocked when:
 - descriptor syntax or identity is invalid;
 - duplicate Release Unit IDs exist;
 - a Build Definition entry point is missing or ambiguous;
-- the requested Adapter operation or dimension is unsupported;
+- the modeled Build Adapter operation or dimension is unsupported;
 - a required dependency or extra input cannot be resolved;
 - one Release Unit resolves to conflicting NBGV lineages;
+- the NBGV-owning Provider reports a shallow checkout, missing required tags,
+  incomplete ancestry, a target mismatch, or an unproved full-history
+  guarantee;
+- a required canonical or native NBGV projection is missing, unknown,
+  conflicting, or not target-bound;
 - output identities collide;
-- a Provider reports unresolved required facts; or
-- the model cannot establish a closed build and artifact scope.
+- a Provider reports unresolved required facts;
+- the model cannot establish a closed build and artifact scope;
+- a Provider Request, Fact Bundle, or Repository Model Snapshot is not bound to
+  the current purpose, request identity, `github.run_id`, `github.run_attempt`,
+  target, producer, and control identity; or
+- a Fact Bundle or Snapshot from a prior `github.run_attempt` is offered to the
+  current compilation or pre-Execution admission path; or
+- a live-release compilation or admission path receives a simulation-purpose
+  artifact, or a simulation pass receives a live-release artifact.
 
 Diagnostics explain the blocking facts. They do not authorize partial model
 compilation.
@@ -425,6 +537,23 @@ Adapter.
 - UV and build-backend metadata provide project and dependency facts.
 - One build operation may produce wheel and source-distribution outputs.
 - `nbgv-python` injects the canonical NBGV version.
+- The Python Build Request selects and freezes the required authoritative native
+  projection from the Repository Model Snapshot; the Adapter applies and
+  verifies that value without recomputing NBGV or falling back to another
+  field.
+
+### Native npm Projection
+
+An npm Release Unit resolves a target-bound NBGV fact set.
+
+- The Repository Model Snapshot contains the canonical NBGV facts and native
+  `npmPackageVersion`.
+- Buddy Release Execution Identity ignores version. After admission, the
+  Release Plan and Build Request select and freeze `npmPackageVersion` from the
+  Snapshot before deriving package coordinates and projections.
+- The Node Build Adapter applies and verifies exactly that value.
+- Missing projection data, recomputation, alternative derivation, and fallback
+  version fields are not admissible.
 
 ### Nested Node Example Workspace
 
@@ -435,15 +564,54 @@ workspace boundary while linking to the parent package.
 - Directory nesting alone does not create a Release Unit relationship.
 - The later CI MLD decides how changes propagate into compatibility obligations.
 
+## Current Implementation Fact to Replace
+
+This is non-normative v1/v2 mechanism evidence, not the v3 contract.
+
+The current reusable Node pack workflow receives planner-provided expected
+versions and verifies packaged manifest values and filenames against them. The
+current WXT workflow also invokes `nbgv get-version -v NpmPackageVersion` and
+uses an `nbgv-version.mjs` build wrapper inside the build workflow. The v3
+implementation must replace that in-build NBGV recomputation path with the
+Repository Model Snapshot and Build Request projection binding defined here.
+
 ## Deferred LLD Decisions
 
 - descriptor basename and serialization format;
-- exact strict descriptor, Provider Result, Fact Bundle, and Provider Request
-  Manifest schemas;
+- exact strict descriptor, Provider Result, Fact Bundle, target-bound NBGV fact,
+  native projection, and Provider Request Manifest schemas, including explicit
+  request identity, purpose, `github.run_id`, `github.run_attempt`, target,
+  producer, and control bindings where applicable;
 - canonical Project Node identity encoding;
 - Provider command lines and isolation details;
 - Build Definition digest canonicalization;
 - artifact output path conventions;
 - authoring helper syntax;
-- per-ecosystem Adapter package layout; and
-- exact admission artifact names and transport.
+- per-ecosystem Adapter package layout;
+- deterministic workflow-run-unique non-authoritative physical artifact names
+  with `github.run_attempt` directly or in the hash preimage, immutable artifact
+  ID/digest/URL transport, and ID-only admission;
+- conformance fixtures proving Repository Model Snapshot and Fact Bundle
+  preservation of canonical and native NBGV outputs;
+- NBGV Provider contract and control fixtures proving exact-target
+  `fetch-depth: 0` or equivalent full-history/tag materialization, rejection of
+  shallow or incomplete history before version compilation, and preservation of
+  the exact target commit after fetch;
+- first-slice npm Build Definition provenance-witness schema and fixtures
+  proving exact target/Release Unit/version/definition/catalog/control/purpose
+  binding without run/Attempt IDs;
+- ready-versus-blocked completeness fixtures for descriptors, technical graph,
+  Build Definitions, modeled variants and outputs, and build and artifact scope;
+- Release request-local Snapshot identity, run ID, run attempt, producer,
+  control, target, and purpose binding; exactly-once per-run-attempt
+  compilation and reuse; and replay recompilation contracts;
+- negative admission fixtures rejecting Provider Requests, Fact Bundles, and
+  Snapshots with mismatched or prior `github.run_attempt` bindings, including a
+  `Re-run all jobs` fixture proving the new attempt rejects the prior attempt's
+  artifacts and compiles a new Snapshot; and
+- purpose-binding fixtures proving live Release and simulation compile and
+  reuse separate Snapshots, derive Simulation Identity only after Snapshot
+  validation, and reject cross-purpose Provider Requests, Fact Bundles, and
+  Snapshots; and
+- Build Adapter contract tests proving exact frozen-projection application and
+  verification without NBGV recomputation, alternative derivation, or fallback.

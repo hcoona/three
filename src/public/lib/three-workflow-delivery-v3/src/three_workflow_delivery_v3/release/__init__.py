@@ -1,0 +1,41 @@
+"""Release-owned commit-3 eligibility contracts."""
+
+from three_workflow_delivery_v3.release.eligibility import (
+    CONSUMER_POLICY_ID,
+    AccessGrant,
+    AccessInventory,
+    ConsumerPolicyResult,
+    EligibilityResult,
+    GovernanceAttestation,
+    GovernanceBlob,
+    GovernanceObservation,
+    GovernanceSourceClient,
+    LiveEligibilityContext,
+    LiveEligibilityDecision,
+    SurfaceDigest,
+    WriterInventoryEntry,
+    evaluate_live_eligibility,
+    observe_governance_source,
+    parse_governance_attestation,
+    release_policy_digest,
+)
+
+__all__ = [
+    "CONSUMER_POLICY_ID",
+    "AccessGrant",
+    "AccessInventory",
+    "ConsumerPolicyResult",
+    "EligibilityResult",
+    "GovernanceAttestation",
+    "GovernanceBlob",
+    "GovernanceObservation",
+    "GovernanceSourceClient",
+    "LiveEligibilityContext",
+    "LiveEligibilityDecision",
+    "SurfaceDigest",
+    "WriterInventoryEntry",
+    "evaluate_live_eligibility",
+    "observe_governance_source",
+    "parse_governance_attestation",
+    "release_policy_digest",
+]

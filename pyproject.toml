@@ -18,7 +18,12 @@ license = "LGPL-3.0-or-later WITH LGPL-3.0-linking-exception"
 classifiers = ["Private :: Do Not Upload"]
 
 [dependency-groups]
-dev = ["pyrefly>=1.0.0", "pytest>=8.3.4", "ruff>=0.11.8"]
+dev = [
+  "hatchling>=1.25.0",
+  "pyrefly>=1.0.0",
+  "pytest>=8.3.4",
+  "ruff>=0.11.8",
+]
 
 [tool.uv.workspace]
 # The current Python workspace is rooted under src/; legacy OnePython paths are retired.
@@ -36,6 +41,7 @@ members = [
   "src/public/lib/hcoona-release-smoke",
   "src/public/lib/hcoona-release-smoke-pypi",
   "src/public/lib/nbgv-python",
+  "src/public/lib/three-workflow-delivery-v3",
   "src/public/lib/three-workflow-release-contracts",
   "src/public/lib/three-workflow-release-authoring",
   "src/public/lib/three-workflow-release-build",
@@ -48,6 +54,7 @@ members = [
 
 [tool.uv.sources]
 nbgv-python = { workspace = true }
+three-workflow-delivery-v3 = { workspace = true }
 three-workflow-release-authoring = { workspace = true }
 three-workflow-release-build = { workspace = true }
 three-workflow-release-contracts = { workspace = true }
@@ -71,6 +78,7 @@ project-includes = [
   "src/public/lib/hcoona-release-smoke/src/**/*.py",
   "src/public/lib/hcoona-release-smoke-pypi/src/**/*.py",
   "src/public/lib/nbgv-python/**/*.py",
+  "src/public/lib/three-workflow-delivery-v3/**/*.py",
   "src/public/lib/three-workflow-release-contracts/**/*.py",
   "src/public/lib/three-workflow-release-authoring/**/*.py",
   "src/public/lib/three-workflow-release-build/**/*.py",
@@ -164,7 +172,9 @@ convention = "google" # Match the Google Python Style Guide docstring structure.
 ]
 
 [tool.pytest.ini_options]
+addopts = "--import-mode=importlib"
 testpaths = [
   "src/public/lib/nbgv-python/tests",
+  "src/public/lib/three-workflow-delivery-v3/tests",
   "src/public/lib/three-workflow-release-contracts/tests",
 ]

@@ -27,7 +27,7 @@ pnpm = "11.19.0"
 uv = "latest"
 
 # Git Commit Hook Manager
-hk = "latest"
+hk = "1.53.0"
 
 #
 # Linters and Formatters

@@ -19,6 +19,7 @@
       "**/*.mts",
       "**/*.tsx",
       "**/*.css",
+      "!src/public/lib/three-workflow-delivery-v3/tests/fixtures/**/*.json",
       "!.copilot",
       "!.three-workflow-release-planner"
     ]
