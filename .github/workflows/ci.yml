@@ -239,6 +239,7 @@ jobs:
 
       - name: Test AzureAuth host OS behavior
         if: matrix.run-host-tests
+        timeout-minutes: 15
         shell: pwsh
         run: |
           dotnet test `

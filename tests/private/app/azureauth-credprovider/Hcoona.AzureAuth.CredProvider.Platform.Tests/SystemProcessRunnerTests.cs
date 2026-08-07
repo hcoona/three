@@ -185,6 +185,14 @@ public sealed class SystemProcessRunnerTests
     [Fact]
     public async Task RunAsyncKillsProcessTreeAndThrowsWhenCanceled()
     {
+        if (
+            OperatingSystem.IsMacOS()
+            && !SystemProcessRunner.IsUnixSessionLauncherAvailable
+        )
+        {
+            return;
+        }
+
         var pidFile = Path.Combine(CreateTestDirectory("process tree"), "child.pid");
         var runner = new SystemProcessRunner();
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
@@ -208,7 +216,14 @@ public sealed class SystemProcessRunnerTests
     [Fact]
     public async Task RunAsyncReturnsTimedOutStatusAndKillsProcessTreeWhenTimeoutExpires()
     {
-        if (OperatingSystem.IsWindows() || !File.Exists("/bin/sh"))
+        if (
+            OperatingSystem.IsWindows()
+            || !File.Exists("/bin/sh")
+            || (
+                OperatingSystem.IsMacOS()
+                && !SystemProcessRunner.IsUnixSessionLauncherAvailable
+            )
+        )
         {
             return;
         }
