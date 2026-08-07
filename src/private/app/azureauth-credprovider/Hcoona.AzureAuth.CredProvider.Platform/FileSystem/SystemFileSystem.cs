@@ -307,7 +307,8 @@ public sealed class SystemFileSystem
             )
             {
                 throw new IOException(
-                    $"The directory link '{candidatePath}' contains a cycle or exceeds the supported traversal depth."
+                    $"The directory link '{candidatePath}' contains a cycle or exceeds "
+                        + "the supported traversal depth."
                 );
             }
 
@@ -320,7 +321,8 @@ public sealed class SystemFileSystem
             )
             {
                 throw new IOException(
-                    $"The directory link '{candidatePath}' does not resolve to an existing directory."
+                    $"The directory link '{candidatePath}' does not resolve to an "
+                        + "existing directory."
                 );
             }
 

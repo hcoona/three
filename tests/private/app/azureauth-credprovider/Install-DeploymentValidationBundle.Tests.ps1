@@ -167,10 +167,18 @@ function New-TestBundle {
 }
 
 function New-DeploymentGeneratorStaging {
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [Parameter(Mandatory = $true)]
         [string]$OutputRoot
     )
+
+    if (-not $PSCmdlet.ShouldProcess(
+            $OutputRoot,
+            'Create deployment generator staging content'
+        )) {
+        return
+    }
 
     $stagingRoot = Join-Path $OutputRoot "staging/$buildOs/$targetRid"
     $appRoot = Join-Path $stagingRoot 'app'
@@ -614,9 +622,9 @@ try {
         Invoke-DeploymentGenerator `
             -OutputRoot $generatorFailureOutput `
             -BeforeArchiveEntry {
-                param([string]$EntryName)
-                throw "Injected packaging failure before '$EntryName'."
-            }
+            param([string]$EntryName)
+            throw "Injected packaging failure before '$EntryName'."
+        }
     } 'Expected the injected deployment packaging failure.'
     Assert-BytesEqual `
         -Expected $preservedPackage `
@@ -732,7 +740,7 @@ try {
         -InstallRoot $cleanupFailureInstallRoot `
         -NuGetPluginRoot $cleanupFailurePluginRoot
 
-    $global:DeploymentInstallerCleanupFailureInjected = $false
+    $script:DeploymentInstallerCleanupFailureInjected = $false
     function global:Remove-Item {
         [CmdletBinding(DefaultParameterSetName = 'Path')]
         param(
@@ -754,9 +762,9 @@ try {
             $Path
         }
         foreach ($requestedPath in $requestedPaths) {
-            if (-not $global:DeploymentInstallerCleanupFailureInjected -and
+            if (-not $script:DeploymentInstallerCleanupFailureInjected -and
                 $requestedPath -like '*.install.backup.*') {
-                $global:DeploymentInstallerCleanupFailureInjected = $true
+                $script:DeploymentInstallerCleanupFailureInjected = $true
                 $removedPayloadPath = Join-Path $requestedPath 'app/previous-product.txt'
                 if (Test-Path -LiteralPath $removedPayloadPath) {
                     Microsoft.PowerShell.Management\Remove-Item `

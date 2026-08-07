@@ -108,7 +108,8 @@ public sealed class NuGetPluginAdapter
             .GetAwaiter()
             .GetResult();
 
-    internal async ValueTask<GetAuthenticationCredentialsResponse> HandleGetAuthenticationCredentialsAsync(
+    internal async ValueTask<GetAuthenticationCredentialsResponse>
+        HandleGetAuthenticationCredentialsAsync(
         GetAuthenticationCredentialsRequest request,
         CancellationToken cancellationToken
     )

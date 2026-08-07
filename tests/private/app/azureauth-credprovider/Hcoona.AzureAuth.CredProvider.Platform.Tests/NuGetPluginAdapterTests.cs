@@ -664,7 +664,7 @@ public sealed class NuGetPluginAdapterTests
         "CA1707:Identifiers should not contain underscores",
         Justification = "The underscores separate the protocol condition from the expected result."
     )]
-    public async Task GetAuthenticationCredentialsHandler_WhenInteractiveBrowserAcquisitionIsBlocked_ReportsProgressBeforeOneFinalResponse()
+    public async Task GetCredentials_WhenBrowserIsBlocked_ReportsProgressBeforeFinalResponse()
     {
         const string requestId = "33333333-3333-3333-3333-333333333333";
         var acquisition = new GatedInteractiveBrowserAcquisitionService();
@@ -761,7 +761,7 @@ public sealed class NuGetPluginAdapterTests
         "CA1707:Identifiers should not contain underscores",
         Justification = "The underscores separate the protocol condition from the expected result."
     )]
-    public async Task GetAuthenticationCredentialsHandler_WhenDialogIsUnavailable_DoesNotReportProgress()
+    public async Task GetCredentials_WhenDialogIsUnavailable_DoesNotReportProgress()
     {
         var adapter = new NuGetPluginAdapter(new RequestTokenCapturingAcquisitionService());
         IRequestHandler handler = GetAuthenticationCredentialsHandler(adapter);

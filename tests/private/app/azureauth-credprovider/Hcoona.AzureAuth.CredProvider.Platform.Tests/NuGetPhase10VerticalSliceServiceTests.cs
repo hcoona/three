@@ -1,4 +1,5 @@
 using Hcoona.AzureAuth.CredProvider.Contracts;
+using Hcoona.AzureAuth.CredProvider.Platform.Composition;
 using Hcoona.AzureAuth.CredProvider.Platform.Configuration;
 using Hcoona.AzureAuth.CredProvider.Platform.Tests.TestDoubles;
 using Hcoona.AzureAuth.CredProvider.Platform.VerticalSlice;
@@ -164,7 +165,7 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
         );
 
     [Fact]
-    public async Task DoctorValidatesAzureArtifactsParserClassificationWithoutCredentialAcquisition()
+    public async Task DoctorValidatesParserWithoutCredentialAcquisition()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Host);
         var acquisition = new ThrowingNuGetDoctorCredentialAcquisitionService();
@@ -175,12 +176,7 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
                 FileSystem = fileSystem,
                 EnvironmentVariableReader = _ => null,
                 CredentialAcquisition =
-                    new Hcoona
-                        .AzureAuth
-                        .CredProvider
-                        .Platform
-                        .Composition
-                        .BoundedCredentialAcquisitionAdapter(acquisition),
+                    new BoundedCredentialAcquisitionAdapter(acquisition),
             }
         );
         fileSystem.AtomicWriteAllText(service.Paths.PluginEntrypointPath, "fake-assembly");

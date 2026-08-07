@@ -2692,17 +2692,21 @@ internal static class CliApplication
             or PythonPhase11KeyringModuleProbeStatus.OutputTooLarge
             or PythonPhase11KeyringModuleProbeStatus.InvalidOutput
             or PythonPhase11KeyringModuleProbeStatus.ModuleFinderError =>
-                "run the selected Python interpreter directly and resolve the reported probe failure, then retry.",
+                "run the selected Python interpreter directly and resolve the "
+                    + "reported probe failure, then retry.",
             _ => productProbe.Status switch
             {
                 PythonPhase11ProductProbeStatus.LaunchFailure =>
-                    "verify that the selected Python interpreter can launch the product probe, then retry.",
+                    "verify that the selected Python interpreter can launch the "
+                        + "product probe, then retry.",
                 PythonPhase11ProductProbeStatus.TimedOut =>
-                    "verify that the selected Python interpreter can complete the product probe promptly, then retry.",
+                    "verify that the selected Python interpreter can complete the "
+                        + "product probe promptly, then retry.",
                 PythonPhase11ProductProbeStatus.UnexpectedNonZeroExit
                 or PythonPhase11ProductProbeStatus.OutputTooLarge
                 or PythonPhase11ProductProbeStatus.InvalidOutput =>
-                    "run the selected Python interpreter directly and resolve the reported product probe failure, then retry.",
+                    "run the selected Python interpreter directly and resolve the "
+                        + "reported product probe failure, then retry.",
                 _ => "review the Python doctor output, correct the failed dependency, then retry.",
             },
         };

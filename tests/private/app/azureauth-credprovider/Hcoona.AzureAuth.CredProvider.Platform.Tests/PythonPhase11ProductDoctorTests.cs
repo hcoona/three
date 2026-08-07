@@ -35,13 +35,25 @@ public sealed class PythonPhase11ProductDoctorTests
             generic =>
             {
                 string script = Assert.IsType<string>(generic.Arguments[1]);
-                Assert.Contains("importlib.util.find_spec('keyring')", script, StringComparison.Ordinal);
-                Assert.DoesNotContain("importlib.metadata.distribution", script, StringComparison.Ordinal);
+                Assert.Contains(
+                    "importlib.util.find_spec('keyring')",
+                    script,
+                    StringComparison.Ordinal
+                );
+                Assert.DoesNotContain(
+                    "importlib.metadata.distribution",
+                    script,
+                    StringComparison.Ordinal
+                );
             },
             product =>
             {
                 string script = Assert.IsType<string>(product.Arguments[1]);
-                Assert.Contains("importlib.metadata.distribution", script, StringComparison.Ordinal);
+                Assert.Contains(
+                    "importlib.metadata.distribution",
+                    script,
+                    StringComparison.Ordinal
+                );
             }
         );
     }
@@ -105,7 +117,11 @@ public sealed class PythonPhase11ProductDoctorTests
 
         string script = Assert.IsType<string>(runner.StartSpecs[1].Arguments[1]);
         Assert.Contains("isinstance(backend_type,type)", script, StringComparison.Ordinal);
-        Assert.Contains("issubclass(backend_type,KeyringBackend)", script, StringComparison.Ordinal);
+        Assert.Contains(
+            "issubclass(backend_type,KeyringBackend)",
+            script,
+            StringComparison.Ordinal
+        );
         Assert.Contains("backend_type.__name__", script, StringComparison.Ordinal);
         Assert.Contains("backend_type.__module__", script, StringComparison.Ordinal);
         Assert.Contains(
@@ -195,7 +211,8 @@ public sealed class PythonPhase11ProductDoctorTests
         Assert.False(result.ProductProbe.BackendLoadable);
         Assert.Equal(PythonPhase11ProductProbeStatus.LoadFailure, result.ProductProbe.Status);
         Assert.Equal(
-            "The AzureAuth keyring backend could not be loaded or did not satisfy its required contract.",
+            "The AzureAuth keyring backend could not be loaded or did not "
+                + "satisfy its required contract.",
             result.ProductProbe.FailureMessage
         );
     }
@@ -255,10 +272,15 @@ public sealed class PythonPhase11ProductDoctorTests
 
         Assert.Equal(PythonPhase11ProductProbeStatus.InvalidOutput, result.ProductProbe.Status);
         Assert.Equal(
-            "The AzureAuth keyring product probe did not produce a recognized marker and exit-code pair.",
+            "The AzureAuth keyring product probe did not produce a recognized "
+                + "marker and exit-code pair.",
             result.ProductProbe.FailureMessage
         );
-        Assert.DoesNotContain("Traceback", result.ProductProbe.FailureMessage, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Traceback",
+            result.ProductProbe.FailureMessage,
+            StringComparison.Ordinal
+        );
         Assert.DoesNotContain(secret, result.ProductProbe.FailureMessage, StringComparison.Ordinal);
     }
 
@@ -315,7 +337,10 @@ public sealed class PythonPhase11ProductDoctorTests
             PythonPhase11AzureAuthKeyringHelperProbeStatus.NotApplicable,
             result.AzureAuthKeyringHelper.Status
         );
-        Assert.Equal(PythonPhase11ProductProbeStatus.DistributionMissing, result.ProductProbe.Status);
+        Assert.Equal(
+            PythonPhase11ProductProbeStatus.DistributionMissing,
+            result.ProductProbe.Status
+        );
         Assert.False(result.IsReady);
     }
 
@@ -418,7 +443,8 @@ public sealed class PythonPhase11ProductDoctorTests
                 ProcessRunner = HealthyGenericRunner(ProductHealthyResult()),
                 EnvironmentVariableReader = name =>
                     name == "PATH"
-                        ? "/other/bin:/workspace/.venv/bin:/home/alice/.local/share/azureauth-credprovider/keyring-shim"
+                        ? "/other/bin:/workspace/.venv/bin:"
+                            + "/home/alice/.local/share/azureauth-credprovider/keyring-shim"
                         : null,
                 ExpectedKeyringShimPath = ExpectedShimPath,
                 PythonExecutablePath = SelectedPythonPath,
@@ -619,7 +645,8 @@ public sealed class PythonPhase11ProductDoctorTests
             {
                 ProcessResult.LaunchFailure(),
                 PythonPhase11ProductProbeStatus.LaunchFailure,
-                "The selected Python interpreter could not be launched for the AzureAuth keyring product probe."
+                "The selected Python interpreter could not be launched for the "
+                    + "AzureAuth keyring product probe."
             },
             {
                 ProcessResult.TimedOut("sensitive-child-output", "sensitive-child-output"),
@@ -679,7 +706,8 @@ public sealed class PythonPhase11ProductDoctorTests
                     {
                         "HOME" => "/home/alice",
                         "PATH" =>
-                            "/home/alice/.local/share/azureauth-credprovider/keyring-shim:/workspace/.venv/bin:/usr/bin",
+                            "/home/alice/.local/share/azureauth-credprovider/"
+                            + "keyring-shim:/workspace/.venv/bin:/usr/bin",
                         _ => null,
                     },
                 ExpectedKeyringShimPath = ExpectedShimPath,
@@ -740,7 +768,8 @@ public sealed class PythonPhase11ProductDoctorTests
 
         string script = Assert.IsType<string>(runner.StartSpecs[1].Arguments[1]);
         Assert.Contains(
-            "backend_entry_points=[entry_point for entry_point in distribution.entry_points if entry_point.group == 'keyring.backends']",
+            "backend_entry_points=[entry_point for entry_point in "
+                + "distribution.entry_points if entry_point.group == 'keyring.backends']",
             script,
             StringComparison.Ordinal
         );
@@ -755,12 +784,19 @@ public sealed class PythonPhase11ProductDoctorTests
             StringComparison.Ordinal
         );
         Assert.Contains(
-            "if entry_point.name != 'azureauth' or entry_point.value != 'azureauth_credprovider_keyring.backend:AzureAuthKeyringBackend':",
+            "if entry_point.name != 'azureauth' or entry_point.value != "
+                + "'azureauth_credprovider_keyring.backend:AzureAuthKeyringBackend':",
             script,
             StringComparison.Ordinal
         );
         const string completePredicate =
-            "valid=(isinstance(backend_type,type) and issubclass(backend_type,KeyringBackend) and not inspect.isabstract(backend_type) and backend_type.__name__ == 'AzureAuthKeyringBackend' and backend_type.__module__ == 'azureauth_credprovider_keyring.backend' and all(callable(getattr(backend_type,method,None)) for method in contract_methods))";
+            "valid=(isinstance(backend_type,type) and "
+            + "issubclass(backend_type,KeyringBackend) and "
+            + "not inspect.isabstract(backend_type) and "
+            + "backend_type.__name__ == 'AzureAuthKeyringBackend' and "
+            + "backend_type.__module__ == 'azureauth_credprovider_keyring.backend' and "
+            + "all(callable(getattr(backend_type,method,None)) "
+            + "for method in contract_methods))";
         Assert.Contains(completePredicate, script, StringComparison.Ordinal);
         Assert.Contains("if not valid:", script, StringComparison.Ordinal);
         Assert.Equal(PythonPhase11ProductProbeStatus.Healthy, result.ProductProbe.Status);
@@ -784,7 +820,8 @@ public sealed class PythonPhase11ProductDoctorTests
         Assert.Equal(PythonPhase11ProductProbeStatus.InvalidOutput, result.ProductProbe.Status);
         Assert.False(result.ProductProbe.BackendLoadable);
         Assert.Equal(
-            "The AzureAuth keyring product probe did not produce a recognized marker and exit-code pair.",
+            "The AzureAuth keyring product probe did not produce a recognized "
+                + "marker and exit-code pair.",
             result.ProductProbe.FailureMessage
         );
     }
@@ -816,7 +853,8 @@ public sealed class PythonPhase11ProductDoctorTests
                     {
                         "HOME" => "/home/alice",
                         "PATH" =>
-                            "/home/alice/.local/share/azureauth-credprovider/keyring-shim:/workspace/.venv/bin:/usr/bin",
+                            "/home/alice/.local/share/azureauth-credprovider/"
+                            + "keyring-shim:/workspace/.venv/bin:/usr/bin",
                         _ => null,
                     },
                 ExpectedKeyringShimPath = ExpectedShimPath,
@@ -845,7 +883,7 @@ public sealed class PythonPhase11ProductDoctorTests
 
     [Theory]
     [MemberData(nameof(RemainingIncorrectProductProtocolPairs))]
-    public async Task RunDoctorProductProbeKnownExitWithEveryRemainingWrongMarkerReturnsInvalidOutput(
+    public async Task RunDoctorProductProbeRemainingWrongMarkersReturnInvalidOutput(
         int exitCode,
         string wrongMarker
     )
@@ -857,7 +895,8 @@ public sealed class PythonPhase11ProductDoctorTests
         Assert.Equal(PythonPhase11ProductProbeStatus.InvalidOutput, result.ProductProbe.Status);
         Assert.False(result.ProductProbe.BackendLoadable);
         Assert.Equal(
-            "The AzureAuth keyring product probe did not produce a recognized marker and exit-code pair.",
+            "The AzureAuth keyring product probe did not produce a recognized "
+                + "marker and exit-code pair.",
             result.ProductProbe.FailureMessage
         );
     }

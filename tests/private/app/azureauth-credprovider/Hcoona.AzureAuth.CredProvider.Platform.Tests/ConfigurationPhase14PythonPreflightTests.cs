@@ -56,7 +56,10 @@ public sealed class ConfigurationPhase14PythonPreflightTests
             );
 
         Assert.True(result.PythonPreflightSucceeded);
-        Assert.Equal(PythonPhase11ProductProbeStatus.Healthy, result.PythonPreflight!.ProductProbe.Status);
+        Assert.Equal(
+            PythonPhase11ProductProbeStatus.Healthy,
+            result.PythonPreflight!.ProductProbe.Status
+        );
         Assert.Equal(
             PythonPhase11AzureAuthKeyringHelperProbeStatus.Found,
             result.PythonPreflight.AzureAuthKeyringHelper.Status
@@ -67,7 +70,7 @@ public sealed class ConfigurationPhase14PythonPreflightTests
     }
 
     [Fact]
-    public async Task ConfigureAsync_WhenPythonPreflightFails_ReturnsFailureWithoutWritesOrPlanExecution()
+    public async Task ConfigureAsync_WhenPythonPreflightFails_ReturnsFailureWithoutWrites()
     {
         var fileSystem = CreatePosixFileSystem(helperPresent: true);
         var runner = HealthyGenericRunner(

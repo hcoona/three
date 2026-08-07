@@ -1829,8 +1829,11 @@ public sealed class CliApplicationTests
                 if (!dryRun)
                 {
                     string gitConfig = File.ReadAllText(gitService.Paths.GitConfigPath);
+                    string serializedHelper = GetSerializedGitHelperPath(
+                        gitService.Paths.GitHelperPath
+                    );
                     Assert.Contains(
-                        $"helper = \"{GetSerializedGitHelperPath(gitService.Paths.GitHelperPath)}\"",
+                        $"helper = \"{serializedHelper}\"",
                         gitConfig,
                         StringComparison.Ordinal
                     );
@@ -5415,7 +5418,11 @@ public sealed class CliApplicationTests
                     throw new IOException("The directory is not empty.");
                 }
 
-                foreach (string file in files.Keys.Where(file => IsDescendant(file, fullPath)).ToArray())
+                foreach (
+                    string file in files.Keys
+                        .Where(file => IsDescendant(file, fullPath))
+                        .ToArray()
+                )
                 {
                     files.Remove(file);
                 }
@@ -6472,7 +6479,11 @@ public sealed class CliApplicationTests
                 doctor.StdOut,
                 StringComparison.Ordinal
             );
-            Assert.Contains("python-keyring-module: pass\n", doctor.StdOut, StringComparison.Ordinal);
+            Assert.Contains(
+                "python-keyring-module: pass\n",
+                doctor.StdOut,
+                StringComparison.Ordinal
+            );
             Assert.Contains(
                 "python-keyring-module-probe: module-found\n",
                 doctor.StdOut,
@@ -7792,7 +7803,7 @@ public sealed class CliApplicationTests
     }
 
     [Fact]
-    public void HandleConfigure_WhenPythonPreflightFails_ReturnsNonzeroWithSelectedInterpreterBootstrapGuidance()
+    public void HandleConfigure_WhenPythonPreflightFails_PrintsBootstrapGuidance()
     {
         using var fixture = new Phase3ConfigureFixture(productHealthy: false);
         string[] before = fixture.GetFileSystemEntries();
@@ -8080,7 +8091,11 @@ public sealed class CliApplicationTests
 
         Assert.Equal(1, result.ExitCode);
         Assert.Equal(string.Empty, result.StdOut);
-        Assert.Contains("python preflight failed", result.StdErr, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            "python preflight failed",
+            result.StdErr,
+            StringComparison.OrdinalIgnoreCase
+        );
         Assert.DoesNotContain("planned-actions", result.StdErr, StringComparison.Ordinal);
         Assert.DoesNotContain("planned-change-count", result.StdErr, StringComparison.Ordinal);
         Assert.DoesNotContain("export PATH=", result.StdErr, StringComparison.Ordinal);
@@ -8193,7 +8208,7 @@ public sealed class CliApplicationTests
         Skip = "POSIX protocol-wrapper integration is unsupported on Windows.",
         SkipWhen = nameof(IsWindows)
     )]
-    public void Run_DoctorWithProductionProcessRunnerAndProtocolWrapper_RendersHealthyProductChecksWithoutPython()
+    public void Run_DoctorWithProtocolWrapper_RendersHealthyProductChecks()
     {
         using var pythonFixture = new PythonDoctorFixture(PythonDoctorFixtureMode.Healthy);
         string invocationLog = Path.Combine(pythonFixture.RootPath, "wrapper-invocations");
@@ -8740,7 +8755,11 @@ public sealed class CliApplicationTests
     [InlineData(PythonPhase11ProductProbeStatus.LoadFailure, true, "load-failed")]
     [InlineData(PythonPhase11ProductProbeStatus.LaunchFailure, true, "launch-failed")]
     [InlineData(PythonPhase11ProductProbeStatus.TimedOut, true, "timed-out")]
-    [InlineData(PythonPhase11ProductProbeStatus.UnexpectedNonZeroExit, true, "unexpected-nonzero-exit")]
+    [InlineData(
+        PythonPhase11ProductProbeStatus.UnexpectedNonZeroExit,
+        true,
+        "unexpected-nonzero-exit"
+    )]
     [InlineData(PythonPhase11ProductProbeStatus.OutputTooLarge, true, "output-too-large")]
     [InlineData(PythonPhase11ProductProbeStatus.InvalidOutput, true, "invalid-output")]
     public void HandleDoctor_ProductProbeStatusTextMappings(

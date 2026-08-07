@@ -285,7 +285,7 @@ public sealed class SystemFileSystemTests
         Skip = "Directory symbolic-link creation is unavailable.",
         SkipUnless = nameof(CanCreateDirectorySymbolicLinks)
     )]
-    public void ResolveFilePathForWriteFullyCanonicalizesChainedAncestorLinksAndKeepsMissingFileName()
+    public void ResolveFilePathForWriteCanonicalizesChainedLinks()
     {
         string root = CreateTestDirectory();
         string physical = Path.Combine(root, "physical");

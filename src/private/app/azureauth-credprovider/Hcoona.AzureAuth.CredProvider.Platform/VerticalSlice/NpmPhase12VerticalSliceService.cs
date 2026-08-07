@@ -839,7 +839,9 @@ public sealed class NpmPhase12VerticalSliceService
     {
         try
         {
-            using JsonDocument document = JsonDocument.Parse(fileSystem.ReadAllText(packageJsonPath));
+            using JsonDocument document = JsonDocument.Parse(
+                fileSystem.ReadAllText(packageJsonPath)
+            );
             return document.RootElement.ValueKind == JsonValueKind.Object
                 && document.RootElement.TryGetProperty("workspaces", out _);
         }
@@ -919,21 +921,27 @@ public sealed class NpmPhase12VerticalSliceService
                 ),
                 ProcessExecutionStatus.TimedOut => CreateWorkspaceResolutionFailure(
                     NpmWorkspaceResolutionStatus.TimedOut,
-                    "npm workspace discovery timed out. Run `npm prefix` from the workspace directory and resolve the delay."
+                    "npm workspace discovery timed out. Run `npm prefix` from the "
+                        + "workspace directory and resolve the delay."
                 ),
                 ProcessExecutionStatus.OutputTooLarge => CreateWorkspaceResolutionFailure(
                     NpmWorkspaceResolutionStatus.OutputTooLarge,
-                    "npm workspace discovery produced too much output. Run `npm prefix` and resolve the npm configuration."
+                    "npm workspace discovery produced too much output. Run `npm prefix` "
+                        + "and resolve the npm configuration."
                 ),
                 ProcessExecutionStatus.InvalidOutput => CreateWorkspaceResolutionFailure(
                     NpmWorkspaceResolutionStatus.InvalidOutput,
-                    "npm workspace discovery returned invalid process output. Run `npm prefix` and verify npm succeeds."
+                    "npm workspace discovery returned invalid process output. Run "
+                        + "`npm prefix` and verify npm succeeds."
                 ),
                 _ => CreateWorkspaceResolutionFailure(
                     NpmWorkspaceResolutionStatus.NonZeroExit,
                     processResult.HasExitCode
-                        ? $"npm workspace discovery failed with exit code {processResult.ExitCode}. Run `npm prefix` and resolve the npm error."
-                        : "npm workspace discovery failed. Run `npm prefix` and resolve the npm error."
+                        ? $"npm workspace discovery failed with exit code "
+                            + $"{processResult.ExitCode}. Run `npm prefix` and resolve "
+                            + "the npm error."
+                        : "npm workspace discovery failed. Run `npm prefix` and resolve "
+                            + "the npm error."
                 ),
             };
         }
@@ -1332,7 +1340,8 @@ public sealed class NpmPhase12VerticalSliceService
     private static NpmWorkspaceResolutionResult CreateInvalidWorkspaceResolution() =>
         CreateWorkspaceResolutionFailure(
             NpmWorkspaceResolutionStatus.InvalidOutput,
-            "npm workspace discovery returned an invalid root. Run `npm prefix` and verify it returns one existing absolute ancestor path."
+            "npm workspace discovery returned an invalid root. Run `npm prefix` and "
+                + "verify it returns one existing absolute ancestor path."
         );
 
     private static NpmWorkspaceResolutionResult CreateWorkspaceResolutionFailure(

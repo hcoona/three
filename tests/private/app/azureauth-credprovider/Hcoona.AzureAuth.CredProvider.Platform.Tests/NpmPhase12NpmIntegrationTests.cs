@@ -338,7 +338,8 @@ public sealed class NpmPhase12NpmIntegrationTests
             );
             File.WriteAllText(
                 Path.Combine(invocationPath, ".npmrc"),
-                $"@{invocationPackageName}:registry=https://pkgs.dev.azure.com/org/_packaging/{invocationPackageName}/npm/registry/\n"
+                $"@{invocationPackageName}:registry=https://pkgs.dev.azure.com/"
+                    + $"org/_packaging/{invocationPackageName}/npm/registry/\n"
             );
             var fixture = new NpmPrefixFixture(rootPath, invocationPath)
             {

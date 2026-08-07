@@ -546,7 +546,10 @@ public sealed class PythonPhase11EnvironmentDiscoveryTests
         Assert.Equal("python3", processRunner.StartSpecs[0].FileName);
         Assert.Equal("/resolved/python3/bin/python3", processRunner.StartSpecs[1].FileName);
         Assert.True(result.KeyringModuleProbe.KeyringModuleResolvable);
-        Assert.Equal("/resolved/python3/bin/python3", result.KeyringModuleProbe.PythonExecutablePath);
+        Assert.Equal(
+            "/resolved/python3/bin/python3",
+            result.KeyringModuleProbe.PythonExecutablePath
+        );
     }
 
     [Fact]
@@ -1229,7 +1232,7 @@ public sealed class PythonPhase11EnvironmentDiscoveryTests
     }
 
     [Fact]
-    public async Task DoctorDoesNotReportModuleNotFoundWhenKeyringProbeExitsOneWithoutProtocolMarker()
+    public async Task DoctorDoesNotReportMissingModuleForUnmarkedExitOne()
     {
         var fileSystem = CreatePosixFileSystemWithSelectedPython();
         var processRunner = new FakeProcessRunner();

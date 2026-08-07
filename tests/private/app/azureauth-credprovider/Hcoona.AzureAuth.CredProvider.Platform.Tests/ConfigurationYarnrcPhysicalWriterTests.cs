@@ -185,7 +185,7 @@ public sealed class ConfigurationYarnrcPhysicalWriterTests
     }
 
     [Fact]
-    public void WriteConfigureNormalizesFlowStyleNpmRegistriesAndRetainsUnrelatedEntriesAsValidYaml()
+    public void WriteConfigureNormalizesFlowRegistriesAndRetainsUnrelatedEntries()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         CanonicalResourceIdentity resource = CreateResource();
@@ -193,7 +193,8 @@ public sealed class ConfigurationYarnrcPhysicalWriterTests
         fileSystem.AtomicWriteAllText(
             Path,
             "npmRegistries: { "
-                + $"\"{UnrelatedRegistry}\": {{ npmAlwaysAuth: false, npmPublishRegistry: 'https://publish.example.com/' }}"
+                + $"\"{UnrelatedRegistry}\": {{ npmAlwaysAuth: false, "
+                + "npmPublishRegistry: 'https://publish.example.com/' }"
                 + " } # keep flow comment\nnodeLinker: node-modules\n"
         );
         ConfigurationChange[] changes = CreateChanges(resource);
@@ -220,7 +221,11 @@ public sealed class ConfigurationYarnrcPhysicalWriterTests
             text,
             StringComparison.Ordinal
         );
-        Assert.Contains("npmRegistries: # keep flow comment\n", text, StringComparison.Ordinal);
+        Assert.Contains(
+            "npmRegistries: # keep flow comment\n",
+            text,
+            StringComparison.Ordinal
+        );
         Assert.Contains("nodeLinker: node-modules\n", text, StringComparison.Ordinal);
         Assert.True(
             writer.IsSatisfied(
@@ -231,7 +236,7 @@ public sealed class ConfigurationYarnrcPhysicalWriterTests
     }
 
     [Fact]
-    public void WriteUnconfigureNormalizesFlowStyleNpmRegistriesAndRetainsUnrelatedEntriesAsValidYaml()
+    public void WriteUnconfigureNormalizesFlowRegistriesAndRetainsUnrelatedEntries()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         CanonicalResourceIdentity resource = CreateResource();

@@ -3490,7 +3490,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     }
 
     [Fact]
-    public async Task CleanupCiTemporaryEcosystemAsync_WhenYarnBaseManifestTargetsDifferentLogicalPath_DryRunFailsClosedAndPreservesFiles()
+    public async Task CleanupCiAsync_YarnBaseTargetMismatch_DryRunFailsClosed()
     {
         await AssertYarnCiManifestTargetMismatchFailsClosedAsync(
             transitional: false,
@@ -3499,7 +3499,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     }
 
     [Fact]
-    public async Task CleanupCiTemporaryEcosystemAsync_WhenYarnBaseManifestTargetsDifferentLogicalPath_ExecutionFailsClosedAndPreservesFiles()
+    public async Task CleanupCiAsync_YarnBaseTargetMismatch_ExecutionFailsClosed()
     {
         await AssertYarnCiManifestTargetMismatchFailsClosedAsync(
             transitional: false,
@@ -3508,7 +3508,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     }
 
     [Fact]
-    public async Task CleanupCiTemporaryEcosystemAsync_WhenYarnTransitionalManifestTargetsDifferentLogicalPath_DryRunFailsClosedAndPreservesFiles()
+    public async Task CleanupCiAsync_YarnTransitionalTargetMismatch_DryRunFailsClosed()
     {
         await AssertYarnCiManifestTargetMismatchFailsClosedAsync(
             transitional: true,
@@ -3517,7 +3517,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     }
 
     [Fact]
-    public async Task CleanupCiTemporaryEcosystemAsync_WhenYarnTransitionalManifestTargetsDifferentLogicalPath_ExecutionFailsClosedAndPreservesFiles()
+    public async Task CleanupCiAsync_YarnTransitionalTargetMismatch_ExecutionFailsClosed()
     {
         await AssertYarnCiManifestTargetMismatchFailsClosedAsync(
             transitional: true,
@@ -3526,7 +3526,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     }
 
     [Fact]
-    public async Task CleanupCiTemporaryEcosystemAsync_WhenYarnManifestTargetsResolvedPhysicalPathInsteadOfConfiguredLogicalPath_FailsClosed()
+    public async Task CleanupCiAsync_YarnPhysicalTargetMismatch_FailsClosed()
     {
         string root = CreateNonRepositoryTestDirectory("phase14-yarn-ci-physical-manifest");
         string physicalProductRoot = Path.Combine(root, "physical");
@@ -3605,7 +3605,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     }
 
     [Fact]
-    public async Task CleanupCiTemporaryEcosystemAsync_WhenYarnManifestTargetsConfiguredLogicalSymlinkPath_CleansSuccessfully()
+    public async Task CleanupCiAsync_YarnLogicalSymlinkTarget_Cleans()
     {
         string root = CreateNonRepositoryTestDirectory("phase14-yarn-ci-logical-manifest");
         string physicalProductRoot = Path.Combine(root, "physical");
@@ -3668,12 +3668,12 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task CleanupCiTemporaryEcosystemAsync_WhenYarnManifestTargetsConfiguredLogicalPath_CleansSuccessfully(
+    public async Task CleanupCiAsync_YarnConfiguredTarget_Cleans(
         bool transitional
     )
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
-        ConfigurationPhase14VerticalSliceService service = await CreateConfiguredYarnCiServiceAsync(
+        ConfigurationPhase14VerticalSliceService service = await CreateYarnCiServiceAsync(
             fileSystem,
             transitional
         );
@@ -3699,7 +3699,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     [Theory]
     [InlineData(CredentialEcosystem.Npm)]
     [InlineData(CredentialEcosystem.Pnpm)]
-    public async Task CleanupCiTemporaryEcosystemAsync_WhenNpmCompatibleBaseManifestTargetsDifferentLogicalPath_DryRunFailsClosedAndPreservesFiles(
+    public async Task CleanupCiAsync_NpmBaseTargetMismatch_DryRunFailsClosed(
         CredentialEcosystem ecosystem
     )
     {
@@ -3713,7 +3713,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     [Theory]
     [InlineData(CredentialEcosystem.Npm)]
     [InlineData(CredentialEcosystem.Pnpm)]
-    public async Task CleanupCiTemporaryEcosystemAsync_WhenNpmCompatibleBaseManifestTargetsDifferentLogicalPath_ExecutionFailsClosedAndPreservesFiles(
+    public async Task CleanupCiAsync_NpmBaseTargetMismatch_ExecutionFailsClosed(
         CredentialEcosystem ecosystem
     )
     {
@@ -3727,7 +3727,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     [Theory]
     [InlineData(CredentialEcosystem.Npm)]
     [InlineData(CredentialEcosystem.Pnpm)]
-    public async Task CleanupCiTemporaryEcosystemAsync_WhenNpmCompatibleTransitionalManifestTargetsDifferentLogicalPath_DryRunFailsClosedAndPreservesFiles(
+    public async Task CleanupCiAsync_NpmTransitionalTargetMismatch_DryRunFailsClosed(
         CredentialEcosystem ecosystem
     )
     {
@@ -3741,7 +3741,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     [Theory]
     [InlineData(CredentialEcosystem.Npm)]
     [InlineData(CredentialEcosystem.Pnpm)]
-    public async Task CleanupCiTemporaryEcosystemAsync_WhenNpmCompatibleTransitionalManifestTargetsDifferentLogicalPath_ExecutionFailsClosedAndPreservesFiles(
+    public async Task CleanupCiAsync_NpmTransitionalTargetMismatch_ExecutionFailsClosed(
         CredentialEcosystem ecosystem
     )
     {
@@ -3765,7 +3765,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     [InlineData(CredentialEcosystem.Yarn, false, true)]
     [InlineData(CredentialEcosystem.Yarn, true, false)]
     [InlineData(CredentialEcosystem.Yarn, true, true)]
-    public async Task UnconfigureCiTemporaryAsync_WhenManifestTargetContainsNul_FailsClosedAndPreservesFiles(
+    public async Task UnconfigureCiAsync_ManifestTargetContainsNul_FailsClosed(
         CredentialEcosystem ecosystem,
         bool transitional,
         bool execute
@@ -3783,14 +3783,14 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     [InlineData(CredentialEcosystem.Npm, true)]
     [InlineData(CredentialEcosystem.Pnpm, false)]
     [InlineData(CredentialEcosystem.Pnpm, true)]
-    public async Task CleanupCiTemporaryEcosystemAsync_WhenNpmCompatibleManifestTargetsConfiguredPath_CleansSuccessfully(
+    public async Task CleanupCiAsync_NpmConfiguredTarget_Cleans(
         CredentialEcosystem ecosystem,
         bool transitional
     )
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         ConfigurationPhase14VerticalSliceService service =
-            await CreateConfiguredNpmCompatibleCiServiceAsync(
+            await CreateNpmCiServiceAsync(
                 fileSystem,
                 ecosystem,
                 transitional
@@ -3816,7 +3816,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     }
 
     [Fact]
-    public async Task CleanupCiTemporaryEcosystemAsync_WhenNpmAndPnpmShareConfiguredTarget_PreservesSharedStateUntilBothOwnersAreRemoved()
+    public async Task CleanupCiAsync_SharedNpmTarget_PreservesUntilBothOwnersRemoved()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         ConfigurationPhase14VerticalSliceService service = CreateService(
@@ -3884,7 +3884,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     [InlineData(CredentialEcosystem.Npm)]
     [InlineData(CredentialEcosystem.Pnpm)]
     [InlineData(CredentialEcosystem.Yarn)]
-    public async Task CleanupCiTemporaryEcosystemAsync_WhenConfiguredWindowsTargetDiffersOnlyByCase_CleansSuccessfully(
+    public async Task CleanupCiAsync_WindowsTargetCaseDifference_Cleans(
         CredentialEcosystem ecosystem
     )
     {
@@ -3954,7 +3954,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         const string UnrelatedContents = "unrelated-npm-marker\n";
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         ConfigurationPhase14VerticalSliceService service =
-            await CreateConfiguredNpmCompatibleCiServiceAsync(
+            await CreateNpmCiServiceAsync(
                 fileSystem,
                 ecosystem,
                 transitional
@@ -4022,8 +4022,8 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         ConfigurationPhase14VerticalSliceService service =
             ecosystem == CredentialEcosystem.Yarn
-                ? await CreateConfiguredYarnCiServiceAsync(fileSystem, transitional)
-                : await CreateConfiguredNpmCompatibleCiServiceAsync(
+                ? await CreateYarnCiServiceAsync(fileSystem, transitional)
+                : await CreateNpmCiServiceAsync(
                     fileSystem,
                     ecosystem,
                     transitional
@@ -4077,7 +4077,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         }
     }
 
-    private static async Task<ConfigurationPhase14VerticalSliceService> CreateConfiguredNpmCompatibleCiServiceAsync(
+    private static async Task<ConfigurationPhase14VerticalSliceService> CreateNpmCiServiceAsync(
         InMemoryFileSystem fileSystem,
         CredentialEcosystem ecosystem,
         bool transitional
@@ -4320,7 +4320,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         const string UnrelatedPath = "/victim/preserved.txt";
         const string UnrelatedContents = "unrelated-marker\n";
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
-        ConfigurationPhase14VerticalSliceService service = await CreateConfiguredYarnCiServiceAsync(
+        ConfigurationPhase14VerticalSliceService service = await CreateYarnCiServiceAsync(
             fileSystem,
             transitional
         );
@@ -4381,7 +4381,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         Assert.True(fileSystem.DirectoryExists(service.Paths.YarnCiTemporaryHomePath));
     }
 
-    private static async Task<ConfigurationPhase14VerticalSliceService> CreateConfiguredYarnCiServiceAsync(
+    private static async Task<ConfigurationPhase14VerticalSliceService> CreateYarnCiServiceAsync(
         InMemoryFileSystem fileSystem,
         bool transitional
     )

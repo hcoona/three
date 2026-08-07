@@ -268,7 +268,8 @@ public sealed class PythonPhase11VerticalSliceService
         + "except BaseException:\n"
         + "    print('ACP_AZUREAUTH_PRODUCT_PROBE_V1:LOAD_FAILURE')\n"
         + "    sys.exit(33)\n"
-        + "backend_entry_points=[entry_point for entry_point in distribution.entry_points if entry_point.group == 'keyring.backends']\n"
+        + "backend_entry_points=[entry_point for entry_point in "
+        + "distribution.entry_points if entry_point.group == 'keyring.backends']\n"
         + "if not backend_entry_points:\n"
         + "    print('ACP_AZUREAUTH_PRODUCT_PROBE_V1:ENTRY_POINT_MISSING')\n"
         + "    sys.exit(31)\n"
@@ -276,14 +277,22 @@ public sealed class PythonPhase11VerticalSliceService
         + "    print('ACP_AZUREAUTH_PRODUCT_PROBE_V1:ENTRY_POINT_MISMATCH')\n"
         + "    sys.exit(32)\n"
         + "entry_point=backend_entry_points[0]\n"
-        + "if entry_point.name != 'azureauth' or entry_point.value != 'azureauth_credprovider_keyring.backend:AzureAuthKeyringBackend':\n"
+        + "if entry_point.name != 'azureauth' or entry_point.value != "
+        + "'azureauth_credprovider_keyring.backend:AzureAuthKeyringBackend':\n"
         + "    print('ACP_AZUREAUTH_PRODUCT_PROBE_V1:ENTRY_POINT_MISMATCH')\n"
         + "    sys.exit(32)\n"
         + "try:\n"
         + "    from keyring.backend import KeyringBackend\n"
         + "    backend_type=entry_point.load()\n"
-        + "    contract_methods=('get_password','get_credential','set_password','delete_password')\n"
-        + "    valid=(isinstance(backend_type,type) and issubclass(backend_type,KeyringBackend) and not inspect.isabstract(backend_type) and backend_type.__name__ == 'AzureAuthKeyringBackend' and backend_type.__module__ == 'azureauth_credprovider_keyring.backend' and all(callable(getattr(backend_type,method,None)) for method in contract_methods))\n"
+        + "    contract_methods=('get_password','get_credential',"
+        + "'set_password','delete_password')\n"
+        + "    valid=(isinstance(backend_type,type) and "
+        + "issubclass(backend_type,KeyringBackend) and "
+        + "not inspect.isabstract(backend_type) and "
+        + "backend_type.__name__ == 'AzureAuthKeyringBackend' and "
+        + "backend_type.__module__ == 'azureauth_credprovider_keyring.backend' and "
+        + "all(callable(getattr(backend_type,method,None)) "
+        + "for method in contract_methods))\n"
         + "except BaseException:\n"
         + "    valid=False\n"
         + "if not valid:\n"
@@ -540,7 +549,8 @@ public sealed class PythonPhase11VerticalSliceService
                     pythonExecutablePath,
                     PythonPhase11ProductProbeStatus.DistributionMissing,
                     backendLoadable: false,
-                    "The selected Python interpreter does not contain the azureauth-credprovider-keyring distribution."
+                    "The selected Python interpreter does not contain the "
+                        + "azureauth-credprovider-keyring distribution."
                 );
             }
 
@@ -566,7 +576,8 @@ public sealed class PythonPhase11VerticalSliceService
                     pythonExecutablePath,
                     PythonPhase11ProductProbeStatus.EntryPointMismatch,
                     backendLoadable: false,
-                    "The AzureAuth keyring backend entry point does not match the required target."
+                    "The AzureAuth keyring backend entry point does not match "
+                        + "the required target."
                 );
             }
 
@@ -579,7 +590,8 @@ public sealed class PythonPhase11VerticalSliceService
                     pythonExecutablePath,
                     PythonPhase11ProductProbeStatus.LoadFailure,
                     backendLoadable: false,
-                    "The AzureAuth keyring backend could not be loaded or did not satisfy its required contract."
+                    "The AzureAuth keyring backend could not be loaded or did not "
+                        + "satisfy its required contract."
                 );
             }
 
@@ -596,7 +608,8 @@ public sealed class PythonPhase11VerticalSliceService
                     pythonExecutablePath,
                     PythonPhase11ProductProbeStatus.UnexpectedNonZeroExit,
                     backendLoadable: false,
-                    $"The AzureAuth keyring product probe exited unexpectedly with code {result.ExitCode}."
+                    $"The AzureAuth keyring product probe exited unexpectedly with "
+                        + $"code {result.ExitCode}."
                 );
             }
 
@@ -604,7 +617,8 @@ public sealed class PythonPhase11VerticalSliceService
                 pythonExecutablePath,
                 PythonPhase11ProductProbeStatus.InvalidOutput,
                 backendLoadable: false,
-                "The AzureAuth keyring product probe did not produce a recognized marker and exit-code pair."
+                "The AzureAuth keyring product probe did not produce a recognized "
+                    + "marker and exit-code pair."
             );
         }
 
@@ -614,7 +628,8 @@ public sealed class PythonPhase11VerticalSliceService
                 pythonExecutablePath,
                 PythonPhase11ProductProbeStatus.LaunchFailure,
                 backendLoadable: false,
-                "The selected Python interpreter could not be launched for the AzureAuth keyring product probe."
+                "The selected Python interpreter could not be launched for the "
+                    + "AzureAuth keyring product probe."
             ),
             ProcessExecutionStatus.TimedOut => CreateProductProbe(
                 pythonExecutablePath,
@@ -668,7 +683,8 @@ public sealed class PythonPhase11VerticalSliceService
             BackendLoadable = false,
             Status = PythonPhase11ProductProbeStatus.NotAttempted,
             FailureMessage =
-                "The AzureAuth keyring product probe was not attempted because the keyring module is unavailable.",
+                "The AzureAuth keyring product probe was not attempted because "
+                + "the keyring module is unavailable.",
         };
 
     private PythonPhase11AzureAuthKeyringHelperProbe ProbeAzureAuthKeyringHelper(
@@ -696,9 +712,15 @@ public sealed class PythonPhase11VerticalSliceService
                 ? null
                 : fileSystem.GetFullPath($"{selectedPythonDirectory}/{helperFileName}");
         string? resolvedExecutablePath = null;
-        foreach (string directory in SplitPathDirectories(environmentVariableReader(PathVariableName)))
+        foreach (
+            string directory in SplitPathDirectories(
+                environmentVariableReader(PathVariableName)
+            )
+        )
         {
-            string candidatePath = fileSystem.GetFullPath($"{directory}/{helperFileName}");
+            string candidatePath = fileSystem.GetFullPath(
+                $"{directory}/{helperFileName}"
+            );
             if (fileSystem.IsExecutableFile(candidatePath))
             {
                 resolvedExecutablePath = candidatePath;
@@ -753,7 +775,9 @@ public sealed class PythonPhase11VerticalSliceService
             };
         }
 
-        string normalizedPythonExecutablePath = fileSystem.GetFullPath(effectivePythonExecutablePath);
+        string normalizedPythonExecutablePath = fileSystem.GetFullPath(
+            effectivePythonExecutablePath
+        );
         bool pythonExecutableExists = fileSystem.FileExists(normalizedPythonExecutablePath);
         ProcessResult result = await processRunner
             .RunAsync(

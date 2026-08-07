@@ -11,6 +11,10 @@ namespace Hcoona.AzureAuth.CredProvider.Platform.Tests;
 
 public sealed class TokenMaterializationWp4Tests
 {
+    private const string TokenDurationPolicyBadRequest =
+        """{"type":"TokenDurationPolicy","message":"""
+        + "\"The requested validTo violates the token duration policy.\"}";
+
     private static readonly DateTimeOffset Now = new(2026, 7, 20, 20, 0, 0, TimeSpan.Zero);
 
     public static TheoryData<string> MalformedJwtCases =>
@@ -747,27 +751,33 @@ public sealed class TokenMaterializationWp4Tests
     [Theory]
     [InlineData(
         "https://vssps.dev.azure.com/org/",
-        "https://vssps.dev.azure.com/org/_apis/Token/SessionTokens?tokenType=SelfDescribing&api-version=5.0-preview.1"
+        "https://vssps.dev.azure.com/org/_apis/Token/SessionTokens"
+            + "?tokenType=SelfDescribing&api-version=5.0-preview.1"
     )]
     [InlineData(
         "https://wcus0.app.vssps.dev.azure.com/org/",
-        "https://wcus0.app.vssps.dev.azure.com/org/_apis/Token/SessionTokens?tokenType=SelfDescribing&api-version=5.0-preview.1"
+        "https://wcus0.app.vssps.dev.azure.com/org/_apis/Token/SessionTokens"
+            + "?tokenType=SelfDescribing&api-version=5.0-preview.1"
     )]
     [InlineData(
         "https://vssps.visualstudio.com/",
-        "https://vssps.visualstudio.com/_apis/Token/SessionTokens?tokenType=SelfDescribing&api-version=5.0-preview.1"
+        "https://vssps.visualstudio.com/_apis/Token/SessionTokens"
+            + "?tokenType=SelfDescribing&api-version=5.0-preview.1"
     )]
     [InlineData(
         "https://wcus0.app.vssps.visualstudio.com/",
-        "https://wcus0.app.vssps.visualstudio.com/_apis/Token/SessionTokens?tokenType=SelfDescribing&api-version=5.0-preview.1"
+        "https://wcus0.app.vssps.visualstudio.com/_apis/Token/SessionTokens"
+            + "?tokenType=SelfDescribing&api-version=5.0-preview.1"
     )]
     [InlineData(
         "https://vsspsext.dev.azure.com/org/",
-        "https://vsspsext.dev.azure.com/org/_apis/Token/SessionTokens?tokenType=SelfDescribing&api-version=5.0-preview.1"
+        "https://vsspsext.dev.azure.com/org/_apis/Token/SessionTokens"
+            + "?tokenType=SelfDescribing&api-version=5.0-preview.1"
     )]
     [InlineData(
         "https://VSSPSEXT.VISUALSTUDIO.COM/",
-        "https://vsspsext.visualstudio.com/_apis/Token/SessionTokens?tokenType=SelfDescribing&api-version=5.0-preview.1"
+        "https://vsspsext.visualstudio.com/_apis/Token/SessionTokens"
+            + "?tokenType=SelfDescribing&api-version=5.0-preview.1"
     )]
     public void SpsSessionEndpointAcceptsOfficialAzureDevOpsHosts(
         string baseEndpoint,
@@ -819,7 +829,7 @@ public sealed class TokenMaterializationWp4Tests
     }
 
     [Fact]
-    public void CreateProductionHttpHandlerUsesSystemProxyAndDisablesRedirectsCookiesAndCustomTlsValidation()
+    public void CreateProductionHttpHandlerUsesSecureDefaults()
     {
         using SocketsHttpHandler handler =
             AzureDevOpsSpsTokenExchange.CreateProductionHttpHandler();
@@ -834,8 +844,6 @@ public sealed class TokenMaterializationWp4Tests
     [Fact]
     public async Task SpsExchangeRetriesTokenDurationPolicyBadRequestOnceWithoutValidTo()
     {
-        const string tokenDurationPolicyBadRequest =
-            """{"type":"TokenDurationPolicy","message":"The requested validTo violates the token duration policy."}""";
         DateTimeOffset serviceExpiry = Now.AddMinutes(45);
         var handler = new RecordingHandler(
             (_, call, _) =>
@@ -856,7 +864,7 @@ public sealed class TokenMaterializationWp4Tests
                         new HttpResponseMessage(HttpStatusCode.BadRequest)
                         {
                             Content = new StringContent(
-                                tokenDurationPolicyBadRequest,
+                                TokenDurationPolicyBadRequest,
                                 Encoding.UTF8,
                                 "application/json"
                             ),
@@ -868,7 +876,10 @@ public sealed class TokenMaterializationWp4Tests
                 {
                     return Task.FromResult(
                         JsonResponse(
-                            $$"""{"token":"relaxed-session-token","validTo":"{{serviceExpiry:O}}"}"""
+                            $$"""
+                            {"token":"relaxed-session-token",
+                            "validTo":"{{serviceExpiry:O}}"}
+                            """
                         )
                     );
                 }
@@ -957,8 +968,6 @@ public sealed class TokenMaterializationWp4Tests
     [Fact]
     public async Task SpsExchangeStopsAfterSecondTokenDurationPolicyBadRequest()
     {
-        const string tokenDurationPolicyBadRequest =
-            """{"type":"TokenDurationPolicy","message":"The requested validTo violates the token duration policy."}""";
         var handler = new RecordingHandler(
             (_, call, _) =>
             {
@@ -978,7 +987,7 @@ public sealed class TokenMaterializationWp4Tests
                         new HttpResponseMessage(HttpStatusCode.BadRequest)
                         {
                             Content = new StringContent(
-                                tokenDurationPolicyBadRequest,
+                                TokenDurationPolicyBadRequest,
                                 Encoding.UTF8,
                                 "application/json"
                             ),

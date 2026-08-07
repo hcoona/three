@@ -752,7 +752,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
     }
 
     [Fact]
-    public void DiscoverRegistryDeclarationsDelegatesNpmWorkspaceResolutionToProcessRunnerForSupportedCharacterClassGlob()
+    public void DiscoverDeclarationsUsesNpmForSupportedCharacterClassGlob()
     {
         NpmPhase12VerticalSliceService service = CreateNpmWorkspaceProcessFixture(
             new ProcessResult(0, "/repo\n", string.Empty),
@@ -782,7 +782,11 @@ public sealed class NpmPhase12VerticalSliceServiceTests
             "//pkgs.dev.azure.com/org/_packaging/root/npm/registry/:_authToken",
             declaration.AuthSelectors.NpmAuthTokenKey
         );
-        Assert.DoesNotContain("credential", declaration.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(
+            "credential",
+            declaration.ToString(),
+            StringComparison.OrdinalIgnoreCase
+        );
     }
 
     [Fact]
@@ -878,7 +882,11 @@ public sealed class NpmPhase12VerticalSliceServiceTests
             exception.ToString(),
             StringComparison.Ordinal
         );
-        Assert.DoesNotContain("stderr-secret-value", exception.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "stderr-secret-value",
+            exception.ToString(),
+            StringComparison.Ordinal
+        );
     }
 
     [Fact]
@@ -897,7 +905,11 @@ public sealed class NpmPhase12VerticalSliceServiceTests
 
         AssertNpmWorkspaceResolutionFailure(exception, processRunner);
         Assert.Contains("timed out", exception.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain("timeout-secret-value", exception.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "timeout-secret-value",
+            exception.ToString(),
+            StringComparison.Ordinal
+        );
     }
 
     [Fact]
@@ -916,7 +928,11 @@ public sealed class NpmPhase12VerticalSliceServiceTests
 
         AssertNpmWorkspaceResolutionFailure(exception, processRunner);
         Assert.Contains("too much output", exception.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain("oversized-secret-value", exception.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "oversized-secret-value",
+            exception.ToString(),
+            StringComparison.Ordinal
+        );
     }
 
     [Theory]
@@ -926,7 +942,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
     [InlineData(ProcessExecutionStatus.Success, "/repo/missing\n")]
     [InlineData(ProcessExecutionStatus.Success, "/outside/workspace\n")]
     [InlineData(ProcessExecutionStatus.Success, "/repo\n/repo/packages/apple\n")]
-    public void DiscoverRegistryDeclarationsFailsActionablyWhenNpmWorkspaceResolutionReturnsInvalidOutput(
+    public void DiscoverDeclarationsInvalidNpmWorkspaceOutputFailsActionably(
         ProcessExecutionStatus status,
         string standardOutput
     )
@@ -1161,7 +1177,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
     }
 
     [Fact]
-    public async Task ResolveWorkspaceAsync_ReturnsNotRequired_WhenRegistryDoesNotRequireNpmResolution()
+    public async Task ResolveWorkspaceAsync_ReturnsNotRequired_WhenNpmIsUnneeded()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         CreateDirectory(fileSystem, "/repo/package");
@@ -1174,7 +1190,12 @@ public sealed class NpmPhase12VerticalSliceServiceTests
             TestContext.Current.CancellationToken
         );
 
-        AssertResolution(result, "NotRequired", expectedWorkspaceRoot: null, expectedFailureDetail: null);
+        AssertResolution(
+            result,
+            "NotRequired",
+            expectedWorkspaceRoot: null,
+            expectedFailureDetail: null
+        );
         Assert.Empty(processRunner.RecordedStartSpecs);
     }
 
@@ -1260,7 +1281,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
     [InlineData("/repo\n/repo/packages/apple\n")]
     [InlineData("relative/workspace\n")]
     [InlineData("/repo/missing\n")]
-    public async Task ResolveWorkspaceAsync_ReturnsInvalidOutput_WhenNpmPrefixOutputIsNotOneValidDirectory(
+    public async Task ResolveWorkspaceAsync_ReturnsInvalidOutput_ForInvalidPrefix(
         string standardOutput
     )
     {
@@ -1701,7 +1722,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
     }
 
     [Fact]
-    public void ResolveNpmExecutable_ReturnsInvalidCandidateFailure_WhenCandidateLayoutIsUnsupported()
+    public void ResolveNpmExecutable_ReturnsInvalidCandidate_ForUnsupportedLayout()
     {
         const string UnsupportedNpmShim = @"C:\custom-layout\npm.cmd";
         NpmPhase12VerticalSliceService service = CreateWindowsExecutableFixture(
@@ -1718,7 +1739,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
     }
 
     [Fact]
-    public async Task ResolveWorkspaceAsync_ReturnsLaunchFailure_WhenResolvedWindowsCommandCannotLaunch()
+    public async Task ResolveWorkspaceAsync_ReturnsLaunchFailure_ForWindowsCommand()
     {
         const string NpmShim = @"C:\Program Files\nodejs\npm.cmd";
         const string NodeExecutable = @"C:\Program Files\nodejs\node.exe";
@@ -1958,7 +1979,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
     }
 
     [Fact]
-    public void ResolveNpmExecutable_WhenFirstGlobalShimUsesRelativeNodePath_ResolvesNodeAgainstWorkspace()
+    public void ResolveNpmExecutable_ResolvesRelativeNodeAgainstWorkspace()
     {
         const string NpmShim = @"C:\Users\alice\AppData\Roaming\npm\npm.cmd";
         const string NpmCliScript =
@@ -1985,7 +2006,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
     }
 
     [Fact]
-    public void ResolveNpmExecutable_WhenRelativeNodePathIsQuotedAndContainsSpaces_ResolvesNodeAgainstWorkspace()
+    public void ResolveNpmExecutable_ResolvesQuotedRelativeNodeAgainstWorkspace()
     {
         const string NpmShim = @"C:\Users\alice\AppData\Roaming\npm\npm.cmd";
         const string NpmCliScript =
@@ -2150,7 +2171,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
     }
 
     [Fact]
-    public void ResolveNpmExecutable_WhenMultipleRelativeNodeDirectoriesExist_SelectsFirstPathMatch()
+    public void ResolveNpmExecutable_SelectsFirstRelativeNodePathMatch()
     {
         const string NpmShim = @"C:\Users\alice\AppData\Roaming\npm\npm.cmd";
         const string NpmCliScript =
@@ -2183,7 +2204,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
     }
 
     [Fact]
-    public void ResolveNpmExecutable_WhenFirstNpmShimNeedsFallbackNode_DoesNotSwitchToLaterNpmBinding()
+    public void ResolveNpmExecutable_DoesNotSwitchNpmBindingForFallbackNode()
     {
         const string FirstNpmShim =
             @"C:\Users\alice\AppData\Roaming\npm\npm.cmd";
@@ -2270,7 +2291,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
     }
 
     [Fact]
-    public void ResolveNpmExecutable_WhenNodePathIsBareDriveRelative_SkipsItAndUsesLaterValidDirectory()
+    public void ResolveNpmExecutable_SkipsBareDriveRelativeNodePath()
     {
         const string NpmShim = @"C:\Users\alice\AppData\Roaming\npm\npm.cmd";
         const string NpmCliScript =

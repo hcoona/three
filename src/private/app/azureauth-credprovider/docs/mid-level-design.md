@@ -321,7 +321,7 @@ canonical entry selector and precedence model before implementing `configure`:
 | NuGet     | Plugin installation path, runtime family, and explicit plugin-path environment or config setting when used.                  | NuGet conventional plugin discovery plus explicit plugin-path overrides.                                                                                   |
 | Python    | Python environment identity, package distribution name, backend registration, shim path, and PATH insertion point when used. | Python environment import path and process PATH order.                                                                                                     |
 | npm/pnpm  | Config file scope, registry URL selector, and auth key selector.                                                             | npm-compatible layered config order for user, global, explicit path, and CI temporary configuration; workspace files are read through `WorkspaceReadOnly`. |
-| Yarn      | `.yarnrc.yml` path, `npmScopes` or `npmRegistries` selector, and auth field selector.                                        | Yarn 4+ configuration resolution with Phase 1.4-approved user-level and CI-temporary change-plan targets; direct adapter writes remain disallowed.          |
+| Yarn      | `.yarnrc.yml` path, `npmScopes` or `npmRegistries` selector, and auth field selector.                                        | Yarn 4+ configuration resolution with Phase 1.4-approved user-level and CI-temporary change-plan targets; direct adapter writes remain disallowed.         |
 
 The default removal strategy is surgical deletion of product-owned entries.
 Each target mutation uses the normal lower-layer write behavior without

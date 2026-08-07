@@ -260,7 +260,7 @@ public sealed class SystemProcessRunnerTests
             ParentExitStartSpec(pidFile, TimeSpan.FromSeconds(30)),
             cancellation.Token
         );
-        (int parentProcessId, int descendantProcessId) = await WaitForProcessIdsAsync(
+        (int parentProcessId, int descendantProcessId) = await WaitForIdsAsync(
             pidFile,
             TestContext.Current.CancellationToken
         );
@@ -309,7 +309,7 @@ public sealed class SystemProcessRunnerTests
             ParentExitStartSpec(pidFile, TimeSpan.FromSeconds(2)),
             TestContext.Current.CancellationToken
         );
-        (int parentProcessId, int descendantProcessId) = await WaitForProcessIdsAsync(
+        (int parentProcessId, int descendantProcessId) = await WaitForIdsAsync(
             pidFile,
             TestContext.Current.CancellationToken
         );
@@ -740,7 +740,7 @@ public sealed class SystemProcessRunnerTests
         throw new TimeoutException("Timed out waiting for child process id.");
     }
 
-    private static async Task<(int ParentProcessId, int DescendantProcessId)> WaitForProcessIdsAsync(
+    private static async Task<(int ParentProcessId, int DescendantProcessId)> WaitForIdsAsync(
         string path,
         CancellationToken cancellationToken
     )
@@ -1494,7 +1494,7 @@ public sealed class SystemProcessRunnerTests
     }
 
     [Fact]
-    public async Task RunAsyncCancellationFallsBackToLauncherTreeWhenProcessGroupSignalReturnsEsrch()
+    public async Task RunAsyncCancellationFallsBackWhenGroupSignalReturnsEsrch()
     {
         string? sessionLauncher = FindProductionUnixSessionLauncher();
         string? compiler = FindExecutableOnPath("cc");
@@ -1524,7 +1524,7 @@ public sealed class SystemProcessRunnerTests
                 SetsidBarrierStartSpec(pidFile, preloadLibrary, TimeSpan.FromSeconds(30)),
                 cancellation.Token
             );
-            (launcherProcessId, descendantProcessId) = await WaitForProcessIdsAsync(
+            (launcherProcessId, descendantProcessId) = await WaitForIdsAsync(
                 pidFile,
                 TestContext.Current.CancellationToken
             );
@@ -1591,7 +1591,7 @@ public sealed class SystemProcessRunnerTests
                 SetsidBarrierStartSpec(pidFile, preloadLibrary, TimeSpan.FromSeconds(2)),
                 TestContext.Current.CancellationToken
             );
-            (launcherProcessId, descendantProcessId) = await WaitForProcessIdsAsync(
+            (launcherProcessId, descendantProcessId) = await WaitForIdsAsync(
                 pidFile,
                 TestContext.Current.CancellationToken
             );
