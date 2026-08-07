@@ -1017,7 +1017,7 @@ public sealed class NpmPhase12VerticalSliceService
     private NpmExecutableResolutionResult ResolveNpmExecutable()
     {
         bool useWindowsLaunch =
-            OperatingSystem.IsWindows()
+            FileSystemPathSemantics.UsesWindowsPaths(fileSystem)
             || (
                 workspaceDirectoryPath is not null
                 && IsWindowsLikePath(workspaceDirectoryPath)

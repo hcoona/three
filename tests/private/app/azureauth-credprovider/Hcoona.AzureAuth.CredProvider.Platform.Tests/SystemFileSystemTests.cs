@@ -301,7 +301,7 @@ public sealed class SystemFileSystemTests
             Directory.CreateSymbolicLink(outerLink, Path.Combine(innerLink, "deep"));
 
             DirectoryInfo intermediate = Assert.IsType<DirectoryInfo>(
-                new DirectoryInfo(outerLink).ResolveLinkTarget(returnFinalTarget: true)
+                new DirectoryInfo(outerLink).ResolveLinkTarget(returnFinalTarget: false)
             );
             Assert.Equal(Path.Combine(innerLink, "deep"), intermediate.FullName);
 
