@@ -1466,7 +1466,8 @@ public sealed class CliApplicationTests
             ConfigurationPhase14Options = new ConfigurationPhase14VerticalSliceOptions
             {
                 StateDirectoryPath = statePath,
-                EnvironmentVariableReader = _ => null,
+                EnvironmentVariableReader = name =>
+                    ReadConfigurationPhase14Environment(parentPath, name),
                 ProductExecutablePath = GetTestProductExecutablePath(),
             },
         };
@@ -4740,8 +4741,10 @@ public sealed class CliApplicationTests
                     "nuget-azure-artifacts-source: pass",
                     "nuget-interactive-policy: pass",
                     "nuget-environment-overrides: absent",
-                    "python-keyring-shim-exists: fail",
-                    "python-keyring-shim-first-on-path: fail",
+                    "python-keyring-shim-exists: "
+                        + (OperatingSystem.IsWindows() ? "N/A" : "fail"),
+                    "python-keyring-shim-first-on-path: "
+                        + (OperatingSystem.IsWindows() ? "N/A" : "fail"),
                     "python-interpreter: not-found",
                     "python-keyring-module: fail",
                     "python-keyring-module-probe: interpreter-not-found",
@@ -4988,10 +4991,19 @@ public sealed class CliApplicationTests
         {
             StateDirectoryPath = Path.Combine(stateDirectoryPath, "configuration"),
             AzurePipelinesJobScopeId = "cli-test-job",
-            EnvironmentVariableReader = _ => null,
+            EnvironmentVariableReader = name =>
+                ReadConfigurationPhase14Environment(stateDirectoryPath, name),
             ProductExecutablePath = GetTestProductExecutablePath(),
             RegistryUrls = CreateTestRegistryUrls(),
         };
+
+    private static string? ReadConfigurationPhase14Environment(
+        string testRootPath,
+        string name
+    ) =>
+        string.Equals(name, "LOCALAPPDATA", StringComparison.Ordinal)
+            ? Path.Combine(testRootPath, "local-app-data")
+            : null;
 
     private static string GetTestProductExecutablePath() =>
         OperatingSystem.IsWindows()
@@ -5022,6 +5034,7 @@ public sealed class CliApplicationTests
         {
             StateDirectoryPath = "/state/azureauth-credprovider/phase10",
             FileSystem = new EmptyNuGetDryRunFileSystem(),
+            EnvironmentVariableReader = _ => null,
         };
 
     private static NpmPhase12VerticalSliceOptions CreateIsolatedNpmPhase12Options(
@@ -6446,12 +6459,16 @@ public sealed class CliApplicationTests
                 StringComparison.Ordinal
             );
             Assert.Contains(
-                "python-keyring-shim-exists: pass\n",
+                "python-keyring-shim-exists: "
+                    + (OperatingSystem.IsWindows() ? "N/A" : "pass")
+                    + "\n",
                 doctor.StdOut,
                 StringComparison.Ordinal
             );
             Assert.Contains(
-                "python-keyring-shim-first-on-path: pass\n",
+                "python-keyring-shim-first-on-path: "
+                    + (OperatingSystem.IsWindows() ? "N/A" : "pass")
+                    + "\n",
                 doctor.StdOut,
                 StringComparison.Ordinal
             );
@@ -6950,7 +6967,10 @@ public sealed class CliApplicationTests
     public void DoctorMissingPythonKeyringModuleRendersFailureAndReturnsNonZero() =>
         AssertDoctorPythonFailure(PythonDoctorFixtureMode.MissingKeyringModule);
 
-    [Fact]
+    [Fact(
+        Skip = "POSIX Python keyring shim PATH behavior is unsupported on Windows.",
+        SkipWhen = nameof(IsWindows)
+    )]
     public void DoctorPathShadowedPythonKeyringShimRendersFailureAndReturnsNonZero() =>
         AssertDoctorPythonFailure(PythonDoctorFixtureMode.ShadowedExpectedShim);
 
@@ -6968,8 +6988,13 @@ public sealed class CliApplicationTests
         Assert.Equal(0, configureGit.ExitCode);
         Assert.Equal(string.Empty, configureGit.StdErr);
         Assert.Equal(0, doctor.ExitCode);
-        AssertDoctorCheck(doctor.StdOut, "python-keyring-shim-exists", "pass");
-        AssertDoctorCheck(doctor.StdOut, "python-keyring-shim-first-on-path", "pass");
+        string expectedShimStatus = OperatingSystem.IsWindows() ? "N/A" : "pass";
+        AssertDoctorCheck(doctor.StdOut, "python-keyring-shim-exists", expectedShimStatus);
+        AssertDoctorCheck(
+            doctor.StdOut,
+            "python-keyring-shim-first-on-path",
+            expectedShimStatus
+        );
         AssertDoctorCheck(
             doctor.StdOut,
             "python-interpreter",
@@ -7007,8 +7032,13 @@ public sealed class CliApplicationTests
         Assert.Equal(0, configureGit.ExitCode);
         Assert.Equal(string.Empty, configureGit.StdErr);
         Assert.Equal(1, doctor.ExitCode);
-        AssertDoctorCheck(doctor.StdOut, "python-keyring-shim-exists", "pass");
-        AssertDoctorCheck(doctor.StdOut, "python-keyring-shim-first-on-path", "pass");
+        string expectedShimStatus = OperatingSystem.IsWindows() ? "N/A" : "pass";
+        AssertDoctorCheck(doctor.StdOut, "python-keyring-shim-exists", expectedShimStatus);
+        AssertDoctorCheck(
+            doctor.StdOut,
+            "python-keyring-shim-first-on-path",
+            expectedShimStatus
+        );
         AssertDoctorCheck(
             doctor.StdOut,
             "python-interpreter",
@@ -7043,8 +7073,13 @@ public sealed class CliApplicationTests
         Assert.Equal(0, configureGit.ExitCode);
         Assert.Equal(string.Empty, configureGit.StdErr);
         Assert.Equal(1, doctor.ExitCode);
-        AssertDoctorCheck(doctor.StdOut, "python-keyring-shim-exists", "pass");
-        AssertDoctorCheck(doctor.StdOut, "python-keyring-shim-first-on-path", "pass");
+        string expectedShimStatus = OperatingSystem.IsWindows() ? "N/A" : "pass";
+        AssertDoctorCheck(doctor.StdOut, "python-keyring-shim-exists", expectedShimStatus);
+        AssertDoctorCheck(
+            doctor.StdOut,
+            "python-keyring-shim-first-on-path",
+            expectedShimStatus
+        );
         AssertDoctorCheck(doctor.StdOut, "python-interpreter", "not-found");
         AssertDoctorCheck(doctor.StdOut, "python-keyring-module", "fail");
         AssertDoctorCheck(
@@ -7105,11 +7140,16 @@ public sealed class CliApplicationTests
         Assert.Equal(0, configureGit.ExitCode);
         Assert.Equal(string.Empty, configureGit.StdErr);
         Assert.Equal(1, doctor.ExitCode);
-        AssertDoctorCheck(doctor.StdOut, "python-keyring-shim-exists", "pass");
+        string expectedShimStatus = OperatingSystem.IsWindows() ? "N/A" : "pass";
+        AssertDoctorCheck(doctor.StdOut, "python-keyring-shim-exists", expectedShimStatus);
         AssertDoctorCheck(
             doctor.StdOut,
             "python-keyring-shim-first-on-path",
-            mode == PythonDoctorFixtureMode.ShadowedExpectedShim ? "fail" : "pass"
+            OperatingSystem.IsWindows()
+                ? "N/A"
+                : mode == PythonDoctorFixtureMode.ShadowedExpectedShim
+                    ? "fail"
+                    : "pass"
         );
         AssertDoctorCheck(
             doctor.StdOut,
@@ -7164,10 +7204,10 @@ public sealed class CliApplicationTests
             ConfigurationPhase14VerticalSliceOptions referenceConfigurationOptions =
                 CreateConfigurationPhase14Options(stateDirectory) with
                 {
-                    EnvironmentVariableReader = _ =>
+                    EnvironmentVariableReader = name =>
                     {
                         expectedConfigurationObservations++;
-                        return null;
+                        return ReadConfigurationPhase14Environment(stateDirectory, name);
                     },
                 };
             _ = await new ConfigurationPhase14VerticalSliceService(
@@ -7195,11 +7235,11 @@ public sealed class CliApplicationTests
                     stateDirectory
                 ) with
                 {
-                    EnvironmentVariableReader = _ =>
+                    EnvironmentVariableReader = name =>
                     {
                         configurationObservations++;
                         callOrder.Add("configuration");
-                        return null;
+                        return ReadConfigurationPhase14Environment(stateDirectory, name);
                     },
                 },
             };
@@ -7460,10 +7500,10 @@ public sealed class CliApplicationTests
                     stateDirectory
                 ) with
                 {
-                    EnvironmentVariableReader = _ =>
+                    EnvironmentVariableReader = name =>
                     {
                         callOrder.Add("configuration");
-                        return null;
+                        return ReadConfigurationPhase14Environment(stateDirectory, name);
                     },
                 },
             };
@@ -7507,16 +7547,36 @@ public sealed class CliApplicationTests
         string workspaceDirectory,
         string stateDirectory,
         IProcessRunner processRunner
-    ) =>
-        new()
+    )
+    {
+        var fileSystem = new SystemFileSystem();
+        string? npmDirectory = null;
+        if (fileSystem.IsPathFullyQualified(@"C:\"))
         {
+            npmDirectory = Path.Combine(stateDirectory, "npm-bin");
+            Directory.CreateDirectory(npmDirectory);
+            File.WriteAllText(Path.Combine(npmDirectory, "npm.exe"), string.Empty);
+        }
+
+        return new NpmPhase12VerticalSliceOptions
+        {
+            FileSystem = fileSystem,
             ProcessRunner = processRunner,
             WorkspaceDirectoryPath = workspaceDirectory,
             UserHomeDirectoryPath = stateDirectory,
             UserNpmrcPath = Path.Combine(stateDirectory, "user.npmrc"),
             CiTemporaryNpmrcPath = Path.Combine(stateDirectory, "ci", ".npmrc"),
-            EnvironmentVariableReader = _ => null,
+            EnvironmentVariableReader = name =>
+                npmDirectory is not null
+                    ? name switch
+                    {
+                        "PATH" => npmDirectory,
+                        "PATHEXT" => ".EXE",
+                        _ => null,
+                    }
+                    : null,
         };
+    }
 
     private static YarnPhase13VerticalSliceOptions CreatePhase3YarnOptions(
         string workspaceDirectory,
@@ -7603,7 +7663,10 @@ public sealed class CliApplicationTests
     }
 
 #pragma warning disable CA1707, CA1861
-    [Fact]
+    [Fact(
+        Skip = "POSIX Python keyring shim doctor behavior is unsupported on Windows.",
+        SkipWhen = nameof(IsWindows)
+    )]
     public void HandleDoctor_RendersGenericBackendHelperShimAndFirstPathRows()
     {
         using var pythonFixture = new PythonDoctorFixture(PythonDoctorFixtureMode.Healthy);
@@ -8015,7 +8078,10 @@ public sealed class CliApplicationTests
         Assert.Equal(2, fixture.Runner.StartSpecs.Count);
     }
 
-    [Theory]
+    [Theory(
+        Skip = "POSIX shell PATH export behavior is unsupported on Windows.",
+        SkipWhen = nameof(IsWindows)
+    )]
     [InlineData("home with spaces")]
     [InlineData("home-with-'quote")]
     public void HandleConfigure_OnPosixSuccess_PrintsSafelyQuotedProcessScopedPathExport(
@@ -8093,7 +8159,10 @@ public sealed class CliApplicationTests
         );
     }
 
-    [Fact]
+    [Fact(
+        Skip = "POSIX shell profile and PATH behavior is unsupported on Windows.",
+        SkipWhen = nameof(IsWindows)
+    )]
     public void HandleConfigure_OnPosixSuccess_DoesNotMutateShellProfileOrParentPath()
     {
         using var fixture = new Phase3ConfigureFixture(productHealthy: true);
@@ -8443,13 +8512,15 @@ public sealed class CliApplicationTests
                     EnableProductProbe = true,
                 }
             );
-            ConfigurationOptions = CreateConfigurationPhase14Options(RootPath) with
+            ConfigurationPhase14VerticalSliceOptions baseConfigurationOptions =
+                CreateConfigurationPhase14Options(RootPath);
+            ConfigurationOptions = baseConfigurationOptions with
             {
                 StateDirectoryPath = Path.Combine(RootPath, "configuration-state"),
                 EnvironmentVariableReader = name =>
                     string.Equals(name, "HOME", StringComparison.Ordinal)
                         ? HomePath
-                        : null,
+                        : baseConfigurationOptions.EnvironmentVariableReader!(name),
                 PythonDoctorService = pythonDoctor,
             };
             Runtime = new CliRuntimeOptions
@@ -8513,14 +8584,16 @@ public sealed class CliApplicationTests
                     string.Empty
                 )
             );
+            ConfigurationPhase14VerticalSliceOptions baseConfigurationOptions =
+                CreateConfigurationPhase14Options(rootPath);
             ConfigurationPhase14VerticalSliceOptions configurationOptions =
-                CreateConfigurationPhase14Options(rootPath) with
+                baseConfigurationOptions with
                 {
                     StateDirectoryPath = Path.Combine(rootPath, "configuration-state"),
                     EnvironmentVariableReader = name =>
                         string.Equals(name, "HOME", StringComparison.Ordinal)
                             ? homePath
-                            : null,
+                            : baseConfigurationOptions.EnvironmentVariableReader!(name),
                     RegistryUrls = new Dictionary<CredentialEcosystem, Uri>
                     {
                         [CredentialEcosystem.Npm] = new Uri(
