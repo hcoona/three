@@ -175,7 +175,10 @@ public sealed class PythonPhase11ProductDoctorTests
         );
 
         Assert.Equal(33, result.ExitCode);
-        Assert.Equal(LoadFailureMarker + "\n", result.StandardOutput);
+        Assert.Equal(
+            LoadFailureMarker + "\n",
+            result.StandardOutput.Replace("\r\n", "\n", StringComparison.Ordinal)
+        );
         Assert.Equal(string.Empty, result.StandardError);
         Assert.Contains("import importlib.metadata,inspect,sys", productProbeScript);
         Assert.Contains("not inspect.isabstract(backend_type)", productProbeScript);
