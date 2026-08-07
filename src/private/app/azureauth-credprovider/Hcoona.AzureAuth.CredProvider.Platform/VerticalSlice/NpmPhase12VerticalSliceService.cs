@@ -158,7 +158,7 @@ public sealed class NpmPhase12VerticalSliceService
     private const string LowercaseNpmUserConfigEnvironmentVariable = "npm_config_userconfig";
     private const string WorkspaceNpmrcFileName = ".npmrc";
     private const int NpmPrefixOutputByteLimit = 4096;
-    private static readonly TimeSpan NpmPrefixTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan NpmPrefixTimeout = TimeSpan.FromSeconds(10);
 
     private readonly Func<string, string?> environmentVariableReader;
     private readonly IFileSystem fileSystem;

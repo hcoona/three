@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import tomllib
@@ -316,6 +317,8 @@ def test_bundle_builds_versioned_wheel_from_clean_checkout(
     """A clean full-history checkout produces one correctly versioned wheel."""
     repository = tmp_path / "repository"
     git = _required_executable("git")
+    clone_environment = os.environ.copy()
+    clone_environment["GIT_LFS_SKIP_SMUDGE"] = "1"
     completed = subprocess.run(  # noqa: S603
         [
             git,
@@ -329,6 +332,7 @@ def test_bundle_builds_versioned_wheel_from_clean_checkout(
         capture_output=True,
         check=False,
         encoding="utf-8",
+        env=clone_environment,
         text=True,
     )
     assert completed.returncode == 0, completed.stderr

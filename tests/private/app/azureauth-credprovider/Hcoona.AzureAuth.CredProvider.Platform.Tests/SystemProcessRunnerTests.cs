@@ -573,7 +573,7 @@ public sealed class SystemProcessRunnerTests
             TestContext.Current.CancellationToken
         );
         var processStart = new TimeoutThenCallerCancellationStartStrategy(
-            TimeSpan.FromMilliseconds(100),
+            TimeSpan.FromSeconds(1),
             cancellation
         );
         var runner = new SystemProcessRunner(processStart);

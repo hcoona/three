@@ -1433,7 +1433,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         Assert.Equal(FirstNodeExecutable, startSpec.FileName);
         Assert.Equal([NpmCliScript, "prefix"], startSpec.Arguments);
         Assert.Equal(@"C:\repo\packages\apple", startSpec.WorkingDirectory);
-        Assert.Equal(TimeSpan.FromSeconds(5), startSpec.Timeout);
+        Assert.Equal(TimeSpan.FromSeconds(10), startSpec.Timeout);
         Assert.DoesNotContain(NpmShim, startSpec.Arguments);
         Assert.DoesNotContain(LaterNpmExecutable, startSpec.Arguments);
     }
@@ -1765,7 +1765,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         Assert.Equal(NodeExecutable, startSpec.FileName);
         Assert.Equal([NpmCliScript, "prefix"], startSpec.Arguments);
         Assert.Equal(@"C:\repo\packages\apple", startSpec.WorkingDirectory);
-        Assert.Equal(TimeSpan.FromSeconds(5), startSpec.Timeout);
+        Assert.Equal(TimeSpan.FromSeconds(10), startSpec.Timeout);
         Assert.Equal(4096, startSpec.OutputCaptureOptions.StandardOutputByteLimit);
         Assert.Equal(4096, startSpec.OutputCaptureOptions.StandardErrorByteLimit);
     }
@@ -2641,7 +2641,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         Assert.Equal("npm", startSpec.FileName);
         Assert.Equal(["prefix"], startSpec.Arguments);
         Assert.Equal("/repo/packages/apple", startSpec.WorkingDirectory);
-        Assert.Equal(TimeSpan.FromSeconds(5), startSpec.Timeout);
+        Assert.Equal(TimeSpan.FromSeconds(10), startSpec.Timeout);
         Assert.Equal(4096, startSpec.OutputCaptureOptions.StandardOutputByteLimit);
         Assert.Equal(4096, startSpec.OutputCaptureOptions.StandardErrorByteLimit);
     }

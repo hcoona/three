@@ -147,7 +147,7 @@ public sealed class NpmPhase12NpmIntegrationTests
             Assert.Single(startSpec.Arguments);
         }
         Assert.Equal(fixture.InvocationPath, startSpec.WorkingDirectory);
-        Assert.Equal(TimeSpan.FromSeconds(5), startSpec.Timeout);
+        Assert.Equal(TimeSpan.FromSeconds(10), startSpec.Timeout);
         Assert.Equal(4096, startSpec.OutputCaptureOptions.StandardOutputByteLimit);
         Assert.Equal(4096, startSpec.OutputCaptureOptions.StandardErrorByteLimit);
     }
