@@ -7843,6 +7843,34 @@ public sealed class CliApplicationTests
         );
     }
 
+    [Fact]
+    public void HandleConfigure_WhenPosixHelperIsShadowed_SuggestsPathActivation()
+    {
+        Assert.SkipWhen(
+            OperatingSystem.IsWindows(),
+            "The Python helper preflight is POSIX-only."
+        );
+        using var fixture = new Phase3ConfigureFixture(
+            productHealthy: true,
+            helperShadowed: true
+        );
+
+        CommandResult result = InvokeWithRuntime(fixture.Runtime, "configure", "python");
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Contains(
+            "guidance: activate the selected Python environment so "
+                + fixture.ExpectedHelperPath
+                + " resolves before "
+                + fixture.ShadowingHelperPath
+                + " on PATH, then retry.\n",
+            Normalize(result.StdErr),
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain("bootstrap-command:", result.StdErr, StringComparison.Ordinal);
+        Assert.DoesNotContain("pip install", result.StdErr, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Theory]
     [MemberData(nameof(PythonProbeFailuresWithoutInstallGuidance))]
     public void HandleConfigure_WhenProbeCannotDiagnoseDependency_OmitsInstallCommand(
@@ -8292,6 +8320,7 @@ public sealed class CliApplicationTests
             string homeDirectoryName = "home",
             IReadOnlyList<ProcessResult>? processResults = null,
             bool helperPresent = true,
+            bool helperShadowed = false,
             bool useExplicitPythonExecutable = true
         )
         {
@@ -8303,9 +8332,17 @@ public sealed class CliApplicationTests
             PythonExecutablePath = Path.Combine(pythonDirectory, "python");
             WritePhase3Executable(PythonExecutablePath, "#!/bin/sh\nexit 91\n");
             string helperPath = Path.Combine(pythonDirectory, "azureauth-keyring");
+            ExpectedHelperPath = helperPath;
             if (helperPresent)
             {
                 WritePhase3Executable(helperPath, "#!/bin/sh\nexit 92\n");
+            }
+            string shadowingDirectory = Path.Combine(RootPath, "shadowing environment", "bin");
+            ShadowingHelperPath = Path.Combine(shadowingDirectory, "azureauth-keyring");
+            if (helperShadowed)
+            {
+                Directory.CreateDirectory(shadowingDirectory);
+                WritePhase3Executable(ShadowingHelperPath, "#!/bin/sh\nexit 93\n");
             }
             Runner = new RecordingPythonResolutionProcessRunner();
             IReadOnlyList<ProcessResult> effectiveProcessResults =
@@ -8336,7 +8373,11 @@ public sealed class CliApplicationTests
                     ProcessRunner = Runner,
                     EnvironmentVariableReader = name =>
                         string.Equals(name, "PATH", StringComparison.Ordinal)
-                            ? pythonDirectory
+                            ? helperShadowed
+                                ? shadowingDirectory
+                                    + Path.PathSeparator
+                                    + pythonDirectory
+                                : pythonDirectory
                             : null,
                     ExpectedKeyringShimPath = Path.Combine(
                         RootPath,
@@ -8369,11 +8410,15 @@ public sealed class CliApplicationTests
 
         public string HomePath { get; }
 
+        public string ExpectedHelperPath { get; }
+
         public string PythonExecutablePath { get; }
 
         public RecordingPythonResolutionProcessRunner Runner { get; }
 
         public string RootPath { get; }
+
+        public string ShadowingHelperPath { get; }
 
         public CliRuntimeOptions Runtime { get; }
 

@@ -2600,7 +2600,11 @@ internal static class CliApplication
         {
             lines.Add(
                 "guidance: "
-                    + GetPythonPreflightDiagnosticGuidance(moduleProbe, productProbe)
+                    + GetPythonPreflightDiagnosticGuidance(
+                        moduleProbe,
+                        productProbe,
+                        preflight.AzureAuthKeyringHelper
+                    )
             );
         }
 
@@ -2629,7 +2633,8 @@ internal static class CliApplication
                 "--force-reinstall azureauth-credprovider-keyring",
             PythonPhase11ProductProbeStatus.Healthy
                 when preflight.AzureAuthKeyringHelper.Status
-                    == PythonPhase11AzureAuthKeyringHelperProbeStatus.Missing =>
+                    == PythonPhase11AzureAuthKeyringHelperProbeStatus.Missing
+                && preflight.AzureAuthKeyringHelper.ResolvedExecutablePath is null =>
                 "--force-reinstall azureauth-credprovider-keyring",
             _ => null,
         };
@@ -2653,9 +2658,24 @@ internal static class CliApplication
 
     private static string GetPythonPreflightDiagnosticGuidance(
         PythonPhase11KeyringModuleProbe moduleProbe,
-        PythonPhase11ProductProbe productProbe
-    ) =>
-        moduleProbe.Status switch
+        PythonPhase11ProductProbe productProbe,
+        PythonPhase11AzureAuthKeyringHelperProbe helperProbe
+    )
+    {
+        if (
+            helperProbe.Status == PythonPhase11AzureAuthKeyringHelperProbeStatus.Missing
+            && helperProbe.ExpectedExecutablePath is { } expectedHelper
+            && helperProbe.ResolvedExecutablePath is { } resolvedHelper
+        )
+        {
+            return "activate the selected Python environment so "
+                + EscapeNonPrintingCharacters(expectedHelper)
+                + " resolves before "
+                + EscapeNonPrintingCharacters(resolvedHelper)
+                + " on PATH, then retry.";
+        }
+
+        return moduleProbe.Status switch
         {
             PythonPhase11KeyringModuleProbeStatus.InterpreterNotFound =>
                 "activate or select an available Python interpreter, then retry.",
@@ -2681,6 +2701,7 @@ internal static class CliApplication
                 _ => "review the Python doctor output, correct the failed dependency, then retry.",
             },
         };
+    }
 
     private static bool AddTemporaryContainerOutput(
         List<string> lines,
