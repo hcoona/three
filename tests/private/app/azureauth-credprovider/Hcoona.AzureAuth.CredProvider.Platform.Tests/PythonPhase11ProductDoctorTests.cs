@@ -432,7 +432,7 @@ public sealed class PythonPhase11ProductDoctorTests
         Assert.Equal(ExpectedHelperPath, result.AzureAuthKeyringHelper.ExpectedExecutablePath);
         Assert.Equal(differentHelperPath, result.AzureAuthKeyringHelper.ResolvedExecutablePath);
         Assert.Equal(
-            PythonPhase11AzureAuthKeyringHelperProbeStatus.Missing,
+            PythonPhase11AzureAuthKeyringHelperProbeStatus.PathMismatch,
             result.AzureAuthKeyringHelper.Status
         );
         Assert.False(result.IsConfigurationPreflightReady);

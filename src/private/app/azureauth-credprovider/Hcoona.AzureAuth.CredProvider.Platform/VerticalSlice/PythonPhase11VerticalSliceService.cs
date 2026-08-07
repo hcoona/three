@@ -148,6 +148,7 @@ public enum PythonPhase11AzureAuthKeyringHelperProbeStatus
     NotApplicable,
     Found,
     Missing,
+    PathMismatch,
 }
 
 public sealed record PythonPhase11EnvironmentProbe
@@ -709,15 +710,20 @@ public sealed class PythonPhase11VerticalSliceService
             expectedExecutablePath is not null
             && resolvedExecutablePath is not null
             && SameFile(expectedExecutablePath, resolvedExecutablePath);
+        bool expectedHelperExists =
+            expectedExecutablePath is not null
+            && fileSystem.IsExecutableFile(expectedExecutablePath);
         return new PythonPhase11AzureAuthKeyringHelperProbe
         {
             Applicable = true,
             ExpectedExecutablePath = expectedExecutablePath,
             ResolvedExecutablePath = resolvedExecutablePath,
             Status =
-                !expectedHelperResolved
-                    ? PythonPhase11AzureAuthKeyringHelperProbeStatus.Missing
-                    : PythonPhase11AzureAuthKeyringHelperProbeStatus.Found,
+                expectedHelperResolved
+                    ? PythonPhase11AzureAuthKeyringHelperProbeStatus.Found
+                    : expectedHelperExists
+                        ? PythonPhase11AzureAuthKeyringHelperProbeStatus.PathMismatch
+                        : PythonPhase11AzureAuthKeyringHelperProbeStatus.Missing,
         };
     }
 

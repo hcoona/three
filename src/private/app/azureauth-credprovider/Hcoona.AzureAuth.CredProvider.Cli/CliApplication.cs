@@ -2633,8 +2633,7 @@ internal static class CliApplication
                 "--force-reinstall azureauth-credprovider-keyring",
             PythonPhase11ProductProbeStatus.Healthy
                 when preflight.AzureAuthKeyringHelper.Status
-                    == PythonPhase11AzureAuthKeyringHelperProbeStatus.Missing
-                && preflight.AzureAuthKeyringHelper.ResolvedExecutablePath is null =>
+                    == PythonPhase11AzureAuthKeyringHelperProbeStatus.Missing =>
                 "--force-reinstall azureauth-credprovider-keyring",
             _ => null,
         };
@@ -2663,16 +2662,22 @@ internal static class CliApplication
     )
     {
         if (
-            helperProbe.Status == PythonPhase11AzureAuthKeyringHelperProbeStatus.Missing
+            moduleProbe.Status == PythonPhase11KeyringModuleProbeStatus.ModuleFound
+            && productProbe.Status == PythonPhase11ProductProbeStatus.Healthy
+            && helperProbe.Status
+                == PythonPhase11AzureAuthKeyringHelperProbeStatus.PathMismatch
             && helperProbe.ExpectedExecutablePath is { } expectedHelper
-            && helperProbe.ResolvedExecutablePath is { } resolvedHelper
         )
         {
-            return "activate the selected Python environment so "
-                + EscapeNonPrintingCharacters(expectedHelper)
-                + " resolves before "
-                + EscapeNonPrintingCharacters(resolvedHelper)
-                + " on PATH, then retry.";
+            return helperProbe.ResolvedExecutablePath is { } resolvedHelper
+                ? "activate the selected Python environment so "
+                    + EscapeNonPrintingCharacters(expectedHelper)
+                    + " resolves before "
+                    + EscapeNonPrintingCharacters(resolvedHelper)
+                    + " on PATH, then retry."
+                : "activate the selected Python environment so "
+                    + EscapeNonPrintingCharacters(expectedHelper)
+                    + " is available on PATH, then retry.";
         }
 
         return moduleProbe.Status switch

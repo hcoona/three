@@ -7871,6 +7871,59 @@ public sealed class CliApplicationTests
         Assert.DoesNotContain("pip install", result.StdErr, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void HandleConfigure_WhenPosixHelperIsAbsentButAnotherHelperIsOnPath_SuggestsReinstall()
+    {
+        Assert.SkipWhen(
+            OperatingSystem.IsWindows(),
+            "The Python helper preflight is POSIX-only."
+        );
+        using var fixture = new Phase3ConfigureFixture(
+            productHealthy: true,
+            helperPresent: false,
+            helperShadowed: true
+        );
+
+        CommandResult result = InvokeWithRuntime(fixture.Runtime, "configure", "python");
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Contains(
+            "bootstrap-command: "
+                + Phase3BootstrapCommand(
+                    fixture.PythonExecutablePath,
+                    "--force-reinstall azureauth-credprovider-keyring"
+                )
+                + "\n",
+            Normalize(result.StdErr),
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain(" resolves before ", result.StdErr, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void HandleConfigure_WhenPythonProbeFails_DoesNotMaskFailureWithHelperPathGuidance()
+    {
+        Assert.SkipWhen(
+            OperatingSystem.IsWindows(),
+            "The Python helper preflight is POSIX-only."
+        );
+        using var fixture = new Phase3ConfigureFixture(
+            productHealthy: false,
+            processResults: [ProcessResult.LaunchFailure()],
+            helperShadowed: true
+        );
+
+        CommandResult result = InvokeWithRuntime(fixture.Runtime, "configure", "python");
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Contains(
+            "guidance: verify that the selected Python interpreter can be launched, then retry.",
+            result.StdErr,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain(" resolves before ", result.StdErr, StringComparison.Ordinal);
+    }
+
     [Theory]
     [MemberData(nameof(PythonProbeFailuresWithoutInstallGuidance))]
     public void HandleConfigure_WhenProbeCannotDiagnoseDependency_OmitsInstallCommand(
