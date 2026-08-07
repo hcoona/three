@@ -1,10 +1,15 @@
+min_version = "2026.7.17"
+
 monorepo_root = true
 
 [settings]
 experimental = true
 
 [monorepo]
-config_roots = ["src/private/app/factorio-cycle-calculator"]
+config_roots = [
+  "src/private/app/factorio-cycle-calculator",
+  "src/public/lib/hexo-renderer-asciidoc",
+]
 
 [tools]
 # Runtimes
@@ -18,12 +23,11 @@ python = "3.14"
 ruby = "4.0.6"
 
 # Package Managers
-pnpm = "11.17.0"
+pnpm = "11.20.0"
 uv = "latest"
 
 # Git Commit Hook Manager
 hk = "latest"
-"pipx:prek" = "latest"
 
 #
 # Linters and Formatters
@@ -59,7 +63,7 @@ dotenv-linter = "latest"
 fd = "latest"
 ripgrep = "latest"
 github-cli = "latest"
-"github:microsoft/apm" = "0.26.0"
+"github:microsoft/apm" = "v0.27.0"
 "github:alibaba/open-code-review" = { version = "1.8.8", bin = "ocr" }
 
 #
@@ -117,14 +121,3 @@ pnpm exec -- prettier --write -- pnpm-lock.yaml src/public/lib/hexo-renderer-asc
 [tasks.update-uv-lock]
 description = "Refresh root uv lockfile"
 run = 'uv lock'
-
-[tasks.update-pre-commit-config]
-description = "Update .pre-commit-config.yaml from .pre-commit-config.pkl"
-run = 'pkl eval .pre-commit-config.pkl -o .pre-commit-config.yaml'
-sources = [
-  ".pre-commit-config.pkl",
-  "hk.pkl",
-  "src/private/hk/**/*.pkl",
-  "PklProject",
-  "PklProject.deps.json",
-]

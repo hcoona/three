@@ -16,7 +16,7 @@ nwa:
     - 'examples/hexo-site/public/**'
     - 'LICENSES/**'
     - '**/node_modules/**'
-    - '.mise.lock'
+    - 'mise.lock'
     - 'COPYING'
     - 'COPYING.LESSER'
     - 'Gemfile.lock'

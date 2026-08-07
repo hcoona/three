@@ -1,4 +1,4 @@
-import "@hk/Config.pkl"
+import "../Config.pkl"
 
 editorconfig_check = new Config.Step {
   batch = true

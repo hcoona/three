@@ -30,14 +30,14 @@
     <PackageVersion Include="Microsoft.SemanticKernel.Connectors.OpenAI" Version="1.78.0" />
     <!-- MSTest.Sdk owns these versions for SDK-style MSTest projects. -->
     <PackageVersion Include="Microsoft.Testing.Extensions.CodeCoverage" Version="18.9.0" Condition="'$(UsingMSTestSdk)' != 'true'" />
-    <PackageVersion Include="Microsoft.Testing.Extensions.TrxReport" Version="2.3.2" Condition="'$(UsingMSTestSdk)' != 'true'" />
-    <PackageVersion Include="Microsoft.Web.WebView2" Version="1.0.4078.44" />
+    <PackageVersion Include="Microsoft.Testing.Extensions.TrxReport" Version="2.3.3" Condition="'$(UsingMSTestSdk)' != 'true'" />
+    <PackageVersion Include="Microsoft.Web.WebView2" Version="1.0.4129.50" />
     <PackageVersion Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2526" />
     <PackageVersion Include="Microsoft.WindowsAppSDK" Version="2.3.1" />
     <PackageVersion Include="Nito.Guids" Version="1.1.1" />
     <PackageVersion Include="NuGet.ProjectModel" Version="7.6.0" />
     <PackageVersion Include="NuGet.Protocol" Version="7.6.0" />
-    <PackageVersion Include="RocksDB" Version="10.10.1.1747" />
+    <PackageVersion Include="RocksDB" Version="11.1.2.3412" />
     <PackageVersion Include="Serilog.Extensions.Logging" Version="10.0.0" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />
     <PackageVersion Include="Svg" Version="3.4.8" />
@@ -55,8 +55,8 @@
 
   <ItemGroup Label="Transitive">
     <PackageVersion Include="ExCSS" Version="4.3.2" />
-    <PackageVersion Include="Microsoft.Testing.Platform.MSBuild" Version="2.3.2" />
-    <PackageVersion Include="OpenMcdf" Version="3.1.4" />
+    <PackageVersion Include="Microsoft.Testing.Platform.MSBuild" Version="2.3.3" />
+    <PackageVersion Include="OpenMcdf" Version="3.2.0" />
     <PackageVersion Include="System.Net.Http" Version="4.3.4" />
     <PackageVersion Include="System.Private.Uri" Version="4.3.2" />
   </ItemGroup>

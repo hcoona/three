@@ -74,7 +74,7 @@ jobs:
           global-json-file: global.json
 
       - name: Set up mise
-        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
+        uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
         with:
           experimental: true
           install: false
@@ -85,7 +85,7 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          mise install pkl powershell pnpm uv ruby
+          mise install --locked pkl powershell pnpm uv ruby
           mise reshim
 
           gem install bundler -v 2.4.20 --no-document

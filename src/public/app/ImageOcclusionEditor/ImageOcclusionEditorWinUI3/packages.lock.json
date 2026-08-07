@@ -290,15 +290,15 @@
       },
       "Microsoft.Web.WebView2": {
         "type": "CentralTransitive",
-        "requested": "[1.0.4078.44, )",
-        "resolved": "1.0.4078.44",
-        "contentHash": "TQkHa/aOHUqFHnJIJ/2ZmJ4nLcQJi0Pc0rj9BAs7SP5sT/KtVtb8jFp9uqQL6cKzCRSrwjS/wEPA43NWUOzU+A=="
+        "requested": "[1.0.4129.50, )",
+        "resolved": "1.0.4129.50",
+        "contentHash": "BuJC70c7SCl8wlvojLZbc/E5ONmGyG3fhAMmpftCpKerxae//TxgKOTELRK2QRD7m7jigNFQRf6cfVT3ZiIQoQ=="
       },
       "OpenMcdf": {
         "type": "CentralTransitive",
-        "requested": "[3.1.4, )",
-        "resolved": "3.1.4",
-        "contentHash": "ncchtCh9YKqutHTlUCrr1llXA65ijGOCjXBM0mL1+WaGouApWDEACWbBHGzuYcAvB+rgW6IgO4AKgmZ2v1moNA=="
+        "requested": "[3.2.0, )",
+        "resolved": "3.2.0",
+        "contentHash": "n/iojS7V77YjM6IBbXaP0ZI8EELhJ2j6XRjx9NxMyUtjcM4a0yr0fWqO1y7lgd3CgYwnDugaKlO9c7Os8VxNtg=="
       },
       "System.IO.Hashing": {
         "type": "CentralTransitive",
@@ -361,9 +361,9 @@
       },
       "Microsoft.Web.WebView2": {
         "type": "CentralTransitive",
-        "requested": "[1.0.4078.44, )",
-        "resolved": "1.0.4078.44",
-        "contentHash": "TQkHa/aOHUqFHnJIJ/2ZmJ4nLcQJi0Pc0rj9BAs7SP5sT/KtVtb8jFp9uqQL6cKzCRSrwjS/wEPA43NWUOzU+A=="
+        "requested": "[1.0.4129.50, )",
+        "resolved": "1.0.4129.50",
+        "contentHash": "BuJC70c7SCl8wlvojLZbc/E5ONmGyG3fhAMmpftCpKerxae//TxgKOTELRK2QRD7m7jigNFQRf6cfVT3ZiIQoQ=="
       }
     }
   }

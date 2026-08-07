@@ -58,5 +58,5 @@ test = new Dynamic {
   ["Microsoft.Build.CopyOnWrite"] = "1.0.334"
   ["Microsoft.Build.NoTargets"] = "3.7.134"
   ["Microsoft.Build.Traversal"] = "4.1.82"
-  ["MSTest.Sdk"] = "4.3.2"
+  ["MSTest.Sdk"] = "4.3.3"
 }

@@ -15,7 +15,7 @@ nwa = new Config.Step {
   exclude =
     List(
       ".editorconfig",
-      ".mise.lock",
+      "mise.lock",
     )
   check = "nwa config -c check"
   fix = new Config.Script {
