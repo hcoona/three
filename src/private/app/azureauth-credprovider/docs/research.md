@@ -70,26 +70,33 @@ credential.helper=<primary-cli> git credential-helper
   -> This fails unless a git-credential-<primary-cli> helper exists.
 ```
 
-Implication: a single CLI can implement the logic, but a production installation should provide a Git helper-shaped entry point or configure an absolute helper command carefully. The recommended user configuration is the standard helper shorthand plus explicit `dev.azure.com` path forwarding:
+Implication: a single CLI can implement the logic, but a production installation should provide a Git helper-shaped entry point or configure an absolute helper command carefully. The recommended resulting user configuration is the standard helper shorthand plus explicit `dev.azure.com` path forwarding:
 
-```powershell
-git config --global credential.helper <helper-name>
-git config --global credential.https://dev.azure.com.useHttpPath true
+```text
+[credential]
+  helper = <helper-name>
+[credential "https://dev.azure.com"]
+  useHttpPath = true
 ```
 
-with an installed `git-credential-<helper-name>` executable that delegates to the shared core. The `useHttpPath` setting is required for `dev.azure.com` because the Azure DevOps organization is in the URL path. Legacy `<org>.visualstudio.com` remotes carry the organization in the host name and do not need the same setting.
+with an installed `git-credential-<helper-name>` executable that delegates to the shared core. The product CLI writes these settings to a private product Git config through ConfigurationManager and activates it with an explicitly marked product-owned `[include]` block in the selected user-global Git config, rather than invoking `git config --global`. The target file follows Git's official global selection behavior: use `~/.gitconfig` when present, otherwise an existing XDG Git config file, otherwise `~/.gitconfig`. ConfigurationManager owns the private selectors and ownership metadata; the activation writer preserves unrelated user content and removes only the exact owned include block. Doctor uses safe real-Git `--global --includes` queries without overriding `GIT_CONFIG_GLOBAL` or invoking helpers. The `useHttpPath` setting is required for `dev.azure.com` because the Azure DevOps organization is in the URL path. Legacy `<org>.visualstudio.com` remotes carry the organization in the host name and do not need the same setting.
 
 The angle-bracketed values in the previous snippet are substitution placeholders, not literal command text. The configure command must either install the helper into a location Git itself can discover or configure a carefully quoted absolute helper path. The doctor command should validate discovery through Git, not only through the current shell, because GUI Git clients may run with a different `PATH`.
 
-Git identity flows should be treated as separate support levels rather than a single generic authentication mode:
+Git identity flows should be treated as separate support levels rather than a
+single generic authentication mode. The Phase 4D MVP scope is limited to the
+accepted browser, device-code, narrow PAT compatibility, and Azure Pipelines
+system access token flows. Generic direct bearer token injection and service
+principal, managed identity, or workload identity federation are future,
+deferred, or background options unless a later phase explicitly promotes them.
 
-| Flow                                                                 | Support implication                                                                                         |
-| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Interactive user OAuth                                               | Primary developer flow for HTTPS remotes.                                                                   |
-| PAT                                                                  | Compatibility flow; avoid embedding tokens in remotes.                                                      |
-| Direct bearer token                                                  | Useful for controlled CI commands such as `http.extraheader`; not a persistent developer setup.             |
-| Service principal, managed identity, or workload identity federation | Viable only when the Azure DevOps organization and repository permissions are configured for that identity. |
-| Azure Pipelines system access token                                  | Pipeline-specific flow; configure as CI bootstrap rather than normal desktop Git helper state.              |
+| Flow                                                                 | Phase 4D qualification                                                                                                                  |
+| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Interactive user OAuth                                               | MVP developer flow for HTTPS remotes through accepted browser or device-code authentication.                                            |
+| PAT                                                                  | MVP narrow compatibility flow; avoid embedding tokens in remotes.                                                                       |
+| Direct bearer token                                                  | Future or background CI technique for controlled commands such as `http.extraheader`; not Phase 4D MVP Git helper support.              |
+| Service principal, managed identity, or workload identity federation | Deferred; viable only if a later phase adds support and the Azure DevOps organization and repository permissions are configured for it. |
+| Azure Pipelines system access token                                  | MVP pipeline-specific bootstrap flow; configure as CI state, not as normal desktop Git helper state.                                    |
 
 ## NuGet and .NET
 
@@ -116,19 +123,26 @@ Implication: NuGet cannot be configured to call a normal `<primary-cli> nuget pl
 
 1. A top-level executable that itself handles NuGet's `-Plugin` invocation.
 2. A NuGet plugin-shaped executable or DLL that delegates to the shared core.
-3. Conventional NuGet plugin installation paths for dotnet and Visual Studio/MSBuild scenarios.
+3. Conventional NuGet plugin installation paths for modern `dotnet` / .NET SDK scenarios.
 
 The existing Azure Artifacts Credential Provider demonstrates this dual-mode model: it can run as a NuGet plugin and can also be invoked in standalone credential-acquisition mode.
 
 NuGet discovery modes have different operational consequences:
 
-| Mode                 | Shape                                                                                   | Notes                                                                                  |
-| -------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Direct plugin path   | Full path to a plugin executable or DLL                                                 | Advanced override; no extra arguments or subcommands; can shadow convention discovery. |
-| Convention discovery | `.nuget/plugins/netcore/<name>/<name>.dll` and `.nuget/plugins/netfx/<name>/<name>.exe` | Preferred for broad tool compatibility.                                                |
-| PATH discovery       | `nuget-plugin-*` executable on `PATH` where supported by the NuGet client version       | Useful for tool-style distribution, but still requires plugin protocol behavior.       |
+| Mode                 | Shape                                                                             | Notes                                                                                  |
+| -------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Direct plugin path   | Full path to a plugin executable or DLL                                           | Advanced override; no extra arguments or subcommands; can shadow convention discovery. |
+| Convention discovery | `.nuget/plugins/netcore/<name>/<name>.dll`                                        | Default Phase 4D MVP path for modern `dotnet` / .NET SDK clients, including .NET 10.   |
+| Deferred convention  | `.nuget/plugins/netfx/<name>/<name>.exe`                                          | .NET Framework / NuGet.exe / Visual Studio legacy host shape; out of scope for MVP.    |
+| PATH discovery       | `nuget-plugin-*` executable on `PATH` where supported by the NuGet client version | Useful for tool-style distribution, but still requires plugin protocol behavior.       |
 
-Prefer conventional installation under NuGet plugin folders for normal developer machines. Use `NUGET_PLUGIN_PATHS` only as an advanced or diagnostic override. Avoid setting it globally in environments that use both `dotnet` and NuGet.exe/MSBuild because the .NET Core and .NET Framework plugin shapes differ.
+Prefer conventional installation under NuGet plugin folders for normal
+developer machines. For Phase 4D MVP, project only
+`.nuget/plugins/netcore/<name>/<name>.dll`; `netcore` is the NuGet convention
+for modern `dotnet` / .NET SDK plugins and remains correct for .NET 10. The
+`.nuget/plugins/netfx/<name>/<name>.exe` shape is deferred unless a later phase
+explicitly adds .NET Framework / NuGet.exe / Visual Studio legacy host support.
+Use `NUGET_PLUGIN_PATHS` only as an advanced or diagnostic override.
 
 ## Python, pip, twine, uv, and keyring
 
@@ -179,7 +193,7 @@ https://pkgs.dev.azure.com/<ORG>/<PROJECT>/_packaging/<FEED>/npm/registry/
 The npm ecosystem does not expose a NuGet-style credential-provider plugin protocol for Azure Artifacts feeds. Authentication is driven by registry configuration files:
 
 - `.npmrc` for npm and pnpm,
-- `.yarnrc.yml` for Yarn Berry.
+- `.yarnrc.yml` for Yarn 4+.
 
 The extracted `@microsoft/artifacts-npm-credprovider` package is a CLI, not a package-manager plugin. It reads npm or Yarn registry configuration, obtains credentials through `@microsoft/artifacts-credprovider-wrapper`, and writes credential material back to the relevant npm or Yarn configuration location.
 

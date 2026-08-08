@@ -191,6 +191,122 @@ jobs:
             }
           }
 
+  azureauth-foundation-artifacts:
+    name: AzureAuth Foundation Artifact (${{ matrix.build-os }} build, ${{ matrix.target-os }} target, ${{ matrix.target-rid }})
+    runs-on: ${{ matrix.build-runner }}
+    needs: [validation, dotnet-tests]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - build-os: Windows
+            build-runner: windows-latest
+            target-os: Windows
+            target-rid: win-x64
+            run-host-tests: false
+            run-deployment-validation: true
+          - build-os: Linux
+            build-runner: ubuntu-latest
+            target-os: Linux
+            target-rid: linux-x64
+            run-host-tests: true
+            run-deployment-validation: true
+          - build-os: macOS
+            build-runner: macos-latest
+            target-os: macOS
+            target-rid: osx-x64
+            run-host-tests: true
+            run-deployment-validation: false
+
+    env:
+      NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: |
+            src/private/app/azureauth-credprovider/Hcoona.AzureAuth.CredProvider.Contracts/packages.lock.json
+            src/private/app/azureauth-credprovider/Hcoona.AzureAuth.CredProvider.Platform/packages.lock.json
+            tests/private/app/azureauth-credprovider/Hcoona.AzureAuth.CredProvider.Platform.Tests/packages.lock.json
+
+      - name: Test AzureAuth host OS behavior
+        if: matrix.run-host-tests
+        timeout-minutes: 15
+        shell: pwsh
+        run: |
+          dotnet test `
+            --project tests/private/app/azureauth-credprovider/Hcoona.AzureAuth.CredProvider.Platform.Tests/Hcoona.AzureAuth.CredProvider.Platform.Tests.csproj `
+            --configuration Release `
+            --filter-class `
+              Hcoona.AzureAuth.CredProvider.Platform.Tests.SystemFileSystemTests `
+              Hcoona.AzureAuth.CredProvider.Platform.Tests.SystemProcessRunnerTests `
+            -p:RestoreLockedMode=true
+
+      - name: Test foundation artifact script
+        shell: pwsh
+        run: ./tests/private/app/azureauth-credprovider/New-FoundationArtifact.Tests.ps1
+
+      - name: Create internal foundation artifact
+        shell: pwsh
+        run: |
+          ./eng/scripts/azureauth-credprovider/New-FoundationArtifact.ps1 `
+            -BuildOs '${{ matrix.build-os }}' `
+            -TargetRid '${{ matrix.target-rid }}' `
+            -Configuration Release `
+            -ProductVersion '0.0.0-internal' `
+            -SourceRevision '${{ github.sha }}'
+
+      - name: Upload internal foundation artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: azureauth-credprovider-foundation-internal-${{ matrix.build-os }}-${{ matrix.target-rid }}
+          path: artifacts/azureauth-credprovider/foundation/azureauth-credprovider-foundation-internal-${{ matrix.build-os }}-${{ matrix.target-rid }}.zip
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Setup Python 3.14 for deployment validation
+        if: matrix.run-deployment-validation
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+
+      - name: Install uv for deployment validation
+        if: matrix.run-deployment-validation
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: '3.14'
+          enable-cache: false
+
+      - name: Create deployment validation bundle
+        if: matrix.run-deployment-validation
+        shell: pwsh
+        run: |
+          ./eng/scripts/azureauth-credprovider/New-DeploymentValidationBundle.ps1 `
+            -BuildOs '${{ matrix.build-os }}' `
+            -TargetRid '${{ matrix.target-rid }}' `
+            -Configuration Release `
+            -ProductVersion '0.0.0-internal' `
+            -SourceRevision '${{ github.sha }}'
+
+      - name: Test deployment validation lifecycle
+        if: matrix.run-deployment-validation
+        shell: pwsh
+        run: |
+          ./tests/private/app/azureauth-credprovider/Install-DeploymentValidationBundle.Tests.ps1 `
+            -BundlePath (
+              'artifacts/azureauth-credprovider/deployment-validation/' +
+              'azureauth-credprovider-deployment-validation-internal-' +
+              '${{ matrix.build-os }}-${{ matrix.target-rid }}.zip'
+            )
+
   node-tests:
     name: Test & Build (Node.js ${{ matrix.node-version }})
     runs-on: ubuntu-latest
@@ -291,7 +407,7 @@ jobs:
       - name: Run tests
         run: |
           set -Eeuo pipefail
-          uv run --frozen pytest
+          uv run --frozen --all-packages pytest
 
   ruby-tests:
     name: Test (Ruby 3.3)

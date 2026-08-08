@@ -15,6 +15,9 @@ The primary user-facing command is a standard CLI. The executable name is intent
 ```text
 <primary-cli> login
 <primary-cli> logout
+<primary-cli> identity configure --tenant <id> [--account <name>]
+<primary-cli> identity reconfigure --tenant <id> [--account <name>]
+<primary-cli> identity unconfigure
 <primary-cli> status
 <primary-cli> configure git
 <primary-cli> configure nuget
@@ -39,14 +42,20 @@ The human-facing CLI owns:
 
 Protocol adapters are installed and configured by the CLI, but they are not the primary interface users interact with.
 
-The design should explicitly evaluate AzureAuth, also known as `microsoft-authentication-cli`, as a candidate identity substrate. AzureAuth is an MSAL-based CLI for Microsoft Entra authentication and includes Azure DevOps token-oriented commands. If reused, it should sit below the shared credential core or behind a well-defined identity-provider abstraction; it should not replace the Git, NuGet, Python keyring, or npm protocol adapters.
+The current Windows, WSL, and native Linux identity path uses AzureAuth
+(`microsoft-authentication-cli`) 0.9.5 behind the shared identity-provider
+abstraction. Direct MSAL remains represented but is not implemented. AzureAuth
+does not replace the Git, NuGet, Python keyring, or npm protocol adapters.
+The product-owned `identity` commands record the required tenant and optional
+account preference without exposing a generic provider selector, acquiring a
+token, or claiming to verify the account.
 
 ## High-Level Components
 
 ```text
                       +-----------------------------+
                       | Primary CLI                 |
-                      | login/configure/doctor      |
+                      | identity/login/configure    |
                       +--------------+--------------+
                                      |
                                      v
@@ -79,16 +88,28 @@ The shared core owns credential behavior that must not diverge between ecosystem
 
 - Azure DevOps host and feed canonicalization,
 - tenant and account selection,
-- interactive browser or device-code login,
-- non-interactive service identity flows,
+- interactive browser and native Linux device-code login,
+- current identity-flow policy for interactive browser, native Linux device code,
+  and Azure Pipelines system access token; PAT compatibility, service principal,
+  managed identity, and workload identity federation remain unavailable or
+  deferred,
 - token exchange and refresh,
-- secure credential cache access,
+- identity-provider cache policy and future product-cache boundaries,
 - cache partitioning,
 - redaction,
 - policy enforcement,
 - diagnostic event generation.
 
-The shared core may use AzureAuth (`microsoft-authentication-cli`) for Microsoft Entra token acquisition and MSAL cache reuse if it satisfies the required token audiences, non-interactive behavior, installation model, logging policy, and protocol-adapter isolation constraints. The design should also permit a direct MSAL integration if shelling out to AzureAuth would make protocol adapters harder to secure or test.
+The shared core uses AzureAuth 0.9.5 for Microsoft Entra token acquisition on
+Windows, WSL, and native Linux. Windows and WSL derive the executable from the
+official per-user Windows installation and use AzureAuth's default WAM-then-web
+ordering. Native Linux uses the official Linux package payload and explicit web
+or device-code mode for explicit interactive requests; silent-only host
+requests use AzureAuth's no-user cache path. On a headless host without Linux
+keyring persistence, AzureAuth's documented owner-only file-cache fallback is
+an explicitly accepted provider-cache behavior; product-owned derived
+credentials remain non-persistent with no plaintext fallback. Direct MSAL is
+not implemented.
 
 The core must not assume a single protocol output format. Protocol adapters are responsible for host-tool input and output.
 
@@ -115,16 +136,37 @@ git-credential-<helper-name> erase
 
 The adapter reads credential records from stdin and writes only Git credential fields to stdout. It delegates account selection and token acquisition to the shared core.
 
-Recommended configuration:
+Recommended resulting configuration:
 
 ```text
-git config --global credential.helper <helper-name>
-git config --global credential.https://dev.azure.com.useHttpPath true
+[credential]
+  helper = <helper-name>
+[credential "https://dev.azure.com"]
+  useHttpPath = true
 ```
+
+`configure git` must not shell out to `git config --global` to apply these
+settings. The product CLI writes them to a private product Git config through
+ConfigurationManager, then adds an explicitly marked product-owned `[include]`
+block to the selected user-global Git config. Unconfigure removes only that
+exact block and the product-owned private settings. The user-global target is
+`~/.gitconfig` when it exists, otherwise the existing XDG Git config file, and
+otherwise `~/.gitconfig`. Doctor uses real `git config --global --includes`
+queries without overriding `GIT_CONFIG_GLOBAL` and never invokes credential
+helpers. AzureAuth, if reused, remains only an identity-acquisition substrate
+behind the shared core abstraction.
 
 The `useHttpPath` setting is required for `dev.azure.com` because the organization is in the URL path. Legacy `<org>.visualstudio.com` remotes carry the organization in the host name and do not require the same setting.
 
-The angle-bracketed helper name is a substitution placeholder. The configuration command should avoid shell snippets as the default. Shell snippets are useful for development, but they are harder to quote safely on Windows and less reliable in GUI Git clients. The installer must either place `git-credential-<helper-name>` where Git itself can discover it or configure a carefully quoted absolute helper path. `doctor` should validate helper discovery by invoking Git, not just by checking the current shell's `PATH`.
+The angle-bracketed helper name is a substitution placeholder. Any equivalent
+`git config --global` command shown in user guidance is illustrative of the
+resulting file content only, not the implementation mechanism. The configuration
+writer should avoid shell snippets as the default. Shell snippets are useful for
+development, but they are harder to quote safely on Windows and less reliable in
+GUI Git clients. The installer must either place `git-credential-<helper-name>`
+where Git itself can discover it or configure a carefully quoted absolute helper
+path. `doctor` should validate helper discovery by invoking Git, not just by
+checking the current shell's `PATH`.
 
 ## NuGet Adapter
 
@@ -143,20 +185,28 @@ The NuGet adapter must:
 - respect non-interactive restore,
 - emit only protocol-valid content to stdout,
 - route diagnostics safely,
-- support dotnet CLI restore scenarios,
-- support Visual Studio/MSBuild/NuGet.exe scenarios where required by project scope.
+- support Phase 4D MVP dotnet CLI restore scenarios through NuGet `netcore` convention discovery,
+- keep Visual Studio/MSBuild/NuGet.exe (`netfx`) scenarios as deferred post-MVP scope unless explicitly added later.
 
 NuGet discovery options should be documented and diagnosed explicitly:
 
 | Mode                 | Shape                                                                                   | Operational note                                                                               |
 | -------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | Direct plugin path   | Full path to the plugin entry point                                                     | Advanced override; cannot include extra subcommand arguments; can shadow convention discovery. |
-| Convention discovery | `.nuget/plugins/netcore/<name>/<name>.dll` and `.nuget/plugins/netfx/<name>/<name>.exe` | Preferred for broad developer-machine compatibility.                                           |
+| Convention discovery | `.nuget/plugins/netcore/<name>/<name>.dll` and `.nuget/plugins/netfx/<name>/<name>.exe` | `netcore` is the Phase 4D MVP default; `netfx` remains deferred post-MVP compatibility scope.  |
 | PATH discovery       | `nuget-plugin-*` executable where supported                                             | Still must enter NuGet plugin mode and speak the NuGet plugin protocol.                        |
 
-Default setup should prefer conventional plugin discovery. `NUGET_PLUGIN_PATHS` should remain an advanced diagnostic or explicit override path, not a global default, because mixed `dotnet` and NuGet.exe/MSBuild environments may require different plugin shapes.
+Default setup should prefer conventional plugin discovery. In Phase 4D MVP this means the `netcore` convention path for `dotnet` restore. `NUGET_PLUGIN_PATHS` and `NUGET_NETCORE_PLUGIN_PATHS` are optional process-scoped diagnostic or explicit temporary override paths and must not be persisted as user-global or machine-global defaults by MVP configuration flows.
 
-Interactive behavior is controlled by the invoking NuGet client. `dotnet restore` should require `--interactive` before the plugin initiates first-time user interaction. MSBuild restore should require `/p:NuGetInteractive=true`. NuGet.exe may prompt by default. The plugin must honor NuGet protocol `NonInteractive` and `CanShowDialog` values and must not prompt or block when `NonInteractive` is true.
+Interactive behavior is controlled by the invoking NuGet client. `dotnet restore` should require `--interactive` before the plugin initiates first-time user interaction. If deferred `netfx` support is later enabled, MSBuild restore should require `/p:NuGetInteractive=true` and NuGet.exe behavior should follow the invoking client's interactive policy. The plugin must honor NuGet protocol `NonInteractive` and `CanShowDialog` values and must not prompt or block when `NonInteractive` is true.
+
+For an interactive request, `CanShowDialog=true` selects browser interaction.
+`CanShowDialog=false` selects device code, but the NuGet plugin process does not
+own a human terminal prompt stream and therefore rejects that flow before
+launch. Explicit native Linux CLI login does own such a stream and supports
+device code. Git and Python helper protocols do not authorize interaction, so
+those adapters remain silent-only rather than inferring permission from the
+environment.
 
 ## Python Adapter
 
@@ -165,9 +215,24 @@ Python requires two adapter shapes for full coverage:
 1. A Python keyring backend package for twine and pip import mode.
 2. A `keyring` executable-compatible shim for uv and pip subprocess mode.
 
-The Python keyring backend should be intentionally thin. It should delegate credential acquisition to the shared core through an absolute helper path, a signed local broker, or a small trusted library boundary. It should not import a large credential implementation into arbitrary project virtual environments.
+The Python keyring backend should be intentionally thin. `configure python`
+writes a backend manifest containing the protocol major, product ID, platform,
+and installed apphost's absolute path. The backend invokes that apphost as:
 
-The backend package must be available in the same Python environment as the tool that imports keyring. `configure python` and `doctor` should account for active virtual environments, pipx-installed twine, tox/nox environments, and isolated CI environments. A unified CLI alone cannot satisfy twine because twine imports Python keyring rather than invoking an arbitrary external subcommand.
+```text
+<absolute-product-apphost> python-keyring get ...
+```
+
+It relies on ordinary file/executable checks and platform process-launch
+behavior. It does not import a large credential implementation into arbitrary
+project virtual environments.
+
+The backend package must be available in the same Python environment as the tool
+that imports keyring. The product bundle carries the wheel but does not install
+it into arbitrary environments. Bootstrap and `doctor` should account for active
+virtual environments, pipx-installed twine, tox/nox environments, and isolated
+CI environments. A unified CLI alone cannot satisfy twine because twine imports
+Python keyring rather than invoking an arbitrary external subcommand.
 
 Keeping the large credential implementation outside the project virtual environment reduces the trusted code imported into arbitrary Python environments, but it is not a security boundary. The invoking package-manager process must receive credentials, so a compromised environment can still observe returned credentials.
 
@@ -178,9 +243,22 @@ keyring get <service> <username>    # stdout is the password
 keyring get <service> --mode creds  # stdout is newline-separated username and password
 ```
 
-It must print only the expected keyring response to stdout.
+The product-owned shim delegates to the wheel-provided `azureauth-keyring`
+console script. This separates uv and pip's PATH-based executable discovery from
+the backend's absolute product-apphost invocation. It must print only the
+expected keyring response to stdout.
 
-The shim must define exit behavior for no credential, unsupported host, and fatal errors. It should either delegate unsupported keyring commands to a real Python `keyring` CLI or avoid global shadowing by using controlled PATH injection. pip subprocess mode requires a username in the index URL and may ignore a `keyring` executable installed only in the current Python environment's scripts directory. uv invokes `keyring` from `PATH` directly and can use `--mode creds` when no username is present.
+The current production shim is POSIX-only. Windows import-mode configuration
+still writes the backend manifest, but Windows subprocess mode remains deferred
+until the product has a real `keyring.exe` launcher; a `.cmd` file is not a
+substitute for uv's direct process launch.
+
+The shim must define exit behavior for no credential, unsupported host, and fatal
+errors. It avoids global shadowing through controlled PATH activation. pip
+subprocess mode requires a username in the index URL and may ignore a `keyring`
+executable installed only in the current Python environment's scripts directory.
+uv invokes `keyring` from `PATH` directly and can use `--mode creds` when no
+username is present.
 
 ## npm Adapter
 
@@ -234,13 +312,19 @@ Azure Repos Git should normally key credential storage by host and organization 
 
 CI mode should be explicit. The CLI should detect common CI environments but should not silently persist credentials just because it is running in CI.
 
-CI behavior should prefer:
+MVP CI behavior accepts only an explicit Azure Pipelines system access token
+request under a non-persistent CI context. Explicit CI mode is a closed gate:
+the selected identity flow must be Azure Pipelines system access token, the
+token must be present, persistent writes must be disabled, and the request must
+use the frozen non-persistent CI cache policy.
 
-- workload identity federation,
-- managed identity where available,
-- Azure Pipelines system access token for Azure Pipelines scenarios,
-- short-lived tokens over personal access tokens,
-- temporary config files or environment variables over user-global writes.
+Deferred/future CI identities are:
+
+- workload identity federation (future/deferred),
+- managed identity where available (future/deferred),
+- service principal or other short-lived CI identities (future/deferred).
+
+Future CI expansion should continue to prefer short-lived tokens over personal access tokens and temporary config files or environment variables over user-global writes.
 
 CI behavior must:
 
@@ -259,7 +343,7 @@ CI behavior must:
 - Python keyring backend discovery,
 - `keyring` shim availability for uv,
 - npm and Yarn registry configuration format and required entries,
-- cache health and account selection,
+- identity-provider readiness, silent-cache availability, and account selection,
 - host/feed canonicalization,
 - CI mode and secret handling.
 
@@ -275,6 +359,30 @@ Removal behavior should include:
 - NuGet: remove this product's plugin installation or explicit plugin-path override without deleting unrelated NuGet package sources.
 - Python: remove this product's keyring backend or shim registration from the targeted Python environment without uninstalling unrelated keyring backends.
 - npm: remove this product's generated credential entries while preserving registry declarations and unrelated npm or Yarn configuration.
+
+## Packaging and Deployment Validation
+
+The repository can produce an internal, unsigned, non-release deployment
+validation bundle for one Windows or Linux RID. The bundle contains the complete
+framework-dependent app payload, CLI and Git launchers, the NuGet netcore plugin
+payload, the Python wheel, a file-hash manifest, and install/uninstall scripts.
+Current bundle generation and installation support x64 hosts and `win-x64` or
+`linux-x64` payloads only.
+
+Physical installation is deliberately separate from ecosystem activation. It
+copies payloads only into per-user, product-owned locations and does not mutate
+global PATH, shell profiles, the registry, Git configuration, NuGet
+configuration, or Python environments. Ecosystem configuration remains an
+explicit CLI operation. Uninstallation first invokes product-owned Git, NuGet,
+and Python unconfiguration, then removes the recorded product and NuGet payload
+roots.
+
+The bundle by itself validates deployment shape and lifecycle behavior. It is
+not a signed release artifact or release installer and does not close Windows,
+Windows Python subprocess mode, signing, provenance, or
+installer-produced-binary acceptance. Separate live acceptance through the
+installed bundle closed the repository's forced-native Linux x64 platform gate;
+native Linux system-keyring behavior remains separate evidence.
 
 ## Explicitly Deferred
 

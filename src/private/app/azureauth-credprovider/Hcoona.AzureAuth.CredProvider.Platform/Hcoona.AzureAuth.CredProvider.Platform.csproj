@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>$(CurrentTargetFramework)</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Hcoona.AzureAuth.CredProvider.Platform</RootNamespace>
+    <RuntimeIdentifiers>win-x64;linux-x64;osx-x64</RuntimeIdentifiers>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="azureauth-credprovider" />
+    <InternalsVisibleTo Include="Hcoona.AzureAuth.CredProvider.Platform.Tests" />
+    <PackageReference Include="NuGet.Protocol" />
+    <ProjectReference Include="../Hcoona.AzureAuth.CredProvider.Contracts/Hcoona.AzureAuth.CredProvider.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -64,6 +64,7 @@ fd = "latest"
 ripgrep = "latest"
 github-cli = "latest"
 "github:microsoft/apm" = "v0.27.0"
+"github:alibaba/open-code-review" = { version = "1.8.8", bin = "ocr" }
 
 #
 # Environment Variables

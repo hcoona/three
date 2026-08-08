@@ -1,0 +1,55 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+namespace Hcoona.AzureAuth.CredProvider.Contracts;
+
+[JsonSerializable(typeof(AcquisitionMode))]
+[JsonSerializable(typeof(AdapterHostResult))]
+[JsonSerializable(typeof(AdapterHostExitCode))]
+[JsonSerializable(typeof(AdapterProtocol))]
+[JsonSerializable(typeof(CachePolicyMode))]
+[JsonSerializable(typeof(CacheKey))]
+[JsonSerializable(typeof(CanonicalResourceIdentity))]
+[JsonSerializable(typeof(CiContext))]
+[JsonSerializable(typeof(ConfigurationChange))]
+[JsonSerializable(typeof(ConfigurationChangeOperation))]
+[JsonSerializable(typeof(ConfigurationChangePlan))]
+[JsonSerializable(typeof(ConfigurationActivationEnvironment))]
+[JsonSerializable(typeof(ConfigurationDeclarationPreservation))]
+[JsonSerializable(typeof(ConfigurationManifestMetadata))]
+[JsonSerializable(typeof(ConfigurationScope))]
+[JsonSerializable(typeof(ConfigurationTargetKind))]
+[JsonSerializable(typeof(ConfigurationTemporaryContainer))]
+[JsonSerializable(typeof(ConfigurationTemporaryContainerKind))]
+[JsonSerializable(typeof(CredentialEcosystem))]
+[JsonSerializable(typeof(CredentialError))]
+[JsonSerializable(typeof(CredentialErrorKind))]
+[JsonSerializable(typeof(CredentialKind))]
+[JsonSerializable(typeof(CredentialOperation))]
+[JsonSerializable(typeof(CredentialRequest))]
+[JsonSerializable(typeof(CredentialRequestV2))]
+[JsonSerializable(typeof(CredentialResult))]
+[JsonSerializable(typeof(CredentialResultStatus))]
+[JsonSerializable(typeof(DoctorCheck))]
+[JsonSerializable(typeof(DoctorCheckSeverity))]
+[JsonSerializable(typeof(DoctorCheckStatus))]
+[JsonSerializable(typeof(IdentityFlow))]
+[JsonSerializable(typeof(IdentityFlowState))]
+[JsonSerializable(typeof(InteractivePolicy))]
+[JsonSerializable(typeof(KeyringHelperMode))]
+[JsonSerializable(typeof(KeyringHelperRequest))]
+[JsonSerializable(typeof(KeyringHelperResponse))]
+[JsonSerializable(typeof(NpmCompatibleAuthSelectors))]
+[JsonSerializable(typeof(TokenAudience))]
+[JsonSerializable(typeof(IReadOnlyDictionary<string, string>))]
+[JsonSerializable(typeof(Dictionary<string, string>))]
+[JsonSerializable(typeof(IReadOnlyList<ConfigurationChange>))]
+[JsonSerializable(typeof(ConfigurationChange[]))]
+[JsonSerializable(typeof(IReadOnlyList<string>))]
+[JsonSerializable(typeof(string[]))]
+[JsonSourceGenerationOptions(
+    JsonSerializerDefaults.Web,
+    WriteIndented = false,
+    GenerationMode = JsonSourceGenerationMode.Metadata
+)]
+internal sealed partial class ContractJsonSerializerContext : JsonSerializerContext;

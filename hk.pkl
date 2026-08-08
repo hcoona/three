@@ -191,6 +191,7 @@ local pwsh_linters = new Mapping<String, Step> {
     stage = powershell_files
     env {
       ["HK_EXEC_PER_FILE"] = "0"
+      ["HK_EXEC_TIMEOUT_SECONDS"] = "300"
     }
     check =
       "python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/linter/Invoke-ScriptAnalyzerWrapper.ps1 -Mode Check -Path -- {{files}}"

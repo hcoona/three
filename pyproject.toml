@@ -24,6 +24,7 @@ members = [
   "src/private/app/rag-postgresql-openai",
   "src/private/app/supermemo-mcp",
   "src/private/app/transcribe",
+  "src/private/app/azureauth-credprovider/python",
   "src/public/app/markdown-hybrid-search-mcp",
   "src/public/lib/nbgv-python",
   "src/sample/nbgv-hatch-demo",
@@ -44,6 +45,7 @@ project-includes = [
   "src/private/app/rag-postgresql-openai",
   "src/private/app/supermemo-mcp",
   "src/private/app/transcribe",
+  "src/private/app/azureauth-credprovider/python",
   "src/public/app/markdown-hybrid-search-mcp",
   "src/public/lib/nbgv-python",
   "src/sample/nbgv-hatch-demo",
@@ -131,4 +133,7 @@ convention = "google" # Match the Google Python Style Guide docstring structure.
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["src/public/lib/nbgv-python/tests"]
+testpaths = [
+  "src/private/app/azureauth-credprovider/python/tests",
+  "src/public/lib/nbgv-python/tests",
+]
