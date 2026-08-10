@@ -931,7 +931,9 @@ public sealed class GitPhase8VerticalSliceService
     {
         var protocolStdout = new StringWriter();
         AdapterHostExecutionOutcome outcome = new GitCredentialHelperAdapter(
-            GetCredentialAcquisition()
+            GetCredentialAcquisition(),
+            static name =>
+                string.Equals(name, "GIT_TERMINAL_PROMPT", StringComparison.Ordinal) ? "0" : null
         ).Execute(
             executablePath,
             arguments,

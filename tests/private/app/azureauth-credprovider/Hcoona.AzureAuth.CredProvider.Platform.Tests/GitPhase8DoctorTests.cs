@@ -1254,6 +1254,20 @@ public sealed class GitPhase8DoctorTests
                 Assert.IsType<Hcoona.AzureAuth.CredProvider.Contracts.CiContext>(request.CiContext);
             Assert.False(ciContext.ExplicitCiMode);
             Assert.False(ciContext.AllowsPersistentWrites);
+            Hcoona.AzureAuth.CredProvider.Contracts.CredentialRequestV2 helperRequest =
+                credentialAcquisition.Requests[1];
+            Assert.Equal(
+                Hcoona.AzureAuth.CredProvider.Contracts.IdentityFlow.InteractiveBrowser,
+                helperRequest.IdentityFlow
+            );
+            Assert.Equal(
+                Hcoona.AzureAuth.CredProvider.Contracts.InteractivePolicy.Never,
+                helperRequest.InteractivePolicy
+            );
+            Assert.Equal(
+                Hcoona.AzureAuth.CredProvider.Contracts.AcquisitionMode.SilentOnly,
+                helperRequest.AcquisitionMode
+            );
             Assert.DoesNotContain(
                 credentialAcquisition.Requests,
                 candidate =>

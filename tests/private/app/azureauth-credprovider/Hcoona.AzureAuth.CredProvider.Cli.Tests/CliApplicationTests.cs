@@ -977,25 +977,43 @@ public sealed class CliApplicationTests
     [Fact]
     public async Task GitCredentialHelperAppHostFailsClosedWithoutProvider()
     {
+        string configRoot = CreateTestDirectory();
         var runner = new SystemProcessRunner();
 
-        ProcessResult result = await runner.RunAsync(
-            new ProcessStartSpec(
-                CliAppHostPath(),
-                ["git", "credential-helper", "get"],
-                standardInput: """
-                protocol=https
-                host=dev.azure.com
-                path=org/project/_git/repository
+        try
+        {
+            ProcessResult result = await runner.RunAsync(
+                new ProcessStartSpec(
+                    CliAppHostPath(),
+                    ["git", "credential-helper", "get"],
+                    environment: new Dictionary<string, string?>
+                    {
+                        [SystemAzureAuthSecureRecordStoreOptions.ConfigRootEnvironmentVariable] =
+                            configRoot,
+                        ["GIT_TERMINAL_PROMPT"] = "0",
+                    },
+                    standardInput: """
+                    protocol=https
+                    host=dev.azure.com
+                    path=org/project/_git/repository
 
-                """
-            ),
-            TestContext.Current.CancellationToken
-        );
+                    """
+                ),
+                TestContext.Current.CancellationToken
+            );
 
-        Assert.Equal(64, result.ExitCode);
-        Assert.Equal(string.Empty, result.StandardOutput);
-        Assert.Contains("ProviderNotConfigured", result.StandardError, StringComparison.Ordinal);
+            Assert.Equal(64, result.ExitCode);
+            Assert.Equal(string.Empty, result.StandardOutput);
+            Assert.Contains(
+                "ProviderNotConfigured",
+                result.StandardError,
+                StringComparison.Ordinal
+            );
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(configRoot);
+        }
     }
 
     [Fact(
@@ -1323,6 +1341,7 @@ public sealed class CliApplicationTests
     public async Task GitCredentialHelperAppHostAcceptsHelperNamedSymlink()
     {
         string tempDirectory = CreateTestDirectory();
+        string configRoot = CreateTestDirectory();
         var runner = new SystemProcessRunner();
         string helperPath = Path.Combine(tempDirectory, "git-credential-azureauth-credprovider");
 
@@ -1335,6 +1354,12 @@ public sealed class CliApplicationTests
                 new ProcessStartSpec(
                     helperPath,
                     ["get"],
+                    environment: new Dictionary<string, string?>
+                    {
+                        [SystemAzureAuthSecureRecordStoreOptions.ConfigRootEnvironmentVariable] =
+                            configRoot,
+                        ["GIT_TERMINAL_PROMPT"] = "0",
+                    },
                     standardInput: """
                     protocol=https
                     host=dev.azure.com
@@ -1356,6 +1381,7 @@ public sealed class CliApplicationTests
         finally
         {
             DeleteDirectoryIfExists(tempDirectory);
+            DeleteDirectoryIfExists(configRoot);
         }
     }
 
