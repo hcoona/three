@@ -14,6 +14,8 @@ public sealed record NuGetPhase10VerticalSliceOptions
 {
     public string? StateDirectoryPath { get; init; }
 
+    public string? ApplicationPayloadRootPath { get; init; }
+
     public IFileSystem? FileSystem { get; init; }
 
     public Func<string, string?>? EnvironmentVariableReader { get; init; }
@@ -28,6 +30,8 @@ public sealed record NuGetPhase10VerticalSliceResolvedPaths
     public required string OwnershipManifestPath { get; init; }
 
     public required string PluginTargetRootPath { get; init; }
+
+    public required string ApplicationPayloadRootPath { get; init; }
 
     public required string PluginEntrypointPath { get; init; }
 
@@ -99,13 +103,6 @@ public sealed class NuGetPhase10UnrecognizedStateException : InvalidOperationExc
 
 public sealed class NuGetPhase10VerticalSliceService
 {
-    internal const string MarkerFileName = ".azureauth-credprovider.nuget-plugin-layout";
-    internal const string MarkerValue =
-        "azureauth-credprovider nuget-plugin-layout\n"
-        + "phase=10\n"
-        + "runtime=netcore\n"
-        + "entrypoint=azureauth-credprovider.dll\n";
-
     private const string ProductId = "azureauth-credprovider";
     private const string ProductVersion = "phase10";
     private const string ManifestId = "phase10-nuget-plugin-layout";
@@ -325,7 +322,12 @@ public sealed class NuGetPhase10VerticalSliceService
                 EntrySelector = EntrySelector,
                 ProductVersion = ProductVersion,
             },
-            [CreateNuGetPluginLayoutChange(ConfigurationChangeOperation.Set, MarkerValue)]
+            [
+                CreateNuGetPluginLayoutChange(
+                    ConfigurationChangeOperation.Set,
+                    paths.ApplicationPayloadRootPath
+                ),
+            ]
         );
     }
 
@@ -425,23 +427,11 @@ public sealed class NuGetPhase10VerticalSliceService
     {
         try
         {
-            if (!fileSystem.FileExists(paths.PluginLayoutMarkerPath))
-            {
-                return false;
-            }
-
-            if (fileSystem.DirectoryExists(paths.PluginLayoutMarkerPath))
-            {
-                throw new NuGetPhase10UnrecognizedStateException(
-                    "The Phase 10 NuGet plugin layout state is not recognized."
-                );
-            }
-
-            return string.Equals(
-                fileSystem.ReadAllText(paths.PluginLayoutMarkerPath),
-                MarkerValue,
-                StringComparison.Ordinal
-            );
+            return fileSystem.FileExists(paths.PluginTargetRootPath)
+                || fileSystem.FileExists(paths.PluginLayoutMarkerPath)
+                || fileSystem.DirectoryExists(paths.PluginLayoutMarkerPath)
+                || fileSystem.FileExists(paths.PluginEntrypointPath)
+                || fileSystem.DirectoryExists(paths.PluginEntrypointPath);
         }
         catch (NuGetPhase10UnrecognizedStateException)
         {
@@ -490,50 +480,41 @@ public sealed class NuGetPhase10VerticalSliceService
         }
     }
 
-    private async ValueTask<NuGetPhase10OwnedState> InspectOwnedStateAsync(
+    private ValueTask<NuGetPhase10OwnedState> InspectOwnedStateAsync(
         CancellationToken cancellationToken
     )
     {
+        cancellationToken.ThrowIfCancellationRequested();
         bool ownershipManifestPresent = OwnershipManifestPathExists();
         if (!ownershipManifestPresent)
         {
-            return new NuGetPhase10OwnedState(
-                ProductOwnedNuGetPluginLayoutStateExists(),
-                OwnershipManifestPresent: false
+            return ValueTask.FromResult(
+                new NuGetPhase10OwnedState(
+                    PluginLayoutMarkerPathExists(),
+                    OwnershipManifestPresent: false
+                )
             );
         }
 
-        bool pluginLayoutMarkerPresent = false;
+        return ValueTask.FromResult(
+            new NuGetPhase10OwnedState(
+                PluginLayoutMarkerPathExists(),
+                ownershipManifestPresent
+            )
+        );
+    }
+
+    private bool PluginLayoutMarkerPathExists()
+    {
         try
         {
-            if (TryLoadExpectedOwnershipManifest(out ConfigurationOwnershipManifest? manifest))
-            {
-                pluginLayoutMarkerPresent = await CanDryRunOwnedNuGetRemovalAsync(
-                    manifest,
-                    cancellationToken
-                );
-            }
-            else
-            {
-                pluginLayoutMarkerPresent = ProductOwnedNuGetPluginLayoutStateExists();
-            }
+            return fileSystem.FileExists(paths.PluginLayoutMarkerPath)
+                && !fileSystem.DirectoryExists(paths.PluginLayoutMarkerPath);
         }
         catch (Exception exception) when (IsExpectedStateCheckFailure(exception))
         {
-            pluginLayoutMarkerPresent = false;
+            return false;
         }
-
-        return new NuGetPhase10OwnedState(pluginLayoutMarkerPresent, ownershipManifestPresent);
-    }
-
-    private async ValueTask<bool> CanDryRunOwnedNuGetRemovalAsync(
-        ConfigurationOwnershipManifest manifest,
-        CancellationToken cancellationToken
-    )
-    {
-        ConfigurationPlanResult planResult = await CreateManager()
-            .DryRunAsync(CreateUnconfigurePlan(manifest), cancellationToken);
-        return planResult.Operation == ConfigurationPlanOperation.DryRun;
     }
 
     private async ValueTask<bool> TryValidateConfigurationPlanAsync(
@@ -796,6 +777,9 @@ public sealed class NuGetPhase10VerticalSliceService
                 }
             );
         string pluginTargetRootPath = fileSystem.GetFullPath(projection.TargetPath);
+        string applicationPayloadRootPath = fileSystem.GetFullPath(
+            options.ApplicationPayloadRootPath ?? AppContext.BaseDirectory
+        );
         string pluginEntrypointPath = FileSystemPathSemantics.Combine(
             fileSystem,
             pluginTargetRootPath,
@@ -804,7 +788,7 @@ public sealed class NuGetPhase10VerticalSliceService
         string pluginLayoutMarkerPath = FileSystemPathSemantics.Combine(
             fileSystem,
             pluginTargetRootPath,
-            MarkerFileName
+            NuGetPluginLayoutPhysicalTargetWriter.MarkerFileName
         );
 
         return new NuGetPhase10VerticalSliceResolvedPaths
@@ -812,6 +796,7 @@ public sealed class NuGetPhase10VerticalSliceService
             StateDirectoryPath = stateDirectoryPath,
             OwnershipManifestPath = ownershipManifestPath,
             PluginTargetRootPath = pluginTargetRootPath,
+            ApplicationPayloadRootPath = applicationPayloadRootPath,
             PluginEntrypointPath = pluginEntrypointPath,
             PluginLayoutMarkerPath = pluginLayoutMarkerPath,
         };

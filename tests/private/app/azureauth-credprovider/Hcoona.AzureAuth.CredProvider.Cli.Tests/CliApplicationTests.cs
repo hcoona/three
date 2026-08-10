@@ -1260,11 +1260,7 @@ public sealed class CliApplicationTests
     public async Task AppHostConfigureAndDryRunIgnoreMalformedProviderRecord()
     {
         const string SecretMarker = "must-not-leak-malformed-configure-secret";
-        string rootPath = Path.Combine(
-            AppContext.BaseDirectory,
-            "malformed-configure-" + Guid.NewGuid().ToString("N")
-        );
-        CreateOwnerOnlyDirectory(rootPath);
+        string rootPath = CreateTestDirectory();
         string configurationHome = Path.Combine(rootPath, "configuration-home");
         CreateOwnerOnlyDirectory(configurationHome);
         try
@@ -1833,9 +1829,14 @@ public sealed class CliApplicationTests
         var nuGetOptions = new NuGetPhase10VerticalSliceOptions
         {
             StateDirectoryPath = Path.Combine(stateDirectory, "nuget"),
+            ApplicationPayloadRootPath = Path.Combine(stateDirectory, "nuget-app"),
             FileSystem = nuGetFileSystem,
             EnvironmentVariableReader = _ => null,
         };
+        nuGetFileSystem.AtomicWriteAllText(
+            Path.Combine(stateDirectory, "nuget-app", "azureauth-credprovider.dll"),
+            "plugin"
+        );
         CliRuntimeOptions runtimeOptions = CreateGitPhase8RuntimeOptions(stateDirectory) with
         {
             CompositionRoot = null,
@@ -1905,12 +1906,14 @@ public sealed class CliApplicationTests
                 );
                 if (!dryRun)
                 {
+                    Assert.Contains(
+                        "azureauth-credprovider-nuget-plugin-activation-v1",
+                        nuGetFileSystem.ReadAllText(nuGetService.Paths.PluginLayoutMarkerPath),
+                        StringComparison.Ordinal
+                    );
                     Assert.Equal(
-                        "azureauth-credprovider nuget-plugin-layout\n"
-                            + "phase=10\n"
-                            + "runtime=netcore\n"
-                            + "entrypoint=azureauth-credprovider.dll\n",
-                        nuGetFileSystem.ReadAllText(nuGetService.Paths.PluginLayoutMarkerPath)
+                        "plugin",
+                        nuGetFileSystem.ReadAllText(nuGetService.Paths.PluginEntrypointPath)
                     );
                     Assert.Contains(
                         "phase10-nuget-plugin-layout",
@@ -4690,7 +4693,7 @@ public sealed class CliApplicationTests
             configuration-plan: valid
             planned-change-count: 1
             planned-actions:
-              1. register product-owned NuGet netcore plugin layout marker
+              1. create product-owned NuGet netcore plugin activation
             note: dry-run only; no files, credentials, or caches are changed in phase 10
             """
         );

@@ -3903,12 +3903,12 @@ internal static class CliApplication
                 ConfigurationChangeOperation.Set,
                 ConfigurationTargetKind.NuGetPluginLayout,
                 NuGetPluginLayoutConfigurationKey
-            ) => "register product-owned NuGet netcore plugin layout marker",
+            ) => "create product-owned NuGet netcore plugin activation",
             (
                 ConfigurationChangeOperation.Remove,
                 ConfigurationTargetKind.NuGetPluginLayout,
                 NuGetPluginLayoutConfigurationKey
-            ) => "remove product-owned NuGet netcore plugin layout marker",
+            ) => "remove product-owned NuGet netcore plugin activation",
             _ => throw new InvalidOperationException("Unsupported planned change."),
         };
     }
