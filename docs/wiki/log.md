@@ -1634,3 +1634,11 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   gates.
 - Kept GitHub Packages atomic behavior as an activation acceptance
   classification rather than an open architecture decision.
+
+## [2026-08-10] query | Deliver Workflow Delivery v3 build and quality adapters
+
+- Recorded completion of first-slice implementation commit 4.
+- Added the canonical in-tarball target witness, isolated Node Build and
+  Quality Adapters, deterministic npm packaging, and strict artifact closure.
+- Advanced the next approved dependency boundary to commit 5 while retaining
+  disabled live activation.

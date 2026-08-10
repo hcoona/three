@@ -10,6 +10,7 @@
   ],
   "scripts": {
     "build": "node ./scripts/nbgv-version.mjs stamp && node ./scripts/build.mjs",
+    "test": "node --test",
     "prepack": "node ./scripts/nbgv-version.mjs stamp",
     "postpack": "node ./scripts/nbgv-version.mjs reset",
     "version:stamp": "node ./scripts/nbgv-version.mjs stamp",

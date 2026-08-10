@@ -13,12 +13,16 @@ If it conflicts with the
 ## Current Checkpoint
 
 - Requirements, HLD, and all five MLDs are confirmed.
-- Implementation commits 1 through 3 of the approved first-slice LLD are
-  delivered in the working tree. Commit 3 now includes target-tree-bound
+- Implementation commits 1 through 4 of the approved first-slice LLD are
+  delivered in the working tree. Commit 3 includes target-tree-bound
   Release Unit/Quality authoring validation, duplicate Release Unit rejection,
   exact-target Repository Model compilation, static catalogs, Node/NBGV
   Provider contracts, fixed Governance-source fields and attestation schema,
-  and the exact-target Live Eligibility Decision.
+  and the exact-target Live Eligibility Decision. Commit 4 adds the first-slice
+  project test, canonical in-tarball Package Target Witness, isolated Node
+  Build and Quality Adapters, immutable single-read source staging, frozen
+  credential-free runtime execution, deterministic cross-umask packaging, and
+  a closed ordinary-file USTAR artifact profile.
 - The first vertical slice is `hcoona-release-smoke-npm`.
 - The slice has one Node project, one package variant, and one npm artifact.
 - It covers CI Qualification, live Buddy publication to GitHub Packages, and
@@ -220,10 +224,11 @@ If it conflicts with the
   state blocks; no repository variable, PAT, App, service, ledger, OIDC, or
   additional token permission is added. Permanent root HK policy remains the
   repository-wide dependency gate.
-- The next LLD dependency boundary is commit 4: first-slice project tests,
-  canonical in-tarball target witness, and isolated Node Build/Quality
-  Adapters. Do not implement it or later scopes without a separate explicit
-  user task; live activation remains disabled.
+- The next LLD dependency boundary is commit 5: CI Planner, Evidence,
+  Finalizer, the shadow pull-request check, manual `slice-validation`, and the
+  permanent repository-wide smoke-package consumer-policy gate. Do not
+  implement it or later scopes without a separate explicit user task; live
+  activation remains disabled.
 - Implementation must preserve the approved commit boundaries and keep live
   activation disabled until acceptance and the separate activation approval.
 
