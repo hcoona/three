@@ -172,18 +172,6 @@ public sealed class ConfigurationManager : IConfigurationManager
             resultManifests.Add(previewManifest);
         }
 
-        foreach ((ConfigurationChangePlan plan, ConfigurationPlanOperation operation) in normalized)
-        {
-            if (operation != ConfigurationPlanOperation.Remove)
-            {
-                continue;
-            }
-
-            cancellationToken.ThrowIfCancellationRequested();
-            await ApplyChanges(plan, originalManifest, operation, cancellationToken);
-            DeleteTemporaryContainer(plan);
-        }
-
         ConfigurationOwnershipManifest? ownershipIntent = CreateOwnershipIntent(
             originalManifest,
             previewManifest
@@ -191,23 +179,48 @@ public sealed class ConfigurationManager : IConfigurationManager
         bool hasApply = normalized.Any(operation =>
             operation.Operation == ConfigurationPlanOperation.Apply
         );
-        if (hasApply)
+        bool hasRemove = normalized.Any(operation =>
+            operation.Operation == ConfigurationPlanOperation.Remove
+        );
+        ConfigurationOwnershipManifest? persistedManifest = originalManifest;
+        if (hasRemove || hasApply)
         {
-            PersistManifest(ownershipIntent);
+            persistedManifest = hasApply ? ownershipIntent : previewManifest;
+            PersistManifest(persistedManifest);
+        }
+
+        try
+        {
+            foreach (
+                (ConfigurationChangePlan plan, ConfigurationPlanOperation operation) in normalized
+            )
+            {
+                if (operation != ConfigurationPlanOperation.Remove)
+                {
+                    continue;
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                await ApplyChanges(plan, originalManifest, operation, cancellationToken);
+                DeleteTemporaryContainer(plan);
+            }
+        }
+        catch
+        {
+            PersistManifest(originalManifest);
+            throw;
         }
 
         foreach ((ConfigurationChangePlan plan, ConfigurationPlanOperation operation) in normalized)
         {
-            if (operation != ConfigurationPlanOperation.Apply)
+            if (operation == ConfigurationPlanOperation.Apply)
             {
-                continue;
+                cancellationToken.ThrowIfCancellationRequested();
+                await ApplyChanges(plan, ownershipIntent, operation, cancellationToken);
             }
-
-            cancellationToken.ThrowIfCancellationRequested();
-            await ApplyChanges(plan, ownershipIntent, operation, cancellationToken);
         }
 
-        if (!ManifestsEquivalent(ownershipIntent, previewManifest))
+        if (!ManifestsEquivalent(persistedManifest, previewManifest))
         {
             PersistManifest(previewManifest);
         }

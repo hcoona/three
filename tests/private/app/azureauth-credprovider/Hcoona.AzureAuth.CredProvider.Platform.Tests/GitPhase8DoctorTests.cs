@@ -2468,12 +2468,11 @@ public sealed class GitPhase8DoctorTests
             );
             Assert.Equal(1, fileSystem.MatchingDeleteAttempts);
             Assert.Equal(1, fileSystem.InjectedFailureCount);
-            AssertOwnedGitActivationAbsent(service);
-            await AssertGitSelectorAbsentAsync(
+            await AssertGitSelectorPresentAsync(
                 service.Paths.GitConfigPath,
                 GitPhase8VerticalSliceService.GitCredentialHelperKey
             );
-            await AssertGitSelectorAbsentAsync(
+            await AssertGitSelectorPresentAsync(
                 service.Paths.GitConfigPath,
                 GitPhase8VerticalSliceService.GitUseHttpPathKey
             );
@@ -2579,6 +2578,24 @@ public sealed class GitPhase8DoctorTests
 
         Assert.Equal(1, result.ExitCode);
         Assert.Empty(result.StandardOutput);
+    }
+
+    private static async Task AssertGitSelectorPresentAsync(
+        string gitConfigPath,
+        string selector
+    )
+    {
+        ProcessResult result = await new SystemProcessRunner()
+            .RunAsync(
+                new ProcessStartSpec(
+                    "git",
+                    ["config", "--file", gitConfigPath, "--get-all", selector]
+                ),
+                TestContext.Current.CancellationToken
+            );
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.NotEmpty(result.StandardOutput);
     }
 
     private sealed class OneShotManifestDeleteFailureFileSystem

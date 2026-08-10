@@ -531,17 +531,39 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
             ConfigurationOwnershipManifestSerializer.Deserialize(
                 fileSystem.ReadAllText(manifestPath)
             );
-        Assert.Equal(ecosystem == CredentialEcosystem.Npm ? 2 : 4, transitional.Entries.Count);
+        bool cancellationBeforePhysicalRemoval =
+            failurePoint == PackageReplacementFailurePoint.CancellationAfterIntent;
+        Assert.Equal(
+            ecosystem == CredentialEcosystem.Npm
+                ? cancellationBeforePhysicalRemoval ? 1 : 2
+                : cancellationBeforePhysicalRemoval ? 2 : 4,
+            transitional.Entries.Count
+        );
         Assert.Contains(
             transitional.Entries,
             entry => entry.Key.Contains("test-feed", StringComparison.Ordinal)
         );
-        Assert.Contains(
-            transitional.Entries,
-            entry => entry.Key.Contains("replacement-feed", StringComparison.Ordinal)
-        );
+        if (cancellationBeforePhysicalRemoval)
+        {
+            Assert.DoesNotContain(
+                transitional.Entries,
+                entry => entry.Key.Contains("replacement-feed", StringComparison.Ordinal)
+            );
+        }
+        else
+        {
+            Assert.Contains(
+                transitional.Entries,
+                entry => entry.Key.Contains("replacement-feed", StringComparison.Ordinal)
+            );
+        }
         Assert.Equal(
-            replacementRegistry,
+            cancellationBeforePhysicalRemoval
+                ? original.ResolvePersistedRegistryUrl(
+                    ecosystem,
+                    ConfigurationPhase14Scope.User
+                )
+                : replacementRegistry,
             replacement.ResolvePersistedRegistryUrl(
                 ecosystem,
                 ConfigurationPhase14Scope.User
