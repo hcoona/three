@@ -640,8 +640,9 @@ isolation.
 ### Keyring Executable Shim
 
 On POSIX platforms, `configure python` also creates a product-owned `keyring`
-shim. The shim delegates to the wheel-provided `azureauth-keyring` console script
-from the activated Python environment. It is activated through controlled PATH
+shim. The shim delegates directly to the installed product apphost's `keyring`
+protocol entry point, so uv and pip subprocess mode do not depend on an already
+synchronized project environment. It is activated through controlled PATH
 ordering; it is not the absolute credential helper recorded in the backend
 manifest.
 
@@ -656,11 +657,12 @@ The shim must support the command forms observed in local experiments:
 ```text
 keyring get <service> <username>
 keyring get <service> --mode creds
+keyring --mode=creds --output=json get <service> [<username>]
 ```
 
 For password-only mode, stdout is the password. For `--mode creds`, stdout is
-newline-separated username and password. No diagnostics may be written to
-stdout.
+newline-separated username and password unless JSON output is requested. No
+diagnostics may be written to stdout.
 
 ### Request Mapping
 
@@ -669,7 +671,7 @@ stdout.
 | `service` URL             | Host, organization, project, feed, endpoint kind, and token audience. |
 | `username`                | Account hint or protocol username depending on tool mode.             |
 | `--mode creds`            | Request both username and password material.                          |
-| Active Python environment | Bootstrap and doctor target scope.                                    |
+| Active Python environment | Import-mode backend and doctor target scope.                          |
 
 pip subprocess mode requires a username in the index URL and may ignore a shim
 installed only into the current Python environment's scripts directory. uv

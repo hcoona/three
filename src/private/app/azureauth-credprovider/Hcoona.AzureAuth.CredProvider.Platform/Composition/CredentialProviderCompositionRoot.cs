@@ -270,6 +270,8 @@ public sealed class CredentialProviderCompositionRoot
 
     public KeyringHelperAdapter CreateKeyringHelperAdapter() => new(boundary);
 
+    public KeyringCliAdapter CreateKeyringCliAdapter() => new(boundary);
+
     public GitPhase8VerticalSliceService CreateGitService(
         GitPhase8VerticalSliceOptions? options = null
     ) =>

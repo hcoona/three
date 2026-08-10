@@ -121,10 +121,10 @@ Host tools own:
 5. Support Azure Artifacts Python simple-index and upload endpoints in both organization-scoped and project-scoped forms.
 6. Provide supported bootstrap paths that make the Python keyring backend discoverable in the exact Python environment running pip or twine, including virtual environments, pipx-managed tools, and isolated CI environments.
 7. Configure the backend with the installed product apphost's absolute path and
-   provide a separate controlled-PATH `keyring` shim that delegates to the
-   wheel-provided `azureauth-keyring` console script; Windows subprocess mode
-   requires a real `.exe` launcher and remains deferred until that launcher is
-   implemented and validated.
+   provide a separate controlled-PATH `keyring` shim that delegates directly to
+   the installed apphost without requiring a project Python environment; Windows
+   subprocess mode requires a real `.exe` launcher and remains deferred until
+   that launcher is implemented and validated.
 
 ### npm, pnpm, and Yarn
 

@@ -243,10 +243,10 @@ keyring get <service> <username>    # stdout is the password
 keyring get <service> --mode creds  # stdout is newline-separated username and password
 ```
 
-The product-owned shim delegates to the wheel-provided `azureauth-keyring`
-console script. This separates uv and pip's PATH-based executable discovery from
-the backend's absolute product-apphost invocation. It must print only the
-expected keyring response to stdout.
+The product-owned shim delegates directly to the installed apphost's `keyring`
+protocol entry point. This removes the project-environment bootstrap cycle for
+uv and pip subprocess mode while keeping import-mode backend installation
+explicit. It must print only the expected keyring response to stdout.
 
 The current production shim is POSIX-only. Windows import-mode configuration
 still writes the backend manifest, but Windows subprocess mode remains deferred

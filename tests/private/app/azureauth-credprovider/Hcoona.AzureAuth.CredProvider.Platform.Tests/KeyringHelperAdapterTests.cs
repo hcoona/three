@@ -4,6 +4,7 @@ using Hcoona.AzureAuth.CredProvider.Platform.Composition;
 using Hcoona.AzureAuth.CredProvider.Platform.CredentialCore;
 using Hcoona.AzureAuth.CredProvider.Platform.Diagnostics;
 using Hcoona.AzureAuth.CredProvider.Platform.Redaction;
+using System.Text.Json;
 using Xunit;
 
 namespace Hcoona.AzureAuth.CredProvider.Platform.Tests;
@@ -366,6 +367,192 @@ public sealed class KeyringHelperAdapterTests
         );
     }
 
+    [Fact]
+    public void KeyringCliCredentialsJsonModeUsesSharedSilentHelperPath()
+    {
+        var provider = new SuccessfulAcquisitionService(
+            "Azure\"DevOps\\user",
+            "phase11-\"secret\\value"
+        );
+
+        AdapterRunResult result = ExecuteKeyringCli(
+            [
+                "--mode=creds",
+                "--output=json",
+                "get",
+                "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/",
+            ],
+            provider
+        );
+
+        Assert.Equal(AdapterHostExitCode.Success, result.Outcome.Result.ExitCode);
+        Assert.Empty(result.HumanStdout);
+        Assert.Equal(string.Empty, result.Stderr);
+        using JsonDocument payload = JsonDocument.Parse(result.ProtocolStdout);
+        Assert.Equal(
+            "Azure\"DevOps\\user",
+            payload.RootElement.GetProperty("username").GetString()
+        );
+        Assert.Equal(
+            "phase11-\"secret\\value",
+            payload.RootElement.GetProperty("password").GetString()
+        );
+        Assert.DoesNotContain("phase11-", result.Stderr, StringComparison.Ordinal);
+
+        CredentialRequestV2 request = Assert.Single(provider.Requests);
+        Assert.Equal("creds", request.ExtensionData["python.keyring.mode"]);
+        Assert.Equal(InteractivePolicy.Never, request.InteractivePolicy);
+        Assert.Equal(AcquisitionMode.SilentOnly, request.AcquisitionMode);
+    }
+
+    [Fact]
+    public void KeyringCliPasswordModeSupportsPipSubprocessShape()
+    {
+        var provider = new SuccessfulAcquisitionService();
+
+        AdapterRunResult result = ExecuteKeyringCli(
+            [
+                "get",
+                "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/",
+                "requested-user",
+            ],
+            provider
+        );
+
+        Assert.Equal(AdapterHostExitCode.Success, result.Outcome.Result.ExitCode);
+        Assert.Equal("phase11-secret\n", result.ProtocolStdout);
+        Assert.Empty(result.HumanStdout);
+        Assert.Equal(string.Empty, result.Stderr);
+        CredentialRequestV2 request = Assert.Single(provider.Requests);
+        Assert.Equal("password", request.ExtensionData["python.keyring.mode"]);
+    }
+
+    [Fact]
+    public void KeyringCliPasswordModeWithoutUsernameFailsClosed()
+    {
+        var provider = new SuccessfulAcquisitionService();
+
+        AdapterRunResult result = ExecuteKeyringCli(
+            [
+                "get",
+                "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/",
+            ],
+            provider
+        );
+
+        Assert.Equal(AdapterHostExitCode.ConfigurationError, result.Outcome.Result.ExitCode);
+        Assert.Equal(string.Empty, result.ProtocolStdout);
+        Assert.Empty(result.HumanStdout);
+        Assert.Contains("code=ProtocolViolation", result.Stderr, StringComparison.Ordinal);
+        Assert.Equal(0, provider.InvocationCount);
+    }
+
+    [Fact]
+    public void KeyringCliUnsupportedHostReturnsNoCredentialWithoutAcquisition()
+    {
+        var provider = new SuccessfulAcquisitionService();
+
+        AdapterRunResult result = ExecuteKeyringCli(
+            ["--mode=creds", "get", "https://example.com/simple/"],
+            provider
+        );
+
+        Assert.Equal(AdapterHostExitCode.NoCredential, result.Outcome.Result.ExitCode);
+        Assert.Equal(string.Empty, result.ProtocolStdout);
+        Assert.Empty(result.HumanStdout);
+        Assert.Equal(string.Empty, result.Stderr);
+        Assert.Equal(0, provider.InvocationCount);
+    }
+
+    [Theory]
+    [InlineData("unrelated-service")]
+    [InlineData(" https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/ ")]
+    public void KeyringCliMalformedServiceFailsClosed(string service)
+    {
+        var provider = new SuccessfulAcquisitionService();
+
+        AdapterRunResult result = ExecuteKeyringCli(
+            ["get", service, "requested-user"],
+            provider
+        );
+
+        Assert.Equal(AdapterHostExitCode.ConfigurationError, result.Outcome.Result.ExitCode);
+        Assert.Equal(string.Empty, result.ProtocolStdout);
+        Assert.Empty(result.HumanStdout);
+        Assert.Contains("code=ProtocolViolation", result.Stderr, StringComparison.Ordinal);
+        Assert.Equal(0, provider.InvocationCount);
+    }
+
+    [Theory]
+    [InlineData("   ")]
+    [InlineData("bad\u0001user")]
+    public void KeyringCliInvalidUsernameFailsClosed(string username)
+    {
+        var provider = new SuccessfulAcquisitionService();
+
+        AdapterRunResult result = ExecuteKeyringCli(
+            [
+                "get",
+                "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/",
+                username,
+            ],
+            provider
+        );
+
+        Assert.Equal(AdapterHostExitCode.ConfigurationError, result.Outcome.Result.ExitCode);
+        Assert.Equal(string.Empty, result.ProtocolStdout);
+        Assert.Empty(result.HumanStdout);
+        Assert.Contains("code=ProtocolViolation", result.Stderr, StringComparison.Ordinal);
+        Assert.Equal(0, provider.InvocationCount);
+    }
+
+    [Fact]
+    public void KeyringCliInvalidArgumentsFailWithoutEchoingUserInput()
+    {
+        const string SecretUsername = "must-not-leak-keyring-argument";
+        var provider = new SuccessfulAcquisitionService();
+
+        AdapterRunResult result = ExecuteKeyringCli(
+            [
+                "--output=plaintext",
+                "get",
+                "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/",
+                SecretUsername,
+            ],
+            provider
+        );
+
+        Assert.Equal(AdapterHostExitCode.ConfigurationError, result.Outcome.Result.ExitCode);
+        Assert.Equal(string.Empty, result.ProtocolStdout);
+        Assert.Empty(result.HumanStdout);
+        Assert.DoesNotContain(SecretUsername, result.Stderr, StringComparison.Ordinal);
+        Assert.Equal(0, provider.InvocationCount);
+    }
+
+    [Fact]
+    public void KeyringCliSharedApphostEntrypointStripsCommandToken()
+    {
+        string[] arguments =
+        [
+            "keyring",
+            "--mode=creds",
+            "get",
+            "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/",
+        ];
+
+        bool resolved = KeyringCliAdapter.TryResolveProtocolInvocation(
+            "/opt/azureauth-credprovider/app/azureauth-credprovider",
+            arguments,
+            out AdapterInvocationContext? context
+        );
+
+        Assert.True(resolved);
+        Assert.NotNull(context);
+        Assert.Equal(["keyring"], context.MatchedArguments);
+        Assert.Equal(arguments[1..], context.PayloadArguments);
+        Assert.Equal(AdapterProtocol.KeyringHelper, context.Protocol);
+    }
+
     private static AdapterRunResult Execute(
         string[] args,
         string executablePath = "/usr/local/bin/python-keyring",
@@ -387,6 +574,36 @@ public sealed class KeyringHelperAdapterTests
                     : new LegacyV1CredentialAcquisitionService(credentialCore)
                 : credentialAcquisition
         ).Execute(executablePath, args, protocolStdout, humanStdout, diagnosticRouter);
+
+        return new AdapterRunResult(
+            outcome,
+            protocolStdout.ToString(),
+            humanStdout.ToString(),
+            stderr.ToString()
+        );
+    }
+
+    private static AdapterRunResult ExecuteKeyringCli(
+        string[] args,
+        ICredentialAcquisitionService credentialAcquisition
+    )
+    {
+        var protocolStdout = new StringWriter();
+        var humanStdout = new StringWriter();
+        var stderr = new StringWriter();
+        var diagnosticRouter = new DiagnosticRouter(
+            [new TextWriterDiagnosticSink(stderr)],
+            SecretRedactor.Empty
+        );
+        AdapterHostExecutionOutcome outcome = new KeyringCliAdapter(
+            credentialAcquisition
+        ).Execute(
+            "/opt/azureauth-credprovider/app/azureauth-credprovider",
+            [KeyringCliAdapter.CommandName, .. args],
+            protocolStdout,
+            humanStdout,
+            diagnosticRouter
+        );
 
         return new AdapterRunResult(
             outcome,
@@ -421,7 +638,10 @@ public sealed class KeyringHelperAdapterTests
         );
     }
 
-    private sealed class SuccessfulAcquisitionService : ICredentialAcquisitionService
+    private sealed class SuccessfulAcquisitionService(
+        string username = "AzureDevOps",
+        string password = "phase11-secret"
+    ) : ICredentialAcquisitionService
     {
         public int InvocationCount => Requests.Count;
 
@@ -437,8 +657,8 @@ public sealed class KeyringHelperAdapterTests
                 new CredentialResult
                 {
                     Status = CredentialResultStatus.Success,
-                    Username = "AzureDevOps",
-                    Password = "phase11-secret",
+                    Username = username,
+                    Password = password,
                     DiagnosticsCorrelationId = "keyring-test",
                 }
             );

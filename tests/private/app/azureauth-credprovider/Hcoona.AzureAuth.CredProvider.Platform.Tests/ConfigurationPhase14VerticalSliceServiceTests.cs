@@ -1839,10 +1839,45 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         {
             ConfigurationPlannedChange shimChange = Assert.Single(result.PlanResults[1].Changes);
             Assert.Equal(
-                "#!/bin/sh\nexec azureauth-keyring \"$@\"\n",
+                "#!/bin/sh\nexec '/opt/azureauth-credprovider/azureauth-credprovider' "
+                    + "keyring \"$@\"\n",
                 fileSystem.ReadAllText(shimChange.TargetPathOrName)
             );
         }
+    }
+
+    [Fact]
+    public async Task ConfigurePythonQuotesInstalledApphostPathInPosixShim()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string ProductPath =
+            "/opt/azure auth/owner's tools/azureauth-credprovider";
+        var service = new ConfigurationPhase14VerticalSliceService(
+            new ConfigurationPhase14VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                StateDirectoryPath = "/state/phase14",
+                EnvironmentVariableReader = name =>
+                    string.Equals(name, "HOME", StringComparison.Ordinal)
+                        ? "/home/test"
+                        : null,
+                ProductExecutablePath = ProductPath,
+                WorkspaceDirectoryPath = "/workspace",
+            }
+        );
+
+        ConfigurationPhase14PlanResult result = await service.ConfigureAsync(
+            CredentialEcosystem.Python,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+
+        ConfigurationPlannedChange shimChange = Assert.Single(result.PlanResults[1].Changes);
+        Assert.Equal(
+            "#!/bin/sh\nexec '/opt/azure auth/owner'\"'\"'s tools/"
+                + "azureauth-credprovider' keyring \"$@\"\n",
+            fileSystem.ReadAllText(shimChange.TargetPathOrName)
+        );
     }
 
     [Fact]

@@ -1,3 +1,4 @@
+using Hcoona.AzureAuth.CredProvider.Contracts;
 using Hcoona.AzureAuth.CredProvider.Platform.AdapterHost;
 using Hcoona.AzureAuth.CredProvider.Platform.Composition;
 using Hcoona.AzureAuth.CredProvider.Platform.Diagnostics;
@@ -19,6 +20,27 @@ internal static class Program
         )
         {
             return RunProtocolWithProductionRoot(RunNuGetPlugin);
+        }
+
+        if (
+            KeyringCliAdapter.TryResolveProtocolInvocation(
+                invocationPath ?? "azureauth-credprovider",
+                args,
+                out AdapterInvocationContext? keyringContext
+            )
+        )
+        {
+            if (
+                keyringContext is not null
+                && KeyringCliAdapter.IsUnsupportedServiceInvocation(keyringContext)
+            )
+            {
+                return (int)AdapterHostExitCode.NoCredential;
+            }
+
+            return RunProtocolWithProductionRoot(root =>
+                RunKeyringCli(root, invocationPath, args)
+            );
         }
 
         if (
@@ -84,6 +106,40 @@ internal static class Program
                 .RunPluginAsync()
                 .GetAwaiter()
                 .GetResult();
+        }
+        catch (Exception)
+        {
+            StandardConsoleTextWriters
+                .StandardError()
+                .WriteLine("error: unexpected fatal failure.");
+            return 70;
+        }
+    }
+
+    private static int RunKeyringCli(
+        CredentialProviderCompositionRoot compositionRoot,
+        string? invocationPath,
+        string[] args
+    )
+    {
+        try
+        {
+            TextWriter protocolStdout = StandardConsoleTextWriters.StandardOutput();
+            TextWriter stderr = StandardConsoleTextWriters.StandardError();
+            var diagnosticRouter = new DiagnosticRouter(
+                [new TextWriterDiagnosticSink(stderr)],
+                SecretRedactor.Empty
+            );
+            AdapterHostExecutionOutcome outcome = compositionRoot
+                .CreateKeyringCliAdapter()
+                .Execute(
+                    invocationPath ?? KeyringHelperAdapter.ProductExecutableName,
+                    args,
+                    protocolStdout,
+                    humanStdout: protocolStdout,
+                    diagnosticRouter
+                );
+            return (int)outcome.Result.ExitCode;
         }
         catch (Exception)
         {
