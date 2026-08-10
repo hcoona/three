@@ -21,24 +21,40 @@ public sealed class KeyringCliAdapter
     public KeyringCliAdapter()
         : this(CredentialProviderCompositionRoot.CreateProduction().AcquisitionService) { }
 
-    public KeyringCliAdapter(CredentialCoreService? credentialCore)
+    public KeyringCliAdapter(
+        CredentialCoreService? credentialCore,
+        Func<string, string?>? environmentVariableReader = null
+    )
         : this(
             credentialCore is null
                 ? CredentialProviderCompositionRoot.CreateProduction().AcquisitionService
-                : new LegacyV1CredentialAcquisitionService(credentialCore)
+                : new LegacyV1CredentialAcquisitionService(credentialCore),
+            environmentVariableReader
         )
     { }
 
-    public KeyringCliAdapter(ICredentialAcquisitionService credentialAcquisition)
+    public KeyringCliAdapter(
+        ICredentialAcquisitionService credentialAcquisition,
+        Func<string, string?>? environmentVariableReader = null
+    )
     {
         ArgumentNullException.ThrowIfNull(credentialAcquisition);
-        helperAdapter = new KeyringHelperAdapter(credentialAcquisition);
+        helperAdapter = new KeyringHelperAdapter(
+            credentialAcquisition,
+            environmentVariableReader
+        );
     }
 
-    public KeyringCliAdapter(BoundedCredentialAcquisitionAdapter credentialAcquisition)
+    public KeyringCliAdapter(
+        BoundedCredentialAcquisitionAdapter credentialAcquisition,
+        Func<string, string?>? environmentVariableReader = null
+    )
     {
         ArgumentNullException.ThrowIfNull(credentialAcquisition);
-        helperAdapter = new KeyringHelperAdapter(credentialAcquisition);
+        helperAdapter = new KeyringHelperAdapter(
+            credentialAcquisition,
+            environmentVariableReader
+        );
     }
 
     public static AdapterDescriptor Descriptor { get; } = CreateDescriptor();

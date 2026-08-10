@@ -889,7 +889,14 @@ future flows.
 
 Ecosystem adapters inherit this policy from the credential core. They may further
 restrict interaction based on host-tool protocol flags, such as NuGet
-non-interactive restore settings or keyring subprocess behavior.
+non-interactive restore settings. Python keyring requests allow interactive
+browser acquisition by default. `ARTIFACTS_KEYRING_NONINTERACTIVE_MODE` enables
+silent-only behavior only when its value is `true`, ignoring case.
+`AZUREAUTH_NO_USER` retains AzureAuth's separate contract in which any non-empty
+value suppresses interaction. `PIP_NO_INPUT` and `TWINE_NON_INTERACTIVE` are not
+provider-wide signals because the shared keyring protocol cannot identify its
+pip, uv, or Twine caller. The adapter does not infer policy from TTY state or
+parent process arguments.
 
 ### Token Handling
 
