@@ -29,7 +29,7 @@ def d2l_ai_extract_document(soup: BeautifulSoup) -> Tag:
     n = soup.find("div", class_="side-doc-outline")
     n.decompose() if n else None
     for el in soup.find_all("a"):
-        if el.string == "Discussions":
+        if isinstance(el, Tag) and el.string == "Discussions":
             el.decompose()
 
     return document_div
