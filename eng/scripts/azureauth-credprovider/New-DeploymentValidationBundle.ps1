@@ -138,29 +138,103 @@ function Assert-DeploymentPayloadMatchesBuildIdentity {
         throw 'The published application version does not match the NBGV build identity.'
     }
 
+    $distributionName = 'azureauth-credprovider-keyring'
+    $wheelDistributionName = 'azureauth_credprovider_keyring'
+    $expectedWheelName = (
+        "$wheelDistributionName-$ExpectedPythonPackageVersion-py3-none-any.whl"
+    )
+    $expectedDistInfoRoot = (
+        "$wheelDistributionName-$ExpectedPythonPackageVersion.dist-info"
+    )
+    $expectedEntries = @(
+        "$expectedDistInfoRoot/METADATA"
+        "$expectedDistInfoRoot/WHEEL"
+        "$expectedDistInfoRoot/RECORD"
+        "$expectedDistInfoRoot/entry_points.txt"
+        "$wheelDistributionName/backend.py"
+        "$wheelDistributionName/helper.py"
+    )
+
     $wheel = @(Get-ChildItem -LiteralPath $PythonRoot -Filter '*.whl' -File)
     if ($wheel.Count -ne 1) {
         throw 'The deployment validation bundle requires exactly one Python wheel.'
     }
+    if ($wheel[0].Name -cne $expectedWheelName) {
+        throw "The Python wheel filename must be '$expectedWheelName'."
+    }
+
     $wheelArchive = [System.IO.Compression.ZipFile]::OpenRead($wheel[0].FullName)
     try {
-        $metadataEntries = @(
-            $wheelArchive.Entries |
-                Where-Object FullName -Like '*.dist-info/METADATA'
-        )
-        if ($metadataEntries.Count -ne 1) {
-            throw 'The Python wheel contains an invalid metadata inventory.'
+        $archiveEntries = @{}
+        foreach ($entry in $wheelArchive.Entries) {
+            if ($archiveEntries.ContainsKey($entry.FullName)) {
+                throw "The Python wheel contains duplicate entry '$($entry.FullName)'."
+            }
+            $archiveEntries.Add($entry.FullName, $entry)
         }
-        $metadataReader = [System.IO.StreamReader]::new($metadataEntries[0].Open())
+        foreach ($expectedEntry in $expectedEntries) {
+            if (-not $archiveEntries.ContainsKey($expectedEntry)) {
+                throw "The Python wheel is missing required entry '$expectedEntry'."
+            }
+        }
+
+        $distInfoEntries = @(
+            $wheelArchive.Entries |
+                Where-Object FullName -Like '*.dist-info/*'
+        )
+        if ($distInfoEntries.Count -eq 0 -or
+            @(
+                $distInfoEntries |
+                    Where-Object {
+                        -not $_.FullName.StartsWith(
+                            "$expectedDistInfoRoot/",
+                            [System.StringComparison]::Ordinal
+                        )
+                    }
+            ).Count -ne 0) {
+            throw "The Python wheel dist-info identity must be '$expectedDistInfoRoot'."
+        }
+
+        $metadataReader = [System.IO.StreamReader]::new(
+            $archiveEntries["$expectedDistInfoRoot/METADATA"].Open()
+        )
         try {
             $wheelMetadata = $metadataReader.ReadToEnd()
         }
         finally {
             $metadataReader.Dispose()
         }
+
+        $wheelReader = [System.IO.StreamReader]::new(
+            $archiveEntries["$expectedDistInfoRoot/WHEEL"].Open()
+        )
+        try {
+            $wheelDescriptor = $wheelReader.ReadToEnd()
+        }
+        finally {
+            $wheelReader.Dispose()
+        }
+
+        $entryPointsReader = [System.IO.StreamReader]::new(
+            $archiveEntries["$expectedDistInfoRoot/entry_points.txt"].Open()
+        )
+        try {
+            $entryPoints = $entryPointsReader.ReadToEnd()
+        }
+        finally {
+            $entryPointsReader.Dispose()
+        }
     }
     finally {
         $wheelArchive.Dispose()
+    }
+    $wheelNameMatch = [System.Text.RegularExpressions.Regex]::Match(
+        $wheelMetadata,
+        '(?m)^Name: (?<name>[^\r\n]+)\r?$'
+    )
+    if (-not $wheelNameMatch.Success -or
+        $wheelNameMatch.Groups['name'].Value -cne $distributionName) {
+        throw "The Python wheel metadata Name must be '$distributionName'."
     }
     $wheelVersionMatch = [System.Text.RegularExpressions.Regex]::Match(
         $wheelMetadata,
@@ -169,6 +243,24 @@ function Assert-DeploymentPayloadMatchesBuildIdentity {
     if (-not $wheelVersionMatch.Success -or
         $wheelVersionMatch.Groups['version'].Value -cne $ExpectedPythonPackageVersion) {
         throw 'The Python wheel version does not match the NBGV build identity.'
+    }
+    if ($wheelDescriptor -cnotmatch '(?m)^Root-Is-Purelib: true\r?$' -or
+        $wheelDescriptor -cnotmatch '(?m)^Tag: py3-none-any\r?$') {
+        throw 'The Python wheel descriptor must declare a pure Python py3-none-any wheel.'
+    }
+
+    $normalizedEntryPoints = (
+        $entryPoints -replace "`r`n", "`n"
+    ).TrimEnd("`n")
+    $expectedEntryPoints = @'
+[console_scripts]
+azureauth-keyring = azureauth_credprovider_keyring.shim:main
+
+[keyring.backends]
+azureauth = azureauth_credprovider_keyring.backend:AzureAuthKeyringBackend
+'@
+    if ($normalizedEntryPoints -cne $expectedEntryPoints) {
+        throw 'The Python wheel entry points do not match the AzureAuth package contract.'
     }
 
     return $wheel[0]
