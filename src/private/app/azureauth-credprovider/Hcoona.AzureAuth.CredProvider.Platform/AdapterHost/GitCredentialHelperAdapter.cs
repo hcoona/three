@@ -13,6 +13,10 @@ public sealed class GitCredentialHelperAdapter
 
     private const int MaxCredentialRecordCharacters = 16 * 1024;
     private const string DefaultServiceIdentity = "default";
+    private const string GitTerminalPromptEnvironmentVariable = "GIT_TERMINAL_PROMPT";
+    private const string GitTerminalPromptDisabledGuidance =
+        "Git credential interaction is disabled by GIT_TERMINAL_PROMPT. Retry this Git "
+        + "operation from an interactive session with GIT_TERMINAL_PROMPT unset or enabled.";
     private const string ProtocolViolationCode = "ProtocolViolation";
     private const string NoCredentialCode = "NoCredential";
 
@@ -26,6 +30,7 @@ public sealed class GitCredentialHelperAdapter
     ];
 
     private readonly BoundedCredentialAcquisitionAdapter credentialAcquisition;
+    private readonly Func<string, string?> environmentVariableReader;
 
     public GitCredentialHelperAdapter()
         : this(CredentialProviderCompositionRoot.CreateProduction().AcquisitionService) { }
@@ -42,9 +47,27 @@ public sealed class GitCredentialHelperAdapter
         : this(new BoundedCredentialAcquisitionAdapter(credentialAcquisition)) { }
 
     public GitCredentialHelperAdapter(BoundedCredentialAcquisitionAdapter credentialAcquisition)
+        : this(credentialAcquisition, environmentVariableReader: null) { }
+
+    internal GitCredentialHelperAdapter(
+        ICredentialAcquisitionService credentialAcquisition,
+        Func<string, string?> environmentVariableReader
+    )
+        : this(
+            new BoundedCredentialAcquisitionAdapter(credentialAcquisition),
+            environmentVariableReader
+        )
+    { }
+
+    internal GitCredentialHelperAdapter(
+        BoundedCredentialAcquisitionAdapter credentialAcquisition,
+        Func<string, string?>? environmentVariableReader
+    )
     {
         ArgumentNullException.ThrowIfNull(credentialAcquisition);
         this.credentialAcquisition = credentialAcquisition;
+        this.environmentVariableReader =
+            environmentVariableReader ?? Environment.GetEnvironmentVariable;
     }
 
     public static AdapterDescriptor Descriptor { get; } = CreateDescriptor();
@@ -207,8 +230,28 @@ public sealed class GitCredentialHelperAdapter
         {
             return CreateProtocolViolationOutput(CredentialOperation.Get);
         }
-        CredentialRequestV2 request = CreateGetRequest(resourceParseResult.Resource);
+        bool interactionAllowed = !IsGitTerminalPromptDisabled(
+            environmentVariableReader(GitTerminalPromptEnvironmentVariable)
+        );
+        CredentialRequestV2 request = CreateGetRequest(
+            resourceParseResult.Resource,
+            interactionAllowed
+        );
         CredentialResult result = credentialAcquisition.Acquire(request, cancellationToken);
+        if (
+            !interactionAllowed
+            && result.Status
+                is CredentialResultStatus.InteractionRequired
+                    or CredentialResultStatus.InteractionBlocked
+            && result.Error is not null
+        )
+        {
+            result = result with
+            {
+                Error = result.Error with { SafeMessage = GitTerminalPromptDisabledGuidance },
+            };
+        }
+
         return new AdapterHostHandlerOutput(
             credentialResult: result,
             operation: CredentialOperation.Get,
@@ -491,7 +534,10 @@ public sealed class GitCredentialHelperAdapter
         return null;
     }
 
-    private static CredentialRequestV2 CreateGetRequest(CanonicalResourceIdentity resource)
+    private static CredentialRequestV2 CreateGetRequest(
+        CanonicalResourceIdentity resource,
+        bool interactionAllowed
+    )
     {
         return new CredentialRequestV2
         {
@@ -503,12 +549,26 @@ public sealed class GitCredentialHelperAdapter
             RequestedAudience = TokenAudience.AzureDevOps,
             CredentialKind = CredentialKind.BasicPassword,
             IdentityFlow = IdentityFlow.InteractiveBrowser,
-            InteractivePolicy = InteractivePolicy.Never,
-            AcquisitionMode = AcquisitionMode.SilentOnly,
+            InteractivePolicy = interactionAllowed
+                ? InteractivePolicy.HostToolAllows
+                : InteractivePolicy.Never,
+            AcquisitionMode = interactionAllowed
+                ? AcquisitionMode.InteractionAllowed
+                : AcquisitionMode.SilentOnly,
             CachePolicy = CachePolicyMode.ProductPersistentCacheDisabled,
             CiContext = new CiContext { ExplicitCiMode = false, AllowsPersistentWrites = false },
         };
     }
+
+    private static bool IsGitTerminalPromptDisabled(string? value) =>
+        value is not null
+        && (
+            value.Length == 0
+            || string.Equals(value, "0", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "false", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "no", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "off", StringComparison.OrdinalIgnoreCase)
+        );
 
     private static AdapterHostHandlerOutput CreateSuccessOutput(CredentialOperation operation)
     {

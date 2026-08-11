@@ -264,7 +264,8 @@ public sealed class CredentialProviderCompositionRoot
         );
     }
 
-    public GitCredentialHelperAdapter CreateGitCredentialHelperAdapter() => new(boundary);
+    public GitCredentialHelperAdapter CreateGitCredentialHelperAdapter() =>
+        new(boundary, ProductionOptions.EnvironmentVariableReader);
 
     public NuGetPluginAdapter CreateNuGetPluginAdapter() => new(boundary);
 
