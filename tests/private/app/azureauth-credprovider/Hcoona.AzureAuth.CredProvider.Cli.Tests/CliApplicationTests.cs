@@ -5105,7 +5105,22 @@ public sealed class CliApplicationTests
 
     private static CliRuntimeOptions CreateNuGetPhase10DryRunRuntimeOptions()
     {
-        return new CliRuntimeOptions { NuGetPhase10Options = CreateIsolatedNuGetPhase10Options() };
+        const string applicationRoot = "/installation/app";
+        var fileSystem =
+            new EmptyNuGetDryRunFileSystem.RecordingNuGetConfigurationFileSystem();
+        fileSystem.AtomicWriteAllText(
+            applicationRoot + "/azureauth-credprovider.dll",
+            "fake-assembly"
+        );
+        fileSystem.AtomicWriteAllText(applicationRoot + "/dependency.dll", "dependency");
+        return new CliRuntimeOptions
+        {
+            NuGetPhase10Options = CreateIsolatedNuGetPhase10Options() with
+            {
+                ApplicationPayloadRootPath = applicationRoot,
+                FileSystem = fileSystem,
+            },
+        };
     }
 
     private static NuGetPhase10VerticalSliceOptions CreateIsolatedNuGetPhase10Options() =>

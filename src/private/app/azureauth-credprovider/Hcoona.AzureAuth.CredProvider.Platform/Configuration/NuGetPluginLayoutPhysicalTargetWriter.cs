@@ -31,7 +31,19 @@ internal sealed class NuGetPluginLayoutPhysicalTargetWriter(IFileSystem fileSyst
     {
         cancellationToken.ThrowIfCancellationRequested();
         ValidateRequest(request);
-        ValidateCurrentState(request);
+        if (
+            request.PlanOperation == ConfigurationPlanOperation.Remove
+            || request.Change.Operation == ConfigurationChangeOperation.Remove
+        )
+        {
+            ValidateCurrentState(request);
+            return;
+        }
+
+        SourcePayload payload = ReadSourcePayload(request.Change.Value!);
+        ValidateDisjointRoots(request.Change.TargetPathOrName, payload);
+        NuGetPluginActivationManifest? existingManifest = ValidateCurrentState(request);
+        ValidateNewTargets(request.Change.TargetPathOrName, existingManifest, payload);
     }
 
     public void Write(
@@ -41,18 +53,28 @@ internal sealed class NuGetPluginLayoutPhysicalTargetWriter(IFileSystem fileSyst
     {
         cancellationToken.ThrowIfCancellationRequested();
         ValidateRequest(request);
-        NuGetPluginActivationManifest? existingManifest = ValidateCurrentState(request);
         bool remove =
             request.PlanOperation == ConfigurationPlanOperation.Remove
             || request.Change.Operation == ConfigurationChangeOperation.Remove;
         if (remove)
         {
-            RemoveActivation(request.Change.TargetPathOrName, existingManifest);
+            NuGetPluginActivationManifest? removalManifest = ValidateCurrentState(request);
+            RemoveActivation(request.Change.TargetPathOrName, removalManifest);
             return;
         }
 
         SourcePayload payload = ReadSourcePayload(request.Change.Value!);
+        ValidateDisjointRoots(request.Change.TargetPathOrName, payload);
+        NuGetPluginActivationManifest? existingManifest = ValidateCurrentState(request);
         ValidateNewTargets(request.Change.TargetPathOrName, existingManifest, payload);
+        if (
+            existingManifest is not null
+            && ManifestsEquivalent(existingManifest, payload.Manifest)
+            && TargetModesMatch(request.Change.TargetPathOrName, payload)
+        )
+        {
+            return;
+        }
         ReplaceActivation(request.Change.TargetPathOrName, existingManifest, payload);
     }
 
@@ -79,7 +101,9 @@ internal sealed class NuGetPluginLayoutPhysicalTargetWriter(IFileSystem fileSyst
                 request.Change.TargetPathOrName,
                 request.Change.Value
             );
-            return existing is not null && ManifestsEquivalent(existing, payload.Manifest);
+            return existing is not null
+                && ManifestsEquivalent(existing, payload.Manifest)
+                && TargetModesMatch(request.Change.TargetPathOrName, payload);
         }
         catch (
             Exception exception
@@ -94,6 +118,21 @@ internal sealed class NuGetPluginLayoutPhysicalTargetWriter(IFileSystem fileSyst
         {
             return false;
         }
+    }
+
+    private bool TargetModesMatch(string targetRootPath, SourcePayload payload)
+    {
+        if (FileSystemPathSemantics.UsesWindowsPaths(fileSystem))
+        {
+            return true;
+        }
+
+        return payload.Files.All(file =>
+            file.UnixFileMode is { } mode
+            && fileSystem.GetUnixFileMode(
+                GetOwnedTargetPath(targetRootPath, file.RelativePath)
+            ) == mode
+        );
     }
 
     internal static string? GetPlanningValidationViolation(ConfigurationChange change)
@@ -375,24 +414,6 @@ internal sealed class NuGetPluginLayoutPhysicalTargetWriter(IFileSystem fileSyst
         SourcePayload payload
     )
     {
-        if (
-            FileSystemPathSemantics.IsSameOrDescendant(
-                fileSystem,
-                payload.Manifest.SourceApplicationRoot,
-                targetRootPath
-            )
-            || FileSystemPathSemantics.IsSameOrDescendant(
-                fileSystem,
-                targetRootPath,
-                payload.Manifest.SourceApplicationRoot
-            )
-        )
-        {
-            throw new InvalidOperationException(
-                "The NuGet plugin source and activation roots must be disjoint."
-            );
-        }
-
         var existingOwnedPaths = new HashSet<string>(
             existingManifest?.Files.Select(file => file.Path) ?? [],
             FileSystemPathSemantics.GetComparer(fileSystem)
@@ -423,6 +444,27 @@ internal sealed class NuGetPluginLayoutPhysicalTargetWriter(IFileSystem fileSyst
                     existingOwnedDirectories
                 );
             }
+        }
+    }
+
+    private void ValidateDisjointRoots(string targetRootPath, SourcePayload payload)
+    {
+        if (
+            FileSystemPathSemantics.IsSameOrDescendant(
+                fileSystem,
+                payload.Manifest.SourceApplicationRoot,
+                targetRootPath
+            )
+            || FileSystemPathSemantics.IsSameOrDescendant(
+                fileSystem,
+                targetRootPath,
+                payload.Manifest.SourceApplicationRoot
+            )
+        )
+        {
+            throw new InvalidOperationException(
+                "The NuGet plugin source and activation roots must be disjoint."
+            );
         }
     }
 

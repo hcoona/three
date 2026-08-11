@@ -71,9 +71,18 @@ public sealed record NuGetPhase10UnconfigureResult
     public required bool OwnershipManifestPresent { get; init; }
 }
 
+public enum NuGetConfigurationState
+{
+    Valid = 1,
+    Refreshable = 2,
+    Unrecognized = 3,
+}
+
 public sealed record NuGetPhase10DoctorResult
 {
     public required NuGetPhase10VerticalSliceResolvedPaths Paths { get; init; }
+
+    public required NuGetConfigurationState ConfigurationState { get; init; }
 
     public required bool ConfigurationPlanValid { get; init; }
 
@@ -180,10 +189,29 @@ public sealed class NuGetPhase10VerticalSliceService
 
         ThrowIfUnrecognizedOwnershipManifestExists();
         ThrowIfMissingManifestLeavesProductOwnedNuGetPluginLayoutState();
+        ConfigurationChangePlan plan = CreateConfigurePlan();
+        ConfigurationManager manager = CreateManager();
         ConfigurationPlanResult planResult;
         try
         {
-            planResult = await CreateManager().ApplyAsync(CreateConfigurePlan(), cancellationToken);
+            if (manager.IsAppliedStateCurrent(plan, cancellationToken))
+            {
+                ConfigurationPlanResult currentResult = await manager.DryRunAsync(
+                    plan,
+                    cancellationToken
+                );
+                planResult = currentResult with
+                {
+                    Operation = ConfigurationPlanOperation.Apply,
+                    Plan = currentResult.Plan with { Changes = [] },
+                    Changes = [],
+                    PlannedOperations = [],
+                };
+            }
+            else
+            {
+                planResult = await manager.ApplyAsync(plan, cancellationToken);
+            }
         }
         catch (Exception exception) when (IsExpectedStateCheckFailure(exception))
         {
@@ -282,7 +310,8 @@ public sealed class NuGetPhase10VerticalSliceService
         cancellationToken.ThrowIfCancellationRequested();
 
         NuGetPhase10OwnedState ownedState = await InspectOwnedStateAsync(cancellationToken);
-        bool configurationPlanValid = await TryValidateConfigurationPlanAsync(cancellationToken);
+        NuGetConfigurationState configurationState =
+            await ClassifyConfigurationStateAsync(cancellationToken);
         bool netCorePluginEntrypointPresent = TryPluginEntrypointExists();
         bool pluginModeEntrypointResolvable =
             netCorePluginEntrypointPresent && TryResolvePluginModeEntrypoint();
@@ -290,7 +319,8 @@ public sealed class NuGetPhase10VerticalSliceService
         return new NuGetPhase10DoctorResult
         {
             Paths = paths,
-            ConfigurationPlanValid = configurationPlanValid,
+            ConfigurationState = configurationState,
+            ConfigurationPlanValid = configurationState == NuGetConfigurationState.Valid,
             PluginLayoutMarkerPresent = ownedState.PluginLayoutMarkerPresent,
             OwnershipManifestPresent = ownedState.OwnershipManifestPresent,
             NetCorePluginEntrypointPresent = netCorePluginEntrypointPresent,
@@ -517,7 +547,7 @@ public sealed class NuGetPhase10VerticalSliceService
         }
     }
 
-    private async ValueTask<bool> TryValidateConfigurationPlanAsync(
+    private async ValueTask<NuGetConfigurationState> ClassifyConfigurationStateAsync(
         CancellationToken cancellationToken
     )
     {
@@ -526,12 +556,29 @@ public sealed class NuGetPhase10VerticalSliceService
             ConfigurationChangePlan plan = CreateConfigurePlan();
             ConfigurationManager manager = CreateManager();
             ConfigurationPlanValidationResult validation = manager.ValidatePlan(plan);
-            ConfigurationPlanResult planResult = await manager.DryRunAsync(plan, cancellationToken);
-            return validation.IsValid && planResult.Operation == ConfigurationPlanOperation.DryRun;
+            if (!validation.IsValid)
+            {
+                return NuGetConfigurationState.Unrecognized;
+            }
+
+            ThrowIfUnrecognizedOwnershipManifestExists();
+            ThrowIfMissingManifestLeavesProductOwnedNuGetPluginLayoutState();
+
+            bool activationPresent =
+                OwnershipManifestPathExists() || PluginLayoutMarkerPathExists();
+            if (!activationPresent)
+            {
+                return NuGetConfigurationState.Valid;
+            }
+
+            await manager.DryRunAsync(plan, cancellationToken);
+            return manager.IsAppliedStateCurrent(plan, cancellationToken)
+                ? NuGetConfigurationState.Valid
+                : NuGetConfigurationState.Refreshable;
         }
         catch (Exception exception) when (IsExpectedStateCheckFailure(exception))
         {
-            return false;
+            return NuGetConfigurationState.Unrecognized;
         }
     }
 

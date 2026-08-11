@@ -45,7 +45,10 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
             TestContext.Current.CancellationToken
         );
 
-        Assert.NotEqual(ConfigurationPlanOperation.DryRun, configureResult.PlanResult.Operation);
+        Assert.Equal(ConfigurationPlanOperation.Apply, configureResult.PlanResult.Operation);
+        Assert.Single(configureResult.PlanResult.Plan.Changes);
+        Assert.Single(configureResult.PlanResult.Changes);
+        Assert.Single(configureResult.PlanResult.PlannedOperations);
         Assert.True(configureResult.PluginLayoutMarkerPresent);
         Assert.True(configureResult.OwnershipManifestPresent);
         Assert.Equal(
@@ -58,6 +61,7 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
             StringComparison.Ordinal
         );
         Assert.True(fileSystem.FileExists(service.Paths.OwnershipManifestPath));
+        Assert.Equal(NuGetConfigurationState.Valid, doctorResult.ConfigurationState);
         Assert.True(doctorResult.ConfigurationPlanValid);
         Assert.True(doctorResult.PluginLayoutMarkerPresent);
         Assert.True(doctorResult.OwnershipManifestPresent);
@@ -193,6 +197,193 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
         Assert.True(fileSystem.DirectoryExists(targetRoot + "/unrelated/empty/subtree"));
     }
 
+    [Theory]
+    [InlineData("missing-root")]
+    [InlineData("missing-entrypoint")]
+    [InlineData("source-contains-target")]
+    [InlineData("target-contains-source")]
+    [InlineData("unowned-file")]
+    [InlineData("unowned-directory")]
+    public async Task DryRunConfigureRejectsInvalidPayloadBeforeMutation(string scenario)
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        InvalidNuGetPayloadFixture fixture = await CreateInvalidPayloadFixtureAsync(
+            fileSystem,
+            scenario
+        );
+        fileSystem.Calls.Clear();
+
+        NuGetPhase10UnrecognizedStateException exception =
+            await Assert.ThrowsAsync<NuGetPhase10UnrecognizedStateException>(async () =>
+                await fixture.Service.DryRunConfigureAsync(
+                    TestContext.Current.CancellationToken
+                )
+            );
+
+        Assert.NotNull(exception.InnerException);
+        Assert.Contains(
+            fixture.ExpectedDiagnostic,
+            exception.InnerException.Message,
+            StringComparison.Ordinal
+        );
+        AssertRejectedConfigureWasNonMutating(fileSystem, fixture);
+    }
+
+    [Theory]
+    [InlineData("missing-root")]
+    [InlineData("missing-entrypoint")]
+    [InlineData("source-contains-target")]
+    [InlineData("target-contains-source")]
+    [InlineData("unowned-file")]
+    [InlineData("unowned-directory")]
+    public async Task ConfigureRejectsInvalidPayloadBeforePersistingOwnership(string scenario)
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        InvalidNuGetPayloadFixture fixture = await CreateInvalidPayloadFixtureAsync(
+            fileSystem,
+            scenario
+        );
+        fileSystem.Calls.Clear();
+
+        NuGetPhase10UnrecognizedStateException exception =
+            await Assert.ThrowsAsync<NuGetPhase10UnrecognizedStateException>(async () =>
+                await fixture.Service.ConfigureAsync(TestContext.Current.CancellationToken)
+            );
+
+        Assert.NotNull(exception.InnerException);
+        Assert.Contains(
+            fixture.ExpectedDiagnostic,
+            exception.InnerException.Message,
+            StringComparison.Ordinal
+        );
+        AssertRejectedConfigureWasNonMutating(fileSystem, fixture);
+    }
+
+    [Fact]
+    public async Task ConfigureWhenAppliedStateIsCurrentPerformsNoWrites()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        NuGetPhase10VerticalSliceService service = CreateService(fileSystem);
+        await service.ConfigureAsync(TestContext.Current.CancellationToken);
+        string entrypointBefore = fileSystem.ReadAllText(service.Paths.PluginEntrypointPath);
+        string markerBefore = fileSystem.ReadAllText(service.Paths.PluginLayoutMarkerPath);
+        string ownershipBefore = fileSystem.ReadAllText(service.Paths.OwnershipManifestPath);
+        fileSystem.Calls.Clear();
+
+        NuGetPhase10ConfigureResult result = await service.ConfigureAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        FileSystemCall[] ownedMutations = GetOwnedMutationCalls(fileSystem, service);
+        Assert.Empty(ownedMutations);
+        Assert.Equal(ConfigurationPlanOperation.Apply, result.PlanResult.Operation);
+        Assert.Empty(result.PlanResult.Plan.Changes);
+        Assert.Empty(result.PlanResult.Changes);
+        Assert.Empty(result.PlanResult.PlannedOperations);
+        Assert.Equal(entrypointBefore, fileSystem.ReadAllText(service.Paths.PluginEntrypointPath));
+        Assert.Equal(markerBefore, fileSystem.ReadAllText(service.Paths.PluginLayoutMarkerPath));
+        Assert.Equal(ownershipBefore, fileSystem.ReadAllText(service.Paths.OwnershipManifestPath));
+        Assert.True(result.PluginLayoutMarkerPresent);
+        Assert.True(result.OwnershipManifestPresent);
+    }
+
+    [Fact]
+    public async Task ConfigureWhenSourcePayloadChangesRefreshesActivationWithWrites()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        NuGetPhase10VerticalSliceService service = CreateService(fileSystem);
+        await service.ConfigureAsync(TestContext.Current.CancellationToken);
+        string targetRoot = service.Paths.PluginTargetRootPath;
+        string sourceRoot = service.Paths.ApplicationPayloadRootPath;
+        string unrelatedPath = targetRoot + "/preserve.txt";
+        fileSystem.AtomicWriteAllText(unrelatedPath, "unrelated");
+        fileSystem.AtomicWriteAllText(
+            sourceRoot + "/azureauth-credprovider.dll",
+            "source-b"
+        );
+        fileSystem.DeleteFile(sourceRoot + "/dependency.dll");
+        fileSystem.AtomicWriteAllText(sourceRoot + "/new/addition.dll", "new-b");
+        fileSystem.Calls.Clear();
+
+        NuGetPhase10ConfigureResult result = await service.ConfigureAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        FileSystemCall[] mutationCalls = GetOwnedMutationCalls(fileSystem, service);
+        Assert.Single(result.PlanResult.Plan.Changes);
+        Assert.Single(result.PlanResult.Changes);
+        Assert.Single(result.PlanResult.PlannedOperations);
+        Assert.Equal(
+            2,
+            mutationCalls.Count(call =>
+                call.Operation == nameof(InMemoryFileSystem.AtomicWriteAllBytes)
+                && IsSameOrDescendant(call.Path, targetRoot)
+            )
+        );
+        Assert.Single(
+            mutationCalls,
+            call =>
+                call.Operation == nameof(InMemoryFileSystem.AtomicWriteAllText)
+                && call.Path == service.Paths.PluginLayoutMarkerPath
+        );
+        Assert.Single(
+            mutationCalls,
+            call =>
+                call.Operation == nameof(InMemoryFileSystem.DeleteFile)
+                && call.Path == targetRoot + "/dependency.dll"
+        );
+        Assert.Equal("source-b", fileSystem.ReadAllText(service.Paths.PluginEntrypointPath));
+        Assert.Equal("new-b", fileSystem.ReadAllText(targetRoot + "/new/addition.dll"));
+        Assert.False(fileSystem.FileExists(targetRoot + "/dependency.dll"));
+        Assert.Equal("unrelated", fileSystem.ReadAllText(unrelatedPath));
+        string marker = fileSystem.ReadAllText(service.Paths.PluginLayoutMarkerPath);
+        Assert.Contains("new/addition.dll", marker, StringComparison.Ordinal);
+        Assert.DoesNotContain("dependency.dll", marker, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ConfigureWhenTargetUnixModeDriftsRepairsModeWithWrites()
+    {
+        const UnixFileMode sourceMode =
+            UnixFileMode.UserRead
+            | UnixFileMode.UserWrite
+            | UnixFileMode.UserExecute
+            | UnixFileMode.GroupRead
+            | UnixFileMode.GroupExecute;
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        NuGetPhase10VerticalSliceService service = CreateService(fileSystem);
+        string sourceEntrypoint =
+            service.Paths.ApplicationPayloadRootPath + "/azureauth-credprovider.dll";
+        fileSystem.SetUnixFileMode(sourceEntrypoint, sourceMode);
+        await service.ConfigureAsync(TestContext.Current.CancellationToken);
+        fileSystem.SetUnixFileMode(
+            service.Paths.PluginEntrypointPath,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite
+        );
+        fileSystem.Calls.Clear();
+
+        await service.ConfigureAsync(TestContext.Current.CancellationToken);
+
+        FileSystemCall[] mutationCalls = GetOwnedMutationCalls(fileSystem, service);
+        Assert.Single(
+            mutationCalls,
+            call =>
+                call.Operation == nameof(InMemoryFileSystem.AtomicWriteAllBytes)
+                && call.Path == service.Paths.PluginEntrypointPath
+        );
+        Assert.Single(
+            mutationCalls,
+            call =>
+                call.Operation == nameof(InMemoryFileSystem.SetUnixFileMode)
+                && call.Path == service.Paths.PluginEntrypointPath
+        );
+        Assert.Equal(sourceMode, fileSystem.GetUnixFileMode(service.Paths.PluginEntrypointPath));
+        Assert.Equal(
+            "fake-assembly",
+            fileSystem.ReadAllText(service.Paths.PluginEntrypointPath)
+        );
+    }
+
     [Fact]
     public async Task RefreshRejectsNewFileUnderPreExistingUnownedDirectory()
     {
@@ -325,6 +516,12 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
         NuGetPhase10VerticalSliceService service = CreateService(fileSystem);
         fileSystem.AtomicWriteAllText(service.Paths.OwnershipManifestPath, "{");
 
+        NuGetPhase10DoctorResult doctor = await service.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(NuGetConfigurationState.Unrecognized, doctor.ConfigurationState);
+        Assert.False(doctor.ConfigurationPlanValid);
         await Assert.ThrowsAsync<NuGetPhase10UnrecognizedStateException>(async () =>
             await service.ConfigureAsync(TestContext.Current.CancellationToken)
         );
@@ -332,15 +529,20 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
 
     private static NuGetPhase10VerticalSliceService CreateService(
         InMemoryFileSystem fileSystem,
-        Func<string, string?>? environmentVariableReader = null
+        Func<string, string?>? environmentVariableReader = null,
+        string? applicationRootPath = null,
+        bool seedPayload = true
     )
     {
-        const string applicationRoot = "/installation/app";
-        fileSystem.AtomicWriteAllText(
-            applicationRoot + "/azureauth-credprovider.dll",
-            "fake-assembly"
-        );
-        fileSystem.AtomicWriteAllText(applicationRoot + "/dependency.dll", "dependency");
+        string applicationRoot = applicationRootPath ?? "/installation/app";
+        if (seedPayload)
+        {
+            fileSystem.AtomicWriteAllText(
+                applicationRoot + "/azureauth-credprovider.dll",
+                "fake-assembly"
+            );
+            fileSystem.AtomicWriteAllText(applicationRoot + "/dependency.dll", "dependency");
+        }
         return new(
             new NuGetPhase10VerticalSliceOptions
             {
@@ -351,6 +553,186 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
             }
         );
     }
+
+    private static async Task<InvalidNuGetPayloadFixture> CreateInvalidPayloadFixtureAsync(
+        InMemoryFileSystem fileSystem,
+        string scenario
+    )
+    {
+        NuGetPhase10VerticalSliceService service;
+        string? foreignPath = null;
+        const string foreignContents = "foreign";
+        string expectedDiagnostic;
+        switch (scenario)
+        {
+            case "missing-root":
+                service = CreateService(
+                    fileSystem,
+                    applicationRootPath: "/missing/application",
+                    seedPayload: false
+                );
+                expectedDiagnostic = "source application root is unavailable";
+                break;
+            case "missing-entrypoint":
+                service = CreateService(fileSystem, seedPayload: false);
+                fileSystem.AtomicWriteAllText(
+                    service.Paths.ApplicationPayloadRootPath + "/dependency.dll",
+                    "dependency"
+                );
+                expectedDiagnostic = "source application payload is incomplete";
+                break;
+            case "source-contains-target":
+                service = CreateService(
+                    fileSystem,
+                    applicationRootPath: "/"
+                );
+                expectedDiagnostic = "source and activation roots must be disjoint";
+                break;
+            case "target-contains-source":
+                NuGetPhase10VerticalSliceService layout = CreateService(
+                    fileSystem,
+                    seedPayload: false
+                );
+                service = CreateService(
+                    fileSystem,
+                    applicationRootPath: layout.Paths.PluginTargetRootPath + "/application"
+                );
+                expectedDiagnostic = "source and activation roots must be disjoint";
+                break;
+            case "unowned-file":
+                service = CreateService(fileSystem);
+                await service.ConfigureAsync(TestContext.Current.CancellationToken);
+                fileSystem.AtomicWriteAllText(
+                    service.Paths.ApplicationPayloadRootPath + "/new/conflict.dll",
+                    "product"
+                );
+                foreignPath = service.Paths.PluginTargetRootPath + "/new/conflict.dll";
+                fileSystem.AtomicWriteAllText(foreignPath, foreignContents);
+                expectedDiagnostic = "overwrite an unowned path";
+                break;
+            case "unowned-directory":
+                service = CreateService(fileSystem);
+                await service.ConfigureAsync(TestContext.Current.CancellationToken);
+                fileSystem.AtomicWriteAllText(
+                    service.Paths.ApplicationPayloadRootPath + "/shared/addition.dll",
+                    "product"
+                );
+                foreignPath = service.Paths.PluginTargetRootPath + "/shared";
+                fileSystem.CreateDirectory(foreignPath);
+                expectedDiagnostic = "use an unowned existing directory";
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(scenario), scenario, null);
+        }
+
+        return new InvalidNuGetPayloadFixture(
+            service,
+            ReadTextIfPresent(fileSystem, service.Paths.PluginLayoutMarkerPath),
+            ReadTextIfPresent(fileSystem, service.Paths.OwnershipManifestPath),
+            foreignPath,
+            foreignContents,
+            expectedDiagnostic
+        );
+    }
+
+    private static void AssertRejectedConfigureWasNonMutating(
+        InMemoryFileSystem fileSystem,
+        InvalidNuGetPayloadFixture fixture
+    )
+    {
+        FileSystemCall[] mutationCalls = GetOwnedMutationCalls(fileSystem, fixture.Service);
+        Assert.Empty(mutationCalls);
+        AssertOptionalTextEquals(
+            fileSystem,
+            fixture.Service.Paths.PluginLayoutMarkerPath,
+            fixture.MarkerBefore
+        );
+        AssertOptionalTextEquals(
+            fileSystem,
+            fixture.Service.Paths.OwnershipManifestPath,
+            fixture.OwnershipBefore
+        );
+        if (fixture.ForeignPath is not null)
+        {
+            if (fileSystem.FileExists(fixture.ForeignPath))
+            {
+                Assert.Equal(
+                    fixture.ForeignContents,
+                    fileSystem.ReadAllText(fixture.ForeignPath)
+                );
+            }
+            else
+            {
+                Assert.True(fileSystem.DirectoryExists(fixture.ForeignPath));
+                Assert.Empty(fileSystem.EnumerateFiles(fixture.ForeignPath));
+                Assert.Empty(fileSystem.EnumerateDirectories(fixture.ForeignPath));
+            }
+        }
+    }
+
+    private static FileSystemCall[] GetOwnedMutationCalls(
+        InMemoryFileSystem fileSystem,
+        NuGetPhase10VerticalSliceService service
+    ) =>
+        fileSystem
+            .Calls.Where(call =>
+                IsMutation(call.Operation)
+                && (
+                    IsSameOrDescendant(call.Path, service.Paths.PluginTargetRootPath)
+                    || IsSameOrDescendant(call.Path, service.Paths.StateDirectoryPath)
+                )
+            )
+            .ToArray();
+
+    private static bool IsMutation(string operation) =>
+        operation
+            is nameof(InMemoryFileSystem.AtomicWriteAllBytes)
+                or nameof(InMemoryFileSystem.AtomicWriteAllText)
+                or nameof(InMemoryFileSystem.WriteAllText)
+                or nameof(InMemoryFileSystem.SetUnixFileMode)
+                or nameof(InMemoryFileSystem.CreateDirectory)
+                or nameof(InMemoryFileSystem.DeleteFile)
+                or nameof(InMemoryFileSystem.DeleteDirectory);
+
+    private static bool IsSameOrDescendant(string path, string root) =>
+        string.Equals(path, root, StringComparison.Ordinal)
+        || path.StartsWith(root + "/", StringComparison.Ordinal);
+
+    private static string? ReadTextIfPresent(InMemoryFileSystem fileSystem, string path) =>
+        fileSystem.FileExists(path) ? fileSystem.ReadAllText(path) : null;
+
+    private static void AssertOptionalTextEquals(
+        InMemoryFileSystem fileSystem,
+        string path,
+        string? expected
+    )
+    {
+        if (expected is null)
+        {
+            Assert.False(fileSystem.FileExists(path));
+        }
+        else
+        {
+            Assert.Equal(expected, fileSystem.ReadAllText(path));
+        }
+    }
+
+    private sealed record InvalidNuGetPayloadFixture(
+        NuGetPhase10VerticalSliceService Service,
+        string? MarkerBefore,
+        string? OwnershipBefore,
+        string? ForeignPath,
+        string ForeignContents,
+        string ExpectedDiagnostic
+    );
+
+    private static string GetIsolatedHomePath() =>
+        Path.Combine(
+            Path.GetPathRoot(Environment.CurrentDirectory)
+                ?? Path.DirectorySeparatorChar.ToString(),
+            "azureauth-credprovider-tests",
+            "user-home"
+        );
 
     [Fact]
     public async Task DoctorValidatesParserWithoutCredentialAcquisition()
@@ -388,6 +770,101 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
         Assert.True(result.AzureArtifactsSourceCanonicalizationSuccess);
         Assert.True(result.InteractivePolicyGuidanceSuccess);
         Assert.True(result.OptionalEnvironmentOverridesAbsent);
+    }
+
+    [Fact]
+    public async Task DoctorClassifiesStaleSourceAsRefreshable()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        NuGetPhase10VerticalSliceService service = CreateService(fileSystem);
+        await service.ConfigureAsync(TestContext.Current.CancellationToken);
+        fileSystem.AtomicWriteAllText(
+            service.Paths.ApplicationPayloadRootPath + "/azureauth-credprovider.dll",
+            "source-b"
+        );
+
+        NuGetPhase10DoctorResult result = await service.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(NuGetConfigurationState.Refreshable, result.ConfigurationState);
+        Assert.False(result.ConfigurationPlanValid);
+        Assert.Equal("fake-assembly", fileSystem.ReadAllText(service.Paths.PluginEntrypointPath));
+        Assert.True(result.PluginLayoutMarkerPresent);
+        Assert.True(result.OwnershipManifestPresent);
+    }
+
+    [Theory]
+    [InlineData("target-root-file")]
+    [InlineData("orphan-entrypoint-file")]
+    [InlineData("entrypoint-directory")]
+    [InlineData("ownership-manifest-directory")]
+    [InlineData("marker-directory")]
+    public async Task DoctorAndConfigureRejectOwnershiplessCollision(string scenario)
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        NuGetPhase10VerticalSliceService service = CreateService(fileSystem);
+        ApplyOwnershiplessCollision(fileSystem, service, scenario);
+
+        NuGetPhase10DoctorResult doctor = await service.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(NuGetConfigurationState.Unrecognized, doctor.ConfigurationState);
+        Assert.False(doctor.ConfigurationPlanValid);
+        await Assert.ThrowsAsync<NuGetPhase10UnrecognizedStateException>(async () =>
+            await service.ConfigureAsync(TestContext.Current.CancellationToken)
+        );
+    }
+
+    [Fact]
+    public async Task DoctorTreatsTargetDirectoryContainingOnlyUnrelatedFilesAsValid()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        NuGetPhase10VerticalSliceService service = CreateService(fileSystem);
+        fileSystem.AtomicWriteAllText(
+            service.Paths.PluginTargetRootPath + "/unrelated.txt",
+            "unrelated"
+        );
+
+        NuGetPhase10DoctorResult doctor = await service.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(NuGetConfigurationState.Valid, doctor.ConfigurationState);
+        Assert.True(doctor.ConfigurationPlanValid);
+        Assert.False(fileSystem.FileExists(service.Paths.PluginLayoutMarkerPath));
+        Assert.False(fileSystem.DirectoryExists(service.Paths.PluginLayoutMarkerPath));
+        Assert.False(fileSystem.FileExists(service.Paths.OwnershipManifestPath));
+        Assert.False(fileSystem.DirectoryExists(service.Paths.OwnershipManifestPath));
+    }
+
+    private static void ApplyOwnershiplessCollision(
+        InMemoryFileSystem fileSystem,
+        NuGetPhase10VerticalSliceService service,
+        string scenario
+    )
+    {
+        switch (scenario)
+        {
+            case "target-root-file":
+                fileSystem.AtomicWriteAllText(service.Paths.PluginTargetRootPath, "foreign");
+                break;
+            case "orphan-entrypoint-file":
+                fileSystem.AtomicWriteAllText(service.Paths.PluginEntrypointPath, "foreign");
+                break;
+            case "entrypoint-directory":
+                fileSystem.CreateDirectory(service.Paths.PluginEntrypointPath);
+                break;
+            case "ownership-manifest-directory":
+                fileSystem.CreateDirectory(service.Paths.OwnershipManifestPath);
+                break;
+            case "marker-directory":
+                fileSystem.CreateDirectory(service.Paths.PluginLayoutMarkerPath);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(scenario), scenario, null);
+        }
     }
 
     private sealed class ThrowingNuGetDoctorCredentialAcquisitionService
