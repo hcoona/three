@@ -43,6 +43,7 @@ if ($hostArchitecture -ne [System.Runtime.InteropServices.Architecture]::X64) {
     throw "Deployment validation bundles do not support host architecture '$hostArchitecture'."
 }
 $expectedTargetRid = if ($runningOnWindows) { 'win-x64' } else { 'linux-x64' }
+$legacySourceRevision = 'f1bf00d412732739713a18e9a07e8738ff80c6f8'
 if ($manifest.targetRid -ne $expectedTargetRid) {
     throw "This $($manifest.targetRid) bundle cannot be installed on $expectedTargetRid."
 }
@@ -244,7 +245,9 @@ if (Test-Path -LiteralPath $InstallRoot) {
 
         if ($receiptSchemaVersion -eq
             'azureauth-credprovider-deployment-validation-install-v1') {
-            if ([string]::IsNullOrWhiteSpace([string]$existingReceipt.nugetPluginRoot)) {
+            if ($existingReceipt.sourceRevision -cne $legacySourceRevision -or
+                $existingReceipt.targetRid -cne $expectedTargetRid -or
+                [string]::IsNullOrWhiteSpace([string]$existingReceipt.nugetPluginRoot)) {
                 throw 'The legacy deployment validation installation receipt is invalid.'
             }
             $legacyNuGetPluginRoot = [System.IO.Path]::GetFullPath(
@@ -380,6 +383,9 @@ try {
     }
     Move-Item -LiteralPath $stagedInstallRoot -Destination $InstallRoot
     $installRootActivated = $true
+    if ($null -ne $legacyNuGetCleanupPlan) {
+        Remove-LegacyNuGetPayload -Plan $legacyNuGetCleanupPlan
+    }
 }
 catch {
     $switchFailure = $_
@@ -427,10 +433,6 @@ catch {
     }
 
     throw $switchFailure
-}
-
-if ($null -ne $legacyNuGetCleanupPlan) {
-    Remove-LegacyNuGetPayload -Plan $legacyNuGetCleanupPlan
 }
 
 $undeletedBackupPaths = [System.Collections.Generic.List[string]]::new()

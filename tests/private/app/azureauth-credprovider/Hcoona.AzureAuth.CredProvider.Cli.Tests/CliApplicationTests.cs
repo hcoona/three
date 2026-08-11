@@ -5280,13 +5280,33 @@ public sealed class CliApplicationTests
         };
     }
 
-    private static NuGetPhase10VerticalSliceOptions CreateIsolatedNuGetPhase10Options() =>
-        new()
+    private static NuGetPhase10VerticalSliceOptions CreateIsolatedNuGetPhase10Options()
+    {
+        string rootPath = Path.Combine(
+            Environment.CurrentDirectory,
+            "artifacts",
+            "azureauth-credprovider",
+            "cli-nuget-fixture"
+        );
+        string applicationRoot = Path.Combine(rootPath, "app");
+        var fileSystem =
+            new EmptyNuGetDryRunFileSystem.RecordingNuGetConfigurationFileSystem();
+        fileSystem.AtomicWriteAllText(
+            Path.Combine(applicationRoot, "azureauth-credprovider.dll"),
+            "fake-assembly"
+        );
+        fileSystem.AtomicWriteAllText(
+            Path.Combine(applicationRoot, "dependency.dll"),
+            "dependency"
+        );
+        return new NuGetPhase10VerticalSliceOptions
         {
-            StateDirectoryPath = "/state/azureauth-credprovider/phase10",
-            FileSystem = new EmptyNuGetDryRunFileSystem(),
+            StateDirectoryPath = Path.Combine(rootPath, "state"),
+            ApplicationPayloadRootPath = applicationRoot,
+            FileSystem = fileSystem,
             EnvironmentVariableReader = _ => null,
         };
+    }
 
     private static NpmPhase12VerticalSliceOptions CreateIsolatedNpmPhase12Options(
         string rootPath

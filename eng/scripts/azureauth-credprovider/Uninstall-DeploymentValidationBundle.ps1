@@ -12,6 +12,18 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $runningOnWindows = $IsWindows
+$hostArchitecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+$expectedTargetRid = if (
+    $hostArchitecture -eq [System.Runtime.InteropServices.Architecture]::X64
+) {
+    if ($runningOnWindows) {
+        'win-x64'
+    }
+    elseif ($IsLinux) {
+        'linux-x64'
+    }
+}
+$legacySourceRevision = 'f1bf00d412732739713a18e9a07e8738ff80c6f8'
 $pathComparison = if ($runningOnWindows) {
     [System.StringComparison]::OrdinalIgnoreCase
 }
@@ -100,7 +112,10 @@ if ($InstallRoot -eq $installPathRoot -or
 $legacyNuGetCleanupPlan = $null
 if ($receiptSchemaVersion -eq
     'azureauth-credprovider-deployment-validation-install-v1') {
-    if ([string]::IsNullOrWhiteSpace([string]$receipt.nugetPluginRoot)) {
+    if ($receipt.sourceRevision -cne $legacySourceRevision -or
+        [string]::IsNullOrWhiteSpace($expectedTargetRid) -or
+        $receipt.targetRid -cne $expectedTargetRid -or
+        [string]::IsNullOrWhiteSpace([string]$receipt.nugetPluginRoot)) {
         throw 'The legacy deployment validation installation receipt is invalid.'
     }
     $legacyNuGetPluginRoot = [System.IO.Path]::GetFullPath(

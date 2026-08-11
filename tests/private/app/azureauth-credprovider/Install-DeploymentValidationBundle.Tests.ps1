@@ -81,6 +81,58 @@ function Assert-BytesEqual {
     }
 }
 
+function Get-FileSnapshotSet {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$LiteralPath
+    )
+
+    $snapshots = [System.Collections.Generic.Dictionary[string, object]]::new(
+        [System.StringComparer]::Ordinal
+    )
+    foreach ($path in $LiteralPath) {
+        $snapshots.Add(
+            $path,
+            [pscustomobject]@{
+                Content      = [System.IO.File]::ReadAllBytes($path)
+                UnixFileMode = if ($IsWindows) {
+                    $null
+                }
+                else {
+                    [int][System.IO.File]::GetUnixFileMode($path)
+                }
+            }
+        )
+    }
+    return $snapshots
+}
+
+function Assert-FileSnapshotSet {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Collections.Generic.Dictionary[string, object]]$Expected,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Context
+    )
+
+    foreach ($entry in $Expected.GetEnumerator()) {
+        Assert-True (
+            Test-Path -LiteralPath $entry.Key -PathType Leaf
+        ) "A snapshotted file was removed during $Context`: $($entry.Key)"
+        Assert-BytesEqual `
+            -Expected $entry.Value.Content `
+            -Actual ([System.IO.File]::ReadAllBytes($entry.Key)) `
+            -Message "A snapshotted file changed during $Context`: $($entry.Key)"
+        if ($null -ne $entry.Value.UnixFileMode) {
+            Assert-Equal `
+                -Expected $entry.Value.UnixFileMode `
+                -Actual ([int][System.IO.File]::GetUnixFileMode($entry.Key)) `
+                -Message "A snapshotted file mode changed during $Context`: $($entry.Key)"
+        }
+    }
+}
+
 function Assert-InvocationFailure {
     param(
         [Parameter(Mandatory = $true)]
@@ -360,7 +412,7 @@ function New-F1LegacyInstallation {
     $receipt = [ordered]@{
         schemaVersion   = 'azureauth-credprovider-deployment-validation-install-v1'
         productVersion  = '1.0.0-test'
-        sourceRevision  = 'f1bf00d4'
+        sourceRevision  = 'f1bf00d412732739713a18e9a07e8738ff80c6f8'
         targetRid       = $targetRid
         installRoot     = [System.IO.Path]::GetFullPath($InstallRoot)
         applicationRoot = [System.IO.Path]::GetFullPath($applicationRoot)
@@ -764,6 +816,71 @@ try {
     $bundleRoot = Join-Path $testRoot 'bundle'
     New-TestBundle -BundleRoot $bundleRoot
 
+    $legacyRevisionRoot = Join-Path $testRoot 'legacy-revision-mismatch'
+    $legacyRevisionInstallRoot = Join-Path $legacyRevisionRoot 'install'
+    $legacyRevisionNuGetRoot = Join-Path $legacyRevisionRoot 'nuget'
+    $legacyRevisionManifestPath = Join-Path $legacyRevisionRoot 'state/ownership.json'
+    New-F1LegacyInstallation `
+        -InstallRoot $legacyRevisionInstallRoot `
+        -NuGetPluginRoot $legacyRevisionNuGetRoot `
+        -OwnershipManifestPath $legacyRevisionManifestPath
+    $legacyRevisionReceiptPath = Join-Path $legacyRevisionInstallRoot 'installation.json'
+    $legacyRevisionReceipt = Get-Content -LiteralPath $legacyRevisionReceiptPath -Raw |
+        ConvertFrom-Json
+    $legacyRevisionReceipt.sourceRevision = 'not-f1bf00d4'
+    $legacyRevisionReceipt | ConvertTo-Json -Depth 5 |
+        Set-Content -LiteralPath $legacyRevisionReceiptPath -Encoding utf8
+    $legacyRevisionSnapshots = Get-FileSnapshotSet -LiteralPath @(
+        $legacyRevisionReceiptPath,
+        (Join-Path $legacyRevisionInstallRoot 'app/azureauth-credprovider.dll'),
+        (Join-Path $legacyRevisionNuGetRoot 'azureauth-credprovider.dll'),
+        (Join-Path $legacyRevisionNuGetRoot '.azureauth-credprovider.nuget-plugin-layout'),
+        $legacyRevisionManifestPath
+    )
+
+    Assert-InvocationFailure {
+        Invoke-Installer `
+            -BundleRoot $bundleRoot `
+            -InstallRoot $legacyRevisionInstallRoot `
+            -LegacyNuGetOwnershipManifestPath $legacyRevisionManifestPath
+    } 'Expected a non-f1bf00d4 legacy receipt to block deployment replacement.'
+    Assert-FileSnapshotSet `
+        -Expected $legacyRevisionSnapshots `
+        -Context 'non-f1bf00d4 installer validation'
+
+    $legacyRidRoot = Join-Path $testRoot 'legacy-rid-mismatch'
+    $legacyRidInstallRoot = Join-Path $legacyRidRoot 'install'
+    $legacyRidNuGetRoot = Join-Path $legacyRidRoot 'nuget'
+    $legacyRidManifestPath = Join-Path $legacyRidRoot 'state/ownership.json'
+    New-F1LegacyInstallation `
+        -InstallRoot $legacyRidInstallRoot `
+        -NuGetPluginRoot $legacyRidNuGetRoot `
+        -OwnershipManifestPath $legacyRidManifestPath
+    $legacyRidReceiptPath = Join-Path $legacyRidInstallRoot 'installation.json'
+    $legacyRidReceipt = Get-Content -LiteralPath $legacyRidReceiptPath -Raw |
+        ConvertFrom-Json
+    $legacyRidReceipt.targetRid = if ($runningOnWindows) { 'linux-x64' } else { 'win-x64' }
+    $legacyRidReceipt | ConvertTo-Json -Depth 5 |
+        Set-Content -LiteralPath $legacyRidReceiptPath -Encoding utf8
+    $legacyRidSnapshots = Get-FileSnapshotSet -LiteralPath @(
+        $legacyRidReceiptPath,
+        (Join-Path $legacyRidInstallRoot 'app/azureauth-credprovider.dll'),
+        (Join-Path $legacyRidNuGetRoot 'azureauth-credprovider.dll'),
+        (Join-Path $legacyRidNuGetRoot '.azureauth-credprovider.nuget-plugin-layout'),
+        $legacyRidManifestPath
+    )
+
+    Assert-InvocationFailure {
+        & (Join-Path $bundleRoot 'uninstall.ps1') `
+            -InstallRoot $legacyRidInstallRoot `
+            -LegacyNuGetOwnershipManifestPath $legacyRidManifestPath `
+            -SkipConfigurationCleanup |
+            Out-Null
+    } 'Expected a mismatched legacy receipt RID to block uninstall.'
+    Assert-FileSnapshotSet `
+        -Expected $legacyRidSnapshots `
+        -Context 'legacy RID uninstaller validation'
+
     $legacyUpgradeRoot = Join-Path $testRoot 'legacy-upgrade'
     $legacyUpgradeInstallRoot = Join-Path $legacyUpgradeRoot 'install'
     $legacyUpgradeNuGetRoot = Join-Path $legacyUpgradeRoot 'nuget'
@@ -804,6 +921,130 @@ try {
     Assert-True (
         -not (Test-Path -LiteralPath $legacyUpgradeManifestPath)
     ) 'Installer left the exact f1bf00d4 ownership manifest.'
+
+    $legacyRetryRoot = Join-Path $testRoot 'legacy-cleanup-retry'
+    $legacyRetryInstallRoot = Join-Path $legacyRetryRoot 'install'
+    $legacyRetryNuGetRoot = Join-Path $legacyRetryRoot 'nuget'
+    $legacyRetryManifestPath = Join-Path $legacyRetryRoot 'state/ownership.json'
+    New-F1LegacyInstallation `
+        -InstallRoot $legacyRetryInstallRoot `
+        -NuGetPluginRoot $legacyRetryNuGetRoot `
+        -OwnershipManifestPath $legacyRetryManifestPath
+    $legacyRetrySnapshots = Get-FileSnapshotSet -LiteralPath @(
+        (Join-Path $legacyRetryInstallRoot 'installation.json'),
+        (Join-Path $legacyRetryInstallRoot 'app/azureauth-credprovider.dll'),
+        (Join-Path $legacyRetryNuGetRoot 'azureauth-credprovider.dll'),
+        (Join-Path $legacyRetryNuGetRoot 'nested/dependency.dll'),
+        (Join-Path $legacyRetryNuGetRoot '.azureauth-credprovider.nuget-plugin-layout'),
+        $legacyRetryManifestPath
+    )
+    $legacyNuGetCleanupFailureState = [pscustomobject]@{
+        FailurePath = Join-Path $legacyRetryNuGetRoot 'nested/dependency.dll'
+        Injected    = $false
+    }
+    $legacyNuGetRemoveItemOverride = {
+        [CmdletBinding(DefaultParameterSetName = 'Path')]
+        param(
+            [Parameter(Mandatory = $true, ParameterSetName = 'LiteralPath')]
+            [string[]]$LiteralPath,
+
+            [Parameter(Mandatory = $true, ParameterSetName = 'Path')]
+            [string[]]$Path,
+
+            [switch]$Recurse,
+
+            [switch]$Force
+        )
+
+        $requestedPaths = if ($PSCmdlet.ParameterSetName -eq 'LiteralPath') {
+            $LiteralPath
+        }
+        else {
+            $Path
+        }
+        foreach ($requestedPath in $requestedPaths) {
+            if (-not $legacyNuGetCleanupFailureState.Injected -and
+                $requestedPath -eq $legacyNuGetCleanupFailureState.FailurePath) {
+                $legacyNuGetCleanupFailureState.Injected = $true
+                throw 'Injected deterministic legacy NuGet cleanup failure.'
+            }
+
+            if ($PSCmdlet.ParameterSetName -eq 'LiteralPath') {
+                Microsoft.PowerShell.Management\Remove-Item `
+                    -LiteralPath $requestedPath `
+                    -Recurse:$Recurse `
+                    -Force:$Force
+            }
+            else {
+                Microsoft.PowerShell.Management\Remove-Item `
+                    -Path $requestedPath `
+                    -Recurse:$Recurse `
+                    -Force:$Force
+            }
+        }
+    }
+    Set-Item `
+        -LiteralPath Function:\Remove-Item `
+        -Value $legacyNuGetRemoveItemOverride.GetNewClosure()
+    try {
+        $legacyRetryFailure = $null
+        try {
+            Invoke-Installer `
+                -BundleRoot $bundleRoot `
+                -InstallRoot $legacyRetryInstallRoot `
+                -LegacyNuGetOwnershipManifestPath $legacyRetryManifestPath
+        }
+        catch {
+            $legacyRetryFailure = $_
+        }
+        Assert-True `
+            -Condition ($null -ne $legacyRetryFailure) `
+            -Message 'Expected the injected legacy NuGet cleanup failure.'
+    }
+    finally {
+        Microsoft.PowerShell.Management\Remove-Item `
+            -LiteralPath Function:\Remove-Item `
+            -Force
+    }
+    Assert-True (
+        $legacyNuGetCleanupFailureState.Injected
+    ) (
+        'The legacy NuGet cleanup failure was not injected. Installer failure: ' +
+        $legacyRetryFailure.Exception.Message
+    )
+    Assert-FileSnapshotSet `
+        -Expected $legacyRetrySnapshots `
+        -Context 'legacy NuGet cleanup rollback'
+
+    Invoke-Installer `
+        -BundleRoot $bundleRoot `
+        -InstallRoot $legacyRetryInstallRoot `
+        -LegacyNuGetOwnershipManifestPath $legacyRetryManifestPath
+    $legacyRetryReceipt = Get-Content -LiteralPath (
+        Join-Path $legacyRetryInstallRoot 'installation.json'
+    ) -Raw | ConvertFrom-Json
+    Assert-Equal `
+        -Expected 'azureauth-credprovider-deployment-validation-install-v2' `
+        -Actual $legacyRetryReceipt.schemaVersion `
+        -Message 'Retry did not commit the v2 installation receipt.'
+    Assert-True (
+        -not (Test-Path -LiteralPath $legacyRetryManifestPath)
+    ) 'Retry left the legacy NuGet ownership manifest.'
+    foreach ($relativePath in @(
+            'azureauth-credprovider.dll',
+            'nested/dependency.dll',
+            '.azureauth-credprovider.nuget-plugin-layout'
+        )) {
+        Assert-True (
+            -not (Test-Path -LiteralPath (Join-Path $legacyRetryNuGetRoot $relativePath))
+        ) "Retry left legacy NuGet content '$relativePath'."
+    }
+    Assert-Equal `
+        -Expected 'unrelated legacy-root content' `
+        -Actual (Get-Content -LiteralPath (
+            Join-Path $legacyRetryNuGetRoot 'preserve.txt'
+        ) -Raw) `
+        -Message 'Retry removed unrelated legacy NuGet content.'
 
     $legacyDriftRoot = Join-Path $testRoot 'legacy-drift'
     $legacyDriftInstallRoot = Join-Path $legacyDriftRoot 'install'
@@ -966,8 +1207,10 @@ try {
     $cleanupFailureInstallRoot = Join-Path $cleanupFailureRoot 'install'
     New-ExistingInstallation -InstallRoot $cleanupFailureInstallRoot
 
-    $script:DeploymentInstallerCleanupFailureInjected = $false
-    function global:Remove-Item {
+    $deploymentInstallerCleanupFailureState = [pscustomobject]@{
+        Injected = $false
+    }
+    $deploymentInstallerRemoveItemOverride = {
         [CmdletBinding(DefaultParameterSetName = 'Path')]
         param(
             [Parameter(Mandatory = $true, ParameterSetName = 'LiteralPath')]
@@ -988,9 +1231,9 @@ try {
             $Path
         }
         foreach ($requestedPath in $requestedPaths) {
-            if (-not $script:DeploymentInstallerCleanupFailureInjected -and
+            if (-not $deploymentInstallerCleanupFailureState.Injected -and
                 $requestedPath -like '*.install.backup.*') {
-                $script:DeploymentInstallerCleanupFailureInjected = $true
+                $deploymentInstallerCleanupFailureState.Injected = $true
                 $removedPayloadPath = Join-Path $requestedPath 'app/previous-product.txt'
                 if (Test-Path -LiteralPath $removedPayloadPath) {
                     Microsoft.PowerShell.Management\Remove-Item `
@@ -1014,6 +1257,9 @@ try {
             }
         }
     }
+    Set-Item `
+        -LiteralPath Function:\Remove-Item `
+        -Value $deploymentInstallerRemoveItemOverride.GetNewClosure()
     try {
         $savedWarningPreference = $WarningPreference
         $WarningPreference = 'Stop'
@@ -1098,8 +1344,4 @@ finally {
         @(Get-ChildItem -LiteralPath $testBase -Force).Count -eq 0) {
         Microsoft.PowerShell.Management\Remove-Item -LiteralPath $testBase -Force
     }
-    Remove-Variable `
-        -Name DeploymentInstallerCleanupFailureInjected `
-        -Scope Global `
-        -ErrorAction SilentlyContinue
 }

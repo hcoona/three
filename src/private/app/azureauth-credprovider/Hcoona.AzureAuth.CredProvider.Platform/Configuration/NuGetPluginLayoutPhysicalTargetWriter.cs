@@ -451,27 +451,38 @@ internal sealed class NuGetPluginLayoutPhysicalTargetWriter(IFileSystem fileSyst
         SourcePayload? payload
     )
     {
-        string entrypointPath = GetOwnedTargetPath(
-            targetRootPath,
-            PluginEntrypointFileName
-        );
+        if (payload is null)
+        {
+            return new ExistingActivation(
+                new NuGetPluginActivationManifest
+                {
+                    SchemaVersion = MarkerSchemaVersion,
+                    SourceApplicationRoot = targetRootPath,
+                    Files = [],
+                },
+                IsLegacy: true
+            );
+        }
+
+        string entrypointPath = GetOwnedTargetPath(targetRootPath, PluginEntrypointFileName);
         if (
             !fileSystem.FileExists(entrypointPath)
             || fileSystem.DirectoryExists(entrypointPath)
         )
         {
             throw new InvalidOperationException(
-                "The legacy NuGet plugin activation entrypoint is damaged."
+                "The legacy NuGet plugin activation entrypoint cannot be matched "
+                    + "to the source payload."
             );
         }
 
-        IEnumerable<string> candidatePaths = payload is null
-            ? [PluginEntrypointFileName]
-            : payload.Files.Select(static file => file.RelativePath);
         var files = new List<NuGetPluginActivationFile>();
-        foreach (string relativePath in candidatePaths)
+        foreach (SourcePayloadFile sourceFile in payload.Files)
         {
-            string targetPath = GetOwnedTargetPath(targetRootPath, relativePath);
+            string targetPath = GetOwnedTargetPath(
+                targetRootPath,
+                sourceFile.RelativePath
+            );
             if (fileSystem.DirectoryExists(targetPath))
             {
                 throw new InvalidOperationException(
@@ -483,16 +494,34 @@ internal sealed class NuGetPluginLayoutPhysicalTargetWriter(IFileSystem fileSyst
                 continue;
             }
 
-            byte[] content = fileSystem.ReadAllBytes(targetPath);
+            byte[] targetContent = fileSystem.ReadAllBytes(targetPath);
+            string targetHash = Convert.ToHexString(SHA256.HashData(targetContent))
+                .ToLowerInvariant();
+            if (
+                !targetContent.AsSpan().SequenceEqual(sourceFile.Content)
+                || !string.Equals(
+                    targetHash,
+                    sourceFile.Sha256,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                throw new InvalidOperationException(
+                    "The legacy NuGet plugin activation payload does not match "
+                        + "the authoritative source payload."
+                );
+            }
+
             files.Add(
                 new NuGetPluginActivationFile
                 {
-                    Path = relativePath,
-                    Length = content.LongLength,
-                    Sha256 = Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant(),
-                    UnixFileMode = FileSystemPathSemantics.UsesWindowsPaths(fileSystem)
-                        ? null
-                        : (int)fileSystem.GetUnixFileMode(targetPath),
+                    Path = sourceFile.RelativePath,
+                    Length = sourceFile.Content.LongLength,
+                    Sha256 = sourceFile.Sha256,
+                    UnixFileMode =
+                        sourceFile.UnixFileMode is null
+                            ? null
+                            : (int)sourceFile.UnixFileMode.Value,
                 }
             );
         }
@@ -501,8 +530,7 @@ internal sealed class NuGetPluginLayoutPhysicalTargetWriter(IFileSystem fileSyst
             new NuGetPluginActivationManifest
             {
                 SchemaVersion = MarkerSchemaVersion,
-                SourceApplicationRoot =
-                    payload?.Manifest.SourceApplicationRoot ?? targetRootPath,
+                SourceApplicationRoot = payload.Manifest.SourceApplicationRoot,
                 Files = files.ToArray(),
             },
             IsLegacy: true
@@ -537,10 +565,7 @@ internal sealed class NuGetPluginLayoutPhysicalTargetWriter(IFileSystem fileSyst
                     "The NuGet plugin activation would overwrite an unowned path."
                 );
             }
-            if (
-                !existingOwnedPaths.Contains(file.RelativePath)
-                && existingActivation is not { IsLegacy: true }
-            )
+            if (!existingOwnedPaths.Contains(file.RelativePath))
             {
                 ValidateNewPathAncestors(
                     targetRootPath,
@@ -696,7 +721,7 @@ internal sealed class NuGetPluginLayoutPhysicalTargetWriter(IFileSystem fileSyst
             PruneEmptyDirectories(
                 targetRootPath,
                 oldFiles.Keys,
-                preserveTargetRoot: false
+                preserveTargetRoot: existingActivation.IsLegacy
             );
         }
         catch

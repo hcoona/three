@@ -35,14 +35,9 @@ function Get-LegacyNuGetCleanupPlan {
     if (-not (Test-Path -LiteralPath $ApplicationRoot -PathType Container)) {
         throw 'The legacy deployment application payload is unavailable.'
     }
-    if (-not (Test-Path -LiteralPath $NuGetPluginRoot)) {
-        return [pscustomobject]@{
-            Files       = @()
-            Directories = @()
-            Root        = $NuGetPluginRoot
-        }
-    }
-    if (-not (Test-Path -LiteralPath $NuGetPluginRoot -PathType Container)) {
+    $rootExists = Test-Path -LiteralPath $NuGetPluginRoot
+    if ($rootExists -and
+        -not (Test-Path -LiteralPath $NuGetPluginRoot -PathType Container)) {
         throw 'The legacy NuGet plugin root is not a directory.'
     }
 
@@ -50,9 +45,15 @@ function Get-LegacyNuGetCleanupPlan {
         [System.IO.Path]::DirectorySeparatorChar,
         [System.IO.Path]::AltDirectorySeparatorChar
     ) + [System.IO.Path]::DirectorySeparatorChar
-    $files = [System.Collections.Generic.List[string]]::new()
+    $files = [System.Collections.Generic.List[object]]::new()
     $directories = [System.Collections.Generic.HashSet[string]]::new($PathComparer)
-    foreach ($sourceFile in Get-ChildItem -LiteralPath $ApplicationRoot -File -Recurse -Force) {
+    $sourceFiles = if ($rootExists) {
+        @(Get-ChildItem -LiteralPath $ApplicationRoot -File -Recurse -Force)
+    }
+    else {
+        @()
+    }
+    foreach ($sourceFile in $sourceFiles) {
         $relativePath = [System.IO.Path]::GetRelativePath(
             $ApplicationRoot,
             $sourceFile.FullName
@@ -80,7 +81,18 @@ function Get-LegacyNuGetCleanupPlan {
         if ($sourceFile.Length -ne $targetFile.Length -or $sourceHash -cne $targetHash) {
             throw "The legacy NuGet plugin payload path '$targetPath' has drifted."
         }
-        $files.Add($targetPath)
+        $files.Add(
+            [pscustomobject]@{
+                Path         = $targetPath
+                Content      = [System.IO.File]::ReadAllBytes($targetPath)
+                UnixFileMode = if ($IsWindows) {
+                    $null
+                }
+                else {
+                    [int][System.IO.File]::GetUnixFileMode($targetPath)
+                }
+            }
+        )
 
         $directory = [System.IO.Path]::GetDirectoryName($targetPath)
         while (-not [string]::IsNullOrWhiteSpace($directory) -and
@@ -155,8 +167,20 @@ function Get-LegacyNuGetCleanupPlan {
             throw 'The legacy NuGet ownership manifest is not recognized.'
         }
 
-        $files.Add($markerPath)
-        $files.Add($OwnershipManifestPath)
+        foreach ($metadataPath in @($markerPath, $OwnershipManifestPath)) {
+            $files.Add(
+                [pscustomobject]@{
+                    Path         = $metadataPath
+                    Content      = [System.IO.File]::ReadAllBytes($metadataPath)
+                    UnixFileMode = if ($IsWindows) {
+                        $null
+                    }
+                    else {
+                        [int][System.IO.File]::GetUnixFileMode($metadataPath)
+                    }
+                }
+            )
+        }
     }
 
     return [pscustomobject]@{
@@ -173,22 +197,64 @@ function Remove-LegacyNuGetPayload {
         [object]$Plan
     )
 
-    foreach ($path in $Plan.Files) {
-        if ((Test-Path -LiteralPath $path -PathType Leaf) -and
-            $PSCmdlet.ShouldProcess($path, 'Remove legacy NuGet payload file')) {
-            Remove-Item -LiteralPath $path -Force
+    try {
+        foreach ($file in $Plan.Files) {
+            if ((Test-Path -LiteralPath $file.Path -PathType Leaf) -and
+                $PSCmdlet.ShouldProcess($file.Path, 'Remove legacy NuGet payload file')) {
+                Remove-Item -LiteralPath $file.Path -Force
+            }
+        }
+        foreach ($directory in @($Plan.Directories | Sort-Object Length -Descending)) {
+            if ((Test-Path -LiteralPath $directory -PathType Container) -and
+                @(Get-ChildItem -LiteralPath $directory -Force).Count -eq 0 -and
+                $PSCmdlet.ShouldProcess($directory, 'Remove empty legacy NuGet directory')) {
+                Remove-Item -LiteralPath $directory -Force
+            }
+        }
+        if ((Test-Path -LiteralPath $Plan.Root -PathType Container) -and
+            @(Get-ChildItem -LiteralPath $Plan.Root -Force).Count -eq 0 -and
+            $PSCmdlet.ShouldProcess($Plan.Root, 'Remove empty legacy NuGet root')) {
+            Remove-Item -LiteralPath $Plan.Root -Force
         }
     }
-    foreach ($directory in @($Plan.Directories | Sort-Object Length -Descending)) {
-        if ((Test-Path -LiteralPath $directory -PathType Container) -and
-            @(Get-ChildItem -LiteralPath $directory -Force).Count -eq 0 -and
-            $PSCmdlet.ShouldProcess($directory, 'Remove empty legacy NuGet directory')) {
-            Remove-Item -LiteralPath $directory -Force
+    catch {
+        $cleanupFailure = $_
+        $rollbackFailures = [System.Collections.Generic.List[System.Exception]]::new()
+        try {
+            New-Item -ItemType Directory -Path $Plan.Root -Force | Out-Null
+            foreach ($directory in @($Plan.Directories | Sort-Object Length)) {
+                New-Item -ItemType Directory -Path $directory -Force | Out-Null
+            }
+            foreach ($file in $Plan.Files) {
+                $parentPath = Split-Path -Parent $file.Path
+                if (-not [string]::IsNullOrWhiteSpace($parentPath)) {
+                    New-Item -ItemType Directory -Path $parentPath -Force | Out-Null
+                }
+                [System.IO.File]::WriteAllBytes($file.Path, $file.Content)
+                if ($null -ne $file.UnixFileMode) {
+                    [System.IO.File]::SetUnixFileMode(
+                        $file.Path,
+                        [System.IO.UnixFileMode][int]$file.UnixFileMode
+                    )
+                }
+            }
         }
-    }
-    if ((Test-Path -LiteralPath $Plan.Root -PathType Container) -and
-        @(Get-ChildItem -LiteralPath $Plan.Root -Force).Count -eq 0 -and
-        $PSCmdlet.ShouldProcess($Plan.Root, 'Remove empty legacy NuGet root')) {
-        Remove-Item -LiteralPath $Plan.Root -Force
+        catch {
+            $rollbackFailures.Add($_.Exception)
+        }
+
+        if ($rollbackFailures.Count -gt 0) {
+            $failures = [System.Collections.Generic.List[System.Exception]]::new()
+            $failures.Add($cleanupFailure.Exception)
+            foreach ($failure in $rollbackFailures) {
+                $failures.Add($failure)
+            }
+            throw [System.AggregateException]::new(
+                'Legacy NuGet cleanup failed and its validated state could not be restored.',
+                $failures
+            )
+        }
+
+        throw $cleanupFailure
     }
 }

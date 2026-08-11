@@ -571,13 +571,10 @@ public sealed class NuGetPhase10VerticalSliceService
 
             bool activationPresent =
                 OwnershipManifestPathExists() || PluginLayoutMarkerPathExists();
-            if (!activationPresent)
-            {
-                return NuGetConfigurationState.Valid;
-            }
-
             await manager.DryRunAsync(plan, cancellationToken);
-            return manager.IsAppliedStateCurrent(plan, cancellationToken)
+            return !activationPresent
+                ? NuGetConfigurationState.Valid
+                : manager.IsAppliedStateCurrent(plan, cancellationToken)
                 ? NuGetConfigurationState.Valid
                 : NuGetConfigurationState.Refreshable;
         }

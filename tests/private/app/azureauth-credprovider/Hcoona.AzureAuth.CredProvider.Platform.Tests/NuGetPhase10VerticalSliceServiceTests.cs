@@ -88,12 +88,7 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         NuGetPhase10VerticalSliceService service = CreateService(fileSystem);
-        string sourceRoot = service.Paths.ApplicationPayloadRootPath;
-        string targetRoot = service.Paths.PluginTargetRootPath;
-        fileSystem.AtomicWriteAllText(sourceRoot + "/shared/legacy.dll", "legacy-only");
         string ownershipBefore = await SeedExactF1LegacyActivationAsync(fileSystem, service);
-        fileSystem.DeleteFile(sourceRoot + "/shared/legacy.dll");
-        fileSystem.AtomicWriteAllText(sourceRoot + "/shared/current.dll", "current-only");
 
         NuGetPhase10ConfigureResult result = await service.ConfigureAsync(
             TestContext.Current.CancellationToken
@@ -116,16 +111,6 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
             StringComparison.Ordinal
         );
         Assert.Contains("\"dependency.dll\"", marker, StringComparison.Ordinal);
-        Assert.Contains("\"shared/current.dll\"", marker, StringComparison.Ordinal);
-        Assert.DoesNotContain("\"shared/legacy.dll\"", marker, StringComparison.Ordinal);
-        Assert.Equal(
-            "legacy-only",
-            fileSystem.ReadAllText(targetRoot + "/shared/legacy.dll")
-        );
-        Assert.Equal(
-            "current-only",
-            fileSystem.ReadAllText(targetRoot + "/shared/current.dll")
-        );
         Assert.Equal(
             ownershipBefore,
             fileSystem.ReadAllText(service.Paths.OwnershipManifestPath)
@@ -133,7 +118,7 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
     }
 
     [Fact]
-    public async Task UnconfigureRemovesOnlyExactF1LegacyEntrypointAndMarker()
+    public async Task UnconfigureRemovesOnlyExactF1LegacyMetadata()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         NuGetPhase10VerticalSliceService service = CreateService(fileSystem);
@@ -146,7 +131,10 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
         );
 
         Assert.True(result.HadOwnedConfiguration);
-        Assert.False(fileSystem.FileExists(service.Paths.PluginEntrypointPath));
+        Assert.Equal(
+            "fake-assembly",
+            fileSystem.ReadAllText(service.Paths.PluginEntrypointPath)
+        );
         Assert.False(fileSystem.FileExists(service.Paths.PluginLayoutMarkerPath));
         Assert.False(fileSystem.FileExists(service.Paths.OwnershipManifestPath));
         Assert.Equal(
@@ -154,6 +142,65 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
             fileSystem.ReadAllText(service.Paths.PluginTargetRootPath + "/dependency.dll")
         );
         Assert.Equal("unrelated", fileSystem.ReadAllText(unrelatedPath));
+    }
+
+    [Fact]
+    public async Task ModifiedF1LegacyEntrypointIsPreservedAndCannotBeConfigured()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        NuGetPhase10VerticalSliceService service = CreateService(fileSystem);
+        await SeedExactF1LegacyActivationAsync(fileSystem, service);
+        fileSystem.AtomicWriteAllText(service.Paths.PluginEntrypointPath, "modified");
+        string markerBefore = fileSystem.ReadAllText(service.Paths.PluginLayoutMarkerPath);
+        string ownershipBefore = fileSystem.ReadAllText(service.Paths.OwnershipManifestPath);
+        fileSystem.Calls.Clear();
+
+        await Assert.ThrowsAsync<NuGetPhase10UnrecognizedStateException>(async () =>
+            await service.ConfigureAsync(TestContext.Current.CancellationToken)
+        );
+
+        Assert.DoesNotContain(fileSystem.Calls, call => IsMutation(call.Operation));
+        Assert.Equal("modified", fileSystem.ReadAllText(service.Paths.PluginEntrypointPath));
+        Assert.Equal(markerBefore, fileSystem.ReadAllText(service.Paths.PluginLayoutMarkerPath));
+        Assert.Equal(
+            ownershipBefore,
+            fileSystem.ReadAllText(service.Paths.OwnershipManifestPath)
+        );
+
+        await service.UnconfigureAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal("modified", fileSystem.ReadAllText(service.Paths.PluginEntrypointPath));
+        Assert.False(fileSystem.FileExists(service.Paths.PluginLayoutMarkerPath));
+        Assert.False(fileSystem.FileExists(service.Paths.OwnershipManifestPath));
+    }
+
+    [Fact]
+    public async Task LegacyConfigureRejectsPreExistingEmptyAncestorWithoutMutation()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        NuGetPhase10VerticalSliceService service = CreateService(fileSystem);
+        await SeedExactF1LegacyActivationAsync(fileSystem, service);
+        string sourcePath = service.Paths.ApplicationPayloadRootPath + "/shared/new.dll";
+        string targetDirectory = service.Paths.PluginTargetRootPath + "/shared";
+        fileSystem.AtomicWriteAllText(sourcePath, "new");
+        fileSystem.CreateDirectory(targetDirectory);
+        string markerBefore = fileSystem.ReadAllText(service.Paths.PluginLayoutMarkerPath);
+        string ownershipBefore = fileSystem.ReadAllText(service.Paths.OwnershipManifestPath);
+        fileSystem.Calls.Clear();
+
+        await Assert.ThrowsAsync<NuGetPhase10UnrecognizedStateException>(async () =>
+            await service.ConfigureAsync(TestContext.Current.CancellationToken)
+        );
+
+        Assert.DoesNotContain(fileSystem.Calls, call => IsMutation(call.Operation));
+        Assert.True(fileSystem.DirectoryExists(targetDirectory));
+        Assert.Empty(fileSystem.EnumerateFiles(targetDirectory));
+        Assert.Empty(fileSystem.EnumerateDirectories(targetDirectory));
+        Assert.Equal(markerBefore, fileSystem.ReadAllText(service.Paths.PluginLayoutMarkerPath));
+        Assert.Equal(
+            ownershipBefore,
+            fileSystem.ReadAllText(service.Paths.OwnershipManifestPath)
+        );
     }
 
     [Theory]
@@ -994,6 +1041,7 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
     [InlineData("target-root-file")]
     [InlineData("orphan-entrypoint-file")]
     [InlineData("entrypoint-directory")]
+    [InlineData("source-payload-file")]
     [InlineData("ownership-manifest-directory")]
     [InlineData("marker-directory")]
     public async Task DoctorAndConfigureRejectOwnershiplessCollision(string scenario)
@@ -1011,6 +1059,31 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
         await Assert.ThrowsAsync<NuGetPhase10UnrecognizedStateException>(async () =>
             await service.ConfigureAsync(TestContext.Current.CancellationToken)
         );
+    }
+
+    [Fact]
+    public async Task DoctorValidatesNeutralActivationWithoutFilesystemMutation()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        NuGetPhase10VerticalSliceService service = CreateService(fileSystem);
+        string unrelatedPath = service.Paths.PluginTargetRootPath + "/unrelated.txt";
+        fileSystem.AtomicWriteAllText(unrelatedPath, "unrelated");
+        fileSystem.Calls.Clear();
+
+        NuGetPhase10DoctorResult doctor = await service.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(NuGetConfigurationState.Valid, doctor.ConfigurationState);
+        Assert.True(doctor.ConfigurationPlanValid);
+        Assert.Contains(
+            fileSystem.Calls,
+            call =>
+                call.Operation == nameof(InMemoryFileSystem.EnumerateFiles)
+                && call.Path == service.Paths.ApplicationPayloadRootPath
+        );
+        Assert.DoesNotContain(fileSystem.Calls, call => IsMutation(call.Operation));
+        Assert.Equal("unrelated", fileSystem.ReadAllText(unrelatedPath));
     }
 
     [Fact]
@@ -1042,6 +1115,48 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
         Assert.False(fileSystem.DirectoryExists(service.Paths.PluginLayoutMarkerPath));
         Assert.True(fileSystem.FileExists(service.Paths.OwnershipManifestPath));
         Assert.False(fileSystem.DirectoryExists(service.Paths.OwnershipManifestPath));
+    }
+
+    [Theory]
+    [InlineData("payload")]
+    [InlineData("marker")]
+    public async Task ConfigureFailureInNeutralDirectoryRollsBackOwnershipAndRetrySucceeds(
+        string failurePoint
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        NuGetPhase10VerticalSliceService service = CreateService(fileSystem);
+        string unrelatedPath = service.Paths.PluginTargetRootPath + "/unrelated.txt";
+        fileSystem.AtomicWriteAllText(unrelatedPath, "unrelated");
+        fileSystem.FailMatchingCall(
+            failurePoint == "payload"
+                ? nameof(InMemoryFileSystem.AtomicWriteAllBytes)
+                : nameof(InMemoryFileSystem.AtomicWriteAllText),
+            failurePoint == "payload"
+                ? service.Paths.PluginEntrypointPath
+                : service.Paths.PluginLayoutMarkerPath,
+            1,
+            new IOException($"Injected {failurePoint} write failure.")
+        );
+
+        await Assert.ThrowsAsync<NuGetPhase10UnrecognizedStateException>(async () =>
+            await service.ConfigureAsync(TestContext.Current.CancellationToken)
+        );
+
+        Assert.False(fileSystem.FileExists(service.Paths.OwnershipManifestPath));
+        Assert.False(fileSystem.FileExists(service.Paths.PluginEntrypointPath));
+        Assert.False(fileSystem.FileExists(service.Paths.PluginLayoutMarkerPath));
+        Assert.Equal("unrelated", fileSystem.ReadAllText(unrelatedPath));
+
+        NuGetPhase10ConfigureResult retry = await service.ConfigureAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Single(retry.PlanResult.Changes);
+        Assert.True(fileSystem.FileExists(service.Paths.OwnershipManifestPath));
+        Assert.True(fileSystem.FileExists(service.Paths.PluginEntrypointPath));
+        Assert.True(fileSystem.FileExists(service.Paths.PluginLayoutMarkerPath));
+        Assert.Equal("unrelated", fileSystem.ReadAllText(unrelatedPath));
     }
 
     [Fact]
@@ -1082,6 +1197,12 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
                 break;
             case "entrypoint-directory":
                 fileSystem.CreateDirectory(service.Paths.PluginEntrypointPath);
+                break;
+            case "source-payload-file":
+                fileSystem.AtomicWriteAllText(
+                    service.Paths.PluginTargetRootPath + "/dependency.dll",
+                    "foreign"
+                );
                 break;
             case "ownership-manifest-directory":
                 fileSystem.CreateDirectory(service.Paths.OwnershipManifestPath);

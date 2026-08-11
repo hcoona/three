@@ -211,13 +211,33 @@ public sealed class ConfigurationManager : IConfigurationManager
             throw;
         }
 
-        foreach ((ConfigurationChangePlan plan, ConfigurationPlanOperation operation) in normalized)
+        try
         {
-            if (operation == ConfigurationPlanOperation.Apply)
+            foreach (
+                (ConfigurationChangePlan plan, ConfigurationPlanOperation operation) in normalized
+            )
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                await ApplyChanges(plan, ownershipIntent, operation, cancellationToken);
+                if (operation == ConfigurationPlanOperation.Apply)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await ApplyChanges(plan, ownershipIntent, operation, cancellationToken);
+                }
             }
+        }
+        catch
+        {
+            if (
+                originalManifest is null
+                && normalized.Length == 1
+                && normalized[0].Operation == ConfigurationPlanOperation.Apply
+                && normalized[0].Plan.Changes.Count == 1
+                && normalized[0].Plan.Changes[0].TargetKind
+                    == ConfigurationTargetKind.NuGetPluginLayout
+            )
+            {
+                PersistManifest(originalManifest);
+            }
+            throw;
         }
 
         if (!ManifestsEquivalent(persistedManifest, previewManifest))
