@@ -374,11 +374,11 @@ public sealed class GitPhase8DoctorTests
     }
 
     [Fact]
-    public async Task DoctorReportsDiscoveryFailureWhenGitCannotStart()
+    public async Task DoctorReportsDiscoveryFailureForLaunchFailureResult()
     {
         string stateDirectory = CreateTestDirectory();
-        var processRunner = new ThrowingGitDiscoveryProcessRunner(
-            new System.ComponentModel.Win32Exception(2)
+        var processRunner = new RecordingGitDiscoveryProcessRunner(
+            helperResult: ProcessResult.LaunchFailure()
         );
         var service = CreateService(stateDirectory, processRunner);
 
@@ -392,11 +392,102 @@ public sealed class GitPhase8DoctorTests
 
             Assert.False(result.LocalShellHelperShorthandSuccess);
             Assert.False(result.LocalShellHelperShorthandDeferred);
-            Assert.Equal(1, processRunner.InvocationCount);
+            Assert.Contains(
+                processRunner.StartSpecs,
+                startSpec => startSpec.Arguments.Contains("--get-regexp")
+            );
             Assert.Equal(
                 GitEffectiveCredentialHelperState.DiscoveryFailed,
                 result.EffectiveCredentialHelper.State
             );
+            Assert.False(result.EffectiveCredentialHelper.ConfigurationTruncated);
+            Assert.Empty(result.EffectiveCredentialHelper.EffectiveOrder);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task DoctorReportsTruncatedConfigurationWhenUrlMatchOutputIsTooLarge()
+    {
+        string stateDirectory = CreateTestDirectory();
+        var processRunner = new RecordingGitDiscoveryProcessRunner(
+            helperResult: new ProcessResult(
+                0,
+                "global\0credential.https://dev.azure.com/org.helper\nmanager\0",
+                string.Empty
+            ),
+            urlMatchResult: ProcessResult.OutputTooLarge(
+                "credential.partial\ntrue\0",
+                string.Empty,
+                exitCode: 0
+            )
+        );
+        var service = CreateService(stateDirectory, processRunner);
+
+        try
+        {
+            await service.ConfigureAsync(TestContext.Current.CancellationToken);
+
+            GitPhase8DoctorResult result = await service.DoctorAsync(
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Single(
+                processRunner.StartSpecs,
+                startSpec => startSpec.Arguments.Contains("--get-urlmatch")
+            );
+            Assert.Equal(
+                GitEffectiveCredentialHelperState.DiscoveryFailed,
+                result.EffectiveCredentialHelper.State
+            );
+            Assert.True(result.EffectiveCredentialHelper.ConfigurationTruncated);
+            Assert.Empty(result.EffectiveCredentialHelper.EffectiveOrder);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task DoctorRejectsMalformedNulDelimitedUrlMatchOutput()
+    {
+        string stateDirectory = CreateTestDirectory();
+        var processRunner = new RecordingGitDiscoveryProcessRunner(
+            helperResult: new ProcessResult(
+                0,
+                "global\0credential.https://dev.azure.com/org.helper\nmanager\0",
+                string.Empty
+            ),
+            urlMatchResult: new ProcessResult(
+                0,
+                "credential.unknown\ntrue\0unterminated",
+                string.Empty
+            )
+        );
+        var service = CreateService(stateDirectory, processRunner);
+
+        try
+        {
+            await service.ConfigureAsync(TestContext.Current.CancellationToken);
+
+            GitPhase8DoctorResult result = await service.DoctorAsync(
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Single(
+                processRunner.StartSpecs,
+                startSpec => startSpec.Arguments.Contains("--get-urlmatch")
+            );
+            Assert.Equal(
+                GitEffectiveCredentialHelperState.DiscoveryFailed,
+                result.EffectiveCredentialHelper.State
+            );
+            Assert.False(result.EffectiveCredentialHelper.ConfigurationTruncated);
+            Assert.Empty(result.EffectiveCredentialHelper.EffectiveOrder);
         }
         finally
         {
@@ -1990,7 +2081,8 @@ public sealed class GitPhase8DoctorTests
 
     private sealed class RecordingGitDiscoveryProcessRunner(
         ProcessResult? helperResult = null,
-        ProcessResult? useHttpPathResult = null
+        ProcessResult? useHttpPathResult = null,
+        ProcessResult? urlMatchResult = null
     )
         : IProcessRunner
     {
@@ -2015,6 +2107,14 @@ public sealed class GitPhase8DoctorTests
             )
             {
                 return Task.FromResult(helperResult);
+            }
+
+            if (
+                urlMatchResult is not null
+                && startSpec.Arguments.Contains("--get-urlmatch")
+            )
+            {
+                return Task.FromResult(urlMatchResult);
             }
 
             if (
@@ -2064,23 +2164,6 @@ public sealed class GitPhase8DoctorTests
                 fallbackStartSpec,
                 cancellationToken
             );
-        }
-    }
-
-    private sealed class ThrowingGitDiscoveryProcessRunner(Exception exception) : IProcessRunner
-    {
-        public int InvocationCount { get; private set; }
-
-        public Task<ProcessResult> RunAsync(
-            ProcessStartSpec startSpec,
-            CancellationToken cancellationToken = default
-        )
-        {
-            ArgumentNullException.ThrowIfNull(startSpec);
-            cancellationToken.ThrowIfCancellationRequested();
-
-            InvocationCount++;
-            throw exception;
         }
     }
 
