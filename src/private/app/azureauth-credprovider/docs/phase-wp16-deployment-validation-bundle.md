@@ -43,10 +43,6 @@ Default product roots are:
 | Windows  | `%LOCALAPPDATA%\AzureAuth\CredProvider\installation` |
 | Linux    | `~/.local/lib/azureauth-credprovider`                |
 
-The NuGet netcore plugin payload is installed separately under
-`~/.nuget/plugins/netcore/azureauth-credprovider` on both platforms, using the
-current user's profile directory.
-
 The product root contains:
 
 - `app/` for the complete application payload;
@@ -56,7 +52,13 @@ The product root contains:
 
 Physical installation does not mutate global PATH, shell profiles, the Windows
 registry, Git configuration, NuGet configuration, or Python environments. The
-wheel must be installed into the exact Python environment that imports the
+NuGet conventional discovery directory does not exist until `configure nuget`
+copies the installed application payload to
+`~/.nuget/plugins/netcore/azureauth-credprovider` and records the product-owned
+activation inventory. `unconfigure nuget` removes only inventory-listed files
+whose hashes still match and preserves unrelated files.
+
+The wheel must be installed into the exact Python environment that imports the
 backend. On Linux, `configure python` then writes the backend manifest and
 controlled-PATH `keyring` shim. The shim invokes the installed apphost directly,
 so uv and pip subprocess mode can authenticate before a project environment has
@@ -69,9 +71,9 @@ configuration.
 Installation rejects an artifact whose manifest does not declare the internal
 non-release schema, supported operating system, and host-matching x64 RID. It
 validates the manifest file inventory and hashes, copies the full app payload to
-both the product app root and NuGet's conventional netcore plugin root, installs
-launchers and the wheel, restores Unix executable modes, and records an install
-receipt.
+the product app root, installs launchers and the wheel, restores Unix executable
+modes, and records an install receipt. Physical installation never creates the
+NuGet conventional plugin root.
 
 By default, uninstallation invokes:
 
@@ -88,39 +90,34 @@ In an identified Azure Pipelines job, uninstallation also runs
 `cleanup --ci azure-pipelines` for the current `SYSTEM_JOBID`; it does not scan
 or remove state for other jobs.
 
-It then removes only the product and NuGet plugin roots recorded in the install
-receipt. `-SkipConfigurationCleanup` is an explicit escape hatch for damaged or
+It then removes only the product root recorded in the install receipt. NuGet
+activation removal belongs exclusively to `unconfigure nuget`.
+`-SkipConfigurationCleanup` is an explicit escape hatch for damaged or
 incomplete installations; it does not bypass receipt validation. If the product
 executable is missing, normal uninstall stops rather than silently leaving stale
 ecosystem configuration.
 
 `-Force` replaces only an empty target or an existing installation whose receipt
-matches both requested roots. It rejects non-empty unrelated directories and
-root changes that could orphan the prior NuGet payload. Product and NuGet roots
-must be disjoint; neither may contain the other. Payload copying uses literal
-source paths, including when the extracted bundle path contains PowerShell
-wildcard characters. If installation fails after creating its target roots, it
-removes those partial roots before propagating the failure.
+matches the requested product root. It rejects non-empty unrelated directories.
+Payload copying uses literal source paths, including when the extracted bundle
+path contains PowerShell wildcard characters. If installation fails after
+creating its target root, it removes that partial root before propagating the
+failure.
 
 ## Linux Lifecycle Evidence
 
-On 2026-07-31, an isolated `linux-x64` bundle completed:
+On 2026-08-11, an isolated `linux-x64` working-tree bundle completed:
 
 1. Archive manifest and file-hash validation.
-2. Installation into isolated product and NuGet roots.
-3. CLI and Git launcher invocation.
-4. Git, NuGet, and Python configuration without authentication.
-5. Wheel installation into an isolated virtual environment.
-6. Backend-manifest loading and exact `python-keyring` apphost argv verification.
-7. Configuration-aware uninstallation.
-8. Removal of the product and NuGet payload roots.
-9. Refusal to delete a damaged installation without the explicit cleanup bypass.
-10. Rejection of unsupported generation and host-mismatched RID requests.
-11. Refusal to force-replace unrelated or receipt-mismatched roots.
-12. Cleanup of roots created by a failed installation.
-13. Rejection of nested product and NuGet roots.
-14. Installation from an extraction path containing wildcard characters.
-15. Rejection of hidden files absent from the bundle manifest.
+2. Physical installation without a NuGet conventional discovery directory.
+3. Uninstallation before NuGet configuration.
+4. `configure nuget` creation of the discoverable owned plugin layout.
+5. Configuration-aware uninstallation after NuGet configuration.
+6. Removal of owned NuGet activation files while preserving an unrelated file.
+7. Refusal to force-replace unrelated or receipt-mismatched product roots.
+8. Cleanup of product roots created by a failed installation.
+9. Installation from an extraction path containing wildcard characters.
+10. Rejection of hidden files absent from the bundle manifest.
 
 No token acquisition, AzureAuth launch, browser interaction, WAM interaction,
 device code, or private-feed authorization occurred.

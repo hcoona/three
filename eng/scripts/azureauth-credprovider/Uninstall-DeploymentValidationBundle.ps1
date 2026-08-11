@@ -3,8 +3,6 @@
 param(
     [string]$InstallRoot,
 
-    [string]$NuGetPluginRoot,
-
     [switch]$SkipConfigurationCleanup
 )
 
@@ -43,14 +41,10 @@ if (-not (Test-Path -LiteralPath $receiptPath -PathType Leaf)) {
 
 $receipt = Get-Content -LiteralPath $receiptPath -Raw | ConvertFrom-Json
 if ($receipt.schemaVersion -ne
-    'azureauth-credprovider-deployment-validation-install-v1') {
+    'azureauth-credprovider-deployment-validation-install-v2') {
     throw 'The deployment validation installation receipt is invalid.'
 }
 
-if ([string]::IsNullOrWhiteSpace($NuGetPluginRoot)) {
-    $NuGetPluginRoot = [string]$receipt.nugetPluginRoot
-}
-$NuGetPluginRoot = [System.IO.Path]::GetFullPath($NuGetPluginRoot)
 $applicationRoot = Join-Path $InstallRoot 'app'
 if (-not $InstallRoot.Equals(
         [System.IO.Path]::GetFullPath([string]$receipt.installRoot),
@@ -59,36 +53,15 @@ if (-not $InstallRoot.Equals(
     -not $applicationRoot.Equals(
         [System.IO.Path]::GetFullPath([string]$receipt.applicationRoot),
         $pathComparison
-    ) -or
-    -not $NuGetPluginRoot.Equals(
-        [System.IO.Path]::GetFullPath([string]$receipt.nugetPluginRoot),
-        $pathComparison
     )) {
     throw 'The requested removal roots do not match the installation receipt.'
 }
 
-foreach ($path in @($InstallRoot, $NuGetPluginRoot)) {
-    $pathRoot = [System.IO.Path]::GetPathRoot($path)
-    if ($path -eq $pathRoot -or
-        $path.TrimEnd([System.IO.Path]::DirectorySeparatorChar) -eq
-        $homeDirectory.TrimEnd([System.IO.Path]::DirectorySeparatorChar)) {
-        throw "The deployment target '$path' is too broad."
-    }
-}
-if ($InstallRoot.Equals($NuGetPluginRoot, $pathComparison)) {
-    throw 'The product and NuGet plugin roots must be distinct.'
-}
-$installRootPrefix = $InstallRoot.TrimEnd(
-    [System.IO.Path]::DirectorySeparatorChar,
-    [System.IO.Path]::AltDirectorySeparatorChar
-) + [System.IO.Path]::DirectorySeparatorChar
-$nugetPluginRootPrefix = $NuGetPluginRoot.TrimEnd(
-    [System.IO.Path]::DirectorySeparatorChar,
-    [System.IO.Path]::AltDirectorySeparatorChar
-) + [System.IO.Path]::DirectorySeparatorChar
-if ($InstallRoot.StartsWith($nugetPluginRootPrefix, $pathComparison) -or
-    $NuGetPluginRoot.StartsWith($installRootPrefix, $pathComparison)) {
-    throw 'The product and NuGet plugin roots must not contain one another.'
+$installPathRoot = [System.IO.Path]::GetPathRoot($InstallRoot)
+if ($InstallRoot -eq $installPathRoot -or
+    $InstallRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar) -eq
+    $homeDirectory.TrimEnd([System.IO.Path]::DirectorySeparatorChar)) {
+    throw "The deployment target '$InstallRoot' is too broad."
 }
 
 $productExecutableName = if ($runningOnWindows) {
@@ -132,12 +105,8 @@ if (-not $SkipConfigurationCleanup) {
     }
 }
 
-if (Test-Path -LiteralPath $NuGetPluginRoot) {
-    Remove-Item -LiteralPath $NuGetPluginRoot -Recurse -Force
-}
 if (Test-Path -LiteralPath $InstallRoot) {
     Remove-Item -LiteralPath $InstallRoot -Recurse -Force
 }
 
 Write-Output "Removed internal deployment validation payload: $InstallRoot"
-Write-Output "Removed NuGet plugin payload: $NuGetPluginRoot"

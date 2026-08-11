@@ -249,10 +249,7 @@ function New-ExistingInstallation {
     [CmdletBinding(SupportsShouldProcess)]
     param(
         [Parameter(Mandatory = $true)]
-        [string]$InstallRoot,
-
-        [Parameter(Mandatory = $true)]
-        [string]$NuGetPluginRoot
+        [string]$InstallRoot
     )
 
     if (-not $PSCmdlet.ShouldProcess($InstallRoot, 'Create existing test installation')) {
@@ -261,24 +258,18 @@ function New-ExistingInstallation {
 
     $applicationRoot = Join-Path $InstallRoot 'app'
     New-Item -ItemType Directory -Path $applicationRoot -Force | Out-Null
-    New-Item -ItemType Directory -Path $NuGetPluginRoot -Force | Out-Null
     Set-Content `
         -LiteralPath (Join-Path $applicationRoot 'previous-product.txt') `
         -Value 'previous product payload' `
         -NoNewline
-    Set-Content `
-        -LiteralPath (Join-Path $NuGetPluginRoot 'previous-plugin.txt') `
-        -Value 'previous plugin payload' `
-        -NoNewline
 
     $receipt = [ordered]@{
-        schemaVersion   = 'azureauth-credprovider-deployment-validation-install-v1'
+        schemaVersion   = 'azureauth-credprovider-deployment-validation-install-v2'
         productVersion  = '1.0.0-test'
         sourceRevision  = 'previous-revision'
         targetRid       = $targetRid
         installRoot     = [System.IO.Path]::GetFullPath($InstallRoot)
         applicationRoot = [System.IO.Path]::GetFullPath($applicationRoot)
-        nugetPluginRoot = [System.IO.Path]::GetFullPath($NuGetPluginRoot)
     }
     $receipt | ConvertTo-Json -Depth 5 |
         Set-Content -LiteralPath (Join-Path $InstallRoot 'installation.json') -Encoding utf8
@@ -290,9 +281,6 @@ function Assert-PreviousInstallationRestored {
         [string]$InstallRoot,
 
         [Parameter(Mandatory = $true)]
-        [string]$NuGetPluginRoot,
-
-        [Parameter(Mandatory = $true)]
         [string]$Context
     )
 
@@ -302,12 +290,6 @@ function Assert-PreviousInstallationRestored {
             Join-Path $InstallRoot 'app/previous-product.txt'
         ) -Raw) `
         -Message "The previous product payload was not restored after $Context."
-    Assert-Equal `
-        -Expected 'previous plugin payload' `
-        -Actual (Get-Content -LiteralPath (
-            Join-Path $NuGetPluginRoot 'previous-plugin.txt'
-        ) -Raw) `
-        -Message "The previous plugin payload was not restored after $Context."
 
     $receipt = Get-Content -LiteralPath (
         Join-Path $InstallRoot 'installation.json'
@@ -321,30 +303,23 @@ function Assert-PreviousInstallationRestored {
                 Join-Path $InstallRoot "app/$productExecutableName"
             ))
     ) "The replacement product payload remains after $Context."
-    Assert-True (
-        -not (Test-Path -LiteralPath (
-                Join-Path $NuGetPluginRoot 'azureauth-credprovider.dll'
-            ))
-    ) "The replacement plugin payload remains after $Context."
 
-    foreach ($targetPath in @($InstallRoot, $NuGetPluginRoot)) {
-        $trimmedPath = $targetPath.TrimEnd(
-            [System.IO.Path]::DirectorySeparatorChar,
-            [System.IO.Path]::AltDirectorySeparatorChar
-        )
-        $parentPath = [System.IO.Path]::GetDirectoryName($trimmedPath)
-        $leafName = [System.IO.Path]::GetFileName($trimmedPath)
-        $workingPaths = @(
-            Get-ChildItem -LiteralPath $parentPath -Force |
-                Where-Object {
-                    $_.Name -like ".$leafName.installing.*" -or
-                    $_.Name -like ".$leafName.backup.*"
-                }
-        )
-        Assert-True (
-            $workingPaths.Count -eq 0
-        ) "Replacement staging remains after $Context."
-    }
+    $trimmedPath = $InstallRoot.TrimEnd(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar
+    )
+    $parentPath = [System.IO.Path]::GetDirectoryName($trimmedPath)
+    $leafName = [System.IO.Path]::GetFileName($trimmedPath)
+    $workingPaths = @(
+        Get-ChildItem -LiteralPath $parentPath -Force |
+            Where-Object {
+                $_.Name -like ".$leafName.installing.*" -or
+                $_.Name -like ".$leafName.backup.*"
+            }
+    )
+    Assert-True (
+        $workingPaths.Count -eq 0
+    ) "Replacement staging remains after $Context."
 }
 
 function Invoke-Installer {
@@ -354,16 +329,12 @@ function Invoke-Installer {
         [string]$BundleRoot,
 
         [Parameter(Mandatory = $true)]
-        [string]$InstallRoot,
-
-        [Parameter(Mandatory = $true)]
-        [string]$NuGetPluginRoot
+        [string]$InstallRoot
     )
 
     $parameters = @{
-        InstallRoot     = $InstallRoot
-        NuGetPluginRoot = $NuGetPluginRoot
-        Force           = $true
+        InstallRoot = $InstallRoot
+        Force       = $true
     }
     if ($PSBoundParameters.ContainsKey('WarningAction')) {
         $parameters.WarningAction = $PSBoundParameters.WarningAction
@@ -378,9 +349,6 @@ function Assert-ReplacementInstallationActive {
         [string]$InstallRoot,
 
         [Parameter(Mandatory = $true)]
-        [string]$NuGetPluginRoot,
-
-        [Parameter(Mandatory = $true)]
         [string]$Context
     )
 
@@ -390,12 +358,6 @@ function Assert-ReplacementInstallationActive {
             Join-Path $InstallRoot "app/$productExecutableName"
         ) -Raw) `
         -Message "The replacement product payload is not active after $Context."
-    Assert-Equal `
-        -Expected 'new plugin payload' `
-        -Actual (Get-Content -LiteralPath (
-            Join-Path $NuGetPluginRoot 'azureauth-credprovider.dll'
-        ) -Raw) `
-        -Message "The replacement plugin payload is not active after $Context."
 
     $receipt = Get-Content -LiteralPath (
         Join-Path $InstallRoot 'installation.json'
@@ -416,8 +378,8 @@ function Invoke-ActualUninstallRegression {
     $actualRoot = Join-Path $testRoot 'actual-uninstall'
     $extractedBundleRoot = Join-Path $actualRoot 'bundle'
     $installRoot = Join-Path $actualRoot 'install'
-    $pluginRoot = Join-Path $actualRoot 'plugin'
     $isolatedHome = Join-Path $actualRoot 'home'
+    $pluginRoot = Join-Path $isolatedHome '.nuget/plugins/netcore/azureauth-credprovider'
     $isolatedLocalAppData = Join-Path $actualRoot 'local-app-data'
     $isolatedTemp = Join-Path $actualRoot 'temp'
     $npmConfigPath = Join-Path $actualRoot 'npm/userconfig.npmrc'
@@ -462,11 +424,38 @@ function Invoke-ActualUninstallRegression {
     $heldGitMarkerPath = Join-Path $repoRoot '.git.deployment-validation-test'
 
     try {
-        & (Join-Path $extractedBundleRoot 'install.ps1') `
-            -InstallRoot $installRoot `
-            -NuGetPluginRoot $pluginRoot | Out-Null
+        & (Join-Path $extractedBundleRoot 'install.ps1') -InstallRoot $installRoot | Out-Null
+
+        Assert-True (
+            -not (Test-Path -LiteralPath $pluginRoot)
+        ) 'Physical installation unexpectedly activated the NuGet plugin.'
+
+        & (Join-Path $extractedBundleRoot 'uninstall.ps1') -InstallRoot $installRoot | Out-Null
+        Assert-True (
+            -not (Test-Path -LiteralPath $installRoot)
+        ) 'Uninstall before NuGet configuration left the product payload.'
+        Assert-True (
+            -not (Test-Path -LiteralPath $pluginRoot)
+        ) 'Uninstall before NuGet configuration created a NuGet activation.'
+
+        & (Join-Path $extractedBundleRoot 'install.ps1') -InstallRoot $installRoot | Out-Null
 
         $productExecutablePath = Join-Path $installRoot "app/$productExecutableName"
+        & $productExecutablePath configure nuget | Out-Null
+        Assert-Equal `
+            -Expected 0 `
+            -Actual $LASTEXITCODE `
+            -Message 'Actual NuGet configuration failed.'
+        Assert-True (
+            Test-Path -LiteralPath (
+                Join-Path $pluginRoot 'azureauth-credprovider.dll'
+            ) -PathType Leaf
+        ) 'NuGet configuration did not create a discoverable plugin activation.'
+        Set-Content `
+            -LiteralPath (Join-Path $pluginRoot 'preserve.txt') `
+            -Value 'unrelated activation-root content' `
+            -NoNewline
+
         if (-not $runningOnWindows) {
             & $productExecutablePath configure python | Out-Null
             Assert-Equal `
@@ -553,16 +542,22 @@ function Invoke-ActualUninstallRegression {
             -Value 'another job remains' `
             -NoNewline
 
-        & (Join-Path $extractedBundleRoot 'uninstall.ps1') `
-            -InstallRoot $installRoot `
-            -NuGetPluginRoot $pluginRoot | Out-Null
+        & (Join-Path $extractedBundleRoot 'uninstall.ps1') -InstallRoot $installRoot | Out-Null
 
         Assert-True (
             -not (Test-Path -LiteralPath $installRoot)
         ) 'Actual uninstall left the installed product payload.'
         Assert-True (
-            -not (Test-Path -LiteralPath $pluginRoot)
-        ) 'Actual uninstall left the NuGet plugin payload.'
+            -not (Test-Path -LiteralPath (
+                    Join-Path $pluginRoot 'azureauth-credprovider.dll'
+                ))
+        ) 'Actual uninstall left the product-owned NuGet plugin activation.'
+        Assert-Equal `
+            -Expected 'unrelated activation-root content' `
+            -Actual (Get-Content -LiteralPath (
+                Join-Path $pluginRoot 'preserve.txt'
+            ) -Raw) `
+            -Message 'Actual uninstall removed unrelated NuGet activation-root content.'
         $remainingCurrentJobFiles = [System.Collections.Generic.List[string]]::new()
         if (Test-Path -LiteralPath $currentJobRoot) {
             foreach ($file in Get-ChildItem -LiteralPath $currentJobRoot -File -Recurse -Force) {
@@ -624,21 +619,14 @@ try {
         $twiceNoBuildBundleRoot
     )
     $twiceNoBuildInstallRoot = Join-Path $testRoot 'twice-no-build-install'
-    $twiceNoBuildPluginRoot = Join-Path $testRoot 'twice-no-build-plugin'
     Invoke-Installer `
         -BundleRoot $twiceNoBuildBundleRoot `
-        -InstallRoot $twiceNoBuildInstallRoot `
-        -NuGetPluginRoot $twiceNoBuildPluginRoot
+        -InstallRoot $twiceNoBuildInstallRoot
     Assert-True (
         Test-Path -LiteralPath (
             Join-Path $twiceNoBuildInstallRoot "app/$productExecutableName"
         ) -PathType Leaf
     ) 'The twice-NoBuild bundle did not install its product payload.'
-    Assert-True (
-        Test-Path -LiteralPath (
-            Join-Path $twiceNoBuildPluginRoot 'azureauth-credprovider.dll'
-        ) -PathType Leaf
-    ) 'The twice-NoBuild bundle did not install its NuGet plugin payload.'
     $twiceNoBuildReceipt = Get-Content -LiteralPath (
         Join-Path $twiceNoBuildInstallRoot 'installation.json'
     ) -Raw | ConvertFrom-Json
@@ -678,10 +666,7 @@ try {
 
     $receiptFailureRoot = Join-Path $testRoot 'receipt-failure'
     $receiptFailureInstallRoot = Join-Path $receiptFailureRoot 'install'
-    $receiptFailurePluginRoot = Join-Path $receiptFailureRoot 'plugin'
-    New-ExistingInstallation `
-        -InstallRoot $receiptFailureInstallRoot `
-        -NuGetPluginRoot $receiptFailurePluginRoot
+    New-ExistingInstallation -InstallRoot $receiptFailureInstallRoot
 
     function global:Set-Content {
         [CmdletBinding()]
@@ -708,8 +693,7 @@ try {
         Assert-InvocationFailure {
             Invoke-Installer `
                 -BundleRoot $bundleRoot `
-                -InstallRoot $receiptFailureInstallRoot `
-                -NuGetPluginRoot $receiptFailurePluginRoot
+                -InstallRoot $receiptFailureInstallRoot
         } 'Expected the injected receipt write failure.'
     }
     finally {
@@ -719,17 +703,13 @@ try {
     }
     Assert-PreviousInstallationRestored `
         -InstallRoot $receiptFailureInstallRoot `
-        -NuGetPluginRoot $receiptFailurePluginRoot `
         -Context 'receipt staging failure'
 
     $switchFailureRoot = Join-Path $testRoot 'switch-failure'
     $switchFailureInstallRoot = Join-Path $switchFailureRoot 'install'
-    $switchFailurePluginRoot = Join-Path $switchFailureRoot 'plugin'
-    New-ExistingInstallation `
-        -InstallRoot $switchFailureInstallRoot `
-        -NuGetPluginRoot $switchFailurePluginRoot
+    New-ExistingInstallation -InstallRoot $switchFailureInstallRoot
 
-    $failureDestination = $switchFailurePluginRoot
+    $failureDestination = $switchFailureInstallRoot
     $moveItemOverride = {
         [CmdletBinding()]
         param(
@@ -747,7 +727,7 @@ try {
                 [System.IO.Path]::GetFullPath($failureDestination),
                 $testPathComparison
             )) {
-            throw 'Injected deterministic plugin activation failure.'
+            throw 'Injected deterministic product activation failure.'
         }
         Microsoft.PowerShell.Management\Move-Item @PSBoundParameters
     }
@@ -758,9 +738,8 @@ try {
         Assert-InvocationFailure {
             Invoke-Installer `
                 -BundleRoot $bundleRoot `
-                -InstallRoot $switchFailureInstallRoot `
-                -NuGetPluginRoot $switchFailurePluginRoot
-        } 'Expected the injected plugin activation failure.'
+                -InstallRoot $switchFailureInstallRoot
+        } 'Expected the injected product activation failure.'
     }
     finally {
         Microsoft.PowerShell.Management\Remove-Item `
@@ -769,15 +748,11 @@ try {
     }
     Assert-PreviousInstallationRestored `
         -InstallRoot $switchFailureInstallRoot `
-        -NuGetPluginRoot $switchFailurePluginRoot `
-        -Context 'plugin activation failure'
+        -Context 'product activation failure'
 
     $cleanupFailureRoot = Join-Path $testRoot 'cleanup-failure'
     $cleanupFailureInstallRoot = Join-Path $cleanupFailureRoot 'install'
-    $cleanupFailurePluginRoot = Join-Path $cleanupFailureRoot 'plugin'
-    New-ExistingInstallation `
-        -InstallRoot $cleanupFailureInstallRoot `
-        -NuGetPluginRoot $cleanupFailurePluginRoot
+    New-ExistingInstallation -InstallRoot $cleanupFailureInstallRoot
 
     $script:DeploymentInstallerCleanupFailureInjected = $false
     function global:Remove-Item {
@@ -834,7 +809,6 @@ try {
             Invoke-Installer `
                 -BundleRoot $bundleRoot `
                 -InstallRoot $cleanupFailureInstallRoot `
-                -NuGetPluginRoot $cleanupFailurePluginRoot `
                 -WarningAction Stop 3>&1
         )
     }
@@ -847,7 +821,6 @@ try {
 
     Assert-ReplacementInstallationActive `
         -InstallRoot $cleanupFailureInstallRoot `
-        -NuGetPluginRoot $cleanupFailurePluginRoot `
         -Context 'post-commit cleanup failure'
     $retainedBackups = @(
         Get-ChildItem -LiteralPath $cleanupFailureRoot -Directory -Force |
@@ -873,11 +846,9 @@ try {
 
     Invoke-Installer `
         -BundleRoot $bundleRoot `
-        -InstallRoot $cleanupFailureInstallRoot `
-        -NuGetPluginRoot $cleanupFailurePluginRoot
+        -InstallRoot $cleanupFailureInstallRoot
     Assert-ReplacementInstallationActive `
         -InstallRoot $cleanupFailureInstallRoot `
-        -NuGetPluginRoot $cleanupFailurePluginRoot `
         -Context 'rerun after post-commit cleanup failure'
     Assert-True (
         Test-Path -LiteralPath $retainedBackups[0].FullName -PathType Container
