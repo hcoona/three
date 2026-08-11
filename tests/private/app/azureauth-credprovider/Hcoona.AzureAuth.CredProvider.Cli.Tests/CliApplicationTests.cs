@@ -1050,6 +1050,27 @@ public sealed class CliApplicationTests
                 ),
                 TestContext.Current.CancellationToken
             );
+            ProcessResult unsupportedKeyringHost = await runner.RunAsync(
+                new ProcessStartSpec(
+                    CliAppHostPath(),
+                    ["keyring", "get", "https://example.com/simple/", "requested-user"],
+                    environment: environment
+                ),
+                TestContext.Current.CancellationToken
+            );
+            ProcessResult unsupportedLegacyKeyringHost = await runner.RunAsync(
+                new ProcessStartSpec(
+                    CliAppHostPath(),
+                    [
+                        "keyring",
+                        "get",
+                        "https://foo.bar.visualstudio.com/_packaging/feed/pypi/simple/",
+                        "requested-user",
+                    ],
+                    environment: environment
+                ),
+                TestContext.Current.CancellationToken
+            );
             ProcessResult help = await runner.RunAsync(
                 new ProcessStartSpec(CliAppHostPath(), ["--help"], environment: environment),
                 TestContext.Current.CancellationToken
@@ -1146,6 +1167,12 @@ public sealed class CliApplicationTests
                 StringComparison.Ordinal
             );
             Assert.DoesNotContain(SecretMarker, protocol.StandardError, StringComparison.Ordinal);
+            Assert.Equal(1, unsupportedKeyringHost.ExitCode);
+            Assert.Equal(string.Empty, unsupportedKeyringHost.StandardOutput);
+            Assert.Equal(string.Empty, unsupportedKeyringHost.StandardError);
+            Assert.Equal(1, unsupportedLegacyKeyringHost.ExitCode);
+            Assert.Equal(string.Empty, unsupportedLegacyKeyringHost.StandardOutput);
+            Assert.Equal(string.Empty, unsupportedLegacyKeyringHost.StandardError);
             Assert.Equal(0, help.ExitCode);
             Assert.Contains("Usage:", help.StandardOutput, StringComparison.Ordinal);
             Assert.DoesNotContain(SecretMarker, help.StandardError, StringComparison.Ordinal);
@@ -8101,6 +8128,46 @@ public sealed class CliApplicationTests
         Assert.DoesNotContain("export PATH=", result.StdErr, StringComparison.Ordinal);
         Assert.Equal(before, fixture.GetFileSystemEntries());
         Assert.Equal(2, fixture.Runner.StartSpecs.Count);
+    }
+
+    [Fact(
+        Skip = "POSIX keyring subprocess bootstrap is unsupported on Windows.",
+        SkipWhen = nameof(IsWindows)
+    )]
+    public void HandleConfigure_OnPosixWithoutExplicitImportPreflight_ConfiguresBootstrapShim()
+    {
+        using var fixture = new Phase3ConfigureFixture(productHealthy: false);
+        ConfigurationPhase14VerticalSliceOptions configurationOptions =
+            fixture.ConfigurationOptions with
+            {
+                PythonDoctorService = null,
+            };
+        var runtime = new CliRuntimeOptions
+        {
+            CompositionRoot = CreateTestCompositionRoot(),
+            ConfigurationPhase14Options = configurationOptions,
+        };
+
+        CommandResult result = InvokeWithRuntime(runtime, "configure", "python");
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(string.Empty, result.StdErr);
+        Assert.Empty(fixture.Runner.StartSpecs);
+        string shimPath = Path.Combine(
+            fixture.HomePath,
+            ".local",
+            "share",
+            "azureauth-credprovider",
+            "keyring-shim",
+            "keyring"
+        );
+        Assert.Equal(
+            "#!/bin/sh\nexec '/opt/azureauth-credprovider/azureauth-credprovider' "
+                + "keyring \"$@\"\n",
+            File.ReadAllText(shimPath)
+        );
+        Assert.Contains("export PATH=", result.StdOut, StringComparison.Ordinal);
+        Assert.DoesNotContain("bootstrap-command:", result.StdErr, StringComparison.Ordinal);
     }
 
     [Theory(

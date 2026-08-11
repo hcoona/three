@@ -3710,7 +3710,13 @@ internal static class CliApplication
             };
         }
 
-        if (registryEcosystem == CredentialEcosystem.Python)
+        bool explicitPythonImportPreflight =
+            options?.PythonDoctorService is not null
+            || runtimeOptions?.PythonPhase11Options is not null;
+        if (
+            registryEcosystem == CredentialEcosystem.Python
+            && (OperatingSystem.IsWindows() || explicitPythonImportPreflight)
+        )
         {
             options = (options ?? new ConfigurationPhase14VerticalSliceOptions()) with
             {

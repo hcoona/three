@@ -467,6 +467,45 @@ function Invoke-ActualUninstallRegression {
             -NuGetPluginRoot $pluginRoot | Out-Null
 
         $productExecutablePath = Join-Path $installRoot "app/$productExecutableName"
+        if (-not $runningOnWindows) {
+            & $productExecutablePath configure python | Out-Null
+            Assert-Equal `
+                -Expected 0 `
+                -Actual $LASTEXITCODE `
+                -Message 'Actual Python subprocess bootstrap configuration failed.'
+
+            $keyringShimPath = Join-Path (
+                Join-Path $environment['XDG_DATA_HOME'] 'azureauth-credprovider/keyring-shim'
+            ) 'keyring'
+            Assert-True (
+                Test-Path -LiteralPath $keyringShimPath -PathType Leaf
+            ) 'Actual Python configuration did not create the keyring shim.'
+            Assert-True (
+                [System.IO.File]::GetUnixFileMode($keyringShimPath).HasFlag(
+                    [System.IO.UnixFileMode]::UserExecute
+                )
+            ) 'Actual Python keyring shim is not executable.'
+            $keyringShimContent = Get-Content -LiteralPath $keyringShimPath -Raw
+            Assert-True (
+                $keyringShimContent.Contains(
+                    $productExecutablePath,
+                    [System.StringComparison]::Ordinal
+                )
+            ) 'Actual Python keyring shim does not bind to the installed apphost.'
+            Assert-True (
+                -not $keyringShimContent.Contains(
+                    'azureauth-keyring',
+                    [System.StringComparison]::Ordinal
+                )
+            ) 'Actual Python keyring shim still depends on a Python environment console script.'
+
+            & $keyringShimPath get 'https://example.com/simple/' 'requested-user' | Out-Null
+            Assert-Equal `
+                -Expected 1 `
+                -Actual $LASTEXITCODE `
+                -Message 'The installed keyring shim did not return no-credential for an unrelated host.'
+        }
+
         $registryUrl = 'https://pkgs.dev.azure.com/example/project/_packaging/feed/npm/registry/'
         Move-Item -LiteralPath $gitMarkerPath -Destination $heldGitMarkerPath
         try {

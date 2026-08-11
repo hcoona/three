@@ -3172,8 +3172,13 @@ public sealed class ConfigurationPhase14VerticalSliceService
         + GetPythonHelperPlatform()
         + "\"}\n";
 
-    private static string CreatePosixKeyringShimValue() =>
-        "#!/bin/sh\nexec azureauth-keyring \"$@\"\n";
+    private string CreatePosixKeyringShimValue() =>
+        "#!/bin/sh\nexec "
+        + QuotePosixShellArgument(GetRequiredProductExecutablePath())
+        + " keyring \"$@\"\n";
+
+    private static string QuotePosixShellArgument(string value) =>
+        "'" + value.Replace("'", "'\"'\"'", StringComparison.Ordinal) + "'";
 
     private string GetRequiredProductExecutablePath() =>
         productExecutablePath

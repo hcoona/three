@@ -58,8 +58,10 @@ Physical installation does not mutate global PATH, shell profiles, the Windows
 registry, Git configuration, NuGet configuration, or Python environments. The
 wheel must be installed into the exact Python environment that imports the
 backend. On Linux, `configure python` then writes the backend manifest and
-controlled-PATH `keyring` shim. Default installation roots are disjoint from
-those configuration targets, so payload replacement does not erase owned Python
+controlled-PATH `keyring` shim. The shim invokes the installed apphost directly,
+so uv and pip subprocess mode can authenticate before a project environment has
+been synchronized. Default installation roots are disjoint from those
+configuration targets, so payload replacement does not erase owned Python
 configuration.
 
 ## Lifecycle
