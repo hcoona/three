@@ -14,6 +14,9 @@ public sealed class GitCredentialHelperAdapter
     private const int MaxCredentialRecordCharacters = 16 * 1024;
     private const string DefaultServiceIdentity = "default";
     private const string GitTerminalPromptEnvironmentVariable = "GIT_TERMINAL_PROMPT";
+    private const string GitTerminalPromptDisabledGuidance =
+        "Git credential interaction is disabled by GIT_TERMINAL_PROMPT. Retry this Git "
+        + "operation from an interactive session with GIT_TERMINAL_PROMPT unset or enabled.";
     private const string ProtocolViolationCode = "ProtocolViolation";
     private const string NoCredentialCode = "NoCredential";
 
@@ -227,8 +230,28 @@ public sealed class GitCredentialHelperAdapter
         {
             return CreateProtocolViolationOutput(CredentialOperation.Get);
         }
-        CredentialRequestV2 request = CreateGetRequest(resourceParseResult.Resource);
+        bool interactionAllowed = !IsGitTerminalPromptDisabled(
+            environmentVariableReader(GitTerminalPromptEnvironmentVariable)
+        );
+        CredentialRequestV2 request = CreateGetRequest(
+            resourceParseResult.Resource,
+            interactionAllowed
+        );
         CredentialResult result = credentialAcquisition.Acquire(request, cancellationToken);
+        if (
+            !interactionAllowed
+            && result.Status
+                is CredentialResultStatus.InteractionRequired
+                    or CredentialResultStatus.InteractionBlocked
+            && result.Error is not null
+        )
+        {
+            result = result with
+            {
+                Error = result.Error with { SafeMessage = GitTerminalPromptDisabledGuidance },
+            };
+        }
+
         return new AdapterHostHandlerOutput(
             credentialResult: result,
             operation: CredentialOperation.Get,
@@ -511,12 +534,11 @@ public sealed class GitCredentialHelperAdapter
         return null;
     }
 
-    private CredentialRequestV2 CreateGetRequest(CanonicalResourceIdentity resource)
+    private static CredentialRequestV2 CreateGetRequest(
+        CanonicalResourceIdentity resource,
+        bool interactionAllowed
+    )
     {
-        bool interactionAllowed = !IsGitTerminalPromptDisabled(
-            environmentVariableReader(GitTerminalPromptEnvironmentVariable)
-        );
-
         return new CredentialRequestV2
         {
             Ecosystem = CredentialEcosystem.Git,

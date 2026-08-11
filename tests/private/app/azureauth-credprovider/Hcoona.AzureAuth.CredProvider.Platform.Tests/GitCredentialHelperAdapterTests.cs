@@ -11,6 +11,10 @@ namespace Hcoona.AzureAuth.CredProvider.Platform.Tests;
 
 public sealed class GitCredentialHelperAdapterTests
 {
+    private const string GitTerminalPromptDisabledGuidance =
+        "Git credential interaction is disabled by GIT_TERMINAL_PROMPT. Retry this Git "
+        + "operation from an interactive session with GIT_TERMINAL_PROMPT unset or enabled.";
+
     [Fact]
     public void GetForDevAzureRepoWritesGitCredentialFieldsOnly()
     {
@@ -645,6 +649,123 @@ public sealed class GitCredentialHelperAdapterTests
         Assert.Equal(AcquisitionMode.SilentOnly, request.AcquisitionMode);
     }
 
+    [Theory]
+    [InlineData(
+        CredentialResultStatus.InteractionRequired,
+        CredentialErrorKind.InteractionRequired,
+        "ProviderInteractionRequired"
+    )]
+    [InlineData(
+        CredentialResultStatus.InteractionBlocked,
+        CredentialErrorKind.InteractionBlocked,
+        "ProviderInteractionBlocked"
+    )]
+    public void GetWithGitTerminalPromptDisabledAddsNarrowGuidanceAndPreservesInteractionFailure(
+        CredentialResultStatus status,
+        CredentialErrorKind errorKind,
+        string errorCode
+    )
+    {
+        const string CorrelationId = "9f2ea1a1-45a4-48d2-9c7f-73a90e6732d2";
+        const string ProviderMessage = "Provider interaction failure.";
+        var credentialAcquisition = new ConfiguredFailureAcquisitionService(
+            status,
+            errorKind,
+            errorCode,
+            ProviderMessage,
+            CorrelationId
+        );
+
+        AdapterRunResult result = Execute(
+            ["git", "credential-helper", "get"],
+            """
+            protocol=https
+            host=dev.azure.com
+            path=org/project/_git/repository
+
+            """,
+            credentialAcquisition: credentialAcquisition,
+            environmentVariableReader: name =>
+                name == "GIT_TERMINAL_PROMPT" ? "0" : null
+        );
+
+        Assert.Equal(AdapterHostExitCode.InteractionRequired, result.Outcome.Result.ExitCode);
+        Assert.False(result.Outcome.Result.WriteProtocolStdout);
+        Assert.Equal(errorCode, result.Outcome.Result.SafeDiagnosticCode);
+        Assert.Equal(string.Empty, result.ProtocolStdout);
+        Assert.Empty(result.HumanStdout);
+        Assert.Single(
+            result.Stderr.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)
+        );
+        Assert.EndsWith(
+            $" [{CorrelationId}] {GitTerminalPromptDisabledGuidance} code={errorCode}"
+                + Environment.NewLine,
+            result.Stderr,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain(ProviderMessage, result.Stderr, StringComparison.Ordinal);
+        Assert.DoesNotContain("pre-login", result.Stderr, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("prelogin", result.Stderr, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("browser", result.Stderr, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("cache", result.Stderr, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("seed", result.Stderr, StringComparison.OrdinalIgnoreCase);
+
+        CredentialRequestV2 request = Assert.Single(credentialAcquisition.Requests);
+        Assert.Equal(InteractivePolicy.Never, request.InteractivePolicy);
+        Assert.Equal(AcquisitionMode.SilentOnly, request.AcquisitionMode);
+    }
+
+    [Fact]
+    public void GetWithGitTerminalPromptDisabledDoesNotRemapUnrelatedProviderFailure()
+    {
+        const string CorrelationId = "ce2bf81e-5406-4e6c-a327-e1d027494b92";
+        const string ErrorCode = "ProviderUnauthorized";
+        const string ProviderMessage = "Provider rejected the credential request.";
+        var credentialAcquisition = new ConfiguredFailureAcquisitionService(
+            CredentialResultStatus.Unauthorized,
+            CredentialErrorKind.Unauthorized,
+            ErrorCode,
+            ProviderMessage,
+            CorrelationId
+        );
+
+        AdapterRunResult result = Execute(
+            ["git", "credential-helper", "get"],
+            """
+            protocol=https
+            host=dev.azure.com
+            path=org/project/_git/repository
+
+            """,
+            credentialAcquisition: credentialAcquisition,
+            environmentVariableReader: name =>
+                name == "GIT_TERMINAL_PROMPT" ? "0" : null
+        );
+
+        Assert.Equal(AdapterHostExitCode.Unauthorized, result.Outcome.Result.ExitCode);
+        Assert.False(result.Outcome.Result.WriteProtocolStdout);
+        Assert.Equal(ErrorCode, result.Outcome.Result.SafeDiagnosticCode);
+        Assert.Equal(string.Empty, result.ProtocolStdout);
+        Assert.Empty(result.HumanStdout);
+        Assert.Single(
+            result.Stderr.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)
+        );
+        Assert.EndsWith(
+            $" [{CorrelationId}] {ProviderMessage} code={ErrorCode}" + Environment.NewLine,
+            result.Stderr,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain(
+            GitTerminalPromptDisabledGuidance,
+            result.Stderr,
+            StringComparison.Ordinal
+        );
+
+        CredentialRequestV2 request = Assert.Single(credentialAcquisition.Requests);
+        Assert.Equal(InteractivePolicy.Never, request.InteractivePolicy);
+        Assert.Equal(AcquisitionMode.SilentOnly, request.AcquisitionMode);
+    }
+
     [Fact]
     public void CompositionRootPassesEnvironmentReaderToGitCredentialHelper()
     {
@@ -713,6 +834,38 @@ public sealed class GitCredentialHelperAdapterTests
                         Kind = CredentialErrorKind.InteractionRequired,
                         Code = "SilentAcquisitionUnavailable",
                         SafeMessage = "Silent acquisition is unavailable.",
+                    },
+                }
+            );
+        }
+    }
+
+    private sealed class ConfiguredFailureAcquisitionService(
+        CredentialResultStatus status,
+        CredentialErrorKind errorKind,
+        string errorCode,
+        string safeMessage,
+        string correlationId
+    ) : ICredentialAcquisitionService
+    {
+        public List<CredentialRequestV2> Requests { get; } = [];
+
+        public ValueTask<CredentialResult> AcquireAsync(
+            CredentialRequestV2 request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            Requests.Add(request);
+            return ValueTask.FromResult(
+                new CredentialResult
+                {
+                    Status = status,
+                    DiagnosticsCorrelationId = correlationId,
+                    Error = new CredentialError
+                    {
+                        Kind = errorKind,
+                        Code = errorCode,
+                        SafeMessage = safeMessage,
                     },
                 }
             );
