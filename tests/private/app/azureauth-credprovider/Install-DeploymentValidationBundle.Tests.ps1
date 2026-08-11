@@ -32,6 +32,25 @@ else {
 $deploymentPackageName = (
     "azureauth-credprovider-deployment-validation-internal-$buildOs-$targetRid.zip"
 )
+$versionOutput = dotnet tool run nbgv get-version -f json -p (
+    Join-Path $repoRoot 'src/private/app/azureauth-credprovider'
+)
+if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+}
+$versionInfo = ($versionOutput -join [System.Environment]::NewLine) | ConvertFrom-Json
+$expectedProductVersion = [string]$versionInfo.AssemblyInformationalVersion
+$expectedSourceRevision = [string]$versionInfo.GitCommitId
+$expectedPythonPackageVersion = uv run `
+    --package nbgv-python `
+    python -c (
+    'from nbgv_python.versioning import normalize_version_field; ' +
+    'import sys; print(normalize_version_field(sys.argv[1], field="SemVer2"))'
+) ([string]$versionInfo.SemVer2)
+if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+}
+$expectedPythonPackageVersion = ([string]$expectedPythonPackageVersion).Trim()
 
 function Assert-True {
     param(
@@ -152,6 +171,116 @@ function Assert-InvocationFailure {
     throw $Message
 }
 
+function New-ValidDeploymentGeneratorBundleRoot {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Destination,
+
+        [Parameter(Mandatory = $true)]
+        [string]$PackagePath
+    )
+
+    if (-not $PSCmdlet.ShouldProcess($Destination, 'Create valid generator bundle root')) {
+        return
+    }
+
+    New-Item -ItemType Directory -Path $Destination -Force | Out-Null
+    [System.IO.Compression.ZipFile]::ExtractToDirectory(
+        (Resolve-Path -LiteralPath $PackagePath).Path,
+        $Destination
+    )
+    return $Destination
+}
+
+function Set-TestWheelVersion {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$WheelPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Version
+    )
+
+    if (-not $PSCmdlet.ShouldProcess($WheelPath, 'Set test wheel version metadata')) {
+        return
+    }
+
+    if (Test-Path -LiteralPath $WheelPath) {
+        Remove-Item -LiteralPath $WheelPath -Force
+    }
+    $wheelArchive = [System.IO.Compression.ZipFile]::Open(
+        $WheelPath,
+        [System.IO.Compression.ZipArchiveMode]::Create
+    )
+    try {
+        $metadataEntry = $wheelArchive.CreateEntry(
+            "azureauth_credprovider_keyring-$Version.dist-info/METADATA"
+        )
+        $metadataWriter = [System.IO.StreamWriter]::new($metadataEntry.Open())
+        try {
+            $metadataWriter.Write(
+                "Metadata-Version: 2.3`n" +
+                "Name: azureauth-credprovider-keyring`n" +
+                "Version: $Version`n"
+            )
+        }
+        finally {
+            $metadataWriter.Dispose()
+        }
+    }
+    finally {
+        $wheelArchive.Dispose()
+    }
+}
+
+function New-WrongVersionApplication {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Destination
+    )
+
+    if (-not $PSCmdlet.ShouldProcess($Destination, 'Create wrong-version test application')) {
+        return
+    }
+
+    $projectRoot = Join-Path $testRoot 'wrong-version-application-project'
+    New-Item -ItemType Directory -Path $projectRoot -Force | Out-Null
+    @'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>azureauth-credprovider</AssemblyName>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+</Project>
+'@ | Set-Content -LiteralPath (Join-Path $projectRoot 'WrongVersion.csproj') -Encoding utf8
+    @'
+if (args is ["--version"])
+{
+    Console.WriteLine("azureauth-credprovider 0.0.0-stale");
+    return;
+}
+
+Environment.ExitCode = 1;
+'@ | Set-Content -LiteralPath (Join-Path $projectRoot 'Program.cs') -Encoding utf8
+
+    $publishOutput = dotnet publish (Join-Path $projectRoot 'WrongVersion.csproj') `
+        --configuration Release `
+        --runtime $targetRid `
+        --self-contained false `
+        --output $Destination 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Wrong-version test application publish failed:`n$($publishOutput -join "`n")"
+    }
+    return $Destination
+}
+
 function New-TestBundle {
     [CmdletBinding(SupportsShouldProcess)]
     param(
@@ -212,8 +341,9 @@ function New-TestBundle {
         schemaVersion  = 'azureauth-credprovider-deployment-validation-v1'
         buildOs        = $buildOs
         targetRid      = $targetRid
-        productVersion = '2.0.0-test'
-        sourceRevision = 'new-revision'
+        productVersion       = '2.0.0-test'
+        pythonPackageVersion = '2.0.0'
+        sourceRevision       = 'new-revision'
         releaseStatus  = 'internal-non-release'
         isInternal     = $true
         isRelease      = $false
@@ -240,20 +370,36 @@ function New-DeploymentGeneratorStaging {
     $stagingRoot = Join-Path $OutputRoot "staging/$buildOs/$targetRid"
     $appRoot = Join-Path $stagingRoot 'app'
     $pythonRoot = Join-Path $stagingRoot 'python'
-    New-Item -ItemType Directory -Path $appRoot -Force | Out-Null
-    New-Item -ItemType Directory -Path $pythonRoot -Force | Out-Null
-    Set-Content `
-        -LiteralPath (Join-Path $appRoot $productExecutableName) `
-        -Value 'deployment generator executable' `
-        -NoNewline
-    Set-Content `
-        -LiteralPath (Join-Path $appRoot 'azureauth-credprovider.dll') `
-        -Value 'deployment generator plugin' `
-        -NoNewline
-    Set-Content `
-        -LiteralPath (Join-Path $pythonRoot 'azureauth_credprovider-1.0.0-py3-none-any.whl') `
-        -Value 'deployment generator wheel' `
-        -NoNewline
+    New-Item -ItemType Directory -Path $stagingRoot -Force | Out-Null
+    Copy-Item `
+        -LiteralPath (Join-Path $validDeploymentBundleRoot 'app') `
+        -Destination $appRoot `
+        -Recurse
+    Copy-Item `
+        -LiteralPath (Join-Path $validDeploymentBundleRoot 'python') `
+        -Destination $pythonRoot `
+        -Recurse
+    if (-not $runningOnWindows) {
+        [System.IO.File]::SetUnixFileMode(
+            (Join-Path $appRoot $productExecutableName),
+            [System.IO.UnixFileMode]::UserRead -bor
+            [System.IO.UnixFileMode]::UserWrite -bor
+            [System.IO.UnixFileMode]::UserExecute -bor
+            [System.IO.UnixFileMode]::GroupRead -bor
+            [System.IO.UnixFileMode]::GroupExecute -bor
+            [System.IO.UnixFileMode]::OtherRead -bor
+            [System.IO.UnixFileMode]::OtherExecute
+        )
+    }
+    [ordered]@{
+        schemaVersion        = 'azureauth-credprovider-build-identity-v1'
+        productVersion       = $expectedProductVersion
+        pythonPackageVersion = $expectedPythonPackageVersion
+        sourceRevision       = $expectedSourceRevision
+    } | ConvertTo-Json -Compress |
+        Set-Content `
+            -LiteralPath (Join-Path $stagingRoot '.build-identity.json') `
+            -Encoding utf8
 }
 
 function Invoke-DeploymentGenerator {
@@ -267,12 +413,10 @@ function Invoke-DeploymentGenerator {
     )
 
     $parameters = @{
-        BuildOs        = $buildOs
-        TargetRid      = $targetRid
-        OutputRoot     = $OutputRoot
-        ProductVersion = '2.0.0-test'
-        SourceRevision = 'generator-test'
-        NoBuild        = $true
+        BuildOs    = $buildOs
+        TargetRid  = $targetRid
+        OutputRoot = $OutputRoot
+        NoBuild    = $true
     }
     if ($null -ne $BeforeArchiveEntry) {
         $parameters.BeforeArchiveEntry = $BeforeArchiveEntry
@@ -755,6 +899,21 @@ function Invoke-ActualUninstallRegression {
                 -Message 'The installed keyring shim did not return no-credential for an unrelated host.'
         }
 
+        & $productExecutablePath configure nuget | Out-Null
+        Assert-Equal `
+            -Expected 0 `
+            -Actual $LASTEXITCODE `
+            -Message 'Actual NuGet configuration failed.'
+        Assert-True (
+            Test-Path -LiteralPath (
+                Join-Path $pluginRoot 'azureauth-credprovider.dll'
+            ) -PathType Leaf
+        ) 'NuGet configuration did not create a discoverable plugin activation.'
+        Set-Content `
+            -LiteralPath (Join-Path $pluginRoot 'preserve.txt') `
+            -Value 'unrelated activation-root content' `
+            -NoNewline
+
         $registryUrl = 'https://pkgs.dev.azure.com/example/project/_packaging/feed/npm/registry/'
         Move-Item -LiteralPath $gitMarkerPath -Destination $heldGitMarkerPath
         try {
@@ -869,6 +1028,24 @@ function Invoke-ActualUninstallRegression {
         Assert-True (
             Test-Path -LiteralPath (Join-Path $otherJobRoot 'preserve.txt') -PathType Leaf
         ) 'Actual uninstall removed another Azure Pipelines job state.'
+
+        & (Join-Path $extractedBundleRoot 'install.ps1') -InstallRoot $installRoot | Out-Null
+        Remove-Item -LiteralPath (
+            Join-Path $installRoot "app/$productExecutableName"
+        ) -Force
+        Assert-InvocationFailure {
+            & (Join-Path $extractedBundleRoot 'uninstall.ps1') -InstallRoot $installRoot |
+                Out-Null
+        } 'Damaged installation unexpectedly allowed normal uninstall.'
+        Assert-True (
+            Test-Path -LiteralPath $installRoot -PathType Container
+        ) 'Damaged-install refusal removed the product root.'
+        & (Join-Path $extractedBundleRoot 'uninstall.ps1') `
+            -InstallRoot $installRoot `
+            -SkipConfigurationCleanup | Out-Null
+        Assert-True (
+            -not (Test-Path -LiteralPath $installRoot)
+        ) 'Explicit damaged-install cleanup did not remove the product root.'
     }
     finally {
         if (Test-Path -LiteralPath $heldGitMarkerPath) {
@@ -882,6 +1059,67 @@ function Invoke-ActualUninstallRegression {
 }
 
 try {
+    $normalReuseOutput = Join-Path $testRoot 'normal-then-no-build'
+    & $bundleGeneratorSource `
+        -BuildOs $buildOs `
+        -TargetRid $targetRid `
+        -OutputRoot $normalReuseOutput | Out-Null
+    $normalReuseStaging = Join-Path $normalReuseOutput "staging/$buildOs/$targetRid"
+    $normalReuseIdentity = Join-Path $normalReuseStaging '.build-identity.json'
+    $normalReusePackage = Join-Path $normalReuseOutput $deploymentPackageName
+    Assert-True (
+        Test-Path -LiteralPath $normalReuseStaging -PathType Container
+    ) 'Normal generation did not retain canonical staging for -NoBuild reuse.'
+    Assert-True (
+        Test-Path -LiteralPath $normalReuseIdentity -PathType Leaf
+    ) 'Normal generation did not retain its canonical build identity.'
+    Assert-True (
+        Test-Path -LiteralPath $normalReusePackage -PathType Leaf
+    ) 'Normal generation did not create the deployment package.'
+
+    Invoke-DeploymentGenerator -OutputRoot $normalReuseOutput
+
+    Assert-True (
+        Test-Path -LiteralPath $normalReuseStaging -PathType Container
+    ) '-NoBuild removed canonical staging retained by normal generation.'
+    Assert-True (
+        Test-Path -LiteralPath $normalReuseIdentity -PathType Leaf
+    ) '-NoBuild removed the canonical build identity.'
+    Assert-True (
+        Test-Path -LiteralPath $normalReusePackage -PathType Leaf
+    ) '-NoBuild did not recreate the deployment package from retained staging.'
+    Assert-NoTemporaryDeploymentPackage `
+        -OutputRoot $normalReuseOutput `
+        -Context 'normal generation followed by direct -NoBuild reuse'
+
+    $validDeploymentBundleRoot = New-ValidDeploymentGeneratorBundleRoot `
+        -Destination (Join-Path $testRoot 'valid-generator-bundle') `
+        -PackagePath $normalReusePackage
+    $normalReusePackageBytes = [System.IO.File]::ReadAllBytes($normalReusePackage)
+    Assert-InvocationFailure {
+        & $bundleGeneratorSource `
+            -BuildOs $buildOs `
+            -TargetRid $targetRid `
+            -OutputRoot $normalReuseOutput `
+            -BeforeArchiveEntry {
+            param([string]$EntryName)
+            throw "Injected normal-generation packaging failure before '$EntryName'."
+        } | Out-Null
+    } 'Expected injected normal-generation packaging failure.'
+    Assert-True (
+        -not (Test-Path -LiteralPath $normalReuseStaging)
+    ) 'Failed normal generation retained incomplete canonical staging.'
+    Assert-BytesEqual `
+        -Expected $normalReusePackageBytes `
+        -Actual ([System.IO.File]::ReadAllBytes($normalReusePackage)) `
+        -Message 'Failed normal generation changed the previous deployment package.'
+    Assert-NoTemporaryDeploymentPackage `
+        -OutputRoot $normalReuseOutput `
+        -Context 'failed normal generation cleanup'
+
+    $wrongVersionApplicationRoot = New-WrongVersionApplication `
+        -Destination (Join-Path $testRoot 'wrong-version-application')
+
     $generatorSuccessOutput = Join-Path $testRoot 'generator-success'
     New-DeploymentGeneratorStaging -OutputRoot $generatorSuccessOutput
     $generatorSuccessPackage = Join-Path $generatorSuccessOutput $deploymentPackageName
@@ -925,9 +1163,17 @@ try {
         Join-Path $twiceNoBuildInstallRoot 'installation.json'
     ) -Raw | ConvertFrom-Json
     Assert-Equal `
-        -Expected 'generator-test' `
+        -Expected $expectedSourceRevision `
         -Actual $twiceNoBuildReceipt.sourceRevision `
         -Message 'The twice-NoBuild bundle installed an unexpected receipt.'
+    Assert-Equal `
+        -Expected $expectedProductVersion `
+        -Actual $twiceNoBuildReceipt.productVersion `
+        -Message 'The installed receipt does not match the NBGV application version.'
+    Assert-Equal `
+        -Expected $expectedPythonPackageVersion `
+        -Actual $twiceNoBuildReceipt.pythonPackageVersion `
+        -Message 'The installed receipt does not match the NBGV Python package version.'
 
     Assert-NoTemporaryDeploymentPackage `
         -OutputRoot $generatorSuccessOutput `
@@ -954,6 +1200,67 @@ try {
     Assert-NoTemporaryDeploymentPackage `
         -OutputRoot $generatorFailureOutput `
         -Context 'injected packaging failure'
+
+    $identityFailureOutput = Join-Path $testRoot 'identity-failure'
+    New-DeploymentGeneratorStaging -OutputRoot $identityFailureOutput
+    $identityPath = Join-Path (
+        Join-Path $identityFailureOutput "staging/$buildOs/$targetRid"
+    ) '.build-identity.json'
+    $staleIdentity = Get-Content -LiteralPath $identityPath -Raw | ConvertFrom-Json
+    $staleIdentity.productVersion = '1.0.0-beta.252'
+    $staleIdentity | ConvertTo-Json -Compress |
+        Set-Content -LiteralPath $identityPath -Encoding utf8
+    Assert-InvocationFailure {
+        Invoke-DeploymentGenerator -OutputRoot $identityFailureOutput
+    } 'Expected stale staging version identity rejection.'
+    Assert-NoTemporaryDeploymentPackage `
+        -OutputRoot $identityFailureOutput `
+        -Context 'stale staging identity rejection'
+
+    $applicationFailureOutput = Join-Path $testRoot 'application-payload-failure'
+    New-DeploymentGeneratorStaging -OutputRoot $applicationFailureOutput
+    Copy-Item `
+        -Path (Join-Path $wrongVersionApplicationRoot '*') `
+        -Destination (
+        Join-Path $applicationFailureOutput "staging/$buildOs/$targetRid/app"
+    ) `
+        -Force
+    Assert-InvocationFailure {
+        Invoke-DeploymentGenerator -OutputRoot $applicationFailureOutput
+    } 'Expected wrong staged application version rejection.'
+    Assert-NoTemporaryDeploymentPackage `
+        -OutputRoot $applicationFailureOutput `
+        -Context 'wrong staged application version rejection'
+
+    $malformedWheelOutput = Join-Path $testRoot 'malformed-wheel-failure'
+    New-DeploymentGeneratorStaging -OutputRoot $malformedWheelOutput
+    $malformedWheelPath = @(
+        Get-ChildItem -LiteralPath (
+            Join-Path $malformedWheelOutput "staging/$buildOs/$targetRid/python"
+        ) -Filter '*.whl' -File
+    )[0].FullName
+    [System.IO.File]::WriteAllText($malformedWheelPath, 'not a wheel archive')
+    Assert-InvocationFailure {
+        Invoke-DeploymentGenerator -OutputRoot $malformedWheelOutput
+    } 'Expected malformed staged wheel rejection.'
+    Assert-NoTemporaryDeploymentPackage `
+        -OutputRoot $malformedWheelOutput `
+        -Context 'malformed staged wheel rejection'
+
+    $wrongWheelOutput = Join-Path $testRoot 'wrong-wheel-failure'
+    New-DeploymentGeneratorStaging -OutputRoot $wrongWheelOutput
+    $wrongWheelPath = @(
+        Get-ChildItem -LiteralPath (
+            Join-Path $wrongWheelOutput "staging/$buildOs/$targetRid/python"
+        ) -Filter '*.whl' -File
+    )[0].FullName
+    Set-TestWheelVersion -WheelPath $wrongWheelPath -Version '0.0.0'
+    Assert-InvocationFailure {
+        Invoke-DeploymentGenerator -OutputRoot $wrongWheelOutput
+    } 'Expected wrong staged wheel version rejection.'
+    Assert-NoTemporaryDeploymentPackage `
+        -OutputRoot $wrongWheelOutput `
+        -Context 'wrong staged wheel version rejection'
 
     $bundleRoot = Join-Path $testRoot 'bundle'
     New-TestBundle -BundleRoot $bundleRoot

@@ -237,6 +237,10 @@ jobs:
             src/private/app/azureauth-credprovider/Hcoona.AzureAuth.CredProvider.Platform/packages.lock.json
             tests/private/app/azureauth-credprovider/Hcoona.AzureAuth.CredProvider.Platform.Tests/packages.lock.json
 
+      - name: Restore dotnet tools for deployment validation
+        if: matrix.run-deployment-validation
+        run: dotnet tool restore
+
       - name: Test AzureAuth host OS behavior
         if: matrix.run-host-tests
         timeout-minutes: 15
@@ -292,9 +296,7 @@ jobs:
           ./eng/scripts/azureauth-credprovider/New-DeploymentValidationBundle.ps1 `
             -BuildOs '${{ matrix.build-os }}' `
             -TargetRid '${{ matrix.target-rid }}' `
-            -Configuration Release `
-            -ProductVersion '0.0.0-internal' `
-            -SourceRevision '${{ github.sha }}'
+            -Configuration Release
 
       - name: Test deployment validation lifecycle
         if: matrix.run-deployment-validation

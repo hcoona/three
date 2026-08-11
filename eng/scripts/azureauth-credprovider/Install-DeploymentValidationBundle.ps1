@@ -25,6 +25,11 @@ if ($manifest.schemaVersion -ne 'azureauth-credprovider-deployment-validation-v1
     $manifest.isRelease) {
     throw 'The bundle is not an internal deployment validation artifact.'
 }
+if ([string]::IsNullOrWhiteSpace([string]$manifest.productVersion) -or
+    [string]::IsNullOrWhiteSpace([string]$manifest.pythonPackageVersion) -or
+    [string]::IsNullOrWhiteSpace([string]$manifest.sourceRevision)) {
+    throw 'The bundle version identity is incomplete.'
+}
 $runningOnWindows = $IsWindows
 $expectedBuildOs = if ($runningOnWindows) {
     'Windows'
@@ -355,12 +360,13 @@ try {
     }
 
     $receipt = [ordered]@{
-        schemaVersion   = 'azureauth-credprovider-deployment-validation-install-v2'
-        productVersion  = $manifest.productVersion
-        sourceRevision  = $manifest.sourceRevision
-        targetRid       = $manifest.targetRid
-        installRoot     = $InstallRoot
-        applicationRoot = $applicationRoot
+        schemaVersion        = 'azureauth-credprovider-deployment-validation-install-v2'
+        productVersion       = $manifest.productVersion
+        pythonPackageVersion = $manifest.pythonPackageVersion
+        sourceRevision       = $manifest.sourceRevision
+        targetRid            = $manifest.targetRid
+        installRoot          = $InstallRoot
+        applicationRoot      = $applicationRoot
     }
     $receipt | ConvertTo-Json -Depth 5 |
         Set-Content `

@@ -13,12 +13,6 @@ param(
     [string]$Configuration = 'Release',
 
     [ValidateNotNullOrEmpty()]
-    [string]$ProductVersion = '0.0.0-internal',
-
-    [ValidateNotNullOrEmpty()]
-    [string]$SourceRevision = 'unknown',
-
-    [ValidateNotNullOrEmpty()]
     [string]$OutputRoot = 'artifacts/azureauth-credprovider/deployment-validation',
 
     [switch]$NoBuild,
@@ -68,16 +62,120 @@ $projectPath = Join-Path $repoRoot (
     'src/private/app/azureauth-credprovider/' +
     'Hcoona.AzureAuth.CredProvider.Cli/Hcoona.AzureAuth.CredProvider.Cli.csproj'
 )
+$projectRoot = Split-Path -Parent $projectPath
+$versionOutput = dotnet tool run nbgv get-version -f json -p $projectRoot
+if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+}
+$versionInfo = ($versionOutput -join [System.Environment]::NewLine) | ConvertFrom-Json
+$productVersion = [string]$versionInfo.AssemblyInformationalVersion
+$sourceRevision = [string]$versionInfo.GitCommitId
+$semVer2 = [string]$versionInfo.SemVer2
+if ([string]::IsNullOrWhiteSpace($productVersion) -or
+    [string]::IsNullOrWhiteSpace($sourceRevision) -or
+    [string]::IsNullOrWhiteSpace($semVer2)) {
+    throw 'NBGV did not resolve the required AzureAuth component version fields.'
+}
+$pythonPackageVersion = uv run `
+    --package nbgv-python `
+    python -c (
+    'from nbgv_python.versioning import normalize_version_field; ' +
+    'import sys; print(normalize_version_field(sys.argv[1], field="SemVer2"))'
+) $semVer2
+if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+}
+$pythonPackageVersion = ([string]$pythonPackageVersion).Trim()
+if ([string]::IsNullOrWhiteSpace($pythonPackageVersion)) {
+    throw 'The nbgv-python version normalizer returned an empty Python package version.'
+}
+
 $stagingRoot = Join-Path $outputRootPath "staging/$BuildOs/$TargetRid"
 $appRoot = Join-Path $stagingRoot 'app'
 $launcherRoot = Join-Path $stagingRoot 'launchers'
 $pythonRoot = Join-Path $stagingRoot 'python'
+$buildIdentityPath = Join-Path $stagingRoot '.build-identity.json'
+$productExecutableName = if ($BuildOs -eq 'Windows') {
+    'azureauth-credprovider.exe'
+}
+else {
+    'azureauth-credprovider'
+}
+$productExecutablePath = Join-Path $appRoot $productExecutableName
 $packagePath = Join-Path $outputRootPath (
     "azureauth-credprovider-deployment-validation-internal-$BuildOs-$TargetRid.zip"
 )
 $temporaryPackagePath = "$packagePath.$([System.Guid]::NewGuid().ToString('N')).tmp"
 
+function Assert-DeploymentPayloadMatchesBuildIdentity {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ApplicationRoot,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ProductExecutablePath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$PythonRoot,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ExpectedProductVersion,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ExpectedPythonPackageVersion
+    )
+
+    $nugetEntrypointPath = Join-Path $ApplicationRoot 'azureauth-credprovider.dll'
+    if (-not (Test-Path -LiteralPath $ProductExecutablePath -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $nugetEntrypointPath -PathType Leaf)) {
+        throw 'The published application payload is incomplete.'
+    }
+
+    $componentVersionOutput = & $ProductExecutablePath --version
+    if ($LASTEXITCODE -ne 0 -or
+        ([string]$componentVersionOutput).Trim() -cne
+        "azureauth-credprovider $ExpectedProductVersion") {
+        throw 'The published application version does not match the NBGV build identity.'
+    }
+
+    $wheel = @(Get-ChildItem -LiteralPath $PythonRoot -Filter '*.whl' -File)
+    if ($wheel.Count -ne 1) {
+        throw 'The deployment validation bundle requires exactly one Python wheel.'
+    }
+    $wheelArchive = [System.IO.Compression.ZipFile]::OpenRead($wheel[0].FullName)
+    try {
+        $metadataEntries = @(
+            $wheelArchive.Entries |
+                Where-Object FullName -Like '*.dist-info/METADATA'
+        )
+        if ($metadataEntries.Count -ne 1) {
+            throw 'The Python wheel contains an invalid metadata inventory.'
+        }
+        $metadataReader = [System.IO.StreamReader]::new($metadataEntries[0].Open())
+        try {
+            $wheelMetadata = $metadataReader.ReadToEnd()
+        }
+        finally {
+            $metadataReader.Dispose()
+        }
+    }
+    finally {
+        $wheelArchive.Dispose()
+    }
+    $wheelVersionMatch = [System.Text.RegularExpressions.Regex]::Match(
+        $wheelMetadata,
+        '(?m)^Version: (?<version>[^\r\n]+)\r?$'
+    )
+    if (-not $wheelVersionMatch.Success -or
+        $wheelVersionMatch.Groups['version'].Value -cne $ExpectedPythonPackageVersion) {
+        throw 'The Python wheel version does not match the NBGV build identity.'
+    }
+
+    return $wheel[0]
+}
+
 New-Item -ItemType Directory -Path $outputRootPath -Force | Out-Null
+$generationSucceeded = $false
 
 try {
     if (-not $NoBuild) {
@@ -112,30 +210,38 @@ try {
         finally {
             Pop-Location
         }
+
+        [ordered]@{
+            schemaVersion        = 'azureauth-credprovider-build-identity-v1'
+            productVersion       = $productVersion
+            pythonPackageVersion = $pythonPackageVersion
+            sourceRevision       = $sourceRevision
+        } | ConvertTo-Json -Compress |
+            Set-Content -LiteralPath $buildIdentityPath -Encoding utf8
     }
     elseif (-not (Test-Path -LiteralPath $stagingRoot -PathType Container)) {
         throw "Canonical staging directory '$stagingRoot' does not exist. Run without -NoBuild first."
     }
+    elseif (-not (Test-Path -LiteralPath $buildIdentityPath -PathType Leaf)) {
+        throw "Canonical staging build identity '$buildIdentityPath' does not exist."
+    }
+
+    $buildIdentity = Get-Content -LiteralPath $buildIdentityPath -Raw | ConvertFrom-Json
+    if ($buildIdentity.schemaVersion -ne 'azureauth-credprovider-build-identity-v1' -or
+        $buildIdentity.productVersion -cne $productVersion -or
+        $buildIdentity.pythonPackageVersion -cne $pythonPackageVersion -or
+        $buildIdentity.sourceRevision -cne $sourceRevision) {
+        throw 'The canonical staging payload does not match the current NBGV build identity.'
+    }
+
+    $wheel = Assert-DeploymentPayloadMatchesBuildIdentity `
+        -ApplicationRoot $appRoot `
+        -ProductExecutablePath $productExecutablePath `
+        -PythonRoot $pythonRoot `
+        -ExpectedProductVersion $productVersion `
+        -ExpectedPythonPackageVersion $pythonPackageVersion
 
     New-Item -ItemType Directory -Path $launcherRoot -Force | Out-Null
-
-    $productExecutableName = if ($BuildOs -eq 'Windows') {
-        'azureauth-credprovider.exe'
-    }
-    else {
-        'azureauth-credprovider'
-    }
-    $productExecutablePath = Join-Path $appRoot $productExecutableName
-    $nugetEntrypointPath = Join-Path $appRoot 'azureauth-credprovider.dll'
-    if (-not (Test-Path -LiteralPath $productExecutablePath -PathType Leaf) -or
-        -not (Test-Path -LiteralPath $nugetEntrypointPath -PathType Leaf)) {
-        throw 'The published application payload is incomplete.'
-    }
-
-    $wheel = @(Get-ChildItem -LiteralPath $pythonRoot -Filter '*.whl' -File)
-    if ($wheel.Count -ne 1) {
-        throw 'The deployment validation bundle requires exactly one Python wheel.'
-    }
 
     if ($BuildOs -eq 'Windows') {
         @"
@@ -202,19 +308,20 @@ exec "$script_dir/../app/azureauth-credprovider" git credential-helper "$@"
     )
 
     $manifest = [ordered]@{
-        schemaVersion   = 'azureauth-credprovider-deployment-validation-v1'
-        artifactName    = 'azureauth-credprovider-deployment-validation'
-        buildOs         = $BuildOs
-        targetRid       = $TargetRid
-        productVersion  = $ProductVersion
-        sourceRevision  = $SourceRevision
-        producedBy      = 'eng/scripts/azureauth-credprovider/New-DeploymentValidationBundle.ps1'
-        releaseStatus   = 'internal-non-release'
-        signatureStatus = 'unsigned'
-        isInternal      = $true
-        isRelease       = $false
-        isSigned        = $false
-        entrypoints     = [ordered]@{
+        schemaVersion        = 'azureauth-credprovider-deployment-validation-v1'
+        artifactName         = 'azureauth-credprovider-deployment-validation'
+        buildOs              = $BuildOs
+        targetRid            = $TargetRid
+        productVersion       = $productVersion
+        pythonPackageVersion = $pythonPackageVersion
+        sourceRevision       = $sourceRevision
+        producedBy           = 'eng/scripts/azureauth-credprovider/New-DeploymentValidationBundle.ps1'
+        releaseStatus        = 'internal-non-release'
+        signatureStatus      = 'unsigned'
+        isInternal           = $true
+        isRelease            = $false
+        isSigned             = $false
+        entrypoints          = [ordered]@{
             cli         = "app/$productExecutableName"
             cliLauncher = $cliLauncherPath
             gitLauncher = $gitLauncherPath
@@ -223,7 +330,7 @@ exec "$script_dir/../app/azureauth-credprovider" git credential-helper "$@"
             installer   = 'install.ps1'
             uninstaller = 'uninstall.ps1'
         }
-        files           = $files
+        files                = $files
     }
     $manifest | ConvertTo-Json -Depth 10 -Compress |
         Set-Content -LiteralPath $manifestPath -Encoding utf8
@@ -306,12 +413,15 @@ exec "$script_dir/../app/azureauth-credprovider" git credential-helper "$@"
     }
 
     [System.IO.File]::Move($temporaryPackagePath, $packagePath, $true)
+    $generationSucceeded = $true
 }
 finally {
     if (Test-Path -LiteralPath $temporaryPackagePath) {
         Remove-Item -LiteralPath $temporaryPackagePath -Force
     }
-    if (-not $NoBuild -and (Test-Path -LiteralPath $stagingRoot)) {
+    if (-not $NoBuild -and
+        -not $generationSucceeded -and
+        (Test-Path -LiteralPath $stagingRoot)) {
         Remove-Item -LiteralPath $stagingRoot -Recurse -Force
     }
 }
