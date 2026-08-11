@@ -21,6 +21,8 @@ public sealed record GitPhase8VerticalSliceOptions
 
     public string? XdgConfigHomeDirectoryPath { get; init; }
 
+    public string? GitConfigurationProbeWorkingDirectoryPath { get; init; }
+
     public IProcessRunner? ProcessRunner { get; init; }
 
     public string? GitExecutablePath { get; init; }
@@ -73,6 +75,85 @@ public sealed record GitPhase8ConfigureResult
     public required bool OwnershipManifestPresent { get; init; }
 }
 
+public enum GitEffectiveCredentialHelperState
+{
+    NotConfigured = 0,
+    Active = 1,
+    Reset = 2,
+    Bypassed = 3,
+    Shadowed = 4,
+    DiscoveryDeferred = 5,
+    DiscoveryFailed = 6,
+}
+
+public enum GitEffectiveCredentialHelperEntryKind
+{
+    Product = 1,
+    Other = 2,
+}
+
+public enum GitConfigurationScope
+{
+    Unknown = 0,
+    System = 1,
+    Global = 2,
+    Local = 3,
+    Worktree = 4,
+    Command = 5,
+}
+
+public enum GitCredentialHelperSelectorKind
+{
+    Unknown = 0,
+    Generic = 1,
+    UrlSpecific = 2,
+}
+
+public enum GitCredentialHelperConflictDirective
+{
+    Reset = 1,
+    OtherHelper = 2,
+    ActivationBypassed = 3,
+}
+
+public sealed record GitCredentialHelperConflictDescriptor
+{
+    public required GitConfigurationScope Scope { get; init; }
+
+    public required GitCredentialHelperSelectorKind Selector { get; init; }
+
+    public required GitCredentialHelperConflictDirective Directive { get; init; }
+}
+
+public sealed record GitEffectiveCredentialHelperDiagnostics
+{
+    public required GitEffectiveCredentialHelperState State { get; init; }
+
+    public required IReadOnlyList<GitEffectiveCredentialHelperEntryKind> EffectiveOrder
+    {
+        get;
+        init;
+    }
+
+    public required bool ConfigurationTruncated { get; init; }
+
+    public required GitCredentialHelperConflictDescriptor? Conflict { get; init; }
+}
+
+public enum GitUseHttpPathInspectionState
+{
+    Present = 1,
+    Absent = 2,
+    InspectionIncomplete = 3,
+}
+
+public sealed record GitUseHttpPathDiagnostics
+{
+    public required GitUseHttpPathInspectionState State { get; init; }
+
+    public required bool OutputTruncated { get; init; }
+}
+
 public sealed record GitPhase8DoctorResult
 {
     public required GitPhase8VerticalSliceResolvedPaths Paths { get; init; }
@@ -95,7 +176,13 @@ public sealed record GitPhase8DoctorResult
 
     public required bool LocalShellHelperShorthandDeferred { get; init; }
 
-    public required bool DevAzureUseHttpPathPresent { get; init; }
+    public required GitEffectiveCredentialHelperDiagnostics EffectiveCredentialHelper
+    {
+        get;
+        init;
+    }
+
+    public required GitUseHttpPathDiagnostics DevAzureUseHttpPath { get; init; }
 
     public required bool ProtocolPayloadCaptured { get; init; }
 }
@@ -129,6 +216,22 @@ public sealed class GitPhase8VerticalSliceService
     private const string ManifestId = "phase8-git-configuration";
     private const string ConfigurePlanId = "phase8-git-configure-plan";
     private const string EntrySelector = "git.config";
+    private const int GitDiscoveryMaximumHelperEntries = 128;
+    private const int GitDiscoveryOutputByteLimit = 64 * 1024;
+    private const string GitUseHttpPathProbeUsernamePresent =
+        "azureauth-use-http-path-present";
+    private const string GitUseHttpPathProbeUsernameAbsent =
+        "azureauth-use-http-path-absent";
+    private const string GitUseHttpPathProbeHelper =
+        "!f() { p=absent; while IFS= read -r line; do case \"$line\" in path=*) "
+        + "p=present;; esac; done; echo username=azureauth-use-http-path-$p; "
+        + "echo password=azureauth-use-http-path-probe; }; f";
+    private const string GitUseHttpPathProbeInput =
+        "protocol=https\n"
+        + "host=dev.azure.com\n"
+        + "path=org/project/_git/repository\n"
+        + "\n";
+    private static readonly TimeSpan GitDiscoveryTimeout = TimeSpan.FromSeconds(10);
     internal const string GitCredentialHelperKey = "credential.helper";
     internal const string GitUseHttpPathKey = "credential.https://dev.azure.com.useHttpPath";
     internal const string GitUseHttpPathValue = "true";
@@ -142,6 +245,7 @@ public sealed class GitPhase8VerticalSliceService
         new("https://dev.azure.com/org/project/_git/repository");
     private readonly IFileSystem fileSystem;
     private readonly GitUserGlobalConfigActivation gitActivation;
+    private readonly string gitConfigurationProbeWorkingDirectoryPath;
     private readonly string gitExecutablePath;
     private readonly bool localShellGitDiscoverySupported;
     private readonly GitPhase8VerticalSliceResolvedPaths paths;
@@ -161,6 +265,10 @@ public sealed class GitPhase8VerticalSliceService
         fileSystem = options?.FileSystem ?? new SystemFileSystem();
         gitActivation = new GitUserGlobalConfigActivation(fileSystem);
         paths = ResolvePaths(options);
+        gitConfigurationProbeWorkingDirectoryPath = GetFullPath(
+            options?.GitConfigurationProbeWorkingDirectoryPath
+                ?? Environment.CurrentDirectory
+        );
         processRunner = options?.ProcessRunner ?? new SystemProcessRunner();
         gitExecutablePath = string.IsNullOrWhiteSpace(options?.GitExecutablePath)
             ? "git"
@@ -331,7 +439,14 @@ public sealed class GitPhase8VerticalSliceService
         var localShellHelperShorthandSuccess = false;
         var localShellHelperShorthandDeferred = false;
         var protocolPayloadCaptured = false;
-        var devAzureUseHttpPathPresent = false;
+        GitUseHttpPathDiagnostics devAzureUseHttpPath =
+            CreateUseHttpPathDiagnostics(
+                GitUseHttpPathInspectionState.InspectionIncomplete
+            );
+        GitEffectiveCredentialHelperDiagnostics effectiveCredentialHelper =
+            CreateEffectiveCredentialHelperDiagnostics(
+                GitEffectiveCredentialHelperState.NotConfigured
+            );
         try
         {
             (gitCredentialHelperGetSuccess, protocolPayloadCaptured) =
@@ -362,28 +477,46 @@ public sealed class GitPhase8VerticalSliceService
             protocolPayloadCaptured = false;
         }
 
-        if (TryInspectOwnedGitActivation())
+        bool ownedGitActivationPresent = TryInspectOwnedGitActivation();
+        bool productGitConfigurationPresent =
+            ownedGitActivationPresent
+            || ownedState.OwnedGitEntriesPresent
+            || ownedState.OwnershipManifestPresent;
+        bool productHelperExecutable = CanExecuteStateGitHelperShim();
+        try
         {
-            try
+            GitEffectiveConfigurationInspection inspection =
+                await InspectEffectiveGitConfigurationAsync(
+                    productGitConfigurationPresent,
+                    cancellationToken
+                );
+            devAzureUseHttpPath = inspection.UseHttpPath;
+            effectiveCredentialHelper = inspection.CredentialHelper;
+            if (
+                configurationPlanValid
+                && ownedState.OwnedGitEntriesPresent
+                && ownedState.OwnershipManifestPresent
+            )
             {
-                GitEffectiveConfigurationInspection inspection =
-                    await InspectEffectiveGitConfigurationAsync(cancellationToken);
-                devAzureUseHttpPathPresent = inspection.UseHttpPathEnabled;
-                if (
-                    configurationPlanValid
-                    && ownedState.OwnedGitEntriesPresent
-                    && ownedState.OwnershipManifestPresent
-                )
-                {
-                    localShellHelperShorthandSuccess = inspection.ExpectedHelperPresent;
-                    localShellHelperShorthandDeferred = inspection.Deferred;
-                }
+                localShellHelperShorthandSuccess =
+                    productHelperExecutable
+                    && inspection.CredentialHelper.State
+                        == GitEffectiveCredentialHelperState.Active;
+                localShellHelperShorthandDeferred =
+                    inspection.CredentialHelper.State
+                    == GitEffectiveCredentialHelperState.DiscoveryDeferred;
             }
-            catch (Exception exception) when (IsExpectedDoctorCheckFailure(exception))
-            {
-                localShellHelperShorthandSuccess = false;
-                localShellHelperShorthandDeferred = false;
-            }
+        }
+        catch (Exception exception) when (IsExpectedDoctorCheckFailure(exception))
+        {
+            localShellHelperShorthandSuccess = false;
+            localShellHelperShorthandDeferred = false;
+            effectiveCredentialHelper = CreateEffectiveCredentialHelperDiagnostics(
+                GitEffectiveCredentialHelperState.DiscoveryFailed
+            );
+            devAzureUseHttpPath = CreateUseHttpPathDiagnostics(
+                GitUseHttpPathInspectionState.InspectionIncomplete
+            );
         }
 
         return new GitPhase8DoctorResult
@@ -398,7 +531,8 @@ public sealed class GitPhase8VerticalSliceService
             GitCredentialHelperEraseSuccess = gitCredentialHelperEraseSuccess,
             LocalShellHelperShorthandSuccess = localShellHelperShorthandSuccess,
             LocalShellHelperShorthandDeferred = localShellHelperShorthandDeferred,
-            DevAzureUseHttpPathPresent = devAzureUseHttpPathPresent,
+            EffectiveCredentialHelper = effectiveCredentialHelper,
+            DevAzureUseHttpPath = devAzureUseHttpPath,
             ProtocolPayloadCaptured = protocolPayloadCaptured,
         };
     }
@@ -957,49 +1091,42 @@ public sealed class GitPhase8VerticalSliceService
     }
 
     private async ValueTask<GitEffectiveConfigurationInspection>
-        InspectEffectiveGitConfigurationAsync(CancellationToken cancellationToken)
+        InspectEffectiveGitConfigurationAsync(
+            bool productGitConfigurationPresent,
+            CancellationToken cancellationToken
+        )
     {
         if (!localShellGitDiscoverySupported)
         {
             return new GitEffectiveConfigurationInspection(
-                ExpectedHelperPresent: false,
-                UseHttpPathEnabled: false,
-                Deferred: true
-            );
-        }
-
-        if (!CanExecuteStateGitHelperShim())
-        {
-            return new GitEffectiveConfigurationInspection(
-                ExpectedHelperPresent: false,
-                UseHttpPathEnabled: false,
-                Deferred: false
+                CreateEffectiveCredentialHelperDiagnostics(
+                    GitEffectiveCredentialHelperState.DiscoveryDeferred
+                ),
+                CreateUseHttpPathDiagnostics(
+                    GitUseHttpPathInspectionState.InspectionIncomplete
+                )
             );
         }
 
         ProcessResult helperResult = await processRunner
             .RunAsync(CreateEffectiveHelperInspectionStartSpec(), cancellationToken)
             .ConfigureAwait(false);
+        GitEffectiveCredentialHelperDiagnostics credentialHelper =
+            await InspectEffectiveCredentialHelpersAsync(
+                    helperResult,
+                    productGitConfigurationPresent,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         ProcessResult useHttpPathResult = await processRunner
             .RunAsync(CreateEffectiveUseHttpPathInspectionStartSpec(), cancellationToken)
             .ConfigureAwait(false);
 
-        bool expectedHelperPresent =
-            helperResult.ExitCode is 0 or 1
-            && helperResult.StandardError.Length == 0
-            && ContainsExpectedEffectiveHelper(helperResult.StandardOutput);
-        bool useHttpPathEnabled =
-            useHttpPathResult.ExitCode == 0
-            && useHttpPathResult.StandardError.Length == 0
-            && string.Equals(
-                useHttpPathResult.StandardOutput.Trim(),
-                GitUseHttpPathValue,
-                StringComparison.OrdinalIgnoreCase
-            );
+        GitUseHttpPathDiagnostics useHttpPath =
+            InspectEffectiveUseHttpPath(useHttpPathResult);
         return new GitEffectiveConfigurationInspection(
-            expectedHelperPresent,
-            useHttpPathEnabled,
-            Deferred: false
+            credentialHelper,
+            useHttpPath
         );
     }
 
@@ -1132,43 +1259,165 @@ public sealed class GitPhase8VerticalSliceService
         return string.Concat("'", value.Replace("'", "'\"'\"'", StringComparison.Ordinal), "'");
     }
 
-    private bool ContainsExpectedEffectiveHelper(string standardOutput)
+    private async ValueTask<GitEffectiveCredentialHelperDiagnostics>
+        InspectEffectiveCredentialHelpersAsync(
+        ProcessResult result,
+        bool productGitConfigurationPresent,
+        CancellationToken cancellationToken
+    )
     {
+        if (!IsNormalGitConfigQueryResult(result))
+        {
+            return new GitEffectiveCredentialHelperDiagnostics
+            {
+                State = GitEffectiveCredentialHelperState.DiscoveryFailed,
+                EffectiveOrder = Array.Empty<GitEffectiveCredentialHelperEntryKind>(),
+                ConfigurationTruncated =
+                    result.Status == ProcessExecutionStatus.OutputTooLarge,
+                Conflict = null,
+            };
+        }
+
+        if (!TryParseCredentialHelperRecords(result.StandardOutput, out var records))
+        {
+            return CreateEffectiveCredentialHelperDiagnostics(
+                GitEffectiveCredentialHelperState.DiscoveryFailed
+            );
+        }
+
+        if (records.Count > GitDiscoveryMaximumHelperEntries)
+        {
+            return new GitEffectiveCredentialHelperDiagnostics
+            {
+                State = GitEffectiveCredentialHelperState.DiscoveryFailed,
+                EffectiveOrder = Array.Empty<GitEffectiveCredentialHelperEntryKind>(),
+                ConfigurationTruncated = true,
+                Conflict = null,
+            };
+        }
+
+        IReadOnlySet<string> applicableUrlPatterns;
+        string[] urlPatterns = records
+            .Where(record => record.UrlPattern is not null)
+            .Select(record => record.UrlPattern!)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (urlPatterns.Length == 0)
+        {
+            applicableUrlPatterns = new HashSet<string>(StringComparer.Ordinal);
+        }
+        else
+        {
+            if (
+                !TryCreateCredentialUrlApplicabilityStartSpec(
+                    urlPatterns,
+                    out ProcessStartSpec? applicabilityStartSpec
+                )
+            )
+            {
+                return CreateEffectiveCredentialHelperDiagnostics(
+                    GitEffectiveCredentialHelperState.DiscoveryFailed
+                );
+            }
+            ProcessResult applicabilityResult = await processRunner
+                .RunAsync(applicabilityStartSpec, cancellationToken)
+                .ConfigureAwait(false);
+            if (
+                !TryInspectApplicableCredentialUrlPatterns(
+                    applicabilityResult,
+                    urlPatterns,
+                    out applicableUrlPatterns
+                )
+            )
+            {
+                return new GitEffectiveCredentialHelperDiagnostics
+                {
+                    State = GitEffectiveCredentialHelperState.DiscoveryFailed,
+                    EffectiveOrder =
+                        Array.Empty<GitEffectiveCredentialHelperEntryKind>(),
+                    ConfigurationTruncated =
+                        applicabilityResult.Status
+                        == ProcessExecutionStatus.OutputTooLarge,
+                    Conflict = null,
+                };
+            }
+        }
+
         string expected = GitConfigPhysicalTargetWriter.RenderCredentialHelperCommandValue(
             CreateGitCredentialHelperValue()
         );
-        var effectiveHelpers = new List<string>();
-        foreach (
-            string record in standardOutput.Split(
-                '\0',
-                StringSplitOptions.RemoveEmptyEntries
-            )
-        )
+        var effectiveHelpers = new List<GitEffectiveCredentialHelperEntry>();
+        var expectedHelperObserved = false;
+        GitCredentialHelperConflictDescriptor? lastReset = null;
+        foreach (GitCredentialHelperRecord record in records)
         {
-            int separator = record.IndexOf('\n');
-            if (separator < 0)
-            {
-                return false;
-            }
-
-            string key = record[..separator];
-            string value = record[(separator + 1)..];
-            if (!IsCredentialHelperKeyApplicable(key, GitConfigurationProbeUrl))
+            if (
+                record.UrlPattern is not null
+                && !applicableUrlPatterns.Contains(record.UrlPattern)
+            )
             {
                 continue;
             }
 
-            if (value.Length == 0)
+            if (record.Value.Length == 0)
             {
                 effectiveHelpers.Clear();
+                lastReset = CreateConflictDescriptor(
+                    record,
+                    GitCredentialHelperConflictDirective.Reset
+                );
             }
             else
             {
-                effectiveHelpers.Add(value);
+                bool isExpected = string.Equals(
+                    record.Value,
+                    expected,
+                    StringComparison.Ordinal
+                );
+                expectedHelperObserved |= isExpected;
+                effectiveHelpers.Add(
+                    new GitEffectiveCredentialHelperEntry(
+                        isExpected
+                            ? GitEffectiveCredentialHelperEntryKind.Product
+                            : GitEffectiveCredentialHelperEntryKind.Other,
+                        record
+                    )
+                );
             }
         }
 
-        return effectiveHelpers.Contains(expected, StringComparer.Ordinal);
+        GitEffectiveCredentialHelperState state =
+            effectiveHelpers.Any(entry =>
+                entry.Kind == GitEffectiveCredentialHelperEntryKind.Product
+            )
+                ? GitEffectiveCredentialHelperState.Active
+            : expectedHelperObserved
+                ? effectiveHelpers.Count == 0
+                    ? GitEffectiveCredentialHelperState.Reset
+                    : GitEffectiveCredentialHelperState.Shadowed
+            : productGitConfigurationPresent
+                ? GitEffectiveCredentialHelperState.Bypassed
+                : GitEffectiveCredentialHelperState.NotConfigured;
+        GitCredentialHelperConflictDescriptor? conflict = state switch
+        {
+            GitEffectiveCredentialHelperState.Reset => lastReset,
+            GitEffectiveCredentialHelperState.Shadowed => lastReset,
+            GitEffectiveCredentialHelperState.Bypassed =>
+                new GitCredentialHelperConflictDescriptor
+                {
+                    Scope = GitConfigurationScope.Unknown,
+                    Selector = GitCredentialHelperSelectorKind.Unknown,
+                    Directive = GitCredentialHelperConflictDirective.ActivationBypassed,
+                },
+            _ => null,
+        };
+        return new GitEffectiveCredentialHelperDiagnostics
+        {
+            State = state,
+            EffectiveOrder = effectiveHelpers.Select(entry => entry.Kind).ToArray(),
+            ConfigurationTruncated = false,
+            Conflict = conflict,
+        };
     }
 
     private ProcessStartSpec CreateEffectiveHelperInspectionStartSpec() =>
@@ -1176,31 +1425,130 @@ public sealed class GitPhase8VerticalSliceService
             gitExecutablePath,
             [
                 "config",
-                "--global",
                 "--includes",
+                "--show-scope",
                 "--null",
                 "--get-regexp",
                 @"^credential(\..*)?\.helper$",
             ],
-            workingDirectory: paths.StateDirectoryPath,
-            environment: CreateGitInspectionEnvironment()
+            workingDirectory: gitConfigurationProbeWorkingDirectoryPath,
+            environment: CreateGitInspectionEnvironment(),
+            timeout: GitDiscoveryTimeout,
+            outputCaptureOptions: new ProcessOutputCaptureOptions
+            {
+                StandardOutputByteLimit = GitDiscoveryOutputByteLimit,
+                StandardErrorByteLimit = GitDiscoveryOutputByteLimit,
+            }
         );
+
+    private bool TryCreateCredentialUrlApplicabilityStartSpec(
+        string[] urlPatterns,
+        [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out ProcessStartSpec? startSpec
+    )
+    {
+        startSpec = null;
+        if (!TryGetInheritedGitConfigCount(out int inheritedCount))
+        {
+            return false;
+        }
+
+        var environment = CreateGitInspectionEnvironment();
+        for (var index = 0; index < urlPatterns.Length; index++)
+        {
+            int configIndex = inheritedCount + index;
+            environment["GIT_CONFIG_KEY_" + configIndex] =
+                "credential."
+                    + urlPatterns[index]
+                    + "."
+                    + CreateCredentialUrlProbeVariable(urlPatterns[index], index);
+            environment["GIT_CONFIG_VALUE_" + configIndex] = "true";
+        }
+        environment["GIT_CONFIG_COUNT"] = (inheritedCount + urlPatterns.Length).ToString(
+            System.Globalization.CultureInfo.InvariantCulture
+        );
+        startSpec = new ProcessStartSpec(
+            gitExecutablePath,
+            [
+                "config",
+                "--includes",
+                "--null",
+                "--get-urlmatch",
+                "credential",
+                GitConfigurationProbeUrl.AbsoluteUri,
+            ],
+            workingDirectory: gitConfigurationProbeWorkingDirectoryPath,
+            environment: environment,
+            timeout: GitDiscoveryTimeout,
+            outputCaptureOptions: CreateGitDiscoveryOutputCaptureOptions()
+        );
+        return true;
+    }
+
+    private static bool TryGetInheritedGitConfigCount(out int count)
+    {
+        string? value = Environment.GetEnvironmentVariable("GIT_CONFIG_COUNT");
+        if (value is null)
+        {
+            count = 0;
+            return true;
+        }
+
+        return int.TryParse(
+                value,
+                System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out count
+            )
+            && count >= 0
+            && count <= GitDiscoveryMaximumHelperEntries;
+    }
 
     private ProcessStartSpec CreateEffectiveUseHttpPathInspectionStartSpec() =>
         new(
             gitExecutablePath,
             [
-                "config",
-                "--global",
-                "--includes",
-                "--type=bool",
-                "--get-urlmatch",
-                "credential.useHttpPath",
-                GitConfigurationProbeUrl.AbsoluteUri,
+                "-c",
+                "credential.helper=",
+                "-c",
+                "credential.helper=" + GitUseHttpPathProbeHelper,
+                "credential",
+                "fill",
             ],
-            workingDirectory: paths.StateDirectoryPath,
-            environment: CreateGitInspectionEnvironment()
+            workingDirectory: gitConfigurationProbeWorkingDirectoryPath,
+            environment: CreateGitInspectionEnvironment(),
+            standardInput: GitUseHttpPathProbeInput,
+            timeout: GitDiscoveryTimeout,
+            outputCaptureOptions: CreateGitDiscoveryOutputCaptureOptions()
         );
+
+    private static ProcessOutputCaptureOptions CreateGitDiscoveryOutputCaptureOptions() =>
+        new()
+        {
+            StandardOutputByteLimit = GitDiscoveryOutputByteLimit,
+            StandardErrorByteLimit = GitDiscoveryOutputByteLimit,
+        };
+
+    private static GitEffectiveCredentialHelperDiagnostics
+        CreateEffectiveCredentialHelperDiagnostics(
+            GitEffectiveCredentialHelperState state
+        ) =>
+        new()
+        {
+            State = state,
+            EffectiveOrder = Array.Empty<GitEffectiveCredentialHelperEntryKind>(),
+            ConfigurationTruncated = false,
+            Conflict = null,
+        };
+
+    private static GitUseHttpPathDiagnostics CreateUseHttpPathDiagnostics(
+        GitUseHttpPathInspectionState state,
+        bool outputTruncated = false
+    ) =>
+        new()
+        {
+            State = state,
+            OutputTruncated = outputTruncated,
+        };
 
     private Dictionary<string, string?> CreateGitInspectionEnvironment()
     {
@@ -1211,10 +1559,105 @@ public sealed class GitPhase8VerticalSliceService
         };
     }
 
-    private static bool IsCredentialHelperKeyApplicable(string key, Uri target)
+    private static bool IsNormalGitConfigQueryResult(ProcessResult result)
+    {
+        if (result.StandardError.Length != 0 || !result.HasExitCode)
+        {
+            return false;
+        }
+
+        return result.Status switch
+        {
+            ProcessExecutionStatus.Success => result.ExitCode == 0,
+            ProcessExecutionStatus.NonZeroExit =>
+                result.ExitCode == 1 && result.StandardOutput.Length == 0,
+            _ => false,
+        };
+    }
+
+    private static bool TryParseCredentialHelperRecords(
+        string output,
+        out IReadOnlyList<GitCredentialHelperRecord> records
+    )
+    {
+        records = Array.Empty<GitCredentialHelperRecord>();
+        if (output.Length == 0)
+        {
+            return true;
+        }
+
+        string[] parts = output.Split('\0', StringSplitOptions.None);
+        if (parts[^1].Length != 0 || (parts.Length - 1) % 2 != 0)
+        {
+            return false;
+        }
+
+        var parsed = new List<GitCredentialHelperRecord>((parts.Length - 1) / 2);
+        for (var index = 0; index < parts.Length - 1; index += 2)
+        {
+            if (!TryParseGitConfigurationScope(parts[index], out GitConfigurationScope scope))
+            {
+                return false;
+            }
+
+            string record = parts[index + 1];
+            int separator = record.IndexOf('\n');
+            if (separator < 0)
+            {
+                return false;
+            }
+
+            string key = record[..separator];
+            string value = record[(separator + 1)..];
+            if (!TryParseCredentialHelperKey(key, out string? urlPattern))
+            {
+                return false;
+            }
+
+            parsed.Add(
+                new GitCredentialHelperRecord(
+                    scope,
+                    urlPattern is null
+                        ? GitCredentialHelperSelectorKind.Generic
+                        : GitCredentialHelperSelectorKind.UrlSpecific,
+                    urlPattern,
+                    value
+                )
+            );
+        }
+
+        records = parsed;
+        return true;
+    }
+
+    private static bool TryParseGitConfigurationScope(
+        string token,
+        out GitConfigurationScope scope
+    )
+    {
+        scope = token switch
+        {
+            "system" => GitConfigurationScope.System,
+            "global" => GitConfigurationScope.Global,
+            "local" => GitConfigurationScope.Local,
+            "worktree" => GitConfigurationScope.Worktree,
+            "command" => GitConfigurationScope.Command,
+            _ => GitConfigurationScope.Unknown,
+        };
+        return token.Length is > 0 and <= 32
+            && token.All(character =>
+                character is >= 'a' and <= 'z' || character == '-'
+            );
+    }
+
+    private static bool TryParseCredentialHelperKey(
+        string key,
+        out string? urlPattern
+    )
     {
         const string Prefix = "credential.";
         const string Suffix = ".helper";
+        urlPattern = null;
         if (string.Equals(key, GitCredentialHelperKey, StringComparison.OrdinalIgnoreCase))
         {
             return true;
@@ -1229,27 +1672,168 @@ public sealed class GitPhase8VerticalSliceService
             return false;
         }
 
-        string patternText = key[Prefix.Length..^Suffix.Length];
-        if (!Uri.TryCreate(patternText, UriKind.Absolute, out Uri? pattern))
+        urlPattern = key[Prefix.Length..^Suffix.Length];
+        return urlPattern.Length <= GitDiscoveryOutputByteLimit
+            && !urlPattern.Contains('\0')
+            && !urlPattern.Contains('\n')
+            && !urlPattern.Contains('\r');
+    }
+
+    private static string CreateCredentialUrlProbeVariable(string pattern, int index)
+    {
+        byte[] digest = SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(index.ToString() + "\0" + pattern)
+        );
+        return "azureauthdiscovery" + Convert.ToHexString(digest.AsSpan(0, 12)).ToLowerInvariant();
+    }
+
+    private static bool TryInspectApplicableCredentialUrlPatterns(
+        ProcessResult result,
+        string[] urlPatterns,
+        out IReadOnlySet<string> applicablePatterns
+    )
+    {
+        applicablePatterns = new HashSet<string>(StringComparer.Ordinal);
+        if (!IsNormalGitConfigQueryResult(result))
         {
             return false;
         }
 
+        var variables = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        for (var index = 0; index < urlPatterns.Length; index++)
+        {
+            variables.Add(
+                "credential." + CreateCredentialUrlProbeVariable(urlPatterns[index], index),
+                urlPatterns[index]
+            );
+        }
+
+        if (result.StandardOutput.Length == 0)
+        {
+            return true;
+        }
+
+        string[] records = result.StandardOutput.Split('\0', StringSplitOptions.None);
+        if (records[^1].Length != 0)
+        {
+            return false;
+        }
+
+        var matched = new HashSet<string>(StringComparer.Ordinal);
+        foreach (string record in records[..^1])
+        {
+            int separator = record.IndexOf('\n');
+            if (separator < 0)
+            {
+                return false;
+            }
+
+            string key = record[..separator];
+            string value = record[(separator + 1)..];
+            if (!variables.TryGetValue(key, out string? pattern))
+            {
+                continue;
+            }
+            if (
+                !string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
+                || !matched.Add(pattern)
+            )
+            {
+                return false;
+            }
+        }
+
+        applicablePatterns = matched;
+        return true;
+    }
+
+    private static GitCredentialHelperConflictDescriptor CreateConflictDescriptor(
+        GitCredentialHelperRecord record,
+        GitCredentialHelperConflictDirective directive
+    ) =>
+        new()
+        {
+            Scope = record.Scope,
+            Selector = record.Selector,
+            Directive = directive,
+        };
+
+    private static GitUseHttpPathDiagnostics InspectEffectiveUseHttpPath(
+        ProcessResult result
+    )
+    {
         if (
-            !string.Equals(pattern.Scheme, target.Scheme, StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(pattern.IdnHost, target.IdnHost, StringComparison.OrdinalIgnoreCase)
-            || pattern.Port != target.Port
-            || !string.Equals(pattern.UserInfo, target.UserInfo, StringComparison.Ordinal)
+            result.Status != ProcessExecutionStatus.Success
+            || !result.HasExitCode
+            || result.ExitCode != 0
+            || result.StandardError.Length != 0
         )
         {
-            return false;
+            return CreateUseHttpPathDiagnostics(
+                GitUseHttpPathInspectionState.InspectionIncomplete,
+                outputTruncated:
+                    result.Status == ProcessExecutionStatus.OutputTooLarge
+            );
         }
 
-        string patternPath = pattern.AbsolutePath.TrimEnd('/');
-        string targetPath = target.AbsolutePath.TrimEnd('/');
-        return patternPath.Length == 0
-            || string.Equals(patternPath, targetPath, StringComparison.Ordinal)
-            || targetPath.StartsWith(patternPath + "/", StringComparison.Ordinal);
+        var fields = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (string rawLine in SplitLines(result.StandardOutput))
+        {
+            string line = rawLine.TrimEnd('\r');
+            if (line.Length == 0)
+            {
+                continue;
+            }
+
+            int separator = line.IndexOf('=');
+            if (
+                separator <= 0
+                || !fields.TryAdd(line[..separator], line[(separator + 1)..])
+            )
+            {
+                return CreateUseHttpPathDiagnostics(
+                    GitUseHttpPathInspectionState.InspectionIncomplete
+                );
+            }
+        }
+
+        string? username = null;
+        bool valid =
+            fields.TryGetValue("protocol", out string? protocol)
+            && string.Equals(protocol, "https", StringComparison.Ordinal)
+            && fields.TryGetValue("host", out string? host)
+            && string.Equals(host, "dev.azure.com", StringComparison.OrdinalIgnoreCase)
+            && fields.TryGetValue("username", out username)
+            && fields.TryGetValue("password", out string? password)
+            && password.Length != 0
+            && (
+                string.Equals(
+                    username,
+                    GitUseHttpPathProbeUsernamePresent,
+                    StringComparison.Ordinal
+                )
+                || string.Equals(
+                    username,
+                    GitUseHttpPathProbeUsernameAbsent,
+                    StringComparison.Ordinal
+                )
+            );
+        if (!valid)
+        {
+            return CreateUseHttpPathDiagnostics(
+                GitUseHttpPathInspectionState.InspectionIncomplete
+            );
+        }
+
+        return CreateUseHttpPathDiagnostics(
+            string.Equals(
+                username,
+                GitUseHttpPathProbeUsernamePresent,
+                StringComparison.Ordinal
+            )
+                ? GitUseHttpPathInspectionState.Present
+                : GitUseHttpPathInspectionState.Absent
+        );
     }
 
     private static bool ContainsDevAzureUseHttpPathState(string gitConfig)
@@ -1953,8 +2537,19 @@ public sealed class GitPhase8VerticalSliceService
     );
 
     private sealed record GitEffectiveConfigurationInspection(
-        bool ExpectedHelperPresent,
-        bool UseHttpPathEnabled,
-        bool Deferred
+        GitEffectiveCredentialHelperDiagnostics CredentialHelper,
+        GitUseHttpPathDiagnostics UseHttpPath
+    );
+
+    private sealed record GitCredentialHelperRecord(
+        GitConfigurationScope Scope,
+        GitCredentialHelperSelectorKind Selector,
+        string? UrlPattern,
+        string Value
+    );
+
+    private sealed record GitEffectiveCredentialHelperEntry(
+        GitEffectiveCredentialHelperEntryKind Kind,
+        GitCredentialHelperRecord Record
     );
 }

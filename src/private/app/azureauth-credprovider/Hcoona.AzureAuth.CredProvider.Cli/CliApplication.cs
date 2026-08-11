@@ -3170,7 +3170,11 @@ internal static class CliApplication
             $"owned-git-entries: {GetPresenceText(doctorResult.OwnedGitEntriesPresent)}",
             $"ownership-manifest: {GetPresenceText(doctorResult.OwnershipManifestPresent)}",
             "dev.azure.com-useHttpPath: "
-                + GetPresenceText(doctorResult.DevAzureUseHttpPathPresent),
+                + GetGitUseHttpPathInspectionText(
+                    doctorResult.DevAzureUseHttpPath.State
+                ),
+            "dev.azure.com-useHttpPath-truncated: "
+                + GetYesNo(doctorResult.DevAzureUseHttpPath.OutputTruncated),
             $"credential-core: {GetCheckStatusText(doctorResult.CredentialCoreSuccess)}",
             "git-credential-helper-get: "
                 + GetCheckStatusText(doctorResult.GitCredentialHelperGetSuccess),
@@ -3179,6 +3183,24 @@ internal static class CliApplication
             "git-credential-helper-erase: "
                 + GetCheckStatusText(doctorResult.GitCredentialHelperEraseSuccess),
             "local-shell-helper-shorthand: " + GetLocalShellHelperShorthandStatusText(doctorResult),
+            "git-effective-credential-helper: "
+                + GetGitEffectiveCredentialHelperStateText(
+                    doctorResult.EffectiveCredentialHelper.State
+                ),
+            "git-effective-credential-helper-order: "
+                + GetGitEffectiveCredentialHelperOrderText(
+                    doctorResult.EffectiveCredentialHelper.EffectiveOrder
+                ),
+            "git-effective-credential-helper-truncated: "
+                + GetYesNo(doctorResult.EffectiveCredentialHelper.ConfigurationTruncated),
+            "git-effective-credential-helper-conflict: "
+                + GetGitCredentialHelperConflictText(
+                    doctorResult.EffectiveCredentialHelper.Conflict
+                ),
+            "git-effective-credential-helper-remediation: "
+                + GetGitCredentialHelperRemediationText(
+                    doctorResult.EffectiveCredentialHelper.State
+                ),
             "protocol-payload: "
                 + (doctorResult.ProtocolPayloadCaptured ? "captured-not-printed" : "not-captured"),
             "auth-accepted-identity-flows: "
@@ -3535,6 +3557,109 @@ internal static class CliApplication
         return GetCheckStatusText(doctorResult.LocalShellHelperShorthandSuccess);
     }
 
+    private static string GetGitEffectiveCredentialHelperStateText(
+        GitEffectiveCredentialHelperState state
+    ) =>
+        state switch
+        {
+            GitEffectiveCredentialHelperState.NotConfigured => "not-configured",
+            GitEffectiveCredentialHelperState.Active => "active",
+            GitEffectiveCredentialHelperState.Reset => "reset",
+            GitEffectiveCredentialHelperState.Bypassed => "bypassed",
+            GitEffectiveCredentialHelperState.Shadowed => "shadowed",
+            GitEffectiveCredentialHelperState.DiscoveryDeferred => "unsupported-mvp",
+            GitEffectiveCredentialHelperState.DiscoveryFailed => "discovery-failed",
+            _ => throw new ArgumentOutOfRangeException(nameof(state), state, null),
+        };
+
+    private static string GetGitEffectiveCredentialHelperOrderText(
+        IReadOnlyList<GitEffectiveCredentialHelperEntryKind> order
+    ) =>
+        order.Count == 0
+            ? "none"
+            : string.Join(
+                ", ",
+                order.Select(entry =>
+                    entry switch
+                    {
+                        GitEffectiveCredentialHelperEntryKind.Product => "product",
+                        GitEffectiveCredentialHelperEntryKind.Other => "other",
+                        _ => throw new ArgumentOutOfRangeException(nameof(order), entry, null),
+                    }
+                )
+            );
+
+    private static string GetGitCredentialHelperConflictText(
+        GitCredentialHelperConflictDescriptor? conflict
+    )
+    {
+        if (conflict is null)
+        {
+            return "none";
+        }
+
+        string scope = conflict.Scope switch
+        {
+            GitConfigurationScope.System => "system",
+            GitConfigurationScope.Global => "global",
+            GitConfigurationScope.Local => "local",
+            GitConfigurationScope.Worktree => "worktree",
+            GitConfigurationScope.Command => "command",
+            GitConfigurationScope.Unknown => "unknown",
+            _ => "unknown",
+        };
+        string selector = conflict.Selector switch
+        {
+            GitCredentialHelperSelectorKind.Unknown => "unknown",
+            GitCredentialHelperSelectorKind.Generic => "generic",
+            GitCredentialHelperSelectorKind.UrlSpecific => "url-specific",
+            _ => "unknown",
+        };
+        string directive = conflict.Directive switch
+        {
+            GitCredentialHelperConflictDirective.Reset => "reset",
+            GitCredentialHelperConflictDirective.OtherHelper => "other-helper",
+            GitCredentialHelperConflictDirective.ActivationBypassed =>
+                "activation-bypassed",
+            _ => "unknown",
+        };
+        return $"scope={scope}; selector={selector}; directive={directive}";
+    }
+
+    private static string GetGitCredentialHelperRemediationText(
+        GitEffectiveCredentialHelperState state
+    ) =>
+        state switch
+        {
+            GitEffectiveCredentialHelperState.NotConfigured =>
+                "run configure git to add the product-managed helper",
+            GitEffectiveCredentialHelperState.Active => "none",
+            GitEffectiveCredentialHelperState.Reset =>
+                "remove the conflicting reset or configure the product helper after it",
+            GitEffectiveCredentialHelperState.Bypassed =>
+                "make the product-managed Git include effective and check Git configuration "
+                + "overrides such as GIT_CONFIG_GLOBAL",
+            GitEffectiveCredentialHelperState.Shadowed =>
+                "remove the conflicting reset or configure the product helper after it",
+            GitEffectiveCredentialHelperState.DiscoveryDeferred =>
+                "run doctor where local Git discovery is supported",
+            GitEffectiveCredentialHelperState.DiscoveryFailed =>
+                "fix Git configuration discovery and rerun doctor",
+            _ => throw new ArgumentOutOfRangeException(nameof(state), state, null),
+        };
+
+    private static string GetGitUseHttpPathInspectionText(
+        GitUseHttpPathInspectionState state
+    ) =>
+        state switch
+        {
+            GitUseHttpPathInspectionState.Present => "present",
+            GitUseHttpPathInspectionState.Absent => "absent",
+            GitUseHttpPathInspectionState.InspectionIncomplete =>
+                "inspection-incomplete",
+            _ => throw new ArgumentOutOfRangeException(nameof(state), state, null),
+        };
+
     private static string[] GetPlannedActions(
         CliCommand command,
         CredentialEcosystem ecosystem,
@@ -3800,7 +3925,10 @@ internal static class CliApplication
             && doctorResult.GitCredentialHelperStoreSuccess
             && doctorResult.GitCredentialHelperEraseSuccess
             && doctorResult.LocalShellHelperShorthandSuccess
-            && doctorResult.DevAzureUseHttpPathPresent;
+            && doctorResult.EffectiveCredentialHelper.State
+                == GitEffectiveCredentialHelperState.Active
+            && doctorResult.DevAzureUseHttpPath.State
+                == GitUseHttpPathInspectionState.Present;
     }
 
     private static bool IsNuGetDoctorSuccess(NuGetPhase10DoctorResult doctorResult)

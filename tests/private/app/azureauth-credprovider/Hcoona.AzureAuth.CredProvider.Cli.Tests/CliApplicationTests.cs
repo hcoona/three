@@ -2050,6 +2050,7 @@ public sealed class CliApplicationTests
                 GitPhase8Options = new GitPhase8VerticalSliceOptions
                 {
                     StateDirectoryPath = stateDirectory,
+                    GitConfigurationProbeWorkingDirectoryPath = stateDirectory,
                     ProcessRunner = new PassingGitDiscoveryProcessRunner(),
                     ProductExecutablePath = CreateFakeProductExecutable(stateDirectory),
                 },
@@ -2092,6 +2093,7 @@ public sealed class CliApplicationTests
             GitPhase8Options = new GitPhase8VerticalSliceOptions
             {
                 StateDirectoryPath = stateDirectory,
+                GitConfigurationProbeWorkingDirectoryPath = stateDirectory,
                 ProcessRunner = new PassingGitDiscoveryProcessRunner(),
                 LocalShellGitDiscoverySupported = false,
                 ProductExecutablePath = CreateFakeProductExecutable(stateDirectory),
@@ -2144,7 +2146,8 @@ public sealed class CliApplicationTests
                     ownershipManifestPresent: false,
                     configurationPlanValid: false,
                     localShellHelperShorthandSuccess: false,
-                    devAzureUseHttpPathPresent: true
+                    devAzureUseHttpPathPresent: true,
+                    productHelperActive: true
                 ),
                 doctorResult.StdOut
             );
@@ -2179,7 +2182,8 @@ public sealed class CliApplicationTests
                     ownershipManifestPresent: true,
                     configurationPlanValid: false,
                     localShellHelperShorthandSuccess: false,
-                    devAzureUseHttpPathPresent: true
+                    devAzureUseHttpPathPresent: true,
+                    productHelperActive: true
                 ),
                 doctorResult.StdOut
             );
@@ -4748,11 +4752,13 @@ public sealed class CliApplicationTests
         bool ownershipManifestPresent,
         bool configurationPlanValid = true,
         bool? localShellHelperShorthandSuccess = null,
-        bool? devAzureUseHttpPathPresent = null
+        bool? devAzureUseHttpPathPresent = null,
+        bool? productHelperActive = null
     )
     {
         bool useHttpPathPresent = devAzureUseHttpPathPresent ?? ownedGitEntriesPresent;
         bool localShellSuccess = localShellHelperShorthandSuccess ?? ownedGitEntriesPresent;
+        bool effectiveProductHelperActive = productHelperActive ?? ownedGitEntriesPresent;
         return Normalize(
             string.Join(
                 "\n",
@@ -4775,11 +4781,24 @@ public sealed class CliApplicationTests
                     $"owned-git-entries: {(ownedGitEntriesPresent ? "present" : "absent")}",
                     $"ownership-manifest: {(ownershipManifestPresent ? "present" : "absent")}",
                     "dev.azure.com-useHttpPath: " + (useHttpPathPresent ? "present" : "absent"),
+                    "dev.azure.com-useHttpPath-truncated: no",
                     "credential-core: pass",
                     "git-credential-helper-get: pass",
                     "git-credential-helper-store: pass",
                     "git-credential-helper-erase: pass",
                     "local-shell-helper-shorthand: " + (localShellSuccess ? "pass" : "fail"),
+                    "git-effective-credential-helper: "
+                        + (effectiveProductHelperActive ? "active" : "not-configured"),
+                    "git-effective-credential-helper-order: "
+                        + (effectiveProductHelperActive ? "product" : "none"),
+                    "git-effective-credential-helper-truncated: no",
+                    "git-effective-credential-helper-conflict: none",
+                    "git-effective-credential-helper-remediation: "
+                        + (
+                            effectiveProductHelperActive
+                                ? "none"
+                                : "run configure git to add the product-managed helper"
+                        ),
                     "protocol-payload: captured-not-printed",
                     "auth-accepted-identity-flows: browser, azure-pipelines",
                     "auth-unavailable-identity-flows: device-code",
@@ -5013,6 +5032,7 @@ public sealed class CliApplicationTests
             GitPhase8Options = new GitPhase8VerticalSliceOptions
             {
                 StateDirectoryPath = stateDirectory,
+                GitConfigurationProbeWorkingDirectoryPath = stateDirectory,
                 ProcessRunner = new PassingGitDiscoveryProcessRunner(),
                 LocalShellGitDiscoverySupported = true,
                 ProductExecutablePath = CreateFakeProductExecutable(stateDirectory),
@@ -5122,6 +5142,7 @@ public sealed class CliApplicationTests
             new GitPhase8VerticalSliceOptions
             {
                 StateDirectoryPath = stateDirectory,
+                GitConfigurationProbeWorkingDirectoryPath = stateDirectory,
                 ProcessRunner = new PassingGitDiscoveryProcessRunner(),
                 LocalShellGitDiscoverySupported = true,
                 ProductExecutablePath = CreateFakeProductExecutable(stateDirectory),
@@ -5256,8 +5277,95 @@ public sealed class CliApplicationTests
         public override DateTimeOffset GetUtcNow() => Now;
     }
 
-    private sealed class PassingGitDiscoveryProcessRunner : IProcessRunner
+    private static Dictionary<string, string?> CreateIsolatedGitEnvironment(
+        IReadOnlyDictionary<string, string?> explicitEnvironment,
+        IEnumerable<string>? inheritedGitConfigVariables = null
+    )
     {
+        var environment = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["GIT_CONFIG"] = null,
+            ["GIT_CONFIG_COUNT"] = null,
+            ["GIT_CONFIG_GLOBAL"] = null,
+            ["GIT_CONFIG_PARAMETERS"] = null,
+            ["GIT_CONFIG_SYSTEM"] = null,
+        };
+        IEnumerable<string> inheritedVariables =
+            inheritedGitConfigVariables
+            ?? Environment
+                .GetEnvironmentVariables()
+                .Keys
+                .OfType<string>();
+        foreach (string variable in inheritedVariables)
+        {
+            if (variable.StartsWith("GIT_CONFIG_", StringComparison.Ordinal))
+            {
+                environment[variable] = null;
+            }
+        }
+        environment["GIT_CONFIG_NOSYSTEM"] = "1";
+        foreach ((string key, string? value) in explicitEnvironment)
+        {
+            if (
+                !string.Equals(key, "GIT_CONFIG_COUNT", StringComparison.Ordinal)
+                && !key.StartsWith("GIT_CONFIG_KEY_", StringComparison.Ordinal)
+                && !key.StartsWith("GIT_CONFIG_VALUE_", StringComparison.Ordinal)
+            )
+            {
+                environment[key] = value;
+            }
+        }
+
+        var entries = new List<(string Key, string Value)>();
+        if (
+            explicitEnvironment.TryGetValue(
+                "GIT_CONFIG_COUNT",
+                out string? countValue
+            )
+            && int.TryParse(
+                countValue,
+                System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out int count
+            )
+        )
+        {
+            for (var index = 0; index < count; index++)
+            {
+                if (
+                    explicitEnvironment.TryGetValue(
+                        "GIT_CONFIG_KEY_" + index,
+                        out string? key
+                    )
+                    && key is not null
+                    && explicitEnvironment.TryGetValue(
+                        "GIT_CONFIG_VALUE_" + index,
+                        out string? value
+                    )
+                    && value is not null
+                )
+                {
+                    entries.Add((key, value));
+                }
+            }
+            environment["GIT_CONFIG_COUNT"] = entries.Count.ToString(
+                System.Globalization.CultureInfo.InvariantCulture
+            );
+            for (var index = 0; index < entries.Count; index++)
+            {
+                environment["GIT_CONFIG_KEY_" + index] = entries[index].Key;
+                environment["GIT_CONFIG_VALUE_" + index] = entries[index].Value;
+            }
+        }
+        return environment;
+    }
+
+    private sealed class PassingGitDiscoveryProcessRunner(
+        IEnumerable<string>? inheritedGitConfigVariables = null
+    ) : IProcessRunner
+    {
+        public List<ProcessStartSpec> EffectiveGitStartSpecs { get; } = [];
+
         public Task<ProcessResult> RunAsync(
             ProcessStartSpec startSpec,
             CancellationToken cancellationToken = default
@@ -5266,18 +5374,26 @@ public sealed class CliApplicationTests
             ArgumentNullException.ThrowIfNull(startSpec);
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (startSpec.Arguments.Contains("config"))
+            if (
+                startSpec.Arguments.Contains("config")
+                || startSpec.Arguments.Contains("credential")
+            )
             {
-                return new SystemProcessRunner().RunAsync(
-                    new ProcessStartSpec(
-                        "git",
-                        startSpec.Arguments,
-                        startSpec.WorkingDirectory,
+                var effectiveStartSpec = new ProcessStartSpec(
+                    "git",
+                    startSpec.Arguments,
+                    startSpec.WorkingDirectory,
+                    CreateIsolatedGitEnvironment(
                         startSpec.Environment,
-                        startSpec.StandardInput,
-                        startSpec.Timeout,
-                        startSpec.OutputCaptureOptions
+                        inheritedGitConfigVariables
                     ),
+                    startSpec.StandardInput,
+                    startSpec.Timeout,
+                    startSpec.OutputCaptureOptions
+                );
+                EffectiveGitStartSpecs.Add(effectiveStartSpec);
+                return new SystemProcessRunner().RunAsync(
+                    effectiveStartSpec,
                     cancellationToken
                 );
             }
@@ -5287,7 +5403,7 @@ public sealed class CliApplicationTests
                 new ProcessResult(
                     0,
                     "protocol=https\nhost=dev.azure.com\npath=org/project/_git/repository\n"
-                        + "username=AzureDevOps\n"
+                        + "username=azureauth-use-http-path-present\n"
                         + "password=fake-secret-phase9-probe\n",
                     string.Empty
                 )
@@ -6407,6 +6523,7 @@ public sealed class CliApplicationTests
             var gitOptions = new GitPhase8VerticalSliceOptions
             {
                 StateDirectoryPath = rootPath,
+                GitConfigurationProbeWorkingDirectoryPath = rootPath,
                 ProcessRunner = gitDiscoveryRunner,
                 GitExecutablePath = "fake-git",
                 LocalShellGitDiscoverySupported = true,
@@ -6589,8 +6706,8 @@ public sealed class CliApplicationTests
             Assert.Equal(
                 [
                     "config",
-                    "--global",
                     "--includes",
+                    "--show-scope",
                     "--null",
                     "--get-regexp",
                     @"^credential(\..*)?\.helper$",
@@ -6744,6 +6861,12 @@ public sealed class CliApplicationTests
     {
         public string ExpectedHelperCommand { private get; set; } = null!;
 
+        public string? ConflictingHelperValue { private get; set; }
+
+        public string? BypassHelperValue { private get; set; }
+
+        public ProcessResult? UseHttpPathResultOverride { private get; set; }
+
         public List<ProcessStartSpec> StartSpecs { get; } = [];
 
         public Task<ProcessResult> RunAsync(
@@ -6754,18 +6877,231 @@ public sealed class CliApplicationTests
             ArgumentNullException.ThrowIfNull(startSpec);
             cancellationToken.ThrowIfCancellationRequested();
             StartSpecs.Add(startSpec);
+            if (startSpec.Arguments.Contains("fill"))
+            {
+                if (UseHttpPathResultOverride is not null)
+                {
+                    return Task.FromResult(UseHttpPathResultOverride);
+                }
+                return Task.FromResult(
+                    new ProcessResult(
+                        0,
+                        "protocol=https\n"
+                            + "host=dev.azure.com\n"
+                            + "path=org/project/_git/repository\n"
+                            + "username=azureauth-use-http-path-present\n"
+                            + "password=azureauth-use-http-path-probe\n",
+                        string.Empty
+                    )
+                );
+            }
+
             if (startSpec.Arguments.Contains("--get-urlmatch"))
             {
-                return Task.FromResult(new ProcessResult(0, "true\n", string.Empty));
+                string probeKey = startSpec.Environment
+                    .Where(pair =>
+                        pair.Key.StartsWith(
+                            "GIT_CONFIG_KEY_",
+                            StringComparison.Ordinal
+                        )
+                        && pair.Value?.StartsWith(
+                            "credential.https://dev.azure.com/org.azureauthdiscovery",
+                            StringComparison.Ordinal
+                        ) == true
+                    )
+                    .Select(pair => pair.Value!)
+                    .Single();
+                string variable = probeKey[(probeKey.LastIndexOf('.') + 1)..];
+                return Task.FromResult(
+                    new ProcessResult(
+                        0,
+                        "credential." + variable + "\ntrue\0",
+                        string.Empty
+                    )
+                );
             }
 
             return Task.FromResult(
                 new ProcessResult(
                     0,
-                    "credential.helper\n" + ExpectedHelperCommand + "\0",
+                    BypassHelperValue is not null
+                        ? "local\0credential.helper\n"
+                            + BypassHelperValue
+                            + "\0"
+                        : "global\0credential.helper\n"
+                            + ExpectedHelperCommand
+                            + "\0"
+                            + (
+                                ConflictingHelperValue is null
+                                    ? string.Empty
+                                    : "global\0credential.https://dev.azure.com/org.helper\n\0"
+                                        + "global\0credential.https://dev.azure.com/org.helper\n"
+                                        + ConflictingHelperValue
+                                        + "\0"
+                            ),
                     string.Empty
                 )
             );
+        }
+    }
+
+    [Fact]
+    public void DoctorPrintsOnlySanitizedGitConflictProvenance()
+    {
+        const string SensitiveHelper =
+            "!provider --token secret-value --path /private/provider/location";
+        using var pythonFixture = new PythonDoctorFixture(PythonDoctorFixtureMode.Healthy);
+        CliRuntimeOptions runtime = CreateHealthyDoctorRuntimeOptions(
+            pythonFixture,
+            new ProcessResult(0, "unused-private-token", "unused-private-diagnostic"),
+            out _,
+            out HealthyDoctorGitDiscoveryProcessRunner gitDiscoveryRunner
+        );
+
+        Assert.Equal(0, InvokeWithRuntime(runtime, "configure", "git").ExitCode);
+        gitDiscoveryRunner.ConflictingHelperValue = SensitiveHelper;
+
+        CommandResult doctor = InvokeWithRuntime(runtime, "doctor");
+
+        Assert.Equal(1, doctor.ExitCode);
+        AssertDoctorCheck(
+            doctor.StdOut,
+            "git-effective-credential-helper-conflict",
+            "scope=global; selector=url-specific; directive=reset"
+        );
+        AssertDoctorCheck(
+            doctor.StdOut,
+            "git-effective-credential-helper-remediation",
+            "remove the conflicting reset or configure the product helper after it"
+        );
+        Assert.DoesNotContain(SensitiveHelper, doctor.StdOut, StringComparison.Ordinal);
+        Assert.DoesNotContain("secret-value", doctor.StdErr, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "/private/provider/location",
+            doctor.StdOut,
+            StringComparison.Ordinal
+        );
+    }
+
+    [Fact]
+    public void DoctorDoesNotAttributeBypassToObservedThirdPartyHelper()
+    {
+        const string SensitiveHelper =
+            "!local-provider --token bypass-secret --path /private/local/provider";
+        using var pythonFixture = new PythonDoctorFixture(PythonDoctorFixtureMode.Healthy);
+        CliRuntimeOptions runtime = CreateHealthyDoctorRuntimeOptions(
+            pythonFixture,
+            new ProcessResult(0, "unused-private-token", "unused-private-diagnostic"),
+            out _,
+            out HealthyDoctorGitDiscoveryProcessRunner gitDiscoveryRunner
+        );
+
+        Assert.Equal(0, InvokeWithRuntime(runtime, "configure", "git").ExitCode);
+        gitDiscoveryRunner.BypassHelperValue = SensitiveHelper;
+
+        CommandResult doctor = InvokeWithRuntime(runtime, "doctor");
+
+        Assert.Equal(1, doctor.ExitCode);
+        AssertDoctorCheck(doctor.StdOut, "git-effective-credential-helper", "bypassed");
+        AssertDoctorCheck(doctor.StdOut, "git-effective-credential-helper-order", "other");
+        AssertDoctorCheck(
+            doctor.StdOut,
+            "git-effective-credential-helper-conflict",
+            "scope=unknown; selector=unknown; directive=activation-bypassed"
+        );
+        AssertDoctorCheck(
+            doctor.StdOut,
+            "git-effective-credential-helper-remediation",
+            "make the product-managed Git include effective and check Git configuration "
+                + "overrides such as GIT_CONFIG_GLOBAL"
+        );
+        Assert.DoesNotContain(SensitiveHelper, doctor.StdOut, StringComparison.Ordinal);
+        Assert.DoesNotContain("bypass-secret", doctor.StdErr, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "/private/local/provider",
+            doctor.StdOut,
+            StringComparison.Ordinal
+        );
+    }
+
+    [Fact]
+    public void DoctorReportsIncompleteTruncatedUseHttpPathInspection()
+    {
+        using var pythonFixture = new PythonDoctorFixture(PythonDoctorFixtureMode.Healthy);
+        CliRuntimeOptions runtime = CreateHealthyDoctorRuntimeOptions(
+            pythonFixture,
+            new ProcessResult(0, "unused-private-token", "unused-private-diagnostic"),
+            out _,
+            out HealthyDoctorGitDiscoveryProcessRunner gitDiscoveryRunner
+        );
+
+        Assert.Equal(0, InvokeWithRuntime(runtime, "configure", "git").ExitCode);
+        gitDiscoveryRunner.UseHttpPathResultOverride = ProcessResult.OutputTooLarge(
+            "protocol=https\nhost=dev.azure.com\n"
+                + "username=azureauth-use-http-path-present\n"
+                + "******",
+            string.Empty,
+            exitCode: 0
+        );
+
+        CommandResult doctor = InvokeWithRuntime(runtime, "doctor");
+
+        Assert.Equal(1, doctor.ExitCode);
+        AssertDoctorCheck(
+            doctor.StdOut,
+            "dev.azure.com-useHttpPath",
+            "inspection-incomplete"
+        );
+        AssertDoctorCheck(
+            doctor.StdOut,
+            "dev.azure.com-useHttpPath-truncated",
+            "yes"
+        );
+        AssertDoctorCheck(doctor.StdOut, "git-effective-credential-helper-truncated", "no");
+    }
+
+    [Fact]
+    public async Task PassingGitDiscoveryRunnerIsolatesAndAppliesExplicitConfig()
+    {
+        string directory = CreateTestDirectory();
+        string globalConfig = Path.Combine(directory, "global.gitconfig");
+        File.WriteAllText(globalConfig, string.Empty);
+        var runner = new PassingGitDiscoveryProcessRunner(
+            ["GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_KEY_99"]
+        );
+
+        try
+        {
+            _ = await runner.RunAsync(
+                new ProcessStartSpec(
+                    "ignored-git",
+                    ["config", "--get-all", "credential.helper"],
+                    directory,
+                    new Dictionary<string, string?>
+                    {
+                        ["GIT_CONFIG_GLOBAL"] = globalConfig,
+                        ["GIT_CONFIG_COUNT"] = "1",
+                        ["GIT_CONFIG_KEY_0"] = "credential.helper",
+                        ["GIT_CONFIG_VALUE_0"] = "manager",
+                    }
+                ),
+                TestContext.Current.CancellationToken
+            );
+
+            ProcessStartSpec effective = Assert.Single(runner.EffectiveGitStartSpecs);
+            Assert.Null(effective.Environment["GIT_CONFIG"]);
+            Assert.Equal(globalConfig, effective.Environment["GIT_CONFIG_GLOBAL"]);
+            Assert.Equal("1", effective.Environment["GIT_CONFIG_NOSYSTEM"]);
+            Assert.Null(effective.Environment["GIT_CONFIG_KEY_99"]);
+            Assert.Equal("1", effective.Environment["GIT_CONFIG_COUNT"]);
+            Assert.Equal(
+                "credential.helper",
+                effective.Environment["GIT_CONFIG_KEY_0"]
+            );
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(directory);
         }
     }
 
@@ -6800,6 +7136,19 @@ public sealed class CliApplicationTests
         PythonDoctorFixture pythonFixture,
         ProcessResult healthProbeResult,
         out PromptingResultProcessRunner healthProbeRunner
+    ) =>
+        CreateHealthyDoctorRuntimeOptions(
+            pythonFixture,
+            healthProbeResult,
+            out healthProbeRunner,
+            out _
+        );
+
+    private static CliRuntimeOptions CreateHealthyDoctorRuntimeOptions(
+        PythonDoctorFixture pythonFixture,
+        ProcessResult healthProbeResult,
+        out PromptingResultProcessRunner healthProbeRunner,
+        out HealthyDoctorGitDiscoveryProcessRunner gitDiscoveryRunner
     )
     {
         var promptWriter = new StringWriter();
@@ -6832,10 +7181,11 @@ public sealed class CliApplicationTests
                 productionRoot.ProductionOptions,
             ])
         );
-        var gitDiscoveryRunner = new HealthyDoctorGitDiscoveryProcessRunner();
+        gitDiscoveryRunner = new HealthyDoctorGitDiscoveryProcessRunner();
         var gitOptions = new GitPhase8VerticalSliceOptions
         {
             StateDirectoryPath = pythonFixture.RootPath,
+            GitConfigurationProbeWorkingDirectoryPath = pythonFixture.RootPath,
             ProcessRunner = gitDiscoveryRunner,
             GitExecutablePath = "fake-git",
             LocalShellGitDiscoverySupported = true,

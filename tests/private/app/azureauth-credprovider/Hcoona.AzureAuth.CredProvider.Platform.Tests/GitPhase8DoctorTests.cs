@@ -29,13 +29,16 @@ public sealed class GitPhase8DoctorTests
             Assert.Equal(2, processRunner.StartSpecs.Count);
             ProcessStartSpec startSpec = processRunner.StartSpecs[0];
             Assert.True(result.LocalShellHelperShorthandSuccess);
-            Assert.True(result.DevAzureUseHttpPathPresent);
+            Assert.Equal(
+                GitUseHttpPathInspectionState.Present,
+                result.DevAzureUseHttpPath.State
+            );
             Assert.Equal("git-probe", startSpec.FileName);
             Assert.Equal(
                 [
                     "config",
-                    "--global",
                     "--includes",
+                    "--show-scope",
                     "--null",
                     "--get-regexp",
                     @"^credential(\..*)?\.helper$",
@@ -49,6 +52,23 @@ public sealed class GitPhase8DoctorTests
                 startSpec.Environment["HOME"]
             );
             Assert.True(processRunner.HelperAliasWasPresent);
+            Assert.All(
+                processRunner.FallbackStartSpecs,
+                fallback =>
+                {
+                    Assert.Null(fallback.Environment["GIT_CONFIG"]);
+                    Assert.Null(fallback.Environment["GIT_CONFIG_GLOBAL"]);
+                    Assert.Equal("1", fallback.Environment["GIT_CONFIG_NOSYSTEM"]);
+                }
+            );
+            Assert.Equal(
+                GitEffectiveCredentialHelperState.Active,
+                result.EffectiveCredentialHelper.State
+            );
+            Assert.Equal(
+                [GitEffectiveCredentialHelperEntryKind.Product],
+                result.EffectiveCredentialHelper.EffectiveOrder
+            );
         }
         finally
         {
@@ -96,11 +116,15 @@ public sealed class GitPhase8DoctorTests
     }
 
     [Fact]
-    public async Task DoctorFailsDiscoveryWhenGitDoesNotReturnExpectedConfiguredHelper()
+    public async Task DoctorReportsBypassWhenGitDoesNotReturnExpectedConfiguredHelper()
     {
         string stateDirectory = CreateTestDirectory();
         var processRunner = new RecordingGitDiscoveryProcessRunner(
-            new ProcessResult(0, "manager\n", string.Empty)
+            new ProcessResult(
+                0,
+                "global\0credential.helper\nmanager\0",
+                string.Empty
+            )
         );
         var service = CreateService(stateDirectory, processRunner);
 
@@ -114,6 +138,195 @@ public sealed class GitPhase8DoctorTests
 
             Assert.False(result.LocalShellHelperShorthandSuccess);
             Assert.Equal(2, processRunner.StartSpecs.Count);
+            Assert.Equal(
+                GitEffectiveCredentialHelperState.Bypassed,
+                result.EffectiveCredentialHelper.State
+            );
+            Assert.Equal(
+                [GitEffectiveCredentialHelperEntryKind.Other],
+                result.EffectiveCredentialHelper.EffectiveOrder
+            );
+            Assert.Equal(
+                new GitCredentialHelperConflictDescriptor
+                {
+                    Scope = GitConfigurationScope.Unknown,
+                    Selector = GitCredentialHelperSelectorKind.Unknown,
+                    Directive = GitCredentialHelperConflictDirective.ActivationBypassed,
+                },
+                result.EffectiveCredentialHelper.Conflict
+            );
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task DoctorReportsEffectiveThirdPartyOrderWithoutProductConfiguration()
+    {
+        string stateDirectory = CreateTestDirectory();
+        var processRunner = new RecordingGitDiscoveryProcessRunner(
+            new ProcessResult(
+                0,
+                "global\0credential.helper\nmanager\0",
+                string.Empty
+            )
+        );
+        var service = CreateService(stateDirectory, processRunner);
+
+        try
+        {
+            GitPhase8DoctorResult result = await service.DoctorAsync(
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Equal(
+                GitEffectiveCredentialHelperState.NotConfigured,
+                result.EffectiveCredentialHelper.State
+            );
+            Assert.Equal(
+                [GitEffectiveCredentialHelperEntryKind.Other],
+                result.EffectiveCredentialHelper.EffectiveOrder
+            );
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task DoctorBoundsOversizedCredentialHelperConfiguration()
+    {
+        string stateDirectory = CreateTestDirectory();
+        string oversizedOutput = string.Concat(
+            Enumerable.Repeat("global\0credential.helper\nmanager\0", 129)
+        );
+        var processRunner = new RecordingGitDiscoveryProcessRunner(
+            new ProcessResult(0, oversizedOutput, string.Empty)
+        );
+        var service = CreateService(stateDirectory, processRunner);
+
+        try
+        {
+            await service.ConfigureAsync(TestContext.Current.CancellationToken);
+
+            GitPhase8DoctorResult result = await service.DoctorAsync(
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Equal(
+                GitEffectiveCredentialHelperState.DiscoveryFailed,
+                result.EffectiveCredentialHelper.State
+            );
+            Assert.True(result.EffectiveCredentialHelper.ConfigurationTruncated);
+            Assert.Empty(result.EffectiveCredentialHelper.EffectiveOrder);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    public static IEnumerable<object[]> AbnormalHelperDiscoveryResults()
+    {
+        const string Partial = "global\0credential.helper\nmanager\0";
+        yield return
+        [
+            ProcessResult.OutputTooLarge(Partial, string.Empty, exitCode: 0),
+            true,
+        ];
+        yield return
+        [
+            ProcessResult.InvalidOutput(Partial, string.Empty, exitCode: 0),
+            false,
+        ];
+        yield return
+        [
+            ProcessResult.TimedOut(Partial, string.Empty, exitCode: 0),
+            false,
+        ];
+    }
+
+    [Theory]
+    [MemberData(nameof(AbnormalHelperDiscoveryResults))]
+    public async Task DoctorRejectsPartialHelperOutputFromAbnormalProcessResult(
+        ProcessResult processResult,
+        bool expectedTruncated
+    )
+    {
+        string stateDirectory = CreateTestDirectory();
+        var processRunner = new RecordingGitDiscoveryProcessRunner(processResult);
+        var service = CreateService(stateDirectory, processRunner);
+
+        try
+        {
+            await service.ConfigureAsync(TestContext.Current.CancellationToken);
+
+            GitPhase8DoctorResult result = await service.DoctorAsync(
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Equal(
+                GitEffectiveCredentialHelperState.DiscoveryFailed,
+                result.EffectiveCredentialHelper.State
+            );
+            Assert.Equal(
+                expectedTruncated,
+                result.EffectiveCredentialHelper.ConfigurationTruncated
+            );
+            Assert.Empty(result.EffectiveCredentialHelper.EffectiveOrder);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    public static IEnumerable<object[]> AbnormalUseHttpPathResults()
+    {
+        const string Partial =
+            "protocol=https\nhost=dev.azure.com\npath=org/project/_git/repository\n"
+            + "username=azureauth-use-http-path-present\n"
+            + "password=azureauth-use-http-path-probe\n";
+        yield return [ProcessResult.OutputTooLarge(Partial, string.Empty, exitCode: 0)];
+        yield return [ProcessResult.InvalidOutput(Partial, string.Empty, exitCode: 0)];
+        yield return [new ProcessResult(0, "protocol=https\nmalformed\n", string.Empty)];
+    }
+
+    [Theory]
+    [MemberData(nameof(AbnormalUseHttpPathResults))]
+    public async Task DoctorDoesNotReportUseHttpPathFromAbnormalProcessResult(
+        ProcessResult processResult
+    )
+    {
+        string stateDirectory = CreateTestDirectory();
+        var processRunner = new RecordingGitDiscoveryProcessRunner(
+            useHttpPathResult: processResult
+        );
+        var service = CreateService(stateDirectory, processRunner);
+
+        try
+        {
+            await service.ConfigureAsync(TestContext.Current.CancellationToken);
+
+            GitPhase8DoctorResult result = await service.DoctorAsync(
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Equal(
+                GitEffectiveCredentialHelperState.Active,
+                result.EffectiveCredentialHelper.State
+            );
+            Assert.Equal(
+                GitUseHttpPathInspectionState.InspectionIncomplete,
+                result.DevAzureUseHttpPath.State
+            );
+            Assert.Equal(
+                processResult.Status == ProcessExecutionStatus.OutputTooLarge,
+                result.DevAzureUseHttpPath.OutputTruncated
+            );
         }
         finally
         {
@@ -149,6 +362,10 @@ public sealed class GitPhase8DoctorTests
             Assert.False(result.LocalShellHelperShorthandSuccess);
             Assert.True(result.LocalShellHelperShorthandDeferred);
             Assert.Empty(processRunner.StartSpecs);
+            Assert.Equal(
+                GitEffectiveCredentialHelperState.DiscoveryDeferred,
+                result.EffectiveCredentialHelper.State
+            );
         }
         finally
         {
@@ -176,6 +393,10 @@ public sealed class GitPhase8DoctorTests
             Assert.False(result.LocalShellHelperShorthandSuccess);
             Assert.False(result.LocalShellHelperShorthandDeferred);
             Assert.Equal(1, processRunner.InvocationCount);
+            Assert.Equal(
+                GitEffectiveCredentialHelperState.DiscoveryFailed,
+                result.EffectiveCredentialHelper.State
+            );
         }
         finally
         {
@@ -184,7 +405,7 @@ public sealed class GitPhase8DoctorTests
     }
 
     [Fact]
-    public async Task DoctorDoesNotDiscoverNonExecutableHelperArtifact()
+    public async Task DoctorSeparatesSelectedConfigurationFromNonExecutableHelperArtifact()
     {
         if (OperatingSystem.IsWindows())
         {
@@ -208,7 +429,11 @@ public sealed class GitPhase8DoctorTests
             );
 
             Assert.False(result.LocalShellHelperShorthandSuccess);
-            Assert.Empty(processRunner.StartSpecs);
+            Assert.Equal(2, processRunner.StartSpecs.Count);
+            Assert.Equal(
+                GitEffectiveCredentialHelperState.Active,
+                result.EffectiveCredentialHelper.State
+            );
         }
         finally
         {
@@ -361,7 +586,10 @@ public sealed class GitPhase8DoctorTests
             );
             Assert.True(doctor.OwnedGitEntriesPresent);
             Assert.True(doctor.LocalShellHelperShorthandSuccess);
-            Assert.True(doctor.DevAzureUseHttpPathPresent);
+            Assert.Equal(
+                GitUseHttpPathInspectionState.Present,
+                doctor.DevAzureUseHttpPath.State
+            );
 
             await service.UnconfigureAsync(TestContext.Current.CancellationToken);
 
@@ -782,7 +1010,10 @@ public sealed class GitPhase8DoctorTests
 
             Assert.Equal(xdgGitConfig, service.Paths.UserGitConfigPath);
             Assert.True(doctor.LocalShellHelperShorthandSuccess);
-            Assert.True(doctor.DevAzureUseHttpPathPresent);
+            Assert.Equal(
+                GitUseHttpPathInspectionState.Present,
+                doctor.DevAzureUseHttpPath.State
+            );
             Assert.Contains(
                 "# existing XDG config\n",
                 File.ReadAllText(xdgGitConfig),
@@ -889,7 +1120,27 @@ public sealed class GitPhase8DoctorTests
             );
 
             Assert.False(doctor.LocalShellHelperShorthandSuccess);
-            Assert.True(doctor.DevAzureUseHttpPathPresent);
+            Assert.Equal(
+                GitUseHttpPathInspectionState.Present,
+                doctor.DevAzureUseHttpPath.State
+            );
+            Assert.Equal(
+                GitEffectiveCredentialHelperState.Shadowed,
+                doctor.EffectiveCredentialHelper.State
+            );
+            Assert.Equal(
+                [GitEffectiveCredentialHelperEntryKind.Other],
+                doctor.EffectiveCredentialHelper.EffectiveOrder
+            );
+            Assert.Equal(
+                new GitCredentialHelperConflictDescriptor
+                {
+                    Scope = GitConfigurationScope.Global,
+                    Selector = GitCredentialHelperSelectorKind.UrlSpecific,
+                    Directive = GitCredentialHelperConflictDirective.Reset,
+                },
+                doctor.EffectiveCredentialHelper.Conflict
+            );
         }
         finally
         {
@@ -921,7 +1172,18 @@ public sealed class GitPhase8DoctorTests
             );
 
             Assert.True(doctor.LocalShellHelperShorthandSuccess);
-            Assert.True(doctor.DevAzureUseHttpPathPresent);
+            Assert.Equal(
+                GitUseHttpPathInspectionState.Present,
+                doctor.DevAzureUseHttpPath.State
+            );
+            Assert.Equal(
+                GitEffectiveCredentialHelperState.Active,
+                doctor.EffectiveCredentialHelper.State
+            );
+            Assert.Equal(
+                [GitEffectiveCredentialHelperEntryKind.Product],
+                doctor.EffectiveCredentialHelper.EffectiveOrder
+            );
         }
         finally
         {
@@ -952,7 +1214,519 @@ public sealed class GitPhase8DoctorTests
             );
 
             Assert.True(doctor.LocalShellHelperShorthandSuccess);
-            Assert.False(doctor.DevAzureUseHttpPathPresent);
+            Assert.Equal(
+                GitUseHttpPathInspectionState.Absent,
+                doctor.DevAzureUseHttpPath.State
+            );
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task DoctorReportsHelperResetWhenNoLaterHelperIsConfigured()
+    {
+        string stateDirectory = CreateTestDirectory();
+        GitPhase8VerticalSliceService service = CreateRealGitService(stateDirectory);
+
+        try
+        {
+            await service.ConfigureAsync(TestContext.Current.CancellationToken);
+            File.AppendAllText(
+                service.Paths.UserGitConfigPath,
+                """
+                [credential "https://dev.azure.com/org"]
+                    helper =
+
+                """
+            );
+
+            GitPhase8DoctorResult doctor = await service.DoctorAsync(
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Equal(
+                GitEffectiveCredentialHelperState.Reset,
+                doctor.EffectiveCredentialHelper.State
+            );
+            Assert.Empty(doctor.EffectiveCredentialHelper.EffectiveOrder);
+            Assert.Equal(
+                new GitCredentialHelperConflictDescriptor
+                {
+                    Scope = GitConfigurationScope.Global,
+                    Selector = GitCredentialHelperSelectorKind.UrlSpecific,
+                    Directive = GitCredentialHelperConflictDirective.Reset,
+                },
+                doctor.EffectiveCredentialHelper.Conflict
+            );
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DoctorTreatsOrdinaryHelperChainingAsActive(bool otherHelperAfterProduct)
+    {
+        string stateDirectory = CreateTestDirectory();
+        GitPhase8VerticalSliceService service = CreateRealGitService(stateDirectory);
+
+        try
+        {
+            await service.ConfigureAsync(TestContext.Current.CancellationToken);
+            const string OtherHelper = "[credential]\n\thelper = manager\n";
+            string userConfig = File.ReadAllText(service.Paths.UserGitConfigPath);
+            File.WriteAllText(
+                service.Paths.UserGitConfigPath,
+                otherHelperAfterProduct
+                    ? userConfig + OtherHelper
+                    : OtherHelper + userConfig
+            );
+
+            GitPhase8DoctorResult doctor = await service.DoctorAsync(
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Equal(
+                GitEffectiveCredentialHelperState.Active,
+                doctor.EffectiveCredentialHelper.State
+            );
+            Assert.Equal(
+                otherHelperAfterProduct
+                    ?
+                    [
+                        GitEffectiveCredentialHelperEntryKind.Product,
+                        GitEffectiveCredentialHelperEntryKind.Other,
+                    ]
+                    :
+                    [
+                        GitEffectiveCredentialHelperEntryKind.Other,
+                        GitEffectiveCredentialHelperEntryKind.Product,
+                    ],
+                doctor.EffectiveCredentialHelper.EffectiveOrder
+            );
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task DoctorReportsBypassWhenGitGlobalConfigurationOverrideSkipsActivation()
+    {
+        string stateDirectory = CreateTestDirectory();
+        string repositoryDirectory = Path.Combine(stateDirectory, "repository");
+        string gitDirectory = Path.Combine(repositoryDirectory, ".git");
+        Directory.CreateDirectory(Path.Combine(gitDirectory, "objects"));
+        Directory.CreateDirectory(Path.Combine(gitDirectory, "refs"));
+        File.WriteAllText(Path.Combine(gitDirectory, "HEAD"), "ref: refs/heads/main\n");
+        File.WriteAllText(
+            Path.Combine(gitDirectory, "config"),
+            """
+            [core]
+                repositoryFormatVersion = 0
+                bare = false
+            [credential]
+                helper = manager
+
+            """
+        );
+        string overrideConfigPath = Path.Combine(stateDirectory, "override.gitconfig");
+        File.WriteAllText(overrideConfigPath, string.Empty);
+        var processRunner = new EnvironmentOverlayProcessRunner(
+            new Dictionary<string, string?>
+            {
+                ["GIT_CONFIG_GLOBAL"] = overrideConfigPath,
+                ["GIT_CONFIG_NOSYSTEM"] = "1",
+            }
+        );
+        GitPhase8VerticalSliceService service = CreateRealGitService(
+            stateDirectory,
+            processRunner: processRunner,
+            gitConfigurationProbeWorkingDirectory: repositoryDirectory
+        );
+
+        try
+        {
+            await service.ConfigureAsync(TestContext.Current.CancellationToken);
+
+            GitPhase8DoctorResult doctor = await service.DoctorAsync(
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.True(doctor.OwnedGitEntriesPresent);
+            Assert.True(doctor.OwnershipManifestPresent);
+            Assert.Equal(
+                GitEffectiveCredentialHelperState.Bypassed,
+                doctor.EffectiveCredentialHelper.State
+            );
+            Assert.Equal(
+                [GitEffectiveCredentialHelperEntryKind.Other],
+                doctor.EffectiveCredentialHelper.EffectiveOrder
+            );
+            Assert.Equal(
+                new GitCredentialHelperConflictDescriptor
+                {
+                    Scope = GitConfigurationScope.Unknown,
+                    Selector = GitCredentialHelperSelectorKind.Unknown,
+                    Directive = GitCredentialHelperConflictDirective.ActivationBypassed,
+                },
+                doctor.EffectiveCredentialHelper.Conflict
+            );
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task DoctorHonorsExplicitCommandScopeOverrideAfterIsolation()
+    {
+        string stateDirectory = CreateTestDirectory();
+        var processRunner = new EnvironmentOverlayProcessRunner(
+            new Dictionary<string, string?>
+            {
+                ["GIT_CONFIG_COUNT"] = "2",
+                ["GIT_CONFIG_KEY_0"] = "credential.https://dev.azure.com/org.helper",
+                ["GIT_CONFIG_VALUE_0"] = string.Empty,
+                ["GIT_CONFIG_KEY_1"] = "credential.https://dev.azure.com/org.helper",
+                ["GIT_CONFIG_VALUE_1"] = "manager",
+            }
+        );
+        GitPhase8VerticalSliceService service = CreateRealGitService(
+            stateDirectory,
+            processRunner: processRunner
+        );
+
+        try
+        {
+            await service.ConfigureAsync(TestContext.Current.CancellationToken);
+
+            GitPhase8DoctorResult doctor = await service.DoctorAsync(
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Equal(
+                GitEffectiveCredentialHelperState.Shadowed,
+                doctor.EffectiveCredentialHelper.State
+            );
+            Assert.Equal(
+                new GitCredentialHelperConflictDescriptor
+                {
+                    Scope = GitConfigurationScope.Command,
+                    Selector = GitCredentialHelperSelectorKind.UrlSpecific,
+                    Directive = GitCredentialHelperConflictDirective.Reset,
+                },
+                doctor.EffectiveCredentialHelper.Conflict
+            );
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task DoctorIgnoresCredentialHelpersForUnrelatedHosts()
+    {
+        string stateDirectory = CreateTestDirectory();
+        GitPhase8VerticalSliceService service = CreateRealGitService(stateDirectory);
+
+        try
+        {
+            await service.ConfigureAsync(TestContext.Current.CancellationToken);
+            File.AppendAllText(
+                service.Paths.UserGitConfigPath,
+                """
+                [credential "https://github.com"]
+                    helper = manager
+
+                """
+            );
+
+            GitPhase8DoctorResult doctor = await service.DoctorAsync(
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Equal(
+                GitEffectiveCredentialHelperState.Active,
+                doctor.EffectiveCredentialHelper.State
+            );
+            Assert.Equal(
+                [GitEffectiveCredentialHelperEntryKind.Product],
+                doctor.EffectiveCredentialHelper.EffectiveOrder
+            );
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task DoctorHandlesUnrelatedCredentialUrlPatternContainingEquals()
+    {
+        string stateDirectory = CreateTestDirectory();
+        var processRunner = new RecordingGitDiscoveryProcessRunner();
+        GitPhase8VerticalSliceService service = CreateRealGitService(
+            stateDirectory,
+            processRunner: processRunner
+        );
+
+        try
+        {
+            await service.ConfigureAsync(TestContext.Current.CancellationToken);
+            File.AppendAllText(
+                service.Paths.UserGitConfigPath,
+                """
+                [credential "https://example.com/path=segment"]
+                    helper = manager
+
+                """
+            );
+
+            GitPhase8DoctorResult doctor = await service.DoctorAsync(
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Equal(
+                GitEffectiveCredentialHelperState.Active,
+                doctor.EffectiveCredentialHelper.State
+            );
+            Assert.Equal(
+                [GitEffectiveCredentialHelperEntryKind.Product],
+                doctor.EffectiveCredentialHelper.EffectiveOrder
+            );
+            ProcessStartSpec applicabilityProbe = Assert.Single(
+                processRunner.StartSpecs,
+                startSpec => startSpec.Arguments.Contains("--get-urlmatch")
+            );
+            Assert.DoesNotContain("-c", applicabilityProbe.Arguments);
+            Assert.Contains(
+                applicabilityProbe.Environment,
+                pair =>
+                    pair.Key.StartsWith("GIT_CONFIG_KEY_", StringComparison.Ordinal)
+                    && pair.Value?.Contains("path=segment", StringComparison.Ordinal) == true
+            );
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task DoctorIncludesRepositoryLocalCredentialHelperShadowing()
+    {
+        string stateDirectory = CreateTestDirectory();
+        string repositoryDirectory = Path.Combine(stateDirectory, "repository");
+        string gitDirectory = Path.Combine(repositoryDirectory, ".git");
+        Directory.CreateDirectory(gitDirectory);
+        Directory.CreateDirectory(Path.Combine(gitDirectory, "objects"));
+        Directory.CreateDirectory(Path.Combine(gitDirectory, "refs"));
+        File.WriteAllText(Path.Combine(gitDirectory, "HEAD"), "ref: refs/heads/main\n");
+        File.WriteAllText(
+            Path.Combine(gitDirectory, "config"),
+            """
+            [core]
+                repositoryFormatVersion = 0
+                bare = false
+            [credential "https://dev.azure.com/org"]
+                helper =
+                helper = manager
+
+            """
+        );
+        GitPhase8VerticalSliceService service = CreateRealGitService(
+            stateDirectory,
+            gitConfigurationProbeWorkingDirectory: repositoryDirectory
+        );
+
+        try
+        {
+            await service.ConfigureAsync(TestContext.Current.CancellationToken);
+
+            GitPhase8DoctorResult doctor = await service.DoctorAsync(
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Equal(
+                GitEffectiveCredentialHelperState.Shadowed,
+                doctor.EffectiveCredentialHelper.State
+            );
+            Assert.Equal(
+                [GitEffectiveCredentialHelperEntryKind.Other],
+                doctor.EffectiveCredentialHelper.EffectiveOrder
+            );
+            Assert.Equal(
+                new GitCredentialHelperConflictDescriptor
+                {
+                    Scope = GitConfigurationScope.Local,
+                    Selector = GitCredentialHelperSelectorKind.UrlSpecific,
+                    Directive = GitCredentialHelperConflictDirective.Reset,
+                },
+                doctor.EffectiveCredentialHelper.Conflict
+            );
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DoctorDelegatesWildcardCredentialScopeMatchingToGit(
+        bool replacementAfterReset
+    )
+    {
+        string stateDirectory = CreateTestDirectory();
+        GitPhase8VerticalSliceService service = CreateRealGitService(stateDirectory);
+
+        try
+        {
+            await service.ConfigureAsync(TestContext.Current.CancellationToken);
+            File.AppendAllText(
+                service.Paths.UserGitConfigPath,
+                "[credential \"https://*.azure.com/org\"]\n"
+                    + "\thelper =\n"
+                    + (replacementAfterReset ? "\thelper = manager\n" : string.Empty)
+            );
+
+            GitPhase8DoctorResult doctor = await service.DoctorAsync(
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Equal(
+                replacementAfterReset
+                    ? GitEffectiveCredentialHelperState.Shadowed
+                    : GitEffectiveCredentialHelperState.Reset,
+                doctor.EffectiveCredentialHelper.State
+            );
+            Assert.Equal(
+                GitCredentialHelperSelectorKind.UrlSpecific,
+                doctor.EffectiveCredentialHelper.Conflict?.Selector
+            );
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task DoctorUsesCredentialConfigOrderForUseHttpPath()
+    {
+        string stateDirectory = CreateTestDirectory();
+        GitPhase8VerticalSliceService service = CreateRealGitService(stateDirectory);
+
+        try
+        {
+            await service.ConfigureAsync(TestContext.Current.CancellationToken);
+            File.AppendAllText(
+                service.Paths.UserGitConfigPath,
+                "[credential]\n\tuseHttpPath = false\n"
+            );
+
+            GitPhase8DoctorResult doctor = await service.DoctorAsync(
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Equal(
+                GitUseHttpPathInspectionState.Absent,
+                doctor.DevAzureUseHttpPath.State
+            );
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Theory]
+    [InlineData("future", GitConfigurationScope.Unknown)]
+    [InlineData("GLOBAL", null)]
+    public async Task DoctorSanitizesUnknownScopeAndRejectsMalformedScope(
+        string scopeToken,
+        GitConfigurationScope? expectedScope
+    )
+    {
+        string stateDirectory = CreateTestDirectory();
+        var processRunner = new RecordingGitDiscoveryProcessRunner(
+            new ProcessResult(
+                0,
+                scopeToken + "\0credential.helper\nmanager\0",
+                string.Empty
+            )
+        );
+        var service = CreateService(stateDirectory, processRunner);
+
+        try
+        {
+            await service.ConfigureAsync(TestContext.Current.CancellationToken);
+
+            GitPhase8DoctorResult doctor = await service.DoctorAsync(
+                TestContext.Current.CancellationToken
+            );
+
+            if (expectedScope is null)
+            {
+                Assert.Equal(
+                    GitEffectiveCredentialHelperState.DiscoveryFailed,
+                    doctor.EffectiveCredentialHelper.State
+                );
+                Assert.Null(doctor.EffectiveCredentialHelper.Conflict);
+            }
+            else
+            {
+                Assert.Equal(
+                    GitEffectiveCredentialHelperState.Bypassed,
+                    doctor.EffectiveCredentialHelper.State
+                );
+                Assert.Equal(
+                    expectedScope,
+                    doctor.EffectiveCredentialHelper.Conflict?.Scope
+                );
+            }
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task CreateRealGitServiceRemovesAmbientGitConfigurationVariables()
+    {
+        string stateDirectory = CreateTestDirectory();
+        var processRunner = new RecordingGitDiscoveryProcessRunner();
+        GitPhase8VerticalSliceService service = CreateRealGitService(
+            stateDirectory,
+            processRunner: processRunner
+        );
+
+        try
+        {
+            await service.ConfigureAsync(TestContext.Current.CancellationToken);
+            _ = await service.DoctorAsync(TestContext.Current.CancellationToken);
+
+            Assert.All(
+                processRunner.StartSpecs,
+                startSpec =>
+                {
+                    Assert.Null(startSpec.Environment["GIT_CONFIG_GLOBAL"]);
+                    Assert.Null(startSpec.Environment["GIT_CONFIG_COUNT"]);
+                    Assert.Equal("1", startSpec.Environment["GIT_CONFIG_NOSYSTEM"]);
+                }
+            );
         }
         finally
         {
@@ -969,6 +1743,7 @@ public sealed class GitPhase8DoctorTests
             new GitPhase8VerticalSliceOptions
             {
                 StateDirectoryPath = stateDirectory,
+                GitConfigurationProbeWorkingDirectoryPath = stateDirectory,
                 ProcessRunner = processRunner,
                 GitExecutablePath = gitExecutablePath,
                 LocalShellGitDiscoverySupported = true,
@@ -980,14 +1755,20 @@ public sealed class GitPhase8DoctorTests
         string stateDirectory,
         string? homeDirectory = null,
         Action? afterOwnedGitActivationRemoved = null,
-        IFileSystem? fileSystem = null
+        IFileSystem? fileSystem = null,
+        IProcessRunner? processRunner = null,
+        string? gitConfigurationProbeWorkingDirectory = null
     ) =>
         new(
             new GitPhase8VerticalSliceOptions
             {
                 StateDirectoryPath = stateDirectory,
                 UserHomeDirectoryPath = homeDirectory ?? Path.Combine(stateDirectory, "user-home"),
-                ProcessRunner = new SystemProcessRunner(),
+                GitConfigurationProbeWorkingDirectoryPath =
+                    gitConfigurationProbeWorkingDirectory ?? stateDirectory,
+                ProcessRunner = new IsolatedRealGitProcessRunner(
+                    processRunner ?? new SystemProcessRunner()
+                ),
                 GitExecutablePath = "git",
                 LocalShellGitDiscoverySupported = true,
                 ProductExecutablePath = CreateFakeProductExecutable(stateDirectory),
@@ -1100,10 +1881,122 @@ public sealed class GitPhase8DoctorTests
         }
     }
 
-    private sealed class RecordingGitDiscoveryProcessRunner(ProcessResult? result = null)
+    private static Dictionary<string, string?> CreateIsolatedGitEnvironment(
+        IReadOnlyDictionary<string, string?> explicitEnvironment
+    )
+    {
+        var environment = new Dictionary<string, string?>(StringComparer.Ordinal);
+        environment["GIT_CONFIG"] = null;
+        environment["GIT_CONFIG_COUNT"] = null;
+        environment["GIT_CONFIG_GLOBAL"] = null;
+        environment["GIT_CONFIG_PARAMETERS"] = null;
+        environment["GIT_CONFIG_SYSTEM"] = null;
+        foreach (
+            System.Collections.DictionaryEntry entry in Environment.GetEnvironmentVariables()
+        )
+        {
+            string? variable = entry.Key as string;
+            if (
+                variable is not null
+                && variable.StartsWith("GIT_CONFIG_", StringComparison.Ordinal)
+            )
+            {
+                environment[variable] = null;
+            }
+        }
+        environment["GIT_CONFIG_NOSYSTEM"] = "1";
+        ApplyExplicitEnvironment(environment, explicitEnvironment);
+        return environment;
+    }
+
+    private static void ApplyExplicitEnvironment(
+        Dictionary<string, string?> target,
+        IReadOnlyDictionary<string, string?> explicitEnvironment
+    )
+    {
+        foreach ((string key, string? value) in explicitEnvironment)
+        {
+            if (
+                !string.Equals(key, "GIT_CONFIG_COUNT", StringComparison.Ordinal)
+                && !key.StartsWith("GIT_CONFIG_KEY_", StringComparison.Ordinal)
+                && !key.StartsWith("GIT_CONFIG_VALUE_", StringComparison.Ordinal)
+            )
+            {
+                target[key] = value;
+            }
+        }
+
+        List<(string Key, string Value)> entries =
+            ReadExplicitGitConfigEntries(explicitEnvironment);
+        if (
+            entries.Count != 0
+            || explicitEnvironment.ContainsKey("GIT_CONFIG_COUNT")
+        )
+        {
+            target["GIT_CONFIG_COUNT"] = entries.Count.ToString(
+                System.Globalization.CultureInfo.InvariantCulture
+            );
+            for (var index = 0; index < entries.Count; index++)
+            {
+                target["GIT_CONFIG_KEY_" + index] = entries[index].Key;
+                target["GIT_CONFIG_VALUE_" + index] = entries[index].Value;
+            }
+        }
+    }
+
+    private static List<(string Key, string Value)> ReadExplicitGitConfigEntries(
+        IReadOnlyDictionary<string, string?> environment
+    )
+    {
+        if (
+            !environment.TryGetValue("GIT_CONFIG_COUNT", out string? countValue)
+            || countValue is null
+        )
+        {
+            return new List<(string Key, string Value)>();
+        }
+        if (
+            !int.TryParse(
+                countValue,
+                System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out int count
+            )
+            || count < 0
+        )
+        {
+            throw new InvalidOperationException("Invalid explicit Git configuration count.");
+        }
+
+        var entries = new List<(string Key, string Value)>(count);
+        for (var index = 0; index < count; index++)
+        {
+            if (
+                !environment.TryGetValue("GIT_CONFIG_KEY_" + index, out string? key)
+                || key is null
+                || !environment.TryGetValue(
+                    "GIT_CONFIG_VALUE_" + index,
+                    out string? value
+                )
+                || value is null
+            )
+            {
+                continue;
+            }
+            entries.Add((key, value));
+        }
+        return entries;
+    }
+
+    private sealed class RecordingGitDiscoveryProcessRunner(
+        ProcessResult? helperResult = null,
+        ProcessResult? useHttpPathResult = null
+    )
         : IProcessRunner
     {
         public List<ProcessStartSpec> StartSpecs { get; } = [];
+
+        public List<ProcessStartSpec> FallbackStartSpecs { get; } = [];
 
         public bool HelperAliasWasPresent { get; private set; }
 
@@ -1116,9 +2009,20 @@ public sealed class GitPhase8DoctorTests
             cancellationToken.ThrowIfCancellationRequested();
 
             StartSpecs.Add(startSpec);
-            if (result is not null && startSpec.Arguments.Contains("--get-regexp"))
+            if (
+                helperResult is not null
+                && startSpec.Arguments.Contains("--get-regexp")
+            )
             {
-                return Task.FromResult(result);
+                return Task.FromResult(helperResult);
+            }
+
+            if (
+                useHttpPathResult is not null
+                && startSpec.Arguments.Contains("fill")
+            )
+            {
+                return Task.FromResult(useHttpPathResult);
             }
 
             if (
@@ -1146,16 +2050,18 @@ public sealed class GitPhase8DoctorTests
                 }
             }
 
-            return new SystemProcessRunner().RunAsync(
-                new ProcessStartSpec(
+            var fallbackStartSpec = new ProcessStartSpec(
                     "git",
                     startSpec.Arguments,
                     startSpec.WorkingDirectory,
-                    startSpec.Environment,
+                    CreateIsolatedGitEnvironment(startSpec.Environment),
                     startSpec.StandardInput,
                     startSpec.Timeout,
                     startSpec.OutputCaptureOptions
-                ),
+            );
+            FallbackStartSpecs.Add(fallbackStartSpec);
+            return new SystemProcessRunner().RunAsync(
+                fallbackStartSpec,
                 cancellationToken
             );
         }
@@ -1175,6 +2081,92 @@ public sealed class GitPhase8DoctorTests
 
             InvocationCount++;
             throw exception;
+        }
+    }
+
+    private sealed class EnvironmentOverlayProcessRunner(
+        IReadOnlyDictionary<string, string?> environment
+    ) : IProcessRunner
+    {
+        public Task<ProcessResult> RunAsync(
+            ProcessStartSpec startSpec,
+            CancellationToken cancellationToken = default
+        )
+        {
+            var combinedEnvironment = new Dictionary<string, string?>(
+                StringComparer.Ordinal
+            );
+            ApplyExplicitEnvironment(combinedEnvironment, startSpec.Environment);
+            foreach ((string key, string? value) in environment)
+            {
+                if (
+                    !string.Equals(key, "GIT_CONFIG_COUNT", StringComparison.Ordinal)
+                    && !key.StartsWith("GIT_CONFIG_KEY_", StringComparison.Ordinal)
+                    && !key.StartsWith("GIT_CONFIG_VALUE_", StringComparison.Ordinal)
+                )
+                {
+                    combinedEnvironment[key] = value;
+                }
+            }
+            List<(string Key, string Value)> overlayEntries =
+                ReadExplicitGitConfigEntries(environment);
+            List<(string Key, string Value)> startEntries =
+                ReadExplicitGitConfigEntries(startSpec.Environment);
+            var combinedEntries = overlayEntries.Concat(startEntries).ToArray();
+            if (combinedEntries.Length != 0)
+            {
+                combinedEnvironment["GIT_CONFIG_COUNT"] =
+                    combinedEntries.Length.ToString(
+                        System.Globalization.CultureInfo.InvariantCulture
+                    );
+                for (var index = 0; index < combinedEntries.Length; index++)
+                {
+                    combinedEnvironment["GIT_CONFIG_KEY_" + index] =
+                        combinedEntries[index].Key;
+                    combinedEnvironment["GIT_CONFIG_VALUE_" + index] =
+                        combinedEntries[index].Value;
+                }
+            }
+
+            return new SystemProcessRunner().RunAsync(
+                new ProcessStartSpec(
+                    startSpec.FileName,
+                    startSpec.Arguments,
+                    startSpec.WorkingDirectory,
+                    combinedEnvironment,
+                    startSpec.StandardInput,
+                    startSpec.Timeout,
+                    startSpec.OutputCaptureOptions,
+                    startSpec.StandardErrorTee
+                ),
+                cancellationToken
+            );
+        }
+    }
+
+    private sealed class IsolatedRealGitProcessRunner(IProcessRunner inner) : IProcessRunner
+    {
+        public Task<ProcessResult> RunAsync(
+            ProcessStartSpec startSpec,
+            CancellationToken cancellationToken = default
+        )
+        {
+            Dictionary<string, string?> environment =
+                CreateIsolatedGitEnvironment(startSpec.Environment);
+
+            return inner.RunAsync(
+                new ProcessStartSpec(
+                    startSpec.FileName,
+                    startSpec.Arguments,
+                    startSpec.WorkingDirectory,
+                    environment,
+                    startSpec.StandardInput,
+                    startSpec.Timeout,
+                    startSpec.OutputCaptureOptions,
+                    startSpec.StandardErrorTee
+                ),
+                cancellationToken
+            );
         }
     }
 
