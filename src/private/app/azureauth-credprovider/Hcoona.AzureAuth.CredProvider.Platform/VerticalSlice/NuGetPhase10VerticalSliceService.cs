@@ -489,10 +489,15 @@ public sealed class NuGetPhase10VerticalSliceService
                 return false;
             }
 
-            manifest = ConfigurationOwnershipManifestSerializer.Deserialize(
-                fileSystem.ReadAllText(paths.OwnershipManifestPath)
-            );
+            string manifestJson = fileSystem.ReadAllText(paths.OwnershipManifestPath);
+            manifest = ConfigurationOwnershipManifestSerializer.Deserialize(manifestJson);
             if (
+                !string.Equals(
+                    ConfigurationOwnershipManifestSerializer.Serialize(manifest),
+                    manifestJson,
+                    StringComparison.Ordinal
+                )
+                ||
                 !HasExpectedManifestMetadata(manifest)
                 || !HasExpectedManagedManifestEntries(manifest)
             )

@@ -9,6 +9,8 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../../..')).ProviderPath
 $installerSource = Join-Path $repoRoot 'eng/scripts/azureauth-credprovider/Install-DeploymentValidationBundle.ps1'
+$uninstallerSource = Join-Path $repoRoot 'eng/scripts/azureauth-credprovider/Uninstall-DeploymentValidationBundle.ps1'
+$legacyNuGetSupportSource = Join-Path $repoRoot 'eng/scripts/azureauth-credprovider/DeploymentValidationLegacyNuGet.ps1'
 $bundleGeneratorSource = Join-Path $repoRoot 'eng/scripts/azureauth-credprovider/New-DeploymentValidationBundle.ps1'
 $testBase = Join-Path $repoRoot 'artifacts/azureauth-credprovider/deployment-installer-tests'
 $testRoot = Join-Path $testBase ([System.Guid]::NewGuid().ToString('N'))
@@ -117,7 +119,10 @@ function New-TestBundle {
     New-Item -ItemType Directory -Path $pythonRoot -Force | Out-Null
 
     Copy-Item -LiteralPath $installerSource -Destination (Join-Path $BundleRoot 'install.ps1')
-    Set-Content -LiteralPath (Join-Path $BundleRoot 'uninstall.ps1') -Value 'exit 0'
+    Copy-Item -LiteralPath $uninstallerSource -Destination (Join-Path $BundleRoot 'uninstall.ps1')
+    Copy-Item `
+        -LiteralPath $legacyNuGetSupportSource `
+        -Destination (Join-Path $BundleRoot 'legacy-nuget.ps1')
     Set-Content `
         -LiteralPath (Join-Path $appRoot $productExecutableName) `
         -Value 'new executable payload' `
@@ -275,6 +280,96 @@ function New-ExistingInstallation {
         Set-Content -LiteralPath (Join-Path $InstallRoot 'installation.json') -Encoding utf8
 }
 
+function New-F1LegacyInstallation {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$InstallRoot,
+
+        [Parameter(Mandatory = $true)]
+        [string]$NuGetPluginRoot,
+
+        [Parameter(Mandatory = $true)]
+        [string]$OwnershipManifestPath
+    )
+
+    if (-not $PSCmdlet.ShouldProcess($InstallRoot, 'Create f1bf00d4 test installation')) {
+        return
+    }
+
+    $applicationRoot = Join-Path $InstallRoot 'app'
+    New-Item -ItemType Directory -Path (Join-Path $applicationRoot 'nested') -Force |
+        Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $NuGetPluginRoot 'nested') -Force |
+        Out-Null
+    $payload = [ordered]@{
+        $productExecutableName       = 'legacy executable payload'
+        'azureauth-credprovider.dll' = 'legacy plugin entrypoint'
+        'nested/dependency.dll'      = 'legacy plugin dependency'
+    }
+    foreach ($entry in $payload.GetEnumerator()) {
+        Set-Content `
+            -LiteralPath (Join-Path $applicationRoot $entry.Key) `
+            -Value $entry.Value `
+            -NoNewline
+        Set-Content `
+            -LiteralPath (Join-Path $NuGetPluginRoot $entry.Key) `
+            -Value $entry.Value `
+            -NoNewline
+    }
+    Set-Content `
+        -LiteralPath (Join-Path $NuGetPluginRoot 'preserve.txt') `
+        -Value 'unrelated legacy-root content' `
+        -NoNewline
+    $legacyMarker = (
+        "azureauth-credprovider nuget-plugin-layout`n" +
+        "phase=10`n" +
+        "runtime=netcore`n" +
+        "entrypoint=azureauth-credprovider.dll`n"
+    )
+    [System.IO.File]::WriteAllText(
+        (Join-Path $NuGetPluginRoot '.azureauth-credprovider.nuget-plugin-layout'),
+        $legacyMarker,
+        [System.Text.UTF8Encoding]::new($false)
+    )
+    $ownershipManifest = [ordered]@{
+        schemaVersion  = 1
+        manifestId     = 'phase10-nuget-plugin-layout'
+        ownerProductId = 'azureauth-credprovider'
+        scope          = 'user'
+        entrySelector  = 'nuget.plugin-layout'
+        productVersion = 'phase10'
+        safeMetadata   = [ordered]@{}
+        entries        = @(
+            [ordered]@{
+                sequence         = 1
+                targetKind       = 'nuGetPluginLayout'
+                targetPathOrName = [System.IO.Path]::GetFullPath($NuGetPluginRoot)
+                key              = 'physical-target'
+            }
+        )
+    }
+    $ownershipManifestDirectory = Split-Path -Parent $OwnershipManifestPath
+    New-Item -ItemType Directory -Path $ownershipManifestDirectory -Force | Out-Null
+    [System.IO.File]::WriteAllText(
+        $OwnershipManifestPath,
+        ($ownershipManifest | ConvertTo-Json -Depth 10 -Compress),
+        [System.Text.UTF8Encoding]::new($false)
+    )
+
+    $receipt = [ordered]@{
+        schemaVersion   = 'azureauth-credprovider-deployment-validation-install-v1'
+        productVersion  = '1.0.0-test'
+        sourceRevision  = 'f1bf00d4'
+        targetRid       = $targetRid
+        installRoot     = [System.IO.Path]::GetFullPath($InstallRoot)
+        applicationRoot = [System.IO.Path]::GetFullPath($applicationRoot)
+        nugetPluginRoot = [System.IO.Path]::GetFullPath($NuGetPluginRoot)
+    }
+    $receipt | ConvertTo-Json -Depth 5 |
+        Set-Content -LiteralPath (Join-Path $InstallRoot 'installation.json') -Encoding utf8
+}
+
 function Assert-PreviousInstallationRestored {
     param(
         [Parameter(Mandatory = $true)]
@@ -329,12 +424,17 @@ function Invoke-Installer {
         [string]$BundleRoot,
 
         [Parameter(Mandatory = $true)]
-        [string]$InstallRoot
+        [string]$InstallRoot,
+
+        [string]$LegacyNuGetOwnershipManifestPath
     )
 
     $parameters = @{
         InstallRoot = $InstallRoot
         Force       = $true
+    }
+    if (-not [string]::IsNullOrWhiteSpace($LegacyNuGetOwnershipManifestPath)) {
+        $parameters.LegacyNuGetOwnershipManifestPath = $LegacyNuGetOwnershipManifestPath
     }
     if ($PSBoundParameters.ContainsKey('WarningAction')) {
         $parameters.WarningAction = $PSBoundParameters.WarningAction
@@ -663,6 +763,118 @@ try {
 
     $bundleRoot = Join-Path $testRoot 'bundle'
     New-TestBundle -BundleRoot $bundleRoot
+
+    $legacyUpgradeRoot = Join-Path $testRoot 'legacy-upgrade'
+    $legacyUpgradeInstallRoot = Join-Path $legacyUpgradeRoot 'install'
+    $legacyUpgradeNuGetRoot = Join-Path $legacyUpgradeRoot 'nuget'
+    $legacyUpgradeManifestPath = Join-Path $legacyUpgradeRoot 'state/ownership.json'
+    New-F1LegacyInstallation `
+        -InstallRoot $legacyUpgradeInstallRoot `
+        -NuGetPluginRoot $legacyUpgradeNuGetRoot `
+        -OwnershipManifestPath $legacyUpgradeManifestPath
+
+    Invoke-Installer `
+        -BundleRoot $bundleRoot `
+        -InstallRoot $legacyUpgradeInstallRoot `
+        -LegacyNuGetOwnershipManifestPath $legacyUpgradeManifestPath
+
+    $upgradedReceipt = Get-Content -LiteralPath (
+        Join-Path $legacyUpgradeInstallRoot 'installation.json'
+    ) -Raw | ConvertFrom-Json
+    Assert-Equal `
+        -Expected 'azureauth-credprovider-deployment-validation-install-v2' `
+        -Actual $upgradedReceipt.schemaVersion `
+        -Message 'Installer did not migrate the exact f1bf00d4 receipt to v2.'
+    foreach ($relativePath in @(
+            $productExecutableName,
+            'azureauth-credprovider.dll',
+            'nested/dependency.dll',
+            '.azureauth-credprovider.nuget-plugin-layout'
+        )) {
+        Assert-True (
+            -not (Test-Path -LiteralPath (Join-Path $legacyUpgradeNuGetRoot $relativePath))
+        ) "Installer left legacy product-owned NuGet content '$relativePath'."
+    }
+    Assert-Equal `
+        -Expected 'unrelated legacy-root content' `
+        -Actual (Get-Content -LiteralPath (
+            Join-Path $legacyUpgradeNuGetRoot 'preserve.txt'
+        ) -Raw) `
+        -Message 'Installer removed unrelated content from the legacy NuGet root.'
+    Assert-True (
+        -not (Test-Path -LiteralPath $legacyUpgradeManifestPath)
+    ) 'Installer left the exact f1bf00d4 ownership manifest.'
+
+    $legacyDriftRoot = Join-Path $testRoot 'legacy-drift'
+    $legacyDriftInstallRoot = Join-Path $legacyDriftRoot 'install'
+    $legacyDriftNuGetRoot = Join-Path $legacyDriftRoot 'nuget'
+    $legacyDriftManifestPath = Join-Path $legacyDriftRoot 'state/ownership.json'
+    New-F1LegacyInstallation `
+        -InstallRoot $legacyDriftInstallRoot `
+        -NuGetPluginRoot $legacyDriftNuGetRoot `
+        -OwnershipManifestPath $legacyDriftManifestPath
+    Set-Content `
+        -LiteralPath (Join-Path $legacyDriftNuGetRoot 'azureauth-credprovider.dll') `
+        -Value 'drifted legacy plugin entrypoint' `
+        -NoNewline
+
+    Assert-InvocationFailure {
+        Invoke-Installer `
+            -BundleRoot $bundleRoot `
+            -InstallRoot $legacyDriftInstallRoot `
+            -LegacyNuGetOwnershipManifestPath $legacyDriftManifestPath
+    } 'Expected legacy NuGet payload drift to block deployment replacement.'
+    $driftedReceipt = Get-Content -LiteralPath (
+        Join-Path $legacyDriftInstallRoot 'installation.json'
+    ) -Raw | ConvertFrom-Json
+    Assert-Equal `
+        -Expected 'azureauth-credprovider-deployment-validation-install-v1' `
+        -Actual $driftedReceipt.schemaVersion `
+        -Message 'Drifted legacy replacement changed the existing receipt.'
+    Assert-Equal `
+        -Expected 'drifted legacy plugin entrypoint' `
+        -Actual (Get-Content -LiteralPath (
+            Join-Path $legacyDriftNuGetRoot 'azureauth-credprovider.dll'
+        ) -Raw) `
+        -Message 'Drifted legacy replacement mutated the NuGet payload.'
+
+    $legacyUninstallRoot = Join-Path $testRoot 'legacy-uninstall'
+    $legacyUninstallInstallRoot = Join-Path $legacyUninstallRoot 'install'
+    $legacyUninstallNuGetRoot = Join-Path $legacyUninstallRoot 'nuget'
+    $legacyUninstallManifestPath = Join-Path $legacyUninstallRoot 'state/ownership.json'
+    New-F1LegacyInstallation `
+        -InstallRoot $legacyUninstallInstallRoot `
+        -NuGetPluginRoot $legacyUninstallNuGetRoot `
+        -OwnershipManifestPath $legacyUninstallManifestPath
+
+    & (Join-Path $bundleRoot 'uninstall.ps1') `
+        -InstallRoot $legacyUninstallInstallRoot `
+        -LegacyNuGetOwnershipManifestPath $legacyUninstallManifestPath `
+        -SkipConfigurationCleanup |
+        Out-Null
+
+    Assert-True (
+        -not (Test-Path -LiteralPath $legacyUninstallInstallRoot)
+    ) 'SkipConfigurationCleanup uninstall left the legacy product payload.'
+    foreach ($relativePath in @(
+            $productExecutableName,
+            'azureauth-credprovider.dll',
+            'nested/dependency.dll',
+            '.azureauth-credprovider.nuget-plugin-layout'
+        )) {
+        Assert-True (
+            -not (Test-Path -LiteralPath (Join-Path $legacyUninstallNuGetRoot $relativePath))
+        ) "SkipConfigurationCleanup uninstall left legacy NuGet content '$relativePath'."
+    }
+    Assert-Equal `
+        -Expected 'unrelated legacy-root content' `
+        -Actual (Get-Content -LiteralPath (
+            Join-Path $legacyUninstallNuGetRoot 'preserve.txt'
+        ) -Raw) `
+        -Message 'SkipConfigurationCleanup uninstall removed unrelated NuGet content.'
+    Assert-True (
+        -not (Test-Path -LiteralPath $legacyUninstallManifestPath)
+    ) 'SkipConfigurationCleanup uninstall left the exact f1bf00d4 ownership manifest.'
 
     $receiptFailureRoot = Join-Path $testRoot 'receipt-failure'
     $receiptFailureInstallRoot = Join-Path $receiptFailureRoot 'install'

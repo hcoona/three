@@ -10,16 +10,24 @@ namespace Hcoona.AzureAuth.CredProvider.Platform.Tests;
 [Collection("ConfigurationManagerExecution")]
 public sealed class NuGetPhase10VerticalSliceServiceTests
 {
+    private const string F1LegacyMarker =
+        "azureauth-credprovider nuget-plugin-layout\n"
+        + "phase=10\n"
+        + "runtime=netcore\n"
+        + "entrypoint=azureauth-credprovider.dll\n";
+
     [Fact]
-    public async Task DryRunConfigurePlansCanonicalNuGetPluginActivation()
+    public async Task ValidConfigureDryRunPlansActivationWithoutFilesystemMutation()
     {
-        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Host);
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         NuGetPhase10VerticalSliceService service = CreateService(fileSystem);
+        fileSystem.Calls.Clear();
 
         NuGetPhase10ConfigureDryRunResult result = await service.DryRunConfigureAsync(
             TestContext.Current.CancellationToken
         );
 
+        Assert.DoesNotContain(fileSystem.Calls, call => IsMutation(call.Operation));
         Assert.True(result.Validation.IsValid);
         Assert.Equal(ConfigurationPlanOperation.DryRun, result.PlanResult.Operation);
         ConfigurationPlannedChange change = Assert.Single(result.PlanResult.Changes);
@@ -28,8 +36,166 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
         Assert.Equal(service.Paths.PluginTargetRootPath, change.TargetPathOrName);
         Assert.Equal("physical-target", change.Key);
         Assert.True(change.HasPlannedValue);
+        Assert.False(fileSystem.DirectoryExists(service.Paths.PluginTargetRootPath));
+        Assert.False(fileSystem.FileExists(service.Paths.PluginEntrypointPath));
+        Assert.False(
+            fileSystem.FileExists(service.Paths.PluginTargetRootPath + "/dependency.dll")
+        );
         Assert.False(fileSystem.FileExists(service.Paths.PluginLayoutMarkerPath));
         Assert.False(fileSystem.FileExists(service.Paths.OwnershipManifestPath));
+    }
+
+    [Fact]
+    public async Task ConfiguredUnconfigureDryRunPreservesOwnedFilesWithoutFilesystemMutation()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        NuGetPhase10VerticalSliceService service = CreateService(fileSystem);
+        await service.ConfigureAsync(TestContext.Current.CancellationToken);
+        string[] ownedPaths =
+        [
+            service.Paths.PluginEntrypointPath,
+            service.Paths.PluginTargetRootPath + "/dependency.dll",
+            service.Paths.PluginLayoutMarkerPath,
+            service.Paths.OwnershipManifestPath,
+        ];
+        Dictionary<string, OwnedFileSnapshot> snapshots = ownedPaths.ToDictionary(
+            path => path,
+            path =>
+                new OwnedFileSnapshot(
+                    fileSystem.ReadAllBytes(path),
+                    fileSystem.GetUnixFileMode(path)
+                ),
+            StringComparer.Ordinal
+        );
+        fileSystem.Calls.Clear();
+
+        await service.ValidateUnconfigureDryRunAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.DoesNotContain(fileSystem.Calls, call => IsMutation(call.Operation));
+        foreach ((string path, OwnedFileSnapshot snapshot) in snapshots)
+        {
+            Assert.True(fileSystem.FileExists(path));
+            Assert.Equal(snapshot.Contents, fileSystem.ReadAllBytes(path));
+            Assert.Equal(snapshot.Mode, fileSystem.GetUnixFileMode(path));
+        }
+        Assert.DoesNotContain(fileSystem.Calls, call => IsMutation(call.Operation));
+    }
+
+    [Fact]
+    public async Task ConfigureMigratesExactF1LegacyActivationToJsonInventory()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        NuGetPhase10VerticalSliceService service = CreateService(fileSystem);
+        string sourceRoot = service.Paths.ApplicationPayloadRootPath;
+        string targetRoot = service.Paths.PluginTargetRootPath;
+        fileSystem.AtomicWriteAllText(sourceRoot + "/shared/legacy.dll", "legacy-only");
+        string ownershipBefore = await SeedExactF1LegacyActivationAsync(fileSystem, service);
+        fileSystem.DeleteFile(sourceRoot + "/shared/legacy.dll");
+        fileSystem.AtomicWriteAllText(sourceRoot + "/shared/current.dll", "current-only");
+
+        NuGetPhase10ConfigureResult result = await service.ConfigureAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Single(result.PlanResult.Changes);
+        Assert.Equal(
+            "fake-assembly",
+            fileSystem.ReadAllText(service.Paths.PluginEntrypointPath)
+        );
+        Assert.Equal(
+            "dependency",
+            fileSystem.ReadAllText(service.Paths.PluginTargetRootPath + "/dependency.dll")
+        );
+        string marker = fileSystem.ReadAllText(service.Paths.PluginLayoutMarkerPath);
+        Assert.StartsWith("{", marker, StringComparison.Ordinal);
+        Assert.Contains(
+            "\"schemaVersion\": \"azureauth-credprovider-nuget-plugin-activation-v1\"",
+            marker,
+            StringComparison.Ordinal
+        );
+        Assert.Contains("\"dependency.dll\"", marker, StringComparison.Ordinal);
+        Assert.Contains("\"shared/current.dll\"", marker, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"shared/legacy.dll\"", marker, StringComparison.Ordinal);
+        Assert.Equal(
+            "legacy-only",
+            fileSystem.ReadAllText(targetRoot + "/shared/legacy.dll")
+        );
+        Assert.Equal(
+            "current-only",
+            fileSystem.ReadAllText(targetRoot + "/shared/current.dll")
+        );
+        Assert.Equal(
+            ownershipBefore,
+            fileSystem.ReadAllText(service.Paths.OwnershipManifestPath)
+        );
+    }
+
+    [Fact]
+    public async Task UnconfigureRemovesOnlyExactF1LegacyEntrypointAndMarker()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        NuGetPhase10VerticalSliceService service = CreateService(fileSystem);
+        await SeedExactF1LegacyActivationAsync(fileSystem, service);
+        string unrelatedPath = service.Paths.PluginTargetRootPath + "/preserve.txt";
+        fileSystem.AtomicWriteAllText(unrelatedPath, "unrelated");
+
+        NuGetPhase10UnconfigureResult result = await service.UnconfigureAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.True(result.HadOwnedConfiguration);
+        Assert.False(fileSystem.FileExists(service.Paths.PluginEntrypointPath));
+        Assert.False(fileSystem.FileExists(service.Paths.PluginLayoutMarkerPath));
+        Assert.False(fileSystem.FileExists(service.Paths.OwnershipManifestPath));
+        Assert.Equal(
+            "dependency",
+            fileSystem.ReadAllText(service.Paths.PluginTargetRootPath + "/dependency.dll")
+        );
+        Assert.Equal("unrelated", fileSystem.ReadAllText(unrelatedPath));
+    }
+
+    [Theory]
+    [InlineData("marker")]
+    [InlineData("manifest")]
+    public async Task DriftedF1LegacyStateRemainsUnrecognized(string scenario)
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        NuGetPhase10VerticalSliceService service = CreateService(fileSystem);
+        string ownershipBefore = await SeedExactF1LegacyActivationAsync(fileSystem, service);
+        string markerBefore = fileSystem.ReadAllText(service.Paths.PluginLayoutMarkerPath);
+        if (scenario == "marker")
+        {
+            markerBefore += " ";
+            fileSystem.AtomicWriteAllText(service.Paths.PluginLayoutMarkerPath, markerBefore);
+        }
+        else
+        {
+            ownershipBefore += " ";
+            fileSystem.AtomicWriteAllText(service.Paths.OwnershipManifestPath, ownershipBefore);
+        }
+
+        NuGetPhase10DoctorResult doctor = await service.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+        await Assert.ThrowsAsync<NuGetPhase10UnrecognizedStateException>(async () =>
+            await service.ConfigureAsync(TestContext.Current.CancellationToken)
+        );
+        await Assert.ThrowsAsync<NuGetPhase10UnrecognizedStateException>(async () =>
+            await service.UnconfigureAsync(TestContext.Current.CancellationToken)
+        );
+
+        Assert.Equal(NuGetConfigurationState.Unrecognized, doctor.ConfigurationState);
+        Assert.Equal(
+            "fake-assembly",
+            fileSystem.ReadAllText(service.Paths.PluginEntrypointPath)
+        );
+        Assert.Equal(markerBefore, fileSystem.ReadAllText(service.Paths.PluginLayoutMarkerPath));
+        Assert.Equal(
+            ownershipBefore,
+            fileSystem.ReadAllText(service.Paths.OwnershipManifestPath)
+        );
     }
 
     [Fact]
@@ -494,15 +660,14 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
         Assert.False(result.PluginModeEntrypointResolvable);
     }
 
-    [Fact]
-    public async Task ConfigureRejectsProductOwnedMarkerWithoutManifest()
+    [Theory]
+    [InlineData("""{"schemaVersion":"azureauth-credprovider-nuget-plugin-activation-v1"}""")]
+    [InlineData(F1LegacyMarker)]
+    public async Task ConfigureRejectsProductOwnedMarkerWithoutManifest(string marker)
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Host);
         NuGetPhase10VerticalSliceService service = CreateService(fileSystem);
-        fileSystem.AtomicWriteAllText(
-            service.Paths.PluginLayoutMarkerPath,
-            """{"schemaVersion":"azureauth-credprovider-nuget-plugin-activation-v1"}"""
-        );
+        fileSystem.AtomicWriteAllText(service.Paths.PluginLayoutMarkerPath, marker);
 
         await Assert.ThrowsAsync<NuGetPhase10UnrecognizedStateException>(async () =>
             await service.ConfigureAsync(TestContext.Current.CancellationToken)
@@ -635,6 +800,35 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
         );
     }
 
+    private static async Task<string> SeedExactF1LegacyActivationAsync(
+        InMemoryFileSystem fileSystem,
+        NuGetPhase10VerticalSliceService service
+    )
+    {
+        await service.ConfigureAsync(TestContext.Current.CancellationToken);
+        string ownership = fileSystem.ReadAllText(service.Paths.OwnershipManifestPath);
+        ConfigurationOwnershipManifest manifest =
+            ConfigurationOwnershipManifestSerializer.Deserialize(ownership);
+        ConfigurationOwnershipManifestEntry entry = Assert.Single(manifest.Entries);
+        Assert.Equal(1, manifest.SchemaVersion);
+        Assert.Equal("phase10-nuget-plugin-layout", manifest.ManifestId);
+        Assert.Equal("azureauth-credprovider", manifest.OwnerProductId);
+        Assert.Equal(ConfigurationScope.User, manifest.Scope);
+        Assert.Equal("nuget.plugin-layout", manifest.EntrySelector);
+        Assert.Equal("phase10", manifest.ProductVersion);
+        Assert.Empty(manifest.SafeMetadata);
+        Assert.Equal(1, entry.Sequence);
+        Assert.Equal(ConfigurationTargetKind.NuGetPluginLayout, entry.TargetKind);
+        Assert.Equal(service.Paths.PluginTargetRootPath, entry.TargetPathOrName);
+        Assert.Equal("physical-target", entry.Key);
+        Assert.Equal(
+            ConfigurationOwnershipManifestSerializer.Serialize(manifest),
+            ownership
+        );
+        fileSystem.AtomicWriteAllText(service.Paths.PluginLayoutMarkerPath, F1LegacyMarker);
+        return ownership;
+    }
+
     private static void AssertRejectedConfigureWasNonMutating(
         InMemoryFileSystem fileSystem,
         InvalidNuGetPayloadFixture fixture
@@ -725,6 +919,8 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
         string ForeignContents,
         string ExpectedDiagnostic
     );
+
+    private sealed record OwnedFileSnapshot(byte[] Contents, UnixFileMode Mode);
 
     private static string GetIsolatedHomePath() =>
         Path.Combine(
@@ -818,7 +1014,7 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
     }
 
     [Fact]
-    public async Task DoctorTreatsTargetDirectoryContainingOnlyUnrelatedFilesAsValid()
+    public async Task ConfigureAndDoctorPreserveMarkerlessDirectoryWithOnlyUnrelatedFiles()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         NuGetPhase10VerticalSliceService service = CreateService(fileSystem);
@@ -827,16 +1023,47 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
             "unrelated"
         );
 
+        NuGetPhase10ConfigureResult configure = await service.ConfigureAsync(
+            TestContext.Current.CancellationToken
+        );
         NuGetPhase10DoctorResult doctor = await service.DoctorAsync(
             TestContext.Current.CancellationToken
         );
 
+        Assert.Single(configure.PlanResult.Changes);
         Assert.Equal(NuGetConfigurationState.Valid, doctor.ConfigurationState);
         Assert.True(doctor.ConfigurationPlanValid);
-        Assert.False(fileSystem.FileExists(service.Paths.PluginLayoutMarkerPath));
+        Assert.Equal(
+            "unrelated",
+            fileSystem.ReadAllText(service.Paths.PluginTargetRootPath + "/unrelated.txt")
+        );
+        Assert.True(fileSystem.FileExists(service.Paths.PluginEntrypointPath));
+        Assert.True(fileSystem.FileExists(service.Paths.PluginLayoutMarkerPath));
         Assert.False(fileSystem.DirectoryExists(service.Paths.PluginLayoutMarkerPath));
-        Assert.False(fileSystem.FileExists(service.Paths.OwnershipManifestPath));
+        Assert.True(fileSystem.FileExists(service.Paths.OwnershipManifestPath));
         Assert.False(fileSystem.DirectoryExists(service.Paths.OwnershipManifestPath));
+    }
+
+    [Fact]
+    public async Task ConfigureAndDoctorRejectOwnershipManifestClaimWithoutMarker()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        NuGetPhase10VerticalSliceService service = CreateService(fileSystem);
+        await service.ConfigureAsync(TestContext.Current.CancellationToken);
+        fileSystem.DeleteFile(service.Paths.PluginLayoutMarkerPath);
+
+        NuGetPhase10DoctorResult doctor = await service.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(NuGetConfigurationState.Unrecognized, doctor.ConfigurationState);
+        Assert.False(doctor.ConfigurationPlanValid);
+        await Assert.ThrowsAsync<NuGetPhase10UnrecognizedStateException>(async () =>
+            await service.ConfigureAsync(TestContext.Current.CancellationToken)
+        );
+        Assert.True(fileSystem.FileExists(service.Paths.OwnershipManifestPath));
+        Assert.True(fileSystem.FileExists(service.Paths.PluginEntrypointPath));
+        Assert.False(fileSystem.FileExists(service.Paths.PluginLayoutMarkerPath));
     }
 
     private static void ApplyOwnershiplessCollision(

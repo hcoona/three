@@ -38,21 +38,42 @@ public sealed class ConfigurationNuGetPluginLayoutPhysicalWriterPhase4DTests
     }
 
     [Fact]
-    public void ExistingUnownedDirectoryIsRejected()
+    public void ExistingMarkerlessDirectoryWithUnrelatedFileIsPreserved()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         fileSystem.AtomicWriteAllText(Source + "/azureauth-credprovider.dll", "plugin");
         fileSystem.AtomicWriteAllText(Root + "/foreign", "keep");
         var writer = new NuGetPluginLayoutPhysicalTargetWriter(fileSystem);
 
+        writer.Write(
+            CreateRequest(CreateChange(ConfigurationChangeOperation.Set, Source)),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal("keep", fileSystem.ReadAllText(Root + "/foreign"));
+        Assert.Equal("plugin", fileSystem.ReadAllText(Root + "/azureauth-credprovider.dll"));
+        Assert.True(fileSystem.FileExists(Marker));
+    }
+
+    [Fact]
+    public void MarkerlessDirectoryWithOwnershipClaimIsRejectedDuringValidation()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        fileSystem.AtomicWriteAllText(Source + "/azureauth-credprovider.dll", "plugin");
+        fileSystem.AtomicWriteAllText(Root + "/foreign", "keep");
+        var writer = new NuGetPluginLayoutPhysicalTargetWriter(fileSystem);
+        ConfigurationChange apply = CreateChange(ConfigurationChangeOperation.Set, Source);
+
         Assert.Throws<InvalidOperationException>(() =>
-            writer.Write(
-                CreateRequest(CreateChange(ConfigurationChangeOperation.Set, Source)),
+            writer.Validate(
+                CreateRequest(apply, ownership: [Owned(apply)]),
                 TestContext.Current.CancellationToken
             )
         );
 
         Assert.Equal("keep", fileSystem.ReadAllText(Root + "/foreign"));
+        Assert.False(fileSystem.FileExists(Root + "/azureauth-credprovider.dll"));
+        Assert.False(fileSystem.FileExists(Marker));
     }
 
     [Fact]

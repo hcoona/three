@@ -11,6 +11,11 @@ internal sealed class NuGetPluginLayoutPhysicalTargetWriter(IFileSystem fileSyst
     : IConfigurationPhysicalTargetWriter
 {
     internal const string MarkerFileName = ".azureauth-credprovider.nuget-plugin-layout";
+    internal const string LegacyMarkerValue =
+        "azureauth-credprovider nuget-plugin-layout\n"
+        + "phase=10\n"
+        + "runtime=netcore\n"
+        + "entrypoint=azureauth-credprovider.dll\n";
     private const string MarkerSchemaVersion =
         "azureauth-credprovider-nuget-plugin-activation-v1";
     private const string PluginEntrypointFileName = "azureauth-credprovider.dll";
@@ -42,8 +47,12 @@ internal sealed class NuGetPluginLayoutPhysicalTargetWriter(IFileSystem fileSyst
 
         SourcePayload payload = ReadSourcePayload(request.Change.Value!);
         ValidateDisjointRoots(request.Change.TargetPathOrName, payload);
-        NuGetPluginActivationManifest? existingManifest = ValidateCurrentState(request);
-        ValidateNewTargets(request.Change.TargetPathOrName, existingManifest, payload);
+        ExistingActivation? existingActivation = ValidateCurrentState(
+            request,
+            allowNewOwnershipIntent: false,
+            payload
+        );
+        ValidateNewTargets(request.Change.TargetPathOrName, existingActivation, payload);
     }
 
     public void Write(
@@ -58,24 +67,31 @@ internal sealed class NuGetPluginLayoutPhysicalTargetWriter(IFileSystem fileSyst
             || request.Change.Operation == ConfigurationChangeOperation.Remove;
         if (remove)
         {
-            NuGetPluginActivationManifest? removalManifest = ValidateCurrentState(request);
-            RemoveActivation(request.Change.TargetPathOrName, removalManifest);
+            ExistingActivation? removalActivation = ValidateCurrentState(
+                request,
+                allowNewOwnershipIntent: false
+            );
+            RemoveActivation(request.Change.TargetPathOrName, removalActivation);
             return;
         }
 
         SourcePayload payload = ReadSourcePayload(request.Change.Value!);
         ValidateDisjointRoots(request.Change.TargetPathOrName, payload);
-        NuGetPluginActivationManifest? existingManifest = ValidateCurrentState(request);
-        ValidateNewTargets(request.Change.TargetPathOrName, existingManifest, payload);
+        ExistingActivation? existingActivation = ValidateCurrentState(
+            request,
+            allowNewOwnershipIntent: true,
+            payload
+        );
+        ValidateNewTargets(request.Change.TargetPathOrName, existingActivation, payload);
         if (
-            existingManifest is not null
-            && ManifestsEquivalent(existingManifest, payload.Manifest)
+            existingActivation is { IsLegacy: false }
+            && ManifestsEquivalent(existingActivation.Manifest, payload.Manifest)
             && TargetModesMatch(request.Change.TargetPathOrName, payload)
         )
         {
             return;
         }
-        ReplaceActivation(request.Change.TargetPathOrName, existingManifest, payload);
+        ReplaceActivation(request.Change.TargetPathOrName, existingActivation, payload);
     }
 
     public bool IsSatisfied(
@@ -97,12 +113,13 @@ internal sealed class NuGetPluginLayoutPhysicalTargetWriter(IFileSystem fileSyst
         try
         {
             SourcePayload payload = ReadSourcePayload(request.Change.Value!);
-            NuGetPluginActivationManifest? existing = ReadAndValidateActivation(
+            ExistingActivation? existing = ReadAndValidateActivation(
                 request.Change.TargetPathOrName,
-                request.Change.Value
+                request.Change.Value,
+                payload
             );
-            return existing is not null
-                && ManifestsEquivalent(existing, payload.Manifest)
+            return existing is { IsLegacy: false }
+                && ManifestsEquivalent(existing.Manifest, payload.Manifest)
                 && TargetModesMatch(request.Change.TargetPathOrName, payload);
         }
         catch (
@@ -196,8 +213,10 @@ internal sealed class NuGetPluginLayoutPhysicalTargetWriter(IFileSystem fileSyst
             ? "The NuGet plugin layout target must be fully qualified."
             : null;
 
-    private NuGetPluginActivationManifest? ValidateCurrentState(
-        ConfigurationPhysicalTargetWriterRequest request
+    private ExistingActivation? ValidateCurrentState(
+        ConfigurationPhysicalTargetWriterRequest request,
+        bool allowNewOwnershipIntent = false,
+        SourcePayload? legacyPayload = null
     )
     {
         string targetRootPath = request.Change.TargetPathOrName;
@@ -228,9 +247,20 @@ internal sealed class NuGetPluginLayoutPhysicalTargetWriter(IFileSystem fileSyst
         }
         if (!markerExists)
         {
-            throw new InvalidOperationException(
-                "The NuGet plugin activation directory exists without its ownership marker."
-            );
+            if (
+                remove
+                || (
+                    !allowNewOwnershipIntent
+                    && request.IsOwned(request.Change, fileSystem)
+                )
+            )
+            {
+                throw new InvalidOperationException(
+                    "The NuGet plugin activation directory exists without its ownership marker."
+                );
+            }
+
+            return null;
         }
         if (!request.IsOwned(request.Change, fileSystem))
         {
@@ -241,7 +271,8 @@ internal sealed class NuGetPluginLayoutPhysicalTargetWriter(IFileSystem fileSyst
 
         return ReadAndValidateActivation(
             targetRootPath,
-            remove ? null : request.Change.Value
+            remove ? null : request.Change.Value,
+            legacyPayload
         );
     }
 
@@ -325,9 +356,10 @@ internal sealed class NuGetPluginLayoutPhysicalTargetWriter(IFileSystem fileSyst
         );
     }
 
-    private NuGetPluginActivationManifest? ReadAndValidateActivation(
+    private ExistingActivation? ReadAndValidateActivation(
         string targetRootPath,
-        string? expectedSourceRoot
+        string? expectedSourceRoot,
+        SourcePayload? legacyPayload = null
     )
     {
         string markerPath = GetMarkerPath(targetRootPath);
@@ -336,9 +368,15 @@ internal sealed class NuGetPluginLayoutPhysicalTargetWriter(IFileSystem fileSyst
             return null;
         }
 
+        string marker = fileSystem.ReadAllText(markerPath, Utf8NoBom);
+        if (string.Equals(marker, LegacyMarkerValue, StringComparison.Ordinal))
+        {
+            return ReadLegacyActivation(targetRootPath, legacyPayload);
+        }
+
         NuGetPluginActivationManifest manifest =
             JsonSerializer.Deserialize<NuGetPluginActivationManifest>(
-                fileSystem.ReadAllText(markerPath, Utf8NoBom),
+                marker,
                 MarkerJsonOptions
             )
             ?? throw new InvalidOperationException(
@@ -402,20 +440,83 @@ internal sealed class NuGetPluginLayoutPhysicalTargetWriter(IFileSystem fileSyst
         }
 
         return entrypointListed
-            ? manifest
+            ? new ExistingActivation(manifest, IsLegacy: false)
             : throw new InvalidOperationException(
                 "The NuGet plugin activation payload is incomplete."
             );
     }
 
+    private ExistingActivation ReadLegacyActivation(
+        string targetRootPath,
+        SourcePayload? payload
+    )
+    {
+        string entrypointPath = GetOwnedTargetPath(
+            targetRootPath,
+            PluginEntrypointFileName
+        );
+        if (
+            !fileSystem.FileExists(entrypointPath)
+            || fileSystem.DirectoryExists(entrypointPath)
+        )
+        {
+            throw new InvalidOperationException(
+                "The legacy NuGet plugin activation entrypoint is damaged."
+            );
+        }
+
+        IEnumerable<string> candidatePaths = payload is null
+            ? [PluginEntrypointFileName]
+            : payload.Files.Select(static file => file.RelativePath);
+        var files = new List<NuGetPluginActivationFile>();
+        foreach (string relativePath in candidatePaths)
+        {
+            string targetPath = GetOwnedTargetPath(targetRootPath, relativePath);
+            if (fileSystem.DirectoryExists(targetPath))
+            {
+                throw new InvalidOperationException(
+                    "The legacy NuGet plugin activation payload is damaged."
+                );
+            }
+            if (!fileSystem.FileExists(targetPath))
+            {
+                continue;
+            }
+
+            byte[] content = fileSystem.ReadAllBytes(targetPath);
+            files.Add(
+                new NuGetPluginActivationFile
+                {
+                    Path = relativePath,
+                    Length = content.LongLength,
+                    Sha256 = Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant(),
+                    UnixFileMode = FileSystemPathSemantics.UsesWindowsPaths(fileSystem)
+                        ? null
+                        : (int)fileSystem.GetUnixFileMode(targetPath),
+                }
+            );
+        }
+
+        return new ExistingActivation(
+            new NuGetPluginActivationManifest
+            {
+                SchemaVersion = MarkerSchemaVersion,
+                SourceApplicationRoot =
+                    payload?.Manifest.SourceApplicationRoot ?? targetRootPath,
+                Files = files.ToArray(),
+            },
+            IsLegacy: true
+        );
+    }
+
     private void ValidateNewTargets(
         string targetRootPath,
-        NuGetPluginActivationManifest? existingManifest,
+        ExistingActivation? existingActivation,
         SourcePayload payload
     )
     {
         var existingOwnedPaths = new HashSet<string>(
-            existingManifest?.Files.Select(file => file.Path) ?? [],
+            existingActivation?.Manifest.Files.Select(file => file.Path) ?? [],
             FileSystemPathSemantics.GetComparer(fileSystem)
         );
         HashSet<string> existingOwnedDirectories = GetOwnedAncestorDirectories(
@@ -436,7 +537,10 @@ internal sealed class NuGetPluginLayoutPhysicalTargetWriter(IFileSystem fileSyst
                     "The NuGet plugin activation would overwrite an unowned path."
                 );
             }
-            if (!existingOwnedPaths.Contains(file.RelativePath))
+            if (
+                !existingOwnedPaths.Contains(file.RelativePath)
+                && existingActivation is not { IsLegacy: true }
+            )
             {
                 ValidateNewPathAncestors(
                     targetRootPath,
@@ -506,17 +610,17 @@ internal sealed class NuGetPluginLayoutPhysicalTargetWriter(IFileSystem fileSyst
 
     private void ReplaceActivation(
         string targetRootPath,
-        NuGetPluginActivationManifest? existingManifest,
+        ExistingActivation? existingActivation,
         SourcePayload payload
     )
     {
         string markerPath = GetMarkerPath(targetRootPath);
-        string? oldMarker = existingManifest is null
+        string? oldMarker = existingActivation is null
             ? null
             : fileSystem.ReadAllText(markerPath, Utf8NoBom);
         Dictionary<string, RestorableFile> oldFiles = SnapshotOwnedFiles(
             targetRootPath,
-            existingManifest
+            existingActivation
         );
         var affectedPaths = new HashSet<string>(
             oldFiles.Keys,
@@ -568,10 +672,10 @@ internal sealed class NuGetPluginLayoutPhysicalTargetWriter(IFileSystem fileSyst
 
     private void RemoveActivation(
         string targetRootPath,
-        NuGetPluginActivationManifest? existingManifest
+        ExistingActivation? existingActivation
     )
     {
-        if (existingManifest is null)
+        if (existingActivation is null)
         {
             return;
         }
@@ -580,7 +684,7 @@ internal sealed class NuGetPluginLayoutPhysicalTargetWriter(IFileSystem fileSyst
         string oldMarker = fileSystem.ReadAllText(markerPath, Utf8NoBom);
         Dictionary<string, RestorableFile> oldFiles = SnapshotOwnedFiles(
             targetRootPath,
-            existingManifest
+            existingActivation
         );
         try
         {
@@ -610,18 +714,18 @@ internal sealed class NuGetPluginLayoutPhysicalTargetWriter(IFileSystem fileSyst
 
     private Dictionary<string, RestorableFile> SnapshotOwnedFiles(
         string targetRootPath,
-        NuGetPluginActivationManifest? manifest
+        ExistingActivation? activation
     )
     {
         var result = new Dictionary<string, RestorableFile>(
             FileSystemPathSemantics.GetComparer(fileSystem)
         );
-        if (manifest is null)
+        if (activation is null)
         {
             return result;
         }
 
-        foreach (NuGetPluginActivationFile entry in manifest.Files)
+        foreach (NuGetPluginActivationFile entry in activation.Manifest.Files)
         {
             string targetPath = GetOwnedTargetPath(targetRootPath, entry.Path);
             result.Add(
@@ -810,8 +914,12 @@ internal sealed class NuGetPluginLayoutPhysicalTargetWriter(IFileSystem fileSyst
         UnixFileMode? UnixFileMode
     );
 
-    private sealed record RestorableFile(byte[] Content, UnixFileMode? UnixFileMode);
+    private sealed record ExistingActivation(
+        NuGetPluginActivationManifest Manifest,
+        bool IsLegacy
+    );
 
+    private sealed record RestorableFile(byte[] Content, UnixFileMode? UnixFileMode);
 }
 
 internal sealed record NuGetPluginActivationManifest

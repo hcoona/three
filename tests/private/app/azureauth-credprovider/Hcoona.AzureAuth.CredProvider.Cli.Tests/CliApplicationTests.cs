@@ -1742,6 +1742,142 @@ public sealed class CliApplicationTests
     }
 
     [Fact]
+    public void ConfigureNuGetReportsInitialNoOpAndChangedSourceCounts()
+    {
+        const string applicationRoot = "/installation/app";
+        var fileSystem =
+            new EmptyNuGetDryRunFileSystem.RecordingNuGetConfigurationFileSystem();
+        fileSystem.AtomicWriteAllText(
+            applicationRoot + "/azureauth-credprovider.dll",
+            "source-a"
+        );
+        fileSystem.AtomicWriteAllText(applicationRoot + "/dependency.dll", "dependency");
+        var options = new NuGetPhase10VerticalSliceOptions
+        {
+            StateDirectoryPath = "/state/nuget",
+            ApplicationPayloadRootPath = applicationRoot,
+            FileSystem = fileSystem,
+            EnvironmentVariableReader = _ => null,
+        };
+        var runtime = new CliRuntimeOptions { NuGetPhase10Options = options };
+
+        CommandResult initial = InvokeWithRuntime(runtime, "configure", "nuget");
+        CommandResult unchanged = InvokeWithRuntime(runtime, "configure", "nuget");
+        fileSystem.AtomicWriteAllText(
+            applicationRoot + "/azureauth-credprovider.dll",
+            "source-b"
+        );
+        CommandResult changed = InvokeWithRuntime(runtime, "configure", "nuget");
+
+        AssertNuGetConfigureCounts(initial, "yes", 1);
+        AssertNuGetConfigureCounts(unchanged, "no", 0);
+        AssertNuGetConfigureCounts(changed, "yes", 1);
+        var service = new NuGetPhase10VerticalSliceService(options);
+        Assert.Equal("source-b", fileSystem.ReadAllText(service.Paths.PluginEntrypointPath));
+    }
+
+    [Fact]
+    public void DoctorReportsRefreshableNuGetActivationWithConfigureRemediation()
+    {
+        using var pythonFixture = new PythonDoctorFixture(PythonDoctorFixtureMode.Healthy);
+        const string applicationRoot = "/installation/app";
+        var fileSystem =
+            new EmptyNuGetDryRunFileSystem.RecordingNuGetConfigurationFileSystem();
+        fileSystem.AtomicWriteAllText(
+            applicationRoot + "/azureauth-credprovider.dll",
+            "source-a"
+        );
+        fileSystem.AtomicWriteAllText(applicationRoot + "/dependency.dll", "dependency");
+        var options = new NuGetPhase10VerticalSliceOptions
+        {
+            StateDirectoryPath = "/state/nuget",
+            ApplicationPayloadRootPath = applicationRoot,
+            FileSystem = fileSystem,
+            EnvironmentVariableReader = _ => null,
+        };
+        CliRuntimeOptions runtime = CreateHealthyDoctorRuntimeOptions(pythonFixture) with
+        {
+            NuGetPhase10Options = options,
+        };
+
+        Assert.Equal(0, InvokeWithRuntime(runtime, "configure", "git").ExitCode);
+        Assert.Equal(0, InvokeWithRuntime(runtime, "configure", "nuget").ExitCode);
+        fileSystem.AtomicWriteAllText(
+            applicationRoot + "/azureauth-credprovider.dll",
+            "source-b"
+        );
+
+        CommandResult doctor = InvokeWithRuntime(runtime, "doctor");
+
+        Assert.Equal(1, doctor.ExitCode);
+        AssertDoctorCheck(doctor.StdOut, "nuget-configuration-state", "refreshable");
+        Assert.Contains(
+            "nuget-configuration-plan-remediation: run "
+                + "azureauth-credprovider configure nuget",
+            doctor.StdOut,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain(
+            "manually inspect and restore",
+            doctor.StdOut,
+            StringComparison.Ordinal
+        );
+    }
+
+    [Fact]
+    public void DoctorReportsUnrecognizedNuGetActivationWithManualRemediation()
+    {
+        using var pythonFixture = new PythonDoctorFixture(PythonDoctorFixtureMode.Healthy);
+        const string applicationRoot = "/installation/app";
+        var fileSystem =
+            new EmptyNuGetDryRunFileSystem.RecordingNuGetConfigurationFileSystem();
+        fileSystem.AtomicWriteAllText(
+            applicationRoot + "/azureauth-credprovider.dll",
+            "source-a"
+        );
+        var options = new NuGetPhase10VerticalSliceOptions
+        {
+            StateDirectoryPath = "/state/nuget",
+            ApplicationPayloadRootPath = applicationRoot,
+            FileSystem = fileSystem,
+            EnvironmentVariableReader = _ => null,
+        };
+        CliRuntimeOptions runtime = CreateHealthyDoctorRuntimeOptions(pythonFixture) with
+        {
+            NuGetPhase10Options = options,
+        };
+        var service = new NuGetPhase10VerticalSliceService(options);
+
+        Assert.Equal(0, InvokeWithRuntime(runtime, "configure", "git").ExitCode);
+        Assert.Equal(0, InvokeWithRuntime(runtime, "configure", "nuget").ExitCode);
+        fileSystem.AtomicWriteAllText(service.Paths.OwnershipManifestPath, "{");
+
+        CommandResult doctor = InvokeWithRuntime(runtime, "doctor");
+        CommandResult configure = InvokeWithRuntime(runtime, "configure", "nuget");
+
+        Assert.Equal(1, doctor.ExitCode);
+        AssertDoctorCheck(doctor.StdOut, "nuget-configuration-state", "unrecognized");
+        Assert.Contains(
+            "nuget-configuration-plan-remediation: manually inspect and restore "
+                + "the product-owned NuGet plugin layout",
+            doctor.StdOut,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain(
+            "azureauth-credprovider configure nuget",
+            doctor.StdOut,
+            StringComparison.Ordinal
+        );
+        Assert.Equal(1, configure.ExitCode);
+        Assert.Contains(
+            "configure cannot modify unrecognized Phase 10 NuGet state",
+            configure.StdErr,
+            StringComparison.Ordinal
+        );
+        Assert.Equal("{", fileSystem.ReadAllText(service.Paths.OwnershipManifestPath));
+    }
+
+    [Fact]
     public void UnconfigureNuGetDryRunValidatesPhase10StateAndWritesGenericOutput()
     {
         CliRuntimeOptions runtimeOptions = CreateNuGetPhase10DryRunRuntimeOptions();
@@ -4718,6 +4854,26 @@ public sealed class CliApplicationTests
         );
     }
 
+    private static void AssertNuGetConfigureCounts(
+        CommandResult result,
+        string mutatesState,
+        int appliedChangeCount
+    )
+    {
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(string.Empty, result.StdErr);
+        Assert.Contains(
+            "mutates-state: " + mutatesState,
+            result.StdOut,
+            StringComparison.Ordinal
+        );
+        Assert.Contains(
+            $"applied-change-count: {appliedChangeCount}",
+            result.StdOut,
+            StringComparison.Ordinal
+        );
+    }
+
     // editorconfig-checker-enable
     private static string GetExpectedGitMutationOutput(
         string command,
@@ -4812,6 +4968,7 @@ public sealed class CliApplicationTests
                     "auth-persistent-derived-credentials: disabled",
                     "auth-product-plaintext-fallback: disabled",
                     "nuget-configuration-plan: pass",
+                    "nuget-configuration-state: valid",
                     "nuget-plugin-layout-marker: absent",
                     "nuget-ownership-manifest: absent",
                     "nuget-netcore-plugin-entrypoint: fail",

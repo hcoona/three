@@ -4,6 +4,8 @@
 param(
     [string]$InstallRoot,
 
+    [string]$LegacyNuGetOwnershipManifestPath,
+
     [switch]$Force
 )
 
@@ -67,6 +69,11 @@ $pathComparer = if ($runningOnWindows) {
 else {
     [System.StringComparer]::Ordinal
 }
+$legacyNuGetSupportPath = Join-Path $bundleRoot 'legacy-nuget.ps1'
+if (-not (Test-Path -LiteralPath $legacyNuGetSupportPath -PathType Leaf)) {
+    throw 'The deployment validation legacy NuGet support script is missing.'
+}
+. $legacyNuGetSupportPath
 $listedPaths = [System.Collections.Generic.HashSet[string]]::new($pathComparer)
 foreach ($entry in $manifestFiles) {
     $relativePath = [string]$entry.path
@@ -188,6 +195,7 @@ function Get-SiblingDeploymentPath {
 }
 
 $existingReceipt = $null
+$legacyNuGetCleanupPlan = $null
 if (Test-Path -LiteralPath $InstallRoot) {
     if (-not $Force) {
         throw "The deployment target '$InstallRoot' already exists. Use -Force to replace it."
@@ -200,9 +208,27 @@ if (Test-Path -LiteralPath $InstallRoot) {
     if (Test-Path -LiteralPath $existingReceiptPath -PathType Leaf) {
         $existingReceipt = Get-Content -LiteralPath $existingReceiptPath -Raw |
             ConvertFrom-Json
-        if ($existingReceipt.schemaVersion -ne
-            'azureauth-credprovider-deployment-validation-install-v2') {
+        $receiptSchemaVersion = [string]$existingReceipt.schemaVersion
+        if ($receiptSchemaVersion -notin @(
+                'azureauth-credprovider-deployment-validation-install-v1',
+                'azureauth-credprovider-deployment-validation-install-v2'
+            )) {
             throw 'The existing deployment validation installation receipt is invalid.'
+        }
+        if ($receiptSchemaVersion -eq
+            'azureauth-credprovider-deployment-validation-install-v1' -and
+            -not (Test-ExactObjectPropertySet `
+                    -Value $existingReceipt `
+                    -ExpectedNames @(
+                    'schemaVersion',
+                    'productVersion',
+                    'sourceRevision',
+                    'targetRid',
+                    'installRoot',
+                    'applicationRoot',
+                    'nugetPluginRoot'
+                ))) {
+            throw 'The legacy deployment validation installation receipt is invalid.'
         }
 
         $receiptInstallRoot = [System.IO.Path]::GetFullPath(
@@ -214,6 +240,55 @@ if (Test-Path -LiteralPath $InstallRoot) {
         if (-not $InstallRoot.Equals($receiptInstallRoot, $pathComparison) -or
             -not $applicationRoot.Equals($receiptApplicationRoot, $pathComparison)) {
             throw 'The replacement roots do not match the existing installation receipt.'
+        }
+
+        if ($receiptSchemaVersion -eq
+            'azureauth-credprovider-deployment-validation-install-v1') {
+            if ([string]::IsNullOrWhiteSpace([string]$existingReceipt.nugetPluginRoot)) {
+                throw 'The legacy deployment validation installation receipt is invalid.'
+            }
+            $legacyNuGetPluginRoot = [System.IO.Path]::GetFullPath(
+                [string]$existingReceipt.nugetPluginRoot
+            )
+            $legacyPathRoot = [System.IO.Path]::GetPathRoot($legacyNuGetPluginRoot)
+            if ($legacyNuGetPluginRoot -eq $legacyPathRoot -or
+                $legacyNuGetPluginRoot.TrimEnd(
+                    [System.IO.Path]::DirectorySeparatorChar,
+                    [System.IO.Path]::AltDirectorySeparatorChar
+                ) -eq $homeDirectory.TrimEnd(
+                    [System.IO.Path]::DirectorySeparatorChar,
+                    [System.IO.Path]::AltDirectorySeparatorChar
+                )) {
+                throw "The legacy NuGet deployment target '$legacyNuGetPluginRoot' is too broad."
+            }
+            $legacyNuGetPluginRootPrefix = $legacyNuGetPluginRoot.TrimEnd(
+                [System.IO.Path]::DirectorySeparatorChar,
+                [System.IO.Path]::AltDirectorySeparatorChar
+            ) + [System.IO.Path]::DirectorySeparatorChar
+            $currentInstallRootPrefix = $InstallRoot.TrimEnd(
+                [System.IO.Path]::DirectorySeparatorChar,
+                [System.IO.Path]::AltDirectorySeparatorChar
+            ) + [System.IO.Path]::DirectorySeparatorChar
+            if ($InstallRoot.Equals($legacyNuGetPluginRoot, $pathComparison) -or
+                $InstallRoot.StartsWith($legacyNuGetPluginRootPrefix, $pathComparison) -or
+                $legacyNuGetPluginRoot.StartsWith($currentInstallRootPrefix, $pathComparison)) {
+                throw 'The product and legacy NuGet plugin roots must not overlap.'
+            }
+            if ([string]::IsNullOrWhiteSpace($LegacyNuGetOwnershipManifestPath)) {
+                $LegacyNuGetOwnershipManifestPath = Join-Path $homeDirectory (
+                    '.azureauth-credprovider/phase10/manifests/' +
+                    'nuget-plugin-layout-ownership-manifest.json'
+                )
+            }
+            $LegacyNuGetOwnershipManifestPath = [System.IO.Path]::GetFullPath(
+                $LegacyNuGetOwnershipManifestPath
+            )
+            $legacyNuGetCleanupPlan = Get-LegacyNuGetCleanupPlan `
+                -ApplicationRoot $receiptApplicationRoot `
+                -NuGetPluginRoot $legacyNuGetPluginRoot `
+                -OwnershipManifestPath $LegacyNuGetOwnershipManifestPath `
+                -PathComparer $pathComparer `
+                -PathComparison $pathComparison
         }
     }
     elseif (-not (Test-EmptyDirectory -LiteralPath $InstallRoot)) {
@@ -352,6 +427,10 @@ catch {
     }
 
     throw $switchFailure
+}
+
+if ($null -ne $legacyNuGetCleanupPlan) {
+    Remove-LegacyNuGetPayload -Plan $legacyNuGetCleanupPlan
 }
 
 $undeletedBackupPaths = [System.Collections.Generic.List[string]]::new()
