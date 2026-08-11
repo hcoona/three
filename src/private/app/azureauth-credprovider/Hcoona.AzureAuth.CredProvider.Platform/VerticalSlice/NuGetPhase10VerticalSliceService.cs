@@ -73,11 +73,74 @@ public sealed record NuGetPhase10UnconfigureResult
     public required bool OwnershipManifestPresent { get; init; }
 }
 
+public enum NuGetPluginDiscoverySource
+{
+    Conventional = 1,
+    NuGetPluginPaths = 2,
+    NuGetNetCorePluginPaths = 3,
+}
+
+public enum NuGetProductPluginDiscoveryState
+{
+    NotFound = 1,
+    DiscoverableCandidate = 2,
+    OverrideExcludesProduct = 3,
+    IncludedPathMissing = 4,
+    InspectionIncomplete = 5,
+}
+
+public enum NuGetOperationalPluginSelectionState
+{
+    DeferredNotProbed = 1,
+}
+
+public enum NuGetOverrideProductInclusionState
+{
+    NotApplicable = 1,
+    IncludesProduct = 2,
+    ExcludesProduct = 3,
+    InspectionIncomplete = 4,
+}
+
+public enum NuGetProductPluginRemediation
+{
+    None = 0,
+    InstallConventionalPlugin = 1,
+    ClearOrIncludeProductInNuGetPluginPaths = 2,
+    ClearOrIncludeProductInNuGetNetCorePluginPaths = 3,
+    RestoreIncludedProductPath = 4,
+    ShortenOverrideAndRerunDoctor = 5,
+    SelectionDeferredNotProbed = 6,
+}
+
 public enum NuGetConfigurationState
 {
     Valid = 1,
     Refreshable = 2,
     Unrecognized = 3,
+}
+
+public sealed record NuGetEffectivePluginDiagnostics
+{
+    public required NuGetPluginDiscoverySource Source { get; init; }
+
+    public required NuGetProductPluginDiscoveryState ProductDiscovery { get; init; }
+
+    public required NuGetOperationalPluginSelectionState OperationalSelection { get; init; }
+
+    public required NuGetOverrideProductInclusionState OverrideProductInclusion
+    {
+        get;
+        init;
+    }
+
+    public required NuGetProductPluginRemediation Remediation { get; init; }
+
+    public required bool NuGetPluginPathsOverridePresent { get; init; }
+
+    public required bool NuGetNetCorePluginPathsOverridePresent { get; init; }
+
+    public required bool OverrideEntriesTruncated { get; init; }
 }
 
 public sealed record NuGetPhase10DoctorResult
@@ -101,6 +164,8 @@ public sealed record NuGetPhase10DoctorResult
     public required bool InteractivePolicyGuidanceSuccess { get; init; }
 
     public required bool OptionalEnvironmentOverridesAbsent { get; init; }
+
+    public required NuGetEffectivePluginDiagnostics EffectivePlugin { get; init; }
 }
 
 public sealed class NuGetPhase10UnrecognizedStateException : InvalidOperationException
@@ -122,6 +187,8 @@ public sealed class NuGetPhase10VerticalSliceService
     private const string PhysicalTargetKey = "physical-target";
     private const string NuGetPluginPathsEnvironmentVariable = "NUGET_PLUGIN_PATHS";
     private const string NuGetNetCorePluginPathsEnvironmentVariable = "NUGET_NETCORE_PLUGIN_PATHS";
+    private const int MaximumOverrideValueLength = 64 * 1024;
+    private const int MaximumOverrideEntries = 128;
 
     private static readonly Uri OrganizationScopedSource = new(
         "https://pkgs.dev.azure.com/org/_packaging/feed/nuget/v3/index.json"
@@ -317,6 +384,9 @@ public sealed class NuGetPhase10VerticalSliceService
         bool netCorePluginEntrypointPresent = TryPluginEntrypointExists();
         bool pluginModeEntrypointResolvable =
             netCorePluginEntrypointPresent && TryResolvePluginModeEntrypoint();
+        NuGetEffectivePluginDiagnostics effectivePlugin = InspectEffectivePluginDiscovery(
+            netCorePluginEntrypointPresent
+        );
 
         return new NuGetPhase10DoctorResult
         {
@@ -330,7 +400,10 @@ public sealed class NuGetPhase10VerticalSliceService
             AzureArtifactsSourceCanonicalizationSuccess =
                 TryValidateAzureArtifactsSourceCanonicalization(),
             InteractivePolicyGuidanceSuccess = TryValidateInteractivePolicyGuidance(),
-            OptionalEnvironmentOverridesAbsent = OptionalEnvironmentOverridesAreAbsent(),
+            OptionalEnvironmentOverridesAbsent =
+                !effectivePlugin.NuGetPluginPathsOverridePresent
+                && !effectivePlugin.NuGetNetCorePluginPathsOverridePresent,
+            EffectivePlugin = effectivePlugin,
         };
     }
 
@@ -742,14 +815,189 @@ public sealed class NuGetPhase10VerticalSliceService
         return parseResult.Status == expectedStatus && parseResult.Resource is null;
     }
 
-    private bool OptionalEnvironmentOverridesAreAbsent()
+    private NuGetEffectivePluginDiagnostics InspectEffectivePluginDiscovery(
+        bool productEntrypointPresent
+    )
     {
-        return string.IsNullOrWhiteSpace(
-                environmentVariableReader(NuGetPluginPathsEnvironmentVariable)
-            )
-            && string.IsNullOrWhiteSpace(
-                environmentVariableReader(NuGetNetCorePluginPathsEnvironmentVariable)
+        NuGetPluginOverrideInspection nuGetPluginPaths = InspectPluginOverride(
+            environmentVariableReader(NuGetPluginPathsEnvironmentVariable)
+        );
+        NuGetPluginOverrideInspection nuGetNetCorePluginPaths = InspectPluginOverride(
+            environmentVariableReader(NuGetNetCorePluginPathsEnvironmentVariable)
+        );
+        NuGetPluginDiscoverySource source =
+            nuGetNetCorePluginPaths.Present
+                ? NuGetPluginDiscoverySource.NuGetNetCorePluginPaths
+            : nuGetPluginPaths.Present
+                ? NuGetPluginDiscoverySource.NuGetPluginPaths
+                : NuGetPluginDiscoverySource.Conventional;
+        NuGetPluginOverrideInspection effectiveOverride =
+            source == NuGetPluginDiscoverySource.NuGetNetCorePluginPaths
+                ? nuGetNetCorePluginPaths
+                : nuGetPluginPaths;
+
+        NuGetOverrideProductInclusionState overrideProductInclusion =
+            source == NuGetPluginDiscoverySource.Conventional
+                ? NuGetOverrideProductInclusionState.NotApplicable
+            : effectiveOverride.IncludesProductEntrypoint is null
+                ? NuGetOverrideProductInclusionState.InspectionIncomplete
+            : effectiveOverride.IncludesProductEntrypoint.Value
+                ? NuGetOverrideProductInclusionState.IncludesProduct
+                : NuGetOverrideProductInclusionState.ExcludesProduct;
+        NuGetProductPluginDiscoveryState productDiscovery =
+            overrideProductInclusion == NuGetOverrideProductInclusionState.InspectionIncomplete
+                ? NuGetProductPluginDiscoveryState.InspectionIncomplete
+            : source == NuGetPluginDiscoverySource.Conventional
+                ? productEntrypointPresent
+                    ? NuGetProductPluginDiscoveryState.DiscoverableCandidate
+                    : NuGetProductPluginDiscoveryState.NotFound
+            : overrideProductInclusion == NuGetOverrideProductInclusionState.ExcludesProduct
+                ? NuGetProductPluginDiscoveryState.OverrideExcludesProduct
+            : productEntrypointPresent
+                ? NuGetProductPluginDiscoveryState.DiscoverableCandidate
+                : NuGetProductPluginDiscoveryState.IncludedPathMissing;
+        return new NuGetEffectivePluginDiagnostics
+        {
+            Source = source,
+            ProductDiscovery = productDiscovery,
+            OperationalSelection = NuGetOperationalPluginSelectionState.DeferredNotProbed,
+            OverrideProductInclusion = overrideProductInclusion,
+            Remediation = GetPluginRemediation(source, productDiscovery),
+            NuGetPluginPathsOverridePresent = nuGetPluginPaths.Present,
+            NuGetNetCorePluginPathsOverridePresent = nuGetNetCorePluginPaths.Present,
+            OverrideEntriesTruncated =
+                effectiveOverride.ValueTooLarge || effectiveOverride.EntryCountExceeded,
+        };
+    }
+
+    private NuGetPluginOverrideInspection InspectPluginOverride(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return NuGetPluginOverrideInspection.Absent;
+        }
+
+        if (value.Length > MaximumOverrideValueLength)
+        {
+            return new NuGetPluginOverrideInspection(
+                Present: true,
+                IncludesProductEntrypoint: null,
+                ValueTooLarge: true,
+                EntryCountExceeded: false
             );
+        }
+
+        string[] entries = value.Split(
+            GetOverridePathSeparator(),
+            StringSplitOptions.RemoveEmptyEntries
+        );
+        if (entries.Length > MaximumOverrideEntries)
+        {
+            return new NuGetPluginOverrideInspection(
+                Present: true,
+                IncludesProductEntrypoint: null,
+                ValueTooLarge: false,
+                EntryCountExceeded: true
+            );
+        }
+
+        bool includesProductEntrypoint = entries.Any(IsProductPluginEntrypointPath);
+        return new NuGetPluginOverrideInspection(
+            Present: true,
+            IncludesProductEntrypoint: includesProductEntrypoint,
+            ValueTooLarge: false,
+            EntryCountExceeded: false
+        );
+    }
+
+    private bool IsProductPluginEntrypointPath(string candidate)
+    {
+        try
+        {
+            if (!IsNuGetAbsolutePluginPath(candidate))
+            {
+                return false;
+            }
+
+            return string.Equals(
+                NormalizeComparablePath(candidate),
+                NormalizeComparablePath(paths.PluginEntrypointPath),
+                FileSystemPathSemantics.GetComparison(fileSystem)
+            );
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or IOException or NotSupportedException
+        )
+        {
+            return false;
+        }
+    }
+
+    private static NuGetProductPluginRemediation GetPluginRemediation(
+        NuGetPluginDiscoverySource source,
+        NuGetProductPluginDiscoveryState discovery
+    ) =>
+        discovery switch
+        {
+            NuGetProductPluginDiscoveryState.DiscoverableCandidate =>
+                NuGetProductPluginRemediation.SelectionDeferredNotProbed,
+            NuGetProductPluginDiscoveryState.NotFound =>
+                NuGetProductPluginRemediation.InstallConventionalPlugin,
+            NuGetProductPluginDiscoveryState.IncludedPathMissing =>
+                NuGetProductPluginRemediation.RestoreIncludedProductPath,
+            NuGetProductPluginDiscoveryState.OverrideExcludesProduct =>
+                source == NuGetPluginDiscoverySource.NuGetNetCorePluginPaths
+                    ? NuGetProductPluginRemediation
+                        .ClearOrIncludeProductInNuGetNetCorePluginPaths
+                    : NuGetProductPluginRemediation.ClearOrIncludeProductInNuGetPluginPaths,
+            NuGetProductPluginDiscoveryState.InspectionIncomplete =>
+                NuGetProductPluginRemediation.ShortenOverrideAndRerunDoctor,
+            _ => throw new ArgumentOutOfRangeException(nameof(discovery), discovery, null),
+        };
+
+    private char GetOverridePathSeparator() =>
+        FileSystemPathSemantics.UsesWindowsPaths(fileSystem) ? ';' : ':';
+
+    private bool IsNuGetAbsolutePluginPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return false;
+        }
+
+        if (FileSystemPathSemantics.UsesWindowsPaths(fileSystem))
+        {
+            bool drivePath =
+                path.Length >= 3
+                && char.IsAsciiLetter(path[0])
+                && path[1] == ':'
+                && path[2] == '\\';
+            bool uncPath = HasWindowsUncRoot(path);
+            return (drivePath || uncPath)
+                && fileSystem.IsPathFullyQualified(path);
+        }
+
+        return path.StartsWith('/')
+            && fileSystem.IsPathFullyQualified(path);
+    }
+
+    private static bool HasWindowsUncRoot(string path)
+    {
+        if (!path.StartsWith(@"\\", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        int serverEnd = path.IndexOfAny(['\\', '/'], 2);
+        if (serverEnd <= 2)
+        {
+            return false;
+        }
+
+        int shareEnd = path.IndexOfAny(['\\', '/'], serverEnd + 1);
+        return shareEnd < 0
+            ? serverEnd + 1 < path.Length
+            : shareEnd > serverEnd + 1;
     }
 
     private static bool HasExpectedManifestMetadata(ConfigurationOwnershipManifest manifest) =>
@@ -790,7 +1038,7 @@ public sealed class NuGetPhase10VerticalSliceService
 
     private string NormalizeComparablePath(string path)
     {
-        return Path.TrimEndingDirectorySeparator(fileSystem.GetFullPath(path)).Replace('\\', '/');
+        return fileSystem.GetFullPath(path);
     }
 
     private static NuGetPhase10VerticalSliceResolvedPaths ResolvePaths(
@@ -955,3 +1203,19 @@ internal sealed record NuGetPhase10OwnedState(
     bool PluginLayoutMarkerPresent,
     bool OwnershipManifestPresent
 );
+
+internal sealed record NuGetPluginOverrideInspection(
+    bool Present,
+    bool? IncludesProductEntrypoint,
+    bool ValueTooLarge,
+    bool EntryCountExceeded
+)
+{
+    public static NuGetPluginOverrideInspection Absent { get; } =
+        new(
+            Present: false,
+            IncludesProductEntrypoint: null,
+            ValueTooLarge: false,
+            EntryCountExceeded: false
+        );
+}
