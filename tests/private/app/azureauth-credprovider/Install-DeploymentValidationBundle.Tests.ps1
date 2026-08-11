@@ -422,16 +422,16 @@ function New-TestBundle {
             Sort-Object path
     )
     $manifest = [ordered]@{
-        schemaVersion  = 'azureauth-credprovider-deployment-validation-v1'
-        buildOs        = $buildOs
-        targetRid      = $targetRid
+        schemaVersion        = 'azureauth-credprovider-deployment-validation-v1'
+        buildOs              = $buildOs
+        targetRid            = $targetRid
         productVersion       = '2.0.0-test'
         pythonPackageVersion = '2.0.0'
         sourceRevision       = 'new-revision'
-        releaseStatus  = 'internal-non-release'
-        isInternal     = $true
-        isRelease      = $false
-        files          = $files
+        releaseStatus        = 'internal-non-release'
+        isInternal           = $true
+        isRelease            = $false
+        files                = $files
     }
     $manifest | ConvertTo-Json -Depth 10 |
         Set-Content -LiteralPath (Join-Path $BundleRoot 'manifest.json') -Encoding utf8
@@ -1073,6 +1073,34 @@ function Invoke-ActualUninstallRegression {
                 -Actual @(Get-ChildItem -LiteralPath $credentialConfigRoot -Force).Count `
                 -Message 'The isolated provider configuration was not empty.'
             try {
+                $pythonFeedUrl = (
+                    'https://pkgs.dev.azure.com/example/project/' +
+                    '_packaging/feed/pypi/simple/'
+                )
+                $consoleScriptPath = Join-Path $venvRoot 'bin/azureauth-keyring'
+                Assert-True (
+                    Test-Path -LiteralPath $consoleScriptPath -PathType Leaf
+                ) 'The installed wheel did not generate the azureauth-keyring console script.'
+                $consoleScriptOutput = @(
+                    & $consoleScriptPath get $pythonFeedUrl 2>&1
+                )
+                $consoleScriptExitCode = $LASTEXITCODE
+                $consoleScriptText = ($consoleScriptOutput | ForEach-Object ToString) -join "`n"
+                Assert-Equal `
+                    -Expected 64 `
+                    -Actual $consoleScriptExitCode `
+                    -Message 'The azureauth-keyring console script returned an unexpected exit code.'
+                Assert-True (
+                    $consoleScriptText.Contains(
+                        'ProviderNotConfigured',
+                        [System.StringComparison]::Ordinal
+                    ) -and
+                    -not $consoleScriptText.Contains(
+                        'Traceback',
+                        [System.StringComparison]::OrdinalIgnoreCase
+                    )
+                ) 'The azureauth-keyring console script failure was not controlled.'
+
                 $probeScript = @'
 import importlib.metadata
 import pathlib
@@ -1095,7 +1123,7 @@ if not module_path.is_relative_to(pathlib.Path(sys.argv[1]).resolve()):
     raise SystemExit(21)
 try:
     backend_type().get_credential(
-        "https://pkgs.dev.azure.com/example/project/_packaging/feed/pypi/simple/",
+        sys.argv[2],
         None,
     )
 except HelperExecutionError as error:
@@ -1105,7 +1133,9 @@ else:
     raise SystemExit(23)
 print("controlled-supported-host-failure")
 '@
-                $probeOutput = @(& $venvPython -I -c $probeScript $venvRoot)
+                $probeOutput = @(
+                    & $venvPython -I -c $probeScript $venvRoot $pythonFeedUrl
+                )
                 Assert-Equal `
                     -Expected 0 `
                     -Actual $LASTEXITCODE `
@@ -1475,17 +1505,21 @@ try {
             -WheelPath $WheelPath `
             -Version $expectedPythonPackageVersion
     }
-    Assert-InvalidStagedWheelRejected -Name 'missing-backend-module' -Mutation {
-        param($WheelPath)
-        Set-TestWheelContent `
-            -WheelPath $WheelPath `
-            -OmitEntryName @('azureauth_credprovider_keyring/backend.py')
-    }
-    Assert-InvalidStagedWheelRejected -Name 'missing-helper-module' -Mutation {
-        param($WheelPath)
-        Set-TestWheelContent `
-            -WheelPath $WheelPath `
-            -OmitEntryName @('azureauth_credprovider_keyring/helper.py')
+    foreach ($moduleName in @(
+            '__init__.py'
+            'backend.py'
+            'contracts.py'
+            'endpoint.py'
+            'helper.py'
+            'integrity.py'
+            'shim.py'
+        )) {
+        Assert-InvalidStagedWheelRejected -Name "missing-$moduleName" -Mutation {
+            param($WheelPath)
+            Set-TestWheelContent `
+                -WheelPath $WheelPath `
+                -OmitEntryName @("azureauth_credprovider_keyring/$moduleName")
+        }
     }
     Assert-InvalidStagedWheelRejected -Name 'missing-entry-points' -Mutation {
         param($WheelPath)

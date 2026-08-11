@@ -146,14 +146,21 @@ function Assert-DeploymentPayloadMatchesBuildIdentity {
     $expectedDistInfoRoot = (
         "$wheelDistributionName-$ExpectedPythonPackageVersion.dist-info"
     )
+    $expectedPackageModules = @(
+        "$wheelDistributionName/__init__.py"
+        "$wheelDistributionName/backend.py"
+        "$wheelDistributionName/contracts.py"
+        "$wheelDistributionName/endpoint.py"
+        "$wheelDistributionName/helper.py"
+        "$wheelDistributionName/integrity.py"
+        "$wheelDistributionName/shim.py"
+    )
     $expectedEntries = @(
         "$expectedDistInfoRoot/METADATA"
         "$expectedDistInfoRoot/WHEEL"
         "$expectedDistInfoRoot/RECORD"
         "$expectedDistInfoRoot/entry_points.txt"
-        "$wheelDistributionName/backend.py"
-        "$wheelDistributionName/helper.py"
-    )
+    ) + $expectedPackageModules
 
     $wheel = @(Get-ChildItem -LiteralPath $PythonRoot -Filter '*.whl' -File)
     if ($wheel.Count -ne 1) {
@@ -165,7 +172,9 @@ function Assert-DeploymentPayloadMatchesBuildIdentity {
 
     $wheelArchive = [System.IO.Compression.ZipFile]::OpenRead($wheel[0].FullName)
     try {
-        $archiveEntries = @{}
+        $archiveEntries = [System.Collections.Generic.Dictionary[string, object]]::new(
+            [System.StringComparer]::Ordinal
+        )
         foreach ($entry in $wheelArchive.Entries) {
             if ($archiveEntries.ContainsKey($entry.FullName)) {
                 throw "The Python wheel contains duplicate entry '$($entry.FullName)'."
@@ -176,6 +185,22 @@ function Assert-DeploymentPayloadMatchesBuildIdentity {
             if (-not $archiveEntries.ContainsKey($expectedEntry)) {
                 throw "The Python wheel is missing required entry '$expectedEntry'."
             }
+        }
+        $packageModules = @(
+            $wheelArchive.Entries |
+                Where-Object {
+                    $_.FullName.StartsWith(
+                        "$wheelDistributionName/",
+                        [System.StringComparison]::Ordinal
+                    ) -and
+                    $_.FullName.EndsWith('.py', [System.StringComparison]::Ordinal)
+                } |
+                ForEach-Object FullName |
+                Sort-Object
+        )
+        if (($packageModules | ConvertTo-Json -Compress) -cne
+            ($expectedPackageModules | Sort-Object | ConvertTo-Json -Compress)) {
+            throw 'The Python wheel package module inventory is invalid.'
         }
 
         $distInfoEntries = @(
