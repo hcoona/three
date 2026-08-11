@@ -65,6 +65,9 @@ internal static class ProcessTestAppModuleInitializer
             case "adapter-host-proof":
                 AdapterHostProofProcess.Run(helperArguments.Skip(1).ToArray());
                 break;
+            case DeploymentValidationNuGetLifecycleHarness.Command:
+                DeploymentValidationNuGetLifecycleHarness.Run(helperArguments.Skip(1).ToArray());
+                break;
             case NuGetPluginProtocolTestProcess.Command:
                 NuGetPluginProtocolTestProcess.Run();
                 break;

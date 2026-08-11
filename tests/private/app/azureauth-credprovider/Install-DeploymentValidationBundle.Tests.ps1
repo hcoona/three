@@ -532,9 +532,34 @@ function Invoke-ActualUninstallRegression {
     $installRoot = Join-Path $actualRoot 'install'
     $isolatedHome = Join-Path $actualRoot 'home'
     $pluginRoot = Join-Path $isolatedHome '.nuget/plugins/netcore/azureauth-credprovider'
+    $isolatedNuGetState = Join-Path $actualRoot 'nuget-state'
+    $nugetOwnershipManifestPath = Join-Path (
+        Join-Path $isolatedNuGetState 'manifests'
+    ) 'nuget-plugin-layout-ownership-manifest.json'
     $isolatedLocalAppData = Join-Path $actualRoot 'local-app-data'
     $isolatedTemp = Join-Path $actualRoot 'temp'
     $npmConfigPath = Join-Path $actualRoot 'npm/userconfig.npmrc'
+    $processHelperNonce = [System.Guid]::NewGuid().ToString('N')
+    $testApphostPath = $null
+    $realNuGetPaths = @()
+    if ($runningOnWindows) {
+        $testApphostPath = Join-Path $repoRoot (
+            'tests/private/app/azureauth-credprovider/' +
+            'Hcoona.AzureAuth.CredProvider.Platform.Tests/bin/Release/net10.0/' +
+            'Hcoona.AzureAuth.CredProvider.Platform.Tests.exe'
+        )
+        $realUserProfile = [Environment]::GetFolderPath(
+            [Environment+SpecialFolder]::UserProfile
+        )
+        $realLocalAppData = [Environment]::GetFolderPath(
+            [Environment+SpecialFolder]::LocalApplicationData
+        )
+        $realNuGetPaths = @(
+            Join-Path $realUserProfile '.nuget/plugins/netcore/azureauth-credprovider'
+            Join-Path $realUserProfile '.azureauth-credprovider/phase10'
+            Join-Path $realLocalAppData 'azureauth-credprovider/phase10'
+        )
+    }
     New-Item -ItemType Directory -Path $extractedBundleRoot -Force | Out-Null
     New-Item -ItemType Directory -Path $isolatedHome -Force | Out-Null
     New-Item -ItemType Directory -Path $isolatedLocalAppData -Force | Out-Null
@@ -563,6 +588,10 @@ function Invoke-ActualUninstallRegression {
     $environment['SYSTEM_ACCESSTOKEN'] = $token
     $environment['SYSTEM_JOBID'] = $jobId
     $environment['TF_BUILD'] = 'True'
+    if ($runningOnWindows) {
+        $environment['AZUREAUTH_PROCESS_HELPER'] = '1'
+        $environment['AZUREAUTH_PROCESS_HELPER_NONCE'] = $processHelperNonce
+    }
     $savedEnvironment = [System.Collections.Generic.Dictionary[string, string]]::new(
         [System.StringComparer]::Ordinal
     )
@@ -576,13 +605,47 @@ function Invoke-ActualUninstallRegression {
     $heldGitMarkerPath = Join-Path $repoRoot '.git.deployment-validation-test'
 
     try {
+        if ($runningOnWindows) {
+            & dotnet build (
+                Join-Path $repoRoot (
+                    'tests/private/app/azureauth-credprovider/' +
+                    'Hcoona.AzureAuth.CredProvider.Platform.Tests/' +
+                    'Hcoona.AzureAuth.CredProvider.Platform.Tests.csproj'
+                )
+            ) `
+                --configuration Release `
+                -p:RestoreLockedMode=true `
+                --nologo `
+                --verbosity quiet
+            Assert-Equal `
+                -Expected 0 `
+                -Actual $LASTEXITCODE `
+                -Message 'The Windows deployment validation test host build failed.'
+            Assert-True (
+                Test-Path -LiteralPath $testApphostPath -PathType Leaf
+            ) 'The Windows deployment validation test host was not built in Release.'
+            foreach ($realNuGetPath in $realNuGetPaths) {
+                Assert-True (
+                    -not (Test-Path -LiteralPath $realNuGetPath)
+                ) "The Windows runner already contains product NuGet state '$realNuGetPath'."
+            }
+        }
+
         & (Join-Path $extractedBundleRoot 'install.ps1') -InstallRoot $installRoot | Out-Null
 
         Assert-True (
             -not (Test-Path -LiteralPath $pluginRoot)
         ) 'Physical installation unexpectedly activated the NuGet plugin.'
 
-        & (Join-Path $extractedBundleRoot 'uninstall.ps1') -InstallRoot $installRoot | Out-Null
+        if ($runningOnWindows) {
+            & (Join-Path $extractedBundleRoot 'uninstall.ps1') `
+                -InstallRoot $installRoot `
+                -SkipConfigurationCleanup | Out-Null
+        }
+        else {
+            & (Join-Path $extractedBundleRoot 'uninstall.ps1') -InstallRoot $installRoot |
+                Out-Null
+        }
         Assert-True (
             -not (Test-Path -LiteralPath $installRoot)
         ) 'Uninstall before NuGet configuration left the product payload.'
@@ -593,16 +656,61 @@ function Invoke-ActualUninstallRegression {
         & (Join-Path $extractedBundleRoot 'install.ps1') -InstallRoot $installRoot | Out-Null
 
         $productExecutablePath = Join-Path $installRoot "app/$productExecutableName"
-        & $productExecutablePath configure nuget | Out-Null
-        Assert-Equal `
-            -Expected 0 `
-            -Actual $LASTEXITCODE `
-            -Message 'Actual NuGet configuration failed.'
+        if ($runningOnWindows) {
+            $harnessArguments = @(
+                '--process-helper'
+                '--process-helper-nonce'
+                $processHelperNonce
+                'deployment-validation-nuget-lifecycle'
+                'configure'
+                $isolatedNuGetState
+                (Join-Path $installRoot 'app')
+                $isolatedHome
+            )
+            $harnessOutput = @(& $testApphostPath @harnessArguments)
+            Assert-Equal `
+                -Expected 0 `
+                -Actual $LASTEXITCODE `
+                -Message 'The isolated Windows NuGet configure harness failed.'
+            Assert-Equal `
+                -Expected 'configure' `
+                -Actual (($harnessOutput -join "`n").Trim()) `
+                -Message 'The isolated Windows NuGet configure harness returned unexpected output.'
+        }
+        else {
+            & $productExecutablePath configure nuget | Out-Null
+            Assert-Equal `
+                -Expected 0 `
+                -Actual $LASTEXITCODE `
+                -Message 'Actual NuGet configuration failed.'
+        }
         Assert-True (
             Test-Path -LiteralPath (
                 Join-Path $pluginRoot 'azureauth-credprovider.dll'
             ) -PathType Leaf
         ) 'NuGet configuration did not create a discoverable plugin activation.'
+        if ($runningOnWindows) {
+            Assert-True (
+                Test-Path -LiteralPath $nugetOwnershipManifestPath -PathType Leaf
+            ) 'The isolated Windows NuGet state root does not contain its ownership manifest.'
+            Assert-Equal `
+                -Expected (
+                Get-FileHash `
+                    -LiteralPath (Join-Path $installRoot 'app/azureauth-credprovider.dll') `
+                    -Algorithm SHA256
+            ).Hash `
+                -Actual (
+                Get-FileHash `
+                    -LiteralPath (Join-Path $pluginRoot 'azureauth-credprovider.dll') `
+                    -Algorithm SHA256
+            ).Hash `
+                -Message 'The isolated activation did not use the installed application payload.'
+            foreach ($realNuGetPath in $realNuGetPaths) {
+                Assert-True (
+                    -not (Test-Path -LiteralPath $realNuGetPath)
+                ) "Isolated Windows NuGet configure wrote real-profile state '$realNuGetPath'."
+            }
+        }
         Set-Content `
             -LiteralPath (Join-Path $pluginRoot 'preserve.txt') `
             -Value 'unrelated activation-root content' `
@@ -694,7 +802,41 @@ function Invoke-ActualUninstallRegression {
             -Value 'another job remains' `
             -NoNewline
 
-        & (Join-Path $extractedBundleRoot 'uninstall.ps1') -InstallRoot $installRoot | Out-Null
+        if ($runningOnWindows) {
+            $harnessArguments[4] = 'unconfigure'
+            $harnessOutput = @(& $testApphostPath @harnessArguments)
+            Assert-Equal `
+                -Expected 0 `
+                -Actual $LASTEXITCODE `
+                -Message 'The isolated Windows NuGet unconfigure harness failed.'
+            Assert-Equal `
+                -Expected 'unconfigure' `
+                -Actual (($harnessOutput -join "`n").Trim()) `
+                -Message 'The Windows NuGet unconfigure harness returned unexpected output.'
+            Assert-True (
+                -not (Test-Path -LiteralPath (
+                        Join-Path $pluginRoot 'azureauth-credprovider.dll'
+                    )) -and
+                -not (Test-Path -LiteralPath $nugetOwnershipManifestPath)
+            ) 'The isolated Windows NuGet harness left owned activation state.'
+            foreach ($realNuGetPath in $realNuGetPaths) {
+                Assert-True (
+                    -not (Test-Path -LiteralPath $realNuGetPath)
+                ) "Isolated Windows NuGet cleanup wrote real-profile state '$realNuGetPath'."
+            }
+            & $productExecutablePath cleanup --ci azure-pipelines | Out-Null
+            Assert-Equal `
+                -Expected 0 `
+                -Actual $LASTEXITCODE `
+                -Message 'Windows Azure Pipelines configuration cleanup failed.'
+            & (Join-Path $extractedBundleRoot 'uninstall.ps1') `
+                -InstallRoot $installRoot `
+                -SkipConfigurationCleanup | Out-Null
+        }
+        else {
+            & (Join-Path $extractedBundleRoot 'uninstall.ps1') -InstallRoot $installRoot |
+                Out-Null
+        }
 
         Assert-True (
             -not (Test-Path -LiteralPath $installRoot)

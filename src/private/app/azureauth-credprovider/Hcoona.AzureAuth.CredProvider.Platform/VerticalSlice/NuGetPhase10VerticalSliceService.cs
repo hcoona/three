@@ -16,6 +16,8 @@ public sealed record NuGetPhase10VerticalSliceOptions
 
     public string? ApplicationPayloadRootPath { get; init; }
 
+    public string? UserHomeDirectoryPath { get; init; }
+
     public IFileSystem? FileSystem { get; init; }
 
     public Func<string, string?>? EnvironmentVariableReader { get; init; }
@@ -806,7 +808,9 @@ public sealed class NuGetPhase10VerticalSliceService
             "manifests",
             "nuget-plugin-layout-ownership-manifest.json"
         );
-        string homeDirectory = GetCurrentUserProfileDirectory(environmentVariableReader);
+        string homeDirectory =
+            NullIfWhiteSpace(options.UserHomeDirectoryPath)
+            ?? GetCurrentUserProfileDirectory(environmentVariableReader);
         if (string.IsNullOrWhiteSpace(homeDirectory))
         {
             throw new InvalidOperationException(
@@ -932,6 +936,9 @@ public sealed class NuGetPhase10VerticalSliceService
 
     private static StringComparison GetPathComparison() =>
         OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+
+    private static string? NullIfWhiteSpace(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value;
 
     private static bool IsExpectedStateCheckFailure(Exception exception) =>
         exception
