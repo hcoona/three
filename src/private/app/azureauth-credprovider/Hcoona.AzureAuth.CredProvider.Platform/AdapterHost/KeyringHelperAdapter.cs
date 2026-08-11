@@ -10,29 +10,54 @@ public sealed class KeyringHelperAdapter
 {
     public const string ProductExecutableName = "azureauth-credprovider";
 
+    private const string ArtifactsKeyringNonInteractiveEnvironmentVariable =
+        "ARTIFACTS_KEYRING_NONINTERACTIVE_MODE";
     private const string DefaultServiceIdentity = "default";
     private const string ProtocolViolationCode = "ProtocolViolation";
+    private const string ProductNoUserEnvironmentVariable = "AZUREAUTH_NO_USER";
     private const string UnsupportedHostCode = "UnsupportedHost";
 
     private readonly BoundedCredentialAcquisitionAdapter credentialAcquisition;
+    private readonly Func<string, string?> environmentVariableReader;
 
     public KeyringHelperAdapter()
-        : this(CredentialProviderCompositionRoot.CreateProduction().AcquisitionService) { }
+        : this(
+            CredentialProviderCompositionRoot.CreateProduction().AcquisitionService,
+            Environment.GetEnvironmentVariable
+        )
+    { }
 
-    public KeyringHelperAdapter(CredentialCoreService? credentialCore)
+    public KeyringHelperAdapter(
+        CredentialCoreService? credentialCore,
+        Func<string, string?>? environmentVariableReader = null
+    )
         : this(
             credentialCore is null
                 ? CredentialProviderCompositionRoot.CreateProduction().AcquisitionService
-                : new LegacyV1CredentialAcquisitionService(credentialCore)
-        ) { }
+                : new LegacyV1CredentialAcquisitionService(credentialCore),
+            environmentVariableReader
+        )
+    { }
 
-    public KeyringHelperAdapter(ICredentialAcquisitionService credentialAcquisition)
-        : this(new BoundedCredentialAcquisitionAdapter(credentialAcquisition)) { }
+    public KeyringHelperAdapter(
+        ICredentialAcquisitionService credentialAcquisition,
+        Func<string, string?>? environmentVariableReader = null
+    )
+        : this(
+            new BoundedCredentialAcquisitionAdapter(credentialAcquisition),
+            environmentVariableReader
+        )
+    { }
 
-    public KeyringHelperAdapter(BoundedCredentialAcquisitionAdapter credentialAcquisition)
+    public KeyringHelperAdapter(
+        BoundedCredentialAcquisitionAdapter credentialAcquisition,
+        Func<string, string?>? environmentVariableReader = null
+    )
     {
         ArgumentNullException.ThrowIfNull(credentialAcquisition);
         this.credentialAcquisition = credentialAcquisition;
+        this.environmentVariableReader =
+            environmentVariableReader ?? Environment.GetEnvironmentVariable;
     }
 
     public static AdapterDescriptor Descriptor { get; } = CreateDescriptor();
@@ -144,7 +169,11 @@ public sealed class KeyringHelperAdapter
             return CreateProtocolViolationOutput();
         }
 
-        CredentialRequestV2 credentialRequest = CreateCredentialRequest(helperRequest, resource);
+        CredentialRequestV2 credentialRequest = CreateCredentialRequest(
+            helperRequest,
+            resource,
+            IsNonInteractiveRequest()
+        );
         CredentialResult credentialResult = credentialAcquisition.Acquire(credentialRequest);
         KeyringHelperResponse response = KeyringHelperV2.ToResponse(
             helperRequest,
@@ -229,7 +258,8 @@ public sealed class KeyringHelperAdapter
 
     private static CredentialRequestV2 CreateCredentialRequest(
         KeyringHelperRequest helperRequest,
-        CanonicalResourceIdentity resource
+        CanonicalResourceIdentity resource,
+        bool isNonInteractive
     )
     {
         return new CredentialRequestV2
@@ -242,8 +272,12 @@ public sealed class KeyringHelperAdapter
             RequestedAudience = TokenAudience.AzureArtifacts,
             CredentialKind = CredentialKind.BasicPassword,
             IdentityFlow = IdentityFlow.InteractiveBrowser,
-            InteractivePolicy = InteractivePolicy.Never,
-            AcquisitionMode = AcquisitionMode.SilentOnly,
+            InteractivePolicy = isNonInteractive
+                ? InteractivePolicy.Never
+                : InteractivePolicy.UserAllowed,
+            AcquisitionMode = isNonInteractive
+                ? AcquisitionMode.SilentOnly
+                : AcquisitionMode.InteractionAllowed,
             CachePolicy = CachePolicyMode.ProductPersistentCacheDisabled,
             CiContext = new CiContext { ExplicitCiMode = false, AllowsPersistentWrites = false },
             ExtensionData = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -253,6 +287,20 @@ public sealed class KeyringHelperAdapter
             },
         };
     }
+
+    private bool IsNonInteractiveRequest() =>
+        IsArtifactsKeyringNonInteractiveModeEnabled(
+            environmentVariableReader(ArtifactsKeyringNonInteractiveEnvironmentVariable)
+        )
+        || IsAzureAuthNoUserEnabled(
+            environmentVariableReader(ProductNoUserEnvironmentVariable)
+        );
+
+    private static bool IsArtifactsKeyringNonInteractiveModeEnabled(string? value) =>
+        string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsAzureAuthNoUserEnabled(string? value) =>
+        !string.IsNullOrEmpty(value);
 
     private static PythonFeedResourceClassification ClassifyPythonFeedResource(
         Uri service,

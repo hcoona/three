@@ -204,9 +204,10 @@ For an interactive request, `CanShowDialog=true` selects browser interaction.
 `CanShowDialog=false` selects device code, but the NuGet plugin process does not
 own a human terminal prompt stream and therefore rejects that flow before
 launch. Explicit native Linux CLI login does own such a stream and supports
-device code. Git and Python helper protocols do not authorize interaction, so
-those adapters remain silent-only rather than inferring permission from the
-environment.
+device code. Git helper requests remain silent-only. Python keyring requests
+allow browser interaction by default and become silent-only when
+`ARTIFACTS_KEYRING_NONINTERACTIVE_MODE` is exactly `true`, ignoring case, or
+when `AZUREAUTH_NO_USER` has any non-empty value.
 
 ## Python Adapter
 

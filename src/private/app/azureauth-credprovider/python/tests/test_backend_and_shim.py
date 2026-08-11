@@ -885,10 +885,10 @@ def _runtime_platform() -> str:
     return PLATFORM_LINUX
 
 
-def test_invoke_helper_executes_shared_cli_argv_without_auth(
+def test_invoke_helper_executes_shared_cli_argv_with_inherited_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Invoke the validated apphost noninteractively with shared CLI argv."""
+    """Invoke the apphost without replacing its inherited environment."""
     contract = HelperContract(
         contract_major=CONTRACT_MAJOR,
         product_id=PRODUCT_ID,

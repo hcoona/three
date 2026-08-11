@@ -99,23 +99,35 @@ Interactive and silent readiness remain independent.
 
 ## Host interaction routing
 
-Interaction is authorized only by an explicit host protocol signal:
+Interaction is bounded by host protocol capabilities and explicit
+non-interactive environment signals:
 
-| Host request                                       | Identity flow | Policy           | Acquisition mode     |
-| -------------------------------------------------- | ------------- | ---------------- | -------------------- |
-| NuGet `IsNonInteractive=true`                      | Browser       | `Never`          | `SilentOnly`         |
-| NuGet interactive and `CanShowDialog=true`         | Browser       | `HostToolAllows` | `InteractionAllowed` |
-| NuGet interactive and `CanShowDialog=false`        | Device code   | `HostToolAllows` | `InteractionAllowed` |
-| Git credential helper or Python keyring subprocess | Browser       | `Never`          | `SilentOnly`         |
+| Host request                                                | Identity flow | Policy           | Acquisition mode     |
+| ----------------------------------------------------------- | ------------- | ---------------- | -------------------- |
+| NuGet `IsNonInteractive=true`                               | Browser       | `Never`          | `SilentOnly`         |
+| NuGet interactive and `CanShowDialog=true`                  | Browser       | `HostToolAllows` | `InteractionAllowed` |
+| NuGet interactive and `CanShowDialog=false`                 | Device code   | `HostToolAllows` | `InteractionAllowed` |
+| Git credential helper                                       | Browser       | `Never`          | `SilentOnly`         |
+| Python keyring default local request                        | Browser       | `UserAllowed`    | `InteractionAllowed` |
+| Python keyring with an explicit non-interactive environment | Browser       | `Never`          | `SilentOnly`         |
 
 NuGet's non-interactive flag overrides dialog capability. The product does not
 attach the CLI human prompt stream to NuGet plugin execution, so that NuGet
 request shape remains unavailable before process launch. Explicit native Linux
 `login --device-code` attaches the CLI stderr stream and tees AzureAuth's bounded
-device-code instructions in real time while keeping token stdout private. Git
-and Python expose no equivalent trustworthy interaction authorization signal;
-the product does not infer one from a terminal, environment variable, or process
-ancestry.
+device-code instructions in real time while keeping token stdout private.
+Python keyring follows the ecosystem's interactive-backend behavior by default.
+It becomes silent-only when `ARTIFACTS_KEYRING_NONINTERACTIVE_MODE` is `true`
+(case-insensitive), matching the upstream artifacts-keyring contract, or when
+the existing `AZUREAUTH_NO_USER` signal has any non-empty value. Unset, empty,
+`false`, `1`, and malformed dedicated-keyring values remain interactive.
+`PIP_NO_INPUT` and `TWINE_NON_INTERACTIVE` alone do not suppress requests:
+keyring's shared shim protocol exposes no trustworthy caller interaction bit,
+and the corresponding CLI options are not reliably exported. Forced
+non-interactive pip or Twine keyring calls must therefore set
+`ARTIFACTS_KEYRING_NONINTERACTIVE_MODE=true`. The product does not inspect
+parent process arguments, infer policy from a terminal, or select device code
+for keyring requests.
 
 ## Persistence
 

@@ -41,8 +41,8 @@ public sealed class KeyringHelperAdapterTests
         Assert.Equal(TokenAudience.AzureArtifacts, credentialRequest.RequestedAudience);
         Assert.Null(credentialRequest.AccountHint);
         Assert.Equal(IdentityFlow.InteractiveBrowser, credentialRequest.IdentityFlow);
-        Assert.Equal(InteractivePolicy.Never, credentialRequest.InteractivePolicy);
-        Assert.Equal(AcquisitionMode.SilentOnly, credentialRequest.AcquisitionMode);
+        Assert.Equal(InteractivePolicy.UserAllowed, credentialRequest.InteractivePolicy);
+        Assert.Equal(AcquisitionMode.InteractionAllowed, credentialRequest.AcquisitionMode);
         Assert.False(provider.BindingMismatchDetected);
         Assert.DoesNotContain(
             "AzureAuthBindingAccountMismatch",
@@ -368,7 +368,7 @@ public sealed class KeyringHelperAdapterTests
     }
 
     [Fact]
-    public void KeyringCliCredentialsJsonModeUsesSharedSilentHelperPath()
+    public void KeyringCliCredentialsJsonModeAllowsUvBrowserInteraction()
     {
         var provider = new SuccessfulAcquisitionService(
             "Azure\"DevOps\\user",
@@ -401,8 +401,9 @@ public sealed class KeyringHelperAdapterTests
 
         CredentialRequestV2 request = Assert.Single(provider.Requests);
         Assert.Equal("creds", request.ExtensionData["python.keyring.mode"]);
-        Assert.Equal(InteractivePolicy.Never, request.InteractivePolicy);
-        Assert.Equal(AcquisitionMode.SilentOnly, request.AcquisitionMode);
+        Assert.Equal(IdentityFlow.InteractiveBrowser, request.IdentityFlow);
+        Assert.Equal(InteractivePolicy.UserAllowed, request.InteractivePolicy);
+        Assert.Equal(AcquisitionMode.InteractionAllowed, request.AcquisitionMode);
     }
 
     [Fact]
@@ -425,6 +426,136 @@ public sealed class KeyringHelperAdapterTests
         Assert.Equal(string.Empty, result.Stderr);
         CredentialRequestV2 request = Assert.Single(provider.Requests);
         Assert.Equal("password", request.ExtensionData["python.keyring.mode"]);
+        Assert.Equal(IdentityFlow.InteractiveBrowser, request.IdentityFlow);
+        Assert.Equal(InteractivePolicy.UserAllowed, request.InteractivePolicy);
+        Assert.Equal(AcquisitionMode.InteractionAllowed, request.AcquisitionMode);
+    }
+
+    [Theory]
+    [InlineData("true")]
+    [InlineData("TRUE")]
+    public void ArtifactsKeyringNonInteractiveModeTrueMakesSharedKeyringRequestSilent(
+        string value
+    )
+    {
+        var provider = new SuccessfulAcquisitionService();
+
+        AdapterRunResult result = ExecuteKeyringCli(
+            [
+                "get",
+                "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/",
+                "requested-user",
+            ],
+            provider,
+            new Dictionary<string, string?>
+            {
+                ["ARTIFACTS_KEYRING_NONINTERACTIVE_MODE"] = value,
+            }
+        );
+
+        Assert.Equal(AdapterHostExitCode.Success, result.Outcome.Result.ExitCode);
+        Assert.Equal("phase11-secret\n", result.ProtocolStdout);
+        CredentialRequestV2 request = Assert.Single(provider.Requests);
+        Assert.Equal(InteractivePolicy.Never, request.InteractivePolicy);
+        Assert.Equal(AcquisitionMode.SilentOnly, request.AcquisitionMode);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("false")]
+    [InlineData("1")]
+    [InlineData("unsupported")]
+    public void ArtifactsKeyringNonInteractiveModeOtherValuesKeepRequestInteractive(
+        string? value
+    )
+    {
+        var provider = new SuccessfulAcquisitionService();
+        KeyringHelperRequest helperRequest = CreateRequest(
+            "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/",
+            username: null,
+            KeyringHelperMode.Password
+        );
+
+        AdapterRunResult result = Execute(
+            KeyringHelperV2.BuildArguments(helperRequest).Skip(1).ToArray(),
+            credentialAcquisition: provider,
+            environment: new Dictionary<string, string?>
+            {
+                ["ARTIFACTS_KEYRING_NONINTERACTIVE_MODE"] = value,
+            }
+        );
+
+        Assert.Equal(AdapterHostExitCode.Success, result.Outcome.Result.ExitCode);
+        CredentialRequestV2 request = Assert.Single(provider.Requests);
+        Assert.Equal(InteractivePolicy.UserAllowed, request.InteractivePolicy);
+        Assert.Equal(AcquisitionMode.InteractionAllowed, request.AcquisitionMode);
+    }
+
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("", false)]
+    [InlineData("1", true)]
+    [InlineData("false", true)]
+    [InlineData("unsupported", true)]
+    public void AzureAuthNoUserUsesNonEmptyAzureAuthSemantics(
+        string? value,
+        bool expectSilent
+    )
+    {
+        var provider = new SuccessfulAcquisitionService();
+        KeyringHelperRequest helperRequest = CreateRequest(
+            "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/",
+            username: null,
+            KeyringHelperMode.Password
+        );
+
+        AdapterRunResult result = Execute(
+            KeyringHelperV2.BuildArguments(helperRequest).Skip(1).ToArray(),
+            credentialAcquisition: provider,
+            environment: new Dictionary<string, string?>
+            {
+                ["AZUREAUTH_NO_USER"] = value,
+            }
+        );
+
+        Assert.Equal(AdapterHostExitCode.Success, result.Outcome.Result.ExitCode);
+        CredentialRequestV2 request = Assert.Single(provider.Requests);
+        Assert.Equal(
+            expectSilent ? InteractivePolicy.Never : InteractivePolicy.UserAllowed,
+            request.InteractivePolicy
+        );
+        Assert.Equal(
+            expectSilent ? AcquisitionMode.SilentOnly : AcquisitionMode.InteractionAllowed,
+            request.AcquisitionMode
+        );
+    }
+
+    [Theory]
+    [InlineData("PIP_NO_INPUT", "1")]
+    [InlineData("TWINE_NON_INTERACTIVE", "true")]
+    public void CallerSpecificNonInteractiveSignalsDoNotSuppressSharedKeyringRequests(
+        string variable,
+        string value
+    )
+    {
+        var provider = new SuccessfulAcquisitionService();
+        KeyringHelperRequest helperRequest = CreateRequest(
+            "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/",
+            username: null,
+            KeyringHelperMode.Password
+        );
+
+        AdapterRunResult result = Execute(
+            KeyringHelperV2.BuildArguments(helperRequest).Skip(1).ToArray(),
+            credentialAcquisition: provider,
+            environment: new Dictionary<string, string?> { [variable] = value }
+        );
+
+        Assert.Equal(AdapterHostExitCode.Success, result.Outcome.Result.ExitCode);
+        CredentialRequestV2 request = Assert.Single(provider.Requests);
+        Assert.Equal(InteractivePolicy.UserAllowed, request.InteractivePolicy);
+        Assert.Equal(AcquisitionMode.InteractionAllowed, request.AcquisitionMode);
     }
 
     [Fact]
@@ -557,7 +688,8 @@ public sealed class KeyringHelperAdapterTests
         string[] args,
         string executablePath = "/usr/local/bin/python-keyring",
         CredentialCoreService? credentialCore = null,
-        ICredentialAcquisitionService? credentialAcquisition = null
+        ICredentialAcquisitionService? credentialAcquisition = null,
+        Dictionary<string, string?>? environment = null
     )
     {
         var protocolStdout = new StringWriter();
@@ -572,7 +704,11 @@ public sealed class KeyringHelperAdapterTests
                 ? credentialCore is null
                     ? CredentialProviderCompositionRoot.CreateProduction().AcquisitionService
                     : new LegacyV1CredentialAcquisitionService(credentialCore)
-                : credentialAcquisition
+                : credentialAcquisition,
+            name =>
+                environment is not null && environment.TryGetValue(name, out string? value)
+                    ? value
+                    : null
         ).Execute(executablePath, args, protocolStdout, humanStdout, diagnosticRouter);
 
         return new AdapterRunResult(
@@ -585,7 +721,8 @@ public sealed class KeyringHelperAdapterTests
 
     private static AdapterRunResult ExecuteKeyringCli(
         string[] args,
-        ICredentialAcquisitionService credentialAcquisition
+        ICredentialAcquisitionService credentialAcquisition,
+        Dictionary<string, string?>? environment = null
     )
     {
         var protocolStdout = new StringWriter();
@@ -596,7 +733,11 @@ public sealed class KeyringHelperAdapterTests
             SecretRedactor.Empty
         );
         AdapterHostExecutionOutcome outcome = new KeyringCliAdapter(
-            credentialAcquisition
+            credentialAcquisition,
+            name =>
+                environment is not null && environment.TryGetValue(name, out string? value)
+                    ? value
+                    : null
         ).Execute(
             "/opt/azureauth-credprovider/app/azureauth-credprovider",
             [KeyringCliAdapter.CommandName, .. args],
@@ -775,7 +916,7 @@ public sealed class KeyringHelperAdapterTests
     );
 
     [Fact]
-    public void GetPasswordKeepsSilentOnlyPolicyAndHumanStdoutEmpty()
+    public void GetPasswordAllowsBrowserInteractionAndKeepsHumanStdoutEmpty()
     {
         var credentialAcquisition = new SuccessfulAcquisitionService();
         KeyringHelperRequest helperRequest = CreateRequest(
@@ -803,8 +944,8 @@ public sealed class KeyringHelperAdapterTests
         Assert.Equal(CredentialKind.BasicPassword, request.CredentialKind);
         Assert.Equal(IdentityFlow.InteractiveBrowser, request.IdentityFlow);
         Assert.NotEqual(IdentityFlow.DeviceCode, request.IdentityFlow);
-        Assert.Equal(InteractivePolicy.Never, request.InteractivePolicy);
-        Assert.Equal(AcquisitionMode.SilentOnly, request.AcquisitionMode);
+        Assert.Equal(InteractivePolicy.UserAllowed, request.InteractivePolicy);
+        Assert.Equal(AcquisitionMode.InteractionAllowed, request.AcquisitionMode);
         Assert.Equal(CachePolicyMode.ProductPersistentCacheDisabled, request.CachePolicy);
         CiContext ciContext = Assert.IsType<CiContext>(request.CiContext);
         Assert.False(ciContext.ExplicitCiMode);
@@ -816,7 +957,7 @@ public sealed class KeyringHelperAdapterTests
     }
 
     [Fact]
-    public void GetPasswordSilentRequestPreservesDefaultServiceAndCanonicalResource()
+    public void GetPasswordInteractiveRequestPreservesDefaultServiceAndCanonicalResource()
     {
         var credentialAcquisition = new SuccessfulAcquisitionService();
         KeyringHelperRequest helperRequest = CreateRequest(
@@ -846,7 +987,8 @@ public sealed class KeyringHelperAdapterTests
             resource.ServiceEndpoint
         );
         Assert.Equal(IdentityFlow.InteractiveBrowser, request.IdentityFlow);
-        Assert.Equal(AcquisitionMode.SilentOnly, request.AcquisitionMode);
+        Assert.Equal(InteractivePolicy.UserAllowed, request.InteractivePolicy);
+        Assert.Equal(AcquisitionMode.InteractionAllowed, request.AcquisitionMode);
         Assert.Equal("phase11-secret\n", result.ProtocolStdout);
     }
 }

@@ -24,3 +24,11 @@ backend manifest, while Windows subprocess mode remains deferred until a real
 `keyring.exe` launcher is implemented. Installing the deployment bundle copies
 this wheel into the product installation but does not install it into a Python
 environment automatically.
+
+Keyring requests allow browser interaction by default. Set
+`ARTIFACTS_KEYRING_NONINTERACTIVE_MODE=true` to force silent-only acquisition;
+other values do not enable that mode. `AZUREAUTH_NO_USER` also suppresses
+interaction when it has any non-empty value. `PIP_NO_INPUT` and
+`TWINE_NON_INTERACTIVE` are not sufficient because the shared keyring protocol
+does not expose a trustworthy pip, uv, or Twine interaction flag. Forced
+non-interactive pip and Twine calls must set the dedicated keyring variable.
