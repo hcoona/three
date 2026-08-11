@@ -268,9 +268,11 @@ public sealed class CredentialProviderCompositionRoot
 
     public NuGetPluginAdapter CreateNuGetPluginAdapter() => new(boundary);
 
-    public KeyringHelperAdapter CreateKeyringHelperAdapter() => new(boundary);
+    public KeyringHelperAdapter CreateKeyringHelperAdapter() =>
+        new(boundary, ProductionOptions.EnvironmentVariableReader);
 
-    public KeyringCliAdapter CreateKeyringCliAdapter() => new(boundary);
+    public KeyringCliAdapter CreateKeyringCliAdapter() =>
+        new(boundary, ProductionOptions.EnvironmentVariableReader);
 
     public GitPhase8VerticalSliceService CreateGitService(
         GitPhase8VerticalSliceOptions? options = null
