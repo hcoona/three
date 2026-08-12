@@ -47,11 +47,13 @@ from three_workflow_delivery_v3.repository.compiler import (
     CompiledQualitySelection,
     CompiledReleaseUnit,
     RepositoryModelSnapshot,
+    compile_release_policy,
 )
 from three_workflow_delivery_v3.repository.descriptors import (
     FIRST_SLICE_PACKAGE,
     FIRST_SLICE_POLICY_PATH,
     FIRST_SLICE_RELEASE_UNIT,
+    load_release_policy,
 )
 from three_workflow_delivery_v3.repository.node_provider import (
     NbgvFacts,
@@ -287,6 +289,12 @@ def _repository_model(candidate: CiCandidate) -> RepositoryModelSnapshot:
             ),
         ),
         release_policy_path=FIRST_SLICE_POLICY_PATH,
+        release_policy=compile_release_policy(
+            load_release_policy(
+                REPO_ROOT / FIRST_SLICE_POLICY_PATH,
+                _target_path=FIRST_SLICE_POLICY_PATH,
+            )
+        ),
         nbgv=NbgvFacts(
             canonical_version="1.2.3",
             sem_ver1="1.2.3-beta-0042-e123456",

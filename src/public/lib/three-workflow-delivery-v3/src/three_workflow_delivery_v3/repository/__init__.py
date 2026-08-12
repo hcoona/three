@@ -2,15 +2,24 @@
 
 from three_workflow_delivery_v3.repository.compiler import (
     AdmittedNodeProviderFactBundle,
+    AdmittedRepositoryModelSnapshot,
     CompilationContext,
+    CompiledChannelPolicy,
+    CompiledGovernanceSource,
+    CompiledProjection,
+    CompiledReleasePolicy,
     FactBundleAdmissionContext,
     ProviderRequest,
     ProviderRequestManifest,
     RepositoryModelSnapshot,
     admit_node_provider_fact_bundle,
+    admit_repository_model_snapshot,
+    compile_release_policy,
     compile_repository_model,
     first_slice_provider_manifest,
     provider_binding,
+    repository_model_snapshot_from_document,
+    validate_compiled_release_policy,
 )
 from three_workflow_delivery_v3.repository.descriptors import (
     BuildDeclaration,
@@ -45,10 +54,15 @@ from three_workflow_delivery_v3.repository.node_provider import (
 
 __all__ = [
     "AdmittedNodeProviderFactBundle",
+    "AdmittedRepositoryModelSnapshot",
     "BuildDeclaration",
     "ChannelPolicy",
     "CheckoutMaterialization",
     "CompilationContext",
+    "CompiledChannelPolicy",
+    "CompiledGovernanceSource",
+    "CompiledProjection",
+    "CompiledReleasePolicy",
     "FactBundleAdmissionContext",
     "GlobalInput",
     "GovernanceSource",
@@ -69,6 +83,8 @@ __all__ = [
     "ReleaseUnitDescriptor",
     "RepositoryModelSnapshot",
     "admit_node_provider_fact_bundle",
+    "admit_repository_model_snapshot",
+    "compile_release_policy",
     "compile_repository_model",
     "create_node_provider_fact_bundle",
     "discover_release_units",
@@ -79,5 +95,7 @@ __all__ = [
     "load_release_unit",
     "provide_node_repository_facts",
     "provider_binding",
+    "repository_model_snapshot_from_document",
+    "validate_compiled_release_policy",
     "verify_exact_checkout",
 ]

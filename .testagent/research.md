@@ -983,3 +983,179 @@ work as incomplete, deterministic summaries, ordinary-PR SLO facts, exact
 workflow permissions/topology, and digest-bound consumer exceptions.
 
 <!-- END APPEND: workflow-delivery-v3-commit5-ci-research-2026-08-12 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit6-release-core-research -->
+
+## Workflow Delivery v3 Commit 6 Release Core Research
+
+### Bounded inventory
+
+- Production:
+  `records/artifacts.py`, `records/release.py`, `repository/compiler.py`,
+  `release/identity.py`, `release/planner.py`, `release/qualification.py`,
+  `release/finalizer.py`, and their package exports.
+- Tests/fixtures:
+  `tests/release/test_commit6_contracts.py`,
+  `tests/release/test_commit6_qualification.py`, shared release fixtures, and
+  canonical Intent/Repository Model fixture bytes and digests.
+- Existing collaborators:
+  RFC 8785 canonical parsing/digests, first-slice Repository Model and Release
+  policy records, Node build/project-test/tarball/install adapters, and static
+  Build/Quality/Destination definitions.
+
+### Acceptance checklist
+
+1. Frozen/slotted Release, simulation, artifact, Evidence, Decision,
+   observation, Publication Snapshot, and Simulation Outcome contracts.
+2. Exact canonical Repository Model transport deserialization and current
+   simulation-purpose admission; forged admission wrappers fail closed.
+3. Official workflow-dispatch simulation Intent and post-admission Simulation
+   Identity/Binding with no live Attempt derivation.
+4. One npm build/variant/output and npmjs projection; four required obligations
+   with a closed DAG and both tarball checks depending on build.
+5. Adapter-wrapped qualification with current-attempt artifact transport,
+   SHA-256/SHA-512, manifest, witness, source-input, toolchain, and provenance
+   binding.
+6. Complete success plus failure-continuation, missing, duplicate,
+   cross-purpose, prior-attempt, and substituted Evidence behavior.
+7. Guarded Publication Snapshot, synthetic absent/exact observation planning,
+   and truthful unsupported-observation simulation finalization.
+8. No workflow, remote npm interpretation, live authority, Receipt,
+   authorization, mutation, HK, catalog, docs, or consumer-policy changes.
+
+### Test conventions
+
+The package uses pytest, exact dataclass construction, `replace` for adversarial
+bindings, monkeypatched adapter boundaries, canonical byte fixtures, and
+scenario fixtures. The focused commit-6 suite maps the checklist to concrete
+contract and qualification scenarios rather than network-dependent tests.
+
+<!-- END APPEND: workflow-delivery-v3-commit6-release-core-research -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit6-core-correction-research -->
+
+## Workflow Delivery v3 Commit 6 Core Correction Research
+
+### Bounded target inventory
+
+- `records/release.py`: complete Request/Intent binding, Qualification Snapshot
+  repository binding, Release Artifact context.
+- `release/identity.py`: rerun-stable Request ID and run-attempt-bound
+  Simulation derivation.
+- `repository/compiler.py`: immutable compiled Release policy in every ready
+  Repository Model Snapshot, strict JSON admission, and incomplete-model
+  behavior.
+- `release/planner.py`: admitted-Snapshot-only policy consumption.
+- `release/qualification.py`: mechanical build execution separated from
+  post-upload artifact/Evidence formation.
+- Direct consumers in `ci/planner.py`, package exports, and focused
+  repository/CI/release tests and fixtures.
+
+The static pairing analyzer scanned the package once: 25 of 26 Python sources
+were paired. The correction targets are already paired with
+`tests/repository/test_compiler.py`, `tests/ci/test_planner.py`,
+`tests/ci/test_scenarios.py`, and the two commit-6 release test files. This is a
+static symbol-reference heuristic, not line or branch coverage evidence.
+
+### Acceptance checklist
+
+1. Intent includes workflow ref and run attempt; request ID stays stable across
+   rerun attempts while Intent and Simulation bindings change.
+2. Ready Repository Models contain exact path/unit/governance and Buddy plus
+   Official quality/projection policy closure and digest. Incomplete models
+   carry no compiled policy.
+3. Release planning accepts no external `ReleasePolicy` and consumes only the
+   admitted Snapshot closure.
+4. Build mechanics require no upload metadata. Successful post-upload
+   formation consumes the original mechanics/tarball once; failed mechanics
+   produce failed Evidence without transport.
+5. Release Artifact admission binds repository, exact GitHub Actions artifact
+   URL, producer/run/attempt, and deterministic purpose/role/attempt name.
+6. No CLI, workflow, docs, HK, remote observation, or live authority changes.
+
+<!-- END APPEND: workflow-delivery-v3-commit6-core-correction-research -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit6-cli-workflow-research -->
+
+# Workflow Delivery v3 Commit 6 CLI and Official Simulation Research
+
+This append-only phase extends the current uncommitted Release core through
+cross-job CLI transport and the Official simulation workflow. Commit-7 remote
+observation, live authority, publication mutation, Receipt, authorization, and
+capability implementation remain excluded.
+
+## Bounded target inventory
+
+- Release transport:
+  `records/release.py`, `records/release_transport.py`, and admitted
+  `RepositoryModelSnapshot` parsing in `repository/compiler.py`.
+- CLI and mechanics:
+  `cli.py`, `release/simulation.py`, and `release/workflow.py`.
+- Workflow:
+  `.github/workflows/workflow-delivery-v3-official-simulate.yml`.
+- Focused tests:
+  `tests/release/test_commit6_transport_cli.py`,
+  `tests/contracts/test_official_simulation_workflow.py`, and the commit-6
+  command-availability assertions in `tests/test_cli.py`.
+- HK already governs `.github/workflows/workflow-delivery-v3-*.yml`; no HK
+  production change is required.
+
+## Acceptance checklist
+
+| ID | Requirement |
+|---|---|
+| C6T-1 | Closed canonical deserialization and caller-authoritative current bindings for Intent, admitted model, Binding, Snapshot, Artifact, Evidence, Decision, and Outcome. |
+| C6T-2 | CLI record chain covers normalization, model admission/compilation, identity, planning/context, mechanics, post-upload formation, exact-four finalization, unavailable observation, empty actions, and non-success Outcome. |
+| C6T-3 | Request ID is rerun-stable while records are attempt-bound; stale, cross-purpose, noncanonical, producer, digest, and type substitutions fail. |
+| C6T-4 | Official workflow has the exact 12-job DAG, dispatch surface, permissions, concurrency, runner, deadlines, and commit-5 action pins. |
+| C6T-5 | Artifact transport is raw, 45-day, non-overwriting, hidden-file inclusive, ID-only, digest checked, and deterministic. |
+| C6T-6 | Build runs once before tarball upload; Release Artifact and build Evidence bind upload outputs afterward. |
+| C6T-7 | Qualification closes exactly four Evidence obligations, including independent project-test and two npm artifact Evidence identities. |
+| C6T-8 | Observation performs no registry/network work, actions stay empty, no PublicationSnapshot is emitted, successful qualification ends incomplete/unsupported, and failed or incomplete qualification is preserved. |
+| C6T-9 | Existing CI behavior remains unchanged and commit-7+ CLI commands remain unavailable. |
+| C6T-10 | Validate focused/full v3 tests, Ruff, Pyrefly, actionlint, Pkl/diff checks, and record exact blockers. |
+
+<!-- END APPEND: workflow-delivery-v3-commit6-cli-workflow-research -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit6-raw-name-correction-research -->
+
+# Workflow Delivery v3 Commit 6 Raw Artifact Name Correction Research
+
+Pinned `actions/upload-artifact` v7 with `archive: false` uses the basename of
+the first uploaded file as the physical artifact name and does not use the
+configured `name` value. The Official simulation workflow therefore cannot
+upload fixed basenames such as `release-intent.json` while claiming a
+digest-bound configured name.
+
+## Correction inventory
+
+- Seventeen raw uploads require exact physical basenames:
+  Intent, Provider Result, Repository Model, Simulation Binding,
+  Qualification Snapshot, Adapter context, tarball, Release Artifact, four
+  Evidence records, Qualification Decision, observation boundary, actions
+  boundary, Simulation Outcome, and human summary.
+- Every downstream CLI path must reference the propagated physical basename
+  after ID-only raw download.
+- `release_artifact_transport_name` must include `.tgz`; the Plan output,
+  build path, upload path, CLI metadata, ReleaseArtifact admission, and npm
+  qualification paths must use that exact string without appending a suffix.
+- The workflow already exposes semantic digests before upload, so JSON/Markdown
+  outputs can be moved to purpose/role/run/attempt/digest names immediately
+  before upload.
+
+## Acceptance checklist
+
+1. For every `archive: false` upload, `basename(path)` equals the configured
+   name and is the intended physical identity.
+2. Every physical name visibly binds purpose, role, run attempt, and digest;
+   roles keep names unique within one run.
+3. Every consumed raw artifact propagates its basename through direct job
+   outputs and uses it in downstream CLI arguments.
+4. Tarball identity includes `.tgz` exactly once from Plan through
+   ReleaseArtifact validation and qualification.
+5. A negative contract test records upload-artifact v7's configured-name
+   behavior.
+6. No docs, consumer policy, live release, or observation implementation
+   changes are made.
+
+<!-- END APPEND: workflow-delivery-v3-commit6-raw-name-correction-research -->

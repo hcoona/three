@@ -332,6 +332,13 @@ def _package_target_witness_from_document(
     return witness
 
 
+def package_target_witness_from_document(
+    document: dict[str, JsonValue],
+) -> PackageTargetWitness:
+    """Parse the closed Package Target Witness document."""
+    return _package_target_witness_from_document(document)
+
+
 def _validate_relative_paths(paths: tuple[str, ...]) -> None:
     if type(paths) is not tuple or not paths:
         message = "declared inputs must be a nonempty exact tuple"

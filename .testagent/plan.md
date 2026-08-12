@@ -1205,3 +1205,109 @@ parser sentinel, then rerun the full Adapter and required validation commands.
    assertion-depth review, and independent GPT-5.6 Sol review.
 
 <!-- END APPEND: workflow-delivery-v3-commit5-ci-plan-2026-08-12 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit6-release-core-plan -->
+
+## Workflow Delivery v3 Commit 6 Release Core Test Plan
+
+1. Add reusable artifact transport/content identities and strict immutable
+   Release records with canonical documents and digests.
+2. Add exact Repository Model JSON deserialization/admission and reject
+   malformed, unknown, tampered, prior-context, and forged admitted wrappers.
+3. Normalize the fixed Official simulation Intent, derive Simulation Binding
+   only from admitted current inputs, and plan the exact first-slice npm
+   Qualification Snapshot.
+4. Wrap the four Node Adapter operations, form exact current-attempt Evidence
+   and Release Artifact records, and finalize complete/failure/missing/
+   duplicate/substituted sets.
+5. Add synthetic absent/exact observation contracts, absent-only hypothetical
+   actions, guarded live Publication Snapshot materialization, and the
+   commit-6 unsupported-observation Simulation Outcome.
+6. Validate with the two focused commit-6 files, Repository Model compiler
+   tests, the full package, Ruff check/format, Pyrefly, and diff integrity.
+7. Review every explicit requirement against named tests; keep remote
+   observation, live eligibility/Attempt creation, workflows, authority, and
+   mutation out of scope.
+
+<!-- END APPEND: workflow-delivery-v3-commit6-release-core-plan -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit6-core-correction-plan -->
+
+## Workflow Delivery v3 Commit 6 Core Correction Plan
+
+1. Extend Intent schema/normalization and add same-request rerun-attempt
+   contract tests plus updated canonical fixtures.
+2. Add strict compiled policy value types, compiler conversion, canonical
+   deserialization, ready/incomplete validation, and update all Snapshot
+   builders and CI path/model checks.
+3. Remove the Planner policy parameter and prove planning uses the admitted
+   Snapshot policy even when repository authoring is unavailable or changed.
+4. Add a frozen successful mechanical build result. Change build execution to
+   return mechanics or failed Evidence, then add post-upload formation of the
+   Release Artifact and satisfied build Evidence.
+5. Add repository-aware deterministic transport validation and tests for
+   post-mechanics binding, no rebuild, same tarball bytes, prior attempt,
+   substituted name, and substituted URL.
+6. Run focused commit-6, repository compiler, CI planner/scenarios, full
+   package, Ruff check/format, Pyrefly, and diff checks. Perform inline
+   test-gap/assertion review because subagents are prohibited.
+
+<!-- END APPEND: workflow-delivery-v3-commit6-core-correction-plan -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit6-cli-workflow-plan -->
+
+# Workflow Delivery v3 Commit 6 CLI and Workflow Test Plan
+
+1. Complete closed recursive parsing for every transported Release record and
+   validate purpose, workflow run, run attempt, target, and producer from
+   caller-selected current bindings.
+2. Implement the bounded `release` CLI surface and thin workflow mechanics,
+   preserving Provider single execution and separating mechanical build bytes
+   from post-upload Artifact/Evidence formation.
+3. Implement the exact Official simulation DAG with propagated immutable
+   artifact IDs/digests through direct dependencies only.
+4. Add `test_every_transported_commit6_release_record_round_trips_closed_schema`
+   and
+   `test_release_transport_rejects_canonical_binding_and_substitution_attacks`
+   for C6T-1 and C6T-3.
+5. Add
+   `test_release_cli_transports_current_attempt_through_commit6_stop_line`,
+   `test_release_cli_request_id_is_rerun_stable_but_transport_is_attempt_bound`,
+   and
+   `test_simulation_finalizer_preserves_non_successful_qualification`
+   for C6T-2, C6T-3, C6T-7, and C6T-8.
+6. Add the Official workflow contract tests for exact dispatch,
+   permissions/concurrency, DAG/deadlines, pins/checkouts, raw artifact
+   transport, build ordering, exact-four qualification, and the commit-6 stop
+   line.
+7. Update CLI availability tests so all commit-6 commands expose help while
+   publication and observation commands outside this scope remain rejected.
+8. Run focused tests first, then the full v3 package if practical. Run Ruff
+   check/format, Pyrefly, actionlint, Pkl evaluation/diff, and Git integrity.
+9. Perform inline test-gap and assertion-quality review because subagents are
+   prohibited; record the requirement-to-test evidence in `status.md`.
+
+<!-- END APPEND: workflow-delivery-v3-commit6-cli-workflow-plan -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit6-raw-name-correction-plan -->
+
+# Workflow Delivery v3 Commit 6 Raw Artifact Name Correction Plan
+
+1. Change `release_artifact_transport_name` to return the complete `.tgz`
+   physical basename.
+2. After each digest-producing CLI/mechanics step, move the output to its exact
+   purpose/role/run/attempt/digest basename and expose that basename as a step
+   and job output.
+3. Make every raw upload's `name` and `path` select the same basename
+   expression. Keep `archive: false`, explicit IDs, and digest checking.
+4. Propagate consumed basenames across the exact direct-dependency DAG and
+   replace every fixed `.wdv3/input/*.json` reference.
+5. Remove all tarball `.tgz` suffix appending from workflow paths and pass the
+   exact Plan-selected basename to post-upload metadata and qualification.
+6. Add workflow regression tests for v7 raw naming, every upload's physical
+   identity, downstream fixed-name absence, tarball path/metadata equality,
+   and the missing-suffix ReleaseArtifact rejection.
+7. Run focused workflow/CLI/release tests, full v3 tests, actionlint, Ruff,
+   Pyrefly, and diff integrity checks.
+
+<!-- END APPEND: workflow-delivery-v3-commit6-raw-name-correction-plan -->

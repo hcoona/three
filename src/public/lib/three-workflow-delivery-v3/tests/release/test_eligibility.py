@@ -40,6 +40,7 @@ from three_workflow_delivery_v3.repository.compiler import (
     FactBundleAdmissionContext,
     RepositoryModelSnapshot,
     admit_node_provider_fact_bundle,
+    compile_release_policy,
     compile_repository_model,
     first_slice_provider_manifest,
     provider_binding,
@@ -101,7 +102,10 @@ type GovernanceSourceMutation = Callable[[GovernanceSource], GovernanceSource]
 
 
 def _policy() -> ReleasePolicy:
-    return load_release_policy(REPO_ROOT / FIRST_SLICE_POLICY_PATH)
+    return load_release_policy(
+        REPO_ROOT / FIRST_SLICE_POLICY_PATH,
+        _target_path=FIRST_SLICE_POLICY_PATH,
+    )
 
 
 def _run(repo: Path, *command: str) -> str:
@@ -255,6 +259,7 @@ def _snapshot(  # noqa: PLR0913
             ),
         ),
         release_policy_path=FIRST_SLICE_POLICY_PATH,
+        release_policy=compile_release_policy(_policy()),
         nbgv=NbgvFacts(
             canonical_version="1.2.3",
             sem_ver1="1.2.3-beta-0042-e123456",

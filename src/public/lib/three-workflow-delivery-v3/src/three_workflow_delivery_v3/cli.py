@@ -50,6 +50,9 @@ from three_workflow_delivery_v3.ci.planner import (
     form_slice_validation_candidate,
     plan_ci_qualification,
 )
+from three_workflow_delivery_v3.records.artifacts import (
+    ArtifactTransportIdentity,
+)
 from three_workflow_delivery_v3.records.ci import (
     CI_LANE_IDS,
     CiArtifact,
@@ -61,16 +64,60 @@ from three_workflow_delivery_v3.records.ci import (
     admit_ci_qualification_snapshot_json,
     ci_qualification_snapshot_digest,
 )
+from three_workflow_delivery_v3.records.release import (
+    QualificationDecision,
+    QualificationEvidence,
+    QualificationSnapshot,
+    ReleaseArtifact,
+    ReleaseIntent,
+    SimulationBinding,
+    SimulationOutcome,
+    admit_release_record,
+    release_artifact_transport_name,
+)
+from three_workflow_delivery_v3.records.release_transport import (
+    ReleaseAdmissionBindings,
+)
 from three_workflow_delivery_v3.release import (
+    derive_simulation_binding,
+    execute_project_test,
+    execute_release_build,
+    finalize_qualification,
+    finalize_simulation,
+    form_incomplete_evidence,
+    form_uploaded_release_artifact,
+    normalize_official_simulation_intent,
     parse_governance_attestation,
+    plan_official_simulation_qualification,
+    qualify_release_artifact_contents,
+    qualify_release_install_import,
+)
+from three_workflow_delivery_v3.release.simulation import (
+    HypotheticalActionsBoundary,
+    ReleaseAdapterContext,
+    SimulationObservationBoundary,
+    hypothetical_actions_boundary_from_bytes,
+    observation_boundary_from_bytes,
+    release_adapter_context_from_bytes,
+    render_simulation_summary,
+)
+from three_workflow_delivery_v3.release.workflow import (
+    artifact_expectation,
+    form_release_adapter_context,
+    mechanical_build_document,
+    mechanical_build_from_bytes,
+    node_build_request,
+    runtime_request,
 )
 from three_workflow_delivery_v3.repository import (
+    AdmittedRepositoryModelSnapshot,
     CheckoutMaterialization,
     CompilationContext,
     FactBundleAdmissionContext,
     NodeProviderResult,
     ProviderRequestManifest,
     admit_node_provider_fact_bundle,
+    admit_repository_model_snapshot,
     compile_repository_model,
     create_node_provider_fact_bundle,
     first_slice_provider_manifest,
@@ -273,6 +320,781 @@ def _validate_attestation_command(arguments: argparse.Namespace) -> int:
     document["content-digest"] = attestation.content_digest
     _write_document(document)
     return 0
+
+
+def _append_outputs(
+    path: str | None,
+    values: tuple[tuple[str, object], ...],
+) -> None:
+    if path is None:
+        return
+    with Path(path).open("a", encoding="utf-8") as output:
+        for name, value in values:
+            print(f"{name}={value}", file=output)
+
+
+def _record_outputs(
+    path: str | None,
+    *,
+    role: str,
+    digest: str,
+    extra: tuple[tuple[str, object], ...] = (),
+) -> None:
+    _append_outputs(
+        path,
+        (
+            (f"{role}-digest", digest),
+            (f"{role}-digest-hex", digest.removeprefix("sha256:")),
+            *extra,
+        ),
+    )
+
+
+def _verify_uploaded_payload(
+    path: str,
+    *,
+    artifact_id: int,
+    artifact_digest: str,
+) -> bytes:
+    if artifact_id <= 0:
+        raise ValueError("downloaded artifact ID must be positive")
+    content = Path(path).read_bytes()
+    expected = _normalized_digest(artifact_digest)
+    actual = f"sha256:{hashlib.sha256(content).hexdigest()}"
+    if actual != expected:
+        raise ValueError(
+            "downloaded payload digest does not match upload output"
+        )
+    return content
+
+
+def _release_bindings(
+    arguments: argparse.Namespace,
+    *,
+    producer: str | None = None,
+) -> ReleaseAdmissionBindings:
+    return ReleaseAdmissionBindings(
+        purpose="release-simulation",
+        workflow_run_id=arguments.workflow_run_id,
+        run_attempt=arguments.run_attempt,
+        target=arguments.target,
+        producer=producer,
+    )
+
+
+def _load_release_record(  # noqa: PLR0913
+    path: str,
+    *,
+    record_type: type[
+        ReleaseIntent
+        | SimulationBinding
+        | QualificationSnapshot
+        | ReleaseArtifact
+        | QualificationEvidence
+        | QualificationDecision
+        | SimulationOutcome
+    ],
+    expected_digest: str,
+    artifact_id: int,
+    artifact_digest: str,
+    bindings: ReleaseAdmissionBindings,
+) -> (
+    ReleaseIntent
+    | SimulationBinding
+    | QualificationSnapshot
+    | ReleaseArtifact
+    | QualificationEvidence
+    | QualificationDecision
+    | SimulationOutcome
+):
+    content = _verify_uploaded_payload(
+        path,
+        artifact_id=artifact_id,
+        artifact_digest=artifact_digest,
+    )
+    admitted = admit_release_record(
+        content,
+        expected_type=record_type,
+        expected_digest=expected_digest,
+        expected_bindings=bindings,
+    )
+    if type(admitted) is not record_type:
+        raise TypeError("Release record admission returned the wrong type")
+    return admitted
+
+
+def _release_model_context(intent: ReleaseIntent) -> CompilationContext:
+    return CompilationContext(
+        request_id=intent.request_id,
+        purpose="release-simulation",
+        workflow_run_id=intent.workflow_run_id,
+        run_attempt=intent.run_attempt,
+        target=intent.target,
+        producer="compile-simulation-model",
+        control=f"workflow-delivery-v3:{intent.target}",
+        catalog_digest=catalog_digest(),
+        channel="official",
+        release_unit=intent.release_unit,
+    )
+
+
+def _load_release_intent(
+    arguments: argparse.Namespace,
+) -> ReleaseIntent:
+    record = _load_release_record(
+        arguments.intent,
+        record_type=ReleaseIntent,
+        expected_digest=arguments.intent_digest,
+        artifact_id=arguments.intent_artifact_id,
+        artifact_digest=arguments.intent_artifact_digest,
+        bindings=_release_bindings(arguments),
+    )
+    return cast("ReleaseIntent", record)
+
+
+def _load_release_model(
+    arguments: argparse.Namespace,
+    intent: ReleaseIntent,
+) -> AdmittedRepositoryModelSnapshot:
+    content = _verify_uploaded_payload(
+        arguments.repository_model,
+        artifact_id=arguments.repository_model_artifact_id,
+        artifact_digest=arguments.repository_model_artifact_digest,
+    )
+    return admit_repository_model_snapshot(
+        content,
+        expected_context=_release_model_context(intent),
+        expected_digest=arguments.repository_model_digest,
+    )
+
+
+def _load_simulation_binding(
+    arguments: argparse.Namespace,
+) -> SimulationBinding:
+    record = _load_release_record(
+        arguments.simulation_binding,
+        record_type=SimulationBinding,
+        expected_digest=arguments.simulation_binding_digest,
+        artifact_id=arguments.simulation_binding_artifact_id,
+        artifact_digest=arguments.simulation_binding_artifact_digest,
+        bindings=_release_bindings(arguments),
+    )
+    return cast("SimulationBinding", record)
+
+
+def _load_qualification_snapshot(
+    arguments: argparse.Namespace,
+) -> QualificationSnapshot:
+    record = _load_release_record(
+        arguments.qualification_snapshot,
+        record_type=QualificationSnapshot,
+        expected_digest=arguments.qualification_snapshot_digest,
+        artifact_id=arguments.qualification_snapshot_artifact_id,
+        artifact_digest=arguments.qualification_snapshot_artifact_digest,
+        bindings=_release_bindings(arguments),
+    )
+    return cast("QualificationSnapshot", record)
+
+
+def _load_release_adapter_context(
+    arguments: argparse.Namespace,
+    snapshot: QualificationSnapshot,
+) -> ReleaseAdapterContext:
+    content = _verify_uploaded_payload(
+        arguments.adapter_context,
+        artifact_id=arguments.adapter_context_artifact_id,
+        artifact_digest=arguments.adapter_context_artifact_digest,
+    )
+    return release_adapter_context_from_bytes(
+        content,
+        snapshot=snapshot,
+        expected_digest=arguments.adapter_context_digest,
+    )
+
+
+def _load_release_artifact_record(
+    arguments: argparse.Namespace,
+    *,
+    path: str | None = None,
+    expected_digest: str | None = None,
+    artifact_id: int | None = None,
+    artifact_digest: str | None = None,
+) -> ReleaseArtifact:
+    record = _load_release_record(
+        path or arguments.release_artifact,
+        record_type=ReleaseArtifact,
+        expected_digest=expected_digest or arguments.release_artifact_digest,
+        artifact_id=artifact_id or arguments.release_artifact_artifact_id,
+        artifact_digest=(
+            artifact_digest or arguments.release_artifact_artifact_digest
+        ),
+        bindings=_release_bindings(arguments, producer="build-tarball"),
+    )
+    return cast("ReleaseArtifact", record)
+
+
+def _load_qualification_decision(
+    arguments: argparse.Namespace,
+) -> QualificationDecision:
+    record = _load_release_record(
+        arguments.qualification_decision,
+        record_type=QualificationDecision,
+        expected_digest=arguments.qualification_decision_digest,
+        artifact_id=arguments.qualification_decision_artifact_id,
+        artifact_digest=arguments.qualification_decision_artifact_digest,
+        bindings=_release_bindings(arguments),
+    )
+    return cast("QualificationDecision", record)
+
+
+def _release_normalize_request_command(arguments: argparse.Namespace) -> int:
+    intent = normalize_official_simulation_intent(
+        repository=arguments.repository,
+        selected_ref=arguments.selected_ref,
+        target=arguments.target,
+        actor=arguments.actor,
+        workflow_run_id=arguments.workflow_run_id,
+        run_attempt=arguments.run_attempt,
+    )
+    _write_output(arguments.output, intent.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="intent",
+        digest=intent.intent_digest,
+        extra=(("request-id", intent.request_id),),
+    )
+    return 0
+
+
+def _release_admit_intent_command(arguments: argparse.Namespace) -> int:
+    _load_release_intent(arguments)
+    return 0
+
+
+def _release_compile_model_command(arguments: argparse.Namespace) -> int:
+    intent = _load_release_intent(arguments)
+    repo_root = Path(arguments.repo_root).resolve()
+    context = _release_model_context(intent)
+    manifest = first_slice_provider_manifest(
+        context,
+        provider_producer="discover-node",
+    )
+    _verify_uploaded_payload(
+        arguments.provider_result,
+        artifact_id=arguments.provider_artifact_id,
+        artifact_digest=arguments.provider_artifact_digest,
+    )
+    result = _load_node_provider_result(
+        arguments.provider_result,
+        expected_binding=provider_binding(manifest, "node-first-slice"),
+        expected_manifest_digest=manifest.manifest_digest,
+    )
+    request_transport_digest = _normalized_digest(
+        arguments.intent_artifact_digest
+    )
+    provider_transport_digest = _normalized_digest(
+        arguments.provider_artifact_digest
+    )
+    bundle = create_node_provider_fact_bundle(
+        result,
+        manifest_digest=manifest.manifest_digest,
+        manifest_entry_id=manifest.requests[0].entry_id,
+        request_artifact_id=arguments.intent_artifact_id,
+        request_artifact_digest=request_transport_digest,
+        transport_id=arguments.provider_artifact_id,
+        transport_digest=provider_transport_digest,
+    )
+    admitted = admit_node_provider_fact_bundle(
+        bundle,
+        context=context,
+        manifest=manifest,
+        admission=FactBundleAdmissionContext(
+            request_artifact_id=arguments.intent_artifact_id,
+            request_artifact_digest=request_transport_digest,
+            transport_id=arguments.provider_artifact_id,
+            transport_digest=provider_transport_digest,
+            bundle_digest=bundle.bundle_digest,
+        ),
+    )
+    snapshot = compile_repository_model(
+        repo_root,
+        context,
+        manifest,
+        [admitted],
+    )
+    canonical_bytes = canonicalize(snapshot.to_document())
+    admitted_model = admit_repository_model_snapshot(
+        canonical_bytes,
+        expected_context=context,
+        expected_digest=snapshot.snapshot_digest,
+    )
+    Path(arguments.output).parent.mkdir(parents=True, exist_ok=True)
+    Path(arguments.output).write_bytes(admitted_model.canonical_bytes)
+    _record_outputs(
+        arguments.github_output,
+        role="repository-model",
+        digest=admitted_model.canonical_digest,
+    )
+    return 0
+
+
+def _release_create_identity_command(arguments: argparse.Namespace) -> int:
+    intent = _load_release_intent(arguments)
+    model = _load_release_model(arguments, intent)
+    binding = derive_simulation_binding(intent, model)
+    _write_output(arguments.output, binding.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="simulation-binding",
+        digest=binding.binding_digest,
+        extra=(("simulation-id", binding.simulation.identity),),
+    )
+    return 0
+
+
+def _release_plan_qualification_command(arguments: argparse.Namespace) -> int:
+    intent = _load_release_intent(arguments)
+    model = _load_release_model(arguments, intent)
+    binding = _load_simulation_binding(arguments)
+    snapshot = plan_official_simulation_qualification(
+        intent,
+        binding,
+        model,
+    )
+    source_date_epoch = int(
+        _command_stdout(
+            ("git", "show", "-s", "--format=%ct", snapshot.target),
+            Path(arguments.repo_root).resolve(),
+        )
+    )
+    context = form_release_adapter_context(
+        snapshot,
+        model,
+        source_date_epoch=source_date_epoch,
+        node_version=_command_stdout(
+            ("node", "--version"),
+            Path(arguments.repo_root).resolve(),
+        ),
+        pnpm_version=_command_stdout(
+            ("pnpm", "--version"),
+            Path(arguments.repo_root).resolve(),
+        ),
+        npm_version=_command_stdout(
+            ("npm", "--version"),
+            Path(arguments.repo_root).resolve(),
+        ),
+    )
+    _write_output(arguments.output, snapshot.to_document())
+    _write_output(arguments.adapter_context_output, context.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="qualification-snapshot",
+        digest=snapshot.snapshot_digest,
+        extra=(
+            ("adapter-context-digest", context.context_digest),
+            (
+                "adapter-context-digest-hex",
+                context.context_digest.removeprefix("sha256:"),
+            ),
+            (
+                "tarball-artifact-name",
+                release_artifact_transport_name(
+                    repository=snapshot.repository,
+                    purpose="release-simulation",
+                    output=snapshot.outputs[0],
+                    qualification_snapshot_digest=snapshot.snapshot_digest,
+                    workflow_run_id=arguments.workflow_run_id,
+                    run_attempt=arguments.run_attempt,
+                    producer="build-tarball",
+                ),
+            ),
+        ),
+    )
+    return 0
+
+
+def _release_run_build_command(arguments: argparse.Namespace) -> int:
+    snapshot = _load_qualification_snapshot(arguments)
+    context = _load_release_adapter_context(arguments, snapshot)
+    request = node_build_request(
+        Path(arguments.repo_root).resolve(),
+        snapshot,
+        context,
+    )
+    mechanics, failure = execute_release_build(snapshot, request)
+    if failure is not None:
+        _write_output(arguments.failure_evidence_output, failure.to_document())
+        _record_outputs(
+            arguments.github_output,
+            role="build-evidence",
+            digest=failure.evidence_digest,
+            extra=(("build-status", "failed"),),
+        )
+        return 0
+    if mechanics is None:
+        raise ValueError(
+            "Release build returned neither mechanics nor Evidence"
+        )
+    Path(arguments.tarball_output).parent.mkdir(parents=True, exist_ok=True)
+    Path(arguments.tarball_output).write_bytes(mechanics.tarball)
+    _write_output(
+        arguments.mechanical_output,
+        mechanical_build_document(mechanics),
+    )
+    _append_outputs(
+        arguments.github_output,
+        (
+            ("build-status", "satisfied"),
+            (
+                "tarball-content-digest",
+                mechanics.content.content_sha256,
+            ),
+            (
+                "tarball-content-digest-hex",
+                mechanics.content.content_sha256.removeprefix("sha256:"),
+            ),
+        ),
+    )
+    return 0
+
+
+def _release_form_artifact_command(arguments: argparse.Namespace) -> int:
+    snapshot = _load_qualification_snapshot(arguments)
+    context = _load_release_adapter_context(arguments, snapshot)
+    tarball = Path(arguments.tarball).read_bytes()
+    mechanics = mechanical_build_from_bytes(
+        Path(arguments.mechanical_result).read_bytes(),
+        snapshot=snapshot,
+        tarball=tarball,
+    )
+    if (
+        canonical_sha256(context.witness.to_document())
+        != mechanics.witness_digest
+    ):
+        raise ValueError("Mechanical result witness does not match context")
+    transport = ArtifactTransportIdentity(
+        artifact_id=arguments.tarball_artifact_id,
+        artifact_name=arguments.tarball_artifact_name,
+        artifact_url=arguments.tarball_artifact_url,
+        transport_digest=_normalized_digest(arguments.tarball_artifact_digest),
+        producer="build-tarball",
+        workflow_run_id=arguments.workflow_run_id,
+        run_attempt=arguments.run_attempt,
+    )
+    artifact, evidence = form_uploaded_release_artifact(
+        snapshot,
+        mechanics,
+        transport,
+    )
+    _write_output(arguments.artifact_output, artifact.to_document())
+    _write_output(arguments.evidence_output, evidence.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="release-artifact",
+        digest=artifact.artifact_digest,
+        extra=(
+            ("build-evidence-digest", evidence.evidence_digest),
+            (
+                "build-evidence-digest-hex",
+                evidence.evidence_digest.removeprefix("sha256:"),
+            ),
+        ),
+    )
+    return 0
+
+
+def _release_project_test_command(arguments: argparse.Namespace) -> int:
+    snapshot = _load_qualification_snapshot(arguments)
+    context = _load_release_adapter_context(arguments, snapshot)
+    evidence = execute_project_test(
+        snapshot,
+        Path(arguments.repo_root).resolve() / context.project_path,
+        runtime_request(snapshot, context),
+    )
+    _write_output(arguments.output, evidence.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="project-test-evidence",
+        digest=evidence.evidence_digest,
+    )
+    return 0
+
+
+def _release_tarball_qualification_command(
+    arguments: argparse.Namespace,
+    *,
+    operation: str,
+) -> int:
+    snapshot = _load_qualification_snapshot(arguments)
+    context = _load_release_adapter_context(arguments, snapshot)
+    artifact = _load_release_artifact_record(arguments)
+    tarball = Path(arguments.tarball).read_bytes()
+    expectation = artifact_expectation(snapshot, context, artifact)
+    if operation == "artifact-contents":
+        evidence = qualify_release_artifact_contents(
+            snapshot,
+            artifact,
+            tarball,
+            expectation,
+        )
+        role = "artifact-contents-evidence"
+    elif operation == "install-import":
+        evidence = qualify_release_install_import(
+            snapshot,
+            artifact,
+            tarball,
+            expectation,
+            runtime_request(snapshot, context),
+        )
+        role = "install-import-evidence"
+    else:
+        raise ValueError(f"unsupported Release qualification: {operation}")
+    _write_output(arguments.output, evidence.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role=role,
+        digest=evidence.evidence_digest,
+    )
+    return 0
+
+
+def _release_artifact_contents_command(arguments: argparse.Namespace) -> int:
+    return _release_tarball_qualification_command(
+        arguments,
+        operation="artifact-contents",
+    )
+
+
+def _release_install_import_command(arguments: argparse.Namespace) -> int:
+    return _release_tarball_qualification_command(
+        arguments,
+        operation="install-import",
+    )
+
+
+def _release_incomplete_evidence_command(arguments: argparse.Namespace) -> int:
+    snapshot = _load_qualification_snapshot(arguments)
+    evidence = form_incomplete_evidence(
+        snapshot,
+        arguments.obligation_id,
+        reason="blocked-by-prerequisite",
+    )
+    _write_output(arguments.output, evidence.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role=arguments.output_role,
+        digest=evidence.evidence_digest,
+    )
+    return 0
+
+
+def _optional_evidence(
+    arguments: argparse.Namespace,
+    *,
+    prefix: str,
+    producer: str,
+) -> QualificationEvidence | None:
+    path = getattr(arguments, prefix.replace("-", "_"))
+    if path is None:
+        return None
+    record = _load_release_record(
+        path,
+        record_type=QualificationEvidence,
+        expected_digest=getattr(
+            arguments,
+            f"{prefix.replace('-', '_')}_digest",
+        ),
+        artifact_id=getattr(
+            arguments,
+            f"{prefix.replace('-', '_')}_artifact_id",
+        ),
+        artifact_digest=getattr(
+            arguments,
+            f"{prefix.replace('-', '_')}_artifact_digest",
+        ),
+        bindings=_release_bindings(arguments, producer=producer),
+    )
+    return cast("QualificationEvidence", record)
+
+
+def _release_finalize_qualification_command(
+    arguments: argparse.Namespace,
+) -> int:
+    snapshot = _load_qualification_snapshot(arguments)
+    evidence = tuple(
+        item
+        for item in (
+            _optional_evidence(
+                arguments,
+                prefix="build-evidence",
+                producer="build-tarball",
+            ),
+            _optional_evidence(
+                arguments,
+                prefix="project-test-evidence",
+                producer="project-test",
+            ),
+            _optional_evidence(
+                arguments,
+                prefix="artifact-contents-evidence",
+                producer="npm-artifact-qualification",
+            ),
+            _optional_evidence(
+                arguments,
+                prefix="install-import-evidence",
+                producer="npm-artifact-qualification",
+            ),
+        )
+        if item is not None
+    )
+    artifacts: tuple[ReleaseArtifact, ...] = ()
+    if arguments.release_artifact is not None:
+        artifacts = (_load_release_artifact_record(arguments),)
+    decision = finalize_qualification(snapshot, evidence, artifacts)
+    _write_output(arguments.output, decision.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="qualification-decision",
+        digest=decision.decision_digest,
+        extra=(
+            ("qualification-result", decision.terminal_result),
+            ("qualification-failure-class", decision.failure_class),
+        ),
+    )
+    return 0
+
+
+def _release_observation_unavailable_command(
+    arguments: argparse.Namespace,
+) -> int:
+    snapshot = _load_qualification_snapshot(arguments)
+    decision = _load_qualification_decision(arguments)
+    if not isinstance(snapshot.subject, SimulationBinding):
+        raise TypeError("Observation boundary requires simulation Snapshot")
+    boundary = SimulationObservationBoundary(
+        simulation=snapshot.subject.simulation,
+        qualification_snapshot_digest=snapshot.snapshot_digest,
+        qualification_decision_digest=decision.decision_digest,
+        status="unavailable",
+        authoritative=False,
+        network_performed=False,
+        reason="observation-adapter-not-implemented",
+        next_action="implement-observation-adapter",
+    )
+    _write_output(arguments.output, boundary.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="observation-boundary",
+        digest=boundary.boundary_digest,
+    )
+    return 0
+
+
+def _load_observation_boundary(
+    arguments: argparse.Namespace,
+    snapshot: QualificationSnapshot,
+    decision: QualificationDecision,
+) -> SimulationObservationBoundary:
+    content = _verify_uploaded_payload(
+        arguments.observation_boundary,
+        artifact_id=arguments.observation_boundary_artifact_id,
+        artifact_digest=arguments.observation_boundary_artifact_digest,
+    )
+    return observation_boundary_from_bytes(
+        content,
+        snapshot=snapshot,
+        decision=decision,
+        expected_digest=arguments.observation_boundary_digest,
+    )
+
+
+def _release_materialize_actions_command(
+    arguments: argparse.Namespace,
+) -> int:
+    snapshot = _load_qualification_snapshot(arguments)
+    decision = _load_qualification_decision(arguments)
+    observation = _load_observation_boundary(
+        arguments,
+        snapshot,
+        decision,
+    )
+    if not isinstance(snapshot.subject, SimulationBinding):
+        raise TypeError("Actions boundary requires simulation Snapshot")
+    boundary = HypotheticalActionsBoundary(
+        simulation=snapshot.subject.simulation,
+        qualification_snapshot_digest=snapshot.snapshot_digest,
+        qualification_decision_digest=decision.decision_digest,
+        observation_boundary_digest=observation.boundary_digest,
+        status="unsupported-observation",
+        actions=(),
+        publication_snapshot_emitted=False,
+    )
+    _write_output(arguments.output, boundary.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="actions-boundary",
+        digest=boundary.boundary_digest,
+    )
+    return 0
+
+
+def _release_finalize_simulation_command(
+    arguments: argparse.Namespace,
+) -> int:
+    snapshot = _load_qualification_snapshot(arguments)
+    decision = _load_qualification_decision(arguments)
+    observation = _load_observation_boundary(
+        arguments,
+        snapshot,
+        decision,
+    )
+    actions_content = _verify_uploaded_payload(
+        arguments.actions_boundary,
+        artifact_id=arguments.actions_boundary_artifact_id,
+        artifact_digest=arguments.actions_boundary_artifact_digest,
+    )
+    hypothetical_actions_boundary_from_bytes(
+        actions_content,
+        snapshot=snapshot,
+        decision=decision,
+        observation=observation,
+        expected_digest=arguments.actions_boundary_digest,
+    )
+    artifacts: tuple[ReleaseArtifact, ...] = ()
+    if arguments.release_artifact is not None:
+        artifacts = (_load_release_artifact_record(arguments),)
+    outcome = finalize_simulation(
+        snapshot,
+        decision,
+        artifacts=artifacts,
+    )
+    _write_output(arguments.output, outcome.to_document())
+    summary = render_simulation_summary(
+        snapshot,
+        decision,
+        outcome.to_document(),
+    )
+    summary_path = Path(arguments.summary_output)
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+    summary_path.write_text(summary, encoding="utf-8", newline="\n")
+    if arguments.github_step_summary is not None:
+        with Path(arguments.github_step_summary).open(
+            "a",
+            encoding="utf-8",
+            newline="\n",
+        ) as github_summary:
+            github_summary.write(summary)
+    _record_outputs(
+        arguments.github_output,
+        role="simulation-outcome",
+        digest=outcome.outcome_digest,
+        extra=(
+            ("terminal-result", outcome.terminal_result),
+            ("failure-class", outcome.failure_class),
+            ("next-action", outcome.next_action),
+        ),
+    )
+    return 0 if outcome.terminal_result == "success" else 1
 
 
 def _object(value: JsonValue, *, context: str) -> dict[str, JsonValue]:
@@ -1313,6 +2135,82 @@ def _add_provider_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_current_release_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--workflow-run-id", required=True, type=int)
+    parser.add_argument("--run-attempt", required=True, type=int)
+    parser.add_argument("--target", required=True)
+
+
+def _add_uploaded_record_arguments(
+    parser: argparse.ArgumentParser,
+    *,
+    name: str,
+    required: bool = True,
+) -> None:
+    option = name.replace("_", "-")
+    parser.add_argument(f"--{option}", required=required)
+    parser.add_argument(
+        f"--{option}-digest",
+        required=required,
+    )
+    parser.add_argument(
+        f"--{option}-artifact-id",
+        required=required,
+        type=int,
+    )
+    parser.add_argument(
+        f"--{option}-artifact-digest",
+        required=required,
+    )
+
+
+def _add_snapshot_arguments(parser: argparse.ArgumentParser) -> None:
+    _add_uploaded_record_arguments(
+        parser,
+        name="qualification_snapshot",
+    )
+
+
+def _add_adapter_context_arguments(parser: argparse.ArgumentParser) -> None:
+    _add_uploaded_record_arguments(parser, name="adapter_context")
+
+
+def _add_release_artifact_arguments(
+    parser: argparse.ArgumentParser,
+    *,
+    required: bool = True,
+) -> None:
+    _add_uploaded_record_arguments(
+        parser,
+        name="release_artifact",
+        required=required,
+    )
+
+
+def _add_decision_arguments(parser: argparse.ArgumentParser) -> None:
+    _add_uploaded_record_arguments(
+        parser,
+        name="qualification_decision",
+    )
+
+
+def _add_observation_boundary_arguments(
+    parser: argparse.ArgumentParser,
+) -> None:
+    _add_uploaded_record_arguments(
+        parser,
+        name="observation_boundary",
+    )
+
+
+def _add_optional_evidence_arguments(
+    parser: argparse.ArgumentParser,
+    *,
+    name: str,
+) -> None:
+    _add_uploaded_record_arguments(parser, name=name, required=False)
+
+
 def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="context", required=True)
@@ -1353,6 +2251,234 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     attestation = release_commands.add_parser("validate-attestation")
     attestation.add_argument("--document", required=True)
     attestation.set_defaults(handler=_validate_attestation_command)
+
+    normalize_request = release_commands.add_parser(
+        "normalize-simulation-request"
+    )
+    normalize_request.add_argument("--repository", required=True)
+    normalize_request.add_argument("--selected-ref", required=True)
+    normalize_request.add_argument("--actor", required=True)
+    _add_current_release_arguments(normalize_request)
+    normalize_request.add_argument("--output", required=True)
+    normalize_request.add_argument("--github-output")
+    normalize_request.set_defaults(handler=_release_normalize_request_command)
+
+    admit_intent = release_commands.add_parser("admit-intent")
+    _add_current_release_arguments(admit_intent)
+    _add_uploaded_record_arguments(admit_intent, name="intent")
+    admit_intent.set_defaults(handler=_release_admit_intent_command)
+
+    compile_model = release_commands.add_parser("compile-simulation-model")
+    compile_model.add_argument("--repo-root", default=".")
+    _add_current_release_arguments(compile_model)
+    _add_uploaded_record_arguments(compile_model, name="intent")
+    compile_model.add_argument("--provider-result", required=True)
+    compile_model.add_argument(
+        "--provider-artifact-id",
+        required=True,
+        type=int,
+    )
+    compile_model.add_argument(
+        "--provider-artifact-digest",
+        required=True,
+    )
+    compile_model.add_argument("--output", required=True)
+    compile_model.add_argument("--github-output")
+    compile_model.set_defaults(handler=_release_compile_model_command)
+
+    create_identity = release_commands.add_parser("create-simulation-identity")
+    _add_current_release_arguments(create_identity)
+    _add_uploaded_record_arguments(create_identity, name="intent")
+    _add_uploaded_record_arguments(
+        create_identity,
+        name="repository_model",
+    )
+    create_identity.add_argument("--output", required=True)
+    create_identity.add_argument("--github-output")
+    create_identity.set_defaults(handler=_release_create_identity_command)
+
+    plan_qualification = release_commands.add_parser("plan-qualification")
+    plan_qualification.add_argument("--repo-root", default=".")
+    _add_current_release_arguments(plan_qualification)
+    _add_uploaded_record_arguments(plan_qualification, name="intent")
+    _add_uploaded_record_arguments(
+        plan_qualification,
+        name="repository_model",
+    )
+    _add_uploaded_record_arguments(
+        plan_qualification,
+        name="simulation_binding",
+    )
+    plan_qualification.add_argument("--output", required=True)
+    plan_qualification.add_argument(
+        "--adapter-context-output",
+        required=True,
+    )
+    plan_qualification.add_argument("--github-output")
+    plan_qualification.set_defaults(handler=_release_plan_qualification_command)
+
+    run_build = release_commands.add_parser("run-build")
+    run_build.add_argument("--repo-root", default=".")
+    _add_current_release_arguments(run_build)
+    _add_snapshot_arguments(run_build)
+    _add_adapter_context_arguments(run_build)
+    run_build.add_argument("--tarball-output", required=True)
+    run_build.add_argument("--mechanical-output", required=True)
+    run_build.add_argument("--failure-evidence-output", required=True)
+    run_build.add_argument("--github-output")
+    run_build.set_defaults(handler=_release_run_build_command)
+
+    form_artifact = release_commands.add_parser("form-uploaded-artifact")
+    _add_current_release_arguments(form_artifact)
+    _add_snapshot_arguments(form_artifact)
+    _add_adapter_context_arguments(form_artifact)
+    form_artifact.add_argument("--mechanical-result", required=True)
+    form_artifact.add_argument("--tarball", required=True)
+    form_artifact.add_argument(
+        "--tarball-artifact-id",
+        required=True,
+        type=int,
+    )
+    form_artifact.add_argument("--tarball-artifact-name", required=True)
+    form_artifact.add_argument("--tarball-artifact-url", required=True)
+    form_artifact.add_argument("--tarball-artifact-digest", required=True)
+    form_artifact.add_argument("--artifact-output", required=True)
+    form_artifact.add_argument("--evidence-output", required=True)
+    form_artifact.add_argument("--github-output")
+    form_artifact.set_defaults(handler=_release_form_artifact_command)
+
+    project_test = release_commands.add_parser("run-project-test")
+    project_test.add_argument("--repo-root", default=".")
+    _add_current_release_arguments(project_test)
+    _add_snapshot_arguments(project_test)
+    _add_adapter_context_arguments(project_test)
+    project_test.add_argument("--output", required=True)
+    project_test.add_argument("--github-output")
+    project_test.set_defaults(handler=_release_project_test_command)
+
+    artifact_contents = release_commands.add_parser("run-artifact-contents")
+    _add_current_release_arguments(artifact_contents)
+    _add_snapshot_arguments(artifact_contents)
+    _add_adapter_context_arguments(artifact_contents)
+    _add_release_artifact_arguments(artifact_contents)
+    artifact_contents.add_argument("--tarball", required=True)
+    artifact_contents.add_argument("--output", required=True)
+    artifact_contents.add_argument("--github-output")
+    artifact_contents.set_defaults(handler=_release_artifact_contents_command)
+
+    install_import = release_commands.add_parser("run-install-import")
+    _add_current_release_arguments(install_import)
+    _add_snapshot_arguments(install_import)
+    _add_adapter_context_arguments(install_import)
+    _add_release_artifact_arguments(install_import)
+    install_import.add_argument("--tarball", required=True)
+    install_import.add_argument("--output", required=True)
+    install_import.add_argument("--github-output")
+    install_import.set_defaults(handler=_release_install_import_command)
+
+    incomplete_evidence = release_commands.add_parser(
+        "form-incomplete-evidence"
+    )
+    _add_current_release_arguments(incomplete_evidence)
+    _add_snapshot_arguments(incomplete_evidence)
+    incomplete_evidence.add_argument(
+        "--obligation-id",
+        required=True,
+        choices=(
+            "release:quality:npm-artifact-contents",
+            "release:quality:npm-install-import",
+        ),
+    )
+    incomplete_evidence.add_argument(
+        "--output-role",
+        required=True,
+        choices=(
+            "artifact-contents-evidence",
+            "install-import-evidence",
+        ),
+    )
+    incomplete_evidence.add_argument("--output", required=True)
+    incomplete_evidence.add_argument("--github-output")
+    incomplete_evidence.set_defaults(
+        handler=_release_incomplete_evidence_command
+    )
+
+    finalize_qualification = release_commands.add_parser(
+        "finalize-qualification"
+    )
+    _add_current_release_arguments(finalize_qualification)
+    _add_snapshot_arguments(finalize_qualification)
+    _add_optional_evidence_arguments(
+        finalize_qualification,
+        name="build_evidence",
+    )
+    _add_optional_evidence_arguments(
+        finalize_qualification,
+        name="project_test_evidence",
+    )
+    _add_optional_evidence_arguments(
+        finalize_qualification,
+        name="artifact_contents_evidence",
+    )
+    _add_optional_evidence_arguments(
+        finalize_qualification,
+        name="install_import_evidence",
+    )
+    _add_release_artifact_arguments(
+        finalize_qualification,
+        required=False,
+    )
+    finalize_qualification.add_argument("--output", required=True)
+    finalize_qualification.add_argument("--github-output")
+    finalize_qualification.set_defaults(
+        handler=_release_finalize_qualification_command
+    )
+
+    observation_unavailable = release_commands.add_parser(
+        "emit-observation-unavailable"
+    )
+    _add_current_release_arguments(observation_unavailable)
+    _add_snapshot_arguments(observation_unavailable)
+    _add_decision_arguments(observation_unavailable)
+    observation_unavailable.add_argument("--output", required=True)
+    observation_unavailable.add_argument("--github-output")
+    observation_unavailable.set_defaults(
+        handler=_release_observation_unavailable_command
+    )
+
+    materialize_actions = release_commands.add_parser(
+        "materialize-hypothetical-actions"
+    )
+    _add_current_release_arguments(materialize_actions)
+    _add_snapshot_arguments(materialize_actions)
+    _add_decision_arguments(materialize_actions)
+    _add_observation_boundary_arguments(materialize_actions)
+    materialize_actions.add_argument("--output", required=True)
+    materialize_actions.add_argument("--github-output")
+    materialize_actions.set_defaults(
+        handler=_release_materialize_actions_command
+    )
+
+    finalize_simulation = release_commands.add_parser("finalize-simulation")
+    _add_current_release_arguments(finalize_simulation)
+    _add_snapshot_arguments(finalize_simulation)
+    _add_decision_arguments(finalize_simulation)
+    _add_observation_boundary_arguments(finalize_simulation)
+    _add_uploaded_record_arguments(
+        finalize_simulation,
+        name="actions_boundary",
+    )
+    _add_release_artifact_arguments(
+        finalize_simulation,
+        required=False,
+    )
+    finalize_simulation.add_argument("--output", required=True)
+    finalize_simulation.add_argument("--summary-output", required=True)
+    finalize_simulation.add_argument("--github-step-summary")
+    finalize_simulation.add_argument("--github-output")
+    finalize_simulation.set_defaults(
+        handler=_release_finalize_simulation_command
+    )
 
     ci = commands.add_parser("ci")
     ci_commands = ci.add_subparsers(dest="ci_command", required=True)

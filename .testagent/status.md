@@ -1796,3 +1796,286 @@ atomic finding was independently adjudicated as TP or FP. The final round
 returned no findings from all three original reviewers.
 
 <!-- END APPEND: workflow-delivery-v3-commit5-final-closure-2026-08-12 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit6-release-core-status -->
+
+## Workflow Delivery v3 Commit 6 Release Core Status
+
+Implementation and focused requirement coverage are complete. The exact
+commit-6 suite passes 23 tests, Repository Model compiler tests pass 200 tests,
+Ruff check/format pass, and Pyrefly reports 0 errors. Canonical JSON fixtures
+contain exact RFC 8785 bytes without terminal whitespace.
+
+### Requirement evidence
+
+| Requirement | Concrete evidence |
+|---|---|
+| Canonical records and Repository Model admission | `test_canonical_intent_and_repository_model_fixtures`, `test_repository_model_admission_rejects_noncanonical_unknown_and_tampered`, `test_simulation_identity_requires_admitted_current_model` |
+| Exact identities and immutable records | `test_release_records_are_exact_frozen_slotted_dataclasses`, `test_identity_field_order_and_live_identity_shapes_are_exact`, `test_simulation_identity_document_contains_no_live_identity` |
+| Exact first-slice plan and DAG | `test_official_simulation_plan_is_the_exact_closed_first_slice`, `test_official_simulation_plan_has_exact_four_obligations_and_closed_dag` |
+| Artifact/Evidence binding and success | `test_complete_qualification_succeeds_with_exact_artifact_binding`, `test_build_transport_rejects_prior_attempt_substitution` |
+| Failure, missing, duplicate, and substituted Evidence | `test_build_adapter_failure_forms_failed_evidence_and_no_artifact`, `test_definitive_failure_continues_to_closed_failed_decision`, `test_missing_evidence_finalizes_incomplete_without_false_success`, `test_duplicate_evidence_is_rejected`, `test_cross_purpose_and_prior_attempt_evidence_are_rejected` |
+| Observation, hypothetical action, and simulation boundary | `test_synthetic_absent_and_exact_observations_plan_actions_only`, `test_synthetic_observations_can_complete_simulation_report`, `test_unsupported_observation_finishes_truthful_incomplete_simulation` |
+| Guarded Publication Snapshot | `test_publication_snapshot_guards_success_observation_and_artifacts` |
+| No live authority/workflow/remote observation | Source scope and `test_simulation_identity_document_contains_no_live_identity`; no workflow, HK, policy, catalog, or docs paths changed |
+
+### Validation
+
+- `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q
+  .../test_commit6_contracts.py .../test_commit6_qualification.py`:
+  23 passed.
+- `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q
+  .../tests/repository/test_compiler.py`: 200 passed.
+- `uv run --python 3.13 pyrefly check`: 0 errors.
+- Scoped Ruff check and format check: passed.
+- `git diff --check`: passed.
+- Full package validation passed with 1,861 tests. One earlier full run hit
+  a transient pnpm temporary-directory rename failure in the existing real
+  Node-provider test; that test passed immediately in isolation, and the next
+  full package run passed.
+
+### Final test-gap and assertion review
+
+Inline review was used because the user prohibited subagents. It identified
+and closed three in-scope gaps: forged admitted Repository Model wrappers,
+Publication Snapshot artifact/observation cardinality mismatches, and
+`exact-satisfied` observations whose content or witness did not match the
+desired artifact. The focused tests contain concrete outcome, digest,
+cardinality, ordering, binding, and serialization assertions; no assertion-free
+or truthiness-only commit-6 scenarios remain.
+
+<!-- END APPEND: workflow-delivery-v3-commit6-release-core-status -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit6-core-correction -->
+
+## Workflow Delivery v3 Commit 6 Core Correction
+
+The focused correction is complete.
+
+### API and contract changes
+
+- `ReleaseIntent` now binds `workflow_ref` and `run_attempt`; Request IDs remain
+  stable across reruns while Intent and Simulation identities change.
+- Ready `RepositoryModelSnapshot` records now contain the complete immutable
+  `CompiledReleasePolicy`; incomplete snapshots contain no compiled policy.
+- `plan_official_simulation_qualification` consumes only the admitted
+  Repository Model and no longer accepts an external Release policy.
+- `execute_release_build` now returns verified `MechanicalBuildResult` bytes
+  without upload metadata. `form_uploaded_release_artifact` later binds exact
+  `ArtifactTransportIdentity` and forms the Release Artifact and successful
+  build Evidence without rebuilding.
+- Release Artifact admission now binds repository, exact GitHub Actions
+  artifact URL, deterministic purpose/role/attempt name, producer, workflow
+  run, and run attempt.
+
+### Validation
+
+| Scope | Result |
+|---|---|
+| Corrected commit-6 contracts and qualification | 25 passed |
+| Repository tests | 358 passed |
+| Commit-3 canonical contract regression | 164 passed |
+| Complete CI test directory | 259 passed |
+| Release eligibility regression | 176 passed |
+| Ruff check and format check | Passed |
+| Pyrefly | 0 errors |
+| `git diff --check` | Passed |
+
+The full package was attempted twice. The first run completed with 1,876
+passing tests and three failures in existing real-HK integration tests. All
+three passed immediately when rerun in isolation. A later serial run was
+blocked when HK attempted to fetch
+`https://github.com/jdx/hk/releases/download/v1.53.0/hk@1.53.0.zip` while
+evaluating temporary test configurations and the HTTP request failed. The
+complete CI directory had already passed before that external fetch became
+unavailable.
+
+Inline test-gap review found no remaining in-scope correction gap.
+`MechanicalBuildResult` now rejects malformed primitive bindings and
+content/output substitution before the post-upload formation boundary.
+
+No CLI, workflow, documentation, HK, consumer-policy, or live-authority files
+were changed, and no commit was created.
+
+<!-- END APPEND: workflow-delivery-v3-commit6-core-correction -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit6-cli-workflow-status -->
+
+# Workflow Delivery v3 Commit 6 CLI and Official Simulation Status
+
+## Outcome
+
+Complete. The bounded commit-6 CLI transport, strict record admission, and
+Official simulation workflow are implemented and validated. No commit was
+created. Commit-7 remote observation, live authority, publication mutation,
+authorization, capability, and Receipt work was not added.
+
+## Files added or extended for this phase
+
+- `.github/workflows/workflow-delivery-v3-official-simulate.yml`
+- `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py`
+- `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/records/release.py`
+- `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/records/release_transport.py`
+- `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/release/simulation.py`
+- `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/release/workflow.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/release/test_commit6_transport_cli.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_official_simulation_workflow.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/test_cli.py`
+- `.testagent/research.md`, `.testagent/plan.md`, `.testagent/status.md`
+
+The current uncommitted commit-6 Release core and unrelated user changes were
+preserved.
+
+## Requirement evidence
+
+| Requirement | Exact evidence |
+|---|---|
+| C6T-1 strict transported record parsing/admission | `test_every_transported_commit6_release_record_round_trips_closed_schema`; admitted model assertion in the same test. |
+| C6T-2 complete bounded CLI chain | `test_release_cli_transports_current_attempt_through_commit6_stop_line`; `test_compile_simulation_model_consumes_uploaded_provider_without_rerun`. |
+| C6T-3 rerun and adversarial rejection | `test_release_cli_request_id_is_rerun_stable_but_transport_is_attempt_bound`; `test_release_transport_rejects_canonical_binding_and_substitution_attacks`. |
+| C6T-4 exact workflow event/DAG/permissions/concurrency/pins/deadlines | `test_official_simulation_event_permissions_and_concurrency_are_exact`; `test_official_simulation_dag_runner_and_deadlines_are_exact`; `test_official_simulation_actions_and_checkouts_are_immutable`. |
+| C6T-5 immutable raw ID-only artifact transport | `test_official_simulation_uses_only_raw_id_bound_artifact_transport`. |
+| C6T-6 two-stage build and upload ordering | `test_build_is_uploaded_before_artifact_and_evidence_are_formed`; existing `test_upload_metadata_binds_after_single_mechanical_build`. |
+| C6T-7 exact four Evidence finalization | CLI end-to-end decision equality in `test_release_cli_transports_current_attempt_through_commit6_stop_line`; four-Evidence workflow assertions in `test_build_is_uploaded_before_artifact_and_evidence_are_formed`. |
+| C6T-8 truthful commit-6 stop line and result preservation | `test_commit6_observation_and_publication_stop_line_is_truthful`; `test_simulation_finalizer_preserves_non_successful_qualification`; CLI Outcome assertions in the end-to-end test. |
+| C6T-9 CI compatibility and commit-7+ absence | `test_cli_exposes_only_the_commit6_release_transport_commands`; `test_cli_rejects_unapproved_commands`; full v3 package suite. |
+| C6T-10 validation | Command table below. |
+
+## Validation results
+
+| Command | Result |
+|---|---|
+| New transport/workflow scenario files | `11 passed` |
+| Release + Official workflow + CLI selection | `256 passed` |
+| Full Workflow Delivery v3 package tests | `1906 passed` |
+| Real HK trigger integration retry | `50 passed` |
+| `uv run --python 3.13 pyrefly check` | Passed: `0 errors` |
+| Focused Ruff check | Passed |
+| Focused Ruff format check | Passed: 8 files already formatted |
+| `mise exec -- actionlint .github/workflows/workflow-delivery-v3-official-simulate.yml` | Passed |
+| `mise exec -- hk --no-progress check --step pkl-eval --step pkl-format --all` | Passed |
+| `git --no-pager diff --check` | Passed |
+
+An initial full-suite run reported 1,897 passes and eight transient real-HK
+configuration-loading failures. The entire HK file then passed with 50 tests,
+and the complete package retry passed all 1,906 tests.
+
+## Inline gap and assertion-quality review
+
+- Every transported record type is admitted from canonical bytes under a
+  caller-selected runtime type and current authority bindings.
+- Negative assertions cover noncanonical bytes, unknown fields, digest
+  substitution, record-type substitution, cross-purpose use, stale attempts,
+  and producer substitution.
+- The CLI scenario asserts exact canonical bytes at identity, plan, Decision,
+  observation boundary, empty actions boundary, deterministic summary, and
+  incomplete Outcome stages.
+- Workflow assertions inspect concrete step ordering and exact configuration,
+  rather than only searching for job names.
+- The observation stop-line test rejects registry/network commands,
+  credentials, live identities, capability/authorization/Receipt, projection
+  observation, and PublicationSnapshot text.
+- No assertion-free or trivial-only generated test remains, and no explicit
+  checklist item lacks named evidence.
+
+<!-- END APPEND: workflow-delivery-v3-commit6-cli-workflow-status -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit6-raw-name-correction-status -->
+
+# Workflow Delivery v3 Commit 6 Raw Artifact Name Correction Status
+
+Complete. All 17 `archive: false` uploads now use a digest-bound file basename
+as the actual physical artifact identity. Configured `name` and
+`basename(path)` are identical, and every consumed basename is propagated into
+downstream CLI paths.
+
+## Evidence
+
+| Requirement | Evidence |
+|---|---|
+| v7 raw-name behavior | `test_upload_artifact_v7_raw_mode_ignores_configured_name` |
+| Every raw upload has exact physical identity | `test_official_simulation_uses_only_raw_id_bound_artifact_transport` |
+| No stale fixed downstream names | Fixed `.wdv3/input/*.json` negative matrix in the raw transport contract test |
+| Exact `.tgz` tarball identity | `test_build_is_uploaded_before_artifact_and_evidence_are_formed`; `.tgz` assertions and missing-suffix rejection in `test_upload_metadata_binds_after_single_mechanical_build` |
+| Plan emits complete tarball basename | `test_release_cli_transports_current_attempt_through_commit6_stop_line` |
+| Explicit ID/digest admission preserved | Existing raw transport assertions in `test_official_simulation_uses_only_raw_id_bound_artifact_transport` |
+
+## Validation
+
+| Command | Result |
+|---|---|
+| Raw-name workflow/release scenarios | `25 passed` |
+| Release + Official workflow + CLI selection | `257 passed` |
+| Full Workflow Delivery v3 package tests | `1907 passed` |
+| `uv run --python 3.13 pyrefly check` | Passed: `0 errors` |
+| Focused Ruff check/format | Passed: 4 files already formatted |
+| Official workflow actionlint | Passed |
+| `git --no-pager diff --check` | Passed |
+
+No blockers. No commit was created, and docs, consumer policy, live release,
+and observation implementation were not changed.
+
+<!-- END APPEND: workflow-delivery-v3-commit6-raw-name-correction-status -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit6-final-closure -->
+
+# Workflow Delivery v3 Commit 6 Final Closure
+
+Commit 6 is complete and ready to commit. Live activation remains disabled,
+and commit-7 npmjs observation was not implemented.
+
+## Final independent review
+
+Four independent GPT-5.6 Sol reviews covered Release contracts/admission,
+qualification mechanics, workflow runtime/security, and holistic v3 scope.
+Every finding received separate TP/FP adjudication.
+
+| Finding | Verdict | Resolution |
+|---|---|---|
+| Digest-mismatched workflow transport could become missing Evidence | TP | Present artifact IDs now require successful download, digest metadata, and exact physical file presence; empty IDs still permit incomplete finalization. |
+| Failed artifact-dependent Evidence could reference an unadmitted Artifact | TP | Artifact-binding completeness now dominates quality-failure classification. |
+| Publication Snapshot reused potential instead of concrete actions | TP | Added immutable `PublicationAction` with exact artifact, input, key, lock, capability, result, and Receipt bindings. |
+| Synthetic observations could produce commit-6 simulation success | TP | Removed the helper from public exports and rejected nonempty observations before commit 7. |
+| Publication Action constructor trusted builder-derived fields | TP | Shared pure derivations now enforce every concrete binding at construction; negative substitution tests cover each category. |
+| Strict transport lacks live Publication records | FP | Live observation/publication transport is outside commit 6; no hosted Publication Snapshot is emitted. |
+| Separate Buddy tag-key claim in this commit-6 correction | FP | The adjudication did not sustain a separate in-scope correction beyond the approved current materialization contract. |
+
+The original contract, qualification, workflow, and holistic reviewers all
+reported no findings after the fixes.
+
+## Final validation
+
+| Command | Result |
+|---|---|
+| Full Workflow Delivery v3 package tests | `1924 passed` |
+| Managed `v3-control-pytest` HK gate | Passed; `1924 passed` |
+| Root Python tests | `3959 passed` |
+| Focused Release tests after formatting | `222 passed` |
+| Pyrefly | `0 errors` |
+| HK Ruff, Ruff format, actionlint, Pkl eval, and Pkl format steps | Passed |
+| `uv build --package three-workflow-delivery-v3` | Built sdist and wheel |
+| `dotnet build dirs.proj --no-incremental` | Passed with 0 warnings and 0 errors |
+| `pnpm run build` | Passed; generated package-version stamps were restored to placeholders |
+| `uv lock --check` | Passed |
+| `pnpm install --frozen-lockfile` | Passed |
+| `dotnet restore --locked-mode` | Passed |
+| `git diff --check` | Passed |
+
+The first managed HK attempt failed because `/tmp` exhausted its inode quota;
+after removing only current-user pytest/workflow temporary trees, the isolated
+HK gate passed. The complete repository-wide HK gate reaches an unrelated
+pre-existing `shfmt` failure in untouched `eng/scripts/*.sh`; the relevant
+commit-6 hook steps pass and no unrelated script was modified.
+
+## Requirement evidence
+
+| Requirement | Evidence |
+|---|---|
+| Exact Official simulation identity and current-attempt transport | `test_release_cli_request_id_is_rerun_stable_but_transport_is_attempt_bound`; `test_release_transport_rejects_canonical_binding_and_substitution_attacks` |
+| Complete two-snapshot contracts without live activation | Publication Action positive and substitution tests in `test_commit6_qualification.py`; guarded live-only materialization tests |
+| Exact four-obligation qualification and failure continuation | Commit-6 qualification scenarios, unknown Artifact binding regressions, and workflow finalizer contract tests |
+| Truthful unsupported observation boundary | `test_commit6_observation_and_publication_stop_line_is_truthful`; nonempty-observation rejection regression |
+| Actual raw artifact identity and fail-closed transport | `test_official_simulation_uses_only_raw_id_bound_artifact_transport`; raw v7 naming regression; optional-download fail-closed contract |
+| Commit-7 and live authority exclusion | CLI command boundary tests, workflow security contract, and final independent holistic review |
+
+<!-- END APPEND: workflow-delivery-v3-commit6-final-closure -->

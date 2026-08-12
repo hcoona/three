@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 from three_workflow_delivery_v3.catalogs import catalog_digest
@@ -24,11 +25,13 @@ from three_workflow_delivery_v3.repository.compiler import (
     CompiledQualitySelection,
     CompiledReleaseUnit,
     RepositoryModelSnapshot,
+    compile_release_policy,
 )
 from three_workflow_delivery_v3.repository.descriptors import (
     FIRST_SLICE_PACKAGE,
     FIRST_SLICE_POLICY_PATH,
     FIRST_SLICE_RELEASE_UNIT,
+    load_release_policy,
 )
 from three_workflow_delivery_v3.repository.node_provider import (
     NbgvFacts,
@@ -43,6 +46,7 @@ PRODUCT_PATH = "src/public/lib/hcoona-release-smoke-npm"
 PROJECT_SOURCE = f"{PRODUCT_PATH}/src/index.js"
 WORKFLOW_RUN_ID = 7001
 RUN_ATTEMPT = 2
+REPO_ROOT = Path(__file__).resolve().parents[6]
 
 
 def _pr_candidate() -> CiCandidate:
@@ -138,6 +142,12 @@ def _repository_model(
             ),
         ),
         release_policy_path=FIRST_SLICE_POLICY_PATH,
+        release_policy=compile_release_policy(
+            load_release_policy(
+                REPO_ROOT / FIRST_SLICE_POLICY_PATH,
+                _target_path=FIRST_SLICE_POLICY_PATH,
+            )
+        ),
         nbgv=NbgvFacts(
             canonical_version="1.2.3",
             sem_ver1="1.2.3-beta-0042-e123456",
@@ -549,6 +559,7 @@ def test_incomplete_identity_valid_repository_model_blocks_without_lanes() -> (
     incomplete = replace(
         model,
         unresolved=("required NBGV facts are unavailable",),
+        release_policy=None,
         ready=False,
     )
     plan = plan_ci_qualification(
@@ -568,7 +579,20 @@ def test_planner_rejects_malformed_or_tampered_repository_model() -> None:
     """Raise for malformed closure state or a digest-tampered model."""
     candidate = _pr_candidate()
     model = _repository_model(candidate)
-    malformed = replace(model, ready=False)
+    falsely_complete = replace(
+        model,
+        unresolved=("authoring is incomplete",),
+        ready=False,
+    )
+    with pytest.raises(ValueError, match="claims compiled policy"):
+        plan_ci_qualification(
+            candidate,
+            falsely_complete,
+            repository_model_digest=falsely_complete.snapshot_digest,
+            changed_paths=(PROJECT_SOURCE,),
+            comparison_identity=(SHA_A, SHA_B),
+        )
+    malformed = replace(model, release_policy=None, ready=False)
     with pytest.raises(ValueError, match="unresolved facts"):
         plan_ci_qualification(
             candidate,
@@ -580,6 +604,7 @@ def test_planner_rejects_malformed_or_tampered_repository_model() -> None:
     incomplete = replace(
         model,
         unresolved=("required NBGV facts are unavailable",),
+        release_policy=None,
         ready=False,
     )
     with pytest.raises(ValueError, match="digest does not match"):

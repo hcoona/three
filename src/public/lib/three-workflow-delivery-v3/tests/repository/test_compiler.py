@@ -29,6 +29,7 @@ from three_workflow_delivery_v3.repository.compiler import (
 from three_workflow_delivery_v3.repository.descriptors import (
     FIRST_SLICE_PACKAGE,
     FIRST_SLICE_POLICY_PATH,
+    FIRST_SLICE_RELEASE_UNIT,
 )
 from three_workflow_delivery_v3.repository.node_provider import (
     AUTHORITATIVE_REMOTE,
@@ -678,6 +679,22 @@ def test_compiler_closes_first_slice_repository_model() -> None:
         "node/project-build-v1",
         "node/project-test-v1",
     )
+    assert snapshot.release_policy is not None
+    assert snapshot.release_policy.path == FIRST_SLICE_POLICY_PATH
+    assert snapshot.release_policy.release_unit == FIRST_SLICE_RELEASE_UNIT
+    assert snapshot.release_policy.governance.to_document() == {
+        "repository": "hcoona/three",
+        "ref": "refs/heads/main",
+        "path": (
+            ".github/workflow-delivery/governance/hcoona-release-smoke-npm.json"
+        ),
+        "max-age-days": 90,
+    }
+    assert tuple(name for name, _ in snapshot.release_policy.channels) == (
+        "buddy",
+        "official",
+    )
+    assert snapshot.release_policy.policy_digest.startswith("sha256:")
     assert snapshot.reverse_index == (
         (
             "@hcoona/hcoona-release-smoke-npm",
@@ -727,6 +744,7 @@ def test_missing_target_authoring_returns_incomplete_snapshot(
     assert snapshot.release_units == ()
     assert snapshot.quality == ()
     assert snapshot.release_policy_path == FIRST_SLICE_POLICY_PATH
+    assert snapshot.release_policy is None
     assert snapshot.reverse_index == ((FIRST_SLICE_PACKAGE, ()),)
     assert snapshot.unresolved == (diagnostic,)
     assert snapshot.snapshot_digest.startswith("sha256:")
@@ -1185,6 +1203,7 @@ def test_compiler_does_not_create_attempt_or_simulation_identity() -> None:
         "release-units",
         "quality",
         "release-policy-path",
+        "release-policy",
         "nbgv",
         "reverse-index",
         "unresolved",

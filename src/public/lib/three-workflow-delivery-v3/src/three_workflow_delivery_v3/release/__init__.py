@@ -1,4 +1,4 @@
-"""Release-owned commit-3 eligibility contracts."""
+"""Release-owned identity, planning, qualification, and eligibility APIs."""
 
 from three_workflow_delivery_v3.release.eligibility import (
     CONSUMER_POLICY_ID,
@@ -19,9 +19,52 @@ from three_workflow_delivery_v3.release.eligibility import (
     parse_governance_attestation,
     release_policy_digest,
 )
+from three_workflow_delivery_v3.release.finalizer import (
+    desired_projection_state_digest,
+    finalize_qualification,
+    finalize_simulation,
+    materialize_hypothetical_actions,
+    materialize_publication_snapshot,
+)
+from three_workflow_delivery_v3.release.identity import (
+    OFFICIAL_SIMULATION_PRODUCER,
+    derive_simulation_binding,
+    normalize_official_simulation_intent,
+)
+from three_workflow_delivery_v3.release.planner import (
+    plan_official_simulation_qualification,
+)
+from three_workflow_delivery_v3.release.qualification import (
+    MechanicalBuildResult,
+    admit_evidence_for_snapshot,
+    execute_project_test,
+    execute_release_build,
+    form_incomplete_evidence,
+    form_uploaded_release_artifact,
+    qualify_release_artifact_contents,
+    qualify_release_install_import,
+)
+from three_workflow_delivery_v3.release.simulation import (
+    HypotheticalActionsBoundary,
+    ReleaseAdapterContext,
+    SimulationObservationBoundary,
+    hypothetical_actions_boundary_from_bytes,
+    observation_boundary_from_bytes,
+    release_adapter_context_from_bytes,
+    render_simulation_summary,
+)
+from three_workflow_delivery_v3.release.workflow import (
+    artifact_expectation,
+    form_release_adapter_context,
+    mechanical_build_document,
+    mechanical_build_from_bytes,
+    node_build_request,
+    runtime_request,
+)
 
 __all__ = [
     "CONSUMER_POLICY_ID",
+    "OFFICIAL_SIMULATION_PRODUCER",
     "AccessGrant",
     "AccessInventory",
     "ConsumerPolicyResult",
@@ -30,12 +73,41 @@ __all__ = [
     "GovernanceBlob",
     "GovernanceObservation",
     "GovernanceSourceClient",
+    "HypotheticalActionsBoundary",
     "LiveEligibilityContext",
     "LiveEligibilityDecision",
+    "MechanicalBuildResult",
+    "ReleaseAdapterContext",
+    "SimulationObservationBoundary",
     "SurfaceDigest",
     "WriterInventoryEntry",
+    "admit_evidence_for_snapshot",
+    "artifact_expectation",
+    "derive_simulation_binding",
+    "desired_projection_state_digest",
     "evaluate_live_eligibility",
+    "execute_project_test",
+    "execute_release_build",
+    "finalize_qualification",
+    "finalize_simulation",
+    "form_incomplete_evidence",
+    "form_release_adapter_context",
+    "form_uploaded_release_artifact",
+    "hypothetical_actions_boundary_from_bytes",
+    "materialize_hypothetical_actions",
+    "materialize_publication_snapshot",
+    "mechanical_build_document",
+    "mechanical_build_from_bytes",
+    "node_build_request",
+    "normalize_official_simulation_intent",
+    "observation_boundary_from_bytes",
     "observe_governance_source",
     "parse_governance_attestation",
+    "plan_official_simulation_qualification",
+    "qualify_release_artifact_contents",
+    "qualify_release_install_import",
+    "release_adapter_context_from_bytes",
     "release_policy_digest",
+    "render_simulation_summary",
+    "runtime_request",
 ]

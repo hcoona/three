@@ -25,8 +25,13 @@ from three_workflow_delivery_v3.ci.planner import (
 from three_workflow_delivery_v3.records.ci import (
     ci_qualification_snapshot_digest,
 )
+from three_workflow_delivery_v3.release.identity import (
+    OFFICIAL_SIMULATION_PRODUCER,
+    normalize_official_simulation_intent,
+)
 from three_workflow_delivery_v3.repository import (
     CompilationContext,
+    admit_repository_model_snapshot,
     first_slice_provider_manifest,
     provider_binding,
 )
@@ -664,6 +669,106 @@ def test_validate_attestation_command_reports_disabled_fixture(
     assert output["content-digest"].startswith("sha256:")
 
 
+def test_compile_simulation_model_consumes_uploaded_provider_without_rerun(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Compile the admitted simulation model from uploaded Provider facts."""
+    repo, target = _target_authoring_repo(tmp_path)
+    intent = normalize_official_simulation_intent(
+        repository="hcoona/three",
+        selected_ref="refs/heads/feature/release",
+        target=target,
+        actor="release-operator",
+        workflow_run_id=WORKFLOW_RUN_ID,
+        run_attempt=RUN_ATTEMPT,
+    )
+    intent_path = _write_canonical(
+        tmp_path / "release-intent.json",
+        intent.to_document(),
+    )
+    context = CompilationContext(
+        request_id=intent.request_id,
+        purpose="release-simulation",
+        workflow_run_id=WORKFLOW_RUN_ID,
+        run_attempt=RUN_ATTEMPT,
+        target=target,
+        producer=OFFICIAL_SIMULATION_PRODUCER,
+        control=f"workflow-delivery-v3:{target}",
+        catalog_digest=cli_module.catalog_digest(),
+        channel="official",
+        release_unit="hcoona-release-smoke-npm",
+    )
+    manifest = first_slice_provider_manifest(
+        context,
+        provider_producer="discover-node",
+    )
+    provider = _fake_provider_result(
+        provider_binding(manifest, "node-first-slice")
+    )
+    provider_document = provider.to_document()
+    provider_document["provider-request-manifest-digest"] = (
+        manifest.manifest_digest
+    )
+    provider_document["result-digest"] = provider.result_digest
+    provider_path = _write_canonical(
+        tmp_path / "provider-result.json",
+        provider_document,
+    )
+    output = tmp_path / "repository-model.json"
+
+    def reject_provider_rerun(*_arguments: object, **_keywords: object) -> None:
+        message = "Provider must not rerun during compilation"
+        raise AssertionError(message)
+
+    monkeypatch.setattr(
+        cli_module,
+        "provide_node_repository_facts",
+        reject_provider_rerun,
+    )
+    result = cli_module.main(
+        [
+            "release",
+            "compile-simulation-model",
+            "--repo-root",
+            str(repo),
+            "--workflow-run-id",
+            str(WORKFLOW_RUN_ID),
+            "--run-attempt",
+            str(RUN_ATTEMPT),
+            "--target",
+            target,
+            "--intent",
+            str(intent_path),
+            "--intent-digest",
+            intent.intent_digest,
+            "--intent-artifact-id",
+            "101",
+            "--intent-artifact-digest",
+            f"sha256:{hashlib.sha256(intent_path.read_bytes()).hexdigest()}",
+            "--provider-result",
+            str(provider_path),
+            "--provider-artifact-id",
+            "102",
+            "--provider-artifact-digest",
+            f"sha256:{hashlib.sha256(provider_path.read_bytes()).hexdigest()}",
+            "--output",
+            str(output),
+        ]
+    )
+    document: JsonValue = json.loads(output.read_bytes())
+    assert isinstance(document, dict)
+    admitted = admit_repository_model_snapshot(
+        output.read_bytes(),
+        expected_context=context,
+        expected_digest=canonical_sha256(document),
+    )
+
+    assert result == 0
+    assert admitted.snapshot.ready is True
+    assert admitted.snapshot.context == context
+
+
 @pytest.mark.parametrize(
     "arguments",
     [
@@ -674,11 +779,41 @@ def test_validate_attestation_command_reports_disabled_fixture(
     ids=["publish", "repository-plan", "observation"],
 )
 def test_cli_rejects_unapproved_commands(arguments: list[str]) -> None:
-    """Expose no publication or commit-6-plus command."""
+    """Expose no publication or commit-7-plus command."""
     with pytest.raises(SystemExit) as error:
         cli_module.main(arguments)
 
     assert error.value.code == ARGPARSE_ERROR
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "normalize-simulation-request",
+        "admit-intent",
+        "compile-simulation-model",
+        "create-simulation-identity",
+        "plan-qualification",
+        "run-build",
+        "form-uploaded-artifact",
+        "run-project-test",
+        "run-artifact-contents",
+        "run-install-import",
+        "form-incomplete-evidence",
+        "finalize-qualification",
+        "emit-observation-unavailable",
+        "materialize-hypothetical-actions",
+        "finalize-simulation",
+    ],
+)
+def test_cli_exposes_only_the_commit6_release_transport_commands(
+    command: str,
+) -> None:
+    """Expose the commit-6 Release surface while later commands stay absent."""
+    with pytest.raises(SystemExit) as error:
+        cli_module.main(["release", command, "--help"])
+
+    assert error.value.code == 0
 
 
 def test_project_registers_only_the_bounded_cli() -> None:

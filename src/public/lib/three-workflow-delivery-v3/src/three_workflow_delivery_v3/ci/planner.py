@@ -27,9 +27,11 @@ from three_workflow_delivery_v3.repository.compiler import (
     CompiledBuild,
     CompiledOutput,
     CompiledQualitySelection,
+    CompiledReleasePolicy,
     CompiledReleaseUnit,
     RepositoryModelSnapshot,
     validate_compilation_context,
+    validate_compiled_release_policy,
     validate_first_slice_repository_model_snapshot,
 )
 from three_workflow_delivery_v3.repository.node_provider import (
@@ -248,6 +250,11 @@ def _validate_snapshot_binding(  # noqa: C901, PLR0912, PLR0915
     if type(repository_model.release_policy_path) is not str:
         message = "Repository Model Snapshot Release policy path is malformed"
         raise TypeError(message)
+    if repository_model.release_policy is not None:
+        if type(repository_model.release_policy) is not CompiledReleasePolicy:
+            message = "Repository Model Snapshot Release policy is malformed"
+            raise TypeError(message)
+        validate_compiled_release_policy(repository_model.release_policy)
     if type(repository_model.nbgv) is not NbgvFacts:
         message = "Repository Model Snapshot NBGV facts are malformed"
         raise TypeError(message)
@@ -264,6 +271,15 @@ def _validate_snapshot_binding(  # noqa: C901, PLR0912, PLR0915
     if type(repository_model.ready) is not bool:
         message = "Repository Model Snapshot ready flag is malformed"
         raise TypeError(message)
+    if repository_model.ready and repository_model.release_policy is None:
+        message = "ready Repository Model Snapshot lacks compiled policy"
+        raise ValueError(message)
+    if (
+        not repository_model.ready
+        and repository_model.release_policy is not None
+    ):
+        message = "incomplete Repository Model Snapshot claims compiled policy"
+        raise ValueError(message)
     for unresolved in repository_model.unresolved:
         if (
             type(unresolved) is not str
@@ -374,7 +390,12 @@ def _is_slice_affecting_path(  # noqa: PLR0911
         return True
     if any(path == selection.path for selection in repository_model.quality):
         return True
-    if path == repository_model.release_policy_path:
+    policy_path = (
+        repository_model.release_policy.path
+        if repository_model.release_policy is not None
+        else repository_model.release_policy_path
+    )
+    if path == policy_path:
         return True
     global_inputs = {
         *FIRST_SLICE_REQUIRED_GLOBAL_INPUTS,

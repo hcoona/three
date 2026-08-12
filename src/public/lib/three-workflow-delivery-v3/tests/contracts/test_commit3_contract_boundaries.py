@@ -40,6 +40,7 @@ from three_workflow_delivery_v3.repository.compiler import (
     FactBundleAdmissionContext,
     ProviderRequestManifest,
     RepositoryModelSnapshot,
+    compile_release_policy,
     first_slice_provider_manifest,
     provider_binding,
     validate_compilation_context,
@@ -264,6 +265,12 @@ def _snapshot() -> RepositoryModelSnapshot:
             ),
         ),
         release_policy_path=FIRST_SLICE_POLICY_PATH,
+        release_policy=compile_release_policy(
+            load_release_policy(
+                REPO_ROOT / FIRST_SLICE_POLICY_PATH,
+                _target_path=FIRST_SLICE_POLICY_PATH,
+            )
+        ),
         nbgv=NbgvFacts(
             canonical_version="1.2.3",
             sem_ver1="1.2.3-beta-0042-e123456",
@@ -506,6 +513,77 @@ def _snapshot_with_tuple_surrogate(  # noqa: C901, PLR0911, PLR0912
                         "Any",
                         _tuple_surrogate(quality.advisory, kind),
                     ),
+                ),
+            ),
+        )
+    if snapshot.release_policy is None:
+        message = "ready Snapshot lacks compiled policy"
+        raise AssertionError(message)
+    if path == "release_policy.channels":
+        return replace(
+            snapshot,
+            release_policy=replace(
+                snapshot.release_policy,
+                channels=cast(
+                    "Any",
+                    _tuple_surrogate(
+                        snapshot.release_policy.channels,
+                        kind,
+                    ),
+                ),
+            ),
+        )
+    if path == "release_policy.channel_entry":
+        entry = snapshot.release_policy.channels[0]
+        return replace(
+            snapshot,
+            release_policy=replace(
+                snapshot.release_policy,
+                channels=(
+                    cast("Any", _tuple_surrogate(entry, kind)),
+                    snapshot.release_policy.channels[1],
+                ),
+            ),
+        )
+    if path == "release_policy.channel.quality":
+        name, channel = snapshot.release_policy.channels[0]
+        return replace(
+            snapshot,
+            release_policy=replace(
+                snapshot.release_policy,
+                channels=(
+                    (
+                        name,
+                        replace(
+                            channel,
+                            quality=cast(
+                                "Any",
+                                _tuple_surrogate(channel.quality, kind),
+                            ),
+                        ),
+                    ),
+                    snapshot.release_policy.channels[1],
+                ),
+            ),
+        )
+    if path == "release_policy.channel.projections":
+        name, channel = snapshot.release_policy.channels[0]
+        return replace(
+            snapshot,
+            release_policy=replace(
+                snapshot.release_policy,
+                channels=(
+                    (
+                        name,
+                        replace(
+                            channel,
+                            projections=cast(
+                                "Any",
+                                _tuple_surrogate(channel.projections, kind),
+                            ),
+                        ),
+                    ),
+                    snapshot.release_policy.channels[1],
                 ),
             ),
         )
@@ -1860,6 +1938,10 @@ def test_repository_model_admission_rejects_top_level_tuple_surrogates(
         "quality",
         "quality.required",
         "quality.advisory",
+        "release_policy.channels",
+        "release_policy.channel_entry",
+        "release_policy.channel.quality",
+        "release_policy.channel.projections",
         "reverse_index",
         "reverse_index.entry",
         "reverse_index.build_ids",
@@ -1948,6 +2030,34 @@ def test_snapshot_admission_and_live_eligibility_reject_top_level_surrogates(
         pytest.param("quality", _duck_record, id="quality-duck"),
         pytest.param("quality", _mapping_record, id="quality-mapping"),
         pytest.param("quality", _list_record, id="quality-list"),
+        pytest.param(
+            "release-policy",
+            _subclass_record,
+            id="release-policy-subclass",
+        ),
+        pytest.param(
+            "release-policy",
+            _duck_record,
+            id="release-policy-duck",
+        ),
+        pytest.param(
+            "release-policy",
+            _mapping_record,
+            id="release-policy-mapping",
+        ),
+        pytest.param(
+            "release-policy",
+            _list_record,
+            id="release-policy-list",
+        ),
+        pytest.param(
+            "governance",
+            _subclass_record,
+            id="governance-subclass",
+        ),
+        pytest.param("governance", _duck_record, id="governance-duck"),
+        pytest.param("governance", _mapping_record, id="governance-mapping"),
+        pytest.param("governance", _list_record, id="governance-list"),
         pytest.param("nbgv", _subclass_record, id="nbgv-subclass"),
         pytest.param("nbgv", _duck_record, id="nbgv-duck"),
         pytest.param("nbgv", _mapping_record, id="nbgv-mapping"),
@@ -1989,6 +2099,27 @@ def test_repository_model_snapshot_admission_rejects_record_surrogates(
         forged = _snapshot_with_quality(
             snapshot,
             surrogate_factory(snapshot.quality[0]),
+        )
+    elif record_path == "release-policy":
+        assert snapshot.release_policy is not None
+        forged = replace(
+            snapshot,
+            release_policy=cast(
+                "Any",
+                surrogate_factory(snapshot.release_policy),
+            ),
+        )
+    elif record_path == "governance":
+        assert snapshot.release_policy is not None
+        forged = replace(
+            snapshot,
+            release_policy=replace(
+                snapshot.release_policy,
+                governance=cast(
+                    "Any",
+                    surrogate_factory(snapshot.release_policy.governance),
+                ),
+            ),
         )
     else:
         forged = replace(
@@ -2074,6 +2205,7 @@ def test_repository_model_valid_tuples_keep_canonical_json_arrays() -> None:
 
     validate_first_slice_repository_model_snapshot(snapshot)
     document = snapshot.to_document()
+    assert snapshot.release_policy is not None
 
     assert document["project-nodes"] == [
         {
@@ -2109,8 +2241,26 @@ def test_repository_model_valid_tuples_keep_canonical_json_arrays() -> None:
             ],
         },
     ]
+    assert document["release-policy"] == {
+        "schema": "workflow-delivery/v3/compiled-release-policy",
+        "path": FIRST_SLICE_POLICY_PATH,
+        "release-unit": FIRST_SLICE_RELEASE_UNIT,
+        "governance": {
+            "repository": "hcoona/three",
+            "ref": "refs/heads/main",
+            "path": (
+                ".github/workflow-delivery/governance/"
+                "hcoona-release-smoke-npm.json"
+            ),
+            "max-age-days": 90,
+        },
+        "channels": {
+            name: channel.to_document()
+            for name, channel in snapshot.release_policy.channels
+        },
+    }
     assert snapshot.snapshot_digest == (
-        "sha256:7012bfd83dba2981dda24309ffa380c6fa5241ae61c0687be51c71d4812e4432"
+        "sha256:4dab3519f0d30d29e275f032ce2cd5a1dcf017bde4cbba67b4d556f0810d3f4d"
     )
 
 
@@ -2143,5 +2293,5 @@ def test_exact_provider_result_and_repository_model_admission_preserve_concrete_
     assert snapshot.quality[0].preset == "node/hcoona-release-smoke-npm-v1"
     assert snapshot.ready is True
     assert snapshot.snapshot_digest == (
-        "sha256:7012bfd83dba2981dda24309ffa380c6fa5241ae61c0687be51c71d4812e4432"
+        "sha256:4dab3519f0d30d29e275f032ce2cd5a1dcf017bde4cbba67b4d556f0810d3f4d"
     )
