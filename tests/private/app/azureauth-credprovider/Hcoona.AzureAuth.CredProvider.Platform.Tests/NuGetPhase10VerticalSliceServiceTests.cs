@@ -1011,7 +1011,9 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
     [Fact]
     public async Task DoctorTreatsPosixBackslashAsLiteralPathCharacter()
     {
-        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        var fileSystem = new InMemoryFileSystem(
+            InMemoryPathSemantics.PosixLiteralBackslash
+        );
         NuGetPhase10VerticalSliceService? service = null;
         service = CreateService(
             fileSystem,

@@ -36,7 +36,7 @@ public sealed class InMemoryFileSystem
         heldLocks = new HashSet<string>(pathComparer);
         unixFileModes = new Dictionary<string, UnixFileMode>(pathComparer);
         rootPath =
-            pathSemantics == InMemoryPathSemantics.Posix ? "/"
+            UsesPosixPathSemantics() ? "/"
             : pathSemantics == InMemoryPathSemantics.Windows ? @"C:\"
             : Path.GetPathRoot(Path.GetFullPath("."))!;
         directories.Add(rootPath);
@@ -138,7 +138,7 @@ public sealed class InMemoryFileSystem
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         bool result =
-            pathSemantics == InMemoryPathSemantics.Posix ? path.StartsWith('/')
+            UsesPosixPathSemantics() ? path.StartsWith('/')
             : pathSemantics == InMemoryPathSemantics.Windows
                 ? (
                     path.Length >= 3
@@ -523,10 +523,12 @@ public sealed class InMemoryFileSystem
         }
 
         char separator = pathSemantics == InMemoryPathSemantics.Windows ? '\\' : '/';
-        string replaced =
-            pathSemantics == InMemoryPathSemantics.Windows
-                ? path.Replace('/', separator)
-                : path;
+        string replaced = pathSemantics switch
+        {
+            InMemoryPathSemantics.Windows => path.Replace('/', separator),
+            InMemoryPathSemantics.Posix => path.Replace('\\', separator),
+            _ => path,
+        };
         string prefix;
         string remainder;
         if (pathSemantics == InMemoryPathSemantics.Windows)
@@ -620,16 +622,21 @@ public sealed class InMemoryFileSystem
     }
 
     private int LastSeparatorIndex(string path) =>
-        UsesWindowsSeparatorSemantics()
+        TreatsBackslashAsSeparator()
             ? path.LastIndexOfAny(['/', '\\'])
             : path.LastIndexOf('/');
 
     private bool IsSeparator(char character) =>
-        character == '/' || (UsesWindowsSeparatorSemantics() && character == '\\');
+        character == '/' || (TreatsBackslashAsSeparator() && character == '\\');
 
-    private bool UsesWindowsSeparatorSemantics() =>
-        pathSemantics == InMemoryPathSemantics.Windows
+    private bool TreatsBackslashAsSeparator() =>
+        pathSemantics is InMemoryPathSemantics.Windows or InMemoryPathSemantics.Posix
         || (pathSemantics == InMemoryPathSemantics.Host && OperatingSystem.IsWindows());
+
+    private bool UsesPosixPathSemantics() =>
+        pathSemantics
+            is InMemoryPathSemantics.Posix
+                or InMemoryPathSemantics.PosixLiteralBackslash;
 
     private static bool HasWindowsUncShareRoot(string path)
     {
@@ -647,14 +654,14 @@ public sealed class InMemoryFileSystem
 
     private string AppendSeparator(string path)
     {
-        if (path.EndsWith('/') || path.EndsWith('\\'))
+        if (path.Length > 0 && IsSeparator(path[^1]))
         {
             return path;
         }
 
         char separator =
             pathSemantics == InMemoryPathSemantics.Windows ? '\\'
-            : pathSemantics == InMemoryPathSemantics.Posix ? '/'
+            : UsesPosixPathSemantics() ? '/'
             : Path.DirectorySeparatorChar;
         return path + separator;
     }

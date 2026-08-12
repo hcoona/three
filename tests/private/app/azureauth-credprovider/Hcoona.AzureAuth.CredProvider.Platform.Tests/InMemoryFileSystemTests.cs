@@ -44,6 +44,38 @@ public sealed class InMemoryFileSystemTests
     }
 
     [Fact]
+    public void PosixSemanticsNormalizeBackslashesAsSeparators()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+
+        fileSystem.CreateDirectory(@"/root\cache");
+        fileSystem.WriteAllText(@"/root\cache\keep.txt", "value");
+
+        Assert.True(fileSystem.DirectoryExists("/root/cache"));
+        Assert.True(fileSystem.FileExists("/root/cache/keep.txt"));
+        Assert.Equal(
+            ["/root/cache/keep.txt"],
+            fileSystem.EnumerateFiles(@"/root\cache", "*.txt")
+        );
+    }
+
+    [Fact]
+    public void LiteralBackslashPosixSemanticsDoNotTreatSiblingAsDescendant()
+    {
+        var fileSystem = new InMemoryFileSystem(
+            InMemoryPathSemantics.PosixLiteralBackslash
+        );
+        fileSystem.CreateDirectory(@"/root/cache\");
+        fileSystem.WriteAllText(@"/root/cache\keep.txt", "sibling");
+
+        Assert.Empty(fileSystem.EnumerateFiles(@"/root/cache\", "*"));
+        Assert.Equal(
+            [@"/root/cache\keep.txt"],
+            fileSystem.EnumerateFiles("/root", "*.txt")
+        );
+    }
+
+    [Fact]
     public void OwnerOnlyAtomicWriteAppliesRequestedMode()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
