@@ -283,6 +283,22 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
         Assert.True(doctorResult.AzureArtifactsSourceCanonicalizationSuccess);
         Assert.True(doctorResult.InteractivePolicyGuidanceSuccess);
         Assert.True(doctorResult.OptionalEnvironmentOverridesAbsent);
+        Assert.Equal(
+            NuGetPluginDiscoverySource.Conventional,
+            doctorResult.EffectivePlugin.Source
+        );
+        Assert.Equal(
+            NuGetProductPluginDiscoveryState.DiscoverableCandidate,
+            doctorResult.EffectivePlugin.ProductDiscovery
+        );
+        Assert.Equal(
+            NuGetOperationalPluginSelectionState.DeferredNotProbed,
+            doctorResult.EffectivePlugin.OperationalSelection
+        );
+        Assert.Equal(
+            NuGetProductPluginRemediation.SelectionDeferredNotProbed,
+            doctorResult.EffectivePlugin.Remediation
+        );
     }
 
     [Fact]
@@ -674,7 +690,7 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
             fileSystem,
             name =>
                 string.Equals(name, "NUGET_NETCORE_PLUGIN_PATHS", StringComparison.Ordinal)
-                    ? "/tmp/plugin.dll"
+                    ? Path.Combine(GetIsolatedHomePath(), "third-party-plugin.dll")
                     : null
         );
         await service.ConfigureAsync(TestContext.Current.CancellationToken);
@@ -686,6 +702,451 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
         Assert.False(result.OptionalEnvironmentOverridesAbsent);
         Assert.True(result.PluginLayoutMarkerPresent);
         Assert.True(result.OwnershipManifestPresent);
+        Assert.Equal(
+            NuGetPluginDiscoverySource.NuGetNetCorePluginPaths,
+            result.EffectivePlugin.Source
+        );
+        Assert.Equal(
+            NuGetProductPluginDiscoveryState.OverrideExcludesProduct,
+            result.EffectivePlugin.ProductDiscovery
+        );
+        Assert.Equal(
+            NuGetOverrideProductInclusionState.ExcludesProduct,
+            result.EffectivePlugin.OverrideProductInclusion
+        );
+        Assert.Equal(
+            NuGetProductPluginRemediation.ClearOrIncludeProductInNuGetNetCorePluginPaths,
+            result.EffectivePlugin.Remediation
+        );
+    }
+
+    [Theory]
+    [InlineData("NUGET_PLUGIN_PATHS", NuGetPluginDiscoverySource.NuGetPluginPaths)]
+    [InlineData(
+        "NUGET_NETCORE_PLUGIN_PATHS",
+        NuGetPluginDiscoverySource.NuGetNetCorePluginPaths
+    )]
+    public async Task DoctorReportsProductAsIncludedCandidateByExplicitOverride(
+        string variableName,
+        NuGetPluginDiscoverySource expectedSource
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Host);
+        NuGetPhase10VerticalSliceService? service = null;
+        service = CreateService(
+            fileSystem,
+            name =>
+                string.Equals(name, variableName, StringComparison.Ordinal)
+                    ? service!.Paths.PluginEntrypointPath
+                    : null
+        );
+        await service.ConfigureAsync(TestContext.Current.CancellationToken);
+
+        NuGetPhase10DoctorResult result = await service.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(expectedSource, result.EffectivePlugin.Source);
+        Assert.Equal(
+            NuGetProductPluginDiscoveryState.DiscoverableCandidate,
+            result.EffectivePlugin.ProductDiscovery
+        );
+        Assert.Equal(
+            NuGetOverrideProductInclusionState.IncludesProduct,
+            result.EffectivePlugin.OverrideProductInclusion
+        );
+        Assert.Equal(
+            NuGetProductPluginRemediation.SelectionDeferredNotProbed,
+            result.EffectivePlugin.Remediation
+        );
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DoctorKeepsProductAsCandidateRegardlessOfCompetingProviderOrder(
+        bool competingProviderAfterProduct
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        NuGetPhase10VerticalSliceService? service = null;
+        service = CreateService(
+            fileSystem,
+            name =>
+                string.Equals(name, "NUGET_NETCORE_PLUGIN_PATHS", StringComparison.Ordinal)
+                    ? string.Join(
+                        ':',
+                        competingProviderAfterProduct
+                            ?
+                            [
+                                service!.Paths.PluginEntrypointPath,
+                                "/plugins/competing.dll",
+                            ]
+                            :
+                            [
+                                "/plugins/competing.dll",
+                                service!.Paths.PluginEntrypointPath,
+                            ]
+                    )
+                    : null,
+            userHomeDirectoryPath: "/home/user"
+        );
+        fileSystem.AtomicWriteAllText(service.Paths.PluginEntrypointPath, "fake-assembly");
+
+        NuGetPhase10DoctorResult result = await service.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(
+            NuGetProductPluginDiscoveryState.DiscoverableCandidate,
+            result.EffectivePlugin.ProductDiscovery
+        );
+        Assert.Equal(
+            NuGetOperationalPluginSelectionState.DeferredNotProbed,
+            result.EffectivePlugin.OperationalSelection
+        );
+    }
+
+    [Fact]
+    public async Task DoctorTreatsWhitespaceOverrideAsExplicit()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Host);
+        NuGetPhase10VerticalSliceService service = CreateService(
+            fileSystem,
+            name =>
+                string.Equals(name, "NUGET_NETCORE_PLUGIN_PATHS", StringComparison.Ordinal)
+                    ? " "
+                    : null
+        );
+        await service.ConfigureAsync(TestContext.Current.CancellationToken);
+
+        NuGetPhase10DoctorResult result = await service.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.False(result.OptionalEnvironmentOverridesAbsent);
+        Assert.Equal(
+            NuGetPluginDiscoverySource.NuGetNetCorePluginPaths,
+            result.EffectivePlugin.Source
+        );
+        Assert.Equal(
+            NuGetProductPluginDiscoveryState.OverrideExcludesProduct,
+            result.EffectivePlugin.ProductDiscovery
+        );
+    }
+
+    [Fact]
+    public async Task DoctorUsesNetCoreOverrideBeforeGenericOverride()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Host);
+        NuGetPhase10VerticalSliceService? service = null;
+        service = CreateService(
+            fileSystem,
+            name =>
+                name switch
+                {
+                    "NUGET_PLUGIN_PATHS" => service!.Paths.PluginEntrypointPath,
+                    "NUGET_NETCORE_PLUGIN_PATHS" => Path.Combine(
+                        GetIsolatedHomePath(),
+                        "third-party-plugin.dll"
+                    ),
+                    _ => null,
+                }
+        );
+        await service.ConfigureAsync(TestContext.Current.CancellationToken);
+
+        NuGetPhase10DoctorResult result = await service.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.True(result.EffectivePlugin.NuGetPluginPathsOverridePresent);
+        Assert.True(result.EffectivePlugin.NuGetNetCorePluginPathsOverridePresent);
+        Assert.Equal(
+            NuGetPluginDiscoverySource.NuGetNetCorePluginPaths,
+            result.EffectivePlugin.Source
+        );
+        Assert.Equal(
+            NuGetProductPluginDiscoveryState.OverrideExcludesProduct,
+            result.EffectivePlugin.ProductDiscovery
+        );
+    }
+
+    [Fact]
+    public async Task DoctorReportsMissingProductPathIncludedByOverride()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Host);
+        NuGetPhase10VerticalSliceService? service = null;
+        service = CreateService(
+            fileSystem,
+            name =>
+                string.Equals(name, "NUGET_NETCORE_PLUGIN_PATHS", StringComparison.Ordinal)
+                    ? service!.Paths.PluginEntrypointPath
+                    : null
+        );
+        await service.ConfigureAsync(TestContext.Current.CancellationToken);
+        fileSystem.DeleteFile(service.Paths.PluginEntrypointPath);
+
+        NuGetPhase10DoctorResult result = await service.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(
+            NuGetProductPluginDiscoveryState.IncludedPathMissing,
+            result.EffectivePlugin.ProductDiscovery
+        );
+        Assert.Equal(
+            NuGetProductPluginRemediation.RestoreIncludedProductPath,
+            result.EffectivePlugin.Remediation
+        );
+    }
+
+    [Fact]
+    public async Task DoctorBoundsOversizedOverrideEntryLists()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Host);
+        NuGetPhase10VerticalSliceService? service = null;
+        string overrideValue = string.Join(
+            Path.PathSeparator,
+            new[] { string.Empty }
+                .Concat(
+                    Enumerable
+                        .Range(0, 128)
+                        .Select(index =>
+                            Path.Combine(GetIsolatedHomePath(), $"third-party-{index}.dll")
+                        )
+                )
+        );
+        service = CreateService(
+            fileSystem,
+            name =>
+                string.Equals(name, "NUGET_PLUGIN_PATHS", StringComparison.Ordinal)
+                    ? service!.Paths.PluginEntrypointPath
+                        + Path.PathSeparator
+                        + overrideValue
+                    : null
+        );
+        await service.ConfigureAsync(TestContext.Current.CancellationToken);
+
+        NuGetPhase10DoctorResult result = await service.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.True(result.EffectivePlugin.OverrideEntriesTruncated);
+        Assert.Equal(
+            NuGetProductPluginDiscoveryState.InspectionIncomplete,
+            result.EffectivePlugin.ProductDiscovery
+        );
+        Assert.Equal(
+            NuGetOverrideProductInclusionState.InspectionIncomplete,
+            result.EffectivePlugin.OverrideProductInclusion
+        );
+        Assert.Equal(
+            NuGetProductPluginRemediation.ShortenOverrideAndRerunDoctor,
+            result.EffectivePlugin.Remediation
+        );
+    }
+
+    [Fact]
+    public async Task DoctorTreatsOversizedOverrideWithProductFirstAsInspectionIncomplete()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        NuGetPhase10VerticalSliceService? service = null;
+        service = CreateService(
+            fileSystem,
+            name =>
+                string.Equals(name, "NUGET_PLUGIN_PATHS", StringComparison.Ordinal)
+                    ? service!.Paths.PluginEntrypointPath
+                        + ":/"
+                        + new string('x', 64 * 1024)
+                    : null
+        );
+        fileSystem.AtomicWriteAllText(service.Paths.PluginEntrypointPath, "fake-assembly");
+
+        NuGetPhase10DoctorResult result = await service.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.True(result.EffectivePlugin.OverrideEntriesTruncated);
+        Assert.Equal(
+            NuGetProductPluginDiscoveryState.InspectionIncomplete,
+            result.EffectivePlugin.ProductDiscovery
+        );
+        Assert.Equal(
+            NuGetOverrideProductInclusionState.InspectionIncomplete,
+            result.EffectivePlugin.OverrideProductInclusion
+        );
+    }
+
+    [Theory]
+    [InlineData("relative")]
+    [InlineData("all-backslash")]
+    public async Task DoctorRejectsNonNuGetPosixPluginPathForms(string form)
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        NuGetPhase10VerticalSliceService? service = null;
+        service = CreateService(
+            fileSystem,
+            name =>
+                string.Equals(name, "NUGET_NETCORE_PLUGIN_PATHS", StringComparison.Ordinal)
+                    ? form == "relative"
+                        ? "azureauth-credprovider.dll"
+                        : service!.Paths.PluginEntrypointPath.Replace('/', '\\')
+                    : null
+        );
+        fileSystem.AtomicWriteAllText(service.Paths.PluginEntrypointPath, "fake-assembly");
+
+        NuGetPhase10DoctorResult result = await service.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(
+            NuGetProductPluginDiscoveryState.OverrideExcludesProduct,
+            result.EffectivePlugin.ProductDiscovery
+        );
+        Assert.Equal(
+            NuGetOverrideProductInclusionState.ExcludesProduct,
+            result.EffectivePlugin.OverrideProductInclusion
+        );
+    }
+
+    [Fact]
+    public async Task DoctorTreatsPosixBackslashAsLiteralPathCharacter()
+    {
+        var fileSystem = new InMemoryFileSystem(
+            InMemoryPathSemantics.PosixLiteralBackslash
+        );
+        NuGetPhase10VerticalSliceService? service = null;
+        service = CreateService(
+            fileSystem,
+            name =>
+                string.Equals(name, "NUGET_NETCORE_PLUGIN_PATHS", StringComparison.Ordinal)
+                    ? service!.Paths.PluginEntrypointPath
+                    : null,
+            userHomeDirectoryPath: "/home/user\\literal"
+        );
+        fileSystem.AtomicWriteAllText(service.Paths.PluginEntrypointPath, "fake-assembly");
+
+        NuGetPhase10DoctorResult result = await service.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Contains('\\', service.Paths.PluginEntrypointPath);
+        Assert.Equal(
+            NuGetOverrideProductInclusionState.IncludesProduct,
+            result.EffectivePlugin.OverrideProductInclusion
+        );
+    }
+
+    [Fact]
+    public async Task DoctorRejectsWindowsDrivePathUsingForwardSlashes()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Windows);
+        NuGetPhase10VerticalSliceService? service = null;
+        service = CreateService(
+            fileSystem,
+            name =>
+                string.Equals(name, "NUGET_NETCORE_PLUGIN_PATHS", StringComparison.Ordinal)
+                    ? service!.Paths.PluginEntrypointPath.Replace('\\', '/')
+                    : null
+        );
+        fileSystem.AtomicWriteAllText(service.Paths.PluginEntrypointPath, "fake-assembly");
+
+        NuGetPhase10DoctorResult result = await service.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(
+            NuGetOverrideProductInclusionState.ExcludesProduct,
+            result.EffectivePlugin.OverrideProductInclusion
+        );
+    }
+
+    [Fact]
+    public async Task DoctorUsesInjectedWindowsPathComparisonAndSeparator()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Windows);
+        NuGetPhase10VerticalSliceService? service = null;
+        service = CreateService(
+            fileSystem,
+            name =>
+                string.Equals(name, "NUGET_NETCORE_PLUGIN_PATHS", StringComparison.Ordinal)
+                    ? @"C:\plugins\other.dll;"
+                        + service!.Paths.PluginEntrypointPath.ToUpperInvariant()
+                    : null
+        );
+        fileSystem.AtomicWriteAllText(service.Paths.PluginEntrypointPath, "fake-assembly");
+
+        NuGetPhase10DoctorResult result = await service.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(
+            NuGetOverrideProductInclusionState.IncludesProduct,
+            result.EffectivePlugin.OverrideProductInclusion
+        );
+        Assert.Equal(
+            NuGetProductPluginDiscoveryState.DiscoverableCandidate,
+            result.EffectivePlugin.ProductDiscovery
+        );
+    }
+
+    [Fact]
+    public async Task DoctorAcceptsForwardSlashAfterWindowsDriveRoot()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Windows);
+        NuGetPhase10VerticalSliceService? service = null;
+        service = CreateService(
+            fileSystem,
+            name =>
+                string.Equals(name, "NUGET_NETCORE_PLUGIN_PATHS", StringComparison.Ordinal)
+                    ? service!.Paths.PluginEntrypointPath[..3]
+                        + service.Paths.PluginEntrypointPath[3..].Replace('\\', '/')
+                    : null
+        );
+        fileSystem.AtomicWriteAllText(service.Paths.PluginEntrypointPath, "fake-assembly");
+
+        NuGetPhase10DoctorResult result = await service.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(
+            NuGetOverrideProductInclusionState.IncludesProduct,
+            result.EffectivePlugin.OverrideProductInclusion
+        );
+    }
+
+    [Fact]
+    public async Task DoctorAcceptsWindowsUncRootWithLaterForwardSlashes()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Windows);
+        NuGetPhase10VerticalSliceService? service = null;
+        service = CreateService(
+            fileSystem,
+            name =>
+                string.Equals(name, "NUGET_NETCORE_PLUGIN_PATHS", StringComparison.Ordinal)
+                    ? @"\\server\share/"
+                        + service!
+                            .Paths
+                            .PluginEntrypointPath[@"\\server\share\".Length..]
+                            .Replace('\\', '/')
+                    : null,
+            userHomeDirectoryPath: @"\\server\share\home"
+        );
+        fileSystem.AtomicWriteAllText(service.Paths.PluginEntrypointPath, "fake-assembly");
+
+        NuGetPhase10DoctorResult result = await service.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.StartsWith(
+            @"\\server\share\",
+            service.Paths.PluginEntrypointPath,
+            StringComparison.OrdinalIgnoreCase
+        );
+        Assert.Equal(
+            NuGetOverrideProductInclusionState.IncludesProduct,
+            result.EffectivePlugin.OverrideProductInclusion
+        );
     }
 
     [Fact]
@@ -700,11 +1161,16 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
             TestContext.Current.CancellationToken
         );
 
+        Assert.Equal(NuGetConfigurationState.Unrecognized, result.ConfigurationState);
         Assert.True(result.PluginLayoutMarkerPresent);
         Assert.True(result.OwnershipManifestPresent);
         Assert.False(result.ConfigurationPlanValid);
         Assert.False(result.NetCorePluginEntrypointPresent);
         Assert.False(result.PluginModeEntrypointResolvable);
+        Assert.Equal(
+            NuGetProductPluginDiscoveryState.NotFound,
+            result.EffectivePlugin.ProductDiscovery
+        );
     }
 
     [Theory]
@@ -742,6 +1208,7 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
     private static NuGetPhase10VerticalSliceService CreateService(
         InMemoryFileSystem fileSystem,
         Func<string, string?>? environmentVariableReader = null,
+        string? userHomeDirectoryPath = null,
         string? applicationRootPath = null,
         bool seedPayload = true
     )
@@ -760,6 +1227,8 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
             {
                 StateDirectoryPath = "/state/azureauth-credprovider/phase10",
                 ApplicationPayloadRootPath = applicationRoot,
+                UserHomeDirectoryPath =
+                    userHomeDirectoryPath ?? GetIsolatedHomePath(),
                 FileSystem = fileSystem,
                 EnvironmentVariableReader = environmentVariableReader ?? (_ => null),
             }
@@ -796,17 +1265,20 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
             case "source-contains-target":
                 service = CreateService(
                     fileSystem,
-                    applicationRootPath: "/"
+                    userHomeDirectoryPath: "/home/user",
+                    applicationRootPath: "/home/user"
                 );
                 expectedDiagnostic = "source and activation roots must be disjoint";
                 break;
             case "target-contains-source":
                 NuGetPhase10VerticalSliceService layout = CreateService(
                     fileSystem,
+                    userHomeDirectoryPath: "/home/user",
                     seedPayload: false
                 );
                 service = CreateService(
                     fileSystem,
+                    userHomeDirectoryPath: "/home/user",
                     applicationRootPath: layout.Paths.PluginTargetRootPath + "/application"
                 );
                 expectedDiagnostic = "source and activation roots must be disjoint";
@@ -992,6 +1464,7 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
             {
                 StateDirectoryPath = "/state/azureauth-credprovider/phase10",
                 ApplicationPayloadRootPath = applicationRoot,
+                UserHomeDirectoryPath = GetIsolatedHomePath(),
                 FileSystem = fileSystem,
                 EnvironmentVariableReader = _ => null,
                 CredentialAcquisition =
@@ -1013,6 +1486,24 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
         Assert.True(result.AzureArtifactsSourceCanonicalizationSuccess);
         Assert.True(result.InteractivePolicyGuidanceSuccess);
         Assert.True(result.OptionalEnvironmentOverridesAbsent);
+    }
+
+    private sealed class ThrowingNuGetDoctorCredentialAcquisitionService
+        : Hcoona.AzureAuth.CredProvider.Platform.Composition.ICredentialAcquisitionService
+    {
+        public int InvocationCount { get; private set; }
+
+        public ValueTask<CredentialResult> AcquireAsync(
+            CredentialRequestV2 request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            InvocationCount++;
+            throw new InvalidOperationException(
+                "NuGet doctor must classify sources without acquiring credentials."
+            );
+        }
     }
 
     [Fact]
@@ -1212,24 +1703,6 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(scenario), scenario, null);
-        }
-    }
-
-    private sealed class ThrowingNuGetDoctorCredentialAcquisitionService
-        : Hcoona.AzureAuth.CredProvider.Platform.Composition.ICredentialAcquisitionService
-    {
-        public int InvocationCount { get; private set; }
-
-        public ValueTask<CredentialResult> AcquireAsync(
-            CredentialRequestV2 request,
-            CancellationToken cancellationToken = default
-        )
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            InvocationCount++;
-            throw new InvalidOperationException(
-                "NuGet doctor must classify sources without acquiring credentials."
-            );
         }
     }
 }

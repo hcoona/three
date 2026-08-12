@@ -36,7 +36,7 @@ public sealed class InMemoryFileSystem
         heldLocks = new HashSet<string>(pathComparer);
         unixFileModes = new Dictionary<string, UnixFileMode>(pathComparer);
         rootPath =
-            pathSemantics == InMemoryPathSemantics.Posix ? "/"
+            UsesPosixPathSemantics() ? "/"
             : pathSemantics == InMemoryPathSemantics.Windows ? @"C:\"
             : Path.GetPathRoot(Path.GetFullPath("."))!;
         directories.Add(rootPath);
@@ -138,12 +138,14 @@ public sealed class InMemoryFileSystem
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         bool result =
-            pathSemantics == InMemoryPathSemantics.Posix ? path.StartsWith('/')
+            UsesPosixPathSemantics() ? path.StartsWith('/')
             : pathSemantics == InMemoryPathSemantics.Windows
-                ? path.Length >= 3
+                ? (
+                    path.Length >= 3
                     && char.IsAsciiLetter(path[0])
                     && path[1] == ':'
                     && IsSeparator(path[2])
+                ) || HasWindowsUncShareRoot(path)
             : Path.IsPathFullyQualified(path);
         Record(nameof(IsPathFullyQualified), path, result.ToString());
         return result;
@@ -521,18 +523,33 @@ public sealed class InMemoryFileSystem
         }
 
         char separator = pathSemantics == InMemoryPathSemantics.Windows ? '\\' : '/';
-        string replaced = path.Replace('\\', separator).Replace('/', separator);
+        string replaced = pathSemantics switch
+        {
+            InMemoryPathSemantics.Windows => path.Replace('/', separator),
+            InMemoryPathSemantics.Posix => path.Replace('\\', separator),
+            _ => path,
+        };
         string prefix;
         string remainder;
         if (pathSemantics == InMemoryPathSemantics.Windows)
         {
+            string[] uncComponents = replaced.StartsWith(@"\\", StringComparison.Ordinal)
+                ? replaced[2..].Split('\\', StringSplitOptions.RemoveEmptyEntries)
+                : [];
+            bool uncRooted = uncComponents.Length >= 2;
             bool rooted =
                 replaced.Length >= 3
                 && char.IsAsciiLetter(replaced[0])
                 && replaced[1] == ':'
                 && replaced[2] == separator;
-            prefix = rooted ? char.ToUpperInvariant(replaced[0]) + @":\" : rootPath;
-            remainder = rooted ? replaced[3..] : replaced;
+            prefix =
+                uncRooted ? @"\\" + uncComponents[0] + @"\" + uncComponents[1]
+                : rooted ? char.ToUpperInvariant(replaced[0]) + @":\"
+                : rootPath;
+            remainder =
+                uncRooted ? string.Join('\\', uncComponents.Skip(2))
+                : rooted ? replaced[3..]
+                : replaced;
         }
         else
         {
@@ -562,12 +579,29 @@ public sealed class InMemoryFileSystem
             components.Add(component);
         }
 
-        return components.Count == 0 ? prefix : prefix + string.Join(separator, components);
+        return components.Count == 0
+            ? prefix
+            : prefix
+                + (
+                    prefix.EndsWith(separator)
+                        ? string.Empty
+                        : separator.ToString()
+                )
+                + string.Join(separator, components);
     }
 
     private string GetParentPath(string path)
     {
-        int separatorIndex = path.LastIndexOfAny(['/', '\\']);
+        if (
+            pathSemantics == InMemoryPathSemantics.Windows
+            && HasWindowsUncShareRoot(path)
+            && path.Count(character => character == '\\') == 3
+        )
+        {
+            return path;
+        }
+
+        int separatorIndex = LastSeparatorIndex(path);
         if (separatorIndex <= 0)
         {
             return rootPath;
@@ -581,24 +615,53 @@ public sealed class InMemoryFileSystem
         return path[..separatorIndex];
     }
 
-    private static string GetFileName(string path)
+    private string GetFileName(string path)
     {
-        int separatorIndex = path.LastIndexOfAny(['/', '\\']);
+        int separatorIndex = LastSeparatorIndex(path);
         return separatorIndex < 0 ? path : path[(separatorIndex + 1)..];
     }
 
-    private static bool IsSeparator(char character) => character is '/' or '\\';
+    private int LastSeparatorIndex(string path) =>
+        TreatsBackslashAsSeparator()
+            ? path.LastIndexOfAny(['/', '\\'])
+            : path.LastIndexOf('/');
+
+    private bool IsSeparator(char character) =>
+        character == '/' || (TreatsBackslashAsSeparator() && character == '\\');
+
+    private bool TreatsBackslashAsSeparator() =>
+        pathSemantics is InMemoryPathSemantics.Windows or InMemoryPathSemantics.Posix
+        || (pathSemantics == InMemoryPathSemantics.Host && OperatingSystem.IsWindows());
+
+    private bool UsesPosixPathSemantics() =>
+        pathSemantics
+            is InMemoryPathSemantics.Posix
+                or InMemoryPathSemantics.PosixLiteralBackslash;
+
+    private static bool HasWindowsUncShareRoot(string path)
+    {
+        if (!path.StartsWith(@"\\", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        string[] components = path[2..].Split(
+            ['\\', '/'],
+            StringSplitOptions.RemoveEmptyEntries
+        );
+        return components.Length >= 2;
+    }
 
     private string AppendSeparator(string path)
     {
-        if (path.EndsWith('/') || path.EndsWith('\\'))
+        if (path.Length > 0 && IsSeparator(path[^1]))
         {
             return path;
         }
 
         char separator =
             pathSemantics == InMemoryPathSemantics.Windows ? '\\'
-            : pathSemantics == InMemoryPathSemantics.Posix ? '/'
+            : UsesPosixPathSemantics() ? '/'
             : Path.DirectorySeparatorChar;
         return path + separator;
     }

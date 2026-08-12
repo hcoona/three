@@ -3263,6 +3263,26 @@ internal static class CliApplication
                 + GetCheckStatusText(doctorResult.InteractivePolicyGuidanceSuccess),
             "nuget-environment-overrides: "
                 + (doctorResult.OptionalEnvironmentOverridesAbsent ? "absent" : "present"),
+            "nuget-plugin-discovery-source: "
+                + GetNuGetPluginDiscoverySourceText(doctorResult.EffectivePlugin.Source),
+            "nuget-product-plugin-discovery: "
+                + GetNuGetProductPluginDiscoveryText(
+                    doctorResult.EffectivePlugin.ProductDiscovery
+                ),
+            "nuget-operational-plugin-selection: "
+                + GetNuGetOperationalPluginSelectionText(
+                    doctorResult.EffectivePlugin.OperationalSelection
+                ),
+            "nuget-override-product-inclusion: "
+                + GetNuGetOverrideProductInclusionText(
+                    doctorResult.EffectivePlugin.OverrideProductInclusion
+                ),
+            "nuget-plugin-override-truncated: "
+                + GetYesNo(doctorResult.EffectivePlugin.OverrideEntriesTruncated),
+            "nuget-product-plugin-remediation: "
+                + GetNuGetProductPluginRemediationText(
+                    doctorResult.EffectivePlugin.Remediation
+                ),
         ];
         if (doctorResult.ConfigurationState == NuGetConfigurationState.Refreshable)
         {
@@ -3695,6 +3715,84 @@ internal static class CliApplication
             _ => throw new ArgumentOutOfRangeException(nameof(state), state, null),
         };
 
+    private static string GetNuGetPluginDiscoverySourceText(
+        NuGetPluginDiscoverySource source
+    ) =>
+        source switch
+        {
+            NuGetPluginDiscoverySource.Conventional => "conventional",
+            NuGetPluginDiscoverySource.NuGetPluginPaths => "NUGET_PLUGIN_PATHS",
+            NuGetPluginDiscoverySource.NuGetNetCorePluginPaths =>
+                "NUGET_NETCORE_PLUGIN_PATHS",
+            _ => throw new ArgumentOutOfRangeException(nameof(source), source, null),
+        };
+
+    private static string GetNuGetProductPluginDiscoveryText(
+        NuGetProductPluginDiscoveryState discovery
+    ) =>
+        discovery switch
+        {
+            NuGetProductPluginDiscoveryState.NotFound => "not-found",
+            NuGetProductPluginDiscoveryState.DiscoverableCandidate =>
+                "discoverable-candidate",
+            NuGetProductPluginDiscoveryState.OverrideExcludesProduct =>
+                "override-excludes-product",
+            NuGetProductPluginDiscoveryState.IncludedPathMissing =>
+                "included-path-missing",
+            NuGetProductPluginDiscoveryState.InspectionIncomplete =>
+                "inspection-incomplete",
+            _ => throw new ArgumentOutOfRangeException(nameof(discovery), discovery, null),
+        };
+
+    private static string GetNuGetOperationalPluginSelectionText(
+        NuGetOperationalPluginSelectionState selection
+    ) =>
+        selection switch
+        {
+            NuGetOperationalPluginSelectionState.DeferredNotProbed =>
+                "deferred-not-probed",
+            _ => throw new ArgumentOutOfRangeException(nameof(selection), selection, null),
+        };
+
+    private static string GetNuGetOverrideProductInclusionText(
+        NuGetOverrideProductInclusionState inclusion
+    ) =>
+        inclusion switch
+        {
+            NuGetOverrideProductInclusionState.NotApplicable => "not-applicable",
+            NuGetOverrideProductInclusionState.IncludesProduct => "includes-product",
+            NuGetOverrideProductInclusionState.ExcludesProduct => "excludes-product",
+            NuGetOverrideProductInclusionState.InspectionIncomplete =>
+                "inspection-incomplete",
+            _ => throw new ArgumentOutOfRangeException(nameof(inclusion), inclusion, null),
+        };
+
+    private static string GetNuGetProductPluginRemediationText(
+        NuGetProductPluginRemediation remediation
+    ) =>
+        remediation switch
+        {
+            NuGetProductPluginRemediation.None => "none",
+            NuGetProductPluginRemediation.InstallConventionalPlugin =>
+                "install the product plugin under the conventional netcore plugin path",
+            NuGetProductPluginRemediation.ClearOrIncludeProductInNuGetPluginPaths =>
+                "clear NUGET_PLUGIN_PATHS or include the product plugin entrypoint",
+            NuGetProductPluginRemediation.ClearOrIncludeProductInNuGetNetCorePluginPaths =>
+                "clear NUGET_NETCORE_PLUGIN_PATHS or include the product plugin entrypoint",
+            NuGetProductPluginRemediation.RestoreIncludedProductPath =>
+                "restore the product plugin entrypoint included by the effective override",
+            NuGetProductPluginRemediation.ShortenOverrideAndRerunDoctor =>
+                "shorten the effective NuGet plugin path override and rerun doctor",
+            NuGetProductPluginRemediation.SelectionDeferredNotProbed =>
+                "candidate discovered; operational selection is determined by NuGet at runtime "
+                + "and was not probed",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(remediation),
+                remediation,
+                null
+            ),
+        };
+
     private static string[] GetPlannedActions(
         CliCommand command,
         CredentialEcosystem ecosystem,
@@ -3970,19 +4068,26 @@ internal static class CliApplication
     {
         ArgumentNullException.ThrowIfNull(doctorResult);
 
-        return doctorResult.ConfigurationPlanValid
+        bool commonChecksPass =
+            doctorResult.ConfigurationPlanValid
             && doctorResult.AzureArtifactsSourceCanonicalizationSuccess
-            && doctorResult.InteractivePolicyGuidanceSuccess
-            && doctorResult.OptionalEnvironmentOverridesAbsent
-            && (
-                NuGetDoctorStateAbsent(doctorResult)
-                || (
-                    doctorResult.PluginLayoutMarkerPresent
-                    && doctorResult.OwnershipManifestPresent
-                    && doctorResult.NetCorePluginEntrypointPresent
-                    && doctorResult.PluginModeEntrypointResolvable
-                )
-            );
+            && doctorResult.InteractivePolicyGuidanceSuccess;
+        bool neutralAbsence =
+            NuGetDoctorStateAbsent(doctorResult)
+            && doctorResult.EffectivePlugin.Source
+                == NuGetPluginDiscoverySource.Conventional;
+        bool structurallyReadyCandidate =
+            doctorResult.PluginLayoutMarkerPresent
+            && doctorResult.OwnershipManifestPresent
+            && doctorResult.NetCorePluginEntrypointPresent
+            && doctorResult.PluginModeEntrypointResolvable
+            && doctorResult.EffectivePlugin.ProductDiscovery
+                == NuGetProductPluginDiscoveryState.DiscoverableCandidate
+            && !doctorResult.EffectivePlugin.OverrideEntriesTruncated
+            && doctorResult.EffectivePlugin.OverrideProductInclusion
+                is NuGetOverrideProductInclusionState.NotApplicable
+                    or NuGetOverrideProductInclusionState.IncludesProduct;
+        return commonChecksPass && (neutralAbsence || structurallyReadyCandidate);
     }
 
     private static bool NuGetDoctorStateAbsent(NuGetPhase10DoctorResult doctorResult) =>

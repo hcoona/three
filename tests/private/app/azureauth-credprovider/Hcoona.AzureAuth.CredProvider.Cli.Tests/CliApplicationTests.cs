@@ -82,6 +82,115 @@ public sealed class CliApplicationTests
         Assert.Equal(string.Empty, result.StdErr);
     }
 
+    [Fact]
+    public void DoctorPassesStructurallyReadyNuGetCandidateWithoutClaimingSelection()
+    {
+        using var pythonFixture = new PythonDoctorFixture(PythonDoctorFixtureMode.Healthy);
+        var nuGetOptions = new NuGetPhase10VerticalSliceOptions
+        {
+            StateDirectoryPath = Path.Combine(pythonFixture.RootPath, "nuget-state"),
+            UserHomeDirectoryPath = Path.Combine(pythonFixture.RootPath, "nuget-home"),
+            EnvironmentVariableReader = _ => null,
+        };
+        CliRuntimeOptions runtime = CreateHealthyDoctorRuntimeOptions(pythonFixture) with
+        {
+            NuGetPhase10Options = nuGetOptions,
+        };
+
+        Assert.Equal(0, InvokeWithRuntime(runtime, "configure", "git").ExitCode);
+        Assert.Equal(0, InvokeWithRuntime(runtime, "configure", "nuget").ExitCode);
+
+        CommandResult doctor = InvokeWithRuntime(runtime, "doctor");
+
+        Assert.Equal(0, doctor.ExitCode);
+        AssertDoctorCheck(
+            doctor.StdOut,
+            "nuget-product-plugin-discovery",
+            "discoverable-candidate"
+        );
+        AssertDoctorCheck(
+            doctor.StdOut,
+            "nuget-operational-plugin-selection",
+            "deferred-not-probed"
+        );
+        AssertDoctorCheck(doctor.StdOut, "doctor-aggregation", "pass");
+    }
+
+    [Theory]
+    [InlineData("included", "discoverable-candidate", "includes-product", true)]
+    [InlineData("excluded", "override-excludes-product", "excludes-product", false)]
+    [InlineData("missing", "included-path-missing", "includes-product", false)]
+    [InlineData("incomplete", "inspection-incomplete", "inspection-incomplete", false)]
+    public void DoctorAggregatesNuGetOverrideStructure(
+        string mode,
+        string expectedDiscovery,
+        string expectedInclusion,
+        bool expectedSuccess
+    )
+    {
+        using var pythonFixture = new PythonDoctorFixture(PythonDoctorFixtureMode.Healthy);
+        string? overrideValue = null;
+        var nuGetOptions = new NuGetPhase10VerticalSliceOptions
+        {
+            StateDirectoryPath = Path.Combine(pythonFixture.RootPath, "nuget-state"),
+            UserHomeDirectoryPath = Path.Combine(pythonFixture.RootPath, "nuget-home"),
+            EnvironmentVariableReader = name =>
+                string.Equals(
+                    name,
+                    "NUGET_NETCORE_PLUGIN_PATHS",
+                    StringComparison.Ordinal
+                )
+                    ? overrideValue
+                    : null,
+        };
+        CliRuntimeOptions runtime = CreateHealthyDoctorRuntimeOptions(pythonFixture) with
+        {
+            NuGetPhase10Options = nuGetOptions,
+        };
+
+        Assert.Equal(0, InvokeWithRuntime(runtime, "configure", "git").ExitCode);
+        Assert.Equal(0, InvokeWithRuntime(runtime, "configure", "nuget").ExitCode);
+        var nuGetService = new NuGetPhase10VerticalSliceService(nuGetOptions);
+        if (string.Equals(mode, "missing", StringComparison.Ordinal))
+        {
+            File.Delete(nuGetService.Paths.PluginEntrypointPath);
+        }
+        overrideValue = mode switch
+        {
+            "included" or "missing" => nuGetService.Paths.PluginEntrypointPath,
+            "excluded" => Path.Combine(pythonFixture.RootPath, "third-party.dll"),
+            "incomplete" =>
+                nuGetService.Paths.PluginEntrypointPath
+                + Path.PathSeparator
+                + new string('x', 64 * 1024),
+            _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, null),
+        };
+
+        CommandResult doctor = InvokeWithRuntime(runtime, "doctor");
+
+        Assert.Equal(expectedSuccess ? 0 : 1, doctor.ExitCode);
+        AssertDoctorCheck(
+            doctor.StdOut,
+            "nuget-product-plugin-discovery",
+            expectedDiscovery
+        );
+        AssertDoctorCheck(
+            doctor.StdOut,
+            "nuget-override-product-inclusion",
+            expectedInclusion
+        );
+        AssertDoctorCheck(
+            doctor.StdOut,
+            "nuget-operational-plugin-selection",
+            "deferred-not-probed"
+        );
+        AssertDoctorCheck(
+            doctor.StdOut,
+            "doctor-aggregation",
+            expectedSuccess ? "pass" : "fail"
+        );
+    }
+
     [Theory]
     [InlineData("status")]
     [InlineData("configure")]
@@ -4976,6 +5085,13 @@ public sealed class CliApplicationTests
                     "nuget-azure-artifacts-source: pass",
                     "nuget-interactive-policy: pass",
                     "nuget-environment-overrides: absent",
+                    "nuget-plugin-discovery-source: conventional",
+                    "nuget-product-plugin-discovery: not-found",
+                    "nuget-operational-plugin-selection: deferred-not-probed",
+                    "nuget-override-product-inclusion: not-applicable",
+                    "nuget-plugin-override-truncated: no",
+                    "nuget-product-plugin-remediation: "
+                        + "install the product plugin under the conventional netcore plugin path",
                     "python-keyring-shim-exists: "
                         + (OperatingSystem.IsWindows() ? "N/A" : "fail"),
                     "python-keyring-shim-first-on-path: "
@@ -9436,6 +9552,119 @@ public sealed class CliApplicationTests
             lines
         );
     }
+
+    [Fact]
+    public void DoctorNuGetDamagedEntrypointRequiresManualInspectionAndFailsClosed()
+    {
+        using var fixture = new NuGetDoctorCliFixture();
+        string damagedPath = fixture.Service.Paths.PluginEntrypointPath;
+        byte[] damage = [0xff, 0x00, 0x7b, 0x22];
+        File.WriteAllBytes(damagedPath, damage);
+
+        CommandResult doctor = InvokeWithRuntime(fixture.Runtime, "doctor");
+        CommandResult configure = InvokeWithRuntime(
+            fixture.Runtime,
+            "configure",
+            "nuget"
+        );
+
+        Assert.Equal(1, doctor.ExitCode);
+        AssertDoctorCheck(doctor.StdOut, "nuget-configuration-state", "unrecognized");
+        Assert.Contains(
+            NuGetUnrecognizedManualGuidance,
+            doctor.StdOut,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain(
+            "azureauth-credprovider configure nuget",
+            doctor.StdOut,
+            StringComparison.Ordinal
+        );
+        Assert.Equal(1, configure.ExitCode);
+        Assert.Contains(
+            "configure cannot modify unrecognized Phase 10 NuGet state",
+            configure.StdErr,
+            StringComparison.Ordinal
+        );
+        Assert.Equal(damage, File.ReadAllBytes(damagedPath));
+    }
+
+    [Fact]
+    public void Run_DoctorNuGet_OwnershiplessTargetRootFileRequiresManualInspection()
+    {
+        using var fixture = new NuGetDoctorCliFixture();
+        fixture.ReplaceOwnedNuGetLayoutWithTargetRootFile();
+
+        CommandResult doctor = InvokeWithRuntime(fixture.Runtime, "doctor");
+
+        Assert.NotEqual(0, doctor.ExitCode);
+        AssertDoctorCheck(doctor.StdOut, "nuget-configuration-state", "unrecognized");
+        Assert.Contains(
+            NuGetUnrecognizedManualGuidance,
+            doctor.StdOut,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain(
+            "azureauth-credprovider configure nuget",
+            doctor.StdOut,
+            StringComparison.Ordinal
+        );
+    }
+
+    private const string NuGetUnrecognizedManualGuidance =
+        "nuget-configuration-plan-remediation: manually inspect and restore "
+        + "the product-owned NuGet plugin layout";
+
+    private sealed class NuGetDoctorCliFixture : IDisposable
+    {
+        private readonly PythonDoctorFixture _pythonFixture;
+
+        public NuGetDoctorCliFixture()
+        {
+            _pythonFixture = new PythonDoctorFixture(PythonDoctorFixtureMode.Healthy);
+            string applicationRoot = Path.Combine(
+                _pythonFixture.RootPath,
+                "nuget-application"
+            );
+            Directory.CreateDirectory(applicationRoot);
+            File.WriteAllText(
+                Path.Combine(applicationRoot, "azureauth-credprovider.dll"),
+                "source-a"
+            );
+            File.WriteAllText(
+                Path.Combine(applicationRoot, "dependency.dll"),
+                "dependency"
+            );
+            var options = new NuGetPhase10VerticalSliceOptions
+            {
+                StateDirectoryPath = Path.Combine(_pythonFixture.RootPath, "nuget-state"),
+                ApplicationPayloadRootPath = applicationRoot,
+                UserHomeDirectoryPath = Path.Combine(_pythonFixture.RootPath, "nuget-home"),
+                EnvironmentVariableReader = _ => null,
+            };
+            Runtime = CreateHealthyDoctorRuntimeOptions(_pythonFixture) with
+            {
+                NuGetPhase10Options = options,
+            };
+            Service = new NuGetPhase10VerticalSliceService(options);
+            Assert.Equal(0, InvokeWithRuntime(Runtime, "configure", "git").ExitCode);
+            Assert.Equal(0, InvokeWithRuntime(Runtime, "configure", "nuget").ExitCode);
+        }
+
+        public CliRuntimeOptions Runtime { get; }
+
+        public NuGetPhase10VerticalSliceService Service { get; }
+
+        public void Dispose() => _pythonFixture.Dispose();
+
+        public void ReplaceOwnedNuGetLayoutWithTargetRootFile()
+        {
+            File.Delete(Service.Paths.OwnershipManifestPath);
+            Directory.Delete(Service.Paths.PluginTargetRootPath, recursive: true);
+            File.WriteAllText(Service.Paths.PluginTargetRootPath, "foreign");
+        }
+    }
+
 #pragma warning restore CA1707, CA1861
 
 }
