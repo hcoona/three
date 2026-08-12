@@ -349,7 +349,7 @@ public sealed class ConfigurationManagerTests
             )
         );
 
-        Assert.DoesNotContain(
+        Assert.Contains(
             plan.Changes.Single().Key,
             fileSystem.ReadAllText(TargetPath),
             StringComparison.Ordinal
@@ -397,7 +397,7 @@ public sealed class ConfigurationManagerTests
             )
         );
 
-        Assert.DoesNotContain(
+        Assert.Contains(
             removedPlan.Changes.Single().Key,
             fileSystem.ReadAllText(TargetPath),
             StringComparison.Ordinal
@@ -421,6 +421,62 @@ public sealed class ConfigurationManagerTests
             LoadManifest(fileSystem).Entries
         );
         Assert.Equal(retainedSelector, entry.Key);
+    }
+
+    [Fact]
+    public async Task RemoveWithRetainedEntryPersistsPreviewManifestOnlyOnce()
+    {
+        const string retainedSelector =
+            "//pkgs.dev.azure.com/org/_packaging/retained-feed/npm/registry/:_authToken";
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        var manager = new ConfigurationManager(fileSystem, ManifestPath);
+        ConfigurationChangePlan removedPlan = CreateNpmPlanForFeed(
+            "removed-npm-plan",
+            "removed-feed",
+            Secret
+        );
+        ConfigurationChangePlan retainedPlan = CreateNpmPlanForFeed(
+            "retained-npm-plan",
+            "retained-feed",
+            "retained-token-value"
+        );
+        await manager.ApplyAsync(removedPlan, TestContext.Current.CancellationToken);
+        await manager.ApplyAsync(retainedPlan, TestContext.Current.CancellationToken);
+        int manifestWritesBefore = fileSystem.Calls.Count(call =>
+            call.Operation == nameof(InMemoryFileSystem.AtomicWriteAllText)
+            && string.Equals(call.Path, ManifestPath, StringComparison.Ordinal)
+        );
+        fileSystem.FailMatchingCall(
+            nameof(InMemoryFileSystem.AtomicWriteAllText),
+            ManifestPath,
+            2,
+            new IOException("Injected redundant manifest write failure.")
+        );
+
+        await manager.RemoveAsync(
+            CreateRemovePlan(removedPlan),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(
+            manifestWritesBefore + 1,
+            fileSystem.Calls.Count(call =>
+                call.Operation == nameof(InMemoryFileSystem.AtomicWriteAllText)
+                && string.Equals(call.Path, ManifestPath, StringComparison.Ordinal)
+            )
+        );
+        string targetContents = fileSystem.ReadAllText(TargetPath);
+        Assert.DoesNotContain(
+            removedPlan.Changes.Single().Key,
+            targetContents,
+            StringComparison.Ordinal
+        );
+        Assert.Contains(retainedSelector, targetContents, StringComparison.Ordinal);
+        ConfigurationOwnershipManifestEntry entry = Assert.Single(
+            LoadManifest(fileSystem).Entries
+        );
+        Assert.Equal(retainedSelector, entry.Key);
+        Assert.Equal(1, entry.Sequence);
     }
 
     private static ConfigurationChangePlan CreateNpmPlan(string targetPath, string token)
@@ -750,7 +806,11 @@ public sealed class ConfigurationManagerTests
             StringComparison.Ordinal
         );
 
-        if (failurePoint == ReplacementFailurePoint.RemoveTarget)
+        if (
+            failurePoint
+            is ReplacementFailurePoint.RemoveTarget
+                or ReplacementFailurePoint.OwnershipIntent
+        )
         {
             Assert.Contains(oldSelector, target, StringComparison.Ordinal);
         }

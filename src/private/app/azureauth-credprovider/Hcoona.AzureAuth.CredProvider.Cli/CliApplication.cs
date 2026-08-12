@@ -3085,6 +3085,7 @@ internal static class CliApplication
     )
     {
         ArgumentNullException.ThrowIfNull(configureResult);
+        bool mutatesState = configureResult.PlanResult.Changes.Count > 0;
 
         return JoinLines(
             $"command: {invocation.CommandName}",
@@ -3092,7 +3093,7 @@ internal static class CliApplication
             $"phase: {PhaseName}",
             $"ci-mode: {GetCiModeText(invocation.CiMode)}",
             $"scope: {GetScopeText(invocation.CiMode)}",
-            "mutates-state: yes",
+            "mutates-state: " + (mutatesState ? "yes" : "no"),
             $"plan-operation: {GetPlanOperationText(configureResult.PlanResult.Operation)}",
             $"applied-change-count: {configureResult.PlanResult.Changes.Count}",
             "nuget-plugin-layout-marker: "
@@ -3241,12 +3242,14 @@ internal static class CliApplication
         && root.Installation.HostPlatform == AzureAuthHostPlatform.NativeLinux
         && root.ProductionOptions.DeviceCodePromptWriter is not null;
 
-    private static IEnumerable<string> BuildNuGetDoctorLines(NuGetPhase10DoctorResult doctorResult)
+    private static List<string> BuildNuGetDoctorLines(NuGetPhase10DoctorResult doctorResult)
     {
         ArgumentNullException.ThrowIfNull(doctorResult);
-        return
+        List<string> lines =
         [
             "nuget-configuration-plan: " + GetCheckStatusText(doctorResult.ConfigurationPlanValid),
+            "nuget-configuration-state: "
+                + GetNuGetConfigurationStateText(doctorResult.ConfigurationState),
             "nuget-plugin-layout-marker: "
                 + GetPresenceText(doctorResult.PluginLayoutMarkerPresent),
             "nuget-ownership-manifest: " + GetPresenceText(doctorResult.OwnershipManifestPresent),
@@ -3261,7 +3264,39 @@ internal static class CliApplication
             "nuget-environment-overrides: "
                 + (doctorResult.OptionalEnvironmentOverridesAbsent ? "absent" : "present"),
         ];
+        if (doctorResult.ConfigurationState == NuGetConfigurationState.Refreshable)
+        {
+            lines.Insert(
+                2,
+                "nuget-configuration-plan-remediation: run "
+                    + "azureauth-credprovider configure nuget"
+            );
+        }
+        else if (doctorResult.ConfigurationState == NuGetConfigurationState.Unrecognized)
+        {
+            lines.Insert(
+                2,
+                "nuget-configuration-plan-remediation: manually inspect and restore "
+                    + "the product-owned NuGet plugin layout"
+            );
+        }
+        return lines;
     }
+
+    private static string GetNuGetConfigurationStateText(
+        NuGetConfigurationState configurationState
+    ) =>
+        configurationState switch
+        {
+            NuGetConfigurationState.Valid => "valid",
+            NuGetConfigurationState.Refreshable => "refreshable",
+            NuGetConfigurationState.Unrecognized => "unrecognized",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(configurationState),
+                configurationState,
+                null
+            ),
+        };
 
     private static List<string> BuildPythonDoctorLines(
         PythonPhase11DoctorResult doctorResult
@@ -3903,12 +3938,12 @@ internal static class CliApplication
                 ConfigurationChangeOperation.Set,
                 ConfigurationTargetKind.NuGetPluginLayout,
                 NuGetPluginLayoutConfigurationKey
-            ) => "register product-owned NuGet netcore plugin layout marker",
+            ) => "create product-owned NuGet netcore plugin activation",
             (
                 ConfigurationChangeOperation.Remove,
                 ConfigurationTargetKind.NuGetPluginLayout,
                 NuGetPluginLayoutConfigurationKey
-            ) => "remove product-owned NuGet netcore plugin layout marker",
+            ) => "remove product-owned NuGet netcore plugin activation",
             _ => throw new InvalidOperationException("Unsupported planned change."),
         };
     }

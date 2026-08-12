@@ -4,7 +4,7 @@
 param(
     [string]$InstallRoot,
 
-    [string]$NuGetPluginRoot,
+    [string]$LegacyNuGetOwnershipManifestPath,
 
     [switch]$Force
 )
@@ -25,7 +25,6 @@ if ($manifest.schemaVersion -ne 'azureauth-credprovider-deployment-validation-v1
     $manifest.isRelease) {
     throw 'The bundle is not an internal deployment validation artifact.'
 }
-
 $runningOnWindows = $IsWindows
 $expectedBuildOs = if ($runningOnWindows) {
     'Windows'
@@ -44,6 +43,7 @@ if ($hostArchitecture -ne [System.Runtime.InteropServices.Architecture]::X64) {
     throw "Deployment validation bundles do not support host architecture '$hostArchitecture'."
 }
 $expectedTargetRid = if ($runningOnWindows) { 'win-x64' } else { 'linux-x64' }
+$legacySourceRevision = 'f1bf00d412732739713a18e9a07e8738ff80c6f8'
 if ($manifest.targetRid -ne $expectedTargetRid) {
     throw "This $($manifest.targetRid) bundle cannot be installed on $expectedTargetRid."
 }
@@ -70,6 +70,11 @@ $pathComparer = if ($runningOnWindows) {
 else {
     [System.StringComparer]::Ordinal
 }
+$legacyNuGetSupportPath = Join-Path $bundleRoot 'legacy-nuget.ps1'
+if (-not (Test-Path -LiteralPath $legacyNuGetSupportPath -PathType Leaf)) {
+    throw 'The deployment validation legacy NuGet support script is missing.'
+}
+. $legacyNuGetSupportPath
 $listedPaths = [System.Collections.Generic.HashSet[string]]::new($pathComparer)
 foreach ($entry in $manifestFiles) {
     $relativePath = [string]$entry.path
@@ -131,34 +136,12 @@ if ([string]::IsNullOrWhiteSpace($InstallRoot)) {
     }
 }
 
-if ([string]::IsNullOrWhiteSpace($NuGetPluginRoot)) {
-    $NuGetPluginRoot = Join-Path $homeDirectory '.nuget/plugins/netcore/azureauth-credprovider'
-}
-
 $InstallRoot = [System.IO.Path]::GetFullPath($InstallRoot)
-$NuGetPluginRoot = [System.IO.Path]::GetFullPath($NuGetPluginRoot)
-foreach ($path in @($InstallRoot, $NuGetPluginRoot)) {
-    $pathRoot = [System.IO.Path]::GetPathRoot($path)
-    if ($path -eq $pathRoot -or
-        $path.TrimEnd([System.IO.Path]::DirectorySeparatorChar) -eq
-        $homeDirectory.TrimEnd([System.IO.Path]::DirectorySeparatorChar)) {
-        throw "The deployment target '$path' is too broad."
-    }
-}
-if ($InstallRoot.Equals($NuGetPluginRoot, $pathComparison)) {
-    throw 'The product and NuGet plugin roots must be distinct.'
-}
-$installRootPrefix = $InstallRoot.TrimEnd(
-    [System.IO.Path]::DirectorySeparatorChar,
-    [System.IO.Path]::AltDirectorySeparatorChar
-) + [System.IO.Path]::DirectorySeparatorChar
-$nugetPluginRootPrefix = $NuGetPluginRoot.TrimEnd(
-    [System.IO.Path]::DirectorySeparatorChar,
-    [System.IO.Path]::AltDirectorySeparatorChar
-) + [System.IO.Path]::DirectorySeparatorChar
-if ($InstallRoot.StartsWith($nugetPluginRootPrefix, $pathComparison) -or
-    $NuGetPluginRoot.StartsWith($installRootPrefix, $pathComparison)) {
-    throw 'The product and NuGet plugin roots must not contain one another.'
+$installPathRoot = [System.IO.Path]::GetPathRoot($InstallRoot)
+if ($InstallRoot -eq $installPathRoot -or
+    $InstallRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar) -eq
+    $homeDirectory.TrimEnd([System.IO.Path]::DirectorySeparatorChar)) {
+    throw "The deployment target '$InstallRoot' is too broad."
 }
 
 $applicationRoot = Join-Path $InstallRoot 'app'
@@ -213,6 +196,7 @@ function Get-SiblingDeploymentPath {
 }
 
 $existingReceipt = $null
+$legacyNuGetCleanupPlan = $null
 if (Test-Path -LiteralPath $InstallRoot) {
     if (-not $Force) {
         throw "The deployment target '$InstallRoot' already exists. Use -Force to replace it."
@@ -225,9 +209,27 @@ if (Test-Path -LiteralPath $InstallRoot) {
     if (Test-Path -LiteralPath $existingReceiptPath -PathType Leaf) {
         $existingReceipt = Get-Content -LiteralPath $existingReceiptPath -Raw |
             ConvertFrom-Json
-        if ($existingReceipt.schemaVersion -ne
-            'azureauth-credprovider-deployment-validation-install-v1') {
+        $receiptSchemaVersion = [string]$existingReceipt.schemaVersion
+        if ($receiptSchemaVersion -notin @(
+                'azureauth-credprovider-deployment-validation-install-v1',
+                'azureauth-credprovider-deployment-validation-install-v2'
+            )) {
             throw 'The existing deployment validation installation receipt is invalid.'
+        }
+        if ($receiptSchemaVersion -eq
+            'azureauth-credprovider-deployment-validation-install-v1' -and
+            -not (Test-ExactObjectPropertySet `
+                    -Value $existingReceipt `
+                    -ExpectedNames @(
+                    'schemaVersion',
+                    'productVersion',
+                    'sourceRevision',
+                    'targetRid',
+                    'installRoot',
+                    'applicationRoot',
+                    'nugetPluginRoot'
+                ))) {
+            throw 'The legacy deployment validation installation receipt is invalid.'
         }
 
         $receiptInstallRoot = [System.IO.Path]::GetFullPath(
@@ -236,13 +238,60 @@ if (Test-Path -LiteralPath $InstallRoot) {
         $receiptApplicationRoot = [System.IO.Path]::GetFullPath(
             [string]$existingReceipt.applicationRoot
         )
-        $receiptNuGetPluginRoot = [System.IO.Path]::GetFullPath(
-            [string]$existingReceipt.nugetPluginRoot
-        )
         if (-not $InstallRoot.Equals($receiptInstallRoot, $pathComparison) -or
-            -not $applicationRoot.Equals($receiptApplicationRoot, $pathComparison) -or
-            -not $NuGetPluginRoot.Equals($receiptNuGetPluginRoot, $pathComparison)) {
+            -not $applicationRoot.Equals($receiptApplicationRoot, $pathComparison)) {
             throw 'The replacement roots do not match the existing installation receipt.'
+        }
+
+        if ($receiptSchemaVersion -eq
+            'azureauth-credprovider-deployment-validation-install-v1') {
+            if ($existingReceipt.sourceRevision -cne $legacySourceRevision -or
+                $existingReceipt.targetRid -cne $expectedTargetRid -or
+                [string]::IsNullOrWhiteSpace([string]$existingReceipt.nugetPluginRoot)) {
+                throw 'The legacy deployment validation installation receipt is invalid.'
+            }
+            $legacyNuGetPluginRoot = [System.IO.Path]::GetFullPath(
+                [string]$existingReceipt.nugetPluginRoot
+            )
+            $legacyPathRoot = [System.IO.Path]::GetPathRoot($legacyNuGetPluginRoot)
+            if ($legacyNuGetPluginRoot -eq $legacyPathRoot -or
+                $legacyNuGetPluginRoot.TrimEnd(
+                    [System.IO.Path]::DirectorySeparatorChar,
+                    [System.IO.Path]::AltDirectorySeparatorChar
+                ) -eq $homeDirectory.TrimEnd(
+                    [System.IO.Path]::DirectorySeparatorChar,
+                    [System.IO.Path]::AltDirectorySeparatorChar
+                )) {
+                throw "The legacy NuGet deployment target '$legacyNuGetPluginRoot' is too broad."
+            }
+            $legacyNuGetPluginRootPrefix = $legacyNuGetPluginRoot.TrimEnd(
+                [System.IO.Path]::DirectorySeparatorChar,
+                [System.IO.Path]::AltDirectorySeparatorChar
+            ) + [System.IO.Path]::DirectorySeparatorChar
+            $currentInstallRootPrefix = $InstallRoot.TrimEnd(
+                [System.IO.Path]::DirectorySeparatorChar,
+                [System.IO.Path]::AltDirectorySeparatorChar
+            ) + [System.IO.Path]::DirectorySeparatorChar
+            if ($InstallRoot.Equals($legacyNuGetPluginRoot, $pathComparison) -or
+                $InstallRoot.StartsWith($legacyNuGetPluginRootPrefix, $pathComparison) -or
+                $legacyNuGetPluginRoot.StartsWith($currentInstallRootPrefix, $pathComparison)) {
+                throw 'The product and legacy NuGet plugin roots must not overlap.'
+            }
+            if ([string]::IsNullOrWhiteSpace($LegacyNuGetOwnershipManifestPath)) {
+                $LegacyNuGetOwnershipManifestPath = Join-Path $homeDirectory (
+                    '.azureauth-credprovider/phase10/manifests/' +
+                    'nuget-plugin-layout-ownership-manifest.json'
+                )
+            }
+            $LegacyNuGetOwnershipManifestPath = [System.IO.Path]::GetFullPath(
+                $LegacyNuGetOwnershipManifestPath
+            )
+            $legacyNuGetCleanupPlan = Get-LegacyNuGetCleanupPlan `
+                -ApplicationRoot $receiptApplicationRoot `
+                -NuGetPluginRoot $legacyNuGetPluginRoot `
+                -OwnershipManifestPath $LegacyNuGetOwnershipManifestPath `
+                -PathComparer $pathComparer `
+                -PathComparison $pathComparison
         }
     }
     elseif (-not (Test-EmptyDirectory -LiteralPath $InstallRoot)) {
@@ -253,30 +302,8 @@ if (Test-Path -LiteralPath $InstallRoot) {
     }
 }
 
-if (Test-Path -LiteralPath $NuGetPluginRoot) {
-    if (-not $Force) {
-        throw "The deployment target '$NuGetPluginRoot' already exists. Use -Force to replace it."
-    }
-    if (-not (Test-Path -LiteralPath $NuGetPluginRoot -PathType Container)) {
-        throw "The deployment target '$NuGetPluginRoot' is not a directory."
-    }
-    if ($null -eq $existingReceipt -and
-        -not (Test-EmptyDirectory -LiteralPath $NuGetPluginRoot)) {
-        throw (
-            "The deployment target '$NuGetPluginRoot' is non-empty and is not bound " +
-            'to a recognized installation receipt.'
-        )
-    }
-}
-
 $stagedInstallRoot = Get-SiblingDeploymentPath -LiteralPath $InstallRoot -Purpose 'installing'
-$stagedNuGetPluginRoot = Get-SiblingDeploymentPath `
-    -LiteralPath $NuGetPluginRoot `
-    -Purpose 'installing'
 $backupInstallRoot = Get-SiblingDeploymentPath -LiteralPath $InstallRoot -Purpose 'backup'
-$backupNuGetPluginRoot = Get-SiblingDeploymentPath `
-    -LiteralPath $NuGetPluginRoot `
-    -Purpose 'backup'
 $stagedApplicationRoot = Join-Path $stagedInstallRoot 'app'
 $stagedBinRoot = Join-Path $stagedInstallRoot 'bin'
 $stagedPythonRoot = Join-Path $stagedInstallRoot 'python'
@@ -285,14 +312,10 @@ try {
     New-Item -ItemType Directory -Path $stagedApplicationRoot -Force | Out-Null
     New-Item -ItemType Directory -Path $stagedBinRoot -Force | Out-Null
     New-Item -ItemType Directory -Path $stagedPythonRoot -Force | Out-Null
-    New-Item -ItemType Directory -Path $stagedNuGetPluginRoot -Force | Out-Null
 
     Copy-DirectoryContent `
         -Source (Join-Path $bundleRoot 'app') `
         -Destination $stagedApplicationRoot
-    Copy-DirectoryContent `
-        -Source (Join-Path $bundleRoot 'app') `
-        -Destination $stagedNuGetPluginRoot
     Copy-DirectoryContent `
         -Source (Join-Path $bundleRoot 'launchers') `
         -Destination $stagedBinRoot
@@ -311,7 +334,7 @@ try {
         throw 'The installed application payload is incomplete.'
     }
 
-    $nugetEntrypointPath = Join-Path $stagedNuGetPluginRoot 'azureauth-credprovider.dll'
+    $nugetEntrypointPath = Join-Path $stagedApplicationRoot 'azureauth-credprovider.dll'
     if (-not (Test-Path -LiteralPath $nugetEntrypointPath -PathType Leaf)) {
         throw 'The installed NuGet plugin payload is incomplete.'
     }
@@ -332,13 +355,12 @@ try {
     }
 
     $receipt = [ordered]@{
-        schemaVersion   = 'azureauth-credprovider-deployment-validation-install-v1'
+        schemaVersion   = 'azureauth-credprovider-deployment-validation-install-v2'
         productVersion  = $manifest.productVersion
         sourceRevision  = $manifest.sourceRevision
         targetRid       = $manifest.targetRid
         installRoot     = $InstallRoot
         applicationRoot = $applicationRoot
-        nugetPluginRoot = $NuGetPluginRoot
     }
     $receipt | ConvertTo-Json -Depth 5 |
         Set-Content `
@@ -346,89 +368,55 @@ try {
             -Encoding utf8
 }
 catch {
-    foreach ($path in @($stagedNuGetPluginRoot, $stagedInstallRoot)) {
-        if (Test-Path -LiteralPath $path) {
-            Remove-Item -LiteralPath $path -Recurse -Force
-        }
+    if (Test-Path -LiteralPath $stagedInstallRoot) {
+        Remove-Item -LiteralPath $stagedInstallRoot -Recurse -Force
     }
     throw
 }
 
 $installBackupCreated = $false
-$nugetPluginBackupCreated = $false
 $installRootActivated = $false
-$nugetPluginRootActivated = $false
 try {
     if (Test-Path -LiteralPath $InstallRoot) {
         Move-Item -LiteralPath $InstallRoot -Destination $backupInstallRoot
         $installBackupCreated = $true
     }
-    if (Test-Path -LiteralPath $NuGetPluginRoot) {
-        Move-Item -LiteralPath $NuGetPluginRoot -Destination $backupNuGetPluginRoot
-        $nugetPluginBackupCreated = $true
-    }
-
     Move-Item -LiteralPath $stagedInstallRoot -Destination $InstallRoot
     $installRootActivated = $true
-    Move-Item -LiteralPath $stagedNuGetPluginRoot -Destination $NuGetPluginRoot
-    $nugetPluginRootActivated = $true
+    if ($null -ne $legacyNuGetCleanupPlan) {
+        Remove-LegacyNuGetPayload -Plan $legacyNuGetCleanupPlan
+    }
 }
 catch {
     $switchFailure = $_
     $rollbackFailures = [System.Collections.Generic.List[System.Exception]]::new()
 
-    foreach ($replacement in @(
-            @{
-                Activated = $nugetPluginRootActivated
-                Path      = $NuGetPluginRoot
-            },
-            @{
-                Activated = $installRootActivated
-                Path      = $InstallRoot
-            }
-        )) {
-        if ($replacement.Activated -and (Test-Path -LiteralPath $replacement.Path)) {
-            try {
-                Remove-Item -LiteralPath $replacement.Path -Recurse -Force
-            }
-            catch {
-                $rollbackFailures.Add($_.Exception)
-            }
+    if ($installRootActivated -and (Test-Path -LiteralPath $InstallRoot)) {
+        try {
+            Remove-Item -LiteralPath $InstallRoot -Recurse -Force
+        }
+        catch {
+            $rollbackFailures.Add($_.Exception)
         }
     }
 
-    foreach ($backup in @(
-            @{
-                Created     = $nugetPluginBackupCreated
-                BackupPath  = $backupNuGetPluginRoot
-                RestorePath = $NuGetPluginRoot
-            },
-            @{
-                Created     = $installBackupCreated
-                BackupPath  = $backupInstallRoot
-                RestorePath = $InstallRoot
-            }
-        )) {
-        if ($backup.Created -and (Test-Path -LiteralPath $backup.BackupPath)) {
-            try {
-                Move-Item `
-                    -LiteralPath $backup.BackupPath `
-                    -Destination $backup.RestorePath
-            }
-            catch {
-                $rollbackFailures.Add($_.Exception)
-            }
+    if ($installBackupCreated -and (Test-Path -LiteralPath $backupInstallRoot)) {
+        try {
+            Move-Item `
+                -LiteralPath $backupInstallRoot `
+                -Destination $InstallRoot
+        }
+        catch {
+            $rollbackFailures.Add($_.Exception)
         }
     }
 
-    foreach ($path in @($stagedNuGetPluginRoot, $stagedInstallRoot)) {
-        if (Test-Path -LiteralPath $path) {
-            try {
-                Remove-Item -LiteralPath $path -Recurse -Force
-            }
-            catch {
-                $rollbackFailures.Add($_.Exception)
-            }
+    if (Test-Path -LiteralPath $stagedInstallRoot) {
+        try {
+            Remove-Item -LiteralPath $stagedInstallRoot -Recurse -Force
+        }
+        catch {
+            $rollbackFailures.Add($_.Exception)
         }
     }
 
@@ -448,27 +436,26 @@ catch {
 }
 
 $undeletedBackupPaths = [System.Collections.Generic.List[string]]::new()
-foreach ($path in @($backupNuGetPluginRoot, $backupInstallRoot)) {
-    if (Test-Path -LiteralPath $path) {
-        try {
-            Remove-Item -LiteralPath $path -Recurse -Force
+if (Test-Path -LiteralPath $backupInstallRoot) {
+    try {
+        Remove-Item -LiteralPath $backupInstallRoot -Recurse -Force
+    }
+    catch {
+        if (Test-Path -LiteralPath $backupInstallRoot) {
+            $undeletedBackupPaths.Add($backupInstallRoot)
+            Write-Warning (
+                "Post-commit cleanup could not completely remove deployment backup data at " +
+                "'$backupInstallRoot': $($_.Exception.Message) The active installation remains " +
+                'committed; data left at this path may be incomplete and must not be treated as ' +
+                'a fully recoverable backup.'
+            ) -WarningAction Continue
         }
-        catch {
-            if (Test-Path -LiteralPath $path) {
-                $undeletedBackupPaths.Add($path)
-                Write-Warning (
-                    "Post-commit cleanup could not completely remove deployment backup data at " +
-                    "'$path': $($_.Exception.Message) The active installation remains committed; " +
-                    'data left at this path may be incomplete and must not be treated as a fully ' +
-                    'recoverable backup.'
-                ) -WarningAction Continue
-            }
-            else {
-                Write-Warning (
-                    "Post-commit cleanup reported a failure after removing deployment backup " +
-                    "data at '$path': $($_.Exception.Message) The active installation remains committed."
-                ) -WarningAction Continue
-            }
+        else {
+            Write-Warning (
+                "Post-commit cleanup reported a failure after removing deployment backup " +
+                "data at '$backupInstallRoot': $($_.Exception.Message) The active installation " +
+                'remains committed.'
+            ) -WarningAction Continue
         }
     }
 }
@@ -482,6 +469,5 @@ if ($undeletedBackupPaths.Count -gt 0) {
 
 Write-Output "Installed internal deployment validation payload: $InstallRoot"
 Write-Output "CLI activation directory: $binRoot"
-Write-Output "NuGet plugin directory: $NuGetPluginRoot"
 Write-Output "Python wheel directory: $pythonRoot"
 Write-Output 'No global PATH, shell profile, registry, Git, NuGet, or Python environment was modified.'

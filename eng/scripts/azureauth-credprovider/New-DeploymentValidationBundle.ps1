@@ -174,6 +174,9 @@ exec "$script_dir/../app/azureauth-credprovider" git credential-helper "$@"
     Copy-Item -LiteralPath (
         Join-Path $scriptRoot 'Uninstall-DeploymentValidationBundle.ps1'
     ) -Destination (Join-Path $stagingRoot 'uninstall.ps1')
+    Copy-Item -LiteralPath (
+        Join-Path $scriptRoot 'DeploymentValidationLegacyNuGet.ps1'
+    ) -Destination (Join-Path $stagingRoot 'legacy-nuget.ps1')
 
     $manifestPath = Join-Path $stagingRoot 'manifest.json'
     if (Test-Path -LiteralPath $manifestPath) {

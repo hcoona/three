@@ -172,18 +172,6 @@ public sealed class ConfigurationManager : IConfigurationManager
             resultManifests.Add(previewManifest);
         }
 
-        foreach ((ConfigurationChangePlan plan, ConfigurationPlanOperation operation) in normalized)
-        {
-            if (operation != ConfigurationPlanOperation.Remove)
-            {
-                continue;
-            }
-
-            cancellationToken.ThrowIfCancellationRequested();
-            await ApplyChanges(plan, originalManifest, operation, cancellationToken);
-            DeleteTemporaryContainer(plan);
-        }
-
         ConfigurationOwnershipManifest? ownershipIntent = CreateOwnershipIntent(
             originalManifest,
             previewManifest
@@ -191,23 +179,68 @@ public sealed class ConfigurationManager : IConfigurationManager
         bool hasApply = normalized.Any(operation =>
             operation.Operation == ConfigurationPlanOperation.Apply
         );
-        if (hasApply)
+        bool hasRemove = normalized.Any(operation =>
+            operation.Operation == ConfigurationPlanOperation.Remove
+        );
+        ConfigurationOwnershipManifest? persistedManifest = originalManifest;
+        if (hasRemove || hasApply)
         {
-            PersistManifest(ownershipIntent);
+            persistedManifest = hasApply ? ownershipIntent : previewManifest;
+            PersistManifest(persistedManifest);
         }
 
-        foreach ((ConfigurationChangePlan plan, ConfigurationPlanOperation operation) in normalized)
+        try
         {
-            if (operation != ConfigurationPlanOperation.Apply)
+            foreach (
+                (ConfigurationChangePlan plan, ConfigurationPlanOperation operation) in normalized
+            )
             {
-                continue;
-            }
+                if (operation != ConfigurationPlanOperation.Remove)
+                {
+                    continue;
+                }
 
-            cancellationToken.ThrowIfCancellationRequested();
-            await ApplyChanges(plan, ownershipIntent, operation, cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+                await ApplyChanges(plan, originalManifest, operation, cancellationToken);
+                DeleteTemporaryContainer(plan);
+            }
+        }
+        catch
+        {
+            PersistManifest(originalManifest);
+            throw;
         }
 
-        if (!ManifestsEquivalent(ownershipIntent, previewManifest))
+        try
+        {
+            foreach (
+                (ConfigurationChangePlan plan, ConfigurationPlanOperation operation) in normalized
+            )
+            {
+                if (operation == ConfigurationPlanOperation.Apply)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await ApplyChanges(plan, ownershipIntent, operation, cancellationToken);
+                }
+            }
+        }
+        catch
+        {
+            if (
+                originalManifest is null
+                && normalized.Length == 1
+                && normalized[0].Operation == ConfigurationPlanOperation.Apply
+                && normalized[0].Plan.Changes.Count == 1
+                && normalized[0].Plan.Changes[0].TargetKind
+                    == ConfigurationTargetKind.NuGetPluginLayout
+            )
+            {
+                PersistManifest(originalManifest);
+            }
+            throw;
+        }
+
+        if (!ManifestsEquivalent(persistedManifest, previewManifest))
         {
             PersistManifest(previewManifest);
         }

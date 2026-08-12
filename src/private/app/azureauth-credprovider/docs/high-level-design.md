@@ -375,8 +375,13 @@ copies payloads only into per-user, product-owned locations and does not mutate
 global PATH, shell profiles, the registry, Git configuration, NuGet
 configuration, or Python environments. Ecosystem configuration remains an
 explicit CLI operation. Uninstallation first invokes product-owned Git, NuGet,
-and Python unconfiguration, then removes the recorded product and NuGet payload
-roots.
+and Python unconfiguration, then removes the recorded product payload root.
+`configure nuget` exclusively owns creation of the conventional NuGet discovery
+layout, and `unconfigure nuget` removes only the inventory-verified activation
+files it owns. Directory cleanup considers only ancestors of affected inventory
+paths whose ownership is established by prior inventory ancestry or creation for
+the current payload, so unrelated files and pre-existing empty subtrees are
+preserved.
 
 The bundle by itself validates deployment shape and lifecycle behavior. It is
 not a signed release artifact or release installer and does not close Windows,
