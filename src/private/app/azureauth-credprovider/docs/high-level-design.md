@@ -111,6 +111,13 @@ an explicitly accepted provider-cache behavior; product-owned derived
 credentials remain non-persistent with no plaintext fallback. Direct MSAL is
 not implemented.
 
+Windows and WSL interaction readiness means that the WAM-first launch path is
+available and may prompt. A WAM cache can satisfy that interaction-allowed
+request without prompting, but AzureAuth 0.9.5 exposes no cache-only command
+mode on those hosts. Status therefore reports Windows and WSL silent-only
+readiness as unavailable without claiming that the provider cache or account is
+absent.
+
 The core must not assume a single protocol output format. Protocol adapters are responsible for host-tool input and output.
 
 ## Machine-Facing Entrypoints
@@ -337,16 +344,30 @@ CI behavior must:
 
 ## Diagnostics
 
-`<primary-cli> doctor` should validate:
+`<primary-cli> status` reports interactive and silent-only provider readiness
+separately. It replaces broad ecosystem support claims with per-ecosystem
+`configurable` and `currently-usable` assessments. `not-assessed` and
+`selection-deferred-not-probed` are valid results when status or a lower-layer
+client cannot establish the stronger claim from local evidence.
+
+`<primary-cli> doctor` should validate bounded local evidence:
 
 - Git helper executable discovery and `credential.https://dev.azure.com.useHttpPath` behavior for Azure Repos hosts,
 - NuGet plugin discovery and runtime compatibility,
 - Python keyring backend discovery,
 - `keyring` shim availability for uv,
 - npm and Yarn registry configuration format and required entries,
-- identity-provider readiness, silent-cache availability, and account selection,
+- identity-provider installation and interaction-mode readiness,
 - host/feed canonicalization,
 - CI mode and secret handling.
+
+Capability reporting distinguishes structural local readiness from remote
+authorization. It does not contact package feeds, prove NuGet's runtime plugin
+selection, directly read or enumerate provider-managed cache storage, or verify
+the configured account preference. `status` performs no live authentication
+probe. Existing bounded Git `doctor` checks may invoke the provider in
+`SilentOnly` mode (cache-only on native Linux) and do not turn other ecosystem
+rows into live-authentication claims.
 
 Diagnostics should never print access tokens, refresh tokens, PATs, Basic auth headers, npm tokens, NuGet API keys, or generated passwords.
 

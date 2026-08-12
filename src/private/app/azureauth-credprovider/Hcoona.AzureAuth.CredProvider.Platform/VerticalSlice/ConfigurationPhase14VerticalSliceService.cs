@@ -115,9 +115,13 @@ public sealed record ConfigurationPhase14EcosystemDoctorResult
 
     public required bool ConfigurationPlanValid { get; init; }
 
+    public required bool ConfigureOperationValid { get; init; }
+
     public required bool OwnershipManifestPresent { get; init; }
 
     public required bool OwnedTargetPresent { get; init; }
+
+    public required bool OwnedTargetMatchesResolvedPath { get; init; }
 
     public required bool TemporaryContainerPresent { get; init; }
 
@@ -546,15 +550,15 @@ public sealed class ConfigurationPhase14VerticalSliceService
             }
         }
 
-        EnsureRecognizedPythonManifestIfPresent(scope, ownershipManifestPath);
-        IReadOnlyList<ConfigurationChangePlan> plans = CreatePythonPlans(scope);
-        List<ConfigurationPlanResult> previewResults = [];
-        foreach (ConfigurationChangePlan plan in plans)
-        {
-            previewResults.Add(
-                await CreateManager(ownershipManifestPath).DryRunAsync(plan, cancellationToken)
-            );
-        }
+        (
+            IReadOnlyList<ConfigurationChangePlan> plans,
+            List<ConfigurationPlanResult> previewResults
+        ) = await PreviewPythonConfigurationAsync(
+                scope,
+                ownershipManifestPath,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
         if (!execute)
         {
@@ -630,14 +634,16 @@ public sealed class ConfigurationPhase14VerticalSliceService
         ConfigurationPhase14Scope scope,
         bool execute,
         bool forceRefresh,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        Uri? registryUrlOverride = null
     )
     {
         string ownershipManifestPath = GetOwnershipManifestPath(ecosystem, scope);
         ConfigurationChangePlan requestedDryRunPlan = CreateApplyPlans(
                 ecosystem,
                 scope,
-                CreateDryRunCredential(scope)
+                CreateDryRunCredential(scope),
+                registryUrlOverride
             )
             .Single();
         ExistingOwnershipManifest? existing = LoadRecognizedPackageManifest(
@@ -677,7 +683,13 @@ public sealed class ConfigurationPhase14VerticalSliceService
         CredentialResult credential = execute
             ? GetPackageCredential(ecosystem, scope, cancellationToken)
             : CreateDryRunCredential(scope);
-        ConfigurationChangePlan applyPlan = CreateApplyPlans(ecosystem, scope, credential).Single();
+        ConfigurationChangePlan applyPlan = CreateApplyPlans(
+                ecosystem,
+                scope,
+                credential,
+                registryUrlOverride
+            )
+            .Single();
         bool replaceExisting =
             existing is not null
             && !ManifestMatchesRequestedConfiguration(existing.Manifest, applyPlan);
@@ -1108,7 +1120,8 @@ public sealed class ConfigurationPhase14VerticalSliceService
     private IReadOnlyList<ConfigurationChangePlan> CreateApplyPlans(
         CredentialEcosystem ecosystem,
         ConfigurationPhase14Scope scope,
-        CredentialResult? credential
+        CredentialResult? credential,
+        Uri? registryUrlOverride = null
     ) =>
         ecosystem switch
         {
@@ -1119,7 +1132,8 @@ public sealed class ConfigurationPhase14VerticalSliceService
                     ecosystem,
                     scope,
                     credential
-                        ?? throw new InvalidOperationException("Package credential is required.")
+                        ?? throw new InvalidOperationException("Package credential is required."),
+                    registryUrlOverride
                 ),
             ],
             CredentialEcosystem.Yarn =>
@@ -1127,7 +1141,8 @@ public sealed class ConfigurationPhase14VerticalSliceService
                 CreateYarnPlan(
                     scope,
                     credential
-                        ?? throw new InvalidOperationException("Package credential is required.")
+                        ?? throw new InvalidOperationException("Package credential is required."),
+                    registryUrlOverride
                 ),
             ],
             _ => throw new NotSupportedException(
@@ -1384,7 +1399,8 @@ public sealed class ConfigurationPhase14VerticalSliceService
     private ConfigurationChangePlan CreateNpmCompatiblePlan(
         CredentialEcosystem ecosystem,
         ConfigurationPhase14Scope scope,
-        CredentialResult credential
+        CredentialResult credential,
+        Uri? registryUrlOverride
     )
     {
         var service = new NpmPhase12VerticalSliceService(
@@ -1399,7 +1415,10 @@ public sealed class ConfigurationPhase14VerticalSliceService
                         : paths.NpmUserNpmrcPath,
             }
         );
-        NpmPhase12RegistryDeclaration declaration = CreateNpmDeclaration(ecosystem);
+        NpmPhase12RegistryDeclaration declaration = CreateNpmDeclaration(
+            ecosystem,
+            registryUrlOverride
+        );
         var request = new NpmPhase12CredentialPlanRequest
         {
             Declaration = declaration,
@@ -1439,7 +1458,8 @@ public sealed class ConfigurationPhase14VerticalSliceService
 
     private ConfigurationChangePlan CreateYarnPlan(
         ConfigurationPhase14Scope scope,
-        CredentialResult credential
+        CredentialResult credential,
+        Uri? registryUrlOverride
     )
     {
         var service = new YarnPhase13VerticalSliceService(
@@ -1451,7 +1471,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
                 UserYarnrcPath = paths.YarnUserYarnrcPath,
             }
         );
-        YarnPhase13RegistryDeclaration declaration = CreateYarnDeclaration();
+        YarnPhase13RegistryDeclaration declaration = CreateYarnDeclaration(registryUrlOverride);
         var request = new YarnPhase13CredentialPlanRequest
         {
             Declaration = declaration,
@@ -1608,7 +1628,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
         };
     }
 
-    private ValueTask<ConfigurationPhase14EcosystemDoctorResult> InspectDoctorAsync(
+    private async ValueTask<ConfigurationPhase14EcosystemDoctorResult> InspectDoctorAsync(
         CredentialEcosystem ecosystem,
         ConfigurationPhase14Scope scope,
         CancellationToken cancellationToken
@@ -1622,6 +1642,11 @@ public sealed class ConfigurationPhase14VerticalSliceService
             scope,
             ownershipManifestPath,
             cancellationToken
+        );
+        bool ownedTargetMatchesResolvedPath = TryInspectOwnedTargetMatchesResolvedPath(
+            ecosystem,
+            scope,
+            ownershipManifestPath
         );
         bool temporaryContainerPresent = TemporaryContainerExists(ecosystem, scope);
         bool configurationPlanValid = !ownershipManifestPresent
@@ -1658,21 +1683,116 @@ public sealed class ConfigurationPhase14VerticalSliceService
                 || !lifecycleMetadataPresent;
             registryUrl = TryGetManifestRegistryUrl(ownershipManifestPath);
         }
+        bool configureOperationValid =
+            configurationPlanValid
+            && (
+                ecosystem == CredentialEcosystem.Python
+                    ? await TryValidatePythonConfigureOperationAsync(
+                            scope,
+                            ownershipManifestPath,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false)
+                    : (
+                        !registryUrls.ContainsKey(ecosystem)
+                        && registryUrl is null
+                        && !ownershipManifestPresent
+                    )
+                        || await TryValidateConfigureOperationAsync(
+                                ecosystem,
+                                scope,
+                                registryUrl,
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false)
+            );
 
-        return ValueTask.FromResult(
-            new ConfigurationPhase14EcosystemDoctorResult
-            {
-                Ecosystem = ecosystem,
-                Scope = scope,
-                ConfigurationPlanValid = configurationPlanValid,
-                OwnershipManifestPresent = ownershipManifestPresent,
-                OwnedTargetPresent = ownedTargetPresent,
-                TemporaryContainerPresent = temporaryContainerPresent,
-                LifecycleState = lifecycleState,
-                CredentialExpiresAt = lifecycle?.ExpiresAt,
-                RegistryUrl = registryUrl,
-            }
-        );
+        return new ConfigurationPhase14EcosystemDoctorResult
+        {
+            Ecosystem = ecosystem,
+            Scope = scope,
+            ConfigurationPlanValid = configurationPlanValid,
+            ConfigureOperationValid = configureOperationValid,
+            OwnershipManifestPresent = ownershipManifestPresent,
+            OwnedTargetPresent = ownedTargetPresent,
+            OwnedTargetMatchesResolvedPath = ownedTargetMatchesResolvedPath,
+            TemporaryContainerPresent = temporaryContainerPresent,
+            LifecycleState = lifecycleState,
+            CredentialExpiresAt = lifecycle?.ExpiresAt,
+            RegistryUrl = registryUrl,
+        };
+    }
+
+    private async ValueTask<bool> TryValidateConfigureOperationAsync(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        Uri? registryUrlOverride,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            _ = await ConfigurePackageCoreAsync(
+                    ecosystem,
+                    scope,
+                    execute: false,
+                    forceRefresh: false,
+                    cancellationToken,
+                    registryUrlOverride
+                )
+                .ConfigureAwait(false);
+            return true;
+        }
+        catch (Exception exception) when (IsExpectedDoctorCheckFailure(exception))
+        {
+            return false;
+        }
+    }
+
+    private async ValueTask<bool> TryValidatePythonConfigureOperationAsync(
+        ConfigurationPhase14Scope scope,
+        string ownershipManifestPath,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            _ = await PreviewPythonConfigurationAsync(
+                    scope,
+                    ownershipManifestPath,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+            return true;
+        }
+        catch (Exception exception) when (IsExpectedDoctorCheckFailure(exception))
+        {
+            return false;
+        }
+    }
+
+    private async ValueTask<(
+        IReadOnlyList<ConfigurationChangePlan> Plans,
+        List<ConfigurationPlanResult> PreviewResults
+    )> PreviewPythonConfigurationAsync(
+        ConfigurationPhase14Scope scope,
+        string ownershipManifestPath,
+        CancellationToken cancellationToken
+    )
+    {
+        EnsureRecognizedPythonManifestIfPresent(scope, ownershipManifestPath);
+        IReadOnlyList<ConfigurationChangePlan> plans = CreatePythonPlans(scope);
+        List<ConfigurationPlanResult> previewResults = [];
+        foreach (ConfigurationChangePlan plan in plans)
+        {
+            previewResults.Add(
+                await CreateManager(ownershipManifestPath)
+                    .DryRunAsync(plan, cancellationToken)
+                    .ConfigureAwait(false)
+            );
+        }
+
+        return (plans, previewResults);
     }
 
     // editorconfig-checker-disable
@@ -2582,6 +2702,69 @@ public sealed class ConfigurationPhase14VerticalSliceService
         }
     }
 
+    private bool TryInspectOwnedTargetMatchesResolvedPath(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        string ownershipManifestPath
+    )
+    {
+        try
+        {
+            if (
+                !TryLoadOwnershipManifest(
+                    ownershipManifestPath,
+                    out ConfigurationOwnershipManifest? manifest
+                )
+                || !OwnershipManifestMatchesExpectedState(manifest, ecosystem, scope)
+            )
+            {
+                return false;
+            }
+
+            if (ecosystem == CredentialEcosystem.Python)
+            {
+                return true;
+            }
+
+            (ConfigurationTargetKind targetKind, string expectedPath) = ecosystem switch
+            {
+                CredentialEcosystem.Npm or CredentialEcosystem.Pnpm =>
+                    (ConfigurationTargetKind.Npmrc, GetNpmTargetPath(ecosystem, scope)),
+                CredentialEcosystem.Yarn =>
+                    (
+                        ConfigurationTargetKind.Yarnrc,
+                        scope == ConfigurationPhase14Scope.User
+                            ? paths.YarnUserYarnrcPath
+                            : FileSystemPathSemantics.Combine(
+                                fileSystem,
+                                paths.YarnCiTemporaryHomePath,
+                                ".yarnrc.yml"
+                            )
+                    ),
+                _ => throw new NotSupportedException("Unsupported configuration ecosystem."),
+            };
+            string normalizedExpectedPath = NormalizePath(expectedPath);
+            ConfigurationOwnershipManifestEntry[] entries = manifest
+                .Entries.Where(entry =>
+                    EntryMatchesEcosystem(entry, ecosystem)
+                    && entry.TargetKind == targetKind
+                )
+                .ToArray();
+            return entries.Length > 0
+                && entries.All(entry =>
+                    string.Equals(
+                        NormalizePath(entry.TargetPathOrName),
+                        normalizedExpectedPath,
+                        FileSystemPathSemantics.GetComparison(fileSystem)
+                    )
+                );
+        }
+        catch (Exception exception) when (IsExpectedDoctorCheckFailure(exception))
+        {
+            return false;
+        }
+    }
+
     private ConfigurationChangePlan CreatePythonPresencePlan(
         ConfigurationOwnershipManifestEntry entry
     )
@@ -3219,9 +3402,12 @@ public sealed class ConfigurationPhase14VerticalSliceService
             : null;
     }
 
-    private NpmPhase12RegistryDeclaration CreateNpmDeclaration(CredentialEcosystem ecosystem)
+    private NpmPhase12RegistryDeclaration CreateNpmDeclaration(
+        CredentialEcosystem ecosystem,
+        Uri? registryUrlOverride = null
+    )
     {
-        Uri registryUrl = GetRequiredRegistryUrl(ecosystem);
+        Uri registryUrl = registryUrlOverride ?? GetRequiredRegistryUrl(ecosystem);
         if (
             !NpmPhase12VerticalSliceService.TryCreateAzureArtifactsNpmResourceIdentity(
                 registryUrl,
@@ -3258,9 +3444,12 @@ public sealed class ConfigurationPhase14VerticalSliceService
         };
     }
 
-    private YarnPhase13RegistryDeclaration CreateYarnDeclaration()
+    private YarnPhase13RegistryDeclaration CreateYarnDeclaration(
+        Uri? registryUrlOverride = null
+    )
     {
-        Uri registryUrl = GetRequiredRegistryUrl(CredentialEcosystem.Yarn);
+        Uri registryUrl =
+            registryUrlOverride ?? GetRequiredRegistryUrl(CredentialEcosystem.Yarn);
         if (
             !NpmPhase12VerticalSliceService.TryCreateAzureArtifactsNpmResourceIdentity(
                 registryUrl,
