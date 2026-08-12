@@ -11,7 +11,7 @@ import tomllib
 import zipfile
 from email.parser import Parser
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -338,6 +338,33 @@ def test_bundle_builds_versioned_wheel_from_clean_checkout(
     assert completed.returncode == 0, completed.stderr
 
     _run_git(repository, "switch", "--quiet", "--force-create", "main")
+    cloned_bundle_script = repository / BUNDLE_SCRIPT_RELATIVE_PATH
+    shutil.copy2(BUNDLE_SCRIPT_PATH, cloned_bundle_script)
+    script_diff = subprocess.run(  # noqa: S603
+        [
+            git,
+            "diff",
+            "--quiet",
+            "--",
+            str(BUNDLE_SCRIPT_RELATIVE_PATH),
+        ],
+        cwd=repository,
+        check=False,
+    )
+    assert script_diff.returncode in {0, 1}
+    if script_diff.returncode == 1:
+        _run_git(repository, "add", "--", str(BUNDLE_SCRIPT_RELATIVE_PATH))
+        _run_git(
+            repository,
+            "-c",
+            "user.email=tests@example.invalid",
+            "-c",
+            "user.name=AzureAuth metadata tests",
+            "commit",
+            "--quiet",
+            "--message",
+            "Test current deployment bundle implementation",
+        )
     assert _run_git(repository, "status", "--porcelain") == ""
     assert _run_git(
         repository,
@@ -348,8 +375,11 @@ def test_bundle_builds_versioned_wheel_from_clean_checkout(
 
     project_root = repository / "src/private/app/azureauth-credprovider"
     version_data = _get_version(project_root / "python", repository)
-    product_version = version_data["SemVer2"]
-    source_revision = _run_git(repository, "rev-parse", "HEAD")
+    product_version = version_data["AssemblyInformationalVersion"]
+    semver2 = version_data["SemVer2"]
+    python_package_version = _wheel_version(semver2)
+    source_revision = version_data["GitCommitId"]
+    cloned_head = _run_git(repository, "rev-parse", "HEAD")
     output_root = tmp_path / "deployment-validation"
     pwsh = _required_executable("pwsh")
     completed = subprocess.run(  # noqa: S603
@@ -364,10 +394,6 @@ def test_bundle_builds_versioned_wheel_from_clean_checkout(
             "linux-x64",
             "-Configuration",
             "Release",
-            "-ProductVersion",
-            product_version,
-            "-SourceRevision",
-            source_revision,
             "-OutputRoot",
             str(output_root),
         ],
@@ -380,13 +406,11 @@ def test_bundle_builds_versioned_wheel_from_clean_checkout(
     assert completed.returncode == 0, (
         f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
     )
-
     bundle_paths = list(output_root.glob("*.zip"))
     assert len(bundle_paths) == 1
-    expected_wheel_version = _wheel_version(product_version)
     expected_wheel_name = (
         "azureauth_credprovider_keyring-"
-        f"{expected_wheel_version}-py3-none-any.whl"
+        f"{python_package_version}-py3-none-any.whl"
     )
 
     with zipfile.ZipFile(bundle_paths[0]) as bundle:
@@ -402,8 +426,10 @@ def test_bundle_builds_versioned_wheel_from_clean_checkout(
     metadata = _read_wheel_metadata(nested_wheel_path)
 
     assert metadata["Name"] == "azureauth-credprovider-keyring"
-    assert metadata["Version"] == expected_wheel_version
+    assert metadata["Version"] == python_package_version
+    assert source_revision == cloned_head
     assert manifest["productVersion"] == product_version
+    assert manifest["pythonPackageVersion"] == python_package_version
     assert manifest["sourceRevision"] == source_revision
     assert manifest["entrypoints"]["pythonWheel"] == wheel_entries[0]
 
@@ -460,7 +486,7 @@ def _commit_path(repository: Path, relative_path: str) -> None:
 def _get_version(
     project_root: Path,
     command_root: Path = WORKSPACE_ROOT,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     completed = subprocess.run(  # noqa: S603
         [
             _required_executable("dotnet"),

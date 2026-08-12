@@ -19,14 +19,15 @@ not create or accept a release installer.
 payload for `win-x64` or `linux-x64` and builds one Python wheel. The ZIP
 contains:
 
-| Path            | Purpose                                                                  |
-| --------------- | ------------------------------------------------------------------------ |
-| `app/`          | Complete published CLI payload and NuGet netcore plugin entrypoint.      |
-| `launchers/`    | CLI and Git credential-helper launchers.                                 |
-| `python/`       | The `azureauth-credprovider-keyring` wheel.                              |
-| `manifest.json` | Artifact identity, boundaries, entrypoints, lengths, and SHA-256 hashes. |
-| `install.ps1`   | Per-user physical installation without ecosystem activation.             |
-| `uninstall.ps1` | Configuration-aware removal of product-owned payloads.                   |
+| Path                   | Purpose                                                                  |
+| ---------------------- | ------------------------------------------------------------------------ |
+| `app/`                 | Complete published CLI payload and NuGet netcore plugin entrypoint.      |
+| `launchers/`           | CLI and Git credential-helper launchers.                                 |
+| `python/`              | The `azureauth-credprovider-keyring` wheel.                              |
+| `.build-identity.json` | NBGV-derived app, wheel, and source identity for safe `-NoBuild` reuse.  |
+| `manifest.json`        | Artifact identity, boundaries, entrypoints, lengths, and SHA-256 hashes. |
+| `install.ps1`          | Per-user physical installation without ecosystem activation.             |
+| `uninstall.ps1`        | Configuration-aware removal of product-owned payloads.                   |
 
 The archive schema is
 `azureauth-credprovider-deployment-validation-v1`. ZIP entry timestamps are
@@ -57,6 +58,17 @@ copies the installed application payload to
 `~/.nuget/plugins/netcore/azureauth-credprovider` and records the product-owned
 activation inventory. `unconfigure nuget` removes only inventory-listed files
 whose hashes still match and preserves unrelated files.
+
+The bundle generator resolves `AssemblyInformationalVersion`, `SemVer2`, and
+`GitCommitId` from the component's existing NBGV `version.json`. It validates
+the published app's `--version` output and the wheel's normalized metadata
+version before writing the manifest, including when `-NoBuild` reuses canonical
+staging. The staging sidecar records source/build identity but cannot substitute
+for payload validation. The install receipt copies those validated app and
+Python package versions; callers cannot supply a separate receipt version.
+Successful normal generation retains only the canonical RID staging tree and
+identity sidecar needed for a direct subsequent `-NoBuild` invocation. Failed
+normal generation removes incomplete staging.
 
 The wheel must be installed into the exact Python environment that imports the
 backend. On Linux, `configure python` then writes the backend manifest and
@@ -109,15 +121,16 @@ failure.
 On 2026-08-11, an isolated `linux-x64` working-tree bundle completed:
 
 1. Archive manifest and file-hash validation.
-2. Physical installation without a NuGet conventional discovery directory.
-3. Uninstallation before NuGet configuration.
-4. `configure nuget` creation of the discoverable owned plugin layout.
-5. Configuration-aware uninstallation after NuGet configuration.
-6. Removal of owned NuGet activation files while preserving an unrelated file.
-7. Refusal to force-replace unrelated or receipt-mismatched product roots.
-8. Cleanup of product roots created by a failed installation.
-9. Installation from an extraction path containing wildcard characters.
-10. Rejection of hidden files absent from the bundle manifest.
+2. NBGV-derived app, wheel, manifest, and receipt version coherence.
+3. Physical installation without a NuGet conventional discovery directory.
+4. Uninstallation before NuGet configuration.
+5. `configure nuget` creation of the discoverable owned plugin layout.
+6. Configuration-aware uninstallation after NuGet configuration.
+7. Removal of owned NuGet activation files while preserving an unrelated file.
+8. Refusal to force-replace unrelated or receipt-mismatched product roots.
+9. Cleanup of product roots created by a failed installation.
+10. Installation from an extraction path containing wildcard characters.
+11. Rejection of hidden files absent from the bundle manifest.
 
 No token acquisition, AzureAuth launch, browser interaction, WAM interaction,
 device code, or private-feed authorization occurred.

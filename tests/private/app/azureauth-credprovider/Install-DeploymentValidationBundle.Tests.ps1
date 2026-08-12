@@ -32,6 +32,25 @@ else {
 $deploymentPackageName = (
     "azureauth-credprovider-deployment-validation-internal-$buildOs-$targetRid.zip"
 )
+$versionOutput = dotnet tool run nbgv get-version -f json -p (
+    Join-Path $repoRoot 'src/private/app/azureauth-credprovider'
+)
+if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+}
+$versionInfo = ($versionOutput -join [System.Environment]::NewLine) | ConvertFrom-Json
+$expectedProductVersion = [string]$versionInfo.AssemblyInformationalVersion
+$expectedSourceRevision = [string]$versionInfo.GitCommitId
+$expectedPythonPackageVersion = uv run `
+    --package nbgv-python `
+    python -c (
+    'from nbgv_python.versioning import normalize_version_field; ' +
+    'import sys; print(normalize_version_field(sys.argv[1], field="SemVer2"))'
+) ([string]$versionInfo.SemVer2)
+if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+}
+$expectedPythonPackageVersion = ([string]$expectedPythonPackageVersion).Trim()
 
 function Assert-True {
     param(
@@ -152,6 +171,200 @@ function Assert-InvocationFailure {
     throw $Message
 }
 
+function New-ValidDeploymentGeneratorBundleRoot {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Destination,
+
+        [Parameter(Mandatory = $true)]
+        [string]$PackagePath
+    )
+
+    if (-not $PSCmdlet.ShouldProcess($Destination, 'Create valid generator bundle root')) {
+        return
+    }
+
+    New-Item -ItemType Directory -Path $Destination -Force | Out-Null
+    [System.IO.Compression.ZipFile]::ExtractToDirectory(
+        (Resolve-Path -LiteralPath $PackagePath).Path,
+        $Destination
+    )
+    return $Destination
+}
+
+function Set-TestWheelVersion {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$WheelPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Version
+    )
+
+    if (-not $PSCmdlet.ShouldProcess($WheelPath, 'Set test wheel version metadata')) {
+        return
+    }
+
+    if (Test-Path -LiteralPath $WheelPath) {
+        Remove-Item -LiteralPath $WheelPath -Force
+    }
+    $wheelArchive = [System.IO.Compression.ZipFile]::Open(
+        $WheelPath,
+        [System.IO.Compression.ZipArchiveMode]::Create
+    )
+    try {
+        $metadataEntry = $wheelArchive.CreateEntry(
+            "azureauth_credprovider_keyring-$Version.dist-info/METADATA"
+        )
+        $metadataWriter = [System.IO.StreamWriter]::new($metadataEntry.Open())
+        try {
+            $metadataWriter.Write(
+                "Metadata-Version: 2.3`n" +
+                "Name: azureauth-credprovider-keyring`n" +
+                "Version: $Version`n"
+            )
+        }
+        finally {
+            $metadataWriter.Dispose()
+        }
+    }
+    finally {
+        $wheelArchive.Dispose()
+    }
+}
+
+function Set-TestWheelContent {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$WheelPath,
+
+        [string]$MetadataName,
+
+        [string[]]$OmitEntryName = @(),
+
+        [string]$EntryPointsContent
+    )
+
+    if (-not $PSCmdlet.ShouldProcess($WheelPath, 'Mutate test wheel content')) {
+        return
+    }
+
+    $temporaryWheelPath = "$WheelPath.mutated"
+    $sourceArchive = [System.IO.Compression.ZipFile]::OpenRead($WheelPath)
+    try {
+        $destinationArchive = [System.IO.Compression.ZipFile]::Open(
+            $temporaryWheelPath,
+            [System.IO.Compression.ZipArchiveMode]::Create
+        )
+        try {
+            foreach ($sourceEntry in $sourceArchive.Entries) {
+                if ([System.Linq.Enumerable]::Contains(
+                        $OmitEntryName,
+                        $sourceEntry.FullName,
+                        [System.StringComparer]::Ordinal
+                    )) {
+                    continue
+                }
+
+                $destinationEntry = $destinationArchive.CreateEntry(
+                    $sourceEntry.FullName,
+                    [System.IO.Compression.CompressionLevel]::NoCompression
+                )
+                $sourceStream = $sourceEntry.Open()
+                $destinationStream = $destinationEntry.Open()
+                try {
+                    if (-not [string]::IsNullOrWhiteSpace($MetadataName) -and
+                        $sourceEntry.FullName -like '*.dist-info/METADATA') {
+                        $reader = [System.IO.StreamReader]::new($sourceStream)
+                        $content = $reader.ReadToEnd()
+                        $reader.Dispose()
+                        $writer = [System.IO.StreamWriter]::new($destinationStream)
+                        $writer.Write(
+                            [System.Text.RegularExpressions.Regex]::Replace(
+                                $content,
+                                '(?m)^Name: [^\r\n]+\r?$',
+                                "Name: $MetadataName"
+                            )
+                        )
+                        $writer.Dispose()
+                    }
+                    elseif ($null -ne $EntryPointsContent -and
+                        $sourceEntry.FullName -like '*.dist-info/entry_points.txt') {
+                        $writer = [System.IO.StreamWriter]::new($destinationStream)
+                        $writer.Write($EntryPointsContent)
+                        $writer.Dispose()
+                    }
+                    else {
+                        $sourceStream.CopyTo($destinationStream)
+                    }
+                }
+                finally {
+                    $sourceStream.Dispose()
+                    $destinationStream.Dispose()
+                }
+            }
+        }
+        finally {
+            $destinationArchive.Dispose()
+        }
+    }
+    finally {
+        $sourceArchive.Dispose()
+    }
+
+    Remove-Item -LiteralPath $WheelPath -Force
+    Move-Item -LiteralPath $temporaryWheelPath -Destination $WheelPath
+}
+
+function New-WrongVersionApplication {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Destination
+    )
+
+    if (-not $PSCmdlet.ShouldProcess($Destination, 'Create wrong-version test application')) {
+        return
+    }
+
+    $projectRoot = Join-Path $testRoot 'wrong-version-application-project'
+    New-Item -ItemType Directory -Path $projectRoot -Force | Out-Null
+    @'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>azureauth-credprovider</AssemblyName>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+</Project>
+'@ | Set-Content -LiteralPath (Join-Path $projectRoot 'WrongVersion.csproj') -Encoding utf8
+    @'
+if (args is ["--version"])
+{
+    Console.WriteLine("azureauth-credprovider 0.0.0-stale");
+    return;
+}
+
+Environment.ExitCode = 1;
+'@ | Set-Content -LiteralPath (Join-Path $projectRoot 'Program.cs') -Encoding utf8
+
+    $publishOutput = dotnet publish (Join-Path $projectRoot 'WrongVersion.csproj') `
+        --configuration Release `
+        --runtime $targetRid `
+        --self-contained false `
+        --output $Destination 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Wrong-version test application publish failed:`n$($publishOutput -join "`n")"
+    }
+    return $Destination
+}
+
 function New-TestBundle {
     [CmdletBinding(SupportsShouldProcess)]
     param(
@@ -209,15 +422,16 @@ function New-TestBundle {
             Sort-Object path
     )
     $manifest = [ordered]@{
-        schemaVersion  = 'azureauth-credprovider-deployment-validation-v1'
-        buildOs        = $buildOs
-        targetRid      = $targetRid
-        productVersion = '2.0.0-test'
-        sourceRevision = 'new-revision'
-        releaseStatus  = 'internal-non-release'
-        isInternal     = $true
-        isRelease      = $false
-        files          = $files
+        schemaVersion        = 'azureauth-credprovider-deployment-validation-v1'
+        buildOs              = $buildOs
+        targetRid            = $targetRid
+        productVersion       = '2.0.0-test'
+        pythonPackageVersion = '2.0.0'
+        sourceRevision       = 'new-revision'
+        releaseStatus        = 'internal-non-release'
+        isInternal           = $true
+        isRelease            = $false
+        files                = $files
     }
     $manifest | ConvertTo-Json -Depth 10 |
         Set-Content -LiteralPath (Join-Path $BundleRoot 'manifest.json') -Encoding utf8
@@ -240,20 +454,36 @@ function New-DeploymentGeneratorStaging {
     $stagingRoot = Join-Path $OutputRoot "staging/$buildOs/$targetRid"
     $appRoot = Join-Path $stagingRoot 'app'
     $pythonRoot = Join-Path $stagingRoot 'python'
-    New-Item -ItemType Directory -Path $appRoot -Force | Out-Null
-    New-Item -ItemType Directory -Path $pythonRoot -Force | Out-Null
-    Set-Content `
-        -LiteralPath (Join-Path $appRoot $productExecutableName) `
-        -Value 'deployment generator executable' `
-        -NoNewline
-    Set-Content `
-        -LiteralPath (Join-Path $appRoot 'azureauth-credprovider.dll') `
-        -Value 'deployment generator plugin' `
-        -NoNewline
-    Set-Content `
-        -LiteralPath (Join-Path $pythonRoot 'azureauth_credprovider-1.0.0-py3-none-any.whl') `
-        -Value 'deployment generator wheel' `
-        -NoNewline
+    New-Item -ItemType Directory -Path $stagingRoot -Force | Out-Null
+    Copy-Item `
+        -LiteralPath (Join-Path $validDeploymentBundleRoot 'app') `
+        -Destination $appRoot `
+        -Recurse
+    Copy-Item `
+        -LiteralPath (Join-Path $validDeploymentBundleRoot 'python') `
+        -Destination $pythonRoot `
+        -Recurse
+    if (-not $runningOnWindows) {
+        [System.IO.File]::SetUnixFileMode(
+            (Join-Path $appRoot $productExecutableName),
+            [System.IO.UnixFileMode]::UserRead -bor
+            [System.IO.UnixFileMode]::UserWrite -bor
+            [System.IO.UnixFileMode]::UserExecute -bor
+            [System.IO.UnixFileMode]::GroupRead -bor
+            [System.IO.UnixFileMode]::GroupExecute -bor
+            [System.IO.UnixFileMode]::OtherRead -bor
+            [System.IO.UnixFileMode]::OtherExecute
+        )
+    }
+    [ordered]@{
+        schemaVersion        = 'azureauth-credprovider-build-identity-v1'
+        productVersion       = $expectedProductVersion
+        pythonPackageVersion = $expectedPythonPackageVersion
+        sourceRevision       = $expectedSourceRevision
+    } | ConvertTo-Json -Compress |
+        Set-Content `
+            -LiteralPath (Join-Path $stagingRoot '.build-identity.json') `
+            -Encoding utf8
 }
 
 function Invoke-DeploymentGenerator {
@@ -267,12 +497,10 @@ function Invoke-DeploymentGenerator {
     )
 
     $parameters = @{
-        BuildOs        = $buildOs
-        TargetRid      = $targetRid
-        OutputRoot     = $OutputRoot
-        ProductVersion = '2.0.0-test'
-        SourceRevision = 'generator-test'
-        NoBuild        = $true
+        BuildOs    = $buildOs
+        TargetRid  = $targetRid
+        OutputRoot = $OutputRoot
+        NoBuild    = $true
     }
     if ($null -ne $BeforeArchiveEntry) {
         $parameters.BeforeArchiveEntry = $BeforeArchiveEntry
@@ -282,6 +510,28 @@ function Invoke-DeploymentGenerator {
     }
 
     & $bundleGeneratorSource @parameters | Out-Null
+}
+
+function Assert-InvalidStagedWheelRejected {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+
+        [Parameter(Mandatory = $true)]
+        [scriptblock]$Mutation
+    )
+
+    $outputRoot = Join-Path $testRoot "wheel-$Name"
+    New-DeploymentGeneratorStaging -OutputRoot $outputRoot
+    $wheelPath = @(
+        Get-ChildItem -LiteralPath (
+            Join-Path $outputRoot "staging/$buildOs/$targetRid/python"
+        ) -Filter '*.whl' -File
+    )[0].FullName
+    & $Mutation $wheelPath
+    Assert-InvocationFailure {
+        Invoke-DeploymentGenerator -OutputRoot $outputRoot
+    } "Expected '$Name' staged wheel rejection."
 }
 
 function Assert-NoTemporaryDeploymentPackage {
@@ -656,6 +906,13 @@ function Invoke-ActualUninstallRegression {
         & (Join-Path $extractedBundleRoot 'install.ps1') -InstallRoot $installRoot | Out-Null
 
         $productExecutablePath = Join-Path $installRoot "app/$productExecutableName"
+        $versionOutput = @(& $productExecutablePath --version)
+        Assert-Equal -Expected 0 -Actual $LASTEXITCODE -Message 'The apphost version smoke failed.'
+        Assert-Equal `
+            -Expected "azureauth-credprovider $expectedProductVersion" `
+            -Actual (($versionOutput -join "`n").Trim()) `
+            -Message 'The installed packaged apphost version is incorrect.'
+
         if ($runningOnWindows) {
             $harnessArguments = @(
                 '--process-helper'
@@ -753,6 +1010,149 @@ function Invoke-ActualUninstallRegression {
                 -Expected 1 `
                 -Actual $LASTEXITCODE `
                 -Message 'The installed keyring shim did not return no-credential for an unrelated host.'
+
+            $deploymentManifest = Get-Content -LiteralPath (
+                Join-Path $extractedBundleRoot 'manifest.json'
+            ) -Raw | ConvertFrom-Json
+            $wheelRelativePath = [string]$deploymentManifest.entrypoints.pythonWheel
+            $bundleWheelPath = Join-Path $extractedBundleRoot $wheelRelativePath
+            $installedWheelPath = Join-Path $installRoot $wheelRelativePath
+            Assert-Equal `
+                -Expected (
+                Get-FileHash -LiteralPath $bundleWheelPath -Algorithm SHA256
+            ).Hash `
+                -Actual (
+                Get-FileHash -LiteralPath $installedWheelPath -Algorithm SHA256
+            ).Hash `
+                -Message 'Physical installation changed the exact bundled wheel.'
+
+            $venvRoot = Join-Path $actualRoot 'wheel-venv'
+            uv venv `
+                --no-project `
+                --no-config `
+                --offline `
+                --no-python-downloads `
+                $venvRoot | Out-Null
+            Assert-Equal `
+                -Expected 0 `
+                -Actual $LASTEXITCODE `
+                -Message 'uv failed to create the isolated bundled-wheel venv.'
+            $venvPython = Join-Path $venvRoot 'bin/python'
+            uv pip install `
+                --python $venvPython `
+                --no-deps `
+                --no-index `
+                --offline `
+                --no-config `
+                $installedWheelPath | Out-Null
+            Assert-Equal `
+                -Expected 0 `
+                -Actual $LASTEXITCODE `
+                -Message 'uv failed to install the exact bundled wheel.'
+
+            $credentialEnvironmentNames = @(
+                'SYSTEM_ACCESSTOKEN'
+                'AZURE_DEVOPS_EXT_PAT'
+                'VSS_NUGET_EXTERNAL_FEED_ENDPOINTS'
+                'ARTIFACTS_CREDENTIALPROVIDER_FEED_ENDPOINTS'
+                'ARTIFACTS_KEYRING_NONINTERACTIVE_MODE'
+            )
+            $savedCredentialEnvironment = @{}
+            foreach ($name in $credentialEnvironmentNames) {
+                $savedCredentialEnvironment[$name] = [Environment]::GetEnvironmentVariable($name)
+                [Environment]::SetEnvironmentVariable($name, $null)
+            }
+            [Environment]::SetEnvironmentVariable(
+                'ARTIFACTS_KEYRING_NONINTERACTIVE_MODE',
+                'true'
+            )
+            $credentialConfigRoot = $environment['AZUREAUTH_CREDPROVIDER_CONFIG_ROOT']
+            New-Item -ItemType Directory -Path $credentialConfigRoot -Force | Out-Null
+            Assert-Equal `
+                -Expected 0 `
+                -Actual @(Get-ChildItem -LiteralPath $credentialConfigRoot -Force).Count `
+                -Message 'The isolated provider configuration was not empty.'
+            try {
+                $pythonFeedUrl = (
+                    'https://pkgs.dev.azure.com/example/project/' +
+                    '_packaging/feed/pypi/simple/'
+                )
+                $consoleScriptPath = Join-Path $venvRoot 'bin/azureauth-keyring'
+                Assert-True (
+                    Test-Path -LiteralPath $consoleScriptPath -PathType Leaf
+                ) 'The installed wheel did not generate the azureauth-keyring console script.'
+                $consoleScriptOutput = @(
+                    & $consoleScriptPath get $pythonFeedUrl 2>&1
+                )
+                $consoleScriptExitCode = $LASTEXITCODE
+                $consoleScriptText = ($consoleScriptOutput | ForEach-Object ToString) -join "`n"
+                Assert-Equal `
+                    -Expected 64 `
+                    -Actual $consoleScriptExitCode `
+                    -Message 'The azureauth-keyring console script returned an unexpected exit code.'
+                Assert-True (
+                    $consoleScriptText.Contains(
+                        'ProviderNotConfigured',
+                        [System.StringComparison]::Ordinal
+                    ) -and
+                    -not $consoleScriptText.Contains(
+                        'Traceback',
+                        [System.StringComparison]::OrdinalIgnoreCase
+                    )
+                ) 'The azureauth-keyring console script failure was not controlled.'
+
+                $probeScript = @'
+import importlib.metadata
+import pathlib
+import sys
+
+from azureauth_credprovider_keyring.contracts import HelperExecutionError
+
+distribution = importlib.metadata.distribution("azureauth-credprovider-keyring")
+entry_points = [
+    entry_point
+    for entry_point in distribution.entry_points
+    if entry_point.group == "keyring.backends"
+    and entry_point.name == "azureauth"
+]
+if len(entry_points) != 1:
+    raise SystemExit(20)
+backend_type = entry_points[0].load()
+module_path = pathlib.Path(sys.modules[backend_type.__module__].__file__).resolve()
+if not module_path.is_relative_to(pathlib.Path(sys.argv[1]).resolve()):
+    raise SystemExit(21)
+try:
+    backend_type().get_credential(
+        sys.argv[2],
+        None,
+    )
+except HelperExecutionError as error:
+    if error.exit_code != 64 or "ProviderNotConfigured" not in error.safe_message:
+        raise SystemExit(22) from error
+else:
+    raise SystemExit(23)
+print("controlled-supported-host-failure")
+'@
+                $probeOutput = @(
+                    & $venvPython -I -c $probeScript $venvRoot $pythonFeedUrl
+                )
+                Assert-Equal `
+                    -Expected 0 `
+                    -Actual $LASTEXITCODE `
+                    -Message 'The exact bundled-wheel entry-point probe failed.'
+                Assert-Equal `
+                    -Expected 'controlled-supported-host-failure' `
+                    -Actual (($probeOutput -join "`n").Trim()) `
+                    -Message 'The supported-host helper failure was not controlled.'
+            }
+            finally {
+                foreach ($name in $credentialEnvironmentNames) {
+                    [Environment]::SetEnvironmentVariable(
+                        $name,
+                        $savedCredentialEnvironment[$name]
+                    )
+                }
+            }
         }
 
         $registryUrl = 'https://pkgs.dev.azure.com/example/project/_packaging/feed/npm/registry/'
@@ -869,6 +1269,31 @@ function Invoke-ActualUninstallRegression {
         Assert-True (
             Test-Path -LiteralPath (Join-Path $otherJobRoot 'preserve.txt') -PathType Leaf
         ) 'Actual uninstall removed another Azure Pipelines job state.'
+
+        & (Join-Path $extractedBundleRoot 'install.ps1') -InstallRoot $installRoot | Out-Null
+        Remove-Item -LiteralPath (
+            Join-Path $installRoot "app/$productExecutableName"
+        ) -Force
+        Assert-InvocationFailure {
+            & (Join-Path $extractedBundleRoot 'uninstall.ps1') -InstallRoot $installRoot |
+                Out-Null
+        } 'Damaged installation unexpectedly allowed normal uninstall.'
+        Assert-True (
+            Test-Path -LiteralPath $installRoot -PathType Container
+        ) 'Damaged-install refusal removed the product root.'
+        & (Join-Path $extractedBundleRoot 'uninstall.ps1') `
+            -InstallRoot $installRoot `
+            -SkipConfigurationCleanup | Out-Null
+        Assert-True (
+            -not (Test-Path -LiteralPath $installRoot)
+        ) 'Explicit damaged-install cleanup did not remove the product root.'
+        if ($runningOnWindows) {
+            foreach ($realNuGetPath in $realNuGetPaths) {
+                Assert-True (
+                    -not (Test-Path -LiteralPath $realNuGetPath)
+                ) "Windows lifecycle cleanup wrote real-profile state '$realNuGetPath'."
+            }
+        }
     }
     finally {
         if (Test-Path -LiteralPath $heldGitMarkerPath) {
@@ -882,6 +1307,73 @@ function Invoke-ActualUninstallRegression {
 }
 
 try {
+    $normalReuseOutput = Join-Path $testRoot 'normal-then-no-build'
+    Push-Location -LiteralPath (Split-Path -Parent $repoRoot)
+    try {
+        & $bundleGeneratorSource `
+            -BuildOs $buildOs `
+            -TargetRid $targetRid `
+            -OutputRoot $normalReuseOutput | Out-Null
+    }
+    finally {
+        Pop-Location
+    }
+    $normalReuseStaging = Join-Path $normalReuseOutput "staging/$buildOs/$targetRid"
+    $normalReuseIdentity = Join-Path $normalReuseStaging '.build-identity.json'
+    $normalReusePackage = Join-Path $normalReuseOutput $deploymentPackageName
+    Assert-True (
+        Test-Path -LiteralPath $normalReuseStaging -PathType Container
+    ) 'Normal generation did not retain canonical staging for -NoBuild reuse.'
+    Assert-True (
+        Test-Path -LiteralPath $normalReuseIdentity -PathType Leaf
+    ) 'Normal generation did not retain its canonical build identity.'
+    Assert-True (
+        Test-Path -LiteralPath $normalReusePackage -PathType Leaf
+    ) 'Normal generation did not create the deployment package.'
+
+    Invoke-DeploymentGenerator -OutputRoot $normalReuseOutput
+
+    Assert-True (
+        Test-Path -LiteralPath $normalReuseStaging -PathType Container
+    ) '-NoBuild removed canonical staging retained by normal generation.'
+    Assert-True (
+        Test-Path -LiteralPath $normalReuseIdentity -PathType Leaf
+    ) '-NoBuild removed the canonical build identity.'
+    Assert-True (
+        Test-Path -LiteralPath $normalReusePackage -PathType Leaf
+    ) '-NoBuild did not recreate the deployment package from retained staging.'
+    Assert-NoTemporaryDeploymentPackage `
+        -OutputRoot $normalReuseOutput `
+        -Context 'normal generation followed by direct -NoBuild reuse'
+
+    $validDeploymentBundleRoot = New-ValidDeploymentGeneratorBundleRoot `
+        -Destination (Join-Path $testRoot 'valid-generator-bundle') `
+        -PackagePath $normalReusePackage
+    $normalReusePackageBytes = [System.IO.File]::ReadAllBytes($normalReusePackage)
+    Assert-InvocationFailure {
+        & $bundleGeneratorSource `
+            -BuildOs $buildOs `
+            -TargetRid $targetRid `
+            -OutputRoot $normalReuseOutput `
+            -BeforeArchiveEntry {
+            param([string]$EntryName)
+            throw "Injected normal-generation packaging failure before '$EntryName'."
+        } | Out-Null
+    } 'Expected injected normal-generation packaging failure.'
+    Assert-True (
+        -not (Test-Path -LiteralPath $normalReuseStaging)
+    ) 'Failed normal generation retained incomplete canonical staging.'
+    Assert-BytesEqual `
+        -Expected $normalReusePackageBytes `
+        -Actual ([System.IO.File]::ReadAllBytes($normalReusePackage)) `
+        -Message 'Failed normal generation changed the previous deployment package.'
+    Assert-NoTemporaryDeploymentPackage `
+        -OutputRoot $normalReuseOutput `
+        -Context 'failed normal generation cleanup'
+
+    $wrongVersionApplicationRoot = New-WrongVersionApplication `
+        -Destination (Join-Path $testRoot 'wrong-version-application')
+
     $generatorSuccessOutput = Join-Path $testRoot 'generator-success'
     New-DeploymentGeneratorStaging -OutputRoot $generatorSuccessOutput
     $generatorSuccessPackage = Join-Path $generatorSuccessOutput $deploymentPackageName
@@ -925,9 +1417,17 @@ try {
         Join-Path $twiceNoBuildInstallRoot 'installation.json'
     ) -Raw | ConvertFrom-Json
     Assert-Equal `
-        -Expected 'generator-test' `
+        -Expected $expectedSourceRevision `
         -Actual $twiceNoBuildReceipt.sourceRevision `
         -Message 'The twice-NoBuild bundle installed an unexpected receipt.'
+    Assert-Equal `
+        -Expected $expectedProductVersion `
+        -Actual $twiceNoBuildReceipt.productVersion `
+        -Message 'The installed receipt does not match the NBGV application version.'
+    Assert-Equal `
+        -Expected $expectedPythonPackageVersion `
+        -Actual $twiceNoBuildReceipt.pythonPackageVersion `
+        -Message 'The installed receipt does not match the NBGV Python package version.'
 
     Assert-NoTemporaryDeploymentPackage `
         -OutputRoot $generatorSuccessOutput `
@@ -954,6 +1454,97 @@ try {
     Assert-NoTemporaryDeploymentPackage `
         -OutputRoot $generatorFailureOutput `
         -Context 'injected packaging failure'
+
+    $identityFailureOutput = Join-Path $testRoot 'identity-failure'
+    New-DeploymentGeneratorStaging -OutputRoot $identityFailureOutput
+    $identityPath = Join-Path (
+        Join-Path $identityFailureOutput "staging/$buildOs/$targetRid"
+    ) '.build-identity.json'
+    $staleIdentity = Get-Content -LiteralPath $identityPath -Raw | ConvertFrom-Json
+    $staleIdentity.productVersion = '1.0.0-beta.252'
+    $staleIdentity | ConvertTo-Json -Compress |
+        Set-Content -LiteralPath $identityPath -Encoding utf8
+    Assert-InvocationFailure {
+        Invoke-DeploymentGenerator -OutputRoot $identityFailureOutput
+    } 'Expected stale staging version identity rejection.'
+    Assert-NoTemporaryDeploymentPackage `
+        -OutputRoot $identityFailureOutput `
+        -Context 'stale staging identity rejection'
+
+    $applicationFailureOutput = Join-Path $testRoot 'application-payload-failure'
+    New-DeploymentGeneratorStaging -OutputRoot $applicationFailureOutput
+    Copy-Item `
+        -Path (Join-Path $wrongVersionApplicationRoot '*') `
+        -Destination (
+        Join-Path $applicationFailureOutput "staging/$buildOs/$targetRid/app"
+    ) `
+        -Force
+    Assert-InvocationFailure {
+        Invoke-DeploymentGenerator -OutputRoot $applicationFailureOutput
+    } 'Expected wrong staged application version rejection.'
+    Assert-NoTemporaryDeploymentPackage `
+        -OutputRoot $applicationFailureOutput `
+        -Context 'wrong staged application version rejection'
+
+    $malformedWheelOutput = Join-Path $testRoot 'malformed-wheel-failure'
+    New-DeploymentGeneratorStaging -OutputRoot $malformedWheelOutput
+    $malformedWheelPath = @(
+        Get-ChildItem -LiteralPath (
+            Join-Path $malformedWheelOutput "staging/$buildOs/$targetRid/python"
+        ) -Filter '*.whl' -File
+    )[0].FullName
+    [System.IO.File]::WriteAllText($malformedWheelPath, 'not a wheel archive')
+    Assert-InvocationFailure {
+        Invoke-DeploymentGenerator -OutputRoot $malformedWheelOutput
+    } 'Expected malformed staged wheel rejection.'
+    Assert-NoTemporaryDeploymentPackage `
+        -OutputRoot $malformedWheelOutput `
+        -Context 'malformed staged wheel rejection'
+
+    Assert-InvalidStagedWheelRejected -Name 'wrong-name' -Mutation {
+        param($WheelPath)
+        Set-TestWheelContent -WheelPath $WheelPath -MetadataName 'other-project'
+    }
+    Assert-InvalidStagedWheelRejected -Name 'metadata-only' -Mutation {
+        param($WheelPath)
+        Set-TestWheelVersion `
+            -WheelPath $WheelPath `
+            -Version $expectedPythonPackageVersion
+    }
+    foreach ($moduleName in @(
+            '__init__.py'
+            'backend.py'
+            'contracts.py'
+            'endpoint.py'
+            'helper.py'
+            'integrity.py'
+            'shim.py'
+        )) {
+        Assert-InvalidStagedWheelRejected -Name "missing-$moduleName" -Mutation {
+            param($WheelPath)
+            Set-TestWheelContent `
+                -WheelPath $WheelPath `
+                -OmitEntryName @("azureauth_credprovider_keyring/$moduleName")
+        }
+    }
+    Assert-InvalidStagedWheelRejected -Name 'missing-entry-points' -Mutation {
+        param($WheelPath)
+        Set-TestWheelContent `
+            -WheelPath $WheelPath `
+            -OmitEntryName @(
+            "azureauth_credprovider_keyring-$expectedPythonPackageVersion.dist-info/entry_points.txt"
+        )
+    }
+    Assert-InvalidStagedWheelRejected -Name 'wrong-entry-points' -Mutation {
+        param($WheelPath)
+        Set-TestWheelContent -WheelPath $WheelPath -EntryPointsContent @'
+[console_scripts]
+azureauth-keyring = azureauth_credprovider_keyring.helper:main
+
+[keyring.backends]
+azureauth = azureauth_credprovider_keyring.backend:WrongBackend
+'@
+    }
 
     $bundleRoot = Join-Path $testRoot 'bundle'
     New-TestBundle -BundleRoot $bundleRoot
