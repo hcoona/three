@@ -181,6 +181,11 @@ public sealed class CliApplicationTests
         );
         AssertDoctorCheck(
             doctor.StdOut,
+            "ecosystem-nuget-currently-usable",
+            expectedSuccess ? "selection-deferred-not-probed" : "blocked"
+        );
+        AssertDoctorCheck(
+            doctor.StdOut,
             "nuget-operational-plugin-selection",
             "deferred-not-probed"
         );
@@ -455,7 +460,7 @@ public sealed class CliApplicationTests
     [Fact]
     public void StatusWritesDeterministicShellOutput()
     {
-        CommandResult result = Invoke("status");
+        CommandResult result = InvokeIsolatedStatus("status");
 
         Assert.Equal(0, result.ExitCode);
         // editorconfig-checker-disable
@@ -465,26 +470,42 @@ public sealed class CliApplicationTests
                 command: status
                 product: azureauth-credprovider
                 phase: 15-end-to-end-hardening
+                capability-schema: azureauth-credprovider-capabilities-v1
                 ci-mode: none
                 composition-mode: Production
                 provider: Unspecified
                 interactive-readiness: interactive-unavailable
                 interactive-readiness-code: ProviderNotConfigured
                 interactive-blocker: Provider configuration is missing.
-                silent-readiness: silent-unavailable
-                silent-readiness-code: ProviderNotConfigured
-                silent-remediation: Provider configuration is missing.
+                silent-only-readiness: silent-unavailable
+                silent-only-readiness-code: ProviderNotConfigured
+                silent-only-remediation: Provider configuration is missing.
+                interactive-mechanism: unavailable
+                silent-only-mechanism: unavailable
                 status-shell: ready
-                environment-probing: disabled
-                persistent-cache: disabled
-                persistent-derived-credentials: disabled
+                live-auth-probing: disabled
+                live-feed-probing: disabled
+                provider-cache: provider-managed-not-probed
+                product-token-cache: disabled
+                registry-derived-credentials: lifecycle-reported-per-ecosystem
                 accepted-identity-flows: browser, azure-pipelines
                 unavailable-identity-flows: device-code
                 deferred-identity-flows: pat-compatibility, service-principal, managed-identity, workload-identity
                 pat-compatibility: deferred-disabled
                 dry-run-rendering: enabled
                 mutating-commands: identity-configuration, host-tool-configuration, auth, cleanup
-                supported-ecosystems: git, nuget, python, npm, pnpm, yarn
+                ecosystem-git-configurable: not-assessed
+                ecosystem-git-currently-usable: not-assessed
+                ecosystem-nuget-configurable: not-assessed
+                ecosystem-nuget-currently-usable: not-assessed
+                ecosystem-python-configurable: yes
+                ecosystem-python-currently-usable: not-configured
+                ecosystem-npm-configurable: not-assessed
+                ecosystem-npm-currently-usable: not-configured
+                ecosystem-pnpm-configurable: not-assessed
+                ecosystem-pnpm-currently-usable: not-configured
+                ecosystem-yarn-configurable: yes
+                ecosystem-yarn-currently-usable: not-configured
                 npm-user-lifecycle: missing
                 pnpm-user-lifecycle: missing
                 yarn-user-lifecycle: missing
@@ -571,7 +592,7 @@ public sealed class CliApplicationTests
     {
         string[] args = ciValue is null ? ["status", ciToken] : ["status", ciToken, ciValue];
 
-        CommandResult result = Invoke(args);
+        CommandResult result = InvokeIsolatedStatus(args);
 
         Assert.Equal(0, result.ExitCode);
         // editorconfig-checker-disable
@@ -581,26 +602,42 @@ public sealed class CliApplicationTests
                 command: status
                 product: azureauth-credprovider
                 phase: 15-end-to-end-hardening
+                capability-schema: azureauth-credprovider-capabilities-v1
                 ci-mode: azure-pipelines
                 composition-mode: Production
                 provider: Unspecified
                 interactive-readiness: interactive-unavailable
                 interactive-readiness-code: ProviderNotConfigured
                 interactive-blocker: Provider configuration is missing.
-                silent-readiness: silent-unavailable
-                silent-readiness-code: ProviderNotConfigured
-                silent-remediation: Provider configuration is missing.
+                silent-only-readiness: silent-unavailable
+                silent-only-readiness-code: ProviderNotConfigured
+                silent-only-remediation: Provider configuration is missing.
+                interactive-mechanism: unavailable
+                silent-only-mechanism: unavailable
                 status-shell: ready
-                environment-probing: disabled
-                persistent-cache: disabled
-                persistent-derived-credentials: disabled
+                live-auth-probing: disabled
+                live-feed-probing: disabled
+                provider-cache: provider-managed-not-probed
+                product-token-cache: disabled
+                registry-derived-credentials: lifecycle-reported-per-ecosystem
                 accepted-identity-flows: browser, azure-pipelines
                 unavailable-identity-flows: device-code
                 deferred-identity-flows: pat-compatibility, service-principal, managed-identity, workload-identity
                 pat-compatibility: deferred-disabled
                 dry-run-rendering: enabled
                 mutating-commands: identity-configuration, host-tool-configuration, auth, cleanup
-                supported-ecosystems: git, nuget, python, npm, pnpm, yarn
+                ecosystem-git-configurable: no
+                ecosystem-git-currently-usable: not-assessed
+                ecosystem-nuget-configurable: no
+                ecosystem-nuget-currently-usable: not-assessed
+                ecosystem-python-configurable: no
+                ecosystem-python-currently-usable: not-assessed
+                ecosystem-npm-configurable: not-assessed
+                ecosystem-npm-currently-usable: not-configured
+                ecosystem-pnpm-configurable: not-assessed
+                ecosystem-pnpm-currently-usable: not-configured
+                ecosystem-yarn-configurable: not-assessed
+                ecosystem-yarn-currently-usable: not-configured
                 npm-user-lifecycle: missing
                 pnpm-user-lifecycle: missing
                 yarn-user-lifecycle: missing
@@ -1966,6 +2003,8 @@ public sealed class CliApplicationTests
 
         Assert.Equal(1, doctor.ExitCode);
         AssertDoctorCheck(doctor.StdOut, "nuget-configuration-state", "unrecognized");
+        AssertDoctorCheck(doctor.StdOut, "ecosystem-nuget-configurable", "no");
+        AssertDoctorCheck(doctor.StdOut, "ecosystem-nuget-currently-usable", "blocked");
         Assert.Contains(
             "nuget-configuration-plan-remediation: manually inspect and restore "
                 + "the product-owned NuGet plugin layout",
@@ -3415,6 +3454,20 @@ public sealed class CliApplicationTests
                 "azure-pipelines"
             );
             Assert.Equal(0, configure.ExitCode);
+            CommandResult status = InvokeWithRuntime(
+                runtimeOptions,
+                "status",
+                "--ci",
+                "azure-pipelines"
+            );
+            Assert.Contains(
+                "ecosystem-npm-configurable: not-assessed\n",
+                status.StdOut
+            );
+            Assert.Contains(
+                "ecosystem-npm-currently-usable: not-assessed\n",
+                status.StdOut
+            );
             string npmrcBefore = File.ReadAllText(npmrcPath);
             string manifestBefore = File.ReadAllText(manifestPath);
 
@@ -3432,6 +3485,19 @@ public sealed class CliApplicationTests
             Assert.Equal(string.Empty, dryRun.StdErr);
             Assert.Equal(npmrcBefore, File.ReadAllText(npmrcPath));
             Assert.Equal(manifestBefore, File.ReadAllText(manifestPath));
+
+            File.Delete(manifestPath);
+            CommandResult orphanedStatus = InvokeWithRuntime(
+                runtimeOptions,
+                "status",
+                "--ci",
+                "azure-pipelines"
+            );
+            Assert.Contains("ecosystem-npm-configurable: no\n", orphanedStatus.StdOut);
+            Assert.Contains(
+                "ecosystem-npm-currently-usable: blocked\n",
+                orphanedStatus.StdOut
+            );
         }
         finally
         {
@@ -3544,6 +3610,55 @@ public sealed class CliApplicationTests
             Assert.Equal(string.Empty, missing.StdOut);
             Assert.Equal(string.Empty, nonAzure.StdOut);
             Assert.False(File.Exists(Path.Combine(stateDirectory, "npm", "user.npmrc")));
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public void StatusKeepsUnconfiguredPackageCapabilitiesConservativeWithoutRegistryContext()
+    {
+        string stateDirectory = CreateTestDirectory();
+        try
+        {
+            CliRuntimeOptions localRuntime = CreateConfigurationRuntimeWithoutRegistries(
+                stateDirectory
+            );
+            var ciRuntime = new CliRuntimeOptions
+            {
+                CompositionRoot = CreateTestCompositionRoot(),
+                ConfigurationPhase14Options = new ConfigurationPhase14VerticalSliceOptions
+                {
+                    StateDirectoryPath = stateDirectory,
+                    EnvironmentVariableReader = name =>
+                        ReadConfigurationEnvironment(stateDirectory, name),
+                },
+            };
+
+            CommandResult local = InvokeWithRuntime(localRuntime, "status");
+            CommandResult ci = InvokeWithRuntime(
+                ciRuntime,
+                "status",
+                "--ci",
+                "azure-pipelines"
+            );
+
+            Assert.Equal(0, local.ExitCode);
+            Assert.Contains("ecosystem-npm-configurable: not-assessed\n", local.StdOut);
+            Assert.Contains("ecosystem-pnpm-configurable: not-assessed\n", local.StdOut);
+            Assert.Contains("ecosystem-yarn-configurable: yes\n", local.StdOut);
+            Assert.Contains("ecosystem-npm-currently-usable: not-configured\n", local.StdOut);
+            Assert.Contains("ecosystem-pnpm-currently-usable: not-configured\n", local.StdOut);
+            Assert.Contains("ecosystem-yarn-currently-usable: not-configured\n", local.StdOut);
+            Assert.Equal(0, ci.ExitCode);
+            Assert.Contains("ecosystem-npm-configurable: not-assessed\n", ci.StdOut);
+            Assert.Contains("ecosystem-pnpm-configurable: not-assessed\n", ci.StdOut);
+            Assert.Contains("ecosystem-yarn-configurable: not-assessed\n", ci.StdOut);
+            Assert.Contains("ecosystem-npm-currently-usable: not-configured\n", ci.StdOut);
+            Assert.Contains("ecosystem-pnpm-currently-usable: not-configured\n", ci.StdOut);
+            Assert.Contains("ecosystem-yarn-currently-usable: not-configured\n", ci.StdOut);
         }
         finally
         {
@@ -3862,8 +3977,22 @@ public sealed class CliApplicationTests
 
             Assert.NotEqual(70, status.ExitCode);
             Assert.Contains("yarn-user-lifecycle: invalid\n", status.StdOut);
+            Assert.Contains("ecosystem-yarn-configurable: no\n", status.StdOut);
+            Assert.Contains("ecosystem-yarn-currently-usable: blocked\n", status.StdOut);
             Assert.NotEqual(70, doctor.ExitCode);
             Assert.Contains("yarn-user-lifecycle: invalid\n", doctor.StdOut);
+            Assert.Contains("ecosystem-yarn-configurable: no\n", doctor.StdOut);
+            Assert.Contains("ecosystem-yarn-currently-usable: blocked\n", doctor.StdOut);
+            Assert.Contains(
+                "yarn-user-remediation: manual action required: inspect the product-owned "
+                    + "configuration state and ownership manifest, then rerun doctor\n",
+                doctor.StdOut
+            );
+            Assert.DoesNotContain(
+                "reconcile the owned target with the resolved configuration path",
+                doctor.StdOut,
+                StringComparison.Ordinal
+            );
         }
         finally
         {
@@ -3883,6 +4012,12 @@ public sealed class CliApplicationTests
             CliRuntimeOptions baseline = CreateConfigurationRuntime(stateDirectory);
             CliRuntimeOptions runtimeOptions = baseline with
             {
+                NpmPhase12Options = CreateIsolatedNpmPhase12Options(stateDirectory) with
+                {
+                    UserNpmrcPath = Path.Combine(stateDirectory, "npm", "user.npmrc"),
+                    EnvironmentVariableReader = name =>
+                        ReadConfigurationEnvironment(stateDirectory, name),
+                },
                 ConfigurationPhase14Options = baseline.ConfigurationPhase14Options! with
                 {
                     TimeProvider = time,
@@ -3898,15 +4033,184 @@ public sealed class CliApplicationTests
             Assert.Equal(0, configured.ExitCode);
             time.Now = new DateTimeOffset(2029, 12, 31, 23, 50, 0, TimeSpan.Zero);
 
+            CommandResult status = InvokeWithRuntime(runtimeOptions, "status");
             CommandResult doctor = InvokeWithRuntime(runtimeOptions, "doctor");
 
+            Assert.Contains(
+                "ecosystem-npm-currently-usable: not-assessed\n",
+                status.StdOut
+            );
             Assert.Contains("configuration-aggregation: pass\n", doctor.StdOut);
             Assert.Contains("npm-user-lifecycle: refresh-recommended\n", doctor.StdOut);
+            Assert.Contains("ecosystem-npm-configurable: yes\n", doctor.StdOut);
+            Assert.Contains(
+                "ecosystem-npm-currently-usable: ready-local-evidence\n",
+                doctor.StdOut
+            );
             Assert.Contains(
                 "npm-user-remediation: azureauth-credprovider refresh npm",
                 doctor.StdOut
             );
             Assert.DoesNotContain("fake-token-test", doctor.StdOut, StringComparison.Ordinal);
+
+            time.Now = new DateTimeOffset(2030, 1, 1, 0, 0, 1, TimeSpan.Zero);
+            CommandResult expiredStatus = InvokeWithRuntime(runtimeOptions, "status");
+            CommandResult expiredDoctor = InvokeWithRuntime(runtimeOptions, "doctor");
+
+            Assert.Contains("npm-user-lifecycle: expired\n", expiredStatus.StdOut);
+            Assert.Contains(
+                "ecosystem-npm-currently-usable: blocked\n",
+                expiredStatus.StdOut
+            );
+            Assert.Contains("npm-user-lifecycle: expired\n", expiredDoctor.StdOut);
+            Assert.Contains(
+                "ecosystem-npm-currently-usable: blocked\n",
+                expiredDoctor.StdOut
+            );
+            Assert.Equal(1, expiredDoctor.ExitCode);
+
+            string alternateNpmrcPath = Path.Combine(
+                stateDirectory,
+                "alternate",
+                "user.npmrc"
+            );
+            Directory.CreateDirectory(Path.GetDirectoryName(alternateNpmrcPath)!);
+            string ownedNpmrcPath = new ConfigurationPhase14VerticalSliceService(
+                runtimeOptions.ConfigurationPhase14Options
+            ).Paths.NpmUserNpmrcPath;
+            File.WriteAllText(alternateNpmrcPath, File.ReadAllText(ownedNpmrcPath));
+            CliRuntimeOptions shadowedRuntime = runtimeOptions with
+            {
+                NpmPhase12Options = runtimeOptions.NpmPhase12Options! with
+                {
+                    UserNpmrcPath = alternateNpmrcPath,
+                    EnvironmentVariableReader = name =>
+                        string.Equals(
+                            name,
+                            "NPM_CONFIG_USERCONFIG",
+                            StringComparison.Ordinal
+                        )
+                            ? alternateNpmrcPath
+                            : null,
+                },
+                ConfigurationPhase14Options = runtimeOptions.ConfigurationPhase14Options! with
+                {
+                    EnvironmentVariableReader = name =>
+                        string.Equals(
+                            name,
+                            "NPM_CONFIG_USERCONFIG",
+                            StringComparison.Ordinal
+                        )
+                            ? alternateNpmrcPath
+                            : ReadConfigurationEnvironment(stateDirectory, name),
+                },
+            };
+
+            CommandResult shadowedStatus = InvokeWithRuntime(shadowedRuntime, "status");
+            CommandResult shadowedDoctor = InvokeWithRuntime(shadowedRuntime, "doctor");
+
+            Assert.Contains("ecosystem-npm-configurable: no\n", shadowedStatus.StdOut);
+            Assert.Contains(
+                "ecosystem-npm-currently-usable: blocked\n",
+                shadowedStatus.StdOut
+            );
+            Assert.Contains(
+                "npm-user-owned-target-matches-resolved-path: no\n",
+                shadowedDoctor.StdOut
+            );
+            Assert.Contains(
+                "ecosystem-npm-currently-usable: blocked\n",
+                shadowedDoctor.StdOut
+            );
+            Assert.Contains("ecosystem-npm-configurable: no\n", shadowedDoctor.StdOut);
+            Assert.Contains(
+                "npm-user-remediation: manual action required: reconcile the owned target "
+                    + "with the resolved configuration path, then rerun doctor before "
+                    + "configure or refresh\n",
+                shadowedDoctor.StdOut
+            );
+            Assert.DoesNotContain(
+                "npm-user-remediation: azureauth-credprovider refresh",
+                shadowedDoctor.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains("configuration-aggregation: fail\n", shadowedDoctor.StdOut);
+            Assert.Contains("doctor-aggregation: fail\n", shadowedDoctor.StdOut);
+            Assert.Equal(1, shadowedDoctor.ExitCode);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public void YarnUnownedReplacementBlocksStatusAndDoctorConfigurability()
+    {
+        string stateDirectory = CreateTestDirectory();
+        try
+        {
+            CliRuntimeOptions runtimeOptions = CreateConfigurationRuntime(stateDirectory);
+            CommandResult configured = InvokeWithRuntime(
+                runtimeOptions,
+                "configure",
+                "yarn",
+                "--registry-url",
+                TestRegistryUrl
+            );
+            Assert.Equal(0, configured.ExitCode);
+
+            var configuredService = new ConfigurationPhase14VerticalSliceService(
+                runtimeOptions.ConfigurationPhase14Options
+            );
+            string alternateHomePath = Path.Combine(stateDirectory, "alternate-yarn-home");
+            string alternateYarnrcPath = Path.Combine(alternateHomePath, ".yarnrc.yml");
+            Directory.CreateDirectory(alternateHomePath);
+            File.WriteAllText(
+                alternateYarnrcPath,
+                File.ReadAllText(configuredService.Paths.YarnUserYarnrcPath)
+            );
+            CliRuntimeOptions shadowedRuntime = runtimeOptions with
+            {
+                YarnPhase13Options = new YarnPhase13VerticalSliceOptions
+                {
+                    WorkspaceDirectoryPath = stateDirectory,
+                    UserHomeDirectoryPath = alternateHomePath,
+                    UserYarnrcPath = alternateYarnrcPath,
+                    EnvironmentVariableReader = name =>
+                        string.Equals(name, "HOME", StringComparison.Ordinal)
+                            ? alternateHomePath
+                            : null,
+                },
+                ConfigurationPhase14Options = runtimeOptions.ConfigurationPhase14Options! with
+                {
+                    EnvironmentVariableReader = name =>
+                        string.Equals(name, "HOME", StringComparison.Ordinal)
+                            ? alternateHomePath
+                            : ReadConfigurationEnvironment(stateDirectory, name),
+                },
+            };
+
+            CommandResult status = InvokeWithRuntime(shadowedRuntime, "status");
+            CommandResult doctor = InvokeWithRuntime(shadowedRuntime, "doctor");
+
+            Assert.Contains("ecosystem-yarn-configurable: no\n", status.StdOut);
+            Assert.Contains("ecosystem-yarn-currently-usable: blocked\n", status.StdOut);
+            Assert.Contains("yarn-user-configuration-plan: pass\n", doctor.StdOut);
+            Assert.Contains("yarn-user-configure-operation: fail\n", doctor.StdOut);
+            Assert.Contains("ecosystem-yarn-configurable: no\n", doctor.StdOut);
+            Assert.Contains("ecosystem-yarn-currently-usable: blocked\n", doctor.StdOut);
+            Assert.Contains(
+                "yarn-user-remediation: manual action required: reconcile the owned target "
+                    + "with the resolved configuration path, then rerun doctor before "
+                    + "configure or refresh\n",
+                doctor.StdOut
+            );
+            Assert.DoesNotContain(
+                "yarn-user-remediation: azureauth-credprovider configure",
+                doctor.StdOut,
+                StringComparison.Ordinal
+            );
         }
         finally
         {
@@ -5027,22 +5331,39 @@ public sealed class CliApplicationTests
         bool useHttpPathPresent = devAzureUseHttpPathPresent ?? ownedGitEntriesPresent;
         bool localShellSuccess = localShellHelperShorthandSuccess ?? ownedGitEntriesPresent;
         bool effectiveProductHelperActive = productHelperActive ?? ownedGitEntriesPresent;
+        bool gitAbsent =
+            !ownedGitEntriesPresent
+            && !ownershipManifestPresent
+            && !useHttpPathPresent
+            && !effectiveProductHelperActive;
+        bool gitStructurallyReady =
+            configurationPlanValid
+            && ownedGitEntriesPresent
+            && ownershipManifestPresent
+            && useHttpPathPresent
+            && localShellSuccess
+            && effectiveProductHelperActive;
         return Normalize(
             string.Join(
                 "\n",
                 [
                     "command: doctor",
                     "phase: 15-end-to-end-hardening",
+                    "capability-schema: azureauth-credprovider-capabilities-v1",
                     "composition-mode: TestScaffold",
                     "provider: DirectMsal",
                     "interactive-readiness: unavailable",
                     "interactive-readiness-code: TestScaffold",
                     "interactive-blocker: Explicit deterministic test scaffold; "
                         + "not production-ready.",
-                    "silent-readiness: silent-unavailable",
-                    "silent-readiness-code: TestScaffold",
-                    "silent-remediation: Explicit deterministic test scaffold; "
+                    "silent-only-readiness: silent-unavailable",
+                    "silent-only-readiness-code: TestScaffold",
+                    "silent-only-remediation: Explicit deterministic test scaffold; "
                         + "not production-ready.",
+                    "interactive-mechanism: unavailable",
+                    "silent-only-mechanism: unavailable",
+                    "live-auth-probing: git-doctor-silent-only",
+                    "live-feed-probing: disabled",
                     "azureauth-version-probe: not-required",
                     "azureauth-version-probe-code: AzureAuthVersionProbeNotRequired",
                     $"configuration-plan: {(configurationPlanValid ? "pass" : "fail")}",
@@ -5076,6 +5397,25 @@ public sealed class CliApplicationTests
                     "auth-pat-compatibility: deferred-disabled",
                     "auth-persistent-derived-credentials: disabled",
                     "auth-product-plaintext-fallback: disabled",
+                    $"ecosystem-git-configurable: {(configurationPlanValid ? "yes" : "no")}",
+                    "ecosystem-git-currently-usable: "
+                        + (
+                            gitAbsent
+                                ? "not-configured"
+                                : gitStructurallyReady
+                                    ? "ready-local-evidence"
+                                    : "blocked"
+                        ),
+                    "ecosystem-nuget-configurable: yes",
+                    "ecosystem-nuget-currently-usable: not-configured",
+                    "ecosystem-python-configurable: no",
+                    "ecosystem-python-currently-usable: not-configured",
+                    "ecosystem-npm-configurable: yes",
+                    "ecosystem-npm-currently-usable: not-configured",
+                    "ecosystem-pnpm-configurable: yes",
+                    "ecosystem-pnpm-currently-usable: not-configured",
+                    "ecosystem-yarn-configurable: yes",
+                    "ecosystem-yarn-currently-usable: not-configured",
                     "nuget-configuration-plan: pass",
                     "nuget-configuration-state: valid",
                     "nuget-plugin-layout-marker: absent",
@@ -5125,23 +5465,31 @@ public sealed class CliApplicationTests
                         + "phase-1.4-accepted; writes-supported-by-phase-13b",
                     "configuration-aggregation: pass",
                     "npm-user-configuration-plan: pass",
+                    "npm-user-configure-operation: pass",
                     "npm-user-owned-targets: absent",
+                    "npm-user-owned-target-matches-resolved-path: no",
                     "npm-user-ownership-manifest: absent",
                     "npm-user-lifecycle: missing",
                     "npm-user-remediation: azureauth-credprovider configure npm --registry-url "
                         + "<azure-artifacts-npm-registry-url>",
                     "pnpm-user-configuration-plan: pass",
+                    "pnpm-user-configure-operation: pass",
                     "pnpm-user-owned-targets: absent",
+                    "pnpm-user-owned-target-matches-resolved-path: no",
                     "pnpm-user-ownership-manifest: absent",
                     "pnpm-user-lifecycle: missing",
                     "pnpm-user-remediation: azureauth-credprovider configure pnpm --registry-url "
                         + "<azure-artifacts-npm-registry-url>",
                     "python-user-configuration-plan: pass",
+                    "python-user-configure-operation: pass",
                     "python-user-owned-targets: absent",
+                    "python-user-owned-target-matches-resolved-path: no",
                     "python-user-ownership-manifest: absent",
                     "python-user-remediation: azureauth-credprovider configure python",
                     "yarn-user-configuration-plan: pass",
+                    "yarn-user-configure-operation: pass",
                     "yarn-user-owned-targets: absent",
+                    "yarn-user-owned-target-matches-resolved-path: no",
                     "yarn-user-ownership-manifest: absent",
                     "yarn-user-lifecycle: missing",
                     "yarn-user-remediation: azureauth-credprovider configure yarn --registry-url "
@@ -5167,6 +5515,31 @@ public sealed class CliApplicationTests
     private static CommandResult Invoke(params string[] args)
     {
         return InvokeWithRuntime(runtimeOptions: null, args: args);
+    }
+
+    private static CommandResult InvokeIsolatedStatus(params string[] args)
+    {
+        string stateDirectory = CreateTestDirectory();
+        try
+        {
+            var runtimeOptions = new CliRuntimeOptions
+            {
+                CompositionRootFactory = () =>
+                    CredentialProviderCompositionRoot.CreateProduction(
+                        new CredentialProviderProductionOptions
+                        {
+                            SecureStoreRootPath = stateDirectory,
+                            EnvironmentVariableReader = _ => null,
+                        }
+                    ),
+                ConfigurationPhase14Options = CreateConfigurationPhase14Options(stateDirectory),
+            };
+            return InvokeWithRuntime(runtimeOptions, args);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
     }
 
     private static CommandResult InvokeWithRuntime(
@@ -5230,6 +5603,7 @@ public sealed class CliApplicationTests
                 AzurePipelinesJobScopeId = "cli-test-job",
                 EnvironmentVariableReader = name =>
                     ReadConfigurationEnvironment(stateDirectoryPath, name),
+                ProductExecutablePath = GetTestProductExecutablePath(),
                 RegistryUrls = CreateTestRegistryUrls(),
             },
         };
@@ -5247,6 +5621,7 @@ public sealed class CliApplicationTests
                 AzurePipelinesJobScopeId = "cli-test-job",
                 EnvironmentVariableReader = name =>
                     ReadConfigurationEnvironment(stateDirectoryPath, name),
+                ProductExecutablePath = GetTestProductExecutablePath(),
             },
         };
 
@@ -5266,6 +5641,7 @@ public sealed class CliApplicationTests
                     string.Equals(name, "SYSTEM_ACCESSTOKEN", StringComparison.Ordinal)
                         ? token
                         : ReadConfigurationEnvironment(stateDirectoryPath, name),
+                ProductExecutablePath = GetTestProductExecutablePath(),
                 RegistryUrls = CreateTestRegistryUrls(),
             },
         };
@@ -6381,7 +6757,17 @@ public sealed class CliApplicationTests
                 StringComparison.Ordinal
             );
             Assert.Contains(
-                "silent-readiness: silent-ready\n",
+                "silent-only-readiness: silent-ready\n",
+                result.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains(
+                "interactive-mechanism: native-linux-web\n",
+                result.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains(
+                "silent-only-mechanism: native-linux-cache-only\n",
                 result.StdOut,
                 StringComparison.Ordinal
             );
@@ -6452,7 +6838,18 @@ public sealed class CliApplicationTests
             );
             Assert.Equal(string.Empty, result.StdErr);
             Assert.Equal(0, runner.InvocationCount);
-            if (!installationReady)
+            if (
+                installationReady
+                && hostPlatform is AzureAuthHostPlatform.Windows or AzureAuthHostPlatform.Wsl
+            )
+            {
+                Assert.Contains(
+                    "interactive-mechanism: windows-wam-then-web\n",
+                    result.StdOut,
+                    StringComparison.Ordinal
+                );
+            }
+            else if (!installationReady)
             {
                 Assert.Contains(
                     "interactive-readiness: interactive-unavailable\n",
@@ -6846,22 +7243,66 @@ public sealed class CliApplicationTests
             gitDiscoveryRunner.ExpectedHelperCommand = OperatingSystem.IsWindows()
                 ? expectedHelperCommand.Replace('\\', '/')
                 : expectedHelperCommand;
+            ConfigurationPhase14VerticalSliceOptions configurationOptions =
+                CreateConfigurationPhase14Options(rootPath) with
+                {
+                    EnvironmentVariableReader = name =>
+                        name switch
+                        {
+                            "HOME" => rootPath,
+                            "NPM_CONFIG_USERCONFIG" => Path.Combine(rootPath, "user.npmrc"),
+                            "XDG_CONFIG_HOME" => Path.Combine(rootPath, ".config"),
+                            _ => ReadConfigurationPhase14Environment(rootPath, name),
+                        },
+                };
+            ConfigurationPhase14ResolvedPaths configurationPaths =
+                new ConfigurationPhase14VerticalSliceService(configurationOptions).Paths;
             var runtime = new CliRuntimeOptions
             {
                 CompositionRoot = root,
                 GitPhase8Options = gitOptions,
                 NuGetPhase10Options = CreateIsolatedNuGetPhase10Options(),
-                NpmPhase12Options = CreateIsolatedNpmPhase12Options(rootPath),
-                YarnPhase13Options = CreateIsolatedYarnPhase13Options(rootPath),
+                NpmPhase12Options = CreateIsolatedNpmPhase12Options(rootPath) with
+                {
+                    UserNpmrcPath = configurationPaths.PnpmUserNpmrcPath,
+                },
+                YarnPhase13Options = CreateIsolatedYarnPhase13Options(rootPath) with
+                {
+                    UserHomeDirectoryPath = rootPath,
+                    UserYarnrcPath = configurationPaths.YarnUserYarnrcPath,
+                },
                 PythonPhase11Options = pythonFixture.Options,
-                ConfigurationPhase14Options = CreateConfigurationPhase14Options(rootPath),
+                ConfigurationPhase14Options = configurationOptions,
             };
             CommandResult configureGit = InvokeWithRuntime(runtime, "configure", "git");
+            CommandResult configurePython = InvokeWithRuntime(
+                runtime,
+                "configure",
+                "python"
+            );
+            CommandResult configurePnpm = InvokeWithRuntime(
+                runtime,
+                "configure",
+                "pnpm",
+                "--registry-url",
+                TestRegistryUrl
+            );
+            CommandResult configureYarn = InvokeWithRuntime(
+                runtime,
+                "configure",
+                "yarn",
+                "--registry-url",
+                TestRegistryUrl
+            );
+            acquisitionService.Requests.Clear();
 
             CommandResult doctor = InvokeWithRuntime(runtime, "doctor");
 
             Assert.Equal(0, configureGit.ExitCode);
             Assert.Equal(string.Empty, configureGit.StdErr);
+            Assert.Equal(0, configurePython.ExitCode);
+            Assert.Equal(0, configurePnpm.ExitCode);
+            Assert.Equal(0, configureYarn.ExitCode);
             Assert.Equal(0, doctor.ExitCode);
             Assert.True(pythonFixture.PathWasRequested);
             Assert.Contains(
@@ -6875,7 +7316,22 @@ public sealed class CliApplicationTests
                 StringComparison.Ordinal
             );
             Assert.Contains(
-                "silent-readiness: silent-ready\n",
+                "silent-only-readiness: silent-ready\n",
+                doctor.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains(
+                "live-feed-probing: disabled\n",
+                doctor.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains(
+                "ecosystem-git-currently-usable: ready-local-evidence\n",
+                doctor.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains(
+                "ecosystem-nuget-currently-usable: not-configured\n",
                 doctor.StdOut,
                 StringComparison.Ordinal
             );
@@ -6997,6 +7453,18 @@ public sealed class CliApplicationTests
                 doctor.StdOut,
                 StringComparison.Ordinal
             );
+            Assert.Contains(
+                "ecosystem-python-currently-usable: ready-local-evidence\n",
+                doctor.StdOut
+            );
+            Assert.Contains(
+                "ecosystem-pnpm-currently-usable: ready-local-evidence\n",
+                doctor.StdOut
+            );
+            Assert.Contains(
+                "ecosystem-yarn-currently-usable: ready-local-evidence\n",
+                doctor.StdOut
+            );
             Assert.Equal(string.Empty, doctor.StdErr);
             Assert.Equal(1, authenticationRunner.InvocationCount);
             ProcessStartSpec healthProbe = Assert.Single(authenticationRunner.StartSpecs);
@@ -7006,10 +7474,15 @@ public sealed class CliApplicationTests
             Assert.Equal(TimeSpan.FromSeconds(10), healthProbe.Timeout);
             Assert.Empty(healthProbe.Environment);
             Assert.Null(healthProbe.StandardErrorTee);
-            Assert.NotEmpty(acquisitionService.Requests);
+            Assert.Equal(2, acquisitionService.Requests.Count);
             Assert.All(
                 acquisitionService.Requests,
-                request => Assert.NotEqual(InteractivePolicy.UserAllowed, request.InteractivePolicy)
+                request =>
+                {
+                    Assert.Equal(CredentialEcosystem.Git, request.Ecosystem);
+                    Assert.Equal(AcquisitionMode.SilentOnly, request.AcquisitionMode);
+                    Assert.Equal(InteractivePolicy.Never, request.InteractivePolicy);
+                }
             );
             Assert.Equal(2, gitDiscoveryRunner.StartSpecs.Count);
             ProcessStartSpec gitDiscovery = gitDiscoveryRunner.StartSpecs[0];
@@ -7025,8 +7498,53 @@ public sealed class CliApplicationTests
                 ],
                 gitDiscovery.Arguments
             );
+            Assert.Equal(rootPath, gitDiscovery.WorkingDirectory);
+            Assert.Equal(TimeSpan.FromSeconds(10), gitDiscovery.Timeout);
+            Assert.Equal(
+                64 * 1024,
+                gitDiscovery.OutputCaptureOptions.StandardOutputByteLimit
+            );
+            Assert.Equal(
+                64 * 1024,
+                gitDiscovery.OutputCaptureOptions.StandardErrorByteLimit
+            );
             Assert.False(gitDiscovery.Environment.ContainsKey("GIT_CONFIG_GLOBAL"));
             Assert.Null(gitDiscovery.StandardErrorTee);
+            ProcessStartSpec useHttpPathProbe = gitDiscoveryRunner.StartSpecs[1];
+            Assert.Equal("fake-git", useHttpPathProbe.FileName);
+            Assert.Equal(
+                [
+                    "-c",
+                    "credential.helper=",
+                    "-c",
+                    "credential.helper=!f() { p=absent; while IFS= read -r line; do "
+                        + "case \"$line\" in path=*) p=present;; esac; done; "
+                        + "echo username=azureauth-use-http-path-$p; "
+                        + "echo password=azureauth-use-http-path-probe; }; f",
+                    "credential",
+                    "fill",
+                ],
+                useHttpPathProbe.Arguments
+            );
+            Assert.Equal(rootPath, useHttpPathProbe.WorkingDirectory);
+            Assert.Equal(
+                "protocol=https\nhost=dev.azure.com\npath=org/project/_git/repository\n\n",
+                useHttpPathProbe.StandardInput
+            );
+            Assert.Equal(TimeSpan.FromSeconds(10), useHttpPathProbe.Timeout);
+            Assert.Equal(
+                64 * 1024,
+                useHttpPathProbe.OutputCaptureOptions.StandardOutputByteLimit
+            );
+            Assert.Equal(
+                64 * 1024,
+                useHttpPathProbe.OutputCaptureOptions.StandardErrorByteLimit
+            );
+            Assert.Equal(
+                ["HOME", "XDG_CONFIG_HOME"],
+                useHttpPathProbe.Environment.Keys.Order(StringComparer.Ordinal)
+            );
+            Assert.Null(useHttpPathProbe.StandardErrorTee);
             Assert.Equal(string.Empty, promptWriter.ToString());
             Assert.DoesNotContain(PrivateToken, doctor.StdOut, StringComparison.Ordinal);
             Assert.DoesNotContain(PrivateToken, doctor.StdErr, StringComparison.Ordinal);
@@ -7084,6 +7602,13 @@ public sealed class CliApplicationTests
                         request.Ecosystem == CredentialEcosystem.NuGet
                             ? "opaque-session-token-healthy-doctor"
                             : "fake-secret-healthy-doctor",
+                    BearerToken =
+                        request.Ecosystem
+                            is CredentialEcosystem.Npm
+                                or CredentialEcosystem.Pnpm
+                                or CredentialEcosystem.Yarn
+                            ? "fake-bearer-token-healthy-doctor"
+                            : null,
                     Account = request.AccountHint ?? "unbound",
                     Tenant = request.TenantHint ?? "unbound",
                     DiagnosticsCorrelationId = "healthy-doctor-success",
@@ -7139,7 +7664,58 @@ public sealed class CliApplicationTests
         Assert.Equal(1, doctor.ExitCode);
         AssertDoctorCheck(doctor.StdOut, "npm-ci-temporary-credential-plan", "fail");
         AssertDoctorCheck(doctor.StdOut, "yarn-forbidden-auth-ident-conflict", "present");
+        AssertDoctorCheck(doctor.StdOut, "ecosystem-yarn-configurable", "no");
         AssertDoctorCheck(doctor.StdOut, "doctor-aggregation", "fail");
+    }
+
+    [Fact]
+    public async Task PythonUnownedTargetBlocksStatusAndDoctorConfigurability()
+    {
+        using var pythonFixture = new PythonDoctorFixture(PythonDoctorFixtureMode.Healthy);
+        CliRuntimeOptions baseline = CreateHealthyDoctorRuntimeOptions(pythonFixture);
+        ConfigurationPhase14VerticalSliceOptions configurationOptions =
+            baseline.ConfigurationPhase14Options! with
+            {
+                EnvironmentVariableReader = name =>
+                    name switch
+                    {
+                        "HOME" => pythonFixture.RootPath,
+                        "XDG_CONFIG_HOME" => Path.Combine(
+                            pythonFixture.RootPath,
+                            "configuration-home"
+                        ),
+                        _ => ReadConfigurationPhase14Environment(
+                            pythonFixture.RootPath,
+                            name
+                        ),
+                    },
+            };
+        var service = new ConfigurationPhase14VerticalSliceService(configurationOptions);
+        ConfigurationPhase14PlanResult preview = await service.DryRunConfigureAsync(
+            CredentialEcosystem.Python,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+        var backend = Assert.Single(
+            preview.PlanResults.SelectMany(static result => result.Changes),
+            change => change.TargetKind == ConfigurationTargetKind.PythonKeyringBackend
+        );
+        Directory.CreateDirectory(Path.GetDirectoryName(backend.TargetPathOrName)!);
+        File.WriteAllText(backend.TargetPathOrName, "unowned-python-backend");
+        CliRuntimeOptions runtime = baseline with
+        {
+            ConfigurationPhase14Options = configurationOptions,
+        };
+
+        CommandResult status = InvokeWithRuntime(runtime, "status");
+        CommandResult doctor = InvokeWithRuntime(runtime, "doctor");
+
+        Assert.Contains("ecosystem-python-configurable: no\n", status.StdOut);
+        Assert.Contains("ecosystem-python-currently-usable: blocked\n", status.StdOut);
+        AssertDoctorCheck(doctor.StdOut, "python-user-configuration-plan", "pass");
+        AssertDoctorCheck(doctor.StdOut, "python-user-configure-operation", "fail");
+        AssertDoctorCheck(doctor.StdOut, "ecosystem-python-configurable", "no");
+        AssertDoctorCheck(doctor.StdOut, "ecosystem-python-currently-usable", "blocked");
     }
 
     private static void AssertDoctorAzureAuthProbeFailure(

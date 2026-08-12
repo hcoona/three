@@ -29,14 +29,14 @@ internal static class CliApplication
         "credential.https://dev.azure.com.useHttpPath";
     private const string NuGetPluginLayoutConfigurationKey = "physical-target";
 
-    private static readonly string[] SupportedEcosystems =
+    private static readonly CredentialEcosystem[] CapabilityEcosystems =
     [
-        "git",
-        "nuget",
-        "python",
-        "npm",
-        "pnpm",
-        "yarn",
+        CredentialEcosystem.Git,
+        CredentialEcosystem.NuGet,
+        CredentialEcosystem.Python,
+        CredentialEcosystem.Npm,
+        CredentialEcosystem.Pnpm,
+        CredentialEcosystem.Yarn,
     ];
     private static readonly HashSet<string> SecretLikeOptionNames = new(StringComparer.Ordinal)
     {
@@ -54,6 +54,12 @@ internal static class CliApplication
         "--help",
         "--dry-run",
     };
+
+    private sealed record EcosystemCapabilityAssessment(
+        CredentialEcosystem Ecosystem,
+        string Configurable,
+        string CurrentlyUsable
+    );
 
     public static int Run(IReadOnlyList<string> args, TextWriter stdout, TextWriter stderr)
     {
@@ -283,6 +289,9 @@ internal static class CliApplication
         WriteText(
             stdout,
             BuildStatusOutput(invocation.CiMode, root, readiness)
+                + BuildEcosystemCapabilityOutput(
+                    CreateStatusEcosystemCapabilities(configuration, invocation.CiMode)
+                )
                 + BuildConfigurationLifecycleStatusOutput(configuration)
         );
         return SuccessExitCode;
@@ -301,6 +310,319 @@ internal static class CliApplication
                     + $"{GetLifecycleStateText(result.LifecycleState)}\n"
                 )
         );
+
+    private static EcosystemCapabilityAssessment[] CreateStatusEcosystemCapabilities(
+        ConfigurationPhase14DoctorResult configurationDoctor,
+        CliCiMode ciMode
+    )
+    {
+        ArgumentNullException.ThrowIfNull(configurationDoctor);
+        return CapabilityEcosystems
+            .Select(ecosystem =>
+            {
+                if (ciMode == CliCiMode.AzurePipelines)
+                {
+                    if (!IsPackageRegistryEcosystem(ecosystem))
+                    {
+                        return new EcosystemCapabilityAssessment(
+                            ecosystem,
+                            "no",
+                            "not-assessed"
+                        );
+                    }
+
+                    ConfigurationPhase14EcosystemDoctorResult? ciConfiguration =
+                        configurationDoctor.Ecosystems.SingleOrDefault(result =>
+                            result.Ecosystem == ecosystem
+                            && result.Scope == ConfigurationPhase14Scope.CiTemporary
+                        );
+                    return ciConfiguration is null
+                        ? new EcosystemCapabilityAssessment(
+                            ecosystem,
+                            "not-assessed",
+                            "not-configured"
+                        )
+                        : new EcosystemCapabilityAssessment(
+                            ecosystem,
+                            GetStatusConfigurableState(ciConfiguration),
+                            GetPhase14CurrentlyUsableState(
+                                ciConfiguration,
+                                additionalEvidenceReady:
+                                    !EcosystemRequiresAdditionalStatusAssessment(ecosystem),
+                                configuredButNotProbed:
+                                    EcosystemRequiresAdditionalStatusAssessment(ecosystem)
+                            )
+                        );
+                }
+
+                if (!IsPhase14ConfigurationEcosystem(ecosystem))
+                {
+                    return new EcosystemCapabilityAssessment(
+                        ecosystem,
+                        "not-assessed",
+                        "not-assessed"
+                    );
+                }
+
+                ConfigurationPhase14EcosystemDoctorResult configuration =
+                    GetUserConfigurationDoctorResult(configurationDoctor, ecosystem);
+                return new EcosystemCapabilityAssessment(
+                    ecosystem,
+                    GetStatusConfigurableState(configuration),
+                    GetPhase14CurrentlyUsableState(
+                        configuration,
+                        additionalEvidenceReady: false,
+                        configuredButNotProbed: true
+                    )
+                );
+            })
+            .ToArray();
+    }
+
+    private static EcosystemCapabilityAssessment[] CreateDoctorEcosystemCapabilities(
+        GitPhase8DoctorResult gitDoctor,
+        NuGetPhase10DoctorResult nuGetDoctor,
+        PythonPhase11DoctorResult pythonDoctor,
+        NpmPhase12DoctorResult npmDoctor,
+        YarnPhase13DoctorResult yarnDoctor,
+        ConfigurationPhase14DoctorResult configurationDoctor
+    )
+    {
+        ArgumentNullException.ThrowIfNull(gitDoctor);
+        ArgumentNullException.ThrowIfNull(nuGetDoctor);
+        ArgumentNullException.ThrowIfNull(pythonDoctor);
+        ArgumentNullException.ThrowIfNull(npmDoctor);
+        ArgumentNullException.ThrowIfNull(yarnDoctor);
+        ArgumentNullException.ThrowIfNull(configurationDoctor);
+
+        ConfigurationPhase14EcosystemDoctorResult pythonConfiguration =
+            GetUserConfigurationDoctorResult(configurationDoctor, CredentialEcosystem.Python);
+        ConfigurationPhase14EcosystemDoctorResult npmConfiguration =
+            GetUserConfigurationDoctorResult(configurationDoctor, CredentialEcosystem.Npm);
+        ConfigurationPhase14EcosystemDoctorResult pnpmConfiguration =
+            GetUserConfigurationDoctorResult(configurationDoctor, CredentialEcosystem.Pnpm);
+        ConfigurationPhase14EcosystemDoctorResult yarnConfiguration =
+            GetUserConfigurationDoctorResult(configurationDoctor, CredentialEcosystem.Yarn);
+
+        bool gitAbsent =
+            !gitDoctor.OwnedGitEntriesPresent
+            && !gitDoctor.OwnershipManifestPresent
+            && gitDoctor.EffectiveCredentialHelper.State
+                == GitEffectiveCredentialHelperState.NotConfigured
+            && gitDoctor.DevAzureUseHttpPath.State
+                == GitUseHttpPathInspectionState.Absent;
+        bool gitStructurallyReady =
+            gitDoctor.ConfigurationPlanValid
+            && gitDoctor.OwnedGitEntriesPresent
+            && gitDoctor.OwnershipManifestPresent
+            && gitDoctor.LocalShellHelperShorthandSuccess
+            && gitDoctor.EffectiveCredentialHelper.State
+                == GitEffectiveCredentialHelperState.Active
+            && gitDoctor.DevAzureUseHttpPath.State
+                == GitUseHttpPathInspectionState.Present;
+
+        bool nuGetStructurallyReady =
+            nuGetDoctor.ConfigurationPlanValid
+            && nuGetDoctor.PluginLayoutMarkerPresent
+            && nuGetDoctor.OwnershipManifestPresent
+            && nuGetDoctor.NetCorePluginEntrypointPresent
+            && nuGetDoctor.PluginModeEntrypointResolvable
+            && nuGetDoctor.EffectivePlugin.ProductDiscovery
+                == NuGetProductPluginDiscoveryState.DiscoverableCandidate
+            && !nuGetDoctor.EffectivePlugin.OverrideEntriesTruncated
+            && nuGetDoctor.EffectivePlugin.OverrideProductInclusion
+                is NuGetOverrideProductInclusionState.NotApplicable
+                    or NuGetOverrideProductInclusionState.IncludesProduct;
+
+        bool npmEvidenceReady =
+            npmDoctor.WorkspaceResolutionSucceeded
+            && npmDoctor.EffectiveUserNpmrcExists
+            && npmDoctor.AzureArtifactsNpmEndpointCanonicalizationSuccess
+            && (
+                !npmDoctor.RegistryDeclarationDiscovered
+                || npmDoctor.NpmUserCredentialPlanValid
+            );
+        bool pnpmEvidenceReady =
+            npmDoctor.EffectiveUserNpmrcExists
+            && npmDoctor.AzureArtifactsNpmEndpointCanonicalizationSuccess
+            && (
+                !npmDoctor.RegistryDeclarationDiscovered
+                || npmDoctor.PnpmUserCredentialPlanValid
+            );
+        bool yarnEvidenceReady =
+            yarnDoctor.EffectiveUserYarnrcExists
+            && yarnDoctor.AzureArtifactsYarnEndpointCanonicalizationSuccess
+            && yarnDoctor.WritesSupported
+            && !yarnDoctor.ForbiddenAuthIdentConflictDetected;
+        bool yarnConfigurable =
+            yarnDoctor.AzureArtifactsYarnEndpointCanonicalizationSuccess
+            && yarnDoctor.WritesSupported
+            && !yarnDoctor.ForbiddenAuthIdentConflictDetected;
+
+        return
+        [
+            new(
+                CredentialEcosystem.Git,
+                gitDoctor.ConfigurationPlanValid ? "yes" : "no",
+                gitAbsent
+                    ? "not-configured"
+                    : gitStructurallyReady
+                        ? "ready-local-evidence"
+                        : "blocked"
+            ),
+            new(
+                CredentialEcosystem.NuGet,
+                nuGetDoctor.ConfigurationState == NuGetConfigurationState.Unrecognized
+                    ? "no"
+                    : "yes",
+                NuGetDoctorStateAbsent(nuGetDoctor)
+                    ? "not-configured"
+                    : nuGetStructurallyReady
+                        ? "selection-deferred-not-probed"
+                        : "blocked"
+            ),
+            new(
+                CredentialEcosystem.Python,
+                pythonConfiguration.ConfigurationPlanValid
+                    && pythonConfiguration.ConfigureOperationValid
+                    && pythonDoctor.IsConfigurationPreflightReady
+                        ? "yes"
+                        : "no",
+                GetPhase14CurrentlyUsableState(
+                    pythonConfiguration,
+                    pythonDoctor.IsReady,
+                    configuredButNotProbed: false
+                )
+            ),
+            new(
+                CredentialEcosystem.Npm,
+                npmConfiguration.ConfigurationPlanValid
+                    && npmConfiguration.ConfigureOperationValid
+                    && npmDoctor.WorkspaceResolutionSucceeded
+                    && npmDoctor.AzureArtifactsNpmEndpointCanonicalizationSuccess
+                        ? "yes"
+                        : "no",
+                GetPhase14CurrentlyUsableState(
+                    npmConfiguration,
+                    npmEvidenceReady,
+                    configuredButNotProbed: false
+                )
+            ),
+            new(
+                CredentialEcosystem.Pnpm,
+                pnpmConfiguration.ConfigurationPlanValid
+                    && pnpmConfiguration.ConfigureOperationValid
+                    && npmDoctor.AzureArtifactsNpmEndpointCanonicalizationSuccess
+                        ? "yes"
+                        : "no",
+                GetPhase14CurrentlyUsableState(
+                    pnpmConfiguration,
+                    pnpmEvidenceReady,
+                    configuredButNotProbed: false
+                )
+            ),
+            new(
+                CredentialEcosystem.Yarn,
+                yarnConfiguration.ConfigurationPlanValid
+                    && yarnConfiguration.ConfigureOperationValid
+                    && yarnConfigurable
+                        ? "yes"
+                        : "no",
+                GetPhase14CurrentlyUsableState(
+                    yarnConfiguration,
+                    yarnEvidenceReady,
+                    configuredButNotProbed: false
+                )
+            ),
+        ];
+    }
+
+    private static string GetStatusConfigurableState(
+        ConfigurationPhase14EcosystemDoctorResult configuration
+    )
+    {
+        if (!configuration.ConfigurationPlanValid || !configuration.ConfigureOperationValid)
+        {
+            return "no";
+        }
+
+        return EcosystemRequiresAdditionalStatusAssessment(configuration.Ecosystem)
+            ? "not-assessed"
+            : "yes";
+    }
+
+    private static bool EcosystemRequiresAdditionalStatusAssessment(
+        CredentialEcosystem ecosystem
+    ) =>
+        ecosystem is CredentialEcosystem.Npm or CredentialEcosystem.Pnpm;
+
+    private static string BuildEcosystemCapabilityOutput(
+        IReadOnlyList<EcosystemCapabilityAssessment> capabilities
+    ) => JoinLines(BuildEcosystemCapabilityLines(capabilities));
+
+    private static IEnumerable<string> BuildEcosystemCapabilityLines(
+        IReadOnlyList<EcosystemCapabilityAssessment> capabilities
+    )
+    {
+        ArgumentNullException.ThrowIfNull(capabilities);
+        foreach (
+            EcosystemCapabilityAssessment capability in capabilities.OrderBy(static capability =>
+                capability.Ecosystem
+            )
+        )
+        {
+            string prefix = $"ecosystem-{GetEcosystemText(capability.Ecosystem)}";
+            yield return $"{prefix}-configurable: {capability.Configurable}";
+            yield return $"{prefix}-currently-usable: {capability.CurrentlyUsable}";
+        }
+    }
+
+    private static ConfigurationPhase14EcosystemDoctorResult
+        GetUserConfigurationDoctorResult(
+            ConfigurationPhase14DoctorResult doctor,
+            CredentialEcosystem ecosystem
+        ) =>
+        doctor.Ecosystems.Single(result =>
+            result.Ecosystem == ecosystem
+            && result.Scope == ConfigurationPhase14Scope.User
+        );
+
+    private static string GetPhase14CurrentlyUsableState(
+        ConfigurationPhase14EcosystemDoctorResult configuration,
+        bool additionalEvidenceReady,
+        bool configuredButNotProbed
+    )
+    {
+        if (!configuration.ConfigurationPlanValid || !configuration.ConfigureOperationValid)
+        {
+            return "blocked";
+        }
+
+        if (ConfigurationPhase14DoctorStateAbsent(configuration))
+        {
+            return "not-configured";
+        }
+
+        if (
+            !configuration.OwnershipManifestPresent
+            || !configuration.OwnedTargetPresent
+            || !configuration.OwnedTargetMatchesResolvedPath
+            || (
+                IsPackageRegistryEcosystem(configuration.Ecosystem)
+                && !IsAcceptableLifecycleState(configuration.LifecycleState)
+            )
+        )
+        {
+            return "blocked";
+        }
+
+        if (configuredButNotProbed)
+        {
+            return "not-assessed";
+        }
+
+        return additionalEvidenceReady ? "ready-local-evidence" : "blocked";
+    }
 
     private static int HandleConfigure(
         CliInvocation invocation,
@@ -2304,6 +2626,7 @@ internal static class CliApplication
             "command: status",
             $"product: {CommandName}",
             $"phase: {PhaseName}",
+            "capability-schema: azureauth-credprovider-capabilities-v1",
             $"ci-mode: {GetCiModeText(ciMode)}",
             $"composition-mode: {root.Mode}",
             $"provider: {root.ProviderConfig.Selection}",
@@ -2317,14 +2640,18 @@ internal static class CliApplication
         }
 
         lines.AddRange([
-            "silent-readiness: "
+            "silent-only-readiness: "
                 + (readiness.Silent.IsReady ? "silent-ready" : "silent-unavailable"),
-            $"silent-readiness-code: {readiness.Silent.Code}",
-            $"silent-remediation: {readiness.Silent.SafeMessage}",
+            $"silent-only-readiness-code: {readiness.Silent.Code}",
+            $"silent-only-remediation: {readiness.Silent.SafeMessage}",
+            $"interactive-mechanism: {GetInteractiveMechanismText(root.Installation.HostPlatform)}",
+            $"silent-only-mechanism: {GetSilentOnlyMechanismText(root.Installation.HostPlatform)}",
             "status-shell: ready",
-            "environment-probing: disabled",
-            "persistent-cache: disabled",
-            "persistent-derived-credentials: disabled",
+            "live-auth-probing: disabled",
+            "live-feed-probing: disabled",
+            "provider-cache: provider-managed-not-probed",
+            "product-token-cache: disabled",
+            "registry-derived-credentials: lifecycle-reported-per-ecosystem",
             "accepted-identity-flows: "
                 + (
                     deviceCodeReady
@@ -2337,7 +2664,6 @@ internal static class CliApplication
             "pat-compatibility: deferred-disabled",
             "dry-run-rendering: enabled",
             "mutating-commands: identity-configuration, host-tool-configuration, auth, cleanup",
-            $"supported-ecosystems: {string.Join(", ", SupportedEcosystems)}",
         ]);
         return JoinLines(lines);
     }
@@ -3155,15 +3481,20 @@ internal static class CliApplication
         [
             $"command: {invocation.CommandName}",
             $"phase: {PhaseName}",
+            "capability-schema: azureauth-credprovider-capabilities-v1",
             $"composition-mode: {root.Mode}",
             $"provider: {root.ProviderConfig.Selection}",
             "interactive-readiness: "
                 + (readiness.Interactive.IsReady ? "interactive-ready" : "unavailable"),
             $"interactive-readiness-code: {readiness.Interactive.Code}",
-            "silent-readiness: "
+            "silent-only-readiness: "
                 + (readiness.Silent.IsReady ? "silent-ready" : "silent-unavailable"),
-            $"silent-readiness-code: {readiness.Silent.Code}",
-            $"silent-remediation: {readiness.Silent.SafeMessage}",
+            $"silent-only-readiness-code: {readiness.Silent.Code}",
+            $"silent-only-remediation: {readiness.Silent.SafeMessage}",
+            $"interactive-mechanism: {GetInteractiveMechanismText(root.Installation.HostPlatform)}",
+            $"silent-only-mechanism: {GetSilentOnlyMechanismText(root.Installation.HostPlatform)}",
+            "live-auth-probing: git-doctor-silent-only",
+            "live-feed-probing: disabled",
             "azureauth-version-probe: "
                 + GetAzureAuthHealthProbeStatusText(azureAuthHealthProbe),
             $"azureauth-version-probe-code: {azureAuthHealthProbe.Code}",
@@ -3219,9 +3550,21 @@ internal static class CliApplication
         ];
         if (!readiness.Interactive.IsReady)
         {
-            lines.Insert(6, $"interactive-blocker: {readiness.Interactive.SafeMessage}");
+            lines.Insert(7, $"interactive-blocker: {readiness.Interactive.SafeMessage}");
         }
 
+        lines.AddRange(
+            BuildEcosystemCapabilityLines(
+                CreateDoctorEcosystemCapabilities(
+                    doctorResult,
+                    nuGetDoctorResult,
+                    pythonDoctorResult,
+                    npmDoctorResult,
+                    yarnDoctorResult,
+                    configurationDoctorResult
+                )
+            )
+        );
         lines.AddRange(BuildNuGetDoctorLines(nuGetDoctorResult));
         lines.AddRange(BuildPythonDoctorLines(pythonDoctorResult));
         lines.AddRange(BuildNpmDoctorLines(npmDoctorResult));
@@ -3241,6 +3584,19 @@ internal static class CliApplication
         readiness.Interactive.IsReady
         && root.Installation.HostPlatform == AzureAuthHostPlatform.NativeLinux
         && root.ProductionOptions.DeviceCodePromptWriter is not null;
+
+    private static string GetInteractiveMechanismText(AzureAuthHostPlatform hostPlatform) =>
+        hostPlatform switch
+        {
+            AzureAuthHostPlatform.Windows or AzureAuthHostPlatform.Wsl => "windows-wam-then-web",
+            AzureAuthHostPlatform.NativeLinux => "native-linux-web",
+            _ => "unavailable",
+        };
+
+    private static string GetSilentOnlyMechanismText(AzureAuthHostPlatform hostPlatform) =>
+        hostPlatform == AzureAuthHostPlatform.NativeLinux
+            ? "native-linux-cache-only"
+            : "unavailable";
 
     private static List<string> BuildNuGetDoctorLines(NuGetPhase10DoctorResult doctorResult)
     {
@@ -3556,7 +3912,15 @@ internal static class CliApplication
                     + GetCheckStatusText(ecosystemResult.ConfigurationPlanValid)
             );
             lines.Add(
+                $"{prefix}-configure-operation: "
+                    + GetCheckStatusText(ecosystemResult.ConfigureOperationValid)
+            );
+            lines.Add(
                 $"{prefix}-owned-targets: " + GetPresenceText(ecosystemResult.OwnedTargetPresent)
+            );
+            lines.Add(
+                $"{prefix}-owned-target-matches-resolved-path: "
+                    + GetYesNo(ecosystemResult.OwnedTargetMatchesResolvedPath)
             );
             lines.Add(
                 $"{prefix}-ownership-manifest: "
@@ -4165,6 +4529,7 @@ internal static class CliApplication
         if (doctorResult.Scope == ConfigurationPhase14Scope.CiTemporary)
         {
             return doctorResult.ConfigurationPlanValid
+                && doctorResult.ConfigureOperationValid
                 && (
                     (
                         !doctorResult.OwnershipManifestPresent
@@ -4174,17 +4539,20 @@ internal static class CliApplication
                     || (
                         doctorResult.OwnershipManifestPresent
                         && doctorResult.OwnedTargetPresent
+                        && doctorResult.OwnedTargetMatchesResolvedPath
                         && IsAcceptableLifecycleState(doctorResult.LifecycleState)
                     )
                 );
         }
 
         return doctorResult.ConfigurationPlanValid
+            && doctorResult.ConfigureOperationValid
             && (
                 ConfigurationPhase14DoctorStateAbsent(doctorResult)
                 || (
                     doctorResult.OwnershipManifestPresent
                     && doctorResult.OwnedTargetPresent
+                    && doctorResult.OwnedTargetMatchesResolvedPath
                     && (
                         !IsPackageRegistryEcosystem(doctorResult.Ecosystem)
                         || IsAcceptableLifecycleState(doctorResult.LifecycleState)
@@ -4314,6 +4682,29 @@ internal static class CliApplication
         }
 
         string ecosystem = GetEcosystemText(doctorResult.Ecosystem);
+        if (!doctorResult.ConfigurationPlanValid)
+        {
+            return "manual action required: inspect the product-owned configuration state "
+                + "and ownership manifest, then rerun doctor";
+        }
+
+        if (
+            !doctorResult.ConfigureOperationValid
+            && doctorResult.OwnershipManifestPresent
+            && doctorResult.OwnedTargetPresent
+            && !doctorResult.OwnedTargetMatchesResolvedPath
+        )
+        {
+            return "manual action required: reconcile the owned target with the resolved "
+                + "configuration path, then rerun doctor before configure or refresh";
+        }
+
+        if (!doctorResult.ConfigureOperationValid)
+        {
+            return "manual action required: resolve conflicting package-manager configuration "
+                + "or access conditions, then rerun doctor";
+        }
+
         if (
             doctorResult.LifecycleState
             is RegistryCredentialLifecycleState.RefreshRecommended

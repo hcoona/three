@@ -411,9 +411,27 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
             fileSystem,
             environmentVariableReader: CreatePackagePathEnvironmentReader(ecosystem, "new")
         );
+        ConfigurationPhase14VerticalSliceService doctorService = CreateService(
+            fileSystem,
+            environmentVariableReader: CreatePackagePathEnvironmentReader(ecosystem, "new"),
+            includeRegistryUrls: false
+        );
         string destinationPath = GetPackageConfigurationPath(replacement, ecosystem);
         fileSystem.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
         fileSystem.WriteAllText(destinationPath, oldContents);
+
+        ConfigurationPhase14DoctorResult doctor = await doctorService.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+        ConfigurationPhase14EcosystemDoctorResult ecosystemDoctor = Assert.Single(
+            doctor.Ecosystems,
+            result =>
+                result.Ecosystem == ecosystem
+                && result.Scope == ConfigurationPhase14Scope.User
+        );
+        Assert.False(ecosystemDoctor.ConfigureOperationValid);
+        Assert.True(ecosystemDoctor.OwnedTargetPresent);
+        Assert.False(ecosystemDoctor.OwnedTargetMatchesResolvedPath);
 
         InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
             async () =>
@@ -432,6 +450,118 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         Assert.Equal(oldContents, fileSystem.ReadAllText(oldPath));
         Assert.Equal(manifestContents, fileSystem.ReadAllText(manifestPath));
         Assert.Equal(oldContents, fileSystem.ReadAllText(destinationPath));
+    }
+
+    [Fact]
+    public async Task DoctorTreatsCleanPackageAbsenceWithoutRegistryContextAsNeutral()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        ConfigurationPhase14VerticalSliceService service = CreateService(
+            fileSystem,
+            includeRegistryUrls: false
+        );
+
+        ConfigurationPhase14DoctorResult doctor = await service.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        ConfigurationPhase14EcosystemDoctorResult[] packageResults = doctor
+            .Ecosystems.Where(result =>
+                result.Scope == ConfigurationPhase14Scope.User
+                && result.Ecosystem
+                    is CredentialEcosystem.Npm
+                        or CredentialEcosystem.Pnpm
+                        or CredentialEcosystem.Yarn
+            )
+            .ToArray();
+        Assert.Equal(3, packageResults.Length);
+        Assert.All(
+            packageResults,
+            result =>
+            {
+                Assert.True(result.ConfigurationPlanValid);
+                Assert.True(result.ConfigureOperationValid);
+                Assert.False(result.OwnershipManifestPresent);
+                Assert.False(result.OwnedTargetPresent);
+            }
+        );
+    }
+
+    [Theory]
+    [InlineData(CredentialEcosystem.Npm)]
+    [InlineData(CredentialEcosystem.Pnpm)]
+    [InlineData(CredentialEcosystem.Yarn)]
+    public async Task DoctorUsesPersistedRegistryWithoutConfiguredRegistryUrls(
+        CredentialEcosystem ecosystem
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        await CreateService(fileSystem)
+            .ConfigureAsync(
+                ecosystem,
+                ConfigurationPhase14Scope.User,
+                TestContext.Current.CancellationToken
+            );
+        ConfigurationPhase14VerticalSliceService doctorService = CreateService(
+            fileSystem,
+            includeRegistryUrls: false
+        );
+
+        ConfigurationPhase14DoctorResult doctor = await doctorService.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        ConfigurationPhase14EcosystemDoctorResult result = Assert.Single(
+            doctor.Ecosystems,
+            item =>
+                item.Ecosystem == ecosystem
+                && item.Scope == ConfigurationPhase14Scope.User
+        );
+        Assert.Equal(new Uri(TestRegistryUrl), result.RegistryUrl);
+        Assert.True(result.ConfigurationPlanValid);
+        Assert.True(result.ConfigureOperationValid);
+        Assert.True(result.OwnershipManifestPresent);
+        Assert.True(result.OwnedTargetPresent);
+        Assert.True(result.OwnedTargetMatchesResolvedPath);
+    }
+
+    [Theory]
+    [InlineData(ConfigurationTargetKind.PythonKeyringBackend)]
+    [InlineData(ConfigurationTargetKind.KeyringShim)]
+    public async Task PythonDoctorRejectsUnownedConfigureTarget(
+        ConfigurationTargetKind targetKind
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        ConfigurationPhase14VerticalSliceService service = CreateService(fileSystem);
+        ConfigurationPhase14PlanResult preview = await service.DryRunConfigureAsync(
+            CredentialEcosystem.Python,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+        ConfigurationPlannedChange target = Assert.Single(
+            preview.PlanResults.SelectMany(static result => result.Changes),
+            change => change.TargetKind == targetKind
+        );
+        fileSystem.CreateDirectory(Path.GetDirectoryName(target.TargetPathOrName)!);
+        fileSystem.WriteAllText(target.TargetPathOrName, "unowned-python-target");
+
+        ConfigurationPhase14DoctorResult doctor = await service.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        ConfigurationPhase14EcosystemDoctorResult python = GetPythonDoctorResult(doctor);
+        Assert.True(python.ConfigurationPlanValid);
+        Assert.False(python.ConfigureOperationValid);
+        Assert.False(python.OwnershipManifestPresent);
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            async () =>
+                await service.DryRunConfigureAsync(
+                    CredentialEcosystem.Python,
+                    ConfigurationPhase14Scope.User,
+                    TestContext.Current.CancellationToken
+                )
+        );
     }
 
     [Theory]
@@ -4218,7 +4348,8 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         Uri? registryUrl = null,
         ICredentialAcquisitionService? credentialAcquisition = null,
         string? workspaceDirectoryPath = null,
-        string? ciTemporaryProductRootPath = null
+        string? ciTemporaryProductRootPath = null,
+        bool includeRegistryUrls = true
     ) =>
         new(
             new ConfigurationPhase14VerticalSliceOptions
@@ -4244,12 +4375,14 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
                 ProductExecutablePath = GetTestProductExecutablePath(fileSystem),
                 WorkspaceDirectoryPath = workspaceDirectoryPath,
                 TimeProvider = timeProvider,
-                RegistryUrls = new Dictionary<CredentialEcosystem, Uri>
-                {
-                    [CredentialEcosystem.Npm] = registryUrl ?? new(TestRegistryUrl),
-                    [CredentialEcosystem.Pnpm] = registryUrl ?? new(TestRegistryUrl),
-                    [CredentialEcosystem.Yarn] = registryUrl ?? new(TestRegistryUrl),
-                },
+                RegistryUrls = includeRegistryUrls
+                    ? new Dictionary<CredentialEcosystem, Uri>
+                    {
+                        [CredentialEcosystem.Npm] = registryUrl ?? new(TestRegistryUrl),
+                        [CredentialEcosystem.Pnpm] = registryUrl ?? new(TestRegistryUrl),
+                        [CredentialEcosystem.Yarn] = registryUrl ?? new(TestRegistryUrl),
+                    }
+                    : null,
             }
         );
 
