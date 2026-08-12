@@ -408,7 +408,6 @@ def test_bundle_builds_versioned_wheel_from_clean_checkout(
     )
     bundle_paths = list(output_root.glob("*.zip"))
     assert len(bundle_paths) == 1
-    assert len(bundle_paths) == 1
     expected_wheel_name = (
         "azureauth_credprovider_keyring-"
         f"{python_package_version}-py3-none-any.whl"
