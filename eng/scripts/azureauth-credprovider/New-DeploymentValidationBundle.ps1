@@ -63,27 +63,33 @@ $projectPath = Join-Path $repoRoot (
     'Hcoona.AzureAuth.CredProvider.Cli/Hcoona.AzureAuth.CredProvider.Cli.csproj'
 )
 $projectRoot = Split-Path -Parent $projectPath
-$versionOutput = dotnet tool run nbgv get-version -f json -p $projectRoot
-if ($LASTEXITCODE -ne 0) {
-    exit $LASTEXITCODE
+Push-Location -LiteralPath $repoRoot
+try {
+    $versionOutput = dotnet tool run nbgv get-version -f json -p $projectRoot
+    if ($LASTEXITCODE -ne 0) {
+        exit $LASTEXITCODE
+    }
+    $versionInfo = ($versionOutput -join [System.Environment]::NewLine) | ConvertFrom-Json
+    $productVersion = [string]$versionInfo.AssemblyInformationalVersion
+    $sourceRevision = [string]$versionInfo.GitCommitId
+    $semVer2 = [string]$versionInfo.SemVer2
+    if ([string]::IsNullOrWhiteSpace($productVersion) -or
+        [string]::IsNullOrWhiteSpace($sourceRevision) -or
+        [string]::IsNullOrWhiteSpace($semVer2)) {
+        throw 'NBGV did not resolve the required AzureAuth component version fields.'
+    }
+    $pythonPackageVersion = uv run `
+        --package nbgv-python `
+        python -c (
+        'from nbgv_python.versioning import normalize_version_field; ' +
+        'import sys; print(normalize_version_field(sys.argv[1], field="SemVer2"))'
+    ) $semVer2
+    if ($LASTEXITCODE -ne 0) {
+        exit $LASTEXITCODE
+    }
 }
-$versionInfo = ($versionOutput -join [System.Environment]::NewLine) | ConvertFrom-Json
-$productVersion = [string]$versionInfo.AssemblyInformationalVersion
-$sourceRevision = [string]$versionInfo.GitCommitId
-$semVer2 = [string]$versionInfo.SemVer2
-if ([string]::IsNullOrWhiteSpace($productVersion) -or
-    [string]::IsNullOrWhiteSpace($sourceRevision) -or
-    [string]::IsNullOrWhiteSpace($semVer2)) {
-    throw 'NBGV did not resolve the required AzureAuth component version fields.'
-}
-$pythonPackageVersion = uv run `
-    --package nbgv-python `
-    python -c (
-    'from nbgv_python.versioning import normalize_version_field; ' +
-    'import sys; print(normalize_version_field(sys.argv[1], field="SemVer2"))'
-) $semVer2
-if ($LASTEXITCODE -ne 0) {
-    exit $LASTEXITCODE
+finally {
+    Pop-Location
 }
 $pythonPackageVersion = ([string]$pythonPackageVersion).Trim()
 if ([string]::IsNullOrWhiteSpace($pythonPackageVersion)) {
@@ -277,13 +283,13 @@ function Assert-DeploymentPayloadMatchesBuildIdentity {
     $normalizedEntryPoints = (
         $entryPoints -replace "`r`n", "`n"
     ).TrimEnd("`n")
-    $expectedEntryPoints = @'
-[console_scripts]
-azureauth-keyring = azureauth_credprovider_keyring.shim:main
-
-[keyring.backends]
-azureauth = azureauth_credprovider_keyring.backend:AzureAuthKeyringBackend
-'@
+    $expectedEntryPoints = @(
+        '[console_scripts]'
+        'azureauth-keyring = azureauth_credprovider_keyring.shim:main'
+        ''
+        '[keyring.backends]'
+        'azureauth = azureauth_credprovider_keyring.backend:AzureAuthKeyringBackend'
+    ) -join "`n"
     if ($normalizedEntryPoints -cne $expectedEntryPoints) {
         throw 'The Python wheel entry points do not match the AzureAuth package contract.'
     }

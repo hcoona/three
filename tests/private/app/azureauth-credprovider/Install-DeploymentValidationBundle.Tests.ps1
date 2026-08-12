@@ -1308,10 +1308,16 @@ print("controlled-supported-host-failure")
 
 try {
     $normalReuseOutput = Join-Path $testRoot 'normal-then-no-build'
-    & $bundleGeneratorSource `
-        -BuildOs $buildOs `
-        -TargetRid $targetRid `
-        -OutputRoot $normalReuseOutput | Out-Null
+    Push-Location -LiteralPath (Split-Path -Parent $repoRoot)
+    try {
+        & $bundleGeneratorSource `
+            -BuildOs $buildOs `
+            -TargetRid $targetRid `
+            -OutputRoot $normalReuseOutput | Out-Null
+    }
+    finally {
+        Pop-Location
+    }
     $normalReuseStaging = Join-Path $normalReuseOutput "staging/$buildOs/$targetRid"
     $normalReuseIdentity = Join-Path $normalReuseStaging '.build-identity.json'
     $normalReusePackage = Join-Path $normalReuseOutput $deploymentPackageName
