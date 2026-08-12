@@ -1,0 +1,6 @@
+{
+  "schema": "workflow-delivery/v3/consumer-policy-acceptance",
+  "dependencies": {
+    "@hcoona/hcoona-release-smoke-npm": "0.0.0-acceptance-fixture"
+  }
+}

@@ -1188,3 +1188,20 @@ Add one canonical-encoding/wrong-value checksum test that installs a semantic
 parser sentinel, then rerun the full Adapter and required validation commands.
 
 <!-- END APPEND: workflow-delivery-v3-robust-tar-checksum-order-review-plan-2026-08-10 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit5-ci-plan-2026-08-12 -->
+
+## Workflow Delivery v3 Commit 5 Test Plan
+
+1. Pin Candidate, Plan, Evidence, lane-result, and Decision admission to the
+   exact current purpose, target, producer, run, and attempt.
+2. Cover blocked, repository-only, complete first-slice, manual, empty-diff,
+   failure, missing-work, and broad-control SLO scenarios.
+3. Verify the workflow's events, permissions, concurrency, exact DAG, pinned
+   actions, artifact bindings, static lanes, and always-run stable Finalizer.
+4. Cover every cataloged dependency surface, exact exception, near miss,
+   Windows form, malformed failure, deterministic output, and HK trigger parity.
+5. Run focused tests, full v3 tests, repository gates, pseudo-mutation review,
+   assertion-depth review, and independent GPT-5.6 Sol review.
+
+<!-- END APPEND: workflow-delivery-v3-commit5-ci-plan-2026-08-12 -->

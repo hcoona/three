@@ -1,0 +1,606 @@
+name: Workflow Delivery v3 CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('wdv3-ci-pr-{0}', github.event.pull_request.number) || format('wdv3-ci-slice-validation-{0}', github.sha) }}
+  cancel-in-progress: true
+
+env:
+  WDV3_PACKAGE: three-workflow-delivery-v3
+  WDV3_PROJECT: src/public/lib/hcoona-release-smoke-npm
+  WDV3_PURPOSE: ${{ github.event_name == 'pull_request' && 'ci-pr-slice-shadow' || 'slice-validation' }}
+  WDV3_REQUEST_ID: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('slice-validation-{0}', github.run_id) }}
+
+jobs:
+  request:
+    name: Form same-revision request
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+      started-at: ${{ steps.clock.outputs.started-at }}
+    steps:
+      - name: Record platform workflow creation
+        id: clock
+        run: |
+          metadata="$(
+            curl --fail --silent --show-error \
+              --header "Accept: application/vnd.github+json" \
+              --header "X-GitHub-Api-Version: 2022-11-28" \
+              "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          )"
+          created_at="$(
+            python3 -c 'import json,sys; value=json.load(sys.stdin)["created_at"]; assert isinstance(value,str) and value; print(value)' \
+              <<< "${metadata}"
+          )"
+          started_at="$(date --date="${created_at}" +%s)"
+          echo "started-at=${started_at}" >> "${GITHUB_OUTPUT}"
+      - name: Check out tested merge candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: '0.10.9'
+      - name: Form exact candidate and comparison
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+            three-workflow-delivery-v3 ci candidate \
+            --event-kind "${GITHUB_EVENT_NAME}" \
+            --repository "${GITHUB_REPOSITORY}" \
+            --request-id "${WDV3_REQUEST_ID}" \
+            --workflow-run-id "${GITHUB_RUN_ID}" \
+            --run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --selected-ref "${GITHUB_REF}" \
+            --base-sha "${BASE_SHA}" \
+            --head-sha "${HEAD_SHA}" \
+            --target "${GITHUB_SHA}" \
+            --output ".wdv3/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-request.json"
+      - name: Upload request
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: wdv3-${{ github.run_id }}-${{ github.run_attempt }}-request
+          path: .wdv3/wdv3-${{ github.run_id }}-${{ github.run_attempt }}-request.json
+          if-no-files-found: error
+          retention-days: 45
+          archive: false
+          include-hidden-files: true
+
+  discover-node:
+    name: Discover Node facts
+    needs: request
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      request-artifact-id: ${{ needs.request.outputs.artifact-id }}
+      request-artifact-digest: ${{ needs.request.outputs.artifact-digest }}
+      provider-artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      provider-artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+      started-at: ${{ needs.request.outputs.started-at }}
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: '0.10.9'
+      - name: Install exact toolchain
+        uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
+        with:
+          experimental: true
+          install: true
+      - name: Produce exact Provider Result
+        run: |
+          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+            three-workflow-delivery-v3 repository provide-node \
+            --request-id "${WDV3_REQUEST_ID}" \
+            --purpose "${WDV3_PURPOSE}" \
+            --workflow-run-id "${GITHUB_RUN_ID}" \
+            --run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --target "${GITHUB_SHA}" \
+            --compiler-producer plan \
+            --provider-producer discover-node \
+            --control "workflow-delivery-v3:${GITHUB_SHA}" \
+            --fetch-depth 0 \
+            --no-persist-credentials \
+            --output ".wdv3/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-provider.json"
+      - name: Upload Provider Result
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: wdv3-${{ github.run_id }}-${{ github.run_attempt }}-provider
+          path: .wdv3/wdv3-${{ github.run_id }}-${{ github.run_attempt }}-provider.json
+          if-no-files-found: error
+          retention-days: 45
+          archive: false
+          include-hidden-files: true
+
+  plan:
+    name: Close CI slice Plan
+    needs: discover-node
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      plan-digest: ${{ steps.plan.outputs.plan-digest }}
+      plan-ready: ${{ steps.plan.outputs.plan-ready }}
+      root-hk-selected: ${{ steps.plan.outputs.root-hk-selected }}
+      project-build-selected: ${{ steps.plan.outputs.project-build-selected }}
+      project-test-selected: ${{ steps.plan.outputs.project-test-selected }}
+      npm-artifact-build-selected: ${{ steps.plan.outputs.npm-artifact-build-selected }}
+      plan-artifact-id: ${{ steps.upload-plan.outputs.artifact-id }}
+      plan-artifact-digest: ${{ steps.upload-plan.outputs.artifact-digest }}
+      context-artifact-id: ${{ steps.upload-context.outputs.artifact-id }}
+      context-artifact-digest: ${{ steps.upload-context.outputs.artifact-digest }}
+      started-at: ${{ needs.discover-node.outputs.started-at }}
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: '0.10.9'
+      - name: Install exact toolchain
+        uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
+        with:
+          experimental: true
+          install: true
+      - name: Download request by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.discover-node.outputs.request-artifact-id }}
+          path: .wdv3/input
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Download Provider Result by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.discover-node.outputs.provider-artifact-id }}
+          path: .wdv3/input
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Admit downloaded payloads
+        run: |
+          cli="uv run --python 3.13 --package ${WDV3_PACKAGE} three-workflow-delivery-v3 ci admit-payload"
+          ${cli} \
+            --input ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-request.json" \
+            --expected-digest "${{ needs.discover-node.outputs.request-artifact-digest }}"
+          ${cli} \
+            --input ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-provider.json" \
+            --expected-digest "${{ needs.discover-node.outputs.provider-artifact-digest }}"
+      - name: Compile model and close Plan
+        id: plan
+        run: |
+          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+            three-workflow-delivery-v3 ci plan \
+            --request ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-request.json" \
+            --provider-result ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-provider.json" \
+            --request-artifact-id "${{ needs.discover-node.outputs.request-artifact-id }}" \
+            --request-artifact-digest "${{ needs.discover-node.outputs.request-artifact-digest }}" \
+            --provider-artifact-id "${{ needs.discover-node.outputs.provider-artifact-id }}" \
+            --provider-artifact-digest "${{ needs.discover-node.outputs.provider-artifact-digest }}" \
+            --output ".wdv3/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-plan.json" \
+            --adapter-context-output ".wdv3/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-adapter-context.json" \
+            --github-output "${GITHUB_OUTPUT}"
+      - name: Upload Plan
+        id: upload-plan
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: wdv3-${{ github.run_id }}-${{ github.run_attempt }}-plan
+          path: .wdv3/wdv3-${{ github.run_id }}-${{ github.run_attempt }}-plan.json
+          if-no-files-found: error
+          retention-days: 45
+          archive: false
+          include-hidden-files: true
+      - name: Upload Adapter context
+        id: upload-context
+        if: steps.plan.outputs.plan-ready == 'true' && hashFiles(format('.wdv3/wdv3-{0}-{1}-adapter-context.json', github.run_id, github.run_attempt)) != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: wdv3-${{ github.run_id }}-${{ github.run_attempt }}-adapter-context
+          path: .wdv3/wdv3-${{ github.run_id }}-${{ github.run_attempt }}-adapter-context.json
+          if-no-files-found: error
+          retention-days: 45
+          archive: false
+          include-hidden-files: true
+      - name: Verify Plan digest binding
+        run: test "sha256:${{ steps.upload-plan.outputs.artifact-digest }}" = "${{ steps.plan.outputs.plan-digest }}"
+
+  root-hk:
+    name: Static lane / root-hk
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: '0.10.9'
+      - name: Install exact toolchain
+        uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
+        with:
+          experimental: true
+          install: true
+      - name: Download Plan by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.plan.outputs.plan-artifact-id }}
+          path: .wdv3/input
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Admit Plan payload
+        run: |
+          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+            three-workflow-delivery-v3 ci admit-payload \
+            --input ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-plan.json" \
+            --expected-digest "${{ needs.plan.outputs.plan-artifact-digest }}"
+      - name: Run permanent root HK and consumer policy
+        id: execute
+        if: needs.plan.outputs.root-hk-selected == 'true'
+        continue-on-error: true
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            uv run --python 3.13 python eng/scripts/workflow_delivery_v3_hk.py \
+              --repository . --from-ref "${BASE_SHA}" --to-ref "${HEAD_SHA}" \
+              -- mise exec -- hk --no-progress check
+          else
+            mise exec -- hk --no-progress check --all
+          fi
+      - name: Form root-hk lane result
+        if: always()
+        run: |
+          args=()
+          if [[ "${{ needs.plan.outputs.root-hk-selected }}" == "true" ]]; then
+            args=(--outcome "${{ steps.execute.outcome }}")
+          fi
+          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+            three-workflow-delivery-v3 ci lane-result \
+            --plan ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-plan.json" \
+            --plan-digest "${{ needs.plan.outputs.plan-digest }}" \
+            --lane-id root-hk "${args[@]}" \
+            --output ".wdv3/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-root-hk-result.json"
+      - name: Upload root-hk lane result
+        id: upload
+        if: always() && hashFiles(format('.wdv3/wdv3-{0}-{1}-root-hk-result.json', github.run_id, github.run_attempt)) != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: wdv3-${{ github.run_id }}-${{ github.run_attempt }}-root-hk-result
+          path: .wdv3/wdv3-${{ github.run_id }}-${{ github.run_attempt }}-root-hk-result.json
+          if-no-files-found: error
+          retention-days: 45
+          archive: false
+          include-hidden-files: true
+
+  project-build:
+    name: Static lane / project-build
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {fetch-depth: 0, persist-credentials: false, ref: '${{ github.sha }}'}
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with: {version: '0.10.9'}
+      - name: Install exact toolchain
+        uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
+        with: {experimental: true, install: true}
+      - name: Download Plan
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with: {artifact-ids: '${{ needs.plan.outputs.plan-artifact-id }}', path: .wdv3/input, skip-decompress: true, digest-mismatch: error}
+      - name: Download Adapter context
+        if: needs.plan.outputs.project-build-selected == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with: {artifact-ids: '${{ needs.plan.outputs.context-artifact-id }}', path: .wdv3/input, skip-decompress: true, digest-mismatch: error}
+      - name: Admit inputs
+        run: |
+          items=("plan:${{ needs.plan.outputs.plan-artifact-digest }}")
+          if [[ "${{ needs.plan.outputs.project-build-selected }}" == "true" ]]; then
+            items+=("adapter-context:${{ needs.plan.outputs.context-artifact-digest }}")
+          fi
+          for item in "${items[@]}"; do
+            IFS=: read -r role digest <<< "${item}"
+            uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+              three-workflow-delivery-v3 ci admit-payload \
+              --input ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${role}.json" \
+              --expected-digest "${digest}"
+          done
+      - name: Run project build Adapter
+        if: needs.plan.outputs.project-build-selected == 'true'
+        continue-on-error: true
+        run: |
+          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+            three-workflow-delivery-v3 ci node-adapter \
+            --lane-id project-build \
+            --plan ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-plan.json" \
+            --plan-digest "${{ needs.plan.outputs.plan-digest }}" \
+            --adapter-context ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-adapter-context.json" \
+            --output .wdv3/project-build-adapter.json
+      - name: Form project-build lane result
+        if: always()
+        run: |
+          args=()
+          if [[ "${{ needs.plan.outputs.project-build-selected }}" == "true" ]]; then
+            args=(--mechanical-result .wdv3/project-build-adapter.json)
+          fi
+          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+            three-workflow-delivery-v3 ci lane-result \
+            --plan ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-plan.json" \
+            --plan-digest "${{ needs.plan.outputs.plan-digest }}" \
+            --lane-id project-build "${args[@]}" \
+            --output ".wdv3/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-project-build-result.json"
+      - name: Upload project-build lane result
+        id: upload
+        if: always() && hashFiles(format('.wdv3/wdv3-{0}-{1}-project-build-result.json', github.run_id, github.run_attempt)) != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with: {name: 'wdv3-${{ github.run_id }}-${{ github.run_attempt }}-project-build-result', path: '.wdv3/wdv3-${{ github.run_id }}-${{ github.run_attempt }}-project-build-result.json', if-no-files-found: error, retention-days: 45, archive: false, include-hidden-files: true}
+
+  project-test:
+    name: Static lane / project-test
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {fetch-depth: 0, persist-credentials: false, ref: '${{ github.sha }}'}
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with: {version: '0.10.9'}
+      - name: Install exact toolchain
+        uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
+        with: {experimental: true, install: true}
+      - name: Download Plan
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with: {artifact-ids: '${{ needs.plan.outputs.plan-artifact-id }}', path: .wdv3/input, skip-decompress: true, digest-mismatch: error}
+      - name: Download Adapter context
+        if: needs.plan.outputs.project-test-selected == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with: {artifact-ids: '${{ needs.plan.outputs.context-artifact-id }}', path: .wdv3/input, skip-decompress: true, digest-mismatch: error}
+      - name: Admit inputs
+        run: |
+          items=("plan:${{ needs.plan.outputs.plan-artifact-digest }}")
+          if [[ "${{ needs.plan.outputs.project-test-selected }}" == "true" ]]; then
+            items+=("adapter-context:${{ needs.plan.outputs.context-artifact-digest }}")
+          fi
+          for item in "${items[@]}"; do
+            IFS=: read -r role digest <<< "${item}"
+            uv run --python 3.13 --package "${WDV3_PACKAGE}" three-workflow-delivery-v3 ci admit-payload \
+              --input ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${role}.json" --expected-digest "${digest}"
+          done
+      - name: Run project test Adapter
+        if: needs.plan.outputs.project-test-selected == 'true'
+        continue-on-error: true
+        run: |
+          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+            three-workflow-delivery-v3 ci node-adapter \
+            --lane-id project-test \
+            --plan ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-plan.json" \
+            --plan-digest "${{ needs.plan.outputs.plan-digest }}" \
+            --adapter-context ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-adapter-context.json" \
+            --output .wdv3/project-test-adapter.json
+      - name: Form project-test lane result
+        if: always()
+        run: |
+          args=()
+          if [[ "${{ needs.plan.outputs.project-test-selected }}" == "true" ]]; then args=(--mechanical-result .wdv3/project-test-adapter.json); fi
+          uv run --python 3.13 --package "${WDV3_PACKAGE}" three-workflow-delivery-v3 ci lane-result \
+            --plan ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-plan.json" \
+            --plan-digest "${{ needs.plan.outputs.plan-digest }}" --lane-id project-test "${args[@]}" \
+            --output ".wdv3/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-project-test-result.json"
+      - name: Upload project-test lane result
+        id: upload
+        if: always() && hashFiles(format('.wdv3/wdv3-{0}-{1}-project-test-result.json', github.run_id, github.run_attempt)) != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with: {name: 'wdv3-${{ github.run_id }}-${{ github.run_attempt }}-project-test-result', path: '.wdv3/wdv3-${{ github.run_id }}-${{ github.run_attempt }}-project-test-result.json', if-no-files-found: error, retention-days: 45, archive: false, include-hidden-files: true}
+
+  npm-artifact-build:
+    name: Static lane / npm-artifact-build
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {fetch-depth: 0, persist-credentials: false, ref: '${{ github.sha }}'}
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with: {version: '0.10.9'}
+      - name: Install exact toolchain
+        uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
+        with: {experimental: true, install: true}
+      - name: Download Plan
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with: {artifact-ids: '${{ needs.plan.outputs.plan-artifact-id }}', path: .wdv3/input, skip-decompress: true, digest-mismatch: error}
+      - name: Download Adapter context
+        if: needs.plan.outputs.npm-artifact-build-selected == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with: {artifact-ids: '${{ needs.plan.outputs.context-artifact-id }}', path: .wdv3/input, skip-decompress: true, digest-mismatch: error}
+      - name: Admit inputs
+        run: |
+          items=("plan:${{ needs.plan.outputs.plan-artifact-digest }}")
+          if [[ "${{ needs.plan.outputs.npm-artifact-build-selected }}" == "true" ]]; then
+            items+=("adapter-context:${{ needs.plan.outputs.context-artifact-digest }}")
+          fi
+          for item in "${items[@]}"; do
+            IFS=: read -r role digest <<< "${item}"
+            uv run --python 3.13 --package "${WDV3_PACKAGE}" three-workflow-delivery-v3 ci admit-payload \
+              --input ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${role}.json" --expected-digest "${digest}"
+          done
+      - name: Run npm artifact build Adapter
+        if: needs.plan.outputs.npm-artifact-build-selected == 'true'
+        continue-on-error: true
+        run: |
+          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+            three-workflow-delivery-v3 ci node-adapter \
+            --lane-id npm-artifact-build \
+            --plan ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-plan.json" \
+            --plan-digest "${{ needs.plan.outputs.plan-digest }}" \
+            --adapter-context ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-adapter-context.json" \
+            --tarball-output ".wdv3/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-npm-tarball.tgz" \
+            --output .wdv3/npm-artifact-build-adapter.json
+      - name: Upload retained npm tarball
+        id: upload-tarball
+        if: hashFiles(format('.wdv3/wdv3-{0}-{1}-npm-tarball.tgz', github.run_id, github.run_attempt)) != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: wdv3-${{ github.run_id }}-${{ github.run_attempt }}-npm-tarball.tgz
+          path: .wdv3/wdv3-${{ github.run_id }}-${{ github.run_attempt }}-npm-tarball.tgz
+          if-no-files-found: error
+          retention-days: 45
+          archive: false
+          include-hidden-files: true
+      - name: Form npm artifact lane result
+        if: always()
+        run: |
+          args=()
+          if [[ "${{ needs.plan.outputs.npm-artifact-build-selected }}" == "true" ]]; then
+            args=(--mechanical-result .wdv3/npm-artifact-build-adapter.json)
+            if [[ -n "${{ steps.upload-tarball.outputs.artifact-id }}" ]]; then
+              args+=(
+                --artifact-id "${{ steps.upload-tarball.outputs.artifact-id }}"
+                --artifact-name "wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-npm-tarball.tgz"
+                --artifact-url "${{ steps.upload-tarball.outputs.artifact-url }}"
+                --artifact-digest "${{ steps.upload-tarball.outputs.artifact-digest }}"
+              )
+            fi
+          fi
+          uv run --python 3.13 --package "${WDV3_PACKAGE}" three-workflow-delivery-v3 ci lane-result \
+            --plan ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-plan.json" \
+            --plan-digest "${{ needs.plan.outputs.plan-digest }}" --lane-id npm-artifact-build "${args[@]}" \
+            --output ".wdv3/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-npm-artifact-build-result.json"
+      - name: Upload npm artifact lane result
+        id: upload
+        if: always() && hashFiles(format('.wdv3/wdv3-{0}-{1}-npm-artifact-build-result.json', github.run_id, github.run_attempt)) != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with: {name: 'wdv3-${{ github.run_id }}-${{ github.run_attempt }}-npm-artifact-build-result', path: '.wdv3/wdv3-${{ github.run_id }}-${{ github.run_attempt }}-npm-artifact-build-result.json', if-no-files-found: error, retention-days: 45, archive: false, include-hidden-files: true}
+
+  required-finalizer:
+    name: Workflow Delivery v3 / hcoona-release-smoke-npm (shadow)
+    if: always()
+    needs: [plan, root-hk, project-build, project-test, npm-artifact-build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {fetch-depth: 0, persist-credentials: false, ref: '${{ github.sha }}'}
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with: {version: '0.10.9'}
+      - name: Download Plan
+        if: always() && needs.plan.outputs.plan-artifact-id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with: {artifact-ids: '${{ needs.plan.outputs.plan-artifact-id }}', path: .wdv3/final, skip-decompress: true, digest-mismatch: error}
+      - name: Download root-hk result
+        if: always() && needs.root-hk.outputs.artifact-id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with: {artifact-ids: '${{ needs.root-hk.outputs.artifact-id }}', path: .wdv3/final, skip-decompress: true, digest-mismatch: error}
+      - name: Download project-build result
+        if: always() && needs.project-build.outputs.artifact-id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with: {artifact-ids: '${{ needs.project-build.outputs.artifact-id }}', path: .wdv3/final, skip-decompress: true, digest-mismatch: error}
+      - name: Download project-test result
+        if: always() && needs.project-test.outputs.artifact-id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with: {artifact-ids: '${{ needs.project-test.outputs.artifact-id }}', path: .wdv3/final, skip-decompress: true, digest-mismatch: error}
+      - name: Download npm artifact result
+        if: always() && needs.npm-artifact-build.outputs.artifact-id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with: {artifact-ids: '${{ needs.npm-artifact-build.outputs.artifact-id }}', path: .wdv3/final, skip-decompress: true, digest-mismatch: error}
+      - name: Admit available results and finalize
+        if: always() && needs.plan.outputs.plan-artifact-id != ''
+        env:
+          PLAN_DIGEST: ${{ needs.plan.outputs.plan-digest }}
+          PLAN_ARTIFACT_DIGEST: ${{ needs.plan.outputs.plan-artifact-digest }}
+          ROOT_DIGEST: ${{ needs.root-hk.outputs.artifact-digest }}
+          BUILD_DIGEST: ${{ needs.project-build.outputs.artifact-digest }}
+          TEST_DIGEST: ${{ needs.project-test.outputs.artifact-digest }}
+          NPM_DIGEST: ${{ needs.npm-artifact-build.outputs.artifact-digest }}
+          STARTED_AT: ${{ needs.plan.outputs.started-at }}
+        run: |
+          plan=".wdv3/final/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-plan.json"
+          cli=(uv run --python 3.13 --package "${WDV3_PACKAGE}" three-workflow-delivery-v3)
+          "${cli[@]}" ci admit-payload --input "${plan}" --expected-digest "${PLAN_ARTIFACT_DIGEST}"
+          args=()
+          for item in "root-hk:${ROOT_DIGEST}" "project-build:${BUILD_DIGEST}" "project-test:${TEST_DIGEST}" "npm-artifact-build:${NPM_DIGEST}"; do
+            IFS=: read -r lane digest <<< "${item}"
+            path=".wdv3/final/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${lane}-result.json"
+            if [[ -f "${path}" ]]; then
+              "${cli[@]}" ci admit-payload --input "${path}" --expected-digest "${digest}"
+              args+=(--lane-result "${path}")
+            fi
+          done
+          pr_args=()
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            pr_args=(
+              --pull-request-number "${{ github.event.pull_request.number }}"
+              --github-api-url "${GITHUB_API_URL}"
+            )
+          fi
+          "${cli[@]}" ci finalize \
+            --plan "${plan}" \
+            --plan-digest "${PLAN_DIGEST}" \
+            "${args[@]}" \
+            --started-at "${STARTED_AT}" \
+            "${pr_args[@]}" \
+            --decision-output .wdv3/ci-slice-decision.json \
+            --summary-output .wdv3/ci-slice-summary.json \
+            --github-step-summary "${GITHUB_STEP_SUMMARY}"
+      - name: Report noncanonical contract failure without a Decision
+        if: always() && hashFiles('.wdv3/ci-slice-decision.json') == ''
+        run: |
+          {
+            echo "## Workflow Delivery v3 CI contract failure"
+            echo
+            echo "Noncanonical contract failure: no canonical CI Decision was produced after Plan, lane, or finalization transport/admission processing."
+          } >> "${GITHUB_STEP_SUMMARY}"
+          exit 1

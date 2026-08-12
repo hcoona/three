@@ -1758,3 +1758,41 @@ The final Adapter suite passed **198 tests**. Managed HK passed with **1,486
 tests**, and root pytest passed with **3,521 tests**.
 
 <!-- END APPEND: workflow-delivery-v3-exact-tar-trailer-status-2026-08-10 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit5-ci-status-2026-08-12 -->
+
+## Workflow Delivery v3 Commit 5 Status
+
+The cancelled oversized implementation was decomposed and salvaged into three
+bounded scopes: CI model core, consumer-policy/HK gate, and workflow/CLI.
+Nonfunctional custom artifact transport and unrelated Provider/lock changes
+were removed.
+
+Focused commit-5 validation currently passes 269 tests. Independent GPT-5.6
+Sol reviews identified and closed partial-Plan admission, incomplete-model
+planning, lane-specific npm artifact Evidence, SLO cohort, summary, empty-diff,
+consumer-policy coverage, and workflow timing defects. Pseudo-mutation and
+assertion-quality review added exact current-candidate admission, CLI output,
+dependency-configuration, Repository Model identity, and Node global-input
+regressions. `test-analysis-extensions` was unavailable, so pytest conventions
+were applied directly.
+
+<!-- END APPEND: workflow-delivery-v3-commit5-ci-status-2026-08-12 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit5-final-closure-2026-08-12 -->
+
+## Workflow Delivery v3 Commit 5 Final Closure
+
+Commit 5 passed the complete v3 suite with **1,838 tests**, the managed
+`v3-control-pytest` HK gate with **1,838 tests**, and root pytest with
+**3,873 tests**. The consumer-policy suite passed **148 tests**; the focused HK
+trigger suite passed **50 tests**. Pyrefly, Ruff check/format, actionlint, Pkl
+evaluation, lock checks, .NET build, JavaScript build, and diff integrity
+passed.
+
+Five successive GPT-5.6 Sol review rounds covered CI contracts and workflow
+transport, consumer-policy/HK behavior, and holistic LLD compliance. Every
+atomic finding was independently adjudicated as TP or FP. The final round
+returned no findings from all three original reviewers.
+
+<!-- END APPEND: workflow-delivery-v3-commit5-final-closure-2026-08-12 -->

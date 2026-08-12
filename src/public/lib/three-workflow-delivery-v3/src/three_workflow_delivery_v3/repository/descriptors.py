@@ -735,6 +735,22 @@ def discover_release_units(
     )
 
 
+class MissingFirstSliceAuthoringError(ValueError):
+    """The target identity is valid but required authoring is absent."""
+
+
+class MissingFirstSliceDescriptorError(MissingFirstSliceAuthoringError):
+    """The target identity is valid but its required descriptor is absent."""
+
+
+class MissingFirstSliceQualitySelectionError(MissingFirstSliceAuthoringError):
+    """The target identity is valid but its Quality selection is absent."""
+
+
+class MissingFirstSliceReleasePolicyError(MissingFirstSliceAuthoringError):
+    """The target identity is valid but its Release policy is absent."""
+
+
 def load_first_slice_authoring(  # noqa: C901
     repo_root: Path,
     target: str,
@@ -743,6 +759,9 @@ def load_first_slice_authoring(  # noqa: C901
     target_paths = _git_paths(repo_root, target)
     target_path_set = frozenset(target_paths)
     descriptors = _discover_release_units(repo_root, target, target_paths)
+    if not descriptors:
+        message = "first-slice Release Unit descriptor is missing"
+        raise MissingFirstSliceDescriptorError(message)
     if len(descriptors) != 1:
         message = (
             "first-slice authoring must contain exactly one Release Unit "
@@ -758,16 +777,16 @@ def load_first_slice_authoring(  # noqa: C901
     )
     if len(matches) != 1:
         message = "first-slice Release Unit descriptor is missing"
-        raise ValueError(message)
+        raise MissingFirstSliceDescriptorError(message)
     descriptor = matches[0]
     descriptor_root = expected_root
     quality_path = (descriptor_root / QUALITY_BASENAME).as_posix()
     if quality_path not in target_path_set:
         message = f"Quality selection does not exist: {quality_path}"
-        raise ValueError(message)
+        raise MissingFirstSliceQualitySelectionError(message)
     if FIRST_SLICE_POLICY_PATH not in target_path_set:
         message = f"Release policy does not exist: {FIRST_SLICE_POLICY_PATH}"
-        raise ValueError(message)
+        raise MissingFirstSliceReleasePolicyError(message)
     quality = load_quality_selection(
         repo_root / quality_path,
         _target_content=_git_target_file(repo_root, target, quality_path),

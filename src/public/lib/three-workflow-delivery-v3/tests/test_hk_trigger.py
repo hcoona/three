@@ -22,6 +22,7 @@ HK_SUPPORT = REPO_ROOT / "src/private/lib/hk"
 HK_RANGE_HELPER = Path("eng/scripts/workflow_delivery_v3_hk.py")
 STEP_NAME = "v3-control-pytest"
 GOVERNED_PATHS = (
+    ".gitattributes",
     "src/public/lib/three-workflow-delivery-v3/src/control.py",
     "src/public/app/example/workflow-delivery.release-unit.yml",
     "src/private/app/example/workflow-delivery.quality.yml",
@@ -630,3 +631,458 @@ def test_v3_collection_roots_include_commit3_contract_boundary_suite() -> None:
         cwd=REPO_ROOT,
     )
     assert sentinel in collection.stdout.splitlines()
+
+
+CONSUMER_STEP_NAME = "hcoona-release-smoke-npm-consumer-policy"
+CONSUMER_POLICY_IMPLEMENTATION = Path(
+    "eng/scripts/workflow_delivery_v3_consumer_policy.py",
+)
+CONSUMER_SURFACE_PATHS = (
+    ".gitattributes",
+    "src/public/app/consumer/package.json",
+    "src/public/app/consumer/pyproject.toml",
+    "src/public/app/consumer/consumer.csproj",
+    "src/public/app/consumer/pnpm-lock.yaml",
+    "src/public/app/consumer/bun.lock",
+    "src/public/app/consumer/.github/workflows/install.yml",
+    ".github/actions/consumer-install/action.yml",
+    "eng/bootstrap/setup-consumer.ps1",
+    "eng/bootstrap/install-consumer.cmd",
+    "postinstall-consumer.mjs",
+    "eng/bootstrap/postinstall-consumer.cjs",
+    "eng/bootstrap/postinstall-consumer.ts",
+    "src/public/app/consumer/.npmrc",
+)
+
+
+def _named_step_from_plan(
+    result: subprocess.CompletedProcess[str],
+    step_name: str,
+) -> HkStepJson:
+    plan: HkPlanJson = json.loads(result.stdout)
+    assert plan["hook"] == "check"
+    assert plan["runType"] == "check"
+    assert "small" in plan["profiles"]
+    assert len(plan["steps"]) == 1
+    step = plan["steps"][0]
+    assert step["name"] == step_name
+    return step
+
+
+def _named_step_plan(
+    repo: Path,
+    step_name: str,
+    *arguments: str,
+) -> HkStepJson:
+    result = _run(
+        (
+            _hk_executable(),
+            "--no-progress",
+            "check",
+            "--plan",
+            "--json",
+            "--step",
+            step_name,
+            *arguments,
+        ),
+        cwd=repo,
+    )
+    return _named_step_from_plan(result, step_name)
+
+
+def _named_helper_step_plan(
+    repo: Path,
+    base: str,
+    head: str,
+    step_name: str,
+) -> HkStepJson:
+    result = _run(
+        (
+            sys.executable,
+            str(repo / HK_RANGE_HELPER),
+            "--repository",
+            str(repo),
+            "--from-ref",
+            base,
+            "--to-ref",
+            head,
+            "--",
+            _hk_executable(),
+            "--no-progress",
+            "check",
+            "--plan",
+            "--json",
+            "--step",
+            step_name,
+        ),
+        cwd=repo,
+    )
+    return _named_step_from_plan(result, step_name)
+
+
+@pytest.mark.parametrize(
+    "path",
+    CONSUMER_SURFACE_PATHS,
+    ids=[
+        "git-attributes",
+        "node-dependency-manifest",
+        "python-dependency-manifest",
+        "dotnet-dependency-manifest",
+        "lockfile",
+        "bun-lock",
+        "workflow",
+        "composite-action",
+        "powershell-install-bootstrap-script",
+        "cmd-install-bootstrap-script",
+        "postinstall-mjs-root",
+        "postinstall-cjs-nested",
+        "postinstall-ts-nested",
+        "dependency-configuration",
+    ],
+)
+def test_real_hk_plan_triggers_consumer_policy_for_each_cataloged_surface(
+    tmp_path: Path,
+    path: str,
+) -> None:
+    """Select the permanent policy for each closed surface category."""
+    repo = tmp_path / "repo"
+    base = _initialize_repository(repo)
+    _write(repo, path, "cataloged surface\n")
+    head = _commit(repo, "cataloged dependency surface")
+
+    paths = _helper_changed_paths(repo, base, head)
+    step = _named_helper_step_plan(
+        repo,
+        base,
+        head,
+        CONSUMER_STEP_NAME,
+    )
+
+    assert paths == (path,)
+    assert step["status"] == "included"
+    assert step["fileCount"] == 1
+
+
+def test_gitattributes_selects_both_v3_internal_steps(
+    tmp_path: Path,
+) -> None:
+    """Select control tests and the policy gate for LF-policy changes."""
+    repo = tmp_path / "repo"
+    base = _initialize_repository(repo)
+    path = ".gitattributes"
+    _write(repo, path, "consumer-policy text eol=lf\n")
+    head = _commit(repo, "consumer policy attributes")
+
+    paths = _helper_changed_paths(repo, base, head)
+    control = _named_helper_step_plan(repo, base, head, STEP_NAME)
+    consumer = _named_helper_step_plan(
+        repo,
+        base,
+        head,
+        CONSUMER_STEP_NAME,
+    )
+
+    assert paths == (path,)
+    assert control["status"] == consumer["status"] == "included"
+    assert control["fileCount"] == consumer["fileCount"] == 1
+
+
+def test_composite_action_manifest_selects_only_consumer_policy(
+    tmp_path: Path,
+) -> None:
+    """Select the policy without broadening the v3 control inventory."""
+    repo = tmp_path / "repo"
+    base = _initialize_repository(repo)
+    path = ".github/actions/consumer-install/action.yaml"
+    _write(repo, path, "runs:\n  using: composite\n  steps: []\n")
+    head = _commit(repo, "local composite action")
+
+    paths = _helper_changed_paths(repo, base, head)
+    consumer = _named_helper_step_plan(
+        repo,
+        base,
+        head,
+        CONSUMER_STEP_NAME,
+    )
+    control = _named_helper_step_plan(repo, base, head, STEP_NAME)
+
+    assert paths == (path,)
+    assert consumer["status"] == "included"
+    assert consumer["fileCount"] == 1
+    assert control["status"] == "skipped"
+    assert control["fileCount"] == 0
+
+
+def test_dangling_catalog_symlink_selects_consumer_policy(
+    tmp_path: Path,
+) -> None:
+    """Include a changed dangling catalog path without following its target."""
+    repo = tmp_path / "repo"
+    base = _initialize_repository(repo)
+    path = "consumer/package.json"
+    destination = repo / path
+    destination.parent.mkdir(parents=True)
+    destination.symlink_to("missing-package.json")
+    head = _commit(repo, "dangling catalog surface")
+
+    paths = _helper_changed_paths(repo, base, head)
+    step = _named_helper_step_plan(
+        repo,
+        base,
+        head,
+        CONSUMER_STEP_NAME,
+    )
+
+    assert paths == (path,)
+    assert step["status"] == "included"
+    assert step["fileCount"] == 1
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        HistoryChange("add", "tools/postinstall-smoke.js"),
+        HistoryChange("modify", "consumer/package.json"),
+        HistoryChange(
+            "delete",
+            "consumer/bun.lock",
+        ),
+        HistoryChange(
+            "rename",
+            "archive/dependencies.txt",
+            old_path="tools/postinstall-smoke.js",
+        ),
+        HistoryChange(
+            "rename",
+            "consumer/bun.lock",
+            old_path="archive/dependencies.lock",
+        ),
+    ],
+    ids=[
+        "postinstall-add",
+        "modify",
+        "bun-lock-delete",
+        "postinstall-rename-out",
+        "bun-lock-rename-in",
+    ],
+)
+def test_real_hk_plan_triggers_consumer_policy_for_git_history(
+    tmp_path: Path,
+    change: HistoryChange,
+) -> None:
+    """Retain add, modify, delete, and both rename sides in policy scope."""
+    repo = tmp_path / "repo"
+    baseline_paths = (
+        (change.old_path or change.path,)
+        if change.kind in {"modify", "delete", "rename"}
+        else ()
+    )
+    base = _initialize_repository(repo, baseline_paths=baseline_paths)
+    _apply_change(repo, change)
+    head = _commit(repo, f"consumer surface {change.kind}")
+
+    paths = _helper_changed_paths(repo, base, head)
+    step = _named_helper_step_plan(
+        repo,
+        base,
+        head,
+        CONSUMER_STEP_NAME,
+    )
+
+    if change.kind == "rename":
+        assert paths == (change.old_path, change.path)
+    else:
+        assert paths == (change.path,)
+    assert step["status"] == "included"
+    assert step["fileCount"] == 1
+
+
+def test_real_hk_plan_slice_validation_runs_both_internal_steps(
+    tmp_path: Path,
+) -> None:
+    """Make the manual full/slice signal include both internal checks."""
+    repo = tmp_path / "repo"
+    _initialize_repository(repo)
+
+    control = _named_step_plan(repo, STEP_NAME, "--all")
+    consumer = _named_step_plan(repo, CONSUMER_STEP_NAME, "--all")
+
+    assert control["status"] == "included"
+    assert control["fileCount"] > 0
+    assert consumer["status"] == "included"
+    assert consumer["fileCount"] > 0
+
+
+def test_real_hk_plan_retains_complete_v3_control_trigger_inventory(
+    tmp_path: Path,
+) -> None:
+    """Retain every governed v3 path family while adding the policy."""
+    repo = tmp_path / "repo"
+    base = _initialize_repository(repo)
+    governed_paths = (
+        *GOVERNED_PATHS,
+        "mise.toml",
+        "mise.lock",
+        CONSUMER_POLICY_IMPLEMENTATION.as_posix(),
+    )
+    for path in governed_paths:
+        if path == "hk.pkl":
+            config = (repo / path).read_text(encoding="utf-8")
+            _write(repo, path, config + "\n// retained trigger inventory\n")
+        elif path == HK_RANGE_HELPER.as_posix():
+            helper = (repo / path).read_text(encoding="utf-8")
+            _write(repo, path, helper + "\n# retained trigger inventory\n")
+        else:
+            _write(repo, path, "governed\n")
+    head = _commit(repo, "complete v3 trigger inventory")
+
+    paths = _helper_changed_paths(repo, base, head)
+    step = _named_helper_step_plan(repo, base, head, STEP_NAME)
+
+    assert set(paths) == set(governed_paths)
+    assert step["status"] == "included"
+    assert step["fileCount"] == len(governed_paths)
+
+
+def test_real_hk_plan_policy_only_selects_v3_control_not_unrelated_product_source(  # noqa: E501
+    tmp_path: Path,
+) -> None:
+    """Keep policy/control inputs governed without broad product matching."""
+    policy_repo = tmp_path / "policy-repo"
+    policy_base = _initialize_repository(policy_repo)
+    policy_path = (
+        "eng/workflow-delivery/v3/policies/hcoona-release-smoke-npm.yml"
+    )
+    _write(policy_repo, policy_path, "policy\n")
+    policy_head = _commit(policy_repo, "policy change")
+
+    policy_control = _named_helper_step_plan(
+        policy_repo,
+        policy_base,
+        policy_head,
+        STEP_NAME,
+    )
+    policy_consumer = _named_helper_step_plan(
+        policy_repo,
+        policy_base,
+        policy_head,
+        CONSUMER_STEP_NAME,
+    )
+
+    product_repo = tmp_path / "product-repo"
+    product_base = _initialize_repository(product_repo)
+    product_path = "src/public/lib/hcoona-release-smoke/src/index.ts"
+    _write(product_repo, product_path, "export const value = 1;\n")
+    product_head = _commit(product_repo, "unrelated product source")
+    product_control = _named_helper_step_plan(
+        product_repo,
+        product_base,
+        product_head,
+        STEP_NAME,
+    )
+
+    assert policy_control["status"] == "included"
+    assert policy_control["fileCount"] == 1
+    assert policy_consumer["status"] == "skipped"
+    assert policy_consumer["fileCount"] == 0
+    assert product_control["status"] == "skipped"
+    assert product_control["fileCount"] == 0
+
+
+def test_consumer_policy_is_one_internal_root_hk_step_not_ci_obligation() -> (
+    None
+):
+    """Keep the policy inside root HK rather than adding a fifth lane."""
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    from three_workflow_delivery_v3.records.ci import (  # noqa: PLC0415
+        CI_LANE_IDS,
+    )
+
+    hk_config = HK_CONFIG.read_text(encoding="utf-8")
+    v3_start = hk_config.index("local workflow_delivery_v3_validation")
+    v3_end = hk_config.index("local dotenv_linter", v3_start)
+    v3_config = hk_config[v3_start:v3_end]
+
+    assert v3_config.count(f'["{CONSUMER_STEP_NAME}"]') == 1
+    assert (
+        "python eng/scripts/workflow_delivery_v3_consumer_policy.py "
+        "--repository-root ."
+    ) in v3_config
+    assert "--timeout-seconds 720" in v3_config
+    assert CI_LANE_IDS == (
+        "root-hk",
+        "project-build",
+        "project-test",
+        "npm-artifact-build",
+    )
+    assert CONSUMER_STEP_NAME not in CI_LANE_IDS
+
+
+def test_testagent_markdown_exclusion_is_local_to_two_markdown_steps() -> None:
+    """Exclude append-only artifacts only from markdownlint/prettier."""
+    hk_config = HK_CONFIG.read_text(encoding="utf-8")
+    markdown_start = hk_config.index("local markdown_linters")
+    markdown_end = hk_config.index("local pkl_linters", markdown_start)
+    markdown_config = hk_config[markdown_start:markdown_end]
+    remaining_config = hk_config[:markdown_start] + hk_config[markdown_end:]
+    expected_exclusion_reference_count = 3
+    exclusion_line = (
+        "    exclude = general_exclude_list + "
+        "markdown_append_only_artifact_exclude"
+    )
+
+    assert hk_config.count('".testagent/**"') == 1
+    assert markdown_config.count("markdown_append_only_artifact_exclude") == (
+        expected_exclusion_reference_count
+    )
+    assert (
+        'local markdown_append_only_artifact_exclude = List(".testagent/**")'
+    ) in (markdown_config)
+    assert (
+        '["markdownlint-cli2"] {\n'
+        '    profiles = List("small")\n'
+        f"{exclusion_line}"
+    ) in markdown_config
+    assert (
+        '["markdown-prettier"] {\n'
+        '    profiles = List("small")\n'
+        f"{exclusion_line}"
+    ) in markdown_config
+    assert ".testagent/**" not in remaining_config
+    assert "markdown_append_only_artifact_exclude" not in remaining_config
+
+
+@pytest.mark.parametrize(
+    "path",
+    [CONSUMER_POLICY_IMPLEMENTATION.as_posix(), "hk.pkl"],
+    ids=["implementation", "root-hk-configuration"],
+)
+def test_real_hk_plan_triggers_consumer_policy_for_policy_definition(
+    tmp_path: Path,
+    path: str,
+) -> None:
+    """Select the policy when its implementation or registration changes."""
+    repo = tmp_path / "repo"
+    base = _initialize_repository(repo)
+    if path == "hk.pkl":
+        config = (repo / path).read_text(encoding="utf-8")
+        _write(repo, path, config + "\n// consumer policy definition\n")
+    else:
+        _write(repo, path, "policy implementation\n")
+    head = _commit(repo, "consumer policy definition")
+
+    paths = _helper_changed_paths(repo, base, head)
+    consumer = _named_helper_step_plan(
+        repo,
+        base,
+        head,
+        CONSUMER_STEP_NAME,
+    )
+    control = _named_helper_step_plan(repo, base, head, STEP_NAME)
+
+    assert paths == (path,)
+    assert consumer["status"] == "included"
+    assert consumer["fileCount"] == 1
+    assert control["status"] == "included"
+    assert control["fileCount"] == 1

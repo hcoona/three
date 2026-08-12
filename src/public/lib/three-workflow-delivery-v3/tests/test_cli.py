@@ -1,4 +1,4 @@
-"""Tests for the bounded Workflow Delivery v3 commit-3 CLI."""
+"""Tests for the bounded Workflow Delivery v3 CLI."""
 
 from __future__ import annotations
 
@@ -7,10 +7,29 @@ import json
 import subprocess
 import tomllib
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Self, cast
+from urllib.request import Request
 
 import pytest
 from three_workflow_delivery_v3 import cli as cli_module
-from three_workflow_delivery_v3.canonical import canonical_sha256
+from three_workflow_delivery_v3.canonical import (
+    JsonValue,
+    canonical_sha256,
+    canonicalize,
+)
+from three_workflow_delivery_v3.ci.planner import (
+    form_pull_request_candidate,
+    form_slice_validation_candidate,
+)
+from three_workflow_delivery_v3.records.ci import (
+    ci_qualification_snapshot_digest,
+)
+from three_workflow_delivery_v3.repository import (
+    CompilationContext,
+    first_slice_provider_manifest,
+    provider_binding,
+)
 from three_workflow_delivery_v3.repository.descriptors import (
     FIRST_SLICE_POLICY_PATH,
 )
@@ -36,6 +55,10 @@ PRODUCT_PATH = "src/public/lib/hcoona-release-smoke-npm"
 WORKFLOW_RUN_ID = 8101
 RUN_ATTEMPT = 2
 ARGPARSE_ERROR = 2
+NPM_ARTIFACT_ID = 303
+NPM_ARTIFACT_DIGEST = "a" * 64
+GITHUB_API_TIMEOUT_SECONDS = 10
+EXPECTED_ELAPSED_SECONDS = 60
 
 
 def _head() -> str:
@@ -81,7 +104,18 @@ def _write(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def _target_authoring_repo(tmp_path: Path) -> tuple[Path, str]:
+def _write_canonical(path: Path, document: JsonValue) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(canonicalize(document))
+    return path
+
+
+def _target_authoring_repo(
+    tmp_path: Path,
+    *,
+    missing_authoring: str | None = None,
+    malformed_authoring: str | None = None,
+) -> tuple[Path, str]:
     repo = tmp_path / "repo"
     repo.mkdir()
     _initialize_repository(repo)
@@ -93,14 +127,26 @@ def _target_authoring_repo(tmp_path: Path) -> tuple[Path, str]:
         "workflow-delivery.release-unit.yml",
         "workflow-delivery.quality.yml",
     ):
+        authoring_kind = {
+            "workflow-delivery.release-unit.yml": "descriptor",
+            "workflow-delivery.quality.yml": "quality",
+        }.get(name)
+        if authoring_kind is not None and missing_authoring == authoring_kind:
+            continue
+        content = (source_product / name).read_text(encoding="utf-8")
+        if authoring_kind is not None and malformed_authoring == authoring_kind:
+            content = "schema: [unterminated"
         _write(
             target_product / name,
-            (source_product / name).read_text(encoding="utf-8"),
+            content,
         )
-    _write(
-        repo / FIRST_SLICE_POLICY_PATH,
-        (REPO_ROOT / FIRST_SLICE_POLICY_PATH).read_text(encoding="utf-8"),
-    )
+    if missing_authoring != "policy":
+        policy_content = (REPO_ROOT / FIRST_SLICE_POLICY_PATH).read_text(
+            encoding="utf-8"
+        )
+        if malformed_authoring == "policy":
+            policy_content = "schema: [unterminated"
+        _write(repo / FIRST_SLICE_POLICY_PATH, policy_content)
     for name in (
         "package.json",
         "pnpm-lock.yaml",
@@ -235,6 +281,166 @@ def _fake_provider_result(binding: ProviderBinding) -> NodeProviderResult:
         conflicts=(),
         outcome="success",
         diagnostic_reference=None,
+    )
+
+
+def _plan_fixture(  # noqa: PLR0913
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    event_kind: str,
+    changed_paths: tuple[str, ...] = (),
+    missing_authoring: str | None = None,
+    malformed_authoring: str | None = None,
+    expect_failure: bool = False,
+) -> tuple[Path, Path, dict[str, JsonValue]]:
+    monkeypatch.setattr(cli_module, "_current_epoch_seconds", lambda: 1000)
+    repo, target = _target_authoring_repo(
+        tmp_path,
+        missing_authoring=missing_authoring,
+        malformed_authoring=malformed_authoring,
+    )
+    request_id = "pr-17" if event_kind == "pull_request" else "slice-17"
+    purpose = (
+        "ci-pr-slice-shadow"
+        if event_kind == "pull_request"
+        else "slice-validation"
+    )
+    context = CompilationContext(
+        request_id=request_id,
+        purpose=purpose,
+        workflow_run_id=WORKFLOW_RUN_ID,
+        run_attempt=RUN_ATTEMPT,
+        target=target,
+        producer="plan",
+        control=f"workflow-delivery-v3:{target}",
+        catalog_digest=cli_module.catalog_digest(),
+    )
+    manifest = first_slice_provider_manifest(
+        context,
+        provider_producer="discover-node",
+    )
+    provider = _fake_provider_result(
+        provider_binding(manifest, "node-first-slice")
+    )
+    provider_document = provider.to_document()
+    provider_document["provider-request-manifest-digest"] = (
+        manifest.manifest_digest
+    )
+    provider_document["result-digest"] = provider.result_digest
+    provider_path = _write_canonical(
+        tmp_path / f"{event_kind}-provider.json",
+        provider_document,
+    )
+    if event_kind == "pull_request":
+        candidate = form_pull_request_candidate(
+            repository="hcoona/three",
+            request_id=request_id,
+            workflow_run_id=WORKFLOW_RUN_ID,
+            run_attempt=RUN_ATTEMPT,
+            selected_ref="refs/pull/17/merge",
+            base_sha="1" * 40,
+            head_sha="2" * 40,
+            tested_merge_sha=target,
+            comparison_identity=("1" * 40, "2" * 40),
+        )
+    else:
+        candidate = form_slice_validation_candidate(
+            repository="hcoona/three",
+            request_id=request_id,
+            workflow_run_id=WORKFLOW_RUN_ID,
+            run_attempt=RUN_ATTEMPT,
+            selected_ref="refs/heads/main",
+            target=target,
+        )
+    request_path = _write_canonical(
+        tmp_path / f"{event_kind}-request.json",
+        {
+            "schema": "workflow-delivery/v3/ci-request",
+            "candidate": candidate.to_document(),
+            "changed-paths": list(changed_paths),
+        },
+    )
+    plan_path = tmp_path / f"{event_kind}-plan.json"
+    context_path = tmp_path / f"{event_kind}-adapter-context.json"
+    output_path = tmp_path / f"{event_kind}-github-output"
+
+    def command_stdout(command: tuple[str, ...], cwd: Path) -> str:
+        assert cwd == repo
+        return "1700000000" if command[1] == "show" else "11.9.0"
+
+    monkeypatch.setattr(cli_module, "_command_stdout", command_stdout)
+    code = cli_module.main(
+        [
+            "ci",
+            "plan",
+            "--repo-root",
+            str(repo),
+            "--request",
+            str(request_path),
+            "--provider-result",
+            str(provider_path),
+            "--request-artifact-id",
+            "101",
+            "--request-artifact-digest",
+            "7" * 64,
+            "--provider-artifact-id",
+            "202",
+            "--provider-artifact-digest",
+            "8" * 64,
+            "--output",
+            str(plan_path),
+            "--adapter-context-output",
+            str(context_path),
+            "--github-output",
+            str(output_path),
+        ]
+    )
+    if expect_failure:
+        assert code == 1
+        return plan_path, context_path, {}
+    assert code == 0
+    plan = cast("dict[str, JsonValue]", json.loads(plan_path.read_bytes()))
+    return plan_path, context_path, plan
+
+
+def _mechanical_result(
+    path: Path,
+    plan: dict[str, JsonValue],
+    lane: str,
+    outcome: str,
+) -> Path:
+    return _write_canonical(
+        path,
+        {
+            "schema": "workflow-delivery/v3/ci-node-adapter-result",
+            "lane-id": lane,
+            "plan-digest": canonical_sha256(plan),
+            "repository-model-digest": plan["repository-model-digest"],
+            "outcome": outcome,
+            "output-digests": ["sha256:" + ("9" * 64)],
+            "artifact": (
+                {
+                    "tarball-basename": (
+                        "hcoona-hcoona-release-smoke-npm-1.2.3.tgz"
+                    ),
+                    "content-sha256": f"sha256:{NPM_ARTIFACT_DIGEST}",
+                    "content-sha512": "sha512:" + ("b" * 128),
+                    "byte-size": 1234,
+                    "provenance-digest": "sha256:" + ("c" * 64),
+                    "entries": [
+                        "package/README.md",
+                        "package/dist/index.js",
+                        "package/package.json",
+                        "package/workflow-delivery/provenance.json",
+                    ],
+                    "lifecycle-scripts": [["test", "node --test"]],
+                }
+                if lane == "npm-artifact-build" and outcome == "success"
+                else None
+            ),
+            "diagnostics": [f"{lane} {outcome}"],
+        },
     )
 
 
@@ -463,15 +669,12 @@ def test_validate_attestation_command_reports_disabled_fixture(
     [
         ["release", "publish"],
         ["repository", "plan"],
-        ["ci", "plan"],
         ["npm", "observe"],
     ],
-    ids=["publish", "repository-plan", "ci", "observation"],
+    ids=["publish", "repository-plan", "observation"],
 )
-def test_cli_rejects_unapproved_commit_three_commands(
-    arguments: list[str],
-) -> None:
-    """Expose no Adapter, workflow, planning, or publication command."""
+def test_cli_rejects_unapproved_commands(arguments: list[str]) -> None:
+    """Expose no publication or commit-6-plus command."""
     with pytest.raises(SystemExit) as error:
         cli_module.main(arguments)
 
@@ -491,3 +694,824 @@ def test_project_registers_only_the_bounded_cli() -> None:
         "PyYAML>=6.0.2",
         "rfc8785>=0.1.4",
     }
+
+
+def test_ci_candidate_cli_binds_tested_merge_and_exact_range(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Use the event base/head only for paths and the tested merge as target."""
+    base = "1" * 40
+    head = "2" * 40
+    merge = "3" * 40
+    observed: tuple[str, ...] = ()
+
+    def run(command: tuple[str, ...], **kwargs: object) -> object:
+        nonlocal observed
+        observed = command
+        assert kwargs["check"] is True
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout='["README.md"]\n',
+            stderr="",
+        )
+
+    monkeypatch.setattr(cli_module.subprocess, "run", run)
+    output = tmp_path / "request.json"
+    code = cli_module.main(
+        [
+            "ci",
+            "candidate",
+            "--event-kind",
+            "pull_request",
+            "--repository",
+            "hcoona/three",
+            "--request-id",
+            "pr-17",
+            "--workflow-run-id",
+            str(WORKFLOW_RUN_ID),
+            "--run-attempt",
+            str(RUN_ATTEMPT),
+            "--selected-ref",
+            "refs/pull/17/merge",
+            "--base-sha",
+            base,
+            "--head-sha",
+            head,
+            "--target",
+            merge,
+            "--output",
+            str(output),
+        ]
+    )
+    document = json.loads(output.read_bytes())
+
+    assert code == 0
+    assert observed[-4:] == ("--from-ref", base, "--to-ref", head)
+    assert document["candidate"]["base-sha"] == base
+    assert document["candidate"]["head-sha"] == head
+    assert document["candidate"]["target"] == merge
+    assert document["candidate"]["tested-merge-sha"] == merge
+    assert document["changed-paths"] == ["README.md"]
+
+
+def test_ci_candidate_cli_forms_scope_less_manual_request(
+    tmp_path: Path,
+) -> None:
+    """Manual slice validation names only the selected target."""
+    target = "4" * 40
+    output = tmp_path / "manual-request.json"
+    code = cli_module.main(
+        [
+            "ci",
+            "candidate",
+            "--event-kind",
+            "workflow_dispatch",
+            "--repository",
+            "hcoona/three",
+            "--request-id",
+            "slice-17",
+            "--workflow-run-id",
+            str(WORKFLOW_RUN_ID),
+            "--run-attempt",
+            str(RUN_ATTEMPT),
+            "--selected-ref",
+            "refs/heads/main",
+            "--target",
+            target,
+            "--output",
+            str(output),
+        ]
+    )
+    document = json.loads(output.read_bytes())
+
+    assert code == 0
+    assert document["candidate"]["purpose"] == "slice-validation"
+    assert document["candidate"]["target"] == target
+    assert document["candidate"]["base-sha"] is None
+    assert document["changed-paths"] == []
+
+
+def test_ci_payload_admission_requires_upload_digest_and_canonical_bytes(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Bind a raw stock artifact payload to the upload action digest."""
+    payload = _write_canonical(tmp_path / "payload.json", {"value": "exact"})
+    digest = hashlib.sha256(payload.read_bytes()).hexdigest()
+
+    assert (
+        cli_module.main(
+            [
+                "ci",
+                "admit-payload",
+                "--input",
+                str(payload),
+                "--expected-digest",
+                digest,
+            ]
+        )
+        == 0
+    )
+    assert (
+        cli_module.main(
+            [
+                "ci",
+                "admit-payload",
+                "--input",
+                str(payload),
+                "--expected-digest",
+                "0" * 64,
+            ]
+        )
+        == 1
+    )
+    assert "does not match upload output" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("event_kind", "changed_paths", "lane_selected"),
+    [
+        ("pull_request", ("README.md",), (True, False, False, False)),
+        ("workflow_dispatch", (), (True, True, True, True)),
+    ],
+)
+def test_ci_plan_cli_closes_repository_only_and_manual_scope(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    event_kind: str,
+    changed_paths: tuple[str, ...],
+    lane_selected: tuple[bool, bool, bool, bool],
+) -> None:
+    """Preserve empty affected lanes and complete manual slice scope."""
+    plan_path, context_path, plan = _plan_fixture(
+        tmp_path,
+        monkeypatch,
+        event_kind=event_kind,
+        changed_paths=changed_paths,
+    )
+
+    assert plan_path.read_bytes() == canonicalize(plan)
+    assert context_path.is_file()
+    obligations = cast("list[dict[str, JsonValue]]", plan["obligations"])
+    assert tuple(item["selected"] for item in obligations) == lane_selected
+    selected_by_lane = dict(
+        zip(cli_module.CI_LANE_IDS, lane_selected, strict=True)
+    )
+    assert (tmp_path / f"{event_kind}-github-output").read_text(
+        encoding="utf-8"
+    ) == (
+        f"plan-digest={canonical_sha256(plan)}\n"
+        "plan-ready=true\n"
+        f"root-hk-selected={str(selected_by_lane['root-hk']).lower()}\n"
+        "project-build-selected="
+        f"{str(selected_by_lane['project-build']).lower()}\n"
+        "project-test-selected="
+        f"{str(selected_by_lane['project-test']).lower()}\n"
+        "npm-artifact-build-selected="
+        f"{str(selected_by_lane['npm-artifact-build']).lower()}\n"
+    )
+    assert plan["candidate"]["purpose"] == (  # type: ignore[index]
+        "ci-pr-slice-shadow"
+        if event_kind == "pull_request"
+        else "slice-validation"
+    )
+
+
+@pytest.mark.parametrize(
+    ("missing_authoring", "diagnostic"),
+    [
+        ("descriptor", "first-slice Release Unit descriptor is missing"),
+        (
+            "quality",
+            "Quality selection does not exist: "
+            f"{PRODUCT_PATH}/workflow-delivery.quality.yml",
+        ),
+        (
+            "policy",
+            f"Release policy does not exist: {FIRST_SLICE_POLICY_PATH}",
+        ),
+    ],
+)
+def test_missing_target_authoring_closes_blocked_plan_and_decision(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    missing_authoring: str,
+    diagnostic: str,
+) -> None:
+    """Carry semantic model incompleteness through the complete CLI contract."""
+    plan_path, context_path, plan = _plan_fixture(
+        tmp_path,
+        monkeypatch,
+        event_kind="workflow_dispatch",
+        missing_authoring=missing_authoring,
+    )
+    plan_digest = canonical_sha256(plan)
+
+    assert plan["ready"] is False
+    assert not context_path.exists()
+    assert plan["selected-project-nodes"] == []
+    assert plan["selected-release-units"] == []
+    assert plan["selected-variants"] == []
+    assert plan["selected-outputs"] == []
+    assert plan["expected-evidence-ids"] == []
+    assert all(
+        item["selected"] is False
+        for item in cast(
+            "list[dict[str, JsonValue]]",
+            plan["obligations"],
+        )
+    )
+    assert diagnostic in " ".join(
+        cast("list[str]", plan["diagnostics"]),
+    )
+    assert (tmp_path / "workflow_dispatch-github-output").read_text(
+        encoding="utf-8"
+    ) == (
+        f"plan-digest={plan_digest}\n"
+        "plan-ready=false\n"
+        "root-hk-selected=false\n"
+        "project-build-selected=false\n"
+        "project-test-selected=false\n"
+        "npm-artifact-build-selected=false\n"
+    )
+
+    results: list[str] = []
+    for lane in cli_module.CI_LANE_IDS:
+        result = tmp_path / f"{lane}-blocked-result.json"
+        assert (
+            cli_module.main(
+                [
+                    "ci",
+                    "lane-result",
+                    "--plan",
+                    str(plan_path),
+                    "--plan-digest",
+                    plan_digest,
+                    "--lane-id",
+                    lane,
+                    "--output",
+                    str(result),
+                ]
+            )
+            == 0
+        )
+        result_document = json.loads(result.read_bytes())
+        assert result_document["disposition"] == "empty"
+        assert result_document["evidence"] is None
+        results.extend(["--lane-result", str(result)])
+
+    decision_path = tmp_path / "blocked-decision.json"
+    summary_path = tmp_path / "blocked-summary.json"
+    assert (
+        cli_module.main(
+            [
+                "ci",
+                "finalize",
+                "--plan",
+                str(plan_path),
+                "--plan-digest",
+                plan_digest,
+                *results,
+                "--started-at",
+                "970",
+                "--decision-output",
+                str(decision_path),
+                "--summary-output",
+                str(summary_path),
+            ]
+        )
+        == 1
+    )
+    decision = json.loads(decision_path.read_bytes())
+    summary = json.loads(summary_path.read_bytes())
+    assert decision_path.read_bytes() == canonicalize(decision)
+    assert summary_path.read_bytes() == canonicalize(summary)
+    assert decision["terminal-result"] == "failure"
+    assert decision["failure-class"] == "incomplete-model-plan"
+    assert decision["next-action"] == "fix-model-plan-and-rerun"
+    assert all(
+        item["outcome"] == "empty"
+        for item in decision["obligation-dispositions"]
+    )
+    assert decision["summary"] == summary
+    assert "Plan was not ready" in summary["text"]
+
+
+def test_malformed_target_authoring_remains_hard_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Reject malformed authoring without emitting a Plan-bound record."""
+    plan_path, context_path, plan = _plan_fixture(
+        tmp_path,
+        monkeypatch,
+        event_kind="workflow_dispatch",
+        malformed_authoring="quality",
+        expect_failure=True,
+    )
+
+    assert plan == {}
+    assert not plan_path.exists()
+    assert not context_path.exists()
+    assert "malformed YAML authoring" in capsys.readouterr().err
+
+
+def test_npm_node_adapter_emits_content_facts_without_platform_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep platform artifact identity out of the mechanical BuildResult."""
+    plan_path, context_path, plan = _plan_fixture(
+        tmp_path,
+        monkeypatch,
+        event_kind="workflow_dispatch",
+    )
+    tarball = tmp_path / "package.tgz"
+    result = tmp_path / "npm-adapter.json"
+    monkeypatch.setattr(
+        cli_module,
+        "build_node_package",
+        lambda _request: SimpleNamespace(
+            tarball=b"exact-tarball",
+            manifest=SimpleNamespace(
+                basename="hcoona-hcoona-release-smoke-npm-1.2.3.tgz",
+                entries=(
+                    "package/README.md",
+                    "package/dist/index.js",
+                    "package/package.json",
+                    "package/workflow-delivery/provenance.json",
+                ),
+                lifecycle_scripts=(("test", "node --test"),),
+                sha256="sha256:" + hashlib.sha256(b"exact-tarball").hexdigest(),
+                sha512="sha512:" + hashlib.sha512(b"exact-tarball").hexdigest(),
+                byte_size=len(b"exact-tarball"),
+            ),
+            witness=b"canonical-witness",
+            source_input_manifest=(("package.json", "sha256:" + ("1" * 64)),),
+        ),
+    )
+
+    assert (
+        cli_module.main(
+            [
+                "ci",
+                "node-adapter",
+                "--lane-id",
+                "npm-artifact-build",
+                "--plan",
+                str(plan_path),
+                "--plan-digest",
+                canonical_sha256(plan),
+                "--adapter-context",
+                str(context_path),
+                "--repository-root",
+                str(REPO_ROOT),
+                "--tarball-output",
+                str(tarball),
+                "--output",
+                str(result),
+            ]
+        )
+        == 0
+    )
+    document = json.loads(result.read_bytes())
+    assert tarball.read_bytes() == b"exact-tarball"
+    assert document["artifact"]["tarball-basename"].endswith(".tgz")
+    assert document["artifact"]["entries"][-1] == (
+        "package/workflow-delivery/provenance.json"
+    )
+    assert document["artifact"]["lifecycle-scripts"] == [
+        ["test", "node --test"]
+    ]
+    assert "artifact-id" not in document["artifact"]
+    assert "artifact-name" not in document["artifact"]
+    assert "transport-digest" not in document["artifact"]
+    assert "artifact-digests" not in document
+
+    lane_result = tmp_path / "npm-lane-result.json"
+    assert (
+        cli_module.main(
+            [
+                "ci",
+                "lane-result",
+                "--plan",
+                str(plan_path),
+                "--plan-digest",
+                canonical_sha256(plan),
+                "--lane-id",
+                "npm-artifact-build",
+                "--mechanical-result",
+                str(result),
+                "--artifact-id",
+                str(NPM_ARTIFACT_ID),
+                "--artifact-name",
+                f"wdv3-{WORKFLOW_RUN_ID}-{RUN_ATTEMPT}-npm-tarball.tgz",
+                "--artifact-url",
+                (
+                    "https://github.com/hcoona/three/actions/runs/"
+                    f"{WORKFLOW_RUN_ID}/artifacts/{NPM_ARTIFACT_ID}"
+                ),
+                "--artifact-digest",
+                hashlib.sha256(b"exact-tarball").hexdigest(),
+                "--output",
+                str(lane_result),
+            ]
+        )
+        == 0
+    )
+    artifact = json.loads(lane_result.read_bytes())["evidence"]["artifacts"][0]
+    assert (
+        artifact["output-id"],
+        artifact["logical-role"],
+        artifact["media-kind"],
+    ) == ("npm-tarball", "primary-package", "npm-tarball")
+
+
+def test_project_test_failure_forms_failed_evidence_and_fails_finalizer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Retain a completed test failure as failed Evidence, not missing work."""
+    plan_path, context_path, plan = _plan_fixture(
+        tmp_path,
+        monkeypatch,
+        event_kind="workflow_dispatch",
+    )
+    plan_digest = ci_qualification_snapshot_digest(
+        cli_module._load_ci_plan(str(plan_path), canonical_sha256(plan))  # noqa: SLF001
+    )
+
+    def fail_tests(project_root: Path, request: object) -> None:
+        del project_root, request
+        raise subprocess.CalledProcessError(1, ("npm", "test"))
+
+    monkeypatch.setattr(cli_module, "run_node_project_tests", fail_tests)
+    adapter = tmp_path / "project-test-adapter.json"
+    assert (
+        cli_module.main(
+            [
+                "ci",
+                "node-adapter",
+                "--lane-id",
+                "project-test",
+                "--plan",
+                str(plan_path),
+                "--plan-digest",
+                plan_digest,
+                "--adapter-context",
+                str(context_path),
+                "--repository-root",
+                str(REPO_ROOT),
+                "--output",
+                str(adapter),
+            ]
+        )
+        == 1
+    )
+    assert json.loads(adapter.read_bytes())["outcome"] == "failure"
+
+    results: list[str] = []
+    for lane in cli_module.CI_LANE_IDS:
+        output = tmp_path / f"{lane}-result.json"
+        arguments = [
+            "ci",
+            "lane-result",
+            "--plan",
+            str(plan_path),
+            "--plan-digest",
+            plan_digest,
+            "--lane-id",
+            lane,
+            "--output",
+            str(output),
+        ]
+        if lane == "root-hk":
+            arguments.extend(["--outcome", "success"])
+        else:
+            mechanical = (
+                adapter
+                if lane == "project-test"
+                else _mechanical_result(
+                    tmp_path / f"{lane}-mechanical.json",
+                    plan,
+                    lane,
+                    "success",
+                )
+            )
+            arguments.extend(["--mechanical-result", str(mechanical)])
+            if lane == "npm-artifact-build":
+                arguments.extend(
+                    [
+                        "--artifact-id",
+                        str(NPM_ARTIFACT_ID),
+                        "--artifact-name",
+                        (
+                            f"wdv3-{WORKFLOW_RUN_ID}-{RUN_ATTEMPT}-"
+                            "npm-tarball.tgz"
+                        ),
+                        "--artifact-url",
+                        (
+                            "https://github.com/hcoona/three/actions/runs/"
+                            f"{WORKFLOW_RUN_ID}/artifacts/{NPM_ARTIFACT_ID}"
+                        ),
+                        "--artifact-digest",
+                        NPM_ARTIFACT_DIGEST,
+                    ]
+                )
+        assert cli_module.main(arguments) == 0
+        results.extend(["--lane-result", str(output)])
+
+    decision = tmp_path / "decision.json"
+    summary = tmp_path / "summary.json"
+    code = cli_module.main(
+        [
+            "ci",
+            "finalize",
+            "--plan",
+            str(plan_path),
+            "--plan-digest",
+            plan_digest,
+            *results,
+            "--started-at",
+            "880",
+            "--decision-output",
+            str(decision),
+            "--summary-output",
+            str(summary),
+        ]
+    )
+    document = json.loads(decision.read_bytes())
+
+    assert code == 1
+    assert document["terminal-result"] == "failure"
+    assert document["authority"] == "non-authoritative"
+    project_test = next(
+        item
+        for item in document["obligation-dispositions"]
+        if item["obligation"]["lane-id"] == "project-test"
+    )
+    assert project_test["outcome"] == "failed"
+    assert json.loads(summary.read_bytes())["authority"] == "non-authoritative"
+
+
+def test_ci_finalizer_marks_missing_selected_work_incomplete(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Do not turn an absent selected lane result into success."""
+    plan_path, _, plan = _plan_fixture(
+        tmp_path,
+        monkeypatch,
+        event_kind="workflow_dispatch",
+    )
+    plan_digest = canonical_sha256(plan)
+    results: list[str] = []
+    for lane in ("root-hk", "project-build", "npm-artifact-build"):
+        result = tmp_path / f"{lane}.json"
+        arguments = [
+            "ci",
+            "lane-result",
+            "--plan",
+            str(plan_path),
+            "--plan-digest",
+            plan_digest,
+            "--lane-id",
+            lane,
+            "--output",
+            str(result),
+        ]
+        if lane == "root-hk":
+            arguments.extend(["--outcome", "success"])
+        else:
+            mechanical = _mechanical_result(
+                tmp_path / f"{lane}-mechanical.json",
+                plan,
+                lane,
+                "success",
+            )
+            arguments.extend(["--mechanical-result", str(mechanical)])
+            if lane == "npm-artifact-build":
+                arguments.extend(
+                    [
+                        "--artifact-id",
+                        str(NPM_ARTIFACT_ID),
+                        "--artifact-name",
+                        (
+                            f"wdv3-{WORKFLOW_RUN_ID}-{RUN_ATTEMPT}-"
+                            "npm-tarball.tgz"
+                        ),
+                        "--artifact-url",
+                        (
+                            "https://github.com/hcoona/three/actions/runs/"
+                            f"{WORKFLOW_RUN_ID}/artifacts/{NPM_ARTIFACT_ID}"
+                        ),
+                        "--artifact-digest",
+                        NPM_ARTIFACT_DIGEST,
+                    ]
+                )
+        assert cli_module.main(arguments) == 0
+        results.extend(["--lane-result", str(result)])
+
+    decision = tmp_path / "incomplete.json"
+    code = cli_module.main(
+        [
+            "ci",
+            "finalize",
+            "--plan",
+            str(plan_path),
+            "--plan-digest",
+            plan_digest,
+            *results,
+            "--started-at",
+            "990",
+            "--decision-output",
+            str(decision),
+            "--summary-output",
+            str(tmp_path / "incomplete-summary.json"),
+        ]
+    )
+
+    assert code == 1
+    assert json.loads(decision.read_bytes())["terminal-result"] == "incomplete"
+
+
+@pytest.mark.parametrize(
+    ("lookup", "supersession_state", "pr_slo"),
+    [
+        ("current", "not-superseded", "met"),
+        ("superseded", "superseded", "excluded"),
+        ("failure", "unsupported", "not-applicable"),
+    ],
+)
+def test_ci_finalizer_queries_exact_current_pr_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    lookup: str,
+    supersession_state: str,
+    pr_slo: str,
+) -> None:
+    """Use the public PR API and reserve unsupported for lookup failure."""
+    plan_path, _, plan = _plan_fixture(
+        tmp_path,
+        monkeypatch,
+        event_kind="pull_request",
+        changed_paths=("README.md",),
+    )
+    plan_digest = canonical_sha256(plan)
+    results: list[str] = []
+    for lane in cli_module.CI_LANE_IDS:
+        result = tmp_path / f"{lane}-pr-result.json"
+        arguments = [
+            "ci",
+            "lane-result",
+            "--plan",
+            str(plan_path),
+            "--plan-digest",
+            plan_digest,
+            "--lane-id",
+            lane,
+            "--output",
+            str(result),
+        ]
+        if lane == "root-hk":
+            arguments.extend(["--outcome", "success"])
+        assert cli_module.main(arguments) == 0
+        results.extend(["--lane-result", str(result)])
+
+    candidate = cast("dict[str, JsonValue]", plan["candidate"])
+    events: list[str] = []
+
+    def fetch_current_pull_request(**kwargs: object) -> dict[str, JsonValue]:
+        events.append("lookup")
+        assert kwargs == {
+            "api_url": "https://api.github.com",
+            "repository": "hcoona/three",
+            "pull_request_number": 17,
+        }
+        if lookup == "failure":
+            raise cli_module._GitHubPullRequestLookupError  # noqa: SLF001
+        head_sha = cast("str", candidate["head-sha"])
+        if lookup == "superseded":
+            head_sha = "f" * 40
+        return {
+            "base": {"sha": candidate["base-sha"]},
+            "head": {"sha": head_sha},
+            "merge_commit_sha": candidate["tested-merge-sha"],
+        }
+
+    monkeypatch.setattr(
+        cli_module,
+        "_fetch_current_pull_request",
+        fetch_current_pull_request,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_current_epoch_seconds",
+        lambda: events.append("clock") or 1000,
+    )
+    decision = tmp_path / f"{lookup}-decision.json"
+    code = cli_module.main(
+        [
+            "ci",
+            "finalize",
+            "--plan",
+            str(plan_path),
+            "--plan-digest",
+            plan_digest,
+            *results,
+            "--started-at",
+            "940",
+            "--pull-request-number",
+            "17",
+            "--decision-output",
+            str(decision),
+            "--summary-output",
+            str(tmp_path / f"{lookup}-summary.json"),
+        ]
+    )
+    document = json.loads(decision.read_bytes())
+
+    assert code == 0
+    assert events == ["lookup", "clock"]
+    assert document["elapsed-seconds"] == EXPECTED_ELAPSED_SECONDS
+    assert document["supersession-state"] == supersession_state
+    assert document["pr-slo"] == pr_slo
+
+
+def test_public_pr_lookup_uses_exact_unauthenticated_github_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Query only the public repository PR resource with closed headers."""
+    observed: dict[str, object] = {}
+
+    class Response:
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            del args
+
+        def read(self) -> bytes:
+            return b'{"base":{"sha":"a"},"head":{"sha":"b"}}'
+
+    def open_request(request: object, *, timeout: int) -> Response:
+        observed["request"] = request
+        observed["timeout"] = timeout
+        return Response()
+
+    monkeypatch.setattr(cli_module, "urlopen", open_request)
+    document = cli_module._fetch_current_pull_request(  # noqa: SLF001
+        api_url="https://api.github.com",
+        repository="hcoona/three",
+        pull_request_number=17,
+    )
+    request = observed["request"]
+
+    assert isinstance(request, Request)
+    assert document == {"base": {"sha": "a"}, "head": {"sha": "b"}}
+    assert observed["timeout"] == GITHUB_API_TIMEOUT_SECONDS
+    assert request.full_url == (
+        "https://api.github.com/repos/hcoona/three/pulls/17"
+    )
+    assert request.get_header("Accept") == ("application/vnd.github+json")
+    assert request.get_header("Authorization") is None
+
+
+def test_ci_finalizer_rejects_pr_number_not_bound_to_plan(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Treat event-to-Plan PR-number drift as a hard binding failure."""
+    plan_path, _, plan = _plan_fixture(
+        tmp_path,
+        monkeypatch,
+        event_kind="pull_request",
+        changed_paths=("README.md",),
+    )
+    decision = tmp_path / "wrong-pr-decision.json"
+
+    assert (
+        cli_module.main(
+            [
+                "ci",
+                "finalize",
+                "--plan",
+                str(plan_path),
+                "--plan-digest",
+                canonical_sha256(plan),
+                "--started-at",
+                "940",
+                "--pull-request-number",
+                "18",
+                "--decision-output",
+                str(decision),
+                "--summary-output",
+                str(tmp_path / "wrong-pr-summary.json"),
+            ]
+        )
+        == 1
+    )
+    assert not decision.exists()

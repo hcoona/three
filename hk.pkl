@@ -65,9 +65,11 @@ local pipeline_linters = new Mapping<String, Step> {
 }
 
 local markdown_linters = new Mapping<String, Step> {
+  local markdown_append_only_artifact_exclude = List(".testagent/**")
+
   ["markdownlint-cli2"] {
     profiles = List("small")
-    exclude = general_exclude_list
+    exclude = general_exclude_list + markdown_append_only_artifact_exclude
     batch = true
     glob = List("*.md")
     stage = List("*.md")
@@ -77,7 +79,7 @@ local markdown_linters = new Mapping<String, Step> {
 
   ["markdown-prettier"] {
     profiles = List("small")
-    exclude = general_exclude_list
+    exclude = general_exclude_list + markdown_append_only_artifact_exclude
     glob = List("*.md")
     stage = List("*.md")
     check = "python eng/scripts/hk_exec.py pnpm exec -- prettier --check -- {{files}}"
@@ -306,6 +308,7 @@ local workflow_release_validation = new Mapping<String, Step> {
 local workflow_delivery_v3_validation = new Mapping<String, Step> {
   local workflow_delivery_v3_files =
     List(
+      ".gitattributes",
       ".github/CODEOWNERS",
       ".github/actions/workflow-delivery-v3-*/**",
       ".github/actions/workflow-delivery-v3/**",
@@ -315,6 +318,7 @@ local workflow_delivery_v3_validation = new Mapping<String, Step> {
       ".python-version",
       "conftest.py",
       "eng/scripts/hk_exec.py",
+      "eng/scripts/workflow_delivery_v3_consumer_policy.py",
       "eng/scripts/workflow_delivery_v3_hk.py",
       "eng/workflow-delivery/v3/**",
       "hk.pkl",
@@ -332,11 +336,165 @@ local workflow_delivery_v3_validation = new Mapping<String, Step> {
       "uv.toml",
     )
 
+  local hcoona_release_smoke_npm_consumer_policy_files =
+    List(
+      "**/*.csproj",
+      "**/*.fsproj",
+      "**/*.vbproj",
+      "**/.github/dependabot.yaml",
+      "**/.github/dependabot.yml",
+      "**/.github/workflows/*.yaml",
+      "**/.github/workflows/*.yml",
+      "**/.npmrc",
+      "**/.pnpmfile.cjs",
+      "**/.yarnrc",
+      "**/.yarnrc.yml",
+      "**/Directory.Packages.props",
+      "**/NuGet.config",
+      "**/bootstrap*.bash",
+      "**/bootstrap*.bat",
+      "**/bootstrap*.cjs",
+      "**/bootstrap*.cmd",
+      "**/bootstrap*.js",
+      "**/bootstrap*.mjs",
+      "**/bootstrap*.ps1",
+      "**/bootstrap*.py",
+      "**/bootstrap*.sh",
+      "**/bootstrap*.ts",
+      "**/bootstrap*.zsh",
+      "**/bun.lock",
+      "**/bunfig.toml",
+      "**/install*.bash",
+      "**/install*.bat",
+      "**/install*.cjs",
+      "**/install*.cmd",
+      "**/install*.js",
+      "**/install*.mjs",
+      "**/install*.ps1",
+      "**/install*.py",
+      "**/install*.sh",
+      "**/install*.ts",
+      "**/install*.zsh",
+      "**/npm-shrinkwrap.json",
+      "**/nuget.config",
+      "**/package-lock.json",
+      "**/package.json",
+      "**/packages.config",
+      "**/packages.lock.json",
+      "**/pnpm-lock.yaml",
+      "**/pnpm-workspace.yaml",
+      "**/poetry.lock",
+      "**/postinstall*.cjs",
+      "**/postinstall*.js",
+      "**/postinstall*.mjs",
+      "**/postinstall*.ts",
+      "**/pyproject.toml",
+      "**/renovate.json",
+      "**/requirements*.txt",
+      "**/setup*.bash",
+      "**/setup*.bat",
+      "**/setup*.cjs",
+      "**/setup*.cmd",
+      "**/setup*.js",
+      "**/setup*.mjs",
+      "**/setup*.ps1",
+      "**/setup*.py",
+      "**/setup*.sh",
+      "**/setup*.ts",
+      "**/setup*.zsh",
+      "**/setup.py",
+      "**/uv.lock",
+      "**/yarn.lock",
+      "*.csproj",
+      "*.fsproj",
+      "*.vbproj",
+      ".gitattributes",
+      ".github/actions/**/action.yaml",
+      ".github/actions/**/action.yml",
+      ".github/dependabot.yaml",
+      ".github/dependabot.yml",
+      ".github/workflows/*.yaml",
+      ".github/workflows/*.yml",
+      ".npmrc",
+      ".pnpmfile.cjs",
+      ".yarnrc",
+      ".yarnrc.yml",
+      "Directory.Packages.props",
+      "NuGet.config",
+      "bootstrap*.bash",
+      "bootstrap*.bat",
+      "bootstrap*.cjs",
+      "bootstrap*.cmd",
+      "bootstrap*.js",
+      "bootstrap*.mjs",
+      "bootstrap*.ps1",
+      "bootstrap*.py",
+      "bootstrap*.sh",
+      "bootstrap*.ts",
+      "bootstrap*.zsh",
+      "bun.lock",
+      "bunfig.toml",
+      "eng/scripts/workflow_delivery_v3_consumer_policy.py",
+      "hk.pkl",
+      "install*.bash",
+      "install*.bat",
+      "install*.cjs",
+      "install*.cmd",
+      "install*.js",
+      "install*.mjs",
+      "install*.ps1",
+      "install*.py",
+      "install*.sh",
+      "install*.ts",
+      "install*.zsh",
+      "npm-shrinkwrap.json",
+      "nuget.config",
+      "package-lock.json",
+      "package.json",
+      "packages.config",
+      "packages.lock.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "poetry.lock",
+      "postinstall*.cjs",
+      "postinstall*.js",
+      "postinstall*.mjs",
+      "postinstall*.ts",
+      "pyproject.toml",
+      "renovate.json",
+      "requirements*.txt",
+      "setup*.bash",
+      "setup*.bat",
+      "setup*.cjs",
+      "setup*.cmd",
+      "setup*.js",
+      "setup*.mjs",
+      "setup*.ps1",
+      "setup*.py",
+      "setup*.sh",
+      "setup*.ts",
+      "setup*.zsh",
+      "setup.py",
+      "src/public/lib/three-workflow-delivery-v3/tests/ci/test_consumer_policy.py",
+      "src/public/lib/three-workflow-delivery-v3/tests/fixtures/release/consumer-policy-acceptance.json",
+      "src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py",
+      "uv.lock",
+      "yarn.lock",
+    )
+
   ["v3-control-pytest"] {
     profiles = List("small")
     glob = workflow_delivery_v3_files
     check =
-      "python eng/scripts/hk_exec.py --timeout-seconds 300 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests"
+      "python eng/scripts/hk_exec.py --timeout-seconds 720 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests"
+  }
+
+  ["hcoona-release-smoke-npm-consumer-policy"] {
+    profiles = List("small")
+    glob = hcoona_release_smoke_npm_consumer_policy_files
+    allow_symlinks = true
+    check =
+      "python eng/scripts/hk_exec.py --timeout-seconds 300 uv run --python 3.13 --package three-workflow-delivery-v3 python eng/scripts/workflow_delivery_v3_consumer_policy.py --repository-root ."
   }
 }
 

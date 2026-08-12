@@ -27,6 +27,7 @@ from three_workflow_delivery_v3.repository.compiler import (
     provider_binding,
 )
 from three_workflow_delivery_v3.repository.descriptors import (
+    FIRST_SLICE_PACKAGE,
     FIRST_SLICE_POLICY_PATH,
 )
 from three_workflow_delivery_v3.repository.node_provider import (
@@ -684,6 +685,67 @@ def test_compiler_closes_first_slice_repository_model() -> None:
         ),
     )
     assert snapshot.snapshot_digest.startswith("sha256:")
+
+
+@pytest.mark.parametrize(
+    ("relative_path", "diagnostic"),
+    [
+        (
+            f"{PRODUCT_PATH}/workflow-delivery.release-unit.yml",
+            "first-slice Release Unit descriptor is missing",
+        ),
+        (
+            f"{PRODUCT_PATH}/workflow-delivery.quality.yml",
+            "Quality selection does not exist: "
+            f"{PRODUCT_PATH}/workflow-delivery.quality.yml",
+        ),
+        (
+            FIRST_SLICE_POLICY_PATH,
+            f"Release policy does not exist: {FIRST_SLICE_POLICY_PATH}",
+        ),
+    ],
+)
+def test_missing_target_authoring_returns_incomplete_snapshot(
+    relative_path: str,
+    diagnostic: str,
+) -> None:
+    """Report semantic incompleteness without losing target identity."""
+    (REPO_ROOT / relative_path).unlink()
+    target = _commit_all(REPO_ROOT)
+    context = _context(target=target)
+    manifest = first_slice_provider_manifest(
+        context,
+        provider_producer="discover-node",
+    )
+    result = _result(context, manifest)
+
+    snapshot = _compile(REPO_ROOT, context, manifest, result)
+
+    assert snapshot.ready is False
+    assert snapshot.context == context
+    assert snapshot.project_nodes == result.project_nodes
+    assert snapshot.release_units == ()
+    assert snapshot.quality == ()
+    assert snapshot.release_policy_path == FIRST_SLICE_POLICY_PATH
+    assert snapshot.reverse_index == ((FIRST_SLICE_PACKAGE, ()),)
+    assert snapshot.unresolved == (diagnostic,)
+    assert snapshot.snapshot_digest.startswith("sha256:")
+
+
+def test_malformed_target_authoring_remains_a_hard_failure() -> None:
+    """Do not downgrade malformed authoring into semantic incompleteness."""
+    quality = REPO_ROOT / PRODUCT_PATH / "workflow-delivery.quality.yml"
+    _write(quality, "schema: [unterminated")
+    target = _commit_all(REPO_ROOT)
+    context = _context(target=target)
+    manifest = first_slice_provider_manifest(
+        context,
+        provider_producer="discover-node",
+    )
+    result = _result(context, manifest)
+
+    with pytest.raises(ValueError, match="malformed YAML authoring"):
+        _compile(REPO_ROOT, context, manifest, result)
 
 
 def test_compiler_uses_target_authoring_not_dirty_worktree() -> None:

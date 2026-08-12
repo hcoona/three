@@ -965,3 +965,21 @@ checksum value while retaining the six-octal-digit space/NUL encoding, replaces
 without invoking semantic TAR parsing.
 
 <!-- END APPEND: workflow-delivery-v3-robust-tar-checksum-order-review-2026-08-10 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit5-ci-research-2026-08-12 -->
+
+## Workflow Delivery v3 Commit 5 Research
+
+The bounded target is the approved first-slice CI dependency boundary:
+candidate formation, Repository Model-backed planning, static lane Evidence,
+required non-authoritative finalization, the shadow/manual workflow, and the
+permanent smoke-package consumer-policy gate. Release identities, simulation,
+live publication, CODEOWNERS, acceptance, and activation remain excluded.
+
+Acceptance requires exact current-candidate bindings, blocked Plans for
+incomplete models or unavailable comparisons, root-HK-only empty affected
+scope, complete four-lane first-slice scope, lane-specific Evidence, missing
+work as incomplete, deterministic summaries, ordinary-PR SLO facts, exact
+workflow permissions/topology, and digest-bound consumer exceptions.
+
+<!-- END APPEND: workflow-delivery-v3-commit5-ci-research-2026-08-12 -->

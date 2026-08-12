@@ -13,7 +13,7 @@ If it conflicts with the
 ## Current Checkpoint
 
 - Requirements, HLD, and all five MLDs are confirmed.
-- Implementation commits 1 through 4 of the approved first-slice LLD are
+- Implementation commits 1 through 5 of the approved first-slice LLD are
   delivered in the working tree. Commit 3 includes target-tree-bound
   Release Unit/Quality authoring validation, duplicate Release Unit rejection,
   exact-target Repository Model compilation, static catalogs, Node/NBGV
@@ -22,7 +22,13 @@ If it conflicts with the
   project test, canonical in-tarball Package Target Witness, isolated Node
   Build and Quality Adapters, immutable single-read source staging, frozen
   credential-free runtime execution, deterministic cross-umask packaging, and
-  a closed ordinary-file USTAR artifact profile.
+  a closed ordinary-file USTAR artifact profile. Commit 5 adds exact
+  current-candidate CI planning, static lane Evidence, required
+  non-authoritative finalization, the shadow pull-request/manual
+  `slice-validation` workflow, typed retained npm artifact Evidence, blocked
+  semantic-model closure, trusted pull-request SLO classification, and the
+  permanent repository-wide smoke-package consumer-policy gate, including
+  bounded local workflow and composite-action consumer discovery.
 - The first vertical slice is `hcoona-release-smoke-npm`.
 - The slice has one Node project, one package variant, and one npm artifact.
 - It covers CI Qualification, live Buddy publication to GitHub Packages, and
@@ -224,11 +230,10 @@ If it conflicts with the
   state blocks; no repository variable, PAT, App, service, ledger, OIDC, or
   additional token permission is added. Permanent root HK policy remains the
   repository-wide dependency gate.
-- The next LLD dependency boundary is commit 5: CI Planner, Evidence,
-  Finalizer, the shadow pull-request check, manual `slice-validation`, and the
-  permanent repository-wide smoke-package consumer-policy gate. Do not
-  implement it or later scopes without a separate explicit user task; live
-  activation remains disabled.
+- The next LLD dependency boundary is commit 6: Release identities,
+  two-snapshot planning, qualification, simulation, and the Official
+  simulation workflow. Do not implement it or later scopes without a separate
+  explicit user task; live activation remains disabled.
 - Implementation must preserve the approved commit boundaries and keep live
   activation disabled until acceptance and the separate activation approval.
 

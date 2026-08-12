@@ -1642,3 +1642,22 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   Quality Adapters, deterministic npm packaging, and strict artifact closure.
 - Advanced the next approved dependency boundary to commit 5 while retaining
   disabled live activation.
+
+## [2026-08-12] query | Deliver Workflow Delivery v3 shadow CI
+
+- Recorded completion of first-slice implementation commit 5.
+- Added exact CI planning, lane Evidence, non-authoritative finalization,
+  shadow/manual CI, and the permanent smoke-package consumer-policy gate.
+- Advanced the next approved dependency boundary to commit 6 while retaining
+  disabled live activation.
+
+## [2026-08-12] lint | Close Workflow Delivery v3 shadow CI review
+
+- Closed five GPT-5.6 Sol review rounds with independent TP/FP adjudication and
+  no findings in the final CI, policy, or holistic passes.
+- Added typed retained npm artifact Evidence, blocked semantic-model
+  finalization, trusted pull-request SLO classification, and bounded workflow
+  and composite-action consumer discovery.
+- Passed 1,838 v3 tests, the managed v3 HK gate, 3,873 root Python tests, and
+  the applicable static, build, and lock gates while keeping live activation
+  disabled.

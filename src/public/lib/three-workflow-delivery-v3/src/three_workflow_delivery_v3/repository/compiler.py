@@ -19,6 +19,7 @@ from three_workflow_delivery_v3.repository.descriptors import (
     FIRST_SLICE_PACKAGE,
     FIRST_SLICE_POLICY_PATH,
     FIRST_SLICE_RELEASE_UNIT,
+    MissingFirstSliceAuthoringError,
     load_first_slice_authoring,
 )
 from three_workflow_delivery_v3.repository.node_provider import (
@@ -1171,11 +1172,26 @@ def compile_repository_model(
             "commit 3 permits exactly one Project Node and no workspace closure"
         )
         raise ValueError(message)
-    release_unit, quality, policy_path = _compile_release_unit(
-        repo_root,
-        context.target,
-        project,
-    )
+    try:
+        release_unit, quality, policy_path = _compile_release_unit(
+            repo_root,
+            context.target,
+            project,
+        )
+    except MissingFirstSliceAuthoringError as error:
+        return RepositoryModelSnapshot(
+            context=context,
+            manifest_digest=manifest.manifest_digest,
+            provider_result_digests=(result.result_digest,),
+            project_nodes=result.project_nodes,
+            release_units=(),
+            quality=(),
+            release_policy_path=FIRST_SLICE_POLICY_PATH,
+            nbgv=result.nbgv,
+            reverse_index=((project.project_id, ()),),
+            unresolved=(str(error),),
+            ready=False,
+        )
     if not release_unit.builds or any(
         not build.outputs for build in release_unit.builds
     ):
