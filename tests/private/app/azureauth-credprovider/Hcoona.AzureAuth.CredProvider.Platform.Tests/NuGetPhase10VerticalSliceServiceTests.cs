@@ -788,7 +788,8 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
                                 service!.Paths.PluginEntrypointPath,
                             ]
                     )
-                    : null
+                    : null,
+            userHomeDirectoryPath: "/home/user"
         );
         fileSystem.AtomicWriteAllText(service.Paths.PluginEntrypointPath, "fake-assembly");
 
