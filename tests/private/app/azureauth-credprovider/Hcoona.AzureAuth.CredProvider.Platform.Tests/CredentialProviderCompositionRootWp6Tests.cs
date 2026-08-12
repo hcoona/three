@@ -75,8 +75,28 @@ public sealed class CredentialProviderCompositionRootWp6Tests
 
             Assert.True(root.Readiness.Interactive.IsReady);
             Assert.True(root.Readiness.IsReady);
+            Assert.Contains(
+                "Web Account Manager (WAM)-first",
+                root.Readiness.Interactive.SafeMessage,
+                StringComparison.Ordinal
+            );
+            Assert.Contains(
+                "may prompt",
+                root.Readiness.Interactive.SafeMessage,
+                StringComparison.Ordinal
+            );
             Assert.False(root.Readiness.Silent.IsReady);
             Assert.Equal("SilentAcquisitionUnavailable", root.Readiness.Silent.Code);
+            Assert.Contains(
+                "WAM cache may satisfy an interaction-allowed request",
+                root.Readiness.Silent.SafeMessage,
+                StringComparison.Ordinal
+            );
+            Assert.Contains(
+                "silent-only readiness is unavailable",
+                root.Readiness.Silent.SafeMessage,
+                StringComparison.Ordinal
+            );
             Assert.Equal(1, discovery.CallCount);
             _ = root.GetReadiness(TestContext.Current.CancellationToken);
             _ = root.RunProviderDoctor(TestContext.Current.CancellationToken);
@@ -122,6 +142,10 @@ public sealed class CredentialProviderCompositionRootWp6Tests
                 );
 
             Assert.True(root.Readiness.Interactive.IsReady);
+            Assert.Equal(
+                "AzureAuth native Linux interaction-allowed acquisition is ready.",
+                root.Readiness.Interactive.SafeMessage
+            );
             Assert.True(root.Readiness.Silent.IsReady);
             Assert.Equal("AzureAuthSilentReady", root.Readiness.Silent.Code);
         }

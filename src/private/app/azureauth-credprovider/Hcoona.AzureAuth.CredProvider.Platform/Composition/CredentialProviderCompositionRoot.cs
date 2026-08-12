@@ -352,7 +352,11 @@ public sealed class CredentialProviderCompositionRoot
         CredentialProviderCapabilityReadiness interactive = prerequisite is null
             ? Ready(
                 "AzureAuthInteractiveReady",
-                "AzureAuth interactive acquisition is ready and may reuse the host MSAL cache."
+                installation.HostPlatform == AzureAuthHostPlatform.NativeLinux
+                    ? "AzureAuth native Linux interaction-allowed acquisition is ready."
+                    : "AzureAuth Windows/WSL interaction-allowed acquisition uses the Windows "
+                        + "Web Account Manager (WAM)-first flow and may prompt; current account "
+                        + "and cache state are not probed."
             )
             : Unavailable(prerequisite.Code, prerequisite.SafeMessage);
         return new CredentialProviderReadiness
@@ -370,8 +374,9 @@ public sealed class CredentialProviderCompositionRoot
                 : config.Selection == AzureAuthProviderSelection.AzureAuth
                     ? Unavailable(
                         "SilentAcquisitionUnavailable",
-                        "AzureAuth 0.9.5 has no cache-only command mode on Windows or WSL; "
-                            + "silent acquisition is unavailable."
+                        "AzureAuth 0.9.5 has no cache-only command mode on Windows or WSL. "
+                            + "A WAM cache may satisfy an interaction-allowed request without "
+                            + "prompting, but silent-only readiness is unavailable."
                     )
                 : interactive,
         };
