@@ -1373,6 +1373,8 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     [InlineData("false")]
     [InlineData("null")]
     [InlineData("undefined")]
+    [InlineData("\"   \"")]
+    [InlineData("\" ${TOKEN?} \"")]
     public async Task FreshNpmConfigureRepairsEffectivelyMissingAuthToken(
         string configuredValue
     )

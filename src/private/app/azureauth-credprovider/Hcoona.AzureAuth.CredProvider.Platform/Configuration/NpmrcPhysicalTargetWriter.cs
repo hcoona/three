@@ -87,13 +87,14 @@ internal sealed class NpmrcPhysicalTargetWriter(
 
     private bool HasEffectiveSecretValue(string value)
     {
-        if (value.Trim() is "false" or "null" or "undefined")
+        string directValue = value.Trim();
+        if (directValue is "" or "false" or "null" or "undefined")
         {
             return false;
         }
 
         string effectiveValue = NpmrcIniSyntax.ExpandEnvironmentVariables(
-            value,
+            directValue,
             readEnvironmentVariable,
             out bool unresolvedEnvironmentReference
         );
