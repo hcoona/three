@@ -390,21 +390,27 @@ public sealed class AzureDevOpsSpsTokenExchange : ITokenExchange, IDisposable
         string? validTo = null;
         foreach (JsonProperty property in document.RootElement.EnumerateObject())
         {
-            if (
-                !names.Add(property.Name)
-                || property.Name is not ("displayName" or "scope" or "validTo" or "token")
-                || property.Value.ValueKind != JsonValueKind.String
-            )
+            if (!names.Add(property.Name))
             {
                 return false;
             }
 
             if (property.Name == "token")
             {
+                if (property.Value.ValueKind != JsonValueKind.String)
+                {
+                    return false;
+                }
+
                 tokenValue = property.Value.GetString();
             }
             else if (property.Name == "validTo")
             {
+                if (property.Value.ValueKind != JsonValueKind.String)
+                {
+                    return false;
+                }
+
                 validTo = property.Value.GetString();
             }
         }

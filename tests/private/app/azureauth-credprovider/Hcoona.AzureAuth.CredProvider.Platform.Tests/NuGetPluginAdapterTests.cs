@@ -135,7 +135,7 @@ public sealed class NuGetPluginAdapterTests
     [InlineData(
         false,
         false,
-        IdentityFlow.DeviceCode,
+        IdentityFlow.InteractiveBrowser,
         InteractivePolicy.HostToolAllows,
         AcquisitionMode.InteractionAllowed
     )]
@@ -348,7 +348,7 @@ public sealed class NuGetPluginAdapterTests
         Assert.Equal("feed", resource.Feed);
         Assert.Null(resource.Repository);
         Assert.Equal(source, resource.ServiceEndpoint);
-        Assert.Equal(IdentityFlow.DeviceCode, capturedRequest.IdentityFlow);
+        Assert.Equal(IdentityFlow.InteractiveBrowser, capturedRequest.IdentityFlow);
         Assert.Equal(InteractivePolicy.HostToolAllows, capturedRequest.InteractivePolicy);
         Assert.Equal(AcquisitionMode.InteractionAllowed, capturedRequest.AcquisitionMode);
         Assert.Equal(expectedRetryExtension, capturedRequest.ExtensionData["nuget.isRetry"]);

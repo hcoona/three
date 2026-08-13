@@ -390,10 +390,6 @@ public sealed class NuGetPluginAdapter
     )
     {
         bool interactionAllowed = !request.IsNonInteractive;
-        IdentityFlow identityFlow =
-            interactionAllowed && !request.CanShowDialog
-                ? IdentityFlow.DeviceCode
-                : IdentityFlow.InteractiveBrowser;
 
         return new CredentialRequestV2
         {
@@ -403,7 +399,7 @@ public sealed class NuGetPluginAdapter
             ServiceIdentity = DefaultServiceIdentity,
             RequestedAudience = TokenAudience.AzureArtifacts,
             CredentialKind = CredentialKind.NuGetPluginCredential,
-            IdentityFlow = identityFlow,
+            IdentityFlow = IdentityFlow.InteractiveBrowser,
             InteractivePolicy = interactionAllowed
                 ? InteractivePolicy.HostToolAllows
                 : InteractivePolicy.Never,
