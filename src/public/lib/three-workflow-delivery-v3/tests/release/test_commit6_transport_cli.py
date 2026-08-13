@@ -9,8 +9,12 @@ from pathlib import Path
 
 import pytest
 from three_workflow_delivery_v3 import cli as cli_module
-from three_workflow_delivery_v3.canonical import canonicalize
+from three_workflow_delivery_v3.canonical import canonical_sha256, canonicalize
 from three_workflow_delivery_v3.records.release import (
+    ObservationRequestFacts,
+    ObservationResponseFacts,
+    ObservationValue,
+    ProjectionObservation,
     QualificationDecision,
     QualificationEvidence,
     QualificationSnapshot,
@@ -25,8 +29,13 @@ from three_workflow_delivery_v3.records.release_transport import (
     ReleaseAdmissionBindings,
 )
 from three_workflow_delivery_v3.release.finalizer import (
+    desired_projection_state_digest,
     finalize_qualification,
     finalize_simulation,
+)
+from three_workflow_delivery_v3.release.simulation import (
+    HypotheticalActionsReport,
+    SimulationObservationSet,
 )
 from three_workflow_delivery_v3.repository.compiler import (
     admit_repository_model_snapshot,
@@ -51,6 +60,9 @@ def _write_record(path: Path, record: object) -> Path:
             ReleaseArtifact,
             QualificationEvidence,
             QualificationDecision,
+            ProjectionObservation,
+            SimulationObservationSet,
+            HypotheticalActionsReport,
             SimulationOutcome,
         ),
     )
@@ -105,14 +117,75 @@ def _bindings(
     )
 
 
+def _exact_observation(scenario) -> ProjectionObservation:
+    projection = scenario.snapshot.destination_projections[0]
+    desired = desired_projection_state_digest(
+        scenario.snapshot,
+        projection.projection_id,
+        scenario.artifact,
+    )
+    value = ObservationValue(
+        classification="exact-satisfied",
+        owner="scope:@hcoona",
+        coordinate=projection.coordinate,
+        content_sha512=scenario.artifact.content.content_sha512,
+        witness_digest=scenario.artifact.witness_digest,
+        routing=(),
+    )
+    request_facts = ObservationRequestFacts(
+        qualification_snapshot_digest=scenario.snapshot.snapshot_digest,
+        projection_digest=projection.projection_digest,
+        desired_state_digest=desired,
+        method="GET",
+        url="https://registry.npmjs.org/test-cli-observation",
+        headers=(),
+    )
+    request_digest = request_facts.request_digest
+    response_facts = ObservationResponseFacts(
+        stage="synthetic",
+        requested_url=request_facts.url,
+        final_url=request_facts.url,
+        redirects=(),
+        status=200,
+        selected_headers=(),
+        truncated=False,
+        body_sha256=None,
+    )
+    response_digest = canonical_sha256(
+        {
+            "schema": "workflow-delivery/v3/observation-response",
+            "request-digest": request_digest,
+            "facts": response_facts.to_document(),
+            "value": value.to_document(),
+        }
+    )
+    return ProjectionObservation(
+        subject=scenario.binding.simulation,
+        purpose="release-simulation",
+        target=scenario.snapshot.target,
+        producer="observe-npmjs",
+        qualification_snapshot_digest=scenario.snapshot.snapshot_digest,
+        projection=projection,
+        desired_state_digest=desired,
+        observation_contract_id=projection.observation_contract_id,
+        request_facts=request_facts,
+        request_digest=request_digest,
+        response_facts=response_facts,
+        response_digest=response_digest,
+        value=value,
+    )
+
+
 def test_every_transported_commit6_release_record_round_trips_closed_schema(
     qualified_simulation,
 ) -> None:
     """Deserialize every cross-job Release record under current authority."""
     scenario = qualified_simulation
+    observation = _exact_observation(scenario)
     outcome = finalize_simulation(
         scenario.snapshot,
         scenario.decision,
+        observations=(observation,),
         artifacts=(scenario.artifact,),
     )
     records = (
@@ -363,6 +436,12 @@ def test_release_cli_transports_current_attempt_through_commit6_stop_line(  # no
         scenario.snapshot.snapshot_digest,
         104,
     )
+    context_arguments = _uploaded_arguments(
+        "adapter_context",
+        context_path,
+        plan_outputs["adapter-context-digest"],
+        105,
+    )
     evidence_specs = (
         ("build_evidence", scenario.evidence[0], 201),
         ("project_test_evidence", scenario.evidence[1], 202),
@@ -416,15 +495,22 @@ def test_release_cli_transports_current_attempt_through_commit6_stop_line(  # no
         scenario.decision.decision_digest,
         206,
     )
-    observation_path = tmp_path / "observation-boundary.json"
+    monkeypatch.setattr(
+        cli_module,
+        "observe_npmjs_projection",
+        lambda *_args, **_kwargs: _exact_observation(scenario),
+    )
+    observation_path = tmp_path / "observation-set.json"
     assert (
         cli_module.main(
             [
                 "release",
-                "emit-observation-unavailable",
+                "observe-npmjs",
                 *current,
                 *snapshot_arguments,
                 *decision_arguments,
+                *context_arguments,
+                *artifact_arguments,
                 "--output",
                 str(observation_path),
             ]
@@ -432,19 +518,22 @@ def test_release_cli_transports_current_attempt_through_commit6_stop_line(  # no
         == 0
     )
     observation_document = json.loads(observation_path.read_bytes())
-    assert observation_document["status"] == "unavailable"
-    assert observation_document["authoritative"] is False
-    assert observation_document["network-performed"] is False
+    assert observation_document["schema"].endswith("simulation-observation-set")
+    assert len(observation_document["observations"]) == 1
+    assert (
+        observation_document["observations"][0]["value"]["classification"]
+        == "exact-satisfied"
+    )
     observation_digest = hashlib.sha256(observation_path.read_bytes())
     observation_semantic_digest = f"sha256:{observation_digest.hexdigest()}"
     observation_arguments = _uploaded_arguments(
-        "observation_boundary",
+        "observation_set",
         observation_path,
         observation_semantic_digest,
         207,
     )
 
-    actions_path = tmp_path / "actions-boundary.json"
+    actions_path = tmp_path / "actions-report.json"
     assert (
         cli_module.main(
             [
@@ -454,6 +543,7 @@ def test_release_cli_transports_current_attempt_through_commit6_stop_line(  # no
                 *snapshot_arguments,
                 *decision_arguments,
                 *observation_arguments,
+                *artifact_arguments,
                 "--output",
                 str(actions_path),
             ]
@@ -461,13 +551,14 @@ def test_release_cli_transports_current_attempt_through_commit6_stop_line(  # no
         == 0
     )
     actions_document = json.loads(actions_path.read_bytes())
+    assert actions_document["schema"].endswith("hypothetical-actions-report")
     assert actions_document["actions"] == []
     assert actions_document["publication-snapshot-emitted"] is False
     actions_digest = (
         f"sha256:{hashlib.sha256(actions_path.read_bytes()).hexdigest()}"
     )
     actions_arguments = _uploaded_arguments(
-        "actions_boundary",
+        "actions_report",
         actions_path,
         actions_digest,
         208,
@@ -493,7 +584,7 @@ def test_release_cli_transports_current_attempt_through_commit6_stop_line(  # no
     )
     first_outcome = outcome_path.read_bytes()
     first_summary = summary_path.read_bytes()
-    assert first_result == 1
+    assert first_result == 0
 
     second_result = cli_module.main(
         [
@@ -511,7 +602,7 @@ def test_release_cli_transports_current_attempt_through_commit6_stop_line(  # no
             str(summary_path),
         ]
     )
-    assert second_result == 1
+    assert second_result == 0
     assert outcome_path.read_bytes() == first_outcome
     assert summary_path.read_bytes() == first_summary
     outcome = admit_release_record(
@@ -521,10 +612,10 @@ def test_release_cli_transports_current_attempt_through_commit6_stop_line(  # no
         expected_bindings=_bindings(scenario.intent),
     )
     assert isinstance(outcome, SimulationOutcome)
-    assert outcome.terminal_result == "incomplete"
-    assert outcome.failure_class == "unsupported-observation"
-    assert outcome.next_action == "implement-observation-adapter"
-    assert b"unsupported-observation" in first_summary
+    assert outcome.terminal_result == "success"
+    assert outcome.failure_class == "none"
+    assert outcome.next_action == "none"
+    assert b"Observation records: `1`" in first_summary
 
 
 def test_release_cli_request_id_is_rerun_stable_but_transport_is_attempt_bound(
@@ -635,4 +726,4 @@ def test_simulation_finalizer_preserves_non_successful_qualification(
         assert outcome.terminal_result == decision.terminal_result
         assert outcome.failure_class == decision.failure_class
         assert outcome.next_action == decision.next_action
-        assert outcome.failure_class != "unsupported-observation"
+        assert outcome.failure_class != "unknown-observation"

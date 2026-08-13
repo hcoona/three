@@ -118,6 +118,29 @@ Expected generated case count: 64.
 | R4 | `test_snapshot_admission_and_live_eligibility_reject_top_level_surrogates` and `test_repository_model_snapshot_admission_rejects_record_surrogates`. |
 | R5 | `test_live_eligibility_validates_snapshot_admission_before_digest_use`. |
 | R6 | `test_live_eligibility_rejects_digest_equivalent_list_backed_snapshot`. |
+
+## 2026-08-12 Workflow Delivery v3 Commit 7 Plan Addendum
+
+1. Preserve the existing 12-job Official simulation topology and only replace
+   commit-6 observation/action boundary payloads with commit-7 observation-set
+   and hypothetical-actions-report payloads.
+2. Add strict immutable transport records in `release/simulation.py` rather
+   than introducing live Release lineage.
+3. Wire CLI:
+   - `release observe-npmjs` loads current Snapshot/Decision/Adapter context
+     and optional Release Artifact transport by explicit artifact ID/digest.
+   - Non-success qualification emits an empty observation set without invoking
+     the npmjs observer.
+   - `materialize-hypothetical-actions` recomputes absent-only actions and
+     otherwise emits an empty report.
+   - `finalize-simulation` re-admits observation/action reports, recomputes the
+     expected outcome/actions, rejects substitution, and returns success only
+     for terminal success.
+4. Update workflow transport and static tests for exact ID/digest raw artifact
+   names, no permissions beyond `contents: read`, no credentials/auth/mutation,
+   and real npmjs observation only in `observe-npmjs`.
+5. Run focused release/workflow/adapters tests, then Ruff/Pyrefly and broader
+   v3 validation as practical.
 | R7 | Tuple and record surrogate matrices. |
 | R8 | `test_live_eligibility_blocks_toctou_mutation_during_snapshot_admission`. |
 | R9 | `test_repository_model_valid_tuples_keep_canonical_json_arrays`. |
@@ -1311,3 +1334,46 @@ parser sentinel, then rerun the full Adapter and required validation commands.
    Pyrefly, and diff integrity checks.
 
 <!-- END APPEND: workflow-delivery-v3-commit6-raw-name-correction-plan -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit7-observer-core-plan -->
+
+# Workflow Delivery v3 Commit 7 Observer Core Plan
+
+## Phase 1 - npmjs adapter
+
+- Add `adapters/npmjs.py` with an injectable `HttpTransport`.
+- Implement stdlib urllib transport only; send no Authorization, cookies, npm
+  configuration, credentials, OIDC, or publish-capable identity.
+- Bound metadata/tarball bytes and timeout; classify HTTP, network, malformed,
+  off-policy, content-encoding, redirect, size, and truncation cases.
+- Reuse safe Node tarball/witness validation helpers for remote `.tgz`
+  identity and witness checks.
+
+Maps: C7-R1 through C7-R6.
+
+## Phase 2 - record transport and finalizer
+
+- Extend `ProjectionObservation` with strict purpose, target, and producer
+  bindings.
+- Add closed `ProjectionObservation` deserialization and current-binding
+  admission in `release_transport`.
+- Keep missing hosted observations at the commit-6 unsupported boundary until
+  CLI/workflow integration; admit real observations when supplied.
+- Recompute hypothetical actions in `finalize_simulation`, map all observation
+  outcomes, and reject the private synthetic seam as a success shortcut.
+
+Maps: C7-R7 through C7-R9.
+
+## Phase 3 - tests and validation
+
+- Add `tests/adapters/test_npmjs.py` for public-registry observation
+  classification and no-network behavior.
+- Add `tests/release/test_commit7_observation.py` for transported observation
+  bindings and finalizer outcome mapping.
+- Update adapter public export assertions.
+- Run focused tests, full v3 tests where practical, Ruff, Pyrefly, format, and
+  diff checks; record blockers.
+
+Maps: C7-R1 through C7-R10.
+
+<!-- END APPEND: workflow-delivery-v3-commit7-observer-core-plan -->

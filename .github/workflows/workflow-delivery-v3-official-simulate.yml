@@ -845,6 +845,10 @@ jobs:
       qualification-snapshot-artifact-digest: ${{ needs.build-tarball.outputs.qualification-snapshot-artifact-digest }}
       qualification-snapshot-artifact-name: ${{ needs.build-tarball.outputs.qualification-snapshot-artifact-name }}
       qualification-snapshot-digest: ${{ needs.build-tarball.outputs.qualification-snapshot-digest }}
+      adapter-context-artifact-id: ${{ needs.build-tarball.outputs.adapter-context-artifact-id }}
+      adapter-context-artifact-digest: ${{ needs.build-tarball.outputs.adapter-context-artifact-digest }}
+      adapter-context-artifact-name: ${{ needs.build-tarball.outputs.adapter-context-artifact-name }}
+      adapter-context-digest: ${{ needs.build-tarball.outputs.adapter-context-digest }}
       release-artifact-artifact-id: ${{ needs.build-tarball.outputs.release-artifact-artifact-id }}
       release-artifact-artifact-digest: ${{ needs.build-tarball.outputs.release-artifact-artifact-digest }}
       release-artifact-artifact-name: ${{ needs.build-tarball.outputs.release-artifact-artifact-name }}
@@ -987,7 +991,7 @@ jobs:
           include-hidden-files: true
 
   observe-npmjs:
-    name: Emit npmjs observation-unavailable boundary
+    name: Observe npmjs public registry
     if: always() && needs.qualification-finalizer.outputs.decision-artifact-id != ''
     needs: qualification-finalizer
     runs-on: ubuntu-24.04
@@ -1001,14 +1005,18 @@ jobs:
       decision-artifact-digest: ${{ needs.qualification-finalizer.outputs.decision-artifact-digest }}
       decision-artifact-name: ${{ needs.qualification-finalizer.outputs.decision-artifact-name }}
       decision-digest: ${{ needs.qualification-finalizer.outputs.decision-digest }}
+      adapter-context-artifact-id: ${{ needs.qualification-finalizer.outputs.adapter-context-artifact-id }}
+      adapter-context-artifact-digest: ${{ needs.qualification-finalizer.outputs.adapter-context-artifact-digest }}
+      adapter-context-artifact-name: ${{ needs.qualification-finalizer.outputs.adapter-context-artifact-name }}
+      adapter-context-digest: ${{ needs.qualification-finalizer.outputs.adapter-context-digest }}
       release-artifact-artifact-id: ${{ needs.qualification-finalizer.outputs.release-artifact-artifact-id }}
       release-artifact-artifact-digest: ${{ needs.qualification-finalizer.outputs.release-artifact-artifact-digest }}
       release-artifact-artifact-name: ${{ needs.qualification-finalizer.outputs.release-artifact-artifact-name }}
       release-artifact-digest: ${{ needs.qualification-finalizer.outputs.release-artifact-digest }}
-      boundary-artifact-id: ${{ steps.upload.outputs.artifact-id }}
-      boundary-artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
-      boundary-artifact-name: ${{ steps.observe.outputs.observation-boundary-artifact-name }}
-      boundary-digest: ${{ steps.observe.outputs.observation-boundary-digest }}
+      observation-set-artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      observation-set-artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+      observation-set-artifact-name: ${{ steps.observe.outputs.observation-set-artifact-name }}
+      observation-set-digest: ${{ steps.observe.outputs.observation-set-digest }}
     steps:
       - name: Check out exact selected target
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -1034,11 +1042,40 @@ jobs:
           path: .wdv3/input
           skip-decompress: true
           digest-mismatch: error
-      - name: Emit explicit unavailable boundary without observation
+      - name: Download Adapter context by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.qualification-finalizer.outputs.adapter-context-artifact-id }}
+          path: .wdv3/input
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Download Release Artifact record by artifact ID
+        if: needs.qualification-finalizer.outputs.release-artifact-artifact-id != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.qualification-finalizer.outputs.release-artifact-artifact-id }}
+          path: .wdv3/input
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Observe npmjs public registry
         id: observe
+        env:
+          RELEASE_ARTIFACT_ID: ${{ needs.qualification-finalizer.outputs.release-artifact-artifact-id }}
+          RELEASE_ARTIFACT_DIGEST: ${{ needs.qualification-finalizer.outputs.release-artifact-digest }}
+          RELEASE_ARTIFACT_UPLOAD: ${{ needs.qualification-finalizer.outputs.release-artifact-artifact-digest }}
         run: |
+          artifact_args=()
+          artifact_path=".wdv3/input/${{ needs.qualification-finalizer.outputs.release-artifact-artifact-name }}"
+          if [[ -f "${artifact_path}" ]]; then
+            artifact_args=(
+              --release-artifact "${artifact_path}"
+              --release-artifact-digest "${RELEASE_ARTIFACT_DIGEST}"
+              --release-artifact-artifact-id "${RELEASE_ARTIFACT_ID}"
+              --release-artifact-artifact-digest "${RELEASE_ARTIFACT_UPLOAD}"
+            )
+          fi
           uv run --python 3.13 --package "${WDV3_PACKAGE}" \
-            three-workflow-delivery-v3 release emit-observation-unavailable \
+            three-workflow-delivery-v3 release observe-npmjs \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
             --target "${GITHUB_SHA}" \
@@ -1050,18 +1087,23 @@ jobs:
             --qualification-decision-digest "${{ needs.qualification-finalizer.outputs.decision-digest }}" \
             --qualification-decision-artifact-id "${{ needs.qualification-finalizer.outputs.decision-artifact-id }}" \
             --qualification-decision-artifact-digest "${{ needs.qualification-finalizer.outputs.decision-artifact-digest }}" \
-            --output .wdv3/observation-boundary.json \
+            --adapter-context ".wdv3/input/${{ needs.qualification-finalizer.outputs.adapter-context-artifact-name }}" \
+            --adapter-context-digest "${{ needs.qualification-finalizer.outputs.adapter-context-digest }}" \
+            --adapter-context-artifact-id "${{ needs.qualification-finalizer.outputs.adapter-context-artifact-id }}" \
+            --adapter-context-artifact-digest "${{ needs.qualification-finalizer.outputs.adapter-context-artifact-digest }}" \
+            "${artifact_args[@]}" \
+            --output .wdv3/observation-set.json \
             --github-output "${GITHUB_OUTPUT}"
-          digest="$(sha256sum .wdv3/observation-boundary.json | cut -d' ' -f1)"
-          artifact_name="wdv3-release-simulation-observation-unavailable-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${digest}.json"
-          mv .wdv3/observation-boundary.json ".wdv3/${artifact_name}"
-          echo "observation-boundary-artifact-name=${artifact_name}" >> "${GITHUB_OUTPUT}"
-      - name: Upload observation boundary
+          digest="$(sha256sum .wdv3/observation-set.json | cut -d' ' -f1)"
+          artifact_name="wdv3-release-simulation-observation-set-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${digest}.json"
+          mv .wdv3/observation-set.json ".wdv3/${artifact_name}"
+          echo "observation-set-artifact-name=${artifact_name}" >> "${GITHUB_OUTPUT}"
+      - name: Upload observation set
         id: upload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: ${{ steps.observe.outputs.observation-boundary-artifact-name }}
-          path: .wdv3/${{ steps.observe.outputs.observation-boundary-artifact-name }}
+          name: ${{ steps.observe.outputs.observation-set-artifact-name }}
+          path: .wdv3/${{ steps.observe.outputs.observation-set-artifact-name }}
           if-no-files-found: error
           retention-days: 45
           overwrite: false
@@ -1069,7 +1111,7 @@ jobs:
           include-hidden-files: true
 
   materialize-hypothetical-actions:
-    name: Materialize empty hypothetical-actions boundary
+    name: Materialize hypothetical actions report
     needs: observe-npmjs
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -1082,18 +1124,18 @@ jobs:
       decision-artifact-digest: ${{ needs.observe-npmjs.outputs.decision-artifact-digest }}
       decision-artifact-name: ${{ needs.observe-npmjs.outputs.decision-artifact-name }}
       decision-digest: ${{ needs.observe-npmjs.outputs.decision-digest }}
-      observation-boundary-artifact-id: ${{ needs.observe-npmjs.outputs.boundary-artifact-id }}
-      observation-boundary-artifact-digest: ${{ needs.observe-npmjs.outputs.boundary-artifact-digest }}
-      observation-boundary-artifact-name: ${{ needs.observe-npmjs.outputs.boundary-artifact-name }}
-      observation-boundary-digest: ${{ needs.observe-npmjs.outputs.boundary-digest }}
+      observation-set-artifact-id: ${{ needs.observe-npmjs.outputs.observation-set-artifact-id }}
+      observation-set-artifact-digest: ${{ needs.observe-npmjs.outputs.observation-set-artifact-digest }}
+      observation-set-artifact-name: ${{ needs.observe-npmjs.outputs.observation-set-artifact-name }}
+      observation-set-digest: ${{ needs.observe-npmjs.outputs.observation-set-digest }}
       release-artifact-artifact-id: ${{ needs.observe-npmjs.outputs.release-artifact-artifact-id }}
       release-artifact-artifact-digest: ${{ needs.observe-npmjs.outputs.release-artifact-artifact-digest }}
       release-artifact-artifact-name: ${{ needs.observe-npmjs.outputs.release-artifact-artifact-name }}
       release-artifact-digest: ${{ needs.observe-npmjs.outputs.release-artifact-digest }}
-      boundary-artifact-id: ${{ steps.upload.outputs.artifact-id }}
-      boundary-artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
-      boundary-artifact-name: ${{ steps.materialize.outputs.actions-boundary-artifact-name }}
-      boundary-digest: ${{ steps.materialize.outputs.actions-boundary-digest }}
+      actions-report-artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      actions-report-artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+      actions-report-artifact-name: ${{ steps.materialize.outputs.hypothetical-actions-report-artifact-name }}
+      actions-report-digest: ${{ steps.materialize.outputs.hypothetical-actions-report-digest }}
     steps:
       - name: Check out exact selected target
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -1119,16 +1161,38 @@ jobs:
           path: .wdv3/input
           skip-decompress: true
           digest-mismatch: error
-      - name: Download observation boundary by artifact ID
+      - name: Download observation set by artifact ID
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          artifact-ids: ${{ needs.observe-npmjs.outputs.boundary-artifact-id }}
+          artifact-ids: ${{ needs.observe-npmjs.outputs.observation-set-artifact-id }}
           path: .wdv3/input
           skip-decompress: true
           digest-mismatch: error
-      - name: Materialize empty action set
+      - name: Download Release Artifact record by artifact ID
+        if: needs.observe-npmjs.outputs.release-artifact-artifact-id != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.observe-npmjs.outputs.release-artifact-artifact-id }}
+          path: .wdv3/input
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Materialize hypothetical actions report
         id: materialize
+        env:
+          RELEASE_ARTIFACT_ID: ${{ needs.observe-npmjs.outputs.release-artifact-artifact-id }}
+          RELEASE_ARTIFACT_DIGEST: ${{ needs.observe-npmjs.outputs.release-artifact-digest }}
+          RELEASE_ARTIFACT_UPLOAD: ${{ needs.observe-npmjs.outputs.release-artifact-artifact-digest }}
         run: |
+          artifact_args=()
+          artifact_path=".wdv3/input/${{ needs.observe-npmjs.outputs.release-artifact-artifact-name }}"
+          if [[ -f "${artifact_path}" ]]; then
+            artifact_args=(
+              --release-artifact "${artifact_path}"
+              --release-artifact-digest "${RELEASE_ARTIFACT_DIGEST}"
+              --release-artifact-artifact-id "${RELEASE_ARTIFACT_ID}"
+              --release-artifact-artifact-digest "${RELEASE_ARTIFACT_UPLOAD}"
+            )
+          fi
           uv run --python 3.13 --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release materialize-hypothetical-actions \
             --workflow-run-id "${GITHUB_RUN_ID}" \
@@ -1142,22 +1206,23 @@ jobs:
             --qualification-decision-digest "${{ needs.observe-npmjs.outputs.decision-digest }}" \
             --qualification-decision-artifact-id "${{ needs.observe-npmjs.outputs.decision-artifact-id }}" \
             --qualification-decision-artifact-digest "${{ needs.observe-npmjs.outputs.decision-artifact-digest }}" \
-            --observation-boundary ".wdv3/input/${{ needs.observe-npmjs.outputs.boundary-artifact-name }}" \
-            --observation-boundary-digest "${{ needs.observe-npmjs.outputs.boundary-digest }}" \
-            --observation-boundary-artifact-id "${{ needs.observe-npmjs.outputs.boundary-artifact-id }}" \
-            --observation-boundary-artifact-digest "${{ needs.observe-npmjs.outputs.boundary-artifact-digest }}" \
-            --output .wdv3/actions-boundary.json \
+            --observation-set ".wdv3/input/${{ needs.observe-npmjs.outputs.observation-set-artifact-name }}" \
+            --observation-set-digest "${{ needs.observe-npmjs.outputs.observation-set-digest }}" \
+            --observation-set-artifact-id "${{ needs.observe-npmjs.outputs.observation-set-artifact-id }}" \
+            --observation-set-artifact-digest "${{ needs.observe-npmjs.outputs.observation-set-artifact-digest }}" \
+            "${artifact_args[@]}" \
+            --output .wdv3/actions-report.json \
             --github-output "${GITHUB_OUTPUT}"
-          digest="$(sha256sum .wdv3/actions-boundary.json | cut -d' ' -f1)"
-          artifact_name="wdv3-release-simulation-hypothetical-actions-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${digest}.json"
-          mv .wdv3/actions-boundary.json ".wdv3/${artifact_name}"
-          echo "actions-boundary-artifact-name=${artifact_name}" >> "${GITHUB_OUTPUT}"
-      - name: Upload hypothetical-actions boundary
+          digest="$(sha256sum .wdv3/actions-report.json | cut -d' ' -f1)"
+          artifact_name="wdv3-release-simulation-hypothetical-actions-report-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${digest}.json"
+          mv .wdv3/actions-report.json ".wdv3/${artifact_name}"
+          echo "hypothetical-actions-report-artifact-name=${artifact_name}" >> "${GITHUB_OUTPUT}"
+      - name: Upload hypothetical-actions report
         id: upload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: ${{ steps.materialize.outputs.actions-boundary-artifact-name }}
-          path: .wdv3/${{ steps.materialize.outputs.actions-boundary-artifact-name }}
+          name: ${{ steps.materialize.outputs.hypothetical-actions-report-artifact-name }}
+          path: .wdv3/${{ steps.materialize.outputs.hypothetical-actions-report-artifact-name }}
           if-no-files-found: error
           retention-days: 45
           overwrite: false
@@ -1165,8 +1230,8 @@ jobs:
           include-hidden-files: true
 
   simulation-finalizer:
-    name: Finalize truthful incomplete simulation
-    if: always() && needs.materialize-hypothetical-actions.outputs.boundary-artifact-id != ''
+    name: Finalize canonical simulation
+    if: always() && needs.materialize-hypothetical-actions.outputs.actions-report-artifact-id != ''
     needs: materialize-hypothetical-actions
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -1195,17 +1260,17 @@ jobs:
           path: .wdv3/input
           skip-decompress: true
           digest-mismatch: error
-      - name: Download observation boundary by artifact ID
+      - name: Download observation set by artifact ID
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          artifact-ids: ${{ needs.materialize-hypothetical-actions.outputs.observation-boundary-artifact-id }}
+          artifact-ids: ${{ needs.materialize-hypothetical-actions.outputs.observation-set-artifact-id }}
           path: .wdv3/input
           skip-decompress: true
           digest-mismatch: error
-      - name: Download actions boundary by artifact ID
+      - name: Download actions report by artifact ID
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          artifact-ids: ${{ needs.materialize-hypothetical-actions.outputs.boundary-artifact-id }}
+          artifact-ids: ${{ needs.materialize-hypothetical-actions.outputs.actions-report-artifact-id }}
           path: .wdv3/input
           skip-decompress: true
           digest-mismatch: error
@@ -1249,14 +1314,14 @@ jobs:
             --qualification-decision-digest "${{ needs.materialize-hypothetical-actions.outputs.decision-digest }}" \
             --qualification-decision-artifact-id "${{ needs.materialize-hypothetical-actions.outputs.decision-artifact-id }}" \
             --qualification-decision-artifact-digest "${{ needs.materialize-hypothetical-actions.outputs.decision-artifact-digest }}" \
-            --observation-boundary ".wdv3/input/${{ needs.materialize-hypothetical-actions.outputs.observation-boundary-artifact-name }}" \
-            --observation-boundary-digest "${{ needs.materialize-hypothetical-actions.outputs.observation-boundary-digest }}" \
-            --observation-boundary-artifact-id "${{ needs.materialize-hypothetical-actions.outputs.observation-boundary-artifact-id }}" \
-            --observation-boundary-artifact-digest "${{ needs.materialize-hypothetical-actions.outputs.observation-boundary-artifact-digest }}" \
-            --actions-boundary ".wdv3/input/${{ needs.materialize-hypothetical-actions.outputs.boundary-artifact-name }}" \
-            --actions-boundary-digest "${{ needs.materialize-hypothetical-actions.outputs.boundary-digest }}" \
-            --actions-boundary-artifact-id "${{ needs.materialize-hypothetical-actions.outputs.boundary-artifact-id }}" \
-            --actions-boundary-artifact-digest "${{ needs.materialize-hypothetical-actions.outputs.boundary-artifact-digest }}" \
+            --observation-set ".wdv3/input/${{ needs.materialize-hypothetical-actions.outputs.observation-set-artifact-name }}" \
+            --observation-set-digest "${{ needs.materialize-hypothetical-actions.outputs.observation-set-digest }}" \
+            --observation-set-artifact-id "${{ needs.materialize-hypothetical-actions.outputs.observation-set-artifact-id }}" \
+            --observation-set-artifact-digest "${{ needs.materialize-hypothetical-actions.outputs.observation-set-artifact-digest }}" \
+            --actions-report ".wdv3/input/${{ needs.materialize-hypothetical-actions.outputs.actions-report-artifact-name }}" \
+            --actions-report-digest "${{ needs.materialize-hypothetical-actions.outputs.actions-report-digest }}" \
+            --actions-report-artifact-id "${{ needs.materialize-hypothetical-actions.outputs.actions-report-artifact-id }}" \
+            --actions-report-artifact-digest "${{ needs.materialize-hypothetical-actions.outputs.actions-report-artifact-digest }}" \
             "${artifact_args[@]}" \
             --output .wdv3/simulation-outcome.json \
             --summary-output .wdv3/simulation-summary.md \
@@ -1296,7 +1361,7 @@ jobs:
           overwrite: false
           archive: false
           include-hidden-files: true
-      - name: Preserve commit-6 non-success
+      - name: Preserve simulation terminal result
         if: always()
         run: |
           if [[ "${{ steps.finalize.outputs.terminal-result }}" == "success" ]]; then

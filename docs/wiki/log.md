@@ -1674,3 +1674,12 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   the applicable static, build, and lock gates.
 - Advanced the next dependency boundary to commit 7 npmjs observation while
   keeping live activation disabled.
+
+## [2026-08-13] query | Close Workflow Delivery v3 commit 7
+
+- Completed credential-free exact-version npmjs observation for Official
+  simulation with bounded HTTP/tar processing and retained canonical facts.
+- Closed six independently adjudicated review findings and obtained clean
+  follow-up reports from all four original GPT-5.6 Sol reviewers.
+- Recorded passing v3, managed HK, root Python, static, Pkl, build, and lock
+  validation evidence; commit 8 remains separately gated.

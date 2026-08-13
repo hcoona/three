@@ -3200,11 +3200,24 @@ def test_adapter_public_api_exports_closed_types_and_functions() -> None:
         "qualify_npm_artifact_contents",
         "qualify_npm_install_import",
     )
+    npmjs_exports = (
+        "HttpResponse",
+        "HttpTransport",
+        "NpmjsNetworkError",
+        "NpmjsPolicyError",
+        "NpmjsTimeoutError",
+        "NpmjsTruncatedResponseError",
+        "StdlibHttpTransport",
+        "observe_npmjs_projection",
+    )
     for name in expected_exports:
         module_export = getattr(node_adapter, name, None)
         assert module_export is not None, f"node adapter missing export {name}"
         assert getattr(adapters_package, name, None) is module_export
-    assert set(adapters_package.__all__) == set(expected_exports)
+    assert set(adapters_package.__all__) == {
+        *expected_exports,
+        *npmjs_exports,
+    }
 
     project_tests_signature = inspect.signature(
         node_adapter.run_node_project_tests

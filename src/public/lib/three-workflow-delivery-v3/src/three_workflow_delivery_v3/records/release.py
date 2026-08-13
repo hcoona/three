@@ -62,11 +62,20 @@ OBLIGATION_DISPOSITION_SCHEMA = (
 )
 QUALIFICATION_DECISION_SCHEMA = "workflow-delivery/v3/qualification-decision"
 OBSERVATION_VALUE_SCHEMA = "workflow-delivery/v3/observation-value"
+OBSERVATION_REQUEST_FACTS_SCHEMA = (
+    "workflow-delivery/v3/observation-request-facts"
+)
+OBSERVATION_RESPONSE_FACTS_SCHEMA = (
+    "workflow-delivery/v3/observation-response-facts"
+)
 PROJECTION_OBSERVATION_SCHEMA = "workflow-delivery/v3/projection-observation"
 HYPOTHETICAL_ACTION_SCHEMA = "workflow-delivery/v3/hypothetical-action"
 PUBLICATION_ACTION_SCHEMA = "workflow-delivery/v3/publication-action"
 PUBLICATION_SNAPSHOT_SCHEMA = "workflow-delivery/v3/publication-snapshot"
 SIMULATION_OUTCOME_SCHEMA = "workflow-delivery/v3/simulation-outcome"
+NPMJS_OBSERVATION_CONTRACT_ID = "npm/npmjs-public-observation-v1"
+NPMJS_OBSERVER_PRODUCER = "observe-npmjs"
+HYPOTHETICAL_ACTIONS_REPORT_PRODUCER = "materialize-hypothetical-actions"
 
 OFFICIAL_SIMULATION_WORKFLOW_PATH = (
     ".github/workflows/workflow-delivery-v3-official-simulate.yml"
@@ -124,6 +133,15 @@ def _positive(value: object, *, field: str) -> int:
     accepted = cast("int", value)
     if accepted <= 0:
         message = f"{field} must be positive"
+        raise ValueError(message)
+    return accepted
+
+
+def _nonnegative(value: object, *, field: str) -> int:
+    _exact(value, int, field=field)
+    accepted = cast("int", value)
+    if accepted < 0:
+        message = f"{field} must be nonnegative"
         raise ValueError(message)
     return accepted
 
@@ -1650,15 +1668,186 @@ class ObservationValue:
 
 
 @dataclass(frozen=True, slots=True)
+class ObservationRequestFacts:
+    """Closed canonical facts for the Adapter's credential-free request."""
+
+    qualification_snapshot_digest: str
+    projection_digest: str
+    desired_state_digest: str
+    method: str
+    url: str
+    headers: tuple[tuple[str, str], ...]
+
+    def __post_init__(self) -> None:
+        """Reject malformed or open request facts."""
+        _digest(
+            self.qualification_snapshot_digest,
+            field="observation request.qualification_snapshot_digest",
+        )
+        _digest(
+            self.projection_digest,
+            field="observation request.projection_digest",
+        )
+        _digest(
+            self.desired_state_digest,
+            field="observation request.desired_state_digest",
+        )
+        if _string(self.method, field="observation request.method") != "GET":
+            message = "observation request method must be GET"
+            raise ValueError(message)
+        _string(self.url, field="observation request.url")
+        _pairs(self.headers, field="observation request.headers")
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the canonical request facts."""
+        return {
+            "schema": OBSERVATION_REQUEST_FACTS_SCHEMA,
+            "qualification-snapshot-digest": (
+                self.qualification_snapshot_digest
+            ),
+            "projection-digest": self.projection_digest,
+            "desired-state-digest": self.desired_state_digest,
+            "method": self.method,
+            "url": self.url,
+            "headers": [[name, value] for name, value in self.headers],
+        }
+
+    @property
+    def request_digest(self) -> str:
+        """Return the digest derived from the retained request facts."""
+        return canonical_sha256(self.to_document())
+
+
+@dataclass(frozen=True, slots=True)
+class ObservationResponseFacts:
+    """Closed bounded facts retained from the remote response."""
+
+    stage: str
+    requested_url: str
+    final_url: str | None
+    redirects: tuple[str, ...]
+    status: int | str
+    selected_headers: tuple[tuple[str, str], ...]
+    truncated: bool | None
+    body_sha256: str | None
+    status_detail: str | None = None
+    metadata_body_sha256: str | None = None
+    metadata_package: str | None = None
+    metadata_version: str | None = None
+    dist_tarball: str | None = None
+    dist_integrity: str | None = None
+    tarball_content_sha512: str | None = None
+    tarball_byte_size: int | None = None
+    remote_witness_digest: str | None = None
+
+    def __post_init__(self) -> None:  # noqa: C901
+        """Reject malformed, unbounded, or loosely typed response facts."""
+        _choice(
+            self.stage,
+            frozenset({"metadata", "tarball", "synthetic"}),
+            field="observation response.stage",
+        )
+        _string(
+            self.requested_url,
+            field="observation response.requested_url",
+        )
+        if self.final_url is not None:
+            _string(self.final_url, field="observation response.final_url")
+        _string_tuple(
+            self.redirects,
+            field="observation response.redirects",
+            unique=False,
+        )
+        if type(self.status) is int:
+            _nonnegative(self.status, field="observation response.status")
+        elif type(self.status) is str:
+            _string(self.status, field="observation response.status")
+        else:
+            message = "observation response.status has the wrong runtime type"
+            raise TypeError(message)
+        _pairs(
+            self.selected_headers,
+            field="observation response.selected_headers",
+        )
+        if self.truncated is not None:
+            _exact(
+                self.truncated,
+                bool,
+                field="observation response.truncated",
+            )
+        for field, value in (
+            ("status_detail", self.status_detail),
+            ("metadata_package", self.metadata_package),
+            ("metadata_version", self.metadata_version),
+            ("dist_tarball", self.dist_tarball),
+            ("dist_integrity", self.dist_integrity),
+        ):
+            if value is not None:
+                _string(value, field=f"observation response.{field}")
+        for field, value in (
+            ("body_sha256", self.body_sha256),
+            ("metadata_body_sha256", self.metadata_body_sha256),
+            ("remote_witness_digest", self.remote_witness_digest),
+        ):
+            if value is not None:
+                _digest(value, field=f"observation response.{field}")
+        if self.tarball_content_sha512 is not None:
+            _digest(
+                self.tarball_content_sha512,
+                field="observation response.tarball_content_sha512",
+                sha512=True,
+            )
+        if self.tarball_byte_size is not None:
+            _nonnegative(
+                self.tarball_byte_size,
+                field="observation response.tarball_byte_size",
+            )
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the canonical bounded response facts."""
+        document: dict[str, JsonValue] = {}
+        document["schema"] = OBSERVATION_RESPONSE_FACTS_SCHEMA
+        document["stage"] = self.stage
+        document["requested-url"] = self.requested_url
+        document["final-url"] = self.final_url
+        redirects: list[JsonValue] = []
+        redirects.extend(self.redirects)
+        document["redirects"] = redirects
+        document["status"] = self.status
+        selected_headers: list[JsonValue] = []
+        for name, value in self.selected_headers:
+            pair: list[JsonValue] = [name, value]
+            selected_headers.append(pair)
+        document["selected-headers"] = selected_headers
+        document["truncated"] = self.truncated
+        document["body-sha256"] = self.body_sha256
+        document["status-detail"] = self.status_detail
+        document["metadata-body-sha256"] = self.metadata_body_sha256
+        document["metadata-package"] = self.metadata_package
+        document["metadata-version"] = self.metadata_version
+        document["dist-tarball"] = self.dist_tarball
+        document["dist-integrity"] = self.dist_integrity
+        document["tarball-content-sha512"] = self.tarball_content_sha512
+        document["tarball-byte-size"] = self.tarball_byte_size
+        document["remote-witness-digest"] = self.remote_witness_digest
+        return document
+
+
+@dataclass(frozen=True, slots=True)
 class ProjectionObservation:
     """One admitted Adapter classification for one logical projection."""
 
     subject: SimulationIdentity | ReleaseAttemptIdentity
+    purpose: str
+    target: str
+    producer: str
     qualification_snapshot_digest: str
     projection: DestinationProjection
     desired_state_digest: str
     observation_contract_id: str
+    request_facts: ObservationRequestFacts
     request_digest: str
+    response_facts: ObservationResponseFacts
     response_digest: str
     value: ObservationValue
 
@@ -1670,6 +1859,21 @@ class ProjectionObservation:
         }:
             message = "Projection Observation subject has wrong type"
             raise TypeError(message)
+        purpose = _choice(
+            self.purpose,
+            _PURPOSES,
+            field="observation.purpose",
+        )
+        expected_purpose = (
+            "release-simulation"
+            if type(self.subject) is SimulationIdentity
+            else "live-release"
+        )
+        if purpose != expected_purpose:
+            message = "Projection Observation purpose binding mismatch"
+            raise ValueError(message)
+        _sha(self.target, field="observation.target")
+        _string(self.producer, field="observation.producer")
         _digest(
             self.qualification_snapshot_digest,
             field="observation.qualification_snapshot_digest",
@@ -1687,7 +1891,17 @@ class ProjectionObservation:
             self.observation_contract_id,
             field="observation.observation_contract_id",
         )
+        _exact(
+            self.request_facts,
+            ObservationRequestFacts,
+            field="observation.request_facts",
+        )
         _digest(self.request_digest, field="observation.request_digest")
+        _exact(
+            self.response_facts,
+            ObservationResponseFacts,
+            field="observation.response_facts",
+        )
         _digest(self.response_digest, field="observation.response_digest")
         _exact(self.value, ObservationValue, field="observation.value")
         if (
@@ -1696,19 +1910,48 @@ class ProjectionObservation:
         ):
             message = "Projection Observation contract binding mismatch"
             raise ValueError(message)
+        if (
+            self.request_facts.qualification_snapshot_digest
+            != self.qualification_snapshot_digest
+            or self.request_facts.projection_digest
+            != self.projection.projection_digest
+            or self.request_facts.desired_state_digest
+            != self.desired_state_digest
+        ):
+            message = "Projection Observation request facts binding mismatch"
+            raise ValueError(message)
+        if self.request_digest != self.request_facts.request_digest:
+            message = "Projection Observation request digest mismatch"
+            raise ValueError(message)
+        expected_response_digest = canonical_sha256(
+            {
+                "schema": "workflow-delivery/v3/observation-response",
+                "request-digest": self.request_digest,
+                "facts": self.response_facts.to_document(),
+                "value": self.value.to_document(),
+            }
+        )
+        if self.response_digest != expected_response_digest:
+            message = "Projection Observation response digest mismatch"
+            raise ValueError(message)
 
     def to_document(self) -> dict[str, JsonValue]:
         """Return the canonical Projection Observation."""
         return {
             "schema": PROJECTION_OBSERVATION_SCHEMA,
             "subject": _subject_document(self.subject),
+            "purpose": self.purpose,
+            "target": self.target,
+            "producer": self.producer,
             "qualification-snapshot-digest": (
                 self.qualification_snapshot_digest
             ),
             "projection": self.projection.to_document(),
             "desired-state-digest": self.desired_state_digest,
             "observation-contract-id": self.observation_contract_id,
+            "request-facts": self.request_facts.to_document(),
             "request-digest": self.request_digest,
+            "response-facts": self.response_facts.to_document(),
             "response-digest": self.response_digest,
             "value": self.value.to_document(),
         }
@@ -2317,6 +2560,7 @@ type ReleaseRecord = (
     | QualificationEvidence
     | QualificationDecision
     | ProjectionObservation
+    | HypotheticalAction
     | PublicationAction
     | PublicationSnapshot
     | SimulationOutcome
@@ -2374,6 +2618,9 @@ def admit_release_record(
 
 
 __all__ = [
+    "HYPOTHETICAL_ACTIONS_REPORT_PRODUCER",
+    "NPMJS_OBSERVATION_CONTRACT_ID",
+    "NPMJS_OBSERVER_PRODUCER",
     "OFFICIAL_SIMULATION_WORKFLOW_PATH",
     "ArtifactVariantIdentity",
     "BuddyExecutionIdentity",

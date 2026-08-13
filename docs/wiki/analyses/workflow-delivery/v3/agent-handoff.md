@@ -13,7 +13,7 @@ If it conflicts with the
 ## Current Checkpoint
 
 - Requirements, HLD, and all five MLDs are confirmed.
-- Implementation commits 1 through 6 of the approved first-slice LLD are
+- Implementation commits 1 through 7 of the approved first-slice LLD are
   delivered in the working tree. Commit 3 includes target-tree-bound
   Release Unit/Quality authoring validation, duplicate Release Unit rejection,
   exact-target Repository Model compilation, static catalogs, Node/NBGV
@@ -34,9 +34,11 @@ If it conflicts with the
   Snapshots and Decisions, two-stage npm build/upload Artifact formation,
   guarded live-only Publication Snapshot contracts with exact materialized
   Publication Actions, strict current-attempt Release transport, and the
-  12-job Official simulation workflow. The hosted simulation performs no
-  registry observation or mutation and ends truthfully incomplete with
-  `unsupported-observation`.
+  12-job Official simulation workflow. Commit 7 adds credential-free public
+  npmjs observation for Official simulation, digest-bound observation/action
+  transport bundles, SHA-512 exact-state classification, and hypothetical
+  action reporting without live Publication Snapshot, capability, receipt, or
+  mutation lineage.
 - The first vertical slice is `hcoona-release-smoke-npm`.
 - The slice has one Node project, one package variant, and one npm artifact.
 - It covers CI Qualification, live Buddy publication to GitHub Packages, and
@@ -238,10 +240,10 @@ If it conflicts with the
   state blocks; no repository variable, PAT, App, service, ledger, OIDC, or
   additional token permission is added. Permanent root HK policy remains the
   repository-wide dependency gate.
-- The next LLD dependency boundary is commit 7: authoritative npmjs
-  observation and exact SHA-512 remote-state classification for Official
-  simulation. Do not implement it or later scopes without a separate explicit
-  user task; live activation remains disabled.
+- The next LLD dependency boundary is commit 8: Buddy approval, authorization,
+  capability admission, publication, Receipt, and final live Attempt
+  finalization. Do not implement it or later scopes without a separate
+  explicit user task; live activation remains disabled.
 - Implementation must preserve the approved commit boundaries and keep live
   activation disabled until acceptance and the separate activation approval.
 

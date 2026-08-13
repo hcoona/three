@@ -758,11 +758,37 @@ def build_node_package(request: BuildRequest) -> BuildResult:
     )
 
 
-def _strict_gzip_payload(tarball: bytes) -> bytes:
+class _TarballExpansionLimitError(ValueError):
+    """The gzip payload exceeded an explicit expanded-byte bound."""
+
+
+def _strict_gzip_payload(
+    tarball: bytes,
+    *,
+    max_payload_bytes: int | None = None,
+) -> bytes:
+    if max_payload_bytes is not None and (
+        type(max_payload_bytes) is not int or max_payload_bytes <= 0
+    ):
+        message = "expanded tarball limit must be a positive exact integer"
+        raise ValueError(message)
     decompressor = zlib.decompressobj(zlib.MAX_WBITS | 16)
     try:
-        payload = decompressor.decompress(tarball)
-        payload += decompressor.flush()
+        if max_payload_bytes is None:
+            payload = decompressor.decompress(tarball)
+            payload += decompressor.flush()
+        else:
+            payload = decompressor.decompress(
+                tarball,
+                max_payload_bytes + 1,
+            )
+            if len(payload) > max_payload_bytes or decompressor.unconsumed_tail:
+                message = "expanded npm tarball exceeded size bound"
+                raise _TarballExpansionLimitError(message)
+            payload += decompressor.flush(max_payload_bytes - len(payload) + 1)
+            if len(payload) > max_payload_bytes:
+                message = "expanded npm tarball exceeded size bound"
+                raise _TarballExpansionLimitError(message)
     except (EOFError, zlib.error) as error:
         message = "invalid npm tarball"
         raise ValueError(message) from error
@@ -865,8 +891,15 @@ def _validate_physical_tar_stream(payload: bytes) -> None:
     raise ValueError(message)
 
 
-def _read_tarball(tarball: bytes) -> dict[str, bytes]:
-    payload = _strict_gzip_payload(tarball)
+def _read_tarball(
+    tarball: bytes,
+    *,
+    max_payload_bytes: int | None = None,
+) -> dict[str, bytes]:
+    payload = _strict_gzip_payload(
+        tarball,
+        max_payload_bytes=max_payload_bytes,
+    )
     if len(payload) % tarfile.BLOCKSIZE != 0:
         message = "invalid npm tarball"
         raise ValueError(message)
@@ -934,13 +967,13 @@ def _validate_artifact_expectation(
     return expected_witness
 
 
-def qualify_npm_artifact_contents(
+def _qualify_npm_artifact_entries(
     tarball: bytes,
+    entries: dict[str, bytes],
     expectation: ArtifactExpectation,
 ) -> ArtifactManifest:
-    """Validate the exact npm artifact manifest and target witness."""
+    """Validate already-parsed exact npm artifact entries and target witness."""
     expected_witness = _validate_artifact_expectation(expectation)
-    entries = _read_tarball(tarball)
     actual_names = tuple(sorted(entries))
     if actual_names != expectation.entry_allowlist:
         message = "npm tarball entry allowlist mismatch"
@@ -985,6 +1018,18 @@ def qualify_npm_artifact_contents(
         sha256=f"sha256:{sha256}",
         sha512=f"sha512:{sha512}",
         byte_size=len(tarball),
+    )
+
+
+def qualify_npm_artifact_contents(
+    tarball: bytes,
+    expectation: ArtifactExpectation,
+) -> ArtifactManifest:
+    """Validate the exact npm artifact manifest and target witness."""
+    return _qualify_npm_artifact_entries(
+        tarball,
+        _read_tarball(tarball),
+        expectation,
     )
 
 

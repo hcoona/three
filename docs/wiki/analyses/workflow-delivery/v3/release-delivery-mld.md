@@ -405,6 +405,17 @@ requirements, actions, and a Simulation Outcome, but it:
 - does not reserve Official or Buddy live identity; and
 - does not enter live Release Execution history.
 
+Simulation encodes authoritative observation results without creating live
+Release state:
+
+- `absent` and `exact-satisfied` produce a successful Simulation Outcome;
+- `unknown` produces an incomplete, replayable outcome whose next action is to
+  rerun the simulation;
+- `unprovable` produces an incomplete outcome whose next action is to repair or
+  implement the required observation capability; and
+- `partial` or `conflicting` produces a failed outcome whose next action is
+  reconciliation.
+
 Shared schemas may be reused only when an explicit purpose discriminator is
 covered by identity and digest. Cross-purpose admission rejects the record.
 Live Release never reuses simulation Snapshots, artifacts, Evidence,

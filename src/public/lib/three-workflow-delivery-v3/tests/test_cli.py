@@ -779,7 +779,7 @@ def test_compile_simulation_model_consumes_uploaded_provider_without_rerun(
     ids=["publish", "repository-plan", "observation"],
 )
 def test_cli_rejects_unapproved_commands(arguments: list[str]) -> None:
-    """Expose no publication or commit-7-plus command."""
+    """Expose no publication or unapproved release command."""
     with pytest.raises(SystemExit) as error:
         cli_module.main(arguments)
 
@@ -801,15 +801,15 @@ def test_cli_rejects_unapproved_commands(arguments: list[str]) -> None:
         "run-install-import",
         "form-incomplete-evidence",
         "finalize-qualification",
-        "emit-observation-unavailable",
+        "observe-npmjs",
         "materialize-hypothetical-actions",
         "finalize-simulation",
     ],
 )
-def test_cli_exposes_only_the_commit6_release_transport_commands(
+def test_cli_exposes_only_the_commit7_release_transport_commands(
     command: str,
 ) -> None:
-    """Expose the commit-6 Release surface while later commands stay absent."""
+    """Expose the commit-7 Release surface while later commands stay absent."""
     with pytest.raises(SystemExit) as error:
         cli_module.main(["release", command, "--help"])
 

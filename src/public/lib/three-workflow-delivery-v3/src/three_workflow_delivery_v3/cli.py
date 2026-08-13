@@ -24,6 +24,7 @@ from three_workflow_delivery_v3.adapters.node import (
     run_node_project_build,
     run_node_project_tests,
 )
+from three_workflow_delivery_v3.adapters.npmjs import observe_npmjs_projection
 from three_workflow_delivery_v3.canonical import (
     canonical_sha256,
     canonicalize,
@@ -65,6 +66,10 @@ from three_workflow_delivery_v3.records.ci import (
     ci_qualification_snapshot_digest,
 )
 from three_workflow_delivery_v3.records.release import (
+    HYPOTHETICAL_ACTIONS_REPORT_PRODUCER,
+    NPMJS_OBSERVER_PRODUCER,
+    HypotheticalAction,
+    ProjectionObservation,
     QualificationDecision,
     QualificationEvidence,
     QualificationSnapshot,
@@ -86,6 +91,7 @@ from three_workflow_delivery_v3.release import (
     finalize_simulation,
     form_incomplete_evidence,
     form_uploaded_release_artifact,
+    materialize_hypothetical_actions,
     normalize_official_simulation_intent,
     parse_governance_attestation,
     plan_official_simulation_qualification,
@@ -93,13 +99,13 @@ from three_workflow_delivery_v3.release import (
     qualify_release_install_import,
 )
 from three_workflow_delivery_v3.release.simulation import (
-    HypotheticalActionsBoundary,
+    HypotheticalActionsReport,
     ReleaseAdapterContext,
-    SimulationObservationBoundary,
-    hypothetical_actions_boundary_from_bytes,
-    observation_boundary_from_bytes,
+    SimulationObservationSet,
+    hypothetical_actions_report_from_bytes,
     release_adapter_context_from_bytes,
     render_simulation_summary,
+    simulation_observation_set_from_bytes,
 )
 from three_workflow_delivery_v3.release.workflow import (
     artifact_expectation,
@@ -392,6 +398,8 @@ def _load_release_record(  # noqa: PLR0913
         | ReleaseArtifact
         | QualificationEvidence
         | QualificationDecision
+        | ProjectionObservation
+        | HypotheticalAction
         | SimulationOutcome
     ],
     expected_digest: str,
@@ -405,6 +413,8 @@ def _load_release_record(  # noqa: PLR0913
     | ReleaseArtifact
     | QualificationEvidence
     | QualificationDecision
+    | ProjectionObservation
+    | HypotheticalAction
     | SimulationOutcome
 ):
     content = _verify_uploaded_payload(
@@ -964,47 +974,61 @@ def _release_finalize_qualification_command(
     return 0
 
 
-def _release_observation_unavailable_command(
+def _release_observe_npmjs_command(
     arguments: argparse.Namespace,
 ) -> int:
     snapshot = _load_qualification_snapshot(arguments)
     decision = _load_qualification_decision(arguments)
     if not isinstance(snapshot.subject, SimulationBinding):
-        raise TypeError("Observation boundary requires simulation Snapshot")
-    boundary = SimulationObservationBoundary(
+        raise TypeError("npmjs observation requires simulation Snapshot")
+    observations: tuple[ProjectionObservation, ...] = ()
+    if decision.terminal_result == "success":
+        context = _load_release_adapter_context(arguments, snapshot)
+        artifact = _load_release_artifact_record(arguments)
+        expectation = artifact_expectation(snapshot, context, artifact)
+        observations = (
+            observe_npmjs_projection(
+                snapshot,
+                decision,
+                artifact,
+                expectation,
+            ),
+        )
+    bundle = SimulationObservationSet(
         simulation=snapshot.subject.simulation,
+        purpose=snapshot.subject.purpose,
+        target=snapshot.target,
+        producer=NPMJS_OBSERVER_PRODUCER,
+        workflow_run_id=snapshot.subject.simulation.workflow_run_id,
+        run_attempt=snapshot.subject.simulation.run_attempt,
         qualification_snapshot_digest=snapshot.snapshot_digest,
         qualification_decision_digest=decision.decision_digest,
-        status="unavailable",
-        authoritative=False,
-        network_performed=False,
-        reason="observation-adapter-not-implemented",
-        next_action="implement-observation-adapter",
+        observations=observations,
     )
-    _write_output(arguments.output, boundary.to_document())
+    _write_output(arguments.output, bundle.to_document())
     _record_outputs(
         arguments.github_output,
-        role="observation-boundary",
-        digest=boundary.boundary_digest,
+        role="observation-set",
+        digest=bundle.set_digest,
     )
     return 0
 
 
-def _load_observation_boundary(
+def _load_observation_set(
     arguments: argparse.Namespace,
     snapshot: QualificationSnapshot,
     decision: QualificationDecision,
-) -> SimulationObservationBoundary:
+) -> SimulationObservationSet:
     content = _verify_uploaded_payload(
-        arguments.observation_boundary,
-        artifact_id=arguments.observation_boundary_artifact_id,
-        artifact_digest=arguments.observation_boundary_artifact_digest,
+        arguments.observation_set,
+        artifact_id=arguments.observation_set_artifact_id,
+        artifact_digest=arguments.observation_set_artifact_digest,
     )
-    return observation_boundary_from_bytes(
+    return simulation_observation_set_from_bytes(
         content,
         snapshot=snapshot,
         decision=decision,
-        expected_digest=arguments.observation_boundary_digest,
+        expected_digest=arguments.observation_set_digest,
     )
 
 
@@ -1013,27 +1037,46 @@ def _release_materialize_actions_command(
 ) -> int:
     snapshot = _load_qualification_snapshot(arguments)
     decision = _load_qualification_decision(arguments)
-    observation = _load_observation_boundary(
+    observations = _load_observation_set(
         arguments,
         snapshot,
         decision,
     )
     if not isinstance(snapshot.subject, SimulationBinding):
-        raise TypeError("Actions boundary requires simulation Snapshot")
-    boundary = HypotheticalActionsBoundary(
+        raise TypeError("Hypothetical actions require simulation Snapshot")
+    actions: tuple[HypotheticalAction, ...] = ()
+    if decision.terminal_result == "success" and observations.observations:
+        classifications = {
+            observation.value.classification
+            for observation in observations.observations
+        }
+        if classifications <= {"absent", "exact-satisfied"}:
+            artifact = _load_release_artifact_record(arguments)
+            actions = materialize_hypothetical_actions(
+                snapshot,
+                decision,
+                observations.observations,
+                (artifact,),
+            )
+    report = HypotheticalActionsReport(
         simulation=snapshot.subject.simulation,
+        purpose=snapshot.subject.purpose,
+        target=snapshot.target,
+        producer=HYPOTHETICAL_ACTIONS_REPORT_PRODUCER,
+        workflow_run_id=snapshot.subject.simulation.workflow_run_id,
+        run_attempt=snapshot.subject.simulation.run_attempt,
         qualification_snapshot_digest=snapshot.snapshot_digest,
         qualification_decision_digest=decision.decision_digest,
-        observation_boundary_digest=observation.boundary_digest,
-        status="unsupported-observation",
-        actions=(),
+        observation_set_digest=observations.set_digest,
+        observation_digests=observations.observation_digests,
+        actions=actions,
         publication_snapshot_emitted=False,
     )
-    _write_output(arguments.output, boundary.to_document())
+    _write_output(arguments.output, report.to_document())
     _record_outputs(
         arguments.github_output,
-        role="actions-boundary",
-        digest=boundary.boundary_digest,
+        role="hypothetical-actions-report",
+        digest=report.report_digest,
     )
     return 0
 
@@ -1043,22 +1086,22 @@ def _release_finalize_simulation_command(
 ) -> int:
     snapshot = _load_qualification_snapshot(arguments)
     decision = _load_qualification_decision(arguments)
-    observation = _load_observation_boundary(
+    observations = _load_observation_set(
         arguments,
         snapshot,
         decision,
     )
     actions_content = _verify_uploaded_payload(
-        arguments.actions_boundary,
-        artifact_id=arguments.actions_boundary_artifact_id,
-        artifact_digest=arguments.actions_boundary_artifact_digest,
+        arguments.actions_report,
+        artifact_id=arguments.actions_report_artifact_id,
+        artifact_digest=arguments.actions_report_artifact_digest,
     )
-    hypothetical_actions_boundary_from_bytes(
+    actions_report = hypothetical_actions_report_from_bytes(
         actions_content,
         snapshot=snapshot,
         decision=decision,
-        observation=observation,
-        expected_digest=arguments.actions_boundary_digest,
+        observations=observations,
+        expected_digest=arguments.actions_report_digest,
     )
     artifacts: tuple[ReleaseArtifact, ...] = ()
     if arguments.release_artifact is not None:
@@ -1066,8 +1109,11 @@ def _release_finalize_simulation_command(
     outcome = finalize_simulation(
         snapshot,
         decision,
+        observations=observations.observations,
         artifacts=artifacts,
     )
+    if actions_report.actions != outcome.hypothetical_actions:
+        raise ValueError("Hypothetical actions report substitution mismatch")
     _write_output(arguments.output, outcome.to_document())
     summary = render_simulation_summary(
         snapshot,
@@ -2194,12 +2240,12 @@ def _add_decision_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _add_observation_boundary_arguments(
+def _add_observation_set_arguments(
     parser: argparse.ArgumentParser,
 ) -> None:
     _add_uploaded_record_arguments(
         parser,
-        name="observation_boundary",
+        name="observation_set",
     )
 
 
@@ -2434,17 +2480,15 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         handler=_release_finalize_qualification_command
     )
 
-    observation_unavailable = release_commands.add_parser(
-        "emit-observation-unavailable"
-    )
-    _add_current_release_arguments(observation_unavailable)
-    _add_snapshot_arguments(observation_unavailable)
-    _add_decision_arguments(observation_unavailable)
-    observation_unavailable.add_argument("--output", required=True)
-    observation_unavailable.add_argument("--github-output")
-    observation_unavailable.set_defaults(
-        handler=_release_observation_unavailable_command
-    )
+    observe_npmjs = release_commands.add_parser("observe-npmjs")
+    _add_current_release_arguments(observe_npmjs)
+    _add_snapshot_arguments(observe_npmjs)
+    _add_decision_arguments(observe_npmjs)
+    _add_adapter_context_arguments(observe_npmjs)
+    _add_release_artifact_arguments(observe_npmjs, required=False)
+    observe_npmjs.add_argument("--output", required=True)
+    observe_npmjs.add_argument("--github-output")
+    observe_npmjs.set_defaults(handler=_release_observe_npmjs_command)
 
     materialize_actions = release_commands.add_parser(
         "materialize-hypothetical-actions"
@@ -2452,7 +2496,11 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     _add_current_release_arguments(materialize_actions)
     _add_snapshot_arguments(materialize_actions)
     _add_decision_arguments(materialize_actions)
-    _add_observation_boundary_arguments(materialize_actions)
+    _add_observation_set_arguments(materialize_actions)
+    _add_release_artifact_arguments(
+        materialize_actions,
+        required=False,
+    )
     materialize_actions.add_argument("--output", required=True)
     materialize_actions.add_argument("--github-output")
     materialize_actions.set_defaults(
@@ -2463,10 +2511,10 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     _add_current_release_arguments(finalize_simulation)
     _add_snapshot_arguments(finalize_simulation)
     _add_decision_arguments(finalize_simulation)
-    _add_observation_boundary_arguments(finalize_simulation)
+    _add_observation_set_arguments(finalize_simulation)
     _add_uploaded_record_arguments(
         finalize_simulation,
-        name="actions_boundary",
+        name="actions_report",
     )
     _add_release_artifact_arguments(
         finalize_simulation,

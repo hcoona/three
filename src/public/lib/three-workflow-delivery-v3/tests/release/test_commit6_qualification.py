@@ -12,7 +12,6 @@ from three_workflow_delivery_v3.adapters import node as node_adapter
 from three_workflow_delivery_v3.canonical import (
     JsonValue,
     canonical_sha256,
-    canonicalize,
 )
 from three_workflow_delivery_v3.records.artifacts import (
     ArtifactTransportIdentity,
@@ -384,11 +383,20 @@ def test_synthetic_absent_and_exact_observations_plan_actions_only(
     )
     assert exact_actions == ()
 
+    substituted_value = replace(
+        exact.value,
+        content_sha512="sha512:" + ("c" * 128),
+    )
     substituted_exact = replace(
         exact,
-        value=replace(
-            exact.value,
-            content_sha512="sha512:" + ("c" * 128),
+        value=substituted_value,
+        response_digest=canonical_sha256(
+            {
+                "schema": "workflow-delivery/v3/observation-response",
+                "request-digest": exact.request_digest,
+                "facts": exact.response_facts.to_document(),
+                "value": substituted_value.to_document(),
+            }
         ),
     )
     with pytest.raises(ValueError, match="does not match desired artifact"):
@@ -400,33 +408,19 @@ def test_synthetic_absent_and_exact_observations_plan_actions_only(
         )
 
 
-def test_unsupported_observation_finishes_truthful_incomplete_simulation(
+def test_successful_simulation_requires_observation_for_each_projection(
     qualified_simulation,
 ) -> None:
     scenario = qualified_simulation
-    outcome = finalize_simulation(
-        scenario.snapshot,
-        scenario.decision,
-        artifacts=(scenario.artifact,),
-    )
-
-    assert outcome.terminal_result == "incomplete"
-    assert outcome.failure_class == "unsupported-observation"
-    assert outcome.next_action == "implement-observation-adapter"
-    assert outcome.observation_digests == ()
-    assert outcome.hypothetical_actions == ()
-    serialized = canonicalize(outcome.to_document()).decode()
-    for forbidden in (
-        "official-product-identity",
-        "official-execution-identity",
-        "release-attempt-identity",
-        "authorization",
-        "receipt",
-    ):
-        assert forbidden not in serialized
+    with pytest.raises(ValueError, match="exactly one Observation"):
+        finalize_simulation(
+            scenario.snapshot,
+            scenario.decision,
+            artifacts=(scenario.artifact,),
+        )
 
 
-def test_synthetic_observations_cannot_complete_simulation_report(
+def test_synthetic_observation_helper_uses_current_observer_producer(
     qualified_simulation,
 ) -> None:
     scenario = qualified_simulation
@@ -437,13 +431,7 @@ def test_synthetic_observations_cannot_complete_simulation_report(
         classification="absent",
     )
 
-    with pytest.raises(ValueError, match="real observation adapter"):
-        finalize_simulation(
-            scenario.snapshot,
-            scenario.decision,
-            observations=(observation,),
-            artifacts=(scenario.artifact,),
-        )
+    assert observation.producer == "observe-npmjs"
 
 
 def test_synthetic_observation_helper_is_not_public_release_api() -> None:
@@ -634,9 +622,7 @@ def test_publication_snapshot_guards_success_observation_and_artifacts(
             "capability-requirements",
             lambda action: replace(
                 action,
-                capability_requirements=(
-                    "npmjs/trusted-publishing-oidc-v2",
-                ),
+                capability_requirements=("npmjs/trusted-publishing-oidc-v2",),
             ),
         ),
         (

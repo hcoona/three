@@ -138,6 +138,50 @@ review was performed manually here.
 
 | Mutation | Killed by |
 |---|---|
+
+## 2026-08-12 Workflow Delivery v3 Commit 7 Status Addendum
+
+| Phase | Status |
+|---|---|
+| Commit-7 transport records | Complete |
+| CLI integration | Complete |
+| Official simulation workflow integration | Complete |
+| Static/release workflow tests | In progress |
+| Ruff/Pyrefly/full v3 validation | Pending |
+
+### Commit-7 Evidence
+
+| Requirement | Evidence |
+|---|---|
+| C7-1/C7-2 canonical transport bundles | `SimulationObservationSet` and `HypotheticalActionsReport` in `release/simulation.py`; transport tests in `test_commit7_observation.py`. |
+| C7-3 npmjs observation CLI and non-success skip | `release observe-npmjs` in `cli.py`; CLI transport test monkeypatches the observer and failed-qualification coverage is in commit-7 tests. |
+| C7-4 action materialization | `materialize_hypothetical_actions` and CLI `materialize-hypothetical-actions`; `test_materialize_hypothetical_actions_accepts_only_absent_and_exact`. |
+| C7-5 finalizer mapping and substitution rejection | `finalize_simulation`; `test_finalize_simulation_maps_commit7_observation_outcomes` and transport binding/substitution tests. |
+| C7-6 workflow permissions/credentials | `test_official_simulation_event_permissions_and_concurrency_are_exact` and `test_commit7_observation_and_hypothetical_actions_are_bounded`. |
+| C7-7 exact ID/digest transport | `test_official_simulation_uses_only_raw_id_bound_artifact_transport`. |
+| C7-8 raw basename model | `_raw_artifact_name` and `test_upload_artifact_v7_raw_mode_ignores_configured_name`. |
+
+### Validation Results
+
+| Command | Result |
+|---|---|
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest src/public/lib/three-workflow-delivery-v3/tests/release/test_commit7_observation.py -q` | `10 passed` |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest src/public/lib/three-workflow-delivery-v3/tests/release/test_commit6_transport_cli.py::test_release_cli_transports_current_attempt_through_commit6_stop_line -q` | `1 passed` |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest src/public/lib/three-workflow-delivery-v3/tests/contracts/test_official_simulation_workflow.py -q` | `8 passed` |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest src/public/lib/three-workflow-delivery-v3/tests/release -q` | `232 passed` |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest src/public/lib/three-workflow-delivery-v3/tests/release -q` | Final rerun after cleanup: `234 passed` |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest src/public/lib/three-workflow-delivery-v3/tests/contracts/test_official_simulation_workflow.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_npmjs.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_node.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py -q` | `274 passed` |
+| `uv run --python 3.13 ruff check ...changed v3 files...` | Passed |
+| `uv run --python 3.13 ruff format --check ...changed v3 files...` | Passed after formatting `test_commit6_qualification.py` |
+| `uv run --python 3.13 pyrefly check src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3 src/public/lib/three-workflow-delivery-v3/tests/release/test_commit7_observation.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py` | `0 errors` |
+| `actionlint .github/workflows/workflow-delivery-v3-official-simulate.yml` | Passed |
+| `git --no-pager diff --check` | Passed |
+
+### Full-v3 Validation Blockers
+
+- `uv run --python 3.13 --package three-workflow-delivery-v3 pytest src/public/lib/three-workflow-delivery-v3/tests -q` was attempted. It reached `1958 passed` with two failures before cleanup: one stale commit-6 CLI exposure test fixed in this change, and `test_installed_nbgv_api_returns_exact_head_and_native_projection`, which fails inside `pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile` in a copied temp repository before reaching commit-7 code.
+- Rerunning the node-provider failure directly still failed in the same `pnpm install` prerequisite with exit 228 and empty stderr.
+- A broader rerun ignoring `test_node_provider.py` reached `1785 passed` and then failed in `test_real_hk_plan_triggers_consumer_policy_for_each_cataloged_surface[postinstall-ts-nested]` because hk panicked while loading configuration in a synthetic temporary repository. This is outside the commit-7 release CLI/workflow scope.
 | Remove the new `release_policy_path` exact-`str` guard | `test_live_eligibility_blocks_toctou_mutation_during_snapshot_admission` would trigger the surrogate `__ne__` and fail its `comparison_triggered is False` assertion. |
 | Move the guard after the equality comparison | The R8 test would trigger the payload and mutate `release_units`, failing the comparison and tuple-closure assertions. |
 | Accept `isinstance(value, str)` instead of exact `type(value) is str` for `release_policy_path` | The R8 surrogate is a `str` subclass with side-effecting `__ne__`, so an `isinstance` guard would reach the payload and fail the test. |
@@ -2079,3 +2123,167 @@ commit-6 hook steps pass and no unrelated script was modified.
 | Commit-7 and live authority exclusion | CLI command boundary tests, workflow security contract, and final independent holistic review |
 
 <!-- END APPEND: workflow-delivery-v3-commit6-final-closure -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit7-observer-core-status -->
+
+# Workflow Delivery v3 Commit 7 Observer Core Status
+
+## Outcome
+
+Complete for the bounded observer core. The npmjs observer, strict
+ProjectionObservation transport/admission, and simulation finalizer outcome
+mapping are implemented and validated. CLI/workflow integration, live identity,
+Authorization, Capability, Receipt, mutation, GitHub Packages behavior, Buddy
+tag behavior, and commit-8 code were not added.
+
+## Files added or extended for this phase
+
+- `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/adapters/npmjs.py`
+- `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/adapters/__init__.py`
+- `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/records/release.py`
+- `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/records/release_transport.py`
+- `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/release/finalizer.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/adapters/test_node.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/adapters/test_npmjs.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/release/test_commit7_observation.py`
+- `.testagent/research.md`, `.testagent/plan.md`, `.testagent/status.md`
+
+Pre-existing modified design docs were left untouched in the working tree.
+
+## Requirement evidence
+
+| Requirement | Evidence |
+|---|---|
+| Credential-free injectable npmjs transport | `ScriptedTransport`; `test_npmjs_observer_does_not_fetch_after_failed_qualification`; `StdlibHttpTransport` has no auth/cookie/npm config. |
+| Exact first-slice coordinate/version and registry policy | `test_npmjs_observer_rejects_wrong_coordinate_before_network`; malformed/wrong metadata assertions. |
+| HTTP/network classification | `test_npmjs_observer_classifies_exact_404_as_absent`; hard-4xx, retryable, and timeout tests. |
+| Redirect, encoding, size, and truncation handling | `test_npmjs_observer_rejects_off_host_redirect_and_nonidentity_encoding`; `test_npmjs_observer_size_truncation_is_unknown`. |
+| Exact bytes and in-package witness | `test_npmjs_observer_accepts_exact_bytes_and_witness`. |
+| Byte/witness conflict and integrity-only rejection | `test_npmjs_observer_reports_byte_conflict`; `test_npmjs_observer_reports_target_witness_conflict`; `test_npmjs_observer_integrity_only_is_not_exact`. |
+| Strict ProjectionObservation transport bindings | `test_projection_observation_crosses_transport_with_current_bindings`; `test_projection_observation_rejects_purpose_and_target_substitution`. |
+| Simulation outcome mapping | `test_finalize_simulation_maps_commit7_observation_outcomes`. |
+| Hypothetical actions absent/exact only | `test_materialize_hypothetical_actions_accepts_only_absent_and_exact`. |
+| Failed/incomplete qualification does not require observation | `test_failed_or_incomplete_qualification_needs_no_observation`; adapter no-fetch failure test. |
+
+## Validation results
+
+| Command | Result |
+|---|---|
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q ...test_node.py::test_adapter_public_api_exports_closed_types_and_functions ...test_npmjs.py ...test_commit7_observation.py ...test_commit6_transport_cli.py ...test_commit6_qualification.py` | `64 passed` |
+| Focused release + adapter suite | `75 passed` |
+| Full v3 package excluding real HK trigger file | `1903 passed` |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q ...tests/test_hk_trigger.py` | Blocked by existing HK config-load panic in copied temp repos, not by observer code |
+| `uv run --python 3.13 pyrefly check` | `0 errors` |
+| Focused Ruff check | Passed |
+| Focused Ruff format check | `8 files already formatted` after formatting two test files |
+| `git --no-pager diff --check` | Passed |
+
+## Inline gap and assertion-quality review
+
+- Every explicit classification branch has a concrete assertion.
+- No test performs a real network request; all HTTP facts are injected.
+- Exactness requires downloaded bytes and witness, not `dist.integrity`.
+- Current purpose, target, run attempt, and producer substitutions are negative
+  tested through transported `ProjectionObservation` admission.
+- The private synthetic seam remains non-public and cannot complete simulation
+  through `finalize_simulation`.
+
+<!-- END APPEND: workflow-delivery-v3-commit7-observer-core-status -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit7-adjudicated-fixes-2026-08-12 -->
+
+# Workflow Delivery v3 Commit 7 Adjudicated Fixes
+
+Status: **complete**.
+
+- npmjs tarball observation now enforces a positive exact-integer expanded
+  payload bound, performs one bounded parse/decompression, and classifies
+  expansion-limit overflow as unprovable.
+- Readable packed manifests with a wrong package name or version classify as
+  conflicting while retaining coordinate, SHA-512, and any valid witness.
+- Observer and stdlib transport size limits reject zero, negative, and Boolean
+  values before network/read activity.
+- Stdlib HTTP reads validate declared `Content-Length`, map incomplete normal
+  and `HTTPError` bodies to unknown network state, retain byte caps, and disable
+  inherited proxies with `ProxyHandler({})`.
+- `ProjectionObservation` now retains closed typed canonical request and
+  bounded response facts. Admission derives and verifies request and response
+  digests and rejects independent fact/digest tampering.
+- The v3 handoff checkpoint now truthfully states commits 1 through 7.
+
+## Validation
+
+| Command | Result |
+|---|---|
+| Focused npmjs, commit-7 observation/finalizer, commit-6 transport/qualification, CLI, and Official workflow tests | `150 passed` |
+| Ruff format check | Passed; 47 files already formatted |
+| Ruff check | Passed |
+| Pyrefly package check | Passed; 0 errors |
+| Full v3 package attempt 1 | `1987 passed`, one unrelated transient HK configuration-load panic; the failed test passed in isolation |
+| Full v3 package attempt 2 | `1986 passed`, two unrelated transient HK configuration-load panics; both failed tests passed in isolation |
+| `git diff --check` | Passed |
+
+No commit was created.
+
+<!-- END APPEND: workflow-delivery-v3-commit7-adjudicated-fixes-2026-08-12 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit7-final-closure-2026-08-13 -->
+
+# Workflow Delivery v3 Commit 7 Final Closure
+
+Status: **complete**.
+
+Commit 7 now provides credential-free, exact-version npmjs observation for
+Official simulation, strict retained request/response facts, SHA-512 and packed
+witness classification, and hypothetical action reporting without registry
+mutation or live authority.
+
+## Review closure
+
+- Four independent GPT-5.6 Sol reviewers examined npmjs protocol behavior,
+  observation transport/finalization, workflow runtime/security, and v3 scope.
+- Eight atomic findings were independently adjudicated: six true positives and
+  two false positives.
+- All six true positives were fixed. The original four reviewers then reported
+  no remaining findings.
+
+## Final validation
+
+| Command | Result |
+|---|---|
+| Focused commit-7 pytest suite | `77 passed` |
+| Full v3 pytest | `1988 passed` |
+| Managed HK `v3-control-pytest` gate | `1988 passed` |
+| Root pytest | `4023 passed` |
+| `uv run --python 3.13 pyrefly check` | `0 errors` |
+| V3 Ruff check and format check | Passed; 47 files formatted |
+| `actionlint .github/workflows/workflow-delivery-v3-official-simulate.yml` | Passed |
+| Managed HK `pkl-eval` and `pkl-format` gates | Passed |
+| `uv build --package three-workflow-delivery-v3` | Built sdist and wheel |
+| `dotnet build dirs.proj --no-incremental` | Passed; 0 warnings and 0 errors |
+| `pnpm run build` | Passed; generated smoke-package versions reset afterward |
+| `uv lock --check` | Passed |
+| `pnpm install --frozen-lockfile` | Passed |
+| `dotnet restore --locked-mode` | Passed |
+| `git diff --check` | Passed |
+
+The first managed HK attempt encountered the known transient HK
+configuration-load panic in a copied temporary repository. The exact failed
+scenario passed in isolation, and the complete managed gate passed on rerun.
+The first root pytest attempt ran concurrently with `pnpm run build`; the build
+temporarily version-stamped two smoke-package manifests. After resetting those
+generated versions, the clean root suite passed.
+
+## Requirement evidence
+
+| Requirement | Evidence |
+|---|---|
+| Credential-free direct npmjs transport | `test_stdlib_transport_ignores_environment_proxies`; workflow permission and credential contract tests |
+| Complete bounded HTTP bodies | `test_stdlib_transport_rejects_incomplete_content_length`; metadata and tarball truncation observation tests |
+| Bounded single-pass tar expansion | `test_npmjs_observer_bounds_expanded_tarball_and_parses_once` |
+| Exact bytes, identity, version, and target witness | `test_npmjs_observer_accepts_exact_bytes_and_witness`; packed name/version conflict tests |
+| Retained canonical request/response facts | ProjectionObservation transport round-trip and independent fact/digest tamper tests |
+| Truthful simulation outcomes | `test_finalize_simulation_maps_commit7_observation_outcomes` |
+| No mutation or live authority | Official workflow contract tests and final holistic reviewer closure |
+
+<!-- END APPEND: workflow-delivery-v3-commit7-final-closure-2026-08-13 -->

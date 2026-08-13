@@ -1,9 +1,9 @@
-"""Commit-6 simulation Adapter context and explicit stop-line records."""
+"""Commit-7 simulation Adapter context and transport records."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from three_workflow_delivery_v3.adapters.node import (
     PackageTargetWitness,
@@ -15,12 +15,17 @@ from three_workflow_delivery_v3.canonical import (
     parse_canonical_json,
 )
 from three_workflow_delivery_v3.records.release import (
+    HYPOTHETICAL_ACTIONS_REPORT_PRODUCER,
+    NPMJS_OBSERVER_PRODUCER,
+    HypotheticalAction,
+    ProjectionObservation,
     QualificationDecision,
     QualificationSnapshot,
     SimulationBinding,
     SimulationIdentity,
 )
 from three_workflow_delivery_v3.records.release_transport import (
+    release_record_from_document,
     simulation_identity_from_document,
 )
 
@@ -28,11 +33,11 @@ if TYPE_CHECKING:
     from three_workflow_delivery_v3.canonical import JsonValue
 
 RELEASE_ADAPTER_CONTEXT_SCHEMA = "workflow-delivery/v3/release-adapter-context"
-SIMULATION_OBSERVATION_BOUNDARY_SCHEMA = (
-    "workflow-delivery/v3/simulation-observation-boundary"
+SIMULATION_OBSERVATION_SET_SCHEMA = (
+    "workflow-delivery/v3/simulation-observation-set"
 )
-HYPOTHETICAL_ACTIONS_BOUNDARY_SCHEMA = (
-    "workflow-delivery/v3/hypothetical-actions-boundary"
+HYPOTHETICAL_ACTIONS_REPORT_SCHEMA = (
+    "workflow-delivery/v3/hypothetical-actions-report"
 )
 _SHA256_LENGTH = 71
 
@@ -76,6 +81,24 @@ def _closed(
         message = f"{field} schema mismatch"
         raise ValueError(message)
     return value
+
+
+def _array(value: JsonValue, *, field: str) -> list[JsonValue]:
+    if not isinstance(value, list):
+        message = f"{field} must be an array"
+        raise TypeError(message)
+    return value
+
+
+def _require_exact_producer(
+    actual: str,
+    expected: str,
+    *,
+    field: str,
+) -> None:
+    if actual != expected:
+        message = f"{field} producer must be {expected}"
+        raise ValueError(message)
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,133 +173,226 @@ class ReleaseAdapterContext:
 
 
 @dataclass(frozen=True, slots=True)
-class SimulationObservationBoundary:
-    """Explicit non-authoritative observation-unavailable boundary."""
+class SimulationObservationSet:
+    """Commit-7 physical transport bundle for simulation observations."""
 
     simulation: SimulationIdentity
+    purpose: str
+    target: str
+    producer: str
+    workflow_run_id: int
+    run_attempt: int
     qualification_snapshot_digest: str
     qualification_decision_digest: str
-    status: str
-    authoritative: bool
-    network_performed: bool
-    reason: str
-    next_action: str
+    observations: tuple[ProjectionObservation, ...]
 
     def __post_init__(self) -> None:
-        """Reject any false observation claim at the commit-6 stop line."""
+        """Reject stale, live, non-canonical, or substituted observations."""
         if type(self.simulation) is not SimulationIdentity:
-            message = "Observation boundary requires SimulationIdentity"
+            message = "Observation set requires SimulationIdentity"
             raise TypeError(message)
-        if self.status != "unavailable":
-            message = "Observation boundary status must be unavailable"
+        if self.purpose != "release-simulation":
+            message = "Observation set purpose must be release-simulation"
             raise ValueError(message)
-        if self.authoritative is not False:
-            message = "Observation boundary cannot be authoritative"
+        _string(self.target, field="observation set.target")
+        _string(self.producer, field="observation set.producer")
+        _require_exact_producer(
+            self.producer,
+            NPMJS_OBSERVER_PRODUCER,
+            field="Observation set",
+        )
+        if self.workflow_run_id != self.simulation.workflow_run_id:
+            message = "Observation set workflow_run_id binding mismatch"
             raise ValueError(message)
-        if self.network_performed is not False:
-            message = "Observation boundary cannot perform network access"
+        if self.run_attempt != self.simulation.run_attempt:
+            message = "Observation set run_attempt binding mismatch"
             raise ValueError(message)
-        if self.reason != "observation-adapter-not-implemented":
-            message = "Observation boundary reason is not commit-6 closed"
-            raise ValueError(message)
-        if self.next_action != "implement-observation-adapter":
-            message = "Observation boundary next action is not closed"
-            raise ValueError(message)
+        _positive(self.workflow_run_id, field="observation set.workflow_run_id")
+        _positive(self.run_attempt, field="observation set.run_attempt")
         _string(
             self.qualification_snapshot_digest,
-            field="observation boundary.snapshot",
+            field="observation set.snapshot",
         )
         _string(
             self.qualification_decision_digest,
-            field="observation boundary.decision",
+            field="observation set.decision",
+        )
+        if type(self.observations) is not tuple:
+            message = "Observation set observations must be a tuple"
+            raise TypeError(message)
+        seen: set[str] = set()
+        for observation in self.observations:
+            if type(observation) is not ProjectionObservation:
+                message = "Observation set item has wrong runtime type"
+                raise TypeError(message)
+            if (
+                observation.subject != self.simulation
+                or observation.purpose != self.purpose
+                or observation.target != self.target
+                or observation.producer != self.producer
+                or observation.qualification_snapshot_digest
+                != self.qualification_snapshot_digest
+            ):
+                message = "Observation set item binding mismatch"
+                raise ValueError(message)
+            digest = observation.observation_digest
+            if digest in seen:
+                message = "Observation set contains duplicate observations"
+                raise ValueError(message)
+            seen.add(digest)
+
+    @property
+    def observation_digests(self) -> tuple[str, ...]:
+        """Return exact canonical observation digests in bundle order."""
+        return tuple(
+            observation.observation_digest for observation in self.observations
         )
 
     def to_document(self) -> dict[str, JsonValue]:
-        """Return the canonical unavailable boundary."""
-        return {
-            "schema": SIMULATION_OBSERVATION_BOUNDARY_SCHEMA,
-            "simulation": self.simulation.to_document(),
-            "qualification-snapshot-digest": (
-                self.qualification_snapshot_digest
-            ),
-            "qualification-decision-digest": (
-                self.qualification_decision_digest
-            ),
-            "status": self.status,
-            "authoritative": self.authoritative,
-            "network-performed": self.network_performed,
-            "reason": self.reason,
-            "next-action": self.next_action,
-        }
+        """Return the closed canonical observation bundle."""
+        return cast(
+            "dict[str, JsonValue]",
+            {
+                "schema": SIMULATION_OBSERVATION_SET_SCHEMA,
+                "simulation": self.simulation.to_document(),
+                "purpose": self.purpose,
+                "target": self.target,
+                "producer": self.producer,
+                "workflow-run-id": self.workflow_run_id,
+                "run-attempt": self.run_attempt,
+                "qualification-snapshot-digest": (
+                    self.qualification_snapshot_digest
+                ),
+                "qualification-decision-digest": (
+                    self.qualification_decision_digest
+                ),
+                "observation-digests": list(self.observation_digests),
+                "observations": [
+                    observation.to_document()
+                    for observation in self.observations
+                ],
+            },
+        )
 
     @property
-    def boundary_digest(self) -> str:
-        """Return the canonical observation boundary digest."""
+    def set_digest(self) -> str:
+        """Return the canonical observation bundle digest."""
         return canonical_sha256(self.to_document())
 
 
 @dataclass(frozen=True, slots=True)
-class HypotheticalActionsBoundary:
-    """Explicit empty action boundary while observation is unsupported."""
+class HypotheticalActionsReport:
+    """Commit-7 physical transport report for simulation-only actions."""
 
     simulation: SimulationIdentity
+    purpose: str
+    target: str
+    producer: str
+    workflow_run_id: int
+    run_attempt: int
     qualification_snapshot_digest: str
     qualification_decision_digest: str
-    observation_boundary_digest: str
-    status: str
-    actions: tuple[object, ...]
+    observation_set_digest: str
+    observation_digests: tuple[str, ...]
+    actions: tuple[HypotheticalAction, ...]
     publication_snapshot_emitted: bool
 
-    def __post_init__(self) -> None:
-        """Reject actions or a live second Snapshot at commit 6."""
+    def __post_init__(self) -> None:  # noqa: C901
+        """Reject live lineage, stale inputs, or action substitution."""
         if type(self.simulation) is not SimulationIdentity:
-            message = "Actions boundary requires SimulationIdentity"
+            message = "Hypothetical actions report requires SimulationIdentity"
             raise TypeError(message)
-        if self.status != "unsupported-observation":
-            message = "Actions boundary status is not commit-6 closed"
+        if self.purpose != "release-simulation":
+            message = "Hypothetical actions report purpose mismatch"
             raise ValueError(message)
-        if self.actions != ():
-            message = "Actions boundary must be empty at commit 6"
+        _string(self.target, field="hypothetical actions report.target")
+        _string(self.producer, field="hypothetical actions report.producer")
+        _require_exact_producer(
+            self.producer,
+            HYPOTHETICAL_ACTIONS_REPORT_PRODUCER,
+            field="Hypothetical actions report",
+        )
+        if self.workflow_run_id != self.simulation.workflow_run_id:
+            message = "Actions report workflow_run_id binding mismatch"
             raise ValueError(message)
+        if self.run_attempt != self.simulation.run_attempt:
+            message = "Actions report run_attempt binding mismatch"
+            raise ValueError(message)
+        _positive(self.workflow_run_id, field="actions report.workflow_run_id")
+        _positive(self.run_attempt, field="actions report.run_attempt")
+        _string(
+            self.qualification_snapshot_digest,
+            field="actions report.snapshot",
+        )
+        _string(
+            self.qualification_decision_digest,
+            field="actions report.decision",
+        )
+        _string(
+            self.observation_set_digest,
+            field="actions report.observation_set_digest",
+        )
+        if type(self.observation_digests) is not tuple:
+            message = "Actions report observation digests must be a tuple"
+            raise TypeError(message)
+        if type(self.actions) is not tuple:
+            message = "Actions report actions must be a tuple"
+            raise TypeError(message)
+        for action in self.actions:
+            if type(action) is not HypotheticalAction:
+                message = "Actions report item has wrong runtime type"
+                raise TypeError(message)
+            if (
+                action.simulation != self.simulation
+                or action.qualification_snapshot_digest
+                != self.qualification_snapshot_digest
+                or action.qualification_decision_digest
+                != self.qualification_decision_digest
+            ):
+                message = "Actions report item binding mismatch"
+                raise ValueError(message)
         if self.publication_snapshot_emitted is not False:
-            message = "Simulation cannot emit PublicationSnapshot"
+            message = "Simulation action report cannot bind PublicationSnapshot"
             raise ValueError(message)
-        for field, value in (
-            (
-                "qualification_snapshot_digest",
-                self.qualification_snapshot_digest,
-            ),
-            (
-                "qualification_decision_digest",
-                self.qualification_decision_digest,
-            ),
-            (
-                "observation_boundary_digest",
-                self.observation_boundary_digest,
-            ),
-        ):
-            _string(value, field=f"actions boundary.{field}")
-
-    def to_document(self) -> dict[str, JsonValue]:
-        """Return the canonical empty hypothetical-actions boundary."""
-        return {
-            "schema": HYPOTHETICAL_ACTIONS_BOUNDARY_SCHEMA,
-            "simulation": self.simulation.to_document(),
-            "qualification-snapshot-digest": (
-                self.qualification_snapshot_digest
-            ),
-            "qualification-decision-digest": (
-                self.qualification_decision_digest
-            ),
-            "observation-boundary-digest": (self.observation_boundary_digest),
-            "status": self.status,
-            "actions": [],
-            "publication-snapshot-emitted": (self.publication_snapshot_emitted),
-        }
 
     @property
-    def boundary_digest(self) -> str:
-        """Return the canonical action boundary digest."""
+    def action_digests(self) -> tuple[str, ...]:
+        """Return exact canonical action digests in report order."""
+        return tuple(
+            canonical_sha256(action.to_document()) for action in self.actions
+        )
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the closed canonical action report."""
+        return cast(
+            "dict[str, JsonValue]",
+            {
+                "schema": HYPOTHETICAL_ACTIONS_REPORT_SCHEMA,
+                "simulation": self.simulation.to_document(),
+                "purpose": self.purpose,
+                "target": self.target,
+                "producer": self.producer,
+                "workflow-run-id": self.workflow_run_id,
+                "run-attempt": self.run_attempt,
+                "qualification-snapshot-digest": (
+                    self.qualification_snapshot_digest
+                ),
+                "qualification-decision-digest": (
+                    self.qualification_decision_digest
+                ),
+                "observation-set-digest": self.observation_set_digest,
+                "observation-digests": list(self.observation_digests),
+                "action-digests": list(self.action_digests),
+                "actions": [action.to_document() for action in self.actions],
+                "publication-snapshot-emitted": (
+                    self.publication_snapshot_emitted
+                ),
+            },
+        )
+
+    @property
+    def report_digest(self) -> str:
+        """Return the canonical action report digest."""
         return canonical_sha256(self.to_document())
 
 
@@ -361,98 +477,128 @@ def release_adapter_context_from_bytes(
     return context
 
 
-def observation_boundary_from_bytes(
+def simulation_observation_set_from_bytes(
     content: bytes,
     *,
     snapshot: QualificationSnapshot,
     decision: QualificationDecision,
     expected_digest: str,
-) -> SimulationObservationBoundary:
-    """Admit the exact current commit-6 observation boundary."""
+) -> SimulationObservationSet:
+    """Admit a canonical commit-7 observation bundle."""
     document = _closed(
         parse_canonical_json(content),
-        field="Simulation observation boundary",
-        schema=SIMULATION_OBSERVATION_BOUNDARY_SCHEMA,
+        field="Simulation observation set",
+        schema=SIMULATION_OBSERVATION_SET_SCHEMA,
         fields=frozenset(
             {
                 "simulation",
+                "purpose",
+                "target",
+                "producer",
+                "workflow-run-id",
+                "run-attempt",
                 "qualification-snapshot-digest",
                 "qualification-decision-digest",
-                "status",
-                "authoritative",
-                "network-performed",
-                "reason",
-                "next-action",
+                "observation-digests",
+                "observations",
             }
         ),
     )
     simulation_document = document["simulation"]
     if not isinstance(simulation_document, dict):
-        message = "Observation boundary simulation must be an object"
+        message = "Observation set simulation must be an object"
         raise TypeError(message)
-    authoritative = document["authoritative"]
-    network_performed = document["network-performed"]
-    if type(authoritative) is not bool or type(network_performed) is not bool:
-        message = "Observation boundary Boolean fields are malformed"
+    observations_value = document["observations"]
+    if not isinstance(observations_value, list):
+        message = "Observation set observations must be an array"
         raise TypeError(message)
-    boundary = SimulationObservationBoundary(
+    observations: list[ProjectionObservation] = []
+    for index, item in enumerate(observations_value):
+        if not isinstance(item, dict):
+            message = f"Observation set observations[{index}] must be object"
+            raise TypeError(message)
+        observation = cast(
+            "ProjectionObservation",
+            release_record_from_document(
+                item,
+                expected_type=ProjectionObservation,
+            ),
+        )
+        observations.append(observation)
+    bundle = SimulationObservationSet(
         simulation=simulation_identity_from_document(simulation_document),
+        purpose=_string(document["purpose"], field="observation set.purpose"),
+        target=_string(document["target"], field="observation set.target"),
+        producer=_string(
+            document["producer"],
+            field="observation set.producer",
+        ),
+        workflow_run_id=_positive(
+            document["workflow-run-id"],
+            field="observation set.workflow-run-id",
+        ),
+        run_attempt=_positive(
+            document["run-attempt"],
+            field="observation set.run-attempt",
+        ),
         qualification_snapshot_digest=_string(
             document["qualification-snapshot-digest"],
-            field="observation boundary.snapshot",
+            field="observation set.snapshot",
         ),
         qualification_decision_digest=_string(
             document["qualification-decision-digest"],
-            field="observation boundary.decision",
+            field="observation set.decision",
         ),
-        status=_string(
-            document["status"],
-            field="observation boundary.status",
-        ),
-        authoritative=authoritative,
-        network_performed=network_performed,
-        reason=_string(
-            document["reason"],
-            field="observation boundary.reason",
-        ),
-        next_action=_string(
-            document["next-action"],
-            field="observation boundary.next-action",
-        ),
+        observations=tuple(observations),
     )
+    if document["observation-digests"] != list(bundle.observation_digests):
+        message = "Observation set digest list mismatch"
+        raise ValueError(message)
     _validate_boundary_basis(
         snapshot,
         decision,
-        boundary.simulation,
-        boundary.qualification_snapshot_digest,
-        boundary.qualification_decision_digest,
+        bundle.simulation,
+        bundle.qualification_snapshot_digest,
+        bundle.qualification_decision_digest,
     )
-    if boundary.boundary_digest != expected_digest:
-        message = "Observation boundary canonical digest mismatch"
+    if bundle.target != snapshot.target:
+        message = "Observation set target binding mismatch"
         raise ValueError(message)
-    return boundary
+    if bundle.set_digest != expected_digest:
+        message = "Observation set canonical digest mismatch"
+        raise ValueError(message)
+    if bundle.to_document() != document:
+        message = "Observation set is not normalized"
+        raise ValueError(message)
+    return bundle
 
 
-def hypothetical_actions_boundary_from_bytes(
+def hypothetical_actions_report_from_bytes(
     content: bytes,
     *,
     snapshot: QualificationSnapshot,
     decision: QualificationDecision,
-    observation: SimulationObservationBoundary,
+    observations: SimulationObservationSet,
     expected_digest: str,
-) -> HypotheticalActionsBoundary:
-    """Admit the exact empty commit-6 hypothetical-actions boundary."""
+) -> HypotheticalActionsReport:
+    """Admit a canonical commit-7 hypothetical action report."""
     document = _closed(
         parse_canonical_json(content),
-        field="Hypothetical actions boundary",
-        schema=HYPOTHETICAL_ACTIONS_BOUNDARY_SCHEMA,
+        field="Hypothetical actions report",
+        schema=HYPOTHETICAL_ACTIONS_REPORT_SCHEMA,
         fields=frozenset(
             {
                 "simulation",
+                "purpose",
+                "target",
+                "producer",
+                "workflow-run-id",
+                "run-attempt",
                 "qualification-snapshot-digest",
                 "qualification-decision-digest",
-                "observation-boundary-digest",
-                "status",
+                "observation-set-digest",
+                "observation-digests",
+                "action-digests",
                 "actions",
                 "publication-snapshot-emitted",
             }
@@ -460,47 +606,90 @@ def hypothetical_actions_boundary_from_bytes(
     )
     simulation_document = document["simulation"]
     if not isinstance(simulation_document, dict):
-        message = "Actions boundary simulation must be an object"
+        message = "Actions report simulation must be an object"
         raise TypeError(message)
-    if document["actions"] != []:
-        message = "Hypothetical actions boundary must contain an empty array"
-        raise ValueError(message)
+    actions_value = document["actions"]
+    if not isinstance(actions_value, list):
+        message = "Actions report actions must be an array"
+        raise TypeError(message)
+    actions: list[HypotheticalAction] = []
+    for index, item in enumerate(actions_value):
+        if not isinstance(item, dict):
+            message = f"Actions report actions[{index}] must be object"
+            raise TypeError(message)
+        action = cast(
+            "HypotheticalAction",
+            release_record_from_document(
+                item,
+                expected_type=HypotheticalAction,
+            ),
+        )
+        actions.append(action)
     publication = document["publication-snapshot-emitted"]
     if type(publication) is not bool:
         message = "publication-snapshot-emitted must be Boolean"
         raise TypeError(message)
-    boundary = HypotheticalActionsBoundary(
+    report = HypotheticalActionsReport(
         simulation=simulation_identity_from_document(simulation_document),
+        purpose=_string(document["purpose"], field="actions report.purpose"),
+        target=_string(document["target"], field="actions report.target"),
+        producer=_string(document["producer"], field="actions report.producer"),
+        workflow_run_id=_positive(
+            document["workflow-run-id"],
+            field="actions report.workflow-run-id",
+        ),
+        run_attempt=_positive(
+            document["run-attempt"],
+            field="actions report.run-attempt",
+        ),
         qualification_snapshot_digest=_string(
             document["qualification-snapshot-digest"],
-            field="actions boundary.snapshot",
+            field="actions report.snapshot",
         ),
         qualification_decision_digest=_string(
             document["qualification-decision-digest"],
-            field="actions boundary.decision",
+            field="actions report.decision",
         ),
-        observation_boundary_digest=_string(
-            document["observation-boundary-digest"],
-            field="actions boundary.observation",
+        observation_set_digest=_string(
+            document["observation-set-digest"],
+            field="actions report.observation-set",
         ),
-        status=_string(document["status"], field="actions boundary.status"),
-        actions=(),
+        observation_digests=tuple(
+            _string(item, field=f"actions report.observation-digests[{index}]")
+            for index, item in enumerate(
+                _array(
+                    document["observation-digests"],
+                    field="observation-digests",
+                )
+            )
+        ),
+        actions=tuple(actions),
         publication_snapshot_emitted=publication,
     )
+    if document["action-digests"] != list(report.action_digests):
+        message = "Actions report digest list mismatch"
+        raise ValueError(message)
     _validate_boundary_basis(
         snapshot,
         decision,
-        boundary.simulation,
-        boundary.qualification_snapshot_digest,
-        boundary.qualification_decision_digest,
+        report.simulation,
+        report.qualification_snapshot_digest,
+        report.qualification_decision_digest,
     )
-    if boundary.observation_boundary_digest != observation.boundary_digest:
-        message = "Actions boundary observation binding mismatch"
+    if (
+        report.target != snapshot.target
+        or report.observation_set_digest != observations.set_digest
+        or report.observation_digests != observations.observation_digests
+    ):
+        message = "Actions report observation binding mismatch"
         raise ValueError(message)
-    if boundary.boundary_digest != expected_digest:
-        message = "Actions boundary canonical digest mismatch"
+    if report.report_digest != expected_digest:
+        message = "Actions report canonical digest mismatch"
         raise ValueError(message)
-    return boundary
+    if report.to_document() != document:
+        message = "Actions report is not normalized"
+        raise ValueError(message)
+    return report
 
 
 def _validate_boundary_basis(
@@ -529,13 +718,21 @@ def render_simulation_summary(
     decision: QualificationDecision,
     outcome_document: dict[str, JsonValue],
 ) -> str:
-    """Render a deterministic human summary for the commit-6 simulation."""
+    """Render a deterministic human summary for the commit-7 simulation."""
     if not isinstance(snapshot.subject, SimulationBinding):
         message = "Simulation summary requires simulation Snapshot"
         raise TypeError(message)
     obligations = "\n".join(
         f"- `{item.obligation.obligation_id}`: `{item.outcome}`"
         for item in decision.obligation_dispositions
+    )
+    observations = _array(
+        outcome_document["observation-digests"],
+        field="outcome.observation-digests",
+    )
+    actions = _array(
+        outcome_document["hypothetical-actions"],
+        field="outcome.hypothetical-actions",
     )
     return (
         "# Workflow Delivery v3 Official simulation\n\n"
@@ -548,8 +745,8 @@ def render_simulation_summary(
         f"- Qualification Snapshot: `{snapshot.snapshot_digest}`\n"
         f"- Qualification Decision: `{decision.decision_digest}`\n"
         f"- Qualification result: `{decision.terminal_result}`\n"
-        "- Observation: `unavailable (commit 6)`\n"
-        "- Hypothetical actions: `0`\n"
+        f"- Observation records: `{len(observations)}`\n"
+        f"- Hypothetical actions: `{len(actions)}`\n"
         f"- Terminal result: `{outcome_document['terminal-result']}`\n"
         f"- Failure class: `{outcome_document['failure-class']}`\n"
         f"- Next action: `{outcome_document['next-action']}`\n\n"
@@ -559,14 +756,14 @@ def render_simulation_summary(
 
 
 __all__ = [
-    "HYPOTHETICAL_ACTIONS_BOUNDARY_SCHEMA",
+    "HYPOTHETICAL_ACTIONS_REPORT_SCHEMA",
     "RELEASE_ADAPTER_CONTEXT_SCHEMA",
-    "SIMULATION_OBSERVATION_BOUNDARY_SCHEMA",
-    "HypotheticalActionsBoundary",
+    "SIMULATION_OBSERVATION_SET_SCHEMA",
+    "HypotheticalActionsReport",
     "ReleaseAdapterContext",
-    "SimulationObservationBoundary",
-    "hypothetical_actions_boundary_from_bytes",
-    "observation_boundary_from_bytes",
+    "SimulationObservationSet",
+    "hypothetical_actions_report_from_bytes",
     "release_adapter_context_from_bytes",
     "render_simulation_summary",
+    "simulation_observation_set_from_bytes",
 ]

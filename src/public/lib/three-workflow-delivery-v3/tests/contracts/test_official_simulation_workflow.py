@@ -1,4 +1,4 @@
-"""Contracts for the commit-6 Official release simulation workflow."""
+"""Contracts for the commit-7 Official release simulation workflow."""
 
 from __future__ import annotations
 
@@ -71,8 +71,8 @@ EXPECTED_RAW_ROLES = {
     "Upload artifact-contents Evidence": "artifact-contents-evidence",
     "Upload install-import Evidence": "install-import-evidence",
     "Upload Qualification Decision": "qualification-decision",
-    "Upload observation boundary": "observation-unavailable",
-    "Upload hypothetical-actions boundary": "hypothetical-actions",
+    "Upload observation set": "observation-set",
+    "Upload hypothetical-actions report": "hypothetical-actions-report",
     "Upload Simulation Outcome": "outcome",
     "Upload deterministic human summary": "summary",
 }
@@ -287,8 +287,8 @@ def test_official_simulation_uses_only_raw_id_bound_artifact_transport() -> (
         "artifact-contents-evidence.json",
         "install-import-evidence.json",
         "qualification-decision.json",
-        "observation-boundary.json",
-        "actions-boundary.json",
+        "observation-set.json",
+        "actions-report.json",
     ):
         assert f".wdv3/input/{stale_basename}" not in raw
 
@@ -369,18 +369,18 @@ def test_qualification_finalizer_optional_downloads_fail_closed() -> None:
     )
 
 
-def test_commit6_observation_and_publication_stop_line_is_truthful() -> None:
-    """Perform no observation network or live publication work at commit 6."""
+def test_commit7_observation_and_hypothetical_actions_are_bounded() -> None:
+    """Allow only credential-free npmjs observation and no live publication."""
     document = _document()
     jobs = document["jobs"]
     observe = jobs["observe-npmjs"]
     observe_run = _run(
         observe,
-        "Emit explicit unavailable boundary without observation",
+        "Observe npmjs public registry",
     )
     materialize_run = _run(
         jobs["materialize-hypothetical-actions"],
-        "Materialize empty action set",
+        "Materialize hypothetical actions report",
     )
     finalize_run = _run(
         jobs["simulation-finalizer"],
@@ -389,7 +389,10 @@ def test_commit6_observation_and_publication_stop_line_is_truthful() -> None:
     raw = WORKFLOW.read_text(encoding="utf-8")
     lowered = raw.lower()
 
-    assert "emit-observation-unavailable" in observe_run
+    assert "observe-npmjs" in observe_run
+    assert "--adapter-context-artifact-id" in observe_run
+    assert "--release-artifact-artifact-id" in observe_run
+    assert "--observation-set" in materialize_run
     assert all(
         token not in observe_run.lower()
         for token in (
@@ -397,14 +400,13 @@ def test_commit6_observation_and_publication_stop_line_is_truthful() -> None:
             "wget ",
             "npm view",
             "npm pack",
-            "registry.npmjs",
-            "https://",
         )
     )
-    assert all(
-        "release-artifact" not in str(step.get("name", "")).lower()
-        for step in _steps(observe)
-    )
+    assert "registry.npmjs" not in raw
+    assert "https://registry.npmjs.org" not in raw
+    assert "Download Release Artifact record by artifact ID" in [
+        step["name"] for step in _steps(observe)
+    ]
     assert "materialize-hypothetical-actions" in materialize_run
     assert "finalize-simulation" in finalize_run
     assert "continue-on-error" in _step(
@@ -413,7 +415,7 @@ def test_commit6_observation_and_publication_stop_line_is_truthful() -> None:
     )
     preserve = _run(
         jobs["simulation-finalizer"],
-        "Preserve commit-6 non-success",
+        "Preserve simulation terminal result",
     )
     assert '== "success"' in preserve
     assert "exit 1" in preserve

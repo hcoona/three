@@ -16,9 +16,12 @@ from three_workflow_delivery_v3.records.release import (
     EXTERNAL_PACKAGE_COORDINATE_SCHEMA,
     HYPOTHETICAL_ACTION_SCHEMA,
     OBLIGATION_DISPOSITION_SCHEMA,
+    OBSERVATION_REQUEST_FACTS_SCHEMA,
+    OBSERVATION_RESPONSE_FACTS_SCHEMA,
     OFFICIAL_EXECUTION_IDENTITY_SCHEMA,
     OFFICIAL_PRODUCT_IDENTITY_SCHEMA,
     POTENTIAL_ACTION_CONTRACT_SCHEMA,
+    PROJECTION_OBSERVATION_SCHEMA,
     QUALIFICATION_DECISION_SCHEMA,
     QUALIFICATION_EVIDENCE_SCHEMA,
     QUALIFICATION_SNAPSHOT_SCHEMA,
@@ -38,9 +41,13 @@ from three_workflow_delivery_v3.records.release import (
     ExternalPackageCoordinate,
     HypotheticalAction,
     ObligationDisposition,
+    ObservationRequestFacts,
+    ObservationResponseFacts,
+    ObservationValue,
     OfficialExecutionIdentity,
     OfficialProductIdentity,
     PotentialActionContract,
+    ProjectionObservation,
     QualificationDecision,
     QualificationEvidence,
     QualificationSnapshot,
@@ -1206,6 +1213,258 @@ def _qualification_decision(value: JsonValue) -> QualificationDecision:
     )
 
 
+def _observation_value(value: JsonValue) -> ObservationValue:
+    document = _closed(
+        value,
+        field="ObservationValue",
+        schema="workflow-delivery/v3/observation-value",
+        fields=frozenset(
+            {
+                "classification",
+                "owner",
+                "coordinate",
+                "content-sha512",
+                "witness-digest",
+                "routing",
+            }
+        ),
+    )
+    coordinate_value = document["coordinate"]
+    coordinate = (
+        None if coordinate_value is None else _coordinate(coordinate_value)
+    )
+    return ObservationValue(
+        classification=_string(
+            document["classification"],
+            field="observation.classification",
+        ),
+        owner=_nullable_string(document["owner"], field="observation.owner"),
+        coordinate=coordinate,
+        content_sha512=_nullable_string(
+            document["content-sha512"],
+            field="observation.content-sha512",
+        ),
+        witness_digest=_nullable_string(
+            document["witness-digest"],
+            field="observation.witness-digest",
+        ),
+        routing=_pairs(document["routing"], field="observation.routing"),
+    )
+
+
+def _observation_request_facts(
+    value: JsonValue,
+) -> ObservationRequestFacts:
+    document = _closed(
+        value,
+        field="ObservationRequestFacts",
+        schema=OBSERVATION_REQUEST_FACTS_SCHEMA,
+        fields=frozenset(
+            {
+                "qualification-snapshot-digest",
+                "projection-digest",
+                "desired-state-digest",
+                "method",
+                "url",
+                "headers",
+            }
+        ),
+    )
+    return ObservationRequestFacts(
+        qualification_snapshot_digest=_string(
+            document["qualification-snapshot-digest"],
+            field="observation request.qualification-snapshot-digest",
+        ),
+        projection_digest=_string(
+            document["projection-digest"],
+            field="observation request.projection-digest",
+        ),
+        desired_state_digest=_string(
+            document["desired-state-digest"],
+            field="observation request.desired-state-digest",
+        ),
+        method=_string(
+            document["method"],
+            field="observation request.method",
+        ),
+        url=_string(document["url"], field="observation request.url"),
+        headers=_pairs(
+            document["headers"],
+            field="observation request.headers",
+        ),
+    )
+
+
+def _observation_response_facts(
+    value: JsonValue,
+) -> ObservationResponseFacts:
+    document = _closed(
+        value,
+        field="ObservationResponseFacts",
+        schema=OBSERVATION_RESPONSE_FACTS_SCHEMA,
+        fields=frozenset(
+            {
+                "stage",
+                "requested-url",
+                "final-url",
+                "redirects",
+                "status",
+                "selected-headers",
+                "truncated",
+                "body-sha256",
+                "status-detail",
+                "metadata-body-sha256",
+                "metadata-package",
+                "metadata-version",
+                "dist-tarball",
+                "dist-integrity",
+                "tarball-content-sha512",
+                "tarball-byte-size",
+                "remote-witness-digest",
+            }
+        ),
+    )
+    status = document["status"]
+    if type(status) is int:
+        parsed_status: int | str = _integer(
+            status,
+            field="observation response.status",
+        )
+    else:
+        parsed_status = _string(
+            status,
+            field="observation response.status",
+        )
+    truncated = document["truncated"]
+    return ObservationResponseFacts(
+        stage=_string(document["stage"], field="observation response.stage"),
+        requested_url=_string(
+            document["requested-url"],
+            field="observation response.requested-url",
+        ),
+        final_url=_nullable_string(
+            document["final-url"],
+            field="observation response.final-url",
+        ),
+        redirects=_strings(
+            document["redirects"],
+            field="observation response.redirects",
+        ),
+        status=parsed_status,
+        selected_headers=_pairs(
+            document["selected-headers"],
+            field="observation response.selected-headers",
+        ),
+        truncated=(
+            None
+            if truncated is None
+            else _boolean(
+                truncated,
+                field="observation response.truncated",
+            )
+        ),
+        body_sha256=_nullable_string(
+            document["body-sha256"],
+            field="observation response.body-sha256",
+        ),
+        status_detail=_nullable_string(
+            document["status-detail"],
+            field="observation response.status-detail",
+        ),
+        metadata_body_sha256=_nullable_string(
+            document["metadata-body-sha256"],
+            field="observation response.metadata-body-sha256",
+        ),
+        metadata_package=_nullable_string(
+            document["metadata-package"],
+            field="observation response.metadata-package",
+        ),
+        metadata_version=_nullable_string(
+            document["metadata-version"],
+            field="observation response.metadata-version",
+        ),
+        dist_tarball=_nullable_string(
+            document["dist-tarball"],
+            field="observation response.dist-tarball",
+        ),
+        dist_integrity=_nullable_string(
+            document["dist-integrity"],
+            field="observation response.dist-integrity",
+        ),
+        tarball_content_sha512=_nullable_string(
+            document["tarball-content-sha512"],
+            field="observation response.tarball-content-sha512",
+        ),
+        tarball_byte_size=(
+            None
+            if document["tarball-byte-size"] is None
+            else _integer(
+                document["tarball-byte-size"],
+                field="observation response.tarball-byte-size",
+            )
+        ),
+        remote_witness_digest=_nullable_string(
+            document["remote-witness-digest"],
+            field="observation response.remote-witness-digest",
+        ),
+    )
+
+
+def _projection_observation(value: JsonValue) -> ProjectionObservation:
+    document = _closed(
+        value,
+        field="ProjectionObservation",
+        schema=PROJECTION_OBSERVATION_SCHEMA,
+        fields=frozenset(
+            {
+                "subject",
+                "purpose",
+                "target",
+                "producer",
+                "qualification-snapshot-digest",
+                "projection",
+                "desired-state-digest",
+                "observation-contract-id",
+                "request-facts",
+                "request-digest",
+                "response-facts",
+                "response-digest",
+                "value",
+            }
+        ),
+    )
+    return ProjectionObservation(
+        subject=_subject(document["subject"]),
+        purpose=_string(document["purpose"], field="observation.purpose"),
+        target=_string(document["target"], field="observation.target"),
+        producer=_string(document["producer"], field="observation.producer"),
+        qualification_snapshot_digest=_string(
+            document["qualification-snapshot-digest"],
+            field="observation.qualification-snapshot-digest",
+        ),
+        projection=_projection(document["projection"]),
+        desired_state_digest=_string(
+            document["desired-state-digest"],
+            field="observation.desired-state-digest",
+        ),
+        observation_contract_id=_string(
+            document["observation-contract-id"],
+            field="observation.observation-contract-id",
+        ),
+        request_facts=_observation_request_facts(document["request-facts"]),
+        request_digest=_string(
+            document["request-digest"],
+            field="observation.request-digest",
+        ),
+        response_facts=_observation_response_facts(document["response-facts"]),
+        response_digest=_string(
+            document["response-digest"],
+            field="observation.response-digest",
+        ),
+        value=_observation_value(document["value"]),
+    )
+
+
 def _hypothetical_action(value: JsonValue) -> HypotheticalAction:
     document = _closed(
         value,
@@ -1317,6 +1576,8 @@ _PARSERS: dict[type[object], Callable[[JsonValue], ReleaseRecord]] = {
     ReleaseArtifact: _release_artifact,
     QualificationEvidence: _qualification_evidence,
     QualificationDecision: _qualification_decision,
+    ProjectionObservation: _projection_observation,
+    HypotheticalAction: _hypothetical_action,
     SimulationOutcome: _simulation_outcome,
 }
 
@@ -1422,6 +1683,14 @@ def _record_bindings(  # noqa: PLR0911
             record.subject.run_attempt,
             record.obligation_dispositions[0].obligation.target,
             None,
+        )
+    if isinstance(record, ProjectionObservation):
+        return (
+            record.purpose,
+            record.subject.workflow_run_id,
+            record.subject.run_attempt,
+            record.target,
+            record.producer,
         )
     if isinstance(record, SimulationOutcome):
         simulation = record.binding.simulation

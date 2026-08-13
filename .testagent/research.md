@@ -138,6 +138,43 @@ adversarial test that proves the comparison payload is not executed.
 ## Exact Validation Commands Discovered/Used
 
 - Narrow generated tests:
+
+## 2026-08-12 Workflow Delivery v3 Commit 7 CLI/Workflow Integration Addendum
+
+### Request
+
+Implement commit-7 Official simulation npmjs observation and CLI/workflow
+transport, replacing commit-6 observation-unavailable/action-boundary records.
+No subagents, commit, push, live Publication Snapshot, authorization,
+capability, Receipt, mutation, GitHub Packages, Buddy, or commit 8 scope.
+
+### Bounded Target Inventory
+
+- `release/simulation.py`: physical cross-job observation/action bundles and
+  summary rendering.
+- `release/finalizer.py`: commit-7 observation classification and hypothetical
+  action outcome mapping.
+- `adapters/npmjs.py`: credential-free stdlib npmjs observer (already present
+  in working tree and consumed by CLI).
+- `cli.py`: `release observe-npmjs`,
+  `materialize-hypothetical-actions`, and `finalize-simulation` boundaries.
+- `.github/workflows/workflow-delivery-v3-official-simulate.yml`: existing
+  12-job Official simulation DAG, updated in-place.
+- Tests under `tests/release`, `tests/adapters`, and
+  `tests/contracts/test_official_simulation_workflow.py`.
+
+### Acceptance Checklist
+
+| ID | Requirement |
+|---|---|
+| C7-1 | Replace commit-6 unavailable/empty boundary transport with canonical observation-set/action-report bundles. |
+| C7-2 | Bind simulation identity, purpose, target, producer, current run/attempt, Snapshot/Decision digests, and exact observation/action digests; include no PublicationSnapshot/live lineage. |
+| C7-3 | Add `release observe-npmjs` using credential-free stdlib adapter and skip network for non-successful qualification. |
+| C7-4 | Materialize absent actions and empty reports for exact/non-ready/non-success. |
+| C7-5 | Finalizer recomputes expected actions/outcome, rejects substitutions, and maps success/non-success exits correctly. |
+| C7-6 | Workflow keeps the approved 12-job names/DAG and `permissions: contents: read`; no secrets, npm token/auth, id-token, packages permission, Environment, or mutation. |
+| C7-7 | Workflow downloads/transports Snapshot, Decision, Adapter context, Release Artifact, observation set, and action report by explicit IDs/digests/raw names. |
+| C7-8 | Static tests understand `archive: false` physical basenames and commit-7 names. |
   `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit3_contract_boundaries.py -k 'repository_model_admission_rejects_top_level_tuple_surrogates or repository_model_snapshot_admission or snapshot_admission_and_live_eligibility_reject_top_level_surrogates or live_eligibility_validates_snapshot_admission_before_digest_use or live_eligibility_rejects_digest_equivalent_list_backed_snapshot or live_eligibility_blocks_toctou_mutation_during_snapshot_admission or repository_model_valid_tuples_keep_canonical_json_arrays'`
 - Full commit-3 contract file:
   `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit3_contract_boundaries.py`
@@ -1159,3 +1196,69 @@ digest-bound configured name.
    changes are made.
 
 <!-- END APPEND: workflow-delivery-v3-commit6-raw-name-correction-research -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit7-observer-core-research -->
+
+# Workflow Delivery v3 Commit 7 Observer Core Research
+
+This append-only section records the commit-7 observer-core target inventory and
+acceptance checklist.
+
+## Instructions and sources read
+
+- `AGENTS.md`: v3 work must read the v3 handoff first; v1/v2 are not normative.
+- `docs/AGENTS.md`: docs wiki rules and immutable source/raw boundaries.
+- `agent-handoff.md`: commit 7 is the npmjs observation boundary; no live
+  activation, publication mutation, Authorization, Capability, Receipt,
+  workflow YAML, or CLI expansion.
+- `release-delivery-mld.md` remote observation/simulation mapping: absent and
+  exact succeed; unknown is incomplete/rerun; unprovable is incomplete/fix
+  capability; partial/conflicting fail for reconciliation.
+- `hcoona-release-smoke-npm-lld.md` npmjs adapter sections: exact first-slice
+  coordinate only, public registry, SHA-512 over raw `.tgz`, in-package target
+  witness, `dist.integrity` auxiliary only, and no routing tag for npmjs.
+
+## Bounded target inventory
+
+- Production:
+  - `three_workflow_delivery_v3/adapters/npmjs.py`
+  - `three_workflow_delivery_v3/adapters/__init__.py`
+  - `three_workflow_delivery_v3/records/release.py`
+  - `three_workflow_delivery_v3/records/release_transport.py`
+  - `three_workflow_delivery_v3/release/finalizer.py`
+- Tests:
+  - `tests/adapters/test_npmjs.py`
+  - `tests/release/test_commit7_observation.py`
+  - `tests/adapters/test_node.py` export assertion update.
+
+## Acceptance checklist
+
+| ID | Requirement |
+|---|---|
+| C7-R1 | Add credential-free injectable npmjs HTTP observation adapter with no network in tests. |
+| C7-R2 | Enforce exact first-slice coordinate `@hcoona/hcoona-release-smoke-npm` plus frozen native version and registry.npmjs.org URL policy. |
+| C7-R3 | Classify exact 404 as absent; 401/403/other hard 4xx/malformed/off-policy as unprovable; timeout/network/429/5xx/truncation as unknown. |
+| C7-R4 | Require 200 metadata and tarball responses to use identity content encoding and bounded byte reads; reject off-host tarball URLs and redirects. |
+| C7-R5 | Download complete raw `.tgz`, compute SHA-512, validate package identity/version and canonical in-package target witness against the qualified basis. |
+| C7-R6 | Treat byte-identical SHA-512 plus exact witness as exact; differing complete valid bytes or different target witness as conflicting; digest-only evidence is not exact. |
+| C7-R7 | Evolve ProjectionObservation minimally for purpose, target, and producer binding and add strict transport deserialization/admission. |
+| C7-R8 | Finalizer admits real observations, materializes hypothetical actions only for absent/exact, maps all observation outcomes, and preserves failed/incomplete qualification without observation. |
+| C7-R9 | Keep synthetic observation support private test support only; no public success shortcut. |
+| C7-R10 | Do not edit workflow YAML or CLI and do not add credentials, live identity, Authorization, Capability, Receipt, mutation, GitHub Packages, Buddy tag, services, or commit-8 code. |
+
+## Source-to-test mapping
+
+| Requirement | Test evidence |
+|---|---|
+| C7-R1 | `ScriptedTransport`; `test_npmjs_observer_does_not_fetch_after_failed_qualification`. |
+| C7-R2 | `test_npmjs_observer_rejects_wrong_coordinate_before_network`; malformed/wrong metadata test. |
+| C7-R3 | `test_npmjs_observer_classifies_exact_404_as_absent`; hard-4xx/retryable/timeout tests. |
+| C7-R4 | redirect/nonidentity and size/truncation tests. |
+| C7-R5 | `test_npmjs_observer_accepts_exact_bytes_and_witness`. |
+| C7-R6 | byte conflict, witness conflict, and integrity-only tests. |
+| C7-R7 | `test_projection_observation_crosses_transport_with_current_bindings`; purpose/target substitution test. |
+| C7-R8 | `test_finalize_simulation_maps_commit7_observation_outcomes`; `test_materialize_hypothetical_actions_accepts_only_absent_and_exact`; failed qualification test. |
+| C7-R9 | Existing commit-6 synthetic private tests retained and passing. |
+| C7-R10 | Changed-file review and no workflow/CLI files modified in this phase. |
+
+<!-- END APPEND: workflow-delivery-v3-commit7-observer-core-research -->

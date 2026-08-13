@@ -576,6 +576,24 @@ version tarball, and applies the same SHA-512 comparison and classification. It
 emits hypothetical actions and requirements only. It never creates npm
 credentials, provenance, authorization, Receipt, or mutation.
 
+For this first slice, the only admitted npmjs coordinate is exactly
+`@hcoona/hcoona-release-smoke-npm` at the frozen native NBGV version. The exact
+scoped coordinate is the expected ownership fact: the Adapter relies on npm's
+scope namespace abstraction and does not require mutable `maintainers`
+metadata. This rule is first-slice-specific and does not classify other scoped
+or unscoped repository packages.
+
+Official simulation closes observation results as follows:
+
+- `absent` succeeds and reports one hypothetical create action;
+- `exact-satisfied` succeeds and reports no action;
+- `unknown` is incomplete and replayable with next action
+  `rerun-simulation`;
+- `unprovable` is incomplete with next action
+  `fix-observation-capability-and-rerun`; and
+- `partial` or `conflicting` fails with next action
+  `reconcile-destination-state`.
+
 ## Workflow Topology
 
 All workflows run control code from the exact selected revision. Every external

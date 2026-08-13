@@ -4,8 +4,12 @@ from __future__ import annotations
 
 from three_workflow_delivery_v3.canonical import canonical_sha256
 from three_workflow_delivery_v3.records.release import (
+    NPMJS_OBSERVATION_CONTRACT_ID,
+    NPMJS_OBSERVER_PRODUCER,
     HypotheticalAction,
     ObligationDisposition,
+    ObservationRequestFacts,
+    ObservationResponseFacts,
     ObservationValue,
     ProjectionObservation,
     PublicationAction,
@@ -287,14 +291,18 @@ def _admit_synthetic_projection_observation(
         projection.projection_id,
         artifact,
     )
-    request_digest = canonical_sha256(
-        {
-            "schema": "workflow-delivery/v3/synthetic-observation-request",
-            "qualification-snapshot-digest": snapshot.snapshot_digest,
-            "projection-digest": projection.projection_digest,
-            "desired-state-digest": desired_digest,
-        }
+    request_facts = ObservationRequestFacts(
+        qualification_snapshot_digest=snapshot.snapshot_digest,
+        projection_digest=projection.projection_digest,
+        desired_state_digest=desired_digest,
+        method="GET",
+        url=(
+            "synthetic://workflow-delivery-v3/"
+            f"{projection.projection_id}"
+        ),
+        headers=(),
     )
+    request_digest = request_facts.request_digest
     if classification == "absent":
         value = ObservationValue(
             classification="absent",
@@ -316,20 +324,40 @@ def _admit_synthetic_projection_observation(
             witness_digest=artifact.witness_digest,
             routing=(),
         )
+    response_facts = ObservationResponseFacts(
+        stage="synthetic",
+        requested_url=request_facts.url,
+        final_url=request_facts.url,
+        redirects=(),
+        status="synthetic",
+        selected_headers=(),
+        truncated=False,
+        body_sha256=None,
+    )
     response_digest = canonical_sha256(
         {
-            "schema": "workflow-delivery/v3/synthetic-observation-response",
+            "schema": "workflow-delivery/v3/observation-response",
             "request-digest": request_digest,
+            "facts": response_facts.to_document(),
             "value": value.to_document(),
         }
     )
     return ProjectionObservation(
         subject=_subject(snapshot),
+        purpose=(
+            snapshot.subject.purpose
+            if isinstance(snapshot.subject, SimulationBinding)
+            else "live-release"
+        ),
+        target=snapshot.target,
+        producer=NPMJS_OBSERVER_PRODUCER,
         qualification_snapshot_digest=snapshot.snapshot_digest,
         projection=projection,
         desired_state_digest=desired_digest,
         observation_contract_id=projection.observation_contract_id,
+        request_facts=request_facts,
         request_digest=request_digest,
+        response_facts=response_facts,
         response_digest=response_digest,
         value=value,
     )
@@ -379,6 +407,17 @@ def _validate_decision_artifacts(
         raise ValueError(message)
 
 
+def _validate_observation_producer(
+    observation: ProjectionObservation,
+) -> None:
+    if (
+        observation.observation_contract_id == NPMJS_OBSERVATION_CONTRACT_ID
+        and observation.producer != NPMJS_OBSERVER_PRODUCER
+    ):
+        message = "npmjs Projection observation producer mismatch"
+        raise ValueError(message)
+
+
 def _validate_observations(
     snapshot: QualificationSnapshot,
     observations: tuple[ProjectionObservation, ...],
@@ -416,6 +455,13 @@ def _validate_observations(
             raise ValueError(message)
         if (
             observation.subject != _subject(snapshot)
+            or observation.purpose
+            != (
+                snapshot.subject.purpose
+                if isinstance(snapshot.subject, SimulationBinding)
+                else "live-release"
+            )
+            or observation.target != snapshot.target
             or observation.qualification_snapshot_digest
             != snapshot.snapshot_digest
             or observation.projection != planned
@@ -428,6 +474,7 @@ def _validate_observations(
         ):
             message = "Projection observation binding mismatch"
             raise ValueError(message)
+        _validate_observation_producer(observation)
         if observation.value.classification == "exact-satisfied" and (
             observation.value.coordinate != planned.coordinate
             or observation.value.content_sha512
@@ -629,7 +676,7 @@ def finalize_simulation(
     observations: tuple[ProjectionObservation, ...] = (),
     artifacts: tuple[ReleaseArtifact, ...] = (),
 ) -> SimulationOutcome:
-    """Finalize truthfully when commit-6 remote observation is unavailable."""
+    """Finalize simulation from admitted observation classifications."""
     if not isinstance(snapshot.subject, SimulationBinding):
         message = "Simulation Finalizer requires a Simulation Binding"
         raise TypeError(message)
@@ -651,21 +698,55 @@ def finalize_simulation(
         message = "successful simulation qualification lacks artifacts"
         raise ValueError(message)
     _validate_decision_artifacts(decision, admitted_artifacts)
-    if observations:
-        message = (
-            "commit-6 simulation finalization does not admit observations "
-            "before the real observation adapter"
+    admitted_observations = _validate_observations(
+        snapshot,
+        observations,
+        admitted_artifacts,
+    )
+    classifications = tuple(
+        observation.value.classification
+        for observation in admitted_observations
+    )
+    if all(
+        classification in {"absent", "exact-satisfied"}
+        for classification in classifications
+    ):
+        actions = materialize_hypothetical_actions(
+            snapshot,
+            decision,
+            admitted_observations,
+            admitted_artifacts,
         )
-        raise ValueError(message)
+        terminal_result = "success"
+        failure_class = "none"
+        next_action = "none"
+    elif "conflicting" in classifications or "partial" in classifications:
+        actions = ()
+        terminal_result = "failure"
+        failure_class = "reconciliation-required"
+        next_action = "reconcile-destination-state"
+    elif "unprovable" in classifications:
+        actions = ()
+        terminal_result = "incomplete"
+        failure_class = "unprovable-observation"
+        next_action = "fix-observation-capability-and-rerun"
+    else:
+        actions = ()
+        terminal_result = "incomplete"
+        failure_class = "unknown-observation"
+        next_action = "rerun-simulation"
     return SimulationOutcome(
         binding=snapshot.subject,
         qualification_snapshot_digest=snapshot.snapshot_digest,
         qualification_decision_digest=decision.decision_digest,
-        observation_digests=(),
-        hypothetical_actions=(),
-        terminal_result="incomplete",
-        failure_class="unsupported-observation",
-        next_action="implement-observation-adapter",
+        observation_digests=tuple(
+            observation.observation_digest
+            for observation in admitted_observations
+        ),
+        hypothetical_actions=actions,
+        terminal_result=terminal_result,
+        failure_class=failure_class,
+        next_action=next_action,
     )
 
 
