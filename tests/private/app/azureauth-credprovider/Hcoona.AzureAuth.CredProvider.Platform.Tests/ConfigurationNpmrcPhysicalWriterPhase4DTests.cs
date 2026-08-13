@@ -109,6 +109,120 @@ public sealed class ConfigurationNpmrcPhysicalWriterPhase4DTests
     }
 
     [Fact]
+    public void ExistingEnvironmentExpandedUnownedSelectorIsRejected()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CanonicalResourceIdentity resource = CreateResource();
+        string selector = NpmCompatibleAuthSelectorPolicy.Create(resource).NpmAuthTokenKey;
+        const string Existing = "${AUTH_KEY}=existing\n";
+        fileSystem.AtomicWriteAllText(Path, Existing);
+        var writer = new NpmrcPhysicalTargetWriter(
+            fileSystem,
+            name => name == "AUTH_KEY" ? selector : null
+        );
+
+        Assert.Throws<InvalidOperationException>(() =>
+            writer.Write(
+                CreateRequest(CreateChange(selector, "replacement"), resource),
+                TestContext.Current.CancellationToken
+            )
+        );
+
+        Assert.Equal(Existing, fileSystem.ReadAllText(Path));
+    }
+
+    [Fact]
+    public void RemoveDeletesOwnedEnvironmentExpandedSelector()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CanonicalResourceIdentity resource = CreateResource();
+        string selector = NpmCompatibleAuthSelectorPolicy.Create(resource).NpmAuthTokenKey;
+        fileSystem.AtomicWriteAllText(Path, "${AUTH_KEY}=existing\n");
+        ConfigurationChange remove = CreateChange(selector, null) with
+        {
+            Operation = ConfigurationChangeOperation.Remove,
+        };
+        var writer = new NpmrcPhysicalTargetWriter(
+            fileSystem,
+            name => name == "AUTH_KEY" ? selector : null
+        );
+
+        writer.Write(
+            CreateRequest(
+                remove,
+                resource,
+                ConfigurationPlanOperation.Remove,
+                [Owned(remove)]
+            ),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(string.Empty, fileSystem.ReadAllText(Path));
+    }
+
+    [Fact]
+    public void RemoveFailsClosedOnEnvironmentExpandedSelectorCollision()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CanonicalResourceIdentity resource = CreateResource();
+        string selector = NpmCompatibleAuthSelectorPolicy.Create(resource).NpmAuthTokenKey;
+        string existing = "${AUTH_KEY}=existing\n" + selector + "=managed\n";
+        fileSystem.AtomicWriteAllText(Path, existing);
+        ConfigurationChange remove = CreateChange(selector, null) with
+        {
+            Operation = ConfigurationChangeOperation.Remove,
+        };
+        var writer = new NpmrcPhysicalTargetWriter(
+            fileSystem,
+            name => name == "AUTH_KEY" ? selector : null
+        );
+
+        Assert.Throws<InvalidOperationException>(() =>
+            writer.Write(
+                CreateRequest(
+                    remove,
+                    resource,
+                    ConfigurationPlanOperation.Remove,
+                    [Owned(remove)]
+                ),
+                TestContext.Current.CancellationToken
+            )
+        );
+
+        Assert.Equal(existing, fileSystem.ReadAllText(Path));
+    }
+
+    [Fact]
+    public void IsSatisfiedFailsClosedOnEnvironmentExpandedRegistryCollision()
+    {
+        const string AzureRegistry =
+            "https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/";
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CanonicalResourceIdentity resource = CreateResource();
+        fileSystem.AtomicWriteAllText(
+            Path,
+            "registry="
+                + AzureRegistry
+                + "\n${REGISTRY_KEY}=https://registry.npmjs.org/\n"
+        );
+        ConfigurationChange change = CreateChange("registry", AzureRegistry) with
+        {
+            IsSecretValue = false,
+        };
+        var writer = new NpmrcPhysicalTargetWriter(
+            fileSystem,
+            name => name == "REGISTRY_KEY" ? "registry" : null
+        );
+
+        Assert.Throws<InvalidOperationException>(() =>
+            writer.IsSatisfied(
+                CreateRequest(change, resource),
+                TestContext.Current.CancellationToken
+            )
+        );
+    }
+
+    [Fact]
     public void WriteReplacesOwnedArraySelectorWithScalar()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);

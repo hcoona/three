@@ -1,6 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
 using System.ComponentModel;
-using System.Text;
 using System.Text.Json;
 using Hcoona.AzureAuth.CredProvider.Contracts;
 using Hcoona.AzureAuth.CredProvider.Platform.Configuration;
@@ -509,7 +508,11 @@ public sealed class NpmPhase12VerticalSliceService
                 ),
                 out _
             );
-            string key = ExpandNpmrcEnvironmentVariables(decodedKey, out _);
+            string key = NpmrcIniSyntax.ExpandEnvironmentVariables(
+                decodedKey,
+                environmentVariableReader,
+                out _
+            );
             if (
                 TryParseRegistryAuthSelector(key, out Uri? registry)
                 && IsSameOrDescendantRegistry(plannedRegistry, registry)
@@ -743,8 +746,9 @@ public sealed class NpmPhase12VerticalSliceService
             string? registryValue = null;
             if (separatorIndex >= 0)
             {
-                string value = ExpandNpmrcEnvironmentVariables(
+                string value = NpmrcIniSyntax.ExpandEnvironmentVariables(
                     NpmrcIniSyntax.DecodeField(rawLine[(separatorIndex + 1)..]),
+                    environmentVariableReader,
                     out bool unresolvedEnvironmentReference
                 );
                 registryValue = unresolvedEnvironmentReference ? null : value;
@@ -755,7 +759,11 @@ public sealed class NpmPhase12VerticalSliceService
 
         foreach ((string decodedKey, var setting) in fileSettings)
         {
-            string key = ExpandNpmrcEnvironmentVariables(decodedKey, out _);
+            string key = NpmrcIniSyntax.ExpandEnvironmentVariables(
+                decodedKey,
+                environmentVariableReader,
+                out _
+            );
             if (!NpmrcRegistryDeclarationKeyPolicy.IsRegistryDeclarationKey(key))
             {
                 continue;
@@ -769,115 +777,6 @@ public sealed class NpmPhase12VerticalSliceService
 
             effectiveSettings[key] = (npmrcPath, setting.RegistryValue);
         }
-    }
-
-    private string ExpandNpmrcEnvironmentVariables(
-        string value,
-        out bool unresolvedEnvironmentReference
-    )
-    {
-        unresolvedEnvironmentReference = false;
-        var expanded = new StringBuilder(value.Length);
-        for (int index = 0; index < value.Length;)
-        {
-            int escapeStart = index;
-            while (index < value.Length && value[index] == '\\')
-            {
-                index++;
-            }
-
-            int escapeCount = index - escapeStart;
-            if (
-                !TryParseNpmEnvironmentReference(
-                    value,
-                    index,
-                    out int referenceEnd,
-                    out string? variableName,
-                    out bool optional
-                )
-            )
-            {
-                expanded.Append(value, escapeStart, escapeCount);
-                if (index < value.Length)
-                {
-                    expanded.Append(value[index]);
-                    index++;
-                }
-                continue;
-            }
-
-            expanded.Append('\\', escapeCount / 2);
-            if ((escapeCount & 1) != 0)
-            {
-                expanded.Append(value, index, referenceEnd - index);
-            }
-            else
-            {
-                string? environmentValue = environmentVariableReader(variableName);
-                if (environmentValue is not null)
-                {
-                    expanded.Append(environmentValue);
-                }
-                else if (!optional)
-                {
-                    unresolvedEnvironmentReference = true;
-                    expanded.Append("${").Append(variableName).Append('}');
-                }
-            }
-
-            index = referenceEnd;
-        }
-
-        return expanded.ToString();
-    }
-
-    private static bool TryParseNpmEnvironmentReference(
-        string value,
-        int startIndex,
-        out int endIndex,
-        [NotNullWhen(true)] out string? variableName,
-        out bool optional
-    )
-    {
-        endIndex = startIndex;
-        variableName = null;
-        optional = false;
-        if (
-            startIndex + 3 > value.Length
-            || value[startIndex] != '$'
-            || value[startIndex + 1] != '{'
-        )
-        {
-            return false;
-        }
-
-        int closingBraceIndex = value.IndexOf('}', startIndex + 2);
-        if (closingBraceIndex < 0)
-        {
-            return false;
-        }
-
-        ReadOnlySpan<char> body = value.AsSpan(
-            startIndex + 2,
-            closingBraceIndex - startIndex - 2
-        );
-        if (!body.IsEmpty && body[^1] == '?')
-        {
-            optional = true;
-            body = body[..^1];
-        }
-
-        if (
-            body.IsEmpty
-            || body.IndexOfAny("${}?".AsSpan()) >= 0
-        )
-        {
-            return false;
-        }
-
-        variableName = body.ToString();
-        endIndex = closingBraceIndex + 1;
-        return true;
     }
 
     private bool TryCreateRegistryDeclaration(

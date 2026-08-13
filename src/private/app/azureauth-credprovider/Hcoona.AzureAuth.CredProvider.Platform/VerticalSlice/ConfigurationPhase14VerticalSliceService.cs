@@ -3453,7 +3453,10 @@ public sealed class ConfigurationPhase14VerticalSliceService
         new(
             fileSystem,
             ownershipManifestPath,
-            new ConfigurationPhysicalTargetWriterDispatcher(fileSystem)
+            new ConfigurationPhysicalTargetWriterDispatcher(
+                fileSystem,
+                environmentVariableReader
+            )
         );
 
     private ConfigurationLayoutProjectionContext CreateCurrentLayoutProjectionContext() =>

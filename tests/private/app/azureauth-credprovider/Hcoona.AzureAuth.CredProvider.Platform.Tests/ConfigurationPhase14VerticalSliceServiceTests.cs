@@ -4530,6 +4530,51 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     }
 
     [Fact]
+    public async Task ConfigureAsyncForCiRejectsEnvironmentExpandedRegistryCollision()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectoryTree(fileSystem, "/workspace");
+        CreateDirectoryTree(fileSystem, "/home/test");
+        fileSystem.WriteAllText("/home/test/.npmrc", $"registry={TestRegistryUrl}\n");
+        ConfigurationPhase14VerticalSliceService service = CreateService(
+            fileSystem,
+            environmentVariableReader: name =>
+                string.Equals(name, "REGISTRY_KEY", StringComparison.Ordinal)
+                    ? "registry"
+                    : ReadCiEnvironment(name),
+            workspaceDirectoryPath: "/workspace",
+            includeRegistryUrls: false
+        );
+
+        await service.ConfigureAsync(
+            CredentialEcosystem.Npm,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken
+        );
+        string targetPath = service.Paths.NpmCiTemporaryNpmrcPath;
+        fileSystem.WriteAllText(
+            targetPath,
+            fileSystem.ReadAllText(targetPath)
+                + "${REGISTRY_KEY}=https://registry.npmjs.org/\n"
+        );
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await service.ConfigureAsync(
+                CredentialEcosystem.Npm,
+                ConfigurationPhase14Scope.CiTemporary,
+                TestContext.Current.CancellationToken
+            )
+        );
+
+        Assert.Contains(
+            "${REGISTRY_KEY}=https://registry.npmjs.org/",
+            fileSystem.ReadAllText(targetPath),
+            StringComparison.Ordinal
+        );
+        Assert.True(fileSystem.FileExists(GetNpmCompatibleCiManifestPath(service)));
+    }
+
+    [Fact]
     public async Task ConfigureAsyncForCiPreservesEquivalentScopedRegistryKeys()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);

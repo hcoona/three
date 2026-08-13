@@ -4,12 +4,17 @@ using Hcoona.AzureAuth.CredProvider.Platform.FileSystem;
 
 namespace Hcoona.AzureAuth.CredProvider.Platform.Configuration;
 
-internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
+internal sealed class NpmrcPhysicalTargetWriter(
+    IFileSystem fileSystem,
+    Func<string, string?>? environmentVariableReader = null
+)
     : IConfigurationPhysicalTargetWriter
 {
     private static readonly Encoding Utf8NoBom = new UTF8Encoding(false, true);
     private static readonly UnixFileMode OwnerOnlyMode =
         UnixFileMode.UserRead | UnixFileMode.UserWrite;
+    private readonly Func<string, string?> readEnvironmentVariable =
+        environmentVariableReader ?? Environment.GetEnvironmentVariable;
 
     public void Validate(
         ConfigurationPhysicalTargetWriterRequest request,
@@ -211,10 +216,14 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
             {
                 throw new InvalidOperationException("The npmrc target is a directory.");
             }
-            return NpmrcDocument.Missing(writePath);
+            return NpmrcDocument.Missing(writePath, readEnvironmentVariable);
         }
 
-        return NpmrcDocument.Parse(fileSystem.ReadAllBytes(writePath), writePath);
+        return NpmrcDocument.Parse(
+            fileSystem.ReadAllBytes(writePath),
+            writePath,
+            readEnvironmentVariable
+        );
     }
 
     private string ResolveWritePath(string targetPath) =>
@@ -303,19 +312,22 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
         private readonly bool hadBom;
         private readonly string newLine;
         private readonly bool trailingNewLine;
+        private readonly Func<string, string?> environmentVariableReader;
 
         private NpmrcDocument(
             List<string> lines,
             bool hadBom,
             string newLine,
             bool trailingNewLine,
-            string writePath
+            string writePath,
+            Func<string, string?> environmentVariableReader
         )
         {
             this.lines = lines;
             this.hadBom = hadBom;
             this.newLine = newLine;
             this.trailingNewLine = trailingNewLine;
+            this.environmentVariableReader = environmentVariableReader;
             WritePath = writePath;
         }
 
@@ -323,10 +335,24 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
 
         public string WritePath { get; }
 
-        public static NpmrcDocument Missing(string writePath) =>
-            new([], hadBom: false, "\n", trailingNewLine: true, writePath);
+        public static NpmrcDocument Missing(
+            string writePath,
+            Func<string, string?> environmentVariableReader
+        ) =>
+            new(
+                [],
+                hadBom: false,
+                "\n",
+                trailingNewLine: true,
+                writePath,
+                environmentVariableReader
+            );
 
-        public static NpmrcDocument Parse(byte[] bytes, string writePath)
+        public static NpmrcDocument Parse(
+            byte[] bytes,
+            string writePath,
+            Func<string, string?> environmentVariableReader
+        )
         {
             bool bom = bytes is [0xEF, 0xBB, 0xBF, ..];
             string text = Utf8NoBom.GetString(bom ? bytes[3..] : bytes);
@@ -335,12 +361,20 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
                 bom,
                 text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n",
                 text.EndsWith('\n'),
-                writePath
+                writePath,
+                environmentVariableReader
             );
         }
 
         public NpmrcDocument Clone() =>
-            new([.. lines], hadBom, newLine, trailingNewLine, WritePath);
+            new(
+                [.. lines],
+                hadBom,
+                newLine,
+                trailingNewLine,
+                WritePath,
+                environmentVariableReader
+            );
 
         public NpmrcEntry? GetEntry(string key)
         {
@@ -402,11 +436,19 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
                 if (
                     TryParseEntry(
                         lines[index],
-                        out string? parsedKey,
+                        out string parsedKey,
                         out string? value,
                         out bool isArray
                     )
-                    && string.Equals(parsedKey, key, StringComparison.Ordinal)
+                    && string.Equals(
+                        NpmrcIniSyntax.ExpandEnvironmentVariables(
+                            parsedKey,
+                            environmentVariableReader,
+                            out _
+                        ),
+                        key,
+                        StringComparison.Ordinal
+                    )
                 )
                 {
                     yield return new NpmrcEntry(index, value, isArray);
@@ -429,12 +471,12 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
 
         private static bool TryParseEntry(
             string line,
-            out string? key,
+            out string key,
             out string value,
             out bool isArray
         )
         {
-            key = null;
+            key = string.Empty;
             value = string.Empty;
             isArray = false;
             string trimmed = line.Trim();
