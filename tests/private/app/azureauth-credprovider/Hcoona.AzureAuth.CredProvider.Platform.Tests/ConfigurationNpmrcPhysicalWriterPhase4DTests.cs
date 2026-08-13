@@ -562,6 +562,35 @@ public sealed class ConfigurationNpmrcPhysicalWriterPhase4DTests
         Assert.Equal($"{selector}=\n{Unrelated}", fileSystem.ReadAllText(Path));
     }
 
+    [Theory]
+    [InlineData("${TOKEN?}", null, false)]
+    [InlineData("${TOKEN}", "", false)]
+    [InlineData("${TOKEN}", "expanded-token", true)]
+    [InlineData("${MISSING}", null, false)]
+    [InlineData("\\${TOKEN?}", null, true)]
+    public void IsSatisfiedUsesEffectiveExpandedNpmAuthToken(
+        string configuredValue,
+        string? environmentValue,
+        bool expected
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CanonicalResourceIdentity resource = CreateResource();
+        string selector = NpmCompatibleAuthSelectorPolicy.Create(resource).NpmAuthTokenKey;
+        fileSystem.AtomicWriteAllText(Path, $"{selector}={configuredValue}\n");
+        var writer = new NpmrcPhysicalTargetWriter(
+            fileSystem,
+            name => name is "TOKEN" or "MISSING" ? environmentValue : null
+        );
+
+        bool satisfied = writer.IsSatisfied(
+            CreateRequest(CreateChange(selector, "requested-token"), resource),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(expected, satisfied);
+    }
+
     [Fact]
     public void IsSatisfiedTreatsNonEmptyNpmAuthTokenAsOpaquePresence()
     {

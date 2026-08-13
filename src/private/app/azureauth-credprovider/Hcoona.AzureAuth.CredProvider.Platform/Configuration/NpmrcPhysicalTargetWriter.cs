@@ -79,10 +79,20 @@ internal sealed class NpmrcPhysicalTargetWriter(
                 && !entry.IsArray
                 && (
                     change.IsSecretValue
-                        ? !string.IsNullOrEmpty(entry.Value)
+                        ? HasEffectiveSecretValue(entry.Value)
                         : RegistryValuesMatch(change.Key, entry.Value, change.Value)
                 );
         });
+    }
+
+    private bool HasEffectiveSecretValue(string value)
+    {
+        string effectiveValue = NpmrcIniSyntax.ExpandEnvironmentVariables(
+            value,
+            readEnvironmentVariable,
+            out bool unresolvedEnvironmentReference
+        );
+        return !unresolvedEnvironmentReference && !string.IsNullOrEmpty(effectiveValue);
     }
 
     internal static string? GetPlanningValidationViolation(

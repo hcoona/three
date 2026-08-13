@@ -1368,6 +1368,39 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         Assert.Equal(configured, fileSystem.ReadAllText(configurationPath));
     }
 
+    [Fact]
+    public async Task FreshNpmConfigureRepairsEnvironmentExpandedEmptyAuthToken()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        var service = CreateService(fileSystem);
+        await service.ConfigureAsync(
+            CredentialEcosystem.Npm,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+        string configurationPath = service.Paths.NpmUserNpmrcPath;
+        string configured = fileSystem.ReadAllText(configurationPath);
+        string tokenLine = Assert.Single(
+            configured.Split('\n'),
+            static line => line.Contains(":_authToken=", StringComparison.Ordinal)
+        );
+        string changed = configured.Replace(
+            tokenLine,
+            tokenLine[..(tokenLine.IndexOf('=') + 1)] + "${TOKEN?}",
+            StringComparison.Ordinal
+        );
+        fileSystem.WriteAllText(configurationPath, changed);
+
+        ConfigurationPhase14PlanResult repaired = await service.ConfigureAsync(
+            CredentialEcosystem.Npm,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.NotEqual(0, repaired.AppliedChangeCount);
+        Assert.Equal(configured, fileSystem.ReadAllText(configurationPath));
+    }
+
     [Theory]
     [InlineData(CredentialEcosystem.Npm)]
     [InlineData(CredentialEcosystem.Yarn)]
