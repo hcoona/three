@@ -664,7 +664,7 @@ public sealed class NuGetPluginAdapterTests
         "CA1707:Identifiers should not contain underscores",
         Justification = "The underscores separate the protocol condition from the expected result."
     )]
-    public async Task GetCredentials_WhenBrowserIsBlocked_ReportsProgressBeforeFinalResponse()
+    public async Task GetCredentials_WhenDialogIsUnavailable_ReportsProgressBeforeFinalResponse()
     {
         const string requestId = "33333333-3333-3333-3333-333333333333";
         var acquisition = new GatedInteractiveBrowserAcquisitionService();
@@ -681,7 +681,7 @@ public sealed class NuGetPluginAdapterTests
                 new Uri("https://pkgs.dev.azure.com/contoso/_packaging/Feed/nuget/v3/index.json"),
                 isRetry: false,
                 isNonInteractive: false,
-                canShowDialog: true
+                canShowDialog: false
             )
         );
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
@@ -704,7 +704,7 @@ public sealed class NuGetPluginAdapterTests
         Assert.Equal(InteractivePolicy.HostToolAllows, capturedRequest.InteractivePolicy);
         Assert.Equal(AcquisitionMode.InteractionAllowed, capturedRequest.AcquisitionMode);
         Assert.Equal("false", capturedRequest.ExtensionData["nuget.isNonInteractive"]);
-        Assert.Equal("true", capturedRequest.ExtensionData["nuget.canShowDialog"]);
+        Assert.Equal("false", capturedRequest.ExtensionData["nuget.canShowDialog"]);
 
         await progressRecorder.FirstProgressCompleted.WaitAsync(
             TimeSpan.FromSeconds(20),
@@ -753,42 +753,6 @@ public sealed class NuGetPluginAdapterTests
         Assert.Equal("opaque-session-token-7c9e2d41", response.Password);
         Assert.Equal(["Basic"], response.AuthenticationTypes);
         Assert.Null(response.Message);
-    }
-
-    [Fact]
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Naming",
-        "CA1707:Identifiers should not contain underscores",
-        Justification = "The underscores separate the protocol condition from the expected result."
-    )]
-    public async Task GetCredentials_WhenDialogIsUnavailable_DoesNotReportProgress()
-    {
-        var adapter = new NuGetPluginAdapter(new RequestTokenCapturingAcquisitionService());
-        IRequestHandler handler = GetAuthenticationCredentialsHandler(adapter);
-        (IConnection connection, ProgressRecordingConnectionProxy progressRecorder) =
-            CreateProgressRecordingConnection();
-        var responseHandler = new CapturingResponseHandler();
-        Message request = MessageUtilities.Create(
-            "44444444-4444-4444-4444-444444444444",
-            MessageType.Request,
-            MessageMethod.GetAuthenticationCredentials,
-            new GetAuthenticationCredentialsRequest(
-                new Uri("https://pkgs.dev.azure.com/contoso/_packaging/Feed/nuget/v3/index.json"),
-                isRetry: false,
-                isNonInteractive: false,
-                canShowDialog: false
-            )
-        );
-
-        await handler.HandleResponseAsync(
-            connection,
-            request,
-            responseHandler,
-            TestContext.Current.CancellationToken
-        );
-
-        Assert.Empty(progressRecorder.Messages);
-        Assert.Equal(1, responseHandler.SendCount);
     }
 
     private static (

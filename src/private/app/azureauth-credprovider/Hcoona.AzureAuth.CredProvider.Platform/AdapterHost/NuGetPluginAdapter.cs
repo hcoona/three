@@ -499,7 +499,7 @@ public sealed class NuGetPluginAdapter
         ) => adapter.HandleGetAuthenticationCredentialsAsync(request, cancellationToken);
 
         protected override bool ShouldReportProgress(GetAuthenticationCredentialsRequest request) =>
-            !request.IsNonInteractive && request.CanShowDialog;
+            !request.IsNonInteractive;
     }
 
     private sealed class SetCredentialsHandler

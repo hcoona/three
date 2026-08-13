@@ -775,7 +775,7 @@ public sealed class NuGetPhase10VerticalSliceService
                 && silentRequest.AcquisitionMode == AcquisitionMode.SilentOnly
                 && deviceCodeRequest.InteractivePolicy == InteractivePolicy.HostToolAllows
                 && deviceCodeRequest.AcquisitionMode == AcquisitionMode.InteractionAllowed
-                && deviceCodeRequest.IdentityFlow == IdentityFlow.DeviceCode
+                && deviceCodeRequest.IdentityFlow == IdentityFlow.InteractiveBrowser
                 && browserRequest.InteractivePolicy == InteractivePolicy.HostToolAllows
                 && browserRequest.AcquisitionMode == AcquisitionMode.InteractionAllowed
                 && browserRequest.IdentityFlow == IdentityFlow.InteractiveBrowser;
