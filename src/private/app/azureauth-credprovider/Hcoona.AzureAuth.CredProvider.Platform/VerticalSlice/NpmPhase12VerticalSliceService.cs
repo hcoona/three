@@ -491,21 +491,24 @@ public sealed class NpmPhase12VerticalSliceService
         }
 
         Uri plannedRegistry = declaration.RegistryUrl;
-        foreach (string rawLine in SplitLines(fileSystem.ReadAllText(workspaceNpmrcPath)))
-        {
-            string trimmedLine = rawLine.Trim();
-            if (
-                trimmedLine.Length == 0
-                || trimmedLine.StartsWith('#')
-                || trimmedLine.StartsWith(';')
+        foreach (
+            string rawLine in EnumerateTopLevelNpmrcLines(
+                fileSystem.ReadAllText(workspaceNpmrcPath)
             )
+        )
+        {
+            int separatorIndex = rawLine.IndexOf('=', StringComparison.Ordinal);
+            if (separatorIndex == 0)
             {
                 continue;
             }
 
-            int separatorIndex = rawLine.IndexOf('=', StringComparison.Ordinal);
-            string key =
-                separatorIndex < 0 ? trimmedLine : rawLine[..separatorIndex].Trim();
+            string key = ExpandNpmrcEnvironmentVariables(
+                DecodeNpmrcField(
+                    separatorIndex < 0 ? rawLine : rawLine[..separatorIndex]
+                ),
+                out _
+            );
             if (
                 TryParseRegistryAuthSelector(key, out Uri? registry)
                 && IsSameOrDescendantRegistry(plannedRegistry, registry)
@@ -703,18 +706,8 @@ public sealed class NpmPhase12VerticalSliceService
     )
     {
         string contents = fileSystem.ReadAllText(npmrcPath);
-        foreach (string rawLine in SplitLines(contents))
+        foreach (string rawLine in EnumerateTopLevelNpmrcLines(contents))
         {
-            string trimmedLine = rawLine.Trim();
-            if (
-                trimmedLine.Length == 0
-                || trimmedLine.StartsWith('#')
-                || trimmedLine.StartsWith(';')
-            )
-            {
-                continue;
-            }
-
             int separatorIndex = rawLine.IndexOf('=', StringComparison.Ordinal);
             if (separatorIndex == 0)
             {
@@ -1904,6 +1897,41 @@ public sealed class NpmPhase12VerticalSliceService
 
     private static string[] SplitLines(string contents) =>
         contents.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Split('\n');
+
+    private static IEnumerable<string> EnumerateTopLevelNpmrcLines(string contents)
+    {
+        foreach (string rawLine in SplitLines(contents))
+        {
+            string trimmedLine = rawLine.Trim();
+            if (
+                trimmedLine.Length == 0
+                || trimmedLine.StartsWith('#')
+                || trimmedLine.StartsWith(';')
+            )
+            {
+                continue;
+            }
+
+            if (IsNpmrcSectionHeader(rawLine))
+            {
+                yield break;
+            }
+
+            yield return rawLine;
+        }
+    }
+
+    private static bool IsNpmrcSectionHeader(string rawLine)
+    {
+        if (rawLine.Length < 2 || rawLine[0] != '[')
+        {
+            return false;
+        }
+
+        int closingBracketIndex = rawLine.IndexOf(']', 1);
+        return closingBracketIndex >= 0
+            && rawLine.AsSpan(closingBracketIndex + 1).Trim().IsEmpty;
+    }
 
     private static string[] GetDecodedPathSegments(Uri uri)
     {
