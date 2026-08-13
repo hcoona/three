@@ -503,12 +503,13 @@ public sealed class NpmPhase12VerticalSliceService
                 continue;
             }
 
-            string key = ExpandNpmrcEnvironmentVariables(
+            string decodedKey = NormalizeNpmrcArrayAssignmentKey(
                 DecodeNpmrcField(
                     separatorIndex < 0 ? rawLine : rawLine[..separatorIndex]
                 ),
                 out _
             );
+            string key = ExpandNpmrcEnvironmentVariables(decodedKey, out _);
             if (
                 TryParseRegistryAuthSelector(key, out Uri? registry)
                 && IsSameOrDescendantRegistry(plannedRegistry, registry)
@@ -706,6 +707,11 @@ public sealed class NpmPhase12VerticalSliceService
     )
     {
         string contents = fileSystem.ReadAllText(npmrcPath);
+        // npm builds bracketed arrays before key expansion and never resets them with scalars.
+        var fileSettings = new Dictionary<
+            string,
+            (bool IsArray, string? RegistryValue)
+        >(StringComparer.Ordinal);
         foreach (string rawLine in EnumerateTopLevelNpmrcLines(contents))
         {
             int separatorIndex = rawLine.IndexOf('=', StringComparison.Ordinal);
@@ -714,35 +720,64 @@ public sealed class NpmPhase12VerticalSliceService
                 continue;
             }
 
-            string key = ExpandNpmrcEnvironmentVariables(
+            string decodedKey = NormalizeNpmrcArrayAssignmentKey(
                 DecodeNpmrcField(
                     separatorIndex < 0 ? rawLine : rawLine[..separatorIndex]
                 ),
-                out _
+                out bool isArrayAssignment
             );
+            if (isArrayAssignment)
+            {
+                fileSettings[decodedKey] = (true, null);
+                continue;
+            }
+
+            if (
+                fileSettings.TryGetValue(decodedKey, out var existingSetting)
+                && existingSetting.IsArray
+            )
+            {
+                continue;
+            }
+
+            string? registryValue = null;
+            if (separatorIndex >= 0)
+            {
+                string value = ExpandNpmrcEnvironmentVariables(
+                    DecodeNpmrcField(rawLine[(separatorIndex + 1)..]),
+                    out bool unresolvedEnvironmentReference
+                );
+                registryValue = unresolvedEnvironmentReference ? null : value;
+            }
+
+            fileSettings[decodedKey] = (false, registryValue);
+        }
+
+        foreach ((string decodedKey, var setting) in fileSettings)
+        {
+            string key = ExpandNpmrcEnvironmentVariables(decodedKey, out _);
             if (!NpmrcRegistryDeclarationKeyPolicy.IsRegistryDeclarationKey(key))
             {
                 continue;
             }
 
-            if (separatorIndex < 0)
+            if (setting.IsArray || setting.RegistryValue is null)
             {
                 effectiveSettings.Remove(key);
                 continue;
             }
 
-            string value = ExpandNpmrcEnvironmentVariables(
-                DecodeNpmrcField(rawLine[(separatorIndex + 1)..]),
-                out bool unresolvedEnvironmentReference
-            );
-            if (unresolvedEnvironmentReference)
-            {
-                effectiveSettings.Remove(key);
-                continue;
-            }
-
-            effectiveSettings[key] = (npmrcPath, value);
+            effectiveSettings[key] = (npmrcPath, setting.RegistryValue);
         }
+    }
+
+    private static string NormalizeNpmrcArrayAssignmentKey(
+        string key,
+        out bool isArrayAssignment
+    )
+    {
+        isArrayAssignment = key.Length > 2 && key.EndsWith("[]", StringComparison.Ordinal);
+        return isArrayAssignment ? key[..^2] : key;
     }
 
     private static string DecodeNpmrcField(string rawValue)

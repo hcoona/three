@@ -256,6 +256,37 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         Assert.Empty(service.DiscoverRegistryDeclarations());
     }
 
+    [Theory]
+    [InlineData("registry")]
+    [InlineData("@team:registry")]
+    public void DiscoverRegistryDeclarationsTreatsArraySettingsAsUnusableShadows(string key)
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/workspace/.npmrc",
+            key
+                + "[]=https://registry.npmjs.org/\n"
+                + key
+                + "=https://pkgs.dev.azure.com/org/_packaging/workspace/npm/registry/\n"
+        );
+        fileSystem.WriteAllText(
+            "/home/alice/.npmrc",
+            key + "=https://pkgs.dev.azure.com/org/_packaging/user/npm/registry/\n"
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+
+        Assert.Empty(service.DiscoverRegistryDeclarations());
+    }
+
     [Fact]
     public void DiscoverRegistryDeclarationsPreservesUnresolvedWorkspaceShadowing()
     {
@@ -1025,6 +1056,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
 
     [Theory]
     [InlineData("_authToken")]
+    [InlineData("_authToken[]")]
     [InlineData("_auth")]
     [InlineData("username")]
     [InlineData("_password")]
