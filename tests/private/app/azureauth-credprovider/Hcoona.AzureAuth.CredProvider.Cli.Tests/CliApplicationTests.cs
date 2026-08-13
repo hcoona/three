@@ -7758,7 +7758,7 @@ public sealed class CliApplicationTests
 
         Assert.Equal(0, configureGit.ExitCode);
         Assert.Equal(1, doctor.ExitCode);
-        AssertDoctorCheck(doctor.StdOut, "npm-ci-temporary-credential-plan", "fail");
+        AssertDoctorCheck(doctor.StdOut, "npm-ci-temporary-credential-plan", "pass");
         AssertDoctorCheck(doctor.StdOut, "yarn-forbidden-auth-ident-conflict", "present");
         AssertDoctorCheck(doctor.StdOut, "ecosystem-yarn-configurable", "no");
         AssertDoctorCheck(doctor.StdOut, "doctor-aggregation", "fail");

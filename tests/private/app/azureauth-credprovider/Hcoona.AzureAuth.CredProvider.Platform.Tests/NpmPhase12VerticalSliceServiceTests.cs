@@ -615,6 +615,39 @@ public sealed class NpmPhase12VerticalSliceServiceTests
     }
 
     [Fact]
+    public async Task DoctorRejectsMultipleCanonicalRegistryGroups()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/workspace/.npmrc",
+            "registry=https://pkgs.dev.azure.com/org/_packaging/first/npm/registry/\n"
+                + "@other:registry="
+                + "https://pkgs.dev.azure.com/org/_packaging/second/npm/registry/\n"
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+                CiTemporaryNpmrcPath = "/tmp/azureauth-ci/.npmrc",
+            }
+        );
+
+        NpmPhase12DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(2, result.RegistryDeclarations.Count);
+        Assert.True(result.RegistryDeclarationDiscovered);
+        Assert.False(result.NpmUserCredentialPlanValid);
+        Assert.False(result.PnpmUserCredentialPlanValid);
+        Assert.False(result.CiTemporaryCredentialPlanValid);
+    }
+
+    [Fact]
     public async Task DoctorReportsEffectiveUserConfigEnvironmentOverride()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);

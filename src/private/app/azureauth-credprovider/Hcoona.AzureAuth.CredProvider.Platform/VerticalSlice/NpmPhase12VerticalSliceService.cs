@@ -268,8 +268,16 @@ public sealed class NpmPhase12VerticalSliceService
             workspaceResolutionSucceeded
                 ? DiscoverRegistryDeclarations(CredentialEcosystem.Npm, resolution)
                 : [];
-        NpmPhase12RegistryDeclaration? firstDeclaration =
-            declarations.Length == 0 ? null : declarations[0];
+        IGrouping<string, NpmPhase12RegistryDeclaration>[] declarationGroups = declarations
+            .GroupBy(
+                static declaration => declaration.AuthSelectors.NpmAuthTokenKey,
+                StringComparer.Ordinal
+            )
+            .ToArray();
+        NpmPhase12RegistryDeclaration[] selectedDeclarations =
+            declarationGroups.Length == 1 ? declarationGroups[0].ToArray() : [];
+        NpmPhase12RegistryDeclaration? selectedDeclaration =
+            selectedDeclarations.Length == 0 ? null : selectedDeclarations[0];
 
         return new NpmPhase12DoctorResult
         {
@@ -295,21 +303,21 @@ public sealed class NpmPhase12VerticalSliceService
             NpmUserCredentialPlanValid =
                 workspaceResolutionSucceeded
                 && TryValidateUserCredentialPlan(
-                    firstDeclaration,
+                    selectedDeclaration,
                     CredentialEcosystem.Npm,
                     resolution
                 ),
             PnpmUserCredentialPlanValid =
                 workspaceResolutionSucceeded
                 && TryValidateUserCredentialPlan(
-                    firstDeclaration,
+                    selectedDeclaration,
                     CredentialEcosystem.Pnpm,
                     resolution
                 ),
             CiTemporaryCredentialPlanValid =
                 workspaceResolutionSucceeded
                 && TryValidateCiTemporaryCredentialPlan(
-                    firstDeclaration,
+                    selectedDeclarations,
                     resolvedCiTemporaryNpmrcPath,
                     resolution
                 ),
@@ -1524,12 +1532,12 @@ public sealed class NpmPhase12VerticalSliceService
     }
 
     private bool TryValidateCiTemporaryCredentialPlan(
-        NpmPhase12RegistryDeclaration? declaration,
+        NpmPhase12RegistryDeclaration[] declarations,
         string targetNpmrcPath,
         NpmWorkspaceResolutionResult resolution
     )
     {
-        if (declaration is null)
+        if (declarations.Length == 0)
         {
             return false;
         }
@@ -1539,10 +1547,11 @@ public sealed class NpmPhase12VerticalSliceService
             ConfigurationChangePlan plan = CreateCiTemporaryCredentialPlan(
                 new NpmPhase12CredentialPlanRequest
                 {
-                    Declaration = declaration,
+                    Declaration = declarations[0],
                     AuthToken = "doctor-token",
                     TargetNpmrcPath = targetNpmrcPath,
                     IncludeRegistryDeclarationInTarget = true,
+                    RegistryDeclarationsToInclude = declarations,
                 },
                 resolution
             );

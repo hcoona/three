@@ -744,6 +744,92 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         Assert.False(repeatedUnconfigure.OwnershipManifestCleanupIncomplete);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task NpmCiScopedReplacementIntentSupportsCleanupAndRetry(bool retry)
+    {
+        const string ReplacementRegistryUrl =
+            "https://pkgs.dev.azure.com/test-org/_packaging/replacement-feed/npm/registry/";
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectoryTree(fileSystem, "/workspace");
+        CreateDirectoryTree(fileSystem, "/home/test");
+        fileSystem.WriteAllText("/home/test/.npmrc", $"@old:registry={TestRegistryUrl}\n");
+        ConfigurationPhase14VerticalSliceService original = CreateService(
+            fileSystem,
+            environmentVariableReader: ReadCiEnvironment,
+            workspaceDirectoryPath: "/workspace",
+            includeRegistryUrls: false
+        );
+        await original.ConfigureAsync(
+            CredentialEcosystem.Npm,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken
+        );
+        fileSystem.WriteAllText(
+            "/home/test/.npmrc",
+            $"@new-one:registry={ReplacementRegistryUrl}\n"
+                + $"@new-two:registry={ReplacementRegistryUrl}\n"
+        );
+        ConfigurationPhase14VerticalSliceService replacement = CreateService(
+            fileSystem,
+            environmentVariableReader: ReadCiEnvironment,
+            workspaceDirectoryPath: "/workspace",
+            includeRegistryUrls: false
+        );
+        string targetPath = replacement.Paths.NpmCiTemporaryNpmrcPath;
+        string manifestPath = GetNpmCompatibleCiManifestPath(replacement);
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken
+        );
+        InjectPackageReplacementFailure(
+            fileSystem,
+            targetPath,
+            manifestPath,
+            PackageReplacementFailurePoint.TargetWriteAfterIntent,
+            cancellation
+        );
+
+        await Assert.ThrowsAsync<IOException>(async () =>
+            await replacement.ConfigureAsync(
+                CredentialEcosystem.Npm,
+                ConfigurationPhase14Scope.CiTemporary,
+                cancellation.Token
+            )
+        );
+
+        ConfigurationOwnershipManifest transitional =
+            ConfigurationOwnershipManifestSerializer.Deserialize(
+                fileSystem.ReadAllText(manifestPath)
+            );
+        Assert.Contains(transitional.Entries, entry => entry.Key == "@old:registry");
+        Assert.Contains(transitional.Entries, entry => entry.Key == "@new-one:registry");
+        Assert.Contains(transitional.Entries, entry => entry.Key == "@new-two:registry");
+
+        if (retry)
+        {
+            await replacement.ConfigureAsync(
+                CredentialEcosystem.Npm,
+                ConfigurationPhase14Scope.CiTemporary,
+                TestContext.Current.CancellationToken
+            );
+            string configured = fileSystem.ReadAllText(targetPath);
+            Assert.DoesNotContain("@old:registry", configured, StringComparison.Ordinal);
+            Assert.Contains("@new-one:registry", configured, StringComparison.Ordinal);
+            Assert.Contains("@new-two:registry", configured, StringComparison.Ordinal);
+        }
+
+        ConfigurationPhase14PlanResult unconfigure = await replacement.UnconfigureAsync(
+            CredentialEcosystem.Npm,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.False(unconfigure.OwnershipManifestCleanupIncomplete);
+        Assert.False(fileSystem.FileExists(targetPath));
+        Assert.False(fileSystem.FileExists(manifestPath));
+    }
+
     [Fact]
     public async Task YarnTransitionalReplacementCleanupSucceedsAfterTargetBecomesRepository()
     {
@@ -4300,6 +4386,16 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
                 ConfigurationPhase14Scope.CiTemporary
             )
         );
+        ConfigurationPhase14DoctorResult doctor = await service.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+        ConfigurationPhase14EcosystemDoctorResult npm = Assert.Single(
+            doctor.Ecosystems,
+            result =>
+                result.Ecosystem == CredentialEcosystem.Npm
+                && result.Scope == ConfigurationPhase14Scope.CiTemporary
+        );
+        Assert.True(npm.OwnedTargetPresent);
 
         await service.UnconfigureAsync(
             CredentialEcosystem.Npm,

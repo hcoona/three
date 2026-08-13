@@ -183,8 +183,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
             CredentialEcosystem ecosystem,
             ConfigurationScope scope,
             CanonicalResourceIdentity resource,
-            string logicalTargetPath,
-            string? npmRegistryKey = null
+            string logicalTargetPath
         )
         {
             if (scope is not (ConfigurationScope.User or ConfigurationScope.CiTemporary))
@@ -208,11 +207,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
                     manifestId = NpmCredentialManifestId;
                     productVersion = "phase12";
                     ecosystemName = ecosystem == CredentialEcosystem.Npm ? "npm" : "pnpm";
-                    registryKey =
-                        npmRegistryKey is not null
-                        && NpmPhase12VerticalSliceService.IsRegistryDeclarationKey(npmRegistryKey)
-                            ? npmRegistryKey
-                            : "registry";
+                    registryKey = "registry";
                     entrySelector = selectors.NpmAuthTokenKey;
                     orderedKeys =
                         scope == ConfigurationScope.CiTemporary
@@ -2006,15 +2001,17 @@ public sealed class ConfigurationPhase14VerticalSliceService
             return false;
         }
 
-        string? npmRegistryKey =
-            ecosystem is CredentialEcosystem.Npm or CredentialEcosystem.Pnpm
-            && manifest.SafeMetadata.TryGetValue(
-                "registry-key",
-                out string? recordedRegistryKey
-            )
-            && NpmPhase12VerticalSliceService.IsRegistryDeclarationKey(recordedRegistryKey)
-                ? recordedRegistryKey
-                : null;
+        if (ecosystem is CredentialEcosystem.Npm or CredentialEcosystem.Pnpm)
+        {
+            return TryGetNpmOwnershipIntentLayouts(
+                manifest,
+                ecosystem,
+                requestedPlan,
+                requestedResource,
+                out layouts
+            );
+        }
+
         ConfigurationOwnershipManifest finalLayout;
         if (requestedPlan is not null)
         {
@@ -2044,8 +2041,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
                 ecosystem,
                 ToConfigurationScope(scope),
                 requestedResource,
-                finalAuthEntry.TargetPathOrName,
-                npmRegistryKey
+                finalAuthEntry.TargetPathOrName
             );
         }
 
@@ -2079,8 +2075,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
                 ecosystem,
                 ToConfigurationScope(scope),
                 previousResource,
-                previousAuthEntry.TargetPathOrName,
-                npmRegistryKey
+                previousAuthEntry.TargetPathOrName
             );
         var expectedEntries = new List<ConfigurationOwnershipManifestEntry>(
             previousLayout.Entries
@@ -2104,6 +2099,115 @@ public sealed class ConfigurationPhase14VerticalSliceService
                         && EntriesMatch(pair.actual, pair.expected)
                 )
                 .All(static matches => matches);
+        if (matches)
+        {
+            layouts = new PackageOwnershipIntentLayouts(previousLayout, finalLayout);
+        }
+
+        return matches;
+    }
+
+    private bool TryGetNpmOwnershipIntentLayouts(
+        ConfigurationOwnershipManifest manifest,
+        CredentialEcosystem ecosystem,
+        ConfigurationChangePlan? requestedPlan,
+        CanonicalResourceIdentity requestedResource,
+        [NotNullWhen(true)] out PackageOwnershipIntentLayouts? layouts
+    )
+    {
+        layouts = null;
+        ConfigurationOwnershipManifest finalLayout;
+        if (requestedPlan is not null)
+        {
+            finalLayout = ProjectManifest(requestedPlan);
+        }
+        else
+        {
+            ConfigurationOwnershipManifestEntry[] finalEntries = manifest
+                .Entries.Where(entry =>
+                    string.Equals(entry.Key, manifest.EntrySelector, StringComparison.Ordinal)
+                    || NpmPhase12VerticalSliceService.IsRegistryDeclarationKey(entry.Key)
+                )
+                .Select((entry, index) => entry with { Sequence = index + 1 })
+                .ToArray();
+            finalLayout = manifest with
+            {
+                Entries = finalEntries,
+            };
+        }
+
+        if (
+            !PackageIntentMetadataMatches(manifest, finalLayout)
+            || manifest.Entries.Count <= finalLayout.Entries.Count
+        )
+        {
+            return false;
+        }
+
+        int previousAuthIndex = manifest
+            .Entries.Select((entry, index) => (entry, index))
+            .Where(pair =>
+                !finalLayout.Entries.Any(finalEntry =>
+                    EntriesMatch(pair.entry, finalEntry)
+                )
+                && TryGetPackageResourceFromAuthEntry(
+                    pair.entry,
+                    ecosystem,
+                    out _
+                )
+            )
+            .Select(static pair => pair.index)
+            .DefaultIfEmpty(-1)
+            .First();
+        if (previousAuthIndex < 0)
+        {
+            return false;
+        }
+
+        ConfigurationOwnershipManifestEntry previousAuthEntry =
+            manifest.Entries[previousAuthIndex];
+        if (
+            !TryGetPackageResourceFromAuthEntry(
+                previousAuthEntry,
+                ecosystem,
+                out CanonicalResourceIdentity? previousResource
+            )
+        )
+        {
+            return false;
+        }
+
+        ConfigurationOwnershipManifestEntry[] previousEntries = manifest
+            .Entries.Take(previousAuthIndex + 1)
+            .Select((entry, index) => entry with { Sequence = index + 1 })
+            .ToArray();
+        ConfigurationOwnershipManifest previousLayout = manifest with
+        {
+            EntrySelector = previousAuthEntry.Key,
+            ResourceIdentity = previousResource,
+            Entries = previousEntries,
+        };
+        var expectedEntries = new List<ConfigurationOwnershipManifestEntry>(
+            previousLayout.Entries
+        );
+        foreach (ConfigurationOwnershipManifestEntry entry in finalLayout.Entries)
+        {
+            if (!expectedEntries.Any(existing => EntriesMatch(existing, entry)))
+            {
+                expectedEntries.Add(entry);
+            }
+        }
+
+        bool matches = Equals(finalLayout.ResourceIdentity, requestedResource)
+            && manifest.Entries.Count == expectedEntries.Count
+            && manifest
+                .Entries.Zip(expectedEntries, (actual, expected) => (actual, expected))
+                .Select(
+                    (pair, index) =>
+                        pair.actual.Sequence == index + 1
+                        && EntriesMatch(pair.actual, pair.expected)
+                )
+                .All(static entryMatches => entryMatches);
         if (matches)
         {
             layouts = new PackageOwnershipIntentLayouts(previousLayout, finalLayout);
@@ -2827,7 +2931,14 @@ public sealed class ConfigurationPhase14VerticalSliceService
                 );
                 string value = entry.Key switch
                 {
-                    "registry" or "npmRegistryServer" => registryUrl,
+                    "npmRegistryServer" => registryUrl,
+                    _
+                        when ecosystem
+                                is CredentialEcosystem.Npm
+                                    or CredentialEcosystem.Pnpm
+                            && NpmPhase12VerticalSliceService.IsRegistryDeclarationKey(
+                                entry.Key
+                            ) => registryUrl,
                     _ when entry.Key.EndsWith(".npmAlwaysAuth", StringComparison.Ordinal) => "true",
                     _ when isAuthToken => "owned-secret-present",
                     _ => throw new InvalidOperationException(
