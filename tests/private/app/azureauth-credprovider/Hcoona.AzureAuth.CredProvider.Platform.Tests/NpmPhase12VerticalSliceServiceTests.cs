@@ -211,6 +211,30 @@ public sealed class NpmPhase12VerticalSliceServiceTests
     }
 
     [Fact]
+    public void DiscoverRegistryDeclarationsPreservesUnresolvedWorkspaceShadowing()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText("/workspace/.npmrc", "registry=${MISSING}\n");
+        fileSystem.WriteAllText(
+            "/home/alice/.npmrc",
+            "registry=https://pkgs.dev.azure.com/org/_packaging/user/npm/registry/\n"
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                EnvironmentVariableReader = _ => null,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+
+        Assert.Empty(service.DiscoverRegistryDeclarations());
+    }
+
+    [Fact]
     public void DiscoverRegistryDeclarationsMergesEffectiveSettingsByKey()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);

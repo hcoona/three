@@ -733,6 +733,7 @@ public sealed class NpmPhase12VerticalSliceService
             );
             if (unresolvedEnvironmentReference)
             {
+                effectiveSettings.Remove(key);
                 continue;
             }
 
