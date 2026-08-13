@@ -639,11 +639,16 @@ public sealed class ConfigurationPhase14VerticalSliceService
     )
     {
         string ownershipManifestPath = GetOwnershipManifestPath(ecosystem, scope);
+        NpmPhase12RegistryDeclaration? npmDeclaration =
+            ecosystem is CredentialEcosystem.Npm or CredentialEcosystem.Pnpm
+                ? CreateNpmDeclaration(ecosystem, registryUrlOverride)
+                : null;
         ConfigurationChangePlan requestedDryRunPlan = CreateApplyPlans(
                 ecosystem,
                 scope,
                 CreateDryRunCredential(scope),
-                registryUrlOverride
+                registryUrlOverride,
+                npmDeclaration
             )
             .Single();
         ExistingOwnershipManifest? existing = LoadRecognizedPackageManifest(
@@ -681,13 +686,19 @@ public sealed class ConfigurationPhase14VerticalSliceService
         }
 
         CredentialResult credential = execute
-            ? GetPackageCredential(ecosystem, scope, cancellationToken)
+            ? GetPackageCredential(
+                ecosystem,
+                scope,
+                cancellationToken,
+                npmDeclaration?.ResourceIdentity
+            )
             : CreateDryRunCredential(scope);
         ConfigurationChangePlan applyPlan = CreateApplyPlans(
                 ecosystem,
                 scope,
                 credential,
-                registryUrlOverride
+                registryUrlOverride,
+                npmDeclaration
             )
             .Single();
         bool replaceExisting =
@@ -1121,7 +1132,8 @@ public sealed class ConfigurationPhase14VerticalSliceService
         CredentialEcosystem ecosystem,
         ConfigurationPhase14Scope scope,
         CredentialResult? credential,
-        Uri? registryUrlOverride = null
+        Uri? registryUrlOverride = null,
+        NpmPhase12RegistryDeclaration? npmDeclaration = null
     ) =>
         ecosystem switch
         {
@@ -1133,7 +1145,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
                     scope,
                     credential
                         ?? throw new InvalidOperationException("Package credential is required."),
-                    registryUrlOverride
+                    npmDeclaration ?? CreateNpmDeclaration(ecosystem, registryUrlOverride)
                 ),
             ],
             CredentialEcosystem.Yarn =>
@@ -1400,47 +1412,23 @@ public sealed class ConfigurationPhase14VerticalSliceService
         CredentialEcosystem ecosystem,
         ConfigurationPhase14Scope scope,
         CredentialResult credential,
-        Uri? registryUrlOverride
+        NpmPhase12RegistryDeclaration declaration
     )
     {
         NpmPhase12VerticalSliceService service = CreateNpmService(ecosystem);
-        NpmPhase12RegistryDeclaration declaration = CreateNpmDeclaration(
-            ecosystem,
-            registryUrlOverride
-        );
         var request = new NpmPhase12CredentialPlanRequest
         {
             Declaration = declaration,
             AuthToken = GetRequiredBearerToken(credential),
             Ecosystem = ecosystem,
             TargetNpmrcPath = GetNpmTargetPath(ecosystem, scope),
+            IncludeRegistryDeclarationInTarget =
+                scope == ConfigurationPhase14Scope.CiTemporary,
         };
         ConfigurationChangePlan plan =
             scope == ConfigurationPhase14Scope.CiTemporary
                 ? service.CreateCiTemporaryCredentialPlan(request)
                 : service.CreateUserCredentialPlan(request);
-        if (scope == ConfigurationPhase14Scope.CiTemporary)
-        {
-            plan = plan with
-            {
-                Changes =
-                [
-                    new ConfigurationChange
-                    {
-                        Operation = ConfigurationChangeOperation.Set,
-                        TargetKind = ConfigurationTargetKind.Npmrc,
-                        TargetPathOrName = request.TargetNpmrcPath!,
-                        Key = declaration.Key,
-                        Value = declaration.RegistryUrl.AbsoluteUri,
-                        IsSecretValue = false,
-                        RequiresOwnershipRecord = true,
-                    },
-                    .. plan.Changes,
-                ],
-                DeclarationPreservation =
-                    ConfigurationDeclarationPreservation.CompleteMergedTemporaryConfig,
-            };
-        }
 
         return AttachCredentialLifecycle(plan, scope, credential);
     }
@@ -1505,13 +1493,17 @@ public sealed class ConfigurationPhase14VerticalSliceService
     private CredentialResult GetPackageCredential(
         CredentialEcosystem ecosystem,
         ConfigurationPhase14Scope scope,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        CanonicalResourceIdentity? resolvedResource = null
     )
     {
         CanonicalResourceIdentity resource =
-            ecosystem == CredentialEcosystem.Yarn
-                ? CreateYarnDeclaration().ResourceIdentity
-                : CreateNpmDeclaration(ecosystem).ResourceIdentity;
+            resolvedResource
+            ?? (
+                ecosystem == CredentialEcosystem.Yarn
+                    ? CreateYarnDeclaration().ResourceIdentity
+                    : CreateNpmDeclaration(ecosystem).ResourceIdentity
+            );
         bool ciTemporary = scope == ConfigurationPhase14Scope.CiTemporary;
         var request = new CredentialRequestV2
         {
@@ -3410,20 +3402,20 @@ public sealed class ConfigurationPhase14VerticalSliceService
             NpmPhase12RegistryDeclaration[] declarations = CreateNpmService(ecosystem)
                 .DiscoverRegistryDeclarations(ecosystem)
                 .ToArray();
-            Uri[] distinctRegistryUrls = declarations
-                .Select(static declaration => declaration.RegistryUrl)
-                .DistinctBy(static registry => registry.AbsoluteUri, StringComparer.Ordinal)
+            NpmPhase12RegistryDeclaration[] distinctDeclarations = declarations
+                .DistinctBy(
+                    static declaration => declaration.AuthSelectors.NpmAuthTokenKey,
+                    StringComparer.Ordinal
+                )
                 .ToArray();
-            if (distinctRegistryUrls.Length == 1)
+            if (distinctDeclarations.Length == 1)
             {
-                return declarations.First(declaration =>
-                    declaration.RegistryUrl == distinctRegistryUrls[0]
-                );
+                return distinctDeclarations[0];
             }
 
             string ecosystemName = GetEcosystemName(ecosystem);
             throw new InvalidOperationException(
-                distinctRegistryUrls.Length == 0
+                distinctDeclarations.Length == 0
                     ? $"No canonical Azure Artifacts registry was discovered from the effective "
                         + $".npmrc. Run azureauth-credprovider configure {ecosystemName} "
                         + "--registry-url <azure-artifacts-npm-url>."

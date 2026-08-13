@@ -4167,6 +4167,106 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     }
 
     [Fact]
+    public async Task ConfigureAsyncTreatsEquivalentRegistryUrlsAsOneRegistry()
+    {
+        string registryWithoutTrailingSlash = TestRegistryUrl.TrimEnd('/');
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectoryTree(fileSystem, "/workspace/app");
+        fileSystem.WriteAllText("/workspace/app/package.json", """{"name":"app"}""");
+        fileSystem.WriteAllText(
+            "/workspace/app/.npmrc",
+            $"registry={registryWithoutTrailingSlash}\n@shared:registry={TestRegistryUrl}\n"
+        );
+        var acquisition = new CapturingCredentialAcquisitionService("canonical-token");
+        ConfigurationPhase14VerticalSliceService service = CreateService(
+            fileSystem,
+            credentialAcquisition: acquisition,
+            workspaceDirectoryPath: "/workspace/app",
+            includeRegistryUrls: false
+        );
+
+        await service.ConfigureAsync(
+            CredentialEcosystem.Npm,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Single(acquisition.Requests);
+        Assert.Contains(
+            "_authToken=canonical-token",
+            fileSystem.ReadAllText(service.Paths.NpmUserNpmrcPath),
+            StringComparison.Ordinal
+        );
+    }
+
+    [Fact]
+    public async Task ConfigureAsyncUsesOneRegistryDecisionAcrossCredentialAcquisition()
+    {
+        const string ReplacementRegistryUrl =
+            "https://pkgs.dev.azure.com/replacement-org/_packaging/replacement-feed/npm/registry/";
+        const string WorkspaceNpmrcPath = "/workspace/app/.npmrc";
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectoryTree(fileSystem, "/workspace/app");
+        fileSystem.WriteAllText("/workspace/app/package.json", """{"name":"app"}""");
+        fileSystem.WriteAllText(WorkspaceNpmrcPath, $"registry={TestRegistryUrl}\n");
+        var acquisition = new CapturingCredentialAcquisitionService(
+            "stable-token",
+            _ =>
+                fileSystem.WriteAllText(
+                    WorkspaceNpmrcPath,
+                    $"registry={ReplacementRegistryUrl}\n"
+                )
+        );
+        ConfigurationPhase14VerticalSliceService service = CreateService(
+            fileSystem,
+            credentialAcquisition: acquisition,
+            workspaceDirectoryPath: "/workspace/app",
+            includeRegistryUrls: false
+        );
+
+        await service.ConfigureAsync(
+            CredentialEcosystem.Npm,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+
+        CredentialRequestV2 request = Assert.Single(acquisition.Requests);
+        Assert.Equal(new Uri(TestRegistryUrl), request.Resource.ServiceEndpoint);
+        string configured = fileSystem.ReadAllText(service.Paths.NpmUserNpmrcPath);
+        Assert.Contains(TestRegistryUrl["https:".Length..], configured, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            ReplacementRegistryUrl["https:".Length..],
+            configured,
+            StringComparison.Ordinal
+        );
+    }
+
+    [Fact]
+    public async Task ConfigureAsyncForCiIncludesDiscoveredUserRegistry()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectoryTree(fileSystem, "/workspace");
+        CreateDirectoryTree(fileSystem, "/home/test");
+        fileSystem.WriteAllText("/home/test/.npmrc", $"registry={TestRegistryUrl}\n");
+        ConfigurationPhase14VerticalSliceService service = CreateService(
+            fileSystem,
+            environmentVariableReader: ReadCiEnvironment,
+            workspaceDirectoryPath: "/workspace",
+            includeRegistryUrls: false
+        );
+
+        await service.ConfigureAsync(
+            CredentialEcosystem.Npm,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken
+        );
+
+        string configured = fileSystem.ReadAllText(service.Paths.NpmCiTemporaryNpmrcPath);
+        Assert.Contains($"registry={TestRegistryUrl}", configured, StringComparison.Ordinal);
+        Assert.Contains("_authToken=system-token", configured, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task ConfigureAsyncForPnpmUsesRegistryFromWorkspaceRootWithoutInvokingNpm()
     {
         const string LeafRegistryUrl =
@@ -5045,7 +5145,10 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         }
     }
 
-    private sealed class CapturingCredentialAcquisitionService(string bearerToken)
+    private sealed class CapturingCredentialAcquisitionService(
+        string bearerToken,
+        Action<CredentialRequestV2>? onAcquire = null
+    )
         : ICredentialAcquisitionService
     {
         public List<CredentialRequestV2> Requests { get; } = [];
@@ -5057,6 +5160,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             Requests.Add(request);
+            onAcquire?.Invoke(request);
             return ValueTask.FromResult(
                 new CredentialResult
                 {

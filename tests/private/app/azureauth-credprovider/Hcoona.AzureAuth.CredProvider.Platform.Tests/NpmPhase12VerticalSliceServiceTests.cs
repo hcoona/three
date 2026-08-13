@@ -53,7 +53,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
     }
 
     [Fact]
-    public void DiscoverRegistryDeclarationsFallsBackToUserNpmrc()
+    public void DiscoverRegistryDeclarationsDoesNotUseShadowedUserRegistry()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         CreateDirectory(fileSystem, "/workspace");
@@ -72,14 +72,39 @@ public sealed class NpmPhase12VerticalSliceServiceTests
             }
         );
 
-        NpmPhase12RegistryDeclaration declaration = Assert.Single(
-            service.DiscoverRegistryDeclarations()
+        Assert.Empty(service.DiscoverRegistryDeclarations());
+    }
+
+    [Fact]
+    public void DiscoverRegistryDeclarationsMergesEffectiveSettingsByKey()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/workspace/.npmrc",
+            "@workspace:registry="
+                + "https://pkgs.dev.azure.com/org/_packaging/workspace/npm/registry/\n"
+        );
+        fileSystem.WriteAllText(
+            "/home/alice/.npmrc",
+            "@user:registry=https://pkgs.dev.azure.com/org/_packaging/user/npm/registry/\n"
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
         );
 
-        Assert.Equal("/home/alice/.npmrc", declaration.SourcePath);
-        Assert.Equal("org", declaration.ResourceIdentity.Organization);
-        Assert.Equal("project", declaration.ResourceIdentity.Project);
-        Assert.Equal("feed", declaration.ResourceIdentity.Feed);
+        IReadOnlyList<NpmPhase12RegistryDeclaration> declarations =
+            service.DiscoverRegistryDeclarations();
+
+        Assert.Equal(2, declarations.Count);
+        Assert.Contains(declarations, declaration => declaration.Key == "@workspace:registry");
+        Assert.Contains(declarations, declaration => declaration.Key == "@user:registry");
     }
 
     [Fact]
@@ -455,6 +480,60 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         );
 
         Assert.Contains("registry declaration to remain visible", exception.Message);
+    }
+
+    [Fact]
+    public void CreateCiTemporaryCredentialPlanCanIncludeUserRegistryDeclaration()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/home/alice/.npmrc",
+            "registry=https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+        NpmPhase12RegistryDeclaration declaration = Assert.Single(
+            service.DiscoverRegistryDeclarations()
+        );
+
+        ConfigurationChangePlan plan = service.CreateCiTemporaryCredentialPlan(
+            new NpmPhase12CredentialPlanRequest
+            {
+                Declaration = declaration,
+                AuthToken = "short-lived-token",
+                TargetNpmrcPath = "/tmp/azureauth-ci/.npmrc",
+                IncludeRegistryDeclarationInTarget = true,
+            }
+        );
+
+        Assert.Equal(
+            ConfigurationDeclarationPreservation.CompleteMergedTemporaryConfig,
+            plan.DeclarationPreservation
+        );
+        Assert.Collection(
+            plan.Changes,
+            registryChange =>
+            {
+                Assert.Equal("registry", registryChange.Key);
+                Assert.Equal(declaration.RegistryUrl.AbsoluteUri, registryChange.Value);
+                Assert.False(registryChange.IsSecretValue);
+            },
+            tokenChange =>
+            {
+                Assert.Equal(declaration.AuthSelectors.NpmAuthTokenKey, tokenChange.Key);
+                Assert.Equal("short-lived-token", tokenChange.Value);
+                Assert.True(tokenChange.IsSecretValue);
+            }
+        );
+        Assert.True(ConfigurationChangePlanPolicy.IsValid(plan));
     }
 
     [Fact]

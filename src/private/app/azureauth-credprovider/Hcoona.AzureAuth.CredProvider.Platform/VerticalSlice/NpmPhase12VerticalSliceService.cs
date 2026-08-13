@@ -107,6 +107,8 @@ public sealed record NpmPhase12CredentialPlanRequest
     public CredentialEcosystem Ecosystem { get; init; } = CredentialEcosystem.Npm;
 
     public string? TargetNpmrcPath { get; init; }
+
+    public bool IncludeRegistryDeclarationInTarget { get; init; }
 }
 
 public sealed record NpmPhase12DoctorResult
@@ -197,22 +199,41 @@ public sealed class NpmPhase12VerticalSliceService
         NpmWorkspaceResolutionResult resolution
     )
     {
+        var effectiveSettings = new Dictionary<
+            string,
+            (string SourcePath, string Value)
+        >(StringComparer.Ordinal);
+        string resolvedUserNpmrcPath = ResolveUserNpmrcPath();
+        if (fileSystem.FileExists(resolvedUserNpmrcPath))
+        {
+            MergeRegistrySettings(resolvedUserNpmrcPath, effectiveSettings);
+        }
+
         string? workspaceNpmrcPath = GetWorkspaceNpmrcPath(ecosystem, resolution);
         if (workspaceNpmrcPath is not null && fileSystem.FileExists(workspaceNpmrcPath))
         {
-            NpmPhase12RegistryDeclaration[] workspaceDeclarations = ReadRegistryDeclarations(
-                workspaceNpmrcPath
-            );
-            if (workspaceDeclarations.Length > 0)
+            MergeRegistrySettings(workspaceNpmrcPath, effectiveSettings);
+        }
+
+        var declarations = new List<NpmPhase12RegistryDeclaration>();
+        foreach (
+            KeyValuePair<string, (string SourcePath, string Value)> setting in effectiveSettings
+        )
+        {
+            if (
+                TryCreateRegistryDeclaration(
+                    setting.Value.SourcePath,
+                    setting.Key,
+                    setting.Value.Value,
+                    out NpmPhase12RegistryDeclaration? declaration
+                )
+            )
             {
-                return workspaceDeclarations;
+                declarations.Add(declaration);
             }
         }
 
-        string resolvedUserNpmrcPath = ResolveUserNpmrcPath();
-        return fileSystem.FileExists(resolvedUserNpmrcPath)
-            ? ReadRegistryDeclarations(resolvedUserNpmrcPath)
-            : [];
+        return declarations.ToArray();
     }
 
     public async ValueTask<NpmPhase12DoctorResult> RunDoctorAsync(
@@ -331,7 +352,11 @@ public sealed class NpmPhase12VerticalSliceService
     )
     {
         ValidateCredentialPlanRequest(request);
-        ThrowIfCiTemporaryPlanWouldHideRegistryDeclaration(request.Declaration);
+        if (!request.IncludeRegistryDeclarationInTarget)
+        {
+            ThrowIfCiTemporaryPlanWouldHideRegistryDeclaration(request.Declaration);
+        }
+
         string targetNpmrcPath =
             NullIfWhiteSpace(request.TargetNpmrcPath)
             ?? throw new ArgumentException(
@@ -359,13 +384,25 @@ public sealed class NpmPhase12VerticalSliceService
             ActivationEnvironment = activationEnvironment,
         };
 
-        return CreateCredentialPlan(
+        ConfigurationChangePlan plan = CreateCredentialPlan(
             request,
             targetNpmrcPath,
             ConfigurationScope.CiTemporary,
             temporaryContainer,
-            ConfigurationDeclarationPreservation.AuthOnlyWhenDeclarationsRemainVisible
+            request.IncludeRegistryDeclarationInTarget
+                ? ConfigurationDeclarationPreservation.CompleteMergedTemporaryConfig
+                : ConfigurationDeclarationPreservation.AuthOnlyWhenDeclarationsRemainVisible
         );
+        return request.IncludeRegistryDeclarationInTarget
+            ? plan with
+            {
+                Changes =
+                [
+                    CreateRegistryDeclarationChange(request, targetNpmrcPath),
+                    .. plan.Changes,
+                ],
+            }
+            : plan;
     }
 
     private void ThrowIfCiTemporaryPlanWouldHideRegistryDeclaration(
@@ -546,6 +583,21 @@ public sealed class NpmPhase12VerticalSliceService
             RequiresOwnershipRecord = true,
         };
 
+    private static ConfigurationChange CreateRegistryDeclarationChange(
+        NpmPhase12CredentialPlanRequest request,
+        string targetNpmrcPath
+    ) =>
+        new()
+        {
+            Operation = ConfigurationChangeOperation.Set,
+            TargetKind = ConfigurationTargetKind.Npmrc,
+            TargetPathOrName = targetNpmrcPath,
+            Key = request.Declaration.Key,
+            Value = request.Declaration.RegistryUrl.AbsoluteUri,
+            IsSecretValue = false,
+            RequiresOwnershipRecord = true,
+        };
+
     private static Dictionary<string, string> CreateNpmrcActivationSetVariables(
         string platform,
         string targetNpmrcPath
@@ -561,10 +613,12 @@ public sealed class NpmPhase12VerticalSliceService
                 [LowercaseNpmUserConfigEnvironmentVariable] = targetNpmrcPath,
             };
 
-    private NpmPhase12RegistryDeclaration[] ReadRegistryDeclarations(string npmrcPath)
+    private void MergeRegistrySettings(
+        string npmrcPath,
+        Dictionary<string, (string SourcePath, string Value)> effectiveSettings
+    )
     {
         string contents = fileSystem.ReadAllText(npmrcPath);
-        var declarations = new List<NpmPhase12RegistryDeclaration>();
         foreach (string rawLine in SplitLines(contents))
         {
             string trimmedLine = rawLine.Trim();
@@ -590,13 +644,8 @@ public sealed class NpmPhase12VerticalSliceService
                 continue;
             }
 
-            if (TryCreateRegistryDeclaration(npmrcPath, key, value, out var declaration))
-            {
-                declarations.Add(declaration);
-            }
+            effectiveSettings[key] = (npmrcPath, value);
         }
-
-        return declarations.ToArray();
     }
 
     private bool TryCreateRegistryDeclaration(
