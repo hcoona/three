@@ -81,11 +81,86 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         Assert.Equal(RegistryUrl, declaration.RegistryUrl.AbsoluteUri);
     }
 
+    [Fact]
+    public void DiscoverRegistryDeclarationsExpandsNpmEnvironmentVariables()
+    {
+        const string RegistryUrl =
+            "https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/";
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/workspace/.npmrc",
+            "registry=${SCHEME}://${HOST}/${PATH}/\n"
+        );
+        var environment = new EnvironmentVariables(
+            new Dictionary<string, string?>
+            {
+                ["SCHEME"] = "https",
+                ["HOST"] = "pkgs.dev.azure.com",
+                ["PATH"] = "org/_packaging/feed/npm/registry",
+            }
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                EnvironmentVariableReader = environment.Get,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+
+        NpmPhase12RegistryDeclaration declaration = Assert.Single(
+            service.DiscoverRegistryDeclarations()
+        );
+
+        Assert.Equal(RegistryUrl, declaration.RegistryUrl.AbsoluteUri);
+    }
+
+    [Theory]
+    [InlineData("${MISSING}")]
+    [InlineData("${MISSING?}")]
+    [InlineData("\\${AZURE_NPM_REGISTRY}")]
+    [InlineData("${INDIRECT}")]
+    [InlineData("${EMPTY}")]
+    public void DiscoverRegistryDeclarationsDoesNotOverExpandNpmEnvironmentVariables(
+        string value
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText("/workspace/.npmrc", "registry=" + value + "\n");
+        var environment = new EnvironmentVariables(
+            new Dictionary<string, string?>
+            {
+                ["AZURE_NPM_REGISTRY"] =
+                    "https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/",
+                ["INDIRECT"] = "${AZURE_NPM_REGISTRY}",
+                ["EMPTY"] = string.Empty,
+            }
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                EnvironmentVariableReader = environment.Get,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+
+        Assert.Empty(service.DiscoverRegistryDeclarations());
+    }
+
     [Theory]
     [InlineData("foo:registry")]
     [InlineData("@:registry")]
     [InlineData("@foo:bar:registry")]
     [InlineData("@foo/bar:registry")]
+    [InlineData("@foo#bar:registry")]
+    [InlineData("@foo;bar:registry")]
     public void DiscoverRegistryDeclarationsRejectsMalformedScopedKeys(string key)
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);

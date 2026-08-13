@@ -722,7 +722,9 @@ public sealed class NpmPhase12VerticalSliceService
             }
 
             string key = rawLine[..separatorIndex].Trim();
-            string value = DecodeNpmrcValue(rawLine[(separatorIndex + 1)..]);
+            string value = ExpandNpmrcEnvironmentVariables(
+                DecodeNpmrcValue(rawLine[(separatorIndex + 1)..])
+            );
             if (!NpmrcRegistryDeclarationKeyPolicy.IsRegistryDeclarationKey(key))
             {
                 continue;
@@ -792,6 +794,106 @@ public sealed class NpmPhase12VerticalSliceService
         }
 
         return decoded.ToString().TrimEnd();
+    }
+
+    private string ExpandNpmrcEnvironmentVariables(string value)
+    {
+        var expanded = new StringBuilder(value.Length);
+        for (int index = 0; index < value.Length;)
+        {
+            int escapeStart = index;
+            while (index < value.Length && value[index] == '\\')
+            {
+                index++;
+            }
+
+            int escapeCount = index - escapeStart;
+            if (
+                !TryParseNpmEnvironmentReference(
+                    value,
+                    index,
+                    out int referenceEnd,
+                    out string? variableName,
+                    out bool optional
+                )
+            )
+            {
+                expanded.Append(value, escapeStart, escapeCount);
+                if (index < value.Length)
+                {
+                    expanded.Append(value[index]);
+                    index++;
+                }
+                continue;
+            }
+
+            expanded.Append('\\', escapeCount / 2);
+            if ((escapeCount & 1) != 0)
+            {
+                expanded.Append(value, index, referenceEnd - index);
+            }
+            else
+            {
+                string? environmentValue = environmentVariableReader(variableName);
+                expanded.Append(
+                    environmentValue
+                        ?? (optional ? string.Empty : "${" + variableName + "}")
+                );
+            }
+
+            index = referenceEnd;
+        }
+
+        return expanded.ToString();
+    }
+
+    private static bool TryParseNpmEnvironmentReference(
+        string value,
+        int startIndex,
+        out int endIndex,
+        [NotNullWhen(true)] out string? variableName,
+        out bool optional
+    )
+    {
+        endIndex = startIndex;
+        variableName = null;
+        optional = false;
+        if (
+            startIndex + 3 > value.Length
+            || value[startIndex] != '$'
+            || value[startIndex + 1] != '{'
+        )
+        {
+            return false;
+        }
+
+        int closingBraceIndex = value.IndexOf('}', startIndex + 2);
+        if (closingBraceIndex < 0)
+        {
+            return false;
+        }
+
+        ReadOnlySpan<char> body = value.AsSpan(
+            startIndex + 2,
+            closingBraceIndex - startIndex - 2
+        );
+        if (!body.IsEmpty && body[^1] == '?')
+        {
+            optional = true;
+            body = body[..^1];
+        }
+
+        if (
+            body.IsEmpty
+            || body.IndexOfAny("${}?".AsSpan()) >= 0
+        )
+        {
+            return false;
+        }
+
+        variableName = body.ToString();
+        endIndex = closingBraceIndex + 1;
+        return true;
     }
 
     private bool TryCreateRegistryDeclaration(

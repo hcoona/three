@@ -29,7 +29,7 @@ internal static class NpmrcRegistryDeclarationKeyPolicy
         {
             if (
                 char.IsWhiteSpace(key[index])
-                || key[index] is '@' or ':' or '/' or '\\'
+                || key[index] is '@' or ':' or '/' or '\\' or '#' or ';'
             )
             {
                 return false;
