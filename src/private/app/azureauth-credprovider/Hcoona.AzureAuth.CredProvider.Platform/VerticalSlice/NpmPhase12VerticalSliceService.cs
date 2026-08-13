@@ -109,6 +109,12 @@ public sealed record NpmPhase12CredentialPlanRequest
     public string? TargetNpmrcPath { get; init; }
 
     public bool IncludeRegistryDeclarationInTarget { get; init; }
+
+    public IReadOnlyList<NpmPhase12RegistryDeclaration> RegistryDeclarationsToInclude
+    {
+        get;
+        init;
+    } = [];
 }
 
 public sealed record NpmPhase12DoctorResult
@@ -147,7 +153,14 @@ public sealed record NpmPhase12DoctorResult
         UppercaseUserConfigEnvironmentOverridePresent
         || LowercaseUserConfigEnvironmentOverridePresent;
 
-    public bool CiTemporaryAuthOnlyPlanSupported => CiTemporaryCredentialPlanValid;
+    public bool CiTemporaryAuthOnlyPlanSupported =>
+        CiTemporaryCredentialPlanValid
+        && RegistryDeclarations.Count > 0
+        && !string.Equals(
+            RegistryDeclarations[0].SourcePath,
+            EffectiveUserNpmrcPath,
+            StringComparison.Ordinal
+        );
 }
 
 public sealed class NpmPhase12VerticalSliceService
@@ -383,6 +396,10 @@ public sealed class NpmPhase12VerticalSliceService
             ProductOwnedPath = targetNpmrcPath,
             ActivationEnvironment = activationEnvironment,
         };
+        IReadOnlyList<NpmPhase12RegistryDeclaration> registryDeclarations =
+            request.IncludeRegistryDeclarationInTarget
+                ? GetRegistryDeclarationsToInclude(request)
+                : [];
 
         ConfigurationChangePlan plan = CreateCredentialPlan(
             request,
@@ -398,7 +415,9 @@ public sealed class NpmPhase12VerticalSliceService
             {
                 Changes =
                 [
-                    CreateRegistryDeclarationChange(request, targetNpmrcPath),
+                    .. registryDeclarations.Select(declaration =>
+                        CreateRegistryDeclarationChange(declaration, targetNpmrcPath)
+                    ),
                     .. plan.Changes,
                 ],
             }
@@ -584,7 +603,7 @@ public sealed class NpmPhase12VerticalSliceService
         };
 
     private static ConfigurationChange CreateRegistryDeclarationChange(
-        NpmPhase12CredentialPlanRequest request,
+        NpmPhase12RegistryDeclaration declaration,
         string targetNpmrcPath
     ) =>
         new()
@@ -592,11 +611,42 @@ public sealed class NpmPhase12VerticalSliceService
             Operation = ConfigurationChangeOperation.Set,
             TargetKind = ConfigurationTargetKind.Npmrc,
             TargetPathOrName = targetNpmrcPath,
-            Key = request.Declaration.Key,
-            Value = request.Declaration.RegistryUrl.AbsoluteUri,
+            Key = declaration.Key,
+            Value = declaration.RegistryUrl.AbsoluteUri,
             IsSecretValue = false,
             RequiresOwnershipRecord = true,
         };
+
+    private static IReadOnlyList<NpmPhase12RegistryDeclaration> GetRegistryDeclarationsToInclude(
+        NpmPhase12CredentialPlanRequest request
+    )
+    {
+        IReadOnlyList<NpmPhase12RegistryDeclaration> declarations =
+            request.RegistryDeclarationsToInclude.Count == 0
+                ? [request.Declaration]
+                : request.RegistryDeclarationsToInclude;
+        string expectedAuthTokenKey = request.Declaration.AuthSelectors.NpmAuthTokenKey;
+        if (
+            declarations.Count == 0
+            || declarations.Any(declaration =>
+                !string.Equals(
+                    declaration.AuthSelectors.NpmAuthTokenKey,
+                    expectedAuthTokenKey,
+                    StringComparison.Ordinal
+                )
+            )
+            || declarations.Select(static declaration => declaration.Key).Distinct().Count()
+                != declarations.Count
+        )
+        {
+            throw new ArgumentException(
+                "Included registry declarations must have unique keys for the requested registry.",
+                nameof(request)
+            );
+        }
+
+        return declarations;
+    }
 
     private static Dictionary<string, string> CreateNpmrcActivationSetVariables(
         string platform,
@@ -1492,6 +1542,7 @@ public sealed class NpmPhase12VerticalSliceService
                     Declaration = declaration,
                     AuthToken = "doctor-token",
                     TargetNpmrcPath = targetNpmrcPath,
+                    IncludeRegistryDeclarationInTarget = true,
                 },
                 resolution
             );
@@ -1634,7 +1685,7 @@ public sealed class NpmPhase12VerticalSliceService
         return path.Length == 0 ? [] : path.Split('/').Select(Uri.UnescapeDataString).ToArray();
     }
 
-    private static bool IsRegistryDeclarationKey(string key) =>
+    internal static bool IsRegistryDeclarationKey(string key) =>
         string.Equals(key, "registry", StringComparison.Ordinal)
         || key.EndsWith(":registry", StringComparison.Ordinal);
 

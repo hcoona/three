@@ -183,7 +183,8 @@ public sealed class ConfigurationPhase14VerticalSliceService
             CredentialEcosystem ecosystem,
             ConfigurationScope scope,
             CanonicalResourceIdentity resource,
-            string logicalTargetPath
+            string logicalTargetPath,
+            string? npmRegistryKey = null
         )
         {
             if (scope is not (ConfigurationScope.User or ConfigurationScope.CiTemporary))
@@ -207,7 +208,11 @@ public sealed class ConfigurationPhase14VerticalSliceService
                     manifestId = NpmCredentialManifestId;
                     productVersion = "phase12";
                     ecosystemName = ecosystem == CredentialEcosystem.Npm ? "npm" : "pnpm";
-                    registryKey = "registry";
+                    registryKey =
+                        npmRegistryKey is not null
+                        && NpmPhase12VerticalSliceService.IsRegistryDeclarationKey(npmRegistryKey)
+                            ? npmRegistryKey
+                            : "registry";
                     entrySelector = selectors.NpmAuthTokenKey;
                     orderedKeys =
                         scope == ConfigurationScope.CiTemporary
@@ -639,16 +644,16 @@ public sealed class ConfigurationPhase14VerticalSliceService
     )
     {
         string ownershipManifestPath = GetOwnershipManifestPath(ecosystem, scope);
-        NpmPhase12RegistryDeclaration? npmDeclaration =
+        NpmPhase12RegistryDeclaration[]? npmDeclarations =
             ecosystem is CredentialEcosystem.Npm or CredentialEcosystem.Pnpm
-                ? CreateNpmDeclaration(ecosystem, registryUrlOverride)
+                ? ResolveNpmDeclarations(ecosystem, registryUrlOverride)
                 : null;
         ConfigurationChangePlan requestedDryRunPlan = CreateApplyPlans(
                 ecosystem,
                 scope,
                 CreateDryRunCredential(scope),
                 registryUrlOverride,
-                npmDeclaration
+                npmDeclarations
             )
             .Single();
         ExistingOwnershipManifest? existing = LoadRecognizedPackageManifest(
@@ -690,7 +695,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
                 ecosystem,
                 scope,
                 cancellationToken,
-                npmDeclaration?.ResourceIdentity
+                npmDeclarations?[0].ResourceIdentity
             )
             : CreateDryRunCredential(scope);
         ConfigurationChangePlan applyPlan = CreateApplyPlans(
@@ -698,7 +703,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
                 scope,
                 credential,
                 registryUrlOverride,
-                npmDeclaration
+                npmDeclarations
             )
             .Single();
         bool replaceExisting =
@@ -1133,7 +1138,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
         ConfigurationPhase14Scope scope,
         CredentialResult? credential,
         Uri? registryUrlOverride = null,
-        NpmPhase12RegistryDeclaration? npmDeclaration = null
+        IReadOnlyList<NpmPhase12RegistryDeclaration>? npmDeclarations = null
     ) =>
         ecosystem switch
         {
@@ -1145,7 +1150,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
                     scope,
                     credential
                         ?? throw new InvalidOperationException("Package credential is required."),
-                    npmDeclaration ?? CreateNpmDeclaration(ecosystem, registryUrlOverride)
+                    npmDeclarations ?? ResolveNpmDeclarations(ecosystem, registryUrlOverride)
                 ),
             ],
             CredentialEcosystem.Yarn =>
@@ -1412,9 +1417,10 @@ public sealed class ConfigurationPhase14VerticalSliceService
         CredentialEcosystem ecosystem,
         ConfigurationPhase14Scope scope,
         CredentialResult credential,
-        NpmPhase12RegistryDeclaration declaration
+        IReadOnlyList<NpmPhase12RegistryDeclaration> declarations
     )
     {
+        NpmPhase12RegistryDeclaration declaration = declarations[0];
         NpmPhase12VerticalSliceService service = CreateNpmService(ecosystem);
         var request = new NpmPhase12CredentialPlanRequest
         {
@@ -1424,6 +1430,8 @@ public sealed class ConfigurationPhase14VerticalSliceService
             TargetNpmrcPath = GetNpmTargetPath(ecosystem, scope),
             IncludeRegistryDeclarationInTarget =
                 scope == ConfigurationPhase14Scope.CiTemporary,
+            RegistryDeclarationsToInclude =
+                scope == ConfigurationPhase14Scope.CiTemporary ? declarations : [],
         };
         ConfigurationChangePlan plan =
             scope == ConfigurationPhase14Scope.CiTemporary
@@ -1998,6 +2006,15 @@ public sealed class ConfigurationPhase14VerticalSliceService
             return false;
         }
 
+        string? npmRegistryKey =
+            ecosystem is CredentialEcosystem.Npm or CredentialEcosystem.Pnpm
+            && manifest.SafeMetadata.TryGetValue(
+                "registry-key",
+                out string? recordedRegistryKey
+            )
+            && NpmPhase12VerticalSliceService.IsRegistryDeclarationKey(recordedRegistryKey)
+                ? recordedRegistryKey
+                : null;
         ConfigurationOwnershipManifest finalLayout;
         if (requestedPlan is not null)
         {
@@ -2027,7 +2044,8 @@ public sealed class ConfigurationPhase14VerticalSliceService
                 ecosystem,
                 ToConfigurationScope(scope),
                 requestedResource,
-                finalAuthEntry.TargetPathOrName
+                finalAuthEntry.TargetPathOrName,
+                npmRegistryKey
             );
         }
 
@@ -2061,7 +2079,8 @@ public sealed class ConfigurationPhase14VerticalSliceService
                 ecosystem,
                 ToConfigurationScope(scope),
                 previousResource,
-                previousAuthEntry.TargetPathOrName
+                previousAuthEntry.TargetPathOrName,
+                npmRegistryKey
             );
         var expectedEntries = new List<ConfigurationOwnershipManifestEntry>(
             previousLayout.Entries
@@ -2315,16 +2334,35 @@ public sealed class ConfigurationPhase14VerticalSliceService
             return manifest.Entries.Count == 1;
         }
 
-        ConfigurationOwnershipManifestEntry? registryEntry = manifest.Entries.SingleOrDefault(
-            static entry => string.Equals(entry.Key, "registry", StringComparison.Ordinal)
-        );
-        return manifest.Entries.Count == 2
-            && registryEntry is not null
-            && registryEntry.TargetKind == ConfigurationTargetKind.Npmrc
-            && string.Equals(
-                registryEntry.TargetPathOrName,
-                authEntry.TargetPathOrName,
-                StringComparison.Ordinal
+        if (
+            !manifest.SafeMetadata.TryGetValue("registry-key", out string? primaryRegistryKey)
+            || !NpmPhase12VerticalSliceService.IsRegistryDeclarationKey(primaryRegistryKey)
+        )
+        {
+            return false;
+        }
+
+        ConfigurationOwnershipManifestEntry[] registryEntries = manifest
+            .Entries.Where(entry =>
+                !string.Equals(entry.Key, manifest.EntrySelector, StringComparison.Ordinal)
+            )
+            .ToArray();
+        return registryEntries.Length > 0
+            && registryEntries.Any(entry =>
+                string.Equals(entry.Key, primaryRegistryKey, StringComparison.Ordinal)
+            )
+            && registryEntries
+                .Select(static entry => entry.Key)
+                .Distinct(StringComparer.Ordinal)
+                .Count() == registryEntries.Length
+            && registryEntries.All(entry =>
+                entry.TargetKind == ConfigurationTargetKind.Npmrc
+                && NpmPhase12VerticalSliceService.IsRegistryDeclarationKey(entry.Key)
+                && string.Equals(
+                    entry.TargetPathOrName,
+                    authEntry.TargetPathOrName,
+                    StringComparison.Ordinal
+                )
             );
     }
 
@@ -3386,6 +3424,11 @@ public sealed class ConfigurationPhase14VerticalSliceService
     private NpmPhase12RegistryDeclaration CreateNpmDeclaration(
         CredentialEcosystem ecosystem,
         Uri? registryUrlOverride = null
+    ) => ResolveNpmDeclarations(ecosystem, registryUrlOverride)[0];
+
+    private NpmPhase12RegistryDeclaration[] ResolveNpmDeclarations(
+        CredentialEcosystem ecosystem,
+        Uri? registryUrlOverride = null
     )
     {
         Uri? configuredRegistryUrl = registryUrlOverride;
@@ -3402,20 +3445,20 @@ public sealed class ConfigurationPhase14VerticalSliceService
             NpmPhase12RegistryDeclaration[] declarations = CreateNpmService(ecosystem)
                 .DiscoverRegistryDeclarations(ecosystem)
                 .ToArray();
-            NpmPhase12RegistryDeclaration[] distinctDeclarations = declarations
-                .DistinctBy(
+            IGrouping<string, NpmPhase12RegistryDeclaration>[] declarationGroups = declarations
+                .GroupBy(
                     static declaration => declaration.AuthSelectors.NpmAuthTokenKey,
                     StringComparer.Ordinal
                 )
                 .ToArray();
-            if (distinctDeclarations.Length == 1)
+            if (declarationGroups.Length == 1)
             {
-                return distinctDeclarations[0];
+                return declarationGroups[0].ToArray();
             }
 
             string ecosystemName = GetEcosystemName(ecosystem);
             throw new InvalidOperationException(
-                distinctDeclarations.Length == 0
+                declarationGroups.Length == 0
                     ? $"No canonical Azure Artifacts registry was discovered from the effective "
                         + $".npmrc. Run azureauth-credprovider configure {ecosystemName} "
                         + "--registry-url <azure-artifacts-npm-url>."
@@ -3437,7 +3480,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
             );
         }
 
-        return CreateNpmDeclaration(ecosystem, resource);
+        return [CreateNpmDeclaration(ecosystem, resource)];
     }
 
     private NpmPhase12VerticalSliceService CreateNpmService(CredentialEcosystem ecosystem) =>

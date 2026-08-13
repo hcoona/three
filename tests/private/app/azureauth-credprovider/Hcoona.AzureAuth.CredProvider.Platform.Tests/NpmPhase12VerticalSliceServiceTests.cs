@@ -483,14 +483,15 @@ public sealed class NpmPhase12VerticalSliceServiceTests
     }
 
     [Fact]
-    public void CreateCiTemporaryCredentialPlanCanIncludeUserRegistryDeclaration()
+    public void CreateCiTemporaryCredentialPlanCanIncludeEquivalentUserRegistryDeclarations()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         CreateDirectory(fileSystem, "/workspace");
         CreateDirectory(fileSystem, "/home/alice");
         fileSystem.WriteAllText(
             "/home/alice/.npmrc",
-            "registry=https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
+            "@one:registry=https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
+                + "@two:registry=https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
         );
         var service = new NpmPhase12VerticalSliceService(
             new NpmPhase12VerticalSliceOptions
@@ -500,17 +501,18 @@ public sealed class NpmPhase12VerticalSliceServiceTests
                 UserHomeDirectoryPath = "/home/alice",
             }
         );
-        NpmPhase12RegistryDeclaration declaration = Assert.Single(
-            service.DiscoverRegistryDeclarations()
-        );
+        IReadOnlyList<NpmPhase12RegistryDeclaration> declarations =
+            service.DiscoverRegistryDeclarations();
+        Assert.Equal(2, declarations.Count);
 
         ConfigurationChangePlan plan = service.CreateCiTemporaryCredentialPlan(
             new NpmPhase12CredentialPlanRequest
             {
-                Declaration = declaration,
+                Declaration = declarations[0],
                 AuthToken = "short-lived-token",
                 TargetNpmrcPath = "/tmp/azureauth-ci/.npmrc",
                 IncludeRegistryDeclarationInTarget = true,
+                RegistryDeclarationsToInclude = declarations,
             }
         );
 
@@ -520,15 +522,21 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         );
         Assert.Collection(
             plan.Changes,
-            registryChange =>
+            firstRegistryChange =>
             {
-                Assert.Equal("registry", registryChange.Key);
-                Assert.Equal(declaration.RegistryUrl.AbsoluteUri, registryChange.Value);
-                Assert.False(registryChange.IsSecretValue);
+                Assert.Equal("@one:registry", firstRegistryChange.Key);
+                Assert.Equal(declarations[0].RegistryUrl.AbsoluteUri, firstRegistryChange.Value);
+                Assert.False(firstRegistryChange.IsSecretValue);
+            },
+            secondRegistryChange =>
+            {
+                Assert.Equal("@two:registry", secondRegistryChange.Key);
+                Assert.Equal(declarations[1].RegistryUrl.AbsoluteUri, secondRegistryChange.Value);
+                Assert.False(secondRegistryChange.IsSecretValue);
             },
             tokenChange =>
             {
-                Assert.Equal(declaration.AuthSelectors.NpmAuthTokenKey, tokenChange.Key);
+                Assert.Equal(declarations[0].AuthSelectors.NpmAuthTokenKey, tokenChange.Key);
                 Assert.Equal("short-lived-token", tokenChange.Value);
                 Assert.True(tokenChange.IsSecretValue);
             }
@@ -576,7 +584,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
     }
 
     [Fact]
-    public async Task DoctorReportsCiTemporaryAuthOnlyUnsupportedForUserOnlyDeclaration()
+    public async Task DoctorValidatesCompleteCiPlanForUserOnlyDeclaration()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         CreateDirectory(fileSystem, "/workspace");
@@ -602,7 +610,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         Assert.True(result.RegistryDeclarationDiscovered);
         Assert.True(result.NpmUserCredentialPlanValid);
         Assert.True(result.PnpmUserCredentialPlanValid);
-        Assert.False(result.CiTemporaryCredentialPlanValid);
+        Assert.True(result.CiTemporaryCredentialPlanValid);
         Assert.False(result.CiTemporaryAuthOnlyPlanSupported);
     }
 

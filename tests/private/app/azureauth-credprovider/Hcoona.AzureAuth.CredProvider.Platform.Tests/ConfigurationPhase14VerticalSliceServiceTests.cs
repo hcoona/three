@@ -4267,6 +4267,53 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     }
 
     [Fact]
+    public async Task ConfigureAsyncForCiPreservesEquivalentScopedRegistryKeys()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectoryTree(fileSystem, "/workspace");
+        CreateDirectoryTree(fileSystem, "/home/test");
+        fileSystem.WriteAllText(
+            "/home/test/.npmrc",
+            $"@one:registry={TestRegistryUrl}\n@two:registry={TestRegistryUrl}\n"
+        );
+        ConfigurationPhase14VerticalSliceService service = CreateService(
+            fileSystem,
+            environmentVariableReader: ReadCiEnvironment,
+            workspaceDirectoryPath: "/workspace",
+            includeRegistryUrls: false
+        );
+
+        await service.ConfigureAsync(
+            CredentialEcosystem.Npm,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken
+        );
+
+        string configured = fileSystem.ReadAllText(service.Paths.NpmCiTemporaryNpmrcPath);
+        Assert.Contains($"@one:registry={TestRegistryUrl}", configured, StringComparison.Ordinal);
+        Assert.Contains($"@two:registry={TestRegistryUrl}", configured, StringComparison.Ordinal);
+        Assert.Contains("_authToken=system-token", configured, StringComparison.Ordinal);
+        Assert.Equal(
+            new Uri(TestRegistryUrl),
+            service.ResolvePersistedRegistryUrl(
+                CredentialEcosystem.Npm,
+                ConfigurationPhase14Scope.CiTemporary
+            )
+        );
+
+        await service.UnconfigureAsync(
+            CredentialEcosystem.Npm,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.False(fileSystem.FileExists(service.Paths.NpmCiTemporaryNpmrcPath));
+        Assert.False(
+            fileSystem.FileExists(GetNpmCompatibleCiManifestPath(service))
+        );
+    }
+
+    [Fact]
     public async Task ConfigureAsyncForPnpmUsesRegistryFromWorkspaceRootWithoutInvokingNpm()
     {
         const string LeafRegistryUrl =
