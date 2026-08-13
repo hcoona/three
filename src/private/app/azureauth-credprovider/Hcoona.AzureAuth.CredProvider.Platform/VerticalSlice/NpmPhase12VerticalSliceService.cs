@@ -183,21 +183,21 @@ public sealed class NpmPhase12VerticalSliceService
         npmExecutablePath = NormalizeOptionalPath(options.NpmExecutablePath);
     }
 
-    public IReadOnlyList<NpmPhase12RegistryDeclaration> DiscoverRegistryDeclarations()
+    public IReadOnlyList<NpmPhase12RegistryDeclaration> DiscoverRegistryDeclarations(
+        CredentialEcosystem ecosystem = CredentialEcosystem.Npm
+    )
     {
         NpmWorkspaceResolutionResult resolution =
-            ResolveWorkspaceForSynchronousOperation(CredentialEcosystem.Npm);
-        return DiscoverRegistryDeclarations(resolution);
+            ResolveWorkspaceForSynchronousOperation(ecosystem);
+        return DiscoverRegistryDeclarations(ecosystem, resolution);
     }
 
     private NpmPhase12RegistryDeclaration[] DiscoverRegistryDeclarations(
+        CredentialEcosystem ecosystem,
         NpmWorkspaceResolutionResult resolution
     )
     {
-        string? workspaceNpmrcPath = GetWorkspaceNpmrcPath(
-            CredentialEcosystem.Npm,
-            resolution
-        );
+        string? workspaceNpmrcPath = GetWorkspaceNpmrcPath(ecosystem, resolution);
         if (workspaceNpmrcPath is not null && fileSystem.FileExists(workspaceNpmrcPath))
         {
             NpmPhase12RegistryDeclaration[] workspaceDeclarations = ReadRegistryDeclarations(
@@ -231,7 +231,9 @@ public sealed class NpmPhase12VerticalSliceService
         string effectiveUserNpmrcPath = ResolveUserNpmrcPath();
         string resolvedCiTemporaryNpmrcPath = ResolveCiTemporaryNpmrcPath();
         NpmPhase12RegistryDeclaration[] declarations =
-            workspaceResolutionSucceeded ? DiscoverRegistryDeclarations(resolution) : [];
+            workspaceResolutionSucceeded
+                ? DiscoverRegistryDeclarations(CredentialEcosystem.Npm, resolution)
+                : [];
         NpmPhase12RegistryDeclaration? firstDeclaration =
             declarations.Length == 0 ? null : declarations[0];
 

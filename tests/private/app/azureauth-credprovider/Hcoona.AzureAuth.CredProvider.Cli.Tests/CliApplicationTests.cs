@@ -3572,49 +3572,121 @@ public sealed class CliApplicationTests
     }
 
     [Fact]
-    public void ConfigureNpmDryRunRequiresExplicitAzureArtifactsRegistry()
+    public void ConfigureNpmDryRunWithoutRegistryUrlDiscoversWorkspaceRegistry()
     {
         string stateDirectory = CreateTestDirectory();
+        string workspaceDirectory = Path.Combine(stateDirectory, "npm-workspace");
         try
         {
-            CliRuntimeOptions runtimeOptions = CreateConfigurationRuntimeWithoutRegistries(
+            CreateOwnerOnlyDirectory(workspaceDirectory);
+            WriteOwnerOnlyText(Path.Combine(workspaceDirectory, "package.json"), "{}\n");
+            WriteOwnerOnlyText(
+                Path.Combine(workspaceDirectory, ".npmrc"),
+                $"registry={TestRegistryUrl}\n"
+            );
+            CliRuntimeOptions baseRuntime = CreateConfigurationRuntimeWithoutRegistries(
                 stateDirectory
             );
+            CliRuntimeOptions runtimeOptions = baseRuntime with
+            {
+                ConfigurationPhase14Options =
+                    baseRuntime.ConfigurationPhase14Options! with
+                    {
+                        WorkspaceDirectoryPath = workspaceDirectory,
+                    },
+            };
 
-            CommandResult missing = InvokeWithRuntime(
+            CommandResult result = InvokeWithRuntime(
                 runtimeOptions,
                 "configure",
                 "npm",
                 "--dry-run"
             );
-            CommandResult nonAzure = InvokeWithRuntime(
-                runtimeOptions,
-                "configure",
-                "npm",
-                "--dry-run",
-                "--registry-url",
-                "https://registry.npmjs.org/"
-            );
 
-            Assert.Equal(2, missing.ExitCode);
-            Assert.Equal(
-                "error: configure for npm, pnpm, and yarn requires " + "'--registry-url <url>'.\n",
-                missing.StdErr
-            );
-            Assert.Equal(1, nonAzure.ExitCode);
-            Assert.Contains(
-                "Registry declarations must use canonical Azure Artifacts npm registry URLs.",
-                nonAzure.StdErr,
+            Assert.Equal(0, result.ExitCode);
+            Assert.Contains("ecosystem: npm\n", result.StdOut, StringComparison.Ordinal);
+            Assert.Equal(string.Empty, result.StdErr);
+            Assert.DoesNotContain(
+                "requires '--registry-url",
+                result.StdErr,
                 StringComparison.Ordinal
             );
-            Assert.Equal(string.Empty, missing.StdOut);
-            Assert.Equal(string.Empty, nonAzure.StdOut);
             Assert.False(File.Exists(Path.Combine(stateDirectory, "npm", "user.npmrc")));
         }
         finally
         {
             DeleteDirectoryIfExists(stateDirectory);
         }
+    }
+
+    [Fact]
+    public void ConfigurePnpmDryRunWithoutRegistryUrlDiscoversWorkspaceRootRegistry()
+    {
+        string stateDirectory = CreateTestDirectory();
+        string workspaceRoot = Path.Combine(stateDirectory, "pnpm-workspace");
+        string nestedPackage = Path.Combine(workspaceRoot, "packages", "nested");
+        const string LeafRegistryUrl =
+            "https://pkgs.dev.azure.com/leaf-org/_packaging/leaf-feed/npm/registry/";
+        try
+        {
+            CreateOwnerOnlyDirectory(nestedPackage);
+            WriteOwnerOnlyText(Path.Combine(workspaceRoot, "pnpm-workspace.yaml"), "packages:\n");
+            WriteOwnerOnlyText(
+                Path.Combine(workspaceRoot, ".npmrc"),
+                $"registry={TestRegistryUrl}\n"
+            );
+            WriteOwnerOnlyText(Path.Combine(nestedPackage, "package.json"), "{}\n");
+            WriteOwnerOnlyText(
+                Path.Combine(nestedPackage, ".npmrc"),
+                $"registry={LeafRegistryUrl}\n"
+            );
+            CliRuntimeOptions baseRuntime = CreateConfigurationRuntimeWithoutRegistries(
+                stateDirectory
+            );
+            CliRuntimeOptions runtimeOptions = baseRuntime with
+            {
+                ConfigurationPhase14Options =
+                    baseRuntime.ConfigurationPhase14Options! with
+                    {
+                        WorkspaceDirectoryPath = nestedPackage,
+                    },
+            };
+
+            CommandResult result = InvokeWithRuntime(
+                runtimeOptions,
+                "configure",
+                "pnpm",
+                "--dry-run"
+            );
+
+            Assert.Equal(0, result.ExitCode);
+            Assert.Contains("ecosystem: pnpm\n", result.StdOut, StringComparison.Ordinal);
+            Assert.Equal(string.Empty, result.StdErr);
+            Assert.DoesNotContain(
+                "requires '--registry-url",
+                result.StdErr,
+                StringComparison.Ordinal
+            );
+            Assert.DoesNotContain(LeafRegistryUrl, result.StdOut, StringComparison.Ordinal);
+            Assert.False(File.Exists(Path.Combine(stateDirectory, "pnpm", "user.npmrc")));
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public void ConfigureYarnWithoutRegistryUrlIsUsageError()
+    {
+        CommandResult result = Invoke("configure", "yarn");
+
+        Assert.Equal(2, result.ExitCode);
+        Assert.Equal(
+            "error: configure for yarn requires '--registry-url <url>'.\n",
+            result.StdErr
+        );
+        Assert.Equal(string.Empty, result.StdOut);
     }
 
     [Fact]
@@ -3670,11 +3742,29 @@ public sealed class CliApplicationTests
     public void ConfigureNpmExplicitRegistryUrlRoundTripsExactTarget()
     {
         string stateDirectory = CreateTestDirectory();
+        string workspaceDirectory = Path.Combine(stateDirectory, "npm-workspace");
         try
         {
-            CliRuntimeOptions runtimeOptions = CreateConfigurationRuntimeWithoutRegistries(
+            const string DiscoveredRegistryUrl =
+                "https://pkgs.dev.azure.com/discovered-org/discovered-project/"
+                + "_packaging/discovered-feed/npm/registry/";
+            CreateOwnerOnlyDirectory(workspaceDirectory);
+            WriteOwnerOnlyText(Path.Combine(workspaceDirectory, "package.json"), "{}\n");
+            WriteOwnerOnlyText(
+                Path.Combine(workspaceDirectory, ".npmrc"),
+                $"registry={DiscoveredRegistryUrl}\n"
+            );
+            CliRuntimeOptions baseRuntime = CreateConfigurationRuntimeWithoutRegistries(
                 stateDirectory
             );
+            CliRuntimeOptions runtimeOptions = baseRuntime with
+            {
+                ConfigurationPhase14Options =
+                    baseRuntime.ConfigurationPhase14Options! with
+                    {
+                        WorkspaceDirectoryPath = workspaceDirectory,
+                    },
+            };
             const string RegistryUrl =
                 "https://pkgs.dev.azure.com/real-org/real-project/"
                 + "_packaging/real-feed/npm/registry/";
@@ -3691,6 +3781,12 @@ public sealed class CliApplicationTests
             string npmrc = File.ReadAllText(Path.Combine(stateDirectory, "npm", "user.npmrc"));
             Assert.Contains(
                 "//pkgs.dev.azure.com/real-org/real-project/_packaging/real-feed/npm/registry/",
+                npmrc,
+                StringComparison.Ordinal
+            );
+            Assert.DoesNotContain(
+                "//pkgs.dev.azure.com/discovered-org/discovered-project/"
+                    + "_packaging/discovered-feed/npm/registry/",
                 npmrc,
                 StringComparison.Ordinal
             );
@@ -4996,7 +5092,7 @@ public sealed class CliApplicationTests
                 """
                     + "\n"
                     + "  azureauth-credprovider configure <ecosystem> [--dry-run] [--ci <mode>] "
-                    + "--registry-url <url> [--help]\n"
+                    + "[--registry-url <url>] [--help]\n"
                     + """
 
                     Ecosystems:
@@ -5014,8 +5110,8 @@ public sealed class CliApplicationTests
                     + "mutating files.\n"
                     + "  --ci <mode>                  Select CI mode explicitly: "
                     + "none | azure-pipelines.\n"
-                    + "  --registry-url <url>         Required Azure Artifacts npm URL for "
-                    + "npm, pnpm, and Yarn 4+.\n"
+                    + "  --registry-url <url>         Azure Artifacts npm URL; optional for npm "
+                    + "and pnpm when .npmrc resolves one registry, required for Yarn 4+.\n"
                     + """
                       -h, --help                   Show help.
                     """,

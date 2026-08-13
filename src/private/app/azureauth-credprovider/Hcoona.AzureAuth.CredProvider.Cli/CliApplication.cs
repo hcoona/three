@@ -2077,15 +2077,12 @@ internal static class CliApplication
 
         if (
             command == CliCommand.Configure
-            && ecosystem
-                is CredentialEcosystem.Npm
-                    or CredentialEcosystem.Pnpm
-                    or CredentialEcosystem.Yarn
+            && ecosystem == CredentialEcosystem.Yarn
             && registryUrl is null
         )
         {
             throw CreateUsageError(
-                "error: configure for npm, pnpm, and yarn requires " + "'--registry-url <url>'."
+                "error: configure for yarn requires '--registry-url <url>'."
             );
         }
 
@@ -2456,9 +2453,9 @@ internal static class CliApplication
             "Usage:",
             $"  {CommandName} {commandName} <ecosystem> [--dry-run] [--ci <mode>] "
                 + (
-                    command == CliCommand.Configure ? "--registry-url <url> "
-                    : command == CliCommand.Refresh ? "[--registry-url <url>] "
-                    : string.Empty
+                    command is CliCommand.Configure or CliCommand.Refresh
+                        ? "[--registry-url <url>] "
+                        : string.Empty
                 )
                 + "[--help]",
             string.Empty,
@@ -2482,8 +2479,8 @@ internal static class CliApplication
         {
             lines.Add(
                 command == CliCommand.Configure
-                    ? "  --registry-url <url>         Required Azure Artifacts npm URL "
-                        + "for npm, pnpm, and Yarn 4+."
+                    ? "  --registry-url <url>         Azure Artifacts npm URL; optional for npm "
+                        + "and pnpm when .npmrc resolves one registry, required for Yarn 4+."
                     : "  --registry-url <url>         Azure Artifacts npm URL; optional only "
                         + "when the canonical ownership manifest is valid."
             );

@@ -1403,18 +1403,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
         Uri? registryUrlOverride
     )
     {
-        var service = new NpmPhase12VerticalSliceService(
-            new NpmPhase12VerticalSliceOptions
-            {
-                FileSystem = fileSystem,
-                EnvironmentVariableReader = environmentVariableReader,
-                WorkspaceDirectoryPath = workspaceDirectoryPath,
-                UserNpmrcPath =
-                    ecosystem == CredentialEcosystem.Pnpm
-                        ? paths.PnpmUserNpmrcPath
-                        : paths.NpmUserNpmrcPath,
-            }
-        );
+        NpmPhase12VerticalSliceService service = CreateNpmService(ecosystem);
         NpmPhase12RegistryDeclaration declaration = CreateNpmDeclaration(
             ecosystem,
             registryUrlOverride
@@ -3407,10 +3396,46 @@ public sealed class ConfigurationPhase14VerticalSliceService
         Uri? registryUrlOverride = null
     )
     {
-        Uri registryUrl = registryUrlOverride ?? GetRequiredRegistryUrl(ecosystem);
+        Uri? configuredRegistryUrl = registryUrlOverride;
+        if (
+            configuredRegistryUrl is null
+            && registryUrls.TryGetValue(ecosystem, out Uri? registryUrl)
+        )
+        {
+            configuredRegistryUrl = registryUrl;
+        }
+
+        if (configuredRegistryUrl is null)
+        {
+            NpmPhase12RegistryDeclaration[] declarations = CreateNpmService(ecosystem)
+                .DiscoverRegistryDeclarations(ecosystem)
+                .ToArray();
+            Uri[] distinctRegistryUrls = declarations
+                .Select(static declaration => declaration.RegistryUrl)
+                .DistinctBy(static registry => registry.AbsoluteUri, StringComparer.Ordinal)
+                .ToArray();
+            if (distinctRegistryUrls.Length == 1)
+            {
+                return declarations.First(declaration =>
+                    declaration.RegistryUrl == distinctRegistryUrls[0]
+                );
+            }
+
+            string ecosystemName = GetEcosystemName(ecosystem);
+            throw new InvalidOperationException(
+                distinctRegistryUrls.Length == 0
+                    ? $"No canonical Azure Artifacts registry was discovered from the effective "
+                        + $".npmrc. Run azureauth-credprovider configure {ecosystemName} "
+                        + "--registry-url <azure-artifacts-npm-url>."
+                    : $"Multiple Azure Artifacts registries were discovered from the effective "
+                        + $".npmrc. Run azureauth-credprovider configure {ecosystemName} "
+                        + "--registry-url <azure-artifacts-npm-url> to select one."
+            );
+        }
+
         if (
             !NpmPhase12VerticalSliceService.TryCreateAzureArtifactsNpmResourceIdentity(
-                registryUrl,
+                configuredRegistryUrl,
                 out CanonicalResourceIdentity? resource
             )
         )
@@ -3422,6 +3447,20 @@ public sealed class ConfigurationPhase14VerticalSliceService
 
         return CreateNpmDeclaration(ecosystem, resource);
     }
+
+    private NpmPhase12VerticalSliceService CreateNpmService(CredentialEcosystem ecosystem) =>
+        new(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                EnvironmentVariableReader = environmentVariableReader,
+                WorkspaceDirectoryPath = workspaceDirectoryPath,
+                UserNpmrcPath =
+                    ecosystem == CredentialEcosystem.Pnpm
+                        ? paths.PnpmUserNpmrcPath
+                        : paths.NpmUserNpmrcPath,
+            }
+        );
 
     private NpmPhase12RegistryDeclaration CreateNpmDeclaration(
         CredentialEcosystem ecosystem,

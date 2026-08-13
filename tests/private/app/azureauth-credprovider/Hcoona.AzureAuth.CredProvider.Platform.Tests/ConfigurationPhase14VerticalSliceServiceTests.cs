@@ -44,8 +44,9 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         );
 
         Assert.Equal(
-            "Package registry configuration is required. Run azureauth-credprovider configure "
-                + "npm --registry-url <azure-artifacts-npm-url>.",
+            "No canonical Azure Artifacts registry was discovered from the effective .npmrc. "
+                + "Run azureauth-credprovider configure npm "
+                + "--registry-url <azure-artifacts-npm-url>.",
             exception.Message
         );
         Assert.False(fileSystem.FileExists(service.Paths.NpmUserNpmrcPath));
@@ -4128,6 +4129,225 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         Assert.False(cleanup.TemporaryContainerPresent);
         Assert.False(fileSystem.FileExists(manifestPath));
         Assert.False(fileSystem.FileExists(configuredTargetPath));
+    }
+
+    [Fact]
+    public async Task ConfigureAsyncForNpmUsesSingleDistinctDiscoveredRegistry()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectoryTree(fileSystem, "/workspace/app");
+        fileSystem.WriteAllText("/workspace/app/package.json", """{"name":"app"}""");
+        fileSystem.WriteAllText(
+            "/workspace/app/.npmrc",
+            $"registry={TestRegistryUrl}\n@shared:registry={TestRegistryUrl}\n"
+        );
+        var acquisition = new CapturingCredentialAcquisitionService("discovered-token");
+        ConfigurationPhase14VerticalSliceService service = CreateService(
+            fileSystem,
+            credentialAcquisition: acquisition,
+            workspaceDirectoryPath: "/workspace/app",
+            includeRegistryUrls: false
+        );
+
+        await service.ConfigureAsync(
+            CredentialEcosystem.Npm,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+
+        CredentialRequestV2 request = Assert.Single(acquisition.Requests);
+        Assert.Equal(new Uri(TestRegistryUrl), request.Resource.ServiceEndpoint);
+        string configured = fileSystem.ReadAllText(service.Paths.NpmUserNpmrcPath);
+        Assert.Contains(TestRegistryUrl["https:".Length..], configured, StringComparison.Ordinal);
+        Assert.Equal(1, configured.Split(TestRegistryUrl["https:".Length..]).Length - 1);
+        string manifest = fileSystem.ReadAllText(
+            GetPackageManifestPath(service, CredentialEcosystem.Npm)
+        );
+        Assert.Contains(TestRegistryUrl, manifest, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ConfigureAsyncForPnpmUsesRegistryFromWorkspaceRootWithoutInvokingNpm()
+    {
+        const string LeafRegistryUrl =
+            "https://pkgs.dev.azure.com/leaf-org/_packaging/leaf-feed/npm/registry/";
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectoryTree(fileSystem, "/workspace/packages/app");
+        fileSystem.WriteAllText("/workspace/pnpm-workspace.yaml", "packages:\n  - packages/*\n");
+        fileSystem.WriteAllText("/workspace/.npmrc", $"registry={TestRegistryUrl}\n");
+        fileSystem.WriteAllText("/workspace/packages/app/package.json", """{"name":"app"}""");
+        fileSystem.WriteAllText(
+            "/workspace/packages/app/.npmrc",
+            $"registry={LeafRegistryUrl}\n"
+        );
+        var acquisition = new CapturingCredentialAcquisitionService("pnpm-token");
+        ConfigurationPhase14VerticalSliceService service = CreateService(
+            fileSystem,
+            credentialAcquisition: acquisition,
+            workspaceDirectoryPath: "/workspace/packages/app",
+            includeRegistryUrls: false
+        );
+
+        await service.ConfigureAsync(
+            CredentialEcosystem.Pnpm,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+
+        CredentialRequestV2 request = Assert.Single(acquisition.Requests);
+        Assert.Equal(new Uri(TestRegistryUrl), request.Resource.ServiceEndpoint);
+        string configured = fileSystem.ReadAllText(service.Paths.PnpmUserNpmrcPath);
+        Assert.Contains(TestRegistryUrl["https:".Length..], configured, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            LeafRegistryUrl["https:".Length..],
+            configured,
+            StringComparison.Ordinal
+        );
+        string manifest = fileSystem.ReadAllText(
+            GetPackageManifestPath(service, CredentialEcosystem.Pnpm)
+        );
+        Assert.Contains(TestRegistryUrl, manifest, StringComparison.Ordinal);
+        Assert.DoesNotContain(LeafRegistryUrl, manifest, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ConfigureAsyncWithMultipleDistinctNpmRegistriesFailsWithoutSideEffects()
+    {
+        const string OtherRegistryUrl =
+            "https://pkgs.dev.azure.com/other-org/_packaging/other-feed/npm/registry/";
+        const string SourcePath = "/workspace/app/.npmrc";
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectoryTree(fileSystem, "/workspace/app");
+        fileSystem.WriteAllText("/workspace/app/package.json", """{"name":"app"}""");
+        fileSystem.WriteAllText(
+            SourcePath,
+            $"registry={TestRegistryUrl}\n@other:registry={OtherRegistryUrl}\n"
+        );
+        byte[] sourceBytes = fileSystem.ReadAllBytes(SourcePath);
+        var acquisition = new CapturingCredentialAcquisitionService("unused-token");
+        ConfigurationPhase14VerticalSliceService service = CreateService(
+            fileSystem,
+            credentialAcquisition: acquisition,
+            workspaceDirectoryPath: "/workspace/app",
+            includeRegistryUrls: false
+        );
+        string manifestPath = GetPackageManifestPath(service, CredentialEcosystem.Npm);
+
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            async () =>
+                await service.ConfigureAsync(
+                    CredentialEcosystem.Npm,
+                    ConfigurationPhase14Scope.User,
+                    TestContext.Current.CancellationToken
+                )
+        );
+
+        Assert.Contains(
+            "configure npm --registry-url <azure-artifacts-npm-url> to select one",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Empty(acquisition.Requests);
+        Assert.False(fileSystem.FileExists(service.Paths.NpmUserNpmrcPath));
+        Assert.False(fileSystem.FileExists(manifestPath));
+        Assert.Equal(sourceBytes, fileSystem.ReadAllBytes(SourcePath));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ConfigureAsyncWithoutCanonicalNpmRegistryFailsWithoutSideEffects(
+        bool includeNonAzureDeclaration
+    )
+    {
+        const string SourcePath = "/workspace/app/.npmrc";
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectoryTree(fileSystem, "/workspace/app");
+        fileSystem.WriteAllText("/workspace/app/package.json", """{"name":"app"}""");
+        byte[]? sourceBytes = null;
+        if (includeNonAzureDeclaration)
+        {
+            fileSystem.WriteAllText(SourcePath, "registry=https://registry.npmjs.org/\n");
+            sourceBytes = fileSystem.ReadAllBytes(SourcePath);
+        }
+
+        var acquisition = new CapturingCredentialAcquisitionService("unused-token");
+        ConfigurationPhase14VerticalSliceService service = CreateService(
+            fileSystem,
+            credentialAcquisition: acquisition,
+            workspaceDirectoryPath: "/workspace/app",
+            includeRegistryUrls: false
+        );
+        string manifestPath = GetPackageManifestPath(service, CredentialEcosystem.Npm);
+
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            async () =>
+                await service.ConfigureAsync(
+                    CredentialEcosystem.Npm,
+                    ConfigurationPhase14Scope.User,
+                    TestContext.Current.CancellationToken
+                )
+        );
+
+        Assert.Contains(
+            "No canonical Azure Artifacts registry",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Contains(
+            "configure npm --registry-url <azure-artifacts-npm-url>",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Empty(acquisition.Requests);
+        Assert.False(fileSystem.FileExists(service.Paths.NpmUserNpmrcPath));
+        Assert.False(fileSystem.FileExists(manifestPath));
+        if (sourceBytes is not null)
+        {
+            Assert.Equal(sourceBytes, fileSystem.ReadAllBytes(SourcePath));
+        }
+    }
+
+    [Fact]
+    public async Task ConfigureAsyncWithExplicitNpmRegistryBypassesDiscoveredRegistry()
+    {
+        const string DiscoveredRegistryUrl =
+            "https://pkgs.dev.azure.com/discovered-org/_packaging/discovered-feed/npm/registry/";
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectoryTree(fileSystem, "/workspace/app");
+        fileSystem.WriteAllText("/workspace/app/package.json", """{"name":"app"}""");
+        fileSystem.WriteAllText(
+            "/workspace/app/.npmrc",
+            $"registry={DiscoveredRegistryUrl}\n"
+        );
+        var acquisition = new CapturingCredentialAcquisitionService("explicit-token");
+        ConfigurationPhase14VerticalSliceService service = CreateService(
+            fileSystem,
+            registryUrl: new Uri(TestRegistryUrl),
+            credentialAcquisition: acquisition,
+            workspaceDirectoryPath: "/workspace/app"
+        );
+
+        await service.ConfigureAsync(
+            CredentialEcosystem.Npm,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+
+        CredentialRequestV2 request = Assert.Single(acquisition.Requests);
+        Assert.Equal(new Uri(TestRegistryUrl), request.Resource.ServiceEndpoint);
+        string configured = fileSystem.ReadAllText(service.Paths.NpmUserNpmrcPath);
+        Assert.Contains(TestRegistryUrl["https:".Length..], configured, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            DiscoveredRegistryUrl["https:".Length..],
+            configured,
+            StringComparison.Ordinal
+        );
+        string manifest = fileSystem.ReadAllText(
+            GetPackageManifestPath(service, CredentialEcosystem.Npm)
+        );
+        Assert.Contains(TestRegistryUrl, manifest, StringComparison.Ordinal);
+        Assert.DoesNotContain(DiscoveredRegistryUrl, manifest, StringComparison.Ordinal);
     }
 
     private static async Task AssertNpmCompatibleCiManifestTargetMismatchFailsClosedAsync(

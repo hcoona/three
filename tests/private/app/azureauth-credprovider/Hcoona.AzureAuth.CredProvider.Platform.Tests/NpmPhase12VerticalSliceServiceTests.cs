@@ -801,7 +801,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
 
         NpmWorkspaceResolutionException exception =
             Assert.Throws<NpmWorkspaceResolutionException>(
-            service.DiscoverRegistryDeclarations
+            () => service.DiscoverRegistryDeclarations()
         );
 
         AssertNpmWorkspaceResolutionFailure(exception, processRunner);
@@ -872,7 +872,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
 
         NpmWorkspaceResolutionException exception =
             Assert.Throws<NpmWorkspaceResolutionException>(
-            service.DiscoverRegistryDeclarations
+            () => service.DiscoverRegistryDeclarations()
         );
 
         AssertNpmWorkspaceResolutionFailure(exception, processRunner);
@@ -900,7 +900,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
 
         NpmWorkspaceResolutionException exception =
             Assert.Throws<NpmWorkspaceResolutionException>(
-            service.DiscoverRegistryDeclarations
+            () => service.DiscoverRegistryDeclarations()
         );
 
         AssertNpmWorkspaceResolutionFailure(exception, processRunner);
@@ -923,7 +923,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
 
         NpmWorkspaceResolutionException exception =
             Assert.Throws<NpmWorkspaceResolutionException>(
-            service.DiscoverRegistryDeclarations
+            () => service.DiscoverRegistryDeclarations()
         );
 
         AssertNpmWorkspaceResolutionFailure(exception, processRunner);
@@ -961,7 +961,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
 
         NpmWorkspaceResolutionException exception =
             Assert.Throws<NpmWorkspaceResolutionException>(
-            service.DiscoverRegistryDeclarations
+            () => service.DiscoverRegistryDeclarations()
         );
 
         AssertNpmWorkspaceResolutionFailure(exception, processRunner);
@@ -1318,7 +1318,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         );
 
         Exception exception = Assert.ThrowsAny<Exception>(
-            service.DiscoverRegistryDeclarations
+            () => service.DiscoverRegistryDeclarations()
         );
 
         AssertTypedWorkspaceResolutionException(exception, expectedStatus, SensitiveError);
@@ -2717,6 +2717,50 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         }
 
         return null;
+    }
+
+    [Fact]
+    public void DiscoverRegistryDeclarationsForPnpmUsesWorkspaceRootWithoutInvokingNpm()
+    {
+        const string RootRegistry =
+            "https://pkgs.dev.azure.com/org/_packaging/root/npm/registry/";
+        const string LeafRegistry =
+            "https://pkgs.dev.azure.com/org/_packaging/leaf/npm/registry/";
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/repo/packages/apple");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText("/repo/pnpm-workspace.yaml", "packages:\n  - packages/*\n");
+        fileSystem.WriteAllText("/repo/.npmrc", "registry=" + RootRegistry + "\n");
+        fileSystem.WriteAllText(
+            "/repo/packages/apple/.npmrc",
+            "registry=" + LeafRegistry + "\n"
+        );
+        var processRunner = new FakeProcessRunner();
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                ProcessRunner = processRunner,
+                WorkspaceDirectoryPath = "/repo/packages/apple",
+                UserNpmrcPath = "/home/alice/.npmrc",
+            }
+        );
+
+        IReadOnlyList<NpmPhase12RegistryDeclaration> declarations =
+            service.DiscoverRegistryDeclarations(CredentialEcosystem.Pnpm);
+
+        NpmPhase12RegistryDeclaration declaration = Assert.Single(declarations);
+        Assert.Equal("/repo/.npmrc", declaration.SourcePath);
+        Assert.Equal(RootRegistry, declaration.RegistryUrl.AbsoluteUri);
+        Assert.Contains(
+            declarations,
+            candidate => candidate.RegistryUrl.AbsoluteUri == RootRegistry
+        );
+        Assert.DoesNotContain(
+            declarations,
+            candidate => candidate.RegistryUrl.AbsoluteUri == LeafRegistry
+        );
+        Assert.Empty(processRunner.RecordedStartSpecs);
     }
 #pragma warning restore CA1707
 }
