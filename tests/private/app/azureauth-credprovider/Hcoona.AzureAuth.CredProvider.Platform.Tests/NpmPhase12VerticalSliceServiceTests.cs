@@ -81,6 +81,40 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         Assert.Equal(RegistryUrl, declaration.RegistryUrl.AbsoluteUri);
     }
 
+    [Theory]
+    [InlineData("\"registry\"", "registry")]
+    [InlineData("'@scope:registry'", "@scope:registry")]
+    public void DiscoverRegistryDeclarationsDecodesQuotedNpmrcKeys(
+        string key,
+        string expectedKey
+    )
+    {
+        const string RegistryUrl =
+            "https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/";
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/workspace/.npmrc",
+            key + "=" + RegistryUrl + "\n"
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+
+        NpmPhase12RegistryDeclaration declaration = Assert.Single(
+            service.DiscoverRegistryDeclarations()
+        );
+
+        Assert.Equal(expectedKey, declaration.Key);
+        Assert.Equal(RegistryUrl, declaration.RegistryUrl.AbsoluteUri);
+    }
+
     [Fact]
     public void DiscoverRegistryDeclarationsExpandsNpmEnvironmentVariables()
     {
@@ -187,13 +221,17 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         Assert.Empty(service.DiscoverRegistryDeclarations());
     }
 
-    [Fact]
-    public void DiscoverRegistryDeclarationsDoesNotUseShadowedUserRegistry()
+    [Theory]
+    [InlineData("registry=https://registry.npmjs.org/\n")]
+    [InlineData("\"registry\"=https://registry.npmjs.org/\n")]
+    public void DiscoverRegistryDeclarationsDoesNotUseShadowedUserRegistry(
+        string workspaceSetting
+    )
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         CreateDirectory(fileSystem, "/workspace");
         CreateDirectory(fileSystem, "/home/alice");
-        fileSystem.WriteAllText("/workspace/.npmrc", "registry=https://registry.npmjs.org/\n");
+        fileSystem.WriteAllText("/workspace/.npmrc", workspaceSetting);
         fileSystem.WriteAllText(
             "/home/alice/.npmrc",
             "registry=https://pkgs.dev.azure.com/org/project/_packaging/feed/npm/registry/\n"

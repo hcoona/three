@@ -721,14 +721,14 @@ public sealed class NpmPhase12VerticalSliceService
                 continue;
             }
 
-            string key = rawLine[..separatorIndex].Trim();
+            string key = DecodeNpmrcField(rawLine[..separatorIndex]);
             if (!NpmrcRegistryDeclarationKeyPolicy.IsRegistryDeclarationKey(key))
             {
                 continue;
             }
 
             string value = ExpandNpmrcEnvironmentVariables(
-                DecodeNpmrcValue(rawLine[(separatorIndex + 1)..]),
+                DecodeNpmrcField(rawLine[(separatorIndex + 1)..]),
                 out bool unresolvedEnvironmentReference
             );
             if (unresolvedEnvironmentReference)
@@ -741,7 +741,7 @@ public sealed class NpmPhase12VerticalSliceService
         }
     }
 
-    private static string DecodeNpmrcValue(string rawValue)
+    private static string DecodeNpmrcField(string rawValue)
     {
         string value = rawValue.Trim();
         if (value.StartsWith('"') && value.EndsWith('"'))
