@@ -81,6 +81,126 @@ public sealed class ConfigurationNpmrcPhysicalWriterPhase4DTests
         Assert.Equal($"{selector}=existing\n", fileSystem.ReadAllText(Path));
     }
 
+    [Theory]
+    [InlineData("\"{0}\"=existing\n")]
+    [InlineData("{0}[]=existing\n")]
+    [InlineData("{0}[]\n")]
+    public void ExistingDecodedOrArrayUnownedSelectorIsRejected(string existingTemplate)
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CanonicalResourceIdentity resource = CreateResource();
+        string selector = NpmCompatibleAuthSelectorPolicy.Create(resource).NpmAuthTokenKey;
+        string existing = string.Format(
+            System.Globalization.CultureInfo.InvariantCulture,
+            existingTemplate,
+            selector
+        );
+        fileSystem.AtomicWriteAllText(Path, existing);
+        var writer = new NpmrcPhysicalTargetWriter(fileSystem);
+
+        Assert.Throws<InvalidOperationException>(() =>
+            writer.Write(
+                CreateRequest(CreateChange(selector, "replacement"), resource),
+                TestContext.Current.CancellationToken
+            )
+        );
+
+        Assert.Equal(existing, fileSystem.ReadAllText(Path));
+    }
+
+    [Fact]
+    public void WriteReplacesOwnedArraySelectorWithScalar()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CanonicalResourceIdentity resource = CreateResource();
+        string selector = NpmCompatibleAuthSelectorPolicy.Create(resource).NpmAuthTokenKey;
+        fileSystem.AtomicWriteAllText(Path, $"{selector}[]=existing\n");
+        ConfigurationChange change = CreateChange(selector, "replacement");
+        var writer = new NpmrcPhysicalTargetWriter(fileSystem);
+
+        writer.Write(
+            CreateRequest(
+                change,
+                resource,
+                ownership: [Owned(change)]
+            ),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal($"{selector}=replacement\n", fileSystem.ReadAllText(Path));
+    }
+
+    [Fact]
+    public void IsSatisfiedRejectsNormalizedArrayAndScalarDuplicates()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CanonicalResourceIdentity resource = CreateResource();
+        string selector = NpmCompatibleAuthSelectorPolicy.Create(resource).NpmAuthTokenKey;
+        fileSystem.AtomicWriteAllText(
+            Path,
+            $"{selector}[]=existing\n{selector}=replacement\n"
+        );
+        var writer = new NpmrcPhysicalTargetWriter(fileSystem);
+
+        Assert.Throws<InvalidOperationException>(() =>
+            writer.IsSatisfied(
+                CreateRequest(CreateChange(selector, "requested-token"), resource),
+                TestContext.Current.CancellationToken
+            )
+        );
+    }
+
+    [Fact]
+    public void WriteInsertsManagedSelectorBeforeFirstSection()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CanonicalResourceIdentity resource = CreateResource();
+        string selector = NpmCompatibleAuthSelectorPolicy.Create(resource).NpmAuthTokenKey;
+        fileSystem.AtomicWriteAllText(
+            Path,
+            "registry=https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
+                + "[ignored]\n"
+                + "setting=value\n"
+        );
+        var writer = new NpmrcPhysicalTargetWriter(fileSystem);
+        ConfigurationPhysicalTargetWriterRequest request = CreateRequest(
+            CreateChange(selector, "token"),
+            resource
+        );
+
+        writer.Write(request, TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            "registry=https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
+                + selector
+                + "=token\n"
+                + "[ignored]\n"
+                + "setting=value\n",
+            fileSystem.ReadAllText(Path)
+        );
+        Assert.True(writer.IsSatisfied(request, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public void IsSatisfiedIgnoresSectionedSelector()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CanonicalResourceIdentity resource = CreateResource();
+        string selector = NpmCompatibleAuthSelectorPolicy.Create(resource).NpmAuthTokenKey;
+        fileSystem.AtomicWriteAllText(
+            Path,
+            "[ignored]\n" + selector + "=section-token\n"
+        );
+        var writer = new NpmrcPhysicalTargetWriter(fileSystem);
+
+        bool satisfied = writer.IsSatisfied(
+            CreateRequest(CreateChange(selector, "requested-token"), resource),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.False(satisfied);
+    }
+
     [Fact]
     public void SecretWriteUsesOwnerOnlyMode()
     {

@@ -503,8 +503,8 @@ public sealed class NpmPhase12VerticalSliceService
                 continue;
             }
 
-            string decodedKey = NormalizeNpmrcArrayAssignmentKey(
-                DecodeNpmrcField(
+            string decodedKey = NpmrcIniSyntax.NormalizeArrayAssignmentKey(
+                NpmrcIniSyntax.DecodeField(
                     separatorIndex < 0 ? rawLine : rawLine[..separatorIndex]
                 ),
                 out _
@@ -720,8 +720,8 @@ public sealed class NpmPhase12VerticalSliceService
                 continue;
             }
 
-            string decodedKey = NormalizeNpmrcArrayAssignmentKey(
-                DecodeNpmrcField(
+            string decodedKey = NpmrcIniSyntax.NormalizeArrayAssignmentKey(
+                NpmrcIniSyntax.DecodeField(
                     separatorIndex < 0 ? rawLine : rawLine[..separatorIndex]
                 ),
                 out bool isArrayAssignment
@@ -744,7 +744,7 @@ public sealed class NpmPhase12VerticalSliceService
             if (separatorIndex >= 0)
             {
                 string value = ExpandNpmrcEnvironmentVariables(
-                    DecodeNpmrcField(rawLine[(separatorIndex + 1)..]),
+                    NpmrcIniSyntax.DecodeField(rawLine[(separatorIndex + 1)..]),
                     out bool unresolvedEnvironmentReference
                 );
                 registryValue = unresolvedEnvironmentReference ? null : value;
@@ -769,77 +769,6 @@ public sealed class NpmPhase12VerticalSliceService
 
             effectiveSettings[key] = (npmrcPath, setting.RegistryValue);
         }
-    }
-
-    private static string NormalizeNpmrcArrayAssignmentKey(
-        string key,
-        out bool isArrayAssignment
-    )
-    {
-        isArrayAssignment = key.Length > 2 && key.EndsWith("[]", StringComparison.Ordinal);
-        return isArrayAssignment ? key[..^2] : key;
-    }
-
-    private static string DecodeNpmrcField(string rawValue)
-    {
-        string value = rawValue.Trim();
-        if (value.StartsWith('"') && value.EndsWith('"'))
-        {
-            try
-            {
-                using JsonDocument document = JsonDocument.Parse(value);
-                return document.RootElement.ValueKind == JsonValueKind.String
-                    ? document.RootElement.GetString() ?? value
-                    : value;
-            }
-            catch (JsonException)
-            {
-                return value;
-            }
-        }
-
-        if (value.StartsWith('\'') && value.EndsWith('\''))
-        {
-            return value[1..^1];
-        }
-
-        var decoded = new StringBuilder(value.Length);
-        bool escaped = false;
-        foreach (char character in value)
-        {
-            if (escaped)
-            {
-                if (character is '\\' or '#' or ';')
-                {
-                    decoded.Append(character);
-                }
-                else
-                {
-                    decoded.Append('\\').Append(character);
-                }
-
-                escaped = false;
-            }
-            else if (character is '#' or ';')
-            {
-                break;
-            }
-            else if (character == '\\')
-            {
-                escaped = true;
-            }
-            else
-            {
-                decoded.Append(character);
-            }
-        }
-
-        if (escaped)
-        {
-            decoded.Append('\\');
-        }
-
-        return decoded.ToString().TrimEnd();
     }
 
     private string ExpandNpmrcEnvironmentVariables(
@@ -1947,25 +1876,13 @@ public sealed class NpmPhase12VerticalSliceService
                 continue;
             }
 
-            if (IsNpmrcSectionHeader(rawLine))
+            if (NpmrcIniSyntax.IsSectionHeader(rawLine))
             {
                 yield break;
             }
 
             yield return rawLine;
         }
-    }
-
-    private static bool IsNpmrcSectionHeader(string rawLine)
-    {
-        if (rawLine.Length < 2 || rawLine[0] != '[')
-        {
-            return false;
-        }
-
-        int closingBracketIndex = rawLine.IndexOf(']', 1);
-        return closingBracketIndex >= 0
-            && rawLine.AsSpan(closingBracketIndex + 1).Trim().IsEmpty;
     }
 
     private static string[] GetDecodedPathSegments(Uri uri)

@@ -69,10 +69,14 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
         NpmrcDocument document = ReadDocument(GetTargetPath(request));
         return request.Changes.All(change =>
         {
-            string? value = document.GetValue(change.Key);
-            return change.IsSecretValue
-                ? !string.IsNullOrEmpty(value)
-                : RegistryValuesMatch(change.Key, value, change.Value);
+            var entry = document.GetEntry(change.Key);
+            return entry is not null
+                && !entry.IsArray
+                && (
+                    change.IsSecretValue
+                        ? !string.IsNullOrEmpty(entry.Value)
+                        : RegistryValuesMatch(change.Key, entry.Value, change.Value)
+                );
         });
     }
 
@@ -242,7 +246,7 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
         NpmrcDocument working = mutate ? document : document.Clone();
         foreach (ConfigurationChange change in request.Changes)
         {
-            string? existing = working.GetValue(change.Key);
+            var existing = working.GetEntry(change.Key);
             bool remove =
                 request.PlanOperation == ConfigurationPlanOperation.Remove
                 || change.Operation == ConfigurationChangeOperation.Remove;
@@ -338,13 +342,13 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
         public NpmrcDocument Clone() =>
             new([.. lines], hadBom, newLine, trailingNewLine, WritePath);
 
-        public string? GetValue(string key)
+        public NpmrcEntry? GetEntry(string key)
         {
             NpmrcEntry[] entries = Find(key).ToArray();
             return entries.Length switch
             {
                 0 => null,
-                1 => entries[0].Value,
+                1 => entries[0],
                 _ => throw new InvalidOperationException(
                     "The managed npmrc selector is declared more than once."
                 ),
@@ -353,37 +357,24 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
 
         public void Set(string key, string value)
         {
-            NpmrcEntry[] entries = Find(key).ToArray();
-            if (entries.Length > 1)
-            {
-                throw new InvalidOperationException(
-                    "The managed npmrc selector is declared more than once."
-                );
-            }
-
+            NpmrcEntry? entry = GetEntry(key);
             string rendered = key + "=" + EscapeValue(value);
-            if (entries.Length == 1)
+            if (entry is not null)
             {
-                lines[entries[0].Index] = rendered;
+                lines[entry.Index] = rendered;
             }
             else
             {
-                lines.Add(rendered);
+                lines.Insert(GetTopLevelInsertionIndex(), rendered);
             }
         }
 
         public void Remove(string key)
         {
-            NpmrcEntry[] entries = Find(key).ToArray();
-            if (entries.Length > 1)
+            NpmrcEntry? entry = GetEntry(key);
+            if (entry is not null)
             {
-                throw new InvalidOperationException(
-                    "The managed npmrc selector is declared more than once."
-                );
-            }
-            if (entries.Length == 1)
-            {
-                lines.RemoveAt(entries[0].Index);
+                lines.RemoveAt(entry.Index);
             }
         }
 
@@ -403,20 +394,49 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
         {
             for (var index = 0; index < lines.Count; index++)
             {
+                if (NpmrcIniSyntax.IsSectionHeader(lines[index]))
+                {
+                    yield break;
+                }
+
                 if (
-                    TryParseEntry(lines[index], out string? parsedKey, out string? value)
+                    TryParseEntry(
+                        lines[index],
+                        out string? parsedKey,
+                        out string? value,
+                        out bool isArray
+                    )
                     && string.Equals(parsedKey, key, StringComparison.Ordinal)
                 )
                 {
-                    yield return new NpmrcEntry(index, value);
+                    yield return new NpmrcEntry(index, value, isArray);
                 }
             }
         }
 
-        private static bool TryParseEntry(string line, out string? key, out string value)
+        private int GetTopLevelInsertionIndex()
+        {
+            for (var index = 0; index < lines.Count; index++)
+            {
+                if (NpmrcIniSyntax.IsSectionHeader(lines[index]))
+                {
+                    return index;
+                }
+            }
+
+            return lines.Count;
+        }
+
+        private static bool TryParseEntry(
+            string line,
+            out string? key,
+            out string value,
+            out bool isArray
+        )
         {
             key = null;
             value = string.Empty;
+            isArray = false;
             string trimmed = line.Trim();
             if (trimmed.Length == 0 || trimmed.StartsWith('#') || trimmed.StartsWith(';'))
             {
@@ -424,21 +444,24 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
             }
 
             int equals = trimmed.IndexOf('=');
-            if (equals <= 0)
+            if (equals == 0)
             {
                 return false;
             }
 
-            key = trimmed[..equals].Trim();
-            value = UnescapeValue(trimmed[(equals + 1)..].Trim());
+            key = NpmrcIniSyntax.NormalizeArrayAssignmentKey(
+                NpmrcIniSyntax.DecodeField(equals < 0 ? trimmed : trimmed[..equals]),
+                out isArray
+            );
+            if (equals >= 0)
+            {
+                value = NpmrcIniSyntax.DecodeField(trimmed[(equals + 1)..]);
+            }
             return key.Length > 0;
         }
 
         private static string EscapeValue(string value) =>
             value.Replace("\\", "\\\\", StringComparison.Ordinal);
-
-        private static string UnescapeValue(string value) =>
-            value.Replace("\\\\", "\\", StringComparison.Ordinal);
 
         private static List<string> SplitLines(string text)
         {
@@ -457,6 +480,6 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
             return result;
         }
 
-        private sealed record NpmrcEntry(int Index, string Value);
+        public sealed record NpmrcEntry(int Index, string Value, bool IsArray);
     }
 }
