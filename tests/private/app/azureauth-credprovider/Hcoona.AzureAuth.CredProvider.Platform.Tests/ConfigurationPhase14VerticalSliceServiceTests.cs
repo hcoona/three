@@ -4687,6 +4687,9 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     [InlineData(
         "@foo#bar:registry=https://pkgs.dev.azure.com/test-org/_packaging/test-feed/npm/registry/\n"
     )]
+    [InlineData(
+        "@foo?bar:registry=https://pkgs.dev.azure.com/test-org/_packaging/test-feed/npm/registry/\n"
+    )]
     public async Task ConfigureAsyncWithoutCanonicalNpmRegistryFailsWithoutSideEffects(
         string? sourceContents
     )

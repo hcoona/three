@@ -722,10 +722,16 @@ public sealed class NpmPhase12VerticalSliceService
             }
 
             string key = rawLine[..separatorIndex].Trim();
-            string value = ExpandNpmrcEnvironmentVariables(
-                DecodeNpmrcValue(rawLine[(separatorIndex + 1)..])
-            );
             if (!NpmrcRegistryDeclarationKeyPolicy.IsRegistryDeclarationKey(key))
+            {
+                continue;
+            }
+
+            string value = ExpandNpmrcEnvironmentVariables(
+                DecodeNpmrcValue(rawLine[(separatorIndex + 1)..]),
+                out bool unresolvedEnvironmentReference
+            );
+            if (unresolvedEnvironmentReference)
             {
                 continue;
             }
@@ -796,8 +802,12 @@ public sealed class NpmPhase12VerticalSliceService
         return decoded.ToString().TrimEnd();
     }
 
-    private string ExpandNpmrcEnvironmentVariables(string value)
+    private string ExpandNpmrcEnvironmentVariables(
+        string value,
+        out bool unresolvedEnvironmentReference
+    )
     {
+        unresolvedEnvironmentReference = false;
         var expanded = new StringBuilder(value.Length);
         for (int index = 0; index < value.Length;)
         {
@@ -835,10 +845,15 @@ public sealed class NpmPhase12VerticalSliceService
             else
             {
                 string? environmentValue = environmentVariableReader(variableName);
-                expanded.Append(
-                    environmentValue
-                        ?? (optional ? string.Empty : "${" + variableName + "}")
-                );
+                if (environmentValue is not null)
+                {
+                    expanded.Append(environmentValue);
+                }
+                else if (!optional)
+                {
+                    unresolvedEnvironmentReference = true;
+                    expanded.Append("${").Append(variableName).Append('}');
+                }
             }
 
             index = referenceEnd;

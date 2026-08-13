@@ -124,6 +124,9 @@ public sealed class NpmPhase12VerticalSliceServiceTests
     [InlineData("\\${AZURE_NPM_REGISTRY}")]
     [InlineData("${INDIRECT}")]
     [InlineData("${EMPTY}")]
+    [InlineData(
+        "https://pkgs.dev.azure.com/org/_packaging/${MISSING}/npm/registry/"
+    )]
     public void DiscoverRegistryDeclarationsDoesNotOverExpandNpmEnvironmentVariables(
         string value
     )
@@ -161,6 +164,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
     [InlineData("@foo/bar:registry")]
     [InlineData("@foo#bar:registry")]
     [InlineData("@foo;bar:registry")]
+    [InlineData("@foo?bar:registry")]
     public void DiscoverRegistryDeclarationsRejectsMalformedScopedKeys(string key)
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);

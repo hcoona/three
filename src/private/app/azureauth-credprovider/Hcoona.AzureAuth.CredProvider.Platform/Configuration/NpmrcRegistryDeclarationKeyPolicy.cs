@@ -27,10 +27,7 @@ internal static class NpmrcRegistryDeclarationKeyPolicy
 
         for (int index = 1; index < scopeEnd; index++)
         {
-            if (
-                char.IsWhiteSpace(key[index])
-                || key[index] is '@' or ':' or '/' or '\\' or '#' or ';'
-            )
+            if (!IsRouteableScopeCharacter(key[index]))
             {
                 return false;
             }
@@ -38,4 +35,8 @@ internal static class NpmrcRegistryDeclarationKeyPolicy
 
         return true;
     }
+
+    private static bool IsRouteableScopeCharacter(char character) =>
+        char.IsAsciiLetterOrDigit(character)
+        || character is '-' or '_' or '.' or '!' or '~' or '*' or '\'' or '(' or ')';
 }
