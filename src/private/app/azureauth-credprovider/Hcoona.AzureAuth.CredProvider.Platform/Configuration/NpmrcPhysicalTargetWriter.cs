@@ -72,7 +72,7 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
             string? value = document.GetValue(change.Key);
             return change.IsSecretValue
                 ? !string.IsNullOrEmpty(value)
-                : string.Equals(value, change.Value, StringComparison.Ordinal);
+                : RegistryValuesMatch(change.Key, value, change.Value);
         });
     }
 
@@ -274,6 +274,28 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
     private static bool IsAuthTokenKey(string key) =>
         string.Equals(key, "_authToken", StringComparison.Ordinal)
         || key.EndsWith(":_authToken", StringComparison.Ordinal);
+
+    private static bool RegistryValuesMatch(string key, string? actual, string? expected)
+    {
+        if (
+            !IsRegistryDeclarationKey(key)
+            || !Uri.TryCreate(actual, UriKind.Absolute, out Uri? actualRegistry)
+            || !Uri.TryCreate(expected, UriKind.Absolute, out Uri? expectedRegistry)
+        )
+        {
+            return string.Equals(actual, expected, StringComparison.Ordinal);
+        }
+
+        return string.Equals(
+            actualRegistry.AbsoluteUri.TrimEnd('/'),
+            expectedRegistry.AbsoluteUri.TrimEnd('/'),
+            StringComparison.Ordinal
+        );
+    }
+
+    private static bool IsRegistryDeclarationKey(string key) =>
+        string.Equals(key, "registry", StringComparison.Ordinal)
+        || key.EndsWith(":registry", StringComparison.Ordinal);
 
     private sealed class NpmrcDocument
     {

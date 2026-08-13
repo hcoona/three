@@ -831,6 +831,102 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     }
 
     [Fact]
+    public async Task NpmCiReplacementIntentRejectsUnrelatedOwnedKey()
+    {
+        const string ReplacementRegistryUrl =
+            "https://pkgs.dev.azure.com/test-org/_packaging/replacement-feed/npm/registry/";
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectoryTree(fileSystem, "/workspace");
+        CreateDirectoryTree(fileSystem, "/home/test");
+        fileSystem.WriteAllText("/home/test/.npmrc", $"@old:registry={TestRegistryUrl}\n");
+        ConfigurationPhase14VerticalSliceService original = CreateService(
+            fileSystem,
+            environmentVariableReader: ReadCiEnvironment,
+            workspaceDirectoryPath: "/workspace",
+            includeRegistryUrls: false
+        );
+        await original.ConfigureAsync(
+            CredentialEcosystem.Npm,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken
+        );
+        fileSystem.WriteAllText(
+            "/home/test/.npmrc",
+            $"@new:registry={ReplacementRegistryUrl}\n"
+        );
+        ConfigurationPhase14VerticalSliceService replacement = CreateService(
+            fileSystem,
+            environmentVariableReader: ReadCiEnvironment,
+            workspaceDirectoryPath: "/workspace",
+            includeRegistryUrls: false
+        );
+        string targetPath = replacement.Paths.NpmCiTemporaryNpmrcPath;
+        string manifestPath = GetNpmCompatibleCiManifestPath(replacement);
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken
+        );
+        InjectPackageReplacementFailure(
+            fileSystem,
+            targetPath,
+            manifestPath,
+            PackageReplacementFailurePoint.TargetWriteAfterIntent,
+            cancellation
+        );
+        await Assert.ThrowsAsync<IOException>(async () =>
+            await replacement.ConfigureAsync(
+                CredentialEcosystem.Npm,
+                ConfigurationPhase14Scope.CiTemporary,
+                cancellation.Token
+            )
+        );
+
+        ConfigurationOwnershipManifest transitional =
+            ConfigurationOwnershipManifestSerializer.Deserialize(
+                fileSystem.ReadAllText(manifestPath)
+            );
+        int previousAuthIndex = transitional
+            .Entries.Select((entry, index) => (entry, index))
+            .Single(pair => pair.entry.Key.Contains("test-feed", StringComparison.Ordinal))
+            .index;
+        var forgedEntries = transitional.Entries.ToList();
+        forgedEntries.Insert(
+            previousAuthIndex,
+            new ConfigurationOwnershipManifestEntry
+            {
+                Sequence = 0,
+                TargetKind = ConfigurationTargetKind.Npmrc,
+                TargetPathOrName = targetPath,
+                Key = "proxy",
+            }
+        );
+        ConfigurationOwnershipManifest forged = transitional with
+        {
+            Entries = forgedEntries
+                .Select((entry, index) => entry with { Sequence = index + 1 })
+                .ToArray(),
+        };
+        fileSystem.WriteAllText(manifestPath, SerializeManifest(forged));
+        if (!fileSystem.FileExists(targetPath))
+        {
+            fileSystem.CreateDirectory(Path.GetDirectoryName(targetPath)!);
+            fileSystem.WriteAllText(targetPath, string.Empty);
+        }
+        fileSystem.WriteAllText(targetPath, fileSystem.ReadAllText(targetPath) + "proxy=owned\n");
+        byte[] targetBefore = fileSystem.ReadAllBytes(targetPath);
+        byte[] manifestBefore = fileSystem.ReadAllBytes(manifestPath);
+
+        ConfigurationPhase14PlanResult result = await replacement.UnconfigureAsync(
+            CredentialEcosystem.Npm,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.True(result.OwnershipManifestCleanupIncomplete);
+        Assert.Equal(targetBefore, fileSystem.ReadAllBytes(targetPath));
+        Assert.Equal(manifestBefore, fileSystem.ReadAllBytes(manifestPath));
+    }
+
+    [Fact]
     public async Task YarnTransitionalReplacementCleanupSucceedsAfterTargetBecomesRepository()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
@@ -4360,7 +4456,8 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         CreateDirectoryTree(fileSystem, "/home/test");
         fileSystem.WriteAllText(
             "/home/test/.npmrc",
-            $"@one:registry={TestRegistryUrl}\n@two:registry={TestRegistryUrl}\n"
+            $"@one:registry={TestRegistryUrl.TrimEnd('/')}\n"
+                + $"@two:registry={TestRegistryUrl}\n"
         );
         ConfigurationPhase14VerticalSliceService service = CreateService(
             fileSystem,
@@ -4376,11 +4473,15 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         );
 
         string configured = fileSystem.ReadAllText(service.Paths.NpmCiTemporaryNpmrcPath);
-        Assert.Contains($"@one:registry={TestRegistryUrl}", configured, StringComparison.Ordinal);
+        Assert.Contains(
+            $"@one:registry={TestRegistryUrl.TrimEnd('/')}",
+            configured,
+            StringComparison.Ordinal
+        );
         Assert.Contains($"@two:registry={TestRegistryUrl}", configured, StringComparison.Ordinal);
         Assert.Contains("_authToken=system-token", configured, StringComparison.Ordinal);
         Assert.Equal(
-            new Uri(TestRegistryUrl),
+            new Uri(TestRegistryUrl.TrimEnd('/')),
             service.ResolvePersistedRegistryUrl(
                 CredentialEcosystem.Npm,
                 ConfigurationPhase14Scope.CiTemporary

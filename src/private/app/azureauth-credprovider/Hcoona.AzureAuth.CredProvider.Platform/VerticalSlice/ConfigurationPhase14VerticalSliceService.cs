@@ -2181,6 +2181,23 @@ public sealed class ConfigurationPhase14VerticalSliceService
             .Entries.Take(previousAuthIndex + 1)
             .Select((entry, index) => entry with { Sequence = index + 1 })
             .ToArray();
+        ConfigurationOwnershipManifestEntry[] previousRegistryEntries = previousEntries[..^1];
+        if (
+            previousAuthEntry.TargetKind != ConfigurationTargetKind.Npmrc
+            || previousRegistryEntries
+                .Select(static entry => entry.Key)
+                .Distinct(StringComparer.Ordinal)
+                .Count() != previousRegistryEntries.Length
+            || previousRegistryEntries.Any(entry =>
+                entry.TargetKind != ConfigurationTargetKind.Npmrc
+                || !NpmPhase12VerticalSliceService.IsRegistryDeclarationKey(entry.Key)
+                || !PathEquals(entry.TargetPathOrName, previousAuthEntry.TargetPathOrName)
+            )
+        )
+        {
+            return false;
+        }
+
         ConfigurationOwnershipManifest previousLayout = manifest with
         {
             EntrySelector = previousAuthEntry.Key,
