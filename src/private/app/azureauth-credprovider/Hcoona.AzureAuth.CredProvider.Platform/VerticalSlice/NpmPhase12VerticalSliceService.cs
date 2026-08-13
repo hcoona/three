@@ -143,6 +143,8 @@ public sealed record NpmPhase12DoctorResult
 
     public required bool NpmUserCredentialPlanValid { get; init; }
 
+    public required bool PnpmRegistryDeclarationDiscovered { get; init; }
+
     public required bool PnpmUserCredentialPlanValid { get; init; }
 
     public required bool CiTemporaryCredentialPlanValid { get; init; }
@@ -253,35 +255,56 @@ public sealed class NpmPhase12VerticalSliceService
         CancellationToken cancellationToken = default
     )
     {
-        NpmWorkspaceResolutionResult resolution = await ResolveWorkspaceAsync(
+        NpmWorkspaceResolutionResult npmResolution = await ResolveWorkspaceAsync(
                 CredentialEcosystem.Npm,
                 cancellationToken
             )
             .ConfigureAwait(false);
-        bool workspaceResolutionSucceeded = resolution.Succeeded;
+        NpmWorkspaceResolutionResult pnpmResolution = await ResolveWorkspaceAsync(
+                CredentialEcosystem.Pnpm,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        bool workspaceResolutionSucceeded = npmResolution.Succeeded;
+        bool pnpmWorkspaceResolutionSucceeded = pnpmResolution.Succeeded;
         string? workspaceNpmrcPath = workspaceResolutionSucceeded
-            ? GetWorkspaceNpmrcPath(CredentialEcosystem.Npm, resolution)
+            ? GetWorkspaceNpmrcPath(CredentialEcosystem.Npm, npmResolution)
             : null;
         string effectiveUserNpmrcPath = ResolveUserNpmrcPath();
         string resolvedCiTemporaryNpmrcPath = ResolveCiTemporaryNpmrcPath();
-        NpmPhase12RegistryDeclaration[] declarations =
+        NpmPhase12RegistryDeclaration[] npmDeclarations =
             workspaceResolutionSucceeded
-                ? DiscoverRegistryDeclarations(CredentialEcosystem.Npm, resolution)
+                ? DiscoverRegistryDeclarations(CredentialEcosystem.Npm, npmResolution)
                 : [];
-        IGrouping<string, NpmPhase12RegistryDeclaration>[] declarationGroups = declarations
+        NpmPhase12RegistryDeclaration[] pnpmDeclarations =
+            pnpmWorkspaceResolutionSucceeded
+                ? DiscoverRegistryDeclarations(CredentialEcosystem.Pnpm, pnpmResolution)
+                : [];
+        IGrouping<string, NpmPhase12RegistryDeclaration>[] npmDeclarationGroups = npmDeclarations
             .GroupBy(
                 static declaration => declaration.AuthSelectors.NpmAuthTokenKey,
                 StringComparer.Ordinal
             )
             .ToArray();
-        NpmPhase12RegistryDeclaration[] selectedDeclarations =
-            declarationGroups.Length == 1 ? declarationGroups[0].ToArray() : [];
-        NpmPhase12RegistryDeclaration? selectedDeclaration =
-            selectedDeclarations.Length == 0 ? null : selectedDeclarations[0];
+        IGrouping<string, NpmPhase12RegistryDeclaration>[] pnpmDeclarationGroups =
+            pnpmDeclarations
+                .GroupBy(
+                    static declaration => declaration.AuthSelectors.NpmAuthTokenKey,
+                    StringComparer.Ordinal
+                )
+                .ToArray();
+        NpmPhase12RegistryDeclaration[] selectedNpmDeclarations =
+            npmDeclarationGroups.Length == 1 ? npmDeclarationGroups[0].ToArray() : [];
+        NpmPhase12RegistryDeclaration[] selectedPnpmDeclarations =
+            pnpmDeclarationGroups.Length == 1 ? pnpmDeclarationGroups[0].ToArray() : [];
+        NpmPhase12RegistryDeclaration? selectedNpmDeclaration =
+            selectedNpmDeclarations.Length == 0 ? null : selectedNpmDeclarations[0];
+        NpmPhase12RegistryDeclaration? selectedPnpmDeclaration =
+            selectedPnpmDeclarations.Length == 0 ? null : selectedPnpmDeclarations[0];
 
         return new NpmPhase12DoctorResult
         {
-            WorkspaceResolutionStatus = resolution.Status,
+            WorkspaceResolutionStatus = npmResolution.Status,
             WorkspaceResolutionSucceeded = workspaceResolutionSucceeded,
             WorkspaceNpmrcPath = workspaceNpmrcPath,
             WorkspaceNpmrcExists =
@@ -297,29 +320,30 @@ public sealed class NpmPhase12VerticalSliceService
                     environmentVariableReader(LowercaseNpmUserConfigEnvironmentVariable)
                 )
                     is not null,
-            RegistryDeclarations = declarations,
+            RegistryDeclarations = npmDeclarations,
             AzureArtifactsNpmEndpointCanonicalizationSuccess =
                 CheckAzureArtifactsNpmEndpointCanonicalization(),
             NpmUserCredentialPlanValid =
                 workspaceResolutionSucceeded
                 && TryValidateUserCredentialPlan(
-                    selectedDeclaration,
+                    selectedNpmDeclaration,
                     CredentialEcosystem.Npm,
-                    resolution
+                    npmResolution
                 ),
+            PnpmRegistryDeclarationDiscovered = pnpmDeclarations.Length > 0,
             PnpmUserCredentialPlanValid =
-                workspaceResolutionSucceeded
+                pnpmWorkspaceResolutionSucceeded
                 && TryValidateUserCredentialPlan(
-                    selectedDeclaration,
+                    selectedPnpmDeclaration,
                     CredentialEcosystem.Pnpm,
-                    resolution
+                    pnpmResolution
                 ),
             CiTemporaryCredentialPlanValid =
                 workspaceResolutionSucceeded
                 && TryValidateCiTemporaryCredentialPlan(
-                    selectedDeclarations,
+                    selectedNpmDeclarations,
                     resolvedCiTemporaryNpmrcPath,
-                    resolution
+                    npmResolution
                 ),
         };
     }

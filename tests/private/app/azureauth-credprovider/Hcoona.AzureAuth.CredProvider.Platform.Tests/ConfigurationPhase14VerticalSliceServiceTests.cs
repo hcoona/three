@@ -927,6 +927,87 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     }
 
     [Fact]
+    public async Task NpmUserReplacementIntentRejectsRegistryDeclarationOwnership()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        ConfigurationPhase14VerticalSliceService original = CreateService(fileSystem);
+        await original.ConfigureAsync(
+            CredentialEcosystem.Npm,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+        var replacementRegistry = new Uri(
+            "https://pkgs.dev.azure.com/test-org/_packaging/replacement-feed/npm/registry/"
+        );
+        ConfigurationPhase14VerticalSliceService replacement = CreateService(
+            fileSystem,
+            registryUrl: replacementRegistry
+        );
+        string targetPath = replacement.Paths.NpmUserNpmrcPath;
+        string manifestPath = GetPackageManifestPath(replacement, CredentialEcosystem.Npm);
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken
+        );
+        InjectPackageReplacementFailure(
+            fileSystem,
+            targetPath,
+            manifestPath,
+            PackageReplacementFailurePoint.TargetWriteAfterIntent,
+            cancellation
+        );
+        await Assert.ThrowsAsync<IOException>(async () =>
+            await replacement.ConfigureAsync(
+                CredentialEcosystem.Npm,
+                ConfigurationPhase14Scope.User,
+                cancellation.Token
+            )
+        );
+
+        ConfigurationOwnershipManifest transitional =
+            ConfigurationOwnershipManifestSerializer.Deserialize(
+                fileSystem.ReadAllText(manifestPath)
+            );
+        int previousAuthIndex = transitional
+            .Entries.Select((entry, index) => (entry, index))
+            .Single(pair => pair.entry.Key.Contains("test-feed", StringComparison.Ordinal))
+            .index;
+        var forgedEntries = transitional.Entries.ToList();
+        forgedEntries.Insert(
+            previousAuthIndex + 1,
+            new ConfigurationOwnershipManifestEntry
+            {
+                Sequence = 0,
+                TargetKind = ConfigurationTargetKind.Npmrc,
+                TargetPathOrName = targetPath,
+                Key = "@victim:registry",
+            }
+        );
+        ConfigurationOwnershipManifest forged = transitional with
+        {
+            Entries = forgedEntries
+                .Select((entry, index) => entry with { Sequence = index + 1 })
+                .ToArray(),
+        };
+        fileSystem.WriteAllText(manifestPath, SerializeManifest(forged));
+        fileSystem.WriteAllText(
+            targetPath,
+            fileSystem.ReadAllText(targetPath) + $"@victim:registry={TestRegistryUrl}\n"
+        );
+        byte[] targetBefore = fileSystem.ReadAllBytes(targetPath);
+        byte[] manifestBefore = fileSystem.ReadAllBytes(manifestPath);
+
+        ConfigurationPhase14PlanResult result = await replacement.UnconfigureAsync(
+            CredentialEcosystem.Npm,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.True(result.OwnershipManifestCleanupIncomplete);
+        Assert.Equal(targetBefore, fileSystem.ReadAllBytes(targetPath));
+        Assert.Equal(manifestBefore, fileSystem.ReadAllBytes(manifestPath));
+    }
+
+    [Fact]
     public async Task YarnTransitionalReplacementCleanupSucceedsAfterTargetBecomesRepository()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);

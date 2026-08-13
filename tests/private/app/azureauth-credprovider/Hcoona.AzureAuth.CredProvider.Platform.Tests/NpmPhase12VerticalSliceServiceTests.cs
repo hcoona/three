@@ -576,6 +576,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         Assert.True(result.RegistryDeclarationDiscovered);
         Assert.True(result.AzureArtifactsNpmEndpointCanonicalizationSuccess);
         Assert.True(result.NpmUserCredentialPlanValid);
+        Assert.True(result.PnpmRegistryDeclarationDiscovered);
         Assert.True(result.PnpmUserCredentialPlanValid);
         Assert.True(result.CiTemporaryCredentialPlanValid);
         Assert.True(result.CiTemporaryAuthOnlyPlanSupported);
@@ -609,6 +610,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
 
         Assert.True(result.RegistryDeclarationDiscovered);
         Assert.True(result.NpmUserCredentialPlanValid);
+        Assert.True(result.PnpmRegistryDeclarationDiscovered);
         Assert.True(result.PnpmUserCredentialPlanValid);
         Assert.True(result.CiTemporaryCredentialPlanValid);
         Assert.False(result.CiTemporaryAuthOnlyPlanSupported);
@@ -643,8 +645,53 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         Assert.Equal(2, result.RegistryDeclarations.Count);
         Assert.True(result.RegistryDeclarationDiscovered);
         Assert.False(result.NpmUserCredentialPlanValid);
+        Assert.True(result.PnpmRegistryDeclarationDiscovered);
         Assert.False(result.PnpmUserCredentialPlanValid);
         Assert.False(result.CiTemporaryCredentialPlanValid);
+    }
+
+    [Fact]
+    public async Task DoctorUsesPnpmWorkspaceRootForPnpmPlanValidation()
+    {
+        const string LeafRegistry =
+            "https://pkgs.dev.azure.com/org/_packaging/leaf/npm/registry/";
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/repo/packages/apple");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText("/repo/pnpm-workspace.yaml", "packages:\n  - packages/*\n");
+        fileSystem.WriteAllText(
+            "/repo/.npmrc",
+            "registry=https://pkgs.dev.azure.com/org/_packaging/first/npm/registry/\n"
+                + "@other:registry="
+                + "https://pkgs.dev.azure.com/org/_packaging/second/npm/registry/\n"
+        );
+        fileSystem.WriteAllText("/repo/packages/apple/package.json", "{}\n");
+        fileSystem.WriteAllText(
+            "/repo/packages/apple/.npmrc",
+            "registry=" + LeafRegistry + "\n"
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/repo/packages/apple",
+                UserHomeDirectoryPath = "/home/alice",
+                CiTemporaryNpmrcPath = "/tmp/azureauth-ci/.npmrc",
+            }
+        );
+
+        NpmPhase12DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        NpmPhase12RegistryDeclaration declaration = Assert.Single(
+            result.RegistryDeclarations
+        );
+        Assert.Equal("/repo/packages/apple/.npmrc", declaration.SourcePath);
+        Assert.Equal(LeafRegistry, declaration.RegistryUrl.AbsoluteUri);
+        Assert.True(result.NpmUserCredentialPlanValid);
+        Assert.True(result.PnpmRegistryDeclarationDiscovered);
+        Assert.False(result.PnpmUserCredentialPlanValid);
     }
 
     [Fact]
@@ -710,6 +757,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         Assert.False(result.RegistryDeclarationDiscovered);
         Assert.True(result.AzureArtifactsNpmEndpointCanonicalizationSuccess);
         Assert.False(result.NpmUserCredentialPlanValid);
+        Assert.False(result.PnpmRegistryDeclarationDiscovered);
         Assert.False(result.PnpmUserCredentialPlanValid);
         Assert.False(result.CiTemporaryCredentialPlanValid);
     }
@@ -2050,7 +2098,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
     [InlineData("NonZeroExit")]
     [InlineData("OutputTooLarge")]
     [InlineData("InvalidOutput")]
-    public async Task RunDoctorAsync_MapsExpectedResolutionFailureToTypedDoctorResult(
+    public async Task RunDoctorAsync_MapsExpectedNpmResolutionFailureAndRetainsPnpmPlan(
         string expectedStatus
     )
     {
@@ -2072,7 +2120,8 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         Assert.Empty(result.RegistryDeclarations);
         Assert.False(result.RegistryDeclarationDiscovered);
         Assert.False(result.NpmUserCredentialPlanValid);
-        Assert.False(result.PnpmUserCredentialPlanValid);
+        Assert.True(result.PnpmRegistryDeclarationDiscovered);
+        Assert.True(result.PnpmUserCredentialPlanValid);
         Assert.False(result.CiTemporaryCredentialPlanValid);
         Assert.DoesNotContain(
             SensitiveError,

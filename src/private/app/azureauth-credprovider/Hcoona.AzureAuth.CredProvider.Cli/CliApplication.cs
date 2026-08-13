@@ -446,7 +446,7 @@ internal static class CliApplication
             npmDoctor.EffectiveUserNpmrcExists
             && npmDoctor.AzureArtifactsNpmEndpointCanonicalizationSuccess
             && (
-                !npmDoctor.RegistryDeclarationDiscovered
+                !npmDoctor.PnpmRegistryDeclarationDiscovered
                 || npmDoctor.PnpmUserCredentialPlanValid
             );
         bool yarnEvidenceReady =
@@ -3847,7 +3847,7 @@ internal static class CliApplication
                     resolutionFailed
                         ? "skipped"
                         : GetRegistryPlanStatusText(
-                            doctorResult.RegistryDeclarationDiscovered,
+                            doctorResult.PnpmRegistryDeclarationDiscovered,
                             doctorResult.PnpmUserCredentialPlanValid
                         )
                 ),
@@ -4488,9 +4488,12 @@ internal static class CliApplication
                 !doctorResult.RegistryDeclarationDiscovered
                 || (
                     doctorResult.NpmUserCredentialPlanValid
-                    && doctorResult.PnpmUserCredentialPlanValid
                     && doctorResult.CiTemporaryCredentialPlanValid
                 )
+            )
+            && (
+                !doctorResult.PnpmRegistryDeclarationDiscovered
+                || doctorResult.PnpmUserCredentialPlanValid
             );
     }
 

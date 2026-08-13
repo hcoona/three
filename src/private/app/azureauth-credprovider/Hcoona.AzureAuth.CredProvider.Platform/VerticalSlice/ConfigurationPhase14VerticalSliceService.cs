@@ -2006,6 +2006,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
             return TryGetNpmOwnershipIntentLayouts(
                 manifest,
                 ecosystem,
+                scope,
                 requestedPlan,
                 requestedResource,
                 out layouts
@@ -2110,12 +2111,23 @@ public sealed class ConfigurationPhase14VerticalSliceService
     private bool TryGetNpmOwnershipIntentLayouts(
         ConfigurationOwnershipManifest manifest,
         CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
         ConfigurationChangePlan? requestedPlan,
         CanonicalResourceIdentity requestedResource,
         [NotNullWhen(true)] out PackageOwnershipIntentLayouts? layouts
     )
     {
         layouts = null;
+        if (
+            scope == ConfigurationPhase14Scope.User
+            && manifest.Entries.Any(entry =>
+                NpmPhase12VerticalSliceService.IsRegistryDeclarationKey(entry.Key)
+            )
+        )
+        {
+            return false;
+        }
+
         ConfigurationOwnershipManifest finalLayout;
         if (requestedPlan is not null)
         {
