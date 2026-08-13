@@ -568,6 +568,11 @@ public sealed class ConfigurationNpmrcPhysicalWriterPhase4DTests
     [InlineData("${TOKEN}", "expanded-token", true)]
     [InlineData("${MISSING}", null, false)]
     [InlineData("\\${TOKEN?}", null, true)]
+    [InlineData("false", null, false)]
+    [InlineData("\"null\"", null, false)]
+    [InlineData("'undefined'", null, false)]
+    [InlineData("${TOKEN}", "false", true)]
+    [InlineData("FALSE", null, true)]
     public void IsSatisfiedUsesEffectiveExpandedNpmAuthToken(
         string configuredValue,
         string? environmentValue,

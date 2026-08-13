@@ -1368,8 +1368,14 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         Assert.Equal(configured, fileSystem.ReadAllText(configurationPath));
     }
 
-    [Fact]
-    public async Task FreshNpmConfigureRepairsEnvironmentExpandedEmptyAuthToken()
+    [Theory]
+    [InlineData("${TOKEN?}")]
+    [InlineData("false")]
+    [InlineData("null")]
+    [InlineData("undefined")]
+    public async Task FreshNpmConfigureRepairsEffectivelyMissingAuthToken(
+        string configuredValue
+    )
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         var service = CreateService(fileSystem);
@@ -1386,7 +1392,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         );
         string changed = configured.Replace(
             tokenLine,
-            tokenLine[..(tokenLine.IndexOf('=') + 1)] + "${TOKEN?}",
+            tokenLine[..(tokenLine.IndexOf('=') + 1)] + configuredValue,
             StringComparison.Ordinal
         );
         fileSystem.WriteAllText(configurationPath, changed);
