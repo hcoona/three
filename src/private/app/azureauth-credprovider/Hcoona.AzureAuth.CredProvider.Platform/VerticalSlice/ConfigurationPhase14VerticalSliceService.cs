@@ -2121,7 +2121,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
         if (
             scope == ConfigurationPhase14Scope.User
             && manifest.Entries.Any(entry =>
-                NpmPhase12VerticalSliceService.IsRegistryDeclarationKey(entry.Key)
+                NpmrcRegistryDeclarationKeyPolicy.IsRegistryDeclarationKey(entry.Key)
             )
         )
         {
@@ -2138,7 +2138,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
             ConfigurationOwnershipManifestEntry[] finalEntries = manifest
                 .Entries.Where(entry =>
                     string.Equals(entry.Key, manifest.EntrySelector, StringComparison.Ordinal)
-                    || NpmPhase12VerticalSliceService.IsRegistryDeclarationKey(entry.Key)
+                    || NpmrcRegistryDeclarationKeyPolicy.IsRegistryDeclarationKey(entry.Key)
                 )
                 .Select((entry, index) => entry with { Sequence = index + 1 })
                 .ToArray();
@@ -2202,7 +2202,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
                 .Count() != previousRegistryEntries.Length
             || previousRegistryEntries.Any(entry =>
                 entry.TargetKind != ConfigurationTargetKind.Npmrc
-                || !NpmPhase12VerticalSliceService.IsRegistryDeclarationKey(entry.Key)
+                || !NpmrcRegistryDeclarationKeyPolicy.IsRegistryDeclarationKey(entry.Key)
                 || !PathEquals(entry.TargetPathOrName, previousAuthEntry.TargetPathOrName)
             )
         )
@@ -2469,7 +2469,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
 
         if (
             !manifest.SafeMetadata.TryGetValue("registry-key", out string? primaryRegistryKey)
-            || !NpmPhase12VerticalSliceService.IsRegistryDeclarationKey(primaryRegistryKey)
+            || !NpmrcRegistryDeclarationKeyPolicy.IsRegistryDeclarationKey(primaryRegistryKey)
         )
         {
             return false;
@@ -2490,7 +2490,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
                 .Count() == registryEntries.Length
             && registryEntries.All(entry =>
                 entry.TargetKind == ConfigurationTargetKind.Npmrc
-                && NpmPhase12VerticalSliceService.IsRegistryDeclarationKey(entry.Key)
+                && NpmrcRegistryDeclarationKeyPolicy.IsRegistryDeclarationKey(entry.Key)
                 && string.Equals(
                     entry.TargetPathOrName,
                     authEntry.TargetPathOrName,
@@ -2965,7 +2965,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
                         when ecosystem
                                 is CredentialEcosystem.Npm
                                     or CredentialEcosystem.Pnpm
-                            && NpmPhase12VerticalSliceService.IsRegistryDeclarationKey(
+                            && NpmrcRegistryDeclarationKeyPolicy.IsRegistryDeclarationKey(
                                 entry.Key
                             ) => registryUrl,
                     _ when entry.Key.EndsWith(".npmAlwaysAuth", StringComparison.Ordinal) => "true",

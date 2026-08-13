@@ -52,6 +52,62 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         );
     }
 
+    [Theory]
+    [InlineData("\"https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\"")]
+    [InlineData("'https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/'")]
+    [InlineData("https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/ ; comment")]
+    [InlineData("https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/# comment")]
+    public void DiscoverRegistryDeclarationsDecodesSupportedNpmrcValues(string value)
+    {
+        const string RegistryUrl =
+            "https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/";
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText("/workspace/.npmrc", "registry=" + value + "\n");
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+
+        NpmPhase12RegistryDeclaration declaration = Assert.Single(
+            service.DiscoverRegistryDeclarations()
+        );
+
+        Assert.Equal(RegistryUrl, declaration.RegistryUrl.AbsoluteUri);
+    }
+
+    [Theory]
+    [InlineData("foo:registry")]
+    [InlineData("@:registry")]
+    [InlineData("@foo:bar:registry")]
+    [InlineData("@foo/bar:registry")]
+    public void DiscoverRegistryDeclarationsRejectsMalformedScopedKeys(string key)
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/workspace/.npmrc",
+            key
+                + "=https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+
+        Assert.Empty(service.DiscoverRegistryDeclarations());
+    }
+
     [Fact]
     public void DiscoverRegistryDeclarationsDoesNotUseShadowedUserRegistry()
     {

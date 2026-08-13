@@ -278,7 +278,7 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
     private static bool RegistryValuesMatch(string key, string? actual, string? expected)
     {
         if (
-            !IsRegistryDeclarationKey(key)
+            !NpmrcRegistryDeclarationKeyPolicy.IsRegistryDeclarationKey(key)
             || !Uri.TryCreate(actual, UriKind.Absolute, out Uri? actualRegistry)
             || !Uri.TryCreate(expected, UriKind.Absolute, out Uri? expectedRegistry)
         )
@@ -292,10 +292,6 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
             StringComparison.Ordinal
         );
     }
-
-    private static bool IsRegistryDeclarationKey(string key) =>
-        string.Equals(key, "registry", StringComparison.Ordinal)
-        || key.EndsWith(":registry", StringComparison.Ordinal);
 
     private sealed class NpmrcDocument
     {

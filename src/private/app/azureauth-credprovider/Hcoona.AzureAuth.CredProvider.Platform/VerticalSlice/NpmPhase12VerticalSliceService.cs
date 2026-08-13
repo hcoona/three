@@ -1,7 +1,9 @@
 using System.Diagnostics.CodeAnalysis;
 using System.ComponentModel;
+using System.Text;
 using System.Text.Json;
 using Hcoona.AzureAuth.CredProvider.Contracts;
+using Hcoona.AzureAuth.CredProvider.Platform.Configuration;
 using Hcoona.AzureAuth.CredProvider.Platform.FileSystem;
 using Hcoona.AzureAuth.CredProvider.Platform.Processes;
 
@@ -720,14 +722,76 @@ public sealed class NpmPhase12VerticalSliceService
             }
 
             string key = rawLine[..separatorIndex].Trim();
-            string value = rawLine[(separatorIndex + 1)..].Trim();
-            if (!IsRegistryDeclarationKey(key))
+            string value = DecodeNpmrcValue(rawLine[(separatorIndex + 1)..]);
+            if (!NpmrcRegistryDeclarationKeyPolicy.IsRegistryDeclarationKey(key))
             {
                 continue;
             }
 
             effectiveSettings[key] = (npmrcPath, value);
         }
+    }
+
+    private static string DecodeNpmrcValue(string rawValue)
+    {
+        string value = rawValue.Trim();
+        if (value.StartsWith('"') && value.EndsWith('"'))
+        {
+            try
+            {
+                using JsonDocument document = JsonDocument.Parse(value);
+                return document.RootElement.ValueKind == JsonValueKind.String
+                    ? document.RootElement.GetString() ?? value
+                    : value;
+            }
+            catch (JsonException)
+            {
+                return value;
+            }
+        }
+
+        if (value.StartsWith('\'') && value.EndsWith('\''))
+        {
+            return value[1..^1];
+        }
+
+        var decoded = new StringBuilder(value.Length);
+        bool escaped = false;
+        foreach (char character in value)
+        {
+            if (escaped)
+            {
+                if (character is '\\' or '#' or ';')
+                {
+                    decoded.Append(character);
+                }
+                else
+                {
+                    decoded.Append('\\').Append(character);
+                }
+
+                escaped = false;
+            }
+            else if (character is '#' or ';')
+            {
+                break;
+            }
+            else if (character == '\\')
+            {
+                escaped = true;
+            }
+            else
+            {
+                decoded.Append(character);
+            }
+        }
+
+        if (escaped)
+        {
+            decoded.Append('\\');
+        }
+
+        return decoded.ToString().TrimEnd();
     }
 
     private bool TryCreateRegistryDeclaration(
@@ -1717,10 +1781,6 @@ public sealed class NpmPhase12VerticalSliceService
         string path = uri.AbsolutePath.Trim('/');
         return path.Length == 0 ? [] : path.Split('/').Select(Uri.UnescapeDataString).ToArray();
     }
-
-    internal static bool IsRegistryDeclarationKey(string key) =>
-        string.Equals(key, "registry", StringComparison.Ordinal)
-        || key.EndsWith(":registry", StringComparison.Ordinal);
 
     private static bool TryGetLegacyVisualStudioOrganization(string host, out string? organization)
     {

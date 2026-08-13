@@ -3843,13 +3843,9 @@ internal static class CliApplication
                         )
                 ),
             "pnpm-user-credential-plan: "
-                + (
-                    resolutionFailed
-                        ? "skipped"
-                        : GetRegistryPlanStatusText(
-                            doctorResult.PnpmRegistryDeclarationDiscovered,
-                            doctorResult.PnpmUserCredentialPlanValid
-                        )
+                + GetRegistryPlanStatusText(
+                    doctorResult.PnpmRegistryDeclarationDiscovered,
+                    doctorResult.PnpmUserCredentialPlanValid
                 ),
             "npm-ci-temporary-credential-plan: "
                 + (

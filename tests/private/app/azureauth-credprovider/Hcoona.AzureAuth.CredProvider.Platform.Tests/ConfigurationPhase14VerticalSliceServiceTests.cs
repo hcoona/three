@@ -4679,10 +4679,13 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
+    [InlineData(null)]
+    [InlineData("registry=https://registry.npmjs.org/\n")]
+    [InlineData(
+        "foo:registry=https://pkgs.dev.azure.com/test-org/_packaging/test-feed/npm/registry/\n"
+    )]
     public async Task ConfigureAsyncWithoutCanonicalNpmRegistryFailsWithoutSideEffects(
-        bool includeNonAzureDeclaration
+        string? sourceContents
     )
     {
         const string SourcePath = "/workspace/app/.npmrc";
@@ -4690,9 +4693,9 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         CreateDirectoryTree(fileSystem, "/workspace/app");
         fileSystem.WriteAllText("/workspace/app/package.json", """{"name":"app"}""");
         byte[]? sourceBytes = null;
-        if (includeNonAzureDeclaration)
+        if (sourceContents is not null)
         {
-            fileSystem.WriteAllText(SourcePath, "registry=https://registry.npmjs.org/\n");
+            fileSystem.WriteAllText(SourcePath, sourceContents);
             sourceBytes = fileSystem.ReadAllBytes(SourcePath);
         }
 

@@ -8652,7 +8652,11 @@ public sealed class CliApplicationTests
             AssertDoctorCheck(doctor.StdOut, "npm-workspace-npmrc", "fail");
             AssertDoctorCheck(doctor.StdOut, "npm-registry-declaration", "skipped");
             AssertDoctorCheck(doctor.StdOut, "npm-user-credential-plan", "skipped");
-            AssertDoctorCheck(doctor.StdOut, "pnpm-user-credential-plan", "skipped");
+            AssertDoctorCheck(
+                doctor.StdOut,
+                "pnpm-user-credential-plan",
+                "not-applicable"
+            );
             AssertDoctorCheck(
                 doctor.StdOut,
                 "npm-ci-temporary-credential-plan",
