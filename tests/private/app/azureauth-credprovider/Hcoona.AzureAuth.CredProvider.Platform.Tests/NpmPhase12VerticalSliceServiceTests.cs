@@ -224,6 +224,10 @@ public sealed class NpmPhase12VerticalSliceServiceTests
     [Theory]
     [InlineData("registry=https://registry.npmjs.org/\n")]
     [InlineData("\"registry\"=https://registry.npmjs.org/\n")]
+    [InlineData("registry\n")]
+    [InlineData("\"registry\"\n")]
+    [InlineData("${KEY}=https://registry.npmjs.org/\n")]
+    [InlineData("${KEY}\n")]
     public void DiscoverRegistryDeclarationsDoesNotUseShadowedUserRegistry(
         string workspaceSetting
     )
@@ -236,10 +240,14 @@ public sealed class NpmPhase12VerticalSliceServiceTests
             "/home/alice/.npmrc",
             "registry=https://pkgs.dev.azure.com/org/project/_packaging/feed/npm/registry/\n"
         );
+        var environment = new EnvironmentVariables(
+            new Dictionary<string, string?> { ["KEY"] = "registry" }
+        );
         var service = new NpmPhase12VerticalSliceService(
             new NpmPhase12VerticalSliceOptions
             {
                 FileSystem = fileSystem,
+                EnvironmentVariableReader = environment.Get,
                 WorkspaceDirectoryPath = "/workspace",
                 UserHomeDirectoryPath = "/home/alice",
             }

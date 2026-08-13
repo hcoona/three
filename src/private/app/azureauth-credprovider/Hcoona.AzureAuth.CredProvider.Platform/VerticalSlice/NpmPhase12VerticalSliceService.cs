@@ -716,14 +716,25 @@ public sealed class NpmPhase12VerticalSliceService
             }
 
             int separatorIndex = rawLine.IndexOf('=', StringComparison.Ordinal);
-            if (separatorIndex <= 0)
+            if (separatorIndex == 0)
             {
                 continue;
             }
 
-            string key = DecodeNpmrcField(rawLine[..separatorIndex]);
+            string key = ExpandNpmrcEnvironmentVariables(
+                DecodeNpmrcField(
+                    separatorIndex < 0 ? rawLine : rawLine[..separatorIndex]
+                ),
+                out _
+            );
             if (!NpmrcRegistryDeclarationKeyPolicy.IsRegistryDeclarationKey(key))
             {
+                continue;
+            }
+
+            if (separatorIndex < 0)
+            {
+                effectiveSettings.Remove(key);
                 continue;
             }
 
