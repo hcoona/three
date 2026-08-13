@@ -3306,7 +3306,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
             StringComparison.Ordinal
         );
 
-        Assert.Throws<InvalidOperationException>(() =>
+        Assert.Throws<YarnRcFilenameConfigurationException>(() =>
             CreateService(
                 new InMemoryFileSystem(InMemoryPathSemantics.Posix),
                 environmentVariableReader: name =>
@@ -3318,6 +3318,101 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
                     }
             )
         );
+    }
+
+    [Theory]
+    [InlineData(false, "../x")]
+    [InlineData(false, "a/../x")]
+    [InlineData(false, @"..\x")]
+    [InlineData(false, @"a\..\x")]
+    [InlineData(false, ".")]
+    [InlineData(false, "a/./x")]
+    [InlineData(true, "../x")]
+    [InlineData(true, "a/../x")]
+    [InlineData(true, @"..\x")]
+    [InlineData(true, @"a\..\x")]
+    [InlineData(true, ".")]
+    [InlineData(true, @"a\.\x")]
+    [InlineData(true, "/x")]
+    [InlineData(true, @"\x")]
+    [InlineData(true, "C:x")]
+    public void YarnTraversalFilenameOverrideIsRejectedForPosixAndWindowsPaths(
+        bool windows,
+        string configuredFilename
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(
+            windows ? InMemoryPathSemantics.Windows : InMemoryPathSemantics.Posix
+        );
+        string home = windows ? @"C:\Users\test" : "/home/test";
+
+        YarnRcFilenameConfigurationException exception =
+            Assert.Throws<YarnRcFilenameConfigurationException>(() =>
+                CreateService(
+                    fileSystem,
+                    environmentVariableReader: name =>
+                        name switch
+                        {
+                            "HOME" => home,
+                            "YARN_RC_FILENAME" => configuredFilename,
+                            _ => null,
+                        }
+                )
+            );
+
+        Assert.Equal(
+            "YARN_RC_FILENAME must be an absolute path or a relative path without traversal.",
+            exception.Message
+        );
+        Assert.Equal("invalid-yarn-rc-filename", exception.Code);
+        Assert.Equal("YARN_RC_FILENAME", exception.SettingName);
+        Assert.Empty(fileSystem.Files);
+        Assert.Single(fileSystem.Directories);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task YarnSafeRelativeFilenameOverrideKeepsDefaultUserCredentialTarget(
+        bool windows
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(
+            windows ? InMemoryPathSemantics.Windows : InMemoryPathSemantics.Posix
+        );
+        string home = windows ? @"C:\Users\test" : "/home/test";
+        string workspace = windows ? @"C:\workspace" : "/workspace";
+        string expectedTarget = windows
+            ? @"C:\Users\Test\.yarnrc.yml"
+            : "/home/test/.yarnrc.yml";
+        string selectorPath = windows
+            ? @"C:\workspace\config\team.yarnrc.yml"
+            : "/workspace/config/team.yarnrc.yml";
+        ConfigurationPhase14VerticalSliceService service = CreateService(
+            fileSystem,
+            environmentVariableReader: name =>
+                name switch
+                {
+                    "HOME" => home,
+                    "YARN_RC_FILENAME" => "config/team.yarnrc.yml",
+                    _ => null,
+                },
+            workspaceDirectoryPath: workspace
+        );
+
+        await service.ConfigureAsync(
+            CredentialEcosystem.Yarn,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(expectedTarget, service.Paths.YarnUserYarnrcPath);
+        Assert.Contains(
+            "npmAuthToken",
+            fileSystem.ReadAllText(expectedTarget),
+            StringComparison.Ordinal
+        );
+        Assert.False(fileSystem.FileExists(selectorPath));
     }
 
     [Fact]

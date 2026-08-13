@@ -131,6 +131,17 @@ public sealed record ConfigurationPhase14EcosystemDoctorResult
     public DateTimeOffset? CredentialExpiresAt { get; init; }
 
     public Uri? RegistryUrl { get; init; }
+
+    public ConfigurationPhase14InputFailure? InputFailure { get; init; }
+}
+
+public sealed record ConfigurationPhase14InputFailure
+{
+    public required string Code { get; init; }
+
+    public required string SettingName { get; init; }
+
+    public required string SafeMessage { get; init; }
 }
 
 public sealed record ConfigurationPhase14CleanupResult
@@ -3804,19 +3815,10 @@ public sealed class ConfigurationPhase14VerticalSliceService
     )
     {
         string home = ResolveUserHomeDirectory(fileSystem, environmentVariableReader);
-        string? configuredFilename = NullIfWhiteSpace(
-            environmentVariableReader(YarnRcFilenameEnvironmentVariable)
+        string? configuredFilename = YarnRcFilenamePolicy.ReadValidatedOverride(
+            fileSystem,
+            environmentVariableReader
         );
-        if (
-            configuredFilename is not null
-            && !fileSystem.IsPathFullyQualified(configuredFilename)
-            && !IsValidRelativeConfigurationPath(configuredFilename)
-        )
-        {
-            throw new InvalidOperationException(
-                "YARN_RC_FILENAME must be an absolute path or a relative path without traversal."
-            );
-        }
 
         if (configuredFilename is not null && fileSystem.IsPathFullyQualified(configuredFilename))
         {
@@ -3836,19 +3838,6 @@ public sealed class ConfigurationPhase14VerticalSliceService
         {
             throw new InvalidOperationException($"The {description} path must be fully qualified.");
         }
-    }
-
-    private static bool IsValidRelativeConfigurationPath(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return false;
-        }
-
-        string[] segments = value
-            .Replace('\\', '/')
-            .Split('/', StringSplitOptions.RemoveEmptyEntries);
-        return segments.Length > 0 && segments.All(segment => segment is not "." and not "..");
     }
 
     private string GetOwnershipManifestPath(

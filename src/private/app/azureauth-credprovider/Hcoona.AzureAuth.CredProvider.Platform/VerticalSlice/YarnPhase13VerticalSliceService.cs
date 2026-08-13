@@ -66,6 +66,10 @@ public sealed record YarnPhase13DoctorResult
 
     public required string? YarnRcFilenameOverride { get; init; }
 
+    public required bool YarnRcFilenameValid { get; init; }
+
+    public string? YarnRcFilenameFailureMessage { get; init; }
+
     // editorconfig-checker-disable
     public required IReadOnlyList<YarnPhase13RegistryDeclaration> RegistryDeclarations { get; init; }
 
@@ -83,7 +87,8 @@ public sealed record YarnPhase13DoctorResult
 
     public bool RegistryDeclarationDiscovered => RegistryDeclarations.Count > 0;
 
-    public bool YarnRcFilenameOverridePresent => YarnRcFilenameOverride is not null;
+    public bool YarnRcFilenameOverridePresent =>
+        YarnRcFilenameOverride is not null || YarnRcFilenameFailureMessage is not null;
 
     public bool ForbiddenAuthIdentConflictDetected => AuthIdentConflicts.Count > 0;
 }
@@ -91,7 +96,6 @@ public sealed record YarnPhase13DoctorResult
 public sealed class YarnPhase13VerticalSliceService
 {
     private const string WorkspaceYarnrcFileName = ".yarnrc.yml";
-    private const string YarnRcFilenameEnvironmentVariable = "YARN_RC_FILENAME";
     private const string ProductId = "azureauth-credprovider";
     private const string ProductVersion = "phase13";
     private const string ManifestId = "phase13-yarnrc-credential";
@@ -198,9 +202,39 @@ public sealed class YarnPhase13VerticalSliceService
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        string? workspaceYarnrcPath = GetWorkspaceYarnrcPath();
-        string effectiveUserYarnrcPath = ResolveUserYarnrcPath();
-        string? yarnRcFilenameOverride = GetYarnRcFilenameOverride();
+        string? workspaceYarnrcPath;
+        string effectiveUserYarnrcPath;
+        string? yarnRcFilenameOverride;
+        try
+        {
+            workspaceYarnrcPath = GetWorkspaceYarnrcPath();
+            effectiveUserYarnrcPath = ResolveUserYarnrcPath();
+            yarnRcFilenameOverride = GetYarnRcFilenameOverride();
+        }
+        catch (YarnRcFilenameConfigurationException exception)
+        {
+            effectiveUserYarnrcPath =
+                userYarnrcPath ?? ResolveDefaultUserYarnrcPath();
+            return ValueTask.FromResult(
+                new YarnPhase13DoctorResult
+                {
+                    WorkspaceYarnrcPath = null,
+                    WorkspaceYarnrcExists = false,
+                    EffectiveUserYarnrcPath = effectiveUserYarnrcPath,
+                    EffectiveUserYarnrcExists = fileSystem.FileExists(effectiveUserYarnrcPath),
+                    YarnRcFilenameOverride = null,
+                    YarnRcFilenameValid = false,
+                    YarnRcFilenameFailureMessage = exception.Message,
+                    RegistryDeclarations = [],
+                    AuthIdentConflicts = [],
+                    AzureArtifactsYarnEndpointCanonicalizationSuccess =
+                        CheckAzureArtifactsYarnEndpointCanonicalization(),
+                    WriteGateStatus = WriteGateStatusValue,
+                    UnsupportedWriteMessage = UnsupportedWriteMessageValue,
+                    WritesSupported = true,
+                }
+            );
+        }
 
         return ValueTask.FromResult(
             new YarnPhase13DoctorResult
@@ -211,6 +245,7 @@ public sealed class YarnPhase13VerticalSliceService
                 EffectiveUserYarnrcPath = effectiveUserYarnrcPath,
                 EffectiveUserYarnrcExists = fileSystem.FileExists(effectiveUserYarnrcPath),
                 YarnRcFilenameOverride = yarnRcFilenameOverride,
+                YarnRcFilenameValid = true,
                 RegistryDeclarations = DiscoverRegistryDeclarations(),
                 AuthIdentConflicts = DiscoverAuthIdentConflicts(),
                 AzureArtifactsYarnEndpointCanonicalizationSuccess =
@@ -1290,7 +1325,10 @@ public sealed class YarnPhase13VerticalSliceService
 
     private string? GetYarnRcFilenameOverride()
     {
-        return NullIfWhiteSpace(environmentVariableReader(YarnRcFilenameEnvironmentVariable));
+        return YarnRcFilenamePolicy.ReadValidatedOverride(
+            fileSystem,
+            environmentVariableReader
+        );
     }
 
     private string GetHomeDirectory()

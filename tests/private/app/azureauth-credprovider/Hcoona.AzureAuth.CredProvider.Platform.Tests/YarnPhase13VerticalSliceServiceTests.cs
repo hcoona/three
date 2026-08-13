@@ -721,6 +721,58 @@ public sealed class YarnPhase13VerticalSliceServiceTests
         Assert.Equal("selected", declaration.ResourceIdentity.Feed);
     }
 
+    [Theory]
+    [InlineData(false, "../x")]
+    [InlineData(false, "a/../x")]
+    [InlineData(false, @"..\x")]
+    [InlineData(false, @"a\..\x")]
+    [InlineData(false, ".")]
+    [InlineData(false, "a/./x")]
+    [InlineData(true, "../x")]
+    [InlineData(true, "a/../x")]
+    [InlineData(true, @"..\x")]
+    [InlineData(true, @"a\..\x")]
+    [InlineData(true, ".")]
+    [InlineData(true, @"a\.\x")]
+    [InlineData(true, "/x")]
+    [InlineData(true, @"\x")]
+    [InlineData(true, "C:x")]
+    public void DiscoveryRejectsTraversalBearingRelativeYarnRcFilename(
+        bool windows,
+        string configuredFilename
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(
+            windows ? InMemoryPathSemantics.Windows : InMemoryPathSemantics.Posix
+        );
+        string workspace = windows ? @"C:\workspace" : "/workspace";
+        string home = windows ? @"C:\Users\alice" : "/home/alice";
+        var service = new YarnPhase13VerticalSliceService(
+            new YarnPhase13VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                EnvironmentVariableReader = name =>
+                    name == "YARN_RC_FILENAME" ? configuredFilename : null,
+                WorkspaceDirectoryPath = workspace,
+                UserHomeDirectoryPath = home,
+            }
+        );
+
+        YarnRcFilenameConfigurationException exception =
+            Assert.Throws<YarnRcFilenameConfigurationException>(() =>
+                service.DiscoverRegistryDeclarations()
+            );
+
+        Assert.Equal(
+            "YARN_RC_FILENAME must be an absolute path or a relative path without traversal.",
+            exception.Message
+        );
+        Assert.Equal("invalid-yarn-rc-filename", exception.Code);
+        Assert.Equal("YARN_RC_FILENAME", exception.SettingName);
+        Assert.Empty(fileSystem.Files);
+        Assert.Single(fileSystem.Directories);
+    }
+
     [Fact]
     public async Task DoctorReportsForbiddenNpmAuthIdentConflicts()
     {

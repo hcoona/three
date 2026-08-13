@@ -278,14 +278,7 @@ internal static class CliApplication
         CancellationToken cancellationToken = GetCancellationToken(runtimeOptions);
         CredentialProviderReadiness readiness = root.GetReadiness(cancellationToken);
         ConfigurationPhase14DoctorResult configuration =
-            CreateConfigurationPhase14VerticalSliceService(
-                    runtimeOptions,
-                    requireCredentialProvider: false
-                )
-                .DoctorAsync(cancellationToken)
-                .AsTask()
-                .GetAwaiter()
-                .GetResult();
+            RunConfigurationPhase14Doctor(runtimeOptions, cancellationToken);
         WriteText(
             stdout,
             BuildStatusOutput(invocation.CiMode, root, readiness)
@@ -308,6 +301,18 @@ internal static class CliApplication
                 .Select(result =>
                     $"{GetConfigurationPhase14DoctorPrefix(result)}-lifecycle: "
                     + $"{GetLifecycleStateText(result.LifecycleState)}\n"
+                    + (
+                        result.InputFailure is null
+                            ? string.Empty
+                            : $"{GetConfigurationPhase14DoctorPrefix(result)}"
+                                + $"-configuration-input: invalid\n"
+                                + $"{GetConfigurationPhase14DoctorPrefix(result)}"
+                                + $"-configuration-input-code: {result.InputFailure.Code}\n"
+                                + $"{GetConfigurationPhase14DoctorPrefix(result)}"
+                                + $"-configuration-setting: {result.InputFailure.SettingName}\n"
+                                + $"{GetConfigurationPhase14DoctorPrefix(result)}"
+                                + $"-configuration-remediation: {result.InputFailure.SafeMessage}\n"
+                    )
                 )
         );
 
@@ -1165,14 +1170,7 @@ internal static class CliApplication
             .GetAwaiter()
             .GetResult();
         ConfigurationPhase14DoctorResult configurationDoctorResult =
-            CreateConfigurationPhase14VerticalSliceService(
-                    runtimeOptions,
-                    requireCredentialProvider: false
-                )
-                .DoctorAsync(cancellationToken)
-                .AsTask()
-                .GetAwaiter()
-                .GetResult();
+            RunConfigurationPhase14Doctor(runtimeOptions, cancellationToken);
         bool doctorSuccess =
             IsGitDoctorSuccess(doctorResult)
             && IsNuGetDoctorSuccess(nuGetDoctorResult)
@@ -3866,20 +3864,37 @@ internal static class CliApplication
         ];
     }
 
-    private static IEnumerable<string> BuildYarnDoctorLines(YarnPhase13DoctorResult doctorResult)
+    private static List<string> BuildYarnDoctorLines(YarnPhase13DoctorResult doctorResult)
     {
         ArgumentNullException.ThrowIfNull(doctorResult);
-        return
+        List<string> lines =
         [
-            "yarn-workspace-yarnrc: " + GetPresenceText(doctorResult.WorkspaceYarnrcExists),
+            "yarn-workspace-yarnrc: "
+                + (
+                    doctorResult.YarnRcFilenameValid
+                        ? GetPresenceText(doctorResult.WorkspaceYarnrcExists)
+                        : "not-assessed"
+                ),
             "yarn-effective-user-yarnrc: "
                 + GetPresenceText(doctorResult.EffectiveUserYarnrcExists),
             "yarn-rc-filename-override: "
-                + GetPresenceText(doctorResult.YarnRcFilenameOverridePresent),
+                + (
+                    doctorResult.YarnRcFilenameValid
+                        ? GetPresenceText(doctorResult.YarnRcFilenameOverridePresent)
+                        : "invalid"
+                ),
             "yarn-registry-declaration: "
-                + GetPresenceText(doctorResult.RegistryDeclarationDiscovered),
+                + (
+                    doctorResult.YarnRcFilenameValid
+                        ? GetPresenceText(doctorResult.RegistryDeclarationDiscovered)
+                        : "not-assessed"
+                ),
             "yarn-forbidden-auth-ident-conflict: "
-                + GetPresenceText(doctorResult.ForbiddenAuthIdentConflictDetected),
+                + (
+                    doctorResult.YarnRcFilenameValid
+                        ? GetPresenceText(doctorResult.ForbiddenAuthIdentConflictDetected)
+                        : "not-assessed"
+                ),
             "yarn-azure-artifacts-endpoint-canonicalization: "
                 + GetCheckStatusText(
                     doctorResult.AzureArtifactsYarnEndpointCanonicalizationSuccess
@@ -3887,6 +3902,12 @@ internal static class CliApplication
             "yarn-writes: " + GetCheckStatusText(doctorResult.WritesSupported),
             $"yarn-write-gate-status: {doctorResult.WriteGateStatus}",
         ];
+        if (doctorResult.YarnRcFilenameFailureMessage is { } failureMessage)
+        {
+            lines.Add("yarn-rc-filename-remediation: " + failureMessage);
+        }
+
+        return lines;
     }
 
     private static List<string> BuildConfigurationPhase14DoctorLines(
@@ -3926,6 +3947,13 @@ internal static class CliApplication
                 $"{prefix}-ownership-manifest: "
                     + GetPresenceText(ecosystemResult.OwnershipManifestPresent)
             );
+            if (ecosystemResult.InputFailure is { } inputFailure)
+            {
+                lines.Add($"{prefix}-configuration-input: invalid");
+                lines.Add($"{prefix}-configuration-input-code: {inputFailure.Code}");
+                lines.Add($"{prefix}-configuration-setting: {inputFailure.SettingName}");
+                lines.Add($"{prefix}-configuration-remediation: {inputFailure.SafeMessage}");
+            }
             if (IsPackageRegistryEcosystem(ecosystemResult.Ecosystem))
             {
                 lines.Add(
@@ -4360,6 +4388,79 @@ internal static class CliApplication
         return new ConfigurationPhase14VerticalSliceService(options);
     }
 
+    private static ConfigurationPhase14DoctorResult RunConfigurationPhase14Doctor(
+        CliRuntimeOptions? runtimeOptions,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            return CreateConfigurationPhase14VerticalSliceService(
+                    runtimeOptions,
+                    requireCredentialProvider: false
+                )
+                .DoctorAsync(cancellationToken)
+                .AsTask()
+                .GetAwaiter()
+                .GetResult();
+        }
+        catch (YarnRcFilenameConfigurationException exception)
+        {
+            ConfigurationPhase14VerticalSliceOptions options =
+                runtimeOptions?.ConfigurationPhase14Options
+                ?? new ConfigurationPhase14VerticalSliceOptions();
+            Func<string, string?> environmentVariableReader =
+                options.EnvironmentVariableReader ?? Environment.GetEnvironmentVariable;
+            options = options with
+            {
+                EnvironmentVariableReader = name =>
+                    string.Equals(
+                        name,
+                        YarnRcFilenameConfigurationException.EnvironmentVariableName,
+                        StringComparison.Ordinal
+                    )
+                        ? null
+                        : environmentVariableReader(name),
+            };
+            CliRuntimeOptions diagnosticRuntime = (runtimeOptions ?? new CliRuntimeOptions()) with
+            {
+                ConfigurationPhase14Options = options,
+            };
+            ConfigurationPhase14DoctorResult result =
+                CreateConfigurationPhase14VerticalSliceService(
+                        diagnosticRuntime,
+                        requireCredentialProvider: false
+                    )
+                    .DoctorAsync(cancellationToken)
+                    .AsTask()
+                    .GetAwaiter()
+                    .GetResult();
+            return result with
+            {
+                Ecosystems = result
+                    .Ecosystems.Select(ecosystem =>
+                        ecosystem.Ecosystem == CredentialEcosystem.Yarn
+                            && ecosystem.Scope == ConfigurationPhase14Scope.User
+                            ? ecosystem with
+                            {
+                                ConfigurationPlanValid = false,
+                                ConfigureOperationValid = false,
+                                OwnedTargetMatchesResolvedPath = false,
+                                LifecycleState = RegistryCredentialLifecycleState.Invalid,
+                                InputFailure = new ConfigurationPhase14InputFailure
+                                {
+                                    Code = exception.Code,
+                                    SettingName = exception.SettingName,
+                                    SafeMessage = exception.Message,
+                                },
+                            }
+                            : ecosystem
+                    )
+                    .ToArray(),
+            };
+        }
+    }
+
     private static bool RequiresCredentialProviderForConfigure(
         CredentialEcosystem ecosystem,
         CliCiMode ciMode
@@ -4503,6 +4604,7 @@ internal static class CliApplication
 
         return doctorResult.AzureArtifactsYarnEndpointCanonicalizationSuccess
             && doctorResult.WritesSupported
+            && doctorResult.YarnRcFilenameValid
             && !doctorResult.ForbiddenAuthIdentConflictDetected;
     }
 
@@ -4645,11 +4747,14 @@ internal static class CliApplication
         ConfigurationPhase14EcosystemDoctorResult doctorResult
     )
     {
-        return !IsConfigurationPhase14EcosystemDoctorSuccess(doctorResult)
+        return doctorResult.InputFailure is null
+            && (
+                !IsConfigurationPhase14EcosystemDoctorSuccess(doctorResult)
             || doctorResult.LifecycleState == RegistryCredentialLifecycleState.RefreshRecommended
             || (
                 doctorResult.Scope == ConfigurationPhase14Scope.User
                 && ConfigurationPhase14DoctorStateAbsent(doctorResult)
+            )
             );
     }
 
