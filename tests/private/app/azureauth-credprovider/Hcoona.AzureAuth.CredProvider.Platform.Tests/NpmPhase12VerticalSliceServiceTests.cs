@@ -52,16 +52,51 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         );
     }
 
-    [Fact]
-    public void DiscoverRegistryDeclarationsFallsBackToUserNpmrc()
+    [Theory]
+    [InlineData("\"https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\"")]
+    [InlineData("'https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/'")]
+    [InlineData("https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/ ; comment")]
+    [InlineData("https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/# comment")]
+    public void DiscoverRegistryDeclarationsDecodesSupportedNpmrcValues(string value)
     {
+        const string RegistryUrl =
+            "https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/";
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         CreateDirectory(fileSystem, "/workspace");
         CreateDirectory(fileSystem, "/home/alice");
-        fileSystem.WriteAllText("/workspace/.npmrc", "registry=https://registry.npmjs.org/\n");
+        fileSystem.WriteAllText("/workspace/.npmrc", "registry=" + value + "\n");
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+
+        NpmPhase12RegistryDeclaration declaration = Assert.Single(
+            service.DiscoverRegistryDeclarations()
+        );
+
+        Assert.Equal(RegistryUrl, declaration.RegistryUrl.AbsoluteUri);
+    }
+
+    [Theory]
+    [InlineData("\"registry\"", "registry")]
+    [InlineData("'@scope:registry'", "@scope:registry")]
+    public void DiscoverRegistryDeclarationsDecodesQuotedNpmrcKeys(
+        string key,
+        string expectedKey
+    )
+    {
+        const string RegistryUrl =
+            "https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/";
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
         fileSystem.WriteAllText(
-            "/home/alice/.npmrc",
-            "registry=https://pkgs.dev.azure.com/org/project/_packaging/feed/npm/registry/\n"
+            "/workspace/.npmrc",
+            key + "=" + RegistryUrl + "\n"
         );
         var service = new NpmPhase12VerticalSliceService(
             new NpmPhase12VerticalSliceOptions
@@ -76,10 +111,292 @@ public sealed class NpmPhase12VerticalSliceServiceTests
             service.DiscoverRegistryDeclarations()
         );
 
-        Assert.Equal("/home/alice/.npmrc", declaration.SourcePath);
-        Assert.Equal("org", declaration.ResourceIdentity.Organization);
-        Assert.Equal("project", declaration.ResourceIdentity.Project);
-        Assert.Equal("feed", declaration.ResourceIdentity.Feed);
+        Assert.Equal(expectedKey, declaration.Key);
+        Assert.Equal(RegistryUrl, declaration.RegistryUrl.AbsoluteUri);
+    }
+
+    [Fact]
+    public void DiscoverRegistryDeclarationsExpandsNpmEnvironmentVariables()
+    {
+        const string RegistryUrl =
+            "https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/";
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/workspace/.npmrc",
+            "registry=${SCHEME}://${HOST}/${PATH}/\n"
+        );
+        var environment = new EnvironmentVariables(
+            new Dictionary<string, string?>
+            {
+                ["SCHEME"] = "https",
+                ["HOST"] = "pkgs.dev.azure.com",
+                ["PATH"] = "org/_packaging/feed/npm/registry",
+            }
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                EnvironmentVariableReader = environment.Get,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+
+        NpmPhase12RegistryDeclaration declaration = Assert.Single(
+            service.DiscoverRegistryDeclarations()
+        );
+
+        Assert.Equal(RegistryUrl, declaration.RegistryUrl.AbsoluteUri);
+    }
+
+    [Theory]
+    [InlineData("${MISSING}")]
+    [InlineData("${MISSING?}")]
+    [InlineData("\\${AZURE_NPM_REGISTRY}")]
+    [InlineData("${INDIRECT}")]
+    [InlineData("${EMPTY}")]
+    [InlineData(
+        "https://pkgs.dev.azure.com/org/_packaging/${MISSING}/npm/registry/"
+    )]
+    public void DiscoverRegistryDeclarationsDoesNotOverExpandNpmEnvironmentVariables(
+        string value
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText("/workspace/.npmrc", "registry=" + value + "\n");
+        var environment = new EnvironmentVariables(
+            new Dictionary<string, string?>
+            {
+                ["AZURE_NPM_REGISTRY"] =
+                    "https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/",
+                ["INDIRECT"] = "${AZURE_NPM_REGISTRY}",
+                ["EMPTY"] = string.Empty,
+            }
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                EnvironmentVariableReader = environment.Get,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+
+        Assert.Empty(service.DiscoverRegistryDeclarations());
+    }
+
+    [Theory]
+    [InlineData("foo:registry")]
+    [InlineData("@:registry")]
+    [InlineData("@foo:bar:registry")]
+    [InlineData("@foo/bar:registry")]
+    [InlineData("@foo#bar:registry")]
+    [InlineData("@foo;bar:registry")]
+    [InlineData("@foo?bar:registry")]
+    public void DiscoverRegistryDeclarationsRejectsMalformedScopedKeys(string key)
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/workspace/.npmrc",
+            key
+                + "=https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+
+        Assert.Empty(service.DiscoverRegistryDeclarations());
+    }
+
+    [Theory]
+    [InlineData("registry=https://registry.npmjs.org/\n")]
+    [InlineData("\"registry\"=https://registry.npmjs.org/\n")]
+    [InlineData("registry\n")]
+    [InlineData("\"registry\"\n")]
+    [InlineData("${KEY}=https://registry.npmjs.org/\n")]
+    [InlineData("${KEY}\n")]
+    public void DiscoverRegistryDeclarationsDoesNotUseShadowedUserRegistry(
+        string workspaceSetting
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText("/workspace/.npmrc", workspaceSetting);
+        fileSystem.WriteAllText(
+            "/home/alice/.npmrc",
+            "registry=https://pkgs.dev.azure.com/org/project/_packaging/feed/npm/registry/\n"
+        );
+        var environment = new EnvironmentVariables(
+            new Dictionary<string, string?> { ["KEY"] = "registry" }
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                EnvironmentVariableReader = environment.Get,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+
+        Assert.Empty(service.DiscoverRegistryDeclarations());
+    }
+
+    [Theory]
+    [InlineData("registry")]
+    [InlineData("@team:registry")]
+    public void DiscoverRegistryDeclarationsTreatsArraySettingsAsUnusableShadows(string key)
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/workspace/.npmrc",
+            key
+                + "[]=https://registry.npmjs.org/\n"
+                + key
+                + "=https://pkgs.dev.azure.com/org/_packaging/workspace/npm/registry/\n"
+        );
+        fileSystem.WriteAllText(
+            "/home/alice/.npmrc",
+            key + "=https://pkgs.dev.azure.com/org/_packaging/user/npm/registry/\n"
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+
+        Assert.Empty(service.DiscoverRegistryDeclarations());
+    }
+
+    [Fact]
+    public void DiscoverRegistryDeclarationsPreservesUnresolvedWorkspaceShadowing()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText("/workspace/.npmrc", "registry=${MISSING}\n");
+        fileSystem.WriteAllText(
+            "/home/alice/.npmrc",
+            "registry=https://pkgs.dev.azure.com/org/_packaging/user/npm/registry/\n"
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                EnvironmentVariableReader = _ => null,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+
+        Assert.Empty(service.DiscoverRegistryDeclarations());
+    }
+
+    [Theory]
+    [InlineData("[ignored]")]
+    [InlineData("[\"quoted\"]")]
+    [InlineData("[]")]
+    public void DiscoverRegistryDeclarationsIgnoresSectionedSettings(string sectionHeader)
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/workspace/.npmrc",
+            sectionHeader
+                + "\nregistry="
+                + "https://pkgs.dev.azure.com/org/_packaging/ignored/npm/registry/\n"
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+
+        Assert.Empty(service.DiscoverRegistryDeclarations());
+    }
+
+    [Fact]
+    public void DiscoverRegistryDeclarationsKeepsTopLevelSettingBeforeSection()
+    {
+        const string RegistryUrl =
+            "https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/";
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/workspace/.npmrc",
+            "registry="
+                + RegistryUrl
+                + "\n[ignored]\nregistry=https://registry.npmjs.org/\n"
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+
+        NpmPhase12RegistryDeclaration declaration = Assert.Single(
+            service.DiscoverRegistryDeclarations()
+        );
+        Assert.Equal(RegistryUrl, declaration.RegistryUrl.AbsoluteUri);
+    }
+
+    [Fact]
+    public void DiscoverRegistryDeclarationsMergesEffectiveSettingsByKey()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/workspace/.npmrc",
+            "@workspace:registry="
+                + "https://pkgs.dev.azure.com/org/_packaging/workspace/npm/registry/\n"
+        );
+        fileSystem.WriteAllText(
+            "/home/alice/.npmrc",
+            "@user:registry=https://pkgs.dev.azure.com/org/_packaging/user/npm/registry/\n"
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+
+        IReadOnlyList<NpmPhase12RegistryDeclaration> declarations =
+            service.DiscoverRegistryDeclarations();
+
+        Assert.Equal(2, declarations.Count);
+        Assert.Contains(declarations, declaration => declaration.Key == "@workspace:registry");
+        Assert.Contains(declarations, declaration => declaration.Key == "@user:registry");
     }
 
     [Fact]
@@ -458,6 +775,68 @@ public sealed class NpmPhase12VerticalSliceServiceTests
     }
 
     [Fact]
+    public void CreateCiTemporaryCredentialPlanCanIncludeEquivalentUserRegistryDeclarations()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/home/alice/.npmrc",
+            "@one:registry=https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
+                + "@two:registry=https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+        IReadOnlyList<NpmPhase12RegistryDeclaration> declarations =
+            service.DiscoverRegistryDeclarations();
+        Assert.Equal(2, declarations.Count);
+
+        ConfigurationChangePlan plan = service.CreateCiTemporaryCredentialPlan(
+            new NpmPhase12CredentialPlanRequest
+            {
+                Declaration = declarations[0],
+                AuthToken = "short-lived-token",
+                TargetNpmrcPath = "/tmp/azureauth-ci/.npmrc",
+                IncludeRegistryDeclarationInTarget = true,
+                RegistryDeclarationsToInclude = declarations,
+            }
+        );
+
+        Assert.Equal(
+            ConfigurationDeclarationPreservation.CompleteMergedTemporaryConfig,
+            plan.DeclarationPreservation
+        );
+        Assert.Collection(
+            plan.Changes,
+            firstRegistryChange =>
+            {
+                Assert.Equal("@one:registry", firstRegistryChange.Key);
+                Assert.Equal(declarations[0].RegistryUrl.AbsoluteUri, firstRegistryChange.Value);
+                Assert.False(firstRegistryChange.IsSecretValue);
+            },
+            secondRegistryChange =>
+            {
+                Assert.Equal("@two:registry", secondRegistryChange.Key);
+                Assert.Equal(declarations[1].RegistryUrl.AbsoluteUri, secondRegistryChange.Value);
+                Assert.False(secondRegistryChange.IsSecretValue);
+            },
+            tokenChange =>
+            {
+                Assert.Equal(declarations[0].AuthSelectors.NpmAuthTokenKey, tokenChange.Key);
+                Assert.Equal("short-lived-token", tokenChange.Value);
+                Assert.True(tokenChange.IsSecretValue);
+            }
+        );
+        Assert.True(ConfigurationChangePlanPolicy.IsValid(plan));
+    }
+
+    [Fact]
     public async Task DoctorReportsWorkspaceRegistryAndValidNpmPnpmPlansWithoutWritingFiles()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
@@ -489,6 +868,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         Assert.True(result.RegistryDeclarationDiscovered);
         Assert.True(result.AzureArtifactsNpmEndpointCanonicalizationSuccess);
         Assert.True(result.NpmUserCredentialPlanValid);
+        Assert.True(result.PnpmRegistryDeclarationDiscovered);
         Assert.True(result.PnpmUserCredentialPlanValid);
         Assert.True(result.CiTemporaryCredentialPlanValid);
         Assert.True(result.CiTemporaryAuthOnlyPlanSupported);
@@ -497,7 +877,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
     }
 
     [Fact]
-    public async Task DoctorReportsCiTemporaryAuthOnlyUnsupportedForUserOnlyDeclaration()
+    public async Task DoctorValidatesCompleteCiPlanForUserOnlyDeclaration()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         CreateDirectory(fileSystem, "/workspace");
@@ -522,9 +902,88 @@ public sealed class NpmPhase12VerticalSliceServiceTests
 
         Assert.True(result.RegistryDeclarationDiscovered);
         Assert.True(result.NpmUserCredentialPlanValid);
+        Assert.True(result.PnpmRegistryDeclarationDiscovered);
         Assert.True(result.PnpmUserCredentialPlanValid);
-        Assert.False(result.CiTemporaryCredentialPlanValid);
+        Assert.True(result.CiTemporaryCredentialPlanValid);
         Assert.False(result.CiTemporaryAuthOnlyPlanSupported);
+    }
+
+    [Fact]
+    public async Task DoctorRejectsMultipleCanonicalRegistryGroups()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/workspace/.npmrc",
+            "registry=https://pkgs.dev.azure.com/org/_packaging/first/npm/registry/\n"
+                + "@other:registry="
+                + "https://pkgs.dev.azure.com/org/_packaging/second/npm/registry/\n"
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+                CiTemporaryNpmrcPath = "/tmp/azureauth-ci/.npmrc",
+            }
+        );
+
+        NpmPhase12DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(2, result.RegistryDeclarations.Count);
+        Assert.True(result.RegistryDeclarationDiscovered);
+        Assert.False(result.NpmUserCredentialPlanValid);
+        Assert.True(result.PnpmRegistryDeclarationDiscovered);
+        Assert.False(result.PnpmUserCredentialPlanValid);
+        Assert.False(result.CiTemporaryCredentialPlanValid);
+    }
+
+    [Fact]
+    public async Task DoctorUsesPnpmWorkspaceRootForPnpmPlanValidation()
+    {
+        const string LeafRegistry =
+            "https://pkgs.dev.azure.com/org/_packaging/leaf/npm/registry/";
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/repo/packages/apple");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText("/repo/pnpm-workspace.yaml", "packages:\n  - packages/*\n");
+        fileSystem.WriteAllText(
+            "/repo/.npmrc",
+            "registry=https://pkgs.dev.azure.com/org/_packaging/first/npm/registry/\n"
+                + "@other:registry="
+                + "https://pkgs.dev.azure.com/org/_packaging/second/npm/registry/\n"
+        );
+        fileSystem.WriteAllText("/repo/packages/apple/package.json", "{}\n");
+        fileSystem.WriteAllText(
+            "/repo/packages/apple/.npmrc",
+            "registry=" + LeafRegistry + "\n"
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/repo/packages/apple",
+                UserHomeDirectoryPath = "/home/alice",
+                CiTemporaryNpmrcPath = "/tmp/azureauth-ci/.npmrc",
+            }
+        );
+
+        NpmPhase12DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        NpmPhase12RegistryDeclaration declaration = Assert.Single(
+            result.RegistryDeclarations
+        );
+        Assert.Equal("/repo/packages/apple/.npmrc", declaration.SourcePath);
+        Assert.Equal(LeafRegistry, declaration.RegistryUrl.AbsoluteUri);
+        Assert.True(result.NpmUserCredentialPlanValid);
+        Assert.True(result.PnpmRegistryDeclarationDiscovered);
+        Assert.False(result.PnpmUserCredentialPlanValid);
     }
 
     [Fact]
@@ -590,12 +1049,14 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         Assert.False(result.RegistryDeclarationDiscovered);
         Assert.True(result.AzureArtifactsNpmEndpointCanonicalizationSuccess);
         Assert.False(result.NpmUserCredentialPlanValid);
+        Assert.False(result.PnpmRegistryDeclarationDiscovered);
         Assert.False(result.PnpmUserCredentialPlanValid);
         Assert.False(result.CiTemporaryCredentialPlanValid);
     }
 
     [Theory]
     [InlineData("_authToken")]
+    [InlineData("_authToken[]")]
     [InlineData("_auth")]
     [InlineData("username")]
     [InlineData("_password")]
@@ -638,6 +1099,83 @@ public sealed class NpmPhase12VerticalSliceServiceTests
 
         Assert.Contains("Project-local npm authentication", exception.Message);
         Assert.DoesNotContain(ProjectSecret, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("quoted")]
+    [InlineData("environment")]
+    public void CreateUserCredentialPlanRejectsDecodedProjectAuthSelectorKeys(string keyForm)
+    {
+        const string Selector =
+            "//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:_authToken";
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        string key = keyForm == "quoted" ? "\"" + Selector + "\"" : "${AUTH_KEY}";
+        fileSystem.WriteAllText(
+            "/workspace/.npmrc",
+            "registry=https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
+                + key
+                + "=project-secret-value\n"
+        );
+        var environment = new EnvironmentVariables(
+            new Dictionary<string, string?> { ["AUTH_KEY"] = Selector }
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                EnvironmentVariableReader = environment.Get,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            service.CreateUserCredentialPlan(
+                new NpmPhase12CredentialPlanRequest
+                {
+                    Declaration = Assert.Single(service.DiscoverRegistryDeclarations()),
+                    AuthToken = "short-lived-token",
+                }
+            )
+        );
+
+        Assert.Contains("Project-local npm authentication", exception.Message);
+    }
+
+    [Fact]
+    public void CreateUserCredentialPlanIgnoresSectionedProjectAuthSelector()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/workspace/.npmrc",
+            """
+            registry=https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/
+            [ignored]
+            //pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:_authToken=ignored
+            """
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+
+        ConfigurationChangePlan plan = service.CreateUserCredentialPlan(
+            new NpmPhase12CredentialPlanRequest
+            {
+                Declaration = Assert.Single(service.DiscoverRegistryDeclarations()),
+                AuthToken = "short-lived-token",
+            }
+        );
+
+        Assert.Single(plan.Changes);
     }
 
     [Theory]
@@ -801,7 +1339,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
 
         NpmWorkspaceResolutionException exception =
             Assert.Throws<NpmWorkspaceResolutionException>(
-            service.DiscoverRegistryDeclarations
+            () => service.DiscoverRegistryDeclarations()
         );
 
         AssertNpmWorkspaceResolutionFailure(exception, processRunner);
@@ -872,7 +1410,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
 
         NpmWorkspaceResolutionException exception =
             Assert.Throws<NpmWorkspaceResolutionException>(
-            service.DiscoverRegistryDeclarations
+            () => service.DiscoverRegistryDeclarations()
         );
 
         AssertNpmWorkspaceResolutionFailure(exception, processRunner);
@@ -900,7 +1438,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
 
         NpmWorkspaceResolutionException exception =
             Assert.Throws<NpmWorkspaceResolutionException>(
-            service.DiscoverRegistryDeclarations
+            () => service.DiscoverRegistryDeclarations()
         );
 
         AssertNpmWorkspaceResolutionFailure(exception, processRunner);
@@ -923,7 +1461,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
 
         NpmWorkspaceResolutionException exception =
             Assert.Throws<NpmWorkspaceResolutionException>(
-            service.DiscoverRegistryDeclarations
+            () => service.DiscoverRegistryDeclarations()
         );
 
         AssertNpmWorkspaceResolutionFailure(exception, processRunner);
@@ -961,7 +1499,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
 
         NpmWorkspaceResolutionException exception =
             Assert.Throws<NpmWorkspaceResolutionException>(
-            service.DiscoverRegistryDeclarations
+            () => service.DiscoverRegistryDeclarations()
         );
 
         AssertNpmWorkspaceResolutionFailure(exception, processRunner);
@@ -1318,7 +1856,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         );
 
         Exception exception = Assert.ThrowsAny<Exception>(
-            service.DiscoverRegistryDeclarations
+            () => service.DiscoverRegistryDeclarations()
         );
 
         AssertTypedWorkspaceResolutionException(exception, expectedStatus, SensitiveError);
@@ -1930,7 +2468,7 @@ public sealed class NpmPhase12VerticalSliceServiceTests
     [InlineData("NonZeroExit")]
     [InlineData("OutputTooLarge")]
     [InlineData("InvalidOutput")]
-    public async Task RunDoctorAsync_MapsExpectedResolutionFailureToTypedDoctorResult(
+    public async Task RunDoctorAsync_MapsExpectedNpmResolutionFailureAndRetainsPnpmPlan(
         string expectedStatus
     )
     {
@@ -1952,7 +2490,8 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         Assert.Empty(result.RegistryDeclarations);
         Assert.False(result.RegistryDeclarationDiscovered);
         Assert.False(result.NpmUserCredentialPlanValid);
-        Assert.False(result.PnpmUserCredentialPlanValid);
+        Assert.True(result.PnpmRegistryDeclarationDiscovered);
+        Assert.True(result.PnpmUserCredentialPlanValid);
         Assert.False(result.CiTemporaryCredentialPlanValid);
         Assert.DoesNotContain(
             SensitiveError,
@@ -2717,6 +3256,50 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         }
 
         return null;
+    }
+
+    [Fact]
+    public void DiscoverRegistryDeclarationsForPnpmUsesWorkspaceRootWithoutInvokingNpm()
+    {
+        const string RootRegistry =
+            "https://pkgs.dev.azure.com/org/_packaging/root/npm/registry/";
+        const string LeafRegistry =
+            "https://pkgs.dev.azure.com/org/_packaging/leaf/npm/registry/";
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/repo/packages/apple");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText("/repo/pnpm-workspace.yaml", "packages:\n  - packages/*\n");
+        fileSystem.WriteAllText("/repo/.npmrc", "registry=" + RootRegistry + "\n");
+        fileSystem.WriteAllText(
+            "/repo/packages/apple/.npmrc",
+            "registry=" + LeafRegistry + "\n"
+        );
+        var processRunner = new FakeProcessRunner();
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                ProcessRunner = processRunner,
+                WorkspaceDirectoryPath = "/repo/packages/apple",
+                UserNpmrcPath = "/home/alice/.npmrc",
+            }
+        );
+
+        IReadOnlyList<NpmPhase12RegistryDeclaration> declarations =
+            service.DiscoverRegistryDeclarations(CredentialEcosystem.Pnpm);
+
+        NpmPhase12RegistryDeclaration declaration = Assert.Single(declarations);
+        Assert.Equal("/repo/.npmrc", declaration.SourcePath);
+        Assert.Equal(RootRegistry, declaration.RegistryUrl.AbsoluteUri);
+        Assert.Contains(
+            declarations,
+            candidate => candidate.RegistryUrl.AbsoluteUri == RootRegistry
+        );
+        Assert.DoesNotContain(
+            declarations,
+            candidate => candidate.RegistryUrl.AbsoluteUri == LeafRegistry
+        );
+        Assert.Empty(processRunner.RecordedStartSpecs);
     }
 #pragma warning restore CA1707
 }

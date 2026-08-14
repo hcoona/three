@@ -639,11 +639,16 @@ public sealed class ConfigurationPhase14VerticalSliceService
     )
     {
         string ownershipManifestPath = GetOwnershipManifestPath(ecosystem, scope);
+        NpmPhase12RegistryDeclaration[]? npmDeclarations =
+            ecosystem is CredentialEcosystem.Npm or CredentialEcosystem.Pnpm
+                ? ResolveNpmDeclarations(ecosystem, registryUrlOverride)
+                : null;
         ConfigurationChangePlan requestedDryRunPlan = CreateApplyPlans(
                 ecosystem,
                 scope,
                 CreateDryRunCredential(scope),
-                registryUrlOverride
+                registryUrlOverride,
+                npmDeclarations
             )
             .Single();
         ExistingOwnershipManifest? existing = LoadRecognizedPackageManifest(
@@ -681,13 +686,19 @@ public sealed class ConfigurationPhase14VerticalSliceService
         }
 
         CredentialResult credential = execute
-            ? GetPackageCredential(ecosystem, scope, cancellationToken)
+            ? GetPackageCredential(
+                ecosystem,
+                scope,
+                cancellationToken,
+                npmDeclarations?[0].ResourceIdentity
+            )
             : CreateDryRunCredential(scope);
         ConfigurationChangePlan applyPlan = CreateApplyPlans(
                 ecosystem,
                 scope,
                 credential,
-                registryUrlOverride
+                registryUrlOverride,
+                npmDeclarations
             )
             .Single();
         bool replaceExisting =
@@ -1121,7 +1132,8 @@ public sealed class ConfigurationPhase14VerticalSliceService
         CredentialEcosystem ecosystem,
         ConfigurationPhase14Scope scope,
         CredentialResult? credential,
-        Uri? registryUrlOverride = null
+        Uri? registryUrlOverride = null,
+        IReadOnlyList<NpmPhase12RegistryDeclaration>? npmDeclarations = null
     ) =>
         ecosystem switch
         {
@@ -1133,7 +1145,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
                     scope,
                     credential
                         ?? throw new InvalidOperationException("Package credential is required."),
-                    registryUrlOverride
+                    npmDeclarations ?? ResolveNpmDeclarations(ecosystem, registryUrlOverride)
                 ),
             ],
             CredentialEcosystem.Yarn =>
@@ -1400,58 +1412,26 @@ public sealed class ConfigurationPhase14VerticalSliceService
         CredentialEcosystem ecosystem,
         ConfigurationPhase14Scope scope,
         CredentialResult credential,
-        Uri? registryUrlOverride
+        IReadOnlyList<NpmPhase12RegistryDeclaration> declarations
     )
     {
-        var service = new NpmPhase12VerticalSliceService(
-            new NpmPhase12VerticalSliceOptions
-            {
-                FileSystem = fileSystem,
-                EnvironmentVariableReader = environmentVariableReader,
-                WorkspaceDirectoryPath = workspaceDirectoryPath,
-                UserNpmrcPath =
-                    ecosystem == CredentialEcosystem.Pnpm
-                        ? paths.PnpmUserNpmrcPath
-                        : paths.NpmUserNpmrcPath,
-            }
-        );
-        NpmPhase12RegistryDeclaration declaration = CreateNpmDeclaration(
-            ecosystem,
-            registryUrlOverride
-        );
+        NpmPhase12RegistryDeclaration declaration = declarations[0];
+        NpmPhase12VerticalSliceService service = CreateNpmService(ecosystem);
         var request = new NpmPhase12CredentialPlanRequest
         {
             Declaration = declaration,
             AuthToken = GetRequiredBearerToken(credential),
             Ecosystem = ecosystem,
             TargetNpmrcPath = GetNpmTargetPath(ecosystem, scope),
+            IncludeRegistryDeclarationInTarget =
+                scope == ConfigurationPhase14Scope.CiTemporary,
+            RegistryDeclarationsToInclude =
+                scope == ConfigurationPhase14Scope.CiTemporary ? declarations : [],
         };
         ConfigurationChangePlan plan =
             scope == ConfigurationPhase14Scope.CiTemporary
                 ? service.CreateCiTemporaryCredentialPlan(request)
                 : service.CreateUserCredentialPlan(request);
-        if (scope == ConfigurationPhase14Scope.CiTemporary)
-        {
-            plan = plan with
-            {
-                Changes =
-                [
-                    new ConfigurationChange
-                    {
-                        Operation = ConfigurationChangeOperation.Set,
-                        TargetKind = ConfigurationTargetKind.Npmrc,
-                        TargetPathOrName = request.TargetNpmrcPath!,
-                        Key = declaration.Key,
-                        Value = declaration.RegistryUrl.AbsoluteUri,
-                        IsSecretValue = false,
-                        RequiresOwnershipRecord = true,
-                    },
-                    .. plan.Changes,
-                ],
-                DeclarationPreservation =
-                    ConfigurationDeclarationPreservation.CompleteMergedTemporaryConfig,
-            };
-        }
 
         return AttachCredentialLifecycle(plan, scope, credential);
     }
@@ -1516,13 +1496,17 @@ public sealed class ConfigurationPhase14VerticalSliceService
     private CredentialResult GetPackageCredential(
         CredentialEcosystem ecosystem,
         ConfigurationPhase14Scope scope,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        CanonicalResourceIdentity? resolvedResource = null
     )
     {
         CanonicalResourceIdentity resource =
-            ecosystem == CredentialEcosystem.Yarn
-                ? CreateYarnDeclaration().ResourceIdentity
-                : CreateNpmDeclaration(ecosystem).ResourceIdentity;
+            resolvedResource
+            ?? (
+                ecosystem == CredentialEcosystem.Yarn
+                    ? CreateYarnDeclaration().ResourceIdentity
+                    : CreateNpmDeclaration(ecosystem).ResourceIdentity
+            );
         bool ciTemporary = scope == ConfigurationPhase14Scope.CiTemporary;
         var request = new CredentialRequestV2
         {
@@ -2017,6 +2001,18 @@ public sealed class ConfigurationPhase14VerticalSliceService
             return false;
         }
 
+        if (ecosystem is CredentialEcosystem.Npm or CredentialEcosystem.Pnpm)
+        {
+            return TryGetNpmOwnershipIntentLayouts(
+                manifest,
+                ecosystem,
+                scope,
+                requestedPlan,
+                requestedResource,
+                out layouts
+            );
+        }
+
         ConfigurationOwnershipManifest finalLayout;
         if (requestedPlan is not null)
         {
@@ -2104,6 +2100,143 @@ public sealed class ConfigurationPhase14VerticalSliceService
                         && EntriesMatch(pair.actual, pair.expected)
                 )
                 .All(static matches => matches);
+        if (matches)
+        {
+            layouts = new PackageOwnershipIntentLayouts(previousLayout, finalLayout);
+        }
+
+        return matches;
+    }
+
+    private bool TryGetNpmOwnershipIntentLayouts(
+        ConfigurationOwnershipManifest manifest,
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        ConfigurationChangePlan? requestedPlan,
+        CanonicalResourceIdentity requestedResource,
+        [NotNullWhen(true)] out PackageOwnershipIntentLayouts? layouts
+    )
+    {
+        layouts = null;
+        if (
+            scope == ConfigurationPhase14Scope.User
+            && manifest.Entries.Any(entry =>
+                NpmrcRegistryDeclarationKeyPolicy.IsRegistryDeclarationKey(entry.Key)
+            )
+        )
+        {
+            return false;
+        }
+
+        ConfigurationOwnershipManifest finalLayout;
+        if (requestedPlan is not null)
+        {
+            finalLayout = ProjectManifest(requestedPlan);
+        }
+        else
+        {
+            ConfigurationOwnershipManifestEntry[] finalEntries = manifest
+                .Entries.Where(entry =>
+                    string.Equals(entry.Key, manifest.EntrySelector, StringComparison.Ordinal)
+                    || NpmrcRegistryDeclarationKeyPolicy.IsRegistryDeclarationKey(entry.Key)
+                )
+                .Select((entry, index) => entry with { Sequence = index + 1 })
+                .ToArray();
+            finalLayout = manifest with
+            {
+                Entries = finalEntries,
+            };
+        }
+
+        if (
+            !PackageIntentMetadataMatches(manifest, finalLayout)
+            || manifest.Entries.Count <= finalLayout.Entries.Count
+        )
+        {
+            return false;
+        }
+
+        int previousAuthIndex = manifest
+            .Entries.Select((entry, index) => (entry, index))
+            .Where(pair =>
+                !finalLayout.Entries.Any(finalEntry =>
+                    EntriesMatch(pair.entry, finalEntry)
+                )
+                && TryGetPackageResourceFromAuthEntry(
+                    pair.entry,
+                    ecosystem,
+                    out _
+                )
+            )
+            .Select(static pair => pair.index)
+            .DefaultIfEmpty(-1)
+            .First();
+        if (previousAuthIndex < 0)
+        {
+            return false;
+        }
+
+        ConfigurationOwnershipManifestEntry previousAuthEntry =
+            manifest.Entries[previousAuthIndex];
+        if (
+            !TryGetPackageResourceFromAuthEntry(
+                previousAuthEntry,
+                ecosystem,
+                out CanonicalResourceIdentity? previousResource
+            )
+        )
+        {
+            return false;
+        }
+
+        ConfigurationOwnershipManifestEntry[] previousEntries = manifest
+            .Entries.Take(previousAuthIndex + 1)
+            .Select((entry, index) => entry with { Sequence = index + 1 })
+            .ToArray();
+        ConfigurationOwnershipManifestEntry[] previousRegistryEntries = previousEntries[..^1];
+        if (
+            previousAuthEntry.TargetKind != ConfigurationTargetKind.Npmrc
+            || previousRegistryEntries
+                .Select(static entry => entry.Key)
+                .Distinct(StringComparer.Ordinal)
+                .Count() != previousRegistryEntries.Length
+            || previousRegistryEntries.Any(entry =>
+                entry.TargetKind != ConfigurationTargetKind.Npmrc
+                || !NpmrcRegistryDeclarationKeyPolicy.IsRegistryDeclarationKey(entry.Key)
+                || !PathEquals(entry.TargetPathOrName, previousAuthEntry.TargetPathOrName)
+            )
+        )
+        {
+            return false;
+        }
+
+        ConfigurationOwnershipManifest previousLayout = manifest with
+        {
+            EntrySelector = previousAuthEntry.Key,
+            ResourceIdentity = previousResource,
+            Entries = previousEntries,
+        };
+        var expectedEntries = new List<ConfigurationOwnershipManifestEntry>(
+            previousLayout.Entries
+        );
+        foreach (ConfigurationOwnershipManifestEntry entry in finalLayout.Entries)
+        {
+            if (!expectedEntries.Any(existing => EntriesMatch(existing, entry)))
+            {
+                expectedEntries.Add(entry);
+            }
+        }
+
+        bool matches = Equals(finalLayout.ResourceIdentity, requestedResource)
+            && manifest.Entries.Count == expectedEntries.Count
+            && manifest
+                .Entries.Zip(expectedEntries, (actual, expected) => (actual, expected))
+                .Select(
+                    (pair, index) =>
+                        pair.actual.Sequence == index + 1
+                        && EntriesMatch(pair.actual, pair.expected)
+                )
+                .All(static entryMatches => entryMatches);
         if (matches)
         {
             layouts = new PackageOwnershipIntentLayouts(previousLayout, finalLayout);
@@ -2334,16 +2467,35 @@ public sealed class ConfigurationPhase14VerticalSliceService
             return manifest.Entries.Count == 1;
         }
 
-        ConfigurationOwnershipManifestEntry? registryEntry = manifest.Entries.SingleOrDefault(
-            static entry => string.Equals(entry.Key, "registry", StringComparison.Ordinal)
-        );
-        return manifest.Entries.Count == 2
-            && registryEntry is not null
-            && registryEntry.TargetKind == ConfigurationTargetKind.Npmrc
-            && string.Equals(
-                registryEntry.TargetPathOrName,
-                authEntry.TargetPathOrName,
-                StringComparison.Ordinal
+        if (
+            !manifest.SafeMetadata.TryGetValue("registry-key", out string? primaryRegistryKey)
+            || !NpmrcRegistryDeclarationKeyPolicy.IsRegistryDeclarationKey(primaryRegistryKey)
+        )
+        {
+            return false;
+        }
+
+        ConfigurationOwnershipManifestEntry[] registryEntries = manifest
+            .Entries.Where(entry =>
+                !string.Equals(entry.Key, manifest.EntrySelector, StringComparison.Ordinal)
+            )
+            .ToArray();
+        return registryEntries.Length > 0
+            && registryEntries.Any(entry =>
+                string.Equals(entry.Key, primaryRegistryKey, StringComparison.Ordinal)
+            )
+            && registryEntries
+                .Select(static entry => entry.Key)
+                .Distinct(StringComparer.Ordinal)
+                .Count() == registryEntries.Length
+            && registryEntries.All(entry =>
+                entry.TargetKind == ConfigurationTargetKind.Npmrc
+                && NpmrcRegistryDeclarationKeyPolicy.IsRegistryDeclarationKey(entry.Key)
+                && string.Equals(
+                    entry.TargetPathOrName,
+                    authEntry.TargetPathOrName,
+                    StringComparison.Ordinal
+                )
             );
     }
 
@@ -2808,7 +2960,14 @@ public sealed class ConfigurationPhase14VerticalSliceService
                 );
                 string value = entry.Key switch
                 {
-                    "registry" or "npmRegistryServer" => registryUrl,
+                    "npmRegistryServer" => registryUrl,
+                    _
+                        when ecosystem
+                                is CredentialEcosystem.Npm
+                                    or CredentialEcosystem.Pnpm
+                            && NpmrcRegistryDeclarationKeyPolicy.IsRegistryDeclarationKey(
+                                entry.Key
+                            ) => registryUrl,
                     _ when entry.Key.EndsWith(".npmAlwaysAuth", StringComparison.Ordinal) => "true",
                     _ when isAuthToken => "owned-secret-present",
                     _ => throw new InvalidOperationException(
@@ -3294,7 +3453,10 @@ public sealed class ConfigurationPhase14VerticalSliceService
         new(
             fileSystem,
             ownershipManifestPath,
-            new ConfigurationPhysicalTargetWriterDispatcher(fileSystem)
+            new ConfigurationPhysicalTargetWriterDispatcher(
+                fileSystem,
+                environmentVariableReader
+            )
         );
 
     private ConfigurationLayoutProjectionContext CreateCurrentLayoutProjectionContext() =>
@@ -3405,12 +3567,53 @@ public sealed class ConfigurationPhase14VerticalSliceService
     private NpmPhase12RegistryDeclaration CreateNpmDeclaration(
         CredentialEcosystem ecosystem,
         Uri? registryUrlOverride = null
+    ) => ResolveNpmDeclarations(ecosystem, registryUrlOverride)[0];
+
+    private NpmPhase12RegistryDeclaration[] ResolveNpmDeclarations(
+        CredentialEcosystem ecosystem,
+        Uri? registryUrlOverride = null
     )
     {
-        Uri registryUrl = registryUrlOverride ?? GetRequiredRegistryUrl(ecosystem);
+        Uri? configuredRegistryUrl = registryUrlOverride;
+        if (
+            configuredRegistryUrl is null
+            && registryUrls.TryGetValue(ecosystem, out Uri? registryUrl)
+        )
+        {
+            configuredRegistryUrl = registryUrl;
+        }
+
+        if (configuredRegistryUrl is null)
+        {
+            NpmPhase12RegistryDeclaration[] declarations = CreateNpmService(ecosystem)
+                .DiscoverRegistryDeclarations(ecosystem)
+                .ToArray();
+            IGrouping<string, NpmPhase12RegistryDeclaration>[] declarationGroups = declarations
+                .GroupBy(
+                    static declaration => declaration.AuthSelectors.NpmAuthTokenKey,
+                    StringComparer.Ordinal
+                )
+                .ToArray();
+            if (declarationGroups.Length == 1)
+            {
+                return declarationGroups[0].ToArray();
+            }
+
+            string ecosystemName = GetEcosystemName(ecosystem);
+            throw new InvalidOperationException(
+                declarationGroups.Length == 0
+                    ? $"No canonical Azure Artifacts registry was discovered from the effective "
+                        + $".npmrc. Run azureauth-credprovider configure {ecosystemName} "
+                        + "--registry-url <azure-artifacts-npm-url>."
+                    : $"Multiple Azure Artifacts registries were discovered from the effective "
+                        + $".npmrc. Run azureauth-credprovider configure {ecosystemName} "
+                        + "--registry-url <azure-artifacts-npm-url> to select one."
+            );
+        }
+
         if (
             !NpmPhase12VerticalSliceService.TryCreateAzureArtifactsNpmResourceIdentity(
-                registryUrl,
+                configuredRegistryUrl,
                 out CanonicalResourceIdentity? resource
             )
         )
@@ -3420,8 +3623,22 @@ public sealed class ConfigurationPhase14VerticalSliceService
             );
         }
 
-        return CreateNpmDeclaration(ecosystem, resource);
+        return [CreateNpmDeclaration(ecosystem, resource)];
     }
+
+    private NpmPhase12VerticalSliceService CreateNpmService(CredentialEcosystem ecosystem) =>
+        new(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                EnvironmentVariableReader = environmentVariableReader,
+                WorkspaceDirectoryPath = workspaceDirectoryPath,
+                UserNpmrcPath =
+                    ecosystem == CredentialEcosystem.Pnpm
+                        ? paths.PnpmUserNpmrcPath
+                        : paths.NpmUserNpmrcPath,
+            }
+        );
 
     private NpmPhase12RegistryDeclaration CreateNpmDeclaration(
         CredentialEcosystem ecosystem,

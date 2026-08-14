@@ -23,11 +23,17 @@ internal interface IConfigurationPhysicalTargetWriterDispatcher
     );
 }
 
-internal sealed class ConfigurationPhysicalTargetWriterDispatcher(IFileSystem fileSystem)
+internal sealed class ConfigurationPhysicalTargetWriterDispatcher(
+    IFileSystem fileSystem,
+    Func<string, string?>? environmentVariableReader = null
+)
     : IConfigurationPhysicalTargetWriterDispatcher
 {
     private readonly GitConfigPhysicalTargetWriter gitConfigWriter = new(fileSystem);
-    private readonly NpmrcPhysicalTargetWriter npmrcWriter = new(fileSystem);
+    private readonly NpmrcPhysicalTargetWriter npmrcWriter = new(
+        fileSystem,
+        environmentVariableReader
+    );
     private readonly NuGetPluginLayoutPhysicalTargetWriter nuGetPluginLayoutWriter = new(
         fileSystem
     );

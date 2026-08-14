@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.ComponentModel;
 using System.Text.Json;
 using Hcoona.AzureAuth.CredProvider.Contracts;
+using Hcoona.AzureAuth.CredProvider.Platform.Configuration;
 using Hcoona.AzureAuth.CredProvider.Platform.FileSystem;
 using Hcoona.AzureAuth.CredProvider.Platform.Processes;
 
@@ -107,6 +108,14 @@ public sealed record NpmPhase12CredentialPlanRequest
     public CredentialEcosystem Ecosystem { get; init; } = CredentialEcosystem.Npm;
 
     public string? TargetNpmrcPath { get; init; }
+
+    public bool IncludeRegistryDeclarationInTarget { get; init; }
+
+    public IReadOnlyList<NpmPhase12RegistryDeclaration> RegistryDeclarationsToInclude
+    {
+        get;
+        init;
+    } = [];
 }
 
 public sealed record NpmPhase12DoctorResult
@@ -135,6 +144,8 @@ public sealed record NpmPhase12DoctorResult
 
     public required bool NpmUserCredentialPlanValid { get; init; }
 
+    public required bool PnpmRegistryDeclarationDiscovered { get; init; }
+
     public required bool PnpmUserCredentialPlanValid { get; init; }
 
     public required bool CiTemporaryCredentialPlanValid { get; init; }
@@ -145,7 +156,14 @@ public sealed record NpmPhase12DoctorResult
         UppercaseUserConfigEnvironmentOverridePresent
         || LowercaseUserConfigEnvironmentOverridePresent;
 
-    public bool CiTemporaryAuthOnlyPlanSupported => CiTemporaryCredentialPlanValid;
+    public bool CiTemporaryAuthOnlyPlanSupported =>
+        CiTemporaryCredentialPlanValid
+        && RegistryDeclarations.Count > 0
+        && !string.Equals(
+            RegistryDeclarations[0].SourcePath,
+            EffectiveUserNpmrcPath,
+            StringComparison.Ordinal
+        );
 }
 
 public sealed class NpmPhase12VerticalSliceService
@@ -183,61 +201,111 @@ public sealed class NpmPhase12VerticalSliceService
         npmExecutablePath = NormalizeOptionalPath(options.NpmExecutablePath);
     }
 
-    public IReadOnlyList<NpmPhase12RegistryDeclaration> DiscoverRegistryDeclarations()
+    public IReadOnlyList<NpmPhase12RegistryDeclaration> DiscoverRegistryDeclarations(
+        CredentialEcosystem ecosystem = CredentialEcosystem.Npm
+    )
     {
         NpmWorkspaceResolutionResult resolution =
-            ResolveWorkspaceForSynchronousOperation(CredentialEcosystem.Npm);
-        return DiscoverRegistryDeclarations(resolution);
+            ResolveWorkspaceForSynchronousOperation(ecosystem);
+        return DiscoverRegistryDeclarations(ecosystem, resolution);
     }
 
     private NpmPhase12RegistryDeclaration[] DiscoverRegistryDeclarations(
+        CredentialEcosystem ecosystem,
         NpmWorkspaceResolutionResult resolution
     )
     {
-        string? workspaceNpmrcPath = GetWorkspaceNpmrcPath(
-            CredentialEcosystem.Npm,
-            resolution
-        );
+        var effectiveSettings = new Dictionary<
+            string,
+            (string SourcePath, string Value)
+        >(StringComparer.Ordinal);
+        string resolvedUserNpmrcPath = ResolveUserNpmrcPath();
+        if (fileSystem.FileExists(resolvedUserNpmrcPath))
+        {
+            MergeRegistrySettings(resolvedUserNpmrcPath, effectiveSettings);
+        }
+
+        string? workspaceNpmrcPath = GetWorkspaceNpmrcPath(ecosystem, resolution);
         if (workspaceNpmrcPath is not null && fileSystem.FileExists(workspaceNpmrcPath))
         {
-            NpmPhase12RegistryDeclaration[] workspaceDeclarations = ReadRegistryDeclarations(
-                workspaceNpmrcPath
-            );
-            if (workspaceDeclarations.Length > 0)
+            MergeRegistrySettings(workspaceNpmrcPath, effectiveSettings);
+        }
+
+        var declarations = new List<NpmPhase12RegistryDeclaration>();
+        foreach (
+            KeyValuePair<string, (string SourcePath, string Value)> setting in effectiveSettings
+        )
+        {
+            if (
+                TryCreateRegistryDeclaration(
+                    setting.Value.SourcePath,
+                    setting.Key,
+                    setting.Value.Value,
+                    out NpmPhase12RegistryDeclaration? declaration
+                )
+            )
             {
-                return workspaceDeclarations;
+                declarations.Add(declaration);
             }
         }
 
-        string resolvedUserNpmrcPath = ResolveUserNpmrcPath();
-        return fileSystem.FileExists(resolvedUserNpmrcPath)
-            ? ReadRegistryDeclarations(resolvedUserNpmrcPath)
-            : [];
+        return declarations.ToArray();
     }
 
     public async ValueTask<NpmPhase12DoctorResult> RunDoctorAsync(
         CancellationToken cancellationToken = default
     )
     {
-        NpmWorkspaceResolutionResult resolution = await ResolveWorkspaceAsync(
+        NpmWorkspaceResolutionResult npmResolution = await ResolveWorkspaceAsync(
                 CredentialEcosystem.Npm,
                 cancellationToken
             )
             .ConfigureAwait(false);
-        bool workspaceResolutionSucceeded = resolution.Succeeded;
+        NpmWorkspaceResolutionResult pnpmResolution = await ResolveWorkspaceAsync(
+                CredentialEcosystem.Pnpm,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        bool workspaceResolutionSucceeded = npmResolution.Succeeded;
+        bool pnpmWorkspaceResolutionSucceeded = pnpmResolution.Succeeded;
         string? workspaceNpmrcPath = workspaceResolutionSucceeded
-            ? GetWorkspaceNpmrcPath(CredentialEcosystem.Npm, resolution)
+            ? GetWorkspaceNpmrcPath(CredentialEcosystem.Npm, npmResolution)
             : null;
         string effectiveUserNpmrcPath = ResolveUserNpmrcPath();
         string resolvedCiTemporaryNpmrcPath = ResolveCiTemporaryNpmrcPath();
-        NpmPhase12RegistryDeclaration[] declarations =
-            workspaceResolutionSucceeded ? DiscoverRegistryDeclarations(resolution) : [];
-        NpmPhase12RegistryDeclaration? firstDeclaration =
-            declarations.Length == 0 ? null : declarations[0];
+        NpmPhase12RegistryDeclaration[] npmDeclarations =
+            workspaceResolutionSucceeded
+                ? DiscoverRegistryDeclarations(CredentialEcosystem.Npm, npmResolution)
+                : [];
+        NpmPhase12RegistryDeclaration[] pnpmDeclarations =
+            pnpmWorkspaceResolutionSucceeded
+                ? DiscoverRegistryDeclarations(CredentialEcosystem.Pnpm, pnpmResolution)
+                : [];
+        IGrouping<string, NpmPhase12RegistryDeclaration>[] npmDeclarationGroups = npmDeclarations
+            .GroupBy(
+                static declaration => declaration.AuthSelectors.NpmAuthTokenKey,
+                StringComparer.Ordinal
+            )
+            .ToArray();
+        IGrouping<string, NpmPhase12RegistryDeclaration>[] pnpmDeclarationGroups =
+            pnpmDeclarations
+                .GroupBy(
+                    static declaration => declaration.AuthSelectors.NpmAuthTokenKey,
+                    StringComparer.Ordinal
+                )
+                .ToArray();
+        NpmPhase12RegistryDeclaration[] selectedNpmDeclarations =
+            npmDeclarationGroups.Length == 1 ? npmDeclarationGroups[0].ToArray() : [];
+        NpmPhase12RegistryDeclaration[] selectedPnpmDeclarations =
+            pnpmDeclarationGroups.Length == 1 ? pnpmDeclarationGroups[0].ToArray() : [];
+        NpmPhase12RegistryDeclaration? selectedNpmDeclaration =
+            selectedNpmDeclarations.Length == 0 ? null : selectedNpmDeclarations[0];
+        NpmPhase12RegistryDeclaration? selectedPnpmDeclaration =
+            selectedPnpmDeclarations.Length == 0 ? null : selectedPnpmDeclarations[0];
 
         return new NpmPhase12DoctorResult
         {
-            WorkspaceResolutionStatus = resolution.Status,
+            WorkspaceResolutionStatus = npmResolution.Status,
             WorkspaceResolutionSucceeded = workspaceResolutionSucceeded,
             WorkspaceNpmrcPath = workspaceNpmrcPath,
             WorkspaceNpmrcExists =
@@ -253,29 +321,30 @@ public sealed class NpmPhase12VerticalSliceService
                     environmentVariableReader(LowercaseNpmUserConfigEnvironmentVariable)
                 )
                     is not null,
-            RegistryDeclarations = declarations,
+            RegistryDeclarations = npmDeclarations,
             AzureArtifactsNpmEndpointCanonicalizationSuccess =
                 CheckAzureArtifactsNpmEndpointCanonicalization(),
             NpmUserCredentialPlanValid =
                 workspaceResolutionSucceeded
                 && TryValidateUserCredentialPlan(
-                    firstDeclaration,
+                    selectedNpmDeclaration,
                     CredentialEcosystem.Npm,
-                    resolution
+                    npmResolution
                 ),
+            PnpmRegistryDeclarationDiscovered = pnpmDeclarations.Length > 0,
             PnpmUserCredentialPlanValid =
-                workspaceResolutionSucceeded
+                pnpmWorkspaceResolutionSucceeded
                 && TryValidateUserCredentialPlan(
-                    firstDeclaration,
+                    selectedPnpmDeclaration,
                     CredentialEcosystem.Pnpm,
-                    resolution
+                    pnpmResolution
                 ),
             CiTemporaryCredentialPlanValid =
                 workspaceResolutionSucceeded
                 && TryValidateCiTemporaryCredentialPlan(
-                    firstDeclaration,
+                    selectedNpmDeclarations,
                     resolvedCiTemporaryNpmrcPath,
-                    resolution
+                    npmResolution
                 ),
         };
     }
@@ -329,7 +398,11 @@ public sealed class NpmPhase12VerticalSliceService
     )
     {
         ValidateCredentialPlanRequest(request);
-        ThrowIfCiTemporaryPlanWouldHideRegistryDeclaration(request.Declaration);
+        if (!request.IncludeRegistryDeclarationInTarget)
+        {
+            ThrowIfCiTemporaryPlanWouldHideRegistryDeclaration(request.Declaration);
+        }
+
         string targetNpmrcPath =
             NullIfWhiteSpace(request.TargetNpmrcPath)
             ?? throw new ArgumentException(
@@ -356,14 +429,32 @@ public sealed class NpmPhase12VerticalSliceService
             ProductOwnedPath = targetNpmrcPath,
             ActivationEnvironment = activationEnvironment,
         };
+        IReadOnlyList<NpmPhase12RegistryDeclaration> registryDeclarations =
+            request.IncludeRegistryDeclarationInTarget
+                ? GetRegistryDeclarationsToInclude(request)
+                : [];
 
-        return CreateCredentialPlan(
+        ConfigurationChangePlan plan = CreateCredentialPlan(
             request,
             targetNpmrcPath,
             ConfigurationScope.CiTemporary,
             temporaryContainer,
-            ConfigurationDeclarationPreservation.AuthOnlyWhenDeclarationsRemainVisible
+            request.IncludeRegistryDeclarationInTarget
+                ? ConfigurationDeclarationPreservation.CompleteMergedTemporaryConfig
+                : ConfigurationDeclarationPreservation.AuthOnlyWhenDeclarationsRemainVisible
         );
+        return request.IncludeRegistryDeclarationInTarget
+            ? plan with
+            {
+                Changes =
+                [
+                    .. registryDeclarations.Select(declaration =>
+                        CreateRegistryDeclarationChange(declaration, targetNpmrcPath)
+                    ),
+                    .. plan.Changes,
+                ],
+            }
+            : plan;
     }
 
     private void ThrowIfCiTemporaryPlanWouldHideRegistryDeclaration(
@@ -399,21 +490,29 @@ public sealed class NpmPhase12VerticalSliceService
         }
 
         Uri plannedRegistry = declaration.RegistryUrl;
-        foreach (string rawLine in SplitLines(fileSystem.ReadAllText(workspaceNpmrcPath)))
-        {
-            string trimmedLine = rawLine.Trim();
-            if (
-                trimmedLine.Length == 0
-                || trimmedLine.StartsWith('#')
-                || trimmedLine.StartsWith(';')
+        foreach (
+            string rawLine in EnumerateTopLevelNpmrcLines(
+                fileSystem.ReadAllText(workspaceNpmrcPath)
             )
+        )
+        {
+            int separatorIndex = rawLine.IndexOf('=', StringComparison.Ordinal);
+            if (separatorIndex == 0)
             {
                 continue;
             }
 
-            int separatorIndex = rawLine.IndexOf('=', StringComparison.Ordinal);
-            string key =
-                separatorIndex < 0 ? trimmedLine : rawLine[..separatorIndex].Trim();
+            string decodedKey = NpmrcIniSyntax.NormalizeArrayAssignmentKey(
+                NpmrcIniSyntax.DecodeField(
+                    separatorIndex < 0 ? rawLine : rawLine[..separatorIndex]
+                ),
+                out _
+            );
+            string key = NpmrcIniSyntax.ExpandEnvironmentVariables(
+                decodedKey,
+                environmentVariableReader,
+                out _
+            );
             if (
                 TryParseRegistryAuthSelector(key, out Uri? registry)
                 && IsSameOrDescendantRegistry(plannedRegistry, registry)
@@ -544,6 +643,52 @@ public sealed class NpmPhase12VerticalSliceService
             RequiresOwnershipRecord = true,
         };
 
+    private static ConfigurationChange CreateRegistryDeclarationChange(
+        NpmPhase12RegistryDeclaration declaration,
+        string targetNpmrcPath
+    ) =>
+        new()
+        {
+            Operation = ConfigurationChangeOperation.Set,
+            TargetKind = ConfigurationTargetKind.Npmrc,
+            TargetPathOrName = targetNpmrcPath,
+            Key = declaration.Key,
+            Value = declaration.RegistryUrl.AbsoluteUri,
+            IsSecretValue = false,
+            RequiresOwnershipRecord = true,
+        };
+
+    private static IReadOnlyList<NpmPhase12RegistryDeclaration> GetRegistryDeclarationsToInclude(
+        NpmPhase12CredentialPlanRequest request
+    )
+    {
+        IReadOnlyList<NpmPhase12RegistryDeclaration> declarations =
+            request.RegistryDeclarationsToInclude.Count == 0
+                ? [request.Declaration]
+                : request.RegistryDeclarationsToInclude;
+        string expectedAuthTokenKey = request.Declaration.AuthSelectors.NpmAuthTokenKey;
+        if (
+            declarations.Count == 0
+            || declarations.Any(declaration =>
+                !string.Equals(
+                    declaration.AuthSelectors.NpmAuthTokenKey,
+                    expectedAuthTokenKey,
+                    StringComparison.Ordinal
+                )
+            )
+            || declarations.Select(static declaration => declaration.Key).Distinct().Count()
+                != declarations.Count
+        )
+        {
+            throw new ArgumentException(
+                "Included registry declarations must have unique keys for the requested registry.",
+                nameof(request)
+            );
+        }
+
+        return declarations;
+    }
+
     private static Dictionary<string, string> CreateNpmrcActivationSetVariables(
         string platform,
         string targetNpmrcPath
@@ -559,42 +704,79 @@ public sealed class NpmPhase12VerticalSliceService
                 [LowercaseNpmUserConfigEnvironmentVariable] = targetNpmrcPath,
             };
 
-    private NpmPhase12RegistryDeclaration[] ReadRegistryDeclarations(string npmrcPath)
+    private void MergeRegistrySettings(
+        string npmrcPath,
+        Dictionary<string, (string SourcePath, string Value)> effectiveSettings
+    )
     {
         string contents = fileSystem.ReadAllText(npmrcPath);
-        var declarations = new List<NpmPhase12RegistryDeclaration>();
-        foreach (string rawLine in SplitLines(contents))
+        // npm builds bracketed arrays before key expansion and never resets them with scalars.
+        var fileSettings = new Dictionary<
+            string,
+            (bool IsArray, string? RegistryValue)
+        >(StringComparer.Ordinal);
+        foreach (string rawLine in EnumerateTopLevelNpmrcLines(contents))
         {
-            string trimmedLine = rawLine.Trim();
+            int separatorIndex = rawLine.IndexOf('=', StringComparison.Ordinal);
+            if (separatorIndex == 0)
+            {
+                continue;
+            }
+
+            string decodedKey = NpmrcIniSyntax.NormalizeArrayAssignmentKey(
+                NpmrcIniSyntax.DecodeField(
+                    separatorIndex < 0 ? rawLine : rawLine[..separatorIndex]
+                ),
+                out bool isArrayAssignment
+            );
+            if (isArrayAssignment)
+            {
+                fileSettings[decodedKey] = (true, null);
+                continue;
+            }
+
             if (
-                trimmedLine.Length == 0
-                || trimmedLine.StartsWith('#')
-                || trimmedLine.StartsWith(';')
+                fileSettings.TryGetValue(decodedKey, out var existingSetting)
+                && existingSetting.IsArray
             )
             {
                 continue;
             }
 
-            int separatorIndex = rawLine.IndexOf('=', StringComparison.Ordinal);
-            if (separatorIndex <= 0)
+            string? registryValue = null;
+            if (separatorIndex >= 0)
             {
-                continue;
+                string value = NpmrcIniSyntax.ExpandEnvironmentVariables(
+                    NpmrcIniSyntax.DecodeField(rawLine[(separatorIndex + 1)..]),
+                    environmentVariableReader,
+                    out bool unresolvedEnvironmentReference
+                );
+                registryValue = unresolvedEnvironmentReference ? null : value;
             }
 
-            string key = rawLine[..separatorIndex].Trim();
-            string value = rawLine[(separatorIndex + 1)..].Trim();
-            if (!IsRegistryDeclarationKey(key))
-            {
-                continue;
-            }
-
-            if (TryCreateRegistryDeclaration(npmrcPath, key, value, out var declaration))
-            {
-                declarations.Add(declaration);
-            }
+            fileSettings[decodedKey] = (false, registryValue);
         }
 
-        return declarations.ToArray();
+        foreach ((string decodedKey, var setting) in fileSettings)
+        {
+            string key = NpmrcIniSyntax.ExpandEnvironmentVariables(
+                decodedKey,
+                environmentVariableReader,
+                out _
+            );
+            if (!NpmrcRegistryDeclarationKeyPolicy.IsRegistryDeclarationKey(key))
+            {
+                continue;
+            }
+
+            if (setting.IsArray || setting.RegistryValue is null)
+            {
+                effectiveSettings.Remove(key);
+                continue;
+            }
+
+            effectiveSettings[key] = (npmrcPath, setting.RegistryValue);
+        }
     }
 
     private bool TryCreateRegistryDeclaration(
@@ -1423,12 +1605,12 @@ public sealed class NpmPhase12VerticalSliceService
     }
 
     private bool TryValidateCiTemporaryCredentialPlan(
-        NpmPhase12RegistryDeclaration? declaration,
+        NpmPhase12RegistryDeclaration[] declarations,
         string targetNpmrcPath,
         NpmWorkspaceResolutionResult resolution
     )
     {
-        if (declaration is null)
+        if (declarations.Length == 0)
         {
             return false;
         }
@@ -1438,9 +1620,11 @@ public sealed class NpmPhase12VerticalSliceService
             ConfigurationChangePlan plan = CreateCiTemporaryCredentialPlan(
                 new NpmPhase12CredentialPlanRequest
                 {
-                    Declaration = declaration,
+                    Declaration = declarations[0],
                     AuthToken = "doctor-token",
                     TargetNpmrcPath = targetNpmrcPath,
+                    IncludeRegistryDeclarationInTarget = true,
+                    RegistryDeclarationsToInclude = declarations,
                 },
                 resolution
             );
@@ -1577,15 +1761,34 @@ public sealed class NpmPhase12VerticalSliceService
     private static string[] SplitLines(string contents) =>
         contents.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Split('\n');
 
+    private static IEnumerable<string> EnumerateTopLevelNpmrcLines(string contents)
+    {
+        foreach (string rawLine in SplitLines(contents))
+        {
+            string trimmedLine = rawLine.Trim();
+            if (
+                trimmedLine.Length == 0
+                || trimmedLine.StartsWith('#')
+                || trimmedLine.StartsWith(';')
+            )
+            {
+                continue;
+            }
+
+            if (NpmrcIniSyntax.IsSectionHeader(rawLine))
+            {
+                yield break;
+            }
+
+            yield return rawLine;
+        }
+    }
+
     private static string[] GetDecodedPathSegments(Uri uri)
     {
         string path = uri.AbsolutePath.Trim('/');
         return path.Length == 0 ? [] : path.Split('/').Select(Uri.UnescapeDataString).ToArray();
     }
-
-    private static bool IsRegistryDeclarationKey(string key) =>
-        string.Equals(key, "registry", StringComparison.Ordinal)
-        || key.EndsWith(":registry", StringComparison.Ordinal);
 
     private static bool TryGetLegacyVisualStudioOrganization(string host, out string? organization)
     {

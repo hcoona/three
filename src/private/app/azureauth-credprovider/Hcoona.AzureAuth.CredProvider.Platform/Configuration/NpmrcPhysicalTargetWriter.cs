@@ -4,12 +4,17 @@ using Hcoona.AzureAuth.CredProvider.Platform.FileSystem;
 
 namespace Hcoona.AzureAuth.CredProvider.Platform.Configuration;
 
-internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
+internal sealed class NpmrcPhysicalTargetWriter(
+    IFileSystem fileSystem,
+    Func<string, string?>? environmentVariableReader = null
+)
     : IConfigurationPhysicalTargetWriter
 {
     private static readonly Encoding Utf8NoBom = new UTF8Encoding(false, true);
     private static readonly UnixFileMode OwnerOnlyMode =
         UnixFileMode.UserRead | UnixFileMode.UserWrite;
+    private readonly Func<string, string?> readEnvironmentVariable =
+        environmentVariableReader ?? Environment.GetEnvironmentVariable;
 
     public void Validate(
         ConfigurationPhysicalTargetWriterRequest request,
@@ -69,11 +74,31 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
         NpmrcDocument document = ReadDocument(GetTargetPath(request));
         return request.Changes.All(change =>
         {
-            string? value = document.GetValue(change.Key);
-            return change.IsSecretValue
-                ? !string.IsNullOrEmpty(value)
-                : string.Equals(value, change.Value, StringComparison.Ordinal);
+            var entry = document.GetEntry(change.Key);
+            return entry is not null
+                && !entry.IsArray
+                && (
+                    change.IsSecretValue
+                        ? HasEffectiveSecretValue(entry.Value)
+                        : RegistryValuesMatch(change.Key, entry.Value, change.Value)
+                );
         });
+    }
+
+    private bool HasEffectiveSecretValue(string value)
+    {
+        string directValue = value.Trim();
+        if (directValue is "" or "false" or "null" or "undefined")
+        {
+            return false;
+        }
+
+        string effectiveValue = NpmrcIniSyntax.ExpandEnvironmentVariables(
+            directValue,
+            readEnvironmentVariable,
+            out bool unresolvedEnvironmentReference
+        );
+        return !unresolvedEnvironmentReference && !string.IsNullOrEmpty(effectiveValue);
     }
 
     internal static string? GetPlanningValidationViolation(
@@ -207,10 +232,14 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
             {
                 throw new InvalidOperationException("The npmrc target is a directory.");
             }
-            return NpmrcDocument.Missing(writePath);
+            return NpmrcDocument.Missing(writePath, readEnvironmentVariable);
         }
 
-        return NpmrcDocument.Parse(fileSystem.ReadAllBytes(writePath), writePath);
+        return NpmrcDocument.Parse(
+            fileSystem.ReadAllBytes(writePath),
+            writePath,
+            readEnvironmentVariable
+        );
     }
 
     private string ResolveWritePath(string targetPath) =>
@@ -242,7 +271,7 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
         NpmrcDocument working = mutate ? document : document.Clone();
         foreach (ConfigurationChange change in request.Changes)
         {
-            string? existing = working.GetValue(change.Key);
+            var existing = working.GetEntry(change.Key);
             bool remove =
                 request.PlanOperation == ConfigurationPlanOperation.Remove
                 || change.Operation == ConfigurationChangeOperation.Remove;
@@ -275,25 +304,46 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
         string.Equals(key, "_authToken", StringComparison.Ordinal)
         || key.EndsWith(":_authToken", StringComparison.Ordinal);
 
+    private static bool RegistryValuesMatch(string key, string? actual, string? expected)
+    {
+        if (
+            !NpmrcRegistryDeclarationKeyPolicy.IsRegistryDeclarationKey(key)
+            || !Uri.TryCreate(actual, UriKind.Absolute, out Uri? actualRegistry)
+            || !Uri.TryCreate(expected, UriKind.Absolute, out Uri? expectedRegistry)
+        )
+        {
+            return string.Equals(actual, expected, StringComparison.Ordinal);
+        }
+
+        return string.Equals(
+            actualRegistry.AbsoluteUri.TrimEnd('/'),
+            expectedRegistry.AbsoluteUri.TrimEnd('/'),
+            StringComparison.Ordinal
+        );
+    }
+
     private sealed class NpmrcDocument
     {
         private readonly List<string> lines;
         private readonly bool hadBom;
         private readonly string newLine;
         private readonly bool trailingNewLine;
+        private readonly Func<string, string?> environmentVariableReader;
 
         private NpmrcDocument(
             List<string> lines,
             bool hadBom,
             string newLine,
             bool trailingNewLine,
-            string writePath
+            string writePath,
+            Func<string, string?> environmentVariableReader
         )
         {
             this.lines = lines;
             this.hadBom = hadBom;
             this.newLine = newLine;
             this.trailingNewLine = trailingNewLine;
+            this.environmentVariableReader = environmentVariableReader;
             WritePath = writePath;
         }
 
@@ -301,10 +351,24 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
 
         public string WritePath { get; }
 
-        public static NpmrcDocument Missing(string writePath) =>
-            new([], hadBom: false, "\n", trailingNewLine: true, writePath);
+        public static NpmrcDocument Missing(
+            string writePath,
+            Func<string, string?> environmentVariableReader
+        ) =>
+            new(
+                [],
+                hadBom: false,
+                "\n",
+                trailingNewLine: true,
+                writePath,
+                environmentVariableReader
+            );
 
-        public static NpmrcDocument Parse(byte[] bytes, string writePath)
+        public static NpmrcDocument Parse(
+            byte[] bytes,
+            string writePath,
+            Func<string, string?> environmentVariableReader
+        )
         {
             bool bom = bytes is [0xEF, 0xBB, 0xBF, ..];
             string text = Utf8NoBom.GetString(bom ? bytes[3..] : bytes);
@@ -313,20 +377,28 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
                 bom,
                 text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n",
                 text.EndsWith('\n'),
-                writePath
+                writePath,
+                environmentVariableReader
             );
         }
 
         public NpmrcDocument Clone() =>
-            new([.. lines], hadBom, newLine, trailingNewLine, WritePath);
+            new(
+                [.. lines],
+                hadBom,
+                newLine,
+                trailingNewLine,
+                WritePath,
+                environmentVariableReader
+            );
 
-        public string? GetValue(string key)
+        public NpmrcEntry? GetEntry(string key)
         {
             NpmrcEntry[] entries = Find(key).ToArray();
             return entries.Length switch
             {
                 0 => null,
-                1 => entries[0].Value,
+                1 => entries[0],
                 _ => throw new InvalidOperationException(
                     "The managed npmrc selector is declared more than once."
                 ),
@@ -335,37 +407,24 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
 
         public void Set(string key, string value)
         {
-            NpmrcEntry[] entries = Find(key).ToArray();
-            if (entries.Length > 1)
-            {
-                throw new InvalidOperationException(
-                    "The managed npmrc selector is declared more than once."
-                );
-            }
-
+            NpmrcEntry? entry = GetEntry(key);
             string rendered = key + "=" + EscapeValue(value);
-            if (entries.Length == 1)
+            if (entry is not null)
             {
-                lines[entries[0].Index] = rendered;
+                lines[entry.Index] = rendered;
             }
             else
             {
-                lines.Add(rendered);
+                lines.Insert(GetTopLevelInsertionIndex(), rendered);
             }
         }
 
         public void Remove(string key)
         {
-            NpmrcEntry[] entries = Find(key).ToArray();
-            if (entries.Length > 1)
+            NpmrcEntry? entry = GetEntry(key);
+            if (entry is not null)
             {
-                throw new InvalidOperationException(
-                    "The managed npmrc selector is declared more than once."
-                );
-            }
-            if (entries.Length == 1)
-            {
-                lines.RemoveAt(entries[0].Index);
+                lines.RemoveAt(entry.Index);
             }
         }
 
@@ -385,20 +444,57 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
         {
             for (var index = 0; index < lines.Count; index++)
             {
+                if (NpmrcIniSyntax.IsSectionHeader(lines[index]))
+                {
+                    yield break;
+                }
+
                 if (
-                    TryParseEntry(lines[index], out string? parsedKey, out string? value)
-                    && string.Equals(parsedKey, key, StringComparison.Ordinal)
+                    TryParseEntry(
+                        lines[index],
+                        out string parsedKey,
+                        out string? value,
+                        out bool isArray
+                    )
+                    && string.Equals(
+                        NpmrcIniSyntax.ExpandEnvironmentVariables(
+                            parsedKey,
+                            environmentVariableReader,
+                            out _
+                        ),
+                        key,
+                        StringComparison.Ordinal
+                    )
                 )
                 {
-                    yield return new NpmrcEntry(index, value);
+                    yield return new NpmrcEntry(index, value, isArray);
                 }
             }
         }
 
-        private static bool TryParseEntry(string line, out string? key, out string value)
+        private int GetTopLevelInsertionIndex()
         {
-            key = null;
+            for (var index = 0; index < lines.Count; index++)
+            {
+                if (NpmrcIniSyntax.IsSectionHeader(lines[index]))
+                {
+                    return index;
+                }
+            }
+
+            return lines.Count;
+        }
+
+        private static bool TryParseEntry(
+            string line,
+            out string key,
+            out string value,
+            out bool isArray
+        )
+        {
+            key = string.Empty;
             value = string.Empty;
+            isArray = false;
             string trimmed = line.Trim();
             if (trimmed.Length == 0 || trimmed.StartsWith('#') || trimmed.StartsWith(';'))
             {
@@ -406,21 +502,24 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
             }
 
             int equals = trimmed.IndexOf('=');
-            if (equals <= 0)
+            if (equals == 0)
             {
                 return false;
             }
 
-            key = trimmed[..equals].Trim();
-            value = UnescapeValue(trimmed[(equals + 1)..].Trim());
+            key = NpmrcIniSyntax.NormalizeArrayAssignmentKey(
+                NpmrcIniSyntax.DecodeField(equals < 0 ? trimmed : trimmed[..equals]),
+                out isArray
+            );
+            if (equals >= 0)
+            {
+                value = NpmrcIniSyntax.DecodeField(trimmed[(equals + 1)..]);
+            }
             return key.Length > 0;
         }
 
         private static string EscapeValue(string value) =>
             value.Replace("\\", "\\\\", StringComparison.Ordinal);
-
-        private static string UnescapeValue(string value) =>
-            value.Replace("\\\\", "\\", StringComparison.Ordinal);
 
         private static List<string> SplitLines(string text)
         {
@@ -439,6 +538,6 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
             return result;
         }
 
-        private sealed record NpmrcEntry(int Index, string Value);
+        public sealed record NpmrcEntry(int Index, string Value, bool IsArray);
     }
 }
