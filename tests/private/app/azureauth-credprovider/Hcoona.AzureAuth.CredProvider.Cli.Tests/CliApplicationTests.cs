@@ -4097,6 +4097,200 @@ public sealed class CliApplicationTests
     }
 
     [Fact]
+    public void InvalidYarnRcFilenameStatusIsActionableInformationalAndBounded()
+    {
+        string stateDirectory = CreateTestDirectory();
+        const string InvalidFilename = "../outside.yml";
+        try
+        {
+            CliRuntimeOptions baseline = CreateConfigurationRuntime(stateDirectory);
+            CliRuntimeOptions runtime = baseline with
+            {
+                ConfigurationPhase14Options = baseline.ConfigurationPhase14Options! with
+                {
+                    EnvironmentVariableReader = name =>
+                        name switch
+                        {
+                            "HOME" => Path.Combine(stateDirectory, "home"),
+                            "YARN_RC_FILENAME" => InvalidFilename,
+                            _ => null,
+                        },
+                },
+            };
+
+            CommandResult status = InvokeWithRuntime(runtime, "status");
+
+            Assert.Equal(0, status.ExitCode);
+            Assert.Contains("npm-user-lifecycle: missing\n", status.StdOut);
+            Assert.Contains("yarn-user-lifecycle: invalid\n", status.StdOut);
+            Assert.Contains(
+                "yarn-user-configuration-input-code: invalid-yarn-rc-filename\n",
+                status.StdOut
+            );
+            Assert.Contains("YARN_RC_FILENAME", status.StdOut, StringComparison.Ordinal);
+            Assert.DoesNotContain(InvalidFilename, status.StdOut, StringComparison.Ordinal);
+            Assert.True(status.StdOut.Length < 8192);
+            Assert.Equal(string.Empty, status.StdErr);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public void InvalidYarnRcFilenameDoctorIsActionableBoundedUnhealthy()
+    {
+        string stateDirectory = CreateTestDirectory();
+        const string InvalidFilename = @"a\..\outside.yml";
+        try
+        {
+            CliRuntimeOptions baseline = CreateConfigurationRuntime(stateDirectory);
+            CliRuntimeOptions runtime = baseline with
+            {
+                YarnPhase13Options = new YarnPhase13VerticalSliceOptions
+                {
+                    WorkspaceDirectoryPath = stateDirectory,
+                    UserHomeDirectoryPath = Path.Combine(stateDirectory, "home"),
+                    EnvironmentVariableReader = name =>
+                        name == "YARN_RC_FILENAME" ? InvalidFilename : null,
+                },
+                ConfigurationPhase14Options = baseline.ConfigurationPhase14Options! with
+                {
+                    EnvironmentVariableReader = name =>
+                        name switch
+                        {
+                            "HOME" => Path.Combine(stateDirectory, "home"),
+                            "YARN_RC_FILENAME" => InvalidFilename,
+                            _ => null,
+                        },
+                },
+            };
+
+            CommandResult doctor = InvokeWithRuntime(runtime, "doctor");
+
+            Assert.Equal(1, doctor.ExitCode);
+            Assert.Contains("yarn-workspace-yarnrc: not-assessed\n", doctor.StdOut);
+            Assert.Contains("yarn-rc-filename-override: invalid\n", doctor.StdOut);
+            Assert.Contains("yarn-registry-declaration: not-assessed\n", doctor.StdOut);
+            Assert.Contains(
+                "yarn-forbidden-auth-ident-conflict: not-assessed\n",
+                doctor.StdOut
+            );
+            Assert.Contains("configuration-aggregation: fail\n", doctor.StdOut);
+            Assert.Contains("yarn-user-configuration-plan: fail\n", doctor.StdOut);
+            Assert.Contains("yarn-user-configure-operation: fail\n", doctor.StdOut);
+            Assert.Contains(
+                "yarn-user-owned-target-matches-resolved-path: no\n",
+                doctor.StdOut
+            );
+            Assert.Contains(
+                "yarn-user-configuration-input-code: invalid-yarn-rc-filename\n",
+                doctor.StdOut
+            );
+            Assert.Contains("YARN_RC_FILENAME", doctor.StdOut, StringComparison.Ordinal);
+            Assert.DoesNotContain(
+                "yarn-user-remediation:",
+                doctor.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.DoesNotContain(InvalidFilename, doctor.StdOut, StringComparison.Ordinal);
+            Assert.True(doctor.StdOut.Length < 16384);
+            Assert.Equal(string.Empty, doctor.StdErr);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Theory]
+    [InlineData("configure")]
+    [InlineData("refresh")]
+    public void InvalidYarnRcFilenameConfigureAndRefreshFailBeforeMutation(string command)
+    {
+        string stateDirectory = CreateTestDirectory();
+        string home = Path.Combine(stateDirectory, "home");
+        string userTarget = Path.Combine(home, ".yarnrc.yml");
+        string manifest = Path.Combine(
+            stateDirectory,
+            "manifests",
+            "yarn-user-ownership-manifest.json"
+        );
+        try
+        {
+            CliRuntimeOptions baseline = CreateConfigurationRuntime(stateDirectory);
+            CliRuntimeOptions runtime = baseline with
+            {
+                ConfigurationPhase14Options = baseline.ConfigurationPhase14Options! with
+                {
+                    EnvironmentVariableReader = name =>
+                        name switch
+                        {
+                            "HOME" => home,
+                            "YARN_RC_FILENAME" => "a/../outside.yml",
+                            _ => null,
+                        },
+                },
+            };
+
+            CommandResult result = InvokeWithRuntime(
+                runtime,
+                command,
+                "yarn",
+                "--registry-url",
+                TestRegistryUrl
+            );
+
+            Assert.Equal(1, result.ExitCode);
+            Assert.Equal(string.Empty, result.StdOut);
+            Assert.Equal(
+                "error: YARN_RC_FILENAME must be an absolute path or a relative path "
+                    + "without traversal.\n",
+                result.StdErr
+            );
+            Assert.False(File.Exists(userTarget));
+            Assert.False(File.Exists(manifest));
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public void UnexpectedYarnFilenameResolutionExceptionRemainsGenericFatal()
+    {
+        const string SensitiveMessage = "sensitive yarn filename sentinel";
+        string stateDirectory = CreateTestDirectory();
+        try
+        {
+            CliRuntimeOptions baseline = CreateConfigurationRuntime(stateDirectory);
+            CliRuntimeOptions runtime = baseline with
+            {
+                ConfigurationPhase14Options = baseline.ConfigurationPhase14Options! with
+                {
+                    EnvironmentVariableReader = name =>
+                        name == "YARN_RC_FILENAME"
+                            ? throw new IOException(SensitiveMessage)
+                            : ReadConfigurationEnvironment(stateDirectory, name),
+                },
+            };
+
+            CommandResult result = InvokeWithRuntime(runtime, "status");
+
+            Assert.Equal(70, result.ExitCode);
+            Assert.Equal(string.Empty, result.StdOut);
+            Assert.Equal("error: unexpected fatal failure.\n", result.StdErr);
+            Assert.DoesNotContain(SensitiveMessage, result.StdErr, StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
     public void DoctorTreatsRefreshRecommendedAsNonfatalWarning()
     {
         string stateDirectory = CreateTestDirectory();
