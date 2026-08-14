@@ -2,17 +2,27 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import inspect
 import json
+import os
 import subprocess
+import sys
 import tomllib
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Self, cast
+from typing import TYPE_CHECKING, Self, cast
 from urllib.request import Request
 
 import pytest
 from three_workflow_delivery_v3 import cli as cli_module
+from three_workflow_delivery_v3.adapters.github_packages import (
+    DeferredPublicationExecutionResult,
+    PublishClassification,
+    PublishCommandResult,
+    PublisherGovernanceRecheckRejectionError,
+)
 from three_workflow_delivery_v3.canonical import (
     JsonValue,
     canonical_sha256,
@@ -24,6 +34,9 @@ from three_workflow_delivery_v3.ci.planner import (
 )
 from three_workflow_delivery_v3.records.ci import (
     ci_qualification_snapshot_digest,
+)
+from three_workflow_delivery_v3.records.release import (
+    PUBLISHER_GOVERNANCE_RECHECK_FAILED_BEFORE_RUNNER,
 )
 from three_workflow_delivery_v3.release.identity import (
     OFFICIAL_SIMULATION_PRODUCER,
@@ -53,6 +66,9 @@ from three_workflow_delivery_v3.repository.node_provider import (
     ProviderBinding,
 )
 
+if TYPE_CHECKING:
+    import argparse
+
 REPO_ROOT = Path(__file__).resolve().parents[5]
 PACKAGE_ROOT = REPO_ROOT / "src/public/lib/three-workflow-delivery-v3"
 FIXTURES = PACKAGE_ROOT / "tests/fixtures/release"
@@ -60,6 +76,7 @@ PRODUCT_PATH = "src/public/lib/hcoona-release-smoke-npm"
 WORKFLOW_RUN_ID = 8101
 RUN_ATTEMPT = 2
 ARGPARSE_ERROR = 2
+LIVE_GITHUB_PACKAGES_TRANSPORT_SELECTIONS = 2
 NPM_ARTIFACT_ID = 303
 NPM_ARTIFACT_DIGEST = "a" * 64
 GITHUB_API_TIMEOUT_SECONDS = 10
@@ -814,6 +831,198 @@ def test_cli_exposes_only_the_commit7_release_transport_commands(
         cli_module.main(["release", command, "--help"])
 
     assert error.value.code == 0
+
+
+@pytest.mark.parametrize(
+    ("command", "required_options"),
+    [
+        (
+            "admit-history",
+            ("--output", "--github-output"),
+        ),
+        (
+            "materialize-publication",
+            ("--output", "--summary-output", "--github-output"),
+        ),
+        (
+            "form-authorization",
+            (
+                "--reviewer-summary-artifact-id",
+                "--reviewer-summary-artifact-digest",
+                "--output",
+            ),
+        ),
+        (
+            "admit-capability",
+            ("--authorization", "--publication-snapshot", "--output"),
+        ),
+        (
+            "preflight-github-packages",
+            ("--preflight-output", "--github-token", "--tarball"),
+        ),
+        (
+            "mark-github-packages-mutation-start",
+            ("--preflight", "--marker-output", "--publication-snapshot"),
+        ),
+        (
+            "publish-github-packages",
+            (
+                "--capability-decision",
+                "--mutation-marker-artifact-id",
+                "--receipt-output",
+                "--execution-state-output",
+            ),
+        ),
+        (
+            "form-github-packages-result",
+            ("--execution-state", "--receipt-artifact-id", "--result-output"),
+        ),
+        (
+            "finalize-live",
+            ("--outcome-output", "--summary-output", "--github-output"),
+        ),
+    ],
+)
+def test_cli_exposes_strict_commit8_live_transport_commands(
+    command: str,
+    required_options: tuple[str, ...],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Expose only canonical file/artifact-bound commit-8 live commands."""
+    with pytest.raises(SystemExit) as error:
+        cli_module.main(["release", command, "--help"])
+
+    assert error.value.code == 0
+    help_text = capsys.readouterr().out
+    assert all(option in help_text for option in required_options)
+
+
+def test_cli_commit8_live_outcome_status_mapping_is_closed() -> None:
+    """Pin success versus every fail-closed terminal CLI status."""
+    assert getattr(cli_module, "LIVE_OUTCOME_EXIT_STATUS", None) == {
+        "success": 0,
+        "failure": 1,
+        "incomplete": 1,
+        "replayable-no-side-effect": 1,
+        "incomplete-possibly-mutated": 1,
+        "unknown-replayable-approval-contract": 1,
+    }
+
+
+def test_cli_live_github_packages_paths_select_manual_redirect_transport() -> (
+    None
+):
+    """Select the credential-safe redirect transport for both live paths."""
+    source = inspect.getsource(cli_module)
+
+    assert "_UrlopenGitHubPackagesTransport" not in source
+    assert (
+        source.count("transport=GitHubPackagesHttpTransport()")
+        == LIVE_GITHUB_PACKAGES_TRANSPORT_SELECTIONS
+    )
+
+
+def test_cli_commit8_finalizer_exposes_platform_and_status_evidence_contract(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Expose explicit platform facts and both retained final status outputs."""
+    with pytest.raises(SystemExit) as error:
+        cli_module.main(["release", "finalize-live", "--help"])
+
+    assert error.value.code == 0
+    help_text = capsys.readouterr().out
+    for option in (
+        "--platform-terminated",
+        "--capability-may-have-started",
+        "--outcome-output",
+        "--summary-output",
+        "--github-step-summary",
+        "--github-output",
+    ):
+        assert option in help_text
+
+
+def test_authorization_formatter_runs_isolated_without_indexes_or_cache(
+    tmp_path: Path,
+) -> None:
+    """Run the exact-revision formatter with no import or index state."""
+    approval_job_id = 91
+    target = "a" * 40
+    snapshot = canonicalize(
+        {
+            "schema": "workflow-delivery/v3/publication-snapshot",
+            "attempt": {
+                "schema": "workflow-delivery/v3/release-attempt-identity",
+                "execution": {
+                    "schema": "workflow-delivery/v3/buddy-execution-identity",
+                    "channel": "buddy",
+                    "release-unit": "hcoona-release-smoke-npm",
+                    "target": target,
+                },
+                "workflow-run-id": 41,
+                "run-attempt": 3,
+            },
+        }
+    )
+    summary = b"# exact reviewer summary\n"
+    formatter: dict[str, JsonValue] = {
+        "schema": "workflow-delivery/v3/bound-reviewer-formatter-input",
+        "snapshot-base64": base64.b64encode(snapshot).decode(),
+        "summary-base64": base64.b64encode(summary).decode(),
+        "snapshot-payload-digest": (
+            f"sha256:{hashlib.sha256(snapshot).hexdigest()}"
+        ),
+        "summary-payload-digest": (
+            f"sha256:{hashlib.sha256(summary).hexdigest()}"
+        ),
+        "reviewer-artifact-id": 71,
+        "reviewer-artifact-digest": "sha256:" + ("b" * 64),
+    }
+    formatter_path = tmp_path / "formatter.json"
+    output = tmp_path / "authorization.json"
+    formatter_path.write_bytes(canonicalize(formatter))
+    script = Path(cli_module.__file__).with_name("authorization_formatter.py")
+
+    completed = subprocess.run(  # noqa: S603
+        (
+            sys.executable,
+            "-I",
+            str(script),
+            "--workflow-run-id",
+            "41",
+            "--run-attempt",
+            "3",
+            "--target",
+            target,
+            "--formatter-input",
+            str(formatter_path),
+            "--approval-job-id",
+            str(approval_job_id),
+            "--completed-at",
+            "2026-08-13T20:00:00Z",
+            "--control",
+            f"workflow-delivery-v3:{target}",
+            "--output",
+            str(output),
+        ),
+        check=False,
+        capture_output=True,
+        env={
+            "HOME": str(tmp_path / "empty-home"),
+            "PATH": os.environ["PATH"],
+            "PIP_NO_INDEX": "1",
+            "PYTHONNOUSERSITE": "1",
+        },
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    authorization = json.loads(output.read_bytes())
+    assert authorization["approval-job-id"] == approval_job_id
+    assert (
+        authorization["publication-snapshot-digest"]
+        == (formatter["snapshot-payload-digest"])
+    )
 
 
 def test_project_registers_only_the_bounded_cli() -> None:
@@ -1650,3 +1859,181 @@ def test_ci_finalizer_rejects_pr_number_not_bound_to_plan(
         == 1
     )
     assert not decision.exists()
+
+
+def test_publish_cli_persists_governance_terminal_state_before_nonzero(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Persist the exact Governance terminal proof before returning failure."""
+    action = SimpleNamespace(
+        action_id="publish-github-packages",
+        action_digest="sha256:" + ("a" * 64),
+        lock_group="npm:@hcoona/hcoona-release-smoke-npm",
+    )
+    publication = SimpleNamespace(
+        attempt=SimpleNamespace(execution=SimpleNamespace(target="b" * 40)),
+        materialized_actions=(action,),
+    )
+    capability = SimpleNamespace(
+        authorizing=True,
+        control="workflow-delivery-v3:" + ("b" * 40),
+    )
+    classification = SimpleNamespace(
+        outcome="failed",
+        mutation_disposition="no-side-effect",
+    )
+
+    terminal_result = DeferredPublicationExecutionResult(
+        command=PublishCommandResult(
+            outcome="governance-rejected",
+            exit_code=None,
+            stdout="",
+            stderr="",
+            command=("npm", "publish"),
+        ),
+        observation=None,
+        classification=PublishClassification(
+            outcome=classification.outcome,
+            mutation_disposition=classification.mutation_disposition,
+            receipt_digest=None,
+        ),
+        response_identity_digest=None,
+        diagnostic_reference=(
+            PUBLISHER_GOVERNANCE_RECHECK_FAILED_BEFORE_RUNNER
+        ),
+        receipt=None,
+    )
+
+    passthrough_loaders = {
+        "_load_publication_snapshot": publication,
+        "_load_capability_decision": capability,
+        "_load_github_packages_preflight": SimpleNamespace(),
+        "_load_mutation_marker": SimpleNamespace(),
+        "_load_live_qualification_snapshot": SimpleNamespace(),
+        "_load_live_qualification_decision": SimpleNamespace(),
+        "_load_release_adapter_context": SimpleNamespace(),
+        "_load_live_release_artifact_record": SimpleNamespace(),
+        "_load_authorization": SimpleNamespace(),
+    }
+    for name, value in passthrough_loaders.items():
+        monkeypatch.setattr(
+            cli_module,
+            name,
+            lambda *_args, _value=value, **_kwargs: _value,
+        )
+    monkeypatch.setattr(
+        cli_module,
+        "load_first_slice_authoring",
+        lambda *_args: (
+            SimpleNamespace(),
+            SimpleNamespace(),
+            SimpleNamespace(
+                governance=SimpleNamespace(repository="owner/repository")
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "artifact_expectation",
+        lambda *_args: SimpleNamespace(),
+    )
+
+    def reject_governance(**_kwargs: object) -> object:
+        raise PublisherGovernanceRecheckRejectionError(terminal_result)
+
+    monkeypatch.setattr(
+        cli_module,
+        "publish_github_packages_action",
+        reject_governance,
+    )
+
+    events: list[tuple[str, object]] = []
+    original_write_output = cli_module._write_output  # noqa: SLF001
+
+    def write_output(path: str, document: dict[str, JsonValue]) -> None:
+        events.append(("write", document))
+        original_write_output(path, document)
+
+    def record_outputs(
+        _path: str,
+        *,
+        role: str,
+        digest: str,
+        extra: object,
+    ) -> None:
+        events.append(("record", (role, digest, extra)))
+
+    monkeypatch.setattr(cli_module, "_write_output", write_output)
+    monkeypatch.setattr(cli_module, "_record_outputs", record_outputs)
+    state_path = tmp_path / "execution-state.json"
+    receipt_path = tmp_path / "receipt.json"
+
+    arguments = cast(
+        "argparse.Namespace",
+        SimpleNamespace(
+            preflight="preflight.json",
+            preflight_digest="sha256:" + ("1" * 64),
+            mutation_marker="marker.json",
+            mutation_marker_digest="sha256:" + ("2" * 64),
+            mutation_marker_artifact_id=17,
+            mutation_marker_artifact_digest="sha256:" + ("3" * 64),
+            repo_root=str(tmp_path),
+            target="b" * 40,
+            tarball=str(tmp_path / "package.tgz"),
+            github_token="token",  # noqa: S106
+            temp_root=str(tmp_path),
+            receipt_output=str(receipt_path),
+            execution_state_output=str(state_path),
+            github_output=str(tmp_path / "github-output"),
+        ),
+    )
+    status = cli_module._release_publish_github_packages_command(  # noqa: SLF001
+        arguments
+    )
+
+    expected_state: dict[str, JsonValue] = {
+        "schema": "workflow-delivery/v3/deferred-publication-result",
+        "action-id": action.action_id,
+        "action-digest": action.action_digest,
+        "lock-group": action.lock_group,
+        "outcome": "failed",
+        "mutation-disposition": "no-side-effect",
+        "response-identity-digest": None,
+        "receipt-digest": None,
+        "diagnostic-reference": (
+            PUBLISHER_GOVERNANCE_RECHECK_FAILED_BEFORE_RUNNER
+        ),
+        "control": capability.control,
+    }
+    persisted_state = json.loads(state_path.read_bytes())
+
+    assert status == 1
+    assert persisted_state == expected_state
+    assert not receipt_path.exists()
+    assert events == [
+        ("write", expected_state),
+        (
+            "record",
+            (
+                "publication-execution",
+                canonical_sha256(expected_state),
+                (("receipt-digest", ""),),
+            ),
+        ),
+    ]
+
+    def fail_generically(**_kwargs: object) -> object:
+        message = "generic post-marker failure"
+        raise ValueError(message)
+
+    generic_state_path = tmp_path / "generic-execution-state.json"
+    arguments.execution_state_output = str(generic_state_path)
+    monkeypatch.setattr(
+        cli_module,
+        "publish_github_packages_action",
+        fail_generically,
+    )
+    with pytest.raises(ValueError, match="generic post-marker failure"):
+        cli_module._release_publish_github_packages_command(arguments)  # noqa: SLF001
+    assert not generic_state_path.exists()

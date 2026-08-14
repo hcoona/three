@@ -13,7 +13,7 @@ If it conflicts with the
 ## Current Checkpoint
 
 - Requirements, HLD, and all five MLDs are confirmed.
-- Implementation commits 1 through 7 of the approved first-slice LLD are
+- Implementation commits 1 through 8 of the approved first-slice LLD are
   delivered in the working tree. Commit 3 includes target-tree-bound
   Release Unit/Quality authoring validation, duplicate Release Unit rejection,
   exact-target Repository Model compilation, static catalogs, Node/NBGV
@@ -39,6 +39,14 @@ If it conflicts with the
   transport bundles, SHA-512 exact-state classification, and hypothetical
   action reporting without live Publication Snapshot, capability, receipt, or
   mutation lineage.
+- Commit 8 adds strict GitHub Actions history discovery/admission, the live CLI
+  chain, immutable reviewer payload and credential-free exact-SHA
+  Authorization formatting, Governance freshness and Capability admission,
+  GitHub Packages publication/result/Receipt finalization, and the disabled
+  Buddy caller/reusable workflows. The protected Governance document remains
+  absent, so normal live execution fails closed before Attempt creation.
+  Acceptance bootstrap, CODEOWNERS expansion, legacy workflow retirement,
+  and activation remain later work.
 - The first vertical slice is `hcoona-release-smoke-npm`.
 - The slice has one Node project, one package variant, and one npm artifact.
 - It covers CI Qualification, live Buddy publication to GitHub Packages, and
@@ -112,8 +120,16 @@ If it conflicts with the
   provenance/content identity with the admitted Live Eligibility Decision, and
   blocks the current Attempt on disablement, expiry, change, or invalidation.
   Governance restoration requires a new Attempt. Only success may schedule the
-  package-write publisher; publisher repetition is optional defense in depth
-  and creates no malicious-writer boundary, credential, or service.
+  package-write publisher. Publisher repetition is optional architecture-wide
+  defense in depth, but this slice LLD elects and requires it immediately
+  before npm mutation; it creates no malicious-writer boundary, credential, or
+  service.
+- The approval job remains `permissions: {}` and credential-free. Because jobs
+  do not share workspaces, it anonymously fetches the exact selected
+  40-character target SHA from the public `hcoona/three` Git repository,
+  verifies detached `HEAD`, and executes that same-revision Authorization
+  formatter. It does not use `GITHUB_TOKEN`, Actions artifact credentials,
+  `actions/checkout`, a moving ref, or fallback revision.
 - Qualification declares Capability requirements but cannot request, approve,
   or create live Capability. The normal v3 live path requests destination
   Capability only in an authorized side-effect capability group after
@@ -240,10 +256,10 @@ If it conflicts with the
   state blocks; no repository variable, PAT, App, service, ledger, OIDC, or
   additional token permission is added. Permanent root HK policy remains the
   repository-wide dependency gate.
-- The next LLD dependency boundary is commit 8: Buddy approval, authorization,
-  capability admission, publication, Receipt, and final live Attempt
-  finalization. Do not implement it or later scopes without a separate
-  explicit user task; live activation remains disabled.
+- The next LLD dependency boundary is commit 9: complete CODEOWNERS
+  final-match coverage and tests for every governed v3 surface. Do not
+  implement it, acceptance, legacy retirement, activation, or later scopes
+  without a separate explicit user task.
 - Implementation must preserve the approved commit boundaries and keep live
   activation disabled until acceptance and the separate activation approval.
 

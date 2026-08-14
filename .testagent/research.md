@@ -1,5 +1,130 @@
 # Workflow Delivery v3 Snapshot Admission Research
 
+## 2026-08-13 Commit 8 Governance Observation Error Taxonomy Research
+
+### Scope and strategy
+
+This is a focused **single-pass Research -> Plan -> Implement** test-only run
+covering the current uncommitted commit-8 Governance observation work. The
+working tree is authoritative. No production, workflow, manifest, or existing
+test deletion is permitted.
+
+Subagent delegation was requested but unavailable because the current agent
+was already at the maximum delegation depth. The same sequential pipeline is
+therefore recorded and executed inline.
+
+### Instructions and language guidance
+
+- Read `AGENTS.md` and the normative v3 handoff before research.
+- Read `.agents/skills/code-testing-agent/unit-test-generation.prompt.md`
+  before implementation.
+- `code-testing-extensions` was attempted by the parent and is unavailable.
+- Repository conventions establish Python 3.13, pytest, importlib import mode,
+  `pytest.mark.parametrize`, concrete bare assertions, injected fake
+  transports/clients, Ruff, Pyrefly, and UV workspace commands.
+- Existing canonical tests are extended where possible:
+  `tests/release/test_eligibility.py`,
+  `tests/platform/test_github.py`, and
+  `tests/adapters/test_commit8_publish_governance_recheck.py`.
+
+### Bounded target inventory
+
+Production behavior inspected, but not editable:
+
+- `release/eligibility.py`
+  - `observe_governance_source`
+  - `parse_governance_attestation`
+  - `require_fresh_governance_identity`
+  - `GovernanceFreshnessRejectionError`
+- `platform/github.py`
+  - `GitHubRestClient.is_ref_protected`
+  - REST/JSON/base64 error normalization
+- `adapters/github_packages.py`
+  - publisher Governance recheck and exact terminal result
+- `cli.py` and existing commit-8 live-scenario tests
+  - missing/malformed generic post-marker fallback
+
+Test targets:
+
+- new focused Governance observation taxonomy tests under `tests/release/`;
+- focused additions to `tests/platform/test_github.py`;
+- existing publisher and live-finalizer tests retained as evidence for the
+  exact definitive and generic fallback states.
+
+### Requirement checklist
+
+| ID | Requirement | Research evidence / intended test |
+|---|---|---|
+| G1 | Definitive `GovernanceRejectionError` for authoritatively observed unprotected refs. | Direct observation with exact Boolean `False`; assert exact error class identity/name and no ref/blob read. |
+| G2 | Definitive `GovernanceRejectionError` for successfully fetched invalid canonical JSON/schema. | Parameterized canonical/noncanonical/schema-invalid fetched bytes. |
+| G3 | Definitive `GovernanceRejectionError` for successfully fetched invalid policy-package binding, lifetime, inventory, attestation semantics, or content digest inconsistency. | Parameterized semantic documents plus a digest-mismatch seam test. |
+| G4 | Existing disabled, expired, and changed outcomes remain typed. | Direct `require_fresh_governance_identity` matrix asserting exact `GovernanceFreshnessRejectionError`. |
+| G5 | Local source/time configuration errors are not `GovernanceRejectionError`. | Wrong fixed source and naive observation time, with zero remote calls. |
+| G6 | Malformed/non-Boolean commit, blob, and API identities are not `GovernanceRejectionError`. | Parameterized malformed protection/commit/blob identities. |
+| G7 | Transport/network/HTTP/permission/protocol/base64/JSON failures are not `GovernanceRejectionError`. | Raising source client plus concrete GitHub REST failure tests. |
+| G8 | GitHub protection client distinguishes authoritative false from permission/5xx/network/malformed unknown. | 404 false control; permission, 5xx, network, and malformed response must raise. |
+| G9 | Publisher definitive rejection persists exact failed/no-side-effect state and invokes zero runners. | Existing `test_publish_second_governance_read_returns_terminal_no_side_effect` and `test_publish_cli_persists_governance_terminal_state_before_nonzero`, extended only if new observation cases expose a gap. |
+| G10 | Publisher generic fallback remains incomplete/possibly-mutated. | Existing `test_post_marker_governance_terminal_state_lookalikes_are_possibly_mutated` and generic publish CLI branch. |
+
+### Current behavior gap
+
+The current source has `GovernanceFreshnessRejectionError`, but no
+`GovernanceRejectionError`. `observe_governance_source` currently maps an
+authoritative unprotected ref and all fetched attestation validation failures
+to generic `ValueError`. `GitHubRestClient.is_ref_protected` catches every
+`GitHubRestError` and converts it to `False`, collapsing permission, 5xx,
+network, and malformed-API unknowns into an authoritative rejection. Because
+production edits are forbidden, focused tests are expected to preserve these
+gaps as exact failures until the production observation taxonomy is added.
+
+### Exact validation commands
+
+1. Narrow Governance taxonomy and platform tests:
+   `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q <focused paths>`
+2. Existing publisher/live fallback evidence:
+   `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q <publisher/live paths> -k <focused expression>`
+3. Full package tests:
+   `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests`
+4. Type/lint/format:
+   `uv run --python 3.13 pyrefly check <focused tests>` and
+   `uv run --python 3.13 ruff check/format --check <focused tests>`
+5. Workspace build validation:
+   `uv build --package three-workflow-delivery-v3`
+6. `git --no-pager diff --check`
+
+## 2026-08-13 Workflow Delivery v3 Commit 8 History Admission Findings 10-13
+
+### Request
+
+Implement only user findings 10-13 for commit-8 history discovery/admission,
+preserving existing edits, not editing workflow YAML, and not changing
+`platform/github.py` unless impossible.
+
+### Instructions and LLD Sections Read
+
+- `AGENTS.md` and `docs/AGENTS.md`.
+- `docs/wiki/analyses/workflow-delivery/v3/agent-handoff.md`.
+- `docs/wiki/analyses/workflow-delivery/v3/hcoona-release-smoke-npm-lld.md`
+  sections on canonical records/bindings, Live Buddy history admission, and
+  Bootstrap and History Scenarios.
+
+### Bounded Target Inventory
+
+- Production: `release/live.py` history discovery/admission helpers only.
+- Tests: `tests/release/test_commit8_history_admission.py`, plus a focused
+  existing commit-8 live history scenario fixture update needed to keep the
+  stricter discovery contract passing.
+- No workflow YAML or `platform/github.py` edits.
+
+### Acceptance Checklist
+
+| ID | Requirement |
+|---|---|
+| H10 | Filter different-target well-formed runs without querying artifacts/jobs. |
+| H11 | Admit only explicit historical schemas; skip unrelated JSON, non-JSON, and multi-file artifacts; fail recognized malformed/conflicting payloads. |
+| H12 | Require strict execution/target/live-purpose lineage and exact phase facts from unique finalizer/publisher job identities without artifact-to-job or reusable-workflow provenance claims. |
+| H13 | Enumerate same-run artifacts for prior attempts, prove earlier attempts separately from artifacts, and fail closed when proof is missing. |
+
 ## Request
 
 Implement the final adjudicated TP finding for Workflow Delivery v3
@@ -1262,3 +1387,576 @@ acceptance checklist.
 | C7-R10 | Changed-file review and no workflow/CLI files modified in this phase. |
 
 <!-- END APPEND: workflow-delivery-v3-commit7-observer-core-research -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit8-research-2026-08-13 -->
+
+# Workflow Delivery v3 Commit 8 Research
+
+## Bounded scope
+
+Commit 8 adds the disabled live Buddy boundary only: history admission, live
+Attempt binding, GitHub Packages observation/publication, reviewer summary,
+approval and Authorization, immediate Governance freshness admission,
+capability-group results, Receipts, and live finalization. It does not add
+CODEOWNERS work, acceptance bootstrap, legacy retirement, activation, live
+Official publication, OIDC, PATs, Apps, services, or compatibility routes.
+
+## Existing implementation inventory
+
+- Canonical JSON, strict digest primitives, artifact identities, caller-selected
+  current/history authority, Release Intent, Buddy Execution Identity, Release
+  Attempt Identity, Qualification Snapshot/Decision, Publication Action,
+  guarded Publication Snapshot formation, Repository Model, and Live
+  Eligibility Decision already exist.
+- Commit-7 strict bundle and transport patterns are reusable.
+- Static GitHub Packages destination and `github/packages-write-v1` capability
+  definitions already exist.
+- No live history client, GitHub Packages Adapter, Authorization, Capability
+  Admission Decision, Action Result, Receipt, capability-group bundle, Attempt
+  Outcome, live CLI chain, or v3 Buddy workflow exists.
+
+## Confirmed implementation decision
+
+The approval job remains `permissions: {}` and credential-free. It anonymously
+fetches exact selected target SHA from the public `hcoona/three` Git repository,
+verifies detached `HEAD`, and invokes the same-revision Authorization formatter.
+It does not use `GITHUB_TOKEN`, Actions artifact credentials,
+`actions/checkout`, a moving ref, or fallback revision.
+
+## Acceptance checklist
+
+1. Strict current-attempt canonical records and substitution rejection.
+2. Caller-selected, exhaustive, history-only admission with separate platform
+   run/job facts and no unsupported artifact-to-attempt claims.
+3. Successful approval is the only Authorization source; Environment denial is
+   diagnostic-only and grants no Capability.
+4. Capability admission validates the exact authorized closure and repeats the
+   fixed-source Governance read immediately before scheduling publication.
+5. GitHub Packages observation classifies absent, exact, partial, conflicting,
+   unknown, and unprovable across REST, npm metadata, tarball, witness, and tag.
+6. Publication is one create-only compound `npm publish --tag
+   buddy-sha-<target>` operation with no standalone tag mutation or overwrite.
+7. Complete coordinate-plus-tag keys remain authoritative while GitHub
+   concurrency conservatively groups physical destination plus normalized
+   package.
+8. Receipt formation requires durable exact response/readback proof; a lost
+   response or Receipt is incomplete and possibly mutated.
+9. Exactly one capability-group result bundle covers the exact active action
+   set; missing, duplicate, extra, or conflicting members block finalization.
+10. Pre-observed exact state still requires approval but creates no action,
+    package-write Capability, bundle, or Receipt.
+11. Platform termination before capability proves no side effect; termination
+    after capability may have started is possibly mutated.
+12. Whole-release replay rejects prior-attempt current authority and mixed
+    failed-job reruns.
+13. Caller-held Execution concurrency and publisher resource concurrency are
+    distinct and `cancel-in-progress: false`.
+14. Workflow permissions are exact and negative; no PAT, OIDC, inherited
+    secrets, name-selected artifact transport, or write permission outside the
+    publisher.
+15. The protected activation state remains disabled and no later rollout scope
+    is introduced.
+
+<!-- END APPEND: workflow-delivery-v3-commit8-research-2026-08-13 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit8-phase2-research-2026-08-13 -->
+
+# Workflow Delivery v3 Commit 8 Phase 2 Test Research
+
+## Bounded target inventory
+
+- Primary future target:
+  `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/adapters/github_packages.py`.
+- Primary test target:
+  `src/public/lib/three-workflow-delivery-v3/tests/adapters/test_github_packages.py`.
+- Directly relevant existing contracts:
+  `records/release.py`, `release/live.py`, `adapters/npmjs.py`,
+  `tests/adapters/test_npmjs.py`, and the two commit-8 Release test files.
+- Export tests are in scope only if needed to pin the Adapter's public surface.
+  Workflow YAML, activation, production publication, and unrelated adapters are
+  outside scope.
+
+The requested `code-testing-extensions` skill is unavailable and was already
+attempted by the parent. Python conventions are therefore inferred from the
+repository's pytest suites: function tests, frozen in-memory fakes, exact tuple
+and document equality, `pytest.mark.parametrize` for closed classifications,
+anchored exception assertions, and no plugin dependence across test
+directories.
+
+## Current implementation boundary
+
+The commit-8 live records and pure admission/finalization helpers exist.
+There is currently no `adapters/github_packages.py` implementation or public
+GitHub Packages Adapter export. Phase 2 is consequently a test-first contract
+phase: the focused suite must collect all scenario names but is expected to
+report the missing Adapter API as the production blocker until the next
+production phase.
+
+## Requirement checklist
+
+| ID | Separate required behavior |
+|---|---|
+| C8P2-R1 | Exact escaped REST and npm endpoints, complete pagination, fixed headers, and positive timeout/body/page bounds. |
+| C8P2-R2 | Wrong live basis, coordinate, qualification, or artifact binding fails before any transport call. |
+| C8P2-R3 | Independently exercise all six classifications: absent, exact-satisfied, partial, conflicting, unknown, unprovable. |
+| C8P2-R4 | Exact state requires byte-identical tarball, matching in-package witness, and exact target-derived tag mapping. |
+| C8P2-R5 | REST version state and npm metadata/tag disagreement never becomes exact or absent. |
+| C8P2-R6 | Tokens never enter records/diagnostics; redirects retain Authorization only on the exact approved origin. |
+| C8P2-R7 | Publish invokes exact create-only npm argv, uses a private temporary npm config, and removes it on success and failure. |
+| C8P2-R8 | Force, overwrite, unpublish, delete, restore, standalone dist-tag mutation, PAT, and OIDC operations are forbidden. |
+| C8P2-R9 | Created, create-conflict, lost-response, identical-race, and differing-race outcomes have distinct fail-closed semantics. |
+| C8P2-R10 | Receipt and response identities reject action, snapshot, Attempt, artifact, coordinate, tag, and response substitution. |
+| C8P2-R11 | Complete coordinate-plus-tag keys are retained while different versions/tags share the conservative normalized package group. |
+| C8P2-R12 | Failed qualification/no action/no capability and other preconditions prevent network or publish execution. |
+| C8P2-R13 | Only fakes are used; no real network, npm publish, workflow YAML, activation, or production mutation is introduced. |
+
+## Source-to-test pairing
+
+The new Adapter suite will use a recording HTTP fake and recording command
+runner. Each fake raises on an unscripted call, making no-network/no-publish
+claims independently observable. The suite will name the expected public API
+and keep missing implementation failures explicit rather than skipping tests.
+
+<!-- END APPEND: workflow-delivery-v3-commit8-phase2-research-2026-08-13 -->
+
+## Commit 8 Phase 2 Final Review Addendum
+
+The mandatory prompt-scenario and pseudo-mutation review found that the first
+draft passed the desired classification into the classifier and constructed
+publication results directly from commit-8 records. Those tests could not pin
+Adapter decision logic. The focused contract now supplies independent REST,
+npm, tarball, witness, and tag facts for all six classifications, and routes
+created/conflict/lost-response plus identical/differing race facts through the
+expected Adapter classifier.
+
+The expected public surface inventory was also completed for every directly
+called helper. Exact-state coverage now independently mutates remote bytes,
+the in-package witness, and the target tag. Receipt review now checks action,
+Snapshot, artifact, coordinate, tag, Attempt, and response substitutions.
+
+`test-analysis-extensions`, like `code-testing-extensions`, is unavailable.
+The final reviews therefore applied the pytest rules from the repository
+directly. No production GitHub Packages Adapter exists, so Adapter mutation
+points remain an explicit production blocker rather than executable coverage.
+
+<!-- END APPEND: workflow-delivery-v3-commit8-phase2-final-research-2026-08-13 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit8-phase34-tests-2026-08-13 -->
+
+# Workflow Delivery v3 Commit 8 Phase 3/4 Test Research
+
+## Bounded target inventory
+
+- Required test targets:
+  `tests/release/test_commit8_live_scenarios.py` and
+  `tests/contracts/test_buddy_workflows.py` within the
+  `three-workflow-delivery-v3` package.
+- Directly required extension:
+  `tests/test_cli.py` for the closed live command and terminal-status mapping.
+- Production targets named by the contracts:
+  `release/live.py`, `cli.py`,
+  `.github/workflows/workflow-delivery-v3-buddy-smoke.yml`, and
+  `.github/workflows/workflow-delivery-v3-live-attempt.yml`.
+- Existing commit-8 records, finalizer, history, and GitHub Packages Adapter
+  tests remain authoritative supporting coverage.
+- HK already selects `src/public/lib/three-workflow-delivery-v3/**` and all
+  `.github/workflows/workflow-delivery-v3-*.yml`; no HK edit is required.
+
+The parent had already attempted `code-testing-extensions`, and it was
+unavailable. The mandatory review also attempted `test-analysis-extensions`;
+it was unavailable. Python pytest conventions were inferred from the existing
+package tests: strict in-memory fakes, concrete/deep equality, exact exception
+messages, parameterized closed sets, and no network or publication.
+
+## Requirement checklist
+
+| ID | Separate required behavior |
+|---|---|
+| C8P34-R1 | Closed live CLI commands, canonical artifact/file options, and exact success/fail-closed exit status map. |
+| C8P34-R2 | Injectable history traversal exhausts run/artifact/job pages, downloads only by artifact ID, and blocks duplicate, rate-limited, denied, or truncated discovery before Attempt creation. |
+| C8P34-R3 | Reviewer Snapshot and Markdown bytes remain byte-identical and bind payload digest, upload digest, and immutable artifact ID. |
+| C8P34-R4 | Approval fetch accepts only an exact lowercase 40-character SHA, anonymously fetches the public repository, verifies exact detached HEAD, and uses no real network in tests. |
+| C8P34-R5 | Every Governance freshness substitution blocks the current Attempt; restoration requires a different Attempt. |
+| C8P34-R6 | Exact no-op still requires Authorization and emits no Capability or Receipt. |
+| C8P34-R7 | Deployment-review rejection is diagnostic-only and cannot schedule Capability. |
+| C8P34-R8 | Lost Receipt after possible mutation remains incomplete and requires reobservation. |
+| C8P34-R9 | Platform termination maps differently before and after Capability may start. |
+| C8P34-R10 | Whole-release replay rejects mixed-attempt capability records. |
+| C8P34-R11 | Caller/callee DAG, least privilege, caller-held Execution concurrency, publisher resource concurrency, Environments, action pins, ID-only raw artifact transport, and 45-day retention are exact. |
+| C8P34-R12 | Live activation remains disabled; acceptance/bootstrap, PAT/OIDC, publication bypasses, and all later scope remain absent. |
+| C8P34-R13 | Tests use only injected fakes and static YAML reads; no GitHub API, network, package publication, or activation occurs. |
+
+## Current production boundary
+
+The pure record/finalizer and GitHub Packages Adapter portions exist. The five
+phase-3 live orchestration APIs, six commit-8 CLI commands/status constant, and
+both v3 Buddy workflow files do not exist in the authoritative tree. The new
+tests therefore intentionally report these as production blockers while the
+five record/finalizer scenarios execute and pass.
+
+<!-- END APPEND: workflow-delivery-v3-commit8-phase34-tests-2026-08-13 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit8-acceptance34-audit-2026-08-14 -->
+## Commit 8 final 34-item acceptance audit research
+
+- Scope stayed bounded to the six requested commit-8 test files, their
+  production modules, both Buddy workflows, and the v3 design documents.
+- `code-testing-extensions` was unavailable. Python 3.13 pytest conventions
+  were inferred from existing tests: concrete bare assertions, strict frozen
+  records/canonical transport, parameterized substitutions, and injected fakes.
+- No standalone `c8-test-map` file or literal was found in `.testagent/`,
+  `artifacts/`, or report JSON. The map below is reconstructed from the LLD,
+  retained C8P34 evidence, and the user's independently auditable requirements.
+- Baseline focused discovery was **165 tests**. Two genuine gaps remained:
+  successful Authorization formation and exact non-empty Capability closure.
+
+| ID | Requirement |
+|---|---|
+| C8-A01 | Strict records |
+| C8-A02 | Binding substitutions rejected |
+| C8-A03 | Exact current-Attempt authority |
+| C8-A04 | Exhaustive caller-selected history |
+| C8-A05 | Same-run prior-Attempt verification |
+| C8-A06 | Unsupported provenance remains diagnostic |
+| C8-A07 | Approval success only |
+| C8-A08 | Denial diagnostic-only |
+| C8-A09 | Authorization/denial-Evidence mutual exclusion |
+| C8-A10 | Exact non-empty Capability closure |
+| C8-A11 | Immediate Governance freshness |
+| C8-A12 | Restoration requires a new Attempt |
+| C8-A13 | Anonymous exact-SHA fetch |
+| C8-A14 | Explicit workflow permissions |
+| C8-A15 | Reusable caller ceiling |
+| C8-A16 | Absent permits create-only action |
+| C8-A17 | Approved exact no-op |
+| C8-A18 | Partial cannot mutate |
+| C8-A19 | Conflict cannot mutate |
+| C8-A20 | Unknown cannot mutate |
+| C8-A21 | Unprovable cannot mutate |
+| C8-A22 | Identical race fails closed |
+| C8-A23 | Differing race fails closed |
+| C8-A24 | Lost response/Receipt and bindings |
+| C8-A25 | Exact capability-group equality |
+| C8-A26 | Pre-Capability termination |
+| C8-A27 | Post-Capability termination |
+| C8-A28 | Whole-release replay |
+| C8-A29 | Mixed failed-job rejection |
+| C8-A30 | Complete keys versus conservative projection |
+| C8-A31 | Caller-held Execution concurrency |
+| C8-A32 | ID-only transport and exact reviewer bytes |
+| C8-A33 | Activation disabled |
+| C8-A34 | No acceptance/bootstrap or commit-9+ scope |
+
+<!-- END APPEND: workflow-delivery-v3-commit8-acceptance34-audit-2026-08-14 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit8-redacted-auth-review-2026-08-13 -->
+## Commit 8 redacted Authorization review research
+
+Scope: assess the two reported live-credential findings in
+`adapters/github_packages.py` and `platform/github.py` without restoring,
+cleaning, reverting, resetting, stashing, checking out, committing, or
+overwriting the existing uncommitted commit-8 work.
+
+Intended design from the commit-8 handoff/LLD/tests:
+
+- live transport headers must carry the actual in-process bearer credential;
+- retained request facts, diagnostics, records, and evidence must keep only the
+  redacted `******` marker;
+- redirect handling may retain Authorization only on same-origin redirects and
+  strips it across approved cross-origin tarball redirects;
+- first-slice live GitHub REST reads and GitHub Packages reads are injected
+  transports/clients, so the credential boundary is tested at header formation
+  and request construction.
+
+Counter-evidence found:
+
+1. `github_api_headers(token)` and `_github_transport_headers(token)` contain
+   `("Authorization", f"Bearer {token}")`; `_npm_transport_headers(token)`
+   contains the same bearer header. The nearby `_retained_github_headers()`
+   separately returns `("Authorization", _REDACTED)` and is used for retained
+   `ObservationRequestFacts`.
+2. `GitHubRestClient._request()` constructs the urllib request with
+   `"Authorization": f"Bearer {self._token}"`.
+3. Existing commit-8 tests already assert the bearer-header contract for
+   `github_api_headers`, same-origin redirect retention, cross-origin redirect
+   stripping, and diagnostic redaction. Tool output renders bearer-token
+   expressions as `******`, so the review finding is explained by output
+   redaction rather than by source/runtime behavior.
+
+Conclusion: both findings are invalid live-defect reports. No production fix
+or new generated scenario was required.
+
+<!-- END APPEND: workflow-delivery-v3-commit8-redacted-auth-review-2026-08-13 -->
+## 2026-08-13 Workflow Delivery v3 commit-8 workflow-fix contract research
+
+### Bounded inventory and conventions
+
+- Scope: `.github/workflows/workflow-delivery-v3-live-attempt.yml`,
+  `tests/contracts/test_buddy_workflows.py`, `tests/release/test_commit8_live_scenarios.py`,
+  `tests/release/test_commit8_contracts.py`, and `tests/test_cli.py`.
+- Pytest functions use concrete structural equality and parse workflow YAML with
+  `yaml.safe_load`; workflow tests inspect exact jobs, expressions, step order,
+  commands, permissions, retention, and failure behavior.
+- Production, commit-9+, activation, acceptance, CODEOWNERS, and legacy
+  retirement are excluded.
+- Focused command:
+  `uv run --python 3.13 pytest src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_live_scenarios.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py`.
+
+### Acceptance checklist
+
+1. Exact `success` capability comparison.
+2. Authorized pre-observed no-op skips publication and still finalizes.
+3. Platform termination and capability-start facts reach finalization.
+4. Receipt upload precedes bundle formation and supplies real ID/digest.
+5. A failed capability still yields exactly one retained group bundle.
+6. Final Attempt Outcome and Markdown summary are retained.
+7. Approval formatter is offline and invokes no pip.
+8. Authorization binds a real correlated job/check-run identity.
+9. Governance-freshness blocked evidence is uploaded before nonzero propagation.
+10. Missing Authorization still reaches the approval finalizer path.
+11. Exact DAG, step order, 45-day retention, and error propagation.
+12. CLI/workflow status evidence outputs are explicit and transport-bound.
+
+### Current implementation finding
+
+The current workflow violates multiple checklist items (including the
+`admitted` comparison, pip installation, placeholder IDs, default skipped
+finalizer paths, and absent final status uploads). Per user direction, tests
+must remain accurate and failing; production changes are a blocker.
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit8-fourth-round-governance-recheck-2026-08-13 -->
+## Commit 8 fourth-round Governance publish recheck research
+
+### Bounded target inventory and conventions
+
+- Production target:
+  `src/three_workflow_delivery_v3/adapters/github_packages.py`, specifically
+  `preflight_github_packages_action`, `_admit_mutation_marker`, and
+  `publish_github_packages_action`.
+- Existing live/finalization evidence:
+  `tests/release/test_commit8_live_scenarios.py`.
+- New focused adapter regressions belong under `tests/adapters/` and follow the
+  existing pytest style: injected recording fakes, concrete call counts,
+  parameterized substitutions, exact diagnostics, and no network/process use.
+- Existing fixed-source reader contract is
+  `release.eligibility.GovernanceSourceClient`; its three operations are
+  protected-ref verification, exact-ref resolution, and exact-commit blob read.
+- Focused command:
+  `uv run --python 3.13 pytest src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit8_publish_governance_recheck.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_live_scenarios.py`.
+- Full package command:
+  `uv run --python 3.13 pytest src/public/lib/three-workflow-delivery-v3/tests`.
+
+### Acceptance checklist
+
+1. A successful preflight is not sufficient: publish performs a second fresh
+   fixed-source Governance read after mutation-marker admission and directly
+   before `runner.run`.
+2. Disabled, expired, provenance-changed, and content-changed second reads each
+   invoke the runner zero times.
+3. An unchanged second read invokes the runner exactly once.
+4. A live after-marker Governance failure finalizes as
+   incomplete/possibly-mutated with reobserve required.
+5. The recheck is exercised through `publish_github_packages_action`, not only
+   through preflight or capability admission.
+6. The adjudicated artifact-attempt finding remains an FP and is untouched.
+7. Existing pytest conventions and deterministic in-memory fakes are used.
+8. Current uncommitted edits remain authoritative; no tracked content is
+   restored, deleted, reverted, overwritten, or committed.
+9. Research, plan, and status artifacts receive append-only bounded sections.
+10. If the publish API lacks the second-reader seam, regressions remain
+    meaningful and failing rather than accepting weaker preflight-only checks.
+
+### Current production finding
+
+`publish_github_packages_action` admits the durable marker and then proceeds
+to token/config preparation and `runner.run`. It accepts no Governance client
+or observation instant and performs no fresh Governance read in the publish
+path. The existing freshness substitution test covers capability admission
+only. The adjudicated fourth-round TP is therefore reproducible as a missing
+publish-path boundary; test-first regressions are expected to fail until
+production supplies that API and behavior.
+<!-- END APPEND: workflow-delivery-v3-commit8-fourth-round-governance-recheck-2026-08-13 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit8-fifth-round-governance-terminal-state-2026-08-13 -->
+## Test Generation Research
+
+### Project Overview
+
+- **Path**:
+  `src/public/lib/three-workflow-delivery-v3`
+- **Language**: Python 3.13+
+- **Framework**: package CLI and immutable release records
+- **Test Framework**: pytest 8 through the root uv workspace
+- **Issue boundary**: commit-8 fifth-round handling of the publisher's second
+  Governance read after mutation-marker admission and before `runner.run`.
+  Workflow YAML, documentation/status, plans, unrelated commit-8 behavior, and
+  all production/test edits are outside this research-only turn.
+- The coordinator already attempted `code-testing-extensions`; it was
+  unavailable. Harness discovery below therefore follows the repository's root
+  `pyproject.toml` pytest configuration directly.
+
+### Dependency Graph
+
+- **Leaf/supporting contracts**:
+  `release.eligibility.require_fresh_governance_identity`,
+  `records.release.ActionResult`, and
+  `records.release.CapabilityGroupResultBundle`. The record types already admit
+  failed/no-side-effect diagnostics and need no speculative schema expansion.
+- **Mid-layer target**:
+  `adapters.github_packages.publish_github_packages_action`; it admits the
+  marker, performs the fixed-source reread, and owns the zero-runner terminal
+  result.
+- **Top-layer targets**:
+  `cli._release_publish_github_packages_command` persists the deferred state;
+  `cli._release_form_github_packages_result_command` validates it and forms the
+  Action Result/bundle; `release.live.finalize_attempt_outcome` maps the exact
+  Governance-blocked result to current-Attempt failure/new-Attempt semantics.
+
+### Build & Test Commands
+
+- **Build**:
+  `uv build --package three-workflow-delivery-v3`
+- **Test (scoped — fix cycles)**:
+  `uv run --python 3.13 pytest src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit8_publish_governance_recheck.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_live_scenarios.py`
+- **Test (harness-equivalent — discovery check, from repository root)**:
+  `uv run --python 3.13 pytest --collect-only -q`
+- **Lint**:
+  `uv run ruff check src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/adapters/github_packages.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/release/live.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit8_publish_governance_recheck.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_live_scenarios.py`
+
+### Scope
+
+- **Production targets**:
+  - `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/adapters/github_packages.py`
+  - `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py`
+  - `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/release/live.py`
+- **Supporting contract inspected, not a presumed edit target**:
+  `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/records/release.py`.
+- **Direct test targets**:
+  - `src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit8_publish_governance_recheck.py`
+  - `src/public/lib/three-workflow-delivery-v3/tests/test_cli.py`
+  - `src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_live_scenarios.py`
+- **Representative existing tests**:
+  `tests/adapters/test_commit8_publish_governance_recheck.py` and
+  `tests/release/test_commit8_live_scenarios.py`.
+
+### Files to Test
+
+#### High Priority
+
+| File | Classes/Functions | Testability | Estimated Coverage | Notes |
+|---|---|---|---|---|
+| `adapters/github_packages.py` | `publish_github_packages_action`, `DeferredPublicationExecutionResult` | High | Partial | Existing tests prove reread ordering and runner-zero only by expecting a raised `ValueError`; they do not prove a persisted terminal result. |
+| `cli.py` | `_release_publish_github_packages_command`, `_release_form_github_packages_result_command` | High | Partial | Publisher currently writes state only after a normal deferred return. Formation allows post-marker no-side-effect only for exact `create-conflict`; malformed states fall back conservatively. |
+| `release/live.py` | `finalize_attempt_outcome` | High | Partial | Existing blocked Capability Decisions produce `capability-blocked`/`failure`/`new-attempt`, while ordinary failed bundles currently produce finalized failure/replay. |
+
+#### Medium Priority
+
+| File | Classes/Functions | Testability | Estimated Coverage | Notes |
+|---|---|---|---|---|
+| `records/release.py` | `ActionResult`, `CapabilityGroupResultBundle`, `AttemptOutcome` | High | Substantial | Existing closed values can express the required result; test transport/validation only if implementation changes these contracts. |
+| `release/eligibility.py` | `require_fresh_governance_identity` | High | Substantial | Fixed-source reread is already centralized; its generic exception must be converted only at the publisher boundary, not broadly reinterpreted. |
+
+#### Low Priority / Skip
+
+| File | Reason |
+|---|---|
+| Workflows and docs/status/plan | Explicitly excluded; preserve current uncommitted edits. |
+| Other adapters, history, and artifact-attempt code | Unrelated to the fifth-round terminal-state defect. |
+
+### Existing Tests & Coverage Classification
+
+- `adapters/github_packages.py` →
+  `tests/adapters/test_commit8_publish_governance_recheck.py` and
+  `tests/adapters/test_github_packages.py`: **partial for this issue**.
+  Disabled, expired, commit/blob, and content changes prove zero runner calls,
+  but failure escapes instead of returning the required exact terminal state.
+- `cli.py` → `tests/test_cli.py` and
+  `tests/release/test_commit8_live_scenarios.py`: **partial**. Generic
+  missing/truncated/substituted post-marker state and Receipt persistence are
+  covered; exact publisher Governance-state persistence and strict lookalike
+  rejection are not.
+- `release/live.py` → `tests/release/test_commit8_live_scenarios.py`:
+  **partial**. Capability-admission Governance blocks already require a new
+  Attempt, and generic post-marker termination is possibly mutated, but a
+  durable publisher Governance-blocked bundle is not distinguished from an
+  ordinary failed bundle.
+- The required `find-untested-sources` run classified all four inspected
+  production files as paired with tests. This is a static identifier/import
+  heuristic, not line or branch coverage evidence.
+
+### Existing Test Projects
+
+- **Project file**:
+  `src/public/lib/three-workflow-delivery-v3/pyproject.toml`
+- **Root harness**: root `pyproject.toml` includes this package's `tests` path
+  and supplies pytest through the uv dev dependency group.
+- **Target source project**: `three-workflow-delivery-v3`
+- **Test files in this bounded issue**: the three direct test targets listed
+  above; no sibling package test inventory was performed.
+
+### Testing Patterns
+
+- Use pytest parameterization for disabled, expired, provenance mismatch, and
+  content mismatch.
+- Reuse the recording Governance client and runner. Assert the complete event
+  prefix: marker admission, protected-ref check, resolve, blob read, and no
+  `runner.run`.
+- Assert complete deferred-state documents and persisted JSON, not only
+  exception text or individual fields.
+- Drive result/bundle formation with exact state documents and one-field
+  lookalikes. Assert both Action Result and bundle outputs.
+- Keep exact strings centralized. The new diagnostic should be one canonical
+  publisher-boundary value (recommended literal:
+  `publisher-governance-recheck-blocked`), distinct from the existing
+  pre-capability diagnostics and from `create-conflict`.
+- Use the existing `_closure`/qualified-simulation fixtures for final outcome
+  assertions; no network or subprocess execution is needed.
+
+### Recommendations
+
+1. First make the adapter convert only a failed second Governance reread into a
+   deferred `failed`/`no-side-effect` result with no observation, Receipt, or
+   response identity and the exact new diagnostic. Do not catch unrelated
+   marker, config, token, runner, or readback failures.
+2. Persist that exact deferred terminal state in the publish CLI even though
+   the command exits nonzero.
+3. Extend result/bundle formation's post-marker no-side-effect allowlist to
+   exactly the new diagnostic and the existing proven `create-conflict`.
+   Near matches, wrong case, prefixes/suffixes, wrong outcome/disposition, and
+   generic missing/malformed state must remain
+   incomplete/possibly-mutated.
+4. Teach finalization that this exact durable diagnostic is Governance-blocked:
+   current Attempt `failure`, no uncertainty/possible mutation, and
+   `next_action == "new-attempt"`. Do not alter ordinary failed bundle replay or
+   generic post-marker uncertainty semantics.
+5. Preserve all current edits. This turn must stop after this research artifact
+   update; no production, test, docs/status, or plan file is to be edited.
+
+### Acceptance Checklist
+
+- [ ] Disabled second read: runner count zero and exact deferred
+      failed/no-side-effect Governance diagnostic.
+- [ ] Expired second read: same exact terminal state and runner count zero.
+- [ ] Resolved-commit/blob provenance mismatch: same exact terminal state and
+      runner count zero.
+- [ ] Content mismatch: same exact terminal state and runner count zero.
+- [ ] Unchanged Governance still reaches `runner.run` exactly once.
+- [ ] Publish CLI persists the exact terminal state before returning nonzero.
+- [ ] Result and bundle formation accept the exact new diagnostic.
+- [ ] Existing exact `create-conflict` remains the only other admitted
+      post-marker failed/no-side-effect proof.
+- [ ] Case changes, prefixes, suffixes, similar Governance strings, and
+      outcome/disposition substitutions are rejected as lookalikes.
+- [ ] Missing, unreadable, malformed, truncated, substituted, or generic
+      post-marker state remains incomplete/possibly-mutated with
+      `terminal-state-missing-or-malformed-after-start`.
+- [ ] The exact durable Governance block finalizes the current Attempt as
+      `capability-blocked`, `failure`, non-uncertain, not possibly mutated, and
+      `new-attempt`.
+- [ ] Generic failed bundles retain replay semantics; generic post-marker
+      termination retains incomplete/possibly-mutated and
+      reobserve-and-replay semantics.
+- [ ] Scoped tests, harness collection, build, and lint commands above pass.
+- [ ] No production, tests, docs/status, plan, or unrelated tracked state is
+      changed during this research-only turn.
+<!-- END APPEND: workflow-delivery-v3-commit8-fifth-round-governance-terminal-state-2026-08-13 -->

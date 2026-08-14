@@ -917,6 +917,15 @@ require a second reviewer. `approval-finalizer` is the credential-free
 Capability Admission Gate between them. An additional destination reviewer is
 optional.
 
+Because GitHub jobs do not share a workspace, the credential-free approval job
+obtains control code through an anonymous public Git fetch of the exact selected
+40-character target SHA from `https://github.com/hcoona/three.git`. It verifies
+the fetched commit and detached `HEAD` before executing the v3 Authorization
+formatter directly from that checkout. It does not use `GITHUB_TOKEN`,
+`actions/checkout`, Actions artifact download, a package registry, a moving ref,
+or fallback revision. Failure to fetch or verify the exact SHA leaves the
+Attempt replayable incomplete and emits no Authorization Record.
+
 Within the called workflow, only the executing
 `publish-github-packages` job declares:
 
@@ -1336,9 +1345,10 @@ SHA-512, tarball manifest, lifecycle scripts, and exact action summary.
     bindings, or otherwise invalidating Governance blocks the Attempt. A
     replacement valid attestation or re-enablement requires a new Attempt and
     new approval.
-17. Publisher-side freshness revalidation uses only existing permissions,
-    creates no credential/service, and is tested as defense in depth rather than
-    a malicious-writer boundary.
+17. Publisher-side freshness revalidation is optional architecture-wide, but
+    this slice elects and requires it immediately before npm mutation. It uses
+    only existing permissions, creates no credential/service, and is tested as
+    defense in depth rather than a malicious-writer boundary.
 18. Protected-document disablement is tested as an operator control with
     bounded review/merge/read latency, not as instantaneous platform enforcement
     or malicious-writer protection. Tests assert that no repository variable or

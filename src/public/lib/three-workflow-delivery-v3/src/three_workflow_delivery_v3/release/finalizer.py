@@ -13,6 +13,7 @@ from three_workflow_delivery_v3.records.release import (
     ObservationValue,
     ProjectionObservation,
     PublicationAction,
+    PublicationObservationReference,
     PublicationSnapshot,
     QualificationDecision,
     QualificationEvidence,
@@ -296,10 +297,7 @@ def _admit_synthetic_projection_observation(
         projection_digest=projection.projection_digest,
         desired_state_digest=desired_digest,
         method="GET",
-        url=(
-            "synthetic://workflow-delivery-v3/"
-            f"{projection.projection_id}"
-        ),
+        url=(f"synthetic://workflow-delivery-v3/{projection.projection_id}"),
         headers=(),
     )
     request_digest = request_facts.request_digest
@@ -584,7 +582,10 @@ def _materialize_publication_action(
         artifact_output=artifact.output,
         prerequisites=potential.prerequisites,
         action_inputs=publication_action_inputs(projection, artifact),
-        mutable_resource_keys=publication_mutable_resource_keys(projection),
+        mutable_resource_keys=publication_mutable_resource_keys(
+            projection,
+            artifact,
+        ),
         lock_projection=publication_lock_projection(projection),
         lock_group=publication_lock_group(projection),
         capability_group=publication_capability_group(projection),
@@ -657,12 +658,12 @@ def materialize_publication_snapshot(
         artifact_output_ids=tuple(
             artifact.output.output_id for artifact in admitted_artifacts
         ),
-        observation_digests=tuple(
-            observation.observation_digest
-            for observation in admitted_observations
-        ),
-        observation_projection_ids=tuple(
-            observation.projection.projection_id
+        observation_references=tuple(
+            PublicationObservationReference(
+                projection_id=observation.projection.projection_id,
+                observation_digest=observation.observation_digest,
+                classification=observation.value.classification,
+            )
             for observation in admitted_observations
         ),
         materialized_actions=actions,

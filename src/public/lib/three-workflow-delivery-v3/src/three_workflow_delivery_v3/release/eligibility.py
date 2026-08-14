@@ -192,6 +192,14 @@ class GovernanceSourceClient(Protocol):
         ...
 
 
+class GovernanceRejectionError(ValueError):
+    """Authoritatively observed Governance state definitively rejected."""
+
+
+class GovernanceFreshnessRejectionError(GovernanceRejectionError):
+    """Exact fresh Governance identity was validly read but rejected."""
+
+
 @dataclass(frozen=True, slots=True)
 class GovernanceObservation:
     """Fresh source provenance and validated canonical attestation."""
@@ -636,9 +644,13 @@ def observe_governance_source(
     """Freshly resolve and read the exact protected Governance source."""
     _validate_source(source)
     observed_at = _utc_now(now)
-    if client.is_ref_protected(source.repository, source.ref) is not True:
-        message = "Governance ref is not protected"
+    protected = client.is_ref_protected(source.repository, source.ref)
+    if type(protected) is not bool:
+        message = "Governance ref protection response is malformed"
         raise ValueError(message)
+    if not protected:
+        message = "Governance ref is not protected"
+        raise GovernanceRejectionError(message)
     resolved_commit = client.resolve_ref(source.repository, source.ref)
     if _SHA_PATTERN.fullmatch(resolved_commit) is None:
         message = "Governance ref did not resolve to a full commit SHA"
@@ -651,11 +663,14 @@ def observe_governance_source(
     if _OBJECT_ID_PATTERN.fullmatch(blob.blob_oid) is None:
         message = "Governance blob OID is malformed"
         raise ValueError(message)
-    attestation = parse_governance_attestation(blob.content)
+    try:
+        attestation = parse_governance_attestation(blob.content)
+    except (TypeError, ValueError, UnicodeError) as error:
+        raise GovernanceRejectionError(str(error)) from error
     content_sha256 = f"sha256:{hashlib.sha256(blob.content).hexdigest()}"
     if content_sha256 != attestation.content_digest:
         message = "Governance canonical content digest mismatch"
-        raise ValueError(message)
+        raise GovernanceRejectionError(message)
     return GovernanceObservation(
         source=source,
         resolved_commit=resolved_commit,
@@ -664,6 +679,55 @@ def observe_governance_source(
         observed_at=observed_at,
         attestation=attestation,
     )
+
+
+def governance_observation_provenance(
+    observation: GovernanceObservation,
+) -> tuple[tuple[str, str], ...]:
+    """Return the canonical fixed-source provenance comparison."""
+    if type(observation) is not GovernanceObservation:
+        message = "Governance observation has the wrong runtime type"
+        raise TypeError(message)
+    return tuple(
+        sorted(
+            (
+                ("repository", observation.source.repository),
+                ("ref", observation.source.ref),
+                ("path", observation.source.path),
+                ("resolved-commit", observation.resolved_commit),
+                ("blob-oid", observation.blob_oid),
+                ("content-sha256", observation.content_sha256),
+            )
+        )
+    )
+
+
+def require_fresh_governance_identity(  # noqa: PLR0913
+    source: GovernanceSource,
+    client: GovernanceSourceClient,
+    *,
+    now: datetime,
+    expected_provenance: tuple[tuple[str, str], ...],
+    expected_content_sha256: str,
+    expected_expires_at: str,
+    expected_live_enabled: bool,
+) -> GovernanceObservation:
+    """Require current fixed-source Governance identity and validity."""
+    observation = observe_governance_source(source, client, now=now)
+    provenance = governance_observation_provenance(observation)
+    if (
+        provenance != expected_provenance
+        or observation.content_sha256 != expected_content_sha256
+        or _format_instant(observation.attestation.expires_at)
+        != expected_expires_at
+        or observation.attestation.live_enabled is not expected_live_enabled
+        or not observation.attestation.live_enabled
+        or observation.attestation.inspected_at > observation.observed_at
+        or observation.attestation.expires_at <= observation.observed_at
+    ):
+        message = "Governance freshness comparison failed"
+        raise GovernanceFreshnessRejectionError(message)
+    return observation
 
 
 def _normalized_path(value: str, *, field: str) -> str:

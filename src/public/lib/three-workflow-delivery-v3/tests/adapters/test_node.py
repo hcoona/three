@@ -3210,12 +3210,36 @@ def test_adapter_public_api_exports_closed_types_and_functions() -> None:
         "StdlibHttpTransport",
         "observe_npmjs_projection",
     )
+    github_packages_exports = (
+        "GITHUB_PACKAGES_DESTINATION_ID",
+        "GITHUB_PACKAGES_OBSERVATION_CONTRACT_ID",
+        "GITHUB_PACKAGES_OPERATION",
+        "GITHUB_PACKAGES_PACKAGE",
+        "GITHUB_PACKAGES_REGISTRY",
+        "GitHubPackagesHttpResponse",
+        "GitHubPackagesNetworkError",
+        "GitHubPackagesPolicyError",
+        "GitHubPackagesPublishPreflight",
+        "GitHubPackagesTimeoutError",
+        "GitHubPackagesTransport",
+        "MutationMayHaveStartedMarker",
+        "PublicationExecutionResult",
+        "PublishCommandResult",
+        "PublishRunner",
+        "classify_github_packages_probe",
+        "classify_publish_result",
+        "form_mutation_may_have_started_marker",
+        "observe_github_packages_projection",
+        "preflight_github_packages_action",
+        "publish_github_packages_action",
+    )
     for name in expected_exports:
         module_export = getattr(node_adapter, name, None)
         assert module_export is not None, f"node adapter missing export {name}"
         assert getattr(adapters_package, name, None) is module_export
     assert set(adapters_package.__all__) == {
         *expected_exports,
+        *github_packages_exports,
         *npmjs_exports,
     }
 

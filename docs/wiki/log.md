@@ -1683,3 +1683,15 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   follow-up reports from all four original GPT-5.6 Sol reviewers.
 - Recorded passing v3, managed HK, root Python, static, Pkl, build, and lock
   validation evidence; commit 8 remains separately gated.
+
+## [2026-08-14] query | Close Workflow Delivery v3 commit 8
+
+- Completed the disabled live Buddy GitHub Packages boundary, including
+  history admission, approval and Capability controls, publication, Receipts,
+  finalization, and caller/reusable workflows.
+- Closed six rounds of independently adjudicated findings and obtained explicit
+  no-finding closure from all five original GPT-5.6 Sol reviewers.
+- Passed 2,253 v3 tests, the managed v3 HK gate, 4,288 root Python tests, and
+  all applicable static, Pkl, build, and lock gates.
+- Advanced the next separately authorized boundary to commit 9 CODEOWNERS
+  final-match coverage while keeping live activation disabled.

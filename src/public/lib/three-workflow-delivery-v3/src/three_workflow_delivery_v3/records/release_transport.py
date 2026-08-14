@@ -10,10 +10,17 @@ from three_workflow_delivery_v3.records.artifacts import (
     ArtifactTransportIdentity,
 )
 from three_workflow_delivery_v3.records.release import (
+    ACTION_RESULT_SCHEMA,
     ARTIFACT_VARIANT_IDENTITY_SCHEMA,
+    ATTEMPT_OUTCOME_SCHEMA,
+    AUTHORIZATION_RECORD_SCHEMA,
     BUDDY_EXECUTION_IDENTITY_SCHEMA,
+    CAPABILITY_ADMISSION_DECISION_SCHEMA,
+    CAPABILITY_GROUP_RESULT_BUNDLE_SCHEMA,
     DESTINATION_PROJECTION_SCHEMA,
+    EXECUTION_HISTORY_ADMISSION_SNAPSHOT_SCHEMA,
     EXTERNAL_PACKAGE_COORDINATE_SCHEMA,
+    HISTORICAL_EXECUTION_RECORD_SCHEMA,
     HYPOTHETICAL_ACTION_SCHEMA,
     OBLIGATION_DISPOSITION_SCHEMA,
     OBSERVATION_REQUEST_FACTS_SCHEMA,
@@ -22,10 +29,15 @@ from three_workflow_delivery_v3.records.release import (
     OFFICIAL_PRODUCT_IDENTITY_SCHEMA,
     POTENTIAL_ACTION_CONTRACT_SCHEMA,
     PROJECTION_OBSERVATION_SCHEMA,
+    PUBLICATION_ACTION_SCHEMA,
+    PUBLICATION_OBSERVATION_REFERENCE_SCHEMA,
+    PUBLICATION_SNAPSHOT_SCHEMA,
     QUALIFICATION_DECISION_SCHEMA,
     QUALIFICATION_EVIDENCE_SCHEMA,
     QUALIFICATION_SNAPSHOT_SCHEMA,
+    RECEIPT_SCHEMA,
     RELEASE_ARTIFACT_SCHEMA,
+    RELEASE_ATTEMPT_BINDING_SCHEMA,
     RELEASE_ATTEMPT_IDENTITY_SCHEMA,
     RELEASE_BUILD_IDENTITY_SCHEMA,
     RELEASE_BUILD_REQUEST_SCHEMA,
@@ -35,10 +47,17 @@ from three_workflow_delivery_v3.records.release import (
     SIMULATION_BINDING_SCHEMA,
     SIMULATION_IDENTITY_SCHEMA,
     SIMULATION_OUTCOME_SCHEMA,
+    ActionResult,
     ArtifactVariantIdentity,
+    AttemptOutcome,
+    AuthorizationRecord,
     BuddyExecutionIdentity,
+    CapabilityAdmissionDecision,
+    CapabilityGroupResultBundle,
     DestinationProjection,
+    ExecutionHistoryAdmissionSnapshot,
     ExternalPackageCoordinate,
+    HistoricalExecutionRecord,
     HypotheticalAction,
     ObligationDisposition,
     ObservationRequestFacts,
@@ -48,10 +67,15 @@ from three_workflow_delivery_v3.records.release import (
     OfficialProductIdentity,
     PotentialActionContract,
     ProjectionObservation,
+    PublicationAction,
+    PublicationObservationReference,
+    PublicationSnapshot,
     QualificationDecision,
     QualificationEvidence,
     QualificationSnapshot,
+    Receipt,
     ReleaseArtifact,
+    ReleaseAttemptBinding,
     ReleaseAttemptIdentity,
     ReleaseBuildIdentity,
     ReleaseBuildRequest,
@@ -189,6 +213,30 @@ def _pairs(value: JsonValue, *, field: str) -> tuple[tuple[str, str], ...]:
             )
         )
     return tuple(pairs)
+
+
+def _nested_strings(
+    value: JsonValue,
+    *,
+    field: str,
+) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    pairs: list[tuple[str, tuple[str, ...]]] = []
+    for index, item in enumerate(_array(value, field=field)):
+        pair = _array(item, field=f"{field}[{index}]")
+        if len(pair) != 2:  # noqa: PLR2004
+            message = f"{field}[{index}] must contain exactly two values"
+            raise ValueError(message)
+        pairs.append(
+            (
+                _string(pair[0], field=f"{field}[{index}][0]"),
+                _strings(pair[1], field=f"{field}[{index}][1]"),
+            )
+        )
+    return tuple(pairs)
+
+
+def _nullable_integer(value: JsonValue, *, field: str) -> int | None:
+    return None if value is None else _integer(value, field=field)
 
 
 def _nullable_string(value: JsonValue, *, field: str) -> str | None:
@@ -395,6 +443,23 @@ def _official_product(value: JsonValue) -> OfficialProductIdentity:
     )
 
 
+def _buddy_execution(value: JsonValue) -> BuddyExecutionIdentity:
+    buddy = _closed(
+        value,
+        field="BuddyExecutionIdentity",
+        schema=BUDDY_EXECUTION_IDENTITY_SCHEMA,
+        fields=frozenset({"channel", "release-unit", "target"}),
+    )
+    return BuddyExecutionIdentity(
+        channel=_string(buddy["channel"], field="execution.channel"),
+        release_unit=_string(
+            buddy["release-unit"],
+            field="execution.release-unit",
+        ),
+        target=_string(buddy["target"], field="execution.target"),
+    )
+
+
 def _release_attempt(value: JsonValue) -> ReleaseAttemptIdentity:
     document = _closed(
         value,
@@ -419,20 +484,7 @@ def _release_attempt(value: JsonValue) -> ReleaseAttemptIdentity:
             target=_string(official["target"], field="execution.target"),
         )
     elif schema == BUDDY_EXECUTION_IDENTITY_SCHEMA:
-        buddy = _closed(
-            execution_document,
-            field="BuddyExecutionIdentity",
-            schema=BUDDY_EXECUTION_IDENTITY_SCHEMA,
-            fields=frozenset({"channel", "release-unit", "target"}),
-        )
-        execution = BuddyExecutionIdentity(
-            channel=_string(buddy["channel"], field="execution.channel"),
-            release_unit=_string(
-                buddy["release-unit"],
-                field="execution.release-unit",
-            ),
-            target=_string(buddy["target"], field="execution.target"),
-        )
+        execution = _buddy_execution(execution_document)
     else:
         message = "ReleaseAttemptIdentity execution has the wrong schema"
         raise ValueError(message)
@@ -1513,6 +1565,175 @@ def _hypothetical_action(value: JsonValue) -> HypotheticalAction:
     )
 
 
+def _publication_action(value: JsonValue) -> PublicationAction:
+    document = _closed(
+        value,
+        field="publication action",
+        schema=PUBLICATION_ACTION_SCHEMA,
+        fields=frozenset(
+            {
+                "action-id",
+                "projection",
+                "operation",
+                "artifact",
+                "artifact-digest",
+                "artifact-output",
+                "prerequisites",
+                "action-inputs",
+                "mutable-resource-keys",
+                "lock-projection",
+                "lock-group",
+                "capability-group",
+                "capability-requirements",
+                "expected-result",
+                "receipt-contract",
+            }
+        ),
+    )
+    return PublicationAction(
+        action_id=_string(
+            document["action-id"],
+            field="publication action.action-id",
+        ),
+        projection=_projection(document["projection"]),
+        operation=_string(
+            document["operation"],
+            field="publication action.operation",
+        ),
+        artifact=_release_artifact(document["artifact"]),
+        artifact_digest=_string(
+            document["artifact-digest"],
+            field="publication action.artifact-digest",
+        ),
+        artifact_output=_output(document["artifact-output"]),
+        prerequisites=_strings(
+            document["prerequisites"],
+            field="publication action.prerequisites",
+        ),
+        action_inputs=_pairs(
+            document["action-inputs"],
+            field="publication action.action-inputs",
+        ),
+        mutable_resource_keys=_strings(
+            document["mutable-resource-keys"],
+            field="publication action.mutable-resource-keys",
+        ),
+        lock_projection=_string(
+            document["lock-projection"],
+            field="publication action.lock-projection",
+        ),
+        lock_group=_string(
+            document["lock-group"],
+            field="publication action.lock-group",
+        ),
+        capability_group=_string(
+            document["capability-group"],
+            field="publication action.capability-group",
+        ),
+        capability_requirements=_strings(
+            document["capability-requirements"],
+            field="publication action.capability-requirements",
+        ),
+        expected_result=_string(
+            document["expected-result"],
+            field="publication action.expected-result",
+        ),
+        receipt_contract=_string(
+            document["receipt-contract"],
+            field="publication action.receipt-contract",
+        ),
+    )
+
+
+def _publication_observation_reference(
+    value: JsonValue,
+) -> PublicationObservationReference:
+    document = _closed(
+        value,
+        field="publication observation reference",
+        schema=PUBLICATION_OBSERVATION_REFERENCE_SCHEMA,
+        fields=frozenset(
+            {"projection-id", "observation-digest", "classification"}
+        ),
+    )
+    return PublicationObservationReference(
+        projection_id=_string(
+            document["projection-id"],
+            field="publication observation reference.projection-id",
+        ),
+        observation_digest=_string(
+            document["observation-digest"],
+            field="publication observation reference.observation-digest",
+        ),
+        classification=_string(
+            document["classification"],
+            field="publication observation reference.classification",
+        ),
+    )
+
+
+def _publication_snapshot(value: JsonValue) -> PublicationSnapshot:
+    document = _closed(
+        value,
+        field="publication snapshot",
+        schema=PUBLICATION_SNAPSHOT_SCHEMA,
+        fields=frozenset(
+            {
+                "attempt",
+                "qualification-snapshot-digest",
+                "qualification-decision-digest",
+                "qualification-result",
+                "projection-ids",
+                "artifact-digests",
+                "artifact-output-ids",
+                "observation-references",
+                "materialized-actions",
+            }
+        ),
+    )
+    return PublicationSnapshot(
+        attempt=_release_attempt(document["attempt"]),
+        qualification_snapshot_digest=_string(
+            document["qualification-snapshot-digest"],
+            field="publication snapshot.qualification-snapshot-digest",
+        ),
+        qualification_decision_digest=_string(
+            document["qualification-decision-digest"],
+            field="publication snapshot.qualification-decision-digest",
+        ),
+        qualification_result=_string(
+            document["qualification-result"],
+            field="publication snapshot.qualification-result",
+        ),
+        projection_ids=_strings(
+            document["projection-ids"],
+            field="publication snapshot.projection-ids",
+        ),
+        artifact_digests=_strings(
+            document["artifact-digests"],
+            field="publication snapshot.artifact-digests",
+        ),
+        artifact_output_ids=_strings(
+            document["artifact-output-ids"],
+            field="publication snapshot.artifact-output-ids",
+        ),
+        observation_references=tuple(
+            _publication_observation_reference(item)
+            for item in _array(
+                document["observation-references"],
+                field="publication snapshot.observation-references",
+            )
+        ),
+        materialized_actions=tuple(
+            _publication_action(item)
+            for item in _array(
+                document["materialized-actions"],
+                field="publication snapshot.materialized-actions",
+            )
+        ),
+    )
+
+
 def _simulation_outcome(value: JsonValue) -> SimulationOutcome:
     document = _closed(
         value,
@@ -1569,8 +1790,738 @@ def _simulation_outcome(value: JsonValue) -> SimulationOutcome:
     )
 
 
+def _historical_execution_record(
+    value: JsonValue,
+) -> HistoricalExecutionRecord:
+    document = _closed(
+        value,
+        field="historical execution record",
+        schema=HISTORICAL_EXECUTION_RECORD_SCHEMA,
+        fields=frozenset(
+            {
+                "authority",
+                "history-only",
+                "execution",
+                "artifact-id",
+                "artifact-digest",
+                "payload-digest",
+                "source-workflow-run-id",
+                "source-workflow-run-node-id",
+                "source-head-sha",
+                "artifact-metadata",
+                "run-metadata",
+                "queried-run-attempt",
+                "queried-job-id",
+                "queried-job-conclusion",
+                "queried-phase",
+                "diagnostic-claims",
+            }
+        ),
+    )
+    if document["authority"] != "execution-history":
+        message = "historical execution record has the wrong authority"
+        raise ValueError(message)
+    execution = _buddy_execution(document["execution"])
+    return HistoricalExecutionRecord(
+        execution=execution,
+        artifact_id=_integer(
+            document["artifact-id"],
+            field="history.artifact-id",
+        ),
+        artifact_digest=_string(
+            document["artifact-digest"],
+            field="history.artifact-digest",
+        ),
+        payload_digest=_string(
+            document["payload-digest"],
+            field="history.payload-digest",
+        ),
+        source_workflow_run_id=_integer(
+            document["source-workflow-run-id"],
+            field="history.source-workflow-run-id",
+        ),
+        source_workflow_run_node_id=_string(
+            document["source-workflow-run-node-id"],
+            field="history.source-workflow-run-node-id",
+        ),
+        source_head_sha=_string(
+            document["source-head-sha"],
+            field="history.source-head-sha",
+        ),
+        artifact_metadata=_pairs(
+            document["artifact-metadata"],
+            field="history.artifact-metadata",
+        ),
+        run_metadata=_pairs(
+            document["run-metadata"],
+            field="history.run-metadata",
+        ),
+        queried_run_attempt=_integer(
+            document["queried-run-attempt"],
+            field="history.queried-run-attempt",
+        ),
+        queried_job_id=(
+            None
+            if document["queried-job-id"] is None
+            else _integer(
+                document["queried-job-id"],
+                field="history.queried-job-id",
+            )
+        ),
+        queried_job_conclusion=(
+            None
+            if document["queried-job-conclusion"] is None
+            else _string(
+                document["queried-job-conclusion"],
+                field="history.queried-job-conclusion",
+            )
+        ),
+        queried_phase=(
+            None
+            if document["queried-phase"] is None
+            else _string(
+                document["queried-phase"],
+                field="history.queried-phase",
+            )
+        ),
+        diagnostic_claims=_pairs(
+            document["diagnostic-claims"],
+            field="history.diagnostic-claims",
+        ),
+        history_only=_boolean(
+            document["history-only"],
+            field="history.history-only",
+        ),
+    )
+
+
+def _history_snapshot(value: JsonValue) -> ExecutionHistoryAdmissionSnapshot:
+    document = _closed(
+        value,
+        field="execution history admission snapshot",
+        schema=EXECUTION_HISTORY_ADMISSION_SNAPSHOT_SCHEMA,
+        fields=frozenset(
+            {
+                "authority",
+                "history-only",
+                "request-id",
+                "current-workflow-run-id",
+                "current-run-attempt",
+                "execution",
+                "query-basis",
+                "pagination-basis",
+                "records",
+            }
+        ),
+    )
+    if document["authority"] != "execution-history":
+        message = "history Snapshot has the wrong authority"
+        raise ValueError(message)
+    return ExecutionHistoryAdmissionSnapshot(
+        request_id=_string(
+            document["request-id"],
+            field="history snapshot.request-id",
+        ),
+        current_workflow_run_id=_integer(
+            document["current-workflow-run-id"],
+            field="history snapshot.current-workflow-run-id",
+        ),
+        current_run_attempt=_integer(
+            document["current-run-attempt"],
+            field="history snapshot.current-run-attempt",
+        ),
+        execution=_buddy_execution(document["execution"]),
+        query_basis=_strings(
+            document["query-basis"],
+            field="history snapshot.query-basis",
+        ),
+        pagination_basis=_strings(
+            document["pagination-basis"],
+            field="history snapshot.pagination-basis",
+        ),
+        records=tuple(
+            _historical_execution_record(item)
+            for item in _array(
+                document["records"],
+                field="history snapshot.records",
+            )
+        ),
+        history_only=_boolean(
+            document["history-only"],
+            field="history snapshot.history-only",
+        ),
+    )
+
+
+def _release_attempt_binding(value: JsonValue) -> ReleaseAttemptBinding:
+    document = _closed(
+        value,
+        field="release attempt binding",
+        schema=RELEASE_ATTEMPT_BINDING_SCHEMA,
+        fields=frozenset(
+            {
+                "intent-digest",
+                "request-id",
+                "execution",
+                "attempt",
+                "repository-model-digest",
+                "live-eligibility-artifact-id",
+                "live-eligibility-artifact-digest",
+                "live-eligibility-payload-digest",
+                "attestation-provenance",
+                "history-snapshot-artifact-id",
+                "history-snapshot-artifact-digest",
+            }
+        ),
+    )
+    return ReleaseAttemptBinding(
+        intent_digest=_string(
+            document["intent-digest"],
+            field="attempt binding.intent-digest",
+        ),
+        request_id=_string(
+            document["request-id"],
+            field="attempt binding.request-id",
+        ),
+        execution=_buddy_execution(document["execution"]),
+        attempt=_release_attempt(document["attempt"]),
+        repository_model_digest=_string(
+            document["repository-model-digest"],
+            field="attempt binding.repository-model-digest",
+        ),
+        live_eligibility_artifact_id=_integer(
+            document["live-eligibility-artifact-id"],
+            field="attempt binding.live-eligibility-artifact-id",
+        ),
+        live_eligibility_artifact_digest=_string(
+            document["live-eligibility-artifact-digest"],
+            field="attempt binding.live-eligibility-artifact-digest",
+        ),
+        live_eligibility_payload_digest=_string(
+            document["live-eligibility-payload-digest"],
+            field="attempt binding.live-eligibility-payload-digest",
+        ),
+        attestation_provenance=_pairs(
+            document["attestation-provenance"],
+            field="attempt binding.attestation-provenance",
+        ),
+        history_snapshot_artifact_id=_integer(
+            document["history-snapshot-artifact-id"],
+            field="attempt binding.history-snapshot-artifact-id",
+        ),
+        history_snapshot_artifact_digest=_string(
+            document["history-snapshot-artifact-digest"],
+            field="attempt binding.history-snapshot-artifact-digest",
+        ),
+    )
+
+
+def _authorization(value: JsonValue) -> AuthorizationRecord:
+    document = _closed(
+        value,
+        field="authorization",
+        schema=AUTHORIZATION_RECORD_SCHEMA,
+        fields=frozenset(
+            {
+                "attempt",
+                "publication-snapshot-digest",
+                "reviewer-summary-artifact-id",
+                "reviewer-summary-upload-digest",
+                "reviewer-summary-payload-digest",
+                "workflow-run-id",
+                "run-attempt",
+                "approval-job-id",
+                "approval-job",
+                "environment",
+                "channel",
+                "completed-at",
+                "producer",
+                "control",
+                "result",
+            }
+        ),
+    )
+    return AuthorizationRecord(
+        attempt=_release_attempt(document["attempt"]),
+        publication_snapshot_digest=_string(
+            document["publication-snapshot-digest"],
+            field="authorization.publication-snapshot-digest",
+        ),
+        reviewer_summary_artifact_id=_integer(
+            document["reviewer-summary-artifact-id"],
+            field="authorization.reviewer-summary-artifact-id",
+        ),
+        reviewer_summary_upload_digest=_string(
+            document["reviewer-summary-upload-digest"],
+            field="authorization.reviewer-summary-upload-digest",
+        ),
+        reviewer_summary_payload_digest=_string(
+            document["reviewer-summary-payload-digest"],
+            field="authorization.reviewer-summary-payload-digest",
+        ),
+        workflow_run_id=_integer(
+            document["workflow-run-id"],
+            field="authorization.workflow-run-id",
+        ),
+        run_attempt=_integer(
+            document["run-attempt"],
+            field="authorization.run-attempt",
+        ),
+        approval_job_id=_integer(
+            document["approval-job-id"],
+            field="authorization.approval-job-id",
+        ),
+        approval_job=_string(
+            document["approval-job"],
+            field="authorization.approval-job",
+        ),
+        environment=_string(
+            document["environment"],
+            field="authorization.environment",
+        ),
+        channel=_string(document["channel"], field="authorization.channel"),
+        completed_at=_string(
+            document["completed-at"],
+            field="authorization.completed-at",
+        ),
+        producer=_string(document["producer"], field="authorization.producer"),
+        control=_string(document["control"], field="authorization.control"),
+        result=_string(document["result"], field="authorization.result"),
+    )
+
+
+def _capability_decision(value: JsonValue) -> CapabilityAdmissionDecision:
+    document = _closed(
+        value,
+        field="capability admission",
+        schema=CAPABILITY_ADMISSION_DECISION_SCHEMA,
+        fields=frozenset(
+            {
+                "attempt",
+                "authorization-digest",
+                "publication-snapshot-digest",
+                "reviewer-summary-artifact-id",
+                "reviewer-summary-upload-digest",
+                "reviewer-summary-payload-digest",
+                "action-digests",
+                "artifact-digests",
+                "resource-key-sets",
+                "lock-groups",
+                "capability-group-manifest",
+                "live-eligibility-artifact-id",
+                "live-eligibility-artifact-digest",
+                "governance-provenance",
+                "governance-content-sha256",
+                "governance-expires-at",
+                "governance-live-enabled",
+                "producer",
+                "control",
+                "workflow-run-id",
+                "run-attempt",
+                "result",
+                "diagnostics",
+            }
+        ),
+    )
+    return CapabilityAdmissionDecision(
+        attempt=_release_attempt(document["attempt"]),
+        authorization_digest=_string(
+            document["authorization-digest"],
+            field="capability admission.authorization-digest",
+        ),
+        publication_snapshot_digest=_string(
+            document["publication-snapshot-digest"],
+            field="capability admission.publication-snapshot-digest",
+        ),
+        reviewer_summary_artifact_id=_integer(
+            document["reviewer-summary-artifact-id"],
+            field="capability admission.reviewer-summary-artifact-id",
+        ),
+        reviewer_summary_upload_digest=_string(
+            document["reviewer-summary-upload-digest"],
+            field="capability admission.reviewer-summary-upload-digest",
+        ),
+        reviewer_summary_payload_digest=_string(
+            document["reviewer-summary-payload-digest"],
+            field="capability admission.reviewer-summary-payload-digest",
+        ),
+        action_digests=_strings(
+            document["action-digests"],
+            field="capability admission.action-digests",
+        ),
+        artifact_digests=_strings(
+            document["artifact-digests"],
+            field="capability admission.artifact-digests",
+        ),
+        resource_key_sets=_nested_strings(
+            document["resource-key-sets"],
+            field="capability admission.resource-key-sets",
+        ),
+        lock_groups=_pairs(
+            document["lock-groups"],
+            field="capability admission.lock-groups",
+        ),
+        capability_group_manifest=_nested_strings(
+            document["capability-group-manifest"],
+            field="capability admission.capability-group-manifest",
+        ),
+        live_eligibility_artifact_id=_integer(
+            document["live-eligibility-artifact-id"],
+            field="capability admission.live-eligibility-artifact-id",
+        ),
+        live_eligibility_artifact_digest=_string(
+            document["live-eligibility-artifact-digest"],
+            field="capability admission.live-eligibility-artifact-digest",
+        ),
+        governance_provenance=_pairs(
+            document["governance-provenance"],
+            field="capability admission.governance-provenance",
+        ),
+        governance_content_sha256=_string(
+            document["governance-content-sha256"],
+            field="capability admission.governance-content-sha256",
+        ),
+        governance_expires_at=_string(
+            document["governance-expires-at"],
+            field="capability admission.governance-expires-at",
+        ),
+        governance_live_enabled=_boolean(
+            document["governance-live-enabled"],
+            field="capability admission.governance-live-enabled",
+        ),
+        producer=_string(
+            document["producer"],
+            field="capability admission.producer",
+        ),
+        control=_string(
+            document["control"],
+            field="capability admission.control",
+        ),
+        workflow_run_id=_integer(
+            document["workflow-run-id"],
+            field="capability admission.workflow-run-id",
+        ),
+        run_attempt=_integer(
+            document["run-attempt"],
+            field="capability admission.run-attempt",
+        ),
+        result=_string(document["result"], field="capability admission.result"),
+        diagnostics=_strings(
+            document["diagnostics"],
+            field="capability admission.diagnostics",
+        ),
+    )
+
+
+def _receipt(value: JsonValue) -> Receipt:
+    document = _closed(
+        value,
+        field="receipt",
+        schema=RECEIPT_SCHEMA,
+        fields=frozenset(
+            {
+                "attempt",
+                "publication-snapshot-digest",
+                "action-id",
+                "action-digest",
+                "coordinate",
+                "mutable-resource-keys",
+                "lock-group",
+                "artifact-transport",
+                "artifact-content-sha256",
+                "artifact-content-sha512",
+                "witness-digest",
+                "creation-result",
+                "tag-mapping",
+                "response-identity-digest",
+                "producer",
+                "control",
+                "workflow-run-id",
+                "run-attempt",
+            }
+        ),
+    )
+    return Receipt(
+        attempt=_release_attempt(document["attempt"]),
+        publication_snapshot_digest=_string(
+            document["publication-snapshot-digest"],
+            field="receipt.publication-snapshot-digest",
+        ),
+        action_id=_string(document["action-id"], field="receipt.action-id"),
+        action_digest=_string(
+            document["action-digest"],
+            field="receipt.action-digest",
+        ),
+        coordinate=_coordinate(document["coordinate"]),
+        mutable_resource_keys=_strings(
+            document["mutable-resource-keys"],
+            field="receipt.mutable-resource-keys",
+        ),
+        lock_group=_string(
+            document["lock-group"],
+            field="receipt.lock-group",
+        ),
+        artifact_transport=_transport(document["artifact-transport"]),
+        artifact_content_sha256=_string(
+            document["artifact-content-sha256"],
+            field="receipt.artifact-content-sha256",
+        ),
+        artifact_content_sha512=_string(
+            document["artifact-content-sha512"],
+            field="receipt.artifact-content-sha512",
+        ),
+        witness_digest=_string(
+            document["witness-digest"],
+            field="receipt.witness-digest",
+        ),
+        creation_result=_string(
+            document["creation-result"],
+            field="receipt.creation-result",
+        ),
+        tag_mapping=_pairs(
+            document["tag-mapping"],
+            field="receipt.tag-mapping",
+        ),
+        response_identity_digest=_string(
+            document["response-identity-digest"],
+            field="receipt.response-identity-digest",
+        ),
+        producer=_string(document["producer"], field="receipt.producer"),
+        control=_string(document["control"], field="receipt.control"),
+        workflow_run_id=_integer(
+            document["workflow-run-id"],
+            field="receipt.workflow-run-id",
+        ),
+        run_attempt=_integer(
+            document["run-attempt"],
+            field="receipt.run-attempt",
+        ),
+    )
+
+
+def _action_result(value: JsonValue) -> ActionResult:
+    document = _closed(
+        value,
+        field="action result",
+        schema=ACTION_RESULT_SCHEMA,
+        fields=frozenset(
+            {
+                "attempt",
+                "publication-snapshot-digest",
+                "action-id",
+                "action-digest",
+                "lock-group",
+                "outcome",
+                "mutation-disposition",
+                "response-identity-digest",
+                "receipt-artifact-id",
+                "receipt-artifact-name",
+                "receipt-artifact-digest",
+                "receipt-payload-digest",
+                "receipt-digest",
+                "diagnostic-reference",
+                "producer",
+                "control",
+                "workflow-run-id",
+                "run-attempt",
+            }
+        ),
+    )
+    return ActionResult(
+        attempt=_release_attempt(document["attempt"]),
+        publication_snapshot_digest=_string(
+            document["publication-snapshot-digest"],
+            field="action result.publication-snapshot-digest",
+        ),
+        action_id=_string(
+            document["action-id"],
+            field="action result.action-id",
+        ),
+        action_digest=_string(
+            document["action-digest"],
+            field="action result.action-digest",
+        ),
+        lock_group=_string(
+            document["lock-group"],
+            field="action result.lock-group",
+        ),
+        outcome=_string(document["outcome"], field="action result.outcome"),
+        mutation_disposition=_string(
+            document["mutation-disposition"],
+            field="action result.mutation-disposition",
+        ),
+        response_identity_digest=_nullable_string(
+            document["response-identity-digest"],
+            field="action result.response-identity-digest",
+        ),
+        receipt_artifact_id=_nullable_integer(
+            document["receipt-artifact-id"],
+            field="action result.receipt-artifact-id",
+        ),
+        receipt_artifact_name=_nullable_string(
+            document["receipt-artifact-name"],
+            field="action result.receipt-artifact-name",
+        ),
+        receipt_artifact_digest=_nullable_string(
+            document["receipt-artifact-digest"],
+            field="action result.receipt-artifact-digest",
+        ),
+        receipt_payload_digest=_nullable_string(
+            document["receipt-payload-digest"],
+            field="action result.receipt-payload-digest",
+        ),
+        receipt_digest=_nullable_string(
+            document["receipt-digest"],
+            field="action result.receipt-digest",
+        ),
+        diagnostic_reference=_nullable_string(
+            document["diagnostic-reference"],
+            field="action result.diagnostic-reference",
+        ),
+        producer=_string(document["producer"], field="action result.producer"),
+        control=_string(document["control"], field="action result.control"),
+        workflow_run_id=_integer(
+            document["workflow-run-id"],
+            field="action result.workflow-run-id",
+        ),
+        run_attempt=_integer(
+            document["run-attempt"],
+            field="action result.run-attempt",
+        ),
+    )
+
+
+def _group_bundle(value: JsonValue) -> CapabilityGroupResultBundle:
+    document = _closed(
+        value,
+        field="capability group result bundle",
+        schema=CAPABILITY_GROUP_RESULT_BUNDLE_SCHEMA,
+        fields=frozenset(
+            {
+                "attempt",
+                "publication-snapshot-digest",
+                "capability-group",
+                "planned-action-ids",
+                "action-results",
+                "completion-state",
+                "producer",
+                "control",
+                "workflow-run-id",
+                "run-attempt",
+            }
+        ),
+    )
+    return CapabilityGroupResultBundle(
+        attempt=_release_attempt(document["attempt"]),
+        publication_snapshot_digest=_string(
+            document["publication-snapshot-digest"],
+            field="group result.publication-snapshot-digest",
+        ),
+        capability_group=_string(
+            document["capability-group"],
+            field="group result.capability-group",
+        ),
+        planned_action_ids=_strings(
+            document["planned-action-ids"],
+            field="group result.planned-action-ids",
+        ),
+        action_results=tuple(
+            _action_result(item)
+            for item in _array(
+                document["action-results"],
+                field="group result.action-results",
+            )
+        ),
+        completion_state=_string(
+            document["completion-state"],
+            field="group result.completion-state",
+        ),
+        producer=_string(document["producer"], field="group result.producer"),
+        control=_string(document["control"], field="group result.control"),
+        workflow_run_id=_integer(
+            document["workflow-run-id"],
+            field="group result.workflow-run-id",
+        ),
+        run_attempt=_integer(
+            document["run-attempt"],
+            field="group result.run-attempt",
+        ),
+    )
+
+
+def _attempt_outcome(value: JsonValue) -> AttemptOutcome:
+    document = _closed(
+        value,
+        field="attempt outcome",
+        schema=ATTEMPT_OUTCOME_SCHEMA,
+        fields=frozenset(
+            {
+                "attempt",
+                "qualification-decision-digest",
+                "publication-snapshot-digest",
+                "authorization-digest",
+                "capability-admission-digests",
+                "capability-group-bundle-digests",
+                "receipt-digests",
+                "terminal-phase",
+                "result",
+                "uncertainty",
+                "possibly-mutated",
+                "next-action",
+            }
+        ),
+    )
+    return AttemptOutcome(
+        attempt=_release_attempt(document["attempt"]),
+        qualification_decision_digest=_string(
+            document["qualification-decision-digest"],
+            field="attempt outcome.qualification-decision-digest",
+        ),
+        publication_snapshot_digest=_string(
+            document["publication-snapshot-digest"],
+            field="attempt outcome.publication-snapshot-digest",
+        ),
+        authorization_digest=_nullable_string(
+            document["authorization-digest"],
+            field="attempt outcome.authorization-digest",
+        ),
+        capability_admission_digests=_strings(
+            document["capability-admission-digests"],
+            field="attempt outcome.capability-admission-digests",
+        ),
+        capability_group_bundle_digests=_strings(
+            document["capability-group-bundle-digests"],
+            field="attempt outcome.capability-group-bundle-digests",
+        ),
+        receipt_digests=_strings(
+            document["receipt-digests"],
+            field="attempt outcome.receipt-digests",
+        ),
+        terminal_phase=_string(
+            document["terminal-phase"],
+            field="attempt outcome.terminal-phase",
+        ),
+        result=_string(document["result"], field="attempt outcome.result"),
+        uncertainty=_boolean(
+            document["uncertainty"],
+            field="attempt outcome.uncertainty",
+        ),
+        possibly_mutated=_boolean(
+            document["possibly-mutated"],
+            field="attempt outcome.possibly-mutated",
+        ),
+        next_action=_string(
+            document["next-action"],
+            field="attempt outcome.next-action",
+        ),
+    )
+
+
 _PARSERS: dict[type[object], Callable[[JsonValue], ReleaseRecord]] = {
     ReleaseIntent: _release_intent,
+    HistoricalExecutionRecord: _historical_execution_record,
+    ExecutionHistoryAdmissionSnapshot: _history_snapshot,
+    ReleaseAttemptBinding: _release_attempt_binding,
     SimulationBinding: _simulation_binding,
     QualificationSnapshot: _qualification_snapshot,
     ReleaseArtifact: _release_artifact,
@@ -1578,7 +2529,15 @@ _PARSERS: dict[type[object], Callable[[JsonValue], ReleaseRecord]] = {
     QualificationDecision: _qualification_decision,
     ProjectionObservation: _projection_observation,
     HypotheticalAction: _hypothetical_action,
+    PublicationAction: _publication_action,
+    PublicationSnapshot: _publication_snapshot,
     SimulationOutcome: _simulation_outcome,
+    AuthorizationRecord: _authorization,
+    CapabilityAdmissionDecision: _capability_decision,
+    ActionResult: _action_result,
+    Receipt: _receipt,
+    CapabilityGroupResultBundle: _group_bundle,
+    AttemptOutcome: _attempt_outcome,
 }
 
 
@@ -1613,7 +2572,7 @@ def simulation_identity_from_document(
     return identity
 
 
-def _record_bindings(  # noqa: PLR0911
+def _record_bindings(  # noqa: C901, PLR0911, PLR0912
     record: ReleaseRecord,
 ) -> tuple[str, int, int, str, str | None]:
     if isinstance(record, ReleaseIntent):
@@ -1622,6 +2581,15 @@ def _record_bindings(  # noqa: PLR0911
             record.workflow_run_id,
             record.run_attempt,
             record.target,
+            None,
+        )
+    if isinstance(record, ReleaseAttemptBinding):
+        attempt = record.attempt
+        return (
+            "live-release",
+            attempt.workflow_run_id,
+            attempt.run_attempt,
+            record.execution.target,
             None,
         )
     if isinstance(record, SimulationBinding):
@@ -1691,6 +2659,74 @@ def _record_bindings(  # noqa: PLR0911
             record.subject.run_attempt,
             record.target,
             record.producer,
+        )
+    if isinstance(record, PublicationAction):
+        subject = record.artifact.subject
+        if not isinstance(subject, ReleaseAttemptIdentity):
+            message = "Publication Action is not bound to a live Attempt"
+            raise TypeError(message)
+        return (
+            "live-release",
+            subject.workflow_run_id,
+            subject.run_attempt,
+            subject.execution.target,
+            record.artifact.transport.producer,
+        )
+    if isinstance(record, PublicationSnapshot):
+        return (
+            "live-release",
+            record.attempt.workflow_run_id,
+            record.attempt.run_attempt,
+            record.attempt.execution.target,
+            None,
+        )
+    if isinstance(record, AuthorizationRecord):
+        return (
+            "live-release",
+            record.workflow_run_id,
+            record.run_attempt,
+            record.attempt.execution.target,
+            record.producer,
+        )
+    if isinstance(record, CapabilityAdmissionDecision):
+        return (
+            "live-release",
+            record.workflow_run_id,
+            record.run_attempt,
+            record.attempt.execution.target,
+            record.producer,
+        )
+    if isinstance(record, ActionResult):
+        return (
+            "live-release",
+            record.workflow_run_id,
+            record.run_attempt,
+            record.attempt.execution.target,
+            record.producer,
+        )
+    if isinstance(record, Receipt):
+        return (
+            "live-release",
+            record.workflow_run_id,
+            record.run_attempt,
+            record.attempt.execution.target,
+            record.producer,
+        )
+    if isinstance(record, CapabilityGroupResultBundle):
+        return (
+            "live-release",
+            record.workflow_run_id,
+            record.run_attempt,
+            record.attempt.execution.target,
+            record.producer,
+        )
+    if isinstance(record, AttemptOutcome):
+        return (
+            "live-release",
+            record.attempt.workflow_run_id,
+            record.attempt.run_attempt,
+            record.attempt.execution.target,
+            None,
         )
     if isinstance(record, SimulationOutcome):
         simulation = record.binding.simulation

@@ -1,5 +1,7 @@
 """Complete first-slice Release Qualification Snapshot planning."""
 
+# ruff: noqa: C901, EM101, I001, TRY003
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
@@ -22,6 +24,7 @@ from three_workflow_delivery_v3.records.release import (
     ReleaseIntent,
     ReleaseObligation,
     ReleaseOutputIdentity,
+    ReleaseAttemptBinding,
     SimulationBinding,
 )
 from three_workflow_delivery_v3.repository.compiler import (
@@ -138,28 +141,48 @@ def _obligation(  # noqa: PLR0913
 
 def _validate_inputs(
     intent: ReleaseIntent,
-    binding: SimulationBinding,
+    binding: SimulationBinding | ReleaseAttemptBinding,
     admitted_repository_model: AdmittedRepositoryModelSnapshot,
 ) -> None:
     if type(intent) is not ReleaseIntent:
         message = "Release Planner requires an exact ReleaseIntent"
         raise TypeError(message)
-    if type(binding) is not SimulationBinding:
-        message = "Release Planner requires an exact SimulationBinding"
+    if type(binding) not in {SimulationBinding, ReleaseAttemptBinding}:
+        message = "Release Planner requires an exact Release binding"
         raise TypeError(message)
     if type(admitted_repository_model) is not AdmittedRepositoryModelSnapshot:
         message = "Release Planner requires an admitted Repository Model"
         raise TypeError(message)
     snapshot = admitted_repository_model.snapshot
-    if (
-        intent.channel != "official"
-        or intent.mode != "simulation"
-        or intent.purpose != "release-simulation"
-        or binding.channel != "official"
-        or binding.purpose != "release-simulation"
-    ):
-        message = "Release Planner supports only Official simulation"
-        raise ValueError(message)
+    live = isinstance(binding, ReleaseAttemptBinding)
+    if live:
+        binding_target = binding.execution.target
+        binding_channel = binding.execution.channel
+        binding_unit = binding.execution.release_unit
+        binding_request = binding.request_id
+        binding_run_id = binding.attempt.workflow_run_id
+        binding_run_attempt = binding.attempt.run_attempt
+        binding_control = snapshot.context.control
+        if (
+            intent.channel != "buddy"
+            or intent.mode != "live"
+            or intent.purpose != "live-release"
+        ):
+            raise ValueError("Release Planner live binding mismatch")
+    else:
+        binding_target = binding.target
+        binding_channel = binding.channel
+        binding_unit = binding.release_unit
+        binding_request = binding.simulation.request_id
+        binding_run_id = binding.simulation.workflow_run_id
+        binding_run_attempt = binding.simulation.run_attempt
+        binding_control = binding.control
+        if (
+            intent.channel != "official"
+            or intent.mode != "simulation"
+            or intent.purpose != "release-simulation"
+        ):
+            raise ValueError("Release Planner simulation binding mismatch")
     checks = (
         ("Intent digest", binding.intent_digest, intent.intent_digest),
         (
@@ -167,19 +190,19 @@ def _validate_inputs(
             binding.repository_model_digest,
             admitted_repository_model.canonical_digest,
         ),
-        ("target", binding.target, snapshot.context.target),
-        ("channel", binding.channel, snapshot.context.channel),
-        ("Release Unit", binding.release_unit, snapshot.context.release_unit),
-        ("control", binding.control, snapshot.context.control),
-        ("request", binding.simulation.request_id, snapshot.context.request_id),
+        ("target", binding_target, snapshot.context.target),
+        ("channel", binding_channel, snapshot.context.channel),
+        ("Release Unit", binding_unit, snapshot.context.release_unit),
+        ("control", binding_control, snapshot.context.control),
+        ("request", binding_request, snapshot.context.request_id),
         (
             "workflow run",
-            binding.simulation.workflow_run_id,
+            binding_run_id,
             snapshot.context.workflow_run_id,
         ),
         (
             "run attempt",
-            binding.simulation.run_attempt,
+            binding_run_attempt,
             snapshot.context.run_attempt,
         ),
     )
@@ -199,7 +222,7 @@ def _validate_inputs(
     ):
         message = "Release Planner policy binding mismatch"
         raise ValueError(message)
-    channel = policy.channel("official")
+    channel = policy.channel("buddy" if live else "official")
     if (
         channel.quality
         != (
@@ -209,17 +232,25 @@ def _validate_inputs(
         )
         or len(channel.projections) != 1
     ):
-        message = "Release Planner Official policy is not the first slice"
+        message = "Release Planner channel policy is not the first slice"
         raise ValueError(message)
 
 
-def plan_official_simulation_qualification(
+def _plan_qualification(
     intent: ReleaseIntent,
-    binding: SimulationBinding,
+    binding: SimulationBinding | ReleaseAttemptBinding,
     admitted_repository_model: AdmittedRepositoryModelSnapshot,
 ) -> QualificationSnapshot:
-    """Plan the exact four-obligation Official simulation closure."""
+    """Plan the shared exact four-obligation Release closure."""
     _validate_inputs(intent, binding, admitted_repository_model)
+    live = isinstance(binding, ReleaseAttemptBinding)
+    target = binding.execution.target if live else binding.target
+    release_unit = (
+        binding.execution.release_unit if live else binding.release_unit
+    )
+    channel_name = "buddy" if live else "official"
+    purpose = "live-release" if live else "release-simulation"
+    subject = binding.attempt if live else binding
     repository_model = admitted_repository_model.snapshot
     policy = repository_model.release_policy
     if policy is None:
@@ -269,13 +300,13 @@ def plan_official_simulation_qualification(
         }
     )
     witness = PackageTargetWitness(
-        target=binding.target,
-        release_unit=binding.release_unit,
+        target=target,
+        release_unit=release_unit,
         nbgv=repository_model.nbgv,
         build_definition=build.definition_id,
         catalog_digest=repository_model.context.catalog_digest,
         control_digest=control_digest,
-        purpose="release-simulation",
+        purpose=purpose,
     )
     build_request = ReleaseBuildRequest(
         build=build,
@@ -289,23 +320,35 @@ def plan_official_simulation_qualification(
         adapter_id="node/npm-package-v1",
     )
 
-    policy_projection = policy.channel("official").projections[0]
+    policy_projection = policy.channel(channel_name).projections[0]
     destination = DESTINATION_DEFINITIONS[policy_projection.destination]
     coordinate = ExternalPackageCoordinate(
-        channel="official",
+        channel=channel_name,
         destination_id=destination.logical_id,
         package_name=policy_projection.package,
         native_version=repository_model.nbgv.npm_package_version,
     )
     projection = DestinationProjection(
-        projection_id="projection:npm:npmjs-public",
+        projection_id=(
+            "projection:npm:github-packages"
+            if live
+            else "projection:npm:npmjs-public"
+        ),
         destination_id=destination.logical_id,
         registry=destination.registry,
         coordinate=coordinate,
         output=output,
         operation="npm-publish-create-only",
-        observation_contract_id="npm/npmjs-public-observation-v1",
-        potential_action_id="potential-action:npm:npmjs-publish",
+        observation_contract_id=(
+            "npm/github-packages-observation-v1"
+            if live
+            else "npm/npmjs-public-observation-v1"
+        ),
+        potential_action_id=(
+            "publish-github-packages"
+            if live
+            else "potential-action:npm:npmjs-publish"
+        ),
     )
     potential_action = PotentialActionContract(
         contract_id=projection.potential_action_id,
@@ -320,7 +363,7 @@ def plan_official_simulation_qualification(
     snapshot_basis_digest = canonical_sha256(
         {
             "schema": "workflow-delivery/v3/qualification-snapshot-basis",
-            "simulation-binding-digest": binding.binding_digest,
+            "release-binding-digest": binding.binding_digest,
             "repository-model-digest": (
                 admitted_repository_model.canonical_digest
             ),
@@ -337,7 +380,7 @@ def plan_official_simulation_qualification(
             definition_id=build.definition_id,
             subject_kind="artifact-variant",
             subject_digest=canonical_sha256(variant.to_document()),
-            target=binding.target,
+            target=target,
         ),
         _obligation(
             snapshot_basis_digest=snapshot_basis_digest,
@@ -351,7 +394,7 @@ def plan_official_simulation_qualification(
                     "path": project.path,
                 }
             ),
-            target=binding.target,
+            target=target,
         ),
         _obligation(
             snapshot_basis_digest=snapshot_basis_digest,
@@ -359,7 +402,7 @@ def plan_official_simulation_qualification(
             definition_id="node/npm-artifact-contents-v1",
             subject_kind="release-output",
             subject_digest=canonical_sha256(output.to_document()),
-            target=binding.target,
+            target=target,
             prerequisites=(_BUILD_OBLIGATION_ID,),
         ),
         _obligation(
@@ -368,18 +411,18 @@ def plan_official_simulation_qualification(
             definition_id="node/npm-install-import-v1",
             subject_kind="release-output",
             subject_digest=canonical_sha256(output.to_document()),
-            target=binding.target,
+            target=target,
             prerequisites=(_BUILD_OBLIGATION_ID,),
         ),
     )
     return QualificationSnapshot(
-        subject=binding,
+        subject=subject,
         repository=intent.repository,
         repository_model_digest=admitted_repository_model.canonical_digest,
         release_policy_digest=policy.policy_digest,
-        target=binding.target,
-        channel="official",
-        release_unit=binding.release_unit,
+        target=target,
+        channel=channel_name,
+        release_unit=release_unit,
         nbgv=repository_model.nbgv,
         builds=(build,),
         variants=(variant,),
@@ -395,4 +438,25 @@ def plan_official_simulation_qualification(
     )
 
 
-__all__ = ["plan_official_simulation_qualification"]
+def plan_official_simulation_qualification(
+    intent: ReleaseIntent,
+    binding: SimulationBinding,
+    admitted_repository_model: AdmittedRepositoryModelSnapshot,
+) -> QualificationSnapshot:
+    """Plan the exact four-obligation Official simulation closure."""
+    return _plan_qualification(intent, binding, admitted_repository_model)
+
+
+def plan_live_qualification(
+    intent: ReleaseIntent,
+    binding: ReleaseAttemptBinding,
+    admitted_repository_model: AdmittedRepositoryModelSnapshot,
+) -> QualificationSnapshot:
+    """Plan the exact four-obligation Buddy live Attempt closure."""
+    return _plan_qualification(intent, binding, admitted_repository_model)
+
+
+__all__ = [
+    "plan_live_qualification",
+    "plan_official_simulation_qualification",
+]

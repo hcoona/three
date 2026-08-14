@@ -1,5 +1,148 @@
 # Workflow Delivery v3 Snapshot Admission Status
 
+## 2026-08-13 Commit 8 Governance Observation Error Taxonomy Status
+
+| Phase | Status |
+|---|---|
+| Research/checklist | Complete |
+| Plan | Complete |
+| Test implementation | Complete; 36 focused cases added |
+| Narrow validation | Complete; expected production gaps retained |
+| Full validation | Complete; expected production gaps retained |
+| `test-gap-analysis` | Complete |
+| `assertion-quality` | Complete |
+
+### Scope guard
+
+Only tests and the three explicitly retained `.testagent` artifacts may be
+edited. Current production and all unrelated working-tree changes remain
+authoritative and untouched.
+
+### Test changes
+
+- Added
+  `tests/release/test_commit8_governance_observation_errors.py`
+  with 24 cases covering G1-G7.
+- Extended `tests/platform/test_github.py` with 9 cases covering concrete
+  protection/content transport distinctions for G7-G8.
+- Extended
+  `tests/adapters/test_commit8_publish_governance_recheck.py`
+  with 3 definitive observation cases covering G9 while preserving its prior
+  disabled/expired/changed cases.
+- Reused existing exact publisher CLI persistence and post-marker fallback
+  tests as G9-G10 evidence.
+
+### Requirement coverage
+
+| Requirement | Evidence |
+|---|---|
+| G1 authoritative unprotected definitive rejection | `test_unprotected_ref_is_definitive_governance_rejection`; publisher case `authoritative-unprotected`. |
+| G2 fetched canonical/schema definitive rejection | `test_fetched_invalid_canonical_or_schema_content_is_definitive_rejection`; publisher case `invalid-schema`. |
+| G3 fetched semantic/digest definitive rejection | `test_fetched_invalid_governance_semantics_are_definitive_rejection`; `test_fetched_content_digest_inconsistency_is_definitive_rejection`; publisher case `invalid-semantics`. |
+| G4 disabled/expired/changed remain typed | `test_disabled_expired_and_changed_governance_remain_freshness_rejections`; existing publisher cases `disabled`, `expired`, `resolved-commit-changed`, `blob-oid-changed`, and `content-changed`. |
+| G5 local source/time errors are not definitive rejection | `test_local_source_and_time_configuration_errors_are_not_governance_rejections`, including zero remote-call assertions. |
+| G6 malformed remote identities are not definitive rejection | `test_malformed_remote_identities_are_not_governance_rejections` with exact generic exception types. |
+| G7 transport/API failures are not definitive rejection | `test_transport_failures_are_not_governance_rejections`; `test_governance_content_transport_failures_remain_rest_errors`. |
+| G8 protection false versus unknown | `test_ref_protection_404_is_authoritative_false`; `test_ref_protection_transport_unknowns_raise`; `test_ref_protection_malformed_success_response_is_unknown`. |
+| G9 exact failed/no-side-effect persistence and zero runner | Expanded `test_publish_second_governance_read_returns_terminal_no_side_effect`; `test_publish_cli_persists_governance_terminal_state_before_nonzero`. |
+| G10 generic incomplete/possibly-mutated fallback | Generic branch in `test_publish_cli_persists_governance_terminal_state_before_nonzero`; `test_post_marker_governance_terminal_state_lookalikes_are_possibly_mutated`. |
+
+### Validation results
+
+| Command | Result |
+|---|---|
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q tests/release/test_commit8_governance_observation_errors.py tests/platform/test_github.py tests/adapters/test_commit8_publish_governance_recheck.py` (repository-relative paths expanded in the actual command) | `37 passed, 18 failed` as expected. The failures are exactly the missing definitive observation taxonomy (10), protection unknown distinction (5), and publisher propagation of new definitive rejection cases (3). |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q tests/test_cli.py::test_publish_cli_persists_governance_terminal_state_before_nonzero tests/release/test_commit8_live_scenarios.py::test_post_marker_governance_terminal_state_lookalikes_are_possibly_mutated` | `10 passed`. |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests` | `2229 passed, 18 failed` in 381.83s. All failures are the focused expected production gaps above; no unrelated failures appeared. |
+| `uv run --python 3.13 pyrefly check <three focused test files>` | Passed; `0 errors`. |
+| `uv run --python 3.13 ruff check <three focused test files>` | Passed. |
+| `uv run --python 3.13 ruff format --check <three focused test files>` | Passed; 3 files already formatted. |
+| `uv build --package three-workflow-delivery-v3` | Passed; sdist and wheel built. |
+| `git --no-pager diff --check` | Passed. |
+
+### Mandatory quality gates
+
+Both `test-gap-analysis` and `assertion-quality` were invoked after the final
+test changes. Their shared `test-analysis-extensions` dependency was
+unavailable, so the required Python/pytest analyses were completed manually.
+
+Pseudo-mutation review found no remaining in-scope test gap:
+
+- changing exact `is not True` protection admission to truthiness is killed by
+  the non-Boolean protection case;
+- converting permission/5xx/network/malformed responses to `False` is killed
+  by the protection unknown matrix, while 404 remains the positive false
+  control;
+- removing canonical/schema/semantic wrapping is killed by the definitive
+  error-class assertions;
+- removing the content digest consistency check is killed by the patched
+  attestation/content mismatch case;
+- over-wrapping local configuration, malformed identity, or transport errors
+  is killed by exact non-Governance type/identity assertions;
+- swallowing the publisher rejection or invoking the runner is killed by the
+  exact persisted-state, event-sequence, and zero-runner assertions.
+
+Assertion-depth review found no assertion-free, trivial-only, or tautological
+generated tests. Each exception test asserts concrete class identity or name
+and at least one secondary observable (call sequence, exact message, preserved
+exception identity, persisted document, or runner count). The review
+strengthened malformed-identity cases with exact exception types, transport
+cases with exact messages, and freshness cases with a direct content digest.
+
+### Expected production blockers
+
+No production edits were allowed. The retained failures demonstrate:
+
+1. `GovernanceRejectionError` does not yet exist and fetched definitive
+   Governance failures currently escape as `ValueError`, `TypeError`, or
+   `JSONDecodeError`.
+2. `GitHubRestClient.is_ref_protected` currently converts every
+   `GitHubRestError` to `False` and admits malformed success objects as
+   protected.
+3. The publisher catches only `GovernanceFreshnessRejectionError`, so the new
+   definitive unprotected/schema/semantic cases cannot yet persist the exact
+   failed/no-side-effect result.
+
+## 2026-08-13 Commit 8 History Admission Findings 10-13 Status
+
+| Phase | Status |
+|---|---|
+| Research/checklist | Complete |
+| Plan | Complete |
+| Production implementation | Complete |
+| Focused tests | Complete |
+| Validation | Complete |
+
+### Files Modified for This Bounded Request
+
+- `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/release/live.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_history_admission.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_live_scenarios.py`
+- `.testagent/research.md`
+- `.testagent/plan.md`
+- `.testagent/status.md`
+
+No workflow YAML or `platform/github.py` files were edited.
+
+### Requirement Coverage
+
+| Requirement | Evidence |
+|---|---|
+| H10 different-target run filtering | `test_discovery_filters_different_target_runs_without_artifact_or_job_queries` |
+| H11 explicit historical schema allowlist and unrelated artifact skipping | `test_discovery_skips_unrelated_json_non_json_and_multifile_artifacts`; `test_discovery_fails_recognized_malformed_or_conflicting_history_schemas` |
+| H12 strict live lineage and exact phase facts without unsupported provenance | `test_discovery_fails_recognized_malformed_or_conflicting_history_schemas`; `test_discovery_requires_unique_context_owned_finalizer_phase_facts`; `test_same_run_prior_attempt_enumerates_current_artifacts_without_attempt_provenance` |
+| H13 same-run prior-attempt proof | `test_same_run_prior_attempt_enumerates_current_artifacts_without_attempt_provenance`; `test_same_run_prior_attempt_fails_closed_when_run_level_proof_is_missing` |
+
+### Validation Results
+
+| Command | Result |
+|---|---|
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_history_admission.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_live_scenarios.py -k history` | `40 passed, 23 deselected` |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_live_scenarios.py` | `28 passed` |
+| `uv run --python 3.13 ruff check src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/release/live.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_history_admission.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_live_scenarios.py` | Passed |
+| `uv run --python 3.13 ruff format --check src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/release/live.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_history_admission.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_live_scenarios.py` | `3 files already formatted` |
+| `uv run --python 3.13 pyrefly check src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/release/live.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_history_admission.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_live_scenarios.py` | `0 errors` |
+
 ## Phase Status
 
 | Phase | Status |
@@ -2287,3 +2430,1317 @@ generated versions, the clean root suite passed.
 | No mutation or live authority | Official workflow contract tests and final holistic reviewer closure |
 
 <!-- END APPEND: workflow-delivery-v3-commit7-final-closure-2026-08-13 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit8-phase1-tests-2026-08-13 -->
+
+# Workflow Delivery v3 Commit 8 Phase 1 Test Evidence
+
+## Implemented scope
+
+- Added `tests/release/test_commit8_contracts.py`.
+- Added `tests/release/test_commit8_history_admission.py`.
+- No production, workflow, transport, publish, research, or plan files changed.
+
+## Focused validation
+
+| Command | Result |
+|---|---|
+| Focused commit-8 pytest | `27 passed, 1 blocked contract failure` |
+| Release suite excluding unavailable contract API | `267 passed, 1 deselected` |
+| Complete admission regression suite | `423 passed` |
+| Ruff check for both phase-1 files | Passed |
+
+The focused contract availability test reports these production API blockers:
+`HistoricalExecutionRecord`, `ExecutionHistoryAdmissionSnapshot`,
+`ReleaseAttemptBinding`, `AuthorizationRecord`,
+`CapabilityAdmissionDecision`, `ActionResult`,
+`CapabilityGroupResultBundle`, `Receipt`, and `AttemptOutcome`.
+
+## Pre-completion gate
+
+- Pseudo-mutation review added exact successful current/history assertions,
+  payload-digest substitution rejection, diagnostic-only history claims,
+  same-run prior-attempt proof, lifecycle, phase, and transport substitution
+  coverage.
+- Assertion-quality review found no assertion-free, trivial-only, or
+  tautological tests. Successful admissions assert primary identity plus
+  transport, authority, platform-fact, and diagnostic secondary observables.
+- Prompt-scenario review confirms the two requested files are the only test
+  files added and no workflow YAML or HTTP/publish transport was implemented.
+
+<!-- END APPEND: workflow-delivery-v3-commit8-phase1-tests-2026-08-13 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit8-phase1-format-validation-2026-08-13 -->
+
+Focused Ruff check and format-check both passed after applying the canonical
+line wrapping to `test_commit8_history_admission.py`.
+The Workflow Delivery v3 package build also passed and produced its sdist and
+wheel.
+
+<!-- END APPEND: workflow-delivery-v3-commit8-phase1-format-validation-2026-08-13 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit8-phase1-production-2026-08-13 -->
+
+# Workflow Delivery v3 Commit 8 Phase 1 Production Evidence
+
+## Implemented scope
+
+- Added strict Buddy live Intent normalization, Execution derivation, and
+  pre-Attempt `ReleaseAttemptBinding`.
+- Added immutable `HistoricalExecutionRecord` and exhaustive
+  `ExecutionHistoryAdmissionSnapshot` contracts plus caller-selected,
+  history-only admission and deterministic sorting.
+- Added strict `AuthorizationRecord`, `CapabilityAdmissionDecision`,
+  `ActionResult`, `Receipt`, `CapabilityGroupResultBundle`, and
+  `AttemptOutcome` contracts.
+- Added pure live finalization mappings for exact no-op, platform termination,
+  exact group coverage, durable Receipts, and possible mutation.
+- Closed canonical transport deserialization/admission and public exports for
+  the new records, `PublicationAction`, and `PublicationSnapshot`.
+- Extended Buddy publication keys to exact coordinate-plus-target-tag keys,
+  `github/packages-write-v1`, and normalized destination/package conservative
+  lock grouping while preserving Official simulation behavior.
+- Did not add workflow YAML, GitHub Packages HTTP transport, publication
+  transport, Approval Outcome Evidence emission, PAT, OIDC, or activation.
+
+## Exact validation
+
+| Command | Result |
+|---|---|
+| New commit-8 files only | **62 passed** |
+| Affected commit-6, commit-7, and commit-8 Release files | **126 passed** |
+| Ruff check for changed production/tests | Passed |
+| Ruff format check for changed production/tests | Passed; 9 files formatted |
+| `uv run --python 3.13 pyrefly check` | Passed; 0 errors |
+| `git diff --check` | Passed |
+
+## Focused test-quality gate
+
+- `test-gap-analysis` and `assertion-quality` were invoked. Their requested
+  `test-analysis-extensions` helper is unavailable, so the Python/pytest review
+  used repository conventions directly.
+- Pseudo-mutation coverage kills caller-authority inversion, incomplete or
+  truncated pagination, malformed/count-substituted query results, duplicate
+  history, same-run unverified prior attempts, post-Attempt history use,
+  Attempt/history substitution, unsuccessful approval, stale Governance
+  success, incomplete coordinate/tag keys, inexact group action sets, false
+  success after Receipt loss, capability records on an exact no-op, and
+  pre-/post-capability termination inversion.
+- Assertion review found no assertion-free or trivial-only generated tests.
+  The suite uses deep equality, exact canonical round trips, collection/set
+  equality, negative absence checks, immutable-state checks, and anchored
+  exception assertions. Round-trip assertions use nontrivial nested records
+  and are paired with independent field substitution tests.
+
+## Requirement evidence
+
+| Requirement | Evidence |
+|---|---|
+| Strict Buddy normalization and Attempt ordering | `test_buddy_request_normalization_and_execution_derivation_are_strict`; `test_attempt_binding_requires_preexisting_exact_history_snapshot` |
+| Caller-selected history-only authority | `test_history_snapshot_rejects_incomplete_or_substituted_query_results`; `test_history_payload_cannot_select_its_own_authority` |
+| Deterministic exhaustive history | `test_history_snapshot_sorts_records_and_round_trips_closed_schema` |
+| Same-run prior attempts without unsupported provenance | `test_same_run_prior_attempt_remains_history_only_without_provenance_claims` |
+| Successful approval only | `test_diagnostic_review_cannot_authorize` |
+| Capability freshness and exact manifests | `test_blocked_capability_decision_is_non_authorizing_and_attempt_local`; `test_group_bundle_requires_exact_action_set_equality` |
+| Coordinate-plus-tag keys and conservative grouping | `test_buddy_complete_keys_are_distinct_from_conservative_group` |
+| Durable Receipt and uncertainty | `test_lost_receipt_after_possible_mutation_can_never_be_success` |
+| Exact no-op and platform termination mappings | `test_exact_preobserved_noop_requires_authorization_and_zero_capability`; `test_platform_termination_maps_by_capability_phase` |
+| Closed canonical transport | `test_commit8_records_round_trip_through_closed_transport`; history Snapshot round-trip test |
+| Independent record substitutions | `test_commit8_records_reject_independent_binding_substitutions`; historical record and Snapshot authority substitution tests |
+
+## Scope and preservation
+
+The pre-existing uncommitted documentation and `.testagent` research/plan
+edits were preserved. No workflow YAML or destination transport was added, and
+no commit was created.
+
+<!-- END APPEND: workflow-delivery-v3-commit8-phase1-production-2026-08-13 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit8-phase2-tests-2026-08-13 -->
+
+# Workflow Delivery v3 Commit 8 Phase 2 Test Evidence
+
+## Implemented scope
+
+- Added
+  `src/public/lib/three-workflow-delivery-v3/tests/adapters/test_github_packages.py`.
+- Appended phase-2 research and plan sections without replacing prior
+  `.testagent` history.
+- Used only strict in-memory HTTP and command fakes. No workflow YAML, Adapter
+  production, export, network, publication, credential, or activation change
+  was made.
+- The unavailable `code-testing-extensions` guidance was replaced by explicit
+  inference from the existing Python/pytest Adapter tests, as recorded in
+  research.
+
+## Validation
+
+| Command | Result |
+|---|---|
+| Focused new Adapter file | **4 passed, 16 failed** across 20 collected cases; every failure is the explicit missing `three_workflow_delivery_v3.adapters.github_packages` production blocker. |
+| Production-independent new contract cases | **4 passed, 16 deselected**. |
+| Existing commit-8 contract/history regression files | **62 passed**. |
+| Workflow Delivery v3 package build | Passed; sdist and wheel built. |
+| Ruff check | Passed after the final E501 suppression for the intentionally explicit scenario name. |
+| Ruff format check | Passed. |
+
+## Pre-completion self-review
+
+`test-gap-analysis` and `assertion-quality` were invoked. Their required
+`test-analysis-extensions` helper is unavailable, so the review used repository
+pytest conventions directly.
+
+- Pseudo-mutation result: the existing record-level mutations for omitted
+  witness, wrong tag, current-Attempt substitution, complete key count,
+  normalized grouping, created/conflict/lost-response distinction, and
+  identical/differing race distinction are killed by concrete assertions.
+  Adapter mutations cannot yet be executed because the production Adapter does
+  not exist; the suite reports this as no coverage/blocking rather than
+  skipping it.
+- Assertion-depth result: no assertion-free, trivial-only, round-trip-only, or
+  tautological generated test remains. Tests assert complete tuples, exact
+  values, exception messages, call-log emptiness, filesystem cleanup and mode,
+  secret absence, result plus mutation disposition, Receipt absence/presence,
+  complete keys, and conservative grouping.
+- Fixes from review: removed a permissive response-digest assertion, added
+  concrete response-binding validation, added cleanup assertions for both
+  runner paths, asserted token placement only in the temporary config, and
+  repaired the complete-key fixtures so the production-independent tests
+  execute.
+
+## Requirement coverage
+
+| Requirement | Evidence |
+|---|---|
+| Exact endpoints, pagination, headers, and bounds | `test_github_packages_requests_exact_escaped_endpoints_headers_and_pages` (BLOCKED on missing Adapter). |
+| Wrong basis before transport | `test_github_packages_rejects_wrong_basis_before_transport` and its empty recording-transport assertion (BLOCKED). |
+| All six classifications | Six parameter cases of `test_github_packages_classifies_all_six_closed_states` (BLOCKED). |
+| Exact tar, witness, and tag | `test_github_packages_exact_requires_tar_witness_and_target_tag` (PASS for exact record/witness/tag closure; Adapter tar readback remains BLOCKED). |
+| REST/npm inconsistency | `test_github_packages_rest_npm_inconsistency_is_blocking` (BLOCKED). |
+| Token redaction and redirect-origin policy | `test_github_packages_redacts_token_and_rejects_cross_origin_redirect` (BLOCKED). |
+| Exact publish argv, temporary config cleanup, and mode | `test_publish_uses_exact_argv_private_config_and_cleans_up`; `test_publish_cleans_config_after_runner_failure` (BLOCKED). |
+| Forbidden operations | `test_publish_never_uses_forbidden_operations_or_credentials` (BLOCKED). |
+| Created/conflict/lost-response semantics | `test_publish_created_conflict_and_lost_response_are_distinct` (PASS). |
+| Identical/differing race semantics | `test_publish_identical_and_differing_races_fail_closed` (PASS). |
+| Receipt/response substitution | `test_publish_rejects_receipt_and_response_substitution` (record substitutions specified; response admission BLOCKED). |
+| Complete keys and conservative grouping | `test_complete_keys_remain_distinct_while_grouping_is_conservative` (PASS). |
+| No-network/no-publish preconditions | `test_github_packages_rejects_wrong_basis_before_transport`; `test_publish_preconditions_block_runner_and_network` (BLOCKED with exact empty-log assertions present). |
+| No real network/publish/workflow/activation | Recording fakes in `test_github_packages.py`; repository diff contains no new workflow or Adapter production file. |
+
+## Blocker
+
+The authoritative workspace has no
+`three_workflow_delivery_v3.adapters.github_packages` module. Per the requested
+test-only phase boundary, it was not reconstructed or implemented. The red
+cases are retained as focused test-first contracts and are not skipped.
+
+<!-- END APPEND: workflow-delivery-v3-commit8-phase2-tests-2026-08-13 -->
+
+## Commit 8 Phase 2 Final Review Addendum
+
+The mandatory pre-completion gate identified and fixed two test-quality gaps:
+
+- all-six-state coverage no longer passes the desired classification into the
+  Adapter; it supplies independent REST/npm/tar/witness/tag facts;
+- publish outcome/race coverage no longer constructs adjacent `ActionResult`
+  records; it exercises the expected Adapter result classifier.
+
+Exact-state assertions now kill independent byte, witness, and tag mutations.
+Receipt validation names all requested substitution dimensions. Endpoint
+coverage includes first and subsequent pages plus the page upper bound.
+
+### Final validation
+
+| Command | Result |
+|---|---|
+| Focused GitHub Packages Adapter pytest | `1 passed, 19 failed`; all 19 failures are the explicit missing `three_workflow_delivery_v3.adapters.github_packages` blocker. |
+| Existing commit-8 contract/history pytest | `62 passed`. |
+| Focused Ruff check and format check | Passed after the final `PLR0913` test-matrix annotation. |
+| `git diff --check` | Passed. |
+
+### Final pseudo-mutation and assertion-depth review
+
+`test-gap-analysis` and `assertion-quality` were invoked. Their requested
+`test-analysis-extensions` dependency is unavailable, so the Python review was
+completed directly.
+
+- **Killed by the contract:** returning the requested classification
+  unconditionally, treating missing tar/witness/tag as exact, accepting
+  differing bytes/witness/tag, collapsing created/conflict/lost response,
+  accepting differing races, retaining credentials across origins, changing
+  exact argv/config mode/cleanup, executing before preconditions, and accepting
+  enumerated Receipt substitutions.
+- **Blocked:** executable mutations inside observation, publication, and
+  response-binding production code, because the Adapter module does not exist.
+- **Assertion quality:** no assertion-free, trivial-only, tautological
+  round-trip, or type-only generated test remains. Tests use concrete equality,
+  exception, negative secret/operation, fake-call side-effect, filesystem
+  cleanup/mode, and structural Receipt/key assertions.
+
+<!-- END APPEND: workflow-delivery-v3-commit8-phase2-final-status-2026-08-13 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit8-phase2-implementation-2026-08-13 -->
+
+## Workflow Delivery v3 Commit 8 Phase 2 Implementation
+
+Complete. The strict first-slice GitHub Packages npm Adapter is implemented
+without workflow YAML or live activation.
+
+### Implementation evidence
+
+- `adapters/github_packages.py` fixes the destination, registry, package,
+  observation contract, operation, owner, and repository identities.
+- Observation uses injected bounded REST/npm/tarball GET seams, exhaustive
+  version pagination, exact version and dist-tag reads, raw tarball SHA-512,
+  and the commit-7 single-pass packed manifest/witness validator.
+- Ordered response exchanges are retained as redacted canonical facts.
+  Credential-bearing redirect hops cannot cross origins, and credentials are
+  absent from retained observations, command facts, and diagnostics.
+- Publication permits one `npm publish` create-only command with the exact
+  target-derived tag, `--ignore-scripts`, and a cleaned mode-0600 temporary
+  npm config. It has no dist-tag repair, force, overwrite, unpublish, delete,
+  restore, `latest`, PAT, or OIDC path.
+- Current semantics emit a Receipt only after successful mutation, exact
+  post-readback, exact current binding validation, and successful persistence.
+  Publish conflicts fail even if readback later appears exact. Lost responses
+  and persistence failures remain incomplete and possibly mutated.
+- The Adapter API is exported through `adapters/__init__.py`.
+
+### Validation
+
+| Command | Result |
+|---|---|
+| Focused GitHub Packages Adapter pytest | `20 passed` |
+| npmjs Adapter pytest | `46 passed` |
+| Node Adapter pytest | `198 passed` |
+| Commit-8 contract/history pytest | `62 passed` |
+| Combined related pytest | `326 passed` |
+| Focused Ruff check | Passed |
+| Focused Ruff format check | Passed: 4 files already formatted |
+| `uv run --python 3.13 pyrefly check` | Passed: 0 errors |
+
+The earlier missing-Adapter blocker in this status file is superseded by this
+implementation evidence. No real network request or npm publication ran.
+
+<!-- END APPEND: workflow-delivery-v3-commit8-phase2-implementation-2026-08-13 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit8-phase34-tests-2026-08-13 -->
+
+# Workflow Delivery v3 Commit 8 Phase 3/4 Test Evidence
+
+## Implemented scope
+
+- Added `tests/release/test_commit8_live_scenarios.py`.
+- Added `tests/contracts/test_buddy_workflows.py`.
+- Extended `tests/test_cli.py` only for the six commit-8 live commands, their
+  required transport options, and the exact terminal exit-status map.
+- Appended research, plan, and status evidence without replacing prior
+  `.testagent` history.
+- Did not edit production, workflow YAML, HK, Governance, credentials,
+  activation, or later commit scope. No GitHub API, network request, or package
+  publication ran.
+
+## Validation
+
+| Command | Result |
+|---|---|
+| Two added phase-3/4 files | **5 passed, 27 failed**. The passing cases cover exact no-op, Receipt loss, both termination phases, and mixed-attempt replay. All failures are missing phase-3 orchestration APIs or the two absent v3 Buddy workflow files. |
+| Focused commit-8 CLI contract | **7 failed**: six commands and `LIVE_OUTCOME_EXIT_STATUS` are absent. |
+| Existing commit-8 contract/history/Adapter regression | **82 passed**. |
+| Full Workflow Delivery v3 pytest | **2075 passed, 34 failed**; the 34 failures are exactly the 27 added phase blockers plus seven CLI blockers. |
+| Package build | Passed; sdist and wheel built. |
+| Ruff check | Passed. |
+| Ruff format check | Passed after apply-patch-only formatting. |
+| `uv run --python 3.13 pyrefly check` | Passed; 0 errors. |
+| `git diff --check` | Passed. |
+
+## Mandatory pre-completion gate
+
+`test-gap-analysis` and `assertion-quality` were invoked.
+`test-analysis-extensions` was attempted and unavailable, so the final review
+used repository pytest conventions.
+
+- Pseudo-mutation review: closed CLI status inversion, partial page traversal,
+  artifact-name selection, duplicate/rate/denial/truncation acceptance,
+  reviewer byte or digest substitution, uppercase/short/long/ref target
+  acceptance, moving-ref fallback, Governance substitution, restoration in the
+  same Attempt, no-op Capability emission, diagnostic denial authorization,
+  false success after Receipt loss, pre/post Capability termination inversion,
+  mixed-attempt admission, permission broadening, concurrency cancellation,
+  name-selected artifact transport, retention drift, mutable action pins,
+  activation, and later-scope introduction all have concrete killing
+  assertions.
+- Review fix: the anonymous-fetch success test now also asserts the exact
+  public repository URL and absence of every `refs/heads/` fallback.
+- No-cover zones remain only where the corresponding phase-3 APIs, CLI
+  commands/status map, and workflow files do not exist. They are production
+  blockers, not skipped or weakened tests.
+- Assertion-depth review found no assertion-free, trivial-only, type-only, or
+  tautological generated tests. Tests combine exact equality/deep structure,
+  exception assertions, negative credential/scope assertions, fake-call side
+  effects, immutable byte/digest bindings, and state-transition assertions.
+
+## Requirement coverage
+
+| Requirement | Exact evidence |
+|---|---|
+| Strict CLI transport/status mappings | `test_cli_exposes_strict_commit8_live_transport_commands`; `test_cli_commit8_live_outcome_status_mapping_is_closed` (BLOCKED on missing CLI surface). |
+| Exhaustive injectable history | `test_history_exhausts_every_run_artifact_and_job_page_by_id`; `test_history_duplicate_rate_denial_and_truncation_fail_before_attempt` (BLOCKED on missing API). |
+| Reviewer byte identity and bindings | `test_reviewer_artifact_preserves_exact_bytes_and_all_digest_bindings` (BLOCKED on missing API). |
+| Anonymous exact-SHA verification | `test_anonymous_fetch_rejects_every_non_exact_target_without_transport`; `test_anonymous_fetch_verifies_exact_commit_and_detached_head_without_network` (BLOCKED on missing API; fake runner only). |
+| Governance substitutions/restoration | `test_governance_freshness_substitution_blocks_and_restoration_needs_new_attempt` (BLOCKED on missing API). |
+| Exact no-op | `test_exact_noop_still_requires_authorization_and_emits_no_capability` (PASS). |
+| Diagnostic-only rejection | `test_diagnostic_only_rejection_never_authorizes_or_starts_capability` (BLOCKED on missing API). |
+| Receipt loss | `test_receipt_loss_after_possible_mutation_requires_reobservation` (PASS). |
+| Pre/post Capability termination | Two cases of `test_platform_termination_mapping_is_capability_phase_exact` (PASS). |
+| Replay/mixed Attempt | `test_whole_release_replay_rejects_mixed_attempt_capability_records` (PASS). |
+| DAG/permissions/concurrency/Environments | `test_buddy_caller_dag_concurrency_and_reusable_boundary_are_exact`; `test_buddy_permission_ceiling_and_effective_permissions_are_exact`; `test_live_attempt_dag_environments_and_capability_gate_are_exact` (BLOCKED on absent workflows). |
+| Action pins/artifact transport/retention | `test_all_actions_are_full_sha_pinned_with_version_comments`; `test_reviewer_artifact_transport_is_raw_id_bound_and_retained_45_days` (BLOCKED on absent workflows). |
+| Disabled activation/no later scope | `test_buddy_workflow_files_are_the_disabled_commit8_pair_only`; `test_workflows_forbid_secrets_oidc_publication_bypasses_and_later_scope` (BLOCKED on absent workflows). |
+| No real network/publication | `RecordingHistoryClient`, injected anonymous-fetch runner, and static YAML readers in the two added files; no live command was executed. |
+
+## Blockers
+
+The authoritative workspace lacks:
+
+1. `discover_execution_history`, `materialize_reviewer_artifact`,
+   `fetch_exact_public_revision`, `form_authorization_record`, and
+   `admit_live_capability`;
+2. the six commit-8 live CLI commands and closed status constant; and
+3. `.github/workflows/workflow-delivery-v3-buddy-smoke.yml` plus
+   `.github/workflows/workflow-delivery-v3-live-attempt.yml`.
+
+Per the requested test-only phase boundary, none was implemented or
+reconstructed. Activation and later commit scope remain untouched.
+
+<!-- END APPEND: workflow-delivery-v3-commit8-phase34-tests-2026-08-13 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit8-phase34-final-gate-2026-08-13 -->
+
+## Commit 8 Phase 3/4 Final Gate Addendum
+
+The final `test-gap-analysis` and `assertion-quality` pass found and fixed
+contract-test gaps before completion:
+
+- history coverage now traverses two artifact pages and two job pages for
+  every run, asserts the exact page sequence, and downloads all four records
+  strictly by artifact ID;
+- duplicate history now comes from the injected platform response instead of a
+  production-only `inject_duplicate` test parameter, while truncated history
+  supplies an explicit incomplete terminal page;
+- reviewer bytes now contain the actual canonical Snapshot payload digest and
+  assert both Snapshot and Markdown payload digests independently of the
+  upload digest and artifact ID;
+- the closed CLI status map now includes the record contract's `incomplete`
+  terminal result as fail-closed;
+- workflow contracts now pin the complete immediate DAG, require explicit
+  job-level permissions, require `needs`-sourced artifact IDs, and inspect the
+  protected Governance document for `live_enabled: false`.
+
+Pseudo-mutation review after those fixes found no remaining test-only gap in the
+requested scope. Executable mutations in the five orchestration APIs, six CLI
+commands/status constant, and two workflows remain no-coverage production
+blockers because those surfaces do not exist. Assertion review found no
+assertion-free, trivial-only, type-only, or tautological test. The final tests
+combine exact/deep equality, exception matching, negative scope and credential
+checks, injected call logs, immutable byte/digest bindings, and state/phase
+assertions.
+
+### Final exact validation
+
+| Command | Result |
+|---|---|
+| Two added phase-3/4 files | **5 passed, 27 failed**; all failures are the missing orchestration APIs or absent workflows. |
+| Focused commit-8 CLI tests | **7 failed, 44 deselected**; all six commands and the closed status constant are absent. |
+| Existing commit-8 contract/history/Adapter regression | **82 passed**. |
+| Full Workflow Delivery v3 pytest | **2075 passed, 34 failed** in 383.25 seconds; failures are exactly the 27 phase-3/4 production blockers plus seven CLI blockers. |
+| Package build | Passed; sdist and wheel built. |
+| Ruff check and format check | Passed; all three touched test files are formatted. |
+| `uv run --python 3.13 pyrefly check` | Passed with 0 errors. |
+
+<!-- END APPEND: workflow-delivery-v3-commit8-phase34-final-gate-2026-08-13 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit8-phase34-implementation-2026-08-13 -->
+
+# Workflow Delivery v3 Commit 8 Phase 3/4 Implementation Evidence
+
+## Implemented but uncommitted
+
+- Added injectable GitHub Actions platform/history traversal and strict
+  execution-history admission.
+- Completed the live CLI chain, reviewer payload binding, anonymous exact-SHA
+  Authorization formatter, Governance freshness/Capability admission,
+  GitHub Packages publication result/Receipt handling, and live finalization.
+- Added the disabled Buddy caller and reusable Attempt workflows with the
+  required DAG, permission ceilings, Environments, concurrency boundaries,
+  immutable ID-only artifact transport, and 45-day retention.
+- Kept the protected Governance document absent. Normal live execution
+  therefore fails closed before Attempt creation.
+- Did not add acceptance bootstrap, CODEOWNERS scope, legacy retirement,
+  activation, or live Official mutation.
+
+## Exact validation evidence
+
+| Validation | Result |
+|---|---|
+| Focused commit-8 contract/history/live/Adapter/workflow/CLI pytest | **165 passed**. |
+| Focused GitHub Packages Adapter plus live scenarios after import-cycle fix | **44 passed**. |
+| Full Workflow Delivery v3 pytest | **2109 passed** in 383.79 seconds. |
+| CLI parser-help contract | **30 passed**. |
+| `actionlint` on both Buddy workflows | Passed. |
+| Ruff check and format check | Passed; **64 files formatted**. |
+| Pyrefly | Passed with **0 errors**. |
+| Pkl evaluation of `hk.pkl` | Passed; emitted **115602 bytes**. |
+| Permanent smoke-package consumer policy | Passed with no consumers. |
+| `git diff --check` | Passed. |
+
+## Remaining validation blocker
+
+The focused HK path gate is not clean because `typos` reports the pre-existing
+hex fixture substring `ba` in
+`src/public/lib/three-workflow-delivery-v3/tests/test_canonical.py:61`.
+That file is unchanged by commit 8. HK aborted later aggregate steps after this
+unrelated failure; the equivalent v3 pytest, actionlint, Ruff, Pyrefly, Pkl,
+and consumer-policy validations were run directly and passed.
+
+Final independent review and repository-wide validation are not claimed
+complete.
+
+<!-- END APPEND: workflow-delivery-v3-commit8-phase34-implementation-2026-08-13 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit8-phase34-test-review-2026-08-13 -->
+
+## Commit 8 Phase 3/4 Test Gap and Assertion Review
+
+`test-gap-analysis` and `assertion-quality` were invoked. The optional
+`test-analysis-extensions` skill was unavailable, so the review used the
+repository's pytest conventions directly.
+
+- The two generated phase-3/4 files contain **20 tests**, **114 bare
+  assertions**, and **5 `pytest.raises` assertions**, averaging **5.95**
+  assertions per test.
+- There are **0 assertion-free** and **0 trivial-only** tests.
+- Pseudo-mutations for pagination truncation/duplication, artifact-name
+  fallback, digest or Attempt substitution, anonymous-fetch ref fallback,
+  Governance restoration in the same Attempt, no-op Capability creation,
+  diagnostic denial authorization, Receipt-loss success, termination-phase
+  inversion, mixed-attempt admission, permission broadening, mutable action
+  pins, retention drift, activation, and later-scope additions are killed by
+  explicit assertions.
+- Assertions cover equality/deep structure, exceptions, negative scope and
+  credential properties, state transitions, fake-client side effects,
+  deterministic byte/digest identity, and workflow topology.
+- No high-risk survived mutation or no-coverage zone was found in the bounded
+  generated-test checklist. Final independent review is still not claimed.
+
+<!-- END APPEND: workflow-delivery-v3-commit8-phase34-test-review-2026-08-13 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit8-acceptance34-audit-2026-08-14 -->
+## Commit 8 final 34-item acceptance audit
+
+**Result:** complete; no production defect was exposed and no production file
+was changed. The standalone `c8-test-map` report requested by name was not
+present, so the LLD/user checklist was reconstructed into exactly 34 rows.
+
+### Discovery and implementation delta
+
+- Baseline focused discovery: **165 tests**.
+- Final focused discovery/execution: **167 passed**.
+- Delta: **+2 tests**, both in
+  `tests/release/test_commit8_live_scenarios.py`.
+- `test_successful_approval_only_forms_bound_authorization_without_scheduling`
+  adds direct successful-approval coverage with exact Attempt, Snapshot,
+  reviewer artifact, approval job, Environment, and zero scheduling assertions.
+- `test_capability_admission_closes_exact_planned_action_and_resource_sets`
+  adds exact non-empty action digest, artifact digest, complete resource-key
+  set, lock group, and capability-group manifest assertions.
+- The existing `_closure` fixture was strengthened to construct a valid live
+  Release Artifact (live purpose, exact transport basename, recomputed
+  provenance digest), enabling the real non-empty Capability path.
+
+### Requirement coverage
+
+| Requirement | Evidence |
+|---|---|
+| C8-A01 strict records | `test_commit8_record_contract_api_is_available`; `test_commit8_records_round_trip_through_closed_transport` |
+| C8-A02 substitutions | `test_commit8_records_reject_independent_binding_substitutions`; current/history transport and digest substitution matrices |
+| C8-A03 current Attempt | `test_exact_current_attempt_authority_preserves_every_trusted_binding`; `test_current_attempt_authority_rejects_every_binding_substitution` |
+| C8-A04 exhaustive history | `test_history_exhausts_every_run_artifact_and_job_page_by_id` asserts every run/artifact/job cursor and immutable-ID download |
+| C8-A05 same-run prior attempts | `test_same_run_history_requires_verified_earlier_attempt_existence` |
+| C8-A06 unsupported provenance | `test_history_producer_and_workflow_claims_remain_diagnostic_only`; `test_same_run_prior_attempt_remains_history_only_without_provenance_claims` |
+| C8-A07 approval success only | `test_successful_approval_only_forms_bound_authorization_without_scheduling`; `test_diagnostic_review_cannot_authorize` |
+| C8-A08 denial diagnostic-only | `test_diagnostic_only_rejection_never_authorizes_or_starts_capability` |
+| C8-A09 mutual exclusion | The preceding success/denial tests prove only `success` creates Authorization and denial cannot schedule; no Approval Outcome Evidence type is exported in the first-slice contract |
+| C8-A10 exact Capability closure | `test_capability_admission_closes_exact_planned_action_and_resource_sets` |
+| C8-A11 immediate Governance freshness | `test_governance_freshness_substitution_blocks_and_restoration_needs_new_attempt` covers disabled, expired, resolved commit, blob, content, and binding substitutions |
+| C8-A12 restoration/new Attempt | Same test asserts restored Attempt differs and alone authorizes |
+| C8-A13 anonymous exact SHA | `test_anonymous_fetch_rejects_every_non_exact_target_without_transport`; `test_anonymous_fetch_verifies_exact_commit_and_detached_head_without_network`; workflow contract counterpart |
+| C8-A14 workflow permissions | `test_buddy_permission_ceiling_and_effective_permissions_are_exact` |
+| C8-A15 reusable ceiling | Same test asserts caller ceiling is exactly contents-read/actions-read/packages-write and every called job narrows it |
+| C8-A16 absent/create | `test_materialize_hypothetical_actions_accepts_only_absent_and_exact` plus `test_publish_uses_exact_argv_private_config_and_cleans_up` proves one create-only `npm publish` |
+| C8-A17 approved exact no-op | `test_exact_noop_still_requires_authorization_and_emits_no_capability`; contract-level counterpart |
+| C8-A18 partial/no mutation | `test_materialize_hypothetical_actions_accepts_only_absent_and_exact` rejects partial; six-state Adapter classification test pins `partial` |
+| C8-A19 conflict/no mutation | Same materialization test rejects conflict; `test_publish_identical_and_differing_races_fail_closed` asserts no-side-effect |
+| C8-A20 unknown/no mutation | Same materialization test rejects unknown; six-state classification pins `unknown` |
+| C8-A21 unprovable/no mutation | Same materialization test rejects unprovable; six-state classification pins `unprovable` |
+| C8-A22 identical race | `test_publish_identical_and_differing_races_fail_closed` asserts failed/no-side-effect and no Receipt |
+| C8-A23 differing race | Same test's differing case asserts failed/no-side-effect and no Receipt |
+| C8-A24 lost response/Receipt/bindings | `test_publish_created_conflict_and_lost_response_are_distinct`; `test_publish_rejects_receipt_and_response_substitution`; `test_receipt_loss_after_possible_mutation_requires_reobservation` |
+| C8-A25 exact group equality | `test_group_bundle_requires_exact_action_set_equality` |
+| C8-A26 pre-Capability termination | `test_platform_termination_mapping_is_capability_phase_exact[False-...]` |
+| C8-A27 post-Capability termination | `test_platform_termination_mapping_is_capability_phase_exact[True-...]` |
+| C8-A28 whole-release replay | `test_whole_release_replay_rejects_mixed_attempt_capability_records` |
+| C8-A29 mixed failed-job rejection | Same test requires `Mixed-attempt failed-job reruns` rejection |
+| C8-A30 keys versus projection | `test_complete_keys_remain_distinct_while_grouping_is_conservative`; contract-level Buddy key test |
+| C8-A31 caller-held Execution concurrency | `test_buddy_caller_dag_concurrency_and_reusable_boundary_are_exact` asserts concurrency on the reusable caller with `cancel-in-progress: false` |
+| C8-A32 ID-only/exact reviewer bytes | `test_reviewer_artifact_preserves_exact_bytes_and_all_digest_bindings`; `test_reviewer_artifact_transport_is_raw_id_bound_and_retained_45_days` |
+| C8-A33 disabled activation | `test_buddy_workflow_files_are_the_disabled_commit8_pair_only` |
+| C8-A34 no commit-9+ scope | `test_workflows_forbid_secrets_oidc_publication_bypasses_and_later_scope`; absence of acceptance workflow is asserted by the disabled-pair test |
+
+### Mandatory pre-completion review
+
+`test-gap-analysis` and `assertion-quality` were invoked. Their required
+`test-analysis-extensions` helper is unavailable, so Python/pytest analysis was
+completed inline.
+
+- **Pseudo-mutation finding fixed:** replacing successful Authorization output
+  with a default/unbound record, or deleting any non-empty Capability closure
+  projection, previously lacked direct scenario assertions. The two added tests
+  now kill those mutations through exact values and deep tuples.
+- Existing matrices kill current/history binding substitution, Governance
+  freshness removal, race-result inversion, Receipt acceptance without durable
+  binding, group subset/superset acceptance, and termination-phase inversion.
+- No remaining high-risk survived mutation was found inside the 34-row scope.
+- **Assertion-depth result:** neither new test is assertion-free,
+  trivial-only, self-referential, or tautological. Both assert concrete primary
+  values and secondary observables (scheduler call list or complete closure
+  tuples). No weakening or extra test was needed.
+
+### Validation commands
+
+| Command | Result |
+|---|---|
+| Focused six-file pytest | **167 passed** in 7.42s |
+| Focused Ruff check | Passed |
+| Focused Ruff format-check | Initially identified one line-wrap only; corrected with `apply_patch`; final rerun recorded below |
+| `uv run --python 3.13 pyrefly check` | Passed: **0 errors** (76 suppressed, 149 warnings not shown) |
+| `mise exec -- actionlint` on both Buddy workflows | Passed |
+
+No commit, checkout, restore, reset, clean, stash, tracked deletion, external
+network call, package publication, or activation was performed.
+
+<!-- END APPEND: workflow-delivery-v3-commit8-acceptance34-audit-2026-08-14 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit8-acceptance34-final-gate-2026-08-14 -->
+### Final gate rerun
+
+- Final collection: **167 tests collected** in 0.08s (baseline 165; delta +2).
+- Final focused execution: **167 passed** in 6.62s.
+- Ruff: all checks passed; **6 files already formatted**.
+- Pyrefly: **0 errors**.
+- actionlint: both relevant workflows passed.
+- `git diff --check`: passed. `git status --short` confirmed the pre-existing
+  authoritative modifications/untracked commit-8 files remain present; nothing
+  was restored, deleted, committed, or otherwise destructively altered.
+- Blockers: none. Production fixes: none.
+
+<!-- END APPEND: workflow-delivery-v3-commit8-acceptance34-final-gate-2026-08-14 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit8-parent-verification-2026-08-13 -->
+### Parent verification
+
+- Invoked `test-gap-analysis` and `assertion-quality` after the final test edits.
+  Their required `test-analysis-extensions` dependency returned `not found`, so
+  the recorded Python/pytest inline reviews remain the applicable equivalent.
+  Reinspection confirmed the two added scenarios kill the previously identified
+  default/unbound Authorization and dropped Capability-closure mutations, use
+  concrete deep equality plus secondary side-effect/closure assertions, and
+  contain no assertion-free, trivial-only, or tautological checks.
+- Focused six-file pytest rerun: **167 passed in 7.74s**.
+- Focused Ruff check and format-check: passed; **6 files already formatted**.
+- Pyrefly: **0 errors** (76 suppressed, 149 warnings not shown).
+- actionlint on both commit-8 workflows: passed.
+- `git diff --check`: passed before this documentation-only append.
+
+<!-- END APPEND: workflow-delivery-v3-commit8-parent-verification-2026-08-13 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit8-redacted-auth-review-2026-08-13 -->
+### Commit 8 redacted Authorization review
+
+**Result:** complete; both reported findings are invalid. No production file or
+test file was changed for this review.
+
+#### Acceptance/evidence
+
+| Requirement | Evidence |
+|---|---|
+| Preserve existing uncommitted work | Final `git status --short` still shows the pre-existing modified/untracked commit-8 files; no restore/clean/revert/reset/stash/checkout/commit was run. |
+| Assess `github_packages.py` live GitHub REST headers | Source inspection shows `github_api_headers(token)` / `_github_transport_headers(token)` build `Authorization: Bearer {token}`. The retained-evidence helper is separate: `_retained_github_headers()` returns only `_REDACTED`. |
+| Assess `github_packages.py` live npm headers | Source inspection shows `_npm_transport_headers(token)` builds `Authorization: Bearer {token}`; redirect tests retain it only on same-origin redirects and strip it cross-origin. |
+| Assess `platform/github.py` live REST client | Source inspection shows `GitHubRestClient._request()` builds `Authorization: Bearer {self._token}`. |
+| Avoid token leakage into diagnostics/evidence | Existing `test_github_packages_redacts_token_and_rejects_cross_origin_redirect` and retained-header separation cover redacted diagnostics/evidence; no real token was added to docs or tests. |
+| Production-fix decision | No fix applied: the apparent `******` values are display/log redaction of bearer-token expressions, not the source value sent to live transport. |
+
+#### Exact counts and validation
+
+| Command | Result |
+|---|---|
+| `uv run --python 3.13 pytest src/public/lib/three-workflow-delivery-v3/tests/adapters/test_github_packages.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_live_scenarios.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_history_admission.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py` | **167 passed** in 6.88s. |
+| `uv run --python 3.13 ruff check ...six focused files...` | Passed: all checks passed. |
+| `uv run --python 3.13 ruff format --check ...six focused files...` | Passed: 6 files already formatted. |
+| `uv run --python 3.13 pyrefly check` | Passed: 0 errors (76 suppressed, 149 warnings not shown). |
+| `mise exec -- actionlint .github/workflows/workflow-delivery-v3-buddy-smoke.yml .github/workflows/workflow-delivery-v3-live-attempt.yml` | Passed. |
+| `git --no-pager diff --check` | Passed. |
+
+Blockers: none.
+
+<!-- END APPEND: workflow-delivery-v3-commit8-redacted-auth-review-2026-08-13 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit8-core-review-correction-2026-08-13 -->
+
+## Commit 8 independent-review findings correction
+
+The earlier 34-item completion and “no production defect” claims are
+superseded for the duration of this remediation. Independent adjudication
+retained two false positives:
+
+1. keep the Planner field name `release-binding-digest`;
+2. do not add same-domain-Attempt resume behavior based on the original G1
+   claim.
+
+The adjudicated core true positives are now remediated:
+
+- outbound GitHub REST and GitHub Packages transports use the stored Bearer
+  token while retained headers and diagnostics remain redacted;
+- authenticated redirects and REST/package pagination fail closed on malformed,
+  cyclic, off-origin, over-limit, truncated, or changing-count chains;
+- public publication requires the complete authority closure and validates the
+  exact safe tarball bytes, package identity, version, witness, action, keys,
+  lock projection, and capability-group manifest before credentials or npm;
+- Publication Snapshot, Capability Admission, Action Result, Receipt, transport,
+  Governance freshness, and finalizer bindings are recomputed exactly;
+- history discovery filters other targets, admits only recognized strict
+  schemas, derives conservative context-owned phase facts, and separately
+  proves same-run earlier attempts without artifact-to-attempt provenance.
+
+Validation after remediation:
+
+| Command set | Result |
+|---|---|
+| Commit-8 Adapter/platform/contract/history/live/CLI tests | **179 passed** |
+| Affected commit-6 and commit-7 regressions | **52 passed** |
+| Existing Buddy workflow contract tests | **8 passed** |
+| Ruff check and format check | Passed |
+| Pyrefly | **0 errors** |
+| `git diff --check` | Passed |
+
+Workflow YAML orchestration findings remain intentionally workflow-owned and
+were not remediated in this core pass.
+
+<!-- END APPEND: workflow-delivery-v3-commit8-core-review-correction-2026-08-13 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit8-workflow-fix-contracts-2026-08-13 -->
+## Commit 8 workflow-fix contract test pass
+
+- Added bounded workflow and CLI contracts for the 12 requested commit-8 fixes.
+- No production/workflow file was edited.
+- Validation and mandatory review results follow in the next append after the
+  focused run.
+<!-- END APPEND: workflow-delivery-v3-commit8-workflow-fix-contracts-2026-08-13 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit8-workflow-fix-results-2026-08-13 -->
+### Focused validation and blocker
+
+- Focused four-file pytest collected **137 tests**: **125 passed, 12 failed**.
+- All 12 failures are the newly added workflow contract tests and expose
+  production/workflow blockers; the CLI status-evidence test and existing live
+  scenarios pass.
+- Production changes are required to satisfy the contracts. Per user
+  instruction, no production or workflow edit was attempted.
+- Ruff initially reported one quote-style issue in a new assertion; it was
+  corrected with `apply_patch`.
+
+### Mandatory final-test review
+
+- `test-gap-analysis` was explicitly invoked. Its requested
+  `test-analysis-extensions` helper is unavailable, so the Python/pytest
+  pseudo-mutation review was completed inline.
+- The 12 workflow contracts kill mutations of the exact result literal,
+  no-op/finalizer condition, platform fact flags, receipt/bundle ordering and
+  transport IDs, failure continuation, retained outcome/summary uploads,
+  offline formatter invocation, job/check-run correlation, freshness evidence
+  ordering, missing-Authorization dependency routing, retention, and status
+  artifact paths. No requested behavior is represented only by an existence
+  assertion.
+- `assertion-quality` was explicitly invoked. The same unavailable helper was
+  noted and pytest assertions were reviewed inline: the 13 added tests contain
+  **59 concrete assertions plus one `pytest.raises` context**, with zero
+  assertion-free, trivial-only, null-only, or tautological tests. They combine
+  exact equality, negative string checks, collection/deep structure, order,
+  permissions, paths, and error-propagation observables.
+- Remaining gaps are not test gaps: they are the 12 accurately failing
+  workflow implementation contracts listed by pytest.
+<!-- END APPEND: workflow-delivery-v3-commit8-workflow-fix-results-2026-08-13 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit8-workflow-remediation-2026-08-13 -->
+
+## Commit 8 workflow/orchestration remediation
+
+Status: **complete; no blockers**. This evidence supersedes the immediately
+preceding 12-failure workflow blocker while preserving its history.
+
+### Implemented corrections
+
+- Capability results and the publisher gate now use the exact
+  `success`/`blocked` vocabulary.
+- Approved exact pre-observed state skips Capability admission and publication,
+  conditionally omits Capability inputs, and finalizes as `finalized-no-op`.
+- Exact-attempt Jobs API phase facts plus the durable capability-job marker
+  distinguish a publisher that did not start from cancelled or ambiguous work
+  that may have reached Capability.
+- Publication now persists the single-file Receipt first, then forms the
+  Action Result and exactly one capability-group bundle with the returned
+  artifact ID, upload digest, and payload digest. Failed/incomplete publication
+  forms and uploads its bundle before failure propagation and emits no fake
+  Receipt.
+- Release finalization retains the exact Attempt Outcome JSON and summary
+  Markdown together in one immutable, run-attempt-unique 45-day artifact for
+  every executable finalizer path.
+- Approval uses a dependency-free exact-revision formatter under isolated
+  Python, with no pip, index, cache, or installed-package dependency.
+- Approval job identity is anonymously correlated from the exact run-attempt
+  Jobs API response and its documented `check_run_url`; no fabricated fallback
+  remains.
+- Governance freshness blocks are named and uploaded before nonzero status
+  propagation. Missing Authorization reaches the finalizer as
+  `unknown-replayable-approval-contract`.
+
+### Exact validation
+
+| Command | Result |
+|---|---|
+| Focused commit-8 contract/history/live/platform/CLI pytest | **179 passed** |
+| Full Workflow Delivery v3 pytest | **2146 passed** in 351.25 seconds |
+| Ruff check and format check | Passed; **57 files formatted** |
+| Pyrefly package check | Passed; **0 errors** |
+| actionlint on both v3 Buddy workflows | Passed |
+| `pkl eval -f json global.pkl` | Passed |
+| `git diff --check` | Passed |
+
+No commit was created. Commit 9+, acceptance, activation, CODEOWNERS, and
+legacy retirement were not added.
+
+Post-implementation pseudo-mutation and assertion-depth review found no
+remaining high-risk gap in the requested scope. Exact comparisons, no-op
+Capability omission, phase inversion, placeholder artifact IDs, Receipt/bundle
+reordering, failure propagation before evidence upload, pip/index reintroduction,
+job-identity fallback, and missing final status retention are all killed by
+named contract or scenario assertions. The focused tests use equality,
+negative, structural, ordering, exception, and state/side-effect assertions;
+none of the added tests is assertion-free, trivial-only, self-referential, or
+tautological. The optional `test-analysis-extensions` helper was unavailable,
+so the Python/pytest review used repository conventions directly.
+
+<!-- END APPEND: workflow-delivery-v3-commit8-workflow-remediation-2026-08-13 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit8-second-round-remediation-2026-08-13 -->
+
+## Commit 8 second-round adjudicated remediation
+
+Status: **complete; no blockers**. This section supersedes the earlier
+commit-8 no-blocker/final-closure claims only for the second-round review and
+records the adjudicated result as **14 true positives and 1 false positive**.
+Prior status history remains unchanged above.
+
+### Adjudication preservation
+
+- The false-positive token claim was not implemented: the existing credential
+  transport helpers already send the real token while retained diagnostics and
+  tool output remain redacted.
+- Planner `release-binding-digest` behavior was preserved.
+- No activation, acceptance bootstrap, CODEOWNERS expansion, legacy
+  retirement, commit-9 scope, or commit was added.
+
+### Remediated true positives
+
+1. CLI live observation/publication now select the manual-redirect
+   `GitHubPackagesHttpTransport`; the legacy urlopen transport was removed.
+2. Publication validates the exact Qualification Snapshot, Decision, Artifact,
+   expectation, Publication Snapshot, selected action, Attempt, projection,
+   and digests before config creation, transport, or runner execution.
+3. Publication Snapshot now retains closed immutable observation references
+   and requires exact planned coverage plus exact absent/action equality.
+4. History normalizes the literal YAML finalizer/publisher display names with
+   an optional reusable-workflow prefix.
+5. History keeps finalizer/publisher facts optional and admits failed,
+   cancelled, blocked, unknown, and possibly-mutated durable outcomes without
+   requiring successful Finalizer existence.
+6. Same-run history classifies candidates first, queries only referenced prior
+   attempts once, and attaches matching prior-attempt jobs; an explicit empty
+   complete response can prove existence.
+7. Finalization preserves and validates Receipt artifact ID, artifact name,
+   upload digest, payload digest, and decoded Receipt digest exactly.
+8. Missing Authorization plus post-authorization evidence is contradictory and
+   finalizes as possibly mutated with mandatory reobservation.
+9. Release Finalizer has no Actions permission and uses retained needs/start
+   facts conservatively.
+10. Workflow API correlation uses the exact reusable composite job names and
+    rejects zero, duplicate, and wrong-prefix matches.
+11. Pre-mutation publisher admission/Governance failure emits a closed
+    failed/no-side-effect execution state before propagation.
+12. Post-execution failed/incomplete publication retains CLI status, forms a
+    nonempty bundle path/digest/output, uploads under `always`, then propagates
+    the saved failure.
+13. Every successful, failed, or no-op finalizer path uploads AttemptOutcome
+    plus summary with exact permissions and 45-day retention.
+14. Focused contract/history/live/Adapter/workflow/CLI regressions cover the
+    complete second-round behavior, including observation/action mismatch,
+    candidate-specific attempts, Receipt transport substitution, contradictory
+    Authorization absence, and durable failed bundles.
+
+### Exact validation
+
+| Command scope | Result |
+|---|---|
+| Focused commit-8 contract/history/live/Adapter/workflow/CLI | **210 passed** |
+| Focused commit-6/7/8 regression set | **274 passed** |
+| Full Workflow Delivery v3 suite | **2159 passed** in 351.40 seconds |
+| Scoped Ruff check | Passed |
+| Scoped Ruff format check | **12 files already formatted** |
+| Pyrefly | **0 errors** |
+| actionlint on both commit-8 workflows | Passed |
+| `pkl eval -f json global.pkl` | Passed |
+| `git diff --check` | Passed |
+
+Blockers: **none**. No commit was created.
+
+<!-- END APPEND: workflow-delivery-v3-commit8-second-round-remediation-2026-08-13 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit8-third-round-remediation-2026-08-13 -->
+
+## Commit 8 third-round adjudicated remediation
+
+Status: **complete; no blockers**. This append preserves all prior evidence and
+records the third-round adjudication as **3 true positives and 1 false
+positive**.
+
+### Adjudication preservation
+
+- The repeated token-rendering claim remains a false positive and was not
+  changed. Runtime adjudication proved that actual transport requests use the
+  real credential while retained tool output and diagnostics are redacted.
+- No activation, acceptance, CODEOWNERS, legacy retirement, commit-9 scope, or
+  commit was added.
+
+### Remediated true positives
+
+1. Historical discovery now treats every recognized payload run-attempt value
+   only as an exact-attempt query selector. It obtains and caches one
+   artifact-independent `GitHubRunAttemptFact` plus exact-attempt Jobs pages per
+   `(run_id, run_attempt)`, validates run ID, node ID, head SHA, attempt, and
+   status metadata, and uses the listed attempt only as the latest watermark.
+   A non-current run listed at attempt 3 now admits retained attempt-1 and
+   attempt-3 candidates independently. Missing, malformed, mismatched, 404-like,
+   or cross-head exact-attempt proof fails closed without adding artifact
+   provenance claims.
+2. GitHub Packages publication now has a mutation-free preflight followed by an
+   immutable uploaded mutation-may-have-started marker binding the Attempt,
+   Publication Snapshot, action digest, complete lock group, and preflight
+   digest. The publisher requires the admitted marker transport before npm.
+   The always-running terminal bundle derivation no longer synthesizes generic
+   no-side-effect state: missing, truncated, substituted, Receipt-lost, or
+   persistence-failed state after the marker becomes
+   incomplete/possibly-mutated; only preflight failure before a marker or the
+   narrow create-conflict fact can prove no side effect.
+3. Release-finalizer workflow derivation now computes platform termination and
+   capability-start evidence independently. Cancellation or publisher failure
+   without a durable bundle sets platform termination; the uploaded start
+   marker independently sets capability-may-have-started. Failure plus marker
+   plus no bundle therefore supplies both facts and finalizes as
+   incomplete-possibly-mutated/post-capability-termination with
+   reobserve-and-replay, while a skipped publisher supplies neither.
+
+### Added regression evidence
+
+- Exact REST-client and history tests cover exact-attempt endpoint shape,
+  per-run/per-attempt cache keys, distinct same-number attempts in different
+  runs, attempt-1 plus attempt-3 admission under a latest-attempt-3 watermark,
+  and malformed or mismatched run/node/head/attempt/status facts.
+- Workflow and live-scenario truth tables cover independent termination/start
+  derivation and skipped publication.
+- Crash-state tests cover interruption after marker before npm, runner
+  mutation followed by raise, generic nonzero/lost response/readback failure,
+  Receipt persistence failure, execution-state persistence failure, and
+  truncated/substituted terminal state. Every post-marker case remains
+  possibly mutated. Preflight/Governance failure has no marker and forms
+  failed/no-side-effect evidence without invoking npm.
+
+### Exact validation
+
+| Command scope | Result |
+|---|---|
+| Focused commit-8 history/platform/Adapter/workflow/live/CLI plus public-export regression | **203 passed** |
+| Affected commit-6 and commit-7 regressions | **64 passed** |
+| Full Workflow Delivery v3 suite | **2184 passed** in 382.07 seconds |
+| Scoped Ruff check | Passed |
+| Scoped Ruff format check | **13 files already formatted** |
+| Pyrefly | **0 errors** |
+| actionlint on both commit-8 workflows | Passed |
+| `pkl eval -f json global.pkl` | Passed |
+| `git diff --check` | Passed before this append |
+
+Blockers: **none**. No commit was created.
+
+<!-- END APPEND: workflow-delivery-v3-commit8-third-round-remediation-2026-08-13 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit8-fourth-round-governance-recheck-2026-08-13 -->
+## Commit 8 fourth-round Governance publish recheck status
+
+Status: **test-first regressions complete; production blocker intentionally
+retained**. No production, workflow, adjudicated artifact-attempt finding, or
+version-control state was modified.
+
+### Implemented regression evidence
+
+- Added
+  `tests/adapters/test_commit8_publish_governance_recheck.py` with seven
+  collected publish-boundary cases: explicit reader seam, disabled, expired,
+  resolved-commit changed, blob-OID changed, content changed, unchanged, and
+  exact marker/read/runner ordering.
+- Appended
+  `test_after_marker_governance_failure_requires_reobservation` to
+  `tests/release/test_commit8_live_scenarios.py`.
+- The publish regressions use an actual immutable preflight/marker record,
+  fixed repository/ref/path constants, canonical Governance bytes, injected
+  protected-source and runner fakes, exact event ordering, runner call counts,
+  and no network or subprocess.
+- Current production lacks `governance_client` and
+  `governance_observed_at` on `publish_github_packages_action`; the seven new
+  adapter test items therefore remain intentionally red. The live finalization
+  regression passes.
+
+### Pre-completion self-review
+
+- `test-gap-analysis` was invoked. Pseudo-mutation review found that testing
+  only resolved-commit provenance would allow a dropped blob-OID comparison to
+  survive, so a distinct `blob-oid-changed` case was added. Disabled, expiry,
+  both provenance components, content digest, omitted recheck, reordered
+  pre-marker recheck, dropped runner suppression, and duplicate runner
+  invocation are now each pinned by concrete inputs, event order, or call
+  counts. No remaining in-scope pseudo-mutation gap was found; execution is
+  blocked only by the deliberately missing production seam.
+- `assertion-quality` was invoked. Generated tests contain no assertion-free,
+  null-only, type-only, or tautological cases. A tautological parameter-name
+  assertion was removed. The final set combines exception assertions, exact
+  structural event equality, fixed-source argument equality, negative
+  side-effect checks, exact call counts, and four-field final outcome checks.
+- Prompt-scenario mapping was rechecked against the final test names and all
+  requested behavior rows have dedicated evidence.
+
+### Exact validation
+
+| Command | Result |
+|---|---|
+| `uv build --package three-workflow-delivery-v3` | Passed; sdist and wheel built |
+| `uv run --python 3.13 ruff check <two changed test files>` | Passed |
+| `uv run --python 3.13 ruff format --check <two changed test files>` | Passed; 2 files already formatted |
+| `uv run --python 3.13 pyrefly check` | Passed; 0 errors |
+| Focused adapter + live pytest | **7 failed, 39 passed**; all seven failures identify the missing publish Governance seam |
+| Full Workflow Delivery v3 pytest | **7 failed, 2185 passed** in 383.49 seconds; no other failure |
+
+### Requirement coverage
+
+| Requirement | Evidence |
+|---|---|
+| Second fresh read after marker and before runner | `test_publish_unchanged_second_governance_read_runs_exactly_once`; exact event sequence starts with `marker-admitted`, then fixed-source protected/resolve/read, then `runner.run` |
+| Disabled/expired/provenance/content changes run zero times | `test_publish_second_governance_read_blocks_before_runner[disabled]`, `[expired]`, `[resolved-commit-changed]`, `[blob-oid-changed]`, and `[content-changed]`; each asserts `runner.calls == 0` |
+| Unchanged runs once | `test_publish_unchanged_second_governance_read_runs_exactly_once` asserts `runner.calls == 1` |
+| After-marker failure finalization | `test_after_marker_governance_failure_requires_reobservation` asserts incomplete-possibly-mutated, post-capability termination, `possibly_mutated is True`, and `reobserve-and-replay` |
+| Recheck belongs to publish, not preflight | `test_publish_api_requires_fresh_governance_reader_seam` and all behavioral calls target `publish_github_packages_action` |
+| Preserve artifact-attempt FP | No artifact/history finding or production file changed |
+| Pytest conventions | New adapter pytest file, parameterized cases, injected fakes, concrete assertions; Ruff passed |
+| Preserve workspace/no commit | No restore, delete, revert, reset, clean, stash, checkout, or commit command was used |
+| Append-only agent artifacts | Bounded append sections added to research, plan, and status; no prior content truncated |
+| Missing API remains meaningful failure | Seven exact failures report the absent publish reader parameters/keyword rather than weakening to a preflight-only assertion |
+<!-- END APPEND: workflow-delivery-v3-commit8-fourth-round-governance-recheck-2026-08-13 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit8-fourth-round-adjudicated-fix-2026-08-13 -->
+
+## Commit 8 fourth-round adjudicated remediation
+
+Status: **complete; no blockers**. This append supersedes only the preceding
+test-first production-blocker status and records the fourth-round adjudication
+as **1 true positive and 1 false positive**.
+
+### Adjudication preservation
+
+- The single Governance publish-path freshness true positive was remediated.
+- The artifact-attempt finding remains the adjudicated false positive and was
+  not changed.
+- No history rewrite, activation, acceptance bootstrap, legacy retirement,
+  commit-9 scope, or commit was performed.
+
+### Remediation
+
+- Extracted one canonical fixed-source Governance provenance/freshness
+  comparison and reused it for publisher preflight and the actual publish path.
+- The immutable publish preflight now carries the exact Governance provenance,
+  content digest, expiry, and live-enabled identity admitted by the
+  Capability Admission Decision.
+- After durable mutation-start marker admission, the publish path freshly
+  resolves and reads the policy-fixed protected Governance source at the last
+  possible point immediately before `runner.run`. It requires exact
+  repository/ref/path, resolved commit, blob OID, content digest, expiry,
+  current validity, `live_enabled: true`, and identity equality with the
+  admitted Capability Decision and preflight.
+- Any second-read disablement, expiry, provenance/content substitution, or
+  preflight/Capability mismatch raises before npm. Because the durable marker
+  already exists, the workflow's always-running result derivation retains
+  incomplete/possibly-mutated and reobserve-and-replay semantics.
+- Handoff and slice LLD wording now distinguishes architecture-wide optional
+  repetition from the repetition elected and required by this slice.
+
+### Regression evidence
+
+- `test_publish_second_governance_read_blocks_before_runner[disabled]`
+- `test_publish_second_governance_read_blocks_before_runner[expired]`
+- `test_publish_second_governance_read_blocks_before_runner[resolved-commit-changed]`
+- `test_publish_second_governance_read_blocks_before_runner[blob-oid-changed]`
+- `test_publish_second_governance_read_blocks_before_runner[content-changed]`
+- `test_publish_unchanged_second_governance_read_runs_exactly_once`
+- `test_publish_api_requires_fresh_governance_reader_seam`
+- `test_after_marker_governance_failure_requires_reobservation`
+
+Each publish behavior test first executes a successful real preflight
+Governance observation, then exercises the second read through
+`publish_github_packages_action`. Exact event ordering proves marker admission,
+fixed-source protected/resolve/read, and only then the single runner call.
+
+### Test quality review
+
+- Pseudo-mutation review found no remaining requested gap: removing the second
+  read, moving it before marker admission, dropping live/expiry/commit/blob/
+  content comparisons, accepting a changed preflight, invoking npm on failure,
+  or invoking npm twice changes a concrete assertion.
+- Assertion review found no assertion-free, trivial-only, self-referential, or
+  tautological generated test. The tests combine exception, equality,
+  structural ordering, negative side-effect, exact-call-count, and final-state
+  assertions. The optional `test-analysis-extensions` helper was unavailable,
+  so Python/pytest conventions were reviewed directly.
+
+### Exact validation
+
+| Command scope | Result |
+|---|---|
+| Focused commit-8 Adapter/contract/history/live/workflow/CLI suite | **236 passed** |
+| Full Workflow Delivery v3 suite | **2192 passed** in 383.64 seconds |
+| Scoped Ruff check | Passed |
+| Scoped Ruff format check | **6 files already formatted** |
+| Pyrefly | **0 errors** |
+| actionlint on both commit-8 workflows | Passed |
+| `git diff --check` | Passed after this append |
+
+Blockers: **none**. No commit was created.
+
+<!-- END APPEND: workflow-delivery-v3-commit8-fourth-round-adjudicated-fix-2026-08-13 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit8-fifth-round-adjudicated-fix-2026-08-13 -->
+
+## Commit 8 fifth-round adjudicated remediation
+
+Status: **complete; no blockers**. This append records the single fifth-round
+non-blocking true positive.
+
+### Remediation
+
+- Added the narrow
+  `PublisherGovernanceRecheckRejectionError`, carrying an exact typed
+  `DeferredPublicationExecutionResult` only when a valid second Governance
+  observation is rejected after mutation-marker admission and before
+  `runner.run`.
+- Added the closed diagnostic
+  `governance-recheck-failed-before-runner`. Its terminal classification is
+  exactly `failed` plus `no-side-effect`, with no observation, response
+  identity, or Receipt.
+- The CLI catches only that adapter exception, persists the closed publication
+  execution state, records its digest, and returns nonzero. Generic
+  missing/unreadable/malformed/post-marker exceptions are not converted into
+  this proof.
+- Marker-present result formation admits `no-side-effect` only for the exact
+  Governance diagnostic and the existing proven `create-conflict` case.
+  Lookalikes and invalid outcome/disposition combinations fall back to
+  `incomplete` plus `possibly-mutated`.
+- Finalization maps the exact publisher Governance rejection to
+  `capability-blocked`, `failure`, and `new-attempt`. Ordinary failed
+  no-side-effect publication remains finalized and replayable.
+- Existing worktree edits were preserved. No history rewrite, reset, checkout,
+  clean, stash, commit, activation, or later-commit work was performed.
+
+### Regression evidence
+
+- `test_publish_second_governance_read_returns_terminal_no_side_effect`
+  covers disabled, expired, resolved-commit substitution, blob-OID
+  substitution, and content substitution; every case asserts the typed
+  exception/result and `runner.calls == 0`.
+- `test_publish_unchanged_second_governance_read_runs_exactly_once` retains the
+  exact marker/read/runner ordering and one runner call.
+- `test_publish_cli_persists_governance_terminal_state_before_nonzero` proves
+  state persistence before nonzero return and proves a generic `ValueError` is
+  not caught or persisted as the typed terminal condition.
+- `test_post_marker_no_side_effect_terminal_state_allowlist_forms_failed_bundle`
+  accepts only the exact Governance diagnostic and `create-conflict`.
+- `test_post_marker_governance_terminal_state_lookalikes_are_possibly_mutated`
+  rejects diagnostic and outcome/disposition lookalikes.
+- `test_start_marker_without_valid_terminal_state_additional_conservative_cases`
+  retains unreadable, malformed, and generic states as incomplete and
+  possibly mutated.
+- `test_publisher_governance_blocked_bundle_requires_new_attempt` and
+  `test_non_governance_failed_bundle_remains_replayable` pin the distinct final
+  Attempt semantics.
+
+### Exact validation
+
+| Command scope | Result |
+|---|---|
+| Focused fifth-round adapter/CLI/live regressions | **122 passed** |
+| Focused commit-8 Adapter/contract/history/live/workflow/CLI suite | **267 passed** |
+| Full Workflow Delivery v3 suite | **2211 passed** in 383.64 seconds |
+| Scoped Ruff check | Passed |
+| Scoped Ruff format check | **9 files already formatted** |
+| Pyrefly | **0 errors** |
+| actionlint on both commit-8 workflows | Passed |
+
+Blockers: **none**. No commit was created.
+
+<!-- END APPEND: workflow-delivery-v3-commit8-fifth-round-adjudicated-fix-2026-08-13 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit8-sixth-round-governance-rejection-fix-2026-08-13 -->
+
+## Commit 8 Sixth-Round Governance Rejection Adjudication
+
+**Result:** complete; the final adjudicated non-blocking true positive is
+fixed. No commit, activation, acceptance bootstrap, CODEOWNERS expansion,
+legacy retirement, or history rewrite was performed.
+
+### Production correction
+
+- Added `GovernanceRejectionError` as the definitive, authoritatively observed
+  Governance rejection base; `GovernanceFreshnessRejectionError` now derives
+  from it.
+- `observe_governance_source` classifies only exact authoritative unprotected
+  state, successfully fetched invalid canonical/schema/policy-binding/lifetime/
+  inventory/attestation content, and canonical content-digest inconsistency as
+  definitive rejection.
+- Local fixed-source/time configuration errors, malformed protection/commit/
+  blob/API identities, and transport/HTTP/permission/protocol/base64/API-JSON
+  failures remain generic unknown failures.
+- GitHub branch lookup now reads the authoritative exact-Boolean `protected`
+  field through the contents-readable branch endpoint, preserves HTTP status
+  identity, validates successful response shape, and propagates 403/404,
+  server, network, and malformed-response failures as unknown.
+- The publisher catches the complete `GovernanceRejectionError` family and
+  retains the exact failed/no-side-effect terminal result before returning
+  nonzero. Generic post-marker failures remain outside that terminal exception
+  and continue through the conservative incomplete/possibly-mutated fallback.
+
+### Requirement evidence
+
+| Requirement | Evidence |
+|---|---|
+| Definitive base taxonomy | `test_governance_freshness_rejection_derives_from_definitive_base` |
+| Authoritative unprotected rejection | `test_unprotected_ref_is_definitive_governance_rejection` |
+| Canonical/schema/semantic/digest rejection | `test_fetched_invalid_canonical_or_schema_content_is_definitive_rejection`, `test_fetched_invalid_governance_semantics_are_definitive_rejection`, `test_fetched_content_digest_inconsistency_is_definitive_rejection` |
+| Local/time/identity/transport remain unknown | `test_local_source_and_time_configuration_errors_are_not_governance_rejections`, `test_malformed_remote_identities_are_not_governance_rejections`, `test_transport_failures_are_not_governance_rejections` |
+| Protection false versus unknown | `test_ref_protection_false_is_authoritative`, `test_ref_protection_http_failures_are_unknown`, `test_ref_protection_transport_unknowns_raise`, `test_ref_protection_malformed_success_response_is_unknown` |
+| Successful protected response | `test_ref_protection_success_is_authoritative_true` |
+| Exact publisher terminal state and zero runner | `test_publish_second_governance_read_returns_terminal_no_side_effect`; CLI persistence assertion in `test_publish_cli_persists_governance_terminal_state_before_nonzero` |
+| Generic conservative fallback | `test_post_marker_governance_terminal_state_lookalikes_are_possibly_mutated`; generic CLI exception remains without a forged definitive terminal state |
+
+### Test-quality review
+
+`test-gap-analysis` and `assertion-quality` were invoked. Their requested
+`test-analysis-extensions` dependency was unavailable, so the focused
+Python/pytest review was completed inline.
+
+- Pseudo-mutations that collapse every REST failure to `False`, remove
+  `status_code` propagation, accept malformed successful protection payloads,
+  invert protected/unprotected outcomes, remove the definitive base
+  inheritance, wrap malformed remote identities as definitive, or let
+  definitive publisher rejection reach the runner are killed by direct
+  assertions.
+- The focused tests combine exact type/inheritance, equality, exception,
+  negative classification, call-order/zero-call side-effect, deep terminal
+  state, and transport-status assertions.
+- No assertion-free, trivial-only, tautological, high-risk survived, or
+  no-coverage case remains in the adjudicated scope.
+
+### Exact validation
+
+| Command | Result |
+|---|---|
+| Focused nine-file commit-8 pytest | **309 passed** in 9.31 seconds. |
+| Full Workflow Delivery v3 pytest | **2253 passed** in 384.23 seconds. |
+| Ruff check and format check over v3 source/tests | Passed; **59 files already formatted**. |
+| `uv run --python 3.13 pyrefly check` | Passed with **0 errors** (76 suppressed, 157 warnings not shown). |
+| `mise exec -- actionlint` on both commit-8 Buddy workflows | Passed. |
+| `git diff --check` | Recorded in the final diff gate after this append. |
+
+Blockers: none.
+
+<!-- END APPEND: workflow-delivery-v3-commit8-sixth-round-governance-rejection-fix-2026-08-13 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit8-final-closure-2026-08-14 -->
+
+# Workflow Delivery v3 Commit 8 Final Closure
+
+Status: **complete**. Live activation remains disabled.
+
+Commit 8 now provides the complete disabled first-slice live Buddy boundary:
+history-only Execution admission, exact live Attempt binding, GitHub Packages
+observation and create-only publication, immutable reviewer summary,
+credential-free exact-SHA Authorization formation, fresh Capability admission,
+durable mutation uncertainty, exact Action Result/Receipt/group bundles,
+platform termination handling, live finalization, and caller/reusable workflow
+permission and concurrency boundaries.
+
+## Review closure
+
+- Five independent GPT-5.6 Sol reviewers covered contracts/history,
+  Destination Adapter security, workflow/runtime permissions, authorization and
+  finalization, and holistic architecture/scope.
+- Every atomic finding was independently adjudicated TP or FP.
+- True positives were fixed through six remediation rounds.
+- All five original reviewers explicitly reported `RAW_FINDINGS: none`.
+
+## Final validation
+
+| Command | Result |
+|---|---|
+| Full v3 pytest | `2253 passed` |
+| Managed HK `v3-control-pytest` | `2253 passed` |
+| Root pytest | `4288 passed` |
+| `uv run --python 3.13 pyrefly check` | `0 errors` |
+| V3 Ruff check and format check | Passed; 68 files formatted |
+| actionlint on both Buddy workflows | Passed |
+| Managed HK `pkl-eval` and `pkl-format` | Passed |
+| `uv build --package three-workflow-delivery-v3` | Built sdist and wheel |
+| `dotnet build dirs.proj --no-incremental` | Passed; 0 warnings and 0 errors |
+| `pnpm run build` | Passed; generated smoke-package versions reset afterward |
+| `uv lock --check` | Passed |
+| `pnpm install --frozen-lockfile` | Passed |
+| `dotnet restore --locked-mode` | Passed |
+| `git diff --check` | Passed |
+
+## Requirement evidence
+
+| Requirement | Evidence |
+|---|---|
+| Strict live/history authority | Commit-8 contract and exact-attempt history suites |
+| Approval and Capability closure | Authorization, Governance freshness, no-op, and substitution scenarios |
+| Credential-safe GitHub Packages behavior | Authenticated redirect, pagination, observation, publication, race, and readback tests |
+| Durable mutation truthfulness | Preflight/start-marker/terminal-state and crash-after-mutation scenarios |
+| Exact Receipt and result bundles | Receipt transport/content cross-binding and exact action-set tests |
+| Least-privilege workflow topology | Buddy workflow DAG, permission-negative, Environment, artifact, and concurrency contracts |
+| Disabled activation and bounded scope | Workflow and holistic scope tests; protected Governance source remains absent |
+
+<!-- END APPEND: workflow-delivery-v3-commit8-final-closure-2026-08-14 -->

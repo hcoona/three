@@ -1,14 +1,17 @@
 """Command-line entry point for approved Workflow Delivery v3 work."""
 
-# ruff: noqa: EM101, EM102, TRY003, TRY301
+# ruff: noqa: EM101, EM102, I001, TRY003, TRY301
 
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
+import os
 import subprocess
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from time import time
 from typing import TYPE_CHECKING, cast
@@ -16,6 +19,18 @@ from urllib.error import URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
+from three_workflow_delivery_v3.adapters.github_packages import (
+    DeferredPublicationExecutionResult,
+    GitHubPackagesPublishPreflight,
+    GitHubPackagesHttpTransport,
+    MutationMayHaveStartedMarker,
+    PublisherGovernanceRecheckRejectionError,
+    PublishRunner,
+    form_mutation_may_have_started_marker,
+    observe_github_packages_projection,
+    preflight_github_packages_action,
+    publish_github_packages_action,
+)
 from three_workflow_delivery_v3.adapters.node import (
     BuildRequest,
     PackageTargetWitness,
@@ -68,12 +83,23 @@ from three_workflow_delivery_v3.records.ci import (
 from three_workflow_delivery_v3.records.release import (
     HYPOTHETICAL_ACTIONS_REPORT_PRODUCER,
     NPMJS_OBSERVER_PRODUCER,
+    PUBLISHER_GOVERNANCE_RECHECK_FAILED_BEFORE_RUNNER,
+    ActionResult,
+    AttemptOutcome,
+    AuthorizationRecord,
+    CapabilityAdmissionDecision,
+    CapabilityGroupResultBundle,
+    ExecutionHistoryAdmissionSnapshot,
     HypotheticalAction,
     ProjectionObservation,
+    PublicationSnapshot,
     QualificationDecision,
     QualificationEvidence,
     QualificationSnapshot,
+    Receipt,
+    ReceiptTransportReference,
     ReleaseArtifact,
+    ReleaseAttemptBinding,
     ReleaseIntent,
     SimulationBinding,
     SimulationOutcome,
@@ -84,19 +110,45 @@ from three_workflow_delivery_v3.records.release_transport import (
     ReleaseAdmissionBindings,
 )
 from three_workflow_delivery_v3.release import (
+    admit_live_capability,
+    bind_reviewer_artifact,
+    derive_buddy_execution_identity,
+    derive_release_attempt_binding,
     derive_simulation_binding,
+    discover_execution_history,
     execute_project_test,
     execute_release_build,
+    finalize_attempt_outcome,
     finalize_qualification,
     finalize_simulation,
+    form_authorization_record,
     form_incomplete_evidence,
     form_uploaded_release_artifact,
+    governance_observation_provenance,
     materialize_hypothetical_actions,
+    materialize_publication_snapshot,
+    materialize_reviewer_artifact,
+    materialize_reviewer_payload,
+    normalize_buddy_live_intent,
     normalize_official_simulation_intent,
     parse_governance_attestation,
+    plan_live_qualification,
     plan_official_simulation_qualification,
+    observe_governance_source,
+    ReviewerArtifact,
+    ReviewerPayload,
     qualify_release_artifact_contents,
     qualify_release_install_import,
+    require_fresh_governance_identity,
+)
+from three_workflow_delivery_v3.platform.github import GitHubRestClient
+from three_workflow_delivery_v3.release.eligibility import (
+    CONSUMER_POLICY_ID,
+    ConsumerPolicyResult,
+    LiveEligibilityContext,
+    SurfaceDigest,
+    evaluate_live_eligibility,
+    release_policy_digest,
 )
 from three_workflow_delivery_v3.release.simulation import (
     HypotheticalActionsReport,
@@ -165,6 +217,14 @@ _NODE_TEST_INPUTS = (
     "test/index.test.js",
 )
 _GITHUB_PUBLIC_API = "https://api.github.com"
+LIVE_OUTCOME_EXIT_STATUS = {
+    "success": 0,
+    "failure": 1,
+    "incomplete": 1,
+    "replayable-no-side-effect": 1,
+    "incomplete-possibly-mutated": 1,
+    "unknown-replayable-approval-contract": 1,
+}
 
 
 class _GitHubPullRequestLookupError(RuntimeError):
@@ -356,6 +416,29 @@ def _record_outputs(
     )
 
 
+class _SubprocessPublishRunner(PublishRunner):
+    """Exact process seam for the one permitted npm publish command."""
+
+    def run(
+        self,
+        argv: tuple[str, ...],
+        *,
+        env: dict[str, str],
+    ) -> dict[str, object]:
+        completed = subprocess.run(  # noqa: S603
+            argv,
+            check=False,
+            capture_output=True,
+            text=True,
+            env={**os.environ, **env},
+        )
+        return {
+            "exit_code": completed.returncode,
+            "stdout": completed.stdout,
+            "stderr": completed.stderr,
+        }
+
+
 def _verify_uploaded_payload(
     path: str,
     *,
@@ -378,9 +461,10 @@ def _release_bindings(
     arguments: argparse.Namespace,
     *,
     producer: str | None = None,
+    purpose: str = "release-simulation",
 ) -> ReleaseAdmissionBindings:
     return ReleaseAdmissionBindings(
-        purpose="release-simulation",
+        purpose=purpose,
         workflow_run_id=arguments.workflow_run_id,
         run_attempt=arguments.run_attempt,
         target=arguments.target,
@@ -394,12 +478,20 @@ def _load_release_record(  # noqa: PLR0913
     record_type: type[
         ReleaseIntent
         | SimulationBinding
+        | ReleaseAttemptBinding
         | QualificationSnapshot
         | ReleaseArtifact
         | QualificationEvidence
         | QualificationDecision
         | ProjectionObservation
         | HypotheticalAction
+        | PublicationSnapshot
+        | AuthorizationRecord
+        | CapabilityAdmissionDecision
+        | ActionResult
+        | Receipt
+        | CapabilityGroupResultBundle
+        | AttemptOutcome
         | SimulationOutcome
     ],
     expected_digest: str,
@@ -409,12 +501,20 @@ def _load_release_record(  # noqa: PLR0913
 ) -> (
     ReleaseIntent
     | SimulationBinding
+    | ReleaseAttemptBinding
     | QualificationSnapshot
     | ReleaseArtifact
     | QualificationEvidence
     | QualificationDecision
     | ProjectionObservation
     | HypotheticalAction
+    | PublicationSnapshot
+    | AuthorizationRecord
+    | CapabilityAdmissionDecision
+    | ActionResult
+    | Receipt
+    | CapabilityGroupResultBundle
+    | AttemptOutcome
     | SimulationOutcome
 ):
     content = _verify_uploaded_payload(
@@ -448,6 +548,21 @@ def _release_model_context(intent: ReleaseIntent) -> CompilationContext:
     )
 
 
+def _live_model_context(intent: ReleaseIntent) -> CompilationContext:
+    return CompilationContext(
+        request_id=intent.request_id,
+        purpose="live-release",
+        workflow_run_id=intent.workflow_run_id,
+        run_attempt=intent.run_attempt,
+        target=intent.target,
+        producer="compile-live-model",
+        control=f"workflow-delivery-v3:{intent.target}",
+        catalog_digest=catalog_digest(),
+        channel="buddy",
+        release_unit=intent.release_unit,
+    )
+
+
 def _load_release_intent(
     arguments: argparse.Namespace,
 ) -> ReleaseIntent:
@@ -458,6 +573,20 @@ def _load_release_intent(
         artifact_id=arguments.intent_artifact_id,
         artifact_digest=arguments.intent_artifact_digest,
         bindings=_release_bindings(arguments),
+    )
+    return cast("ReleaseIntent", record)
+
+
+def _load_live_intent(
+    arguments: argparse.Namespace,
+) -> ReleaseIntent:
+    record = _load_release_record(
+        arguments.intent,
+        record_type=ReleaseIntent,
+        expected_digest=arguments.intent_digest,
+        artifact_id=arguments.intent_artifact_id,
+        artifact_digest=arguments.intent_artifact_digest,
+        bindings=_release_bindings(arguments, purpose="live-release"),
     )
     return cast("ReleaseIntent", record)
 
@@ -476,6 +605,36 @@ def _load_release_model(
         expected_context=_release_model_context(intent),
         expected_digest=arguments.repository_model_digest,
     )
+
+
+def _load_live_model(
+    arguments: argparse.Namespace,
+    intent: ReleaseIntent,
+) -> AdmittedRepositoryModelSnapshot:
+    content = _verify_uploaded_payload(
+        arguments.repository_model,
+        artifact_id=arguments.repository_model_artifact_id,
+        artifact_digest=arguments.repository_model_artifact_digest,
+    )
+    return admit_repository_model_snapshot(
+        content,
+        expected_context=_live_model_context(intent),
+        expected_digest=arguments.repository_model_digest,
+    )
+
+
+def _load_attempt_binding(
+    arguments: argparse.Namespace,
+) -> ReleaseAttemptBinding:
+    record = _load_release_record(
+        arguments.attempt_binding,
+        record_type=ReleaseAttemptBinding,
+        expected_digest=arguments.attempt_binding_digest,
+        artifact_id=arguments.attempt_binding_artifact_id,
+        artifact_digest=arguments.attempt_binding_artifact_digest,
+        bindings=_release_bindings(arguments, purpose="live-release"),
+    )
+    return cast("ReleaseAttemptBinding", record)
 
 
 def _load_simulation_binding(
@@ -502,6 +661,20 @@ def _load_qualification_snapshot(
         artifact_id=arguments.qualification_snapshot_artifact_id,
         artifact_digest=arguments.qualification_snapshot_artifact_digest,
         bindings=_release_bindings(arguments),
+    )
+    return cast("QualificationSnapshot", record)
+
+
+def _load_live_qualification_snapshot(
+    arguments: argparse.Namespace,
+) -> QualificationSnapshot:
+    record = _load_release_record(
+        arguments.qualification_snapshot,
+        record_type=QualificationSnapshot,
+        expected_digest=arguments.qualification_snapshot_digest,
+        artifact_id=arguments.qualification_snapshot_artifact_id,
+        artifact_digest=arguments.qualification_snapshot_artifact_digest,
+        bindings=_release_bindings(arguments, purpose="live-release"),
     )
     return cast("QualificationSnapshot", record)
 
@@ -543,6 +716,24 @@ def _load_release_artifact_record(
     return cast("ReleaseArtifact", record)
 
 
+def _load_live_release_artifact_record(
+    arguments: argparse.Namespace,
+) -> ReleaseArtifact:
+    record = _load_release_record(
+        arguments.release_artifact,
+        record_type=ReleaseArtifact,
+        expected_digest=arguments.release_artifact_digest,
+        artifact_id=arguments.release_artifact_artifact_id,
+        artifact_digest=arguments.release_artifact_artifact_digest,
+        bindings=_release_bindings(
+            arguments,
+            producer="build-tarball",
+            purpose="live-release",
+        ),
+    )
+    return cast("ReleaseArtifact", record)
+
+
 def _load_qualification_decision(
     arguments: argparse.Namespace,
 ) -> QualificationDecision:
@@ -553,6 +744,20 @@ def _load_qualification_decision(
         artifact_id=arguments.qualification_decision_artifact_id,
         artifact_digest=arguments.qualification_decision_artifact_digest,
         bindings=_release_bindings(arguments),
+    )
+    return cast("QualificationDecision", record)
+
+
+def _load_live_qualification_decision(
+    arguments: argparse.Namespace,
+) -> QualificationDecision:
+    record = _load_release_record(
+        arguments.qualification_decision,
+        record_type=QualificationDecision,
+        expected_digest=arguments.qualification_decision_digest,
+        artifact_id=arguments.qualification_decision_artifact_id,
+        artifact_digest=arguments.qualification_decision_artifact_digest,
+        bindings=_release_bindings(arguments, purpose="live-release"),
     )
     return cast("QualificationDecision", record)
 
@@ -663,14 +868,22 @@ def _release_create_identity_command(arguments: argparse.Namespace) -> int:
 
 
 def _release_plan_qualification_command(arguments: argparse.Namespace) -> int:
-    intent = _load_release_intent(arguments)
-    model = _load_release_model(arguments, intent)
-    binding = _load_simulation_binding(arguments)
-    snapshot = plan_official_simulation_qualification(
-        intent,
-        binding,
-        model,
-    )
+    if hasattr(arguments, "attempt_binding"):
+        intent = _load_live_intent(arguments)
+        model = _load_live_model(arguments, intent)
+        binding = _load_attempt_binding(arguments)
+        snapshot = plan_live_qualification(intent, binding, model)
+        purpose = "live-release"
+    else:
+        intent = _load_release_intent(arguments)
+        model = _load_release_model(arguments, intent)
+        simulation_binding = _load_simulation_binding(arguments)
+        snapshot = plan_official_simulation_qualification(
+            intent,
+            simulation_binding,
+            model,
+        )
+        purpose = "release-simulation"
     source_date_epoch = int(
         _command_stdout(
             ("git", "show", "-s", "--format=%ct", snapshot.target),
@@ -710,7 +923,7 @@ def _release_plan_qualification_command(arguments: argparse.Namespace) -> int:
                 "tarball-artifact-name",
                 release_artifact_transport_name(
                     repository=snapshot.repository,
-                    purpose="release-simulation",
+                    purpose=purpose,
                     output=snapshot.outputs[0],
                     qualification_snapshot_digest=snapshot.snapshot_digest,
                     workflow_run_id=arguments.workflow_run_id,
@@ -1141,6 +1354,1281 @@ def _release_finalize_simulation_command(
         ),
     )
     return 0 if outcome.terminal_result == "success" else 1
+
+
+def _release_normalize_live_request_command(
+    arguments: argparse.Namespace,
+) -> int:
+    intent = normalize_buddy_live_intent(
+        repository=arguments.repository,
+        selected_ref=arguments.selected_ref,
+        target=arguments.target,
+        actor=arguments.actor,
+        workflow_run_id=arguments.workflow_run_id,
+        run_attempt=arguments.run_attempt,
+    )
+    _write_output(arguments.output, intent.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="intent",
+        digest=intent.intent_digest,
+        extra=(("request-id", intent.request_id),),
+    )
+    return 0
+
+
+def _release_compile_live_model_command(arguments: argparse.Namespace) -> int:
+    intent = _load_live_intent(arguments)
+    repo_root = Path(arguments.repo_root).resolve()
+    context = _live_model_context(intent)
+    manifest = first_slice_provider_manifest(
+        context,
+        provider_producer="discover-node",
+    )
+    _verify_uploaded_payload(
+        arguments.provider_result,
+        artifact_id=arguments.provider_artifact_id,
+        artifact_digest=arguments.provider_artifact_digest,
+    )
+    result = _load_node_provider_result(
+        arguments.provider_result,
+        expected_binding=provider_binding(manifest, "node-first-slice"),
+        expected_manifest_digest=manifest.manifest_digest,
+    )
+    request_transport_digest = _normalized_digest(
+        arguments.intent_artifact_digest
+    )
+    provider_transport_digest = _normalized_digest(
+        arguments.provider_artifact_digest
+    )
+    bundle = create_node_provider_fact_bundle(
+        result,
+        manifest_digest=manifest.manifest_digest,
+        manifest_entry_id=manifest.requests[0].entry_id,
+        request_artifact_id=arguments.intent_artifact_id,
+        request_artifact_digest=request_transport_digest,
+        transport_id=arguments.provider_artifact_id,
+        transport_digest=provider_transport_digest,
+    )
+    admitted = admit_node_provider_fact_bundle(
+        bundle,
+        context=context,
+        manifest=manifest,
+        admission=FactBundleAdmissionContext(
+            request_artifact_id=arguments.intent_artifact_id,
+            request_artifact_digest=request_transport_digest,
+            transport_id=arguments.provider_artifact_id,
+            transport_digest=provider_transport_digest,
+            bundle_digest=bundle.bundle_digest,
+        ),
+    )
+    snapshot = compile_repository_model(
+        repo_root,
+        context,
+        manifest,
+        [admitted],
+    )
+    admitted_model = admit_repository_model_snapshot(
+        canonicalize(snapshot.to_document()),
+        expected_context=context,
+        expected_digest=snapshot.snapshot_digest,
+    )
+    _write_output(arguments.output, admitted_model.snapshot.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="repository-model",
+        digest=admitted_model.canonical_digest,
+    )
+    return 0
+
+
+def _consumer_policy_from_file(  # noqa: C901
+    path: str,
+) -> ConsumerPolicyResult:
+    try:
+        document = json.loads(Path(path).read_bytes())
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("Consumer policy result is unreadable") from error
+    if type(document) is not dict:
+        raise TypeError("Consumer policy result must be an object")
+    result_marker = document.pop("result", None)
+    if result_marker not in {None, "clean", "consumer"}:
+        raise ValueError("Consumer policy result marker is invalid")
+    if document.get("schema") != "workflow-delivery/v3/consumer-policy-result":
+        raise ValueError("Consumer policy result has the wrong schema")
+
+    def surfaces(name: str) -> tuple[SurfaceDigest, ...]:
+        value = document.get(name)
+        if type(value) is not list:
+            raise TypeError(f"Consumer policy {name} must be an array")
+        parsed: list[SurfaceDigest] = []
+        for item in value:
+            if (
+                type(item) is not dict
+                or type(item.get("path")) is not str
+                or type(item.get("content-digest")) is not str
+            ):
+                raise TypeError(f"Consumer policy {name} entry is malformed")
+            parsed.append(
+                SurfaceDigest(
+                    path=cast("str", item["path"]),
+                    content_digest=cast("str", item["content-digest"]),
+                )
+            )
+        return tuple(parsed)
+
+    consumers = document.get("consumers")
+    if type(consumers) is not list or any(
+        type(item) is not str for item in consumers
+    ):
+        raise TypeError("Consumer policy consumers must be strings")
+    result = ConsumerPolicyResult(
+        policy_id=cast("str", document.get("policy-id")),
+        policy_digest=cast("str", document.get("policy-digest")),
+        target=cast("str", document.get("target")),
+        scanned_surfaces=surfaces("scanned-surfaces"),
+        admitted_exceptions=surfaces("admitted-exceptions"),
+        consumers=tuple(cast("list[str]", consumers)),
+    )
+    if result.policy_id != CONSUMER_POLICY_ID:
+        raise ValueError("Consumer policy result is not the permanent policy")
+    return result
+
+
+def _release_evaluate_live_eligibility_command(
+    arguments: argparse.Namespace,
+) -> int:
+    intent = _load_live_intent(arguments)
+    model = _load_live_model(arguments, intent)
+    _descriptor, _quality, policy = load_first_slice_authoring(
+        Path(arguments.repo_root).resolve(),
+        arguments.target,
+    )
+    consumer_policy = _consumer_policy_from_file(arguments.consumer_policy)
+    client = GitHubRestClient(
+        repository=policy.governance.repository,
+        token=arguments.github_token,
+    )
+    context = LiveEligibilityContext(
+        purpose="live-release",
+        request_id=intent.request_id,
+        workflow_run_id=arguments.workflow_run_id,
+        run_attempt=arguments.run_attempt,
+        selected_ref=intent.selected_ref,
+        target=arguments.target,
+        repository_model_digest=model.canonical_digest,
+        producer="evaluate-live-eligibility",
+        control=model.snapshot.context.control,
+        release_policy_digest=release_policy_digest(policy),
+        catalog_digest=catalog_digest(),
+    )
+    decision = evaluate_live_eligibility(
+        context,
+        model.snapshot,
+        consumer_policy,
+        policy,
+        client,
+        now=datetime.now(UTC),
+    )
+    _write_output(arguments.output, decision.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="live-eligibility",
+        digest=decision.decision_digest,
+        extra=(
+            (
+                "live-result",
+                "admitted" if decision.result == "pass" else "blocked",
+            ),
+        ),
+    )
+    return 0 if decision.result == "pass" else 1
+
+
+def _release_discover_history_command(arguments: argparse.Namespace) -> int:
+    intent = _load_live_intent(arguments)
+    execution = derive_buddy_execution_identity(intent)
+    client = GitHubRestClient(
+        repository=arguments.repository,
+        token=arguments.github_token,
+        workflow_path=arguments.workflow_path,
+    )
+    snapshot = discover_execution_history(
+        client=client,
+        execution=execution,
+        request_id=intent.request_id,
+        current_workflow_run_id=arguments.workflow_run_id,
+        current_run_attempt=arguments.run_attempt,
+    )
+    _write_output(arguments.output, snapshot.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="history-snapshot",
+        digest=snapshot.snapshot_digest,
+    )
+    return 0
+
+
+def _history_snapshot_from_file(
+    arguments: argparse.Namespace,
+) -> ExecutionHistoryAdmissionSnapshot:
+    content = _verify_uploaded_payload(
+        arguments.history_snapshot,
+        artifact_id=arguments.history_snapshot_artifact_id,
+        artifact_digest=arguments.history_snapshot_artifact_digest,
+    )
+    admitted = admit_release_record(
+        content,
+        expected_type=ExecutionHistoryAdmissionSnapshot,
+        expected_digest=arguments.history_snapshot_digest,
+        expected_bindings=_release_bindings(
+            arguments,
+            purpose="live-release",
+        ),
+    )
+    if type(admitted) is not ExecutionHistoryAdmissionSnapshot:
+        raise TypeError("History Snapshot admission returned the wrong type")
+    return admitted
+
+
+def _attestation_provenance_from_decision(
+    arguments: argparse.Namespace,
+) -> tuple[tuple[str, str], ...]:
+    content = _verify_uploaded_payload(
+        arguments.live_eligibility_decision,
+        artifact_id=arguments.live_eligibility_artifact_id,
+        artifact_digest=arguments.live_eligibility_artifact_digest,
+    )
+    expected = _normalized_digest(arguments.live_eligibility_payload_digest)
+    actual = f"sha256:{hashlib.sha256(content).hexdigest()}"
+    if actual != expected:
+        raise ValueError("Live Eligibility Decision payload digest mismatch")
+    decision = _object(
+        parse_canonical_json(content),
+        context="Live Eligibility Decision",
+    )
+    if decision.get("result") != "pass":
+        raise ValueError("Live Eligibility Decision is not passing")
+    governance = _object(
+        decision["governance"],
+        context="Live Eligibility Decision.governance",
+    )
+    return tuple(
+        sorted(
+            (
+                name,
+                _string(governance[name], context=f"governance.{name}"),
+            )
+            for name in (
+                "repository",
+                "ref",
+                "path",
+                "resolved-commit",
+                "blob-oid",
+                "content-sha256",
+            )
+        )
+    )
+
+
+def _release_bind_live_attempt_command(arguments: argparse.Namespace) -> int:
+    intent = _load_live_intent(arguments)
+    _load_live_model(arguments, intent)
+    history_snapshot = _history_snapshot_from_file(arguments)
+    binding = derive_release_attempt_binding(
+        intent=intent,
+        execution=derive_buddy_execution_identity(intent),
+        repository_model_digest=arguments.repository_model_digest,
+        live_eligibility_artifact_id=arguments.live_eligibility_artifact_id,
+        live_eligibility_artifact_digest=_normalized_digest(
+            arguments.live_eligibility_artifact_digest
+        ),
+        live_eligibility_payload_digest=_normalized_digest(
+            arguments.live_eligibility_payload_digest
+        ),
+        attestation_provenance=_attestation_provenance_from_decision(arguments),
+        history_snapshot=history_snapshot,
+        history_snapshot_artifact_id=arguments.history_snapshot_artifact_id,
+        history_snapshot_artifact_digest=_normalized_digest(
+            arguments.history_snapshot_artifact_digest
+        ),
+    )
+    _write_output(arguments.output, binding.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="attempt-binding",
+        digest=binding.binding_digest,
+        extra=(("attempt-run-attempt", binding.attempt.run_attempt),),
+    )
+    return 0
+
+
+def _release_admit_history_command(arguments: argparse.Namespace) -> int:
+    snapshot = _history_snapshot_from_file(arguments)
+    _write_output(arguments.output, snapshot.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="history-snapshot",
+        digest=snapshot.snapshot_digest,
+    )
+    return 0
+
+
+def _release_admit_live_eligibility_command(
+    arguments: argparse.Namespace,
+) -> int:
+    content = _verify_uploaded_payload(
+        arguments.live_eligibility_decision,
+        artifact_id=arguments.live_eligibility_artifact_id,
+        artifact_digest=arguments.live_eligibility_artifact_digest,
+    )
+    expected = _normalized_digest(arguments.live_eligibility_payload_digest)
+    actual = f"sha256:{hashlib.sha256(content).hexdigest()}"
+    if actual != expected:
+        raise ValueError("Live Eligibility Decision payload digest mismatch")
+    decision = _object(
+        parse_canonical_json(content),
+        context="Live Eligibility Decision",
+    )
+    if decision.get("result") != "pass":
+        raise ValueError("Live Eligibility Decision is not passing")
+    _write_output(arguments.output, decision)
+    _record_outputs(
+        arguments.github_output,
+        role="live-eligibility-decision",
+        digest=canonical_sha256(decision),
+    )
+    return 0
+
+
+def _release_admit_live_attempt_command(arguments: argparse.Namespace) -> int:
+    _load_attempt_binding(arguments)
+    return 0
+
+
+def _release_materialize_publication_command(
+    arguments: argparse.Namespace,
+) -> int:
+    snapshot = _load_live_qualification_snapshot(arguments)
+    decision = _load_live_qualification_decision(arguments)
+    artifact = _load_live_release_artifact_record(arguments)
+    observation = cast(
+        "ProjectionObservation",
+        _load_release_record(
+            arguments.observation,
+            record_type=ProjectionObservation,
+            expected_digest=arguments.observation_digest,
+            artifact_id=arguments.observation_artifact_id,
+            artifact_digest=arguments.observation_artifact_digest,
+            bindings=_release_bindings(
+                arguments,
+                producer="observe-github-packages",
+                purpose="live-release",
+            ),
+        ),
+    )
+    publication = materialize_publication_snapshot(
+        snapshot,
+        decision,
+        (observation,),
+        (artifact,),
+    )
+    snapshot_bytes = canonicalize(publication.to_document())
+    snapshot_digest = publication.snapshot_digest
+    markdown = (
+        "# Workflow Delivery v3 Buddy publication review\n\n"
+        f"- Publication Snapshot digest: `{snapshot_digest}`\n"
+        f"- Target: `{publication.attempt.execution.target}`\n"
+        f"- Workflow run: `{publication.attempt.workflow_run_id}`\n"
+        f"- Run attempt: `{publication.attempt.run_attempt}`\n"
+        f"- Materialized actions: `{len(publication.materialized_actions)}`\n"
+    ).encode()
+    reviewer = materialize_reviewer_payload(
+        snapshot_bytes=snapshot_bytes,
+        summary_bytes=markdown,
+    )
+    Path(arguments.output).write_bytes(snapshot_bytes)
+    Path(arguments.summary_output).write_bytes(reviewer.summary_bytes)
+    _write_output(arguments.formatter_input_output, reviewer.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="publication-snapshot",
+        digest=snapshot_digest,
+        extra=(
+            (
+                "publication-snapshot-payload-digest",
+                reviewer.snapshot_payload_digest,
+            ),
+            ("reviewer-digest", reviewer.summary_payload_digest),
+            (
+                "publish-required",
+                str(bool(publication.materialized_actions)).lower(),
+            ),
+            (
+                "resource-concurrency-key",
+                publication.materialized_actions[0].lock_group
+                if publication.materialized_actions
+                else "no-op",
+            ),
+        ),
+    )
+    return 0
+
+
+def _reviewer_payload_from_value(
+    document: dict[str, JsonValue],
+) -> ReviewerPayload:
+    if (
+        set(document)
+        != {
+            "schema",
+            "snapshot-base64",
+            "summary-base64",
+            "snapshot-payload-digest",
+            "summary-payload-digest",
+        }
+        or document["schema"] != "workflow-delivery/v3/reviewer-formatter-input"
+    ):
+        raise ValueError("reviewer formatter input has the wrong schema")
+    try:
+        snapshot_bytes = base64.b64decode(
+            _string(document["snapshot-base64"], context="snapshot-base64"),
+            validate=True,
+        )
+        summary_bytes = base64.b64decode(
+            _string(document["summary-base64"], context="summary-base64"),
+            validate=True,
+        )
+    except ValueError as error:
+        raise ValueError(
+            "reviewer formatter input base64 is malformed"
+        ) from error
+    payload = materialize_reviewer_payload(
+        snapshot_bytes=snapshot_bytes,
+        summary_bytes=summary_bytes,
+    )
+    if (
+        payload.snapshot_payload_digest != document["snapshot-payload-digest"]
+        or payload.summary_payload_digest != document["summary-payload-digest"]
+    ):
+        raise ValueError("reviewer formatter input digest mismatch")
+    return payload
+
+
+def _reviewer_payload_from_document(path: str) -> ReviewerPayload:
+    return _reviewer_payload_from_value(
+        _object(
+            parse_canonical_json(Path(path).read_bytes()),
+            context="reviewer formatter input",
+        )
+    )
+
+
+def _release_bind_reviewer_artifact_command(
+    arguments: argparse.Namespace,
+) -> int:
+    payload = _reviewer_payload_from_document(arguments.formatter_input)
+    if (
+        Path(arguments.publication_snapshot).read_bytes()
+        != payload.snapshot_bytes
+    ):
+        raise ValueError("reviewer Publication Snapshot bytes mismatch")
+    if Path(arguments.reviewer_summary).read_bytes() != payload.summary_bytes:
+        raise ValueError("reviewer Markdown bytes mismatch")
+    reviewer = bind_reviewer_artifact(
+        payload=payload,
+        artifact_id=arguments.reviewer_artifact_id,
+        upload_digest=_normalized_digest(arguments.reviewer_artifact_digest),
+        snapshot_payload_digest=arguments.snapshot_payload_digest,
+        summary_payload_digest=arguments.summary_payload_digest,
+    )
+    document = payload.to_document()
+    document.update(
+        {
+            "schema": "workflow-delivery/v3/bound-reviewer-formatter-input",
+            "reviewer-artifact-id": reviewer.artifact_id,
+            "reviewer-artifact-digest": reviewer.upload_digest,
+        }
+    )
+    _write_output(arguments.output, cast("dict[str, JsonValue]", document))
+    _record_outputs(
+        arguments.github_output,
+        role="bound-reviewer",
+        digest=canonical_sha256(cast("dict[str, JsonValue]", document)),
+    )
+    return 0
+
+
+def _bound_reviewer_artifact(
+    path: str,
+) -> tuple[ReviewerArtifact, ReviewerPayload]:
+    document = _object(
+        parse_canonical_json(Path(path).read_bytes()),
+        context="bound reviewer formatter input",
+    )
+    if (
+        document.get("schema")
+        != "workflow-delivery/v3/bound-reviewer-formatter-input"
+    ):
+        raise ValueError("bound reviewer formatter input has the wrong schema")
+    base = dict(document)
+    artifact_id = _integer(
+        base.pop("reviewer-artifact-id"),
+        context="reviewer-artifact-id",
+    )
+    artifact_digest = _string(
+        base.pop("reviewer-artifact-digest"),
+        context="reviewer-artifact-digest",
+    )
+    base["schema"] = "workflow-delivery/v3/reviewer-formatter-input"
+    payload = _reviewer_payload_from_value(cast("dict[str, JsonValue]", base))
+    return bind_reviewer_artifact(
+        payload=payload,
+        artifact_id=artifact_id,
+        upload_digest=_normalized_digest(artifact_digest),
+        snapshot_payload_digest=payload.snapshot_payload_digest,
+        summary_payload_digest=payload.summary_payload_digest,
+    ), payload
+
+
+def _load_publication_snapshot(
+    arguments: argparse.Namespace,
+) -> PublicationSnapshot:
+    return cast(
+        "PublicationSnapshot",
+        _load_release_record(
+            arguments.publication_snapshot,
+            record_type=PublicationSnapshot,
+            expected_digest=arguments.publication_snapshot_digest,
+            artifact_id=arguments.publication_snapshot_artifact_id,
+            artifact_digest=arguments.publication_snapshot_artifact_digest,
+            bindings=_release_bindings(arguments, purpose="live-release"),
+        ),
+    )
+
+
+def _load_authorization(arguments: argparse.Namespace) -> AuthorizationRecord:
+    return cast(
+        "AuthorizationRecord",
+        _load_release_record(
+            arguments.authorization,
+            record_type=AuthorizationRecord,
+            expected_digest=arguments.authorization_digest,
+            artifact_id=arguments.authorization_artifact_id,
+            artifact_digest=arguments.authorization_artifact_digest,
+            bindings=_release_bindings(
+                arguments,
+                producer="approval",
+                purpose="live-release",
+            ),
+        ),
+    )
+
+
+def _release_form_authorization_command(arguments: argparse.Namespace) -> int:
+    reviewer, payload = _bound_reviewer_artifact(arguments.formatter_input)
+    publication = cast(
+        "PublicationSnapshot",
+        admit_release_record(
+            payload.snapshot_bytes,
+            expected_type=PublicationSnapshot,
+            expected_digest=payload.snapshot_payload_digest,
+            expected_bindings=_release_bindings(
+                arguments,
+                purpose="live-release",
+            ),
+        ),
+    )
+    authorization = form_authorization_record(
+        approval_result=arguments.approval_result,
+        attempt=publication.attempt,
+        publication_snapshot=publication,
+        reviewer_artifact=reviewer,
+        approval_job_id=arguments.approval_job_id,
+        completed_at=arguments.completed_at,
+        control=arguments.control,
+    )
+    _write_output(arguments.output, authorization.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="authorization",
+        digest=authorization.authorization_digest,
+    )
+    return 0
+
+
+def _release_admit_capability_command(arguments: argparse.Namespace) -> int:
+    publication = _load_publication_snapshot(arguments)
+    authorization = _load_authorization(arguments)
+    reviewer = materialize_reviewer_artifact(
+        snapshot_bytes=Path(arguments.publication_snapshot).read_bytes(),
+        summary_bytes=Path(arguments.reviewer_summary).read_bytes(),
+        artifact_id=arguments.reviewer_summary_artifact_id,
+        upload_digest=_normalized_digest(
+            arguments.reviewer_summary_artifact_digest
+        ),
+    )
+    _descriptor, _quality, policy = load_first_slice_authoring(
+        Path(arguments.repo_root).resolve(),
+        arguments.target,
+    )
+    observed_at = datetime.now(UTC)
+    fresh = observe_governance_source(
+        policy.governance,
+        GitHubRestClient(
+            repository=policy.governance.repository,
+            token=arguments.github_token,
+        ),
+        now=observed_at,
+    )
+    fresh_provenance = governance_observation_provenance(fresh)
+    initial_provenance = _attestation_provenance_from_decision(arguments)
+    initial_content_sha256 = dict(initial_provenance)["content-sha256"]
+    decision = admit_live_capability(
+        attempt=publication.attempt,
+        authorization=authorization,
+        publication_snapshot=publication,
+        reviewer_artifact=reviewer,
+        live_eligibility_artifact_id=arguments.live_eligibility_artifact_id,
+        live_eligibility_artifact_digest=_normalized_digest(
+            arguments.live_eligibility_artifact_digest
+        ),
+        governance_provenance=fresh_provenance,
+        governance_content_sha256=fresh.content_sha256,
+        governance_expires_at=fresh.attestation.expires_at.strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        ),
+        governance_live_enabled=fresh.attestation.live_enabled,
+        governance_observed_at=observed_at,
+        expected_governance_provenance=initial_provenance,
+        expected_governance_content_sha256=initial_content_sha256,
+        control=arguments.control,
+    )
+    if not isinstance(decision, CapabilityAdmissionDecision):
+        raise TypeError("Capability admission returned scenario test result")
+    _write_output(arguments.output, decision.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="capability-decision",
+        digest=decision.decision_digest,
+        extra=(("capability-result", decision.result),),
+    )
+    return 0 if decision.authorizing else 1
+
+
+def _load_capability_decision(
+    arguments: argparse.Namespace,
+) -> CapabilityAdmissionDecision:
+    return cast(
+        "CapabilityAdmissionDecision",
+        _load_release_record(
+            arguments.capability_decision,
+            record_type=CapabilityAdmissionDecision,
+            expected_digest=arguments.capability_decision_digest,
+            artifact_id=arguments.capability_decision_artifact_id,
+            artifact_digest=arguments.capability_decision_artifact_digest,
+            bindings=_release_bindings(
+                arguments,
+                producer="approval-finalizer",
+                purpose="live-release",
+            ),
+        ),
+    )
+
+
+def _release_observe_github_packages_command(
+    arguments: argparse.Namespace,
+) -> int:
+    snapshot = _load_live_qualification_snapshot(arguments)
+    decision = _load_live_qualification_decision(arguments)
+    context = _load_release_adapter_context(arguments, snapshot)
+    artifact = _load_live_release_artifact_record(arguments)
+    observation = observe_github_packages_projection(
+        snapshot,
+        decision,
+        artifact,
+        artifact_expectation(snapshot, context, artifact),
+        token=arguments.github_token,
+        transport=GitHubPackagesHttpTransport(),
+    )
+    _write_output(arguments.output, observation.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="observation",
+        digest=observation.observation_digest,
+    )
+    if observation.value.classification in {"absent", "exact-satisfied"}:
+        return 0
+    return 1
+
+
+def _release_publish_github_packages_command(
+    arguments: argparse.Namespace,
+) -> int:
+    publication = _load_publication_snapshot(arguments)
+    capability = _load_capability_decision(arguments)
+    if not capability.authorizing:
+        raise ValueError("Capability Admission Decision is not authorizing")
+    preflight = _load_github_packages_preflight(
+        arguments.preflight,
+        expected_digest=arguments.preflight_digest,
+        publication=publication,
+    )
+    marker = _load_mutation_marker(
+        arguments.mutation_marker,
+        expected_digest=arguments.mutation_marker_digest,
+        artifact_id=arguments.mutation_marker_artifact_id,
+        artifact_digest=arguments.mutation_marker_artifact_digest,
+        publication=publication,
+        preflight=preflight,
+    )
+    snapshot = _load_live_qualification_snapshot(arguments)
+    decision = _load_live_qualification_decision(arguments)
+    context = _load_release_adapter_context(arguments, snapshot)
+    artifact = _load_live_release_artifact_record(arguments)
+    authorization = _load_authorization(arguments)
+    _descriptor, _quality, policy = load_first_slice_authoring(
+        Path(arguments.repo_root).resolve(),
+        arguments.target,
+    )
+    try:
+        result = publish_github_packages_action(
+            tarball=Path(arguments.tarball),
+            target=publication.attempt.execution.target,
+            token=arguments.github_token,
+            runner=_SubprocessPublishRunner(),
+            temp_root=Path(arguments.temp_root),
+            transport=GitHubPackagesHttpTransport(),
+            publication_snapshot=publication,
+            authorization=authorization,
+            capability_decision=capability,
+            action=publication.materialized_actions[0],
+            qualification_snapshot=snapshot,
+            qualification_decision=decision,
+            artifact=artifact,
+            expectation=artifact_expectation(snapshot, context, artifact),
+            preflight=preflight,
+            mutation_marker=marker,
+            governance_source=policy.governance,
+            governance_client=GitHubRestClient(
+                repository=policy.governance.repository,
+                token=arguments.github_token,
+            ),
+            governance_observed_at=lambda: datetime.now(UTC),
+            defer_receipt_binding=True,
+            checkout_root=Path(arguments.repo_root).resolve(),
+        )
+    except PublisherGovernanceRecheckRejectionError as error:
+        result = error.result
+    if not isinstance(result, DeferredPublicationExecutionResult):
+        message = "GitHub Packages publisher returned a bound result"
+        raise TypeError(message)
+    if result.receipt is not None:
+        _write_output(arguments.receipt_output, result.receipt.to_document())
+    state: dict[str, JsonValue] = {
+        "schema": "workflow-delivery/v3/deferred-publication-result",
+        "action-id": publication.materialized_actions[0].action_id,
+        "action-digest": publication.materialized_actions[0].action_digest,
+        "lock-group": publication.materialized_actions[0].lock_group,
+        "outcome": result.classification.outcome,
+        "mutation-disposition": result.classification.mutation_disposition,
+        "response-identity-digest": result.response_identity_digest,
+        "receipt-digest": (
+            None if result.receipt is None else result.receipt.receipt_digest
+        ),
+        "diagnostic-reference": result.diagnostic_reference,
+        "control": capability.control,
+    }
+    _write_output(arguments.execution_state_output, state)
+    _record_outputs(
+        arguments.github_output,
+        role="publication-execution",
+        digest=canonical_sha256(state),
+        extra=(
+            (
+                "receipt-digest",
+                "" if result.receipt is None else result.receipt.receipt_digest,
+            ),
+        ),
+    )
+    return 0 if result.classification.outcome == "success" else 1
+
+
+def _release_preflight_github_packages_command(
+    arguments: argparse.Namespace,
+) -> int:
+    publication = _load_publication_snapshot(arguments)
+    capability = _load_capability_decision(arguments)
+    if not capability.authorizing:
+        raise ValueError("Capability Admission Decision is not authorizing")
+    _descriptor, _quality, policy = load_first_slice_authoring(
+        Path(arguments.repo_root).resolve(),
+        arguments.target,
+    )
+    observed_at = datetime.now(UTC)
+    require_fresh_governance_identity(
+        policy.governance,
+        GitHubRestClient(
+            repository=policy.governance.repository,
+            token=arguments.github_token,
+        ),
+        now=observed_at,
+        expected_provenance=capability.governance_provenance,
+        expected_content_sha256=capability.governance_content_sha256,
+        expected_expires_at=capability.governance_expires_at,
+        expected_live_enabled=capability.governance_live_enabled,
+    )
+    if len(publication.materialized_actions) != 1:
+        raise ValueError("GitHub Packages publisher requires one action")
+    snapshot = _load_live_qualification_snapshot(arguments)
+    decision = _load_live_qualification_decision(arguments)
+    context = _load_release_adapter_context(arguments, snapshot)
+    artifact = _load_live_release_artifact_record(arguments)
+    authorization = _load_authorization(arguments)
+    preflight = preflight_github_packages_action(
+        tarball=Path(arguments.tarball),
+        target=publication.attempt.execution.target,
+        publication_snapshot=publication,
+        authorization=authorization,
+        capability_decision=capability,
+        action=publication.materialized_actions[0],
+        qualification_snapshot=snapshot,
+        qualification_decision=decision,
+        artifact=artifact,
+        expectation=artifact_expectation(snapshot, context, artifact),
+        governance_source=policy.governance,
+        governance_client=GitHubRestClient(
+            repository=policy.governance.repository,
+            token=arguments.github_token,
+        ),
+        governance_observed_at=observed_at,
+    )
+    _write_output(arguments.preflight_output, preflight.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="publication-preflight",
+        digest=preflight.preflight_digest,
+    )
+    return 0
+
+
+def _load_github_packages_preflight(
+    path: str,
+    *,
+    expected_digest: str,
+    publication: PublicationSnapshot,
+) -> GitHubPackagesPublishPreflight:
+    value = json.loads(Path(path).read_bytes())
+    action = publication.materialized_actions[0]
+    if (
+        type(value) is not dict
+        or value.get("schema")
+        != "workflow-delivery/v3/github-packages-publish-preflight"
+        or canonical_sha256(value) != expected_digest
+        or value.get("attempt") != publication.attempt.to_document()
+        or value.get("publication-snapshot-digest")
+        != publication.snapshot_digest
+        or value.get("action-digest") != action.action_digest
+        or value.get("lock-group") != action.lock_group
+    ):
+        raise ValueError(
+            "GitHub Packages preflight is malformed or substituted"
+        )
+    governance_value = value.get("governance-provenance")
+    if type(governance_value) is not list or any(
+        type(pair) is not list
+        or len(pair) != _PAIR_FIELD_COUNT
+        or any(type(item) is not str for item in pair)
+        for pair in governance_value
+    ):
+        raise ValueError(
+            "GitHub Packages preflight is malformed or substituted"
+        )
+    governance_provenance = tuple(
+        (cast("str", pair[0]), cast("str", pair[1]))
+        for pair in governance_value
+    )
+    preflight = GitHubPackagesPublishPreflight(
+        attempt=publication.attempt,
+        publication_snapshot_digest=publication.snapshot_digest,
+        action_digest=action.action_digest,
+        lock_group=action.lock_group,
+        tarball_sha256=cast("str", value.get("tarball-sha256")),
+        tarball_sha512=cast("str", value.get("tarball-sha512")),
+        npm_configuration_digest=cast(
+            "str",
+            value.get("npm-configuration-digest"),
+        ),
+        governance_provenance=governance_provenance,
+        governance_content_sha256=cast(
+            "str",
+            value.get("governance-content-sha256"),
+        ),
+        governance_expires_at=cast(
+            "str",
+            value.get("governance-expires-at"),
+        ),
+        governance_live_enabled=cast(
+            "bool",
+            value.get("governance-live-enabled"),
+        ),
+    )
+    if preflight.to_document() != value:
+        raise ValueError("GitHub Packages preflight is not canonical")
+    return preflight
+
+
+def _release_mark_github_packages_mutation_command(
+    arguments: argparse.Namespace,
+) -> int:
+    publication = _load_publication_snapshot(arguments)
+    preflight = _load_github_packages_preflight(
+        arguments.preflight,
+        expected_digest=arguments.preflight_digest,
+        publication=publication,
+    )
+    marker = form_mutation_may_have_started_marker(preflight=preflight)
+    _write_output(arguments.marker_output, marker.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="mutation-may-have-started",
+        digest=marker.marker_digest,
+    )
+    return 0
+
+
+def _load_mutation_marker(  # noqa: PLR0913
+    path: str,
+    *,
+    expected_digest: str,
+    artifact_id: int,
+    artifact_digest: str,
+    publication: PublicationSnapshot,
+    preflight: GitHubPackagesPublishPreflight,
+) -> MutationMayHaveStartedMarker:
+    if artifact_id <= 0 or not artifact_digest.startswith("sha256:"):
+        raise ValueError("mutation-start marker transport is malformed")
+    value = json.loads(Path(path).read_bytes())
+    action = publication.materialized_actions[0]
+    if (
+        type(value) is not dict
+        or value.get("schema")
+        != ("workflow-delivery/v3/github-packages-mutation-may-have-started")
+        or canonical_sha256(value) != expected_digest
+        or value.get("attempt") != publication.attempt.to_document()
+        or value.get("publication-snapshot-digest")
+        != publication.snapshot_digest
+        or value.get("action-digest") != action.action_digest
+        or value.get("lock-group") != action.lock_group
+        or value.get("preflight-digest") != preflight.preflight_digest
+    ):
+        raise ValueError("mutation-start marker is malformed or substituted")
+    return MutationMayHaveStartedMarker(
+        attempt=publication.attempt,
+        publication_snapshot_digest=publication.snapshot_digest,
+        action_digest=action.action_digest,
+        lock_group=action.lock_group,
+        preflight_digest=preflight.preflight_digest,
+    )
+
+
+def _release_form_github_packages_result_command(
+    arguments: argparse.Namespace,
+) -> int:
+    publication = _load_publication_snapshot(arguments)
+    action = publication.materialized_actions[0]
+    marker_present = arguments.mutation_marker_artifact_id is not None
+    state_value: dict[str, JsonValue] | None = None
+    if arguments.execution_state is not None:
+        try:
+            loaded_state = json.loads(
+                Path(arguments.execution_state).read_bytes()
+            )
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            loaded_state = None
+        if (
+            type(loaded_state) is dict
+            and loaded_state.get("schema")
+            == "workflow-delivery/v3/deferred-publication-result"
+            and loaded_state.get("action-id") == action.action_id
+            and loaded_state.get("action-digest") == action.action_digest
+            and loaded_state.get("lock-group") == action.lock_group
+        ):
+            state_value = cast("dict[str, JsonValue]", loaded_state)
+    if state_value is not None and (
+        state_value.get("outcome") not in {"success", "failed", "incomplete"}
+        or state_value.get("mutation-disposition")
+        not in {
+            "created",
+            "exact-race-accepted",
+            "no-side-effect",
+            "possibly-mutated",
+        }
+        or type(state_value.get("control")) is not str
+        or (
+            state_value.get("response-identity-digest") is not None
+            and type(state_value.get("response-identity-digest")) is not str
+        )
+        or (
+            state_value.get("receipt-digest") is not None
+            and type(state_value.get("receipt-digest")) is not str
+        )
+        or (
+            marker_present
+            and (
+                (
+                    state_value.get("mutation-disposition") == "no-side-effect"
+                    and (
+                        state_value.get("outcome") != "failed"
+                        or state_value.get("diagnostic-reference")
+                        not in {
+                            "create-conflict",
+                            (PUBLISHER_GOVERNANCE_RECHECK_FAILED_BEFORE_RUNNER),
+                        }
+                    )
+                )
+                or (
+                    state_value.get("mutation-disposition")
+                    in {"created", "exact-race-accepted"}
+                    and state_value.get("outcome") != "success"
+                )
+                or (
+                    state_value.get("mutation-disposition")
+                    == "possibly-mutated"
+                    and state_value.get("outcome") != "incomplete"
+                )
+            )
+        )
+    ):
+        state_value = None
+    if state_value is None:
+        state_value = {
+            "schema": "workflow-delivery/v3/deferred-publication-result",
+            "action-id": action.action_id,
+            "action-digest": action.action_digest,
+            "lock-group": action.lock_group,
+            "outcome": "incomplete" if marker_present else "failed",
+            "mutation-disposition": (
+                "possibly-mutated" if marker_present else "no-side-effect"
+            ),
+            "response-identity-digest": None,
+            "receipt-digest": None,
+            "diagnostic-reference": (
+                "terminal-state-missing-or-malformed-after-start"
+                if marker_present
+                else "preflight-failed-before-mutation-start"
+            ),
+            "control": f"workflow-delivery-v3:{arguments.target}",
+        }
+    elif arguments.publish_step_outcome == "success" and (
+        state_value.get("outcome") != "success"
+    ):
+        raise ValueError("Deferred publication step outcome mismatch")
+    receipt = None
+    if arguments.receipt is not None:
+        receipt = cast(
+            "Receipt",
+            _load_release_record(
+                arguments.receipt,
+                record_type=Receipt,
+                expected_digest=arguments.receipt_digest,
+                artifact_id=arguments.receipt_artifact_id,
+                artifact_digest=arguments.receipt_artifact_digest,
+                bindings=_release_bindings(
+                    arguments,
+                    producer="publish-github-packages",
+                    purpose="live-release",
+                ),
+            ),
+        )
+    state_receipt_digest = cast("str | None", state_value["receipt-digest"])
+    if receipt is None and state_receipt_digest is not None and marker_present:
+        state_value = {
+            **state_value,
+            "outcome": "incomplete",
+            "mutation-disposition": "possibly-mutated",
+            "response-identity-digest": None,
+            "receipt-digest": None,
+            "diagnostic-reference": "receipt-persistence-failed-after-start",
+        }
+        state_receipt_digest = None
+    if (receipt is None) != (state_receipt_digest is None) or (
+        receipt is not None
+        and (
+            receipt.receipt_digest != state_receipt_digest
+            or receipt.action_id != action.action_id
+        )
+    ):
+        raise ValueError("Deferred publication Receipt binding mismatch")
+    result = ActionResult(
+        attempt=publication.attempt,
+        publication_snapshot_digest=publication.snapshot_digest,
+        action_id=action.action_id,
+        action_digest=action.action_digest,
+        lock_group=action.lock_group,
+        outcome=cast("str", state_value["outcome"]),
+        mutation_disposition=cast(
+            "str",
+            state_value["mutation-disposition"],
+        ),
+        response_identity_digest=cast(
+            "str | None",
+            state_value["response-identity-digest"],
+        ),
+        receipt_artifact_id=(
+            None if receipt is None else arguments.receipt_artifact_id
+        ),
+        receipt_artifact_name=(
+            None
+            if receipt is None
+            else Path(_string(arguments.receipt, context="receipt")).name
+        ),
+        receipt_artifact_digest=(
+            None if receipt is None else arguments.receipt_artifact_digest
+        ),
+        receipt_payload_digest=(
+            None if receipt is None else receipt.receipt_digest
+        ),
+        receipt_digest=(None if receipt is None else receipt.receipt_digest),
+        diagnostic_reference=cast(
+            "str | None",
+            state_value["diagnostic-reference"],
+        ),
+        producer="publish-github-packages",
+        control=cast("str", state_value["control"]),
+        workflow_run_id=publication.attempt.workflow_run_id,
+        run_attempt=publication.attempt.run_attempt,
+    )
+    bundle = CapabilityGroupResultBundle(
+        attempt=publication.attempt,
+        publication_snapshot_digest=publication.snapshot_digest,
+        capability_group=action.capability_group,
+        planned_action_ids=(action.action_id,),
+        action_results=(result,),
+        completion_state=(
+            "complete" if result.outcome == "success" else result.outcome
+        ),
+        producer="publish-github-packages",
+        control=result.control,
+        workflow_run_id=publication.attempt.workflow_run_id,
+        run_attempt=publication.attempt.run_attempt,
+    )
+    _write_output(arguments.result_output, result.to_document())
+    _write_output(arguments.bundle_output, bundle.to_document())
+    _record_outputs(
+        arguments.github_output,
+        role="capability-group-bundle",
+        digest=bundle.bundle_digest,
+        extra=(
+            ("action-result-digest", result.result_digest),
+            (
+                "receipt-digest",
+                "" if receipt is None else receipt.receipt_digest,
+            ),
+        ),
+    )
+    return 0 if result.outcome == "success" else 1
+
+
+def _release_finalize_live_command(arguments: argparse.Namespace) -> int:
+    publication = _load_publication_snapshot(arguments)
+    decision = _load_live_qualification_decision(arguments)
+    authorization = (
+        None
+        if arguments.authorization is None
+        else _load_authorization(arguments)
+    )
+    capability_decision = None
+    if arguments.capability_decision is not None:
+        capability_decision = _load_capability_decision(arguments)
+    group_bundle = None
+    if arguments.capability_group_bundle is not None:
+        group_bundle = cast(
+            "CapabilityGroupResultBundle",
+            _load_release_record(
+                arguments.capability_group_bundle,
+                record_type=CapabilityGroupResultBundle,
+                expected_digest=arguments.capability_group_bundle_digest,
+                artifact_id=arguments.capability_group_bundle_artifact_id,
+                artifact_digest=arguments.capability_group_bundle_artifact_digest,
+                bindings=_release_bindings(
+                    arguments,
+                    producer="publish-github-packages",
+                    purpose="live-release",
+                ),
+            ),
+        )
+    receipt = None
+    if arguments.receipt is not None:
+        receipt = cast(
+            "Receipt",
+            _load_release_record(
+                arguments.receipt,
+                record_type=Receipt,
+                expected_digest=arguments.receipt_digest,
+                artifact_id=arguments.receipt_artifact_id,
+                artifact_digest=arguments.receipt_artifact_digest,
+                bindings=_release_bindings(
+                    arguments,
+                    producer="publish-github-packages",
+                    purpose="live-release",
+                ),
+            ),
+        )
+    outcome = finalize_attempt_outcome(
+        attempt=publication.attempt,
+        qualification_decision=decision,
+        publication_snapshot=publication,
+        authorization=authorization,
+        capability_decisions=()
+        if capability_decision is None
+        else (capability_decision,),
+        group_bundles=() if group_bundle is None else (group_bundle,),
+        receipts=() if receipt is None else (receipt,),
+        receipt_transport_references=()
+        if receipt is None
+        else (
+            ReceiptTransportReference(
+                action_id=receipt.action_id,
+                artifact_id=arguments.receipt_artifact_id,
+                artifact_name=Path(
+                    _string(arguments.receipt, context="receipt")
+                ).name,
+                upload_digest=_normalized_digest(
+                    arguments.receipt_artifact_digest
+                ),
+                payload_digest=receipt.receipt_digest,
+            ),
+        ),
+        platform_terminated=arguments.platform_terminated,
+        capability_may_have_started=arguments.capability_may_have_started,
+    )
+    _write_output(arguments.outcome_output, outcome.to_document())
+    summary = (
+        "# Workflow Delivery v3 live finalization\n\n"
+        f"- Result: `{outcome.result}`\n"
+        f"- Terminal phase: `{outcome.terminal_phase}`\n"
+        f"- Next action: `{outcome.next_action}`\n"
+    )
+    Path(arguments.summary_output).write_text(
+        summary,
+        encoding="utf-8",
+        newline="\n",
+    )
+    if arguments.github_step_summary is not None:
+        with Path(arguments.github_step_summary).open(
+            "a",
+            encoding="utf-8",
+            newline="\n",
+        ) as github_summary:
+            github_summary.write(summary)
+    _record_outputs(
+        arguments.github_output,
+        role="attempt-outcome",
+        digest=outcome.outcome_digest,
+        extra=(("terminal-result", outcome.result),),
+    )
+    return LIVE_OUTCOME_EXIT_STATUS[outcome.result]
 
 
 def _object(value: JsonValue, *, context: str) -> dict[str, JsonValue]:
@@ -2527,6 +4015,372 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     finalize_simulation.set_defaults(
         handler=_release_finalize_simulation_command
     )
+
+    normalize_live = release_commands.add_parser("normalize-live-request")
+    normalize_live.add_argument("--repository", required=True)
+    normalize_live.add_argument("--selected-ref", required=True)
+    normalize_live.add_argument("--actor", required=True)
+    _add_current_release_arguments(normalize_live)
+    normalize_live.add_argument("--output", required=True)
+    normalize_live.add_argument("--github-output")
+    normalize_live.set_defaults(handler=_release_normalize_live_request_command)
+
+    compile_live = release_commands.add_parser("compile-live-model")
+    compile_live.add_argument("--repo-root", default=".")
+    _add_current_release_arguments(compile_live)
+    _add_uploaded_record_arguments(compile_live, name="intent")
+    compile_live.add_argument("--provider-result", required=True)
+    compile_live.add_argument("--provider-artifact-id", required=True, type=int)
+    compile_live.add_argument("--provider-artifact-digest", required=True)
+    compile_live.add_argument("--output", required=True)
+    compile_live.add_argument("--github-output")
+    compile_live.set_defaults(handler=_release_compile_live_model_command)
+
+    evaluate_live = release_commands.add_parser("evaluate-live-eligibility")
+    evaluate_live.add_argument("--repo-root", default=".")
+    evaluate_live.add_argument("--github-token", required=True)
+    evaluate_live.add_argument("--consumer-policy", required=True)
+    _add_current_release_arguments(evaluate_live)
+    _add_uploaded_record_arguments(evaluate_live, name="intent")
+    _add_uploaded_record_arguments(evaluate_live, name="repository_model")
+    evaluate_live.add_argument("--output", required=True)
+    evaluate_live.add_argument("--github-output")
+    evaluate_live.set_defaults(
+        handler=_release_evaluate_live_eligibility_command
+    )
+
+    live_eligibility = release_commands.add_parser("admit-live-eligibility")
+    _add_current_release_arguments(live_eligibility)
+    live_eligibility.add_argument(
+        "--live-eligibility-decision",
+        required=True,
+    )
+    live_eligibility.add_argument(
+        "--live-eligibility-artifact-id",
+        required=True,
+        type=int,
+    )
+    live_eligibility.add_argument(
+        "--live-eligibility-artifact-digest",
+        required=True,
+    )
+    live_eligibility.add_argument(
+        "--live-eligibility-payload-digest",
+        required=True,
+    )
+    live_eligibility.add_argument("--output", required=True)
+    live_eligibility.add_argument("--github-output")
+    live_eligibility.set_defaults(
+        handler=_release_admit_live_eligibility_command
+    )
+
+    discover_history = release_commands.add_parser("discover-execution-history")
+    discover_history.add_argument("--repository", required=True)
+    discover_history.add_argument("--workflow-path", required=True)
+    discover_history.add_argument("--github-token", required=True)
+    _add_current_release_arguments(discover_history)
+    _add_uploaded_record_arguments(discover_history, name="intent")
+    discover_history.add_argument("--output", required=True)
+    discover_history.add_argument("--github-output")
+    discover_history.set_defaults(handler=_release_discover_history_command)
+
+    admit_history = release_commands.add_parser("admit-history")
+    _add_current_release_arguments(admit_history)
+    admit_history.add_argument("--history-snapshot", required=True)
+    admit_history.add_argument("--history-snapshot-digest", required=True)
+    admit_history.add_argument(
+        "--history-snapshot-artifact-id",
+        required=True,
+        type=int,
+    )
+    admit_history.add_argument(
+        "--history-snapshot-artifact-digest",
+        required=True,
+    )
+    admit_history.add_argument("--output", required=True)
+    admit_history.add_argument("--github-output")
+    admit_history.set_defaults(handler=_release_admit_history_command)
+
+    bind_attempt = release_commands.add_parser("bind-live-attempt")
+    _add_current_release_arguments(bind_attempt)
+    _add_uploaded_record_arguments(bind_attempt, name="intent")
+    _add_uploaded_record_arguments(bind_attempt, name="repository_model")
+    bind_attempt.add_argument(
+        "--live-eligibility-decision",
+        required=True,
+    )
+    bind_attempt.add_argument(
+        "--live-eligibility-artifact-id",
+        required=True,
+        type=int,
+    )
+    bind_attempt.add_argument(
+        "--live-eligibility-artifact-digest",
+        required=True,
+    )
+    bind_attempt.add_argument(
+        "--live-eligibility-payload-digest",
+        required=True,
+    )
+    bind_attempt.add_argument("--history-snapshot", required=True)
+    bind_attempt.add_argument("--history-snapshot-digest", required=True)
+    bind_attempt.add_argument(
+        "--history-snapshot-artifact-id",
+        required=True,
+        type=int,
+    )
+    bind_attempt.add_argument(
+        "--history-snapshot-artifact-digest",
+        required=True,
+    )
+    bind_attempt.add_argument("--output", required=True)
+    bind_attempt.add_argument("--github-output")
+    bind_attempt.set_defaults(handler=_release_bind_live_attempt_command)
+
+    admit_attempt = release_commands.add_parser("admit-live-attempt")
+    _add_current_release_arguments(admit_attempt)
+    _add_uploaded_record_arguments(admit_attempt, name="attempt_binding")
+    admit_attempt.set_defaults(handler=_release_admit_live_attempt_command)
+
+    plan_live = release_commands.add_parser("plan-live-qualification")
+    plan_live.add_argument("--repo-root", default=".")
+    _add_current_release_arguments(plan_live)
+    _add_uploaded_record_arguments(plan_live, name="intent")
+    _add_uploaded_record_arguments(plan_live, name="repository_model")
+    _add_uploaded_record_arguments(plan_live, name="attempt_binding")
+    plan_live.add_argument("--output", required=True)
+    plan_live.add_argument("--adapter-context-output", required=True)
+    plan_live.add_argument("--github-output")
+    plan_live.set_defaults(handler=_release_plan_qualification_command)
+
+    observe_github = release_commands.add_parser("observe-github-packages")
+    _add_current_release_arguments(observe_github)
+    _add_snapshot_arguments(observe_github)
+    _add_decision_arguments(observe_github)
+    _add_adapter_context_arguments(observe_github)
+    _add_release_artifact_arguments(observe_github)
+    observe_github.add_argument("--github-token", required=True)
+    observe_github.add_argument("--output", required=True)
+    observe_github.add_argument("--github-output")
+    observe_github.set_defaults(
+        handler=_release_observe_github_packages_command
+    )
+
+    materialize_publication = release_commands.add_parser(
+        "materialize-publication"
+    )
+    _add_current_release_arguments(materialize_publication)
+    _add_snapshot_arguments(materialize_publication)
+    _add_decision_arguments(materialize_publication)
+    _add_release_artifact_arguments(materialize_publication)
+    _add_uploaded_record_arguments(materialize_publication, name="observation")
+    materialize_publication.add_argument("--output", required=True)
+    materialize_publication.add_argument("--summary-output", required=True)
+    materialize_publication.add_argument(
+        "--formatter-input-output",
+        required=True,
+    )
+    materialize_publication.add_argument("--github-output")
+    materialize_publication.set_defaults(
+        handler=_release_materialize_publication_command
+    )
+
+    bind_reviewer = release_commands.add_parser("bind-reviewer-artifact")
+    bind_reviewer.add_argument("--formatter-input", required=True)
+    bind_reviewer.add_argument("--publication-snapshot", required=True)
+    bind_reviewer.add_argument("--reviewer-summary", required=True)
+    bind_reviewer.add_argument(
+        "--reviewer-artifact-id", required=True, type=int
+    )
+    bind_reviewer.add_argument("--reviewer-artifact-digest", required=True)
+    bind_reviewer.add_argument("--snapshot-payload-digest", required=True)
+    bind_reviewer.add_argument("--summary-payload-digest", required=True)
+    bind_reviewer.add_argument("--output", required=True)
+    bind_reviewer.add_argument("--github-output")
+    bind_reviewer.set_defaults(handler=_release_bind_reviewer_artifact_command)
+
+    authorization = release_commands.add_parser("form-authorization")
+    _add_current_release_arguments(authorization)
+    authorization.add_argument("--formatter-input", required=True)
+    authorization.add_argument("--reviewer-summary-artifact-id", type=int)
+    authorization.add_argument("--reviewer-summary-artifact-digest")
+    authorization.add_argument(
+        "--approval-result",
+        default="success",
+        choices=("success", "deployment-review-denied"),
+    )
+    authorization.add_argument("--approval-job-id", required=True, type=int)
+    authorization.add_argument("--completed-at", required=True)
+    authorization.add_argument("--control", required=True)
+    authorization.add_argument("--output", required=True)
+    authorization.add_argument("--github-output")
+    authorization.set_defaults(handler=_release_form_authorization_command)
+
+    capability = release_commands.add_parser("admit-capability")
+    capability.add_argument("--repo-root", default=".")
+    capability.add_argument("--github-token", required=True)
+    _add_current_release_arguments(capability)
+    _add_uploaded_record_arguments(capability, name="authorization")
+    _add_uploaded_record_arguments(capability, name="publication_snapshot")
+    capability.add_argument("--reviewer-summary", required=True)
+    capability.add_argument(
+        "--reviewer-summary-artifact-id",
+        required=True,
+        type=int,
+    )
+    capability.add_argument(
+        "--reviewer-summary-artifact-digest",
+        required=True,
+    )
+    capability.add_argument("--live-eligibility-decision", required=True)
+    capability.add_argument(
+        "--live-eligibility-artifact-id",
+        required=True,
+        type=int,
+    )
+    capability.add_argument(
+        "--live-eligibility-artifact-digest",
+        required=True,
+    )
+    capability.add_argument(
+        "--live-eligibility-payload-digest",
+        required=True,
+    )
+    capability.add_argument("--control", required=True)
+    capability.add_argument("--output", required=True)
+    capability.add_argument("--github-output")
+    capability.set_defaults(handler=_release_admit_capability_command)
+
+    publish_github = release_commands.add_parser("publish-github-packages")
+    _add_current_release_arguments(publish_github)
+    publish_github.add_argument("--repo-root", default=".")
+    _add_snapshot_arguments(publish_github)
+    _add_decision_arguments(publish_github)
+    _add_adapter_context_arguments(publish_github)
+    _add_release_artifact_arguments(publish_github)
+    _add_uploaded_record_arguments(publish_github, name="publication_snapshot")
+    _add_uploaded_record_arguments(publish_github, name="authorization")
+    _add_uploaded_record_arguments(publish_github, name="capability_decision")
+    publish_github.add_argument("--tarball", required=True)
+    publish_github.add_argument("--github-token", required=True)
+    publish_github.add_argument("--preflight", required=True)
+    publish_github.add_argument("--preflight-digest", required=True)
+    _add_uploaded_record_arguments(
+        publish_github,
+        name="mutation_marker",
+    )
+    publish_github.add_argument("--temp-root", required=True)
+    publish_github.add_argument("--receipt-output", required=True)
+    publish_github.add_argument("--execution-state-output", required=True)
+    publish_github.add_argument("--github-output")
+    publish_github.set_defaults(
+        handler=_release_publish_github_packages_command
+    )
+
+    preflight_github = release_commands.add_parser("preflight-github-packages")
+    _add_current_release_arguments(preflight_github)
+    preflight_github.add_argument("--repo-root", default=".")
+    _add_snapshot_arguments(preflight_github)
+    _add_decision_arguments(preflight_github)
+    _add_adapter_context_arguments(preflight_github)
+    _add_release_artifact_arguments(preflight_github)
+    _add_uploaded_record_arguments(
+        preflight_github,
+        name="publication_snapshot",
+    )
+    _add_uploaded_record_arguments(preflight_github, name="authorization")
+    _add_uploaded_record_arguments(
+        preflight_github,
+        name="capability_decision",
+    )
+    preflight_github.add_argument("--tarball", required=True)
+    preflight_github.add_argument("--github-token", required=True)
+    preflight_github.add_argument("--preflight-output", required=True)
+    preflight_github.add_argument("--github-output")
+    preflight_github.set_defaults(
+        handler=_release_preflight_github_packages_command
+    )
+
+    mark_mutation = release_commands.add_parser(
+        "mark-github-packages-mutation-start"
+    )
+    _add_current_release_arguments(mark_mutation)
+    _add_uploaded_record_arguments(
+        mark_mutation,
+        name="publication_snapshot",
+    )
+    mark_mutation.add_argument("--preflight", required=True)
+    mark_mutation.add_argument("--preflight-digest", required=True)
+    mark_mutation.add_argument("--marker-output", required=True)
+    mark_mutation.add_argument("--github-output")
+    mark_mutation.set_defaults(
+        handler=_release_mark_github_packages_mutation_command
+    )
+
+    form_github_result = release_commands.add_parser(
+        "form-github-packages-result"
+    )
+    _add_current_release_arguments(form_github_result)
+    _add_uploaded_record_arguments(
+        form_github_result,
+        name="publication_snapshot",
+    )
+    _add_uploaded_record_arguments(
+        form_github_result,
+        name="receipt",
+        required=False,
+    )
+    form_github_result.add_argument("--execution-state")
+    form_github_result.add_argument("--mutation-marker")
+    form_github_result.add_argument(
+        "--mutation-marker-artifact-id",
+        type=int,
+    )
+    form_github_result.add_argument("--publish-step-outcome", required=True)
+    form_github_result.add_argument("--result-output", required=True)
+    form_github_result.add_argument("--bundle-output", required=True)
+    form_github_result.add_argument("--github-output")
+    form_github_result.set_defaults(
+        handler=_release_form_github_packages_result_command
+    )
+
+    finalize_live = release_commands.add_parser("finalize-live")
+    _add_current_release_arguments(finalize_live)
+    _add_decision_arguments(finalize_live)
+    _add_uploaded_record_arguments(finalize_live, name="publication_snapshot")
+    _add_uploaded_record_arguments(
+        finalize_live,
+        name="authorization",
+        required=False,
+    )
+    _add_uploaded_record_arguments(
+        finalize_live,
+        name="capability_decision",
+        required=False,
+    )
+    _add_uploaded_record_arguments(
+        finalize_live,
+        name="capability_group_bundle",
+        required=False,
+    )
+    _add_uploaded_record_arguments(
+        finalize_live,
+        name="receipt",
+        required=False,
+    )
+    finalize_live.add_argument(
+        "--platform-terminated",
+        action="store_true",
+    )
+    finalize_live.add_argument(
+        "--capability-may-have-started",
+        action="store_true",
+    )
+    finalize_live.add_argument("--outcome-output", required=True)
+    finalize_live.add_argument("--summary-output", required=True)
+    finalize_live.add_argument("--github-step-summary")
+    finalize_live.add_argument("--github-output")
+    finalize_live.set_defaults(handler=_release_finalize_live_command)
 
     ci = commands.add_parser("ci")
     ci_commands = ci.add_subparsers(dest="ci_command", required=True)
