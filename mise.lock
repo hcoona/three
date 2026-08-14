@@ -114,49 +114,49 @@ url_api = "https://api.github.com/repos/cli/cli/releases/assets/371025645"
 provenance = "github-attestations"
 
 [[tools."github:alibaba/open-code-review"]]
-version = "1.9.0"
+version = "1.9.1"
 backend = "github:alibaba/open-code-review"
 
 [tools."github:alibaba/open-code-review"."platforms.linux-arm64"]
-checksum = "sha256:278fecf6ea819ab56ff7ce0c23fd1a56684c8e32609693a4acdf78885c90ccb2"
-url = "https://github.com/alibaba/open-code-review/releases/download/v1.9.0/opencodereview-linux-arm64"
-url_api = "https://api.github.com/repos/alibaba/open-code-review/releases/assets/508537886"
+checksum = "sha256:ad949f5dcff8b6645c5c3d47d05b5812959bd10505c44ffe41c7d559a8fecaa3"
+url = "https://github.com/alibaba/open-code-review/releases/download/v1.9.1/opencodereview-linux-arm64"
+url_api = "https://api.github.com/repos/alibaba/open-code-review/releases/assets/509703234"
 provenance = "github-attestations"
 
 [tools."github:alibaba/open-code-review"."platforms.linux-arm64-musl"]
-checksum = "sha256:278fecf6ea819ab56ff7ce0c23fd1a56684c8e32609693a4acdf78885c90ccb2"
-url = "https://github.com/alibaba/open-code-review/releases/download/v1.9.0/opencodereview-linux-arm64"
-url_api = "https://api.github.com/repos/alibaba/open-code-review/releases/assets/508537886"
+checksum = "sha256:ad949f5dcff8b6645c5c3d47d05b5812959bd10505c44ffe41c7d559a8fecaa3"
+url = "https://github.com/alibaba/open-code-review/releases/download/v1.9.1/opencodereview-linux-arm64"
+url_api = "https://api.github.com/repos/alibaba/open-code-review/releases/assets/509703234"
 provenance = "github-attestations"
 
 [tools."github:alibaba/open-code-review"."platforms.linux-x64"]
-checksum = "sha256:4164682c1a6f1992f1f7271d7e1d42a98c2de37866483e4c1218bcc4f397f6e3"
-url = "https://github.com/alibaba/open-code-review/releases/download/v1.9.0/opencodereview-linux-amd64"
-url_api = "https://api.github.com/repos/alibaba/open-code-review/releases/assets/508537890"
+checksum = "sha256:9cb546e4f29389e3b7d768becc34a18cf2aaa6635610459fa65a7ea32a6c8bec"
+url = "https://github.com/alibaba/open-code-review/releases/download/v1.9.1/opencodereview-linux-amd64"
+url_api = "https://api.github.com/repos/alibaba/open-code-review/releases/assets/509703239"
 provenance = "github-attestations"
 
 [tools."github:alibaba/open-code-review"."platforms.linux-x64-musl"]
-checksum = "sha256:4164682c1a6f1992f1f7271d7e1d42a98c2de37866483e4c1218bcc4f397f6e3"
-url = "https://github.com/alibaba/open-code-review/releases/download/v1.9.0/opencodereview-linux-amd64"
-url_api = "https://api.github.com/repos/alibaba/open-code-review/releases/assets/508537890"
+checksum = "sha256:9cb546e4f29389e3b7d768becc34a18cf2aaa6635610459fa65a7ea32a6c8bec"
+url = "https://github.com/alibaba/open-code-review/releases/download/v1.9.1/opencodereview-linux-amd64"
+url_api = "https://api.github.com/repos/alibaba/open-code-review/releases/assets/509703239"
 provenance = "github-attestations"
 
 [tools."github:alibaba/open-code-review"."platforms.macos-arm64"]
-checksum = "sha256:7ca90c42b4ece4b7aa1f89890fc185e51e83b4548436cf4e8ef324e32eeaf56c"
-url = "https://github.com/alibaba/open-code-review/releases/download/v1.9.0/opencodereview-darwin-arm64"
-url_api = "https://api.github.com/repos/alibaba/open-code-review/releases/assets/508537888"
+checksum = "sha256:5cffe45ef006b80dcbe95e6711807261850108d6390ce708cdac0e72cb261d1d"
+url = "https://github.com/alibaba/open-code-review/releases/download/v1.9.1/opencodereview-darwin-arm64"
+url_api = "https://api.github.com/repos/alibaba/open-code-review/releases/assets/509703235"
 provenance = "github-attestations"
 
 [tools."github:alibaba/open-code-review"."platforms.macos-x64"]
-checksum = "sha256:9cf93a98b85ceb7aa1d66e50aec2ea52a90f245748bfc1c23dce30e69bf0dc8e"
-url = "https://github.com/alibaba/open-code-review/releases/download/v1.9.0/opencodereview-darwin-amd64"
-url_api = "https://api.github.com/repos/alibaba/open-code-review/releases/assets/508537889"
+checksum = "sha256:8ecf3e7c42ccd45e4f9c5eef6ccb84df9b718af734e122c221e6d1854616cac0"
+url = "https://github.com/alibaba/open-code-review/releases/download/v1.9.1/opencodereview-darwin-amd64"
+url_api = "https://api.github.com/repos/alibaba/open-code-review/releases/assets/509703236"
 provenance = "github-attestations"
 
 [tools."github:alibaba/open-code-review"."platforms.windows-x64"]
-checksum = "sha256:a0c2467edb34a017ad4aeeba828601dbee131e298214990dfd55eb6e216abb45"
-url = "https://github.com/alibaba/open-code-review/releases/download/v1.9.0/opencodereview-windows-amd64.exe"
-url_api = "https://api.github.com/repos/alibaba/open-code-review/releases/assets/508537884"
+checksum = "sha256:911cd8ba3780218728feb211f2712a364fce47b184b8282a1ceabdde0690d3eb"
+url = "https://github.com/alibaba/open-code-review/releases/download/v1.9.1/opencodereview-windows-amd64.exe"
+url_api = "https://api.github.com/repos/alibaba/open-code-review/releases/assets/509703238"
 provenance = "github-attestations"
 provenance_verified = true
 
