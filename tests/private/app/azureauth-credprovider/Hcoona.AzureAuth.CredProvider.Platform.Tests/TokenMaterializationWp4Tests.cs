@@ -178,6 +178,49 @@ public sealed class TokenMaterializationWp4Tests
         );
     }
 
+    [Fact]
+    public async Task SpsExchangeAcceptsCurrentAzureDevOpsMetadataEnvelope()
+    {
+        var handler = CreateTwoStepHandler(
+            $$"""
+            {
+              "clientId":"00000000-0000-0000-0000-000000000000",
+              "accessId":"00000000-0000-0000-0000-000000000000",
+              "authorizationId":"00000000-0000-0000-0000-000000000000",
+              "hostAuthorizationId":"00000000-0000-0000-0000-000000000000",
+              "userId":"00000000-0000-0000-0000-000000000000",
+              "validFrom":"{{Now:O}}",
+              "validTo":"{{Now.AddMinutes(30):O}}",
+              "displayName":"Azure DevOps Artifacts Credential Provider",
+              "scope":"vso.packaging_write vso.drop_write",
+              "targetAccounts":[],
+              "token":"session-secret",
+              "alternateToken":null,
+              "isValid":true,
+              "isPublic":false,
+              "publicData":null,
+              "source":null,
+              "claims":null,
+              "crossCompanyCorrelatingId":null
+            }
+            """
+        );
+        using var exchange = new AzureDevOpsSpsTokenExchange(
+            new HttpClient(handler),
+            new FixedTimeProvider(Now)
+        );
+
+        AsyncTokenExchangeResult result = await exchange.ExchangeAsync(
+            CreateRequest(CredentialEcosystem.NuGet, CredentialKind.NuGetPluginCredential),
+            CreateAcquiredToken(),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(AsyncTokenExchangeStatus.Success, result.Status);
+        Assert.Equal("session-secret", result.Token!.Value);
+        Assert.Equal(Now.AddMinutes(30), result.ExpiresAt);
+    }
+
     [Theory]
     [InlineData("http://vssps.dev.azure.com/org/", "SpsEndpointRejected")]
     [InlineData("https://evil.example/org/", "SpsEndpointRejected")]

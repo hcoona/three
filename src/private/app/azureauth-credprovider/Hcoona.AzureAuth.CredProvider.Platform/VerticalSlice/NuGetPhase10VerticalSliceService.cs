@@ -752,15 +752,16 @@ public sealed class NuGetPhase10VerticalSliceService
                     canShowDialog: false
                 )
             );
-            CredentialRequestV2 deviceCodeRequest = NuGetPluginAdapter.CreateCredentialRequest(
+            CredentialRequestV2 dialogUnavailableRequest =
+                NuGetPluginAdapter.CreateCredentialRequest(
                 parseResult.Resource,
                 new GetAuthenticationCredentialsRequest(
                     OrganizationScopedSource,
                     isRetry: false,
                     isNonInteractive: false,
                     canShowDialog: false
-                )
-            );
+                    )
+                );
             CredentialRequestV2 browserRequest = NuGetPluginAdapter.CreateCredentialRequest(
                 parseResult.Resource,
                 new GetAuthenticationCredentialsRequest(
@@ -773,9 +774,10 @@ public sealed class NuGetPhase10VerticalSliceService
 
             return silentRequest.InteractivePolicy == InteractivePolicy.Never
                 && silentRequest.AcquisitionMode == AcquisitionMode.SilentOnly
-                && deviceCodeRequest.InteractivePolicy == InteractivePolicy.HostToolAllows
-                && deviceCodeRequest.AcquisitionMode == AcquisitionMode.InteractionAllowed
-                && deviceCodeRequest.IdentityFlow == IdentityFlow.DeviceCode
+                && dialogUnavailableRequest.InteractivePolicy
+                    == InteractivePolicy.HostToolAllows
+                && dialogUnavailableRequest.AcquisitionMode == AcquisitionMode.InteractionAllowed
+                && dialogUnavailableRequest.IdentityFlow == IdentityFlow.InteractiveBrowser
                 && browserRequest.InteractivePolicy == InteractivePolicy.HostToolAllows
                 && browserRequest.AcquisitionMode == AcquisitionMode.InteractionAllowed
                 && browserRequest.IdentityFlow == IdentityFlow.InteractiveBrowser;
