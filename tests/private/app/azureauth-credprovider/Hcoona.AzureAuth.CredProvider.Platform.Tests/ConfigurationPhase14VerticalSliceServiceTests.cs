@@ -3382,9 +3382,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         );
         string home = windows ? @"C:\Users\test" : "/home/test";
         string workspace = windows ? @"C:\workspace" : "/workspace";
-        string expectedTarget = windows
-            ? @"C:\Users\Test\.yarnrc.yml"
-            : "/home/test/.yarnrc.yml";
+        string expectedTarget = $"{home}{(windows ? '\\' : '/')}.yarnrc.yml";
         string selectorPath = windows
             ? @"C:\workspace\config\team.yarnrc.yml"
             : "/workspace/config/team.yarnrc.yml";
@@ -3393,7 +3391,8 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
             environmentVariableReader: name =>
                 name switch
                 {
-                    "HOME" => home,
+                    "USERPROFILE" when windows => home,
+                    "HOME" when !windows => home,
                     "YARN_RC_FILENAME" => "config/team.yarnrc.yml",
                     _ => null,
                 },
