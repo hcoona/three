@@ -13,7 +13,7 @@ If it conflicts with the
 ## Current Checkpoint
 
 - Requirements, HLD, and all five MLDs are confirmed.
-- Implementation commits 1 through 8 of the approved first-slice LLD are
+- Implementation commits 1 through 9 of the approved first-slice LLD are
   delivered in the working tree. Commit 3 includes target-tree-bound
   Release Unit/Quality authoring validation, duplicate Release Unit rejection,
   exact-target Repository Model compilation, static catalogs, Node/NBGV
@@ -45,8 +45,14 @@ If it conflicts with the
   GitHub Packages publication/result/Receipt finalization, and the disabled
   Buddy caller/reusable workflows. The protected Governance document remains
   absent, so normal live execution fails closed before Attempt creation.
-  Acceptance bootstrap, CODEOWNERS expansion, legacy workflow retirement,
-  and activation remain later work.
+  Acceptance bootstrap, legacy workflow retirement, and activation remain
+  later work.
+- Commit 9 adds final-match `@hcoona` CODEOWNERS coverage for every governed v3
+  package, engineering, descriptor, Governance, HK, root Python, workflow,
+  action, and directly invoked script surface. Contracts evaluate the real
+  ordered CODEOWNERS rules, future descriptor/workflow/action layouts,
+  missing and later-overridden rules, arbitrary-ref Buddy separation, and
+  real HK add/modify/delete/rename trigger behavior.
 - The first vertical slice is `hcoona-release-smoke-npm`.
 - The slice has one Node project, one package variant, and one npm artifact.
 - It covers CI Qualification, live Buddy publication to GitHub Packages, and
@@ -256,9 +262,10 @@ If it conflicts with the
   state blocks; no repository variable, PAT, App, service, ledger, OIDC, or
   additional token permission is added. Permanent root HK policy remains the
   repository-wide dependency gate.
-- The next LLD dependency boundary is commit 9: complete CODEOWNERS
-  final-match coverage and tests for every governed v3 surface. Do not
-  implement it, acceptance, legacy retirement, activation, or later scopes
+- The next LLD dependency boundary is commit 10: add the temporary protected
+  acceptance bootstrap, disabled protected attestation, run-attempt guards,
+  terminal Evidence, reconciliation classification, and Governance inspection
+  tooling. Do not implement it, legacy retirement, activation, or later scopes
   without a separate explicit user task.
 - Implementation must preserve the approved commit boundaries and keep live
   activation disabled until acceptance and the separate activation approval.

@@ -1990,3 +1990,385 @@ planning-turn edit is this appended section in `.testagent/plan.md`.
 - [ ] All Phase 4 commands pass.
 - [ ] No workflow, documentation, status, or unrelated tracked file changes.
 <!-- END APPEND: workflow-delivery-v3-commit8-fifth-round-governance-terminal-state-2026-08-13 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit9-codeowners-tests-2026-08-14 -->
+# Workflow Delivery v3 Commit 9 CODEOWNERS Test Plan
+
+## Strategy
+
+Single bounded test module:
+`src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit9_codeowners.py`.
+Implement phases sequentially and do not edit production.
+
+## Phase 1: Ordered CODEOWNERS evaluator and inventory
+
+- Parse non-comment CODEOWNERS rules in order.
+- Match the repository's anchored patterns with GitHub-compatible `*`, `**`,
+  and basename behavior needed by the governed rules.
+- Resolve ownership from the final matching rule.
+- Discover tracked governed files by category, plus the exact intentionally
+  absent Governance path.
+- Assert every requested category is represented where actual files exist.
+
+Planned test:
+
+- `test_every_governed_v3_surface_resolves_finally_to_hcoona`
+
+Checklist mapping: 1, 2, 7.
+
+## Phase 2: Descriptor discovery and negative mutation contracts
+
+- Add synthesized nested release-unit and quality descriptor paths to the
+  discovered inventory and prove both are checked.
+- Remove a required rule from a complete synthetic CODEOWNERS document and
+  assert evaluation reports the uncovered path.
+- Append a later overriding rule and assert final-match evaluation reports the
+  wrong final owner.
+
+Planned tests:
+
+- `test_new_descriptor_paths_are_discovered_and_owned`
+- `test_missing_required_pattern_fails_coverage`
+- `test_later_overriding_pattern_fails_final_match_coverage`
+
+Checklist mapping: 3, 4, 5, 7.
+
+## Phase 3: Buddy runtime decoupling
+
+- Exercise arbitrary valid branch and tag refs through the existing runtime
+  selected-ref validator.
+- Assert the eligibility module has no CODEOWNERS input or lookup coupling.
+
+Planned test:
+
+- `test_arbitrary_ref_buddy_runtime_eligibility_is_not_codeowners_gated`
+  (parameterized for branch and tag refs)
+
+Checklist mapping: 6, 7.
+
+## Phase 4: Validation and review
+
+- Run the focused module only.
+- Invoke `test-gap-analysis` and `assertion-quality`; fix actionable findings.
+- Append results to `.testagent/status.md`.
+- Run `git diff --check` and inspect `git diff --name-only` against the hard
+  edit boundary.
+
+Checklist mapping: 8.
+
+## Expected result before production commit-9 patterns
+
+Synthetic negative/final-match, descriptor, and runtime-decoupling tests should
+pass. The repository-wide positive test should fail on the delivered
+pre-commit-9 CODEOWNERS file, providing the intended test-first evidence
+without violating the production edit boundary.
+<!-- END APPEND: workflow-delivery-v3-commit9-codeowners-tests-2026-08-14 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit9-independently-adjudicated-tp-fixes-2026-08-14 -->
+# Workflow Delivery v3 Commit 9 Independently Adjudicated TP Fix Plan
+
+## Overview
+
+Use a targeted, two-file test-only strategy because the bounded suite is
+currently green and the adjudicated gaps are confined to ownership-oracle
+integrity and real-HK/public-Buddy cross-validation. Edit only:
+
+- `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit9_codeowners.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py`
+
+`.github/CODEOWNERS`, `hk.pkl`, production/runtime code, workflows, activation,
+acceptance, legacy files, and all other tests remain unchanged. The earlier
+expected-red statement is historical and must not guide implementation.
+
+## Commands
+
+- **Focused tests**:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit9_codeowners.py src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py`
+- **Ruff check**:
+  `uv run ruff check src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit9_codeowners.py src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py`
+- **Ruff format check**:
+  `uv run ruff format --check src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit9_codeowners.py src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py`
+- **Boundary checks**: `git diff --check` and `git diff --name-only`
+- **Required reviews**: invoke `test-gap-analysis` and `assertion-quality`
+  against the final two-file diff, address only findings within those files,
+  then rerun all gates above.
+
+## Phase Summary
+
+| Phase | Focus | Files | Est. Tests |
+|---|---|---:|---:|
+| 1 | Actual CODEOWNERS oracle and mutation strength | 1 | 5-7 |
+| 2 | Real HK history cross-validation | 1 | 7-9 |
+| 3 | Public CLI and actual Buddy workflow contract | 1 | 2-3 |
+| 4 | Focused validation and review | 2 | Gates |
+
+---
+
+## Phase 1: Actual CODEOWNERS Final-Match Contract
+
+### File to Test
+
+- **Source oracle**: `.github/CODEOWNERS` (read-only)
+- **Test File**:
+  `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit9_codeowners.py`
+- **Test Module**: `test_commit9_codeowners`
+
+### Helper and Inventory Changes
+
+1. Retain `CodeOwnersRule`, `_parse_rules`, `_pattern_expression`,
+   `_final_owners`, `_coverage_failures`, `_workspace_paths`,
+   `_descriptor_paths`, and `_governed_categories`.
+2. Remove `COMPLETE_REQUIRED_RULES` and `_complete_rules`. Parse the actual
+   `.github/CODEOWNERS` once into an ordered module fixture/constant and pass
+   only those rules, or explicit mutations of those rules, to the evaluator.
+3. Add one reusable `_governed_surface_inventory()` that combines:
+   - actual tracked v3 workflows, approved actions, direct scripts,
+     descriptors, package/control/catalog/tests, and
+     `eng/workflow-delivery/v3/**`;
+   - `.github/CODEOWNERS`, the exact absent Governance path, `hk.pkl`,
+     `src/private/lib/hk/**`, `eng/scripts/hk_exec.py`,
+     `eng/scripts/workflow_delivery_v3_hk.py`, `pyproject.toml`, and `uv.lock`;
+   - shallow and nested future instances of both descriptor basenames;
+   - a future v3 workflow, one future path in each approved action layout, and
+     a future direct `eng/scripts/workflow_delivery_v3*.py` path.
+4. Expose that inventory for `test_hk_trigger.py` rather than maintaining a
+   second surface list.
+5. Make the success predicate exact:
+   `_final_owners(rules, path) == ("@hcoona",)`. Earlier matches, no match,
+   replacement owners, and `("@hcoona", "@co-owner")` all fail.
+
+### Planned Tests
+
+1. `test_actual_codeowners_final_owner_is_exact_for_every_current_and_future_v3_surface`
+   - Parse the real file in source order and evaluate every shared inventory
+     path, including the absent Governance document.
+   - Assert each governed category is nonempty.
+   - Assert `_coverage_failures(...) == ()` and, per path, the exact final
+     tuple is `("@hcoona",)`.
+   - Explicitly assert the synthetic shallow/nested descriptor, workflow,
+     both action-layout, and direct-script paths are present so accidental
+     inventory omission cannot make the coverage assertion vacuous.
+
+2. `test_removing_each_actual_governing_rule_exposes_its_exact_surface`
+   - Parameterize the actual final rules governing workflow, both action
+     layouts, direct script, both descriptor basenames, package/control,
+     `eng/workflow-delivery/v3`, Governance, HK/support/helper, root Python
+     inputs, and CODEOWNERS self-ownership.
+   - For each case remove that rule from the actual parsed sequence, evaluate
+     its named current/future exemplar, and assert the exact resulting owner
+     tuple (normally `()`, or the explicitly recorded earlier-rule tuple).
+   - Assert `_coverage_failures` reports exactly that `(path, final_owners)`
+     failure. Do not reconstruct or append any expected production rule.
+
+3. `test_later_replacement_owner_override_fails_exact_final_match`
+   - Append an exact-path `@replacement-owner` rule to the actual rules.
+   - Assert final owners equal `("@replacement-owner",)` and the sole coverage
+     failure identifies that path and tuple.
+
+4. `test_later_hcoona_coowner_override_fails_exact_final_match`
+   - Append an exact-path `@hcoona @co-owner` rule.
+   - Assert final owners equal `("@hcoona", "@co-owner")`, not success, and
+     assert the exact single failure.
+
+5. Retain parser-focused ordering/glob tests only where they validate syntax
+   used by the real rules; rewrite any test that relies on
+   `_complete_rules()` to mutate the actual parsed rule sequence instead.
+
+### Success Criteria
+
+- [ ] Actual ordered CODEOWNERS is the sole positive ownership oracle.
+- [ ] Every current, absent-required, and synthetic future surface ends with
+      exactly one owner, `@hcoona`.
+- [ ] Removing broad or v3-specific rules and appending later overrides fails
+      with the exact affected path and final tuple.
+
+---
+
+## Phase 2: Real HK Cross-Validation Across Git History
+
+### File to Test
+
+- **Source controls**: `hk.pkl` and
+  `eng/scripts/workflow_delivery_v3_hk.py` (read-only)
+- **Test File**:
+  `src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py`
+- **Test Module**: `test_hk_trigger`
+
+### Helper Changes
+
+1. Reuse `HistoryChange`, `_initialize_repository`, `_apply_change`, `_commit`,
+   `_helper_changed_paths`, `_helper_step_plan`, `_step_from_plan`, `_git`,
+   `_write`, and the actual `_hk_executable`; do not add a glob/matcher
+   substitute.
+2. Import the Phase 1 shared surface inventory and convert it into one
+   deterministic representative set containing all required categories.
+3. Add `_batched_history_changes(kind, surfaces)` to produce one batch for
+   each of `add`, `modify`, `delete`, `rename-out`, and `rename-in`.
+4. Add `_restore_execution_copies(...)` that caches valid `hk.pkl` and helper
+   bytes before mutation and restores safe **unstaged, uncommitted** copies
+   after the requested delete/rename commit. Invoke the helper and HK only
+   after restoration, while passing the unchanged committed base/head SHAs.
+   This operational restoration must not alter the matcher, changed-path
+   result, or asserted history range.
+
+### Planned Tests
+
+1. `test_real_v3_control_pytest_selects_every_codeowners_surface_for_history_kind`
+   parameterized with `add`, `modify`, and `delete`
+   - Create one temporary Git repository per kind, apply all representative
+     surfaces as one batch, and make one history commit.
+   - Assert `_helper_changed_paths(base, head)` equals the exact sorted batch.
+   - Obtain the actual plan from `hk.pkl`, select `STEP_NAME`, and assert the
+     real `v3-control-pytest` step is present with
+     `fileCount == len(representative_surfaces)`.
+   - For deletion of active HK/helper files, restore execution copies only
+     after the commit and prove the committed range still reports deletion.
+
+2. `test_real_v3_control_pytest_selects_governed_side_of_batched_rename`
+   parameterized with `rename-out` and `rename-in`
+   - Use one repository/run per rename kind and batch every representative
+     surface.
+   - Rename-out maps governed old paths to unrelated new paths; rename-in maps
+     unrelated old paths to governed new paths.
+   - Assert the range helper reports both old and new names for every rename.
+   - Assert the actual HK plan includes the governed side and has the exact
+     `fileCount == len(representative_surfaces)`, rather than counting both
+     rename names or omitting the governed side.
+   - Restore safe HK/helper execution copies after committing any rename that
+     moves them; never execute a missing, deleted, or malformed control file.
+
+3. Retain `test_unrelated_product_source_does_not_select_v3_control_pytest`
+   (or its existing equivalent)
+   - Assert an unrelated product source does not select `STEP_NAME`.
+
+4. Retain the existing `--all` slice-validation test
+   - Assert the actual HK plan still selects the v3 test slice with its exact
+     current plan structure.
+
+### Inventory Assertions
+
+Before each five-kind matrix, assert representatives include:
+`.github/CODEOWNERS`, package/control/catalog/test paths, both descriptors,
+current and future workflows/actions/direct scripts, Governance, `hk.pkl`,
+`src/private/lib/hk/**`, `eng/scripts/hk_exec.py`,
+`eng/scripts/workflow_delivery_v3_hk.py`, `pyproject.toml`, and `uv.lock`.
+This ties HK evidence to the same CODEOWNERS surfaces and prevents silent
+category loss.
+
+### Success Criteria
+
+- [ ] Exactly five batched temporary-repository histories exercise all
+      surfaces: add, modify, delete, rename-out, and rename-in.
+- [ ] Changed paths come from the real range helper and selection comes from
+      the actual `hk.pkl` plan.
+- [ ] Operational restoration keeps HK/helper execution safe without changing
+      committed-range assertions or weakening matching.
+- [ ] Negative unrelated-source and `--all` contracts remain intact.
+
+---
+
+## Phase 3: Public Arbitrary-Ref Buddy Boundaries
+
+### File to Test
+
+- **Production/workflow sources**:
+  `three_workflow_delivery_v3.cli.main` and
+  `.github/workflows/workflow-delivery-v3-buddy-smoke.yml` (read-only)
+- **Test File**:
+  `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit9_codeowners.py`
+- **Test Module**: `test_commit9_codeowners`
+
+### Planned Tests
+
+1. `test_public_cli_normalizes_arbitrary_buddy_branch_and_tag_without_codeowners_gate`
+   parameterized with an arbitrary valid branch ref and tag ref
+   - Call public `cli.main(["release", "normalize-live-request", ...])`.
+   - Assert status `0` and parse the canonical emitted intent.
+   - Assert exactly:
+     `workflow_ref == selected_ref`, `selected_ref` equals the supplied ref,
+     `workflow_sha == target`, `target` equals the supplied target,
+     `event_kind == "workflow_dispatch"`, `channel == "buddy"`,
+     `mode == "live"`, and `purpose == "live-release"`.
+   - Install local fail-fast network sentinels for the call and assert none is
+     reached. Invoke no CODEOWNERS option and assert branch/tag values are
+     neither narrowed to a protected branch nor rewritten.
+
+2. `test_actual_buddy_workflow_passes_github_ref_as_selected_ref_without_ownership_gate`
+   - Parse the actual Buddy caller YAML and locate the exact
+     `Normalize fixed live request` step, reusing the established
+     `_document`, `_step`, and `_run` contract helpers.
+   - Assert its command invokes `release normalize-live-request`.
+   - Assert it passes the literal
+     `--selected-ref "${GITHUB_REF}"` and emits/preserves `${GITHUB_REF}` as
+     selected-ref.
+   - Assert the step contains no hard-coded branch, CODEOWNERS argument/read,
+     ownership gate, GitHub API query, or network ownership lookup.
+
+### Success Criteria
+
+- [ ] Public CLI canonical intent preserves arbitrary branch and tag refs.
+- [ ] No ownership or network dependency participates in normalization.
+- [ ] The actual workflow connects `GITHUB_REF` to `--selected-ref` exactly.
+
+---
+
+## Phase 4: Validation and Mandatory Reviews
+
+Run sequentially, fixing only the two bounded test files:
+
+1. Focused pytest for both files.
+2. Ruff check for both files.
+3. Ruff format check for both files.
+4. Invoke `test-gap-analysis`; close any missing adjudicated behavior without
+   broadening scope.
+5. Invoke `assertion-quality`; replace shallow/tautological checks with exact
+   path, owner tuple, plan, count, canonical intent, or workflow-command
+   assertions.
+6. Rerun focused pytest and both Ruff gates after review changes.
+7. Run `git diff --check`.
+8. Inspect `git diff --name-only`; confirm implementation touched only the two
+   pytest files and that this planning turn appended only this plan addendum.
+
+## Checklist-to-Test Mapping
+
+| Requirement | Concrete evidence |
+|---|---|
+| Actual CODEOWNERS only; no synthetic completion | Remove `COMPLETE_REQUIRED_RULES`/`_complete_rules`; `test_actual_codeowners_final_owner_is_exact_for_every_current_and_future_v3_surface` parses the real ordered file. |
+| Future descriptors/workflow/actions/script | Same positive test asserts every named synthetic surface is in the shared inventory and has final owners `("@hcoona",)`. |
+| Exact final owner | Positive test plus replacement/co-owner override tests reject every tuple other than `("@hcoona",)`. |
+| Broad/v3-specific rule removal | `test_removing_each_actual_governing_rule_exposes_its_exact_surface` asserts exact exemplar and fallback final tuple for every actual relevant rule. |
+| Later final-match overrides | `test_later_replacement_owner_override_fails_exact_final_match` and `test_later_hcoona_coowner_override_fails_exact_final_match`. |
+| CODEOWNERS/HK shared surfaces | `_governed_surface_inventory()` is consumed by the real-HK history matrix. |
+| Add/modify/delete batching | `test_real_v3_control_pytest_selects_every_codeowners_surface_for_history_kind` uses one temp repository/run per kind and exact `fileCount`. |
+| Rename-out/rename-in batching | `test_real_v3_control_pytest_selects_governed_side_of_batched_rename` asserts both helper names and one governed-side count. |
+| Safe HK/helper operation | `_restore_execution_copies` restores uncommitted execution bytes after the history commit while helper/HK assertions stay on base-to-head. |
+| Negative and `--all` HK behavior | Retained unrelated-product and slice-validation tests use the actual plan. |
+| Public branch/tag canonical intent | `test_public_cli_normalizes_arbitrary_buddy_branch_and_tag_without_codeowners_gate` calls `cli.main`, asserts status/canonical fields, and trips on network access. |
+| Actual workflow `GITHUB_REF` contract | `test_actual_buddy_workflow_passes_github_ref_as_selected_ref_without_ownership_gate` asserts exact command wiring and absence of CODEOWNERS/network gates. |
+| Scope and quality | Focused pytest, Ruff check/format check, both mandatory reviews, `git diff --check`, and `git diff --name-only`. |
+
+## Final Success Criteria
+
+- [ ] All checklist rows have exact named tests, helpers, and assertions.
+- [ ] The two-file focused suite remains green.
+- [ ] No fake CODEOWNERS completion and no fake HK matcher remains.
+- [ ] `.github/CODEOWNERS` and all production/runtime/workflow/activation/
+      acceptance/legacy files are preserved.
+- [ ] No file other than this append-only plan artifact is changed during this
+      planning turn.
+<!-- END APPEND: workflow-delivery-v3-commit9-independently-adjudicated-tp-fixes-2026-08-14 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit9-tp-final-plan-correction-2026-08-14 -->
+## Commit 9 TP final plan correction
+
+Final execution is limited to the two owned pytest files. Public CLI and Buddy
+workflow requirements are tested from `test_commit9_codeowners.py` by importing
+the public CLI and reusing the established read-only workflow contract helpers;
+no additional test file is edited.
+
+Representative replacement-owner and co-owner overrides are parameterized over
+every approved synthetic descriptor/workflow/action surface and both actual
+direct-script paths. The shared inventory is then exercised through the actual
+HK plan in five batched Git histories: add, modify, delete, rename-in, and
+rename-out.
+<!-- END APPEND: workflow-delivery-v3-commit9-tp-final-plan-correction-2026-08-14 -->

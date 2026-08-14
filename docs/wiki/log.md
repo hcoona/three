@@ -1695,3 +1695,16 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   all applicable static, Pkl, build, and lock gates.
 - Advanced the next separately authorized boundary to commit 9 CODEOWNERS
   final-match coverage while keeping live activation disabled.
+
+## [2026-08-14] query | Close Workflow Delivery v3 commit 9
+
+- Added exact final-match `@hcoona` ownership for all approved Workflow
+  Delivery v3 governance surfaces, including the absent protected Governance
+  path and future descriptor/workflow/action layouts.
+- Added real CODEOWNERS and HK history contracts for missing/overridden rules,
+  exact owners, add/modify/delete/rename behavior, and arbitrary-ref Buddy
+  separation.
+- Closed all independently adjudicated review findings and passed 2,294 v3
+  tests, the managed v3 HK gate, and 4,329 root Python tests.
+- Advanced the next separately authorized boundary to commit 10 acceptance
+  bootstrap while keeping live activation disabled.

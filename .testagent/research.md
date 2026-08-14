@@ -1960,3 +1960,248 @@ production supplies that API and behavior.
 - [ ] No production, tests, docs/status, plan, or unrelated tracked state is
       changed during this research-only turn.
 <!-- END APPEND: workflow-delivery-v3-commit8-fifth-round-governance-terminal-state-2026-08-13 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit9-codeowners-tests-2026-08-14 -->
+# Workflow Delivery v3 Commit 9 CODEOWNERS Test Research
+
+## Bounded objective
+
+Add tests only for GitHub CODEOWNERS final-match coverage. The delivered
+workspace is authoritative. Production CODEOWNERS changes, activation,
+acceptance, legacy workflow work, and all unrelated files are excluded.
+
+## Required-reading findings
+
+- The handoff identifies commit 9 as complete final-match coverage for every
+  governed v3 surface and preserves arbitrary-ref Buddy eligibility.
+- The LLD CODEOWNERS section requires `@hcoona` ownership for the v3 package,
+  `eng/workflow-delivery/v3/**`, both descriptor basenames, the exact protected
+  Governance path, HK configuration, and root Python workspace inputs. Existing
+  workflow, action, script, and CODEOWNERS ownership remains authoritative.
+- GitHub CODEOWNERS uses the last matching pattern; tests therefore must parse
+  ordered rules and inspect the final match rather than accept any earlier
+  `@hcoona` match.
+- The protected Governance document is intentionally absent and must still be
+  tested by its exact repository-relative path.
+
+## Bounded target inventory
+
+- Existing ownership source: `.github/CODEOWNERS`.
+- Actual governed paths are discovered from tracked files for:
+  `src/public/lib/three-workflow-delivery-v3/**`,
+  `eng/workflow-delivery/v3/**`, both descriptor basenames, v3 workflows,
+  v3 actions when present, and directly invoked v3 scripts.
+- Explicit governed paths include `.github/CODEOWNERS`,
+  `.github/workflow-delivery/governance/hcoona-release-smoke-npm.json`,
+  `hk.pkl`, `src/private/lib/hk/**`, `eng/scripts/hk_exec.py`,
+  `pyproject.toml`, and `uv.lock`.
+- Current descriptors are the release-unit and quality files under
+  `src/public/lib/hcoona-release-smoke-npm/`; discovery must also accept
+  synthesized descriptors in new nested `src/**` locations.
+- Existing Python tests use pytest functions, `Path`, concrete equality,
+  parameterization where useful, and root-relative repository contracts.
+- Existing live eligibility tests already use an arbitrary feature ref. The
+  commit-9 test must prove ownership data is not an input to that runtime
+  decision, without changing production.
+
+## Acceptance checklist
+
+1. Every actual governed path in every requested category resolves finally to
+   `@hcoona`.
+2. The exact absent protected Governance path resolves finally to `@hcoona`.
+3. Newly synthesized release-unit and quality descriptor paths are discovered
+   and checked.
+4. Removing required coverage causes the contract evaluator to fail.
+5. Appending a later non-`@hcoona` override causes the contract evaluator to
+   fail.
+6. Arbitrary-ref Buddy live eligibility remains accepted and CODEOWNERS is not
+   consulted or coupled into runtime eligibility.
+7. Tests are local-only and have no network or GitHub API dependency.
+8. Changes remain within one or more pytest files under the v3 tests directory
+   and append-only updates to the three existing `.testagent` files.
+
+## Validation commands
+
+- Focused: `uv run --python 3.13 pytest src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit9_codeowners.py`
+- Boundary: `git diff --name-only` and `git diff --check`
+
+## Current expected production state
+
+The delivered `.github/CODEOWNERS` contains the pre-commit-9 workflow, action,
+script, and self-ownership rules but not the new package, descriptor,
+Governance, HK, or root-workspace patterns. The repository-wide positive
+contract is therefore expected to fail until the separate production portion
+of commit 9 lands; the synthetic parser/failure and runtime-decoupling tests
+can still pass.
+<!-- END APPEND: workflow-delivery-v3-commit9-codeowners-tests-2026-08-14 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit9-independently-adjudicated-tp-fixes-2026-08-14 -->
+# Commit 9 Independently Adjudicated TP Fix Research Addendum
+
+## Boundary and current state
+
+- **Strict implementation inventory**:
+  `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit9_codeowners.py`,
+  `src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py`,
+  `src/public/lib/three-workflow-delivery-v3/tests/test_cli.py`, and
+  `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`.
+  Production sources, workflows, `hk.pkl`, and `.github/CODEOWNERS` are
+  read-only for these test fixes.
+- The actual `.github/CODEOWNERS` now contains the nine commit-9 rules from the
+  LLD after the existing broad workflow/action/script/self rules. The earlier
+  expected-red statement is superseded: the bounded four-file suite is
+  currently green (**142 passed**).
+- Python 3.13 and pytest are authoritative. Tests use module-level repository
+  paths, plain functions, `tmp_path`, `pytest.mark.parametrize`, exact
+  structural equality, real local Git repositories, and parsed YAML. No
+  network, GitHub API, or production mutation is needed.
+- The requested `code-testing-extensions` skill is unavailable. Harness
+  discovery was therefore taken from the actual `hk.pkl`
+  `v3-control-pytest` step and package/root pytest configuration.
+
+## Exact existing symbols and helpers
+
+- CODEOWNERS contracts: `CodeOwnersRule`, `_parse_rules`,
+  `_pattern_expression`, `_final_owners`, `_coverage_failures`,
+  `_workspace_paths`, `_descriptor_paths`, `_governed_categories`, and
+  `_complete_rules`.
+- Real-HK fixture support: `HistoryChange`, `GOVERNED_PATHS`, `HK_CONFIG`,
+  `HK_SUPPORT`, `HK_RANGE_HELPER`, `STEP_NAME`, `_run`, `_git`, `_write`,
+  `_commit`, `_initialize_repository`, `_hk_executable`, `_step_from_plan`,
+  `_helper_changed_paths`, `_helper_step_plan`, and `_apply_change`.
+- Public CLI boundary: `three_workflow_delivery_v3.cli.main`,
+  `_release_normalize_live_request_command`, and
+  `normalize_buddy_live_intent`. The resulting `ReleaseIntent` preserves
+  `workflow_ref == selected_ref`, `selected_ref`, `workflow_sha == target`,
+  `target`, `event_kind == "workflow_dispatch"`, `channel == "buddy"`,
+  `mode == "live"`, and `purpose == "live-release"`.
+- Workflow boundary: `CALLER`, `_document`, `_step`, and `_run` in
+  `test_buddy_workflows.py`; the actual request step is `Normalize fixed live
+  request` in `.github/workflows/workflow-delivery-v3-buddy-smoke.yml`.
+
+## Adjudicated requirement checklist
+
+### A. Actual CODEOWNERS as the sole ownership oracle
+
+- [ ] Parse `.github/CODEOWNERS` once in ordered form and evaluate every
+      current and synthetic path against those actual rules. Remove
+      `COMPLETE_REQUIRED_RULES` and `_complete_rules`; tests must never append
+      an expected production rule document to make a future path pass.
+- [ ] Add synthetic future descriptors at shallow and nested `src/**`
+      locations for both fixed basenames:
+      `workflow-delivery.release-unit.yml` and
+      `workflow-delivery.quality.yml`.
+- [ ] Add a representative future v3 workflow, both approved action layouts
+      (`.github/actions/workflow-delivery-v3-*/**` and
+      `.github/actions/workflow-delivery-v3/**`), and a direct
+      `eng/scripts/workflow_delivery_v3*.py` path. Keep actual tracked v3
+      workflows, direct scripts, descriptors, package/control, HK, root Python
+      inputs, CODEOWNERS, and the exact intentionally absent Governance path in
+      the same governed inventory.
+- [ ] Require the **exact** final tuple `("@hcoona",)` for every path; neither
+      an earlier match nor `@hcoona` plus a co-owner is sufficient.
+- [ ] Mutation tests must derive from the actual parsed rules. Remove each
+      relevant actual broad rule in turn (workflow, action, direct-script,
+      descriptor, and applicable v3-specific rules) and assert the exact
+      affected future/current path and resulting final owners. Append later
+      replacement-owner and co-owner overrides and assert final-match failure.
+      This prevents a mutation from being masked by production rules copied
+      into test constants.
+
+### B. CODEOWNERS-to-real-HK cross-validation
+
+- [ ] Build one shared current-plus-synthetic v3 surface inventory, then prove
+      every CODEOWNERS-governed surface is selected by the **actual**
+      `v3-control-pytest` plan from the actual `hk.pkl`. Do not implement a
+      second glob matcher as an HK substitute.
+- [ ] Exercise real Git add, modify, delete, rename-out, and rename-in history
+      through `_initialize_repository`, `_apply_change`, `_commit`,
+      `_helper_changed_paths`, and `_helper_step_plan`.
+- [ ] Batch all representative surfaces once per history kind (five temporary
+      repositories/runs), rather than one HK process per path. For renames,
+      assert the helper reports both old and new names while the real HK plan
+      includes the governed side with the exact expected `fileCount`.
+- [ ] Include `.github/CODEOWNERS`, package/control/catalog/test paths,
+      descriptors, current and future workflow/action/direct-script paths,
+      Governance, `hk.pkl`, `src/private/lib/hk/**`,
+      `eng/scripts/hk_exec.py`, `eng/scripts/workflow_delivery_v3_hk.py`,
+      `pyproject.toml`, and `uv.lock`.
+- [ ] Keep the execution copies of `hk.pkl` and
+      `eng/scripts/workflow_delivery_v3_hk.py` usable when their governed
+      history cases delete or rename those paths. Commit the requested history,
+      then restore safe uncommitted execution copies before invoking the
+      range helper/HK; the asserted range must remain the committed
+      base-to-head range. Never execute a deleted helper or malformed/deleted
+      active HK configuration.
+- [ ] Retain the negative unrelated-product-source case and `--all`
+      slice-validation contract.
+
+### C. Arbitrary-ref Buddy contract at public boundaries
+
+- [ ] Parameterize arbitrary valid branch and tag refs and call public
+      `cli.main(["release", "normalize-live-request", ...])`, not the private
+      eligibility validator. Assert return code `0`, canonical output, and the
+      exact preserved Intent fields listed above.
+- [ ] Prove the command performs no network operation and has no CODEOWNERS
+      argument/gate. The test should fail if normalization narrows the selected
+      branch/tag to a protected ref or rewrites canonical intent.
+- [ ] Parse the actual Buddy caller workflow and require its normalization step
+      to invoke `release normalize-live-request`, pass
+      `--selected-ref "${GITHUB_REF}"`, and preserve `${GITHUB_REF}` in the
+      emitted selected-ref output. Reject a hard-coded branch, CODEOWNERS gate,
+      or network-based ownership lookup.
+
+### D. Append-only and validation
+
+- [ ] Preserve all pre-existing working-tree changes. Test implementation may
+      edit only the four bounded pytest files above; test-agent state remains
+      append-only.
+- [ ] Keep all tests deterministic and local. Do not add package dependencies,
+      a fake HK matcher, acceptance/activation work, legacy retirement, or
+      production changes.
+- [ ] Finish with `git diff --check`, inspect `git diff --name-only`, and verify
+      this pre-existing research prefix is unchanged.
+
+## Priority and testability
+
+| Priority | Target | Testability | Current gap |
+|---|---|---|---|
+| High | `test_commit9_codeowners.py` | High | Uses expected-rule synthesis; future workflow/action/script coverage and broad-rule mutations are incomplete. |
+| High | `test_hk_trigger.py` | High, local integration | Real HK exists, but cross-validation is not shared with CODEOWNERS and all surfaces are not covered across all five history kinds. |
+| Medium | `test_cli.py` | High | No public `cli.main` branch/tag normalization contract. |
+| Medium | `test_buddy_workflows.py` | High | No exact `GITHUB_REF` to `--selected-ref` request-step contract. |
+
+The tests are integration/contract leaves around local files and subprocesses;
+no mocks of in-scope types are required. `cli.main` is a mid-layer boundary,
+but its normalization path is deterministic and can be exercised directly
+without mocking network services.
+
+## Commands
+
+- **Scoped fix cycle**:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit9_codeowners.py src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+- **Harness-equivalent discovery/check from repository root**:
+  `python eng/scripts/hk_exec.py --timeout-seconds 720 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests`
+- **Build**: `uv build --package three-workflow-delivery-v3`
+- **Lint/format**:
+  `uv run ruff check src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit9_codeowners.py src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+  and the corresponding `ruff format --check` command.
+- **Boundary**: `git diff --check` and `git diff --name-only`.
+<!-- END APPEND: workflow-delivery-v3-commit9-independently-adjudicated-tp-fixes-2026-08-14 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit9-tp-final-scope-correction-2026-08-14 -->
+## Commit 9 TP final scope correction
+
+The earlier expected-red evidence is historical. The final implementation owns
+only `test_commit9_codeowners.py`, `test_hk_trigger.py`, and append-only
+commit-9 addenda in the three `.testagent` files. `test_cli.py`,
+`test_buddy_workflows.py`, `.github/CODEOWNERS`, `hk.pkl`, and all production,
+workflow, activation, acceptance, and legacy files remain unedited by this
+implementation.
+
+The approved synthetic inventory contains both descriptor basenames, one
+future v3 workflow, and both future action layouts. Direct-script evidence uses
+the two actual registered `eng/scripts/workflow_delivery_v3_*.py` paths. Actual
+parsed CODEOWNERS rules, exact final-owner tuples, representative later
+overrides, and the real HK plan are the only positive oracles.
+<!-- END APPEND: workflow-delivery-v3-commit9-tp-final-scope-correction-2026-08-14 -->

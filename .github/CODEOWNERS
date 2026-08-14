@@ -8,3 +8,14 @@
 /eng/release/buddy-target-refs.yml @hcoona
 /.github/actions/** @hcoona
 /eng/scripts/** @hcoona
+
+# Workflow Delivery v3 governance.
+/src/public/lib/three-workflow-delivery-v3/** @hcoona
+/eng/workflow-delivery/v3/** @hcoona
+/src/**/workflow-delivery.release-unit.yml @hcoona
+/src/**/workflow-delivery.quality.yml @hcoona
+/.github/workflow-delivery/governance/hcoona-release-smoke-npm.json @hcoona
+/hk.pkl @hcoona
+/src/private/lib/hk/** @hcoona
+/pyproject.toml @hcoona
+/uv.lock @hcoona

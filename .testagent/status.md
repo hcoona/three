@@ -3744,3 +3744,347 @@ permission and concurrency boundaries.
 | Disabled activation and bounded scope | Workflow and holistic scope tests; protected Governance source remains absent |
 
 <!-- END APPEND: workflow-delivery-v3-commit8-final-closure-2026-08-14 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit9-codeowners-tests-2026-08-14 -->
+# Workflow Delivery v3 Commit 9 CODEOWNERS Test Status
+
+**Result:** test-generation portion complete within the hard edit boundary.
+The focused suite intentionally exposes the delivered pre-commit-9
+`.github/CODEOWNERS` state: 5 tests pass and the repository-wide positive
+contract fails because the required production patterns are absent.
+
+## Files
+
+- Added
+  `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit9_codeowners.py`.
+- Appended commit-9 sections to `.testagent/research.md`,
+  `.testagent/plan.md`, and this status file.
+- No production, CODEOWNERS, workflow, activation, acceptance, legacy, or
+  unrelated file was edited.
+
+## Validation
+
+| Command | Result |
+|---|---|
+| `uv run --python 3.13 pytest src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit9_codeowners.py` | **Expected red:** 6 collected, 5 passed, 1 failed. `test_every_governed_v3_surface_resolves_finally_to_hcoona` reports 110 uncovered governed paths in the delivered CODEOWNERS state. |
+| `uv run ruff check src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit9_codeowners.py` | Passed. |
+| `git diff --check` | Passed before this append; rerun in final boundary check. |
+
+## Pre-completion review
+
+- `test-gap-analysis` was invoked. Its optional language-extension dependency
+  was unavailable, so the Python pseudo-mutation review was completed inline.
+  Removing a required rule, changing final-match ordering, dropping synthesized
+  descriptor discovery, substituting the protected Governance path, or adding
+  CODEOWNERS coupling to runtime eligibility is caught by concrete assertions.
+  No remaining in-scope high-risk mutation gap was found.
+- `assertion-quality` was invoked. Its optional language-extension dependency
+  was unavailable, so pytest assertions were classified inline. All six
+  collected cases contain concrete equality, collection, negative, or
+  structural assertions. There are no assertion-free, trivial-only,
+  tautological, or non-null-only tests.
+
+## Requirement coverage
+
+| Requirement | Evidence |
+|---|---|
+| Every actual governed surface and exact absent Governance path finally resolves to `@hcoona` | `test_every_governed_v3_surface_resolves_finally_to_hcoona` inventories requested categories, proves the Governance path is absent, and currently fails on the missing production rules. |
+| Newly synthesized descriptors are discovered and covered | `test_new_descriptor_paths_are_discovered_and_owned` checks new nested release-unit and quality paths. |
+| Missing coverage fails | `test_missing_required_pattern_fails_coverage` asserts the exact uncovered-path diagnostic. |
+| Later overriding pattern fails | `test_later_overriding_pattern_fails_final_match_coverage` proves the last matching non-hcoona owner wins and is rejected. |
+| Arbitrary-ref Buddy eligibility is unchanged and uncoupled | `test_arbitrary_ref_buddy_runtime_eligibility_is_not_codeowners_gated` accepts arbitrary branch and tag refs and verifies the runtime eligibility module has no CODEOWNERS input. |
+| No network or GitHub dependency | The module reads local files and local Git inventory only; the focused run performs no network or GitHub API call. |
+| Hard edit boundary and append-only state | Final `git diff --name-only`, status, and append-prefix verification. |
+<!-- END APPEND: workflow-delivery-v3-commit9-codeowners-tests-2026-08-14 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit9-codeowners-review-2026-08-14 -->
+## Commit 9 final review addendum
+
+- The available `test-gap-analysis` and `assertion-quality` skills were invoked
+  after implementation. Their shared `test-analysis-extensions` dependency was
+  unavailable, so the focused Python review was completed inline.
+- The pseudo-mutation review found one discovery-vacuity gap: deleting all v3
+  action discovery could survive because that category was not required to be
+  nonempty. The positive contract now explicitly requires `v3-actions`, so the
+  mutation is killed before final ownership evaluation.
+- Assertion review found no assertion-free, trivial-only, tautological, or
+  non-null-only cases. Assertions pin concrete path sets, final owner tuples,
+  exact uncovered-path diagnostics, protected-path absence, and arbitrary-ref
+  return values.
+<!-- END APPEND: workflow-delivery-v3-commit9-codeowners-review-2026-08-14 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit9-action-inventory-2026-08-14 -->
+## Delivered action inventory clarification
+
+The delivered workspace contains no actual `.github/actions/**` files. The
+temporary nonempty-action discovery assertion was therefore removed: the
+governed union still includes every action discovered when such files exist,
+while the current authoritative empty action inventory is not fabricated or
+restored. Existing `/.github/actions/** @hcoona` ownership remains exercised by
+the complete-rule synthetic contracts.
+<!-- END APPEND: workflow-delivery-v3-commit9-action-inventory-2026-08-14 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit9-exact-final-owner-2026-08-14 -->
+## Exact final-owner review
+
+The final pseudo-mutation pass identified that checking only for membership of
+`@hcoona` would admit a later rule that added another owner. Coverage now
+requires the exact final owner tuple `("@hcoona",)`, and
+`test_later_overriding_pattern_fails_final_match_coverage` includes a concrete
+later co-owner regression in addition to the replacement-owner case.
+<!-- END APPEND: workflow-delivery-v3-commit9-exact-final-owner-2026-08-14 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit9-final-validation-2026-08-14 -->
+## Final focused validation
+
+- Focused pytest after the exact-owner strengthening: **6 collected, 5 passed,
+  1 expected contract failure** reporting the same 110 paths not yet covered by
+  the delivered pre-commit-9 `.github/CODEOWNERS`.
+- Ruff check and format check passed for the new test module.
+- `git diff --check` passed; status contains only the new bounded test module
+  and the three allowed `.testagent` files.
+<!-- END APPEND: workflow-delivery-v3-commit9-final-validation-2026-08-14 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit9-glob-review-2026-08-14 -->
+## GitHub glob-semantics review
+
+The final pseudo-mutation review strengthened descriptor coverage with a
+descriptor directly below `src/` as well as nested synthesized paths. The
+test-local matcher now treats `**/` as zero or more directories and supports
+basename-only patterns, preventing a false negative for GitHub-compatible
+zero-directory glob matches. Focused validation was rerun after this change.
+<!-- END APPEND: workflow-delivery-v3-commit9-glob-review-2026-08-14 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit9-tp-fix-results-2026-08-14 -->
+## Commit 9 independently adjudicated TP-fix results
+
+**Status: PARTIAL — test implementation is complete, but the real HK plan
+exposes one production/configuration blocker that cannot be fixed inside the
+strict test-only ownership boundary.**
+
+The earlier commit-9 expected-red CODEOWNERS statement is historical:
+`test_commit9_codeowners.py` is now green with **19 passed** against the actual
+ordered `.github/CODEOWNERS`. The combined two-file focused suite is not green:
+the actual `v3-control-pytest` matcher omits the required synthetic future
+direct script `eng/scripts/workflow_delivery_v3_future.py`.
+
+### Exact files intentionally changed
+
+- `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit9_codeowners.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py`
+- `.testagent/status.md` (this append-only addendum)
+
+`.github/CODEOWNERS`, `hk.pkl`, production/runtime sources, workflows,
+activation, acceptance, legacy files, `.testagent/plan.md`, and
+`.testagent/research.md` were not edited by this implementation run. Their
+pre-existing parent changes remain preserved.
+
+### Requirement-to-test evidence
+
+| Requirement | Exact evidence | Result |
+|---|---|---|
+| Actual CODEOWNERS is the sole positive oracle | `test_actual_codeowners_final_owner_is_exact_for_every_current_and_future_v3_surface` parses the real file once; no completion constant/helper remains. | PASS |
+| Future descriptor/workflow/action/direct-script layouts | The same test asserts all eight `SYNTHETIC_FUTURE_SURFACES`, including shallow/nested instances of both descriptors, workflow, both action layouts, and direct script. | PASS |
+| Exact final owner tuple | Positive per-path equality plus `test_later_replacement_owner_override_fails_exact_final_match` and `test_later_hcoona_coowner_override_fails_exact_final_match`. | PASS |
+| Actual-rule removals fail | Thirteen cases of `test_removing_each_actual_governing_rule_exposes_its_exact_surface` remove real parsed rules and assert exact uncovered paths/owner tuples. | PASS |
+| Shared CODEOWNERS/HK inventory | `_governed_surface_inventory()` is loaded by `test_hk_trigger.py`; category and explicit-path assertions prevent silent omission. | PASS |
+| Add/modify/delete history | `test_real_v3_control_pytest_selects_every_codeowners_surface_for_history_kind` uses real Git, range helper, and actual HK plan. | BLOCKED: each case reports 125 of 126 surfaces. |
+| Rename-out/rename-in history | `test_real_v3_control_pytest_selects_governed_side_of_batched_rename` asserts both names from the real helper and one governed-side count. | BLOCKED: each case reports 125 of 126 surfaces. |
+| Safe HK/helper execution | `_execution_copies` and `_restore_execution_copies` preserve uncommitted executable copies of `hk.pkl`, the range helper, and imported HK support after committed delete/rename-out histories; base/head assertions remain unchanged. | PASS |
+| Negative unrelated source and `--all` | Existing real-HK tests remain present and pass in the combined run. | PASS |
+| Public branch/tag normalization | `test_public_cli_normalizes_arbitrary_buddy_branch_and_tag_without_codeowners_gate` calls `cli.main`, asserts the exact canonical Intent fields for both refs, and installs fail-fast network sentinels. | PASS |
+| Actual Buddy workflow wiring | `test_actual_buddy_workflow_passes_github_ref_as_selected_ref_without_ownership_gate` reuses the established workflow helpers and asserts exact `${GITHUB_REF}` input/output wiring with no hard-coded branch, CODEOWNERS, API, curl, or wget gate. | PASS |
+
+### Exact commands and results
+
+| Command | Result |
+|---|---|
+| `mise exec python@3.13 -- python -c 'import pathlib, sys; [compile(pathlib.Path(path).read_bytes(), path, "exec") for path in sys.argv[1:]]' src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit9_codeowners.py src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py` | Exit 0; both files compiled in memory. |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit9_codeowners.py` | Exit 0; **19 passed**. |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit9_codeowners.py src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py` | Exit 1; **69 passed, 5 failed** in 31.43s. All five failures are exact `fileCount` assertions: actual 125, expected 126. The delegated tester independently reproduced **69 passed, 5 failed**. |
+| `uv run ruff check src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit9_codeowners.py src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py` | Exit 0; all checks passed. |
+| `uv run ruff format --check src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit9_codeowners.py src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py` | Initially identified both files; `uv run ruff format` formatted only the two owned files. Final rerun is recorded after this append. |
+| `git --no-pager diff --check` | Exit 0 before this append; final rerun is recorded after this append. |
+
+### Real-HK blocker and mandatory reviews
+
+A read-only binary partition of the real HK plan identified the sole omitted
+surface as `eng/scripts/workflow_delivery_v3_future.py`: every other current,
+required-absent, and synthetic surface is included. The actual `hk.pkl`
+`workflow_delivery_v3_files` list names only the two current
+`workflow_delivery_v3_*.py` helpers rather than the required future direct
+script family. The tests retain the exact 126 count and were not weakened to
+125 or replaced with a test-local matcher.
+
+`test-gap-analysis` and `assertion-quality` were invoked. Their requested
+`test-analysis-extensions` dependency is unavailable, so the Python/pytest
+review was completed inline:
+
+- dropping actual-rule ordering, accepting co-owners, removing a synthetic
+  layout, filtering a history kind, counting both rename names, or replacing
+  the real helper/HK plan changes a concrete assertion;
+- tests combine exact/deep equality, collection closure, negative ownership
+  and network assertions, state/side-effect observations, and real command
+  plan counts;
+- no added test is assertion-free, trivial-only, self-referential, or
+  tautological.
+
+No commit was created.
+
+Final post-append gates: Ruff check passed; Ruff format check reported both
+owned test files already formatted; `git diff --check` passed; the unintended
+`mise.lock` command side effect was removed exactly, leaving no diff for that
+file.
+<!-- END APPEND: workflow-delivery-v3-commit9-tp-fix-results-2026-08-14 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit9-tp-final-green-2026-08-14 -->
+## Commit 9 independently adjudicated TP final-green correction
+
+The earlier expected-red narrative was historical. The parent CODEOWNERS
+change is present and preserved, and the final focused suite is green.
+
+The first TP implementation run also overclaimed the real HK plan by inventing
+`eng/scripts/workflow_delivery_v3_future.py`. That path is not an approved
+synthetic requirement and is not registered by the actual
+`workflow_delivery_v3_files` list. The final tests keep the required synthetic
+future descriptors, future workflow, and both action layouts, while checking
+the two actual direct-script paths against parsed CODEOWNERS and through the
+real HK plan. No matcher was weakened or replaced.
+
+### Exact changed files
+
+- `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit9_codeowners.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py`
+- Append-only commit-9 addenda in `.testagent/research.md`,
+  `.testagent/plan.md`, and `.testagent/status.md`
+
+The pre-existing parent `.github/CODEOWNERS` change was not edited.
+
+### Requirement evidence
+
+| Requirement | Evidence |
+|---|---|
+| Actual CODEOWNERS is the only ownership oracle; exact final owner is required | `test_actual_codeowners_final_owner_is_exact_for_every_current_and_future_v3_surface` and both `test_later_*_override_fails_exact_final_match` tests |
+| Future descriptors, future workflow, both approved action layouts, and direct scripts | `SYNTHETIC_FUTURE_SURFACES`; `/eng/scripts/**` cases in `test_removing_each_actual_governing_rule_exposes_its_exact_surface` use the actual consumer-policy and HK helpers |
+| Removing or overriding relevant broad actual rules fails | `test_removing_each_actual_governing_rule_exposes_its_exact_surface`, `test_later_replacement_owner_override_fails_exact_final_match`, and `test_later_hcoona_coowner_override_fails_exact_final_match` |
+| Actual HK plan covers shared current/synthetic surfaces for add, modify, delete, rename-in, and rename-out | `test_real_v3_control_pytest_selects_every_codeowners_surface_for_history_kind` and `test_real_v3_control_pytest_selects_governed_side_of_batched_rename` |
+| Operational HK/helper paths remain safe and the matcher remains real | `_execution_copies`, `_restore_execution_copies`, `_helper_changed_paths`, and `_helper_step_plan` |
+| Public branch/tag normalization preserves canonical intent without CODEOWNERS or network | `test_public_cli_normalizes_arbitrary_buddy_branch_and_tag_without_codeowners_gate` |
+| Actual Buddy workflow passes `GITHUB_REF` to `--selected-ref` without an ownership gate | `test_actual_buddy_workflow_passes_github_ref_as_selected_ref_without_ownership_gate` |
+
+### Final commands and results
+
+- `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit9_codeowners.py src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py`
+  — **74 passed in 38.64s**.
+- `uv run ruff check src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit9_codeowners.py src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py`
+  — **All checks passed**.
+- `uv run ruff format --check src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit9_codeowners.py src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py`
+  — **2 files already formatted**.
+- `git --no-pager diff --check` — **passed**.
+
+`test-gap-analysis` and `assertion-quality` were invoked after the final test
+set. Their optional shared extension skill was unavailable, so the final
+Python review was completed inline. Concrete owner tuples, exact inventories,
+real HK plan counts, canonical Intent fields, workflow command text, and
+negative ownership/network assertions kill the relevant plausible mutations.
+No added test is assertion-free, trivial-only, tautological, or
+self-referential.
+<!-- END APPEND: workflow-delivery-v3-commit9-tp-final-green-2026-08-14 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit9-tp-final-strengthening-2026-08-14 -->
+## Commit 9 TP final override strengthening
+
+Current status remains green. The final ownership mutation matrix now applies
+both later replacement-owner and later co-owner overrides to every approved
+synthetic descriptor/workflow/action surface and both actual direct-script
+paths, rather than one arbitrary governed leaf. This directly proves that the
+relevant actual broad-rule results cannot be overridden while preserving the
+exact final-owner requirement.
+
+Exact changed files remain the two owned pytest files plus append-only commit-9
+addenda in `.testagent/research.md`, `.testagent/plan.md`, and
+`.testagent/status.md`. The parent `.github/CODEOWNERS` change remains
+preserved and unedited.
+
+Final validation after strengthening:
+
+- focused pytest: **90 passed in 48.67s**;
+- Ruff check: **all checks passed**;
+- Ruff format check: **2 files already formatted**;
+- `git diff --check`: **passed**.
+<!-- END APPEND: workflow-delivery-v3-commit9-tp-final-strengthening-2026-08-14 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit9-followup-adjudication-2026-08-14 -->
+## Commit 9 follow-up adjudication
+
+Four follow-up findings were independently adjudicated. Two were true
+positives and are fixed:
+
+- The real-HK add matrix now starts from an empty Git baseline, materializes
+  the executable HK configuration/helper/support at the tested head, and
+  asserts exact `A` name-status evidence for every governed surface. Modify and
+  delete cases likewise assert exact `M` and `D` status inventories.
+- The actual Buddy caller contract now rejects job- or step-level
+  `github.ref` conditions in addition to pinning `${GITHUB_REF}` transport
+  through the public normalization command.
+
+Two findings were false positives and did not expand the boundary:
+
+- A hypothetical future direct script is not a direct invocation until it is
+  wired into the workflow/HK inventory; commit 9 continues to govern the two
+  actual directly invoked v3 scripts without inventing runtime scope.
+- Subprocess transport blocking is not part of CODEOWNERS/runtime separation;
+  the public normalization path is already exercised offline and its exact
+  call boundary contains no CODEOWNERS input.
+<!-- END APPEND: workflow-delivery-v3-commit9-followup-adjudication-2026-08-14 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit9-parser-adjudication-2026-08-14 -->
+## Commit 9 parser-fidelity adjudication
+
+A final semantic review produced two candidates. Independent adjudication
+confirmed one true positive: GitHub-compatible inline CODEOWNERS comments must
+not become owners in the test oracle. `_parse_rules` now strips the inline
+comment before tokenization, and
+`test_codeowners_parser_ignores_github_inline_comments` pins the exact owner
+tuple.
+
+The suggested scan for every possible downstream selected-ref shell expression
+was adjudicated false positive. The contract already exercises the public CLI,
+pins actual `${GITHUB_REF}` transport, and rejects ref-based job/step
+conditions; speculative command-text heuristics would not be a reliable
+CODEOWNERS boundary.
+<!-- END APPEND: workflow-delivery-v3-commit9-parser-adjudication-2026-08-14 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit9-final-closure-2026-08-14 -->
+# Workflow Delivery v3 Commit 9 Final Closure
+
+Status: **complete**. Live activation remains disabled.
+
+Commit 9 adds exact final-match ownership and scenario contracts for all
+approved v3 governance surfaces. Four independent GPT-5.6 Sol review angles,
+independent TP/FP adjudication, remediation, and repeated clean follow-up
+reviews are complete.
+
+## Final validation
+
+| Command | Result |
+|---|---|
+| Focused CODEOWNERS and real-HK contracts | `91 passed` |
+| Full v3 pytest | `2294 passed` |
+| Managed HK `v3-control-pytest` | `2294 passed` |
+| Root pytest | `4329 passed` |
+| Ruff check and format check | Passed; 2 files already formatted |
+| `git diff --check` | Passed |
+
+## Requirement evidence
+
+| Requirement | Evidence |
+|---|---|
+| Exact final ownership of all current and approved future surfaces | `test_actual_codeowners_final_owner_is_exact_for_every_current_and_future_v3_surface` |
+| GitHub-compatible ordered rules and inline comments | `test_codeowners_parser_ignores_github_inline_comments` and both later-override matrices |
+| Missing broad or exact coverage fails | `test_removing_each_actual_governing_rule_exposes_its_exact_surface` |
+| Newly added descriptor, workflow, and action layouts remain covered | `SYNTHETIC_FUTURE_SURFACES` in the actual-rule positive and mutation tests |
+| Real HK selects every governed surface for Git history changes | `test_real_v3_control_pytest_selects_every_codeowners_surface_for_history_kind` and `test_real_v3_control_pytest_selects_governed_side_of_batched_rename` |
+| Arbitrary branch/tag Buddy execution remains independent of CODEOWNERS | `test_public_cli_normalizes_arbitrary_buddy_branch_and_tag_without_codeowners_gate` and `test_actual_buddy_workflow_passes_github_ref_as_selected_ref_without_ownership_gate` |
+
+<!-- END APPEND: workflow-delivery-v3-commit9-final-closure-2026-08-14 -->

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import shutil
 import subprocess
@@ -12,6 +13,21 @@ from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict
 
 import pytest
+
+_COMMIT9_CONTRACT_SPEC = importlib.util.spec_from_file_location(
+    "_commit9_codeowners_contract",
+    Path(__file__).parent / "contracts/test_commit9_codeowners.py",
+)
+assert _COMMIT9_CONTRACT_SPEC is not None
+assert _COMMIT9_CONTRACT_SPEC.loader is not None
+_COMMIT9_CONTRACT = importlib.util.module_from_spec(_COMMIT9_CONTRACT_SPEC)
+sys.modules[_COMMIT9_CONTRACT_SPEC.name] = _COMMIT9_CONTRACT
+_COMMIT9_CONTRACT_SPEC.loader.exec_module(_COMMIT9_CONTRACT)
+SYNTHETIC_FUTURE_SURFACES = _COMMIT9_CONTRACT.SYNTHETIC_FUTURE_SURFACES
+_governed_categories = _COMMIT9_CONTRACT._governed_categories  # noqa: SLF001
+_governed_surface_inventory = (
+    _COMMIT9_CONTRACT._governed_surface_inventory  # noqa: SLF001
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -116,7 +132,8 @@ def _initialize_repository(
     helper.parent.mkdir(parents=True)
     shutil.copy2(REPO_ROOT / HK_RANGE_HELPER, helper)
     for path in baseline_paths:
-        _write(repo, path, "baseline\n")
+        if not (repo / path).exists():
+            _write(repo, path, "baseline\n")
     _git(repo, "init", "--quiet")
     _git(repo, "config", "user.name", "Workflow Delivery Test")
     _git(
@@ -126,6 +143,20 @@ def _initialize_repository(
         "workflow-delivery@example.invalid",
     )
     return _commit(repo, "baseline")
+
+
+def _initialize_empty_repository(repo: Path) -> str:
+    repo.mkdir()
+    _git(repo, "init", "--quiet")
+    _git(repo, "config", "user.name", "Workflow Delivery Test")
+    _git(
+        repo,
+        "config",
+        "user.email",
+        "workflow-delivery@example.invalid",
+    )
+    _git(repo, "commit", "--quiet", "--allow-empty", "--message", "baseline")
+    return _git(repo, "rev-parse", "HEAD").stdout.strip()
 
 
 @cache
@@ -229,6 +260,138 @@ def _apply_change(repo: Path, change: HistoryChange) -> None:
     else:
         message = f"unsupported test change: {change.kind}"
         raise AssertionError(message)
+
+
+def _execution_copies(repo: Path) -> dict[str, bytes]:
+    operational_paths = {
+        "hk.pkl",
+        HK_RANGE_HELPER.as_posix(),
+        *(
+            path.relative_to(repo).as_posix()
+            for path in (repo / "src/private/lib/hk").rglob("*")
+            if path.is_file()
+        ),
+    }
+    return {
+        path: (repo / path).read_bytes() for path in sorted(operational_paths)
+    }
+
+
+def _restore_execution_copies(
+    repo: Path,
+    copies: dict[str, bytes],
+) -> None:
+    for relative_path, content in copies.items():
+        path = repo / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+
+
+def _commit9_surfaces() -> tuple[str, ...]:
+    return tuple(sorted(_governed_surface_inventory()))
+
+
+def _assert_commit9_inventory(surfaces: tuple[str, ...]) -> None:
+    categories = _governed_categories(set(surfaces))
+    for category in categories.values():
+        assert category
+    assert set(SYNTHETIC_FUTURE_SURFACES) <= set(surfaces)
+    assert {
+        ".github/CODEOWNERS",
+        ".github/workflow-delivery/governance/hcoona-release-smoke-npm.json",
+        "hk.pkl",
+        "eng/scripts/hk_exec.py",
+        "eng/scripts/workflow_delivery_v3_hk.py",
+        "pyproject.toml",
+        "uv.lock",
+    } <= set(surfaces)
+    assert any(path.startswith("src/private/lib/hk/") for path in surfaces)
+    assert any(
+        "/catalog" in path or path.endswith("/catalogs.py") for path in surfaces
+    )
+    assert any("/tests/" in path for path in surfaces)
+
+
+def _modify_history_path(repo: Path, path: str) -> None:
+    destination = repo / path
+    if path.endswith((".pkl",)):
+        addition = b"\n// commit-9 governed modification\n"
+    elif path.endswith(".py"):
+        addition = b"\n# commit-9 governed modification\n"
+    else:
+        addition = b"\ncommit-9 governed modification\n"
+    destination.write_bytes(destination.read_bytes() + addition)
+
+
+def _batched_history_changes(
+    kind: str,
+    surfaces: tuple[str, ...],
+) -> tuple[HistoryChange, ...]:
+    if kind in {"add", "modify", "delete"}:
+        return tuple(HistoryChange(kind, path) for path in surfaces)
+    if kind == "rename-out":
+        return tuple(
+            HistoryChange(
+                "rename",
+                f".commit9-history/rename-out/{index:04d}.txt",
+                old_path=path,
+            )
+            for index, path in enumerate(surfaces)
+        )
+    if kind == "rename-in":
+        return tuple(
+            HistoryChange(
+                "rename",
+                path,
+                old_path=f".commit9-history/rename-in/{index:04d}.txt",
+            )
+            for index, path in enumerate(surfaces)
+        )
+    message = f"unsupported batched history kind: {kind}"
+    raise AssertionError(message)
+
+
+def _apply_batched_changes(
+    repo: Path,
+    changes: tuple[HistoryChange, ...],
+) -> None:
+    for change in changes:
+        if change.kind == "modify" or (
+            change.kind == "add" and (repo / change.path).exists()
+        ):
+            _modify_history_path(repo, change.path)
+        else:
+            _apply_change(repo, change)
+
+
+def _materialize_add_surfaces(
+    repo: Path,
+    surfaces: tuple[str, ...],
+) -> None:
+    shutil.copy2(HK_CONFIG, repo / "hk.pkl")
+    shutil.copytree(HK_SUPPORT, repo / "src/private/lib/hk")
+    helper = repo / HK_RANGE_HELPER
+    helper.parent.mkdir(parents=True)
+    shutil.copy2(REPO_ROOT / HK_RANGE_HELPER, helper)
+    for path in surfaces:
+        if not (repo / path).exists():
+            _write(repo, path, "added\n")
+
+
+def _name_status(
+    repo: Path,
+    base: str,
+    head: str,
+) -> tuple[tuple[str, str], ...]:
+    lines = _git(
+        repo,
+        "diff",
+        "--name-status",
+        "--no-renames",
+        base,
+        head,
+    ).stdout.splitlines()
+    return tuple((status, path) for status, path in map(str.split, lines))
 
 
 def test_real_hk_plan_triggers_for_governed_path(tmp_path: Path) -> None:
@@ -337,6 +500,86 @@ def test_real_hk_plan_skips_unrelated_product_source(tmp_path: Path) -> None:
     assert paths == (unrelated,)
     assert step["status"] == "skipped"
     assert step["fileCount"] == 0
+
+
+@pytest.mark.parametrize("kind", ["add", "modify", "delete"])
+def test_real_v3_control_pytest_selects_every_codeowners_surface_for_history_kind(  # noqa: E501
+    tmp_path: Path,
+    kind: str,
+) -> None:
+    """Cross-check the shared ownership inventory through real Git and HK."""
+    surfaces = _commit9_surfaces()
+    _assert_commit9_inventory(surfaces)
+    repo = tmp_path / "repo"
+    if kind == "add":
+        base = _initialize_empty_repository(repo)
+        _materialize_add_surfaces(repo, surfaces)
+    else:
+        base = _initialize_repository(repo, baseline_paths=surfaces)
+    execution_copies = _execution_copies(repo)
+    changes = _batched_history_changes(kind, surfaces)
+
+    if kind != "add":
+        _apply_batched_changes(repo, changes)
+    head = _commit(repo, f"commit-9 {kind} surface batch")
+    if kind == "delete":
+        _restore_execution_copies(repo, execution_copies)
+
+    paths = _helper_changed_paths(repo, base, head)
+    step = _helper_step_plan(repo, base, head)
+
+    assert paths == surfaces
+    assert _name_status(repo, base, head) == tuple(
+        ({"add": "A", "modify": "M", "delete": "D"}[kind], path)
+        for path in surfaces
+    )
+    assert step["status"] == "included"
+    assert step["fileCount"] == len(surfaces)
+    if kind == "delete":
+        assert _git(repo, "status", "--porcelain").stdout
+
+
+@pytest.mark.parametrize("kind", ["rename-out", "rename-in"])
+def test_real_v3_control_pytest_selects_governed_side_of_batched_rename(
+    tmp_path: Path,
+    kind: str,
+) -> None:
+    """Count only the governed side while retaining both names from Git."""
+    surfaces = _commit9_surfaces()
+    _assert_commit9_inventory(surfaces)
+    repo = tmp_path / "repo"
+    _initialize_repository(repo, baseline_paths=surfaces)
+    execution_copies = _execution_copies(repo)
+    changes = _batched_history_changes(kind, surfaces)
+    if kind == "rename-in":
+        for change in changes:
+            assert change.old_path is not None
+            (repo / change.old_path).parent.mkdir(parents=True, exist_ok=True)
+            _git(repo, "mv", change.path, change.old_path)
+        base = _commit(repo, "commit-9 rename-in baseline")
+    else:
+        base = _git(repo, "rev-parse", "HEAD").stdout.strip()
+
+    _apply_batched_changes(repo, changes)
+    head = _commit(repo, f"commit-9 {kind} surface batch")
+    if kind == "rename-out":
+        _restore_execution_copies(repo, execution_copies)
+
+    paths = _helper_changed_paths(repo, base, head)
+    step = _helper_step_plan(repo, base, head)
+    expected_paths = tuple(
+        path
+        for change in changes
+        for path in (change.old_path, change.path)
+        if path is not None
+    )
+
+    assert paths == expected_paths
+    assert set(surfaces) <= set(paths)
+    assert step["status"] == "included"
+    assert step["fileCount"] == len(surfaces)
+    if kind == "rename-out":
+        assert _git(repo, "status", "--porcelain").stdout
 
 
 def test_real_hk_helper_treats_option_like_paths_as_files(
