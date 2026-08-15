@@ -927,3 +927,9 @@ novel_output.md
 
 # APM dependencies
 apm_modules/
+
+# Keep the exact captured npm acceptance request closure.
+!src/public/lib/three-workflow-delivery-v3/tests/fixtures/acceptance/npm-publish-request/package.tgz
+!src/public/lib/three-workflow-delivery-v3/tests/fixtures/acceptance/npm-publish-request/package/dist/
+!src/public/lib/three-workflow-delivery-v3/tests/fixtures/acceptance/npm-publish-request/package/dist/index.js
+!src/public/lib/three-workflow-delivery-v3/tests/fixtures/acceptance/npm-publish-request/package/dist/acceptance-witness.json

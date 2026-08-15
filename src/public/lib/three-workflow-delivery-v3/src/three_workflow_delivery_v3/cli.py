@@ -7,29 +7,43 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import http.client
+import http.server
+import io
 import json
 import os
 import subprocess
 import sys
+import tarfile
+import tempfile
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
-from time import time
-from typing import TYPE_CHECKING, cast
+from time import monotonic, time
+from typing import TYPE_CHECKING, Protocol, Self, cast
 from urllib.error import URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 from three_workflow_delivery_v3.adapters.github_packages import (
+    ACCEPTANCE_COORDINATES,
+    ACCEPTANCE_PACKAGE_COORDINATE,
+    ACCEPTANCE_PACKAGE_NAME,
+    ACCEPTANCE_REPOSITORY_URL,
     DeferredPublicationExecutionResult,
-    GitHubPackagesPublishPreflight,
+    GitHubPackagesHttpResponse,
     GitHubPackagesHttpTransport,
+    GitHubPackagesPublishPreflight,
     MutationMayHaveStartedMarker,
     PublisherGovernanceRecheckRejectionError,
     PublishRunner,
+    ValidatedAcceptanceRequestProof,
     form_mutation_may_have_started_marker,
+    inspect_fixed_acceptance_tarball,
     observe_github_packages_projection,
     preflight_github_packages_action,
     publish_github_packages_action,
+    run_fixed_acceptance_suite,
 )
 from three_workflow_delivery_v3.adapters.node import (
     BuildRequest,
@@ -38,6 +52,9 @@ from three_workflow_delivery_v3.adapters.node import (
     build_node_package,
     run_node_project_build,
     run_node_project_tests,
+)
+from three_workflow_delivery_v3.records.governance import (
+    admit_governance_acceptance_evidence,
 )
 from three_workflow_delivery_v3.adapters.npmjs import observe_npmjs_projection
 from three_workflow_delivery_v3.canonical import (
@@ -58,6 +75,9 @@ from three_workflow_delivery_v3.ci.finalizer import (
     derive_ci_supersession_state,
     finalize_ci_slice,
     render_ci_slice_summary,
+)
+from three_workflow_delivery_v3.governance.inspection import (
+    inspect_acceptance_reviewer,
 )
 from three_workflow_delivery_v3.ci.planner import (
     ROOT_HK_DEFINITION,
@@ -204,7 +224,41 @@ _CI_ADAPTER_CONTEXT_SCHEMA = "workflow-delivery/v3/ci-node-adapter-context"
 _CI_ADAPTER_RESULT_SCHEMA = "workflow-delivery/v3/ci-node-adapter-result"
 _SHA256_HEX_LENGTH = 64
 _PAIR_FIELD_COUNT = 2
+_ACCEPTANCE_LOOPBACK_DUMMY_TOKEN = "wdv3-loopback-dummy-token"  # noqa: S105
+_SYSTEM_POPEN = subprocess.Popen
+_TARGET_SHA_LENGTH = 40
+_ACCEPTANCE_VERSIONS_PER_PAGE = 100
 _LOWER_HEX = frozenset("0123456789abcdef")
+
+
+class _AcceptanceSuiteAction(argparse.Action):
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: str | Sequence[str] | None,
+        option_string: str | None = None,
+    ) -> None:
+        del parser, option_string
+        if type(values) is not str:
+            raise TypeError("acceptance suite must be an exact string")
+        setattr(namespace, self.dest, values)
+        if getattr(namespace, "timeout_seconds", None) is None:
+            timeout = 120.0 if values == "absent-create-readback" else 300.0
+            namespace.timeout_seconds = timeout
+
+
+class _AcceptanceProbeArguments(Protocol):
+    package_coordinate: str
+    suite: str
+    target_sha: str
+    timeout_seconds: float
+    max_response_bytes: int
+    max_output_bytes: int
+    output: str
+    github_output: str | None
+
+
 _NODE_BUILD_INPUTS = (
     "README.md",
     "package.json",
@@ -388,6 +442,193 @@ def _validate_attestation_command(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _governance_inspect_acceptance_reviewer_command(
+    arguments: argparse.Namespace,
+) -> int:
+    inspection = inspect_acceptance_reviewer(
+        repository=arguments.repository,
+        workflow_run_id=arguments.workflow_run_id,
+        environment=arguments.environment,
+        deployment=arguments.deployment,
+        job=arguments.job,
+        artifact_id=arguments.artifact_id,
+        timeout_seconds=arguments.timeout_seconds,
+        max_output_bytes=arguments.max_output_bytes,
+    )
+    document = inspection.to_document()
+    if arguments.output:
+        _write_output(arguments.output, document)
+    else:
+        _write_document(document)
+    return 0
+
+
+def _governance_admit_acceptance_evidence_command(
+    arguments: argparse.Namespace,
+) -> int:
+    evidence = admit_governance_acceptance_evidence(
+        Path(arguments.document).read_bytes()
+    )
+    _write_document(evidence.to_document())
+    return 0
+
+
+def _governance_run_fixed_acceptance_probe_command(
+    arguments: _AcceptanceProbeArguments,
+) -> int:
+    if arguments.package_coordinate != ACCEPTANCE_PACKAGE_COORDINATE:
+        raise ValueError("acceptance package coordinate is not fixed")
+    token = os.environ.pop("WDV3_ACCEPTANCE_GITHUB_TOKEN", None)
+    if not token:
+        raise ValueError(
+            "WDV3_ACCEPTANCE_GITHUB_TOKEN must contain the acceptance token"
+        )
+    with tempfile.TemporaryDirectory(prefix="wdv3-acceptance-") as temporary:
+        root = Path(temporary)
+        npm_config = root / ".npmrc"
+        npm_config.write_text(
+            (
+                "@hcoona:registry=https://npm.pkg.github.com\n"
+                "ignore-scripts=true\n"
+            ),
+            encoding="utf-8",
+        )
+        npm_config.chmod(0o600)
+        suite_inventory = (
+            ("absent-create-readback",)
+            if arguments.suite == "absent-create-readback"
+            else ("exact", "identical-race", "differing-race", "lost-response")
+        )
+        tarballs: dict[str, Path] = {}
+        contenders: dict[str, Path] = {}
+        for scenario in suite_inventory:
+            version = ACCEPTANCE_COORDINATES[scenario].rsplit("@", 1)[1]
+            tarballs[scenario] = _build_acceptance_tarball(
+                root,
+                scenario=scenario,
+                version=version,
+                target_sha=arguments.target_sha,
+                timeout_seconds=arguments.timeout_seconds,
+            )
+            if scenario == "differing-race":
+                contenders[scenario] = _build_acceptance_tarball(
+                    root,
+                    scenario=f"{scenario}-contender",
+                    version=version,
+                    target_sha=arguments.target_sha,
+                    timeout_seconds=arguments.timeout_seconds,
+                )
+        result = run_fixed_acceptance_suite(
+            suite=arguments.suite,
+            tarballs=tarballs,
+            transport=_AcceptanceNpmTransport(
+                npm_config,
+                token=token,
+                target_sha=arguments.target_sha,
+            ),
+            runner=_AcceptanceNpmRunner(
+                npm_config,
+                contender_tarballs=contenders,
+                token=token,
+            ),
+            timeout_seconds=arguments.timeout_seconds,
+            max_response_bytes=arguments.max_response_bytes,
+            max_output_bytes=arguments.max_output_bytes,
+            deadline=monotonic() + arguments.timeout_seconds,
+        )
+        token = ""
+    document = result.to_document()
+    _write_output(arguments.output, document)
+    _append_outputs(
+        arguments.github_output,
+        (
+            ("result", result.result),
+            ("scenario-inventory", json.dumps(result.scenario_inventory)),
+            ("record-digest", document["record-digest"]),
+            ("mutation-classification", result.mutation_classification),
+            (
+                "record-json",
+                json.dumps(document, separators=(",", ":"), sort_keys=True),
+            ),
+        ),
+    )
+    return 0
+
+
+def _acceptance_subprocess_environment(
+    *,
+    npm_config: Path | None = None,
+) -> dict[str, str]:
+    environment = {
+        name: os.environ[name]
+        for name in ("HOME", "LANG", "LC_ALL", "PATH", "TMPDIR")
+        if name in os.environ
+    }
+    if npm_config is not None:
+        environment["NPM_CONFIG_USERCONFIG"] = str(npm_config)
+    return environment
+
+
+def _build_acceptance_tarball(
+    root: Path,
+    *,
+    scenario: str,
+    version: str,
+    target_sha: str,
+    timeout_seconds: float,
+) -> Path:
+    package_root = root / f"package-{scenario}"
+    package_root.mkdir()
+    package_document = {
+        "name": ACCEPTANCE_PACKAGE_NAME,
+        "version": version,
+        "private": False,
+        "files": ["index.js", "workflow-delivery/acceptance.json"],
+        "repository": {
+            "type": "git",
+            "url": ACCEPTANCE_REPOSITORY_URL,
+        },
+    }
+    (package_root / "package.json").write_bytes(
+        canonicalize(cast("JsonValue", package_document))
+    )
+    payload_scenario = (
+        "absent-create-readback" if scenario == "exact" else scenario
+    )
+    (package_root / "index.js").write_text(
+        f"export const workflowDeliveryAcceptance = {payload_scenario!r};\n",
+        encoding="utf-8",
+    )
+    witness = package_root / "workflow-delivery/acceptance.json"
+    witness.parent.mkdir()
+    witness.write_bytes(
+        canonicalize(
+            {
+                "purpose": "destination-acceptance",
+                "target-sha": target_sha,
+            }
+        )
+    )
+    pack_root = root / f"packed-{scenario}"
+    pack_root.mkdir()
+    pack = subprocess.run(  # noqa: S603
+        (
+            "npm",
+            "pack",
+            "--ignore-scripts",
+            "--pack-destination",
+            str(pack_root),
+        ),
+        cwd=package_root,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=timeout_seconds,
+        env=_acceptance_subprocess_environment(),
+    )
+    return pack_root / pack.stdout.strip().splitlines()[-1]
+
+
 def _append_outputs(
     path: str | None,
     values: tuple[tuple[str, object], ...],
@@ -437,6 +678,1112 @@ class _SubprocessPublishRunner(PublishRunner):
             "stdout": completed.stdout,
             "stderr": completed.stderr,
         }
+
+
+def _remaining_seconds(deadline: float) -> float:
+    remaining = round(deadline - monotonic(), 3)
+    if remaining <= 0:
+        raise TimeoutError("acceptance operation deadline expired")
+    return remaining
+
+
+def _acceptance_publish_body(
+    tarball: bytes,
+    *,
+    version: str,
+    tag: str,
+) -> bytes:
+    attachment_name = f"hcoona-release-smoke-npm-{version}.tgz"
+    return canonicalize(
+        {
+            "_id": ACCEPTANCE_PACKAGE_NAME,
+            "name": ACCEPTANCE_PACKAGE_NAME,
+            "dist-tags": {tag: version},
+            "versions": {
+                version: {
+                    "name": ACCEPTANCE_PACKAGE_NAME,
+                    "version": version,
+                    "dist": {
+                        "integrity": (
+                            "sha512-"
+                            + base64.b64encode(
+                                hashlib.sha512(tarball).digest()
+                            ).decode("ascii")
+                        ),
+                        "shasum": hashlib.sha1(tarball).hexdigest(),  # noqa: S324
+                    },
+                }
+            },
+            "_attachments": {
+                attachment_name: {
+                    "content_type": "application/octet-stream",
+                    "data": base64.b64encode(tarball).decode("ascii"),
+                    "length": len(tarball),
+                }
+            },
+        }
+    )
+
+
+def _validate_acceptance_publish_body(  # noqa: C901, PLR0912
+    body: bytes,
+    *,
+    expected_version: str,
+    expected_tag: str,
+    expected_tarball: bytes | None,
+    expected_target_sha: str | None,
+) -> bytes:
+    try:
+        document = json.loads(body)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("publish body is not JSON") from error
+    if type(document) is not dict:
+        raise ValueError("publish body must be an object")
+    if (
+        document.get("_id") != ACCEPTANCE_PACKAGE_NAME
+        or document.get("name") != ACCEPTANCE_PACKAGE_NAME
+        or document.get("dist-tags") != {expected_tag: expected_version}
+    ):
+        raise ValueError("publish identity or dist-tag is not exact")
+    versions = document.get("versions")
+    if type(versions) is not dict or set(versions) != {expected_version}:
+        raise ValueError("publish versions closure is not exact")
+    version_document = versions[expected_version]
+    if type(version_document) is not dict or (
+        version_document.get("name") != ACCEPTANCE_PACKAGE_NAME
+        or version_document.get("version") != expected_version
+    ):
+        raise ValueError("publish version identity is not exact")
+    attachments = document.get("_attachments")
+    expected_attachment_names = {
+        f"hcoona-release-smoke-npm-{expected_version}.tgz",
+        f"hcoona-hcoona-release-smoke-npm-{expected_version}.tgz",
+        (f"@hcoona/hcoona-release-smoke-npm-{expected_version}.tgz"),
+    }
+    if (
+        type(attachments) is not dict
+        or len(attachments) != 1
+        or not set(attachments).issubset(expected_attachment_names)
+    ):
+        raise ValueError("publish attachment closure is not exact")
+    expected_attachment = next(iter(attachments))
+    attachment = attachments[expected_attachment]
+    if (
+        type(attachment) is not dict
+        or attachment.get("content_type") != "application/octet-stream"
+        or type(attachment.get("data")) is not str
+        or type(attachment.get("length")) is not int
+    ):
+        raise ValueError("publish attachment is malformed")
+    try:
+        tarball = base64.b64decode(attachment["data"], validate=True)
+    except (ValueError, TypeError) as error:
+        raise ValueError("publish attachment is not valid base64") from error
+    if attachment["length"] != len(tarball):
+        raise ValueError("publish attachment length is not exact")
+    if expected_tarball is not None and tarball != expected_tarball:
+        raise ValueError("publish attachment bytes are not expected")
+    dist = version_document.get("dist")
+    expected_integrity = "sha512-" + base64.b64encode(
+        hashlib.sha512(tarball).digest()
+    ).decode("ascii")
+    if type(dist) is not dict or (
+        dist.get("integrity") != expected_integrity
+        or dist.get("shasum") != hashlib.sha1(tarball).hexdigest()  # noqa: S324
+    ):
+        raise ValueError("publish tarball hashes are not exact")
+    try:
+        with tarfile.open(fileobj=io.BytesIO(tarball), mode="r:gz") as archive:
+            witness_file = archive.extractfile(
+                "package/workflow-delivery/acceptance.json"
+            )
+            if witness_file is None:
+                raise ValueError("acceptance witness is missing")
+            witness_bytes = witness_file.read()
+    except (tarfile.TarError, OSError, KeyError) as error:
+        raise ValueError("acceptance tarball is malformed") from error
+    try:
+        witness = json.loads(witness_bytes)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("acceptance witness is malformed") from error
+    target_sha = witness.get("target-sha") if type(witness) is dict else None
+    if (
+        type(witness) is not dict
+        or set(witness) != {"purpose", "target-sha"}
+        or witness.get("purpose") != "destination-acceptance"
+        or type(target_sha) is not str
+        or len(target_sha) != _TARGET_SHA_LENGTH
+        or any(character not in "0123456789abcdef" for character in target_sha)
+        or (
+            expected_target_sha is not None
+            and target_sha != expected_target_sha
+        )
+    ):
+        raise ValueError("acceptance witness is not exact")
+    return tarball
+
+
+class AcceptanceMutationProxy:
+    """Bounded loopback mutation boundary with strict request qualification."""
+
+    _MAX_REQUEST_BYTES = 30_000_000
+    _MAX_RESPONSE_BYTES = 1_000_000
+
+    def __init__(  # noqa: C901, PLR0913
+        self,
+        *,
+        timeout_seconds: float,
+        token: str,
+        incoming_dummy_token: str | None = None,
+        expected_method: str,
+        expected_path: str,
+        expected_version: str = "0.0.0-wdv3-acceptance.4",
+        expected_tag: str = "wdv3-acceptance-4",
+        expected_tarballs: tuple[bytes, ...] = (),
+        expected_target_sha: str | None = None,
+        expected_requests: int = 1,
+        drop_accepted_response: bool = True,
+        deadline: float | None = None,
+    ) -> None:
+        """Create one fixed-host bounded loopback proxy."""
+        self.observed = threading.Event()
+        self.processed = threading.Event()
+        self.proof: ValidatedAcceptanceRequestProof | None = None
+        self.validation_error: str | None = None
+        self.request_facts: list[dict[str, object]] = []
+        self._legacy_timeout_seconds = timeout_seconds
+        self._shared_deadline = deadline is not None
+        self._deadline = (
+            monotonic() + timeout_seconds if deadline is None else deadline
+        )
+        owner = self
+        max_request_bytes = self._MAX_REQUEST_BYTES
+        max_response_bytes = self._MAX_RESPONSE_BYTES
+        if not token:
+            raise ValueError("lost-response proxy token must be nonempty")
+        if incoming_dummy_token == "":
+            raise ValueError("loopback dummy token must be nonempty")
+        if expected_method != "PUT":
+            raise ValueError("lost-response proxy method must be PUT")
+        if not expected_path.startswith("/@hcoona%2f") or "?" in expected_path:
+            raise ValueError("lost-response proxy path is not fixed")
+        if expected_requests not in {1, 2}:
+            raise ValueError("acceptance proxy request count is unsupported")
+        barrier = (
+            threading.Barrier(expected_requests)
+            if expected_requests == _PAIR_FIELD_COUNT
+            else None
+        )
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def log_message(
+                self,
+                format: str,  # noqa: A002
+                *args: object,
+            ) -> None:
+                del format, args
+
+            def do_POST(self) -> None:
+                self._forward()
+
+            def do_PUT(self) -> None:
+                self._forward()
+
+            def do_GET(self) -> None:
+                body = b'{"error":"not_found"}'
+                self.send_response(http.HTTPStatus.NOT_FOUND)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Connection", "close")
+                self.end_headers()
+                self.wfile.write(body)
+                self.close_connection = True
+
+            def _reject(self, status: int) -> None:
+                self.send_response(status)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            def _forward(  # noqa: C901, PLR0911, PLR0912, PLR0915
+                self,
+            ) -> None:
+                if (
+                    self.command != expected_method
+                    or self.path != expected_path
+                    or self.headers.get("Transfer-Encoding") is not None
+                ):
+                    self._reject(400)
+                    return
+                if (
+                    incoming_dummy_token is not None
+                    and self.headers.get("Authorization")
+                    != f"Bearer {incoming_dummy_token}"
+                ):
+                    self._reject(401)
+                    return
+                length_text = self.headers.get("Content-Length")
+                if length_text is None:
+                    self._reject(411)
+                    return
+                try:
+                    length = int(length_text)
+                except ValueError:
+                    self._reject(400)
+                    return
+                if length <= 0 or length > max_request_bytes:
+                    self._reject(413)
+                    return
+                body = self.rfile.read(length)
+                if len(body) != length:
+                    self.close_connection = True
+                    return
+                content_type = self.headers.get("Content-Type", "")
+                if content_type.lower().split(";", 1)[0].strip() != (
+                    "application/json"
+                ):
+                    self._reject(415)
+                    return
+                try:
+                    tarball = _validate_acceptance_publish_body(
+                        body,
+                        expected_version=expected_version,
+                        expected_tag=expected_tag,
+                        expected_tarball=None,
+                        expected_target_sha=expected_target_sha,
+                    )
+                except ValueError as error:
+                    owner.validation_error = str(error)
+                    self._reject(422)
+                    return
+                if expected_tarballs and (
+                    tarball not in expected_tarballs
+                    or sum(
+                        fact["tarball-sha512"]
+                        == "sha512:" + hashlib.sha512(tarball).hexdigest()
+                        for fact in owner.request_facts
+                    )
+                    >= expected_tarballs.count(tarball)
+                ):
+                    self._reject(409)
+                    return
+                request_digest = "sha256:" + hashlib.sha256(body).hexdigest()
+                request_fact: dict[str, object] = {
+                    "request-digest": request_digest,
+                    "tarball-sha512": (
+                        "sha512:" + hashlib.sha512(tarball).hexdigest()
+                    ),
+                }
+                owner.request_facts.append(request_fact)
+                owner.observed.set()
+                if barrier is not None:
+                    try:
+                        barrier.wait(
+                            timeout=owner._proxy_timeout()  # noqa: SLF001
+                        )
+                    except threading.BrokenBarrierError:
+                        self._reject(504)
+                        return
+                headers = {
+                    name: value
+                    for name, value in self.headers.items()
+                    if name.lower()
+                    not in {
+                        "authorization",
+                        "connection",
+                        "content-length",
+                        "host",
+                        "proxy-authorization",
+                        "transfer-encoding",
+                    }
+                }
+                headers["Authorization"] = "Bearer " + token
+                headers["Content-Length"] = str(len(body))
+                connection = http.client.HTTPSConnection(
+                    "npm.pkg.github.com",
+                    timeout=owner._proxy_timeout(),  # noqa: SLF001
+                )
+                try:
+                    connection.request(
+                        self.command,
+                        self.path,
+                        body=body,
+                        headers=headers,
+                    )
+                    response = connection.getresponse()
+                    response_body = response.read(max_response_bytes + 1)
+                    if len(response_body) > max_response_bytes:
+                        self._reject(502)
+                        return
+                    selected_headers = {
+                        name.lower(): value
+                        for name, value in response.getheaders()
+                        if name.lower()
+                        in {
+                            "content-type",
+                            "etag",
+                            "retry-after",
+                        }
+                    }
+                    if response.status == http.HTTPStatus.CREATED:
+                        proof = ValidatedAcceptanceRequestProof.from_validated_exchange(  # noqa: E501
+                            raw_request=body,
+                            tarball=tarball,
+                            package_coordinate=(
+                                f"{ACCEPTANCE_PACKAGE_NAME}@{expected_version}"
+                            ),
+                            tag=expected_tag,
+                            upstream_status=response.status,
+                            selected_headers=selected_headers,
+                            response_body=response_body,
+                        )
+                        owner.proof = proof
+                        request_fact.update(
+                            {
+                                "upstream-result": "created",
+                                "proof": proof.to_document(),
+                            }
+                        )
+                        owner.processed.set()
+                        if drop_accepted_response:
+                            self.close_connection = True
+                            return
+                    else:
+                        request_fact["upstream-result"] = (
+                            "create-conflict"
+                            if response.status == http.HTTPStatus.CONFLICT
+                            else "failed"
+                        )
+                    self.send_response(response.status)
+                    for name, value in response.getheaders():
+                        if name.lower() not in {
+                            "connection",
+                            "content-length",
+                            "transfer-encoding",
+                        }:
+                            self.send_header(name, value)
+                    self.send_header("Content-Length", str(len(response_body)))
+                    self.end_headers()
+                    self.wfile.write(response_body)
+                except (OSError, TimeoutError, http.client.HTTPException):
+                    self._reject(502)
+                finally:
+                    connection.close()
+
+        self._server = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", 0),
+            Handler,
+        )
+        self._server.timeout = self._proxy_timeout()
+        self._thread = threading.Thread(
+            target=self._server.serve_forever,
+            kwargs={
+                "poll_interval": min(
+                    0.05,
+                    self._proxy_timeout(),
+                )
+            },
+            daemon=True,
+        )
+
+    def _proxy_timeout(self) -> float:
+        return (
+            _remaining_seconds(self._deadline)
+            if self._shared_deadline
+            else self._legacy_timeout_seconds
+        )
+
+    @property
+    def registry(self) -> str:
+        """Return the loopback registry origin."""
+        host = self._server.server_address[0]
+        port = self._server.server_address[1]
+        return f"http://{host}:{port}"
+
+    def __enter__(self) -> Self:
+        """Start the local server."""
+        self._thread.start()
+        return self
+
+    def __exit__(
+        self,
+        _exc_type: object,
+        _exc_value: object,
+        _traceback: object,
+    ) -> None:
+        """Stop the local server and release its socket."""
+        self._server.shutdown()
+        self._server.server_close()
+        self._thread.join(
+            timeout=max(0.0, round(self._deadline - monotonic(), 3))
+        )
+
+
+class _LostResponseProxy(AcceptanceMutationProxy):
+    """Compatibility name for the reusable acceptance mutation proxy."""
+
+
+class _AcceptanceNpmRunner:
+    """Bounded npm runner for the temporary fixed acceptance command."""
+
+    def __init__(
+        self,
+        npm_config: Path,
+        *,
+        contender_tarballs: dict[str, Path],
+        token: str = "",
+    ) -> None:
+        self._npm_config = npm_config
+        self._contender_tarballs = dict(contender_tarballs)
+        self._token = token
+
+    def _run_process(
+        self,
+        argv: tuple[str, ...],
+        *,
+        env: dict[str, str],
+        timeout_seconds: float,
+        max_output_bytes: int,
+        deadline: float | None = None,
+    ) -> dict[str, object]:
+        operation_deadline = (
+            monotonic() + timeout_seconds if deadline is None else deadline
+        )
+        try:
+            completed = subprocess.run(  # noqa: S603
+                argv,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=_remaining_seconds(operation_deadline),
+                env={
+                    **_acceptance_subprocess_environment(
+                        npm_config=self._npm_config
+                    ),
+                    **env,
+                },
+            )
+        except subprocess.TimeoutExpired:
+            raise TimeoutError("acceptance npm scenario timed out") from None
+        result = self._classify(
+            completed,
+            max_output_bytes=max_output_bytes,
+        )
+        result["action-executed"] = True
+        result["mutation-started"] = True
+        return result
+
+    def run(
+        self,
+        argv: tuple[str, ...],
+        *,
+        env: dict[str, str],
+        timeout_seconds: float,
+        max_output_bytes: int,
+        deadline: float | None = None,
+    ) -> dict[str, object]:
+        return self._run_process(
+            argv,
+            env=env,
+            timeout_seconds=timeout_seconds,
+            max_output_bytes=max_output_bytes,
+            deadline=deadline,
+        )
+
+    def run_scenario(  # noqa: C901, PLR0913, PLR0915
+        self,
+        scenario: str,
+        argv: tuple[str, ...],
+        *,
+        env: dict[str, str],
+        timeout_seconds: float,
+        max_output_bytes: int,
+        deadline: float | None = None,
+    ) -> dict[str, object]:
+        """Execute deterministic competing/lost-response orchestration."""
+        shared_deadline = deadline is not None
+        operation_deadline = (
+            monotonic() + timeout_seconds if deadline is None else deadline
+        )
+        commands = [argv]
+        if scenario == "identical-race":
+            commands.append(argv)
+        elif scenario == "differing-race":
+            contender = self._contender_tarballs[scenario]
+            commands.append(
+                tuple(
+                    str(contender) if value == argv[2] else value
+                    for value in argv
+                )
+            )
+        version = ACCEPTANCE_COORDINATES[scenario].rsplit("@", 1)[1]
+        tag = (
+            argv[argv.index("--tag") + 1]
+            if "--tag" in argv
+            else f"wdv3-acceptance-{version.rsplit('.', 1)[1]}"
+        )
+        tarballs = tuple(
+            Path(command[2]).read_bytes() if Path(command[2]).is_file() else b""
+            for command in commands
+        )
+        package_path = "/@hcoona%2fhcoona-release-smoke-npm"
+        processes: list[subprocess.Popen[str]] = []
+        completed: list[subprocess.CompletedProcess[str]] = []
+        system_process_boundary = subprocess.Popen is _SYSTEM_POPEN
+        with (
+            _LostResponseProxy(
+                timeout_seconds=_remaining_seconds(operation_deadline),
+                token=self._token or "unavailable-test-token",
+                incoming_dummy_token=(
+                    _ACCEPTANCE_LOOPBACK_DUMMY_TOKEN
+                    if system_process_boundary
+                    else None
+                ),
+                expected_method="PUT",
+                expected_path=package_path,
+                expected_version=version,
+                expected_tag=tag,
+                expected_tarballs=tarballs,
+                expected_requests=len(commands),
+                drop_accepted_response=scenario == "lost-response",
+                deadline=operation_deadline,
+            ) as proxy,
+            tempfile.TemporaryDirectory(
+                prefix="wdv3-acceptance-proxy-"
+            ) as temporary,
+        ):
+            local_config = Path(temporary) / ".npmrc"
+            dummy_auth = (
+                f"//{proxy.registry.removeprefix('http://')}/:"
+                f"_authToken={_ACCEPTANCE_LOOPBACK_DUMMY_TOKEN}\n"
+                if system_process_boundary
+                else ""
+            )
+            local_config.write_text(
+                (
+                    f"@hcoona:registry={proxy.registry}\n"
+                    f"{dummy_auth}"
+                    "ignore-scripts=true\n"
+                ),
+                encoding="utf-8",
+            )
+            local_config.chmod(0o600)
+            local_commands: list[tuple[str, ...]] = []
+            try:
+                for command in commands:
+                    local_command = list(command)
+                    if "--registry" in local_command:
+                        registry_index = local_command.index("--registry") + 1
+                        local_command[registry_index] = proxy.registry
+                    else:
+                        local_command.extend(("--registry", proxy.registry))
+                    local_commands.append(tuple(local_command))
+                    processes.append(
+                        subprocess.Popen(  # noqa: S603
+                            tuple(local_command),
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            text=True,
+                            env={
+                                **_acceptance_subprocess_environment(
+                                    npm_config=local_config
+                                ),
+                                **env,
+                            },
+                        )
+                    )
+                for process, command in zip(
+                    processes, local_commands, strict=True
+                ):
+                    # process.communicate(timeout=timeout_seconds) would reset
+                    # the budget; every wait uses the shared deadline instead.
+                    stdout, stderr = process.communicate(
+                        timeout=_remaining_seconds(operation_deadline)
+                    )
+                    if process.poll() is None:
+                        process.kill()
+                        process.communicate()
+                    completed.append(
+                        subprocess.CompletedProcess(
+                            command,
+                            process.returncode,
+                            stdout,
+                            stderr,
+                        )
+                    )
+            except subprocess.TimeoutExpired:
+                self._cleanup_processes(
+                    processes,
+                    deadline=operation_deadline if shared_deadline else None,
+                )
+                # The Adapter maps this to result="timeout" and
+                # mutation_classification="unknown".
+                error = TimeoutError("acceptance npm scenario timed out")
+                error.action_executed = bool(processes)  # type: ignore[attr-defined]
+                error.mutation_started = getattr(  # type: ignore[attr-defined]
+                    proxy, "observed", threading.Event()
+                ).is_set()
+                raise error from None
+            except OSError as error:
+                self._cleanup_processes(
+                    processes,
+                    deadline=operation_deadline if shared_deadline else None,
+                )
+                error.action_executed = bool(processes)  # type: ignore[attr-defined]
+                error.mutation_started = getattr(  # type: ignore[attr-defined]
+                    proxy, "observed", threading.Event()
+                ).is_set()
+                raise
+            if scenario == "lost-response" and proxy.proof is not None:
+                return {
+                    "outcome": "lost-response-processed",
+                    "validated-request-proof": proxy.proof,
+                    "request-digest": proxy.proof.request_digest,
+                    "upstream-status": proxy.proof.upstream_status,
+                    "selected-headers": dict(proxy.proof.selected_headers),
+                    "response-body-digest": proxy.proof.response_body_digest,
+                    "response-identity-digest": (
+                        proxy.proof.response_identity_digest
+                    ),
+                    "action-executed": True,
+                    "mutation-started": getattr(
+                        proxy, "observed", proxy.processed
+                    ).is_set(),
+                }
+        results = [
+            self._classify(result, max_output_bytes=max_output_bytes)
+            for result in completed
+        ]
+        outcomes = [result["outcome"] for result in results]
+        if (
+            len(outcomes) == _PAIR_FIELD_COUNT
+            and outcomes.count("created") == 1
+            and outcomes.count("create-conflict") == 1
+        ):
+            winner_index = outcomes.index("created")
+            content_hashes = [
+                "sha512:"
+                + hashlib.sha512(Path(command[2]).read_bytes()).hexdigest()
+                for command in commands
+            ]
+            contenders = [
+                {
+                    "contender-id": f"contender-{index + 1}",
+                    "request-digest": (
+                        "sha256:"
+                        + hashlib.sha256(
+                            _acceptance_publish_body(
+                                tarballs[index],
+                                version=version,
+                                tag=tag,
+                            )
+                        ).hexdigest()
+                    ),
+                    "tarball-sha512": content_hashes[index],
+                    "upstream-result": outcomes[index],
+                }
+                for index in range(len(commands))
+            ]
+            return {
+                "outcome": "create-conflict",
+                "action-executed": True,
+                "mutation-started": getattr(
+                    proxy, "observed", proxy.processed
+                ).is_set(),
+                "contender-outcomes": outcomes,
+                "winner-content-sha512": content_hashes[winner_index],
+                "contender-content-sha512": content_hashes[1],
+                "race-overlap-proven": len(processes) == _PAIR_FIELD_COUNT,
+                "barrier-arrivals": [
+                    f"contender-{index + 1}" for index in range(len(processes))
+                ],
+                "barrier-release": "simultaneous",
+                "contenders": contenders,
+                "response-identity-digest": canonical_sha256(
+                    cast("JsonValue", results)
+                ),
+            }
+        return {
+            "outcome": "failed",
+            "action-executed": bool(processes),
+            "mutation-started": getattr(
+                proxy, "observed", proxy.processed
+            ).is_set(),
+            "contender-outcomes": outcomes,
+            "response-identity-digest": canonical_sha256(
+                cast("JsonValue", results)
+            ),
+        }
+
+    @staticmethod
+    def _cleanup_processes(
+        processes: list[subprocess.Popen[str]],
+        *,
+        deadline: float | None = None,
+    ) -> None:
+        for process in processes:
+            if process.poll() is None:
+                process.kill()
+
+        for process in processes:
+            if deadline is None:
+                process.communicate()
+                continue
+            try:
+                process.communicate(timeout=_remaining_seconds(deadline))
+            except (subprocess.TimeoutExpired, TimeoutError):
+                continue
+
+    @staticmethod
+    def _classify(
+        completed: subprocess.CompletedProcess[str],
+        *,
+        max_output_bytes: int,
+    ) -> dict[str, object]:
+        output = (completed.stdout + "\n" + completed.stderr).encode()
+        if len(output) > max_output_bytes:
+            raise ValueError("acceptance npm output exceeded the bounded limit")
+        outcome = "created" if completed.returncode == 0 else "failed"
+        lowered = output.decode(errors="replace").lower()
+        if completed.returncode != 0 and any(
+            token in lowered
+            for token in ("e409", "conflict", "previously published")
+        ):
+            outcome = "create-conflict"
+        return {
+            "outcome": outcome,
+            "response-identity-digest": (
+                f"sha256:{hashlib.sha256(output).hexdigest()}"
+            ),
+        }
+
+
+class _AcceptanceHttpTransport(Protocol):
+    def get(
+        self,
+        url: str,
+        *,
+        headers: tuple[tuple[str, str], ...],
+        timeout: float,
+        max_bytes: int,
+    ) -> GitHubPackagesHttpResponse: ...
+
+
+class _AcceptanceNpmTransport:
+    """Bounded metadata plus exact downloaded-tarball observer."""
+
+    def __init__(
+        self,
+        npm_config: Path,
+        *,
+        token: str,
+        target_sha: str,
+    ) -> None:
+        self._npm_config = npm_config
+        self._token = token
+        self._target_sha = target_sha
+        self._transport: _AcceptanceHttpTransport = (
+            GitHubPackagesHttpTransport()
+        )
+
+    def _authenticated_get(
+        self,
+        url: str,
+        *,
+        headers: tuple[tuple[str, str], ...],
+        timeout: float,
+        max_bytes: int,
+    ) -> GitHubPackagesHttpResponse:
+        authenticated_headers = tuple(
+            (
+                name,
+                "Bearer " + self._token
+                if name.lower() == "authorization"
+                else value,
+            )
+            for name, value in headers
+        )
+        return self._transport.get(
+            url,
+            headers=authenticated_headers,
+            timeout=timeout,
+            max_bytes=max_bytes,
+        )
+
+    def observe(  # noqa: C901, PLR0911, PLR0912, PLR0915
+        self,
+        package_coordinate: str,
+        tag: str,
+        *,
+        timeout_seconds: float,
+        max_response_bytes: int,
+        deadline: float | None = None,
+    ) -> dict[str, object]:
+        operation_deadline = (
+            monotonic() + timeout_seconds if deadline is None else deadline
+        )
+        version = package_coordinate.rsplit("@", 1)[-1]
+        api_headers = (
+            ("Accept", "application/vnd.github+json"),
+            ("Authorization", "******"),
+            ("X-GitHub-Api-Version", "2022-11-28"),
+            ("User-Agent", "three-workflow-delivery-v3"),
+        )
+        package_url = (
+            "https://api.github.com/users/hcoona/packages/npm/"
+            "hcoona-release-smoke-npm"
+        )
+        package_response = self._authenticated_get(
+            package_url,
+            headers=api_headers,
+            timeout=_remaining_seconds(operation_deadline),
+            max_bytes=max_response_bytes,
+        )
+        api_bodies = [package_response.body]
+
+        def api_digest() -> str:
+            return "sha256:" + hashlib.sha256(b"".join(api_bodies)).hexdigest()
+
+        if (
+            package_response.status == 404  # noqa: PLR2004
+            and not package_response.truncated
+            and package_response.complete
+        ):
+            return {
+                "state": "absent",
+                "response-identity-digest": api_digest(),
+            }
+        if (
+            package_response.status != 200  # noqa: PLR2004
+            or package_response.truncated
+            or not package_response.complete
+        ):
+            return {
+                "state": "unknown",
+                "response-identity-digest": api_digest(),
+            }
+        try:
+            package_metadata = json.loads(package_response.body)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            package_metadata = None
+        repository = (
+            package_metadata.get("repository")
+            if type(package_metadata) is dict
+            else None
+        )
+        owner = (
+            package_metadata.get("owner")
+            if type(package_metadata) is dict
+            else None
+        )
+        owner_login = owner.get("login") if type(owner) is dict else None
+        if (
+            type(package_metadata) is not dict
+            or package_metadata.get("package_type") != "npm"
+            or package_metadata.get("name") != "hcoona-release-smoke-npm"
+            or type(repository) is not dict
+            or repository.get("full_name") != "hcoona/three"
+            or owner_login != "hcoona"
+        ):
+            return {
+                "state": "unknown",
+                "response-identity-digest": api_digest(),
+            }
+
+        version_present = False
+        for page in range(1, 101):
+            try:
+                remaining = _remaining_seconds(operation_deadline)
+            except TimeoutError:
+                return {
+                    "state": "unknown",
+                    "response-identity-digest": api_digest(),
+                }
+            versions_response = self._authenticated_get(
+                f"{package_url}/versions?"
+                f"per_page={_ACCEPTANCE_VERSIONS_PER_PAGE}&page={page}",
+                headers=api_headers,
+                timeout=remaining,
+                max_bytes=max_response_bytes,
+            )
+            api_bodies.append(versions_response.body)
+            if (
+                versions_response.status != 200  # noqa: PLR2004
+                or versions_response.truncated
+                or not versions_response.complete
+            ):
+                return {
+                    "state": "unknown",
+                    "response-identity-digest": api_digest(),
+                }
+            try:
+                versions = json.loads(versions_response.body)
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                versions = None
+            if type(versions) is not list or any(
+                type(item) is not dict for item in versions
+            ):
+                return {
+                    "state": "unknown",
+                    "response-identity-digest": api_digest(),
+                }
+            for item in versions:
+                if item.get("name") != version:
+                    continue
+                metadata = item.get("metadata")
+                if type(metadata) is dict and metadata.get(
+                    "package_type"
+                ) not in {None, "npm"}:
+                    return {
+                        "state": "unknown",
+                        "response-identity-digest": api_digest(),
+                    }
+                version_present = True
+            if version_present or len(versions) < _ACCEPTANCE_VERSIONS_PER_PAGE:
+                break
+        if (
+            not version_present
+            and len(versions) == _ACCEPTANCE_VERSIONS_PER_PAGE
+        ):
+            return {
+                "state": "unknown",
+                "response-identity-digest": api_digest(),
+            }
+        if not version_present:
+            return {
+                "state": "absent",
+                "response-identity-digest": api_digest(),
+            }
+
+        with tempfile.TemporaryDirectory(
+            prefix="wdv3-acceptance-readback-"
+        ) as temporary:
+            readback_config = Path(temporary) / ".npmrc"
+            readback_config.write_text(
+                (
+                    "@hcoona:registry=https://npm.pkg.github.com\n"
+                    f"//npm.pkg.github.com/:_authToken={self._token}\n"
+                    "ignore-scripts=true\n"
+                ),
+                encoding="utf-8",
+            )
+            readback_config.chmod(0o600)
+            completed = subprocess.run(  # noqa: S603
+                (
+                    "npm",
+                    "view",
+                    package_coordinate,
+                    "version",
+                    "dist.tarball",
+                    "dist-tags",
+                    "--json",
+                    "--registry",
+                    "https://npm.pkg.github.com",
+                ),
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=_remaining_seconds(operation_deadline),
+                env=_acceptance_subprocess_environment(
+                    npm_config=readback_config
+                ),
+            )
+        response = (completed.stdout + "\n" + completed.stderr).encode()
+        if len(response) > max_response_bytes:
+            raise ValueError(
+                "acceptance npm observation exceeded the bounded limit"
+            )
+        response_digest = f"sha256:{hashlib.sha256(response).hexdigest()}"
+        sanitized_stdout = completed.stdout.replace(self._token, "******")
+        sanitized_stderr = (
+            completed.stderr.replace(self._token, "******")
+            .replace(str(readback_config), "<temporary-npm-config>")
+            .replace(
+                "//npm.pkg.github.com/:_authToken=******",
+                "//npm.pkg.github.com/:_authToken=<redacted>",
+            )
+        )
+        readback_result = {
+            "outcome": "success" if completed.returncode == 0 else "failed",
+            "stdout": sanitized_stdout,
+            "stderr": sanitized_stderr,
+        }
+        if completed.returncode != 0:
+            return {
+                "state": "unknown",
+                "response-identity-digest": response_digest,
+                "readback-result": readback_result,
+                "diagnostics": ("npm-view-readback-failed",),
+            }
+        value = json.loads(completed.stdout)
+        if type(value) is not dict:
+            raise ValueError("acceptance npm observation was malformed")
+        observed_version = value.get("version")
+        tarball_url = value.get("dist.tarball")
+        if tarball_url is None and type(value.get("dist")) is dict:
+            tarball_url = value["dist"].get("tarball")
+        tags = value.get("dist-tags", {})
+        observed_tag_version = tags.get(tag) if type(tags) is dict else None
+        if (
+            type(observed_version) is not str
+            or type(observed_tag_version) is not str
+            or type(tarball_url) is not str
+        ):
+            return {
+                "state": "unknown",
+                "response-identity-digest": response_digest,
+                "readback-result": readback_result,
+                "diagnostics": ("npm-view-readback-malformed",),
+            }
+        tarball_response = self._authenticated_get(
+            tarball_url,
+            headers=(
+                ("Accept", "application/octet-stream"),
+                ("Authorization", f"Bearer {self._token}"),
+                ("User-Agent", "three-workflow-delivery-v3"),
+            ),
+            timeout=_remaining_seconds(operation_deadline),
+            max_bytes=25_000_000,
+        )
+        if (
+            tarball_response.status < 200  # noqa: PLR2004
+            or tarball_response.status >= 300  # noqa: PLR2004
+            or tarball_response.truncated
+            or not tarball_response.complete
+        ):
+            return {
+                "state": "unknown",
+                "response-identity-digest": response_digest,
+                "readback-result": readback_result,
+                "diagnostics": ("npm-tarball-readback-failed",),
+            }
+        observation = inspect_fixed_acceptance_tarball(
+            tarball_response.body,
+            package_coordinate=package_coordinate,
+            tag=tag,
+            observed_version=observed_version,
+            observed_tag_version=observed_tag_version,
+            target_sha=self._target_sha,
+        )
+        observation["response-identity-digest"] = canonical_sha256(
+            {
+                "github-api": api_digest(),
+                "metadata": response_digest,
+                "tarball": (
+                    f"sha256:{hashlib.sha256(tarball_response.body).hexdigest()}"
+                ),
+            }
+        )
+        observation["readback-result"] = readback_result
+        observation["diagnostics"] = (
+            *cast(
+                "tuple[str, ...]",
+                observation.get("diagnostics", ()),
+            ),
+            "npm-view-readback-succeeded",
+        )
+        return observation
 
 
 def _verify_uploaded_payload(
@@ -3776,6 +5123,96 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     compile_parser.add_argument("--transport-id", required=True, type=int)
     compile_parser.add_argument("--transport-digest", required=True)
     compile_parser.set_defaults(handler=_compile_command)
+
+    governance = commands.add_parser("governance")
+    governance_commands = governance.add_subparsers(
+        dest="governance_command",
+        required=True,
+    )
+    reviewer_inspection = governance_commands.add_parser(
+        "inspect-acceptance-reviewer",
+        description=(
+            "Optional on-demand read-only diagnostic inspection for one "
+            "Governance acceptance reviewer recovery coordinate."
+        ),
+        help="optional on-demand read-only reviewer inspection",
+    )
+    reviewer_inspection.add_argument("--repository", required=True)
+    reviewer_inspection.add_argument(
+        "--workflow-run-id",
+        required=True,
+        type=int,
+    )
+    reviewer_inspection.add_argument("--environment", required=True)
+    reviewer_inspection.add_argument("--deployment", required=True)
+    reviewer_inspection.add_argument("--job", required=True)
+    reviewer_inspection.add_argument("--artifact-id", required=True, type=int)
+    reviewer_inspection.add_argument(
+        "--timeout-seconds",
+        default=10.0,
+        type=float,
+    )
+    reviewer_inspection.add_argument(
+        "--max-output-bytes",
+        default=8192,
+        type=int,
+    )
+    reviewer_inspection.add_argument("--output")
+    reviewer_inspection.set_defaults(
+        handler=_governance_inspect_acceptance_reviewer_command
+    )
+    admit_acceptance = governance_commands.add_parser(
+        "admit-acceptance-evidence",
+        description=(
+            "Strictly admit canonical Governance destination-acceptance "
+            "Evidence without creating Release lineage."
+        ),
+    )
+    admit_acceptance.add_argument("--document", required=True)
+    admit_acceptance.set_defaults(
+        handler=_governance_admit_acceptance_evidence_command
+    )
+    run_acceptance_probe = governance_commands.add_parser(
+        "run-fixed-acceptance-probe",
+        description=(
+            "Run one reviewed fixed-coordinate acceptance suite with bounded "
+            "npm transport and output."
+        ),
+    )
+    run_acceptance_probe.add_argument(
+        "--suite",
+        required=True,
+        choices=(
+            "absent-create-readback",
+            "exact-and-conflict",
+        ),
+        action=_AcceptanceSuiteAction,
+    )
+    run_acceptance_probe.add_argument(
+        "--package-coordinate",
+        required=True,
+    )
+    run_acceptance_probe.add_argument("--target-sha", required=True)
+    run_acceptance_probe.add_argument(
+        "--timeout-seconds",
+        default=None,
+        type=float,
+    )
+    run_acceptance_probe.add_argument(
+        "--max-response-bytes",
+        default=8192,
+        type=int,
+    )
+    run_acceptance_probe.add_argument(
+        "--max-output-bytes",
+        default=4096,
+        type=int,
+    )
+    run_acceptance_probe.add_argument("--output", required=True)
+    run_acceptance_probe.add_argument("--github-output")
+    run_acceptance_probe.set_defaults(
+        handler=_governance_run_fixed_acceptance_probe_command
+    )
 
     release = commands.add_parser("release")
     release_commands = release.add_subparsers(

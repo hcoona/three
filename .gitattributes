@@ -28,3 +28,4 @@ apm.lock.yaml linguist-generated
 # Preserve byte-stable Workflow Delivery v3 consumer-policy exceptions.
 src/public/lib/hcoona-release-smoke-npm/package.json text eol=lf
 src/public/lib/three-workflow-delivery-v3/tests/fixtures/release/consumer-policy-acceptance.json text eol=lf
+src/public/lib/three-workflow-delivery-v3/tests/fixtures/acceptance/npm-publish-request/package/package.json text eol=lf

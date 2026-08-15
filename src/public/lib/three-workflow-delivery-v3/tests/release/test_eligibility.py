@@ -633,7 +633,7 @@ class RecordingGovernanceClient:
         path: str,
     ) -> GovernanceBlob:
         """Record and answer the exact commit/path blob read."""
-        self.calls.append(("blob", repository, commit, path))
+        self.calls.append(("read", repository, commit, path))
         if self.failure == "blob":
             message = "blob unavailable"
             raise ValueError(message)
@@ -684,7 +684,7 @@ def test_live_eligibility_passes_with_fresh_exact_target_inputs() -> None:
         ("protected", GOVERNANCE_REPOSITORY, GOVERNANCE_REF),
         ("resolve", GOVERNANCE_REPOSITORY, GOVERNANCE_REF),
         (
-            "blob",
+            "read",
             GOVERNANCE_REPOSITORY,
             GOVERNANCE_COMMIT,
             GOVERNANCE_PATH,
@@ -897,10 +897,10 @@ def test_each_evaluation_performs_a_fresh_protected_ref_read() -> None:
     assert [call[0] for call in client.calls] == [
         "protected",
         "resolve",
-        "blob",
+        "read",
         "protected",
         "resolve",
-        "blob",
+        "read",
     ]
 
 
@@ -1535,7 +1535,7 @@ def test_prior_facts_cannot_substitute_for_fresh_input() -> None:
 
     assert prior.result is EligibilityResult.PASS
     assert prior.decision_digest.startswith("sha256:")
-    assert blocking_client.calls[-1][0] == "blob"
+    assert blocking_client.calls[-1][0] == "read"
     assert len(blocking_client.calls) == FRESH_SOURCE_CALL_COUNT
 
 

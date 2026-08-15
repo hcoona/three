@@ -328,6 +328,29 @@ provenance because eligibility and freshness records bind source provenance
 externally. This protected document is the authoritative normal-flow
 live-enable source. It grants no Capability by itself.
 
+Commit 10 installs the canonical disabled attestation with issuer and sole
+accepted Admin writer `hcoona`, repository access `admin`, package access
+`write`, Manage Actions `allowed`, inspection time
+`2026-08-14T17:19:12Z`, and expiry `2026-11-12T17:19:12Z`. Its limitations
+state that GitHub APIs are not a complete universal authority enumeration and
+that reviewer recovery may depend on retained platform data.
+
+Post-activation re-attestation is always a protected human procedure:
+
+1. promptly merge `live_enabled: false` after a relevant writer, role,
+   repository/package grant, or Manage Actions change;
+2. inspect the current accepted writers and access facts without claiming API
+   completeness;
+3. replace the canonical document with a fresh inspection time, expiry no more
+   than 90 days later, exact inventories or approved evidence digest, and
+   updated limitations;
+4. keep live disabled until all normal activation gates are again satisfied;
+   and
+5. use a separate protected approval to restore `live_enabled: true`.
+
+Optional reviewer inspection never substitutes for this procedure, grants
+Capability, or enables live.
+
 ## Canonical Records and Bindings
 
 Records are strict UTF-8 JSON with duplicate-key and unknown-field rejection.
@@ -1477,11 +1500,31 @@ if: ${{ always() && github.run_attempt == 1 }}
 ```
 
 It records `needs.<job>.result` for validation, review, and every probe;
-available probe outputs, response identities, digests, and diagnostics; and an
-explicit mutation disposition. A failed, skipped, or canceled dependency never
+available canonical suite records, exact scenario inventories, suite-record
+digests, immutable artifact IDs/digests, pre/action/response/post facts, and an
+explicit mutation disposition. Complete Evidence requires the exact five
+scenario set and every non-placeholder binding. A failed, skipped, or canceled dependency never
 silently suppresses this first-attempt evidence. If a probe may have started but
 durable exact state or non-mutation cannot be proved, the evidence classifies
 the bootstrap incomplete/unknown and requires reconciliation.
+
+The local acceptance implementation is pinned to a disposable-package request
+captured from Node 24.14.0/npm 11.9.0 against a bounded loopback registry. The
+proxy admits only the exact validated CouchDB coordinate, version, routing tag,
+attachment bytes and hashes, witness, path, framing, and dummy authorization;
+only then may it replace authorization for the mocked upstream. Its immutable
+workflow installs and verifies Node 24.14.0 and npm 11.9.0 before either
+write-capable probe. The absent/create/readback suite receives one shared
+120-second deadline. The exact/race/lost-response suite receives one shared
+300-second deadline across all four scenarios; no scenario resets that budget.
+proof binds the validated raw request and tarball digests to selected upstream
+response facts and response identity, with both credentials excluded. One
+monotonic deadline supplies decreasing remaining budgets to every observation,
+npm process, proxy, upstream, and cleanup boundary. Missing, partial,
+wrong-typed, contradictory, or pre-validation runner facts remain incomplete.
+Complete Governance Acceptance Evidence independently rejects zero target and
+workflow SHAs; incomplete rejected-dispatch evidence retains its sentinel
+semantics.
 
 Therefore **Re-run failed jobs**, **Re-run all jobs**, or any other partial
 rerun cannot reuse the prior Environment review or coordinate.
@@ -1490,13 +1533,33 @@ Only probe jobs declare `packages: write`; no PAT or `id-token: write` exists.
 The workflow top-level permissions are `{}`. Validation and evidence-capture
 jobs declare only `contents: read`; each probe job declares `contents: read`
 plus `packages: write`. Unspecified permissions are none.
-The dedicated acceptance Environment has required reviewers and is not either
-normal Buddy Environment. The workflow emits only Governance acceptance
+The dedicated acceptance Environment and reviewer configuration are pending
+protected finalization; they are not asserted to exist at the commit-10
+boundary. Once configured, it is not either normal Buddy Environment. The
+workflow emits only Governance acceptance
 evidence bound to workflow/run/target/fixed coordinate, dependency outcomes,
 available probe results, and complete/incomplete/unknown mutation
 classification. It cannot create Release Intent,
 Product/Execution/Attempt/Simulation identity, Authorization Record, Receipt,
 or live Release history.
+
+The actual Environment reviewer login is unavailable inside the workflow job
+context. Governance Acceptance Evidence therefore records `reviewer.login:
+null` with source `unavailable-in-job-context` plus run, Environment, asserted
+unique review job, and artifact recovery coordinates. This absence alone does
+not downgrade otherwise complete Evidence and `github.actor` is never used as
+a reviewer substitute. The optional on-demand CLI first resolves the exact workflow run `node_id`
+through a bounded REST `GET`, then paginates the supported
+`WorkflowRun.deploymentReviews` GraphQL connection with query-only POST
+transport. Recovery scope is run plus Environment and is unique because only
+`acceptance-review` declares that Environment. Nested Environment pagination
+is continued per specific `DeploymentReview` node without advancing or
+skipping other review edges. The CLI reports only
+present/removed/unknown/human-required diagnostic state. It cannot grant
+Capability, enable live, become mandatory acceptance, or prove universal
+negatives. Recovery can become impossible after GitHub removes the relevant
+deployment/review data, so the coordinates and 45-day immutable artifact are
+retained promptly and the retention risk is explicit.
 
 This bootstrap is temporary repository configuration, not a reusable bypass.
 After evidence capture, Governance deletes the workflow, any temporary enable

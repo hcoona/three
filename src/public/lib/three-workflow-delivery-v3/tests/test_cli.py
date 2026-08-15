@@ -2037,3 +2037,463 @@ def test_publish_cli_persists_governance_terminal_state_before_nonzero(
     with pytest.raises(ValueError, match="generic post-marker failure"):
         cli_module._release_publish_github_packages_command(arguments)  # noqa: SLF001
     assert not generic_state_path.exists()
+
+
+def test_acceptance_cli_persists_validated_request_proof(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Persist the admitted proof rather than reconstructed request data."""
+    from three_workflow_delivery_v3.adapters.github_packages import (  # noqa: PLC0415
+        FixedAcceptanceSuiteResult,
+        FixedCoordinateAcceptanceProbeResult,
+        ValidatedAcceptanceRequestProof,
+    )
+
+    proof = ValidatedAcceptanceRequestProof.from_validated_exchange(
+        raw_request=b'{"actual":"captured-couchdb-request"}',
+        tarball=b"acceptance-tarball",
+        package_coordinate=cli_module.ACCEPTANCE_PACKAGE_COORDINATE,
+        tag="wdv3-acceptance-1",
+        upstream_status=201,
+        selected_headers={"ETag": '"created"'},
+        response_body=b'{"ok":true}',
+    )
+    result = FixedAcceptanceSuiteResult(
+        suite="absent-create-readback",
+        scenarios=(
+            FixedCoordinateAcceptanceProbeResult(
+                scenario="absent-create-readback",
+                package_coordinate=cli_module.ACCEPTANCE_PACKAGE_COORDINATE,
+                tag="wdv3-acceptance-1",
+                pre_state="absent",
+                post_state="exact",
+                result="created",
+                mutation_classification="complete",
+                action_executed=True,
+                mutation_started=True,
+                response_identity_digest=proof.response_identity_digest,
+                content_sha512=proof.tarball_sha512,
+                diagnostics=(),
+                validated_request_proof=proof,
+            ),
+        ),
+    )
+    monkeypatch.setenv("WDV3_ACCEPTANCE_GITHUB_TOKEN", "upstream-secret")
+    monkeypatch.setattr(
+        cli_module,
+        "_build_acceptance_tarball",
+        lambda root, **_kwargs: root / "unused.tgz",
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "run_fixed_acceptance_suite",
+        lambda **_kwargs: result,
+    )
+    output = tmp_path / "acceptance.json"
+    arguments = cast(
+        "cli_module._AcceptanceProbeArguments",  # noqa: SLF001
+        SimpleNamespace(
+            package_coordinate=cli_module.ACCEPTANCE_PACKAGE_COORDINATE,
+            suite="absent-create-readback",
+            target_sha="c" * 40,
+            timeout_seconds=7.0,
+            max_response_bytes=8192,
+            max_output_bytes=4096,
+            output=str(output),
+            github_output=None,
+        ),
+    )
+
+    assert (
+        cli_module._governance_run_fixed_acceptance_probe_command(  # noqa: SLF001
+            arguments
+        )
+        == 0
+    )
+
+    persisted = json.loads(output.read_bytes())
+    assert persisted["scenarios"][0]["validated-request-proof"] == (
+        proof.to_document()
+    )
+    assert persisted["scenarios"][0]["response"]["identity-digest"] == (
+        proof.response_identity_digest
+    )
+
+
+def test_acceptance_cli_output_contains_no_request_credentials(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep raw request credentials out of persisted acceptance output."""
+    from three_workflow_delivery_v3.adapters.github_packages import (  # noqa: PLC0415
+        FixedAcceptanceSuiteResult,
+        FixedCoordinateAcceptanceProbeResult,
+        ValidatedAcceptanceRequestProof,
+    )
+
+    proof = ValidatedAcceptanceRequestProof.from_validated_exchange(
+        raw_request=b'{"authorization":"not-retained"}',
+        tarball=b"acceptance-tarball",
+        package_coordinate=cli_module.ACCEPTANCE_PACKAGE_COORDINATE,
+        tag="wdv3-acceptance-1",
+        upstream_status=201,
+        selected_headers={"Content-Type": "application/json"},
+        response_body=b'{"ok":true}',
+    )
+    result = FixedAcceptanceSuiteResult(
+        suite="absent-create-readback",
+        scenarios=(
+            FixedCoordinateAcceptanceProbeResult(
+                scenario="absent-create-readback",
+                package_coordinate=cli_module.ACCEPTANCE_PACKAGE_COORDINATE,
+                tag="wdv3-acceptance-1",
+                pre_state="absent",
+                post_state="exact",
+                result="created",
+                mutation_classification="complete",
+                action_executed=True,
+                mutation_started=True,
+                response_identity_digest=proof.response_identity_digest,
+                content_sha512=proof.tarball_sha512,
+                diagnostics=(),
+                validated_request_proof=proof,
+            ),
+        ),
+    )
+    monkeypatch.setenv("WDV3_ACCEPTANCE_GITHUB_TOKEN", "upstream-secret")
+    monkeypatch.setattr(
+        cli_module,
+        "_build_acceptance_tarball",
+        lambda root, **_kwargs: root / "unused.tgz",
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "run_fixed_acceptance_suite",
+        lambda **_kwargs: result,
+    )
+    output = tmp_path / "acceptance.json"
+
+    cli_module._governance_run_fixed_acceptance_probe_command(  # noqa: SLF001
+        cast(
+            "cli_module._AcceptanceProbeArguments",  # noqa: SLF001
+            SimpleNamespace(
+                package_coordinate=cli_module.ACCEPTANCE_PACKAGE_COORDINATE,
+                suite="absent-create-readback",
+                target_sha="c" * 40,
+                timeout_seconds=7.0,
+                max_response_bytes=8192,
+                max_output_bytes=4096,
+                output=str(output),
+                github_output=None,
+            ),
+        )
+    )
+
+    retained = output.read_bytes()
+    assert b"upstream-secret" not in retained
+    assert b"not-retained" not in retained
+    assert b"authorization" not in retained.lower()
+
+
+def test_acceptance_cli_threads_single_deadline_through_observe_publish_and_cleanup(  # noqa: E501
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Thread one absolute deadline into the acceptance suite."""
+    from three_workflow_delivery_v3.adapters.github_packages import (  # noqa: PLC0415
+        FixedAcceptanceSuiteResult,
+        FixedCoordinateAcceptanceProbeResult,
+    )
+
+    captured: dict[str, object] = {}
+    tarball = tmp_path / "acceptance.tgz"
+    tarball.write_bytes(b"acceptance")
+    monkeypatch.setenv("WDV3_ACCEPTANCE_GITHUB_TOKEN", "local-test-token")
+    monkeypatch.setattr(cli_module, "monotonic", lambda: 100.0)
+    monkeypatch.setattr(
+        cli_module,
+        "_build_acceptance_tarball",
+        lambda *_args, **_kwargs: tarball,
+    )
+
+    def run_suite(**kwargs: object) -> FixedAcceptanceSuiteResult:
+        captured.update(kwargs)
+        return FixedAcceptanceSuiteResult(
+            suite="absent-create-readback",
+            scenarios=(
+                FixedCoordinateAcceptanceProbeResult(
+                    scenario="absent-create-readback",
+                    package_coordinate=cli_module.ACCEPTANCE_PACKAGE_COORDINATE,
+                    tag="wdv3-acceptance-1",
+                    pre_state="exact",
+                    post_state="exact",
+                    result="exact-no-mutation",
+                    mutation_classification="complete",
+                    action_executed=False,
+                    mutation_started=False,
+                    response_identity_digest="sha256:" + ("a" * 64),
+                    content_sha512="sha512:" + ("b" * 128),
+                    diagnostics=(),
+                ),
+            ),
+        )
+
+    monkeypatch.setattr(cli_module, "run_fixed_acceptance_suite", run_suite)
+    output = tmp_path / "output.json"
+
+    status = cli_module._governance_run_fixed_acceptance_probe_command(  # noqa: SLF001
+        cast(
+            "cli_module._AcceptanceProbeArguments",  # noqa: SLF001
+            SimpleNamespace(
+                package_coordinate=cli_module.ACCEPTANCE_PACKAGE_COORDINATE,
+                suite="absent-create-readback",
+                target_sha="c" * 40,
+                timeout_seconds=7.0,
+                max_response_bytes=8192,
+                max_output_bytes=4096,
+                output=str(output),
+                github_output=None,
+            ),
+        )
+    )
+
+    assert status == 0
+    expected_timeout = 7.0
+    assert captured["deadline"] == 100.0 + expected_timeout
+    assert captured["timeout_seconds"] == expected_timeout
+    assert (
+        json.loads(output.read_bytes())["mutation-classification"] == "complete"
+    )
+
+
+def test_acceptance_cli_persists_incomplete_result_for_partial_runner_facts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Persist fail-closed facts when the runner omits one required fact."""
+
+    class Transport:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            self.calls = 0
+
+        def observe(
+            self, *_args: object, **_kwargs: object
+        ) -> dict[str, object]:
+            self.calls += 1
+            if self.calls == 1:
+                return {
+                    "state": "absent",
+                    "response-identity-digest": "sha256:" + ("a" * 64),
+                }
+            return {
+                "state": "exact",
+                "version": "0.0.0-wdv3-acceptance.1",
+                "tag": "wdv3-acceptance-1",
+                "content-sha512": (
+                    "sha512:" + hashlib.sha512(b"acceptance").hexdigest()
+                ),
+                "response-identity-digest": "sha256:" + ("b" * 64),
+            }
+
+    class Runner:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def run(
+            self,
+            *_args: object,
+            **_kwargs: object,
+        ) -> dict[str, object]:
+            return {"outcome": "created", "action-executed": True}
+
+    tarball = tmp_path / "acceptance.tgz"
+    tarball.write_bytes(b"acceptance")
+    monkeypatch.setenv("WDV3_ACCEPTANCE_GITHUB_TOKEN", "local-test-token")
+    monkeypatch.setattr(
+        cli_module,
+        "_build_acceptance_tarball",
+        lambda *_args, **_kwargs: tarball,
+    )
+    monkeypatch.setattr(cli_module, "_AcceptanceNpmTransport", Transport)
+    monkeypatch.setattr(cli_module, "_AcceptanceNpmRunner", Runner)
+    output = tmp_path / "incomplete.json"
+
+    status = cli_module._governance_run_fixed_acceptance_probe_command(  # noqa: SLF001
+        cast(
+            "cli_module._AcceptanceProbeArguments",  # noqa: SLF001
+            SimpleNamespace(
+                package_coordinate=cli_module.ACCEPTANCE_PACKAGE_COORDINATE,
+                suite="absent-create-readback",
+                target_sha="c" * 40,
+                timeout_seconds=7.0,
+                max_response_bytes=8192,
+                max_output_bytes=4096,
+                output=str(output),
+                github_output=None,
+            ),
+        )
+    )
+
+    document = json.loads(output.read_bytes())
+    scenario = document["scenarios"][0]
+    assert status == 0
+    assert scenario["mutation-classification"] == "incomplete"
+    assert scenario["action"]["executed"] is False
+    assert scenario["action"]["mutation-started"] is False
+    assert scenario["response"]["result"] == "runner-malformed-before-mutation"
+
+
+def _acceptance_parser_arguments(
+    suite: str,
+    *extra: str,
+) -> argparse.Namespace:
+    return cli_module._parser().parse_args(  # noqa: SLF001
+        [
+            "governance",
+            "run-fixed-acceptance-probe",
+            "--suite",
+            suite,
+            "--package-coordinate",
+            cli_module.ACCEPTANCE_PACKAGE_COORDINATE,
+            "--target-sha",
+            "c" * 40,
+            "--output",
+            "acceptance.json",
+            *extra,
+        ]
+    )
+
+
+def test_acceptance_absent_create_readback_default_timeout_is_120_seconds() -> (
+    None
+):
+    """Use the bounded default for the single-scenario acceptance suite."""
+    arguments = _acceptance_parser_arguments("absent-create-readback")
+    expected_timeout = 120.0
+
+    assert arguments.timeout_seconds == expected_timeout
+    assert type(arguments.timeout_seconds) is float
+
+
+def test_acceptance_exact_and_conflict_default_timeout_is_at_least_300_seconds() -> (  # noqa: E501
+    None
+):
+    """Reserve a realistic minimum budget for all four scenarios."""
+    arguments = _acceptance_parser_arguments("exact-and-conflict")
+    minimum_timeout = 300.0
+
+    assert arguments.timeout_seconds >= minimum_timeout
+    assert type(arguments.timeout_seconds) is float
+
+
+@pytest.mark.parametrize(
+    "suite",
+    ["absent-create-readback", "exact-and-conflict"],
+)
+def test_acceptance_explicit_timeout_overrides_suite_default(
+    suite: str,
+) -> None:
+    """Preserve an explicit operator-selected timeout for either suite."""
+    explicit_timeout = 43.25
+    arguments = _acceptance_parser_arguments(
+        suite,
+        "--timeout-seconds",
+        str(explicit_timeout),
+    )
+
+    assert arguments.timeout_seconds == explicit_timeout
+    assert type(arguments.timeout_seconds) is float
+
+
+@pytest.mark.parametrize("_timeout_contract", [None], ids=["timeout-budget"])
+def test_acceptance_cli_does_not_reset_deadline_between_scenarios(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    _timeout_contract: None,
+) -> None:
+    """Construct one deadline and spend it monotonically across scenarios."""
+    from three_workflow_delivery_v3.adapters.github_packages import (  # noqa: PLC0415
+        FixedAcceptanceSuiteResult,
+        FixedCoordinateAcceptanceProbeResult,
+    )
+
+    class Clock:
+        now = 200.0
+        calls = 0
+
+        def monotonic(self) -> float:
+            self.calls += 1
+            return self.now
+
+    clock = Clock()
+    budgets: list[float] = []
+    tarball = tmp_path / "acceptance.tgz"
+    tarball.write_bytes(b"acceptance")
+    monkeypatch.setenv("WDV3_ACCEPTANCE_GITHUB_TOKEN", "local-test-token")
+    monkeypatch.setattr(cli_module, "monotonic", clock.monotonic)
+    monkeypatch.setattr(
+        cli_module,
+        "_build_acceptance_tarball",
+        lambda *_args, **_kwargs: tarball,
+    )
+
+    def run_suite(**kwargs: object) -> FixedAcceptanceSuiteResult:
+        deadline = cast("float", kwargs["deadline"])
+        timeout = cast("float", kwargs["timeout_seconds"])
+        assert deadline == 200.0 + timeout
+        scenarios = []
+        for index, scenario in enumerate(
+            ("exact", "identical-race", "differing-race", "lost-response")
+        ):
+            budgets.append(deadline - clock.now)
+            clock.now += 2.0
+            scenarios.append(
+                FixedCoordinateAcceptanceProbeResult(
+                    scenario=scenario,
+                    package_coordinate=cli_module.ACCEPTANCE_PACKAGE_COORDINATE,
+                    tag=f"wdv3-acceptance-{index + 1}",
+                    pre_state="unknown",
+                    post_state="unknown",
+                    result="timeout",
+                    mutation_classification="unknown",
+                    action_executed=True,
+                    mutation_started=True,
+                    response_identity_digest="sha256:" + ("a" * 64),
+                    content_sha512=None,
+                    diagnostics=("acceptance-operation-timeout",),
+                )
+            )
+        return FixedAcceptanceSuiteResult(
+            suite="exact-and-conflict",
+            scenarios=tuple(scenarios),
+        )
+
+    monkeypatch.setattr(cli_module, "run_fixed_acceptance_suite", run_suite)
+    output = tmp_path / "acceptance.json"
+
+    status = cli_module._governance_run_fixed_acceptance_probe_command(  # noqa: SLF001
+        cast(
+            "cli_module._AcceptanceProbeArguments",  # noqa: SLF001
+            SimpleNamespace(
+                package_coordinate=cli_module.ACCEPTANCE_PACKAGE_COORDINATE,
+                suite="exact-and-conflict",
+                target_sha="c" * 40,
+                timeout_seconds=300.0,
+                max_response_bytes=8192,
+                max_output_bytes=4096,
+                output=str(output),
+                github_output=None,
+            ),
+        )
+    )
+
+    assert status == 0
+    assert clock.calls == 1
+    assert budgets == [300.0, 298.0, 296.0, 294.0]
+    assert json.loads(output.read_bytes())["scenario-inventory"] == [
+        "exact",
+        "identical-race",
+        "differing-race",
+        "lost-response",
+    ]

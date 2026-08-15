@@ -2205,3 +2205,487 @@ the two actual registered `eng/scripts/workflow_delivery_v3_*.py` paths. Actual
 parsed CODEOWNERS rules, exact final-owner tuples, representative later
 overrides, and the real HK plan are the only positive oracles.
 <!-- END APPEND: workflow-delivery-v3-commit9-tp-final-scope-correction-2026-08-14 -->
+
+# Commit-10 adversarial regression research
+
+## Scope and authority
+
+- Python/pytest repository conventions; the current working tree is authoritative.
+- Test-only changes are permitted. Production, workflows, docs, status files, and existing expectations are out of scope.
+- Bounded targets are the five existing commit-10 files:
+  - `tests/contracts/test_commit10_acceptance_workflow.py`
+  - `tests/adapters/test_commit10_acceptance_probes.py`
+  - `tests/governance/test_commit10_acceptance_evidence.py`
+  - `tests/governance/test_commit10_inspection.py`
+  - `tests/governance/test_commit10_attestation.py`
+- `find-untested-sources` polyglot analyzer was run exactly once with Python and `--include-tested`. Its static heuristic found 158 source files, 65 test files, 125 paired sources, 33 unpaired sources, and one orphan test. Conclusions here remain bounded to the five files above; static pairing is not line/branch coverage.
+
+## Existing conventions
+
+- pytest functions with explicit concrete assertions and parameterization.
+- Injected fake transports/runners for network/process boundaries.
+- YAML contract tests parse the actual workflow and inspect exact job/step structure.
+- Canonical evidence tests build closed documents and assert admission or precise rejection.
+- Reviewer tests use a recording GraphQL runner and assert exact cursor arguments.
+
+## Bounded implementation inventory
+
+- Acceptance workflow: confirmation input/env/validation, protected Environment placement, terminal embedded Python reconstruction.
+- Acceptance probe adapter/CLI: process result facts, two-contender race semantics, lost-response runner boundary, authenticated package metadata observation.
+- Governance evidence: action fact semantics and authentic incomplete/unknown scenario preservation.
+- Reviewer inspection: outer deployment-review pagination and per-review nested EnvironmentConnection pagination.
+- Protected attestation: no new behavior requested; preserve unchanged unless a requirement needs it.
+
+## Requirement checklist
+
+1. Exact confirmation literal `I_ACCEPT_DISPOSABLE_GITHUB_PACKAGES_PROBES`; no inert default.
+2. Exactly one protected Environment job (`acceptance-review`); no Environment on probes/terminal; zero-SHA failure cannot cause terminal Environment review.
+3. Executable terminal capture accepts successful dependencies/probes with missing review artifact ID and writes incomplete evidence.
+4. Terminal reconstruction preserves per-scenario incomplete/unknown classifications instead of constructing every scenario as complete.
+5. Evidence `action.executed`/`mutation-started` comes from explicit runner facts: pre-start false/false, lost and timeout true/true, exact false/false.
+6. Differing race is complete only for one created plus one explicit conflict in either ordering; readback must equal the actual winning payload; all other outcomes rejected.
+7. Lost-response runner crosses a deterministic forwarded/processed boundary before dropping response; immediate kill after `Popen` is forbidden; use an injected fake process/proxy seam.
+8. Acceptance observation uses authenticated GitHub Packages REST package/version metadata for absence and owner/repository/version authority; npm E404 alone is insufficient; exact tarball claims require `repository.full_name == hcoona/three` and matching version metadata.
+9. Reviewer traverses every review edge and independently paginates one review's nested environments; workflow has exactly one Environment-bearing job; timeout stays unknown.
+10. Docs remain out of scope.
+
+## Validation commands
+
+- Ruff on changed commit-10 tests.
+- `pytest --collect-only` for the package tests.
+- Scoped pytest for changed commit-10 files.
+- Full package/workspace pytest validation as appropriate without edits outside tests.
+- Final `test-gap-analysis` and `assertion-quality`.
+
+<!-- BEGIN APPEND: workflow-delivery-v3-acceptance-request-proof-research-2026-08-15 -->
+# Test Generation Research
+
+## Project Overview
+
+- **Path**: `/workspace/three-workspaces/design-workflows`
+- **Bounded package**:
+  `src/public/lib/three-workflow-delivery-v3`
+- **Language**: Python 3.13+ production and pytest tests, with a local npm
+  subprocess boundary. The active shell reports Python 3.14.3, Node 24.14.0,
+  and npm 11.9.0; `mise.toml` pins Node 24 but does not separately pin npm.
+- **Framework**: Hatchling package, uv workspace.
+- **Test Framework**: pytest 8+; Ruff for Python lint/format.
+- **Extension note**: the parent invoked `code-testing-extensions`, but it was
+  unavailable. No language example was read. The repository's own pytest
+  conventions are sufficient.
+- **Required prompt read**:
+  `.agents/skills/code-testing-agent/unit-test-generation.prompt.md`.
+- **Authority**: current tracked and untracked workspace content is
+  authoritative. No remote Environment was configured, no workflow was
+  dispatched, no external service was called, and git was not mutated.
+
+## Dependency Graph
+
+- **Leaf types / records**:
+  `records/governance.py` (`GovernanceAcceptanceEvidence`,
+  `GovernanceProbeFact`, reviewer/recovery/workflow/dependency records and
+  admission helpers). These depend on canonical JSON primitives, not the CLI
+  or adapter.
+- **Mid-layer adapter**:
+  `adapters/github_packages.py` fixed-coordinate records, request-proof
+  validation, scenario classification, and suite aggregation. It depends on
+  canonical hashing and npm-artifact inspection.
+- **Top layer / process boundary**:
+  `cli.py` acceptance tarball construction, npm execution, loopback mutation
+  proxy, GitHub Packages observation transport, CLI commands, and output
+  persistence. It depends on both the adapter and governance records.
+- **External boundaries to fake or bind locally**: npm subprocess,
+  loopback HTTP server, and the proxy's upstream HTTPS connection. Tests must
+  never contact GitHub Packages; monkeypatch the upstream connection.
+
+## Build & Test Commands
+
+- **Build**:
+  `uv build --package three-workflow-delivery-v3`
+- **Test (scoped — fix cycles)**:
+  `PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -p no:cacheprovider -q src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py`
+- **Scoped discovery/count**: the same four files with `--collect-only -q`;
+  current authoritative collection is **490 tests**.
+- **Test (harness-equivalent — discovery/full-package check)**:
+  `python eng/scripts/hk_exec.py --timeout-seconds 720 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests`
+- **Full-package discovery/count**:
+  `PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -p no:cacheprovider --collect-only -q src/public/lib/three-workflow-delivery-v3/tests`;
+  current authoritative collection is **2775 tests**.
+- **Lint**:
+  `uv run --python 3.13 ruff check --no-cache src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/adapters/github_packages.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/records/governance.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py`
+  and the corresponding `ruff format --check` command.
+- **Final local hygiene**: `git diff --check` and `git diff --name-only`.
+  These inspect only; do not restore, stage, or commit files.
+
+## Scope
+
+- **Boundary**: only local acceptance regressions and fixtures, the acceptance
+  CLI/proxy, GitHub Packages adapter, governance records/exports, and the
+  minimum status/docs needed to describe closure.
+- **Production targets**:
+  - `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py`
+  - `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/adapters/github_packages.py`
+  - `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/adapters/__init__.py`
+  - `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/records/governance.py`
+  - `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/records/__init__.py`
+- **Acceptance tests / fixtures**:
+  - `src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py`
+  - `src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py`
+  - `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py`
+  - `src/public/lib/three-workflow-delivery-v3/tests/test_cli.py`
+  - Add a bounded fixture directory such as
+    `tests/fixtures/acceptance/npm-publish-request/` only if needed for the
+    captured manifest, tarball, raw request, and capture metadata.
+- **Read-only acceptance inputs**:
+  `.github/workflows/workflow-delivery-v3-buddy-smoke-acceptance.yml` and
+  `src/public/lib/hcoona-release-smoke-npm/package.json`.
+- **Docs/status targets**:
+  `docs/wiki/analyses/workflow-delivery/v3/agent-handoff.md`,
+  `docs/wiki/analyses/workflow-delivery/v3/hcoona-release-smoke-npm-lld.md`,
+  `docs/wiki/log.md`, and an append-only newest closure in
+  `.testagent/status.md`.
+- **Excluded**: remote Environment/reviewer configuration, dispatch, external
+  HTTP, package publication, activation, unrelated release/CI modules,
+  dependency changes, git restoration/staging/commit, and sibling projects.
+- **Representative existing tests**:
+  `tests/adapters/test_commit10_acceptance_probes.py` and
+  `tests/governance/test_commit10_acceptance_evidence.py`.
+
+## Files to Test
+
+### High Priority
+
+| File | Classes/Functions | Testability | Estimated Coverage | Notes |
+|---|---|---:|---|---|
+| `cli.py` | `AcceptanceMutationProxy`, `_AcceptanceNpmRunner`, acceptance request validation/building, deadline handling | High | Partial | Existing proxy tests feed a hand-built `_adversarial_publish_body`; they do not prove compatibility with the raw request emitted by the active/repository-pinned npm client. |
+| `adapters/github_packages.py` | `_valid_lost_response_proof`, `run_fixed_coordinate_acceptance_probe` and a new validated request/upstream proof record | High | Partial | `_expected_acceptance_request_digest` reconstructs a synthetic body instead of consuming proof of the bytes actually validated and forwarded. |
+| `records/governance.py` | `_sha`, `admit_governance_acceptance_evidence` | High | Partial | Syntax admits forty zeroes; complete evidence needs a semantic non-zero SHA rule. |
+| `test_commit10_acceptance_probes.py` | real npm loopback capture, strict proxy/proof/deadline/runner regressions | High | Partial | Strong existing local seams; missing real-client request fixture and missing/partial fact matrix. |
+
+### Medium Priority
+
+| File | Classes/Functions | Testability | Estimated Coverage | Notes |
+|---|---|---:|---|---|
+| `test_commit10_acceptance_evidence.py` | complete-evidence SHA admission | High | Partial | Add zero target/workflow SHA negatives while retaining zero only in rejected/incomplete workflow paths where contractually intended. |
+| `test_commit10_acceptance_workflow.py` | terminal complete/incomplete evidence paths | High | Partial | Ensure workflow-generated complete evidence cannot carry the zero sentinel. |
+| `test_cli.py` | CLI command/output contract | High | Partial | Add only CLI-level proof/export/output regressions not already covered by adapter acceptance tests. |
+| adapter/record `__init__.py` exports | proof record/API exports | High | Partial | Update only if the proof object is intentionally public across the CLI/adapter boundary. |
+
+### Low Priority / Skip
+
+| File | Reason |
+|---|---|
+| Other `release/`, `ci/`, `repository/`, and platform modules | Outside the bounded acceptance request/proof correction. |
+| Existing package source under `hcoona-release-smoke-npm` | Use a disposable copied/generated package for capture; do not stamp or modify the tracked smoke package. |
+| Remote workflow/Environment state | Explicitly prohibited and unnecessary for local loopback tests. |
+
+## Existing Tests & Coverage Classification
+
+- `adapters/github_packages.py` ↔
+  `tests/adapters/test_commit10_acceptance_probes.py`,
+  `tests/adapters/test_github_packages.py`, and many broader contract tests:
+  **partial for this request**. Existing tests validate a schema-faithful but
+  synthetic JSON body and bind response facts; they do not capture npm's exact
+  emitted request.
+- `cli.py` ↔ `tests/test_cli.py`,
+  `tests/adapters/test_commit10_acceptance_probes.py`, and acceptance workflow
+  contracts: **partial for this request**.
+- `records/governance.py` ↔
+  `tests/governance/test_commit10_acceptance_evidence.py` and workflow
+  contracts: **partial for this request**; complete zero-SHA rejection is
+  absent.
+- `adapters/__init__.py` ↔ adapter/release tests: **substantial generally**,
+  but any new proof export is untested until added.
+- `records/__init__.py` ↔ admission/release tests: **substantial generally**,
+  but any new proof/export surface is untested until added.
+- Static pairing is only a parse/identifier heuristic, not line or branch
+  coverage.
+
+## Existing Test Projects
+
+- **Project file**:
+  `src/public/lib/three-workflow-delivery-v3/pyproject.toml`
+- **Target source project**: the same Hatchling package.
+- **Test files**: pytest files under
+  `src/public/lib/three-workflow-delivery-v3/tests`; bounded files are listed
+  above. There is no separate test manifest.
+
+## Static Pairing Result
+
+`find-untested-sources` was run exactly once on the bounded package with
+`--lang python --include-tested`: **38 source files, 39 test files, 36 paired,
+2 unpaired, 0 orphan tests**. The only unpaired files are declaration-free
+`ci/__init__.py` and `repository/__init__.py`, both outside this request.
+Relevant target source files are paired. The analyzer attributes broad
+identifier-overlap test sets, so the focused pairs above are the useful
+implementation map.
+
+## Testing Patterns
+
+- Plain pytest functions, parameterized negative matrices, concrete exact
+  documents, and precise diagnostics.
+- Injected fake runners/transports and monkeypatched
+  `http.client.HTTPSConnection`; loopback is permitted, external network is
+  not.
+- Canonical JSON and exact SHA-256/SHA-512 assertions; inspect tar members and
+  witness content, not merely status codes.
+- Contract tests parse the actual workflow and execute bounded embedded
+  terminal-capture code locally.
+- Keep dummy credentials loopback-scoped and assert neither dummy nor upstream
+  token appears in retained proof, diagnostics, request fixture, or forwarded
+  headers.
+
+## Auditable Implementation Checklist
+
+1. [ ] **Locally capture repository-pinned/active exact npm publish HTTP
+   request against bounded loopback using a disposable package matching
+   `@hcoona/hcoona-release-smoke-npm` and acceptance manifest/tarball, with
+   dummy loopback-scoped token and schema-faithful fixtures/tests.** Record
+   Node/npm versions and argv in non-secret capture metadata. Use the actual
+   emitted method, escaped path, headers, and body bytes as the fixture oracle;
+   do not call an external registry or modify/stamp the tracked package.
+2. [ ] **Strict proxy validation of actual CouchDB payload and token
+   replacement.** Validate package/version/tag closure, attachment bytes and
+   hashes, acceptance witness, method/path/content framing, and the incoming
+   dummy loopback authorization. Strip it, inject only the upstream token into
+   the mocked upstream request, and prove neither token leaks into evidence.
+3. [ ] **Remove synthetic raw request reconstruction in
+   `adapters/github_packages.py` and use a validated request/upstream proof
+   object.** Eliminate `_expected_acceptance_request_digest` as an authority.
+   The proxy/request validator should form an immutable proof from actual raw
+   bytes; adapter classification should admit that proof and bind request
+   digest, tarball digest, coordinate/tag, upstream status, selected headers,
+   response digest, and response-identity digest.
+4. [ ] **Shared monotonic deadline.** Create one operation deadline and pass
+   its remaining budget through pre-observation, npm process creation/waits,
+   proxy barrier/read/upstream exchange, post-observation, and cleanup. No
+   nested component may reset a full timeout.
+5. [ ] **Malformed missing/partial runner proof facts.** Add a matrix for no
+   facts, executed-only, started-only, wrong types, contradictory
+   `started=True/executed=False`, pre-start failure, local post-spawn failure,
+   proxy-observed timeout, and fully validated proof. Missing/partial facts
+   must not default to `True/True` or produce complete evidence.
+6. [ ] **Governance complete evidence rejects zero SHA.** Reject forty-zero
+   `target-sha` and complete-evidence workflow SHA independently while
+   preserving admissible failure/incomplete capture semantics required for
+   rejected dispatches.
+7. [ ] **Append newest `.testagent/status.md` closure.** Do not overwrite or
+   rewrite history. Append exact files, regression names, commands, pass/fail
+   counts, npm/Node capture versions, fixture provenance, external-call
+   prohibition evidence, and remaining blockers.
+8. [ ] **Add regressions and run requested/relevant narrow/full validations
+   and report counts.** Run Ruff, scoped collection/test, full package
+   collection/harness-equivalent test, build, and diff hygiene. Report
+   collected/passed/failed/skipped counts exactly; current pre-change
+   collection baselines are 490 scoped and 2775 full-package tests.
+
+## Recommendations
+
+1. Capture the real npm request first; freeze only non-secret, deterministic
+   body/header facts and the exact disposable tarball/manifest needed to
+   reproduce validation.
+2. Introduce the immutable validated request/upstream proof seam before
+   changing adapter classification. This removes duplicated body builders in
+   `cli.py`, `github_packages.py`, and tests as competing authorities.
+3. Thread one monotonic deadline object/value through CLI, proxy, and adapter,
+   then add adversarial clock tests.
+4. Close runner-fact and zero-SHA matrices, then update workflow/CLI contracts.
+5. Update only the bounded docs and append the status closure after all local
+   validations. Never configure or dispatch acceptance remotely.
+<!-- END APPEND: workflow-delivery-v3-acceptance-request-proof-research-2026-08-15 -->
+
+<!-- BEGIN APPEND: current-commit-10-regression-scope-2026-08-15T021318Z -->
+# Current Commit-10 Regression Scope Research (2026-08-15T02:13:18Z)
+
+## Project Overview
+
+- **Path**: `/workspace/three-workspaces/design-workflows`
+- **Boundary**: the uncommitted Workflow Delivery v3 commit-10 acceptance
+  implementation only. Do not inventory or modify sibling packages.
+- **Language/framework**: Python 3.13, Hatchling/UV workspace, pytest with
+  `--import-mode=importlib`; YAML workflow contract tests use PyYAML.
+- **Authority read**: `AGENTS.md`, the v3 handoff,
+  `.agents/skills/code-testing-agent/unit-test-generation.prompt.md`, and the
+  Python testing extension. The `code-testing-extensions` skill was not
+  invocable, so its checked-in `extensions/python.md` was read directly.
+- **Research-only constraints**: production and tests are inspection-only;
+  `.testagent/plan.md` and `.testagent/status.md` remain untouched. This
+  uniquely labeled section is appended without changing the prior research
+  prefix.
+
+## Bounded Target Inventory and Dependencies
+
+### High priority
+
+| Target | Public/internal surface | Dependency layer | Existing coverage |
+|---|---|---|---|
+| `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py` | `_AcceptanceNpmRunner._cleanup_processes`, `_AcceptanceNpmTransport.observe`, `_acceptance_subprocess_environment`, acceptance parser/deadline wiring | Top layer: subprocesses, temporary files, proxy, HTTP transport, monotonic clock | Partial |
+| `.github/workflows/workflow-delivery-v3-buddy-smoke-acceptance.yml` | two write-probe jobs, uploads, terminal fan-in | Top layer: Actions jobs and acceptance CLI | Partial |
+| `src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py` | process cleanup, credential/config boundary, shared deadlines | Direct fakes for processes, clock, transport; no external network | Partial |
+| `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py` | workflow topology, action pins, gates, terminal evidence | Leaf contract parser over repository YAML | Partial |
+
+### Medium priority
+
+| Target | Reason |
+|---|---|
+| `.gitignore` | Exact fixture files under `tests/fixtures/acceptance/npm-publish-request/` are currently hidden by global `*.tgz` and `dist/` rules; only narrow path negations are admissible. |
+| `src/public/lib/three-workflow-delivery-v3/tests/test_cli.py` | Existing CLI deadline test pins the obsolete `7.0` default and should pair with parser-level suite-default regressions. |
+| `src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py` | Existing repository contract for the narrow `.testagent/**` markdown-only exclusion; appropriate home for any explicit append-only/typos convention check. |
+| `.typos.toml` and `src/public/lib/Hjg.Pngcs/Chunks/PngChunkZTXT.cs` | Read-only historical convention for requirement 8. |
+
+### Low priority / skip
+
+- `adapters/github_packages.py`, governance records, and governance inspection
+  are already paired and are outside these newly requested cleanup,
+  credential, workflow-gate, deadline, and repository-contract regressions
+  unless a signature must be imported by a focused test.
+- Do not change docs, remote Environment/reviewer state, or dispatch workflows.
+- Do not restore ignored fixtures by broad `dist/**`, `*.tgz`, or fixture-tree
+  negations.
+
+### Dependency graph
+
+- **Leaves**: workflow YAML contract parsing; `.gitignore`, `hk.pkl`, and
+  `.typos.toml` text contracts; fake process/clock/transport objects.
+- **Mid layer**: `_acceptance_subprocess_environment`,
+  `_AcceptanceNpmTransport`, `_AcceptanceNpmRunner`.
+- **Top layer**: acceptance CLI suite orchestration and the two workflow probe
+  jobs followed by terminal evidence fan-in.
+- Mock/fake subprocess, filesystem mode checks, monotonic time, and HTTP
+  transport. Never call GitHub Packages or publish externally.
+
+## Requirement Checklist
+
+1. **Ignored acceptance fixtures and narrow negations**: `capture.json` is
+   visible, but `package.tgz` is ignored by `.gitignore:538` (`*.tgz`) and
+   `package/dist/acceptance-witness.json` plus `package/dist/index.js` are
+   ignored by the global `dist/` convention. Add contract coverage for exact
+   file-level negations only and prove unrelated `.tgz`/`dist` artifacts remain
+   ignored.
+2. **Cleanup ordering and immutable timeout state**:
+   `_cleanup_processes` currently kills and reaps one process at a time and
+   returns on the first expired reap. The regression must require a first pass
+   that signals/kills every started process, then a bounded reap pass using one
+   shared absolute deadline. Once timeout is classified, no contender result,
+   winner, proof, or mutation state may be changed by late process completion.
+   Extend the all-started/partial-startup fake-process convention with multiple
+   stubborn processes and ordered call assertions.
+3. **Authenticated npm readback credential boundary**:
+   `_AcceptanceNpmTransport.observe` currently invokes `npm view` with the
+   tokenless shared config created at CLI lines 458-466. Require a fresh 0600
+   temporary npm config containing only the dedicated token plus minimum
+   GitHub-registry settings, used only for `npm view`/readback, absent from argv,
+   logs, retained output, and inherited environment, and deleted on success and
+   failure. Keep `_AcceptanceNpmRunner.run_scenario`'s loopback proxy config
+   separate; it may contain only the dummy proxy token and must never contain
+   the dedicated token.
+4. **Workflow classification gates and terminal evidence**:
+   each probe needs record production, an `always()` immutable upload, then an
+   explicit classification gate after both record and upload. A failing first
+   probe must prevent the second mutation job through `needs`; the terminal job
+   must retain its exact `always() && github.run_attempt == 1` guard, consume
+   all dependency results/record/artifact outputs, form evidence even for
+   failed/skipped jobs, and always attempt its evidence upload.
+5. **Suite deadlines**: parser default is currently `7.0`. Regressions must pin
+   omitted `--timeout-seconds` to exactly 120 seconds for
+   `absent-create-readback` and at least 300 seconds for the four-scenario
+   `exact-and-conflict` suite. An explicit CLI timeout remains authoritative.
+   Both suite paths must form and preserve one shared internal absolute
+   deadline rather than resetting a budget per scenario/proxy/wait/reap.
+6. **Exact Node/npm toolchain and credential boundary**:
+   both package-writing jobs currently have no setup-node step. Require a
+   full-SHA-pinned `actions/setup-node` step selecting exact Node `24.14.0`,
+   explicit installation and verification of npm `11.9.0`, and checks of both
+   exact versions before mutation. Setup/checkouts remain credential-free
+   (`persist-credentials: false`, no registry token on setup); the dedicated
+   token enters only the acceptance process boundary described in item 3.
+7. **`.testagent` append-only contracts**: repository convention already
+   excludes `.testagent/**` only from the two mutating/checking Markdown steps:
+   `hk.pkl:68,72,82`, enforced by
+   `test_testagent_markdown_exclusion_is_local_to_two_markdown_steps`.
+   Add any requested contract without broadening that exclusion; it must check
+   the intended append-only/zero-deletion rule rather than rewriting historical
+   artifacts.
+8. **Historical two-letter identifier and narrow typos exception**: preserve
+   the exact legacy declaration at
+   `src/public/lib/Hjg.Pngcs/Chunks/PngChunkZTXT.cs:46`. `.typos.toml` already
+   names that exact legacy file in `extend-exclude`; preserve the file-specific
+   exception and reject a wildcard/general identifier exemption. The same legacy
+   identifier appears in nearby Pngcs chunk files, also represented by exact
+   file entries rather than a broad generated-code exception.
+
+## Source-to-Test Pairs and Coverage Classification
+
+- `cli.py` ↔ `tests/adapters/test_commit10_acceptance_probes.py` and
+  `tests/test_cli.py`: **partial**. Shared-deadline and single-process cleanup
+  tests exist, but signal-all-before-reap, immutable post-timeout state,
+  dedicated ephemeral readback config, and suite-specific defaults do not.
+- Acceptance workflow ↔
+  `tests/contracts/test_commit10_acceptance_workflow.py`: **partial**. It
+  already pins full action SHAs, first-attempt guards, sequential jobs, output
+  bindings, and terminal fan-in, but not setup-node/npm versions or post-upload
+  classification gates.
+- `.gitignore` ↔ new focused repository contract in the existing commit-10
+  contract file (or `test_hk_trigger.py` if kept as root hygiene):
+  **untested for these fixtures**.
+- `hk.pkl` ↔ `tests/test_hk_trigger.py`: **substantial for the existing narrow
+  Markdown exclusion**, partial for an explicit append-only history contract.
+- `.typos.toml`/historical Pngcs line ↔ root hygiene contract:
+  **represented by exact current configuration, but no focused regression was
+  found**.
+
+Static pairing was run once on the bounded package with
+`--lang python --include-tested`: 38 source files, 39 tests, 36 paired, 2
+unpaired declaration-free `__init__.py` files, and 0 orphan tests. Relevant
+`cli.py`, `adapters/github_packages.py`, governance inspection, and governance
+records are paired. This is a static identifier/import heuristic, not line or
+branch coverage.
+
+## Existing Test Conventions
+
+- Plain pytest functions; `pytest.mark.parametrize` for state matrices; exact
+  dict/list/string assertions rather than truthiness.
+- Injected fakes and `monkeypatch` for Popen, clocks, subprocess, and transport.
+- Workflow tests parse the actual YAML and execute bounded embedded Python only
+  when needed; all action revisions are checked as 40-character SHAs.
+- Security assertions inspect argv, environment, file mode/lifetime, retained
+  bytes, and logs independently. Dummy proxy and dedicated upstream
+  credentials must be distinguishable sentinel values.
+- Representative tests:
+  `tests/adapters/test_commit10_acceptance_probes.py` and
+  `tests/contracts/test_commit10_acceptance_workflow.py`.
+
+## Exact Build and Test Commands
+
+- **Build (narrow package)**:
+  `uv build --package three-workflow-delivery-v3`
+- **Test (scoped fix cycles)**:
+  `PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -p no:cacheprovider -q src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py`
+- **Scoped discovery**: use the same command with `--collect-only -q`.
+- **Test (harness-equivalent full package from repository root)**:
+  `python eng/scripts/hk_exec.py --timeout-seconds 720 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests`
+- **Harness discovery check**:
+  `uv run --python 3.13 pytest --collect-only -q`
+- **Lint/format check (narrow)**:
+  `uv run ruff check src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py`
+  and the corresponding `uv run ruff format --check ...`.
+- **Full repository build requested by unit-test-generation guidance**:
+  `uv build --package three-workflow-delivery-v3` for this bounded Python
+  package; do not expand to unrelated C#/Node sibling builds.
+- **Final hygiene**:
+  `git diff --check` and
+  `git diff --numstat HEAD -- .testagent/research.md` (research must report
+  zero deletions).
+
+## Recommendations
+
+1. Add repository-contract regressions first for fixture visibility,
+   `.testagent` locality, and the historical identifier exception.
+2. Add adversarial cleanup and credential-lifetime tests with independent
+   sentinels, then suite-default/shared-deadline parser tests.
+3. Add workflow topology tests for exact tool versions, full SHA pinning,
+   record/upload/gate order, first-failure skip, and unconditional terminal
+   evidence upload.
+4. Do not dispatch, configure a remote Environment, expose credentials, alter
+   status/plan artifacts, or modify production during test generation.
+<!-- END APPEND: current-commit-10-regression-scope-2026-08-15T021318Z -->

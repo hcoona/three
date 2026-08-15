@@ -4088,3 +4088,1424 @@ reviews are complete.
 | Arbitrary branch/tag Buddy execution remains independent of CODEOWNERS | `test_public_cli_normalizes_arbitrary_buddy_branch_and_tag_without_codeowners_gate` and `test_actual_buddy_workflow_passes_github_ref_as_selected_ref_without_ownership_gate` |
 
 <!-- END APPEND: workflow-delivery-v3-commit9-final-closure-2026-08-14 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit10-iterative-rpi-status-2026-08-14 -->
+# Workflow Delivery v3 Commit 10 Iterative Test Status
+
+## Research and plan
+
+| Phase | Status |
+|---|---|
+| Bounded research and explicit R1-R9 checklist | Complete |
+| Requirement-mapped sequential plan | Complete |
+| Phase 1 workflow/inventory contracts | Implemented; expected-red validation complete |
+| Phase 2 Governance contracts | Pending |
+| Phase 3 Adapter probes | Pending |
+| Phase 4 inspection tool | Pending |
+| Coverage iteration and quality gates | Pending |
+
+## Phase 1 validation
+
+Command:
+
+`uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py`
+
+Result: **1 passed, 11 failed**. The passing test proves the actual
+CODEOWNERS final-match and HK inventory already cover both commit-10 paths. Ten
+failures are the single expected missing temporary acceptance-workflow
+production gap reported independently by each scenario. The remaining failure
+is the expected missing actual protected disabled attestation. Collection and
+the established commit-9 ownership oracle are healthy; no assertion was
+weakened and no production file was changed.
+<!-- END APPEND: workflow-delivery-v3-commit10-iterative-rpi-status-2026-08-14 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit10-phase2-status-2026-08-14 -->
+## Phase 2 Governance validation
+
+Added:
+
+- `tests/governance/test_commit10_attestation.py`
+- `tests/governance/test_commit10_acceptance_evidence.py`
+
+Command:
+
+`uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_attestation.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py`
+
+Result: **38 failed** with clean collection. Three failures report only the
+missing actual protected attestation. The other 35 scenario cases report only
+the missing
+`three_workflow_delivery_v3.records.governance` commit-10 production surface.
+The failures cover positive canonical admission as well as reviewer,
+recovery-coordinate, schema-closure, purpose/lineage, dependency/probe,
+classification, and forbidden-Release mutations, so the red result is not a
+test-harness or assertion defect.
+
+| Phase | Status |
+|---|---|
+| Phase 2 protected attestation contracts | Implemented; expected red |
+| Phase 2 Governance Evidence contracts | Implemented; expected red |
+| Phase 3 Adapter probes | Next |
+<!-- END APPEND: workflow-delivery-v3-commit10-phase2-status-2026-08-14 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit10-phase3-status-2026-08-14 -->
+## Phase 3 Adapter validation
+
+Added
+`tests/adapters/test_commit10_acceptance_probes.py`.
+
+Command:
+
+`uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py`
+
+Result: **18 failed** with clean collection. Every case reports the same
+expected missing
+`run_fixed_coordinate_acceptance_probe` production API before any fake
+transport or runner call. The parameterized red surface independently covers
+coordinate/tag rejection, seven forbidden mutation modes, absent/create/
+readback, exact no-mutation, identical and differing races, lost response, and
+offline bounded injection. No real network or registry mutation occurred.
+
+| Phase | Status |
+|---|---|
+| Phase 3 fixed-coordinate probe contracts | Implemented; expected red |
+| Phase 4 inspection tool | Next |
+<!-- END APPEND: workflow-delivery-v3-commit10-phase3-status-2026-08-14 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit10-phase4-status-2026-08-14 -->
+## Phase 4 inspection validation
+
+Added
+`tests/governance/test_commit10_inspection.py`.
+
+Command:
+
+`uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py`
+
+Result: **7 failed** with clean collection. Six cases report the expected
+missing optional Governance inspection module; the CLI exposure case reports
+the expected absent `governance` command group (`SystemExit(2)` rather than the
+required help exit `0`). Present, removed, timeout, transport, malformed,
+diagnostic-only, Capability-negative, and live-enable-negative assertions are
+all retained.
+
+| Phase | Status |
+|---|---|
+| Phase 4 optional read-only inspection contracts | Implemented; expected red |
+| Initial RPI implementation pass | Complete |
+| Static/test quality and coverage iteration | Next |
+<!-- END APPEND: workflow-delivery-v3-commit10-phase4-status-2026-08-14 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit10-final-validation-2026-08-14 -->
+# Workflow Delivery v3 Commit 10 Final Test-Generation Validation
+
+Status: **test generation complete; expected commit-10 production contracts are
+red**.
+
+## Final generated surface
+
+| Metric | Value |
+|---|---:|
+| New pytest files | 5 |
+| Test functions | 39 |
+| Collected parameterized cases | 78 |
+| Generated cases passing | 1 |
+| Expected production-contract gaps | 77 |
+| Assertion-free tests | 0 |
+
+The sole green generated case proves current CODEOWNERS final-match and HK
+inventory coverage. The expected-red groups are:
+
+- 10 missing temporary-workflow scenarios plus 1 missing actual-attestation
+  normal-flow scenario;
+- 3 actual protected-attestation scenarios;
+- 37 absent Governance Acceptance Evidence record scenarios;
+- 19 absent fixed-coordinate Adapter probe scenarios; and
+- 7 absent optional Governance inspection/CLI scenarios.
+
+## Build and test commands
+
+| Command | Result |
+|---|---|
+| Narrow generated pytest | `1 passed, 77 failed`; every failure is one of the bounded commit-10 production gaps above |
+| Generated-test collection | `78 tests collected` |
+| Full v3 pytest | `2161 passed, 211 failed` in 363.54s |
+| Full root pytest | `4196 passed, 211 failed` in 502.22s |
+| `uv build --package three-workflow-delivery-v3` | Passed; sdist and wheel built |
+| `pnpm build` | Passed across the pnpm workspace |
+| `dotnet build dirs.proj --no-incremental` | Passed; 0 warnings, 0 errors |
+| `pnpm test` | `332 passed, 1 failed`; unrelated hexo validator environment mismatch: expected pnpm 11.19.0, received 11.17.0 |
+| `dotnet test dirs.proj --no-restore` | Exit 1: traversal reported no test projects |
+| Ruff check | Passed |
+| Ruff format check | Passed; 5 files already formatted |
+| Focused Pyrefly | Passed; 0 errors |
+| `git diff --check` | Passed |
+
+The 134 non-commit-10 failures in both Python full scopes are caused by
+`pnpm build` stamping tracked smoke-package manifest versions before pytest:
+132 consumer-policy cases, one CI scenario, and one Node Adapter source-version
+case. The successful build changed:
+
+- `src/public/lib/hcoona-release-smoke-npm/package.json` from
+  `0.0.0-placeholder` to `1.0.0-beta.269.gadf3fdf`; and
+- `src/public/lib/hcoona-release-smoke-npm-dual/package.json` from
+  `0.0.0-placeholder` to `1.0.0-beta.265.gadf3fdf`.
+
+No cleanup, restore, reset, reconstruction, or manual production edit was
+performed because the task explicitly forbids those operations. These two
+validation side effects are therefore reported separately from the generated
+test/state outputs.
+
+## Mandatory quality gates
+
+`test-gap-analysis` and `assertion-quality` were invoked. Their shared optional
+`test-analysis-extensions` dependency was unavailable. Direct Python/pytest
+review found six first-iteration weaknesses and fixed all six:
+
+1. protected-ref comparison and every dispatch input/constant comparison;
+2. one immutable upload in review, every probe, and terminal capture;
+3. no mandatory reviewer-inspection invocation in capture;
+4. noncanonical and duplicate-key Evidence bytes;
+5. rejection of an unreviewed but syntactically valid acceptance tag; and
+6. concrete secondary observables for transport, runner, and source-read calls.
+
+Post-fix metrics: 188 concrete assertions, 10 exception expectations, average
+5.08 per test function, 18 explicit-negative functions, 9 collaborator/
+side-effect functions, 4 deep-document functions, and no trivial-only or
+self-referential tests. Ruff, formatting, Pyrefly, narrow pytest, and collection
+were rerun after the fixes.
+
+## Requirement coverage
+
+| Requirement | Exact generated evidence |
+|---|---|
+| 1. Later protected target finalization, zero sentinel, no probe | `test_commit10_acceptance_target_is_zero_sentinel_pending_protected_finalization`; `test_zero_sentinel_validation_blocks_review_and_every_probe` |
+| 2. Exact disabled protected attestation and pre-Attempt block | `test_actual_protected_attestation_is_canonical_disabled_and_exactly_bound`; `test_actual_attestation_accepts_only_hcoona_admin_and_exact_access`; `test_disabled_attestation_decision_cannot_cross_the_pre_attempt_gate` |
+| 3. Truthful reviewer omission and optional recovery | `test_terminal_evidence_declares_reviewer_unavailable_and_recovery_coordinates`; `test_complete_evidence_accepts_unavailable_reviewer_with_all_recovery_coordinates`; `test_missing_reviewer_alone_does_not_downgrade_complete_evidence`; `test_github_actor_cannot_substitute_for_environment_reviewer`; `test_reviewer_inspection_cli_is_optional_on_demand` |
+| 4. Exact temporary acceptance workflow | `test_acceptance_dispatch_inputs_and_constants_are_exact`; `test_acceptance_dag_environment_and_concurrency_are_exact`; `test_acceptance_permissions_keep_package_write_only_in_probe_jobs`; `test_acceptance_action_pins_and_evidence_retention_are_exact` |
+| 5. Independent attempt guards and terminal fan-in | `test_each_validation_review_and_probe_job_independently_rejects_reruns`; `test_each_probe_has_the_exact_first_attempt_job_guard`; `test_terminal_capture_has_exact_always_guard_and_every_dependency` |
+| 6. Closed Governance Acceptance Evidence | `test_acceptance_evidence_schema_is_closed_at_every_level`; `test_acceptance_evidence_rejects_noncanonical_or_duplicate_json`; `test_acceptance_evidence_requires_exact_purpose_and_no_release_lineage`; `test_acceptance_evidence_retains_every_dependency_result_and_probe_fact`; `test_mutation_classification_is_closed_and_consistent`; `test_acceptance_evidence_rejects_every_release_lineage_field` |
+| 7. Fixed-coordinate offline probe scenarios | `test_acceptance_probe_requires_the_fixed_coordinate_and_explicit_tag`; `test_acceptance_probe_rejects_latest_and_every_forbidden_mutation_mode`; `test_absent_create_readback_records_exact_complete_facts`; `test_exact_preexisting_state_never_invokes_the_mutation_runner`; `test_identical_conflict_race_is_exact_without_blind_repair`; `test_differing_conflict_race_is_conflicting_without_overwrite`; `test_lost_response_is_unknown_and_requires_reconciliation`; `test_probe_transport_and_runner_are_bounded_injected_and_offline` |
+| 8. Read-only inspection outcomes and authority negatives | `test_reviewer_inspection_present_is_read_only_and_scoped`; `test_reviewer_inspection_removed_is_not_universal_negative_proof`; `test_reviewer_inspection_errors_are_unknown_and_human_required`; `test_reviewer_inspection_cannot_grant_capability_or_enable_live`; `test_reviewer_inspection_cli_is_optional_on_demand` |
+| 9. CODEOWNERS/HK and disabled normal Buddy | `test_commit10_surfaces_have_exact_codeowners_and_hk_inventory`; `test_normal_buddy_remains_disabled_before_attempt_without_legacy_route` |
+
+## Final file boundary
+
+Intended generated/state files:
+
+- `.testagent/research.md` (append-only)
+- `.testagent/plan.md` (append-only)
+- `.testagent/status.md` (append-only)
+- `tests/contracts/test_commit10_acceptance_workflow.py`
+- `tests/governance/test_commit10_attestation.py`
+- `tests/governance/test_commit10_acceptance_evidence.py`
+- `tests/governance/test_commit10_inspection.py`
+- `tests/adapters/test_commit10_acceptance_probes.py`
+
+The two tracked package-manifest build side effects listed above are the only
+additional changed paths. No production/workflow/documentation implementation
+was authored.
+<!-- END APPEND: workflow-delivery-v3-commit10-final-validation-2026-08-14 -->
+
+# Workflow Delivery v3 Commit 10 Phase 5 Final Tail Closure
+
+Timestamp: 2026-08-15T01:18:54Z.
+
+Status: **SUCCESS**. This tail record supersedes earlier expected-red notes and
+is intentionally appended after every pre-existing status entry.
+
+## Exact Phase 5 changed files
+
+- `src/public/lib/three-workflow-delivery-v3/tests/adapters/test_node.py`
+- `docs/wiki/analyses/workflow-delivery/v3/agent-handoff.md`
+- `docs/wiki/analyses/workflow-delivery/v3/hcoona-release-smoke-npm-lld.md`
+- `docs/wiki/log.md`
+- `.testagent/status.md` (append-only records)
+
+The first full-package run exposed the closed adapter export expectation as the
+only regression (`ValidatedAcceptanceRequestProof` was intentionally public but
+absent from the expected export set). The test contract was updated without
+deleting any test; its focused rerun and the full package then passed.
+
+## Fixture provenance and local-only proof
+
+- Disposable fixture:
+  `src/public/lib/three-workflow-delivery-v3/tests/fixtures/acceptance/npm-publish-request/`.
+- Captured toolchain/argv: Node `v24.14.0`, npm `11.9.0`;
+  `npm publish <package> --tag wdv3-acceptance-1 --registry
+  <loopback-registry> --ignore-scripts`.
+- Fixture SHA-256:
+  `capture.json`
+  `d9a1c15370c950b63baf18dec3a6190d6b76b646fe5ff3da51176df117825e0f`;
+  `package.json`
+  `1729de7c1dd97b07c9819a733063e2a5bbb93526f8fafed7edcf65530ae5bd17`;
+  `README.md`
+  `7eebfef1441e4125667c599f6aceb4bfab52925963dbc9bf5ba082e92dfc49fd`;
+  `dist/acceptance-witness.json`
+  `bb4fcbdd195050a2061de9d252160b8e8c054014f3f8520e55bf7ab5136bcdca`;
+  `dist/index.js`
+  `6be199c72a12dc6348bc2f4b9596f99364456bd367f614dc521c96d63b1951c1`.
+- The credential/external-registry scan returned 0 matches. Tests use the
+  loopback capture server and monkeypatched upstream only. No external HTTP,
+  remote Environment configuration, workflow dispatch, package publication,
+  activation, git mutation, or test deletion occurred.
+
+## Commands and exact counts
+
+- Four-file collection command from the plan:
+  **537 collected in 0.54s**, delta **+47** from 490.
+- Four-file scoped test command from the plan:
+  **537 passed, 0 failed, 0 skipped** in 15.67s initially and 15.28s after the
+  integration fix.
+- Full-package collection:
+  `PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --package
+  three-workflow-delivery-v3 pytest -p no:cacheprovider --collect-only -q
+  src/public/lib/three-workflow-delivery-v3/tests`:
+  **2822 collected in 0.91s**, delta **+47** from 2775.
+- Full-package test:
+  `python eng/scripts/hk_exec.py --timeout-seconds 720 uv run --python 3.13
+  --package three-workflow-delivery-v3 pytest -q
+  src/public/lib/three-workflow-delivery-v3/tests`:
+  first run **1 failed, 2821 passed in 374.43s**; final run
+  **2822 passed, 0 failed, 0 skipped in 374.24s**.
+- Focused integration rerun:
+  `... pytest -q
+  src/public/lib/three-workflow-delivery-v3/tests/adapters/test_node.py::test_adapter_public_api_exports_closed_types_and_functions`:
+  **1 passed in 0.27s**.
+- Ruff check/format over all 17 changed Python files:
+  **all checks passed; 17 files formatted**. Focused post-fix Ruff:
+  **passed; 1 file formatted**.
+- Scoped docs:
+  Prettier **passed for 3 files**; markdownlint **0 issues**.
+- `uv build --package three-workflow-delivery-v3`:
+  **sdist and wheel built successfully**.
+- Fixture `sha256sum` plus bounded credential/external-registry `rg` scan:
+  **5 hashes above; 0 forbidden matches**.
+- `git diff --check`: **passed with no output**.
+  `git diff --name-only`/`git status --short` were inspection-only.
+
+## Requirement evidence
+
+- Real npm request/metadata/reproducibility/no credentials:
+  `test_acceptance_capture_uses_real_npm_publish_request`,
+  `test_acceptance_capture_records_nonsecret_toolchain_metadata`,
+  `test_acceptance_request_fixture_is_reproducible`,
+  `test_acceptance_request_fixture_contains_no_credentials`.
+- Strict validation/token replacement/redaction:
+  `test_proxy_validates_captured_couchdb_publish_request`,
+  `test_proxy_replaces_dummy_authorization_only_for_mocked_upstream`,
+  `test_proxy_proof_redacts_incoming_and_upstream_tokens`.
+- Validated immutable proof/substitution closure:
+  `test_validated_request_proof_binds_raw_request_and_tarball_digests`,
+  `test_validated_request_proof_binds_upstream_response_identity`,
+  `test_acceptance_probe_rejects_request_proof_substitutions`,
+  `test_acceptance_probe_uses_validated_proof_not_synthetic_body`.
+- Shared deadline:
+  `test_acceptance_operation_uses_one_monotonic_deadline`,
+  `test_acceptance_deadline_budget_decreases_across_all_boundaries`,
+  `test_acceptance_deadline_is_not_reset_by_proxy_or_observation`,
+  `test_acceptance_cleanup_uses_only_remaining_deadline_budget`.
+- Fail-closed runner facts:
+  `test_acceptance_runner_proof_fact_matrix`,
+  `test_missing_or_partial_runner_facts_never_default_to_mutation_started`,
+  `test_only_fully_validated_runner_proof_can_form_complete_evidence`.
+- Non-zero complete evidence and retained incomplete semantics:
+  `test_complete_acceptance_evidence_rejects_zero_target_sha`,
+  `test_complete_acceptance_evidence_rejects_zero_workflow_sha`,
+  `test_terminal_complete_evidence_never_emits_zero_sha`, plus the passing
+  incomplete-sentinel regressions.
+
+## Blockers
+
+- Implementation blockers: **none**.
+- As explicitly required by the caller, this phase did **not** invoke or claim
+  `test-gap-analysis` or `assertion-quality`; both remain parent-owned follow-up
+  gates.
+- Remote protected Environment/reviewer setup, dispatch, publication, and
+  activation remain out of scope and unperformed.
+
+<!-- END APPEND: workflow-delivery-v3-commit10-phase5-final-tail-closure-2026-08-15T011854Z -->
+
+# Workflow Delivery v3 Commit 10 Phase 5 Integrated Acceptance Closure
+
+Timestamp: 2026-08-15T01:18:54Z.
+
+Status: **SUCCESS — four-file acceptance integration and full-package
+validation pass locally; no external operation was performed**.
+
+## Exact Phase 5 changed files
+
+- `src/public/lib/three-workflow-delivery-v3/tests/adapters/test_node.py`
+  - Updated the existing closed adapter export expectation to include the
+    intentional `ValidatedAcceptanceRequestProof` public export after the first
+    full-package run exposed the integration regression.
+- `docs/wiki/analyses/workflow-delivery/v3/agent-handoff.md`
+- `docs/wiki/analyses/workflow-delivery/v3/hcoona-release-smoke-npm-lld.md`
+- `docs/wiki/log.md`
+- `.testagent/status.md` (this append-only closure only)
+
+No Phase 5 change was required in the four scoped acceptance files or
+production implementation. All earlier workspace changes and tests were
+preserved; no file was deleted, restored, reset, staged, committed, or cleaned.
+
+## Validated acceptance implementation and fixture
+
+- `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/adapters/__init__.py`
+- `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/adapters/github_packages.py`
+- `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py`
+- `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/records/__init__.py`
+- `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/records/governance.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/test_cli.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/fixtures/acceptance/npm-publish-request/capture.json`
+- `src/public/lib/three-workflow-delivery-v3/tests/fixtures/acceptance/npm-publish-request/package/package.json`
+- `src/public/lib/three-workflow-delivery-v3/tests/fixtures/acceptance/npm-publish-request/package/README.md`
+- `src/public/lib/three-workflow-delivery-v3/tests/fixtures/acceptance/npm-publish-request/package/dist/acceptance-witness.json`
+- `src/public/lib/three-workflow-delivery-v3/tests/fixtures/acceptance/npm-publish-request/package/dist/index.js`
+
+## Node/npm fixture provenance and local-only evidence
+
+- The fixture records Node `v24.14.0`, npm `11.9.0`, and argv
+  `npm publish <package> --tag wdv3-acceptance-1 --registry
+  <loopback-registry> --ignore-scripts`.
+- It came from the disposable acceptance package, not the tracked smoke
+  package, and records `PUT /@hcoona%2fhcoona-release-smoke-npm`, content
+  length `2235`, and normalized request-body SHA-256
+  `a68061edbd52ceb4b3e9cf54c220b757e61c5b8d0f6df478b6ee347bffb91e45`.
+- Exact fixture file SHA-256 values:
+  - `capture.json`: `d9a1c15370c950b63baf18dec3a6190d6b76b646fe5ff3da51176df117825e0f`
+  - `package.json`: `1729de7c1dd97b07c9819a733063e2a5bbb93526f8fafed7edcf65530ae5bd17`
+  - `README.md`: `7eebfef1441e4125667c599f6aceb4bfab52925963dbc9bf5ba082e92dfc49fd`
+  - `acceptance-witness.json`: `bb4fcbdd195050a2061de9d252160b8e8c054014f3f8520e55bf7ab5136bcdca`
+  - `index.js`: `6be199c72a12dc6348bc2f4b9596f99364456bd367f614dc521c96d63b1951c1`
+- The fixture credential/external-registry scan for
+  `npm.pkg.github.com`, `registry.npmjs.org`, authorization/bearer text, and
+  the dummy/upstream test token literals returned **0 matches**.
+- `test_acceptance_capture_uses_real_npm_publish_request`,
+  `test_acceptance_request_fixture_is_reproducible`,
+  `test_acceptance_request_fixture_contains_no_credentials`, and the proxy
+  tests bind only loopback or monkeypatched upstream seams. No remote
+  Environment configuration, workflow dispatch, external HTTP, package
+  publication, or package mutation command was run.
+
+## Exact commands and results
+
+| Command | Result |
+|---|---|
+| `PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -p no:cacheprovider --collect-only -q src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py` | Passed: `537 tests collected in 0.54s`; authoritative scoped delta `+47` from 490. |
+| Same four-file command without `--collect-only` | Passed initially: `537 passed in 15.67s`; passed after the integration fix: `537 passed in 15.28s`; 0 failed, 0 skipped. |
+| `PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -p no:cacheprovider --collect-only -q src/public/lib/three-workflow-delivery-v3/tests` | Passed: `2822 tests collected in 0.91s`; authoritative full-package delta `+47` from 2775. |
+| `python eng/scripts/hk_exec.py --timeout-seconds 720 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests` | First integration run: `1 failed, 2821 passed in 374.43s`; exact failure was the closed adapter `__all__` expectation missing `ValidatedAcceptanceRequestProof`. Final run after the test-contract fix: `2822 passed in 374.24s`; 0 failed, 0 skipped. |
+| `PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -p no:cacheprovider -q src/public/lib/three-workflow-delivery-v3/tests/adapters/test_node.py::test_adapter_public_api_exports_closed_types_and_functions` | Passed: `1 passed in 0.27s`. |
+| `uv run --python 3.13 ruff check --no-cache <all 17 changed Python paths>` | Passed: `All checks passed!`. |
+| `uv run --python 3.13 ruff format --check <all 17 changed Python paths>` | Passed: `17 files already formatted`. |
+| `uv run --python 3.13 ruff check --no-cache src/public/lib/three-workflow-delivery-v3/tests/adapters/test_node.py && uv run --python 3.13 ruff format --check src/public/lib/three-workflow-delivery-v3/tests/adapters/test_node.py` | Passed after integration fix: all checks passed; 1 file already formatted. |
+| `pnpm exec prettier --check docs/wiki/analyses/workflow-delivery/v3/agent-handoff.md docs/wiki/analyses/workflow-delivery/v3/hcoona-release-smoke-npm-lld.md docs/wiki/log.md` | Passed: all matched files use Prettier style. |
+| `pnpm exec markdownlint-cli2 docs/wiki/analyses/workflow-delivery/v3/agent-handoff.md docs/wiki/analyses/workflow-delivery/v3/hcoona-release-smoke-npm-lld.md docs/wiki/log.md` | Passed: 0 issues in 0 files. |
+| `uv build --package three-workflow-delivery-v3` | Passed: sdist and wheel built. |
+| `sha256sum <five fixture files>` plus the bounded `rg` credential/external-registry scan | Passed: hashes above; 0 forbidden matches. |
+| `git diff --check` | Passed with no output. |
+| `git diff --name-only` | Inspection only; existing workspace changes remained present. |
+
+## Requirement mapping
+
+| Requirement | Concrete evidence |
+|---|---|
+| Real active npm request and reproducible non-secret fixture | `test_acceptance_capture_uses_real_npm_publish_request`; `test_acceptance_capture_records_nonsecret_toolchain_metadata`; `test_acceptance_request_fixture_is_reproducible`; `test_acceptance_request_fixture_contains_no_credentials` |
+| Strict request validation, exact token replacement, and redaction | `test_proxy_validates_captured_couchdb_publish_request`; `test_proxy_replaces_dummy_authorization_only_for_mocked_upstream`; `test_proxy_proof_redacts_incoming_and_upstream_tokens` |
+| Immutable validated request/upstream proof and fail-closed substitutions | `test_validated_request_proof_binds_raw_request_and_tarball_digests`; `test_validated_request_proof_binds_upstream_response_identity`; `test_acceptance_probe_rejects_request_proof_substitutions`; `test_acceptance_probe_uses_validated_proof_not_synthetic_body` |
+| One shared monotonic deadline | `test_acceptance_operation_uses_one_monotonic_deadline`; `test_acceptance_deadline_budget_decreases_across_all_boundaries`; `test_acceptance_deadline_is_not_reset_by_proxy_or_observation`; `test_acceptance_cleanup_uses_only_remaining_deadline_budget` |
+| Missing/partial/contradictory runner facts remain incomplete | `test_acceptance_runner_proof_fact_matrix`; `test_missing_or_partial_runner_facts_never_default_to_mutation_started`; `test_only_fully_validated_runner_proof_can_form_complete_evidence` |
+| Complete evidence independently rejects zero SHAs | `test_complete_acceptance_evidence_rejects_zero_target_sha`; `test_complete_acceptance_evidence_rejects_zero_workflow_sha`; `test_terminal_complete_evidence_never_emits_zero_sha`; incomplete sentinel tests remain green |
+| Integrated four-file and full-package closure | 537/537 scoped and 2822/2822 full-package passing commands above |
+| Necessary docs and append-only record | Three scoped docs above and this newest `.testagent/status.md` append |
+
+## Blockers and deferred parent gates
+
+- Implementation/validation blockers: **none**.
+- Per the Phase 5 caller instruction, this phase did **not** invoke or claim
+  `test-gap-analysis` or `assertion-quality`; those mandatory parent-owned gates
+  remain explicitly deferred to the parent.
+- No external acceptance execution evidence is claimed. Protected Environment
+  setup, reviewer configuration, dispatch, publication, and activation remain
+  out of scope.
+
+<!-- END APPEND: workflow-delivery-v3-commit10-phase5-integrated-acceptance-closure-2026-08-15T011854Z -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit10-fixes-green-2026-08-14 -->
+
+# Workflow Delivery v3 Commit 10 Remaining-Fix Validation
+
+Status: **green in the current working tree**. The earlier commit-10
+expected-red entries are superseded by this result.
+
+- The protected acceptance Environment and reviewer configuration remain
+  **pending Environment setup**. No live acceptance dispatch or package
+  mutation was performed.
+- Strict mutation qualification, proof binding, race overlap, startedness,
+  shared deadlines, terminal evidence consistency, hostile-input capture, and
+  hidden artifact upload handling are implemented.
+- The scoped inventory currently contains **481 tests**, not the earlier 476
+  count, because five additional reviewer/deadline cases are present in the
+  current tree.
+
+| Command | Exact result |
+|---|---|
+| Five commit-10 scoped files | **481 passed** |
+| Full Workflow Delivery v3 pytest | **2775 passed** |
+| Targeted CLI / GitHub Packages Adapter / public API pytest | **359 passed** |
+| Targeted Ruff check | Passed |
+| Targeted Ruff format | Passed |
+| `uv run --python 3.13 pyrefly check` | **0 errors** |
+| Acceptance workflow `actionlint` | Passed |
+| Targeted unstaged HK `actionlint` + `v3-control-pytest` | Passed; **2775 passed** in the managed pytest gate |
+| `git diff --check` | Passed |
+
+<!-- END APPEND: workflow-delivery-v3-commit10-fixes-green-2026-08-14 -->
+
+# Workflow Delivery v3 Commit 10 Red-Regression Repair
+
+Timestamp: 2026-08-14.
+
+Status: **green locally; remote Environment/dispatch remains pending and was
+not configured or run**.
+
+## Repair summary
+
+- Lost-response npm publication now uses a loopback registry proxy with an
+  in-memory Bearer token, bounded exact method/path/JSON request validation,
+  TLS upstream forwarding, bounded responses, and proof only for 2xx or 409
+  GitHub Packages responses.
+- The runner returns the distinct `lost-response-processed` proof-bearing
+  outcome. Generic runtime failures remain unknown even when readback is exact.
+- `subprocess.TimeoutExpired` is translated to builtin `TimeoutError`, and the
+  probe records `action-executed=true`, `mutation-started=true`, unknown.
+- Acceptance REST observation requires exact owner login `hcoona`, exact
+  repository `hcoona/three`, uses the confirmed user package endpoint, and
+  returns unknown after bounded pagination exhaustion.
+- Acceptance workflow checkouts use `${{ github.token }}` with
+  `persist-credentials: false`; pinned `setup-uv` explicitly receives an empty
+  `github-token`.
+- Governance probe fact results are derived from admitted scenario
+  classifications with unknown precedence. Every successful fact independently
+  requires complete scenarios plus record/artifact identifiers and digests.
+- Reviewer inspection skips rejected/non-approved matching reviews and
+  continues to later approvals while retaining nested pagination.
+- `.testagent/plan.md` and `.testagent/research.md` were restored from `HEAD`
+  and the existing commit-10 notes appended without deleting historical lines.
+
+## Validation
+
+| Command | Result |
+|---|---|
+| Commit-10 acceptance/inspection regression set | `401 passed in 2.45s` |
+| Targeted CLI/adapter/public API set | `240 passed in 8.90s` |
+| Full Workflow Delivery v3 pytest | `2700 passed in 398.56s` |
+| Targeted Ruff check | `All checks passed!` |
+| Targeted Ruff format check | `9 files already formatted` |
+| `uv run --python 3.13 pyrefly check` | `0 errors` (76 suppressed, 158 warnings not shown) |
+| `mise exec -- actionlint .github/workflows/workflow-delivery-v3-buddy-smoke-acceptance.yml` | Passed |
+| `git diff --check` | Passed |
+
+## Append-only proof
+
+| File | Diff versus `HEAD` |
+|---|---|
+| `.testagent/plan.md` | `40 insertions, 0 deletions` |
+| `.testagent/research.md` | `51 insertions, 0 deletions` |
+
+The working tree remains intentionally uncommitted.
+
+<!-- END APPEND: workflow-delivery-v3-commit10-red-regression-repair-2026-08-14 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit10-adjudicated-tp-fixes-2026-08-14 -->
+# Workflow Delivery v3 Commit 10 Adjudicated TP Fix Status
+
+Timestamp: 2026-08-14.
+
+Status: **COMPLETE — this section supersedes the stale commit-10 expected-red
+entries above. All independently adjudicated true positives are fixed and the
+current focused/regression validation is green.**
+
+## Implemented corrections
+
+- The five-job workflow now executes the exact fixed five-scenario inventory.
+  The second package-write job runs `exact`, `identical-race`,
+  `differing-race`, and `lost-response` at reviewed internal `.1` through `.4`
+  coordinates.
+- Real bounded CLI orchestration starts same-byte and different-byte competing
+  publishers and deliberately discards the lost-response result only after the
+  mutation process starts. Injected deterministic seams cover every path.
+- `absent-create-readback` completes only after absent observation, executed
+  create, and exact readback. A preexisting exact `.1` coordinate is incomplete
+  and requires a new reviewed fixed coordinate.
+- Readback downloads and hashes exact tarball bytes and strictly validates
+  actual version/tag, package owner/name, exact repository metadata, and the
+  embedded acceptance witness purpose/target.
+- Canonical suite records bind exact scenario inventories, record digests,
+  immutable artifact IDs/digests, and pre/action/response/post facts.
+  Governance Acceptance Evidence requires the exact five-scenario set and
+  rejects missing bindings for `complete`.
+- Terminal evidence capture checks out `github.workflow_sha` before any `uv`
+  command and still runs on first-attempt failed/skipped/cancelled dependency
+  paths.
+- No `inputs.*` expression appears inside a `run` script. Inputs cross the
+  expression boundary only through step environments and are quoted in shell;
+  terminal JSON is formed from environment values in Python. Negative static
+  tests reject direct interpolation.
+- Mutation classification is aggregated once with
+  `unknown > incomplete > complete`; all dependency/probe mixed permutations
+  are covered.
+- The acceptance token is removed from CLI argv, read from the dedicated
+  environment variable, popped immediately, omitted from allowlisted
+  subprocess environments, and supplied only through the mode-0600 npm config
+  for publish/view and an in-memory Authorization header for tarball GET.
+  Local `npm pack` receives no auth config.
+- Reviewer recovery now resolves the workflow run `node_id` by REST GET and
+  paginates query-only GraphQL
+  `WorkflowRun.deploymentReviews`, parsing real connection/edge/pageInfo,
+  user/state/databaseId/environment shapes and matching the exact Environment.
+- Governance-only scope remains intact: no Release Attempt/Receipt lineage,
+  live activation, real network/mutation execution, legacy retirement, or
+  commit-11+ work was added.
+
+## Independent review closure
+
+The final independent adversarial review reported two medium findings:
+non-.1 suite records used the base coordinate, and tarball GET did not consume
+the retained in-memory token. Both are fixed. Governance admission now enforces
+each scenario's exact coordinate/tag, and the authenticated GET wrapper replaces
+the retained redaction placeholder with `Bearer <dedicated token>` only at the
+transport boundary.
+
+## Current validation
+
+| Command scope | Result |
+|---|---|
+| Focused commit-10 tests | `68 passed` |
+| Commit-9 CODEOWNERS/HK, Buddy workflow, and eligibility regressions | `240 passed` |
+| GitHub Packages Adapter and CLI regressions | `81 passed` |
+| Reviewer-finding focused rerun | `46 passed` |
+| Ruff check | Passed |
+| Ruff format check | Passed; 8 files already formatted |
+| Pyrefly over v3 source and changed commit-10 tests | Passed; `0 errors` |
+| actionlint over the acceptance workflow | Passed |
+| `git diff --check` | Passed |
+
+No network probe, workflow dispatch, package mutation, commit, push, live
+activation, legacy retirement, or commit-11+ operation was performed.
+<!-- END APPEND: workflow-delivery-v3-commit10-adjudicated-tp-fixes-2026-08-14 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit10-implementation-status-2026-08-14 -->
+# Workflow Delivery v3 Commit 10 Implementation Status
+
+Implementation completed in the working tree without committing or pushing.
+The checked-in acceptance target remains the 40-zero protected-finalization
+sentinel, so review and mutation are unreachable. Normal live remains blocked
+by the canonical `live_enabled: false` attestation. Legacy Buddy entry files
+remain present and no real probes were executed.
+
+Validation results are appended after the final implementation verification.
+<!-- END APPEND: workflow-delivery-v3-commit10-implementation-status-2026-08-14 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit10-implementation-validation-2026-08-14 -->
+## Commit 10 Implementation Validation
+
+| Command scope | Result |
+|---|---|
+| Five generated commit-10 files | `352 passed` |
+| Commit-9 CODEOWNERS, Buddy workflows, eligibility, HK trigger tests | `295 passed` |
+| Existing CLI and GitHub Packages Adapter regressions | `81 passed` |
+| Ruff check and format-check over changed Python scope | Passed |
+| Pyrefly over the v3 package | Passed: `0 errors` |
+| actionlint over acceptance caller and normal Buddy caller/callee | Passed |
+| Governance CLI help surfaces | Passed |
+| `git diff --check` | Passed |
+
+No network probe, workflow dispatch, package mutation, commit, push, live
+activation, legacy retirement, or commit-11 work was performed.
+<!-- END APPEND: workflow-delivery-v3-commit10-implementation-validation-2026-08-14 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit10-review-closure-2026-08-14 -->
+## Commit 10 Independent Review Closure
+
+An independent adversarial review found four actionable gaps, all fixed:
+
+1. terminal capture now normalizes missing skipped-probe outputs and admits an
+   incomplete record with a null unavailable review artifact rather than
+   producing malformed JSON;
+2. real npm SRI `sha512-<base64>` integrity is converted to canonical
+   `sha512:<hex>`;
+3. the exact follow-up probe observes the tag created by the first probe; and
+4. Governance Evidence admission now enforces the fixed repository, workflow
+   path/ref, package coordinate, Environment, producer, first attempt, and
+   recovery correlations.
+
+The 352 commit-10 tests, 295 ownership/Buddy/eligibility/HK tests, 81
+CLI/Adapter tests, Ruff, format, Pyrefly, actionlint, and diff check all passed
+again after these fixes.
+<!-- END APPEND: workflow-delivery-v3-commit10-review-closure-2026-08-14 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit10-step8-final-gate-coverage-iteration-2026-08-14T180554Z -->
+# Workflow Delivery v3 Commit 10 Step 8 Final Coverage/Test-Quality Iteration
+
+Timestamp: 2026-08-14T18:05:54Z.
+
+Status: **final generated-test quality iteration complete; expected red
+production-contract gaps remain**.
+
+## Exact scoped edits
+
+- `tests/contracts/test_commit10_acceptance_workflow.py`
+  - Added exact trigger closure: the acceptance workflow trigger map must be
+    exactly `{"workflow_dispatch"}`.
+  - Replaced token-presence validation checks with fail-closed static guard
+    assertions for target SHA, protected `refs/heads/main`, every fixed
+    dispatch input constant, first `run_attempt`, and `exit 1` failure action.
+  - Strengthened terminal capture to require exact dependency-result emission
+    and non-success dependency-to-`incomplete` classification logic, while
+    retaining the `unknown` classification path.
+- `tests/governance/test_commit10_acceptance_evidence.py`
+  - Added parameterized missing-required-field cases for top-level and nested
+    Evidence fields, including workflow SHA, target SHA, package coordinate,
+    dependency job/result, probe response/content digests, run attempt, and
+    mutation classification.
+  - Added terminal fact matrices that derive exact mutation classification from
+    dependency/probe result cross-products.
+  - Added inconsistency cases for incomplete-with-all-success facts,
+    complete-with-failed/cancelled/skipped dependency, unknown-vs-incomplete
+    precedence, and unknown-without-unknown-fact combinations.
+- `tests/governance/test_commit10_inspection.py`
+  - Strengthened the read-only `gh api --method GET` assertion so the API query
+    itself is scoped by every recovery coordinate: repository, workflow run,
+    environment, deployment, job, and artifact.
+- `tests/adapters/test_commit10_acceptance_probes.py`
+  - Bound every mutation command assertion to `npm publish <exact tarball>`
+    with the tarball path present exactly once.
+  - Added a tarball SHA-512 mismatch negative test that requires rejection
+    before observation or mutation.
+- `tests/governance/test_commit10_attestation.py`
+  - Reviewed in scope; no Step 8 edit required.
+
+## Commands and results
+
+| Command | Result |
+|---|---|
+| `uv run --python 3.13 ruff format src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_attestation.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py` | `2 files reformatted, 3 files left unchanged` |
+| `uv run --python 3.13 ruff check src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_attestation.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py` | Passed: `All checks passed!` |
+| `uv run --python 3.13 ruff format --check src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_attestation.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py` | Passed: `5 files already formatted` |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest --collect-only -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_attestation.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py` | Passed: `127 tests collected in 0.18s` |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_attestation.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py` | Expected red: `126 failed, 1 passed in 0.62s`. Failures remain bounded to absent commit-10 production contracts: missing acceptance workflow, missing protected disabled attestation, missing Governance Acceptance Evidence module, missing optional Governance inspection module/CLI, and missing fixed-coordinate acceptance probe API. |
+
+## Remaining gaps
+
+No additional generated-test assertion-quality gaps are known after this
+iteration. The focused suite remains intentionally red until commit-10
+production contracts are implemented.
+<!-- END APPEND: workflow-delivery-v3-commit10-step8-final-gate-coverage-iteration-2026-08-14T180554Z -->
+
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit10-final-gate-weakness-closure-2026-08-14T182456Z -->
+# Workflow Delivery v3 Commit 10 Final-Gate Weakness Closure
+
+Timestamp: 2026-08-14T18:24:56Z.
+
+Status: **scoped generated-test weakness closure complete; focused suite remains expected-red on absent commit-10 production/workflow surfaces**.
+
+## Exact scoped edits
+
+- `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py`
+  - Reworked the shared shell-guard helper to identify the exact `if` condition and inspect only its then arm before any `else`/`elif`/`fi` branch marker.
+  - `_assert_single_fail_closed_guard` now requires the mismatch condition then arm to contain `exit 1`, rejecting inverted `else`-failure branches.
+  - `_assert_dependency_result_emitted_and_classified` now requires each `needs.<dependency>.result != success` condition then arm to assign `incomplete`, rejecting inverted complete/incomplete branches.
+- `src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py`
+  - Added `PROBES` and indexed terminal-fact mutation helpers so classification derivation/rejection is parameterized across every dependency result and both probe facts instead of the final entries only.
+  - Expanded missing-required-field coverage to whole required containers/lists: `workflow`, `reviewer`, `recovery`, `dependency-results`, and `probe-facts`.
+  - Added empty/short/extra array rejection for `dependency-results` and `probe-facts`.
+  - Expanded required-field deletion cases to every dependency entry (`job`, `result`) and every probe entry (`probe`, `result`, `response-identity-digest`, `content-sha512`, `diagnostics`).
+- `src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py`
+  - Replaced substring recovery-coordinate checks with exact read-only `gh api --method GET` endpoint parsing for `repos/{repository}/actions/runs/{workflow-run-id}/pending_deployments`.
+  - Required typed `gh api` fields for `environment`, `deployment`, `job`, and numeric `artifact_id`, with no extra/missing fields.
+
+## Commands and results
+
+| Command | Result |
+|---|---|
+| `uv run --python 3.13 ruff format src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py` | Passed: `3 files left unchanged` after final edits. |
+| `uv run --python 3.13 ruff check src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py` | Passed: `All checks passed!` |
+| `uv run --python 3.13 ruff format --check src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py` | Passed: `3 files already formatted` |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest --collect-only -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py` | Passed: `283 tests collected in 0.19s` |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py` | Expected red: `282 failed, 1 passed in 0.73s`; representative failures remain bounded to missing `.github/workflows/workflow-delivery-v3-buddy-smoke-acceptance.yml`, missing `three_workflow_delivery_v3.records.governance`, and missing `three_workflow_delivery_v3.governance.inspection` / CLI production surfaces. |
+
+## Changed/strengthened test names
+
+- `test_zero_sentinel_validation_blocks_review_and_every_probe`
+- `test_acceptance_dispatch_inputs_and_constants_are_exact`
+- `test_each_validation_review_and_probe_job_independently_rejects_reruns`
+- `test_terminal_capture_has_exact_always_guard_and_every_dependency`
+- `test_acceptance_evidence_rejects_missing_required_fields`
+- `test_acceptance_evidence_rejects_empty_or_wrong_length_fact_arrays`
+- `test_mutation_classification_is_closed_and_consistent`
+- `test_terminal_fact_matrix_derives_exact_mutation_classification`
+- `test_mutation_classification_rejects_inconsistent_or_open_values`
+- `test_mutation_classification_rejects_dependency_probe_cross_products`
+- `test_reviewer_inspection_present_is_read_only_and_scoped`
+- `test_reviewer_inspection_removed_is_not_universal_negative_proof`
+- `test_reviewer_inspection_errors_are_unknown_and_human_required`
+- `test_reviewer_inspection_cannot_grant_capability_or_enable_live`
+
+<!-- END APPEND: workflow-delivery-v3-commit10-final-gate-weakness-closure-2026-08-14T182456Z -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit10-final-exhaustive-test-only-pass-2026-08-14T183019Z -->
+# Workflow Delivery v3 Commit 10 Final Exhaustive Test-Only Pass
+
+Timestamp: 2026-08-14T18:30:19Z.
+
+Status: **scoped generated-test strengthening complete; accurate expected-red
+behavior preserved**.
+
+## Exact scoped edits
+
+- `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py`
+  - Strengthened `test_terminal_capture_has_exact_always_guard_and_every_dependency`
+    so terminal capture must emit `"probe-facts"` for both probe jobs.
+  - Added exact static wiring checks for each probe fact field:
+    `result`, `response-identity-digest`, `content-sha512`, and
+    `diagnostics` must use `needs.<probe>.outputs.<field>`.
+  - Added probe-result classification checks requiring `incomplete` and
+    `unknown` outputs to assign the matching top-level mutation
+    classification.
+- `src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py`
+  - Added `test_mutation_classification_rejects_open_value_with_all_success_facts`
+    for isolated `mutation-classification: unsupported` rejection with all
+    dependency/probe facts otherwise successful.
+  - Added `test_acceptance_evidence_rejects_mutated_dependency_job_inventory`
+    across every dependency job for unexpected same-length identifiers and
+    duplicate same-cardinality inventory.
+  - Added `test_acceptance_evidence_rejects_mutated_probe_fact_inventory`
+    across every probe identifier for unexpected same-length identifiers and
+    duplicate same-cardinality inventory.
+  - Added `test_acceptance_evidence_rejects_reordered_fact_inventory` for
+    dependency and probe arrays with exact same members but wrong order.
+- `src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py`
+  - Strengthened full `to_document()` equality for
+    `test_absent_create_readback_records_exact_complete_facts`,
+    `test_exact_preexisting_state_never_invokes_the_mutation_runner`,
+    `test_identical_conflict_race_is_exact_without_blind_repair`,
+    `test_differing_conflict_race_is_conflicting_without_overwrite`,
+    `test_lost_response_is_unknown_and_requires_reconciliation`, and
+    `test_probe_transport_and_runner_are_bounded_injected_and_offline`.
+  - The exact payload assertions now pin schema, scenario, fixed
+    coordinate/tag, pre/post state, result, mutation classification, response
+    identity digest, content digest, and diagnostics for every terminal probe
+    scenario, including the alternate explicit tag.
+  - Added exact transport-call assertions for the race/lost-response paths so
+    skipped or extra observations are visible.
+
+## Commands and results
+
+| Command | Result |
+|---|---|
+| `uv run --python 3.13 ruff format src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py` | Final rerun passed: `3 files left unchanged`. |
+| `uv run --python 3.13 ruff check src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py` | Passed: `All checks passed!`. |
+| `uv run --python 3.13 ruff format --check src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py` | Passed: `3 files already formatted`. |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest --collect-only -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_attestation.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py` | Passed: `321 tests collected in 0.18s`. |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_attestation.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py` | Expected red: `320 failed, 1 passed in 0.95s`. Failures remain bounded to missing commit-10 production/workflow surfaces: absent acceptance workflow, absent protected disabled attestation, missing Governance Acceptance Evidence module, missing optional inspection module/CLI, and missing fixed-coordinate acceptance probe API. |
+
+## Final pseudo-mutation review
+
+- Hardcoded or dropped terminal probe outputs are killed by exact
+  `needs.<probe>.outputs.result`, `response-identity-digest`,
+  `content-sha512`, and `diagnostics` assertions for both probe jobs.
+- Count-only fact inventory validators are killed by every dependency/probe
+  unexpected same-length identifier case, every duplicate same-cardinality
+  case, and reordered same-member arrays.
+- Open classification enums are killed independently by the all-success
+  `unsupported` case, separate from dependency/probe consistency failures.
+- Partial Adapter probe records are killed by full document equality across
+  absent-create, exact preexisting, identical race, differing race, lost
+  response, and alternate explicit tag.
+- No broad validation was run.
+
+<!-- END APPEND: workflow-delivery-v3-commit10-final-exhaustive-test-only-pass-2026-08-14T183019Z -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit10-final-two-gap-closure-2026-08-14T184512Z -->
+# Workflow Delivery v3 Commit 10 Final Two-Gap Closure
+
+Timestamp: 2026-08-14T18:45:12Z.
+
+Status: **scoped test-only strengthening complete; accurate expected-red
+behavior preserved**.
+
+## Exact scoped edits
+
+- `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py`
+  - Strengthened `test_zero_sentinel_validation_blocks_review_and_every_probe`
+    to require fail-closed validation for both zero-sentinel target sources
+    before the review/probe dependency-chain assertions:
+    pinned `WDV3_ACCEPTANCE_TARGET_SHA` / `env.WDV3_ACCEPTANCE_TARGET_SHA`
+    and dispatch `inputs.target_sha`.
+  - Added `_assert_single_fail_closed_zero_sentinel_guard`, requiring an
+    explicit equality comparison to the 40-zero sentinel and `exit 1` in the
+    matched then arm.
+  - Added if/elif-aware terminal classification arm parsing and
+    `_assert_probe_unknown_precedes_non_success_classification` so each probe's
+    `unknown` classification must precede the broader `result != success`
+    incomplete classification as an adjacent same-chain `elif`, preventing a
+    later independent incomplete guard from overwriting unknown.
+  - Added
+    `test_terminal_probe_classification_static_assertions_reject_unknown_overwrite`
+    to prove the static assertions reject the two-independent-if mutation where
+    `unknown` is assigned and then overwritten by a later non-success
+    incomplete guard.
+
+## Commands and results
+
+| Command | Result |
+|---|---|
+| `uv run --python 3.13 ruff format src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py` | Passed: `1 file left unchanged`. |
+| `uv run --python 3.13 ruff check src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py` | Passed: `All checks passed!`. |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py::test_terminal_probe_classification_static_assertions_reject_unknown_overwrite` | Passed: `1 passed in 0.09s`. |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest --collect-only -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_attestation.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py` | Passed: `322 tests collected in 0.16s`. |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_attestation.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py` | Expected red: `320 failed, 2 passed in 0.99s`. Failures remain bounded to missing commit-10 production/workflow surfaces, starting with absent `.github/workflows/workflow-delivery-v3-buddy-smoke-acceptance.yml`; no skips were introduced. |
+
+<!-- END APPEND: workflow-delivery-v3-commit10-final-two-gap-closure-2026-08-14T184512Z -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit10-terminal-schema-closure-2026-08-14T185432Z -->
+# Workflow Delivery v3 Commit 10 Terminal Classification and Schema Closure
+
+Timestamp: 2026-08-14T18:54:32Z.
+
+Status: **scoped test-only strengthening complete; accurate expected-red
+behavior preserved; no skips introduced**.
+
+## Exact scoped edits
+
+- `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py`
+  - Strengthened terminal probe classification static assertions to reject a
+    later `mutation_classification=` assignment after the correct
+    unknown/non-success same-chain `if`/`elif` classification when it remains
+    in that probe's classification region and could overwrite `unknown`.
+  - Added a negative static fixture:
+    `test_terminal_probe_classification_static_assertions_reject_later_unknown_overwrite`.
+  - Added false-positive guards:
+    `test_terminal_probe_classification_static_assertions_allow_prior_unrelated_assignments`
+    and
+    `test_terminal_probe_classification_static_assertions_allow_later_other_probe_assignments`.
+- `src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py`
+  - Parameterized closed-schema unexpected-key injection through
+    `CLOSED_SCHEMA_EXTRA_PATHS`: top-level, `workflow`, `reviewer`, `recovery`,
+    every `dependency-results` entry (`0` through `3`), and both
+    `probe-facts` entries (`0` and `1`).
+
+## Commands and exact results
+
+| Command | Result |
+|---|---|
+| `uv run --python 3.13 ruff format src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py` | Passed: `2 files left unchanged`. |
+| `uv run --python 3.13 ruff check src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py` | Passed: `All checks passed!`. |
+| `uv run --python 3.13 ruff format --check src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py` | Passed: `2 files already formatted`. |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest --collect-only -q src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_attestation.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py` | Passed: `329 tests collected in 0.21s`. |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_attestation.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py` | Expected red: `324 failed, 5 passed in 1.01s`. Failures remain bounded to missing commit-10 production/workflow surfaces, including absent fixed-coordinate acceptance probe API, absent acceptance workflow, missing Governance Acceptance Evidence module, missing protected attestation, and missing optional reviewer inspection module/CLI. |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py::test_terminal_probe_classification_static_assertions_reject_unknown_overwrite src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py::test_terminal_probe_classification_static_assertions_reject_later_unknown_overwrite src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py::test_terminal_probe_classification_static_assertions_allow_prior_unrelated_assignments src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py::test_terminal_probe_classification_static_assertions_allow_later_other_probe_assignments src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py::test_acceptance_evidence_schema_is_closed_at_every_level` | Expected red: `10 failed, 4 passed in 0.14s`. The four terminal static assertion tests passed. The ten closed-schema parameter cases failed because `three_workflow_delivery_v3.records.governance` is still intentionally missing. |
+
+## Exact changed test outcomes
+
+| Test | Outcome |
+|---|---|
+| `test_terminal_probe_classification_static_assertions_reject_unknown_overwrite` | Passed in changed-nodeid run. |
+| `test_terminal_probe_classification_static_assertions_reject_later_unknown_overwrite` | Passed in changed-nodeid run. |
+| `test_terminal_probe_classification_static_assertions_allow_prior_unrelated_assignments` | Passed in changed-nodeid run. |
+| `test_terminal_probe_classification_static_assertions_allow_later_other_probe_assignments` | Passed in changed-nodeid run. |
+| `test_acceptance_evidence_schema_is_closed_at_every_level[top-level]` | Expected red: missing `three_workflow_delivery_v3.records.governance`. |
+| `test_acceptance_evidence_schema_is_closed_at_every_level[workflow]` | Expected red: missing `three_workflow_delivery_v3.records.governance`. |
+| `test_acceptance_evidence_schema_is_closed_at_every_level[reviewer]` | Expected red: missing `three_workflow_delivery_v3.records.governance`. |
+| `test_acceptance_evidence_schema_is_closed_at_every_level[recovery]` | Expected red: missing `three_workflow_delivery_v3.records.governance`. |
+| `test_acceptance_evidence_schema_is_closed_at_every_level[dependency-results-0]` | Expected red: missing `three_workflow_delivery_v3.records.governance`. |
+| `test_acceptance_evidence_schema_is_closed_at_every_level[dependency-results-1]` | Expected red: missing `three_workflow_delivery_v3.records.governance`. |
+| `test_acceptance_evidence_schema_is_closed_at_every_level[dependency-results-2]` | Expected red: missing `three_workflow_delivery_v3.records.governance`. |
+| `test_acceptance_evidence_schema_is_closed_at_every_level[dependency-results-3]` | Expected red: missing `three_workflow_delivery_v3.records.governance`. |
+| `test_acceptance_evidence_schema_is_closed_at_every_level[probe-facts-0]` | Expected red: missing `three_workflow_delivery_v3.records.governance`. |
+| `test_acceptance_evidence_schema_is_closed_at_every_level[probe-facts-1]` | Expected red: missing `three_workflow_delivery_v3.records.governance`. |
+
+## Quality review
+
+`test-gap-analysis` and `assertion-quality` were invoked. Their
+`test-analysis-extensions` dependency was unavailable in this workspace, so the
+Python/pytest review was completed inline.
+
+- Pseudo-mutation review: the later-overwrite mutation is killed by
+  `test_terminal_probe_classification_static_assertions_reject_later_unknown_overwrite`;
+  the independent-if overwrite mutation remains killed by
+  `test_terminal_probe_classification_static_assertions_reject_unknown_overwrite`;
+  unrelated prior and other-probe classification assignments are covered by
+  explicit positive fixtures; dropping any dependency/probe path from
+  `CLOSED_SCHEMA_EXTRA_PATHS` removes a parameterized closed-schema case.
+- Assertion-quality review: no assertion-free or skip-based tests were added.
+  The terminal static tests use meaningful exception and helper assertions, and
+  the closed-schema parameterization preserves the `pytest.raises` closed-schema
+  assertion for every injected path.
+
+<!-- END APPEND: workflow-delivery-v3-commit10-terminal-schema-closure-2026-08-14T185432Z -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit10-final-review-defect-closure-2026-08-14T190925Z -->
+# Workflow Delivery v3 Commit 10 Final Review Defect Closure
+
+Timestamp: 2026-08-14T19:09:25Z.
+
+Status: **scoped test-only final review closure complete; accurate expected-red
+behavior preserved; no skips introduced**.
+
+## Exact scoped edits
+
+- `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py`
+  - Replaced fail-closed shell checks with exact `if`-condition matching for
+    the expected mismatch/equality semantics and a standalone executable
+    `exit 1` command in that exact then arm.
+  - Added passing and negative static regressions for fixed input constants,
+    zero-sentinel input/env checks, protected main ref, first run attempt,
+    echoed/commented/string `exit 1`, and neutralized/wrapped guard
+    conditions.
+  - Replaced mutation-classification overwrite scanning with executable shell
+    assignment detection covering plain, `export`, quoted `export`,
+    `declare`, `local`, and `readonly` assignment forms while ignoring comments
+    and `echo`/`printf` text.
+  - Removed the prior generic substring/action helper path and required
+    executable `mutation_classification` assignments for adjacent dependency
+    and probe classification checks.
+
+No production, workflow, documentation, manifest, package, `.testagent/plan.md`,
+or `.testagent/research.md` files were edited for this pass.
+
+## Commands and exact results
+
+| Command | Result |
+|---|---|
+| `uv run --python 3.13 ruff format src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py` | Passed: `1 file left unchanged`. |
+| `uv run --python 3.13 ruff check src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_attestation.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py` | Passed: `All checks passed!`. |
+| `uv run --python 3.13 ruff format --check src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_attestation.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py` | Passed: `5 files already formatted`. |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py -k 'static_assertions or fail_closed_static'` | Passed: `11 passed, 12 deselected in 0.10s`. |
+| `PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -p no:cacheprovider --collect-only -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_attestation.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py` | Passed: `336 tests collected in 0.17s`. |
+| `PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -p no:cacheprovider -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_attestation.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py` | Expected red: `324 failed, 12 passed in 1.04s`. Failures remain bounded to missing commit-10 production/workflow surfaces, starting with absent `.github/workflows/workflow-delivery-v3-buddy-smoke-acceptance.yml` and continuing through missing protected attestation, Governance Acceptance Evidence, reviewer inspection, and fixed-coordinate acceptance probe implementation surfaces. |
+
+## Exact changed static evidence
+
+| Requirement | Evidence |
+|---|---|
+| Standalone executable fail-closed `exit 1` in the exact then arm | `test_fail_closed_static_assertions_accept_required_exact_guard_conditions`; `test_fail_closed_static_assertions_reject_non_executable_exit_text` |
+| Exact guard condition semantics for sentinel env/input, main ref, fixed inputs, and run attempt | `test_fail_closed_static_assertions_accept_required_exact_guard_conditions`; `test_fail_closed_static_assertions_reject_neutralized_or_wrapped_conditions` |
+| Later overwrite detection covers export/declare/local/readonly/quoted assignment forms | `test_terminal_probe_classification_static_assertions_reject_later_assignment_forms` |
+| Later overwrite detection avoids comments/echo false positives | `test_terminal_probe_classification_static_assertions_ignore_echoed_and_commented_later_assignment_text` |
+| Adjacent shell classification helpers reject echo-only actions and neutralized conditions | `test_terminal_probe_classification_static_assertions_reject_echoed_assignment_action`; `test_terminal_probe_classification_static_assertions_reject_neutralized_probe_condition` |
+
+<!-- END APPEND: workflow-delivery-v3-commit10-final-review-defect-closure-2026-08-14T190925Z -->
+
+# Workflow Delivery v3 Commit 10 R8 Reviewer Inspection Contract Closure
+
+Timestamp: 2026-08-14T19:15:25Z.
+
+Status: **scoped test-only R8 reviewer inspection contract closure complete;
+accurate expected-red behavior preserved; no skips introduced**.
+
+## Exact scoped edits
+
+- `src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py`
+  - Replaced the diagnostic-output forbidden-key shortlist with exact closed
+    allowed key sets for present, removed, and error/unknown reviewer
+    inspection outcomes.
+  - Required every outcome to carry only the diagnostic authority contract:
+    `authority`, `scope`, and `recovery`, with exact expected values.
+  - Pinned outcome-specific reviewer/diagnostic fields, including
+    `deployment-review-id is None` for removed and error/unknown outcomes.
+  - Added a negative helper contract test proving representative
+    evidence/capability/live/mutation/authority-like/universal-negative extras
+    are rejected as unrecognized keys, not merely screened by name.
+
+No production, workflow, documentation, manifest, package,
+`.testagent/plan.md`, or `.testagent/research.md` files were edited for this
+pass.
+
+## Commands and exact results
+
+| Command | Result |
+|---|---|
+| `uv run --python 3.13 ruff format src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py` | Passed: `1 file left unchanged`. |
+| `uv run --python 3.13 ruff check --no-cache src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_attestation.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py` | Passed: `All checks passed!`. |
+| `uv run --python 3.13 ruff format --check src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_attestation.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py` | Passed: `5 files already formatted`. |
+| `PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -p no:cacheprovider --collect-only -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_attestation.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py` | Passed: `345 tests collected in 0.18s`. |
+| `PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -p no:cacheprovider -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_attestation.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py` | Expected red: `324 failed, 21 passed in 1.09s`. Failures remain bounded to missing commit-10 production/workflow surfaces, including the absent acceptance workflow, absent protected attestation, missing Governance Acceptance Evidence module, missing optional reviewer inspection module/CLI, and missing fixed-coordinate acceptance probe API. |
+
+## Requirement evidence
+
+| Requirement | Evidence |
+|---|---|
+| Present outcome is a closed diagnostic-only reviewer contract | `test_reviewer_inspection_present_is_read_only_and_scoped` |
+| Removed outcome is closed, human-required, and not universal-negative proof | `test_reviewer_inspection_removed_is_not_universal_negative_proof` |
+| Error/unknown outcomes are closed, human-required diagnostics | `test_reviewer_inspection_errors_are_unknown_and_human_required` |
+| Unrecognized extras cannot slip through closed contracts | `test_reviewer_inspection_contract_rejects_every_unrecognized_extra_key` |
+| Capability/live behavior remains absent and unpinned to live execution | `test_reviewer_inspection_cannot_grant_capability_or_enable_live` |
+
+<!-- END APPEND: workflow-delivery-v3-commit10-r8-reviewer-inspection-contract-closure-2026-08-14T191525Z -->
+
+# Workflow Delivery v3 Commit 10 Acceptance Test Gap Closure
+
+Timestamp: 2026-08-14T19:31:05Z.
+
+Status: **scoped generated-test gap closure complete; accurate expected-red
+behavior preserved; no skips introduced**.
+
+## Exact scoped edits
+
+- `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py`
+  - Added static render/parse helpers that substitute synthetic workflow,
+    dependency, and probe outputs into the actual terminal capture command,
+    parse the emitted JSON/YAML Governance Acceptance Evidence payload, and
+    pass it through `admit_governance_acceptance_evidence`.
+  - Added full closed-contract assertions for schema/purpose, workflow
+    repository/path/ref/SHA, target SHA, package coordinate, confirmation
+    digest, environment, reviewer `login: null` with
+    `source: unavailable-in-job-context`, full recovery coordinates, every
+    dependency result, both probe facts, mutation classification, producer,
+    run/attempt, `release-lineage: none`, and absence of Release record fields.
+  - Strengthened reviewer capture checks to require an explicit null reviewer
+    login and to reject any `github.actor` expression, not only loose text.
+- `src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py`
+  - Added a negative governance case proving a non-null reviewer login is
+    rejected when `source` is `unavailable-in-job-context`.
+- `src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py`
+  - Added fixed-coordinate negatives for accepted version with wrong npm scope
+    and accepted version with wrong package name.
+  - Added wrong-tag preexisting, readback, and conflict-race observations where
+    bytes/digest match but the observed tag differs. These assert
+    conflict/reconciliation/unknown results, never exact/complete, and verify
+    no repair/mutation path beyond the single allowed create attempt where that
+    scenario may have started.
+
+No production, workflow, documentation, manifest, package,
+`.testagent/plan.md`, or `.testagent/research.md` files were edited for this
+pass.
+
+## Commands and exact results
+
+| Command | Result |
+|---|---|
+| `uv run --python 3.13 ruff format src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py` | Passed: `1 file reformatted, 2 files left unchanged`. |
+| `uv run --python 3.13 ruff check --no-cache src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_attestation.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py` | Passed: `All checks passed!`. |
+| `uv run --python 3.13 ruff format --check src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_attestation.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py` | Passed: `5 files already formatted`. |
+| `PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -p no:cacheprovider --collect-only -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_attestation.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py` | Passed: `352 tests collected in 0.28s`. |
+| `PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -p no:cacheprovider -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_attestation.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py` | Expected red: `331 failed, 21 passed in 1.37s`. Failures remain bounded to missing commit-10 production/workflow surfaces, including the absent acceptance workflow, absent protected attestation, missing Governance Acceptance Evidence module, missing optional reviewer inspection module/CLI, and missing fixed-coordinate acceptance probe API. |
+
+## Self-review for vacuous/token-only assertions
+
+- Governance workflow binding now requires one parseable emitted Evidence
+  payload and admits it through the closed production contract with synthetic
+  outputs; the assertions compare exact nested fields and reject extra Release
+  lineage fields rather than checking token presence only.
+- Reviewer assertions require explicit `login: null` and absence of the
+  `github.actor` expression.
+- Coordinate negatives keep the accepted version constant while mutating only
+  the scope or package name, proving exact coordinate validation.
+- Wrong-tag probe tests assert exact result documents, classifications,
+  diagnostics, digest/bytes equality, transport call coordinates, and
+  runner-call counts so they cannot pass via substring-only checks or hidden
+  repair/mutation behavior.
+
+## Requirement evidence
+
+| Requirement | Evidence |
+|---|---|
+| Terminal capture binds actual emitted payload to the closed Governance Acceptance Evidence contract | `test_terminal_capture_payload_admits_full_closed_governance_evidence_contract` |
+| Non-null reviewer with unavailable source rejects; workflow capture emits null reviewer and never `github.actor` | `test_unavailable_reviewer_source_requires_null_reviewer_login`; `test_terminal_evidence_declares_reviewer_unavailable_and_recovery_coordinates` |
+| Probe coordinate rejects accepted version with wrong scope/name | `test_acceptance_probe_requires_the_fixed_coordinate_and_explicit_tag[wrong-scope]`; `test_acceptance_probe_requires_the_fixed_coordinate_and_explicit_tag[wrong-package-name]` |
+| Wrong-tag observations never classify exact/complete and require conflict/reconciliation/unknown without repair | `test_wrong_tag_preexisting_state_requires_reconciliation_without_mutation`; `test_wrong_tag_readback_requires_reconciliation_without_repair`; `test_wrong_tag_identical_conflict_race_requires_unknown_reconciliation` |
+
+<!-- END APPEND: workflow-delivery-v3-commit10-acceptance-test-gap-closure-2026-08-14T193105Z -->
+
+# Workflow Delivery v3 Commit 10 Final Validation and Quality Signoff
+
+Timestamp: 2026-08-14.
+
+Status: **iterative test generation complete; generated suite intentionally red
+against missing commit-10 production contracts**.
+
+## Final test-quality gate
+
+- `test-gap-analysis` and `assertion-quality` were invoked after the final test
+  edits. The language-extension helper was unavailable, so the review applied
+  pytest conventions directly.
+- The conclusive independent pseudo-mutation/assertion-depth review returned
+  `RAW_FINDINGS: none`.
+- No assertion-free, trivial-only, tautological, skipped, or adjacent-feature
+  substitute tests were reported.
+- Prompt-scenario coverage was rechecked against all nine requirements after
+  the final coverage iteration.
+
+## Final full-workspace build
+
+| Command | Result |
+|---|---|
+| `uv build --package three-workflow-delivery-v3` | Passed; sdist and wheel built. |
+| `pnpm build` | Passed; all 8 selected workspace projects built, warnings only. |
+| `dotnet build dirs.proj --no-incremental` | Passed; 0 warnings, 0 errors. |
+
+## Final full-workspace tests
+
+| Command | Result |
+|---|---|
+| `uv run --python 3.13 pytest -q` | Expected red: `4216 passed, 465 failed` in 503.71s. The generated commit-10 scope contributed `21 passed, 331 failed`; all 331 failures are the intended missing-contract gaps. The other 134 failures are existing consumer/version expectations affected by workspace package stamping. |
+| `pnpm test` | `349/350` executed tests passed; one environment/toolchain failure because the workspace requires pnpm `11.19.0` while the runner has `11.17.0`. |
+| `dotnet test dirs.proj --no-restore` | No tests executed: `No test projects were found.` |
+
+## Workspace side-effect disclosure
+
+The required `pnpm build` stamped these tracked package versions:
+
+- `src/public/lib/hcoona-release-smoke-npm/package.json`
+- `src/public/lib/hcoona-release-smoke-npm-dual/package.json`
+
+They were not manually edited, restored, or reverted because the task forbids
+overwriting/restoring tracked files. No production, workflow, or documentation
+source was intentionally changed by the test implementation.
+
+<!-- END APPEND: workflow-delivery-v3-commit10-final-validation-2026-08-14 -->
+
+# Workflow Delivery v3 Commit 10 Phase 5 Newest Closure
+
+Timestamp: 2026-08-15T01:18:54Z. Status: **SUCCESS**.
+
+- **Exact Phase 5 files changed**:
+  `src/public/lib/three-workflow-delivery-v3/tests/adapters/test_node.py`,
+  `docs/wiki/analyses/workflow-delivery/v3/agent-handoff.md`,
+  `docs/wiki/analyses/workflow-delivery/v3/hcoona-release-smoke-npm-lld.md`,
+  `docs/wiki/log.md`, and append-only `.testagent/status.md`.
+- **Fixture provenance**:
+  disposable loopback-only `tests/fixtures/acceptance/npm-publish-request`
+  captured with Node `v24.14.0`, npm `11.9.0`, and
+  `npm publish <package> --tag wdv3-acceptance-1 --registry
+  <loopback-registry> --ignore-scripts`. SHA-256:
+  `capture.json=d9a1c15370c950b63baf18dec3a6190d6b76b646fe5ff3da51176df117825e0f`,
+  `package.json=1729de7c1dd97b07c9819a733063e2a5bbb93526f8fafed7edcf65530ae5bd17`,
+  `README.md=7eebfef1441e4125667c599f6aceb4bfab52925963dbc9bf5ba082e92dfc49fd`,
+  `acceptance-witness.json=bb4fcbdd195050a2061de9d252160b8e8c054014f3f8520e55bf7ab5136bcdca`,
+  `index.js=6be199c72a12dc6348bc2f4b9596f99364456bd367f614dc521c96d63b1951c1`.
+- **Local-only/no-external evidence**:
+  credential/external-registry fixture scan returned 0 matches; all request
+  tests use loopback and mocked upstream seams. No external HTTP, remote
+  Environment configuration, dispatch, publication, activation, git mutation,
+  or test deletion occurred.
+- **Commands/counts**:
+  four-file collection `537` in `0.54s` and tests `537 passed` in `15.67s`
+  then `15.28s` after the integration fix; full collection `2822` in `0.91s`;
+  first full run `1 failed, 2821 passed` in `374.43s`; focused closed-export
+  regression `1 passed` in `0.27s`; final full run `2822 passed` in `374.24s`.
+  Scoped/full collection deltas from 490/2775 are both `+47`. Ruff check and
+  format passed all 17 changed Python files; post-fix Ruff passed; Prettier
+  passed 3 scoped docs; markdownlint reported 0 issues; `uv build --package
+  three-workflow-delivery-v3` built sdist/wheel; fixture hashes/scan passed;
+  `git diff --check` passed.
+- **Requirement mapping**:
+  real request/metadata/reproducibility/no-secret tests; strict proxy,
+  token-replacement/redaction tests; validated request/upstream proof
+  substitution tests; four shared-deadline tests; runner-fact matrix and
+  incomplete-evidence tests; independent zero target/workflow SHA and terminal
+  reconstruction tests all pass in the 537-file scope. The three scoped docs
+  record the proof boundary, deadline, runner facts, SHA rule, and provenance.
+- **Blockers**: none in implementation. Per caller instruction,
+  `test-gap-analysis` and `assertion-quality` were not invoked or claimed and
+  remain parent-owned follow-up gates. Remote acceptance setup/execution
+  remains out of scope.
+
+The complete exact command strings, fixture hashes, and named-test mapping are
+also retained in the preceding detailed Phase 5 closure records.
+
+<!-- END APPEND: workflow-delivery-v3-commit10-phase5-newest-closure-2026-08-15T011854Z -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit10-non-success-proof-gate-2026-08-15 -->
+## Commit 10 non-success request-proof gate fix
+
+- Added the parameterized adapter regression
+  `test_acceptance_probe_rejects_runner_supplied_non_success_proof` for
+  runner-supplied proofs tampered to upstream statuses 409 and 500.
+- Exact readback remains observable, but both cases fail closed as `unknown`,
+  return `lost-response`, and persist no validated request proof.
+- Narrow result: 2 passed. Full adapter file: 152 passed. Harness discovery:
+  152 collected, delta +2 from the 150-test baseline.
+- Ruff check and format check passed; the affected package built successfully.
+  Pseudo-mutation and assertion-quality review found the non-success-status
+  guard killed by five concrete assertions per case. No production files were
+  changed and no external or git-mutating operation was performed.
+<!-- END APPEND: workflow-delivery-v3-commit10-non-success-proof-gate-2026-08-15 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit10-final-green-2026-08-15 -->
+## Commit 10 final green closure
+
+Status: **complete**.
+
+- The mandatory `test-gap-analysis` gate first found one survived mutation:
+  adapter admission did not directly pin a runner-supplied proof with a
+  non-success upstream status. The new parameterized
+  `test_acceptance_probe_rejects_runner_supplied_non_success_proof` covers 409
+  and 500; the repeated gate returned no findings.
+- The mandatory `assertion-quality` gate returned no findings: the final tests
+  contain no assertion-free, trivial-only, tautological, or non-null-only
+  cases. The optional `test-analysis-extensions` skill was unavailable, so the
+  Python/pytest classification was completed directly.
+- Final scoped acceptance validation: **539 passed in 15.59s**.
+- Final full package validation: **2824 passed in 405.48s**.
+- Final package build produced the sdist and wheel successfully.
+- Ruff check passed and all 8 bounded Python files were already formatted.
+- No external HTTP call, remote Environment configuration, workflow dispatch,
+  package publication, or git mutation was performed.
+<!-- END APPEND: workflow-delivery-v3-commit10-final-green-2026-08-15 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-runtime-closure-review-fixes-2026-08-15 -->
+## Runtime closure high-confidence review fixes
+
+Timestamp: 2026-08-15T01:44:45Z request window. Status: **complete**.
+
+- Fixed validated-request-proof preservation across terminal workflow suite
+  reconstruction, canonical suite digest recomputation, and Governance
+  Acceptance Evidence admission. The lost-response complete scenario now
+  carries a closed-validated proof through canonical records instead of
+  silently dropping it.
+- Made record-present/artifact-output-missing probe evidence admissible as
+  incomplete when the immutable suite record and complete scenarios are still
+  available, matching terminal capture downgrade behavior.
+- Fixed lost-response runner fact admission so missing, partial, or
+  contradictory action facts classify as
+  `runner-malformed-before-mutation`/`incomplete` before the ambiguous
+  lost-response branch.
+- Restricted validated acceptance request proofs and the local npm publish
+  proxy to the exact accepted publish contract: upstream HTTP `201 Created`;
+  other 2xx statuses no longer produce processed proof.
+- Test-first gate: the new targeted regressions failed before implementation
+  with **9 failed in 0.82s**.
+- Final validation:
+  - `uv run --python 3.13 --package three-workflow-delivery-v3 pytest src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py`
+    → **559 passed in 16.09s**.
+  - `uv run --python 3.13 --package three-workflow-delivery-v3 ruff format src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/adapters/github_packages.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/records/governance.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py`
+    → **4 files reformatted, 3 files left unchanged**.
+  - `uv run --python 3.13 --package three-workflow-delivery-v3 ruff check src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/adapters/github_packages.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/records/governance.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py`
+    → **All checks passed!**.
+  - `uv run --python 3.13 --package three-workflow-delivery-v3 ruff format --check src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/adapters/github_packages.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/records/governance.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py`
+    → **7 files already formatted**.
+  - `git --no-pager diff --check` → **passed**.
+- No external HTTP, remote environment mutation, workflow dispatch, package
+  publication, or git mutation was performed.
+<!-- END APPEND: workflow-delivery-v3-runtime-closure-review-fixes-2026-08-15 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit10-real-runtime-final-2026-08-15 -->
+## Commit 10 real-runtime findings final closure
+
+Timestamp: 2026-08-15T02:01:00Z.
+
+Status: **implementation complete; one targeted HK typo gate remains red for
+an older append-only status entry**.
+
+- The real loopback capture used Node `v24.14.0` and npm `11.9.0`. npm emitted
+  `PUT /@hcoona%2fhcoona-release-smoke-npm` with
+  `Content-Type: application/json`, a CouchDB document containing `_id`,
+  `name`, `dist-tags`, `versions`, and `_attachments`, and attachment
+  `hcoona-release-smoke-npm-0.0.0-wdv3-acceptance.1.tgz`.
+- npm required a loopback-host-and-port-scoped dummy bearer token before it
+  sent the request. The proxy validates that dummy credential, removes it, and
+  injects the real upstream credential only in memory; retained fixtures and
+  proof records contain no authorization value.
+- The validated attachment contains exactly `package/README.md`,
+  `package/dist/acceptance-witness.json`, `package/dist/index.js`, and
+  `package/package.json`. Its captured SHA-512 is
+  `N6TYjcaSLw27Wax1eRwYwlVEShT33m15cFNBpd+7Jv12e4HaJy9wSQ3+SkrE5rfEFUUuFBWn9wO0Yp8OQn6xiA==`.
+- Final focused acceptance/CLI/Adapter/Governance/workflow suite:
+  **559 passed in 16.73 seconds**.
+- Final full Workflow Delivery v3 suite:
+  **2844 passed in 374.92 seconds**; collection also reported exactly 2844.
+- Targeted CLI/Adapter public-API selection: **5 passed, 255 deselected**.
+- Ruff check and format check passed; Pyrefly passed with **0 errors**;
+  direct `actionlint` passed; `git diff --check` passed.
+- Targeted unstaged HK ran the changed-file gates. Ruff and actionlint passed,
+  but HK stopped on `typos` because the older append-only commit-8 status text
+  literally documents the two-character fixture substring that typos flags.
+  That historical status entry was not rewritten.
+- The protected acceptance Environment, reviewer configuration, final nonzero
+  target SHA, live dispatch, and publication remain pending and out of scope.
+  No external mutation occurred.
+
+This section supersedes all older expected-red and earlier-count tails.
+<!-- END APPEND: workflow-delivery-v3-commit10-real-runtime-final-2026-08-15 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit10-operability-reproducibility-final-2026-08-15 -->
+# Workflow Delivery v3 Commit 10 Operability/Reproducibility Closure
+
+Timestamp: 2026-08-15T03:45:00Z.
+
+Status: **confirmed local implementation and relevant validation complete**.
+
+- The captured npm fixture closure is visible to Git, includes the exact
+  pinned Node `v24.14.0`/npm `11.9.0` tarball, and is admitted only through an
+  exact digest-bound consumer-policy exception.
+- Process cleanup now signals every started contender before bounded reaping.
+  Authenticated npm readback uses a separate mode-`0600` temporary config that
+  is deleted after use; the loopback proxy config retains only its dummy token.
+- Both write probes install and verify Node `24.14.0` and npm `11.9.0`, use
+  explicit shared suite deadlines of 120 and 300 seconds, upload records before
+  classification, fail unless classification is complete, and prevent the
+  second mutation job after first-probe failure. Terminal evidence and upload
+  remain unconditional.
+- Focused commit-10 suite: **403 passed in 66.60 seconds**.
+- Full Workflow Delivery v3 suite through the relevant HK gate:
+  **2886 passed in 411.38 seconds**.
+- Consumer-policy targeted suite: **341 passed in 43.31 seconds**.
+- Ruff check/format, Pyrefly (**0 errors**), actionlint, targeted typos,
+  editorconfig, fixture format/reproducibility, consumer policy, and relevant
+  targeted HK all pass.
+- The older status note claiming the historical two-letter typo was a current
+  blocker is historical and superseded. Its original line is restored exactly,
+  and `.typos.toml` now excludes only `.testagent/status.md`; current HK typos
+  passes with `--force-exclude`.
+- The unfiltered unrelated workflow-release acceptance gate still has two
+  pre-existing repository failures: mismatched CodeQL action digests and the
+  absent `.pre-commit-config.yaml`. The commit-10-relevant HK run excludes only
+  that unrelated step and is green.
+- The protected acceptance Environment, reviewer configuration, final nonzero
+  target SHA, live dispatch, and publication remain pending and out of scope.
+  No Environment was configured, no workflow was dispatched, and no external
+  mutation occurred.
+
+<!-- END APPEND: workflow-delivery-v3-commit10-operability-reproducibility-final-2026-08-15 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit10-authoritative-final-2026-08-15 -->
+# Workflow Delivery v3 Commit 10 Authoritative Final Validation
+
+Timestamp: 2026-08-15T04:40:00Z.
+
+Status: **local implementation, review, and applicable validation complete;
+protected finalization remains pending**.
+
+- All five independent final review angles returned `RAW_FINDINGS: none` after
+  the mixed first-probe-success/second-probe-failure terminal-evidence path was
+  corrected and re-reviewed.
+- The five commit-10 scenario-heavy test files pass **578 tests**.
+- The Workflow Delivery v3 package and managed `v3-control-pytest` HK gate pass
+  **2,888 tests**.
+- The root Python suite passes **4,923 tests**.
+- PNPM tests and builds pass under the repository-required pnpm `11.19.0`;
+  both smoke-package manifests were reset to placeholders afterward.
+- `uv build --package three-workflow-delivery-v3` produced the sdist and wheel.
+- `dotnet build dirs.proj --no-incremental` passed with **0 warnings and
+  0 errors**.
+- Ruff check/format, Pyrefly (**0 errors**), actionlint, Pkl evaluation,
+  consumer policy, lock checks, and `git diff --check` passed.
+- The complete changed-file HK run reached only two pre-existing unrelated
+  workflow-release failures: mismatched root/nested CodeQL action digests and
+  the absent `.pre-commit-config.yaml`. The commit-10 managed v3 HK gate is
+  green.
+- The 40-zero target sentinel remains fail-closed. The protected acceptance
+  Environment and required reviewer configuration, exact nonzero target SHA,
+  workflow dispatch, live package probes, and activation remain pending
+  protected work. No remote Environment configuration, workflow dispatch,
+  package publication, or external mutation occurred.
+
+This section supersedes all earlier commit-10 expected-red, partial-count, and
+intermediate-validation sections.
+<!-- END APPEND: workflow-delivery-v3-commit10-authoritative-final-2026-08-15 -->

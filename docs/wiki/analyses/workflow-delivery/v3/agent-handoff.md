@@ -13,7 +13,7 @@ If it conflicts with the
 ## Current Checkpoint
 
 - Requirements, HLD, and all five MLDs are confirmed.
-- Implementation commits 1 through 9 of the approved first-slice LLD are
+- Implementation commits 1 through 10 of the approved first-slice LLD are
   delivered in the working tree. Commit 3 includes target-tree-bound
   Release Unit/Quality authoring validation, duplicate Release Unit rejection,
   exact-target Repository Model compilation, static catalogs, Node/NBGV
@@ -43,16 +43,53 @@ If it conflicts with the
   chain, immutable reviewer payload and credential-free exact-SHA
   Authorization formatting, Governance freshness and Capability admission,
   GitHub Packages publication/result/Receipt finalization, and the disabled
-  Buddy caller/reusable workflows. The protected Governance document remains
-  absent, so normal live execution fails closed before Attempt creation.
-  Acceptance bootstrap, legacy workflow retirement, and activation remain
-  later work.
+  Buddy caller/reusable workflows. At the commit-8 boundary the protected
+  Governance document was absent, so normal live execution failed closed
+  before Attempt creation.
 - Commit 9 adds final-match `@hcoona` CODEOWNERS coverage for every governed v3
   package, engineering, descriptor, Governance, HK, root Python, workflow,
   action, and directly invoked script surface. Contracts evaluate the real
   ordered CODEOWNERS rules, future descriptor/workflow/action layouts,
   missing and later-overridden rules, arbitrary-ref Buddy separation, and
   real HK add/modify/delete/rename trigger behavior.
+- Commit 10 is present as uncommitted working-tree implementation and adds the
+  temporary five-job protected destination-acceptance
+  workflow, with a 40-zero target sentinel that blocks before Environment
+  review or mutation until a later protected finalization commit fixes the true
+  target SHA. It adds the canonical protected attestation with
+  `live_enabled: false`, strict Governance Acceptance Evidence and fixed
+  GitHub Packages probe contracts, first-attempt-only guards, terminal
+  incomplete/unknown reconciliation evidence, and optional on-demand read-only
+  reviewer recovery. The second package-write job runs the fixed exact,
+  identical-race, differing-race, and lost-response suite at reviewed internal
+  `.1` through `.4` coordinates; authenticated GitHub REST package and version
+  enumeration proves absence, ownership, repository association, and the exact
+  version before strict npm/tarball readback validates tag, bytes, and witness.
+  Reviewer identity is unavailable in workflow job context;
+  a missing reviewer alone does not downgrade otherwise complete Evidence, and
+  recovery is uniquely scoped by run plus Environment because only
+  `acceptance-review` declares it; recovery remains diagnostic-only and
+  retention-dependent. The Environment and reviewer configuration are pending
+  protected finalization, not asserted to exist at this boundary. Normal live remains
+  blocked. The real bounded probe orchestration is present but unreachable
+  behind the zero-SHA sentinel. Legacy Buddy retirement, final target
+  insertion, acceptance execution, and activation remain later protected work.
+- Commit 10's local acceptance boundary is closed around a real npm 11.9.0
+  request captured with Node 24.14.0 from a disposable package against a
+  loopback-only registry. The proxy strictly validates the emitted CouchDB
+  body before replacing the dummy authorization for a mocked upstream, and
+  classification consumes an immutable proof of those validated request,
+  tarball, response, and response-identity bytes rather than reconstructing a
+  synthetic body. One monotonic deadline spans observation, process, proxy,
+  upstream, and cleanup boundaries. Missing, malformed, or contradictory
+  runner facts remain incomplete, and complete Governance Acceptance Evidence
+  rejects zero target and workflow SHAs while incomplete sentinel semantics
+  remain available.
+- The current five-file acceptance inventory is 578 passing tests; full-package
+  validation passes all 2888 tests. This supersedes earlier expected-red
+  commit-10 notes. The protected
+  acceptance Environment and reviewer configuration are still pending; no live
+  acceptance dispatch or package mutation has run.
 - The first vertical slice is `hcoona-release-smoke-npm`.
 - The slice has one Node project, one package variant, and one npm artifact.
 - It covers CI Qualification, live Buddy publication to GitHub Packages, and
@@ -262,11 +299,11 @@ If it conflicts with the
   state blocks; no repository variable, PAT, App, service, ledger, OIDC, or
   additional token permission is added. Permanent root HK policy remains the
   repository-wide dependency gate.
-- The next LLD dependency boundary is commit 10: add the temporary protected
-  acceptance bootstrap, disabled protected attestation, run-attempt guards,
-  terminal Evidence, reconciliation classification, and Governance inspection
-  tooling. Do not implement it, legacy retirement, activation, or later scopes
-  without a separate explicit user task.
+- The next LLD dependency boundary is commit 11: retire both legacy Buddy entry
+  files and rewrite only the Buddy-specific topology/tests/docs required by
+  that approved item. Do not implement legacy retirement, run real acceptance
+  probes, finalize the sentinel target, activate normal live, or begin later
+  scopes without a separate explicit user task.
 - Implementation must preserve the approved commit boundaries and keep live
   activation disabled until acceptance and the separate activation approval.
 

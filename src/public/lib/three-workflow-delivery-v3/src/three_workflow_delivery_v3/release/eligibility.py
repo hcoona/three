@@ -50,6 +50,10 @@ _ALLOWED_EXCEPTION_PATHS = frozenset(
             "src/public/lib/three-workflow-delivery-v3/tests/fixtures/"
             "release/consumer-policy-acceptance.json"
         ),
+        (
+            "src/public/lib/three-workflow-delivery-v3/tests/fixtures/"
+            "acceptance/npm-publish-request/package/package.json"
+        ),
     }
 )
 _SHA_PATTERN = re.compile(r"[0-9a-f]{40}\Z")

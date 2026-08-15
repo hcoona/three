@@ -2372,3 +2372,329 @@ direct-script paths. The shared inventory is then exercised through the actual
 HK plan in five batched Git histories: add, modify, delete, rename-in, and
 rename-out.
 <!-- END APPEND: workflow-delivery-v3-commit9-tp-final-plan-correction-2026-08-14 -->
+
+<!-- BEGIN APPEND: current-commit-10-single-pass-test-plan-2026-08-15T021630Z -->
+
+# Current Commit-10 Single-Pass Test Implementation Plan
+
+## Overview
+
+Use a targeted, test-only strategy for requirement checklist items 1-8 in the
+latest research section. Implement repository-contract leaves first, then
+CLI/process-boundary regressions, then workflow topology contracts. Edit only
+the four existing pytest files named below; do not edit production, workflow
+YAML, `.testagent/research.md`, or `.testagent/status.md`. Tests remain
+meaningful failures where the current implementation does not yet satisfy the
+contract.
+
+## Commands
+
+- **Build**: `uv build --package three-workflow-delivery-v3`
+- **Scoped tests**: `PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -p no:cacheprovider -q src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py`
+- **Full package**: `python eng/scripts/hk_exec.py --timeout-seconds 720 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests`
+- **Lint**: `uv run ruff check <changed-test-paths>`
+- **Format**: `uv run ruff format --check <changed-test-paths>`
+- **Workspace validation**: `uv run --python 3.13 pytest --collect-only -q`; `uv build --package three-workflow-delivery-v3`; `git diff --check`; `git diff --name-only`
+
+## Phase Summary
+
+| Phase | Focus | Files | Est. tests |
+|---|---|---:|---:|
+| 1 | Repository hygiene contracts | 1 | 8-12 |
+| 2 | Cleanup, credentials, and deadlines | 2 | 12-18 |
+| 3 | Workflow gates and toolchain | 1 | 8-12 |
+| 4 | Integrated validation | 4 | Existing suite + new regressions |
+
+---
+
+## Phase 1: Repository Hygiene Leaves
+
+### Overview
+
+Pin filesystem and repository-policy behavior without subprocess, network, or
+workflow dependencies. These tests establish exact fixtures and historical
+exceptions used by later phases.
+
+### Files to Test
+
+#### 1. `test_hk_trigger.py`
+
+- **Test File**: `src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py`
+- **Test Module**: `test_hk_trigger`
+
+**Tests and assertions**:
+
+1. `test_acceptance_fixture_gitignore_negations_are_exact_and_narrow`
+   - Maps requirement **1**.
+   - Assert `git check-ignore` does not ignore exactly
+     `tests/fixtures/acceptance/npm-publish-request/package.tgz`,
+     `package/dist/acceptance-witness.json`, and
+     `package/dist/index.js`.
+   - Assert representative sibling `other.tgz` and unrelated `dist/index.js`
+     remain ignored, proving there is no broad `!*.tgz` or `!dist/**` rule.
+
+2. `test_acceptance_fixture_required_files_are_visible_to_git`
+   - Maps requirement **1**.
+   - Assert `capture.json`, `package.tgz`, and both required package `dist`
+     files are present in `git ls-files --cached --others
+     --exclude-standard`; assert the expected four-path closure exactly.
+
+3. `test_testagent_markdown_exclusion_remains_local_to_two_steps`
+   - Maps requirement **7** and retains the existing convention.
+   - Assert only the two mutating/checking Markdown HK steps exclude
+     `.testagent/**`; all other HK selectors remain unchanged.
+
+4. `test_testagent_plan_update_is_append_only_against_head`
+   - Maps requirement **7**.
+   - Read HEAD and working-tree plan bytes without mutation; assert the
+     working bytes start with the complete HEAD bytes and contain the unique
+     current section marker exactly once.
+
+5. `test_legacy_pngchunk_ztxt_ba_line_and_typos_exception_are_exact`
+   - Maps requirement **8**.
+   - Assert line 46 preserves the exact historical two-letter identifier.
+   - Assert `.typos.toml` names the exact legacy Pngcs file path.
+
+6. `test_typos_legacy_identifier_exceptions_are_file_specific`
+   - Maps requirement **8**.
+   - Assert no wildcard Pngcs/generated-code exclusion and no global
+     identifier exemption exists; exact nearby legacy file entries are
+     permitted.
+
+### Narrow Command
+
+`PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -p no:cacheprovider -q src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py -k 'acceptance_fixture or testagent or legacy_pngchunk or typos_legacy'`
+
+### Success Criteria
+
+- [ ] Requirements 1, 7, and 8 have exact positive and negative assertions.
+- [ ] No repository/configuration file is edited by the tests.
+- [ ] The narrow tests collect and run locally.
+
+---
+
+## Phase 2: Process Cleanup, Readback Credentials, and Suite Deadlines
+
+### Overview
+
+Exercise the mid/top-layer acceptance seams with fake processes, clocks, and
+transports. No test may invoke external npm publication or GitHub Packages.
+
+### Files to Test
+
+#### 1. `test_commit10_acceptance_probes.py`
+
+- **Test File**: `src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py`
+- **Test Module**: `test_commit10_acceptance_probes`
+
+**Tests and assertions**:
+
+1. `test_cleanup_signals_every_started_process_before_reaping`
+   - Maps requirement **2**.
+   - Use multiple stubborn fake processes; assert every `kill` event precedes
+     the first `wait` event and every started PID is signaled once.
+
+2. `test_cleanup_reaps_all_processes_with_one_absolute_deadline`
+   - Maps requirement **2**.
+   - Assert decreasing remaining timeout values derive from one absolute
+     monotonic deadline; one expired reap cannot prevent attempts to reap the
+     remaining processes.
+
+3. `test_timeout_classification_is_immutable_after_late_process_completion`
+   - Maps requirement **2**.
+   - After timeout classification, complete fakes late; assert contender
+     results, winner, request proof, and mutation facts remain byte-for-byte
+     equal to the timeout snapshot.
+
+4. `test_partial_startup_cleanup_signals_only_started_processes`
+   - Maps requirement **2**.
+   - Assert no signal/wait is attempted for an unstarted contender and all
+     started contenders still follow signal-all-then-reap ordering.
+
+5. `test_authenticated_readback_uses_dedicated_ephemeral_npm_config`
+   - Maps requirement **3**.
+   - Assert `npm view` receives a fresh config path with mode `0600`, exact
+     GitHub registry settings, and only the dedicated token.
+   - Assert the token and config content are absent from argv, retained
+     output, diagnostics, and inherited environment.
+
+6. `test_authenticated_readback_config_is_deleted_on_success`
+   - Maps requirement **3**; assert the config exists during the fake call and
+     is absent afterward.
+
+7. `test_authenticated_readback_config_is_deleted_on_failure`
+   - Maps requirement **3**; inject command/parse failure and assert identical
+     cleanup and redaction.
+
+8. `test_publish_proxy_config_never_contains_dedicated_readback_token`
+   - Maps requirement **3**.
+   - Assert the loopback proxy config contains only the dummy proxy token and
+     the readback config never contains that dummy token.
+
+9. `test_acceptance_suite_uses_one_absolute_deadline_across_scenarios`
+   - Maps requirement **5**.
+   - Parameterize both suite paths; assert observation, spawn, proxy, waits,
+     readback, and cleanup receive monotonically decreasing budgets from one
+     deadline, never a reset full timeout.
+
+#### 2. `test_cli.py`
+
+- **Test File**: `src/public/lib/three-workflow-delivery-v3/tests/test_cli.py`
+- **Test Module**: `test_cli`
+
+**Tests and assertions**:
+
+1. `test_acceptance_absent_create_readback_default_timeout_is_120_seconds`
+   - Maps requirement **5**; omit the option and assert the parsed/effective
+     timeout is exactly `120.0`.
+
+2. `test_acceptance_exact_and_conflict_default_timeout_is_at_least_300_seconds`
+   - Maps requirement **5**; omit the option and assert effective timeout is
+     at least `300.0`.
+
+3. `test_acceptance_explicit_timeout_overrides_suite_default`
+   - Maps requirement **5**; parameterize both suites and assert an explicit
+     value is passed unchanged to the single deadline constructor.
+
+4. `test_acceptance_cli_does_not_reset_deadline_between_scenarios`
+   - Maps requirement **5**; assert one constructor call and decreasing
+     remaining budgets across all four scenarios.
+
+### Narrow Commands
+
+- `PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -p no:cacheprovider -q src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py -k 'cleanup_signals or cleanup_reaps or timeout_classification_is_immutable or partial_startup_cleanup or authenticated_readback or publish_proxy_config or one_absolute_deadline'`
+- `PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -p no:cacheprovider -q src/public/lib/three-workflow-delivery-v3/tests/test_cli.py -k 'acceptance and timeout'`
+
+### Success Criteria
+
+- [ ] Requirements 2, 3, and 5 are covered at process, filesystem, argv,
+      environment, retained-output, and clock boundaries.
+- [ ] Tests use only injected fakes/loopback seams.
+- [ ] Current production gaps remain explicit failures, not skips or xfails.
+
+---
+
+## Phase 3: Workflow Classification and Toolchain Contracts
+
+### Overview
+
+Parse the actual acceptance workflow and pin exact job/step topology. This
+phase depends on the behavior contracts from phase 2 but performs no workflow
+dispatch.
+
+### Files to Test
+
+#### 1. `test_commit10_acceptance_workflow.py`
+
+- **Test File**: `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py`
+- **Test Module**: `test_commit10_acceptance_workflow`
+
+**Tests and assertions**:
+
+1. `test_probe_jobs_record_upload_then_classify`
+   - Maps requirement **4**.
+   - For each write-probe job, assert exact step ordering: produce immutable
+     record, `always()` upload, then classification gate.
+
+2. `test_probe_classification_gate_runs_after_failed_record_upload_attempt`
+   - Maps requirement **4**.
+   - Assert gate conditions reference record and upload outcomes and cannot run
+     before the upload attempt.
+
+3. `test_first_probe_failure_prevents_second_mutation_job`
+   - Maps requirement **4**.
+   - Assert the second mutation job has a `needs` dependency and success gate
+     on the first probe; no `always()` bypass may start the second mutation.
+
+4. `test_terminal_job_fans_in_all_probe_results_and_outputs`
+   - Maps requirement **4**.
+   - Assert exact terminal guard
+     `always() && github.run_attempt == 1`, and consumption of every dependency
+     result, record output, and artifact ID/digest output, including failed or
+     skipped jobs.
+
+5. `test_terminal_evidence_upload_is_always_attempted`
+   - Maps requirement **4**.
+   - Assert evidence formation handles failed/skipped dependencies and its
+     upload step uses `always()` after formation.
+
+6. `test_package_writing_jobs_pin_exact_node_and_npm_versions`
+   - Maps requirement **6**.
+   - For both jobs, assert a full-40-character-SHA `actions/setup-node` use,
+     exact Node `24.14.0`, explicit npm `11.9.0` installation, and exact
+     `node --version`/`npm --version` checks before mutation.
+
+7. `test_package_writing_setup_is_credential_free`
+   - Maps requirement **6**.
+   - Assert checkout uses `persist-credentials: false`; setup-node has no
+     registry/token configuration; no dedicated token exists before the
+     acceptance process step.
+
+8. `test_dedicated_token_enters_only_acceptance_process_boundary`
+   - Maps requirements **3** and **6**.
+   - Assert the token is scoped only to the acceptance command step and is
+     absent from setup, install, version-check, upload, and terminal steps.
+
+### Narrow Command
+
+`PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -p no:cacheprovider -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py -k 'record_upload_then_classify or classification_gate or prevents_second_mutation or terminal_job_fans_in or evidence_upload_is_always or exact_node_and_npm or setup_is_credential_free or token_enters_only'`
+
+### Success Criteria
+
+- [ ] Requirements 4 and 6 are mapped to exact workflow paths and conditions.
+- [ ] Existing action-pin and first-attempt assertions remain intact.
+- [ ] No workflow or remote state is changed.
+
+---
+
+## Phase 4: Integrated Test-Only Validation
+
+### Overview
+
+Run all four bounded test files together, then repository-convention checks.
+Do not edit production or tests outside the bounded inventory in response to
+failures; report failures as implementation blockers for the subsequent code
+phase.
+
+### Requirement-to-Test Matrix
+
+| Requirement | Test files | Exact evidence |
+|---|---|---|
+| 1 | `tests/test_hk_trigger.py` | Exact fixture visibility and unrelated-ignore controls |
+| 2 | `tests/adapters/test_commit10_acceptance_probes.py` | Signal-all ordering, shared reap deadline, immutable timeout state |
+| 3 | Adapter probe + workflow contract tests | 0600 ephemeral config, token separation/redaction, narrow workflow token scope |
+| 4 | `tests/contracts/test_commit10_acceptance_workflow.py` | Record/upload/gate order, sequential failure gate, terminal fan-in/upload |
+| 5 | Adapter probe + CLI tests | 120/300 suite defaults, explicit override, one absolute deadline |
+| 6 | Workflow contract tests | Full-SHA setup-node, Node 24.14.0, npm 11.9.0, credential-free setup |
+| 7 | `tests/test_hk_trigger.py` | Existing local HK exclusion plus HEAD-prefix/unique-append assertion |
+| 8 | `tests/test_hk_trigger.py` | Exact historical source line and file-specific typos exclusions |
+
+### Validation Sequence
+
+1. Scoped collection:
+   `PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -p no:cacheprovider --collect-only -q src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py`
+2. Scoped execution using the exact **Scoped tests** command above.
+3. Narrow lint and format checks on the four test files.
+4. Harness discovery:
+   `uv run --python 3.13 pytest --collect-only -q`
+5. Full package:
+   `python eng/scripts/hk_exec.py --timeout-seconds 720 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests`
+6. Package build:
+   `uv build --package three-workflow-delivery-v3`
+7. Inspection-only hygiene:
+   `git diff --check`;
+   `git diff --name-only`;
+   `git diff --numstat HEAD -- .testagent/plan.md` and require zero deletions.
+
+### Success Criteria
+
+- [ ] Every checklist item 1-8 maps to at least one exact named regression.
+- [ ] Every test asserts concrete state, ordering, bytes, paths, versions, or
+      conditions rather than truthiness alone.
+- [ ] Only the four bounded pytest files are proposed implementation edits.
+- [ ] No external network, package publication, remote configuration, or
+      workflow dispatch occurs.
+- [ ] Historical `.testagent/plan.md` bytes remain an exact HEAD prefix and
+      this uniquely labeled section is append-only.
+
+<!-- END APPEND: current-commit-10-single-pass-test-plan-2026-08-15T021630Z -->

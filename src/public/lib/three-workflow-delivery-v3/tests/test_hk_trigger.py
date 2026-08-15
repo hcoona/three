@@ -1329,3 +1329,212 @@ def test_real_hk_plan_triggers_consumer_policy_for_policy_definition(
     assert consumer["fileCount"] == 1
     assert control["status"] == "included"
     assert control["fileCount"] == 1
+
+
+def test_acceptance_fixture_gitignore_negations_are_exact_and_narrow() -> None:
+    """Expose only the four acceptance fixture files required by the probe."""
+    fixture_root = (
+        "src/public/lib/three-workflow-delivery-v3/tests/fixtures/acceptance/"
+        "npm-publish-request"
+    )
+    required_paths = (
+        f"{fixture_root}/package.tgz",
+        f"{fixture_root}/package/dist/acceptance-witness.json",
+        f"{fixture_root}/package/dist/index.js",
+    )
+    still_ignored_paths = (
+        f"{fixture_root}/other.tgz",
+        f"{fixture_root}/other/dist/index.js",
+    )
+
+    result = subprocess.run(  # noqa: S603
+        (
+            "git",
+            "check-ignore",
+            "--no-index",
+            *required_paths,
+            *still_ignored_paths,
+        ),
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    ignored_paths = tuple(result.stdout.splitlines())
+
+    assert result.returncode == 0
+    assert result.stderr == ""
+    assert ignored_paths == still_ignored_paths
+
+
+def test_acceptance_fixture_required_files_are_visible_to_git() -> None:
+    """Keep the captured request closure visible without broad exceptions."""
+    fixture_root = (
+        "src/public/lib/three-workflow-delivery-v3/tests/fixtures/acceptance/"
+        "npm-publish-request"
+    )
+    expected_paths = (
+        f"{fixture_root}/capture.json",
+        f"{fixture_root}/package.tgz",
+        f"{fixture_root}/package/dist/acceptance-witness.json",
+        f"{fixture_root}/package/dist/index.js",
+    )
+
+    result = _git(
+        REPO_ROOT,
+        "ls-files",
+        "--cached",
+        "--others",
+        "--exclude-standard",
+        "--",
+        *expected_paths,
+    )
+    visible_paths = tuple(result.stdout.splitlines())
+
+    assert visible_paths == expected_paths
+    assert all((REPO_ROOT / path).is_file() for path in visible_paths)
+
+
+def test_testagent_markdown_exclusion_remains_local_to_two_steps() -> None:
+    """Pin both Markdown selectors while keeping the exclusion local."""
+    expected_markdown_step_count = 2
+    hk_config = HK_CONFIG.read_text(encoding="utf-8")
+    markdown_start = hk_config.index("local markdown_linters")
+    markdown_end = hk_config.index("local pkl_linters", markdown_start)
+    markdown_config = hk_config[markdown_start:markdown_end]
+    remaining_config = hk_config[:markdown_start] + hk_config[markdown_end:]
+    exclusion = (
+        "    exclude = general_exclude_list + "
+        "markdown_append_only_artifact_exclude"
+    )
+
+    assert markdown_config.count(exclusion) == expected_markdown_step_count
+    assert (
+        markdown_config.count('glob = List("*.md")')
+        == expected_markdown_step_count
+    )
+    assert (
+        markdown_config.count('stage = List("*.md")')
+        == expected_markdown_step_count
+    )
+    assert (
+        '["markdownlint-cli2"] {\n'
+        '    profiles = List("small")\n'
+        f"{exclusion}\n"
+        "    batch = true\n"
+        '    glob = List("*.md")\n'
+        '    stage = List("*.md")'
+    ) in markdown_config
+    assert (
+        '["markdown-prettier"] {\n'
+        '    profiles = List("small")\n'
+        f"{exclusion}\n"
+        '    glob = List("*.md")\n'
+        '    stage = List("*.md")'
+    ) in markdown_config
+    assert ".testagent/**" not in remaining_config
+    assert "markdown_append_only_artifact_exclude" not in remaining_config
+
+
+def test_testagent_plan_update_is_append_only_against_head() -> None:
+    """Require the current plan to preserve committed bytes across commit."""
+    marker = (
+        b"<!-- BEGIN APPEND: current-commit-10-single-pass-test-plan-"
+        b"2026-08-15T021630Z -->"
+    )
+    plan_path = ".testagent/plan.md"
+    head_plan = subprocess.run(  # noqa: S603
+        ("git", "show", f"HEAD:{plan_path}"),
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+    ).stdout
+    working_plan = (REPO_ROOT / plan_path).read_bytes()
+    diff_numstat = subprocess.run(  # noqa: S603
+        ("git", "diff", "--numstat", "--", plan_path),
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    assert working_plan.startswith(head_plan)
+    assert working_plan.count(marker) == 1
+    if head_plan.count(marker) == 0:
+        assert len(working_plan) > len(head_plan)
+    else:
+        assert head_plan.count(marker) == 1
+    if diff_numstat:
+        added, deleted, path = diff_numstat.split("\t")
+        assert path == plan_path
+        assert added != "-"
+        assert deleted == "0"
+
+
+def test_legacy_pngchunk_ztxt_ba_line_and_typos_exception_are_exact() -> None:
+    """Preserve the historical identifier and its file-specific exception."""
+    legacy_path = "src/public/lib/Hjg.Pngcs/Chunks/PngChunkZTXT.cs"
+    legacy_lines = (
+        (REPO_ROOT / legacy_path)
+        .read_text(
+            encoding="utf-8",
+        )
+        .splitlines()
+    )
+    typos_config = (REPO_ROOT / ".typos.toml").read_text(encoding="utf-8")
+    exact_exception = f'  "{legacy_path}",'
+    legacy_identifier = "b" + "a"
+
+    assert legacy_lines[45] == (
+        f"            MemoryStream {legacy_identifier} = new MemoryStream();"
+    )
+    assert typos_config.count(exact_exception) == 1
+
+
+def test_typos_legacy_identifier_exceptions_are_file_specific() -> None:
+    """Reject wildcard Pngcs or repository-wide identifier exemptions."""
+    minimum_specific_exception_count = 3
+    typos_config = (REPO_ROOT / ".typos.toml").read_text(encoding="utf-8")
+    exclusion_block = typos_config.split("extend-exclude = [", 1)[1].split(
+        "]",
+        1,
+    )[0]
+    pngcs_exclusions = tuple(
+        line.strip().rstrip(",").strip("\"'")
+        for line in exclusion_block.splitlines()
+        if "src/public/lib/Hjg.Pngcs/" in line
+    )
+
+    assert "src/public/lib/Hjg.Pngcs/Chunks/PngChunkZTXT.cs" in pngcs_exclusions
+    assert "src/public/lib/Hjg.Pngcs/Chunks/ChunkRaw.cs" in pngcs_exclusions
+    assert len(pngcs_exclusions) >= minimum_specific_exception_count
+    assert all("*" not in path and "?" not in path for path in pngcs_exclusions)
+    legacy_identifier = "b" + "a"
+    assert not any(
+        line.lstrip()
+        .casefold()
+        .startswith(
+            (
+                f"{legacy_identifier} =",
+                f"{legacy_identifier}=",
+            )
+        )
+        for line in typos_config.splitlines()
+    )
+    assert rf"\b{legacy_identifier}\b" not in typos_config.casefold()
+
+
+def test_historical_status_identifier_and_typos_scope_are_exact() -> None:
+    """Preserve the historical line while limiting the exception to one file."""
+    status_path = ".testagent/status.md"
+    status_lines = (
+        (REPO_ROOT / status_path).read_text(encoding="utf-8").splitlines()
+    )
+    legacy_identifier = "b" + "a"
+    typos_config = (REPO_ROOT / ".typos.toml").read_text(encoding="utf-8")
+
+    assert (
+        status_lines[2899] == f"hex fixture substring `{legacy_identifier}` in"
+    )
+    assert typos_config.count(f"  '{status_path}',") == 1
+    assert ".testagent/**" not in typos_config

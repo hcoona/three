@@ -95,6 +95,10 @@ def _correlated_jobs(
 def test_buddy_workflow_files_are_the_disabled_commit8_pair_only() -> None:
     assert CALLER.is_file()
     assert CALLEE.is_file()
+    assert (
+        REPO_ROOT
+        / ".github/workflows/workflow-delivery-v3-buddy-smoke-acceptance.yml"
+    ).is_file()
     raw = CALLER.read_text(encoding="utf-8") + CALLEE.read_text(
         encoding="utf-8"
     )

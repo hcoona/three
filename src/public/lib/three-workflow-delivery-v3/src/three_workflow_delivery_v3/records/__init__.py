@@ -14,6 +14,22 @@ from three_workflow_delivery_v3.records.bindings import (
     PlatformRunFacts,
     admit,
 )
+from three_workflow_delivery_v3.records.governance import (
+    GOVERNANCE_ACCEPTANCE_DEPENDENCIES,
+    GOVERNANCE_ACCEPTANCE_ENVIRONMENT,
+    GOVERNANCE_ACCEPTANCE_EVIDENCE_PURPOSE,
+    GOVERNANCE_ACCEPTANCE_EVIDENCE_RELEASE_LINEAGE,
+    GOVERNANCE_ACCEPTANCE_EVIDENCE_SCHEMA,
+    GOVERNANCE_ACCEPTANCE_PACKAGE_COORDINATE,
+    GOVERNANCE_ACCEPTANCE_PROBES,
+    GOVERNANCE_ACCEPTANCE_PRODUCER,
+    GOVERNANCE_ACCEPTANCE_REF,
+    GOVERNANCE_ACCEPTANCE_REPOSITORY,
+    GOVERNANCE_ACCEPTANCE_WORKFLOW_PATH,
+    GovernanceAcceptanceEvidence,
+    GovernanceAcceptanceRecovery,
+    admit_governance_acceptance_evidence,
+)
 from three_workflow_delivery_v3.records.release import (
     OFFICIAL_SIMULATION_WORKFLOW_PATH,
     ActionResult,
@@ -66,6 +82,17 @@ from three_workflow_delivery_v3.records.release_transport import (
 )
 
 __all__ = [
+    "GOVERNANCE_ACCEPTANCE_DEPENDENCIES",
+    "GOVERNANCE_ACCEPTANCE_ENVIRONMENT",
+    "GOVERNANCE_ACCEPTANCE_EVIDENCE_PURPOSE",
+    "GOVERNANCE_ACCEPTANCE_EVIDENCE_RELEASE_LINEAGE",
+    "GOVERNANCE_ACCEPTANCE_EVIDENCE_SCHEMA",
+    "GOVERNANCE_ACCEPTANCE_PACKAGE_COORDINATE",
+    "GOVERNANCE_ACCEPTANCE_PROBES",
+    "GOVERNANCE_ACCEPTANCE_PRODUCER",
+    "GOVERNANCE_ACCEPTANCE_REF",
+    "GOVERNANCE_ACCEPTANCE_REPOSITORY",
+    "GOVERNANCE_ACCEPTANCE_WORKFLOW_PATH",
     "OFFICIAL_SIMULATION_WORKFLOW_PATH",
     "ActionResult",
     "Admission",
@@ -83,6 +110,8 @@ __all__ = [
     "ExecutionHistoryAdmissionSnapshot",
     "ExecutionHistoryContext",
     "ExternalPackageCoordinate",
+    "GovernanceAcceptanceEvidence",
+    "GovernanceAcceptanceRecovery",
     "HistoricalExecutionRecord",
     "HistoryLineage",
     "HypotheticalAction",
@@ -117,6 +146,7 @@ __all__ = [
     "SimulationIdentity",
     "SimulationOutcome",
     "admit",
+    "admit_governance_acceptance_evidence",
     "admit_release_record",
     "release_artifact_transport_name",
     "release_record_digest",

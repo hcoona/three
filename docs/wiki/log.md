@@ -1708,3 +1708,40 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   tests, the managed v3 HK gate, and 4,329 root Python tests.
 - Advanced the next separately authorized boundary to commit 10 acceptance
   bootstrap while keeping live activation disabled.
+
+## [2026-08-14] query | Implement Workflow Delivery v3 commit 10
+
+- Added the protected disabled Governance attestation, strict Governance
+  Acceptance Evidence, fixed-coordinate GitHub Packages probe contracts, and
+  optional scoped read-only reviewer recovery.
+- Added the temporary five-job destination-acceptance workflow with an
+  immutable 40-zero target sentinel, first-attempt guards, dedicated
+  Environment review, least-privilege probe jobs, and terminal reconciliation
+  evidence retained for 45 days.
+- Recorded that reviewer identity is unavailable in job context, recovery is
+  diagnostic-only and retention-dependent, normal live remains disabled, and
+  legacy Buddy retirement, real probes, target finalization, and activation are
+  still later protected work.
+
+## [2026-08-15] test | Close commit 10 local acceptance integration
+
+- Bound acceptance classification to the exact validated npm request and
+  mocked-upstream response proof captured locally with Node 24.14.0/npm 11.9.0,
+  including exact credential replacement and redaction.
+- Closed the single monotonic deadline, fail-closed runner-fact matrix, and
+  non-zero complete-evidence SHA rules while retaining incomplete sentinel
+  behavior.
+- Kept capture and validation loopback-only, performed no remote Environment
+  configuration, dispatch, external publication, or package mutation, and
+  validated all four acceptance files together.
+
+## [2026-08-15] query | Finalize Workflow Delivery v3 commit 10 locally
+
+- Closed all independently adjudicated acceptance-bootstrap findings across
+  evidence, workflow, probe runtime, Governance, and holistic review angles.
+- Passed 578 commit-10 tests, 2,888 v3 tests through both direct and managed HK
+  execution, 4,923 root Python tests, PNPM tests/builds, Python and .NET builds,
+  and all applicable static and consumer-policy gates.
+- Kept the acceptance workflow fail-closed behind the 40-zero target sentinel.
+  Protected Environment setup, reviewer configuration, target-SHA
+  finalization, dispatch, package mutation, and activation remain pending.

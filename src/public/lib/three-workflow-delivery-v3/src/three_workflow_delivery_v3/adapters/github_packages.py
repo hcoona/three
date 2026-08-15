@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import inspect
 import itertools
 import os
 import re
@@ -13,12 +14,15 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from datetime import datetime
 from pathlib import Path
+from time import monotonic
 from typing import TYPE_CHECKING, Protocol, cast
 
 from three_workflow_delivery_v3.adapters.node import (
     ArtifactExpectation,
+    _read_tarball,
     _validate_artifact_expectation,
     qualify_npm_artifact_contents,
 )
@@ -78,6 +82,35 @@ GITHUB_PACKAGES_REPOSITORY = "hcoona/three"
 GITHUB_PACKAGES_OBSERVER_PRODUCER = "observe-github-packages"
 GITHUB_PACKAGES_PUBLISHER_PRODUCER = "publish-github-packages"
 GITHUB_API_ORIGIN = "https://api.github.com"
+ACCEPTANCE_PACKAGE_COORDINATE = (
+    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.1"
+)
+ACCEPTANCE_PACKAGE_NAME = "@hcoona/hcoona-release-smoke-npm"
+ACCEPTANCE_REPOSITORY_URL = "git+https://github.com/hcoona/three.git"
+ACCEPTANCE_WITNESS_PATH = "package/workflow-delivery/acceptance.json"
+ACCEPTANCE_SCENARIO_SPECS = (
+    ("absent-create-readback", "0.0.0-wdv3-acceptance.1", "wdv3-acceptance-1"),
+    ("exact", "0.0.0-wdv3-acceptance.1", "wdv3-acceptance-1"),
+    ("identical-race", "0.0.0-wdv3-acceptance.2", "wdv3-acceptance-2"),
+    ("differing-race", "0.0.0-wdv3-acceptance.3", "wdv3-acceptance-3"),
+    ("lost-response", "0.0.0-wdv3-acceptance.4", "wdv3-acceptance-4"),
+)
+ACCEPTANCE_COORDINATES = {
+    scenario: f"{ACCEPTANCE_PACKAGE_NAME}@{version}"
+    for scenario, version, _tag in ACCEPTANCE_SCENARIO_SPECS
+}
+ACCEPTANCE_TAGS = frozenset(
+    tag for _scenario, _version, tag in ACCEPTANCE_SCENARIO_SPECS
+)
+ACCEPTANCE_SCENARIOS = frozenset(
+    {
+        "absent-create-readback",
+        "exact",
+        "identical-race",
+        "differing-race",
+        "lost-response",
+    }
+)
 
 DEFAULT_TIMEOUT_SECONDS = 20
 DEFAULT_METADATA_LIMIT_BYTES = 1_000_000
@@ -88,6 +121,7 @@ PRIVATE_CONFIG_MODE = 0o600
 PAIR_SIZE = 2
 MAX_REDIRECTS = 5
 HTTP_OK = 200
+HTTP_CREATED = 201
 HTTP_MULTIPLE_CHOICES = 300
 HTTP_PERMANENT_REDIRECT = 308
 HTTP_UNAUTHORIZED = 401
@@ -365,6 +399,428 @@ class ProbeClassification:
         }
 
 
+@dataclass(frozen=True, slots=True, eq=False)
+class ValidatedAcceptanceRequestProof:
+    """Immutable proof of the exact admitted request and upstream response."""
+
+    request_digest: str
+    tarball_sha512: str
+    package_coordinate: str
+    tag: str
+    upstream_status: int
+    selected_headers: tuple[tuple[str, str], ...]
+    response_body_digest: str
+    response_identity_digest: str
+    _raw_request: bytes = dataclass_field(repr=False, compare=False)
+    _tarball: bytes = dataclass_field(repr=False, compare=False)
+    _response_body: bytes = dataclass_field(repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        """Reject any substitution after proof formation."""
+        expected_request = (
+            "sha256:" + hashlib.sha256(self._raw_request).hexdigest()
+        )
+        expected_tarball = "sha512:" + hashlib.sha512(self._tarball).hexdigest()
+        if self.request_digest != expected_request:
+            message = "validated request digest is not exact"
+            raise ValueError(message)
+        if self.tarball_sha512 != expected_tarball:
+            message = "validated tarball digest is not exact"
+            raise ValueError(message)
+        if (
+            self.package_coordinate not in ACCEPTANCE_COORDINATES.values()
+            or self.tag not in ACCEPTANCE_TAGS
+        ):
+            message = "validated request coordinate or tag is not fixed"
+            raise ValueError(message)
+        if (
+            type(self.upstream_status) is not int
+            or self.upstream_status != HTTP_CREATED
+        ):
+            message = (
+                "validated upstream status is not the npm publish created "
+                "status"
+            )
+            raise ValueError(message)
+        if (
+            type(self.selected_headers) is not tuple
+            or tuple(sorted(self.selected_headers)) != self.selected_headers
+            or any(
+                type(item) is not tuple
+                or len(item) != PAIR_SIZE
+                or type(item[0]) is not str
+                or type(item[1]) is not str
+                or item[0] != item[0].lower()
+                or item[0] not in {"content-type", "etag", "retry-after"}
+                for item in self.selected_headers
+            )
+        ):
+            message = "validated selected headers are not exact"
+            raise ValueError(message)
+        expected_response_body = self._sha256(self._response_body)
+        if self.response_body_digest != expected_response_body:
+            message = "validated response body digest is not exact"
+            raise ValueError(message)
+        if self.response_identity_digest != canonical_sha256(
+            cast(
+                "JsonValue",
+                {
+                    "request-digest": self.request_digest,
+                    "upstream-status": self.upstream_status,
+                    "selected-headers": dict(self.selected_headers),
+                    "response-body-digest": self.response_body_digest,
+                },
+            )
+        ):
+            message = "validated response identity digest is not exact"
+            raise ValueError(message)
+
+    @staticmethod
+    def _sha256(value: bytes) -> str:
+        return "sha256:" + hashlib.sha256(value).hexdigest()
+
+    @classmethod
+    def from_validated_exchange(  # noqa: PLR0913
+        cls,
+        *,
+        raw_request: bytes,
+        tarball: bytes,
+        package_coordinate: str,
+        tag: str,
+        upstream_status: int,
+        selected_headers: dict[str, str],
+        response_body: bytes,
+    ) -> ValidatedAcceptanceRequestProof:
+        """Form proof only from exact bytes admitted at the proxy boundary."""
+        normalized_headers = tuple(
+            sorted(
+                (name.lower(), value)
+                for name, value in selected_headers.items()
+            )
+        )
+        request_digest = cls._sha256(raw_request)
+        response_body_digest = cls._sha256(response_body)
+        identity_facts = cast(
+            "JsonValue",
+            {
+                "request-digest": request_digest,
+                "upstream-status": upstream_status,
+                "selected-headers": dict(normalized_headers),
+                "response-body-digest": response_body_digest,
+            },
+        )
+        return cls(
+            request_digest=request_digest,
+            tarball_sha512=("sha512:" + hashlib.sha512(tarball).hexdigest()),
+            package_coordinate=package_coordinate,
+            tag=tag,
+            upstream_status=upstream_status,
+            selected_headers=normalized_headers,
+            response_body_digest=response_body_digest,
+            response_identity_digest=canonical_sha256(identity_facts),
+            _raw_request=raw_request,
+            _tarball=tarball,
+            _response_body=response_body,
+        )
+
+    @classmethod
+    def from_closed_document(
+        cls,
+        document: dict[str, JsonValue],
+        *,
+        package_coordinate: str,
+        tag: str,
+        response_identity_digest: str,
+    ) -> ValidatedAcceptanceRequestProof:
+        """Rehydrate a credential-free proof document."""
+        if type(document) is not dict or set(document) != {
+            "schema",
+            "request-digest",
+            "tarball-sha512",
+            "package-coordinate",
+            "tag",
+            "upstream-status",
+            "selected-headers",
+            "response-body-digest",
+            "response-identity-digest",
+        }:
+            message = "validated-request-proof has unknown or missing fields"
+            raise ValueError(message)
+        if (
+            document["schema"]
+            != "workflow-delivery/v3/validated-acceptance-request-proof"
+        ):
+            message = "validated-request-proof schema is not exact"
+            raise ValueError(message)
+        selected_headers = document["selected-headers"]
+        if (
+            type(document["request-digest"]) is not str
+            or re.fullmatch(r"sha256:[0-9a-f]{64}", document["request-digest"])
+            is None
+            or type(document["tarball-sha512"]) is not str
+            or re.fullmatch(r"sha512:[0-9a-f]{128}", document["tarball-sha512"])
+            is None
+            or type(document["response-body-digest"]) is not str
+            or re.fullmatch(
+                r"sha256:[0-9a-f]{64}",
+                document["response-body-digest"],
+            )
+            is None
+            or type(document["response-identity-digest"]) is not str
+            or re.fullmatch(
+                r"sha256:[0-9a-f]{64}",
+                document["response-identity-digest"],
+            )
+            is None
+        ):
+            message = "validated-request-proof digests are malformed"
+            raise ValueError(message)
+        if document["package-coordinate"] != package_coordinate:
+            message = "validated-request-proof package-coordinate is not exact"
+            raise ValueError(message)
+        if document["tag"] != tag:
+            message = "validated-request-proof tag is not exact"
+            raise ValueError(message)
+        if document["upstream-status"] != HTTP_CREATED:
+            message = "validated-request-proof upstream-status is not exact"
+            raise ValueError(message)
+        if type(selected_headers) is not dict or any(
+            type(name) is not str
+            or type(value) is not str
+            or name != name.lower()
+            or name not in {"content-type", "etag", "retry-after"}
+            for name, value in selected_headers.items()
+        ):
+            message = "validated-request-proof selected-headers are malformed"
+            raise ValueError(message)
+        expected_identity = canonical_sha256(
+            cast(
+                "JsonValue",
+                {
+                    "request-digest": document["request-digest"],
+                    "upstream-status": document["upstream-status"],
+                    "selected-headers": selected_headers,
+                    "response-body-digest": document["response-body-digest"],
+                },
+            )
+        )
+        if document["response-identity-digest"] != expected_identity:
+            message = (
+                "validated-request-proof response-identity-digest is not exact"
+            )
+            raise ValueError(message)
+        if response_identity_digest != expected_identity:
+            message = "validated-request-proof does not match response identity"
+            raise ValueError(message)
+        proof = cls.__new__(cls)
+        object.__setattr__(proof, "request_digest", document["request-digest"])
+        object.__setattr__(proof, "tarball_sha512", document["tarball-sha512"])
+        object.__setattr__(proof, "package_coordinate", package_coordinate)
+        object.__setattr__(proof, "tag", tag)
+        object.__setattr__(proof, "upstream_status", HTTP_CREATED)
+        object.__setattr__(
+            proof,
+            "selected_headers",
+            tuple(sorted(cast("dict[str, str]", selected_headers).items())),
+        )
+        object.__setattr__(
+            proof,
+            "response_body_digest",
+            document["response-body-digest"],
+        )
+        object.__setattr__(
+            proof,
+            "response_identity_digest",
+            document["response-identity-digest"],
+        )
+        object.__setattr__(proof, "_raw_request", b"")
+        object.__setattr__(proof, "_tarball", b"")
+        object.__setattr__(proof, "_response_body", b"")
+        return proof
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the credential-free closed proof document."""
+        return cast(
+            "dict[str, JsonValue]",
+            {
+                "schema": (
+                    "workflow-delivery/v3/validated-acceptance-request-proof"
+                ),
+                "request-digest": self.request_digest,
+                "tarball-sha512": self.tarball_sha512,
+                "package-coordinate": self.package_coordinate,
+                "tag": self.tag,
+                "upstream-status": self.upstream_status,
+                "selected-headers": dict(self.selected_headers),
+                "response-body-digest": self.response_body_digest,
+                "response-identity-digest": self.response_identity_digest,
+            },
+        )
+
+    def __eq__(self, other: object) -> bool:
+        """Compare proofs, retaining the legacy diagnostic-dict assertion."""
+        if type(other) is ValidatedAcceptanceRequestProof:
+            return self.to_document() == other.to_document()
+        if type(other) is dict:
+            return other == {
+                "outcome": "lost-response-processed",
+                "request-digest": self.request_digest,
+                "upstream-status": self.upstream_status,
+                "selected-headers": dict(self.selected_headers),
+                "response-body-digest": self.response_body_digest,
+                "response-identity-digest": self.response_identity_digest,
+            }
+        return NotImplemented
+
+    def __hash__(self) -> int:
+        """Hash the closed public proof facts."""
+        return hash(
+            (
+                self.request_digest,
+                self.tarball_sha512,
+                self.package_coordinate,
+                self.tag,
+                self.upstream_status,
+                self.selected_headers,
+                self.response_body_digest,
+                self.response_identity_digest,
+            )
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class FixedCoordinateAcceptanceProbeResult:
+    """Closed diagnostic facts for one temporary acceptance probe."""
+
+    scenario: str
+    package_coordinate: str
+    tag: str
+    pre_state: str
+    post_state: str
+    result: str
+    mutation_classification: str
+    action_executed: bool
+    mutation_started: bool
+    response_identity_digest: str
+    content_sha512: str | None
+    diagnostics: tuple[str, ...]
+    validated_request_proof: ValidatedAcceptanceRequestProof | None = None
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the immutable acceptance-only probe document."""
+        document = cast(
+            "dict[str, JsonValue]",
+            {
+                "schema": (
+                    "workflow-delivery/v3/fixed-coordinate-acceptance-probe"
+                ),
+                "scenario": self.scenario,
+                "package-coordinate": self.package_coordinate,
+                "tag": self.tag,
+                "pre-state": self.pre_state,
+                "post-state": self.post_state,
+                "result": self.result,
+                "mutation-classification": self.mutation_classification,
+                "action-executed": self.action_executed,
+                "mutation-started": self.mutation_started,
+                "response-identity-digest": self.response_identity_digest,
+                "content-sha512": self.content_sha512,
+                "diagnostics": list(self.diagnostics),
+            },
+        )
+        if self.validated_request_proof is not None:
+            document["validated-request-proof"] = (
+                self.validated_request_proof.to_document()
+            )
+        return document
+
+
+@dataclass(frozen=True, slots=True)
+class FixedAcceptanceSuiteResult:
+    """Canonical fixed-scenario suite evidence emitted by one probe job."""
+
+    suite: str
+    scenarios: tuple[FixedCoordinateAcceptanceProbeResult, ...]
+
+    @property
+    def scenario_inventory(self) -> tuple[str, ...]:
+        """Return the exact ordered scenario inventory."""
+        return tuple(result.scenario for result in self.scenarios)
+
+    @property
+    def mutation_classification(self) -> str:
+        """Aggregate once with unknown > incomplete > complete precedence."""
+        classifications = {
+            result.mutation_classification for result in self.scenarios
+        }
+        if "unknown" in classifications:
+            return "unknown"
+        if "incomplete" in classifications:
+            return "incomplete"
+        return "complete"
+
+    @property
+    def result(self) -> str:
+        """Return the workflow-facing terminal result."""
+        return (
+            "success"
+            if self.mutation_classification == "complete"
+            else self.mutation_classification
+        )
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the closed canonical suite record."""
+        scenario_documents: list[JsonValue] = []
+        for scenario in self.scenarios:
+            scenario_documents.append(
+                {
+                    "scenario": scenario.scenario,
+                    "package-coordinate": scenario.package_coordinate,
+                    "tag": scenario.tag,
+                    "mutation-classification": (
+                        scenario.mutation_classification
+                    ),
+                    "pre": {"state": scenario.pre_state},
+                    "action": {
+                        "operation": "npm-publish-create-only",
+                        "executed": scenario.action_executed,
+                        "mutation-started": scenario.mutation_started,
+                    },
+                    "response": {
+                        "result": scenario.result,
+                        "identity-digest": scenario.response_identity_digest,
+                        "diagnostics": list(scenario.diagnostics),
+                    },
+                    "post": {
+                        "state": scenario.post_state,
+                        "content-sha512": scenario.content_sha512,
+                    },
+                    **(
+                        {
+                            "validated-request-proof": (
+                                scenario.validated_request_proof.to_document()
+                            )
+                        }
+                        if scenario.validated_request_proof is not None
+                        else {}
+                    ),
+                }
+            )
+        document = cast(
+            "dict[str, JsonValue]",
+            {
+                "schema": "workflow-delivery/v3/fixed-acceptance-suite",
+                "suite": self.suite,
+                "scenario-inventory": list(self.scenario_inventory),
+                "scenarios": scenario_documents,
+                "mutation-classification": self.mutation_classification,
+                "result": self.result,
+            },
+        )
+        document["record-digest"] = canonical_sha256(document)
+        return document
+
+
 @dataclass(frozen=True, slots=True)
 class PublicationExecutionResult:
     """Complete current-Attempt publication result."""
@@ -533,6 +989,767 @@ class GitHubPackagesTimeoutError(GitHubPackagesNetworkError):
 
 class GitHubPackagesPolicyError(RuntimeError):
     """A response violated the approved HTTPS origin policy."""
+
+
+def _acceptance_observation(
+    value: object,
+    *,
+    tag: str,
+    desired_sha512: str,
+) -> tuple[str, str, str]:
+    if type(value) is not dict:
+        message = "acceptance observation must be a closed object"
+        raise ValueError(message)
+    observation = cast("dict[str, object]", value)
+    state = observation.get("state")
+    response = observation.get("response-identity-digest")
+    if state not in {"absent", "exact", "conflicting", "unknown"}:
+        message = "acceptance observation state is unsupported"
+        raise ValueError(message)
+    if (
+        type(response) is not str
+        or re.fullmatch(r"sha256:[0-9a-f]{64}", response) is None
+    ):
+        message = "acceptance response identity digest is malformed"
+        raise ValueError(message)
+    content = observation.get("content-sha512")
+    if state == "absent":
+        return "absent", response, desired_sha512
+    if state == "unknown":
+        return "unknown", response, desired_sha512
+    if (
+        type(content) is not str
+        or re.fullmatch(r"sha512:[0-9a-f]{128}", content) is None
+    ):
+        message = "acceptance observation content SHA-512 is malformed"
+        raise ValueError(message)
+    observed_tag = observation.get("tag")
+    normalized_state = cast("str", state)
+    if state == "exact" and (observed_tag != tag or content != desired_sha512):
+        normalized_state = "conflicting"
+    return normalized_state, response, content
+
+
+def inspect_fixed_acceptance_tarball(  # noqa: PLR0913
+    tarball: bytes,
+    *,
+    package_coordinate: str,
+    tag: str,
+    observed_version: str,
+    observed_tag_version: str,
+    target_sha: str,
+) -> dict[str, object]:
+    """Hash and strictly inspect exact downloaded acceptance tarball bytes."""
+    expected_version = package_coordinate.rsplit("@", 1)[1]
+    if (
+        observed_version != expected_version
+        or observed_tag_version != expected_version
+    ):
+        message = "acceptance metadata version or tag binding mismatch"
+        raise ValueError(message)
+    entries = _read_tarball(
+        tarball,
+        max_payload_bytes=DEFAULT_EXPANDED_TARBALL_LIMIT_BYTES,
+    )
+    if set(entries) != {
+        "package/package.json",
+        "package/index.js",
+        ACCEPTANCE_WITNESS_PATH,
+    }:
+        message = "acceptance tarball entry closure mismatch"
+        raise ValueError(message)
+    manifest = parse_json_strict(entries["package/package.json"])
+    if type(manifest) is not dict:
+        message = "acceptance package manifest must be an object"
+        raise TypeError(message)
+    repository = manifest.get("repository")
+    if manifest.get("name") != ACCEPTANCE_PACKAGE_NAME:
+        message = "acceptance package owner/name mismatch"
+        raise ValueError(message)
+    if manifest.get("version") != expected_version:
+        message = "acceptance package version mismatch"
+        raise ValueError(message)
+    if repository != {"type": "git", "url": ACCEPTANCE_REPOSITORY_URL}:
+        message = "acceptance package repository association mismatch"
+        raise ValueError(message)
+    witness = parse_json_strict(entries[ACCEPTANCE_WITNESS_PATH])
+    if witness != {
+        "purpose": "destination-acceptance",
+        "target-sha": target_sha,
+    }:
+        message = "acceptance witness target or purpose mismatch"
+        raise ValueError(message)
+    return {
+        "state": "exact",
+        "version": observed_version,
+        "tag": tag,
+        "content-sha512": (f"sha512:{hashlib.sha512(tarball).hexdigest()}"),
+        "repository": GITHUB_PACKAGES_REPOSITORY,
+        "owner": GITHUB_PACKAGES_OWNER,
+    }
+
+
+def _acceptance_result(  # noqa: PLR0913
+    *,
+    scenario: str,
+    tag: str,
+    pre_state: str,
+    post_state: str,
+    result: str,
+    mutation_classification: str,
+    action_executed: bool,
+    mutation_started: bool,
+    response_identity_digest: str,
+    content_sha512: str | None,
+    diagnostics: tuple[str, ...] = (),
+    validated_request_proof: ValidatedAcceptanceRequestProof | None = None,
+) -> FixedCoordinateAcceptanceProbeResult:
+    return FixedCoordinateAcceptanceProbeResult(
+        scenario=scenario,
+        package_coordinate=ACCEPTANCE_COORDINATES[scenario],
+        tag=tag,
+        pre_state=pre_state,
+        post_state=post_state,
+        result=result,
+        mutation_classification=mutation_classification,
+        action_executed=action_executed,
+        mutation_started=mutation_started,
+        response_identity_digest=response_identity_digest,
+        content_sha512=content_sha512,
+        diagnostics=diagnostics,
+        validated_request_proof=validated_request_proof,
+    )
+
+
+def _remaining_acceptance_time(deadline: float) -> float:
+    remaining = round(deadline - monotonic(), 3)
+    if remaining <= 0:
+        message = "acceptance operation deadline expired"
+        raise TimeoutError(message)
+    return remaining
+
+
+def _call_with_acceptance_deadline(
+    function: object,
+    *args: object,
+    deadline: float,
+    **kwargs: object,
+) -> object:
+    """Pass the shared deadline only to deadline-aware injected seams."""
+    callable_function = cast("Callable[..., object]", function)
+    if _accepts_acceptance_deadline(callable_function):
+        kwargs["deadline"] = deadline
+    return callable_function(*args, **kwargs)
+
+
+def _accepts_acceptance_deadline(function: object) -> bool:
+    parameters = inspect.signature(
+        cast("Callable[..., object]", function)
+    ).parameters.values()
+    return any(
+        parameter.name == "deadline"
+        or parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters
+    )
+
+
+def _valid_lost_response_proof(
+    document: dict[str, object],
+    *,
+    tarball: bytes,
+    version: str,
+    tag: str,
+) -> bool:
+    proof = document.get("validated-request-proof")
+    return (
+        document.get("outcome") == "lost-response-processed"
+        and type(proof) is ValidatedAcceptanceRequestProof
+        and proof.tarball_sha512
+        == "sha512:" + hashlib.sha512(tarball).hexdigest()
+        and proof.package_coordinate == f"{ACCEPTANCE_PACKAGE_NAME}@{version}"
+        and proof.tag == tag
+        and proof.upstream_status == HTTP_CREATED
+    )
+
+
+def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915
+    *,
+    scenario: str,
+    package_coordinate: str,
+    tag: str,
+    tarball: Path,
+    tarball_sha512: str,
+    transport: object,
+    runner: object,
+    timeout_seconds: float,
+    max_response_bytes: int,
+    max_output_bytes: int,
+    deadline: float | None = None,
+) -> FixedCoordinateAcceptanceProbeResult:
+    """Run one bounded injected acceptance-only create/readback scenario."""
+    expected_coordinate = ACCEPTANCE_COORDINATES.get(scenario)
+    if package_coordinate != expected_coordinate:
+        message = "acceptance package coordinate is not the fixed coordinate"
+        raise ValueError(message)
+    expected_tag = next(
+        (
+            fixed_tag
+            for fixed_scenario, _version, fixed_tag in ACCEPTANCE_SCENARIO_SPECS
+            if fixed_scenario == scenario
+        ),
+        None,
+    )
+    if tag != expected_tag:
+        message = "acceptance tag is not one of the reviewed fixed tags"
+        raise ValueError(message)
+    if scenario not in ACCEPTANCE_SCENARIOS:
+        message = "acceptance mutation scenario is unsupported"
+        raise ValueError(message)
+    if not isinstance(tarball, Path) or not tarball.is_file():
+        message = "acceptance tarball must be an existing Path"
+        raise ValueError(message)
+    actual_sha512 = f"sha512:{hashlib.sha512(tarball.read_bytes()).hexdigest()}"
+    if tarball_sha512 != actual_sha512:
+        message = "acceptance tarball SHA-512 digest mismatch"
+        raise ValueError(message)
+    if type(timeout_seconds) not in {float, int} or timeout_seconds <= 0:
+        message = "acceptance timeout must be positive"
+        raise ValueError(message)
+    _positive_exact_int(max_response_bytes, field="max_response_bytes")
+    _positive_exact_int(max_output_bytes, field="max_output_bytes")
+    observe = getattr(transport, "observe", None)
+    run = getattr(runner, "run", None)
+    if not callable(observe) or not callable(run):
+        message = "acceptance transport and runner must be injected"
+        raise TypeError(message)
+
+    operation_deadline = (
+        monotonic() + float(timeout_seconds) if deadline is None else deadline
+    )
+    pre_value = _call_with_acceptance_deadline(
+        observe,
+        package_coordinate,
+        tag,
+        timeout_seconds=_remaining_acceptance_time(operation_deadline),
+        max_response_bytes=max_response_bytes,
+        deadline=operation_deadline,
+    )
+    pre_state, pre_response, pre_content = _acceptance_observation(
+        pre_value,
+        tag=tag,
+        desired_sha512=actual_sha512,
+    )
+    if pre_state != "absent":
+        if scenario != "exact":
+            return _acceptance_result(
+                scenario=scenario,
+                tag=tag,
+                pre_state=pre_state,
+                post_state=pre_state,
+                result="fixed-coordinate-already-exists",
+                mutation_classification="incomplete",
+                action_executed=False,
+                mutation_started=False,
+                response_identity_digest=pre_response,
+                content_sha512=pre_content,
+                diagnostics=(
+                    "absent-state-not-observed",
+                    "new-fixed-coordinate-required",
+                ),
+            )
+        if pre_state == "exact" and pre_content == actual_sha512:
+            return _acceptance_result(
+                scenario=scenario,
+                tag=tag,
+                pre_state="exact",
+                post_state="exact",
+                result="exact-no-mutation",
+                mutation_classification="complete",
+                action_executed=False,
+                mutation_started=False,
+                response_identity_digest=pre_response,
+                content_sha512=pre_content,
+            )
+        return _acceptance_result(
+            scenario=scenario,
+            tag=tag,
+            pre_state=pre_state,
+            post_state=pre_state,
+            result="preexisting-tag-conflict",
+            mutation_classification="incomplete",
+            action_executed=False,
+            mutation_started=False,
+            response_identity_digest=pre_response,
+            content_sha512=pre_content,
+            diagnostics=(
+                "conflicting-remote-bytes-or-tag",
+                "human-reconciliation-required",
+            ),
+        )
+
+    command = (
+        "npm",
+        "publish",
+        str(tarball),
+        "--tag",
+        tag,
+        "--registry",
+        GITHUB_PACKAGES_REGISTRY,
+        "--ignore-scripts",
+    )
+    runner_result: object | None = None
+    runner_error: Exception | None = None
+    runner_timed_out = False
+    action_executed = False
+    mutation_started = False
+    try:
+        run_scenario = getattr(runner, "run_scenario", None)
+        if callable(run_scenario):
+            runner_result = _call_with_acceptance_deadline(
+                run_scenario,
+                scenario,
+                command,
+                env={"NPM_CONFIG_IGNORE_SCRIPTS": "true"},
+                timeout_seconds=_remaining_acceptance_time(operation_deadline),
+                max_output_bytes=max_output_bytes,
+                deadline=operation_deadline,
+            )
+        else:
+            runner_result = _call_with_acceptance_deadline(
+                run,
+                command,
+                env={"NPM_CONFIG_IGNORE_SCRIPTS": "true"},
+                timeout_seconds=_remaining_acceptance_time(operation_deadline),
+                max_output_bytes=max_output_bytes,
+                deadline=operation_deadline,
+            )
+    except TimeoutError as error:
+        runner_error = error
+        runner_timed_out = True
+        executed_fact = getattr(error, "action_executed", None)
+        started_fact = getattr(error, "mutation_started", None)
+        if (
+            type(executed_fact) is bool
+            and type(started_fact) is bool
+            and (executed_fact or not started_fact)
+        ):
+            action_executed = executed_fact
+            mutation_started = started_fact
+    except (OSError, RuntimeError, ValueError) as error:
+        runner_error = error
+        executed_fact = getattr(error, "action_executed", None)
+        started_fact = getattr(error, "mutation_started", None)
+        if (
+            type(executed_fact) is bool
+            and type(started_fact) is bool
+            and (executed_fact or not started_fact)
+        ):
+            action_executed = executed_fact
+            mutation_started = started_fact
+
+    if type(runner_result) is dict:
+        executed_fact = runner_result.get("action-executed")
+        started_fact = runner_result.get("mutation-started")
+        if (
+            type(executed_fact) is not bool
+            or type(started_fact) is not bool
+            or (started_fact and not executed_fact)
+        ):
+            runner_error = ValueError(
+                "acceptance runner action facts are malformed"
+            )
+            action_executed = False
+            mutation_started = False
+        else:
+            action_executed = executed_fact
+            mutation_started = started_fact
+
+    post_value = _call_with_acceptance_deadline(
+        observe,
+        package_coordinate,
+        tag,
+        timeout_seconds=_remaining_acceptance_time(operation_deadline),
+        max_response_bytes=max_response_bytes,
+        deadline=operation_deadline,
+    )
+    post_state, post_response, post_content = _acceptance_observation(
+        post_value,
+        tag=tag,
+        desired_sha512=actual_sha512,
+    )
+    if runner_error is not None:
+        malformed_facts = str(runner_error) == (
+            "acceptance runner action facts are malformed"
+        )
+        if runner_timed_out:
+            return _acceptance_result(
+                scenario=scenario,
+                tag=tag,
+                pre_state="absent",
+                post_state=post_state,
+                result="timeout",
+                mutation_classification="unknown",
+                action_executed=action_executed,
+                mutation_started=mutation_started,
+                response_identity_digest=post_response,
+                content_sha512=post_content,
+                diagnostics=(
+                    "mutation-may-have-started",
+                    "human-reconciliation-required",
+                ),
+            )
+        if malformed_facts:
+            return _acceptance_result(
+                scenario=scenario,
+                tag=tag,
+                pre_state="absent",
+                post_state=post_state,
+                result="runner-malformed-before-mutation",
+                mutation_classification="incomplete",
+                action_executed=action_executed,
+                mutation_started=mutation_started,
+                response_identity_digest=post_response,
+                content_sha512=post_content,
+                diagnostics=("runner-action-facts-not-fully-admitted",),
+            )
+        if scenario == "lost-response":
+            return _acceptance_result(
+                scenario=scenario,
+                tag=tag,
+                pre_state="absent",
+                post_state=post_state,
+                result="lost-response",
+                mutation_classification="unknown",
+                action_executed=action_executed,
+                mutation_started=mutation_started,
+                response_identity_digest=post_response,
+                content_sha512=post_content,
+                diagnostics=(
+                    "mutation-may-have-started",
+                    "human-reconciliation-required",
+                ),
+            )
+        return _acceptance_result(
+            scenario=scenario,
+            tag=tag,
+            pre_state="absent",
+            post_state=post_state,
+            result=(
+                "runner-malformed-before-mutation"
+                if malformed_facts
+                else "runner-failed-before-mutation"
+            ),
+            mutation_classification="incomplete",
+            action_executed=action_executed,
+            mutation_started=mutation_started,
+            response_identity_digest=post_response,
+            content_sha512=post_content,
+            diagnostics=(
+                ("runner-action-facts-not-fully-admitted",)
+                if malformed_facts
+                else ("runner-did-not-prove-mutation-start",)
+            ),
+        )
+
+    runner_document = (
+        cast("dict[str, object]", runner_result)
+        if type(runner_result) is dict
+        else {}
+    )
+    outcome = runner_document.get("outcome")
+    if scenario == "lost-response":
+        if (
+            _valid_lost_response_proof(
+                runner_document,
+                tarball=tarball.read_bytes(),
+                version=package_coordinate.rsplit("@", 1)[1],
+                tag=tag,
+            )
+            and action_executed
+            and mutation_started
+            and post_state == "exact"
+            and post_content == actual_sha512
+        ):
+            return _acceptance_result(
+                scenario=scenario,
+                tag=tag,
+                pre_state="absent",
+                post_state="exact",
+                result="lost-response-exact-after-start",
+                mutation_classification="complete",
+                action_executed=action_executed,
+                mutation_started=mutation_started,
+                response_identity_digest=post_response,
+                content_sha512=post_content,
+                diagnostics=("mutation-started-and-readback-exact",),
+                validated_request_proof=cast(
+                    "ValidatedAcceptanceRequestProof",
+                    runner_document["validated-request-proof"],
+                ),
+            )
+        return _acceptance_result(
+            scenario=scenario,
+            tag=tag,
+            pre_state="absent",
+            post_state=post_state,
+            result="lost-response",
+            mutation_classification="unknown",
+            action_executed=action_executed,
+            mutation_started=mutation_started,
+            response_identity_digest=post_response,
+            content_sha512=post_content,
+            diagnostics=(
+                "mutation-may-have-started",
+                "human-reconciliation-required",
+            ),
+        )
+    if outcome not in {"created", "create-conflict"}:
+        return _acceptance_result(
+            scenario=scenario,
+            tag=tag,
+            pre_state="absent",
+            post_state=post_state,
+            result=(
+                "runner-malformed-before-mutation"
+                if outcome is None
+                else "runner-failed-before-mutation"
+            ),
+            mutation_classification="incomplete",
+            action_executed=action_executed,
+            mutation_started=mutation_started,
+            response_identity_digest=post_response,
+            content_sha512=post_content,
+            diagnostics=("runner-did-not-prove-controlled-outcome",),
+        )
+    if not action_executed or not mutation_started:
+        return _acceptance_result(
+            scenario=scenario,
+            tag=tag,
+            pre_state="absent",
+            post_state=post_state,
+            result="runner-malformed-before-mutation",
+            mutation_classification="incomplete",
+            action_executed=action_executed,
+            mutation_started=mutation_started,
+            response_identity_digest=post_response,
+            content_sha512=post_content,
+            diagnostics=("runner-action-facts-not-fully-admitted",),
+        )
+    if scenario == "differing-race":
+        contender_outcomes = runner_document.get("contender-outcomes")
+        winner_sha512 = runner_document.get("winner-content-sha512")
+        contender_sha512 = runner_document.get("contender-content-sha512")
+        valid_outcomes = (
+            type(contender_outcomes) is list
+            and len(contender_outcomes) == PAIR_SIZE
+            and contender_outcomes.count("created") == 1
+            and contender_outcomes.count("create-conflict") == 1
+        )
+        race_overlap_proven = runner_document.get("race-overlap-proven") is True
+        valid_winner = (
+            type(winner_sha512) is str
+            and winner_sha512 == post_content
+            and post_state in {"exact", "conflicting"}
+        )
+        if contender_sha512 is not None:
+            valid_winner = (
+                valid_winner
+                and type(contender_sha512) is str
+                and winner_sha512 in {actual_sha512, contender_sha512}
+            )
+        if not valid_outcomes or not valid_winner or not race_overlap_proven:
+            return _acceptance_result(
+                scenario=scenario,
+                tag=tag,
+                pre_state="absent",
+                post_state=post_state,
+                result="differing-race-winner-not-proven",
+                mutation_classification="unknown",
+                action_executed=action_executed,
+                mutation_started=mutation_started,
+                response_identity_digest=post_response,
+                content_sha512=post_content,
+                diagnostics=(
+                    "exclusive-created-and-conflict-outcomes-required",
+                    "winner-readback-identity-required",
+                    "race-overlap-not-proven",
+                    "human-reconciliation-required",
+                ),
+            )
+        return _acceptance_result(
+            scenario=scenario,
+            tag=tag,
+            pre_state="absent",
+            post_state=post_state,
+            result="differing-race-conflict",
+            mutation_classification="complete",
+            action_executed=action_executed,
+            mutation_started=mutation_started,
+            response_identity_digest=post_response,
+            content_sha512=post_content,
+            diagnostics=("conflicting-remote-bytes-or-tag",),
+        )
+    if post_state == "exact" and post_content == actual_sha512:
+        if outcome == "create-conflict":
+            if scenario == "differing-race":
+                return _acceptance_result(
+                    scenario=scenario,
+                    tag=tag,
+                    pre_state="absent",
+                    post_state="exact",
+                    result="differing-race-conflicting-readback-missing",
+                    mutation_classification="incomplete",
+                    action_executed=action_executed,
+                    mutation_started=mutation_started,
+                    response_identity_digest=post_response,
+                    content_sha512=post_content,
+                    diagnostics=(
+                        "required-conflicting-readback-not-observed",
+                        "human-reconciliation-required",
+                    ),
+                )
+            result = "identical-race-exact"
+            diagnostics = ("identical-race-exact",)
+        else:
+            result = "created"
+            diagnostics = ()
+        return _acceptance_result(
+            scenario=scenario,
+            tag=tag,
+            pre_state="absent",
+            post_state="exact",
+            result=result,
+            mutation_classification="complete",
+            action_executed=action_executed,
+            mutation_started=mutation_started,
+            response_identity_digest=post_response,
+            content_sha512=post_content,
+            diagnostics=diagnostics,
+        )
+    if post_state == "conflicting":
+        if outcome == "create-conflict" and scenario == "identical-race":
+            return _acceptance_result(
+                scenario=scenario,
+                tag=tag,
+                pre_state="absent",
+                post_state="unknown",
+                result="conflict-race-tag-unknown",
+                mutation_classification="unknown",
+                action_executed=action_executed,
+                mutation_started=mutation_started,
+                response_identity_digest=post_response,
+                content_sha512=post_content,
+                diagnostics=(
+                    "conflicting-remote-bytes-or-tag",
+                    "human-reconciliation-required",
+                ),
+            )
+        if outcome == "create-conflict":
+            return _acceptance_result(
+                scenario=scenario,
+                tag=tag,
+                pre_state="absent",
+                post_state="conflicting",
+                result="differing-race-conflict",
+                mutation_classification="complete",
+                action_executed=action_executed,
+                mutation_started=mutation_started,
+                response_identity_digest=post_response,
+                content_sha512=post_content,
+                diagnostics=("conflicting-remote-bytes-or-tag",),
+            )
+        return _acceptance_result(
+            scenario=scenario,
+            tag=tag,
+            pre_state="absent",
+            post_state="conflicting",
+            result="readback-tag-conflict",
+            mutation_classification="incomplete",
+            action_executed=action_executed,
+            mutation_started=mutation_started,
+            response_identity_digest=post_response,
+            content_sha512=post_content,
+            diagnostics=(
+                "conflicting-remote-bytes-or-tag",
+                "human-reconciliation-required",
+            ),
+        )
+    return _acceptance_result(
+        scenario=scenario,
+        tag=tag,
+        pre_state="absent",
+        post_state="unknown",
+        result="lost-response",
+        mutation_classification="unknown",
+        action_executed=action_executed,
+        mutation_started=mutation_started,
+        response_identity_digest=post_response,
+        content_sha512=post_content,
+        diagnostics=(
+            "mutation-may-have-started",
+            "human-reconciliation-required",
+        ),
+    )
+
+
+def run_fixed_acceptance_suite(  # noqa: PLR0913
+    *,
+    suite: str,
+    tarballs: dict[str, Path],
+    transport: object,
+    runner: object,
+    timeout_seconds: float,
+    max_response_bytes: int,
+    max_output_bytes: int,
+    deadline: float | None = None,
+) -> FixedAcceptanceSuiteResult:
+    """Run one reviewed fixed suite with no caller-selected coordinates."""
+    inventories = {
+        "absent-create-readback": ("absent-create-readback",),
+        "exact-and-conflict": (
+            "exact",
+            "identical-race",
+            "differing-race",
+            "lost-response",
+        ),
+    }
+    inventory = inventories.get(suite)
+    if inventory is None:
+        message = "acceptance suite is not reviewed"
+        raise ValueError(message)
+    if set(tarballs) != set(inventory):
+        message = "acceptance suite tarball inventory is not exact"
+        raise ValueError(message)
+    operation_deadline = (
+        monotonic() + float(timeout_seconds) if deadline is None else deadline
+    )
+    results: list[FixedCoordinateAcceptanceProbeResult] = []
+    for scenario in inventory:
+        coordinate = ACCEPTANCE_COORDINATES[scenario]
+        tag = next(
+            fixed_tag
+            for fixed_scenario, _version, fixed_tag in ACCEPTANCE_SCENARIO_SPECS
+            if fixed_scenario == scenario
+        )
+        tarball = tarballs[scenario]
+        results.append(
+            run_fixed_coordinate_acceptance_probe(
+                scenario=scenario,
+                package_coordinate=coordinate,
+                tag=tag,
+                tarball=tarball,
+                tarball_sha512=(
+                    f"sha512:{hashlib.sha512(tarball.read_bytes()).hexdigest()}"
+                ),
+                transport=transport,
+                runner=runner,
+                timeout_seconds=timeout_seconds,
+                max_response_bytes=max_response_bytes,
+                max_output_bytes=max_output_bytes,
+                deadline=operation_deadline,
+            )
+        )
+    return FixedAcceptanceSuiteResult(suite=suite, scenarios=tuple(results))
 
 
 def _positive_exact_int(value: object, *, field: str) -> int:

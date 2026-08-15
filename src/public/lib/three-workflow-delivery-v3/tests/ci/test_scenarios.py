@@ -112,6 +112,7 @@ def _load_consumer_policy() -> Any:
 
 _CONSUMER_POLICY = _load_consumer_policy()
 ACCEPTANCE_FIXTURE_PATH = _CONSUMER_POLICY.ACCEPTANCE_FIXTURE_PATH
+ACCEPTANCE_NPM_MANIFEST_PATH = _CONSUMER_POLICY.ACCEPTANCE_NPM_MANIFEST_PATH
 APPROVED_CONSUMER_EXCEPTIONS = _CONSUMER_POLICY.APPROVED_CONSUMER_EXCEPTIONS
 DEPENDENCY_SURFACE_CATALOG = _CONSUMER_POLICY.DEPENDENCY_SURFACE_CATALOG
 OWN_DECLARATION_PATH = _CONSUMER_POLICY.OWN_DECLARATION_PATH
@@ -655,7 +656,11 @@ def _apply_history_change(repo: Path, change: HistoryChange) -> None:
 
 def _initialize_policy_repository(repo: Path) -> tuple[Path, str]:
     repo.mkdir()
-    for path in (OWN_DECLARATION_PATH, ACCEPTANCE_FIXTURE_PATH):
+    for path in (
+        OWN_DECLARATION_PATH,
+        ACCEPTANCE_FIXTURE_PATH,
+        ACCEPTANCE_NPM_MANIFEST_PATH,
+    ):
         source = REPO_ROOT / path
         destination = repo / path
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -1170,7 +1175,7 @@ def test_ci_scenario_consumer_reference_blocks_except_acceptance_fixtures(  # no
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Exercise literal LLD CI scenario 9 and both exact exceptions."""
+    """Exercise literal LLD CI scenario 9 and all exact exceptions."""
     expected_categories = tuple(case[0] for case in SURFACE_CASES)
     hk_config = HK_CONFIG.read_text(encoding="utf-8")
     step_start = hk_config.index(f'["{CONSUMER_STEP_NAME}"]')
@@ -1209,7 +1214,15 @@ def test_ci_scenario_consumer_reference_blocks_except_acceptance_fixtures(  # no
         assert path in {surface.path for surface in result.scanned_surfaces}
         assert tuple(
             surface.path for surface in result.admitted_exceptions
-        ) == (OWN_DECLARATION_PATH, ACCEPTANCE_FIXTURE_PATH)
+        ) == tuple(
+            sorted(
+                (
+                    OWN_DECLARATION_PATH,
+                    ACCEPTANCE_FIXTURE_PATH,
+                    ACCEPTANCE_NPM_MANIFEST_PATH,
+                )
+            )
+        )
         assert return_code == 1
         assert captured.err == ""
         assert json.loads(captured.out)["consumers"] == [path]
@@ -1256,6 +1269,15 @@ def test_ci_scenario_consumer_reference_blocks_except_acceptance_fixtures(  # no
             (
                 "sha256:"
                 "0dede06fe12d0fc5a5ff7fc943fe485c068b44b1cb609a98b4d980076b592ac7"
+            ),
+        ),
+        (
+            ACCEPTANCE_NPM_MANIFEST_PATH,
+            "dependency-manifest",
+            "name",
+            (
+                "sha256:"
+                "d032b543a77820f9660a629e7deee6140664150a2c0a7de8048d37947afc957e"
             ),
         ),
     )

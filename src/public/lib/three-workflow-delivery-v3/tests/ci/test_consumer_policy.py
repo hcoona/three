@@ -35,6 +35,7 @@ def _load_policy() -> Any:
 
 POLICY = _load_policy()
 ACCEPTANCE_FIXTURE_PATH = POLICY.ACCEPTANCE_FIXTURE_PATH
+ACCEPTANCE_NPM_MANIFEST_PATH = POLICY.ACCEPTANCE_NPM_MANIFEST_PATH
 APPROVED_CONSUMER_EXCEPTIONS = POLICY.APPROVED_CONSUMER_EXCEPTIONS
 CONSUMER_POLICY_HK_GLOBS = POLICY.CONSUMER_POLICY_HK_GLOBS
 ConsumerPolicyScanError = POLICY.ConsumerPolicyScanError
@@ -76,6 +77,7 @@ def _repository(tmp_path: Path) -> tuple[Path, str]:
         GIT_ATTRIBUTES_PATH,
         OWN_DECLARATION_PATH,
         ACCEPTANCE_FIXTURE_PATH,
+        ACCEPTANCE_NPM_MANIFEST_PATH,
     ):
         source = REPO_ROOT / path
         destination = repository / path
@@ -103,7 +105,13 @@ def _assert_consumer(
     assert tuple(
         surface.path for surface in result.admitted_exceptions
     ) == tuple(
-        sorted((OWN_DECLARATION_PATH, ACCEPTANCE_FIXTURE_PATH)),
+        sorted(
+            (
+                OWN_DECLARATION_PATH,
+                ACCEPTANCE_FIXTURE_PATH,
+                ACCEPTANCE_NPM_MANIFEST_PATH,
+            )
+        ),
     )
     assert path in {surface.path for surface in result.scanned_surfaces}
 
@@ -1795,10 +1803,10 @@ def test_ignores_identity_only_mentions_and_near_misses(
     assert result.consumers == ()
 
 
-def test_admits_only_the_two_exact_digest_bound_exceptions(
+def test_admits_only_the_three_exact_digest_bound_exceptions(
     tmp_path: Path,
 ) -> None:
-    """Admit only the reviewed manifest and acceptance fixture bytes."""
+    """Admit only the reviewed product and acceptance fixture bytes."""
     repository, target = _repository(tmp_path)
 
     result = scan_consumer_policy(repository)
@@ -1808,7 +1816,13 @@ def test_admits_only_the_two_exact_digest_bound_exceptions(
     assert tuple(
         surface.path for surface in result.admitted_exceptions
     ) == tuple(
-        sorted((OWN_DECLARATION_PATH, ACCEPTANCE_FIXTURE_PATH)),
+        sorted(
+            (
+                OWN_DECLARATION_PATH,
+                ACCEPTANCE_FIXTURE_PATH,
+                ACCEPTANCE_NPM_MANIFEST_PATH,
+            )
+        ),
     )
     assert tuple(
         (
@@ -1835,6 +1849,15 @@ def test_admits_only_the_two_exact_digest_bound_exceptions(
             (
                 "sha256:"
                 "0dede06fe12d0fc5a5ff7fc943fe485c068b44b1cb609a98b4d980076b592ac7"
+            ),
+        ),
+        (
+            ACCEPTANCE_NPM_MANIFEST_PATH,
+            "dependency-manifest",
+            "name",
+            (
+                "sha256:"
+                "d032b543a77820f9660a629e7deee6140664150a2c0a7de8048d37947afc957e"
             ),
         ),
     )
@@ -1864,7 +1887,11 @@ def test_lf_attributes_preserve_exception_digests_with_autocrlf_checkout(
     attributes = (checkout / GIT_ATTRIBUTES_PATH).read_text(
         encoding="utf-8",
     )
-    for path in (OWN_DECLARATION_PATH, ACCEPTANCE_FIXTURE_PATH):
+    for path in (
+        OWN_DECLARATION_PATH,
+        ACCEPTANCE_FIXTURE_PATH,
+        ACCEPTANCE_NPM_MANIFEST_PATH,
+    ):
         assert f"{path} text eol=lf" in attributes
         assert b"\r\n" not in (checkout / path).read_bytes()
     result = scan_consumer_policy(checkout)
@@ -1901,7 +1928,9 @@ def test_changed_exception_context_or_digest_is_a_consumer(
 
     assert result.consumers == (path,)
     assert path not in {surface.path for surface in result.admitted_exceptions}
-    assert len(result.admitted_exceptions) == 1
+    assert len(result.admitted_exceptions) == (
+        len(APPROVED_CONSUMER_EXCEPTIONS) - 1
+    )
 
 
 def test_changed_exception_path_is_a_scan_error(

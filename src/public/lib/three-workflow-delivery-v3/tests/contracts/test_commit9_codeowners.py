@@ -224,7 +224,7 @@ def test_actual_codeowners_final_owner_is_exact_for_every_current_and_future_v3_
     governed_paths = set(_governed_surface_inventory())
     assert set(SYNTHETIC_FUTURE_SURFACES) <= governed_paths
     assert GOVERNANCE_PATH in governed_paths
-    assert GOVERNANCE_PATH not in _workspace_paths()
+    assert GOVERNANCE_PATH in _workspace_paths()
     assert _coverage_failures(ACTUAL_RULES, governed_paths) == {}
     assert {
         path: _final_owners(ACTUAL_RULES, path) for path in governed_paths

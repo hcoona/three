@@ -38,6 +38,7 @@ POLICY_IMPLEMENTATION_PATH = "eng/scripts/workflow_delivery_v3_consumer_policy.p
 GIT_ATTRIBUTES_PATH = ".gitattributes"
 OWN_DECLARATION_PATH = "src/public/lib/hcoona-release-smoke-npm/package.json"
 ACCEPTANCE_FIXTURE_PATH = "src/public/lib/three-workflow-delivery-v3/tests/fixtures/release/consumer-policy-acceptance.json"
+ACCEPTANCE_NPM_MANIFEST_PATH = "src/public/lib/three-workflow-delivery-v3/tests/fixtures/acceptance/npm-publish-request/package/package.json"
 
 _PACKAGE = re.escape(PACKAGE_NAME)
 _DIRECT_SPEC = re.compile(rf"{_PACKAGE}(?:@[^\s]+)?\Z")
@@ -132,6 +133,7 @@ DEPENDENCY_SURFACE_CATALOG = (
 APPROVED_CONSUMER_EXCEPTIONS = (
     ApprovedConsumerException(OWN_DECLARATION_PATH, "dependency-manifest", "name", "sha256:a7d84bac91fe5f9fa7ccfbf46cd065cd85ded95188046d96f6f2c9ce97775566"),
     ApprovedConsumerException(ACCEPTANCE_FIXTURE_PATH, "dependency-manifest", f"dependencies.{PACKAGE_NAME}", "sha256:0dede06fe12d0fc5a5ff7fc943fe485c068b44b1cb609a98b4d980076b592ac7"),
+    ApprovedConsumerException(ACCEPTANCE_NPM_MANIFEST_PATH, "dependency-manifest", "name", "sha256:d032b543a77820f9660a629e7deee6140664150a2c0a7de8048d37947afc957e"),
 )
 CONSUMER_POLICY_HK_GLOBS = tuple(sorted(
     {pattern for rule in DEPENDENCY_SURFACE_CATALOG for pattern in rule.path_patterns}

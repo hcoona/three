@@ -243,6 +243,7 @@ jobs:
 
   evaluate-live-eligibility:
     name: Evaluate live eligibility before Attempt
+    # Governance remains blocked unless the protected attestation has live_enabled=true.
     needs: compile-model
     runs-on: ubuntu-24.04
     timeout-minutes: 10
