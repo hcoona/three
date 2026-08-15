@@ -5,13 +5,14 @@
 - Active projects now follow the canonical monorepo roots under `src/`, `src/lab/`, and `tests/`.
 - The former `OneDotNet/` subtree has been migrated into those canonical roots.
 - Release workflows are already active; NuGet registry publication remains deferred until the dotnet/NuGet workflow path exists.
+- Workflow Delivery v3 commit 11 retires legacy `.github/workflows/buddy.yml` and `.github/workflows/release-buddy.yml` with no `legacy-buddy.yml`, dispatch, or caller-compatibility route. v1 `official.yml` and `ci.yml` remain active.
 
 ## Current design decisions to preserve
 
-- Keep release and release-authority validation entry workflows exactly `ci.yml`, `buddy.yml`, and `official.yml`.
+- Keep release and release-authority validation entry workflows exactly `ci.yml` and `official.yml`; legacy `buddy.yml` is retired and must not be restored as a compatibility route.
 - Allow `.github/workflows/codeql.yml` as a triggered top-level non-release security analysis workflow only without release authority, publish credentials, protected-ref bypass credentials, or release mutation worker access.
 - Do not add extra triggered top-level workflow files for readiness, drift, governance, health monitoring, or release authority. Scheduled, manually dispatched, or carefully dashboard-edit-triggered Renovate dependency-maintenance workflows are allowed only without release authority and with workflow-level `permissions: {}` plus job-level least privilege. A dedicated GitHub App token may create dependency branches and pull requests, but must not bypass branch protection or mutate release refs. Renovate may use GitHub platform automerge with squash merge for configured dependency pull requests after required CI and branch protection/rulesets pass.
-- Preserve the active entry/auth-gate plus reusable-orchestrator topology: `buddy.yml` and `official.yml` authorize entry, while `release-orchestrate.yml` hosts current publish/token-minting paths.
+- Preserve the active entry/auth-gate plus reusable-orchestrator topology: `official.yml` authorizes release entry, while `release-orchestrate.yml` hosts current publish/token-minting paths. The retired legacy `buddy.yml`/`release-buddy.yml` entries have no compatibility route.
 - Treat the older direct `official.yml` OIDC publishing design as superseded by the active split topology: `.github/workflows/release-orchestrate.yml` orchestrates token-minting / publish paths for PyPI, npmjs, and RubyGems.
 - Use `github-release/public` as the active GitHub Release target; older `github:release` wording is superseded.
 - Do not reintroduce `pypi:testpypi`.
@@ -447,7 +448,7 @@
 ### FACT
 
 - The repository's current design state already reflects the review-summary fixes for external-system-sensitive items: NuGet no longer has a closed default audience, PyPI records `pypi` as the checked-in baseline with Day 0 re-confirmation, approval-related `GITHUB_STEP_SUMMARY` output is constrained to validated frozen data with Markdown escaping/code-fencing, and degraded monitor handling explicitly requires cancellation of already-waiting approval runs so they do not hold active dynamic entry concurrency slots indefinitely.
-- GitHub Actions concurrency and environment approval remain separate platform behaviors in the current repository notes: `buddy.yml` and `official.yml` define dynamic entry workflow/ref/project concurrency groups, while `release-orchestrate.yml` has no concurrency of its own. Registry environment approval is the human/credential gate that may leave a run waiting until cancellation or approval intervenes.
+- GitHub Actions concurrency and environment approval remain separate platform behaviors in the current repository notes: active `official.yml` defines dynamic entry workflow/ref/project concurrency groups, while `release-orchestrate.yml` has no concurrency of its own. Retired legacy `buddy.yml` no longer defines an active entry group. Registry environment approval is the human/credential gate that may leave a run waiting until cancellation or approval intervenes.
 - The current repository notes still support treating NuGet audience choice as evidence-bound per reviewed target configuration, not as one repository-wide constant, because no reviewed first-party source in this repository state confirms `api://NuGet`.
 
 ### ASSUMPTION / UNCERTAINTY

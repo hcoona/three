@@ -2698,3 +2698,32 @@ phase.
       this uniquely labeled section is append-only.
 
 <!-- END APPEND: current-commit-10-single-pass-test-plan-2026-08-15T021630Z -->
+
+
+## 2026-08-15 Commit 11 Calibration Plan Addendum
+
+1. Replace overbroad Buddy assertions with exact AST/YAML inventories:
+   retired Buddy-only test names, exact retired acceptance rows, exact removed
+   live gate, exact matrix/gate retired node IDs, and exact active matrix
+   evidence paths.
+2. Preserve mixed and Official/CI evidence explicitly: keep the mixed R41 test
+   outside `RETIRED_BUDDY_TEST_NAMES`, require named Official/CI tests, and
+   require explicit Official/CI acceptance-gate node IDs.
+3. Add executable/static script contracts: caller completeness must execute with
+   only `official.yml`, bootstrap governance exact paths must drop only legacy
+   entry workflows while preserving other entries, and actionlint path overrides
+   must drop only deleted Buddy entry paths while retaining official/orchestrate
+   overrides.
+4. Calibrate active-doc checks to optional exact filename references only:
+   references to `buddy.yml` or `release-buddy.yml` require retirement context
+   when present; documents with only generic Buddy prose pass.
+5. Validate with collect-only, the narrow contract module, Ruff check, and Ruff
+   format check; record expected-red failures as bounded commit-11 gaps.
+<!-- BEGIN APPEND: commit11-calibration-mixed-node-correction-2026-08-15 -->
+## Commit 11 Calibration Mixed-Node Correction Plan
+
+1. Keep the exact ten Buddy-only function inventory separate.
+2. Require the old mixed R41 Buddy/completion pin name to be retired or split.
+3. Check every exact retired matrix test node ID across the complete row set.
+4. Re-run collect-only, narrow expected-red pytest, and Ruff validation.
+<!-- END APPEND: commit11-calibration-mixed-node-correction-2026-08-15 -->

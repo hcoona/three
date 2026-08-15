@@ -8,19 +8,21 @@ contracts, and executor limits on top of `three.release.plan/v1alpha1`.
 
 ## Design Summary
 
-- `buddy` and `official` remain the only top-level `workflow_dispatch` entry
-  workflows.
-- Both active entry workflows pre-authorize and pre-resolve the dispatch
-  selector, then call the same shared orchestration contract with normalized
-  inputs plus the pinned `release_target_sha`. In the active split topology,
+- Workflow Delivery v3 commit 11 retires legacy `.github/workflows/buddy.yml`
+  and `.github/workflows/release-buddy.yml` with no `legacy-buddy.yml`,
+  dispatch, or caller-compatibility route. `official` remains the active
+  top-level release `workflow_dispatch` entry, and v1 CI remains active.
+- The active `official.yml` entry workflow pre-authorizes and pre-resolves the
+  dispatch selector, then calls the same shared orchestration contract with
+  normalized inputs plus the pinned `release_target_sha`. In the active split topology,
   registry-token-minting PyPI, npmjs, and RubyGems jobs are hosted inside
   `.github/workflows/release-orchestrate.yml` and bind registry trust to
   registry-specific GitHub environments: `pypi`, `npmjs`, and `rubygems`.
 - Direct reusable `source=manual` callers may still leave `target` empty or
   provide a branch, tag, ref, or 40-hex commit SHA for `release-resolve` to pin
-  once. Active `buddy.yml` and `official.yml` entry workflows instead pass their
-  already-pinned target SHA into the reusable orchestration layer, and later jobs
-  stay pinned to that commit.
+  once. Active `official.yml` instead passes its already-pinned target SHA into
+  the reusable orchestration layer, and later jobs stay pinned to that commit.
+  The retired legacy `buddy.yml` no longer contributes an entry route.
 - The shared orchestration workflow materializes normalized inputs into the
   authoritative planner-facing request for current scope, including the
   profile-neutral `request-flags.force` flag used by planner-authorized buddy
@@ -83,22 +85,21 @@ remote-observation seam used to classify remote-state-dependent reruns.
 
 ### Top-Level Boundaries
 
-| Boundary                      | Kind                           | Stable granularity       | Owns                                                                                                                                                                                                                                                    |
-| ----------------------------- | ------------------------------ | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `buddy` entry workflow        | top-level workflow             | one `buddy` run          | manual dispatch inputs, profile selection, entry permissions, `authorize-entry` release identity resolution, job-level `orchestrate` concurrency wiring, and final reporting                                                                            |
-| `official` entry workflow     | top-level workflow             | one `official` run       | manual dispatch inputs, profile selection, explicit triggering-actor `maintain+` authorization, protected-environment approval wiring, `authorize-entry` release identity resolution, job-level `orchestrate` concurrency wiring, and final reporting   |
-| shared orchestration workflow | reusable workflow              | one selected-profile run | planning, selector derivation, reusable-safe side-effect sequencing, tag orchestration, artifact fan-out and fan-in, and active split-topology publish jobs, including token-minting PyPI, npmjs, and RubyGems jobs with registry-specific environments |
-| `build-variant` unit          | reusable workflow              | one `variant-id`         | build-request materialization, ecosystem-specific build-executor selection, runner or tool wiring, and upload of one variant bundle plus build receipt                                                                                                  |
-| `publish-node` unit           | topology-specific publish path | one `publish-node-id`    | publish-request materialization, topology and family-specific publish-executor routing, download of referenced build bundles, and upload of one publish receipt from the concrete orchestration-hosted publish job                                      |
+| Boundary                      | Kind                           | Stable granularity        | Owns                                                                                                                                                                                                                                                    |
+| ----------------------------- | ------------------------------ | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `official` entry workflow     | top-level workflow             | one active `official` run | manual dispatch inputs, profile selection, explicit triggering-actor `maintain+` authorization, protected-environment approval wiring, `authorize-entry` release identity resolution, job-level `orchestrate` concurrency wiring, and final reporting   |
+| shared orchestration workflow | reusable workflow              | one selected-profile run  | planning, selector derivation, reusable-safe side-effect sequencing, tag orchestration, artifact fan-out and fan-in, and active split-topology publish jobs, including token-minting PyPI, npmjs, and RubyGems jobs with registry-specific environments |
+| `build-variant` unit          | reusable workflow              | one `variant-id`          | build-request materialization, ecosystem-specific build-executor selection, runner or tool wiring, and upload of one variant bundle plus build receipt                                                                                                  |
+| `publish-node` unit           | topology-specific publish path | one `publish-node-id`     | publish-request materialization, topology and family-specific publish-executor routing, download of referenced build bundles, and upload of one publish receipt from the concrete orchestration-hosted publish job                                      |
 
 The stable workflow handoff boundaries are therefore:
 
-1. profile entry workflow -> shared orchestration workflow;
+1. active Official entry workflow -> shared orchestration workflow;
 2. shared orchestration workflow -> one build unit per `variant-id`;
 3. shared orchestration workflow -> one orchestration-hosted publish unit per
    `publish-node-id`, including PyPI, npmjs, and RubyGems OIDC jobs that mint
    registry tokens from `.github/workflows/release-orchestrate.yml`;
-4. profile entry workflow -> final report after orchestration-hosted publish
+4. active Official entry workflow -> final report after orchestration-hosted publish
    receipts are available, or after the run has reached a reportable failure
    state.
 
@@ -285,8 +286,9 @@ inside `details` or outside this contract entirely.
 
 Before invoking the planner, the shared orchestration workflow must materialize
 one logical planner request from normalized inputs and a pinned target SHA. The
-active `buddy.yml` and `official.yml` entry workflows pass that pinned SHA after
-entry authorization and resolution; direct reusable `source=manual` callers may
+active `official.yml` entry workflow passes that pinned SHA after entry
+authorization and resolution; retired legacy `buddy.yml` has no compatibility
+route; direct reusable `source=manual` callers may
 still pass an empty, branch, tag, ref, or 40-hex selector for `release-resolve`
 to pin once before planner request materialization. The planner request has
 exactly these current-scope fields:
@@ -355,7 +357,7 @@ trusted-publisher scheduling a middle-layer control-plane contract.
 
 ### Dry-Run Boundary
 
-The active `buddy.yml` and `official.yml` dispatch surfaces do not expose dry-run
+The active `official.yml` dispatch surface does not expose dry-run
 or validation-build inputs, and the active orchestration path treats both as
 `false`. Historical dry-run or validation-only modes stay outside the planner
 request and are future-only until a successor workflow contract reintroduces
@@ -839,10 +841,11 @@ The following concerns are explicitly control-plane-owned:
   cancellation use native GitHub workflow cancellation semantics and ordinary
   cancelled status; current scope does not adopt repo-defined in-progress
   duplicate-run auto-cancellation. Same-release-group `orchestrate` jobs across
-  the active `buddy` and `official` entry workflows are serialized with
+  active `official` entry workflow runs are serialized with
   `cancel-in-progress: false`; GitHub may still cancel and replace an older
-  pending run when a newer pending run from either entry workflow enters the
-  same resolved release group;
+  pending run when a newer pending run from the active Official entry workflow
+  enters the same resolved release group. Retired legacy Buddy entries do not
+  contribute a current concurrency peer or caller route;
 - **tagging**: the planner resolves the final project-scoped `release-tag`,
   but the control plane creates or verifies each distinct selected Git tag once
   per run only when the selected plan contains at least one GitHub Release

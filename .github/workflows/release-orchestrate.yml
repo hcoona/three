@@ -20,8 +20,7 @@ name: Release Orchestrator (Reusable)
 #          |
 #  [release-completed]
 #
-# Entry callers: official.yml (push:tag + workflow_dispatch)
-#                buddy.yml   (workflow_dispatch, prerelease-only)
+# Entry caller: official.yml (push:tag + workflow_dispatch)
 
 on:
   workflow_call:
@@ -61,7 +60,7 @@ on:
         default: ''
         type: string
       force_update_tag:
-        description: 'Official channels may use this to force-update an existing release tag; buddy channels forward it only to planner-owned mutable prerelease overwrite.'
+        description: 'The active Official caller may use this to force-update an existing release tag. Legacy Buddy entry callers are retired and rejected.'
         required: false
         default: false
         type: boolean
@@ -75,8 +74,9 @@ on:
         description: |-
           Do NOT use 'x-official', 'x-buddy', or any value that normalizes to these
           (e.g. 'x-official-') — reserved sanitization escape slugs.
-          Release channel label for logs and policy validation (example: official, buddy).
-          Reserved values: 'official' and 'buddy' are governed by strict policy assertions.
+          Release channel label for logs and policy validation (example: official, staging).
+          'official' is the active governed entry channel. 'buddy' is reserved and rejected
+          because the legacy Buddy entry route is retired; v3 Buddy uses separate workflows.
           Custom allowlisted channels must not use 'x-official' or 'x-buddy' as these names
           are reserved as sanitization escape slugs and will collide with mistyped official/buddy
           inputs in the generated target_environment output.
@@ -85,17 +85,18 @@ on:
       channel_allowlist:
         description: >-
           Comma-separated list of custom channel names that are explicitly
-          exempt from strict channel profile assertions (official/buddy policy
-          matrix). Use only for non-production channels (e.g., staging, canary).
+          exempt from the active Official policy matrix. Use only for
+          non-production channels (e.g., staging, canary).
           Callers are fully responsible for setting all publish flags correctly.
           SECURITY NOTE: allowlisted channels bypass all policy enforcement —
           only grant default-branch merge access to trusted contributors.
           Any new caller workflow file that supplies a non-empty channel_allowlist
           is itself a policy bypass vector and must be subject to the same
           branch-protection review as official.yml.
-          RESERVED NAMES: do not include 'x-official' or 'x-buddy' in the
-          allowlist — these values are reserved sanitization escape slugs and
-          will be rejected at runtime by the policy job.
+          RESERVED NAMES: do not include 'official', 'buddy', 'x-official', or
+          'x-buddy' in the allowlist. 'official' is governed by the active
+          caller policy; legacy 'buddy' is retired as an entry route; x-* values
+          are reserved sanitization escape slugs. All are rejected at runtime.
         required: false
         default: ''
         type: string
@@ -108,10 +109,12 @@ on:
         required: true
         type: boolean
 
-      # Channel profile flags — these are fully determined by 'channel' for official/buddy channels.
-      # Callers MUST pass all flags explicitly; the policy job re-asserts them to catch
-      # misconfiguration at workflow start. For custom allowlisted channels, callers are
-      # responsible for setting these flags to their desired values.
+      # Channel profile flags are active for Official and custom callers. The
+      # preserved Buddy policy matrix is historical/domain regression logic;
+      # channel=buddy is reserved and rejected before this policy job.
+      # Callers MUST pass all flags explicitly; the policy job re-asserts them
+      # to catch misconfiguration at workflow start. For custom allowlisted
+      # channels, callers are responsible for setting desired values.
       enforce_prerelease_only:
         description: 'If true, enforce resolved version to be prerelease-only.'
         required: false
@@ -266,6 +269,15 @@ jobs:
               for item in os.environ.get("CHANNEL_ALLOWLIST", "").split(",")
               if item.strip()
           }
+          reserved_allowlist_entries = channel_allowlist & {"official", "buddy"}
+          if reserved_allowlist_entries:
+              fail(
+                  "Reserved channel names cannot appear in channel_allowlist: "
+                  f"{sorted(reserved_allowlist_entries)!r}. "
+                  "'official' is the only active entry route, and legacy "
+                  "'buddy' is retired."
+              )
+
           claims = decode_payload(request_token())
 
           if claims.get("repository") != repository:
@@ -286,8 +298,14 @@ jobs:
 
           entry_workflows = {
               "official": ".github/workflows/official.yml",
-              "buddy": ".github/workflows/buddy.yml",
           }
+          if channel == "buddy":
+              fail(
+                  "Legacy Buddy entry route is retired; channel 'buddy' is a "
+                  "reserved channel with no active caller route. Use the "
+                  "current v3 Buddy workflows or the active Official entry "
+                  "instead."
+              )
           entry_workflow = entry_workflows.get(channel)
           workflow_ref = claims.get("workflow_ref")
           if entry_workflow is not None:
@@ -568,9 +586,9 @@ jobs:
     # jobs should hold id-token: write.
     # SYNC[add-new-language] — if a new language adds a hub-level output, add it here.
     # Published outputs (forwarding contract — stable for spoke consumers):
-    #   channel_profile:    'official' | 'buddy' | 'custom'
-    #   planner_profile:    'official' | 'buddy' (custom channels intentionally use the official descriptor/planner profile)
-    #   target_environment: 'release-official' | 'release-buddy' | 'release-<sanitized>'
+    #   channel_profile:    'official' | 'custom' ('buddy' is retained only as unreachable historical/domain logic)
+    #   planner_profile:    'official' (custom channels intentionally use the official descriptor/planner profile)
+    #   target_environment: 'release-official' | 'release-<sanitized>' ('release-buddy' is unreachable after retirement)
     #   publish_mode:       'publish' | 'build-only'
     # Hub-internal derived value (NOT in outputs:, do NOT forward to spokes):
     #   project_variant:    known values: 'python' | 'ruby' | 'dotnet' | 'node-npm' | 'node-wxt';
@@ -592,10 +610,11 @@ jobs:
     # SECURITY: publish_mode is informational routing intent, not an authorization
     # decision. It MUST NOT be the sole if: condition guarding OIDC token requests.
     # The environment: field with required reviewers is the real security boundary.
-    # PREREQUISITE: The GitHub Environments 'release-official' and 'release-buddy' MUST
-    # be pre-created in repository Settings → Environments with required reviewers before
-    # any spoke is deployed. GitHub auto-creates missing environments with NO protection
-    # rules, silently bypassing the approval gate.
+    # PREREQUISITE: The active GitHub Environment 'release-official' MUST be
+    # pre-created in repository Settings → Environments with required reviewers
+    # before any spoke is deployed. Legacy 'release-buddy' is not an active
+    # prerequisite after commit 11. GitHub auto-creates missing environments
+    # with NO protection rules, silently bypassing the approval gate.
     outputs:
       channel_profile: ${{ steps.context.outputs.channel_profile }}
       # ROUTING-ONLY: channel_profile is metadata for spoke routing and diagnostics.
@@ -2776,7 +2795,7 @@ jobs:
           echo "     The npm publish command still runs in .github/workflows/release-orchestrate.yml.)"
           echo "  - Environment (if configured on npm): npmjs"
           echo "The official caller grants id-token: write, and this reusable publish job also grants id-token: write."
-          echo "Buddy does not live-publish npmjs today; if enabled later, add a separate npm Trusted Publisher for .github/workflows/buddy.yml and grant id-token: write to that caller."
+          echo "Legacy Buddy entries are retired; do not add .github/workflows/buddy.yml as a Trusted Publisher or caller-compatibility route."
           echo "See: https://docs.npmjs.com/trusted-publishers"
 
       - name: Publish to npm registry (idempotent)
@@ -3548,11 +3567,11 @@ jobs:
   # following sync points. Missing any one causes misconfiguration, policy bypass, or
   # incorrect release status reporting.
   #
-  # WARNING: ALL steps below are MANDATORY. Skipping any step — in particular B2 (buddy
-  # channel policy assertions) — causes a SILENT policy bypass: the new language's flags
-  # will not be enforced for the buddy channel, so a misconfigured caller workflow will
-  # pass policy validation undetected. There is no CI enforcement that all steps are
-  # completed; the checklist is the sole safeguard.
+  # WARNING: ALL active Official/custom steps below are mandatory. B2 preserves
+  # the historical Buddy policy-domain assertion matrix as regression evidence;
+  # channel=buddy has no active caller route after commit 11. There is no CI
+  # enforcement that all steps are completed; the checklist is the sole
+  # safeguard for any future separately approved topology that reuses this logic.
   #
   # Across files:
   #   A. release-orchestrate.yml inputs block — add publish_<lang>_<registry> and any
@@ -3572,16 +3591,14 @@ jobs:
   #      "<lang>_version" call to the verification script step
   #   E. (SYNC above) Define new pipeline jobs here in release-orchestrate.yml
   #   F. official.yml — pass new inputs with their official-channel values
-  #   G. buddy.yml — pass new inputs with their buddy-channel values
   #
-  # Steps A, C, E, F, G are MANUAL-ONLY (no CI enforcement). Steps B2 and D have
+  # Steps A, C, E, F are MANUAL-ONLY (no CI enforcement). Steps B2 and D have
   # automated guards; omitting those steps causes CI to fail at the next run.
   # Step E's sub-task of adding release-* names to release-completed's needs: is
   # CI-enforced by the "Verify release-completed covers all release-* jobs" lint step;
   # writing the actual job definitions is still manual.
-  # WARNING: Step G (buddy.yml) is the highest-risk manual step. The buddy channel
-  # defaults all publish flags to false, so omitting step G causes a silent failure:
-  # the workflow succeeds but skips publishing the new target without any error.
+  # Legacy Buddy entry workflows are retired; do not add a replacement
+  # caller-compatibility route when adding new publish flags.
   #
   # Within this job (one internal sync point):
   #   1. needs: — add the new release job name(s) here

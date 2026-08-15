@@ -457,7 +457,6 @@ _BOOTSTRAP_GOVERNANCE_EXACT_PATHS = (
     ".github/CODEOWNERS",
     ".github/actionlint.yaml",
     ".github/workflows/ci.yml",
-    ".github/workflows/buddy.yml",
     ".github/workflows/release-orchestrate.yml",
     ".github/workflows/release-resolve.yml",
     ".github/workflows/release-build-python.yml",

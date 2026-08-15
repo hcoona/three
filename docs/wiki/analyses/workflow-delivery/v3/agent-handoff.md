@@ -14,7 +14,9 @@ If it conflicts with the
 
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 10 of the approved first-slice LLD are
-  delivered in the working tree. Commit 3 includes target-tree-bound
+  delivered; commit 10 was pushed at `e69675be`. Commit 11 is implemented
+  locally in the working tree and remains uncommitted until the parent commit.
+  Commit 3 includes target-tree-bound
   Release Unit/Quality authoring validation, duplicate Release Unit rejection,
   exact-target Repository Model compilation, static catalogs, Node/NBGV
   Provider contracts, fixed Governance-source fields and attestation schema,
@@ -52,7 +54,7 @@ If it conflicts with the
   ordered CODEOWNERS rules, future descriptor/workflow/action layouts,
   missing and later-overridden rules, arbitrary-ref Buddy separation, and
   real HK add/modify/delete/rename trigger behavior.
-- Commit 10 is present as uncommitted working-tree implementation and adds the
+- Commit 10 is delivered and pushed at `e69675be`; it adds the
   temporary five-job protected destination-acceptance
   workflow, with a 40-zero target sentinel that blocks before Environment
   review or mutation until a later protected finalization commit fixes the true
@@ -72,8 +74,11 @@ If it conflicts with the
   retention-dependent. The Environment and reviewer configuration are pending
   protected finalization, not asserted to exist at this boundary. Normal live remains
   blocked. The real bounded probe orchestration is present but unreachable
-  behind the zero-SHA sentinel. Legacy Buddy retirement, final target
-  insertion, acceptance execution, and activation remain later protected work.
+  behind the zero-SHA sentinel. Commit 11 then retires the legacy
+  `.github/workflows/buddy.yml` and `.github/workflows/release-buddy.yml`
+  entries locally with no `legacy-buddy.yml`, dispatch, or caller-compatibility
+  route while preserving v1 Official/CI, generic/v2 behavior, normal v3 Buddy
+  workflows, and the live-attempt/acceptance sentinel.
 - Commit 10's local acceptance boundary is closed around a real npm 11.9.0
   request captured with Node 24.14.0 from a disposable package against a
   loopback-only registry. The proxy strictly validates the emitted CouchDB
@@ -299,9 +304,10 @@ If it conflicts with the
   state blocks; no repository variable, PAT, App, service, ledger, OIDC, or
   additional token permission is added. Permanent root HK policy remains the
   repository-wide dependency gate.
-- The next LLD dependency boundary is commit 11: retire both legacy Buddy entry
-  files and rewrite only the Buddy-specific topology/tests/docs required by
-  that approved item. Do not implement legacy retirement, run real acceptance
+- Commit 11 is implemented but uncommitted until the parent commit. The next
+  operational LLD boundary remains post-merge commit 12: freeze dispatch,
+  repository-wide disable both old workflow identities, cancel or drain old
+  executions, and prove old-ref dispatch rejection. Do not run real acceptance
   probes, finalize the sentinel target, activate normal live, or begin later
   scopes without a separate explicit user task.
 - Implementation must preserve the approved commit boundaries and keep live

@@ -2689,3 +2689,38 @@ branch coverage.
 4. Do not dispatch, configure a remote Environment, expose credentials, alter
    status/plan artifacts, or modify production during test generation.
 <!-- END APPEND: current-commit-10-regression-scope-2026-08-15T021318Z -->
+
+
+## 2026-08-15 Commit 11 Calibration Research Addendum
+
+- Calibrated the legacy Buddy retirement contracts away from blanket `buddy`
+  token rejection and toward explicit inventories. Generic Buddy text, v2/history
+  documentation, and future v3 Buddy concepts are no longer rejected by this
+  contract unless they keep an exact retired v1 entry filename or exact retired
+  node/path inventory.
+- Exact retired v1 test inventory is the ten Buddy-only functions currently in
+  `tests/test_workflow_release_control.py`; the mixed
+  `test_acceptance_gate_pins_r41_release_completion_and_buddy_regressions`
+  remains separate and is not part of `RETIRED_BUDDY_TEST_NAMES`.
+- Acceptance-matrix calibration now targets exact retired row IDs
+  `buddy-to-official-promotion` and
+  `buddy-force-rejected-after-official-freeze`, exact removed live gate
+  `buddy-github-packages-live-publication`, exact retired matrix/gate node IDs,
+  and exact active evidence paths `.github/workflows/buddy.yml` /
+  `.github/workflows/release-buddy.yml`.
+- Added script/config/doc contract inventory research for
+  `release_orchestrate_lint_caller_completeness.sh`,
+  `workflow_release_control.py`, `workflow_release_acceptance_gate.py`,
+  `.github/actionlint.yaml`, `src/public/lib/hexo-renderer-asciidoc/README.md`,
+  and `workflow-release-workflow-executor-boundaries.md`.
+<!-- BEGIN APPEND: commit11-calibration-mixed-node-correction-2026-08-15 -->
+## Commit 11 Calibration Mixed-Node Correction
+
+The mixed R41 acceptance-pin function is an exact retired mixed Buddy node,
+not preserved Official/CI evidence. The calibrated contract therefore keeps
+the ten Buddy-only names in `RETIRED_BUDDY_TEST_NAMES` and separately requires
+`test_acceptance_gate_pins_r41_release_completion_and_buddy_regressions` to be
+absent through `RETIRED_MIXED_BUDDY_TEST_NAMES`. Matrix node-ID retirement is
+evaluated across all rows; exact legacy workflow paths remain limited to
+active-row evidence checks.
+<!-- END APPEND: commit11-calibration-mixed-node-correction-2026-08-15 -->

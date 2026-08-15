@@ -1743,5 +1743,40 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   execution, 4,923 root Python tests, PNPM tests/builds, Python and .NET builds,
   and all applicable static and consumer-policy gates.
 - Kept the acceptance workflow fail-closed behind the 40-zero target sentinel.
+
+## [2026-08-15] query | Implement Workflow Delivery v3 commit 11 locally
+
+- Retired legacy `.github/workflows/buddy.yml` and
+  `.github/workflows/release-buddy.yml` with no `legacy-buddy.yml`, dispatch, or
+  caller-compatibility route while preserving v1 Official/CI, v2 docs, generic
+  profiles, and normal v3 Buddy workflows.
+- Rewrote active workflow-release tests, matrix rows, caller completeness,
+  bootstrap inventory, actionlint overrides, and active docs around the
+  retained Official caller and retired legacy Buddy entries.
+- Updated the v3 handoff to record commit 10 as delivered/pushed at `e69675be`
+  and commit 11 as implemented locally until the parent commit; the next
+  operational boundary remains post-merge commit 12.
   Protected Environment setup, reviewer configuration, target-SHA
   finalization, dispatch, package mutation, and activation remain pending.
+
+## [2026-08-15] query | Close commit 11 TP adjudication findings
+
+- Tightened reserved Buddy route handling so legacy `channel=buddy` callers and
+  reserved `official`/`buddy` allowlist entries fail closed instead of falling
+  through as custom channels.
+- Removed impossible Official GitHub Packages live-publication evidence from
+  Node and Ruby GitHub Release acceptance rows and dropped the now-unreferenced
+  gate definition while preserving public registry and GitHub Release evidence.
+- Preserved reusable/profile Buddy-domain regression coverage without restoring
+  retired exact entry names, and clarified active docs as Official-only with
+  post-merge commit-12 live-activation prerequisites.
+
+## [2026-08-15] query | Finalize Workflow Delivery v3 commit 11 locally
+
+- Marked the preserved v2 workflow design as archived and superseded without
+  erasing its historical mechanism record.
+- Closed all topology, evidence, reusable-domain, and documentation findings;
+  the final 28-case retirement contract and 2,916-test managed v3 gate pass.
+- Kept commit 11 uncommitted and performed no post-merge dispatch freeze,
+  workflow disablement, run cancellation, acceptance execution, package
+  mutation, target finalization, or activation.

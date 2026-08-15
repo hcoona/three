@@ -1,5 +1,13 @@
 # GitHub Workflows Design (v2.50)
 
+> **Archived and superseded:** This v2 document is preserved as historical
+> rationale and a mechanism source. Workflow Delivery v3 is active and
+> normative. As of v3 commit 11, `.github/workflows/buddy.yml` and
+> `.github/workflows/release-buddy.yml` are retired with no compatibility
+> route; statements below describing v2 or those workflows as current, target,
+> or active are historical and superseded. See
+> [Workflow Delivery v3](../../../docs/wiki/analyses/workflow-delivery/v3/README.md).
+
 <!-- markdownlint-disable MD013 MD028 MD029 -->
 
 This document describes the target GitHub Actions release design for the `three` monorepo.
@@ -954,18 +962,18 @@ reference material.
 
 ### 5.2 Fields
 
-| Field                 | Type       | Required      | Description                                                                                                                                                                                   |
+| Field | Type | Required | Description |
 | --------------------- | ---------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | ---------------------------- |
-| `schemaVersion`       | `number`   | Yes           | Must be `1`.                                                                                                                                                                                  |
-| `packageIdentity`     | `string`   | Yes           | Exact external package identifier published to the ecosystem.                                                                                                                                 |
-| `packageManifestPath` | `string`   | Yes           | Explicit repo-relative path to the manifest or project file that defines `packageIdentity`; the workflow validates exact identity equivalence from this file before `planDigest` is computed. |
-| `buildKind`           | `string`   | Yes           | Closed set `{csharp-pack, python-package, node-npm, node-wxt, ruby-gem}`.                                                                                                                     |
-| `officialBranchMode`  | `string`   | Yes           | Closed set `{main, release-line}` defining which protected branch shape may authorize official releases.                                                                                      |
-| `releaseLine`         | `string`   | Conditionally | Required when `officialBranchMode = release-line`; forbidden when `officialBranchMode = main`; must match `(0                                                                                 | [1-9][0-9]\*)\.(0 | [1-9][0-9]\*)` when present. |
-| `targets`             | `string[]` | Yes           | Non-empty array of unique publish targets in active `family/instance-id` format. Historical `ecosystem:destination` / colon keys are superseded.                                              |
-| `artifacts`           | `object`   | Yes           | Non-empty artifact catalog keyed by checked-in artifact alias.                                                                                                                                |
-| `targetArtifacts`     | `object`   | Yes           | Exact target-to-artifact routing map.                                                                                                                                                         |
-| `npmAccessHint`       | `string`   | No            | Optional checked-in npm access hint for `node-npm` projects declaring `npm/*`; closed set `{public, restricted}`.                                                                             |
+| `schemaVersion` | `number` | Yes | Must be `1`. |
+| `packageIdentity` | `string` | Yes | Exact external package identifier published to the ecosystem. |
+| `packageManifestPath` | `string` | Yes | Explicit repo-relative path to the manifest or project file that defines `packageIdentity`; the workflow validates exact identity equivalence from this file before `planDigest` is computed. |
+| `buildKind` | `string` | Yes | Closed set `{csharp-pack, python-package, node-npm, node-wxt, ruby-gem}`. |
+| `officialBranchMode` | `string` | Yes | Closed set `{main, release-line}` defining which protected branch shape may authorize official releases. |
+| `releaseLine` | `string` | Conditionally | Required when `officialBranchMode = release-line`; forbidden when `officialBranchMode = main`; must match `(0                                                                                 | [1-9][0-9]\*)\.(0 | [1-9][0-9]\*)` when present. |
+| `targets` | `string[]` | Yes | Non-empty array of unique publish targets in active `family/instance-id` format. Historical `ecosystem:destination` / colon keys are superseded. |
+| `artifacts` | `object` | Yes | Non-empty artifact catalog keyed by checked-in artifact alias. |
+| `targetArtifacts` | `object` | Yes | Exact target-to-artifact routing map. |
+| `npmAccessHint` | `string` | No | Optional checked-in npm access hint for `node-npm` projects declaring `npm/*`; closed set `{public, restricted}`. |
 
 ### 5.3 Validation rules
 

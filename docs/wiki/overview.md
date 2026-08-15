@@ -22,6 +22,11 @@ v1 is the historical `origin/main` baseline. v2 is an archived prototype at
 commit `8824df2a12c78a1f3a851a3c2763bcb9e64f2412`. Neither version is normative
 for new v3 implementation work.
 
+Workflow Delivery v3 commit 11 locally retires the legacy Buddy entry routes:
+`.github/workflows/buddy.yml` and `.github/workflows/release-buddy.yml` are
+removed with no `legacy-buddy.yml`, dispatch, or caller-compatibility route.
+v1 Official and CI remain active; activation remains unauthorized. The active host-specific GitHub Packages instances only inside the npm and RubyGems target families remain unchanged by this retirement; NuGet GitHub Packages is deferred/future vocabulary until a reviewed dotnet/NuGet path restores it.
+
 ## Confirmed v3 Shape
 
 - CI Qualification and Release Delivery are peer bounded contexts.
@@ -169,7 +174,10 @@ for new v3 implementation work.
   former projects are unsupported until migrated, while v1 Official and CI
   assets remain unchanged. Legacy Buddy workflows, Buddy-specific tests and
   matrices, and Buddy docs are excluded from that preservation and are retired
-  or rewritten. No coding or activation is authorized yet.
+  or rewritten. Commit 11 implements the legacy Buddy entry retirement locally:
+  `.github/workflows/buddy.yml` and `.github/workflows/release-buddy.yml` are
+  removed with no `legacy-buddy.yml`, dispatch, or caller-compatibility route;
+  v1 Official and CI remain. Activation remains unauthorized.
 - Repository Model compilation emits authoritative target-bound canonical and
   native NBGV projections after the NBGV Provider remains pinned to the exact
   target and proves complete ancestry and tags through `fetch-depth: 0` or an

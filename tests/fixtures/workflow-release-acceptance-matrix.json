@@ -1619,10 +1619,6 @@
           {
             "type": "test",
             "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_buddy_smoke_projects_plan_github_packages_publish"
           }
         ],
         "execution-set-selectors": [
@@ -1695,10 +1691,6 @@
             "value": "release-workflow-manual-live-run"
           },
           {
-            "type": "live-gate",
-            "value": "buddy-github-packages-live-publication"
-          },
-          {
             "type": "test",
             "value": "tests/test_workflow_release_control.py::test_github_packages_package_404_is_absent_for_supported_families"
           }
@@ -1723,10 +1715,6 @@
           {
             "type": "live-gate",
             "value": "release-workflow-manual-live-run"
-          },
-          {
-            "type": "live-gate",
-            "value": "buddy-github-packages-live-publication"
           }
         ]
       }
@@ -1887,10 +1875,6 @@
           {
             "type": "test",
             "value": "tests/test_workflow_release_control.py::test_matrix_outputs_emit_artifact_names_and_publish_sets"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_buddy_smoke_projects_plan_github_packages_publish"
           }
         ],
         "execution-set-selectors": [
@@ -1959,10 +1943,6 @@
             "value": "release-workflow-manual-live-run"
           },
           {
-            "type": "live-gate",
-            "value": "buddy-github-packages-live-publication"
-          },
-          {
             "type": "test",
             "value": "tests/test_workflow_release_control.py::test_github_packages_package_404_is_absent_for_supported_families"
           }
@@ -1987,10 +1967,6 @@
           {
             "type": "live-gate",
             "value": "release-workflow-manual-live-run"
-          },
-          {
-            "type": "live-gate",
-            "value": "buddy-github-packages-live-publication"
           }
         ]
       }
@@ -3681,275 +3657,6 @@
       }
     },
     {
-      "id": "buddy-to-official-promotion",
-      "scenario": "Buddy to official promotion unsupported fail-closed",
-      "fixture-anchor": "buddy GitHub Release proof mode disabled fixture",
-      "validation-mode": "ci-mocked",
-      "evidence": {
-        "descriptor-or-catalog": [
-          {
-            "type": "path",
-            "value": "src/public/lib/nbgv-python/three.release.yml"
-          },
-          {
-            "type": "path",
-            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
-          }
-        ],
-        "plan": [
-          {
-            "type": "absent-artifact",
-            "value": "release-plan.json"
-          },
-          {
-            "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_buddy_github_release_without_attestations_fails_before_mutation"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_buddy_github_release_only_target_fails_closed_when_deactivated"
-          },
-          {
-            "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
-          }
-        ],
-        "execution-set-selectors": [
-          {
-            "type": "absent-artifact",
-            "value": "execution-sets.json"
-          },
-          {
-            "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_buddy_github_release_without_attestations_fails_before_mutation"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_buddy_github_release_only_target_fails_closed_when_deactivated"
-          },
-          {
-            "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
-          }
-        ],
-        "request-result-or-receipt": [
-          {
-            "type": "absent-artifact",
-            "value": "build-result.json"
-          },
-          {
-            "type": "absent-artifact",
-            "value": "tag-result.json"
-          },
-          {
-            "type": "absent-artifact",
-            "value": "publish-request.json"
-          },
-          {
-            "type": "absent-artifact",
-            "value": "publish-result.json"
-          },
-          {
-            "type": "absent-artifact",
-            "value": "github-release-result.json"
-          },
-          {
-            "type": "absent-artifact",
-            "value": "skip-result.json"
-          },
-          {
-            "type": "absent-artifact",
-            "value": "immutable-proof.json"
-          },
-          {
-            "type": "absent-artifact",
-            "value": "github-release-asset-proof.json"
-          },
-          {
-            "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_buddy_github_release_without_attestations_fails_before_mutation"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_buddy_github_release_only_target_fails_closed_when_deactivated"
-          },
-          {
-            "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
-          }
-        ],
-        "registry-or-readiness": [
-          {
-            "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_buddy_github_release_without_attestations_fails_before_mutation"
-          },
-          {
-            "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
-          }
-        ],
-        "workflow-conclusion": [
-          {
-            "type": "artifact",
-            "value": "release-report.json"
-          },
-          {
-            "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_buddy_github_release_without_attestations_fails_before_mutation"
-          },
-          {
-            "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
-          }
-        ]
-      },
-      "status": "unsupported while buddy GitHub Release attestations are disabled; fail-closed before release mutation"
-    },
-    {
-      "id": "buddy-force-rejected-after-official-freeze",
-      "scenario": "Buddy force rejected after official freeze",
-      "fixture-anchor": "official-freeze fixture",
-      "validation-mode": "ci-mocked",
-      "evidence": {
-        "descriptor-or-catalog": [
-          {
-            "type": "path",
-            "value": "src/public/lib/nbgv-python/three.release.yml"
-          },
-          {
-            "type": "path",
-            "value": "tests/fixtures/workflow-release-acceptance-matrix.json"
-          }
-        ],
-        "plan": [
-          {
-            "type": "artifact",
-            "value": "planner-diagnostics.json"
-          },
-          {
-            "type": "absent-artifact",
-            "value": "release-plan.json"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_buddy_force_official_frozen_version_fails_closed"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_cli_passes_official_frozen_versions"
-          },
-          {
-            "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
-          }
-        ],
-        "execution-set-selectors": [
-          {
-            "type": "absent-artifact",
-            "value": "execution-sets.json"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_buddy_force_official_frozen_version_fails_closed"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_cli_passes_official_frozen_versions"
-          },
-          {
-            "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
-          }
-        ],
-        "request-result-or-receipt": [
-          {
-            "type": "absent-artifact",
-            "value": "build-result.json"
-          },
-          {
-            "type": "absent-artifact",
-            "value": "tag-result.json"
-          },
-          {
-            "type": "absent-artifact",
-            "value": "publish-request.json"
-          },
-          {
-            "type": "absent-artifact",
-            "value": "publish-result.json"
-          },
-          {
-            "type": "absent-artifact",
-            "value": "github-release-result.json"
-          },
-          {
-            "type": "absent-artifact",
-            "value": "skip-result.json"
-          },
-          {
-            "type": "absent-artifact",
-            "value": "immutable-proof.json"
-          },
-          {
-            "type": "absent-artifact",
-            "value": "github-release-asset-proof.json"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_buddy_force_official_frozen_version_fails_closed"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_cli_passes_official_frozen_versions"
-          },
-          {
-            "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
-          }
-        ],
-        "registry-or-readiness": [
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_buddy_force_official_frozen_version_fails_closed"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_cli_passes_official_frozen_versions"
-          },
-          {
-            "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
-          }
-        ],
-        "workflow-conclusion": [
-          {
-            "type": "artifact",
-            "value": "planner-diagnostics.json"
-          },
-          {
-            "type": "artifact",
-            "value": "release-report.json"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_buddy_force_official_frozen_version_fails_closed"
-          },
-          {
-            "type": "test",
-            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_cli_passes_official_frozen_versions"
-          },
-          {
-            "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_fail_closed_acceptance_rows_match_phase_artifact_contracts"
-          },
-          {
-            "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_pre_plan_fail_closed_acceptance_allows_final_report_only"
-          }
-        ]
-      }
-    },
-    {
       "id": "direct-official-publication",
       "scenario": "Official GitHub Release publication",
       "fixture-anchor": "direct official GitHub Release smoke fixture",
@@ -5187,15 +4894,11 @@
     },
     {
       "id": "dispatch-sha-pinning",
-      "scenario": "Dispatch SHA pinning and buddy target authorization",
+      "scenario": "Dispatch SHA pinning",
       "fixture-anchor": "dispatch ref pinning fixture",
       "validation-mode": "ci-mocked",
       "evidence": {
         "descriptor-or-catalog": [
-          {
-            "type": "path",
-            "value": "eng/release/buddy-target-refs.yml"
-          },
           {
             "type": "path",
             "value": "tests/test_workflow_release_control.py"
@@ -5262,14 +4965,6 @@
           },
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_buddy_target_ref_policy_authorizes_default_branch"
-          },
-          {
-            "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_buddy_target_ref_policy_rejects_unsafe_refs"
-          },
-          {
-            "type": "test",
             "value": "tests/test_workflow_release_control.py::test_entry_workflows_pass_dispatch_pinned_sha"
           }
         ],
@@ -5292,10 +4987,6 @@
           },
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_buddy_entry_authorizes_resolved_targets_by_reachability"
-          },
-          {
-            "type": "test",
             "value": "tests/test_workflow_release_control.py::test_entry_workflows_pass_dispatch_pinned_sha"
           }
         ]
@@ -5303,14 +4994,14 @@
     },
     {
       "id": "same-release-cross-entry-release-identity-concurrency-serialization",
-      "scenario": "Same-release cross-entry release-identity concurrency serialization",
+      "scenario": "Same-release entry release-identity concurrency serialization",
       "fixture-anchor": "workflow structure fixture",
       "validation-mode": "ci-structure",
       "evidence": {
         "descriptor-or-catalog": [
           {
             "type": "path",
-            "value": ".github/workflows/buddy.yml"
+            "value": ".github/workflows/official.yml"
           },
           {
             "type": "path",
@@ -5625,15 +5316,7 @@
   "live-gates": {
     "release-workflow-manual-live-run": {
       "owner": "release operator",
-      "evidence": "GitHub Actions run record for buddy.yml or official.yml"
-    },
-    "official-github-packages-live-publication": {
-      "owner": "GitHub Packages registry",
-      "evidence": "registry package/version observation from protected official publication"
-    },
-    "buddy-github-packages-live-publication": {
-      "owner": "GitHub Packages registry",
-      "evidence": "fresh post-commit registry package/version observations from active buddy.yml GitHub Packages package identities; NuGet package identities are deferred until a dotnet/NuGet workflow path exists"
+      "evidence": "GitHub Actions run record for the current official.yml entry workflow"
     },
     "release-environment-required-review": {
       "owner": "GitHub environment release",
@@ -5661,7 +5344,7 @@
     },
     "orchestrate-job-concurrency-group": {
       "owner": "GitHub Actions workflow syntax",
-      "evidence": "buddy.yml and official.yml orchestrate jobs use needs.authorize-entry.outputs.release_group with cancel-in-progress false"
+      "evidence": "official.yml orchestrate job uses needs.authorize-entry.outputs.release_group with cancel-in-progress false"
     },
     "github-actions-manual-cancellation": {
       "owner": "GitHub Actions run state",

@@ -327,8 +327,6 @@ MANDATORY_TEST_NODEIDS = (
     "tests/test_workflow_release_control.py::"
     "test_acceptance_gate_pins_r40_observer_regression",
     "tests/test_workflow_release_control.py::"
-    "test_acceptance_gate_pins_r41_release_completion_and_buddy_regressions",
-    "tests/test_workflow_release_control.py::"
     "test_acceptance_gate_pins_r42_all_skip_completion_receipt_regressions",
     "tests/test_workflow_release_control.py::"
     "test_acceptance_gate_pins_r43_ensure_tag_and_pypi_dependency_regressions",
@@ -394,8 +392,6 @@ MANDATORY_TEST_NODEIDS = (
     "test_ci_validation_release_shaped_preserves_satisfied_supplemental_group",
     "tests/test_workflow_release_control.py::"
     "test_ci_batch_aggregation_propagates_malformed_release_mapping_failure",
-    "src/public/lib/three-workflow-release-planner/tests/test_planner.py::"
-    "test_buddy_mixed_github_release_fails_closed_when_deactivated",
     "src/public/lib/three-workflow-release-planner/tests/test_planner.py::"
     "test_ci_validation_plans_workflow_governance_markdown_as_tooling",
     "src/public/lib/three-workflow-release-contracts/tests/test_contracts.py::"
@@ -510,13 +506,9 @@ MANDATORY_TEST_NODEIDS = (
     "tests/test_workflow_release_control.py::"
     "test_ci_release_pipeline_architecture_detects_active_split_topology",
     "tests/test_workflow_release_control.py::"
-    "test_buddy_entry_is_not_restricted_by_public_release_ref",
-    "tests/test_workflow_release_control.py::"
     "test_entry_authorization_requires_profile_scoped_permissions",
     "tests/test_workflow_release_control.py::"
     "test_entry_workflows_authorize_before_write_capable_orchestration",
-    "tests/test_workflow_release_control.py::"
-    "test_buddy_entry_is_not_restricted_by_public_release_ref",
     "tests/test_workflow_release_control.py::"
     "test_entry_workflows_concurrency_on_canonical_release_identity",
     "tests/test_workflow_release_control.py::"
@@ -539,8 +531,6 @@ MANDATORY_TEST_NODEIDS = (
     "test_release_orchestrate_prepares_plan_artifacts_before_ensure_tag",
     "tests/test_workflow_release_control.py::"
     "test_release_orchestrate_ensures_tags_before_publish_fanout",
-    "tests/test_workflow_release_control.py::"
-    "test_buddy_github_release_deactivation_blocks_publish_handoff",
     "tests/test_workflow_release_control.py::"
     "test_github_release_mixed_same_release_requires_union",
     "tests/test_workflow_release_control.py::"

@@ -5509,3 +5509,231 @@ protected finalization remains pending**.
 This section supersedes all earlier commit-10 expected-red, partial-count, and
 intermediate-validation sections.
 <!-- END APPEND: workflow-delivery-v3-commit10-authoritative-final-2026-08-15 -->
+
+
+## 2026-08-15 Commit 11 Calibration Status Addendum
+
+| Phase | Result |
+|---|---|
+| Contract calibration | Complete |
+| Collect-only | Passed; 25 cases collected from the calibrated contract module. |
+| Narrow pytest | Expected red: 11 passed, 14 failed. Failures are bounded to retained legacy entry files/routes, exact retired acceptance matrix/gate/test inventories, six active docs with exact legacy entry references lacking retirement context, the caller-completeness helper still requiring `buddy.yml`, bootstrap governance still listing `.github/workflows/buddy.yml`, and actionlint still carrying the deleted Buddy path override. |
+| Ruff check | Passed. |
+| Ruff format check | Passed; file already formatted. |
+
+### Calibration requirement mapping
+
+| Requirement | Evidence |
+|---|---|
+| Exact ten Buddy-only v1 tests retired, excluding mixed R41 | `RETIRED_BUDDY_TEST_NAMES`; `test_legacy_v1_buddy_only_and_mixed_test_nodes_are_retired_or_split` |
+| Exact retired acceptance rows and live gate | `RETIRED_ACCEPTANCE_ROW_IDS`, `REMOVED_LIVE_GATE_IDS`; `test_buddy_only_acceptance_rows_nodeids_and_live_gates_are_removed` |
+| Exact matrix/gate retired or mixed Buddy node IDs | `RETIRED_MATRIX_TEST_NODEIDS`, `RETIRED_GATE_TEST_NODEIDS`; matrix/gate inventory tests |
+| Forbid only exact active matrix evidence paths for deleted entries | `FORBIDDEN_ACTIVE_MATRIX_EVIDENCE_PATHS`; active YAML evidence-path traversal |
+| Preserve Official/CI named tests and gate node IDs | `REQUIRED_OFFICIAL_TESTS`, `PRESERVED_GATE_TEST_NODEIDS` assertions |
+| Caller completeness becomes Official-only | executable temp-workflow run in `test_release_orchestrate_caller_completeness_is_official_only` |
+| Bootstrap exact path inventory drops legacy entry paths only | AST assignment parse in `test_bootstrap_governance_exact_paths_drop_only_legacy_buddy_entries` |
+| Acceptance gate drops retired/mixed Buddy node IDs while retaining Official/CI | AST assignment parse in `test_acceptance_gate_drops_buddy_nodes_and_retains_official_ci` |
+| Actionlint drops deleted Buddy path override while retaining active overrides | YAML parse in `test_actionlint_drops_deleted_buddy_override_and_keeps_active` |
+| Active docs only check exact legacy filenames when present | optional exact filename context scan in `test_active_v1_docs_describe_retirement_not_an_active_buddy_route` |
+
+### Validation commands
+
+| Command | Result |
+|---|---|
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest --collect-only -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit11_legacy_buddy_retirement.py` | Passed; 25 tests collected. |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit11_legacy_buddy_retirement.py` | Expected red; 14 failed, 11 passed. |
+| `uv run --python 3.13 ruff check src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit11_legacy_buddy_retirement.py` | Passed. |
+| `uv run --python 3.13 ruff format --check src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit11_legacy_buddy_retirement.py` | Passed. |
+<!-- BEGIN APPEND: commit11-calibration-mixed-node-correction-2026-08-15 -->
+## Commit 11 Calibration Mixed-Node Correction Status
+
+The earlier calibration wording that said to preserve the mixed R41 function
+name is superseded. The final contract requires that exact mixed Buddy node to
+be retired or split while preserving only the separately enumerated
+Official/CI tests and gate node IDs. Validation results follow in the next
+append-only closure.
+<!-- END APPEND: commit11-calibration-mixed-node-correction-2026-08-15 -->
+<!-- BEGIN APPEND: commit11-calibration-final-validation-2026-08-15 -->
+## Commit 11 Calibration Final Validation
+
+| Command | Result |
+|---|---|
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest --collect-only -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit11_legacy_buddy_retirement.py` | Passed; 25 cases collected. |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit11_legacy_buddy_retirement.py` | Expected red; 14 failed, 11 passed. Failures remain bounded to the two live legacy entries/routes, exact retired matrix/gate/test inventories including the mixed R41 name, six active documents, Official-only caller completeness, bootstrap inventory, and actionlint override. |
+| `uv run --python 3.13 ruff check <commit-11-test>` | Passed. |
+| `uv run --python 3.13 ruff format --check <commit-11-test>` | Passed. |
+| `git --no-pager diff --check` | Passed. |
+
+### Final pre-completion gate
+
+- `test-gap-analysis` and `assertion-quality` were invoked. Their mandatory
+  shared `test-analysis-extensions` dependency was unavailable, so the final
+  Python/pytest review was completed inline.
+- Pseudo-mutation review found no surviving in-scope mutation: exact set
+  member removal/addition, retired-row/live-gate/node-ID retention, legacy
+  evidence-path retention, caller dependence on a missing Buddy file,
+  bootstrap/actionlint path retention, topology weakening, HK rename-side
+  omission, and CODEOWNERS final-owner weakening are each observed by a
+  concrete equality, disjointness, execution, parsed-topology, or final-owner
+  assertion.
+- Assertion-depth review found 40 explicit assertions across 14 test
+  functions / 25 collected cases, with no assertion-free function,
+  trivial-only assertion, tautology, or self-referential round trip. The
+  optional document assertion is intentionally conditional because documents
+  that remove exact legacy filenames satisfy the requirement.
+
+### Final requirement correction
+
+| Requirement | Evidence |
+|---|---|
+| Exact ten Buddy-only functions | `RETIRED_BUDDY_TEST_NAMES`; `test_legacy_v1_buddy_only_and_mixed_test_nodes_are_retired_or_split` |
+| Exact mixed R41 node retired/split | `RETIRED_MIXED_BUDDY_TEST_NAMES`; the same test-name inventory contract |
+| Exact retired/mixed matrix and gate node IDs | `RETIRED_MATRIX_TEST_NODEIDS`, checked across all rows; `RETIRED_GATE_TEST_NODEIDS` |
+| Exact retired rows/live gate and active evidence paths | `RETIRED_ACCEPTANCE_ROW_IDS`, `REMOVED_LIVE_GATE_IDS`, and `FORBIDDEN_ACTIVE_MATRIX_EVIDENCE_PATHS` |
+| Official/CI tests and topology preserved | `REQUIRED_OFFICIAL_TESTS`, `PRESERVED_GATE_TEST_NODEIDS`, and `test_official_and_ci_workflows_keep_real_parseable_topology` |
+| Official-only caller completeness | `test_release_orchestrate_caller_completeness_is_official_only` executes without `buddy.yml` |
+| Bootstrap/actionlint exact cleanup | `test_bootstrap_governance_exact_paths_drop_only_legacy_buddy_entries`; `test_actionlint_drops_deleted_buddy_override_and_keeps_active` |
+| Active exact-path documentation retirement | six cases of `test_active_v1_docs_describe_retirement_not_an_active_buddy_route` |
+| Generic/v2/history and v3 Buddy preservation | exact-name/path checks replace blanket Buddy scans; `PRESERVED_V2_FILES`; unchanged route, HK, CODEOWNERS, descriptor, and Official/CI preservation contracts |
+<!-- END APPEND: commit11-calibration-final-validation-2026-08-15 -->
+<!-- BEGIN APPEND: commit11-v3-buddy-preservation-2026-08-15 -->
+## Commit 11 v3 Buddy Preservation Closure
+
+The calibrated preservation inventory now explicitly pins both active v3
+Buddy workflow filenames, their `workflow_dispatch` triggers, and their exact
+job topologies. This ensures the v1 retirement contract cannot erase v3 Buddy
+workflows while still allowing generic and historical Buddy terminology.
+
+| Command | Result |
+|---|---|
+| commit-11 contract collect-only | Passed; 26 cases collected. |
+| narrow commit-11 contract | Expected red; 14 failed and 12 passed. |
+| Ruff check/format and `git diff --check` | Passed. |
+
+| Requirement | Evidence |
+|---|---|
+| Preserve v3 Buddy workflows | `PRESERVED_V3_BUDDY_WORKFLOW_JOBS`; `test_v3_buddy_workflows_keep_their_exact_topology` |
+| Preserve generic/v2/history Buddy material | Exact retired v1 inventories replace blanket token assertions; `PRESERVED_V2_FILES` remains pinned. |
+<!-- END APPEND: commit11-v3-buddy-preservation-2026-08-15 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit11-implementation-status-2026-08-15 -->
+## Workflow Delivery v3 Commit 11 Implementation Status
+
+Implemented locally and intentionally uncommitted until the parent commit.
+
+### Scope evidence
+
+- Deleted exactly `.github/workflows/buddy.yml` and
+  `.github/workflows/release-buddy.yml`; no `legacy-buddy.yml`, dispatch, or
+  caller-compatibility route was added.
+- Updated caller completeness, bootstrap governance inventory, actionlint path
+  overrides, acceptance-gate retired node IDs, the acceptance matrix, active
+  v1 docs, wiki overview/index/log, and v3 handoff.
+- Preserved v1 Official/CI workflows, v2 files, generic profile behavior,
+  descriptors, normal v3 Buddy workflows, acceptance sentinel/attestation, and
+  v3 live-attempt.
+
+### Validation evidence
+
+| Command | Result |
+|---|---|
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit11_legacy_buddy_retirement.py` | Passed: 26 passed in 2.99s. |
+| Targeted workflow-release pytest selection for matrix/gate/docs/Official preservation | Passed: 12 passed in 3.65s. |
+| `uv run --python 3.13 python eng/scripts/workflow_release_acceptance_gate.py` | Blocked by pre-existing unrelated failures: CodeQL action digest mismatch and missing `.pre-commit-config.yaml`; 1247 passed, 2 failed. |
+| Full v3 pytest | Blocked by pre-existing `.testagent` append-only/line-index failures; 2912 passed, 2 failed. |
+| Ruff check and format check on changed Python | Passed; 4 files already formatted. |
+| `mise exec -- actionlint` | Passed. |
+| `bash -n eng/scripts/release_orchestrate_lint_caller_completeness.sh` and `bash eng/scripts/release_orchestrate_lint_caller_completeness.sh` | Passed; caller completeness is Official-only. |
+| `pnpm exec markdownlint-cli2 ...changed docs...` | Passed: 0 issues in 10 files. |
+| `python -m json.tool tests/fixtures/workflow-release-acceptance-matrix.json` | Passed. |
+
+Blockers are outside the commit-11 retirement scope and were not remediated.
+Next operational step remains post-merge commit 12.
+<!-- END APPEND: workflow-delivery-v3-commit11-implementation-status-2026-08-15 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit11-final-diff-check-2026-08-15 -->
+## Workflow Delivery v3 Commit 11 Final Diff Check
+
+- Final commit-11 contracts rerun passed: 26 passed in 2.92s.
+- `git --no-pager diff --check` passed after implementation and status
+  evidence updates.
+<!-- END APPEND: workflow-delivery-v3-commit11-final-diff-check-2026-08-15 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit11-caller-route-closure-2026-08-15 -->
+## Workflow Delivery v3 Commit 11 Caller Route Closure
+
+- Removed the retained `buddy.yml` caller identity mapping and stale npmjs/setup
+  comments from `release-orchestrate.yml`; the reusable caller guard now names
+  only `official.yml` for the reserved Official channel.
+- Rerun validation after this closure:
+  - commit-11 contracts: 26 passed in 4.02s;
+  - route-related workflow tests: 2 passed in 1.24s;
+  - `mise exec -- actionlint`: passed;
+  - `git --no-pager diff --check`: passed.
+<!-- END APPEND: workflow-delivery-v3-commit11-caller-route-closure-2026-08-15 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit11-authoritative-final-2026-08-15 -->
+## Workflow Delivery v3 Commit 11 Authoritative Final Status
+
+- Retired exactly `.github/workflows/buddy.yml` and
+  `.github/workflows/release-buddy.yml` with no direct, renamed, indirect, or
+  allowlisted `channel=buddy` compatibility route.
+- Preserved v1 Official/CI, v2 historical material, all release descriptors,
+  generic Buddy planner-domain invariants, and the normal v3 Buddy workflows.
+- Added an explicit v2 supersession banner, removed impossible Official GPR
+  acceptance evidence, and made active v1 documentation Official-only with all
+  dispatch/live procedures gated behind post-merge commit 12 and separate
+  authorization.
+- The final commit-11 contract contains 28 passing scenarios. The managed v3 HK
+  gate passes 2,916 tests with `GIT_LFS_SKIP_SMUDGE=1`.
+- Root Python passed 4,949 tests before the final documentation-only closure;
+  the directly affected workflow-release and contract tests pass afterward.
+- Pyrefly reports zero errors. Ruff, actionlint, policy self-tests,
+  markdownlint, Prettier, PNPM tests/build, Python package build, .NET build,
+  and `git diff --check` pass.
+- Four original review angles, independent TP/FP adjudication, and repeated
+  follow-up reviews closed with no remaining findings.
+- The repository-wide workflow-release gate still exposes only the unrelated
+  pre-existing CodeQL digest mismatch and missing `.pre-commit-config.yaml`.
+  A direct full-v3 run may also fail when Git LFS attempts to download an
+  unavailable budget-exhausted object; the managed no-smudge gate is green.
+- Commit 11 remains local and uncommitted. No Environment configuration,
+  workflow dispatch, old-run cancellation, package mutation, target-SHA
+  finalization, or activation occurred. The next boundary remains post-merge
+  commit 12.
+<!-- END APPEND: workflow-delivery-v3-commit11-authoritative-final-2026-08-15 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit11-tp-adjudication-closure-2026-08-15 -->
+## Workflow Delivery v3 Commit 11 TP Adjudication Closure
+
+- Closed independently adjudicated TP findings for reserved Buddy caller-route
+  rejection, reserved channel allowlist rejection, impossible Official GPR live
+  gate evidence, preserved Buddy-domain reusable/profile coverage, and active
+  docs wording.
+- Added tests proving direct/renamed Buddy route attempts with
+  `channel_allowlist: buddy` remain rejected, policy validation rejects reserved
+  allowlist entries before Buddy policy selection, Official Node/Ruby GitHub
+  Release rows do not require the removed GPR live gate, Buddy-domain force does
+  not retarget GitHub Release tag mismatches, and reusable Buddy rerun guards
+  still cover orchestrator, ensure-tag, inline publish, and attestation jobs.
+- Validation rerun summary:
+  - targeted commit-11/workflow tests: 35 passed;
+  - policy self-test: passed;
+  - Ruff check/format on changed Python: passed;
+  - Pyrefly project check: passed;
+  - actionlint on `release-orchestrate.yml`: passed;
+  - bash syntax and shellcheck on changed shell scripts: passed;
+  - Biome JSON check on acceptance matrix: passed;
+  - markdownlint and Prettier on changed docs: passed.
+- Remaining known blockers: full acceptance/HK workflow-release gate still fails
+  on pre-existing unrelated CodeQL digest mismatch and missing
+  `.pre-commit-config.yaml`; HK also reports pre-existing shfmt formatting drift
+  in `release_orchestrate_policy_validate_inputs.sh`.
+<!-- END APPEND: workflow-delivery-v3-commit11-tp-adjudication-closure-2026-08-15 -->
+
+<!-- BEGIN APPEND: workflow-delivery-v3-commit11-final-contract-count-2026-08-15 -->
+## Workflow Delivery v3 Commit 11 Final Contract Count
+
+- Direct commit-11 contract rerun after the final closure passed with the
+  updated collection count: 28 passed.
+<!-- END APPEND: workflow-delivery-v3-commit11-final-contract-count-2026-08-15 -->

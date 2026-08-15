@@ -130,7 +130,6 @@ PRE_PLAN_FAIL_CLOSED_IDS = {
     "target-catalog-validation-fails-closed",
     "unknown-requested-project-id-fails-closed",
     "package-registry-profile-coexistence-fail-closed-rule",
-    "buddy-force-rejected-after-official-freeze",
     "external-oidc-topology-blocked",
     "external-target-disabled",
     "invalid-external-oidc-live-enable-allowlist-fails-closed",
@@ -196,10 +195,6 @@ FAIL_CLOSED_ARTIFACT_CONTRACTS = {
             "immutable-proof.json",
             "github-release-asset-proof.json",
         },
-    },
-    "buddy-to-official-promotion": {
-        "allowed": {"release-report.json"},
-        "absent": FORBIDDEN_FAIL_CLOSED_OUTPUTS,
     },
 }
 NO_SIDE_EFFECT_ARTIFACT_CONTRACTS = {
@@ -1067,7 +1062,6 @@ def _has_ci_release_pipeline_architecture() -> bool:
     """Return whether release workflows use CI release v2 jobs."""
     workflows = REPO_ROOT / ".github/workflows"
     expected_workflow_names = {
-        "buddy.yml",
         "official.yml",
         "release-orchestrate.yml",
         "release-resolve.yml",
@@ -1136,7 +1130,7 @@ def _release_workflow_paths() -> list[Path]:
     paths = set(workflows.glob("release-*.yml"))
     paths.update(
         path
-        for name in ("official.yml", "buddy.yml")
+        for name in ("official.yml",)
         if (path := workflows / name).exists()
     )
     return sorted(paths)
@@ -2132,6 +2126,39 @@ def test_superseded_acceptance_rows_do_not_require_live_evidence() -> None:
             ), row["id"]
 
 
+def test_official_node_and_ruby_release_rows_do_not_require_gpr_live_gate() -> (
+    None
+):
+    """Official Node/Ruby GitHub Release evidence must not require GPR live publication."""
+    matrix = _acceptance_matrix()
+    rows = {
+        row["id"]: row
+        for row in cast("list[dict[str, object]]", matrix["rows"])
+    }
+
+    assert "official-github-packages-live-publication" not in cast(
+        "dict[str, object]", matrix["live-gates"]
+    )
+    for row_id in (
+        "node-package-build-and-github-release",
+        "ruby-gem-build-and-github-release",
+    ):
+        referenced_values = {
+            reference["value"]
+            for references in cast(
+                "dict[str, list[dict[str, str]]]",
+                rows[row_id]["evidence"],
+            ).values()
+            for reference in references
+        }
+        assert "official-github-packages-live-publication" not in (
+            referenced_values
+        )
+        assert "release-workflow-manual-live-run" in referenced_values
+        assert "github-release-result.json" in referenced_values
+        assert "github-release-asset-proof.json" in referenced_values
+
+
 def test_superseded_node_publish_workflow_is_deleted() -> None:
     """The deleted Node publish reusable workflow must not remain callable."""
     workflow_path = REPO_ROOT / ".github/workflows/release-publish-node.yml"
@@ -2276,7 +2303,7 @@ def test_acceptance_matrix_uses_github_release_result_receipt() -> None:
         "github-release-asset-content-equivalence",
         "direct-official-publication",
     }
-    github_release_fail_closed_rows = {"buddy-to-official-promotion"}
+    github_release_fail_closed_rows: set[str] = set()
     github_release_no_side_effect_rows = {"github-release-tag-atomicity"}
     package_registry_positive_rows = {
         "first-delivery-pypi-official-publish",
@@ -2671,8 +2698,6 @@ def test_acceptance_gate_pins_group1_r204_gate_only_regressions() -> None:
         "tests/test_workflow_release_control.py::"
         "test_ci_release_pipeline_architecture_detects_active_split_topology",
         "tests/test_workflow_release_control.py::"
-        "test_buddy_entry_is_not_restricted_by_public_release_ref",
-        "tests/test_workflow_release_control.py::"
         "test_entry_authorization_requires_profile_scoped_permissions",
         "tests/test_workflow_release_control.py::"
         "test_entry_workflows_authorize_before_write_capable_orchestration",
@@ -2723,8 +2748,6 @@ def test_acceptance_gate_pins_group1_r204_gate_only_regressions() -> None:
 def test_acceptance_gate_pins_r22_release_reconciliation_regressions() -> None:
     """Focused release acceptance must pin R22 release-reconciliation fixes."""
     required_nodeids = {
-        "tests/test_workflow_release_control.py::"
-        "test_buddy_github_release_deactivation_blocks_publish_handoff",
         "tests/test_workflow_release_control.py::"
         "test_github_release_mixed_same_release_requires_union",
         "tests/test_workflow_release_control.py::"
@@ -3160,28 +3183,6 @@ def test_acceptance_gate_pins_r40_observer_regression() -> None:
     required_nodeids = {
         "tests/test_workflow_release_control.py::"
         "test_observe_remote_publications_mixed_same_release_exact_and_partial",
-    }
-    matrix_nodeids = set().union(
-        _matrix_test_nodeids(_acceptance_matrix()),
-        _matrix_test_nodeids(_ci_acceptance_matrix()),
-    )
-
-    assert required_nodeids <= set(acceptance_gate.MANDATORY_TEST_NODEIDS)
-    assert required_nodeids.isdisjoint(matrix_nodeids), (
-        "gate-only pins must not be duplicated by acceptance matrices",
-        sorted(required_nodeids & matrix_nodeids),
-    )
-
-
-def test_acceptance_gate_pins_r41_release_completion_and_buddy_regressions() -> (
-    None
-):
-    """Focused release acceptance must pin R41 fail-closed regressions."""
-    required_nodeids = {
-        "src/public/lib/three-workflow-release-planner/tests/test_planner.py::"
-        "test_buddy_mixed_github_release_fails_closed_when_deactivated",
-        "tests/test_workflow_release_control.py::"
-        "test_github_release_completion_requires_skip_satisfied_receipt",
     }
     matrix_nodeids = set().union(
         _matrix_test_nodeids(_acceptance_matrix()),
@@ -4754,7 +4755,7 @@ def test_low_level_design_documents_entry_pinned_target_concurrency() -> None:
     """LLD must distinguish entry-pinned targets from reusable selector fallback."""
     low_level = LOW_LEVEL_DESIGN.read_text(encoding="utf-8")
 
-    assert "pass the pinned `release_target_sha`" in low_level
+    assert "passes the pinned `release_target_sha`" in low_level
     assert "Direct reusable callers" in low_level
     assert "delegates to `release-resolve.yml`" in low_level
     assert "`release/${project_id}/v${release_version}`" in (low_level)
@@ -4783,8 +4784,11 @@ def test_release_docs_describe_active_concurrency_contract() -> None:
     assert "optional native duplicate-run cancellation" not in all_docs
     assert "`release/${project_id}/v${release_version}`" in all_docs
     assert "`cancel-in-progress: false`" in all_docs
-    assert "active `buddy` and `official` entry workflows" in boundaries
-    assert "newer pending run from either entry workflow" in boundaries
+    assert "active `official` entry workflow runs" in boundaries
+    assert "newer pending run from the active Official entry workflow" in (
+        boundaries
+    )
+    assert "active `buddy` and `official` entry workflows" not in boundaries
 
 
 def test_design_monitoring_metrics_use_active_concurrency_terms() -> None:
@@ -4866,9 +4870,7 @@ def test_manual_release_project_input_descriptions_match_alias_behavior() -> (
     """Manual release input descriptions should document alias canonicalization."""
     for workflow_name in (
         "official.yml",
-        "buddy.yml",
         "release-official.yml",
-        "release-buddy.yml",
     ):
         workflow = _workflow_yaml(workflow_name)
         workflow_dispatch = cast(
@@ -4891,9 +4893,7 @@ def test_manual_release_target_input_descriptions_match_ref_resolution() -> (
     """Manual release target descriptions should document empty/ref/SHA pinning."""
     for workflow_name in (
         "official.yml",
-        "buddy.yml",
         "release-official.yml",
-        "release-buddy.yml",
     ):
         workflow = _workflow_yaml(workflow_name)
         workflow_dispatch = cast(
@@ -4934,10 +4934,7 @@ def test_release_resolve_project_input_description_matches_alias_behavior() -> (
 
 def test_compatibility_release_stubs_match_active_entry_contract() -> None:
     """Compatibility stubs should expose the same release entry inputs as active workflows."""
-    for stub_name, active_name in (
-        ("release-official.yml", "official.yml"),
-        ("release-buddy.yml", "buddy.yml"),
-    ):
+    for stub_name, active_name in (("release-official.yml", "official.yml"),):
         stub_workflow = _workflow_yaml(stub_name)
         active_workflow = _workflow_yaml(active_name)
         stub_dispatch = cast(
@@ -4965,7 +4962,6 @@ def test_release_stub_workflows_are_documented_as_non_active() -> None:
     ).read_text(encoding="utf-8")
 
     for docs in (design, rollout):
-        assert "release-buddy.yml" in docs
         assert "release-official.yml" in docs
         assert "dispatch-registration stubs" in docs
         assert "fail closed" in docs
@@ -5035,31 +5031,6 @@ def test_gh_api_uses_typed_boolean_fields(
     assert "-F" in command
     assert "sha=deadbeef" in command
     assert "force=true" in command
-
-
-def test_buddy_entry_is_not_restricted_by_public_release_ref(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Buddy dispatch remains allowed from trusted non-public release refs."""
-    try:
-        result, metadata, diagnostics = _authorize_entry(
-            monkeypatch,
-            {
-                "profile": "buddy",
-                "ref": "refs/heads/dev/workflow-canary",
-                "ref_name": "dev/workflow-canary",
-                "ref_type": "branch",
-                "requested_project_ids": "hcoona-release-smoke-pypi",
-                "canary_override_non_public_ref": "false",
-            },
-        )
-
-        assert result == 0
-        assert diagnostics is None
-        assert metadata is not None
-        assert metadata["profile"] == "buddy"
-    finally:
-        shutil.rmtree(SCRATCH, ignore_errors=True)
 
 
 def test_normalize_entry_uses_dispatch_pinned_sha(monkeypatch) -> None:
@@ -8422,13 +8393,15 @@ def test_official_force_github_release_tag_mismatch_observes_for_retarget(
         shutil.rmtree(scratch, ignore_errors=True)
 
 
-def test_buddy_force_github_release_tag_mismatch_stays_conflicting(
+def test_buddy_domain_force_github_release_tag_mismatch_stays_conflicting(
     monkeypatch,
 ) -> None:
-    """Buddy force does not authorize release-tag retarget observation."""
+    """Buddy-domain force does not authorize release-tag retarget observation."""
     plan = deepcopy(_load("release-plan.json"))
+    plan["envelope"]["profile"] = "buddy"
     plan["envelope"]["request-flags"] = {"force": True}
     node = plan["graph"]["publish-nodes"]["publish-node/gh"]
+    node["profile"] = "buddy"
     monkeypatch.setattr(control, "_remote_tag_commit", lambda *_: SHA_B)
 
     assert (
@@ -10993,53 +10966,6 @@ def test_ensure_tags_force_updates_existing_active_tag(monkeypatch) -> None:
         assert result["tags"][0]["outcome"] == "created"
         assert result["tags"][0]["expected-commit-sha"] == commit_sha
         assert result["tags"][0]["peeled-commit-sha"] == commit_sha
-    finally:
-        shutil.rmtree(SCRATCH, ignore_errors=True)
-
-
-def test_ensure_tags_buddy_force_does_not_retarget_existing_active_tag(
-    monkeypatch,
-) -> None:
-    """Buddy force keeps release tags immutable and fails closed on mismatch."""
-    plan = deepcopy(_load("release-plan.json"))
-    commit_sha = str(plan["envelope"]["commit-sha"])
-    assert plan["envelope"]["profile"] == "buddy"
-    execution_sets = deepcopy(_load("execution-sets.json"))
-    execution_sets["selected-github-release-publish-node-ids"] = [
-        "publish-node/gh"
-    ]
-    execution_sets["active-github-release-publish-node-ids"] = [
-        "publish-node/gh"
-    ]
-    gh_calls = []
-    shutil.rmtree(SCRATCH, ignore_errors=True)
-    SCRATCH.mkdir()
-    monkeypatch.setattr(control, "_remote_tag_commit", lambda *_: SHA_C)
-    monkeypatch.setattr(
-        control,
-        "_gh_api",
-        lambda *args, **kwargs: gh_calls.append((args, kwargs)),
-    )
-    try:
-        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
-        (SCRATCH / "execution-sets.json").write_text(
-            json.dumps(execution_sets),
-            encoding="utf-8",
-        )
-
-        with pytest.raises(RuntimeError, match=f"expected {commit_sha}"):
-            control._cmd_ensure_tags(
-                control.argparse.Namespace(
-                    plan=str(SCRATCH / "plan.json"),
-                    execution_sets=str(SCRATCH / "execution-sets.json"),
-                    repository="hcoona/three",
-                    force_update_tag="true",
-                    out=str(SCRATCH / "tag-result.json"),
-                )
-            )
-
-        assert gh_calls == []
-        assert not (SCRATCH / "tag-result.json").exists()
     finally:
         shutil.rmtree(SCRATCH, ignore_errors=True)
 
@@ -15889,68 +15815,6 @@ def test_prepare_release_plan_materializes_official_frozen_versions() -> None:
     assert "--deactivate-buddy-github-release" in finalize_run
 
 
-def test_buddy_github_release_deactivation_blocks_publish_handoff() -> None:
-    """Mixed buddy GitHub Release descriptors fail before registry publish."""
-    orchestrate = _workflow_yaml("release-orchestrate.yml")
-    jobs = cast("dict[str, object]", orchestrate["jobs"])
-    prepare_job = cast("dict[str, object]", jobs["prepare-release-plan"])
-    steps = cast("list[dict[str, object]]", prepare_job["steps"])
-    bootstrap_run = cast(
-        "str",
-        next(
-            step
-            for step in steps
-            if step.get("name") == "Bootstrap release plan"
-        )["run"],
-    )
-    finalize_run = cast(
-        "str",
-        next(
-            step
-            for step in steps
-            if step.get("name") == "Finalize release plan"
-        )["run"],
-    )
-    buddy_guard = next(
-        step
-        for step in steps
-        if step.get("name")
-        == "Fail unsupported buddy GitHub Release proof mode"
-    )
-    handoff_index = next(
-        index
-        for index, step in enumerate(steps)
-        if step.get("name") == "Prepare entry publish handoff"
-    )
-    guard_index = steps.index(buddy_guard)
-
-    for run in (bootstrap_run, finalize_run):
-        assert (
-            'if [[ "${CHANNEL}" == "buddy" && "${ENABLE_ATTESTATION}" != "true" ]]'
-            in run
-        )
-        assert (
-            "buddy_github_release_args=(--deactivate-buddy-github-release)"
-            in run
-        )
-
-    assert buddy_guard["if"] == (
-        "${{ inputs.channel == 'buddy' && !inputs.enable_attestation && "
-        "steps.outputs.outputs.has_active_github_release == 'true' }}"
-    )
-    assert guard_index < handoff_index
-    guard_run = cast("str", buddy_guard["run"])
-    assert "Refusing before release mutation." in guard_run
-    for job_name in (
-        "publish-node-gpr-enabled",
-        "publish-node-npmjs",
-        "publish-ruby-gpr-enabled",
-        "publish-ruby-rubygems",
-    ):
-        job = cast("dict[str, object]", jobs[job_name])
-        assert "prepare-release-plan" in cast("list[str]", job["needs"])
-
-
 def test_ruby_gpr_existing_version_fetches_are_authenticated() -> None:
     """Ruby GitHub Packages idempotency checks must authenticate gem fetch."""
     script = (
@@ -20185,7 +20049,6 @@ def test_orchestrator_npmjs_publish_uses_trusted_publisher_runtime() -> None:
     job = workflow["jobs"]["publish-node-npmjs"]
     steps = job["steps"]
     official = yaml.safe_load(_workflow("official.yml"))
-    buddy = yaml.safe_load(_workflow("buddy.yml"))
 
     setup_index, setup_step = next(
         (index, step)
@@ -20222,19 +20085,12 @@ def test_orchestrator_npmjs_publish_uses_trusted_publisher_runtime() -> None:
     assert "release-orchestrate.yml" in note_run
     assert "Environment (if configured on npm): npmjs" in note_run
     assert "official caller grants id-token: write" in note_run
-    assert "buddy.yml" in note_run
     assert (
         cast("dict[str, object]", official["jobs"]["orchestrate"])[
             "permissions"
         ]["id-token"]
         == "write"
     )
-    buddy_permissions = cast(
-        "dict[str, object]",
-        cast("dict[str, object]", buddy["jobs"]["orchestrate"])["permissions"],
-    )
-    assert buddy_permissions["id-token"] == "write"
-    assert buddy_permissions["attestations"] == "write"
 
 
 def test_npmjs_target_catalog_uses_caller_workflow_oidc_topology() -> None:
@@ -21102,7 +20958,6 @@ def _assert_active_split_topology_does_not_model_nuget_registry_targets() -> (
 
     for workflow_name in (
         "official.yml",
-        "buddy.yml",
         "release-orchestrate.yml",
     ):
         workflow_text = _workflow(workflow_name)
@@ -21255,44 +21110,6 @@ def test_bootstrap_codeowners_validation_fails_closed_for_actionlint_config(
         match=r"\.github/actionlint\.yaml",
     ):
         control._validate_bootstrap_codeowners(tmp_path)
-
-
-def test_buddy_target_ref_policy_authorizes_default_branch() -> None:
-    """Buddy explicit targets must be reachable from checked-in authorized refs."""
-    assert control._buddy_authorized_refs(
-        REPO_ROOT,
-        project_id="hcoona-release-smoke-npm",
-        channel="buddy",
-    ) == ("refs/heads/main",)
-
-
-def test_buddy_target_ref_policy_rejects_unsafe_refs(
-    tmp_path: Path,
-) -> None:
-    """Buddy target policy must reject raw SHAs, tags, and unsafe branches."""
-    policy_path = tmp_path / "eng/release/buddy-target-refs.yml"
-    policy_path.parent.mkdir(parents=True)
-    policy_path.write_text(
-        "api-version: three.release.buddy-target-refs/v1alpha1\n"
-        "kind: buddy-target-ref-policy\n"
-        "channels:\n"
-        "  buddy:\n"
-        "    default:\n"
-        "      refs:\n"
-        "        - refs/tags/release/demo/v1.2.3\n"
-        "    projects: {}\n",
-        encoding="utf-8",
-    )
-
-    with pytest.raises(
-        ValueError,
-        match=r"must be an exact refs/heads/\* ref",
-    ):
-        control._buddy_authorized_refs(
-            tmp_path,
-            project_id="hcoona-release-smoke-npm",
-            channel="buddy",
-        )
 
 
 def test_ci_validation_workflow_exposes_control_plane_boundaries() -> None:
@@ -29437,28 +29254,15 @@ def test_release_workflow_uv_setup_precedes_uv_run() -> None:
 
 def test_entry_workflows_pass_dispatch_pinned_sha() -> None:
     """Manual entry helpers receive github.sha for immutable run pinning."""
-    for workflow_name in ("official.yml", "buddy.yml"):
+    for workflow_name in ("official.yml",):
         workflow = _workflow(workflow_name)
         normalize_block = _step_block(workflow, "Authorize and pin release ref")
         assert "RELEASE_PINNED_SHA: ${{ github.sha }}" in normalize_block
         assert '--pinned-sha "$RELEASE_PINNED_SHA" \\' in normalize_block
 
 
-def test_buddy_reusable_orchestrate_call_grants_publish_upper_bound() -> None:
-    """buddy.yml must grant the upper-bound permissions release-orchestrate may need."""
-    workflow = _workflow_yaml("buddy.yml")
-    orchestrate = cast("dict[str, object]", workflow["jobs"]["orchestrate"])
-    assert orchestrate["permissions"] == {
-        "contents": "write",
-        "actions": "read",
-        "packages": "write",
-        "id-token": "write",
-        "attestations": "write",
-    }
-
-
 def test_release_orchestrate_guards_reusable_caller_identity() -> None:
-    """Reusable orchestrator must authenticate official/buddy caller workflow identity."""
+    """Reusable orchestrator authenticates the active Official caller identity."""
     workflow = _workflow_yaml("release-orchestrate.yml")
     jobs = cast("dict[str, object]", workflow["jobs"])
     guard = cast("dict[str, object]", jobs["guard-caller-identity"])
@@ -29478,11 +29282,20 @@ def test_release_orchestrate_guards_reusable_caller_identity() -> None:
     assert "ACTIONS_ID_TOKEN_REQUEST_URL" in run_script
     assert "three-release-orchestrate-caller" in run_script
     assert '"official": ".github/workflows/official.yml"' in run_script
-    assert '"buddy": ".github/workflows/buddy.yml"' in run_script
     assert "job_workflow_ref" in run_script
     assert "workflow_ref" in run_script
     assert "channel_allowlist" in run_script
+    assert "reserved_allowlist_entries" in run_script
+    assert "Reserved channel names cannot appear in channel_allowlist" in (
+        run_script
+    )
     assert "Channel {channel!r} must be called only by" in run_script
+    assert '"buddy": ".github/workflows/buddy.yml"' not in run_script
+    assert 'if channel == "buddy":' in run_script
+    assert "Legacy Buddy entry route is retired" in run_script
+    assert run_script.index('if channel == "buddy":') < run_script.index(
+        "entry_workflow = entry_workflows.get(channel)"
+    )
     assert policy["needs"] == [
         "reject-buddy-reruns",
         "guard-caller-identity",
@@ -29491,7 +29304,7 @@ def test_release_orchestrate_guards_reusable_caller_identity() -> None:
 
 def test_entry_workflows_bare_branch_targets_use_origin_tracking_refs() -> None:
     """Manual dispatch branch targets should resolve via fetched origin refs."""
-    for workflow_name in ("official.yml", "buddy.yml"):
+    for workflow_name in ("official.yml",):
         workflow = _workflow(workflow_name)
         identity_block = _step_block(
             workflow, "Resolve canonical release identity"
@@ -29515,36 +29328,9 @@ def test_entry_workflows_bare_branch_targets_use_origin_tracking_refs() -> None:
         ), workflow_name
 
 
-def test_buddy_entry_authorizes_resolved_targets_by_reachability() -> None:
-    """Buddy targets, including empty/default dispatch targets, need reachability."""
-    workflow = _workflow("buddy.yml")
-    workflow_doc = yaml.safe_load(workflow)
-    target_description = workflow_doc[True]["workflow_dispatch"]["inputs"][
-        "target"
-    ]["description"]
-    identity_block = _step_block(workflow, "Resolve canonical release identity")
-    identity_run = identity_block.split("        run: |\n", 1)[1]
-
-    assert "checked-in buddy-authorized ref" in target_description
-    assert "buddy-authorized-refs" in identity_run
-    assert "--channel buddy" in identity_run
-    assert "mapfile -t buddy_authorized_refs" in identity_run
-    assert "fetch_buddy_authorized_refs" in identity_run
-    assert "git merge-base --is-ancestor" in identity_run
-    assert 'if [[ -z "${release_target_input}" ]]' in identity_run
-    assert 'release_target_input="${RELEASE_PINNED_SHA}"' in identity_run
-    assert (
-        'assert_buddy_target_authorized "${release_target_input}" "${release_target}"'
-        in identity_run
-    )
-    assert 'if [[ -z "${target_label}" ]]' not in identity_run
-    assert "No buddy authorized refs are configured" in identity_run
-    assert "which is not reachable from an authorized buddy ref" in identity_run
-
-
 def test_entry_workflows_tag_targets_fetch_local_tags_and_pin_commits() -> None:
     """Manual dispatch tag targets should fetch local tag refs before pinning."""
-    for workflow_name in ("official.yml", "buddy.yml"):
+    for workflow_name in ("official.yml",):
         workflow = _workflow(workflow_name)
         identity_block = _step_block(
             workflow, "Resolve canonical release identity"
@@ -29585,7 +29371,6 @@ def test_entry_workflows_authorize_before_write_capable_orchestration() -> None:
     """Entry authorization must gate the release orchestrator call."""
     for workflow_name, profile, required in (
         ("official.yml", "official", "maintain"),
-        ("buddy.yml", "buddy", "write"),
     ):
         workflow = yaml.safe_load(_workflow(workflow_name))
         jobs = workflow["jobs"]
@@ -29605,124 +29390,24 @@ def test_entry_workflows_authorize_before_write_capable_orchestration() -> None:
             "RELEASE_ACTOR: ${{ github.triggering_actor }}" in normalize_block
         )
 
-        if workflow_name == "official.yml":
-            assert "reject-reruns" not in jobs
-            assert "if" not in authorize, workflow_name
-            assert "if" not in orchestrate, workflow_name
-            assert "github.run_attempt == 1" not in yaml.safe_dump(
-                {"authorize-entry": authorize, "orchestrate": orchestrate},
-                sort_keys=True,
-            )
-            report = jobs["report"]
-            assert report["needs"] == "authorize-entry", workflow_name
-            assert report["if"] == (
-                "${{ always() && needs.authorize-entry.result != 'success' }}"
-            ), workflow_name
-        else:
-            assert "if" not in authorize, workflow_name
-            assert "if" not in orchestrate, workflow_name
+        assert "reject-reruns" not in jobs
+        assert "if" not in authorize, workflow_name
+        assert "if" not in orchestrate, workflow_name
+        assert "github.run_attempt == 1" not in yaml.safe_dump(
+            {"authorize-entry": authorize, "orchestrate": orchestrate},
+            sort_keys=True,
+        )
+        report = jobs["report"]
+        assert report["needs"] == "authorize-entry", workflow_name
+        assert report["if"] == (
+            "${{ always() && needs.authorize-entry.result != 'success' }}"
+        ), workflow_name
 
 
-def test_buddy_workflow_rejects_rerun_attempts_before_authorization() -> None:
-    """Buddy reruns must fail in rerunnable entry and orchestrator paths."""
-    workflow = _workflow_yaml("buddy.yml")
-    jobs = cast("dict[str, object]", workflow["jobs"])
-    guard_job = cast("dict[str, object]", jobs["reject-reruns"])
-    authorize_job = cast("dict[str, object]", jobs["authorize-entry"])
-    orchestrate_job = cast("dict[str, object]", jobs["orchestrate"])
-    steps = cast("list[dict[str, object]]", guard_job["steps"])
-
-    assert guard_job["runs-on"] == "ubuntu-latest"
-    assert guard_job["permissions"] == {}
-    assert [step["name"] for step in steps] == ["Fail rerun attempts"]
-    assert steps[0]["env"]["RUN_ATTEMPT"] == "${{ github.run_attempt }}"
-    run_script = cast("str", steps[0]["run"])
-    assert 'if [[ "${RUN_ATTEMPT}" != "1" ]]' in run_script
-    assert "single-attempt only" in run_script
-    assert "if" not in authorize_job
-    assert "if" not in orchestrate_job
-    assert authorize_job["needs"] == "reject-reruns"
-    authorize_steps = cast("list[dict[str, object]]", authorize_job["steps"])
-    authorize_guard = authorize_steps[0]
-    assert authorize_guard["name"] == "Fail rerun attempts"
-    assert authorize_guard["env"]["RUN_ATTEMPT"] == "${{ github.run_attempt }}"
-    assert 'if [[ "${RUN_ATTEMPT}" != "1" ]]' in cast(
-        "str", authorize_guard["run"]
-    )
-
+def test_reusable_buddy_rerun_guards_remain_fail_closed() -> None:
+    """Reusable Buddy-domain guards stay enforced without a legacy entry route."""
     orchestrate_workflow = _workflow_yaml("release-orchestrate.yml")
     orchestrate_jobs = cast("dict[str, object]", orchestrate_workflow["jobs"])
-    reusable_guard = cast(
-        "dict[str, object]", orchestrate_jobs["reject-buddy-reruns"]
-    )
-    reusable_steps = cast("list[dict[str, object]]", reusable_guard["steps"])
-    reusable_step = reusable_steps[0]
-    assert reusable_guard["permissions"] == {}
-    assert reusable_step["env"]["CHANNEL"] == "${{ inputs.channel }}"
-    assert reusable_step["env"]["RUN_ATTEMPT"] == "${{ github.run_attempt }}"
-    assert (
-        'if [[ "${CHANNEL}" == "buddy" && "${RUN_ATTEMPT}" != "1" ]]'
-        in cast("str", reusable_step["run"])
-    )
-    assert cast("dict[str, object]", orchestrate_jobs["policy"])["needs"] == [
-        "reject-buddy-reruns",
-        "guard-caller-identity",
-    ]
-    ensure_tag = cast("dict[str, object]", orchestrate_jobs["ensure-tag"])
-    ensure_needs = cast("list[str]", ensure_tag["needs"])
-    assert "reject-buddy-reruns" in ensure_needs
-    ensure_if = cast("str", ensure_tag["if"])
-    assert (
-        "!(inputs.channel == 'buddy' && github.run_attempt != 1)" in ensure_if
-    )
-    assert "needs.reject-buddy-reruns.result == 'success'" in ensure_if
-    ensure_verifier = cast(
-        "dict[str, object]",
-        orchestrate_jobs["verify-ensure-tag-buddy-rerun-rejection"],
-    )
-    assert "environment" not in ensure_verifier
-    assert ensure_verifier["permissions"] == {}
-    assert ensure_verifier["needs"] == [
-        "reject-buddy-reruns",
-        "ensure-tag",
-    ]
-    assert ensure_verifier["if"] == (
-        "${{ always() && inputs.channel == 'buddy' && github.run_attempt != 1 }}"
-    )
-    ensure_verifier_steps = cast(
-        "list[dict[str, object]]", ensure_verifier["steps"]
-    )
-    assert ensure_verifier_steps[0]["name"] == "Fail buddy rerun attempts"
-    assert "protected environments" in cast(
-        "str", ensure_verifier_steps[0]["run"]
-    )
-
-    guarded_inline_jobs = (
-        "ensure-tag",
-        "attest-dotnet-enabled",
-        "publish-python",
-        "attest-python-enabled",
-        "attest-wxt-enabled",
-        "gate-node-publish-npmjs",
-        "publish-node-gpr-enabled",
-        "publish-node-npmjs",
-        "attest-node-enabled",
-        "publish-ruby-gpr-enabled",
-        "publish-ruby-rubygems",
-        "attest-ruby-enabled",
-    )
-    for job_name in guarded_inline_jobs:
-        job = cast("dict[str, object]", orchestrate_jobs[job_name])
-        first_step = cast("list[dict[str, object]]", job["steps"])[0]
-        assert first_step["name"] == "Fail buddy rerun attempts", job_name
-        assert first_step["env"]["CHANNEL"] == "${{ inputs.channel }}", job_name
-        assert (
-            first_step["env"]["RUN_ATTEMPT"] == "${{ github.run_attempt }}"
-        ), job_name
-        assert (
-            'if [[ "${CHANNEL}" == "buddy" && "${RUN_ATTEMPT}" != "1" ]]'
-            in cast("str", first_step["run"])
-        ), job_name
 
     release_jobs = {
         job_name: cast("dict[str, object]", job)
@@ -29837,10 +29522,37 @@ def test_buddy_workflow_rejects_rerun_attempts_before_authorization() -> None:
         "${{ always() && inputs.channel == 'buddy' && github.run_attempt != 1 }}"
     )
 
+    guarded_inline_jobs = (
+        "ensure-tag",
+        "attest-dotnet-enabled",
+        "publish-python",
+        "attest-python-enabled",
+        "attest-wxt-enabled",
+        "gate-node-publish-npmjs",
+        "publish-node-gpr-enabled",
+        "publish-node-npmjs",
+        "attest-node-enabled",
+        "publish-ruby-gpr-enabled",
+        "publish-ruby-rubygems",
+        "attest-ruby-enabled",
+    )
+    for job_name in guarded_inline_jobs:
+        job = cast("dict[str, object]", orchestrate_jobs[job_name])
+        first_step = cast("list[dict[str, object]]", job["steps"])[0]
+        assert first_step["name"] == "Fail buddy rerun attempts", job_name
+        assert first_step["env"]["CHANNEL"] == "${{ inputs.channel }}", job_name
+        assert first_step["env"]["RUN_ATTEMPT"] == (
+            "${{ github.run_attempt }}"
+        ), job_name
+        assert (
+            'if [[ "${CHANNEL}" == "buddy" && "${RUN_ATTEMPT}" != "1" ]]'
+            in cast("str", first_step["run"])
+        ), job_name
+
 
 def test_entry_authorization_uses_env_for_context_and_dispatch_values() -> None:
     """Pre-authorization shell scripts must not interpolate expressions."""
-    for workflow_name in ("official.yml", "buddy.yml"):
+    for workflow_name in ("official.yml",):
         workflow = _workflow(workflow_name)
         normalize_block = _step_block(workflow, "Authorize and pin release ref")
         run_script = normalize_block.split("        run: |\n", 1)[1]
@@ -29864,32 +29576,16 @@ def test_entry_authorization_uses_env_for_context_and_dispatch_values() -> None:
                 assert env_line not in normalize_block
             else:
                 assert env_line in normalize_block
-        if workflow_name == "buddy.yml":
-            assert (
-                "RELEASE_FORCE: ${{ inputs.force_update_tag }}"
-                in normalize_block
-            )
-            assert (
-                "RELEASE_REQUESTED_PROJECT_IDS: ${{ inputs.project }}"
-                in normalize_block
-            )
-            assert '--force "$RELEASE_FORCE" \\' in run_script
-            assert (
-                "RELEASE_CANARY_OVERRIDE_NON_PUBLIC_REF" not in normalize_block
-            )
-        else:
-            assert (
-                "RELEASE_FORCE: ${{ inputs.force_update_tag || false }}"
-                in normalize_block
-            )
-            assert (
-                "RELEASE_INPUT_PROJECT: ${{ inputs.project || '' }}"
-                in normalize_block
-            )
-            assert (
-                'requested_project_ids="${RELEASE_INPUT_PROJECT}"' in run_script
-            )
-            assert 'tag_remainder="${RELEASE_REF_NAME#release/}"' in run_script
+        assert (
+            "RELEASE_FORCE: ${{ inputs.force_update_tag || false }}"
+            in normalize_block
+        )
+        assert (
+            "RELEASE_INPUT_PROJECT: ${{ inputs.project || '' }}"
+            in normalize_block
+        )
+        assert 'requested_project_ids="${RELEASE_INPUT_PROJECT}"' in run_script
+        assert 'tag_remainder="${RELEASE_REF_NAME#release/}"' in run_script
         assert "--requested-project-ids " in run_script
         assert '--dry-run "$RELEASE_DRY_RUN" \\' in run_script
         assert '--validation-build "$RELEASE_VALIDATION_BUILD" \\' in run_script
@@ -29900,7 +29596,7 @@ def test_entry_authorization_uses_env_for_context_and_dispatch_values() -> None:
 
 def test_entry_workflows_upload_hidden_planner_diagnostics_artifact() -> None:
     """Entry workflows upload hidden diagnostics artifacts from the release dir."""
-    for workflow_name in ("official.yml", "buddy.yml"):
+    for workflow_name in ("official.yml",):
         workflow = yaml.safe_load(_workflow(workflow_name))
         upload_step = next(
             step
@@ -29945,7 +29641,7 @@ def test_release_shell_steps_use_env_for_workflow_inputs_and_vars() -> None:
 
 def test_entry_workflows_concurrency_on_canonical_release_identity() -> None:
     """Entry workflow concurrency keys should serialize one release identity."""
-    for workflow_name in ("official.yml", "buddy.yml"):
+    for workflow_name in ("official.yml",):
         workflow = _workflow_yaml(workflow_name)
         assert "concurrency" not in workflow, workflow_name
 
@@ -30065,7 +29761,7 @@ def test_github_release_workflow_serializes_by_release_tag() -> None:
 
 def test_release_workflows_generate_final_release_reports() -> None:
     """Final release report jobs should invoke and upload release-report.json."""
-    for workflow_name in ("official.yml", "buddy.yml"):
+    for workflow_name in ("official.yml",):
         workflow = _workflow_yaml(workflow_name)
         report_job = workflow["jobs"]["report"]
         steps = cast("list[dict[str, object]]", report_job["steps"])
@@ -30931,84 +30627,6 @@ def test_release_create_finalization_requires_live_coverage_only_sidecars() -> (
         < current_proof_call_index
         < finalize_run.index('> "${RESULT_JSON}"')
     )
-
-
-def test_buddy_github_release_without_attestations_fails_before_mutation() -> (
-    None
-):
-    """Buddy GitHub Release paths fail before mutation while proofs need attestations."""
-    orchestrate = _workflow_yaml("release-orchestrate.yml")
-    prepare_steps = cast(
-        "list[dict[str, object]]",
-        orchestrate["jobs"]["prepare-release-plan"]["steps"],
-    )
-    prepare_names = [cast("str", step["name"]) for step in prepare_steps]
-    compute_index = prepare_names.index("Compute release plan outputs")
-    guard_index = prepare_names.index(
-        "Fail unsupported buddy GitHub Release proof mode"
-    )
-    handoff_index = prepare_names.index("Prepare entry publish handoff")
-    guard_step = prepare_steps[guard_index]
-
-    assert compute_index < guard_index < handoff_index
-    assert guard_step["if"] == (
-        "${{ inputs.channel == 'buddy' && !inputs.enable_attestation && "
-        "steps.outputs.outputs.has_active_github_release == 'true' }}"
-    )
-    guard_run = cast("str", guard_step["run"])
-    assert (
-        "GitHub Release asset proof generation requires verified GitHub attestations"
-        in guard_run
-    )
-    assert "Refusing before release mutation" in guard_run
-
-    release_callers = [
-        job
-        for job in cast("dict[str, object]", orchestrate["jobs"]).values()
-        if isinstance(job, dict)
-        and job.get("uses")
-        == "./.github/workflows/release-create-github-release.yml"
-    ]
-    assert release_callers
-    for release_caller in release_callers:
-        caller_with = cast("dict[str, object]", release_caller["with"])
-        assert caller_with["enable_attestation"] == (
-            "${{ inputs.enable_attestation }}"
-        )
-
-    create_workflow = _workflow_yaml("release-create-github-release.yml")
-    create_steps = cast(
-        "list[dict[str, object]]",
-        create_workflow["jobs"]["create-release"]["steps"],
-    )
-    create_names = [cast("str", step["name"]) for step in create_steps]
-    create_guard_index = create_names.index(
-        "Fail unsupported buddy GitHub Release proof mode"
-    )
-    mutation_index = create_names.index(
-        "Create or update tag + release + assets"
-    )
-    create_guard = create_steps[create_guard_index]
-
-    assert create_guard_index < mutation_index
-    create_on = cast(
-        "dict[str, object]",
-        create_workflow.get("on", create_workflow.get(True, {})),
-    )
-    create_inputs = cast(
-        "dict[str, dict[str, object]]",
-        cast("dict[str, object]", create_on["workflow_call"])["inputs"],
-    )
-    assert create_inputs["enable_attestation"]["type"] == "boolean"
-    assert create_guard["if"] == (
-        "${{ inputs.channel == 'buddy' && !inputs.enable_attestation }}"
-    )
-    create_guard_run = cast("str", create_guard["run"])
-    assert (
-        "GitHub Release asset proof generation requires verified GitHub attestations"
-        in create_guard_run
-    )
-    assert "Refusing before release mutation" in create_guard_run
 
 
 def test_release_create_workflow_runs_control_from_trusted_checkout() -> None:

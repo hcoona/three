@@ -15,6 +15,23 @@ repository settings, GitHub environments, package registry trusted publishers,
 and package ownership records. The workflows and planner must not create or
 repair those external settings automatically.
 
+Current supersession note: Workflow Delivery v3 commit 11 retires the legacy
+v1 Buddy entry files `.github/workflows/buddy.yml` and
+`.github/workflows/release-buddy.yml` with no `legacy-buddy.yml`, dispatch, or
+caller-compatibility route. This runbook now treats `official.yml` and `ci.yml`
+as the retained v1 entry surfaces; historical Buddy notes are not active
+operator instructions.
+
+Strong activation prerequisite: every dispatch, manual, and live procedure in
+this runbook is post-merge commit-12 guidance only. Do not execute these
+procedures from the uncommitted commit-11 working tree, from an old workflow ref,
+or before commit 12 has explicitly frozen the target workflows, disabled
+unreviewed live activation, drained pending legacy attempts, and proved old-ref
+Buddy rejection. Local and CI gates are necessary evidence for readiness, but
+they are insufficient to authorize live activation by themselves; a separate
+explicit maintainer authorization is still required, and live activation remains
+disabled pending acceptance.
+
 ## External References Consulted
 
 The rollout guidance below is grounded in these external documents:
@@ -47,7 +64,7 @@ Complete these checks before enabling any official live publication path.
 ### GitHub Repository and Environment
 
 - The checked-in workflow filenames for the active split topology are present and
-  unchanged: `.github/workflows/buddy.yml`, `.github/workflows/official.yml`,
+  unchanged: `.github/workflows/official.yml`,
   `.github/workflows/release-orchestrate.yml`,
   `.github/workflows/release-resolve.yml`,
   `.github/workflows/release-build-python.yml`,
@@ -60,12 +77,11 @@ Complete these checks before enabling any official live publication path.
   `.github/workflows/release-build-variant.yml` and
   `.github/workflows/release-publish-node.yml` paths are superseded and are not
   rollout prerequisites.
-- `.github/workflows/release-buddy.yml` and
-  `.github/workflows/release-official.yml` are compatibility /
-  dispatch-registration stubs only. They intentionally remain manually
-  dispatchable, fail closed, and direct operators to `buddy.yml` or
-  `official.yml`; do not configure registry trusted publishers, environments, or
-  runbook entry steps against those stub filenames.
+- `.github/workflows/release-official.yml` remains one of the compatibility /
+  dispatch-registration stubs, but only as the retained Official stub. The legacy `.github/workflows/release-buddy.yml`
+  stub and `.github/workflows/buddy.yml` entry are retired, removed, and have no
+  compatibility route. Do not configure registry trusted publishers,
+  environments, or runbook entry steps against retired Buddy filenames.
 - The GitHub approval environments used by official release orchestration exist
   before official live side-effect testing.
 - Active release environments (`github-release`, `pypi`, `npmjs-gate`, `npmjs`,
@@ -118,20 +134,21 @@ registry validates for the token-minting job. For npmjs `workflow_call`, that is
 the direct caller workflow rather than the reusable workflow that runs
 `npm publish`.
 
-| Surface         | Required owner-side setup before live testing                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PyPI            | For each enabled project, configure a PyPI trusted publisher for owner `hcoona`, repository `three`, workflow filename `release-orchestrate.yml`, and environment `pypi`. Do not configure `official.yml`, `release-build-variant.yml`, or `release-publish-node.yml` for PyPI in the active split topology.                                                                                                                                                                                                                       |
-| npmjs           | For each enabled official package, configure a trusted publisher for owner `hcoona`, repository `three`, workflow filename `official.yml`, and environment `npmjs`. Confirm the package can use the npm CLI and Node.js versions required by npm trusted publishing. The reusable `publish-node-npmjs` job still runs `npm publish`, but npm validates the direct caller workflow for `workflow_call`; if buddy live npmjs publishing is enabled later, add a separate `buddy.yml` trusted publisher and caller `id-token: write`. |
-| RubyGems.org    | For each enabled gem, configure trusted publishing for repository `hcoona/three`, workflow filename `release-orchestrate.yml`, and environment `rubygems`, using same-repository workflow settings. Do not require the deleted `release-publish-node.yml` path.                                                                                                                                                                                                                                                                    |
-| NuGet.org       | Deferred/unavailable in the active catalog. `families.nuget.instances: []` means no smoke or real package may publish `nuget/nuget-org` until a reviewed dotnet/NuGet workflow path, target catalog instances, token-minting identity, and NuGet.org trusted-publishing setup are re-enabled. Keep real package NuGet.org publication such as `hjg-pngcs` disabled until that package path is explicitly brought into scope.                                                                                                       |
-| GitHub Release  | No external trusted publisher exists. Pre-create and protect the active `github-release` environment for enabled `github-release/public` targets, and verify `contents: write` on the live GitHub Release mutation job only; keep attestation `attestations: write` / `id-token: write` guidance scoped to separate attestation jobs.                                                                                                                                                                                              |
-| GitHub Packages | No external trusted publisher exists. Verify package ownership and `packages: write` only on live mutation jobs.                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Surface         | Required owner-side setup before live testing                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PyPI            | For each enabled project, configure a PyPI trusted publisher for owner `hcoona`, repository `three`, workflow filename `release-orchestrate.yml`, and environment `pypi`. Do not configure `official.yml`, `release-build-variant.yml`, or `release-publish-node.yml` for PyPI in the active split topology.                                                                                                                                                                             |
+| npmjs           | For each enabled official package, configure a trusted publisher for owner `hcoona`, repository `three`, workflow filename `official.yml`, and environment `npmjs`. Confirm the package can use the npm CLI and Node.js versions required by npm trusted publishing. The reusable `publish-node-npmjs` job still runs `npm publish`, but npm validates the direct caller workflow for `workflow_call`; retired legacy `buddy.yml` must not be configured as a current trusted publisher. |
+| RubyGems.org    | For each enabled gem, configure trusted publishing for repository `hcoona/three`, workflow filename `release-orchestrate.yml`, and environment `rubygems`, using same-repository workflow settings. Do not require the deleted `release-publish-node.yml` path.                                                                                                                                                                                                                          |
+| NuGet.org       | Deferred/unavailable in the active catalog. `families.nuget.instances: []` means no smoke or real package may publish `nuget/nuget-org` until a reviewed dotnet/NuGet workflow path, target catalog instances, token-minting identity, and NuGet.org trusted-publishing setup are re-enabled. Keep real package NuGet.org publication such as `hjg-pngcs` disabled until that package path is explicitly brought into scope.                                                             |
+| GitHub Release  | No external trusted publisher exists. Pre-create and protect the active `github-release` environment for enabled `github-release/public` targets, and verify `contents: write` on the live GitHub Release mutation job only; keep attestation `attestations: write` / `id-token: write` guidance scoped to separate attestation jobs.                                                                                                                                                    |
+| GitHub Packages | No external trusted publisher exists. Verify package ownership and `packages: write` only on live mutation jobs.                                                                                                                                                                                                                                                                                                                                                                         |
 
 ## Local and CI Gate Criteria Before Live Testing
 
-Do not start actual live/manual external testing until all local implementation
-gates and the final global overview checks have passed. The minimum current gate
-is:
+Do not start actual live/manual external testing until commit 12 has merged,
+freeze/disable/drain/old-ref rejection evidence is complete, separate explicit
+maintainer authorization has been granted, and all local implementation gates
+and final global overview checks have passed. The minimum current gate is:
 
 1. `uv run python eng/scripts/workflow_release_acceptance_gate.py`
 2. Relevant HK or direct lint checks for changed files, especially markdown and
@@ -142,7 +159,10 @@ is:
 Treat the Group 9 acceptance gate as the focused `workflow-release` regression
 suite. The HK step `workflow-release-control-tests` runs that gate when release
 workflow, descriptor, control-script, workflow-release package, matrix, or
-control-test files are touched.
+control-test files are touched. Passing local, HK, and CI gates is necessary but
+not sufficient for live activation; keep live paths disabled until the
+post-merge commit-12 acceptance and explicit authorization steps above are
+complete.
 
 ### Deferred Official PyPI Full-Success Acceptance
 
@@ -278,20 +298,24 @@ Use the first failing stage to choose the next action.
 
 ## When Actual Testing Should Begin
 
-Actual live/manual external testing should begin only after Group 10 changes pass
-local validation, the focused workflow-release acceptance gate, any relevant HK
-checks, and the final global overview checks. At that point, perform the manual
-repository and registry configuration review, confirm mock/local and CI
-acceptance are already green, then proceed through the staged validation order
-above. The active workflows do not expose dry-run or validation-build dispatch
-inputs.
+Actual live/manual external testing should begin only after the commit-12
+post-merge freeze/disable/drain/old-ref-rejection package is complete, Group 10
+changes pass local validation, the focused workflow-release acceptance gate, any
+relevant HK checks, and the final global overview checks. At that point, obtain
+separate explicit maintainer authorization, perform the manual repository and
+registry configuration review, confirm mock/local and CI acceptance are already
+green, and only then proceed through the staged validation order above. The
+active workflows do not expose dry-run or validation-build dispatch inputs, and
+live activation remains disabled pending that acceptance.
 
-In short: begin live testing after implementation and documentation are green in
-local and CI gates, after final overview checks, and after the active registry
-environments plus registry trusted-publisher settings are manually in place. The
-first live run should be narrow and low-blast-radius: one selected project, one
-target class, and one explicitly enabled external OIDC token only when that stage
-is reached. Live side effects are not assumed reversible; after
+In short: begin live testing only after the post-merge commit-12 freeze,
+disable, drain, old-ref rejection, acceptance, and explicit authorization steps;
+implementation and documentation being green in local and CI gates is required
+but insufficient. The active registry environments plus registry
+trusted-publisher settings must also be manually in place. The first live run
+should be narrow and low-blast-radius: one selected project, one target class,
+and one explicitly enabled external OIDC token only when that stage is reached.
+Live side effects are not assumed reversible; after
 any partial side effect, operators must stop and inspect receipts plus registry
 state before proceeding or rerunning.
 

@@ -17,7 +17,11 @@ file, repository, environment, and reusable-workflow identity can publish.
 
 This research page is superseded where it prescribed one uniform reusable
 workflow trusted-publisher identity for every external registry. The active
-split release topology keeps `buddy` and `official` as entry workflows, but
+split release topology retains `official` as the current release entry workflow
+and keeps v1 CI unchanged. Legacy `.github/workflows/buddy.yml` and
+`.github/workflows/release-buddy.yml` are retired with no compatibility caller
+or dispatch route after Workflow Delivery v3 commit 11. Historical sections may
+still mention Buddy only as superseded context. Registry validation differs by registry when a `workflow_call` reusable workflow
 registry validation differs by registry when a `workflow_call` reusable workflow
 hosts the publish command.
 
@@ -109,10 +113,9 @@ job plus caller workflow identity. npm validates the caller workflow name when
 `publish-node-npmjs` is reached through `workflow_call`, so official npmjs
 publishing must register `.github/workflows/official.yml` with environment
 `npmjs`; the official caller job and the reusable publish job both grant
-`id-token: write`. Buddy does not live-publish npmjs in the active
-policy. If buddy npmjs live publishing is enabled later, npm must also trust
-`.github/workflows/buddy.yml` with environment `npmjs`, and the buddy caller
-must grant `id-token: write`.
+`id-token: write`. Retired legacy Buddy does not live-publish npmjs in the
+active policy, and `.github/workflows/buddy.yml` must not be added as a current
+trusted publisher or compatibility caller route.
 
 ### The publish fan-out must split by topology
 
