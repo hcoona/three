@@ -2640,7 +2640,7 @@ internal static class CliApplication
             $"silent-only-readiness-code: {readiness.Silent.Code}",
             $"silent-only-remediation: {readiness.Silent.SafeMessage}",
             $"interactive-mechanism: {GetInteractiveMechanismText(root.Installation.HostPlatform)}",
-            $"silent-only-mechanism: {GetSilentOnlyMechanismText(root.Installation.HostPlatform)}",
+            $"silent-only-mechanism: {GetSilentOnlyMechanismText(root, readiness)}",
             "status-shell: ready",
             "live-auth-probing: disabled",
             "live-feed-probing: disabled",
@@ -3487,8 +3487,8 @@ internal static class CliApplication
             $"silent-only-readiness-code: {readiness.Silent.Code}",
             $"silent-only-remediation: {readiness.Silent.SafeMessage}",
             $"interactive-mechanism: {GetInteractiveMechanismText(root.Installation.HostPlatform)}",
-            $"silent-only-mechanism: {GetSilentOnlyMechanismText(root.Installation.HostPlatform)}",
-            "live-auth-probing: git-doctor-silent-only",
+            $"silent-only-mechanism: {GetSilentOnlyMechanismText(root, readiness)}",
+            "live-auth-probing: " + GetDoctorLiveAuthProbingText(readiness),
             "live-feed-probing: disabled",
             "azureauth-version-probe: "
                 + GetAzureAuthHealthProbeStatusText(azureAuthHealthProbe),
@@ -3588,10 +3588,20 @@ internal static class CliApplication
             _ => "unavailable",
         };
 
-    private static string GetSilentOnlyMechanismText(AzureAuthHostPlatform hostPlatform) =>
-        hostPlatform == AzureAuthHostPlatform.NativeLinux
-            ? "native-linux-cache-only"
-            : "unavailable";
+    private static string GetSilentOnlyMechanismText(
+        CredentialProviderCompositionRoot root,
+        CredentialProviderReadiness readiness
+    ) =>
+        readiness.Silent.Code == "AzureAuthDevBoxWslSilentFirstWorkaroundReady"
+            ? "devbox-wsl-wam-first-may-interact"
+            : root.Installation.HostPlatform == AzureAuthHostPlatform.NativeLinux
+                ? "native-linux-cache-only"
+                : "unavailable";
+
+    private static string GetDoctorLiveAuthProbingText(CredentialProviderReadiness readiness) =>
+        readiness.Silent.Code == "AzureAuthDevBoxWslSilentFirstWorkaroundReady"
+            ? "git-doctor-silent-only-may-interact"
+            : "git-doctor-silent-only";
 
     private static List<string> BuildNuGetDoctorLines(NuGetPhase10DoctorResult doctorResult)
     {

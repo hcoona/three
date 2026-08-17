@@ -70,6 +70,7 @@ public sealed class CredentialProviderCompositionRootWp6Tests
                         ProviderConfig = config,
                         Binding = binding,
                         InstallationDiscovery = discovery,
+                        EnvironmentVariableReader = _ => null,
                     }
                 );
 
@@ -101,6 +102,164 @@ public sealed class CredentialProviderCompositionRootWp6Tests
             _ = root.GetReadiness(TestContext.Current.CancellationToken);
             _ = root.RunProviderDoctor(TestContext.Current.CancellationToken);
             Assert.Equal(1, discovery.CallCount);
+        }
+        finally
+        {
+            Directory.Delete(rootPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void DevBoxWslSilentFirstWorkaroundDefaultsFromInstallationDetection()
+    {
+        string rootPath = CreateTestDirectory();
+        try
+        {
+            AzureAuthProviderConfig config = AzureAuthProviderConfig.CreateAzureAuth();
+            AzureAuthBinding binding = AzureAuthBindingPolicy.CreateBound(
+                config,
+                "user@example.com",
+                "tenant",
+                DateTimeOffset.UtcNow
+            );
+            var discovery = new CountingDiscovery(
+                AzureAuthInstallation.Available(
+                    @"C:\Users\User\AppData\Local\Programs\AzureAuth\0.9.5\azureauth.exe",
+                    "/mnt/c/Users/User/AppData/Local/Programs/AzureAuth/0.9.5/azureauth.exe",
+                    "0.9.5",
+                    AzureAuthHostPlatform.Wsl,
+                    isDevBox: true
+                )
+            );
+
+            CredentialProviderCompositionRoot root =
+                CredentialProviderCompositionRoot.CreateProduction(
+                    new CredentialProviderProductionOptions
+                    {
+                        SecureStoreRootPath = rootPath,
+                        ProviderConfig = config,
+                        Binding = binding,
+                        InstallationDiscovery = discovery,
+                        EnvironmentVariableReader = _ => null,
+                    }
+                );
+
+            Assert.True(root.Readiness.Silent.IsReady);
+            Assert.Equal(
+                "AzureAuthDevBoxWslSilentFirstWorkaroundReady",
+                root.Readiness.Silent.Code
+            );
+            Assert.Contains(
+                "may display interactive UI",
+                root.Readiness.Silent.SafeMessage,
+                StringComparison.Ordinal
+            );
+        }
+        finally
+        {
+            Directory.Delete(rootPath, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("")]
+    [InlineData("true")]
+    public void DevBoxWslSilentFirstWorkaroundCanBeDisabledByEnvironment(
+        string environmentValue
+    )
+    {
+        string rootPath = CreateTestDirectory();
+        try
+        {
+            AzureAuthProviderConfig config = AzureAuthProviderConfig.CreateAzureAuth();
+            AzureAuthBinding binding = AzureAuthBindingPolicy.CreateBound(
+                config,
+                "user@example.com",
+                "tenant",
+                DateTimeOffset.UtcNow
+            );
+            var discovery = new CountingDiscovery(
+                AzureAuthInstallation.Available(
+                    @"C:\Users\User\AppData\Local\Programs\AzureAuth\0.9.5\azureauth.exe",
+                    "/mnt/c/Users/User/AppData/Local/Programs/AzureAuth/0.9.5/azureauth.exe",
+                    "0.9.5",
+                    AzureAuthHostPlatform.Wsl,
+                    isDevBox: true
+                )
+            );
+
+            CredentialProviderCompositionRoot root =
+                CredentialProviderCompositionRoot.CreateProduction(
+                    new CredentialProviderProductionOptions
+                    {
+                        SecureStoreRootPath = rootPath,
+                        ProviderConfig = config,
+                        Binding = binding,
+                        InstallationDiscovery = discovery,
+                        EnvironmentVariableReader = name =>
+                            name
+                                == AzureAuthProcessLaunchOptions
+                                    .DevBoxWslSilentFirstWorkaroundEnvironmentVariable
+                                ? environmentValue
+                                : null,
+                    }
+                );
+
+            Assert.False(root.Readiness.Silent.IsReady);
+            Assert.Equal("SilentAcquisitionUnavailable", root.Readiness.Silent.Code);
+        }
+        finally
+        {
+            Directory.Delete(rootPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void DevBoxWslSilentFirstWorkaroundCanBeForcedWhenDetectionIsFalse()
+    {
+        string rootPath = CreateTestDirectory();
+        try
+        {
+            AzureAuthProviderConfig config = AzureAuthProviderConfig.CreateAzureAuth();
+            AzureAuthBinding binding = AzureAuthBindingPolicy.CreateBound(
+                config,
+                "user@example.com",
+                "tenant",
+                DateTimeOffset.UtcNow
+            );
+            var discovery = new CountingDiscovery(
+                AzureAuthInstallation.Available(
+                    @"C:\Users\User\AppData\Local\Programs\AzureAuth\0.9.5\azureauth.exe",
+                    "/mnt/c/Users/User/AppData/Local/Programs/AzureAuth/0.9.5/azureauth.exe",
+                    "0.9.5",
+                    AzureAuthHostPlatform.Wsl,
+                    isDevBox: false
+                )
+            );
+
+            CredentialProviderCompositionRoot root =
+                CredentialProviderCompositionRoot.CreateProduction(
+                    new CredentialProviderProductionOptions
+                    {
+                        SecureStoreRootPath = rootPath,
+                        ProviderConfig = config,
+                        Binding = binding,
+                        InstallationDiscovery = discovery,
+                        EnvironmentVariableReader = name =>
+                            name
+                                == AzureAuthProcessLaunchOptions
+                                    .DevBoxWslSilentFirstWorkaroundEnvironmentVariable
+                                ? "1"
+                                : null,
+                    }
+                );
+
+            Assert.True(root.Readiness.Silent.IsReady);
+            Assert.Equal(
+                "AzureAuthDevBoxWslSilentFirstWorkaroundReady",
+                root.Readiness.Silent.Code
+            );
         }
         finally
         {

@@ -205,14 +205,14 @@ Notes:
 
 ## Request Matrix
 
-| Request shape                                                                                                                    | WP3 AzureAuth behavior                                                     |
-| -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `contractMajor: 2`, `acquisitionMode: interactionAllowed`, browser, human interactive policy, non-CI, accepted WP1 request shape | Windows/WSL default mode; native Linux explicit web mode                   |
-| Explicit CLI device code with an attached human prompt stream                                                                    | Native Linux explicit device-code mode; Windows/WSL rejected               |
-| `acquisitionMode: unspecified`                                                                                                   | Fail closed before process                                                 |
-| Valid `acquisitionMode: silentOnly`, `interactivePolicy: never`, non-CI frozen v1 shape                                          | Native Linux cache-only launch; Windows/WSL `SilentAcquisitionUnavailable` |
-| Invalid `silentOnly` combinations, including interactive policy, explicit CI, or opaque token                                    | Reject before process                                                      |
-| Invalid `interactionAllowed` combinations, explicit CI, unsupported cache or frozen-request drift                                | Reject before process                                                      |
+| Request shape                                                                                                                    | WP3 AzureAuth behavior                                                                                                           |
+| -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `contractMajor: 2`, `acquisitionMode: interactionAllowed`, browser, human interactive policy, non-CI, accepted WP1 request shape | Windows/WSL default mode; native Linux explicit web mode                                                                         |
+| Explicit CLI device code with an attached human prompt stream                                                                    | Native Linux explicit device-code mode; Windows/WSL rejected                                                                     |
+| `acquisitionMode: unspecified`                                                                                                   | Fail closed before process                                                                                                       |
+| Valid `acquisitionMode: silentOnly`, `interactivePolicy: never`, non-CI frozen v1 shape                                          | Native Linux cache-only launch; Dev Box WSL temporary WAM-first workaround; otherwise Windows/WSL `SilentAcquisitionUnavailable` |
+| Invalid `silentOnly` combinations, including interactive policy, explicit CI, or opaque token                                    | Reject before process                                                                                                            |
+| Invalid `interactionAllowed` combinations, explicit CI, unsupported cache or frozen-request drift                                | Reject before process                                                                                                            |
 
 `AzureAuthIdentityProvider` accepts only `CredentialRequestV2`.
 
@@ -300,9 +300,13 @@ identity remains a best-effort preference.
 The process inherits the ordinary host integration environment.
 `OEAUTH_MSAL_DISABLE_CACHE` is not set: host MSAL cache reuse is an intentional
 product behavior. Windows and WSL AzureAuth have no cache-only CLI mode, so
-`SilentOnly` remains unavailable there and never launches. Native Linux
-`SilentOnly` launches AzureAuth with `AZUREAUTH_NO_USER=1`, preserving its
-cached-token attempt while suppressing user interaction.
+`SilentOnly` normally remains unavailable there and never launches. Until
+AzureAuth issue #464 is implemented, GCM-compatible Dev Box WSL hosts may use
+the temporary WAM-first workaround documented in
+[`phase-wp6-production-composition.md`](phase-wp6-production-composition.md);
+that path may display UI. Native Linux `SilentOnly` launches AzureAuth with
+`AZUREAUTH_NO_USER=1`, preserving its cached-token attempt while suppressing
+user interaction.
 
 ## Error Codes
 

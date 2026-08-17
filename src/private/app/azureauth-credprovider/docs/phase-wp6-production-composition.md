@@ -94,8 +94,24 @@ credential store. Product-owned derived credentials remain non-persistent and
 have no plaintext fallback.
 
 Windows AzureAuth `0.9.5` has no equivalent cache-only CLI mode, so Windows and
-WSL `SilentOnly` still return `SilentAcquisitionUnavailable` without launching.
-Interactive and silent readiness remain independent.
+WSL `SilentOnly` return `SilentAcquisitionUnavailable` without launching by
+default. WSL discovery uses Git Credential Manager's Dev Box definition in the
+64-bit registry view: `HKLM\SOFTWARE\Microsoft\Windows365` must contain
+`IsW365Environment`, and `PartnerId` must parse as
+`e3171dd9-9a5f-e5be-b36c-cc7c4f3f3bcf`. A matching Dev Box automatically enables
+a temporary workaround that lets a `SilentOnly` request use AzureAuth's default
+WAM-first flow. This usually completes from broker-backed state but may display
+interactive UI. It intentionally violates the non-interactive contract and must
+be removed when AzureAuth issue
+[#464](https://github.com/AzureAD/microsoft-authentication-cli/issues/464) is
+implemented.
+
+`AZUREAUTH_CREDPROVIDER_ENABLE_DEVBOX_WSL_SILENT_FIRST_WORKAROUND` is an
+optional override. When unset, Dev Box detection decides. Value `1` forces the
+workaround on in WSL; value `0` or any other value disables it. The workaround
+never applies to ordinary Windows or native Linux hosts. Interactive and silent
+readiness remain independent. Registry probe failures are treated as
+non-Dev-Box results and do not block AzureAuth installation discovery.
 
 ## Host interaction routing
 
@@ -158,16 +174,17 @@ containment of a hostile provider.
 
 ## Readiness and stable states
 
-| Code                              | Meaning                                               |
-| --------------------------------- | ----------------------------------------------------- |
-| `ProviderNotConfigured`           | Run `identity configure` to record identity context.  |
-| `DirectMsalNotImplemented`        | Run `identity reconfigure` to use the supported path. |
-| `AzureAuthInstallationMissing`    | Install AzureAuth 0.9.5 for the current platform.     |
-| `AzureAuthVersionMismatch`        | Install/select supported version 0.9.5.               |
-| `AzureAuthBindingRequired`        | Run `identity configure` with the intended tenant.    |
-| `AzureAuthBindingMalformed`       | Run `identity reconfigure` or `identity unconfigure`. |
-| `SilentAcquisitionUnavailable`    | Windows/WSL AzureAuth has no silent-only mode.        |
-| `AzureAuthSilentTokenUnavailable` | Native Linux cache lookup requires interaction.       |
+| Code                                           | Meaning                                                              |
+| ---------------------------------------------- | -------------------------------------------------------------------- |
+| `ProviderNotConfigured`                        | Run `identity configure` to record identity context.                 |
+| `DirectMsalNotImplemented`                     | Run `identity reconfigure` to use the supported path.                |
+| `AzureAuthInstallationMissing`                 | Install AzureAuth 0.9.5 for the current platform.                    |
+| `AzureAuthVersionMismatch`                     | Install/select supported version 0.9.5.                              |
+| `AzureAuthBindingRequired`                     | Run `identity configure` with the intended tenant.                   |
+| `AzureAuthBindingMalformed`                    | Run `identity reconfigure` or `identity unconfigure`.                |
+| `SilentAcquisitionUnavailable`                 | Windows/WSL workaround is disabled or inapplicable.                  |
+| `AzureAuthSilentTokenUnavailable`              | AzureAuth did not return a token for a silent-only request.          |
+| `AzureAuthDevBoxWslSilentFirstWorkaroundReady` | Dev Box WSL best-effort silent-first mode is enabled and may prompt. |
 
 Status and doctor report provider selection, installation, binding, and separate
 interactive/silent readiness without printing tokens or process output. Login,

@@ -255,7 +255,8 @@ public sealed class Wp6ProductionAdapterTests
             File.WriteAllText(executable, "");
             var runner = new DiscoveryRunner(
                 "{\"localApplicationData\":\"C:\\\\Users\\\\User\\\\AppData\\\\Local\","
-                    + $"\"exists\":true,\"fileVersion\":\"{fileVersion}\"}}"
+                    + $"\"exists\":true,\"fileVersion\":\"{fileVersion}\","
+                    + "\"isDevBox\":true}"
             );
             var discovery = new SystemAzureAuthInstallationDiscovery(
                 runner,
@@ -288,6 +289,27 @@ public sealed class Wp6ProductionAdapterTests
             {
                 Assert.Equal(executable, result.HostExecutablePath);
                 Assert.Equal(AzureAuthHostPlatform.Wsl, result.HostPlatform);
+                Assert.True(result.IsDevBox);
+                Assert.Contains(
+                    AzureAuthInstallation.DevBoxPartnerId,
+                    runner.StartSpec.Arguments[^1],
+                    StringComparison.Ordinal
+                );
+                Assert.Contains(
+                    "Registry64",
+                    runner.StartSpec.Arguments[^1],
+                    StringComparison.Ordinal
+                );
+                Assert.Contains(
+                    "IsW365Environment",
+                    runner.StartSpec.Arguments[^1],
+                    StringComparison.Ordinal
+                );
+                Assert.Contains(
+                    "catch",
+                    runner.StartSpec.Arguments[^1],
+                    StringComparison.Ordinal
+                );
             }
         }
         finally
