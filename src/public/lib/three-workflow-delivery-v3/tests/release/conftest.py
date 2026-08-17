@@ -272,7 +272,7 @@ def node_build_request(
         witness=witness,
         source_date_epoch=1_700_000_000,
         node_version="24.14.0",
-        pnpm_version="11.17.0",
+        pnpm_version="11.21.0",
         npm_version="11.9.0",
     )
 

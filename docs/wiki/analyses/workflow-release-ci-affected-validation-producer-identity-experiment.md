@@ -70,7 +70,7 @@ The run API returned these run-level identity fields:
 | `run_attempt`          | `2` after rerun                                                                                    |
 | `event`                | `workflow_dispatch`                                                                                |
 | `workflow_id`          | `269749708`                                                                                        |
-| `path`                 | `.github/workflows/buddy.yml`                                                              |
+| `path`                 | `.github/workflows/buddy.yml`                                                                      |
 | `head_branch`          | `dev/shuaizhang/design-workflows`                                                                  |
 | `head_sha`             | `7842f979aaffb9d993e7d0e45664aa1aac8853e3`                                                         |
 | `actor`                | `hcoona`                                                                                           |

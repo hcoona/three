@@ -23,7 +23,7 @@ python = "3.14"
 ruby = "4.0.6"
 
 # Package Managers
-pnpm = "11.19.0"
+pnpm = "11.21.0"
 uv = "latest"
 
 # Git Commit Hook Manager
@@ -63,7 +63,8 @@ dotenv-linter = "latest"
 fd = "latest"
 ripgrep = "latest"
 github-cli = "latest"
-"github:microsoft/apm" = "0.26.0"
+"github:microsoft/apm" = "v0.28.0"
+"github:alibaba/open-code-review" = { version = "v1.9.3", bin = "ocr" }
 
 #
 # Environment Variables

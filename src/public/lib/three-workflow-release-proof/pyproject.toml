@@ -20,14 +20,7 @@ dev = ["pytest>=8.3.4"]
 three-workflow-release-proof = "three_workflow_release_proof.cli:main"
 
 [tool.ruff.lint]
-extend-ignore = [
-  "C901",
-  "EM101",
-  "EM102",
-  "PLR0911",
-  "PLR0912",
-  "TRY003",
-]
+extend-ignore = ["C901", "EM101", "EM102", "PLR0911", "PLR0912", "TRY003"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["PLR2004", "S101"]

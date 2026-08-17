@@ -46,7 +46,8 @@ internal sealed partial class Program
                     exitCode == 0 ? "success" : "failure");
                 return exitCode;
             }
-            catch (OperationCanceledException) when (cancellationTokenSource.IsCancellationRequested)
+            catch (OperationCanceledException)
+                when (cancellationTokenSource.IsCancellationRequested)
             {
                 CloudflareTelemetry.MarkOutcome(runActivity, "cancelled");
                 return 0;

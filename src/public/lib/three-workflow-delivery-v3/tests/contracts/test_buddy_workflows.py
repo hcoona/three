@@ -18,6 +18,11 @@ GOVERNANCE = (
     / ".github/workflow-delivery/governance/hcoona-release-smoke-npm.json"
 )
 RETENTION_DAYS = 45
+CHECKOUT = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+UV = "astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d"
+MISE = "jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518"
+UPLOAD = "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+DOWNLOAD = "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c"
 APPROVAL_CORRELATION_NAME = (
     "Run same-revision Buddy live Attempt / "
     "Human approval and same-revision Authorization"
@@ -283,6 +288,7 @@ def test_all_actions_are_full_sha_pinned_with_version_comments() -> None:
     raw = CALLER.read_text(encoding="utf-8") + CALLEE.read_text(
         encoding="utf-8"
     )
+    documents = (_document(CALLER), _document(CALLEE))
     uses_lines = [
         line.strip()
         for line in raw.splitlines()
@@ -295,7 +301,13 @@ def test_all_actions_are_full_sha_pinned_with_version_comments() -> None:
 
     assert uses_lines
     assert all(pin.fullmatch(line) for line in uses_lines)
-    assert any("actions/upload-artifact@" in line for line in uses_lines)
+    assert {
+        str(step["uses"])
+        for document in documents
+        for job in document["jobs"].values()
+        for step in _steps(job)
+        if "uses" in step
+    } == {CHECKOUT, UV, MISE, UPLOAD, DOWNLOAD}
 
 
 def test_workflows_forbid_secrets_oidc_publication_bypasses_and_later_scope() -> (

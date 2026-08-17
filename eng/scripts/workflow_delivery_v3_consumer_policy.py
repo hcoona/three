@@ -132,7 +132,7 @@ DEPENDENCY_SURFACE_CATALOG = (
 )
 APPROVED_CONSUMER_EXCEPTIONS = (
     ApprovedConsumerException(OWN_DECLARATION_PATH, "dependency-manifest", "name", "sha256:a7d84bac91fe5f9fa7ccfbf46cd065cd85ded95188046d96f6f2c9ce97775566"),
-    ApprovedConsumerException(ACCEPTANCE_FIXTURE_PATH, "dependency-manifest", f"dependencies.{PACKAGE_NAME}", "sha256:0dede06fe12d0fc5a5ff7fc943fe485c068b44b1cb609a98b4d980076b592ac7"),
+    ApprovedConsumerException(ACCEPTANCE_FIXTURE_PATH, "dependency-manifest", f"dependencies.{PACKAGE_NAME}", "sha256:a28d7f1e161df6948cdc2f122e78b9a38f425b481877178e29c8cd8ef30b0aa2"),
     ApprovedConsumerException(ACCEPTANCE_NPM_MANIFEST_PATH, "dependency-manifest", "name", "sha256:d032b543a77820f9660a629e7deee6140664150a2c0a7de8048d37947afc957e"),
 )
 CONSUMER_POLICY_HK_GLOBS = tuple(sorted(

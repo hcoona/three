@@ -4,13 +4,13 @@ version = "0.0.0-dev"
 description = "Root uv workspace manifest for the Three monorepo."
 authors = [{ name = "Shuai Zhang", email = "zhangshuai.ustc@gmail.com" }]
 dependencies = [
-    "three-workflow-release-authoring",
-    "three-workflow-release-build",
-    "three-workflow-release-contracts",
-    "three-workflow-release-metadata",
-    "three-workflow-release-planner",
-    "three-workflow-release-proof",
-    "three-workflow-release-publish",
+  "three-workflow-release-authoring",
+  "three-workflow-release-build",
+  "three-workflow-release-contracts",
+  "three-workflow-release-metadata",
+  "three-workflow-release-planner",
+  "three-workflow-release-proof",
+  "three-workflow-release-publish",
 ]
 readme = "README.md"
 requires-python = ">= 3.13"
@@ -18,12 +18,7 @@ license = "LGPL-3.0-or-later WITH LGPL-3.0-linking-exception"
 classifiers = ["Private :: Do Not Upload"]
 
 [dependency-groups]
-dev = [
-  "hatchling>=1.25.0",
-  "pyrefly>=1.0.0",
-  "pytest>=8.3.4",
-  "ruff>=0.11.8",
-]
+dev = ["hatchling>=1.25.0", "pyrefly>=1.0.0", "pytest>=8.3.4", "ruff>=0.11.8"]
 
 [tool.uv.workspace]
 # The current Python workspace is rooted under src/; legacy OnePython paths are retired.
@@ -37,6 +32,7 @@ members = [
   "src/private/app/rag-postgresql-openai",
   "src/private/app/supermemo-mcp",
   "src/private/app/transcribe",
+  "src/private/app/azureauth-credprovider/python",
   "src/public/app/markdown-hybrid-search-mcp",
   "src/public/lib/hcoona-release-smoke",
   "src/public/lib/hcoona-release-smoke-pypi",
@@ -74,6 +70,7 @@ project-includes = [
   "src/private/app/rag-postgresql-openai/**/*.py",
   "src/private/app/supermemo-mcp/**/*.py",
   "src/private/app/transcribe/**/*.py",
+  "src/private/app/azureauth-credprovider/python",
   "src/public/app/markdown-hybrid-search-mcp/src/**/*.py",
   "src/public/lib/hcoona-release-smoke/src/**/*.py",
   "src/public/lib/hcoona-release-smoke-pypi/src/**/*.py",
@@ -174,6 +171,7 @@ convention = "google" # Match the Google Python Style Guide docstring structure.
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib"
 testpaths = [
+  "src/private/app/azureauth-credprovider/python/tests",
   "src/public/lib/nbgv-python/tests",
   "src/public/lib/three-workflow-delivery-v3/tests",
   "src/public/lib/three-workflow-release-contracts/tests",

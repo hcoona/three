@@ -26,7 +26,7 @@ The product owns:
 - interactive and non-interactive credential acquisition,
 - account and tenant selection,
 - host/feed canonicalization,
-- secure token cache coordination,
+- identity-provider cache policy and future product-cache boundaries,
 - protocol adapters for host-tool credential exchange,
 - user-facing configuration and diagnostics commands.
 
@@ -48,17 +48,28 @@ Host tools own:
 
 1. Provide one human-facing CLI for setup, login, logout, status, diagnostics, and ecosystem configuration.
 2. Support Azure Repos HTTPS Git remotes hosted on `dev.azure.com` and legacy `*.visualstudio.com` hosts.
-3. Support Azure Artifacts NuGet v3 feeds for `dotnet`, NuGet.exe, MSBuild, and Visual Studio restore scenarios.
+3. Support Azure Artifacts NuGet v3 feeds for Phase 4D MVP `dotnet` restore through NuGet `netcore` plugin convention discovery; treat NuGet.exe, MSBuild, and Visual Studio (`netfx`) restore support as deferred post-MVP scope.
 4. Support Azure Artifacts Python simple-index and upload endpoints for pip, twine, and uv workflows.
 5. Support Azure Artifacts npm registry endpoints for npm, pnpm, and Yarn workflows.
-6. Reuse a single credential core for token acquisition, account selection, cache access, and policy enforcement.
+6. Reuse a single credential core for token acquisition, account selection,
+   cache policy and key partitioning, and policy enforcement.
 7. Provide entry points that conform to each host tool's required discovery and invocation protocol.
 8. Avoid duplicating credential logic across ecosystem adapters.
 9. Preserve host-tool protocol boundaries: protocol adapters must write only protocol-valid content to stdout.
 10. Provide configuration commands that can install, verify, and remove each ecosystem integration.
 11. Support non-interactive CI operation without persisting secrets by default.
-12. Evaluate AzureAuth, also known as `microsoft-authentication-cli`, as a candidate identity substrate for Microsoft Entra token acquisition, MSAL cache reuse, and Azure DevOps token-oriented flows.
-13. Provide a `doctor` command that validates Git helper configuration through Git's own discovery behavior, NuGet plugin discovery, Python keyring availability, npm registry configuration, credential cache health, and common CI misconfigurations.
+12. Use AzureAuth (`microsoft-authentication-cli`) 0.9.5 as the current Windows, WSL, and native Linux identity path; keep Direct MSAL unimplemented behind the same provider abstraction.
+13. Support interactive browser acquisition, explicit native Linux device-code
+    login, and explicit Azure Pipelines system access tokens; keep PAT
+    compatibility, service principal, managed identity, and workload identity
+    federation unavailable or deferred until implemented.
+14. Provide a `doctor` command that validates Git helper configuration through
+    Git's own discovery behavior, NuGet plugin discovery, Python keyring
+    availability, npm registry configuration, identity-provider readiness and
+    silent-cache availability, and common CI misconfigurations.
+15. Provide an internal deployment-validation bundle that exercises complete
+    application, Git, NuGet, Python wheel, installation, and uninstallation
+    shapes without representing that bundle as a signed release installer.
 
 ## Non-Functional Requirements
 
@@ -69,9 +80,16 @@ Host tools own:
 5. Keep protocol adapters small, deterministic, and testable.
 6. Keep token handling centralized and auditable.
 7. Redact secrets in stdout, stderr, logs, traces, dry-run output, and error messages.
-8. Partition credential cache entries by ecosystem, service identity, feed or host, account, tenant, token audience, and credential type.
+8. Model cache keys by ecosystem, service identity, feed or host, account,
+   tenant, token audience, and credential type without requiring a
+   product-owned persistent cache.
 9. Prefer short-lived or identity-derived credentials over long-lived personal access tokens.
 10. Avoid writing credentials into repository-local configuration files by default.
+11. Keep product-owned derived credentials non-persistent by default and never
+    add a product plaintext cache fallback. On headless native Linux, permit
+    pinned AzureAuth 0.9.5's documented provider-owned cache fallback under
+    owner-only directory and file modes so device-code login can support later
+    silent host-tool acquisition.
 
 ## Integration Requirements by Ecosystem
 
@@ -89,24 +107,30 @@ Host tools own:
 1. Provide a NuGet plugin-compatible entry point that supports NuGet's plugin handshake and authentication request protocol.
 2. Enter plugin mode when launched by NuGet with fixed plugin arguments.
 3. Support .NET Core plugin discovery for `dotnet restore`.
-4. Support .NET Framework-compatible plugin discovery where Visual Studio, MSBuild, or NuGet.exe scenarios require it.
+4. Keep .NET Framework-compatible plugin discovery for Visual Studio, MSBuild, or NuGet.exe as a deferred post-MVP compatibility target; it is out of Phase 4D MVP scope.
 5. Respect NuGet's interactive and non-interactive restore settings.
-6. Prefer NuGet's conventional plugin installation locations for default setup, with `NUGET_PLUGIN_PATHS` reserved for advanced diagnostics or explicit overrides.
+6. Prefer NuGet's conventional plugin installation locations for default setup, with `NUGET_PLUGIN_PATHS` and `NUGET_NETCORE_PLUGIN_PATHS` reserved for optional process-scoped diagnostics or explicit temporary overrides only.
+7. Do not persist NuGet plugin-path environment overrides as user-global or machine-global state in Phase 4D MVP.
 
 ### Python
 
 1. Provide a Python keyring backend package for tools that import Python keyring directly.
 2. Provide a `keyring` command-compatible shim for tools that use subprocess keyring mode.
 3. Support pip, twine, and uv without requiring credentials in source-controlled project files.
-4. Keep trusted credential logic outside arbitrary project virtual environments where practical.
+4. Keep trusted credential logic outside arbitrary project virtual environments where practical by using a thin backend that invokes the installed product helper by a configured absolute path after ordinary existence and executable checks.
 5. Support Azure Artifacts Python simple-index and upload endpoints in both organization-scoped and project-scoped forms.
 6. Provide supported bootstrap paths that make the Python keyring backend discoverable in the exact Python environment running pip or twine, including virtual environments, pipx-managed tools, and isolated CI environments.
+7. Configure the backend with the installed product apphost's absolute path and
+   provide a separate controlled-PATH `keyring` shim that delegates directly to
+   the installed apphost without requiring a project Python environment; Windows
+   subprocess mode requires a real `.exe` launcher and remains deferred until
+   that launcher is implemented and validated.
 
 ### npm, pnpm, and Yarn
 
 1. Provide an npm ecosystem command that reads npm and Yarn registry configuration and updates credential material safely.
 2. Support `.npmrc` registry entries for npm and pnpm.
-3. Support `.yarnrc.yml` registry entries for Yarn Berry (Yarn 2+), including `npmRegistryServer`, `npmScopes`, and auth material under `npmRegistries`.
+3. Support `.yarnrc.yml` registry entries for Yarn 4+ only, including `npmRegistryServer`, `npmScopes`, and auth material under `npmRegistries`. Yarn 2 and Yarn 3 are outside the supported product boundary.
 4. Support invocation from package-manager lifecycle or bootstrap scripts when the CLI is already available.
 5. Avoid writing raw long-lived tokens to repository-local `.npmrc` files by default.
 
@@ -125,10 +149,9 @@ Host tools own:
 ## Open Questions
 
 1. Whether the shared credential core should be a library, a local broker process, or a single executable invoked by adapters.
-2. Whether the NuGet adapter should ship as one multi-target package, separate netcore/netfx artifacts, or a top-level executable that also supports `-Plugin`.
-3. Whether the Python keyring backend should call an absolute external helper path or use an embedded shared library.
+2. How to package deferred netfx support if NuGet.exe/MSBuild/Visual Studio compatibility is added after the Phase 4D MVP netcore-only scope.
+3. Which signing or trusted-publishing mechanisms should be required for Python release artifacts and installers.
 4. Whether npm compatibility aliases should be provided in addition to the primary npm credential refresh command.
-5. Which identity flows are mandatory for MVP: interactive browser, device code, PAT, service principal, managed identity, workload identity federation, or Azure Pipelines system access token.
 
 ## Acceptance Criteria for the Design Phase
 

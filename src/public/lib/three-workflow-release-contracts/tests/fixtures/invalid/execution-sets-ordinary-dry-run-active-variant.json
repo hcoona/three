@@ -7,9 +7,7 @@
     "external-oidc-reusable-workflow": [],
     "github-token": []
   },
-  "active-variant-ids": [
-    "variant/v1"
-  ],
+  "active-variant-ids": ["variant/v1"],
   "api-version": "three.release.execution-sets/v1alpha1",
   "dry-run": true,
   "kind": "execution-sets",

@@ -33,7 +33,7 @@ variants:
         kind-family: package
         concrete-kind: npm-package
         projection:
-          package-name: "@hcoona/hexo-renderer-asciidoc"
+          package-name: '@hcoona/hexo-renderer-asciidoc'
 
 profiles:
   buddy:

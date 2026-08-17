@@ -13,8 +13,8 @@ WORKFLOW = (
     REPO_ROOT / ".github/workflows/workflow-delivery-v3-official-simulate.yml"
 )
 CHECKOUT = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
-UV = "astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9"
-MISE = "jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654"
+UV = "astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d"
+MISE = "jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518"
 UPLOAD = "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
 DOWNLOAD = "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c"
 RETENTION_DAYS = 45

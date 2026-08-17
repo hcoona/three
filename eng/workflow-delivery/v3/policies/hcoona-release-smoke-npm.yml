@@ -15,7 +15,7 @@ channels:
     projections:
       - destination: npm/github-packages-hcoona-three-v1
         artifact: npm-tarball
-        package: "@hcoona/hcoona-release-smoke-npm"
+        package: '@hcoona/hcoona-release-smoke-npm'
   official:
     quality:
       - node/project-test-v1
@@ -24,4 +24,4 @@ channels:
     projections:
       - destination: npm/npmjs-public-v1
         artifact: npm-tarball
-        package: "@hcoona/hcoona-release-smoke-npm"
+        package: '@hcoona/hcoona-release-smoke-npm'

@@ -47,9 +47,7 @@
   "kind": "release-report",
   "plan": {
     "plan-id": "plan/abc123",
-    "selected-project-ids": [
-      "example"
-    ]
+    "selected-project-ids": ["example"]
   },
   "run": {
     "conclusion": "success",

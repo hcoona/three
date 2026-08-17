@@ -6,7 +6,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$project = Join-Path $PSScriptRoot '..' 'hcoona-release-smoke-inno.csproj'
+$project = Join-Path -Path $PSScriptRoot -ChildPath '..' -AdditionalChildPath 'hcoona-release-smoke-inno.csproj'
+$profileTelemetryOutputPath = $TelemetryOutputPath
 $profilePhases = [System.Collections.Generic.List[object]]::new()
 
 function Add-ProfilePhase {
@@ -30,13 +31,13 @@ function Add-ProfilePhase {
         $completedAtUtc = $startedAtUtc.AddMilliseconds($durationMs)
     }
     $record = [ordered]@{
-        phase = $Phase
-        'started-at' = $startedAtUtc.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+        phase          = $Phase
+        'started-at'   = $startedAtUtc.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
         'completed-at' = $completedAtUtc.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
-        'duration-ms' = $durationMs
-        outcome = $Outcome
-        argv = @($Argv)
-        cwd = $Cwd
+        'duration-ms'  = $durationMs
+        outcome        = $Outcome
+        argv           = @($Argv)
+        cwd            = $Cwd
         'output-paths' = @($OutputPaths)
     }
     if ($PSBoundParameters.ContainsKey('ExitCode')) {
@@ -58,21 +59,21 @@ function Add-ProfilePhase {
 }
 
 function Write-ProfileTelemetry {
-    if (-not $TelemetryOutputPath) { return }
+    if (-not $script:profileTelemetryOutputPath) { return }
     try {
-        $parent = Split-Path -Parent $TelemetryOutputPath
+        $parent = Split-Path -Parent $script:profileTelemetryOutputPath
         if ($parent) {
             New-Item -ItemType Directory -Force -Path $parent | Out-Null
         }
         @{
-            kind = 'powershell-release-build-profile-telemetry'
+            kind             = 'powershell-release-build-profile-telemetry'
             'schema-version' = 1
-            script = $PSCommandPath
-            phases = @($profilePhases)
-        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $TelemetryOutputPath -Encoding UTF8
+            script           = $PSCommandPath
+            phases           = @($profilePhases)
+        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $script:profileTelemetryOutputPath -Encoding UTF8
     }
     catch {
-        Write-Warning "Profile telemetry could not be written to '$TelemetryOutputPath': $($_.Exception.Message)" -WarningAction Continue
+        Write-Warning "Profile telemetry could not be written to '$script:profileTelemetryOutputPath': $($_.Exception.Message)" -WarningAction Continue
     }
 }
 

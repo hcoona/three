@@ -57,8 +57,8 @@ def test_canonical_sha256_matches_golden_digest() -> None:
     second: dict[str, JsonValue] = {"a": "value", "z": [3, 2, 1]}
 
     assert canonical_sha256(first) == (
-        "sha256:666291de8b61a11d3a139f9df95e7476a3accf1ac96d401"
-        "abf8fb35b43e294ba"
+        "sha256:666291de8b61a11d3a139f9df95e7476"
+        "a3accf1ac96d401abf8fb35b43e294ba"
     )
     assert canonical_sha256(second) == canonical_sha256(first)
 

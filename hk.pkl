@@ -113,7 +113,9 @@ local json_linters = new Mapping<String, Step> {
 local yaml_linters = new Mapping<String, Step> {
   ["yaml-prettier"] {
     profiles = List("small")
-    exclude = general_exclude_list
+    exclude =
+      general_exclude_list
+        + List("src/public/lib/three-workflow-release-authoring/tests/fixtures/invalid-yaml.yml")
     glob = List("*.yml", "*.yaml")
     stage = List("*.yml", "*.yaml")
     check = "python eng/scripts/hk_exec.py pnpm exec -- prettier --check -- {{files}}"
@@ -193,6 +195,7 @@ local pwsh_linters = new Mapping<String, Step> {
     stage = powershell_files
     env {
       ["HK_EXEC_PER_FILE"] = "0"
+      ["HK_EXEC_TIMEOUT_SECONDS"] = "300"
     }
     check =
       "python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/linter/Invoke-ScriptAnalyzerWrapper.ps1 -Mode Check -Path -- {{files}}"
@@ -262,7 +265,6 @@ local python_linters = new Mapping<String, Step> {
 local workflow_release_validation = new Mapping<String, Step> {
   local workflow_release_files =
     List(
-      ".pre-commit-config.yaml",
       ".github/CODEOWNERS",
       ".github/actionlint.yaml",
       ".github/workflows/*.yml",

@@ -525,7 +525,7 @@ def _result(
         provider_implementation_id=PROVIDER_IMPLEMENTATION_ID,
         execution_mode=PROVIDER_EXECUTION_MODE,
         execution_class=PROVIDER_EXECUTION_CLASS,
-        toolchain=(("node", "v24.14.0"), ("pnpm", "11.17.0")),
+        toolchain=(("node", "v24.14.0"), ("pnpm", "11.21.0")),
         manifest_digest=manifest_digest,
         configuration_digest=configuration_digest,
         checkout=CheckoutEvidence(
@@ -1810,30 +1810,30 @@ def test_compiler_rejects_substituted_provider_execution_class(
 @pytest.mark.parametrize(
     "toolchain",
     [
-        (("pnpm", "11.17.0"),),
+        (("pnpm", "11.21.0"),),
         (("node", "v24.14.0"),),
         (
             ("node", "v24.14.0"),
-            ("pnpm", "11.17.0"),
+            ("pnpm", "11.21.0"),
             ("python", "3.13.5"),
         ),
         (
             ("node", "v24.14.0"),
             ("node", "v22.17.0"),
-            ("pnpm", "11.17.0"),
+            ("pnpm", "11.21.0"),
         ),
         (
             ("node", "v24.14.0"),
-            ("pnpm", "11.17.0"),
+            ("pnpm", "11.21.0"),
             ("pnpm", "10.12.1"),
         ),
-        (("pnpm", "11.17.0"), ("node", "v24.14.0")),
-        (("nodejs", "v24.14.0"), ("pnpm", "11.17.0")),
-        (("node", "v24.14.0"), ("pnpm-cli", "11.17.0")),
-        (("", "v24.14.0"), ("pnpm", "11.17.0")),
-        (("node", ""), ("pnpm", "11.17.0")),
-        (("node", " v24.14.0"), ("pnpm", "11.17.0")),
-        (("node", "v24.14.0"), ("pnpm", "11.17.0 ")),
+        (("pnpm", "11.21.0"), ("node", "v24.14.0")),
+        (("nodejs", "v24.14.0"), ("pnpm", "11.21.0")),
+        (("node", "v24.14.0"), ("pnpm-cli", "11.21.0")),
+        (("", "v24.14.0"), ("pnpm", "11.21.0")),
+        (("node", ""), ("pnpm", "11.21.0")),
+        (("node", " v24.14.0"), ("pnpm", "11.21.0")),
+        (("node", "v24.14.0"), ("pnpm", "11.21.0 ")),
         (("node", "v24.14.0"), ("pnpm", " \t")),
     ],
     ids=[
@@ -2014,7 +2014,7 @@ def test_compiler_accepts_exact_provider_result_and_validates_snapshot(
     )
     assert selected_result.toolchain == (
         ("node", "v24.14.0"),
-        ("pnpm", "11.17.0"),
+        ("pnpm", "11.21.0"),
     )
     assert snapshot.provider_result_digests == (selected_result.result_digest,)
     assert snapshot.unresolved == ()

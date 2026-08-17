@@ -172,7 +172,7 @@ function Invoke-CycloneDX {
 
     $cmds = @(
         @{
-            File = 'dotnet'
+            File      = 'dotnet'
             Arguments = @('tool', 'run', 'dotnet-CycloneDX', '--') + $cdxArguments
         },
         @{ File = 'dotnet-CycloneDX'; Arguments = $cdxArguments },

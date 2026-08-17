@@ -1,0 +1,543 @@
+using System.Text;
+using Hcoona.AzureAuth.CredProvider.Contracts;
+using Hcoona.AzureAuth.CredProvider.Platform.FileSystem;
+
+namespace Hcoona.AzureAuth.CredProvider.Platform.Configuration;
+
+internal sealed class NpmrcPhysicalTargetWriter(
+    IFileSystem fileSystem,
+    Func<string, string?>? environmentVariableReader = null
+)
+    : IConfigurationPhysicalTargetWriter
+{
+    private static readonly Encoding Utf8NoBom = new UTF8Encoding(false, true);
+    private static readonly UnixFileMode OwnerOnlyMode =
+        UnixFileMode.UserRead | UnixFileMode.UserWrite;
+    private readonly Func<string, string?> readEnvironmentVariable =
+        environmentVariableReader ?? Environment.GetEnvironmentVariable;
+
+    public void Validate(
+        ConfigurationPhysicalTargetWriterRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ValidateRequest(request);
+        NpmrcDocument document = ReadDocument(GetTargetPath(request));
+        _ = Apply(document, request, mutate: false);
+    }
+
+    public void Write(
+        ConfigurationPhysicalTargetWriterRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ValidateRequest(request);
+        string targetPath = GetTargetPath(request);
+        NpmrcDocument document = ReadDocument(targetPath);
+        string original = document.Text;
+        string updated = Apply(document, request, mutate: true);
+        bool containsSecret = request.Changes.Any(change => change.IsSecretValue);
+        if (string.Equals(original, updated, StringComparison.Ordinal))
+        {
+            if (
+                containsSecret
+                && fileSystem.FileExists(document.WritePath)
+                && !FileSystemPathSemantics.UsesWindowsPaths(fileSystem)
+                && fileSystem.GetUnixFileMode(document.WritePath) != OwnerOnlyMode
+            )
+            {
+                RevalidateWritePath(targetPath, document.WritePath);
+                fileSystem.SetUnixFileMode(document.WritePath, OwnerOnlyMode);
+            }
+            return;
+        }
+
+        RevalidateWritePath(targetPath, document.WritePath);
+        fileSystem.AtomicWriteAllBytes(
+            document.WritePath,
+            document.Encode(updated),
+            containsSecret
+                ? AtomicWriteOptions.RestrictUnixFileModeToOwnerOnly
+                : AtomicWriteOptions.None
+        );
+    }
+
+    public bool IsSatisfied(
+        ConfigurationPhysicalTargetWriterRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ValidateRequest(request);
+        NpmrcDocument document = ReadDocument(GetTargetPath(request));
+        return request.Changes.All(change =>
+        {
+            var entry = document.GetEntry(change.Key);
+            return entry is not null
+                && !entry.IsArray
+                && (
+                    change.IsSecretValue
+                        ? HasEffectiveSecretValue(entry.Value)
+                        : RegistryValuesMatch(change.Key, entry.Value, change.Value)
+                );
+        });
+    }
+
+    private bool HasEffectiveSecretValue(string value)
+    {
+        string directValue = value.Trim();
+        if (directValue is "" or "false" or "null" or "undefined")
+        {
+            return false;
+        }
+
+        string effectiveValue = NpmrcIniSyntax.ExpandEnvironmentVariables(
+            directValue,
+            readEnvironmentVariable,
+            out bool unresolvedEnvironmentReference
+        );
+        return !unresolvedEnvironmentReference && !string.IsNullOrEmpty(effectiveValue);
+    }
+
+    internal static string? GetPlanningValidationViolation(
+        ConfigurationChange change,
+        CanonicalResourceIdentity? resourceIdentity = null
+    )
+    {
+        ArgumentNullException.ThrowIfNull(change);
+        if (change.TargetKind != ConfigurationTargetKind.Npmrc)
+        {
+            return null;
+        }
+
+        if (
+            string.IsNullOrWhiteSpace(change.Key)
+            || change.Key.Contains('\r')
+            || change.Key.Contains('\n')
+            || change.Key.Contains('=')
+            || change.Key.StartsWith('#')
+            || change.Key.StartsWith(';')
+        )
+        {
+            return "The npmrc writer requires a valid single-line key.";
+        }
+
+        bool writesValue =
+            change.Operation
+            is ConfigurationChangeOperation.Set
+                or ConfigurationChangeOperation.Create
+                or ConfigurationChangeOperation.Update
+                or ConfigurationChangeOperation.Refresh;
+        if (
+            writesValue
+            && (change.Value is null || change.Value.Contains('\r') || change.Value.Contains('\n'))
+        )
+        {
+            return "The npmrc writer requires a single-line value.";
+        }
+
+        bool authToken = IsAuthTokenKey(change.Key);
+        if (writesValue && authToken != change.IsSecretValue)
+        {
+            return authToken
+                ? "npm auth token values must be marked as secret."
+                : "npmrc secret values are supported only for auth token selectors.";
+        }
+
+        if (writesValue && authToken)
+        {
+            if (
+                resourceIdentity is null
+                || !CanonicalResourceIdentityPolicy.IsServiceEndpointCompatibleWithEcosystem(
+                    resourceIdentity.ServiceEndpoint,
+                    CredentialEcosystem.Npm
+                )
+                || !string.Equals(
+                    NpmCompatibleAuthSelectorPolicy.Create(resourceIdentity).NpmAuthTokenKey,
+                    change.Key,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                return "The npm auth token selector must match the canonical registry identity.";
+            }
+        }
+
+        return change.Operation switch
+        {
+            ConfigurationChangeOperation.Set
+            or ConfigurationChangeOperation.Create
+            or ConfigurationChangeOperation.Update
+            or ConfigurationChangeOperation.Refresh
+            or ConfigurationChangeOperation.Remove => null,
+            _ => "The npmrc writer supports value-writing and remove operations only.",
+        };
+    }
+
+    private void ValidateRequest(ConfigurationPhysicalTargetWriterRequest request)
+    {
+        if (request.TargetKind != ConfigurationTargetKind.Npmrc)
+        {
+            throw new NotSupportedException("The npmrc writer received another target kind.");
+        }
+
+        _ = GetTargetPath(request);
+        if (
+            request
+                .Changes.GroupBy(change => change.Key, StringComparer.Ordinal)
+                .Any(group => group.Count() > 1)
+        )
+        {
+            throw new InvalidOperationException(
+                "An npmrc request contains duplicate managed selectors."
+            );
+        }
+
+        foreach (ConfigurationChange change in request.Changes)
+        {
+            string? violation = GetPlanningValidationViolation(change, request.ResourceIdentity);
+            if (violation is not null)
+            {
+                throw new NotSupportedException(violation);
+            }
+        }
+    }
+
+    private string GetTargetPath(ConfigurationPhysicalTargetWriterRequest request)
+    {
+        string[] paths = request
+            .Changes.Select(change =>
+            {
+                if (!fileSystem.IsPathFullyQualified(change.TargetPathOrName))
+                {
+                    throw new ArgumentException("The npmrc target path must be fully qualified.");
+                }
+                return fileSystem.GetFullPath(change.TargetPathOrName);
+            })
+            .Distinct(FileSystemPathSemantics.GetComparer(fileSystem))
+            .ToArray();
+        return paths.Length == 1
+            ? paths[0]
+            : throw new NotSupportedException("An npmrc request must target one file.");
+    }
+
+    private NpmrcDocument ReadDocument(string targetPath)
+    {
+        string writePath = ResolveWritePath(targetPath);
+        if (!fileSystem.FileExists(writePath))
+        {
+            if (fileSystem.DirectoryExists(writePath))
+            {
+                throw new InvalidOperationException("The npmrc target is a directory.");
+            }
+            return NpmrcDocument.Missing(writePath, readEnvironmentVariable);
+        }
+
+        return NpmrcDocument.Parse(
+            fileSystem.ReadAllBytes(writePath),
+            writePath,
+            readEnvironmentVariable
+        );
+    }
+
+    private string ResolveWritePath(string targetPath) =>
+        fileSystem is IFileSystemLinkResolver linkResolver
+            ? linkResolver.ResolveFilePathForWrite(targetPath)
+            : targetPath;
+
+    private void RevalidateWritePath(string targetPath, string writePath)
+    {
+        if (
+            fileSystem is IFileSystemLinkResolver
+            && !FileSystemPathSemantics
+                .GetComparer(fileSystem)
+                .Equals(ResolveWritePath(targetPath), writePath)
+        )
+        {
+            throw new IOException(
+                "The npmrc configuration link changed while it was being updated."
+            );
+        }
+    }
+
+    private string Apply(
+        NpmrcDocument document,
+        ConfigurationPhysicalTargetWriterRequest request,
+        bool mutate
+    )
+    {
+        NpmrcDocument working = mutate ? document : document.Clone();
+        foreach (ConfigurationChange change in request.Changes)
+        {
+            var existing = working.GetEntry(change.Key);
+            bool remove =
+                request.PlanOperation == ConfigurationPlanOperation.Remove
+                || change.Operation == ConfigurationChangeOperation.Remove;
+            if (remove)
+            {
+                if (!request.IsOwned(change, fileSystem))
+                {
+                    throw new InvalidOperationException(
+                        "npmrc removal requires a recognized owned selector."
+                    );
+                }
+                working.Remove(change.Key);
+                continue;
+            }
+
+            if (existing is not null && !request.IsOwned(change, fileSystem))
+            {
+                throw new InvalidOperationException(
+                    "The npmrc selector already exists without recognized ownership."
+                );
+            }
+
+            working.Set(change.Key, change.Value!);
+        }
+
+        return working.Render();
+    }
+
+    private static bool IsAuthTokenKey(string key) =>
+        string.Equals(key, "_authToken", StringComparison.Ordinal)
+        || key.EndsWith(":_authToken", StringComparison.Ordinal);
+
+    private static bool RegistryValuesMatch(string key, string? actual, string? expected)
+    {
+        if (
+            !NpmrcRegistryDeclarationKeyPolicy.IsRegistryDeclarationKey(key)
+            || !Uri.TryCreate(actual, UriKind.Absolute, out Uri? actualRegistry)
+            || !Uri.TryCreate(expected, UriKind.Absolute, out Uri? expectedRegistry)
+        )
+        {
+            return string.Equals(actual, expected, StringComparison.Ordinal);
+        }
+
+        return string.Equals(
+            actualRegistry.AbsoluteUri.TrimEnd('/'),
+            expectedRegistry.AbsoluteUri.TrimEnd('/'),
+            StringComparison.Ordinal
+        );
+    }
+
+    private sealed class NpmrcDocument
+    {
+        private readonly List<string> lines;
+        private readonly bool hadBom;
+        private readonly string newLine;
+        private readonly bool trailingNewLine;
+        private readonly Func<string, string?> environmentVariableReader;
+
+        private NpmrcDocument(
+            List<string> lines,
+            bool hadBom,
+            string newLine,
+            bool trailingNewLine,
+            string writePath,
+            Func<string, string?> environmentVariableReader
+        )
+        {
+            this.lines = lines;
+            this.hadBom = hadBom;
+            this.newLine = newLine;
+            this.trailingNewLine = trailingNewLine;
+            this.environmentVariableReader = environmentVariableReader;
+            WritePath = writePath;
+        }
+
+        public string Text => Render();
+
+        public string WritePath { get; }
+
+        public static NpmrcDocument Missing(
+            string writePath,
+            Func<string, string?> environmentVariableReader
+        ) =>
+            new(
+                [],
+                hadBom: false,
+                "\n",
+                trailingNewLine: true,
+                writePath,
+                environmentVariableReader
+            );
+
+        public static NpmrcDocument Parse(
+            byte[] bytes,
+            string writePath,
+            Func<string, string?> environmentVariableReader
+        )
+        {
+            bool bom = bytes is [0xEF, 0xBB, 0xBF, ..];
+            string text = Utf8NoBom.GetString(bom ? bytes[3..] : bytes);
+            return new NpmrcDocument(
+                SplitLines(text),
+                bom,
+                text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n",
+                text.EndsWith('\n'),
+                writePath,
+                environmentVariableReader
+            );
+        }
+
+        public NpmrcDocument Clone() =>
+            new(
+                [.. lines],
+                hadBom,
+                newLine,
+                trailingNewLine,
+                WritePath,
+                environmentVariableReader
+            );
+
+        public NpmrcEntry? GetEntry(string key)
+        {
+            NpmrcEntry[] entries = Find(key).ToArray();
+            return entries.Length switch
+            {
+                0 => null,
+                1 => entries[0],
+                _ => throw new InvalidOperationException(
+                    "The managed npmrc selector is declared more than once."
+                ),
+            };
+        }
+
+        public void Set(string key, string value)
+        {
+            NpmrcEntry? entry = GetEntry(key);
+            string rendered = key + "=" + EscapeValue(value);
+            if (entry is not null)
+            {
+                lines[entry.Index] = rendered;
+            }
+            else
+            {
+                lines.Insert(GetTopLevelInsertionIndex(), rendered);
+            }
+        }
+
+        public void Remove(string key)
+        {
+            NpmrcEntry? entry = GetEntry(key);
+            if (entry is not null)
+            {
+                lines.RemoveAt(entry.Index);
+            }
+        }
+
+        public string Render()
+        {
+            string text = string.Join(newLine, lines);
+            return trailingNewLine && lines.Count > 0 ? text + newLine : text;
+        }
+
+        public byte[] Encode(string value)
+        {
+            byte[] bytes = Utf8NoBom.GetBytes(value);
+            return hadBom ? [0xEF, 0xBB, 0xBF, .. bytes] : bytes;
+        }
+
+        private IEnumerable<NpmrcEntry> Find(string key)
+        {
+            for (var index = 0; index < lines.Count; index++)
+            {
+                if (NpmrcIniSyntax.IsSectionHeader(lines[index]))
+                {
+                    yield break;
+                }
+
+                if (
+                    TryParseEntry(
+                        lines[index],
+                        out string parsedKey,
+                        out string? value,
+                        out bool isArray
+                    )
+                    && string.Equals(
+                        NpmrcIniSyntax.ExpandEnvironmentVariables(
+                            parsedKey,
+                            environmentVariableReader,
+                            out _
+                        ),
+                        key,
+                        StringComparison.Ordinal
+                    )
+                )
+                {
+                    yield return new NpmrcEntry(index, value, isArray);
+                }
+            }
+        }
+
+        private int GetTopLevelInsertionIndex()
+        {
+            for (var index = 0; index < lines.Count; index++)
+            {
+                if (NpmrcIniSyntax.IsSectionHeader(lines[index]))
+                {
+                    return index;
+                }
+            }
+
+            return lines.Count;
+        }
+
+        private static bool TryParseEntry(
+            string line,
+            out string key,
+            out string value,
+            out bool isArray
+        )
+        {
+            key = string.Empty;
+            value = string.Empty;
+            isArray = false;
+            string trimmed = line.Trim();
+            if (trimmed.Length == 0 || trimmed.StartsWith('#') || trimmed.StartsWith(';'))
+            {
+                return false;
+            }
+
+            int equals = trimmed.IndexOf('=');
+            if (equals == 0)
+            {
+                return false;
+            }
+
+            key = NpmrcIniSyntax.NormalizeArrayAssignmentKey(
+                NpmrcIniSyntax.DecodeField(equals < 0 ? trimmed : trimmed[..equals]),
+                out isArray
+            );
+            if (equals >= 0)
+            {
+                value = NpmrcIniSyntax.DecodeField(trimmed[(equals + 1)..]);
+            }
+            return key.Length > 0;
+        }
+
+        private static string EscapeValue(string value) =>
+            value.Replace("\\", "\\\\", StringComparison.Ordinal);
+
+        private static List<string> SplitLines(string text)
+        {
+            if (text.Length == 0)
+            {
+                return [];
+            }
+
+            List<string> result = text.Replace("\r\n", "\n", StringComparison.Ordinal)
+                .Split('\n')
+                .ToList();
+            if (text.EndsWith('\n'))
+            {
+                result.RemoveAt(result.Count - 1);
+            }
+            return result;
+        }
+
+        public sealed record NpmrcEntry(int Index, string Value, bool IsArray);
+    }
+}

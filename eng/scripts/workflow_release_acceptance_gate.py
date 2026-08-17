@@ -393,6 +393,16 @@ MANDATORY_TEST_NODEIDS = (
     "tests/test_workflow_release_control.py::"
     "test_ci_batch_aggregation_propagates_malformed_release_mapping_failure",
     "src/public/lib/three-workflow-release-planner/tests/test_planner.py::"
+    "test_buddy_smoke_projects_plan_github_packages_publish",
+    "src/public/lib/three-workflow-release-planner/tests/test_planner.py::"
+    "test_buddy_mixed_github_release_fails_closed_when_deactivated",
+    "src/public/lib/three-workflow-release-planner/tests/test_planner.py::"
+    "test_buddy_github_release_only_target_fails_closed_when_deactivated",
+    "src/public/lib/three-workflow-release-planner/tests/test_planner.py::"
+    "test_buddy_force_official_frozen_version_fails_closed",
+    "src/public/lib/three-workflow-release-planner/tests/test_planner.py::"
+    "test_cli_passes_official_frozen_versions",
+    "src/public/lib/three-workflow-release-planner/tests/test_planner.py::"
     "test_ci_validation_plans_workflow_governance_markdown_as_tooling",
     "src/public/lib/three-workflow-release-contracts/tests/test_contracts.py::"
     "test_successful_release_report_requires_plan_identity",

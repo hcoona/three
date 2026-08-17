@@ -251,7 +251,7 @@ def _fake_provider_result(binding: ProviderBinding) -> NodeProviderResult:
         provider_implementation_id=PROVIDER_IMPLEMENTATION_ID,
         execution_mode=PROVIDER_EXECUTION_MODE,
         execution_class=PROVIDER_EXECUTION_CLASS,
-        toolchain=(("node", "v24.14.0"), ("pnpm", "11.17.0")),
+        toolchain=(("node", "v24.14.0"), ("pnpm", "11.21.0")),
         manifest_digest=(
             "sha256:"
             + hashlib.sha256(

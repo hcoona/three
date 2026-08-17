@@ -1848,7 +1848,7 @@ def test_admits_only_the_three_exact_digest_bound_exceptions(
             f"dependencies.{PACKAGE_NAME}",
             (
                 "sha256:"
-                "0dede06fe12d0fc5a5ff7fc943fe485c068b44b1cb609a98b4d980076b592ac7"
+                "a28d7f1e161df6948cdc2f122e78b9a38f425b481877178e29c8cd8ef30b0aa2"
             ),
         ),
         (

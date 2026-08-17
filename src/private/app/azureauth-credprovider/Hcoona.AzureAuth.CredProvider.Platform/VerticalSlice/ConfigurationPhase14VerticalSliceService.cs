@@ -1,0 +1,4187 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Text.Json;
+using Hcoona.AzureAuth.CredProvider.Contracts;
+using Hcoona.AzureAuth.CredProvider.Platform.AzurePipelines;
+using Hcoona.AzureAuth.CredProvider.Platform.Composition;
+using Hcoona.AzureAuth.CredProvider.Platform.Configuration;
+using Hcoona.AzureAuth.CredProvider.Platform.CredentialCore;
+using Hcoona.AzureAuth.CredProvider.Platform.FileSystem;
+
+namespace Hcoona.AzureAuth.CredProvider.Platform.VerticalSlice;
+
+public sealed record ConfigurationPhase14VerticalSliceOptions
+{
+    public string? AzurePipelinesJobScopeId { get; init; }
+
+    public string? CiTemporaryProductRootPath { get; init; }
+
+    public string? StateDirectoryPath { get; init; }
+
+    public IFileSystem? FileSystem { get; init; }
+
+    public CredentialCoreService? CredentialCoreService { get; init; }
+
+    public BoundedCredentialAcquisitionAdapter? CredentialAcquisition { get; init; }
+
+    public Func<ICredentialAcquisitionService>? CredentialAcquisitionFactory { get; init; }
+
+    public Func<string, string?>? EnvironmentVariableReader { get; init; }
+
+    public string? ProductExecutablePath { get; init; }
+
+    public string? WorkspaceDirectoryPath { get; init; }
+
+    public IReadOnlyDictionary<CredentialEcosystem, Uri>? RegistryUrls { get; init; }
+
+    public TimeProvider? TimeProvider { get; init; }
+
+    public RegistryCredentialExpiryPolicyOptions? ExpiryPolicy { get; init; }
+
+    public PythonPhase11VerticalSliceService? PythonDoctorService { get; init; }
+}
+
+public sealed record ConfigurationPhase14ResolvedPaths
+{
+    public required string StateDirectoryPath { get; init; }
+
+    public required string ManifestDirectoryPath { get; init; }
+
+    public required string CiTemporaryRootPath { get; init; }
+
+    public required string CiTemporaryManifestDirectoryPath { get; init; }
+
+    public required string OwnershipManifestPath { get; init; }
+
+    public required string NpmUserNpmrcPath { get; init; }
+
+    public required string PnpmUserNpmrcPath { get; init; }
+
+    public required string NpmCiTemporaryNpmrcPath { get; init; }
+
+    public required string PnpmCiTemporaryNpmrcPath { get; init; }
+
+    public required string YarnUserYarnrcPath { get; init; }
+
+    public required string YarnCiTemporaryHomePath { get; init; }
+}
+
+public sealed record ConfigurationPhase14PlanResult
+{
+    public required ConfigurationPhase14ResolvedPaths Paths { get; init; }
+
+    public required IReadOnlyList<ConfigurationPlanResult> PlanResults { get; init; }
+
+    public required bool OwnershipManifestPresent { get; init; }
+
+    public PythonPhase11DoctorResult? PythonPreflight { get; init; }
+
+    public bool OwnershipManifestCleanupIncomplete { get; init; }
+
+    public bool LifecycleStateMutated { get; init; }
+
+    public bool PythonPreflightSucceeded =>
+        PythonPreflight?.IsConfigurationPreflightReady ?? true;
+
+    public ConfigurationPlanResult? PlanResult =>
+        PlanResults.Count == 0 ? null : PlanResults[^1];
+
+    public int ChangeCount => PlanResults.Sum(static result => result.Changes.Count);
+
+    public int AppliedChangeCount =>
+        PlanResults
+            .Where(static result => result.Operation != ConfigurationPlanOperation.DryRun)
+            .Sum(static result => result.Changes.Count);
+}
+
+public sealed record ConfigurationPhase14DoctorResult
+{
+    public required ConfigurationPhase14ResolvedPaths Paths { get; init; }
+
+    // editorconfig-checker-disable
+    public required IReadOnlyList<ConfigurationPhase14EcosystemDoctorResult> Ecosystems { get; init; }
+
+    // editorconfig-checker-enable
+
+    public required bool AzurePipelinesSystemAccessTokenPresent { get; init; }
+
+    public required bool PersistentDerivedCredentialCacheEnabled { get; init; }
+}
+
+public sealed record ConfigurationPhase14EcosystemDoctorResult
+{
+    public required CredentialEcosystem Ecosystem { get; init; }
+
+    public required ConfigurationPhase14Scope Scope { get; init; }
+
+    public required bool ConfigurationPlanValid { get; init; }
+
+    public required bool ConfigureOperationValid { get; init; }
+
+    public required bool OwnershipManifestPresent { get; init; }
+
+    public required bool OwnedTargetPresent { get; init; }
+
+    public required bool OwnedTargetMatchesResolvedPath { get; init; }
+
+    public required bool TemporaryContainerPresent { get; init; }
+
+    public RegistryCredentialLifecycleState LifecycleState { get; init; } =
+        RegistryCredentialLifecycleState.Missing;
+
+    public DateTimeOffset? CredentialExpiresAt { get; init; }
+
+    public Uri? RegistryUrl { get; init; }
+
+    public ConfigurationPhase14InputFailure? InputFailure { get; init; }
+}
+
+public sealed record ConfigurationPhase14InputFailure
+{
+    public required string Code { get; init; }
+
+    public required string SettingName { get; init; }
+
+    public required string SafeMessage { get; init; }
+}
+
+public sealed record ConfigurationPhase14CleanupResult
+{
+    public required ConfigurationPhase14ResolvedPaths Paths { get; init; }
+
+    public required ConfigurationPhase14Scope Scope { get; init; }
+
+    // editorconfig-checker-disable
+    public required IReadOnlyList<ConfigurationPhase14CleanupEcosystemResult> Ecosystems { get; init; }
+
+    // editorconfig-checker-enable
+
+    public required bool PersistentDerivedCredentialsRemoved { get; init; }
+
+    public int ChangeCount => Ecosystems.Sum(static result => result.ChangeCount);
+
+    public int AppliedChangeCount => Ecosystems.Sum(static result => result.AppliedChangeCount);
+}
+
+public sealed record ConfigurationPhase14CleanupEcosystemResult
+{
+    public required CredentialEcosystem Ecosystem { get; init; }
+
+    public required ConfigurationPhase14Scope Scope { get; init; }
+
+    public required string State { get; init; }
+
+    public required int ChangeCount { get; init; }
+
+    public required int AppliedChangeCount { get; init; }
+
+    public required bool OwnershipManifestPresent { get; init; }
+
+    public required bool TemporaryContainerPresent { get; init; }
+}
+
+public sealed class ConfigurationPhase14VerticalSliceService
+{
+    private sealed record ExistingOwnershipManifest(ConfigurationOwnershipManifest Manifest);
+
+    private sealed record PackageOwnershipIntentLayouts(
+        ConfigurationOwnershipManifest Previous,
+        ConfigurationOwnershipManifest Requested
+    );
+
+    private static class PackageCleanupLayoutProjector
+    {
+        public static ConfigurationOwnershipManifest ProjectOwnershipLayout(
+            CredentialEcosystem ecosystem,
+            ConfigurationScope scope,
+            CanonicalResourceIdentity resource,
+            string logicalTargetPath
+        )
+        {
+            if (scope is not (ConfigurationScope.User or ConfigurationScope.CiTemporary))
+            {
+                throw new ArgumentOutOfRangeException(nameof(scope), scope, null);
+            }
+
+            NpmCompatibleAuthSelectors selectors = NpmCompatibleAuthSelectorPolicy.Create(resource);
+            ConfigurationTargetKind targetKind;
+            string manifestId;
+            string productVersion;
+            string ecosystemName;
+            string registryKey;
+            string entrySelector;
+            string[] orderedKeys;
+            switch (ecosystem)
+            {
+                case CredentialEcosystem.Npm:
+                case CredentialEcosystem.Pnpm:
+                    targetKind = ConfigurationTargetKind.Npmrc;
+                    manifestId = NpmCredentialManifestId;
+                    productVersion = "phase12";
+                    ecosystemName = ecosystem == CredentialEcosystem.Npm ? "npm" : "pnpm";
+                    registryKey = "registry";
+                    entrySelector = selectors.NpmAuthTokenKey;
+                    orderedKeys =
+                        scope == ConfigurationScope.CiTemporary
+                            ? [registryKey, entrySelector]
+                            : [entrySelector];
+                    break;
+                case CredentialEcosystem.Yarn:
+                    targetKind = ConfigurationTargetKind.Yarnrc;
+                    manifestId = YarnCredentialManifestId;
+                    productVersion = "phase13";
+                    ecosystemName = "yarn";
+                    registryKey = "npmRegistryServer";
+                    entrySelector = selectors.YarnAuthTokenKey;
+                    orderedKeys =
+                        scope == ConfigurationScope.CiTemporary
+                            ? [registryKey, selectors.YarnAlwaysAuthKey, entrySelector]
+                            : [selectors.YarnAlwaysAuthKey, entrySelector];
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(ecosystem), ecosystem, null);
+            }
+
+            return new ConfigurationOwnershipManifest
+            {
+                ManifestId = manifestId,
+                OwnerProductId = ProductId,
+                Scope = scope,
+                EntrySelector = entrySelector,
+                ResourceIdentity = resource,
+                ProductVersion = productVersion,
+                SafeMetadata = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["ecosystem"] = ecosystemName,
+                    ["registry-key"] = registryKey,
+                },
+                Entries = orderedKeys
+                    .Select(
+                        (key, index) =>
+                            new ConfigurationOwnershipManifestEntry
+                            {
+                                Sequence = index + 1,
+                                TargetKind = targetKind,
+                                TargetPathOrName = logicalTargetPath,
+                                Key = key,
+                            }
+                    )
+                    .ToArray(),
+            };
+        }
+
+        public static ConfigurationTemporaryContainer? ProjectTemporaryContainer(
+            IFileSystem fileSystem,
+            CredentialEcosystem ecosystem,
+            ConfigurationScope scope,
+            string logicalTargetPath,
+            string yarnCiTemporaryHomePath
+        )
+        {
+            if (scope != ConfigurationScope.CiTemporary)
+            {
+                return null;
+            }
+
+            bool windows = FileSystemPathSemantics.UsesWindowsPaths(fileSystem);
+            if (ecosystem is CredentialEcosystem.Npm or CredentialEcosystem.Pnpm)
+            {
+                return new ConfigurationTemporaryContainer
+                {
+                    Kind = ConfigurationTemporaryContainerKind.NpmrcFile,
+                    ProductOwnedPath = logicalTargetPath,
+                    ActivationEnvironment = new ConfigurationActivationEnvironment
+                    {
+                        Platform = windows ? "windows" : "posix",
+                        SetVariables = windows
+                            ? new Dictionary<string, string>(StringComparer.Ordinal)
+                            {
+                                [NpmUserConfigEnvironmentVariable] = logicalTargetPath,
+                            }
+                            : new Dictionary<string, string>(StringComparer.Ordinal)
+                            {
+                                [NpmUserConfigEnvironmentVariable] = logicalTargetPath,
+                                [LowercaseNpmUserConfigEnvironmentVariable] = logicalTargetPath,
+                            },
+                        ClearVariables = [],
+                    },
+                };
+            }
+
+            if (ecosystem != CredentialEcosystem.Yarn)
+            {
+                throw new ArgumentOutOfRangeException(nameof(ecosystem), ecosystem, null);
+            }
+
+            return new ConfigurationTemporaryContainer
+            {
+                Kind = ConfigurationTemporaryContainerKind.TemporaryHome,
+                ProductOwnedPath = yarnCiTemporaryHomePath,
+                ActivationEnvironment = new ConfigurationActivationEnvironment
+                {
+                    Platform = windows ? "windows" : "posix",
+                    SetVariables = windows
+                        ? new Dictionary<string, string>(StringComparer.Ordinal)
+                        {
+                            ["USERPROFILE"] = yarnCiTemporaryHomePath,
+                            ["HOME"] = yarnCiTemporaryHomePath,
+                        }
+                        : new Dictionary<string, string>(StringComparer.Ordinal)
+                        {
+                            ["HOME"] = yarnCiTemporaryHomePath,
+                        },
+                    ClearVariables = windows
+                        ? ["HOMEDRIVE", "HOMEPATH", YarnRcFilenameEnvironmentVariable]
+                        : [YarnRcFilenameEnvironmentVariable],
+                },
+            };
+        }
+    }
+
+    private enum PythonOwnershipManifestLayout
+    {
+        Current,
+        LegacyWindows,
+    }
+
+    private const string ProductId = "azureauth-credprovider";
+    private const string ProductVersion = "phase14.2";
+    private const string PythonPlanId = "phase14-python-keyring-configure-plan";
+    private const string PythonManifestId = "phase14-python-keyring";
+    private const string NpmCredentialManifestId = "phase12-npmrc-credential";
+    private const string YarnCredentialManifestId = "phase13-yarnrc-credential";
+    private const string PhysicalTargetKey = "physical-target";
+    private const string AzurePipelinesSystemAccessTokenVariable = "SYSTEM_ACCESSTOKEN";
+    private const string AzurePipelinesJobScopeIdVariable = "SYSTEM_JOBID";
+    private const int MaximumJobScopeIdLength = 128;
+    private const string NpmUserConfigEnvironmentVariable = "NPM_CONFIG_USERCONFIG";
+    private const string LowercaseNpmUserConfigEnvironmentVariable = "npm_config_userconfig";
+    private const string YarnRcFilenameEnvironmentVariable = "YARN_RC_FILENAME";
+    private const string CleanupStateNotNeeded = "not-needed";
+    private const string CleanupStateRemoved = "removed";
+    private const string CleanupStateIncomplete = "incomplete";
+
+    private static readonly Uri PythonServiceEndpoint = new("https://dev.azure.com/org");
+
+    private readonly Lazy<BoundedCredentialAcquisitionAdapter> credentialAcquisition;
+    private readonly Func<string, string?> environmentVariableReader;
+    private readonly IFileSystem fileSystem;
+    private readonly string? jobScopeId;
+    private readonly ConfigurationLayoutPlatform layoutPlatform;
+    private readonly string? rawJobScopeId;
+    private readonly ConfigurationPhase14ResolvedPaths paths;
+    private readonly Dictionary<CredentialEcosystem, Uri> registryUrls;
+    private readonly RegistryCredentialExpiryPolicy expiryPolicy;
+    private readonly TimeProvider timeProvider;
+    private readonly string? productExecutablePath;
+    private readonly PythonPhase11VerticalSliceService? pythonDoctorService;
+    private readonly string workspaceDirectoryPath;
+
+    public ConfigurationPhase14VerticalSliceService(
+        ConfigurationPhase14VerticalSliceOptions? options = null
+    )
+    {
+        options ??= new ConfigurationPhase14VerticalSliceOptions();
+        fileSystem = options.FileSystem ?? new SystemFileSystem();
+        layoutPlatform = GetLayoutPlatform(fileSystem);
+        credentialAcquisition = new Lazy<BoundedCredentialAcquisitionAdapter>(
+            () =>
+                options.CredentialAcquisition
+                ?? new BoundedCredentialAcquisitionAdapter(
+                    options.CredentialAcquisitionFactory?.Invoke()
+                        ?? (
+                            options.CredentialCoreService is null
+                                ? CredentialProviderCompositionRoot
+                                    .CreateProduction()
+                                    .AcquisitionService
+                                : new LegacyV1CredentialAcquisitionService(
+                                    options.CredentialCoreService
+                                )
+                        )
+                ),
+            LazyThreadSafetyMode.ExecutionAndPublication
+        );
+        environmentVariableReader =
+            options.EnvironmentVariableReader ?? Environment.GetEnvironmentVariable;
+        rawJobScopeId =
+            options.AzurePipelinesJobScopeId
+            ?? environmentVariableReader(AzurePipelinesJobScopeIdVariable);
+        jobScopeId = IsValidJobScopeId(rawJobScopeId) ? rawJobScopeId : null;
+        workspaceDirectoryPath = fileSystem.GetFullPath(options.WorkspaceDirectoryPath ?? ".");
+        paths = ResolvePaths(
+            options,
+            fileSystem,
+            jobScopeId,
+            environmentVariableReader
+        );
+        registryUrls = ValidateRegistryUrls(options.RegistryUrls);
+        timeProvider = options.TimeProvider ?? TimeProvider.System;
+        expiryPolicy = new RegistryCredentialExpiryPolicy(timeProvider, options.ExpiryPolicy);
+        productExecutablePath = ResolveProductExecutablePath(options.ProductExecutablePath);
+        pythonDoctorService = options.PythonDoctorService;
+    }
+
+    public ConfigurationPhase14ResolvedPaths Paths => paths;
+
+    public void ValidateConfigureRequest(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope
+    )
+    {
+        EnsureCiJobScope(scope);
+        _ = GetOwnershipManifestPath(ecosystem, scope);
+        switch (ecosystem)
+        {
+            case CredentialEcosystem.Npm:
+            case CredentialEcosystem.Pnpm:
+                _ = CreateNpmDeclaration(ecosystem);
+                break;
+            case CredentialEcosystem.Yarn:
+                _ = CreateYarnDeclaration();
+                break;
+            case CredentialEcosystem.Python:
+                break;
+            default:
+                throw new NotSupportedException("Unsupported Phase 14 configuration ecosystem.");
+        }
+    }
+
+    public void ValidateUnconfigureRequest(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope
+    )
+    {
+        EnsureCiJobScope(scope);
+        _ = GetOwnershipManifestPath(ecosystem, scope);
+    }
+
+    public async ValueTask<ConfigurationPhase14PlanResult> ConfigureAsync(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        CancellationToken cancellationToken = default
+    ) =>
+        await ConfigureCoreAsync(
+            ecosystem,
+            scope,
+            execute: true,
+            forceRefresh: false,
+            cancellationToken
+        );
+
+    public async ValueTask<ConfigurationPhase14PlanResult> DryRunConfigureAsync(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        CancellationToken cancellationToken = default
+    ) =>
+        await ConfigureCoreAsync(
+            ecosystem,
+            scope,
+            execute: false,
+            forceRefresh: false,
+            cancellationToken
+        );
+
+    public async ValueTask<ConfigurationPhase14PlanResult> RefreshAsync(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        CancellationToken cancellationToken = default
+    ) =>
+        await ConfigureCoreAsync(
+            ecosystem,
+            scope,
+            execute: true,
+            forceRefresh: true,
+            cancellationToken
+        );
+
+    public async ValueTask<ConfigurationPhase14PlanResult> DryRunRefreshAsync(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        CancellationToken cancellationToken = default
+    ) =>
+        await ConfigureCoreAsync(
+            ecosystem,
+            scope,
+            execute: false,
+            forceRefresh: true,
+            cancellationToken
+        );
+
+    private async ValueTask<ConfigurationPhase14PlanResult> ConfigureCoreAsync(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        bool execute,
+        bool forceRefresh,
+        CancellationToken cancellationToken
+    )
+    {
+        EnsureCiJobScope(scope);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (
+            forceRefresh
+            && ecosystem
+                is not CredentialEcosystem.Npm
+                    and not CredentialEcosystem.Pnpm
+                    and not CredentialEcosystem.Yarn
+        )
+        {
+            throw new NotSupportedException(
+                "Refresh supports only npm, pnpm, and Yarn registry credentials."
+            );
+        }
+
+        if (IsPackageEcosystem(ecosystem))
+        {
+            return await ConfigurePackageCoreAsync(
+                ecosystem,
+                scope,
+                execute,
+                forceRefresh,
+                cancellationToken
+            );
+        }
+
+        if (ecosystem != CredentialEcosystem.Python)
+        {
+            throw new NotSupportedException(
+                "Phase 14 configuration supports Python, npm, pnpm, and Yarn. "
+                    + "Git and NuGet use their dedicated configuration services."
+            );
+        }
+
+        string ownershipManifestPath = GetOwnershipManifestPath(ecosystem, scope);
+        PythonPhase11DoctorResult? pythonPreflight = null;
+        if (pythonDoctorService is not null)
+        {
+            pythonPreflight = await pythonDoctorService
+                .RunDoctorAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (!pythonPreflight.IsConfigurationPreflightReady)
+            {
+                return CreatePythonPreflightFailureResult(pythonPreflight);
+            }
+        }
+
+        (
+            IReadOnlyList<ConfigurationChangePlan> plans,
+            List<ConfigurationPlanResult> previewResults
+        ) = await PreviewPythonConfigurationAsync(
+                scope,
+                ownershipManifestPath,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (!execute)
+        {
+            return CreateResult(
+                previewResults,
+                ownershipManifestPath,
+                pythonPreflight: pythonPreflight
+            );
+        }
+
+        (ConfigurationChangePlan Plan, ConfigurationPlanOperation Operation)[] operations = plans
+            .Select(plan =>
+                (
+                    plan,
+                    plan.Changes.All(static change =>
+                        change.Operation == ConfigurationChangeOperation.Remove
+                    )
+                        ? ConfigurationPlanOperation.Remove
+                        : ConfigurationPlanOperation.Apply
+                )
+            )
+            .ToArray();
+        IReadOnlyList<ConfigurationPlanResult> executed = await CreateManager(ownershipManifestPath)
+            .ExecuteBatchAsync(operations, cancellationToken);
+        List<ConfigurationPlanResult> appliedResults = executed
+            .Select((result, index) => result with { Plan = previewResults[index].Plan })
+            .ToList();
+        return CreateResult(
+            appliedResults,
+            ownershipManifestPath,
+            pythonPreflight: pythonPreflight
+        );
+    }
+
+    public Uri ResolvePersistedRegistryUrl(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope
+    )
+    {
+        EnsureCiJobScope(scope);
+        if (!IsPackageEcosystem(ecosystem))
+        {
+            throw new NotSupportedException(
+                "Registry URL inference supports only npm, pnpm, and Yarn."
+            );
+        }
+
+        try
+        {
+            string ownershipManifestPath = GetOwnershipManifestPath(ecosystem, scope);
+            if (
+                !TryLoadOwnershipManifest(
+                    ownershipManifestPath,
+                    out ConfigurationOwnershipManifest? manifest
+                )
+                || !OwnershipManifestMatchesExpectedState(manifest, ecosystem, scope)
+                || manifest.ResourceIdentity?.ServiceEndpoint is not { } registryUrl
+            )
+            {
+                throw CreateRegistryUrlInferenceException();
+            }
+
+            return registryUrl;
+        }
+        catch (Exception exception) when (IsExpectedOwnershipManifestReadOrParseFailure(exception))
+        {
+            throw CreateRegistryUrlInferenceException(exception);
+        }
+    }
+
+    private async ValueTask<ConfigurationPhase14PlanResult> ConfigurePackageCoreAsync(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        bool execute,
+        bool forceRefresh,
+        CancellationToken cancellationToken,
+        Uri? registryUrlOverride = null
+    )
+    {
+        string ownershipManifestPath = GetOwnershipManifestPath(ecosystem, scope);
+        NpmPhase12RegistryDeclaration[]? npmDeclarations =
+            ecosystem is CredentialEcosystem.Npm or CredentialEcosystem.Pnpm
+                ? ResolveNpmDeclarations(ecosystem, registryUrlOverride)
+                : null;
+        ConfigurationChangePlan requestedDryRunPlan = CreateApplyPlans(
+                ecosystem,
+                scope,
+                CreateDryRunCredential(scope),
+                registryUrlOverride,
+                npmDeclarations
+            )
+            .Single();
+        ExistingOwnershipManifest? existing = LoadRecognizedPackageManifest(
+            ecosystem,
+            scope,
+            ownershipManifestPath,
+            requestedDryRunPlan
+        );
+        if (
+            !forceRefresh
+            && existing is not null
+            && await IsCurrentConfigurationFreshAsync(
+                existing.Manifest,
+                ecosystem,
+                scope,
+                requestedDryRunPlan,
+                ownershipManifestPath,
+                cancellationToken
+            )
+        )
+        {
+            return CreateResult(
+                [
+                    CreatePersistedNoOpPlanResult(
+                        execute
+                            ? ConfigurationPlanOperation.Apply
+                            : ConfigurationPlanOperation.DryRun,
+                        applied: execute,
+                        requestedDryRunPlan,
+                        ownershipManifestPath
+                    ),
+                ],
+                ownershipManifestPath
+            );
+        }
+
+        CredentialResult credential = execute
+            ? GetPackageCredential(
+                ecosystem,
+                scope,
+                cancellationToken,
+                npmDeclarations?[0].ResourceIdentity
+            )
+            : CreateDryRunCredential(scope);
+        ConfigurationChangePlan applyPlan = CreateApplyPlans(
+                ecosystem,
+                scope,
+                credential,
+                registryUrlOverride,
+                npmDeclarations
+            )
+            .Single();
+        bool replaceExisting =
+            existing is not null
+            && !ManifestMatchesRequestedConfiguration(existing.Manifest, applyPlan);
+        ConfigurationChangePlan[] removalPlans = replaceExisting
+            ? CreateRemovePlans(ecosystem, scope, existing!.Manifest)
+            : [];
+
+        List<ConfigurationPlanResult> previewResults = [];
+        foreach (ConfigurationChangePlan removalPlan in removalPlans)
+        {
+            previewResults.Add(
+                await CreateManager(ownershipManifestPath)
+                    .DryRunAsync(removalPlan, cancellationToken)
+            );
+        }
+
+        previewResults.Add(
+            await CreateManager(ownershipManifestPath).DryRunAsync(applyPlan, cancellationToken)
+        );
+
+        if (!execute)
+        {
+            return CreateResult(previewResults, ownershipManifestPath);
+        }
+
+        var operations = removalPlans
+            .Select(plan => (plan, ConfigurationPlanOperation.Remove))
+            .Append((applyPlan, ConfigurationPlanOperation.Apply))
+            .ToArray();
+        IReadOnlyList<ConfigurationPlanResult> executed = await CreateManager(ownershipManifestPath)
+            .ExecuteBatchAsync(operations, cancellationToken);
+        List<ConfigurationPlanResult> appliedResults = executed
+            .Select((result, index) => result with { Plan = previewResults[index].Plan })
+            .ToList();
+        return CreateResult(appliedResults, ownershipManifestPath);
+    }
+
+    private ExistingOwnershipManifest? LoadRecognizedPackageManifest(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        string ownershipManifestPath,
+        ConfigurationChangePlan requestedPlan
+    )
+    {
+        try
+        {
+            if (
+                !TryLoadOwnershipManifest(
+                    ownershipManifestPath,
+                    out ConfigurationOwnershipManifest? manifest
+                )
+            )
+            {
+                return null;
+            }
+
+            if (
+                !OwnershipManifestMatchesExpectedBaseState(manifest, ecosystem, scope)
+                && !PackageOwnershipIntentMatchesExpectedState(
+                    manifest,
+                    ecosystem,
+                    scope,
+                    requestedPlan
+                )
+            )
+            {
+                throw new InvalidOperationException(
+                    "The existing registry credential ownership manifest is not recognized."
+                );
+            }
+
+            return new ExistingOwnershipManifest(manifest);
+        }
+        catch (Exception exception) when (IsExpectedOwnershipManifestReadOrParseFailure(exception))
+        {
+            throw new InvalidOperationException(
+                "The existing registry credential ownership manifest is invalid.",
+                exception
+            );
+        }
+    }
+
+    public async ValueTask<ConfigurationPhase14PlanResult> UnconfigureAsync(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        CancellationToken cancellationToken = default
+    ) => await UnconfigureCoreAsync(ecosystem, scope, execute: true, cancellationToken);
+
+    public async ValueTask<ConfigurationPhase14PlanResult> DryRunUnconfigureAsync(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        CancellationToken cancellationToken = default
+    ) => await UnconfigureCoreAsync(ecosystem, scope, execute: false, cancellationToken);
+
+    private async ValueTask<ConfigurationPhase14PlanResult> UnconfigureCoreAsync(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        bool execute,
+        CancellationToken cancellationToken
+    )
+    {
+        EnsureCiJobScope(scope);
+        cancellationToken.ThrowIfCancellationRequested();
+        string ownershipManifestPath = GetOwnershipManifestPath(ecosystem, scope);
+        ConfigurationOwnershipManifest? manifest;
+        try
+        {
+            if (!TryLoadOwnershipManifest(ownershipManifestPath, out manifest))
+            {
+                return CreateResult(
+                    [
+                        CreateNoOpPlanResult(
+                            execute
+                                ? ConfigurationPlanOperation.Remove
+                                : ConfigurationPlanOperation.DryRun,
+                            execute
+                        ),
+                    ],
+                    ownershipManifestPath
+                );
+            }
+        }
+        catch (Exception exception) when (IsExpectedOwnershipManifestReadOrParseFailure(exception))
+        {
+            return CreateResult(
+                [
+                    CreateNoOpPlanResult(
+                        execute
+                            ? ConfigurationPlanOperation.Remove
+                            : ConfigurationPlanOperation.DryRun,
+                        execute
+                    ),
+                ],
+                ownershipManifestPath,
+                ownershipManifestCleanupIncomplete: true
+            );
+        }
+
+        if (!OwnershipManifestAuthorizesCleanup(manifest, ecosystem, scope))
+        {
+            return CreateResult(
+                [
+                    CreateNoOpPlanResult(
+                        execute
+                            ? ConfigurationPlanOperation.Remove
+                            : ConfigurationPlanOperation.DryRun,
+                        execute
+                    ),
+                ],
+                ownershipManifestPath,
+                ownershipManifestCleanupIncomplete: true
+            );
+        }
+
+        ConfigurationOwnershipManifestEntry[] packageEntries = IsPackageEcosystem(ecosystem)
+            ? manifest
+                .Entries.Where(entry => EntryMatchesEcosystem(entry, ecosystem))
+                .ToArray()
+            : [];
+        if (
+            packageEntries.Any(entry =>
+                !TryInspectConfigurationTarget(entry, out _)
+            )
+        )
+        {
+            return CreateResult(
+                [
+                    CreateNoOpPlanResult(
+                        execute
+                            ? ConfigurationPlanOperation.Remove
+                            : ConfigurationPlanOperation.DryRun,
+                        execute
+                    ),
+                ],
+                ownershipManifestPath,
+                ownershipManifestCleanupIncomplete: true
+            );
+        }
+
+        if (
+            packageEntries.Length > 0
+            && packageEntries.All(entry =>
+                TryInspectConfigurationTarget(entry, out bool exists) && !exists
+            )
+        )
+        {
+            if (execute)
+            {
+                fileSystem.DeleteFile(ownershipManifestPath);
+                if (scope == ConfigurationPhase14Scope.CiTemporary)
+                {
+                    DeleteKnownCiTemporaryContainerIfEmpty(ecosystem);
+                }
+            }
+
+            return CreateResult(
+                [
+                    CreateNoOpPlanResult(
+                        execute
+                            ? ConfigurationPlanOperation.Remove
+                            : ConfigurationPlanOperation.DryRun,
+                        execute
+                    ),
+                ],
+                ownershipManifestPath,
+                lifecycleStateMutated: execute
+            );
+        }
+
+        ConfigurationChangePlan[] plans = CreateRemovePlans(ecosystem, scope, manifest);
+        List<ConfigurationPlanResult> previewResults = [];
+        foreach (ConfigurationChangePlan plan in plans)
+        {
+            previewResults.Add(
+                await CreateManager(ownershipManifestPath).DryRunAsync(plan, cancellationToken)
+            );
+        }
+
+        if (!execute)
+        {
+            return previewResults.Count == 0
+                ? CreateResult(
+                    [CreateNoOpPlanResult(ConfigurationPlanOperation.DryRun, applied: false)],
+                    ownershipManifestPath
+                )
+                : CreateResult(previewResults, ownershipManifestPath);
+        }
+
+        List<ConfigurationPlanResult> removedResults = [];
+        for (var index = 0; index < plans.Length; index++)
+        {
+            ConfigurationPlanResult removed = await CreateManager(ownershipManifestPath)
+                .RemoveAsync(plans[index], cancellationToken);
+            removedResults.Add(removed with { Plan = previewResults[index].Plan });
+        }
+
+        if (
+            scope == ConfigurationPhase14Scope.CiTemporary
+            && !fileSystem.FileExists(ownershipManifestPath)
+        )
+        {
+            DeleteKnownCiTemporaryContainerIfEmpty(ecosystem);
+        }
+
+        return removedResults.Count == 0
+            ? CreateResult(
+                [CreateNoOpPlanResult(ConfigurationPlanOperation.Remove, applied: true)],
+                ownershipManifestPath,
+                lifecycleStateMutated: true
+            )
+            : CreateResult(removedResults, ownershipManifestPath, lifecycleStateMutated: true);
+    }
+
+    public async ValueTask<ConfigurationPhase14DoctorResult> DoctorAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        List<ConfigurationPhase14EcosystemDoctorResult> ecosystemResults = [];
+        foreach (CredentialEcosystem ecosystem in GetSupportedUserEcosystems())
+        {
+            ecosystemResults.Add(
+                await InspectDoctorAsync(
+                    ecosystem,
+                    ConfigurationPhase14Scope.User,
+                    cancellationToken
+                )
+            );
+        }
+
+        foreach (CredentialEcosystem ecosystem in GetSupportedCiTemporaryEcosystems())
+        {
+            if (TemporaryStateExists(ecosystem, ConfigurationPhase14Scope.CiTemporary))
+            {
+                ecosystemResults.Add(
+                    await InspectDoctorAsync(
+                        ecosystem,
+                        ConfigurationPhase14Scope.CiTemporary,
+                        cancellationToken
+                    )
+                );
+            }
+        }
+
+        return new ConfigurationPhase14DoctorResult
+        {
+            Paths = paths,
+            Ecosystems = ecosystemResults,
+            AzurePipelinesSystemAccessTokenPresent = !string.IsNullOrWhiteSpace(
+                environmentVariableReader(AzurePipelinesSystemAccessTokenVariable)
+            ),
+            PersistentDerivedCredentialCacheEnabled = false,
+        };
+    }
+
+    public async ValueTask<ConfigurationPhase14CleanupResult> CleanupAsync(
+        CredentialEcosystem? ecosystem,
+        ConfigurationPhase14Scope scope,
+        CancellationToken cancellationToken = default
+    ) => await CleanupCoreAsync(ecosystem, scope, execute: true, cancellationToken);
+
+    public async ValueTask<ConfigurationPhase14CleanupResult> DryRunCleanupAsync(
+        CredentialEcosystem? ecosystem,
+        ConfigurationPhase14Scope scope,
+        CancellationToken cancellationToken = default
+    ) => await CleanupCoreAsync(ecosystem, scope, execute: false, cancellationToken);
+
+    private async ValueTask<ConfigurationPhase14CleanupResult> CleanupCoreAsync(
+        CredentialEcosystem? ecosystem,
+        ConfigurationPhase14Scope scope,
+        bool execute,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (scope != ConfigurationPhase14Scope.CiTemporary)
+        {
+            return new ConfigurationPhase14CleanupResult
+            {
+                Paths = paths,
+                Scope = scope,
+                Ecosystems = [],
+                PersistentDerivedCredentialsRemoved = false,
+            };
+        }
+
+        List<ConfigurationPhase14CleanupEcosystemResult> cleanupResults = [];
+        foreach (CredentialEcosystem targetEcosystem in GetCleanupEcosystems(ecosystem))
+        {
+            if (ecosystem is null && targetEcosystem == CredentialEcosystem.Pnpm)
+            {
+                cleanupResults.Add(CreateSharedPnpmCleanupAliasResult());
+                continue;
+            }
+
+            try
+            {
+                EnsureCiJobScope(scope);
+                ConfigurationPhase14CleanupEcosystemResult cleanupResult =
+                    await CleanupCiTemporaryEcosystemAsync(
+                        targetEcosystem,
+                        execute,
+                        cancellationToken
+                    );
+                cleanupResults.Add(cleanupResult);
+            }
+            catch (Exception exception) when (IsExpectedCleanupFailure(exception))
+            {
+                cleanupResults.Add(
+                    CreateIncompleteCleanupResult(
+                        targetEcosystem,
+                        ConfigurationPhase14Scope.CiTemporary
+                    )
+                );
+            }
+        }
+
+        return new ConfigurationPhase14CleanupResult
+        {
+            Paths = paths,
+            Scope = scope,
+            Ecosystems = cleanupResults,
+            PersistentDerivedCredentialsRemoved = false,
+        };
+    }
+
+    public async ValueTask<ConfigurationPhase14CleanupResult> LogoutAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        List<ConfigurationPhase14CleanupEcosystemResult> results = [];
+        foreach (CredentialEcosystem ecosystem in GetSupportedUserPackageEcosystems())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                ConfigurationPhase14PlanResult removed = await UnconfigureAsync(
+                    ecosystem,
+                    ConfigurationPhase14Scope.User,
+                    cancellationToken
+                );
+                results.Add(
+                    CreateCleanupResult(ecosystem, ConfigurationPhase14Scope.User, removed)
+                );
+            }
+            catch (Exception exception) when (IsExpectedCleanupFailure(exception))
+            {
+                results.Add(
+                    CreateIncompleteCleanupResult(ecosystem, ConfigurationPhase14Scope.User)
+                );
+            }
+        }
+
+        if (rawJobScopeId is not null)
+        {
+            try
+            {
+                ConfigurationPhase14CleanupResult ci = await CleanupAsync(
+                    ecosystem: null,
+                    ConfigurationPhase14Scope.CiTemporary,
+                    cancellationToken
+                );
+                results.AddRange(ci.Ecosystems);
+            }
+            catch (Exception exception) when (IsExpectedCleanupFailure(exception))
+            {
+                foreach (CredentialEcosystem ecosystem in GetSupportedCiTemporaryEcosystems())
+                {
+                    results.Add(
+                        CreateIncompleteCleanupResult(
+                            ecosystem,
+                            ConfigurationPhase14Scope.CiTemporary
+                        )
+                    );
+                }
+            }
+        }
+
+        return new ConfigurationPhase14CleanupResult
+        {
+            Paths = paths,
+            Scope = ConfigurationPhase14Scope.User,
+            Ecosystems = results,
+            PersistentDerivedCredentialsRemoved = false,
+        };
+    }
+
+    private IReadOnlyList<ConfigurationChangePlan> CreateApplyPlans(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        CredentialResult? credential,
+        Uri? registryUrlOverride = null,
+        IReadOnlyList<NpmPhase12RegistryDeclaration>? npmDeclarations = null
+    ) =>
+        ecosystem switch
+        {
+            CredentialEcosystem.Python => CreatePythonPlans(scope),
+            CredentialEcosystem.Npm or CredentialEcosystem.Pnpm =>
+            [
+                CreateNpmCompatiblePlan(
+                    ecosystem,
+                    scope,
+                    credential
+                        ?? throw new InvalidOperationException("Package credential is required."),
+                    npmDeclarations ?? ResolveNpmDeclarations(ecosystem, registryUrlOverride)
+                ),
+            ],
+            CredentialEcosystem.Yarn =>
+            [
+                CreateYarnPlan(
+                    scope,
+                    credential
+                        ?? throw new InvalidOperationException("Package credential is required."),
+                    registryUrlOverride
+                ),
+            ],
+            _ => throw new NotSupportedException(
+                "Phase 14.2 configuration orchestration supports Python, npm, pnpm, and Yarn."
+            ),
+        };
+
+    private IReadOnlyList<ConfigurationChangePlan> CreatePythonPlans(
+        ConfigurationPhase14Scope scope
+    )
+    {
+        if (scope != ConfigurationPhase14Scope.User)
+        {
+            throw new NotSupportedException(
+                "Phase 14.2 Python configuration supports only user scope."
+            );
+        }
+
+        ConfigurationTargetLayoutProjection backendProjection =
+            ConfigurationLayoutProjector.ProjectPythonKeyringBackend(
+                CreateCurrentLayoutProjectionContext()
+            );
+        ConfigurationChangePlan backendPlan = CreatePythonPlan(
+            "backend",
+            ConfigurationTargetKind.PythonKeyringBackend,
+            backendProjection.TargetPath,
+            CreatePythonBackendManifestValue(GetRequiredProductExecutablePath())
+        );
+        if (layoutPlatform == ConfigurationLayoutPlatform.Windows)
+        {
+            ConfigurationChangePlan? obsoleteShimRemovalPlan =
+                CreateObsoleteWindowsPythonShimRemovalPlan(scope, backendProjection.TargetPath);
+            return obsoleteShimRemovalPlan is null
+                ? [backendPlan]
+                : [obsoleteShimRemovalPlan, backendPlan];
+        }
+
+        ConfigurationTargetLayoutProjection shimProjection =
+            ConfigurationLayoutProjector.ProjectKeyringShim(CreateCurrentLayoutProjectionContext());
+        return
+        [
+            backendPlan,
+            CreatePythonPlan(
+                "shim",
+                ConfigurationTargetKind.KeyringShim,
+                shimProjection.TargetPath,
+                CreatePosixKeyringShimValue()
+            ),
+        ];
+    }
+
+    private ConfigurationChangePlan? CreateObsoleteWindowsPythonShimRemovalPlan(
+        ConfigurationPhase14Scope scope,
+        string expectedBackendPath
+    )
+    {
+        string ownershipManifestPath = GetOwnershipManifestPath(CredentialEcosystem.Python, scope);
+        if (
+            !TryLoadOwnershipManifest(
+                ownershipManifestPath,
+                out ConfigurationOwnershipManifest? manifest
+            )
+        )
+        {
+            return null;
+        }
+
+        ConfigurationOwnershipManifestEntry[] obsoleteEntries = manifest
+            .Entries.Where(static entry => entry.TargetKind == ConfigurationTargetKind.KeyringShim)
+            .ToArray();
+        if (obsoleteEntries.Length == 0)
+        {
+            return null;
+        }
+
+        string expectedShimPath = ConfigurationLayoutProjector
+            .ProjectKeyringShim(CreateCurrentLayoutProjectionContext())
+            .TargetPath;
+        if (
+            !TryRecognizePythonOwnershipManifest(manifest, scope, out var layout)
+            || layout != PythonOwnershipManifestLayout.LegacyWindows
+            || !PathEquals(expectedBackendPath, GetExpectedPythonBackendPath())
+            || !PathEquals(expectedShimPath, GetExpectedPythonShimPath())
+        )
+        {
+            throw new InvalidOperationException(
+                "The existing Python ownership manifest does not identify the expected "
+                    + "product-owned Windows keyring shim."
+            );
+        }
+
+        return CreateRemovePlan(
+            CredentialEcosystem.Python,
+            "python",
+            scope,
+            manifest,
+            obsoleteEntries
+        );
+    }
+
+    private void EnsureRecognizedPythonManifestIfPresent(
+        ConfigurationPhase14Scope scope,
+        string ownershipManifestPath
+    )
+    {
+        ConfigurationOwnershipManifest? manifest;
+        try
+        {
+            if (!TryLoadOwnershipManifest(ownershipManifestPath, out manifest))
+            {
+                return;
+            }
+        }
+        catch (Exception exception) when (IsExpectedOwnershipManifestReadOrParseFailure(exception))
+        {
+            throw new InvalidOperationException(
+                "The existing Python ownership manifest is invalid.",
+                exception
+            );
+        }
+
+        if (!TryRecognizePythonOwnershipManifest(manifest, scope, out _))
+        {
+            throw new InvalidOperationException(
+                "The existing Python ownership manifest is not recognized."
+            );
+        }
+    }
+
+    private bool TryRecognizePythonOwnershipManifest(
+        ConfigurationOwnershipManifest manifest,
+        ConfigurationPhase14Scope scope,
+        out PythonOwnershipManifestLayout layout
+    )
+    {
+        layout = default;
+        ConfigurationManifestMetadata expectedMetadata = CreatePythonManifestMetadata();
+        if (
+            manifest.SchemaVersion != ConfigurationOwnershipManifest.CurrentSchemaVersion
+            || !string.Equals(
+                manifest.ManifestId,
+                expectedMetadata.ManifestId,
+                StringComparison.Ordinal
+            )
+            || !string.Equals(
+                manifest.OwnerProductId,
+                expectedMetadata.OwnerProductId,
+                StringComparison.Ordinal
+            )
+            || manifest.Scope
+                != (
+                    scope == ConfigurationPhase14Scope.CiTemporary
+                        ? ConfigurationScope.CiTemporary
+                        : ConfigurationScope.User
+                )
+            || !string.Equals(
+                manifest.EntrySelector,
+                expectedMetadata.EntrySelector,
+                StringComparison.Ordinal
+            )
+            || !Equals(manifest.ResourceIdentity, expectedMetadata.ResourceIdentity)
+            || !string.Equals(
+                manifest.ProductVersion,
+                expectedMetadata.ProductVersion,
+                StringComparison.Ordinal
+            )
+            || manifest.SafeMetadata is null
+            || manifest.SafeMetadata.Count != 1
+            || !manifest.SafeMetadata.TryGetValue("ecosystem", out string? ecosystem)
+            || !string.Equals(ecosystem, "python", StringComparison.Ordinal)
+        )
+        {
+            return false;
+        }
+
+        string expectedBackendPath = GetExpectedPythonBackendPath();
+        string expectedShimPath = GetExpectedPythonShimPath();
+        bool backendMatches =
+            manifest.Entries.Count >= 1
+            && PythonManifestEntryMatches(
+                manifest.Entries[0],
+                sequence: 1,
+                ConfigurationTargetKind.PythonKeyringBackend,
+                expectedBackendPath
+            );
+        if (!backendMatches)
+        {
+            return false;
+        }
+
+        if (layoutPlatform == ConfigurationLayoutPlatform.Windows && manifest.Entries.Count == 1)
+        {
+            layout = PythonOwnershipManifestLayout.Current;
+            return true;
+        }
+
+        if (
+            manifest.Entries.Count != 2
+            || !PythonManifestEntryMatches(
+                manifest.Entries[1],
+                sequence: 2,
+                ConfigurationTargetKind.KeyringShim,
+                expectedShimPath
+            )
+        )
+        {
+            return false;
+        }
+
+        layout = layoutPlatform == ConfigurationLayoutPlatform.Windows
+            ? PythonOwnershipManifestLayout.LegacyWindows
+            : PythonOwnershipManifestLayout.Current;
+        return true;
+    }
+
+    private bool PythonManifestEntryMatches(
+        ConfigurationOwnershipManifestEntry entry,
+        int sequence,
+        ConfigurationTargetKind targetKind,
+        string expectedPath
+    ) =>
+        entry.Sequence == sequence
+        && entry.TargetKind == targetKind
+        && string.Equals(entry.Key, PhysicalTargetKey, StringComparison.Ordinal)
+        && PathEquals(entry.TargetPathOrName, expectedPath);
+
+    private string GetExpectedPythonBackendPath() =>
+        ConfigurationLayoutProjector
+            .ProjectPythonKeyringBackend(CreateCurrentLayoutProjectionContext())
+            .TargetPath;
+
+    private string GetExpectedPythonShimPath() =>
+        ConfigurationLayoutProjector
+            .ProjectKeyringShim(CreateCurrentLayoutProjectionContext())
+            .TargetPath;
+
+    private static ConfigurationChangePlan CreatePythonPlan(
+        string suffix,
+        ConfigurationTargetKind targetKind,
+        string targetPath,
+        string value
+    )
+    {
+        return ConfigurationChangePlanPolicy.Create(
+            PythonPlanId + "-" + suffix,
+            ProductId,
+            ConfigurationScope.User,
+            CreatePythonManifestMetadata(),
+            [CreatePythonPhysicalTargetChange(targetKind, targetPath, value)],
+            containsCredentialMaterial: false
+        );
+    }
+
+    private ConfigurationChangePlan CreateNpmCompatiblePlan(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        CredentialResult credential,
+        IReadOnlyList<NpmPhase12RegistryDeclaration> declarations
+    )
+    {
+        NpmPhase12RegistryDeclaration declaration = declarations[0];
+        NpmPhase12VerticalSliceService service = CreateNpmService(ecosystem);
+        var request = new NpmPhase12CredentialPlanRequest
+        {
+            Declaration = declaration,
+            AuthToken = GetRequiredBearerToken(credential),
+            Ecosystem = ecosystem,
+            TargetNpmrcPath = GetNpmTargetPath(ecosystem, scope),
+            IncludeRegistryDeclarationInTarget =
+                scope == ConfigurationPhase14Scope.CiTemporary,
+            RegistryDeclarationsToInclude =
+                scope == ConfigurationPhase14Scope.CiTemporary ? declarations : [],
+        };
+        ConfigurationChangePlan plan =
+            scope == ConfigurationPhase14Scope.CiTemporary
+                ? service.CreateCiTemporaryCredentialPlan(request)
+                : service.CreateUserCredentialPlan(request);
+
+        return AttachCredentialLifecycle(plan, scope, credential);
+    }
+
+    private ConfigurationChangePlan CreateYarnPlan(
+        ConfigurationPhase14Scope scope,
+        CredentialResult credential,
+        Uri? registryUrlOverride
+    )
+    {
+        var service = new YarnPhase13VerticalSliceService(
+            new YarnPhase13VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                EnvironmentVariableReader = environmentVariableReader,
+                WorkspaceDirectoryPath = workspaceDirectoryPath,
+                UserYarnrcPath = paths.YarnUserYarnrcPath,
+            }
+        );
+        YarnPhase13RegistryDeclaration declaration = CreateYarnDeclaration(registryUrlOverride);
+        var request = new YarnPhase13CredentialPlanRequest
+        {
+            Declaration = declaration,
+            AuthToken = GetRequiredBearerToken(credential),
+            TargetYarnrcPath = paths.YarnUserYarnrcPath,
+            TemporaryHomePath = paths.YarnCiTemporaryHomePath,
+        };
+        ConfigurationChangePlan plan =
+            scope == ConfigurationPhase14Scope.CiTemporary
+                ? service.CreateCiTemporaryCredentialPlan(request)
+                : service.CreateUserCredentialPlan(request);
+        if (scope == ConfigurationPhase14Scope.CiTemporary)
+        {
+            plan = plan with
+            {
+                Changes =
+                [
+                    new ConfigurationChange
+                    {
+                        Operation = ConfigurationChangeOperation.Set,
+                        TargetKind = ConfigurationTargetKind.Yarnrc,
+                        TargetPathOrName = FileSystemPathSemantics.Combine(
+                            fileSystem,
+                            paths.YarnCiTemporaryHomePath,
+                            ".yarnrc.yml"
+                        ),
+                        Key = declaration.Key,
+                        Value = declaration.RegistryUrl.AbsoluteUri,
+                        IsSecretValue = false,
+                        RequiresOwnershipRecord = true,
+                    },
+                    .. plan.Changes,
+                ],
+                DeclarationPreservation =
+                    ConfigurationDeclarationPreservation.CompleteMergedTemporaryConfig,
+            };
+        }
+
+        return AttachCredentialLifecycle(plan, scope, credential);
+    }
+
+    private CredentialResult GetPackageCredential(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        CancellationToken cancellationToken,
+        CanonicalResourceIdentity? resolvedResource = null
+    )
+    {
+        CanonicalResourceIdentity resource =
+            resolvedResource
+            ?? (
+                ecosystem == CredentialEcosystem.Yarn
+                    ? CreateYarnDeclaration().ResourceIdentity
+                    : CreateNpmDeclaration(ecosystem).ResourceIdentity
+            );
+        bool ciTemporary = scope == ConfigurationPhase14Scope.CiTemporary;
+        var request = new CredentialRequestV2
+        {
+            Ecosystem = ecosystem,
+            Operation = CredentialOperation.Get,
+            Resource = resource,
+            ServiceIdentity = "default",
+            RequestedAudience = TokenAudience.AzureArtifacts,
+            CredentialKind = CredentialKind.NpmAuthToken,
+            IdentityFlow = ciTemporary
+                ? IdentityFlow.AzurePipelinesSystemAccessToken
+                : IdentityFlow.InteractiveBrowser,
+            InteractivePolicy = ciTemporary
+                ? InteractivePolicy.Never
+                : InteractivePolicy.UserAllowed,
+            AcquisitionMode = ciTemporary
+                ? AcquisitionMode.SilentOnly
+                : AcquisitionMode.InteractionAllowed,
+            CachePolicy = ciTemporary
+                ? CachePolicyMode.NonPersistentCi
+                : CachePolicyMode.ProductPersistentCacheDisabled,
+            CiContext = ciTemporary
+                ? new CiContext
+                {
+                    ExplicitCiMode = true,
+                    Provider = CiProviderNames.AzurePipelines,
+                    HasAzurePipelinesSystemAccessToken = true,
+                    AllowsPersistentWrites = false,
+                }
+                : null,
+        };
+        CredentialResult result = ciTemporary
+            ? AzurePipelinesSystemAccessTokenService
+                .Handle(request, environmentVariableReader(AzurePipelinesSystemAccessTokenVariable))
+                .CreateProtocolResult("wp5-ci-temporary-configuration")
+            : credentialAcquisition.Value.Acquire(request, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (
+            result.Status != CredentialResultStatus.Success
+            || string.IsNullOrWhiteSpace(result.BearerToken)
+        )
+        {
+            throw new InvalidOperationException(
+                result.Error?.SafeMessage ?? "Failed to acquire a package authentication token."
+            );
+        }
+
+        return result;
+    }
+
+    private CredentialResult CreateDryRunCredential(ConfigurationPhase14Scope scope) =>
+        new()
+        {
+            Status = CredentialResultStatus.Success,
+            BearerToken = "dry-run-redacted-placeholder",
+            ExpiresAt =
+                scope == ConfigurationPhase14Scope.User
+                    ? timeProvider.GetUtcNow().AddHours(1)
+                    : null,
+            DiagnosticsCorrelationId = "dry-run",
+        };
+
+    private ConfigurationChangePlan AttachCredentialLifecycle(
+        ConfigurationChangePlan plan,
+        ConfigurationPhase14Scope scope,
+        CredentialResult credential
+    )
+    {
+        RegistryCredentialLifecycleMetadata metadata = expiryPolicy.Create(
+            scope == ConfigurationPhase14Scope.CiTemporary
+                ? ConfigurationScope.CiTemporary
+                : ConfigurationScope.User,
+            credential.ExpiresAt
+        );
+        return plan with
+        {
+            Manifest = plan.Manifest with
+            {
+                SafeMetadata = RegistryCredentialLifecycleMetadataCodec.Write(
+                    plan.Manifest.SafeMetadata,
+                    metadata
+                ),
+            },
+        };
+    }
+
+    private static string GetRequiredBearerToken(CredentialResult credential) =>
+        !string.IsNullOrWhiteSpace(credential.BearerToken)
+            ? credential.BearerToken
+            : throw new InvalidOperationException("Package credential material is missing.");
+
+    private string GetNpmTargetPath(CredentialEcosystem ecosystem, ConfigurationPhase14Scope scope)
+    {
+        return (ecosystem, scope) switch
+        {
+            (CredentialEcosystem.Npm, ConfigurationPhase14Scope.User) => paths.NpmUserNpmrcPath,
+            (CredentialEcosystem.Pnpm, ConfigurationPhase14Scope.User) => paths.PnpmUserNpmrcPath,
+            (CredentialEcosystem.Npm, ConfigurationPhase14Scope.CiTemporary) =>
+                paths.NpmCiTemporaryNpmrcPath,
+            (CredentialEcosystem.Pnpm, ConfigurationPhase14Scope.CiTemporary) =>
+                paths.PnpmCiTemporaryNpmrcPath,
+            _ => throw new NotSupportedException("Unsupported npm-compatible configuration scope."),
+        };
+    }
+
+    private async ValueTask<ConfigurationPhase14EcosystemDoctorResult> InspectDoctorAsync(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        string ownershipManifestPath = GetOwnershipManifestPath(ecosystem, scope);
+        bool ownershipManifestPresent = fileSystem.FileExists(ownershipManifestPath);
+        bool ownedTargetPresent = TryInspectOwnedTargetPresence(
+            ecosystem,
+            scope,
+            ownershipManifestPath,
+            cancellationToken
+        );
+        bool ownedTargetMatchesResolvedPath = TryInspectOwnedTargetMatchesResolvedPath(
+            ecosystem,
+            scope,
+            ownershipManifestPath
+        );
+        bool temporaryContainerPresent = TemporaryContainerExists(ecosystem, scope);
+        bool configurationPlanValid = !ownershipManifestPresent
+            ? scope != ConfigurationPhase14Scope.CiTemporary || !temporaryContainerPresent
+            : TryLoadRecognizedManifest(ecosystem, scope, ownershipManifestPath);
+        RegistryCredentialLifecycleMetadata? lifecycle = null;
+        RegistryCredentialLifecycleState lifecycleState = RegistryCredentialLifecycleState.Missing;
+        Uri? registryUrl = null;
+        if (IsPackageEcosystem(ecosystem) && ownershipManifestPresent)
+        {
+            bool lifecycleMetadataPresent = OwnershipManifestContainsLifecycleMetadata(
+                ownershipManifestPath
+            );
+            bool lifecycleStructurallyValid = TryGetCurrentLifecycle(
+                scope,
+                ownershipManifestPath,
+                out lifecycle
+            );
+            lifecycleState =
+                lifecycleStructurallyValid && ownedTargetPresent
+                    ? expiryPolicy.Evaluate(
+                        lifecycle,
+                        scope == ConfigurationPhase14Scope.CiTemporary
+                            ? ConfigurationScope.CiTemporary
+                            : ConfigurationScope.User
+                    )
+                : lifecycleStructurallyValid && !ownedTargetPresent
+                    ? RegistryCredentialLifecycleState.Missing
+                : lifecycleMetadataPresent ? RegistryCredentialLifecycleState.Invalid
+                : RegistryCredentialLifecycleState.Missing;
+            configurationPlanValid &=
+                (lifecycleStructurallyValid && ownedTargetPresent)
+                || (lifecycleStructurallyValid && !ownedTargetPresent)
+                || !lifecycleMetadataPresent;
+            registryUrl = TryGetManifestRegistryUrl(ownershipManifestPath);
+        }
+        bool configureOperationValid =
+            configurationPlanValid
+            && (
+                ecosystem == CredentialEcosystem.Python
+                    ? await TryValidatePythonConfigureOperationAsync(
+                            scope,
+                            ownershipManifestPath,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false)
+                    : (
+                        !registryUrls.ContainsKey(ecosystem)
+                        && registryUrl is null
+                        && !ownershipManifestPresent
+                    )
+                        || await TryValidateConfigureOperationAsync(
+                                ecosystem,
+                                scope,
+                                registryUrl,
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false)
+            );
+
+        return new ConfigurationPhase14EcosystemDoctorResult
+        {
+            Ecosystem = ecosystem,
+            Scope = scope,
+            ConfigurationPlanValid = configurationPlanValid,
+            ConfigureOperationValid = configureOperationValid,
+            OwnershipManifestPresent = ownershipManifestPresent,
+            OwnedTargetPresent = ownedTargetPresent,
+            OwnedTargetMatchesResolvedPath = ownedTargetMatchesResolvedPath,
+            TemporaryContainerPresent = temporaryContainerPresent,
+            LifecycleState = lifecycleState,
+            CredentialExpiresAt = lifecycle?.ExpiresAt,
+            RegistryUrl = registryUrl,
+        };
+    }
+
+    private async ValueTask<bool> TryValidateConfigureOperationAsync(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        Uri? registryUrlOverride,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            _ = await ConfigurePackageCoreAsync(
+                    ecosystem,
+                    scope,
+                    execute: false,
+                    forceRefresh: false,
+                    cancellationToken,
+                    registryUrlOverride
+                )
+                .ConfigureAwait(false);
+            return true;
+        }
+        catch (Exception exception) when (IsExpectedDoctorCheckFailure(exception))
+        {
+            return false;
+        }
+    }
+
+    private async ValueTask<bool> TryValidatePythonConfigureOperationAsync(
+        ConfigurationPhase14Scope scope,
+        string ownershipManifestPath,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            _ = await PreviewPythonConfigurationAsync(
+                    scope,
+                    ownershipManifestPath,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+            return true;
+        }
+        catch (Exception exception) when (IsExpectedDoctorCheckFailure(exception))
+        {
+            return false;
+        }
+    }
+
+    private async ValueTask<(
+        IReadOnlyList<ConfigurationChangePlan> Plans,
+        List<ConfigurationPlanResult> PreviewResults
+    )> PreviewPythonConfigurationAsync(
+        ConfigurationPhase14Scope scope,
+        string ownershipManifestPath,
+        CancellationToken cancellationToken
+    )
+    {
+        EnsureRecognizedPythonManifestIfPresent(scope, ownershipManifestPath);
+        IReadOnlyList<ConfigurationChangePlan> plans = CreatePythonPlans(scope);
+        List<ConfigurationPlanResult> previewResults = [];
+        foreach (ConfigurationChangePlan plan in plans)
+        {
+            previewResults.Add(
+                await CreateManager(ownershipManifestPath)
+                    .DryRunAsync(plan, cancellationToken)
+                    .ConfigureAwait(false)
+            );
+        }
+
+        return (plans, previewResults);
+    }
+
+    // editorconfig-checker-disable
+    private async ValueTask<ConfigurationPhase14CleanupEcosystemResult> CleanupCiTemporaryEcosystemAsync(
+        CredentialEcosystem ecosystem,
+        bool execute,
+        CancellationToken cancellationToken
+    )
+    // editorconfig-checker-enable
+    {
+        if (!execute)
+        {
+            return await InspectCiTemporaryCleanupAsync(ecosystem, cancellationToken);
+        }
+
+        bool temporaryContainerBefore = TemporaryContainerExists(
+            ecosystem,
+            ConfigurationPhase14Scope.CiTemporary
+        );
+        string ownershipManifestPath = GetOwnershipManifestPath(
+            ecosystem,
+            ConfigurationPhase14Scope.CiTemporary
+        );
+        bool ownershipManifestBefore = fileSystem.FileExists(ownershipManifestPath);
+        ConfigurationPhase14PlanResult result = await UnconfigureCoreAsync(
+            ecosystem,
+            ConfigurationPhase14Scope.CiTemporary,
+            execute: true,
+            cancellationToken
+        );
+        if (
+            !fileSystem.FileExists(ownershipManifestPath)
+            && IsKnownCiTemporaryContainerEmpty(ecosystem)
+        )
+        {
+            DeleteKnownCiTemporaryContainer(ecosystem);
+        }
+
+        bool temporaryContainerAfter = TemporaryContainerExists(
+            ecosystem,
+            ConfigurationPhase14Scope.CiTemporary
+        );
+        bool ownershipManifestAfter = fileSystem.FileExists(ownershipManifestPath);
+        string state =
+            temporaryContainerAfter || ownershipManifestAfter ? CleanupStateIncomplete
+            : result.ChangeCount > 0 || temporaryContainerBefore || ownershipManifestBefore
+                ? CleanupStateRemoved
+            : CleanupStateNotNeeded;
+
+        return new ConfigurationPhase14CleanupEcosystemResult
+        {
+            Ecosystem = ecosystem,
+            Scope = ConfigurationPhase14Scope.CiTemporary,
+            State = state,
+            ChangeCount = result.ChangeCount,
+            AppliedChangeCount = result.AppliedChangeCount,
+            OwnershipManifestPresent = ownershipManifestAfter,
+            TemporaryContainerPresent = temporaryContainerAfter,
+        };
+    }
+
+    // editorconfig-checker-disable
+    private async ValueTask<ConfigurationPhase14CleanupEcosystemResult> InspectCiTemporaryCleanupAsync(
+        CredentialEcosystem ecosystem,
+        CancellationToken cancellationToken
+    )
+    // editorconfig-checker-enable
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        bool temporaryContainerPresent = TemporaryContainerExists(
+            ecosystem,
+            ConfigurationPhase14Scope.CiTemporary
+        );
+        string ownershipManifestPath = GetOwnershipManifestPath(
+            ecosystem,
+            ConfigurationPhase14Scope.CiTemporary
+        );
+        bool ownershipManifestPresent = fileSystem.FileExists(ownershipManifestPath);
+        ConfigurationPhase14PlanResult result = await UnconfigureCoreAsync(
+            ecosystem,
+            ConfigurationPhase14Scope.CiTemporary,
+            execute: false,
+            cancellationToken
+        );
+
+        bool cleanupIncomplete =
+            result.OwnershipManifestCleanupIncomplete
+            || (
+                !ownershipManifestPresent
+                && temporaryContainerPresent
+                && !IsKnownCiTemporaryContainerEmpty(ecosystem)
+            );
+        string state =
+            cleanupIncomplete ? CleanupStateIncomplete
+            : ownershipManifestPresent || temporaryContainerPresent ? CleanupStateRemoved
+            : CleanupStateNotNeeded;
+        return new ConfigurationPhase14CleanupEcosystemResult
+        {
+            Ecosystem = ecosystem,
+            Scope = ConfigurationPhase14Scope.CiTemporary,
+            State = state,
+            ChangeCount = result.ChangeCount,
+            AppliedChangeCount = 0,
+            OwnershipManifestPresent = ownershipManifestPresent,
+            TemporaryContainerPresent = temporaryContainerPresent,
+        };
+    }
+
+    private bool IsKnownCiTemporaryContainerEmpty(CredentialEcosystem ecosystem)
+    {
+        try
+        {
+            return ecosystem switch
+            {
+                CredentialEcosystem.Npm or CredentialEcosystem.Pnpm => !fileSystem.FileExists(
+                    GetNpmTargetPath(ecosystem, ConfigurationPhase14Scope.CiTemporary)
+                )
+                    || fileSystem
+                        .ReadAllBytes(
+                            GetNpmTargetPath(ecosystem, ConfigurationPhase14Scope.CiTemporary)
+                        )
+                        .Length == 0,
+                CredentialEcosystem.Yarn => fileSystem
+                    .EnumerateFiles(paths.YarnCiTemporaryHomePath, "*", SearchOption.AllDirectories)
+                    .All(path =>
+                        string.Equals(
+                            Path.GetFileName(path),
+                            ".azureauth-credprovider.fs.lock",
+                            StringComparison.Ordinal
+                        )
+                    ),
+                _ => false,
+            };
+        }
+        catch (Exception exception) when (IsExpectedDoctorCheckFailure(exception))
+        {
+            return false;
+        }
+    }
+
+    private bool OwnershipManifestMatchesExpectedState(
+        ConfigurationOwnershipManifest manifest,
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope
+    )
+    {
+        if (
+            ecosystem == CredentialEcosystem.Yarn
+            && manifest.Entries.Any(entry =>
+                entry.TargetKind == ConfigurationTargetKind.Yarnrc
+                && YarnCredentialTargetPolicy.IsRepositoryLocalPath(
+                    fileSystem,
+                    YarnCredentialTargetPolicy.ResolveAuthoritativeWritePath(
+                        fileSystem,
+                        entry.TargetPathOrName
+                    )
+                )
+            )
+        )
+        {
+            return false;
+        }
+
+        return ecosystem == CredentialEcosystem.Python
+            ? TryRecognizePythonOwnershipManifest(manifest, scope, out _)
+            : OwnershipManifestMatchesExpectedBaseState(manifest, ecosystem, scope)
+                || PackageOwnershipIntentMatchesExpectedState(
+                    manifest,
+                    ecosystem,
+                    scope,
+                    requestedPlan: null
+                );
+    }
+
+    private bool OwnershipManifestAuthorizesCleanup(
+        ConfigurationOwnershipManifest manifest,
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope
+    ) =>
+        ecosystem == CredentialEcosystem.Python
+            ? TryRecognizePythonOwnershipManifest(manifest, scope, out _)
+            : OwnershipManifestMatchesExpectedBaseState(manifest, ecosystem, scope)
+                || PackageOwnershipIntentMatchesExpectedState(
+                    manifest,
+                    ecosystem,
+                    scope,
+                    requestedPlan: null
+                );
+
+    private bool PackageOwnershipIntentMatchesExpectedState(
+        ConfigurationOwnershipManifest manifest,
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        ConfigurationChangePlan? requestedPlan
+    ) =>
+        TryGetPackageOwnershipIntentLayouts(
+            manifest,
+            ecosystem,
+            scope,
+            requestedPlan,
+            out _
+        );
+
+    private bool TryGetPackageOwnershipIntentLayouts(
+        ConfigurationOwnershipManifest manifest,
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        ConfigurationChangePlan? requestedPlan,
+        [NotNullWhen(true)] out PackageOwnershipIntentLayouts? layouts
+    )
+    {
+        layouts = null;
+        if (
+            !IsPackageEcosystem(ecosystem)
+            || !ManifestMatchesExpectedOwnership(manifest, scope)
+            || !PackageManifestTargetsConfiguredCiPath(manifest, ecosystem, scope)
+            || !TryValidateLifecycleManifest(manifest, scope, out _)
+            || manifest.ResourceIdentity is not { } requestedResource
+            || manifest.Entries.Any(entry => !IsCanonicalPath(entry.TargetPathOrName))
+        )
+        {
+            return false;
+        }
+
+        if (ecosystem is CredentialEcosystem.Npm or CredentialEcosystem.Pnpm)
+        {
+            return TryGetNpmOwnershipIntentLayouts(
+                manifest,
+                ecosystem,
+                scope,
+                requestedPlan,
+                requestedResource,
+                out layouts
+            );
+        }
+
+        ConfigurationOwnershipManifest finalLayout;
+        if (requestedPlan is not null)
+        {
+            finalLayout = ProjectManifest(requestedPlan);
+        }
+        else
+        {
+            ConfigurationTargetKind targetKind =
+                ecosystem is CredentialEcosystem.Npm or CredentialEcosystem.Pnpm
+                    ? ConfigurationTargetKind.Npmrc
+                    : ConfigurationTargetKind.Yarnrc;
+            ConfigurationOwnershipManifestEntry? finalAuthEntry = manifest
+                .Entries.LastOrDefault(entry =>
+                    entry.TargetKind == targetKind
+                    && string.Equals(
+                        entry.Key,
+                        manifest.EntrySelector,
+                        StringComparison.Ordinal
+                    )
+                );
+            if (finalAuthEntry is null)
+            {
+                return false;
+            }
+
+            finalLayout = PackageCleanupLayoutProjector.ProjectOwnershipLayout(
+                ecosystem,
+                ToConfigurationScope(scope),
+                requestedResource,
+                finalAuthEntry.TargetPathOrName
+            );
+        }
+
+        if (
+            !PackageIntentMetadataMatches(manifest, finalLayout)
+            || manifest.Entries.Count <= finalLayout.Entries.Count
+        )
+        {
+            return false;
+        }
+
+        ConfigurationOwnershipManifestEntry? previousAuthEntry = manifest
+            .Entries.FirstOrDefault(entry =>
+                !finalLayout.Entries.Any(finalEntry => EntriesMatch(entry, finalEntry))
+                && TryGetPackageResourceFromAuthEntry(entry, ecosystem, out _)
+            );
+        if (
+            previousAuthEntry is null
+            || !TryGetPackageResourceFromAuthEntry(
+                previousAuthEntry,
+                ecosystem,
+                out CanonicalResourceIdentity? previousResource
+            )
+        )
+        {
+            return false;
+        }
+
+        ConfigurationOwnershipManifest previousLayout =
+            PackageCleanupLayoutProjector.ProjectOwnershipLayout(
+                ecosystem,
+                ToConfigurationScope(scope),
+                previousResource,
+                previousAuthEntry.TargetPathOrName
+            );
+        var expectedEntries = new List<ConfigurationOwnershipManifestEntry>(
+            previousLayout.Entries
+        );
+        foreach (ConfigurationOwnershipManifestEntry entry in finalLayout.Entries)
+        {
+            if (!expectedEntries.Any(existing => EntriesMatch(existing, entry)))
+            {
+                expectedEntries.Add(entry);
+            }
+        }
+
+        bool matches = manifest.Entries.Count == expectedEntries.Count
+            && manifest.Entries.Zip(
+                expectedEntries,
+                (actual, expected) => (actual, expected)
+            )
+                .Select(
+                    (pair, index) =>
+                        pair.actual.Sequence == index + 1
+                        && EntriesMatch(pair.actual, pair.expected)
+                )
+                .All(static matches => matches);
+        if (matches)
+        {
+            layouts = new PackageOwnershipIntentLayouts(previousLayout, finalLayout);
+        }
+
+        return matches;
+    }
+
+    private bool TryGetNpmOwnershipIntentLayouts(
+        ConfigurationOwnershipManifest manifest,
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        ConfigurationChangePlan? requestedPlan,
+        CanonicalResourceIdentity requestedResource,
+        [NotNullWhen(true)] out PackageOwnershipIntentLayouts? layouts
+    )
+    {
+        layouts = null;
+        if (
+            scope == ConfigurationPhase14Scope.User
+            && manifest.Entries.Any(entry =>
+                NpmrcRegistryDeclarationKeyPolicy.IsRegistryDeclarationKey(entry.Key)
+            )
+        )
+        {
+            return false;
+        }
+
+        ConfigurationOwnershipManifest finalLayout;
+        if (requestedPlan is not null)
+        {
+            finalLayout = ProjectManifest(requestedPlan);
+        }
+        else
+        {
+            ConfigurationOwnershipManifestEntry[] finalEntries = manifest
+                .Entries.Where(entry =>
+                    string.Equals(entry.Key, manifest.EntrySelector, StringComparison.Ordinal)
+                    || NpmrcRegistryDeclarationKeyPolicy.IsRegistryDeclarationKey(entry.Key)
+                )
+                .Select((entry, index) => entry with { Sequence = index + 1 })
+                .ToArray();
+            finalLayout = manifest with
+            {
+                Entries = finalEntries,
+            };
+        }
+
+        if (
+            !PackageIntentMetadataMatches(manifest, finalLayout)
+            || manifest.Entries.Count <= finalLayout.Entries.Count
+        )
+        {
+            return false;
+        }
+
+        int previousAuthIndex = manifest
+            .Entries.Select((entry, index) => (entry, index))
+            .Where(pair =>
+                !finalLayout.Entries.Any(finalEntry =>
+                    EntriesMatch(pair.entry, finalEntry)
+                )
+                && TryGetPackageResourceFromAuthEntry(
+                    pair.entry,
+                    ecosystem,
+                    out _
+                )
+            )
+            .Select(static pair => pair.index)
+            .DefaultIfEmpty(-1)
+            .First();
+        if (previousAuthIndex < 0)
+        {
+            return false;
+        }
+
+        ConfigurationOwnershipManifestEntry previousAuthEntry =
+            manifest.Entries[previousAuthIndex];
+        if (
+            !TryGetPackageResourceFromAuthEntry(
+                previousAuthEntry,
+                ecosystem,
+                out CanonicalResourceIdentity? previousResource
+            )
+        )
+        {
+            return false;
+        }
+
+        ConfigurationOwnershipManifestEntry[] previousEntries = manifest
+            .Entries.Take(previousAuthIndex + 1)
+            .Select((entry, index) => entry with { Sequence = index + 1 })
+            .ToArray();
+        ConfigurationOwnershipManifestEntry[] previousRegistryEntries = previousEntries[..^1];
+        if (
+            previousAuthEntry.TargetKind != ConfigurationTargetKind.Npmrc
+            || previousRegistryEntries
+                .Select(static entry => entry.Key)
+                .Distinct(StringComparer.Ordinal)
+                .Count() != previousRegistryEntries.Length
+            || previousRegistryEntries.Any(entry =>
+                entry.TargetKind != ConfigurationTargetKind.Npmrc
+                || !NpmrcRegistryDeclarationKeyPolicy.IsRegistryDeclarationKey(entry.Key)
+                || !PathEquals(entry.TargetPathOrName, previousAuthEntry.TargetPathOrName)
+            )
+        )
+        {
+            return false;
+        }
+
+        ConfigurationOwnershipManifest previousLayout = manifest with
+        {
+            EntrySelector = previousAuthEntry.Key,
+            ResourceIdentity = previousResource,
+            Entries = previousEntries,
+        };
+        var expectedEntries = new List<ConfigurationOwnershipManifestEntry>(
+            previousLayout.Entries
+        );
+        foreach (ConfigurationOwnershipManifestEntry entry in finalLayout.Entries)
+        {
+            if (!expectedEntries.Any(existing => EntriesMatch(existing, entry)))
+            {
+                expectedEntries.Add(entry);
+            }
+        }
+
+        bool matches = Equals(finalLayout.ResourceIdentity, requestedResource)
+            && manifest.Entries.Count == expectedEntries.Count
+            && manifest
+                .Entries.Zip(expectedEntries, (actual, expected) => (actual, expected))
+                .Select(
+                    (pair, index) =>
+                        pair.actual.Sequence == index + 1
+                        && EntriesMatch(pair.actual, pair.expected)
+                )
+                .All(static entryMatches => entryMatches);
+        if (matches)
+        {
+            layouts = new PackageOwnershipIntentLayouts(previousLayout, finalLayout);
+        }
+
+        return matches;
+    }
+
+    private static bool PackageIntentMetadataMatches(
+        ConfigurationOwnershipManifest manifest,
+        ConfigurationOwnershipManifest finalLayout
+    ) =>
+        manifest.SchemaVersion == finalLayout.SchemaVersion
+        && string.Equals(manifest.ManifestId, finalLayout.ManifestId, StringComparison.Ordinal)
+        && string.Equals(
+            manifest.OwnerProductId,
+            finalLayout.OwnerProductId,
+            StringComparison.Ordinal
+        )
+        && manifest.Scope == finalLayout.Scope
+        && string.Equals(
+            manifest.EntrySelector,
+            finalLayout.EntrySelector,
+            StringComparison.Ordinal
+        )
+        && Equals(manifest.ResourceIdentity, finalLayout.ResourceIdentity)
+        && string.Equals(
+            manifest.ProductVersion,
+            finalLayout.ProductVersion,
+            StringComparison.Ordinal
+        )
+        && manifest.SafeMetadata.TryGetValue("ecosystem", out string? actualEcosystem)
+        && finalLayout.SafeMetadata.TryGetValue("ecosystem", out string? expectedEcosystem)
+        && string.Equals(actualEcosystem, expectedEcosystem, StringComparison.Ordinal)
+        && manifest.SafeMetadata.TryGetValue("registry-key", out string? actualRegistryKey)
+        && finalLayout.SafeMetadata.TryGetValue("registry-key", out string? expectedRegistryKey)
+        && string.Equals(actualRegistryKey, expectedRegistryKey, StringComparison.Ordinal);
+
+    private static ConfigurationOwnershipManifest ProjectManifest(
+        ConfigurationChangePlan plan
+    ) =>
+        ConfigurationPlanProjector.CreateOwnershipManifest(
+            plan,
+            ConfigurationPlanProjector.CreatePlannedOperations(plan)
+        );
+
+    private static bool TryGetPackageResourceFromAuthEntry(
+        ConfigurationOwnershipManifestEntry entry,
+        CredentialEcosystem ecosystem,
+        [NotNullWhen(true)] out CanonicalResourceIdentity? resource
+    )
+    {
+        const string YarnAuthPrefix = "npmRegistries[\"";
+        const string YarnAuthSuffix = "\"].npmAuthToken";
+        resource = null;
+        string? registryUrl = ecosystem switch
+        {
+            CredentialEcosystem.Npm or CredentialEcosystem.Pnpm
+                when entry.TargetKind == ConfigurationTargetKind.Npmrc
+                    && entry.Key.StartsWith("//", StringComparison.Ordinal)
+                    && entry.Key.EndsWith("/:_authToken", StringComparison.Ordinal) =>
+                "https:" + entry.Key[..^"/:_authToken".Length] + "/",
+            CredentialEcosystem.Yarn
+                when entry.TargetKind == ConfigurationTargetKind.Yarnrc
+                    && entry.Key.StartsWith(YarnAuthPrefix, StringComparison.Ordinal)
+                    && entry.Key.EndsWith(YarnAuthSuffix, StringComparison.Ordinal) =>
+                entry.Key[
+                    YarnAuthPrefix.Length..^YarnAuthSuffix.Length
+                ] + "/",
+            _ => null,
+        };
+        if (
+            registryUrl is null
+            || !Uri.TryCreate(registryUrl, UriKind.Absolute, out Uri? registryUri)
+            || !NpmPhase12VerticalSliceService.TryCreateAzureArtifactsNpmResourceIdentity(
+                registryUri,
+                out resource
+            )
+            || resource is null
+        )
+        {
+            return false;
+        }
+
+        NpmCompatibleAuthSelectors selectors = NpmCompatibleAuthSelectorPolicy.Create(resource);
+        string expectedSelector =
+            ecosystem is CredentialEcosystem.Npm or CredentialEcosystem.Pnpm
+                ? selectors.NpmAuthTokenKey
+                : selectors.YarnAuthTokenKey;
+        return string.Equals(entry.Key, expectedSelector, StringComparison.Ordinal);
+    }
+
+    private bool EntriesMatch(
+        ConfigurationOwnershipManifestEntry left,
+        ConfigurationOwnershipManifestEntry right
+    ) =>
+        left.TargetKind == right.TargetKind
+        && PathEquals(left.TargetPathOrName, right.TargetPathOrName)
+        && string.Equals(left.Key, right.Key, StringComparison.Ordinal);
+
+    private bool IsCanonicalPath(string path) =>
+        string.Equals(
+            path,
+            NormalizePath(path),
+            FileSystemPathSemantics.GetComparison(fileSystem)
+        );
+
+    private bool OwnershipManifestMatchesExpectedBaseState(
+        ConfigurationOwnershipManifest manifest,
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope
+    )
+    {
+        if (
+            !ManifestMatchesExpectedOwnership(manifest, scope)
+            || !PackageManifestTargetsConfiguredCiPath(manifest, ecosystem, scope)
+            || !PackageManifestEntriesMatchExpectedState(manifest, ecosystem, scope)
+            || manifest.ResourceIdentity?.ServiceEndpoint is not { } registryUrl
+            || !NpmPhase12VerticalSliceService.TryCreateAzureArtifactsNpmResourceIdentity(
+                registryUrl,
+                out CanonicalResourceIdentity? expectedResource
+            )
+            || !Equals(manifest.ResourceIdentity, expectedResource)
+        )
+        {
+            return false;
+        }
+
+        string expectedSelector = ecosystem is CredentialEcosystem.Npm or CredentialEcosystem.Pnpm
+            ? NpmCompatibleAuthSelectorPolicy.Create(expectedResource).NpmAuthTokenKey
+            : NpmCompatibleAuthSelectorPolicy.Create(expectedResource).YarnAuthTokenKey;
+        return string.Equals(manifest.EntrySelector, expectedSelector, StringComparison.Ordinal);
+    }
+
+    private bool PackageManifestTargetsConfiguredCiPath(
+        ConfigurationOwnershipManifest manifest,
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope
+    )
+    {
+        if (
+            scope != ConfigurationPhase14Scope.CiTemporary
+            || !IsPackageEcosystem(ecosystem)
+        )
+        {
+            return true;
+        }
+
+        (ConfigurationTargetKind targetKind, string expectedPath) = ecosystem switch
+        {
+            CredentialEcosystem.Npm or CredentialEcosystem.Pnpm =>
+                (ConfigurationTargetKind.Npmrc, GetNpmTargetPath(ecosystem, scope)),
+            CredentialEcosystem.Yarn =>
+                (
+                    ConfigurationTargetKind.Yarnrc,
+                    FileSystemPathSemantics.Combine(
+                        fileSystem,
+                        paths.YarnCiTemporaryHomePath,
+                        ".yarnrc.yml"
+                    )
+                ),
+            _ => throw new NotSupportedException("Unsupported package ecosystem."),
+        };
+        string normalizedExpectedPath = NormalizePath(expectedPath);
+        foreach (ConfigurationOwnershipManifestEntry entry in manifest.Entries)
+        {
+            string normalizedEntryPath;
+            try
+            {
+                normalizedEntryPath = NormalizePath(entry.TargetPathOrName);
+            }
+            catch (Exception exception) when (IsExpectedManifestPathFormatException(exception))
+            {
+                return false;
+            }
+
+            if (
+                entry.TargetKind == targetKind
+                && !string.Equals(
+                    normalizedEntryPath,
+                    normalizedExpectedPath,
+                    FileSystemPathSemantics.GetComparison(fileSystem)
+                )
+            )
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private bool PackageManifestEntriesMatchExpectedState(
+        ConfigurationOwnershipManifest manifest,
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope
+    ) =>
+        ecosystem switch
+        {
+            CredentialEcosystem.Npm or CredentialEcosystem.Pnpm => string.Equals(
+                manifest.ManifestId,
+                NpmCredentialManifestId,
+                StringComparison.Ordinal
+            ) && ManifestEntriesMatchNpmCompatibleState(manifest, scope),
+            CredentialEcosystem.Yarn => string.Equals(
+                manifest.ManifestId,
+                YarnCredentialManifestId,
+                StringComparison.Ordinal
+            ) && ManifestEntriesMatchYarnState(manifest, scope),
+            _ => false,
+        };
+
+    private static bool ManifestEntriesMatchNpmCompatibleState(
+        ConfigurationOwnershipManifest manifest,
+        ConfigurationPhase14Scope scope
+    )
+    {
+        ConfigurationOwnershipManifestEntry? authEntry = manifest.Entries.SingleOrDefault(entry =>
+            string.Equals(entry.Key, manifest.EntrySelector, StringComparison.Ordinal)
+        );
+        if (authEntry is null || authEntry.TargetKind != ConfigurationTargetKind.Npmrc)
+        {
+            return false;
+        }
+
+        if (scope == ConfigurationPhase14Scope.User || manifest.Entries.Count == 1)
+        {
+            return manifest.Entries.Count == 1;
+        }
+
+        if (
+            !manifest.SafeMetadata.TryGetValue("registry-key", out string? primaryRegistryKey)
+            || !NpmrcRegistryDeclarationKeyPolicy.IsRegistryDeclarationKey(primaryRegistryKey)
+        )
+        {
+            return false;
+        }
+
+        ConfigurationOwnershipManifestEntry[] registryEntries = manifest
+            .Entries.Where(entry =>
+                !string.Equals(entry.Key, manifest.EntrySelector, StringComparison.Ordinal)
+            )
+            .ToArray();
+        return registryEntries.Length > 0
+            && registryEntries.Any(entry =>
+                string.Equals(entry.Key, primaryRegistryKey, StringComparison.Ordinal)
+            )
+            && registryEntries
+                .Select(static entry => entry.Key)
+                .Distinct(StringComparer.Ordinal)
+                .Count() == registryEntries.Length
+            && registryEntries.All(entry =>
+                entry.TargetKind == ConfigurationTargetKind.Npmrc
+                && NpmrcRegistryDeclarationKeyPolicy.IsRegistryDeclarationKey(entry.Key)
+                && string.Equals(
+                    entry.TargetPathOrName,
+                    authEntry.TargetPathOrName,
+                    StringComparison.Ordinal
+                )
+            );
+    }
+
+    private bool ManifestEntriesMatchYarnState(
+        ConfigurationOwnershipManifest manifest,
+        ConfigurationPhase14Scope scope
+    )
+    {
+        string? expectedAlwaysAuthSelector = manifest.ResourceIdentity is { } resource
+            ? NpmCompatibleAuthSelectorPolicy.Create(resource).YarnAlwaysAuthKey
+            : null;
+        string? targetPath = GetSingleNormalizedPathOrDefault(
+            manifest.Entries.Select(static entry => entry.TargetPathOrName)
+        );
+        int expectedEntryCount = scope == ConfigurationPhase14Scope.CiTemporary ? 3 : 2;
+        return manifest.Entries.Count == expectedEntryCount
+            && targetPath is not null
+            && manifest.Entries.All(entry =>
+                entry.TargetKind == ConfigurationTargetKind.Yarnrc
+                && PathEquals(entry.TargetPathOrName, targetPath)
+            )
+            && manifest.Entries.Count(entry =>
+                string.Equals(entry.Key, manifest.EntrySelector, StringComparison.Ordinal)
+            ) == 1
+            && manifest.Entries.Count(entry =>
+                string.Equals(entry.Key, expectedAlwaysAuthSelector, StringComparison.Ordinal)
+            ) == 1
+            && (
+                scope != ConfigurationPhase14Scope.CiTemporary
+                || manifest.Entries.Count(entry =>
+                    string.Equals(entry.Key, "npmRegistryServer", StringComparison.Ordinal)
+                ) == 1
+            );
+    }
+
+    private static bool TryValidateLifecycleManifest(
+        ConfigurationOwnershipManifest manifest,
+        ConfigurationPhase14Scope scope,
+        [NotNullWhen(true)] out RegistryCredentialLifecycleMetadata? lifecycle
+    )
+    {
+        lifecycle = null;
+        if (
+            !ManifestMatchesExpectedOwnership(manifest, scope)
+            || !RegistryCredentialLifecycleMetadataCodec.TryRead(
+                manifest.SafeMetadata,
+                out RegistryCredentialLifecycleMetadata? parsedLifecycle
+            )
+            || parsedLifecycle is null
+        )
+        {
+            return false;
+        }
+
+        lifecycle = parsedLifecycle;
+        return true;
+    }
+
+    private static bool ManifestMatchesExpectedOwnership(
+        ConfigurationOwnershipManifest manifest,
+        ConfigurationPhase14Scope scope
+    ) =>
+        manifest.SchemaVersion == ConfigurationOwnershipManifest.CurrentSchemaVersion
+        && string.Equals(manifest.OwnerProductId, ProductId, StringComparison.Ordinal)
+        && manifest.Scope
+            == (
+                scope == ConfigurationPhase14Scope.CiTemporary
+                    ? ConfigurationScope.CiTemporary
+                    : ConfigurationScope.User
+            )
+        && manifest.ResourceIdentity is not null;
+
+    private ValueTask<bool> IsCurrentConfigurationFreshAsync(
+        ConfigurationOwnershipManifest manifest,
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        ConfigurationChangePlan requestedPlan,
+        string ownershipManifestPath,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            if (
+                !OwnershipManifestMatchesExpectedBaseState(manifest, ecosystem, scope)
+                || !ManifestMatchesRequestedConfiguration(manifest, requestedPlan)
+                || !TryValidateLifecycleManifest(
+                    manifest,
+                    scope,
+                    out RegistryCredentialLifecycleMetadata? lifecycle
+                )
+            )
+            {
+                return ValueTask.FromResult(false);
+            }
+
+            bool fresh =
+                expiryPolicy.Evaluate(
+                    lifecycle,
+                    scope == ConfigurationPhase14Scope.CiTemporary
+                        ? ConfigurationScope.CiTemporary
+                        : ConfigurationScope.User
+                ) == RegistryCredentialLifecycleState.Fresh
+                && CreateManager(ownershipManifestPath)
+                    .IsAppliedStateCurrent(requestedPlan, cancellationToken);
+            return ValueTask.FromResult(fresh);
+        }
+        catch (Exception exception) when (IsExpectedDoctorCheckFailure(exception))
+        {
+            return ValueTask.FromResult(false);
+        }
+    }
+
+    private bool ManifestMatchesRequestedConfiguration(
+        ConfigurationOwnershipManifest manifest,
+        ConfigurationChangePlan requestedPlan
+    )
+    {
+        string existingTargetPath = GetSingleNormalizedPath(
+            manifest.Entries.Select(static entry => entry.TargetPathOrName)
+        );
+        string requestedTargetPath = GetSingleNormalizedPath(
+            requestedPlan.Changes.Select(static change => change.TargetPathOrName)
+        );
+        return Equals(manifest.ResourceIdentity, requestedPlan.Manifest.ResourceIdentity)
+            && string.Equals(
+                manifest.EntrySelector,
+                requestedPlan.Manifest.EntrySelector,
+                StringComparison.Ordinal
+            )
+            && PathEquals(existingTargetPath, requestedTargetPath)
+            && manifest.Entries.Count == requestedPlan.Changes.Count
+            && manifest.Entries.All(entry =>
+                requestedPlan.Changes.Any(change =>
+                    change.Operation == ConfigurationChangeOperation.Set
+                    && change.TargetKind == entry.TargetKind
+                    && PathEquals(change.TargetPathOrName, entry.TargetPathOrName)
+                    && string.Equals(change.Key, entry.Key, StringComparison.Ordinal)
+                )
+            );
+    }
+
+    private static InvalidOperationException CreateRegistryUrlInferenceException(
+        Exception? innerException = null
+    ) =>
+        new(
+            "The registry URL was omitted and could not be inferred from the canonical ownership "
+                + "manifest. Specify --registry-url <url>; run status or doctor, then "
+                + "unconfigure the package ecosystem to remediate invalid state.",
+            innerException
+        );
+
+    private bool TryGetCurrentLifecycle(
+        ConfigurationPhase14Scope scope,
+        string ownershipManifestPath,
+        [NotNullWhen(true)] out RegistryCredentialLifecycleMetadata? lifecycle
+    )
+    {
+        lifecycle = null;
+        try
+        {
+            if (
+                !TryLoadOwnershipManifest(
+                    ownershipManifestPath,
+                    out ConfigurationOwnershipManifest? manifest
+                )
+            )
+            {
+                return false;
+            }
+
+            return TryValidateLifecycleManifest(manifest, scope, out lifecycle);
+        }
+        catch (Exception exception) when (IsExpectedDoctorCheckFailure(exception))
+        {
+            return false;
+        }
+    }
+
+    private Uri? TryGetManifestRegistryUrl(string ownershipManifestPath)
+    {
+        try
+        {
+            if (
+                !TryLoadOwnershipManifest(
+                    ownershipManifestPath,
+                    out ConfigurationOwnershipManifest? manifest
+                ) || manifest.ResourceIdentity is null
+            )
+            {
+                return null;
+            }
+
+            return manifest.ResourceIdentity.ServiceEndpoint;
+        }
+        catch (Exception exception) when (IsExpectedDoctorCheckFailure(exception))
+        {
+            return null;
+        }
+    }
+
+    private bool OwnershipManifestContainsLifecycleMetadata(string ownershipManifestPath)
+    {
+        try
+        {
+            return TryLoadOwnershipManifest(
+                    ownershipManifestPath,
+                    out ConfigurationOwnershipManifest? manifest
+                )
+                && RegistryCredentialLifecycleMetadataCodec.ContainsLifecycleMetadata(
+                    manifest.SafeMetadata
+                );
+        }
+        catch (Exception exception) when (IsExpectedDoctorCheckFailure(exception))
+        {
+            return true;
+        }
+    }
+
+    private static bool IsExpectedOwnershipManifestReadOrParseFailure(Exception exception) =>
+        exception
+            is IOException
+                or UnauthorizedAccessException
+                or InvalidOperationException
+                or NotSupportedException
+                or ArgumentException
+                or System.Text.Json.JsonException;
+
+    private static bool IsExpectedManifestPathFormatException(Exception exception) =>
+        exception is ArgumentException or NotSupportedException or PathTooLongException;
+
+    private void DeleteKnownCiTemporaryContainer(CredentialEcosystem ecosystem)
+    {
+        switch (ecosystem)
+        {
+            case CredentialEcosystem.Npm:
+            case CredentialEcosystem.Pnpm:
+                string path = GetNpmTargetPath(ecosystem, ConfigurationPhase14Scope.CiTemporary);
+                if (fileSystem.FileExists(path))
+                {
+                    fileSystem.DeleteFile(path);
+                }
+
+                break;
+            case CredentialEcosystem.Yarn:
+                fileSystem.DeleteDirectory(paths.YarnCiTemporaryHomePath, recursive: true);
+                break;
+            default:
+                throw new NotSupportedException(
+                    "Phase 14.3 cleanup supports npm, pnpm, and Yarn CI temporary state."
+                );
+        }
+    }
+
+    private void DeleteKnownCiTemporaryContainerIfEmpty(CredentialEcosystem ecosystem)
+    {
+        if (ecosystem == CredentialEcosystem.Yarn)
+        {
+            string yarnrcPath = FileSystemPathSemantics.Combine(
+                fileSystem,
+                paths.YarnCiTemporaryHomePath,
+                ".yarnrc.yml"
+            );
+            if (
+                fileSystem.FileExists(yarnrcPath)
+                && string.IsNullOrWhiteSpace(fileSystem.ReadAllText(yarnrcPath))
+            )
+            {
+                fileSystem.DeleteFile(yarnrcPath);
+            }
+        }
+
+        if (IsKnownCiTemporaryContainerEmpty(ecosystem))
+        {
+            DeleteKnownCiTemporaryContainer(ecosystem);
+        }
+    }
+
+    private bool TryLoadRecognizedManifest(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        string ownershipManifestPath
+    )
+    {
+        try
+        {
+            if (
+                !TryLoadOwnershipManifest(
+                    ownershipManifestPath,
+                    out ConfigurationOwnershipManifest? manifest
+                )
+            )
+            {
+                return false;
+            }
+
+            return OwnershipManifestMatchesExpectedState(manifest, ecosystem, scope);
+        }
+        catch (Exception exception) when (IsExpectedDoctorCheckFailure(exception))
+        {
+            return false;
+        }
+    }
+
+    private bool TryInspectOwnedTargetPresence(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        string ownershipManifestPath,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            if (
+                !TryLoadOwnershipManifest(
+                    ownershipManifestPath,
+                    out ConfigurationOwnershipManifest? manifest
+                )
+                || !OwnershipManifestMatchesExpectedState(manifest, ecosystem, scope)
+            )
+            {
+                return false;
+            }
+
+            ConfigurationOwnershipManifestEntry[] entries = manifest
+                .Entries.Where(entry => EntryMatchesEcosystem(entry, ecosystem))
+                .ToArray();
+            if (entries.Length == 0)
+            {
+                return false;
+            }
+
+            if (ecosystem == CredentialEcosystem.Python)
+            {
+                ConfigurationManager manager = CreateManager(ownershipManifestPath);
+                return entries.All(entry =>
+                    manager.IsAppliedStateCurrent(
+                        CreatePythonPresencePlan(entry),
+                        cancellationToken
+                    )
+                );
+            }
+
+            ConfigurationChangePlan presencePlan = CreateOwnedTargetPresencePlan(
+                manifest,
+                ecosystem,
+                scope,
+                entries
+            );
+            return CreateManager(ownershipManifestPath)
+                .IsAppliedStateCurrent(presencePlan, cancellationToken);
+        }
+        catch (Exception exception) when (IsExpectedDoctorCheckFailure(exception))
+        {
+            return false;
+        }
+    }
+
+    private bool TryInspectOwnedTargetMatchesResolvedPath(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        string ownershipManifestPath
+    )
+    {
+        try
+        {
+            if (
+                !TryLoadOwnershipManifest(
+                    ownershipManifestPath,
+                    out ConfigurationOwnershipManifest? manifest
+                )
+                || !OwnershipManifestMatchesExpectedState(manifest, ecosystem, scope)
+            )
+            {
+                return false;
+            }
+
+            if (ecosystem == CredentialEcosystem.Python)
+            {
+                return true;
+            }
+
+            (ConfigurationTargetKind targetKind, string expectedPath) = ecosystem switch
+            {
+                CredentialEcosystem.Npm or CredentialEcosystem.Pnpm =>
+                    (ConfigurationTargetKind.Npmrc, GetNpmTargetPath(ecosystem, scope)),
+                CredentialEcosystem.Yarn =>
+                    (
+                        ConfigurationTargetKind.Yarnrc,
+                        scope == ConfigurationPhase14Scope.User
+                            ? paths.YarnUserYarnrcPath
+                            : FileSystemPathSemantics.Combine(
+                                fileSystem,
+                                paths.YarnCiTemporaryHomePath,
+                                ".yarnrc.yml"
+                            )
+                    ),
+                _ => throw new NotSupportedException("Unsupported configuration ecosystem."),
+            };
+            string normalizedExpectedPath = NormalizePath(expectedPath);
+            ConfigurationOwnershipManifestEntry[] entries = manifest
+                .Entries.Where(entry =>
+                    EntryMatchesEcosystem(entry, ecosystem)
+                    && entry.TargetKind == targetKind
+                )
+                .ToArray();
+            return entries.Length > 0
+                && entries.All(entry =>
+                    string.Equals(
+                        NormalizePath(entry.TargetPathOrName),
+                        normalizedExpectedPath,
+                        FileSystemPathSemantics.GetComparison(fileSystem)
+                    )
+                );
+        }
+        catch (Exception exception) when (IsExpectedDoctorCheckFailure(exception))
+        {
+            return false;
+        }
+    }
+
+    private ConfigurationChangePlan CreatePythonPresencePlan(
+        ConfigurationOwnershipManifestEntry entry
+    )
+    {
+        string value = entry.TargetKind switch
+        {
+            ConfigurationTargetKind.PythonKeyringBackend =>
+                CreatePythonBackendManifestValue(GetRequiredProductExecutablePath()),
+            ConfigurationTargetKind.KeyringShim => CreatePosixKeyringShimValue(),
+            _ => throw new InvalidOperationException(
+                "The Python ownership manifest contains an unsupported target kind."
+            ),
+        };
+        return CreatePythonPlan(
+            "presence-" + entry.Sequence,
+            entry.TargetKind,
+            entry.TargetPathOrName,
+            value
+        );
+    }
+
+    private ConfigurationChangePlan CreateOwnedTargetPresencePlan(
+        ConfigurationOwnershipManifest manifest,
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        IReadOnlyList<ConfigurationOwnershipManifestEntry> entries
+    )
+    {
+        string registryUrl =
+            manifest.ResourceIdentity?.ServiceEndpoint.AbsoluteUri
+            ?? throw new InvalidOperationException(
+                "The package ownership manifest does not identify its registry resource."
+            );
+        ConfigurationChange[] changes = entries
+            .Select(entry =>
+            {
+                bool isAuthToken = string.Equals(
+                    entry.Key,
+                    manifest.EntrySelector,
+                    StringComparison.Ordinal
+                );
+                string value = entry.Key switch
+                {
+                    "npmRegistryServer" => registryUrl,
+                    _
+                        when ecosystem
+                                is CredentialEcosystem.Npm
+                                    or CredentialEcosystem.Pnpm
+                            && NpmrcRegistryDeclarationKeyPolicy.IsRegistryDeclarationKey(
+                                entry.Key
+                            ) => registryUrl,
+                    _ when entry.Key.EndsWith(".npmAlwaysAuth", StringComparison.Ordinal) => "true",
+                    _ when isAuthToken => "owned-secret-present",
+                    _ => throw new InvalidOperationException(
+                        "The package ownership manifest contains an unsupported selector."
+                    ),
+                };
+                return new ConfigurationChange
+                {
+                    Operation = ConfigurationChangeOperation.Set,
+                    TargetKind = entry.TargetKind,
+                    TargetPathOrName = entry.TargetPathOrName,
+                    Key = entry.Key,
+                    Value = value,
+                    RequiresOwnershipRecord = true,
+                    PreserveDeclarationsAndComments = true,
+                    IsSecretValue = isAuthToken,
+                };
+            })
+            .ToArray();
+        return ConfigurationChangePlanPolicy.Create(
+            "phase14-" + ToContractEcosystemName(ecosystem) + "-presence-plan",
+            manifest.OwnerProductId,
+            scope == ConfigurationPhase14Scope.CiTemporary
+                ? ConfigurationScope.CiTemporary
+                : ConfigurationScope.User,
+            new ConfigurationManifestMetadata
+            {
+                ManifestId = manifest.ManifestId,
+                OwnerProductId = manifest.OwnerProductId,
+                EntrySelector = manifest.EntrySelector,
+                ResourceIdentity = manifest.ResourceIdentity,
+                ProductVersion = manifest.ProductVersion,
+                SafeMetadata = manifest.SafeMetadata,
+            },
+            changes,
+            temporaryContainer: CreatePackageTemporaryContainer(ecosystem, scope, manifest),
+            declarationPreservation: scope == ConfigurationPhase14Scope.CiTemporary
+                ? ConfigurationDeclarationPreservation.AuthOnlyWhenDeclarationsRemainVisible
+                : ConfigurationDeclarationPreservation.NotApplicable,
+            containsCredentialMaterial: true
+        );
+    }
+
+    private bool ConfigurationTargetExists(string targetPath)
+    {
+        try
+        {
+            return fileSystem.FileExists(targetPath) || fileSystem.DirectoryExists(targetPath);
+        }
+        catch (Exception exception) when (IsExpectedDoctorCheckFailure(exception))
+        {
+            return false;
+        }
+    }
+
+    private bool TryInspectConfigurationTarget(
+        ConfigurationOwnershipManifestEntry entry,
+        out bool exists
+    )
+    {
+        exists = false;
+        try
+        {
+            exists =
+                fileSystem.FileExists(entry.TargetPathOrName)
+                || fileSystem.DirectoryExists(entry.TargetPathOrName);
+            if (
+                entry.TargetKind == ConfigurationTargetKind.Yarnrc
+                && fileSystem is IFileSystemLinkResolver linkResolver
+            )
+            {
+                _ = linkResolver.ResolveFilePathForWrite(entry.TargetPathOrName);
+            }
+
+            return true;
+        }
+        catch (Exception exception) when (IsExpectedDoctorCheckFailure(exception))
+        {
+            return false;
+        }
+    }
+
+    private bool TemporaryStateExists(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope
+    )
+    {
+        return fileSystem.FileExists(GetOwnershipManifestPath(ecosystem, scope))
+            || TemporaryContainerExists(ecosystem, scope);
+    }
+
+    private bool TemporaryContainerExists(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope
+    )
+    {
+        if (scope != ConfigurationPhase14Scope.CiTemporary)
+        {
+            return false;
+        }
+
+        return ecosystem switch
+        {
+            CredentialEcosystem.Npm or CredentialEcosystem.Pnpm => fileSystem.FileExists(
+                GetNpmTargetPath(ecosystem, scope)
+            ),
+            CredentialEcosystem.Yarn => fileSystem.DirectoryExists(paths.YarnCiTemporaryHomePath),
+            _ => false,
+        };
+    }
+
+    private static IReadOnlyList<CredentialEcosystem> GetSupportedUserEcosystems() =>
+        [
+            CredentialEcosystem.Python,
+            CredentialEcosystem.Npm,
+            CredentialEcosystem.Pnpm,
+            CredentialEcosystem.Yarn,
+        ];
+
+    private static IReadOnlyList<CredentialEcosystem> GetSupportedCiTemporaryEcosystems() =>
+        [CredentialEcosystem.Npm, CredentialEcosystem.Pnpm, CredentialEcosystem.Yarn];
+
+    private static IReadOnlyList<CredentialEcosystem> GetSupportedUserPackageEcosystems() =>
+        [CredentialEcosystem.Npm, CredentialEcosystem.Pnpm, CredentialEcosystem.Yarn];
+
+    private static bool IsPackageEcosystem(CredentialEcosystem ecosystem) =>
+        ecosystem
+            is CredentialEcosystem.Npm
+                or CredentialEcosystem.Pnpm
+                or CredentialEcosystem.Yarn;
+
+    private ConfigurationPhase14CleanupEcosystemResult CreateCleanupResult(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        ConfigurationPhase14PlanResult result
+    ) =>
+        new()
+        {
+            Ecosystem = ecosystem,
+            Scope = scope,
+            State =
+                result.OwnershipManifestCleanupIncomplete ? CleanupStateIncomplete
+                : result.OwnershipManifestPresent ? CleanupStateIncomplete
+                : result.AppliedChangeCount > 0 || result.LifecycleStateMutated
+                    ? CleanupStateRemoved
+                : CleanupStateNotNeeded,
+            ChangeCount = result.ChangeCount,
+            AppliedChangeCount = result.AppliedChangeCount,
+            OwnershipManifestPresent = result.OwnershipManifestPresent,
+            TemporaryContainerPresent = TemporaryContainerExists(ecosystem, scope),
+        };
+
+    private ConfigurationPhase14CleanupEcosystemResult CreateIncompleteCleanupResult(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope
+    ) =>
+        new()
+        {
+            Ecosystem = ecosystem,
+            Scope = scope,
+            State = CleanupStateIncomplete,
+            ChangeCount = 0,
+            AppliedChangeCount = 0,
+            OwnershipManifestPresent = fileSystem.FileExists(
+                GetOwnershipManifestPath(ecosystem, scope)
+            ),
+            TemporaryContainerPresent = TemporaryContainerExists(ecosystem, scope),
+        };
+
+    // editorconfig-checker-disable
+    private static ConfigurationPhase14CleanupEcosystemResult CreateSharedPnpmCleanupAliasResult() =>
+        new()
+        {
+            Ecosystem = CredentialEcosystem.Pnpm,
+            Scope = ConfigurationPhase14Scope.CiTemporary,
+            State = CleanupStateNotNeeded,
+            ChangeCount = 0,
+            AppliedChangeCount = 0,
+            OwnershipManifestPresent = false,
+            TemporaryContainerPresent = false,
+        };
+
+    // editorconfig-checker-enable
+
+    private static bool IsExpectedCleanupFailure(Exception exception) =>
+        exception
+            is IOException
+                or UnauthorizedAccessException
+                or InvalidOperationException
+                or NotSupportedException
+                or ArgumentException
+                or System.Text.Json.JsonException;
+
+    private static IReadOnlyList<CredentialEcosystem> GetCleanupEcosystems(
+        CredentialEcosystem? ecosystem
+    )
+    {
+        if (ecosystem is null)
+        {
+            return GetSupportedCiTemporaryEcosystems();
+        }
+
+        return
+            ecosystem.Value
+                is CredentialEcosystem.Npm
+                    or CredentialEcosystem.Pnpm
+                    or CredentialEcosystem.Yarn
+            ? [ecosystem.Value]
+            : throw new NotSupportedException(
+                "Phase 14.3 cleanup supports npm, pnpm, and Yarn CI temporary state."
+            );
+    }
+
+    private static bool IsExpectedDoctorCheckFailure(Exception exception) =>
+        exception
+            is IOException
+                or UnauthorizedAccessException
+                or InvalidOperationException
+                or NotSupportedException
+                or ArgumentException
+                or System.Text.Json.JsonException;
+
+    private static ConfigurationScope ToConfigurationScope(ConfigurationPhase14Scope scope) =>
+        scope == ConfigurationPhase14Scope.CiTemporary
+            ? ConfigurationScope.CiTemporary
+            : ConfigurationScope.User;
+
+    private ConfigurationChangePlan[] CreateRemovePlans(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        ConfigurationOwnershipManifest manifest
+    )
+    {
+        string ecosystemName = ToContractEcosystemName(ecosystem);
+        if (
+            IsPackageEcosystem(ecosystem)
+            && !OwnershipManifestMatchesExpectedBaseState(manifest, ecosystem, scope)
+            && TryGetPackageOwnershipIntentLayouts(
+                manifest,
+                ecosystem,
+                scope,
+                requestedPlan: null,
+                out PackageOwnershipIntentLayouts? layouts
+            )
+        )
+        {
+            ConfigurationOwnershipManifestEntry[] previousOnly = layouts
+                .Previous.Entries.Where(previous =>
+                    !layouts.Requested.Entries.Any(requested =>
+                        EntriesMatch(previous, requested)
+                    )
+                )
+                .ToArray();
+            return CreateRemovePlansForEntries(
+                    ecosystem,
+                    ecosystemName,
+                    scope,
+                    layouts.Previous,
+                    previousOnly
+                )
+                .Concat(
+                    CreateRemovePlansForEntries(
+                        ecosystem,
+                        ecosystemName,
+                        scope,
+                        layouts.Requested,
+                        layouts.Requested.Entries
+                    )
+                )
+                .ToArray();
+        }
+
+        ConfigurationOwnershipManifestEntry[] entries = manifest
+            .Entries.Where(entry => EntryMatchesEcosystem(entry, ecosystem))
+            .OrderBy(entry => entry.Sequence)
+            .ToArray();
+
+        return CreateRemovePlansForEntries(
+            ecosystem,
+            ecosystemName,
+            scope,
+            manifest,
+            entries
+        );
+    }
+
+    private ConfigurationChangePlan[] CreateRemovePlansForEntries(
+        CredentialEcosystem ecosystem,
+        string ecosystemName,
+        ConfigurationPhase14Scope scope,
+        ConfigurationOwnershipManifest manifest,
+        IReadOnlyList<ConfigurationOwnershipManifestEntry> entries
+    )
+    {
+        return entries
+            .GroupBy(static entry => entry.TargetKind)
+            .Select(group =>
+                CreateRemovePlan(ecosystem, ecosystemName, scope, manifest, group.ToArray())
+            )
+            .ToArray();
+    }
+
+    private ConfigurationChangePlan CreateRemovePlan(
+        CredentialEcosystem ecosystem,
+        string ecosystemName,
+        ConfigurationPhase14Scope scope,
+        ConfigurationOwnershipManifest manifest,
+        IReadOnlyList<ConfigurationOwnershipManifestEntry> entries
+    )
+    {
+        return ConfigurationChangePlanPolicy.Create(
+            "phase14-" + ecosystemName + "-unconfigure-plan",
+            ProductId,
+            scope == ConfigurationPhase14Scope.CiTemporary
+                ? ConfigurationScope.CiTemporary
+                : ConfigurationScope.User,
+            new ConfigurationManifestMetadata
+            {
+                ManifestId = manifest.ManifestId,
+                OwnerProductId = manifest.OwnerProductId,
+                EntrySelector = manifest.EntrySelector,
+                ResourceIdentity = manifest.ResourceIdentity,
+                ProductVersion = manifest.ProductVersion,
+                SafeMetadata = manifest.SafeMetadata,
+            },
+            entries.Select(CreateRemoveChange).ToArray(),
+            temporaryContainer: CreatePackageTemporaryContainer(ecosystem, scope, manifest),
+            declarationPreservation: scope == ConfigurationPhase14Scope.CiTemporary
+                ? ConfigurationDeclarationPreservation.AuthOnlyWhenDeclarationsRemainVisible
+                : ConfigurationDeclarationPreservation.NotApplicable,
+            containsCredentialMaterial: ecosystem
+                is CredentialEcosystem.Npm
+                    or CredentialEcosystem.Pnpm
+                    or CredentialEcosystem.Yarn
+        );
+    }
+
+    private ConfigurationTemporaryContainer? CreatePackageTemporaryContainer(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        ConfigurationOwnershipManifest manifest
+    )
+    {
+        if (scope != ConfigurationPhase14Scope.CiTemporary)
+        {
+            return null;
+        }
+
+        string targetPath = GetSingleNormalizedPath(
+            manifest.Entries.Select(static entry => entry.TargetPathOrName)
+        );
+        return PackageCleanupLayoutProjector.ProjectTemporaryContainer(
+            fileSystem,
+            ecosystem,
+            ToConfigurationScope(scope),
+            targetPath,
+            paths.YarnCiTemporaryHomePath
+        );
+    }
+
+    private static ConfigurationChange CreateRemoveChange(
+        ConfigurationOwnershipManifestEntry entry
+    ) =>
+        new()
+        {
+            Operation = ConfigurationChangeOperation.Remove,
+            TargetKind = entry.TargetKind,
+            TargetPathOrName = entry.TargetPathOrName,
+            Key = entry.Key,
+            Value = null,
+            RequiresOwnershipRecord = true,
+            PreserveDeclarationsAndComments = true,
+        };
+
+    private static bool EntryMatchesEcosystem(
+        ConfigurationOwnershipManifestEntry entry,
+        CredentialEcosystem ecosystem
+    )
+    {
+        return ecosystem switch
+        {
+            CredentialEcosystem.Python => entry.TargetKind
+                is ConfigurationTargetKind.PythonKeyringBackend
+                    or ConfigurationTargetKind.KeyringShim,
+            CredentialEcosystem.Npm or CredentialEcosystem.Pnpm => entry.TargetKind
+                == ConfigurationTargetKind.Npmrc,
+            CredentialEcosystem.Yarn => entry.TargetKind == ConfigurationTargetKind.Yarnrc,
+            _ => false,
+        };
+    }
+
+    private ConfigurationPhase14PlanResult CreateResult(
+        IReadOnlyList<ConfigurationPlanResult> planResults,
+        string ownershipManifestPath,
+        bool ownershipManifestCleanupIncomplete = false,
+        bool? ownershipManifestPresent = null,
+        bool lifecycleStateMutated = false,
+        PythonPhase11DoctorResult? pythonPreflight = null
+    )
+    {
+        return new()
+        {
+            Paths = paths,
+            PlanResults = planResults,
+            OwnershipManifestPresent =
+                ownershipManifestPresent ?? fileSystem.FileExists(ownershipManifestPath),
+            OwnershipManifestCleanupIncomplete = ownershipManifestCleanupIncomplete,
+            LifecycleStateMutated = lifecycleStateMutated,
+            PythonPreflight = pythonPreflight,
+        };
+    }
+
+    private ConfigurationPhase14PlanResult CreatePythonPreflightFailureResult(
+        PythonPhase11DoctorResult pythonPreflight
+    ) =>
+        new()
+        {
+            Paths = paths,
+            PlanResults = [],
+            OwnershipManifestPresent = false,
+            PythonPreflight = pythonPreflight,
+        };
+
+    private static ConfigurationPlanResult CreateNoOpPlanResult(
+        ConfigurationPlanOperation operation,
+        bool applied = true,
+        ConfigurationChangePlan? sourcePlan = null
+    ) =>
+        new()
+        {
+            Plan = new ConfigurationDryRunPlan
+            {
+                ContractMajor = ContractVersions.ConfigurationChangePlanMajor,
+                PlanId = "phase14-configuration-noop",
+                OwnerProductId = ProductId,
+                Scope = sourcePlan?.Scope ?? ConfigurationScope.User,
+                Manifest = sourcePlan?.Manifest ?? CreateNeutralNoOpManifestMetadata(),
+                DeclarationPreservation =
+                    sourcePlan?.DeclarationPreservation
+                    ?? ConfigurationDeclarationPreservation.NotApplicable,
+                ContainsCredentialMaterial = false,
+                TemporaryContainer = sourcePlan?.TemporaryContainer,
+            },
+            Operation = operation,
+        };
+
+    private ConfigurationPlanResult CreatePersistedNoOpPlanResult(
+        ConfigurationPlanOperation operation,
+        bool applied,
+        ConfigurationChangePlan sourcePlan,
+        string ownershipManifestPath
+    )
+    {
+        ConfigurationOwnershipManifest manifest =
+            ConfigurationOwnershipManifestSerializer.Deserialize(
+                fileSystem.ReadAllText(ownershipManifestPath)
+            );
+        ConfigurationChangePlan persistedSourcePlan = sourcePlan with
+        {
+            Manifest = new ConfigurationManifestMetadata
+            {
+                ManifestId = manifest.ManifestId,
+                OwnerProductId = manifest.OwnerProductId,
+                EntrySelector = manifest.EntrySelector,
+                ResourceIdentity = manifest.ResourceIdentity,
+                ProductVersion = manifest.ProductVersion,
+                SafeMetadata = manifest.SafeMetadata,
+            },
+        };
+        return CreateNoOpPlanResult(operation, applied, persistedSourcePlan);
+    }
+
+    private static ConfigurationManifestMetadata CreateNeutralNoOpManifestMetadata() =>
+        new()
+        {
+            ManifestId = "phase14-configuration-noop",
+            OwnerProductId = ProductId,
+            EntrySelector = string.Empty,
+            ProductVersion = ProductVersion,
+        };
+
+    private ConfigurationManager CreateManager(string ownershipManifestPath) =>
+        new(
+            fileSystem,
+            ownershipManifestPath,
+            new ConfigurationPhysicalTargetWriterDispatcher(
+                fileSystem,
+                environmentVariableReader
+            )
+        );
+
+    private ConfigurationLayoutProjectionContext CreateCurrentLayoutProjectionContext() =>
+        new()
+        {
+            Platform =
+                layoutPlatform,
+            HomeDirectory = ResolveUserHomeDirectory(fileSystem, environmentVariableReader),
+            LocalAppDataDirectory = ResolveLocalAppDataDirectory(
+                fileSystem,
+                layoutPlatform,
+                environmentVariableReader
+            ),
+            XdgDataHomeDirectory = environmentVariableReader("XDG_DATA_HOME"),
+            XdgConfigHomeDirectory = environmentVariableReader("XDG_CONFIG_HOME"),
+            FileExists = fileSystem.FileExists,
+        };
+
+    private static ConfigurationChange CreatePythonPhysicalTargetChange(
+        ConfigurationTargetKind targetKind,
+        string targetPath,
+        string value
+    ) =>
+        new()
+        {
+            Operation = ConfigurationChangeOperation.Set,
+            TargetKind = targetKind,
+            TargetPathOrName = targetPath,
+            Key = PhysicalTargetKey,
+            Value = value,
+            IsSecretValue = false,
+            RequiresOwnershipRecord = true,
+        };
+
+    private static ConfigurationManifestMetadata CreatePythonManifestMetadata() =>
+        new()
+        {
+            ManifestId = PythonManifestId,
+            OwnerProductId = ProductId,
+            EntrySelector = "python.keyring",
+            ResourceIdentity = CanonicalResourceIdentity.Create(
+                "dev.azure.com",
+                "org",
+                PythonServiceEndpoint
+            ),
+            ProductVersion = ProductVersion,
+            SafeMetadata = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["ecosystem"] = "python",
+            },
+        };
+
+    private string CreatePythonBackendManifestValue(string helperPath) =>
+        "{\"contractMajor\":2,\"productId\":\"azureauth-credprovider\","
+        + "\"absoluteHelperPath\":\""
+        + JsonEncodedText.Encode(helperPath)
+        + "\",\"platform\":\""
+        + GetPythonHelperPlatform()
+        + "\"}\n";
+
+    private string CreatePosixKeyringShimValue() =>
+        "#!/bin/sh\nexec "
+        + QuotePosixShellArgument(GetRequiredProductExecutablePath())
+        + " keyring \"$@\"\n";
+
+    private static string QuotePosixShellArgument(string value) =>
+        "'" + value.Replace("'", "'\"'\"'", StringComparison.Ordinal) + "'";
+
+    private string GetRequiredProductExecutablePath() =>
+        productExecutablePath
+        ?? throw new InvalidOperationException(
+            "Python configuration requires the absolute installed "
+                + "azureauth-credprovider executable path."
+        );
+
+    private string GetPythonHelperPlatform() =>
+        layoutPlatform switch
+        {
+            ConfigurationLayoutPlatform.Windows => "windows",
+            ConfigurationLayoutPlatform.Linux => "linux",
+            ConfigurationLayoutPlatform.MacOs => "macOs",
+            _ => throw new PlatformNotSupportedException(
+                "Python keyring configuration requires Windows, Linux, or macOS."
+            ),
+        };
+
+    private string? ResolveProductExecutablePath(string? configuredPath)
+    {
+        string? candidate = string.IsNullOrWhiteSpace(configuredPath)
+            ? Environment.ProcessPath
+            : configuredPath;
+        if (string.IsNullOrWhiteSpace(candidate) || !fileSystem.IsPathFullyQualified(candidate))
+        {
+            return null;
+        }
+
+        string fullPath = fileSystem.GetFullPath(candidate);
+        string fileName = fullPath.Replace('\\', '/').TrimEnd('/').Split('/')[^1];
+        return string.Equals(
+            Path.GetFileNameWithoutExtension(fileName),
+            ProductId,
+            StringComparison.OrdinalIgnoreCase
+        )
+            ? fullPath
+            : null;
+    }
+
+    private NpmPhase12RegistryDeclaration CreateNpmDeclaration(
+        CredentialEcosystem ecosystem,
+        Uri? registryUrlOverride = null
+    ) => ResolveNpmDeclarations(ecosystem, registryUrlOverride)[0];
+
+    private NpmPhase12RegistryDeclaration[] ResolveNpmDeclarations(
+        CredentialEcosystem ecosystem,
+        Uri? registryUrlOverride = null
+    )
+    {
+        Uri? configuredRegistryUrl = registryUrlOverride;
+        if (
+            configuredRegistryUrl is null
+            && registryUrls.TryGetValue(ecosystem, out Uri? registryUrl)
+        )
+        {
+            configuredRegistryUrl = registryUrl;
+        }
+
+        if (configuredRegistryUrl is null)
+        {
+            NpmPhase12RegistryDeclaration[] declarations = CreateNpmService(ecosystem)
+                .DiscoverRegistryDeclarations(ecosystem)
+                .ToArray();
+            IGrouping<string, NpmPhase12RegistryDeclaration>[] declarationGroups = declarations
+                .GroupBy(
+                    static declaration => declaration.AuthSelectors.NpmAuthTokenKey,
+                    StringComparer.Ordinal
+                )
+                .ToArray();
+            if (declarationGroups.Length == 1)
+            {
+                return declarationGroups[0].ToArray();
+            }
+
+            string ecosystemName = GetEcosystemName(ecosystem);
+            throw new InvalidOperationException(
+                declarationGroups.Length == 0
+                    ? $"No canonical Azure Artifacts registry was discovered from the effective "
+                        + $".npmrc. Run azureauth-credprovider configure {ecosystemName} "
+                        + "--registry-url <azure-artifacts-npm-url>."
+                    : $"Multiple Azure Artifacts registries were discovered from the effective "
+                        + $".npmrc. Run azureauth-credprovider configure {ecosystemName} "
+                        + "--registry-url <azure-artifacts-npm-url> to select one."
+            );
+        }
+
+        if (
+            !NpmPhase12VerticalSliceService.TryCreateAzureArtifactsNpmResourceIdentity(
+                configuredRegistryUrl,
+                out CanonicalResourceIdentity? resource
+            )
+        )
+        {
+            throw new InvalidOperationException(
+                "The configured package registry URL is not a canonical Azure Artifacts npm URL."
+            );
+        }
+
+        return [CreateNpmDeclaration(ecosystem, resource)];
+    }
+
+    private NpmPhase12VerticalSliceService CreateNpmService(CredentialEcosystem ecosystem) =>
+        new(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                EnvironmentVariableReader = environmentVariableReader,
+                WorkspaceDirectoryPath = workspaceDirectoryPath,
+                UserNpmrcPath =
+                    ecosystem == CredentialEcosystem.Pnpm
+                        ? paths.PnpmUserNpmrcPath
+                        : paths.NpmUserNpmrcPath,
+            }
+        );
+
+    private NpmPhase12RegistryDeclaration CreateNpmDeclaration(
+        CredentialEcosystem ecosystem,
+        CanonicalResourceIdentity resource
+    )
+    {
+        Uri registryUrl = resource.ServiceEndpoint;
+        return new NpmPhase12RegistryDeclaration
+        {
+            SourcePath = FileSystemPathSemantics.Combine(
+                fileSystem,
+                paths.StateDirectoryPath,
+                "npm",
+                "explicit-registry-declaration.npmrc"
+            ),
+            Key = "registry",
+            RegistryUrl = registryUrl,
+            ResourceIdentity = resource,
+            AuthSelectors = NpmCompatibleAuthSelectorPolicy.Create(resource),
+        };
+    }
+
+    private YarnPhase13RegistryDeclaration CreateYarnDeclaration(
+        Uri? registryUrlOverride = null
+    )
+    {
+        Uri registryUrl =
+            registryUrlOverride ?? GetRequiredRegistryUrl(CredentialEcosystem.Yarn);
+        if (
+            !NpmPhase12VerticalSliceService.TryCreateAzureArtifactsNpmResourceIdentity(
+                registryUrl,
+                out CanonicalResourceIdentity? resource
+            )
+        )
+        {
+            throw new InvalidOperationException(
+                "The configured package registry URL is not a canonical Azure Artifacts npm URL."
+            );
+        }
+
+        return CreateYarnDeclaration(resource);
+    }
+
+    private YarnPhase13RegistryDeclaration CreateYarnDeclaration(CanonicalResourceIdentity resource)
+    {
+        Uri registryUrl = resource.ServiceEndpoint;
+        return new YarnPhase13RegistryDeclaration
+        {
+            SourcePath = FileSystemPathSemantics.Combine(
+                fileSystem,
+                paths.StateDirectoryPath,
+                "yarn",
+                "explicit-registry-declaration.yarnrc.yml"
+            ),
+            Key = "npmRegistryServer",
+            RegistryUrl = registryUrl,
+            ResourceIdentity = resource,
+            NpmRegistriesKey = registryUrl.AbsoluteUri,
+        };
+    }
+
+    private Uri GetRequiredRegistryUrl(CredentialEcosystem ecosystem)
+    {
+        if (registryUrls.TryGetValue(ecosystem, out Uri? registryUrl))
+        {
+            return registryUrl;
+        }
+
+        throw new InvalidOperationException(
+            "Package registry configuration is required. Run azureauth-credprovider configure "
+                + $"{GetEcosystemName(ecosystem)} --registry-url "
+                + "<azure-artifacts-npm-url>."
+        );
+    }
+
+    private static Dictionary<CredentialEcosystem, Uri> ValidateRegistryUrls(
+        IReadOnlyDictionary<CredentialEcosystem, Uri>? registryUrls
+    )
+    {
+        if (registryUrls is null)
+        {
+            return new Dictionary<CredentialEcosystem, Uri>();
+        }
+
+        var validated = new Dictionary<CredentialEcosystem, Uri>();
+        foreach ((CredentialEcosystem ecosystem, Uri registryUrl) in registryUrls)
+        {
+            if (
+                ecosystem
+                is not CredentialEcosystem.Npm
+                    and not CredentialEcosystem.Pnpm
+                    and not CredentialEcosystem.Yarn
+            )
+            {
+                throw new ArgumentException(
+                    "Registry declarations are supported only for npm, pnpm, and Yarn.",
+                    nameof(registryUrls)
+                );
+            }
+
+            ArgumentNullException.ThrowIfNull(registryUrl);
+            if (
+                !registryUrl.IsAbsoluteUri
+                || !NpmPhase12VerticalSliceService.TryCreateAzureArtifactsNpmResourceIdentity(
+                    registryUrl,
+                    out _
+                )
+            )
+            {
+                throw new ArgumentException(
+                    "Registry declarations must use canonical Azure Artifacts npm registry URLs.",
+                    nameof(registryUrls)
+                );
+            }
+
+            validated.Add(ecosystem, registryUrl);
+        }
+
+        return validated;
+    }
+
+    private static string GetEcosystemName(CredentialEcosystem ecosystem) =>
+        ecosystem switch
+        {
+            CredentialEcosystem.Npm => "npm",
+            CredentialEcosystem.Pnpm => "pnpm",
+            CredentialEcosystem.Yarn => "yarn",
+            _ => throw new ArgumentException(
+                "A package registry declaration was requested for an unsupported ecosystem.",
+                nameof(ecosystem)
+            ),
+        };
+
+    private static ConfigurationPhase14ResolvedPaths ResolvePaths(
+        ConfigurationPhase14VerticalSliceOptions options,
+        IFileSystem fileSystem,
+        string? jobScopeId,
+        Func<string, string?> environmentVariableReader
+    )
+    {
+        string stateDirectoryInput = options.StateDirectoryPath ?? GetDefaultStateDirectoryPath();
+        RequireFullyQualifiedPath(fileSystem, stateDirectoryInput, "state directory");
+        string stateDirectoryPath = fileSystem.GetFullPath(stateDirectoryInput);
+        string ciTemporaryProductRootInput =
+            options.CiTemporaryProductRootPath
+            ?? (
+                options.StateDirectoryPath is null
+                    ? GetDefaultCiTemporaryProductRootPath()
+                    : FileSystemPathSemantics.Combine(
+                        fileSystem,
+                        stateDirectoryPath,
+                        "ci-jobs"
+                    )
+            );
+        RequireFullyQualifiedPath(
+            fileSystem,
+            ciTemporaryProductRootInput,
+            "CI temporary product root"
+        );
+        string ciTemporaryProductRootPath = fileSystem.GetFullPath(ciTemporaryProductRootInput);
+        string ciTemporaryRootPath =
+            jobScopeId is null
+                ? ciTemporaryProductRootPath
+                : FileSystemPathSemantics.Combine(
+                    fileSystem,
+                    ciTemporaryProductRootPath,
+                    jobScopeId
+                );
+        string npmUserConfigPath = ResolveNpmUserConfigPath(
+            fileSystem,
+            environmentVariableReader
+        );
+        return new ConfigurationPhase14ResolvedPaths
+        {
+            StateDirectoryPath = stateDirectoryPath,
+            ManifestDirectoryPath = FileSystemPathSemantics.Combine(
+                fileSystem,
+                stateDirectoryPath,
+                "manifests"
+            ),
+            CiTemporaryRootPath = ciTemporaryRootPath,
+            CiTemporaryManifestDirectoryPath = FileSystemPathSemantics.Combine(
+                fileSystem,
+                ciTemporaryRootPath,
+                "manifests"
+            ),
+            OwnershipManifestPath = FileSystemPathSemantics.Combine(
+                fileSystem,
+                stateDirectoryPath,
+                "manifests",
+                "python-user-ownership-manifest.json"
+            ),
+            NpmUserNpmrcPath = npmUserConfigPath,
+            PnpmUserNpmrcPath = npmUserConfigPath,
+            NpmCiTemporaryNpmrcPath = FileSystemPathSemantics.Combine(
+                fileSystem,
+                ciTemporaryRootPath,
+                "npm",
+                "userconfig.npmrc"
+            ),
+            PnpmCiTemporaryNpmrcPath = FileSystemPathSemantics.Combine(
+                fileSystem,
+                ciTemporaryRootPath,
+                "npm",
+                "userconfig.npmrc"
+            ),
+            YarnUserYarnrcPath = ResolveYarnUserConfigPath(
+                fileSystem,
+                environmentVariableReader
+            ),
+            YarnCiTemporaryHomePath = FileSystemPathSemantics.Combine(
+                fileSystem,
+                ciTemporaryRootPath,
+                "yarn",
+                "home"
+            ),
+        };
+    }
+
+    private static string GetDefaultStateDirectoryPath()
+    {
+        string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (!string.IsNullOrWhiteSpace(userProfile))
+        {
+            return Path.Combine(userProfile, "." + ProductId, "phase14.2");
+        }
+
+        string localApplicationData = Environment.GetFolderPath(
+            Environment.SpecialFolder.LocalApplicationData
+        );
+        if (!string.IsNullOrWhiteSpace(localApplicationData))
+        {
+            return Path.Combine(localApplicationData, ProductId, "phase14.2");
+        }
+
+        return Path.Combine(Path.GetTempPath(), ProductId, "phase14.2");
+    }
+
+    private static string GetDefaultCiTemporaryProductRootPath() =>
+        Path.Combine(Path.GetTempPath(), ProductId, "phase14.2", "ci-jobs");
+
+    private static string GetHomeDirectory()
+    {
+        string profileDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (!string.IsNullOrWhiteSpace(profileDirectory))
+        {
+            return profileDirectory;
+        }
+
+        string environmentHome = Environment.GetEnvironmentVariable("HOME") ?? string.Empty;
+        return !string.IsNullOrWhiteSpace(environmentHome)
+            ? environmentHome
+            : throw new InvalidOperationException(
+                "A fully qualified user home directory is required."
+            );
+    }
+
+    private static ConfigurationLayoutPlatform GetLayoutPlatform(IFileSystem fileSystem) =>
+        FileSystemPathSemantics.UsesWindowsPaths(fileSystem)
+            ? ConfigurationLayoutPlatform.Windows
+            : OperatingSystem.IsMacOS()
+                ? ConfigurationLayoutPlatform.MacOs
+                : ConfigurationLayoutPlatform.Linux;
+
+    private static string? ResolveLocalAppDataDirectory(
+        IFileSystem fileSystem,
+        ConfigurationLayoutPlatform layoutPlatform,
+        Func<string, string?> environmentVariableReader
+    )
+    {
+        if (layoutPlatform != ConfigurationLayoutPlatform.Windows)
+        {
+            return null;
+        }
+
+        string? configured = NullIfWhiteSpace(environmentVariableReader("LOCALAPPDATA"));
+        if (configured is not null && fileSystem.IsPathFullyQualified(configured))
+        {
+            return fileSystem.GetFullPath(configured);
+        }
+
+        string localApplicationData = Environment.GetFolderPath(
+            Environment.SpecialFolder.LocalApplicationData
+        );
+        return !string.IsNullOrWhiteSpace(localApplicationData)
+            && fileSystem.IsPathFullyQualified(localApplicationData)
+            ? fileSystem.GetFullPath(localApplicationData)
+            : null;
+    }
+
+    private static string ResolveNpmUserConfigPath(
+        IFileSystem fileSystem,
+        Func<string, string?> environmentVariableReader
+    )
+    {
+        string? uppercase = NullIfWhiteSpace(
+            environmentVariableReader(NpmUserConfigEnvironmentVariable)
+        );
+        string? lowercase = NullIfWhiteSpace(
+            environmentVariableReader(LowercaseNpmUserConfigEnvironmentVariable)
+        );
+        if (uppercase is not null)
+        {
+            RequireFullyQualifiedPath(fileSystem, uppercase, NpmUserConfigEnvironmentVariable);
+        }
+        if (lowercase is not null)
+        {
+            RequireFullyQualifiedPath(
+                fileSystem,
+                lowercase,
+                LowercaseNpmUserConfigEnvironmentVariable
+            );
+        }
+        string? uppercasePath = uppercase is null ? null : fileSystem.GetFullPath(uppercase);
+        string? lowercasePath = lowercase is null ? null : fileSystem.GetFullPath(lowercase);
+        if (
+            uppercasePath is not null
+            && lowercasePath is not null
+            && !string.Equals(
+                uppercasePath,
+                lowercasePath,
+                FileSystemPathSemantics.GetComparison(fileSystem)
+            )
+        )
+        {
+            throw new InvalidOperationException(
+                "NPM_CONFIG_USERCONFIG and npm_config_userconfig resolve to different user "
+                    + "configuration paths."
+            );
+        }
+
+        return uppercasePath
+            ?? lowercasePath
+            ?? FileSystemPathSemantics.Combine(
+                fileSystem,
+                ResolveUserHomeDirectory(fileSystem, environmentVariableReader),
+                ".npmrc"
+            );
+    }
+
+    private static string? NullIfWhiteSpace(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value;
+
+    private static string ResolveUserHomeDirectory(
+        IFileSystem fileSystem,
+        Func<string, string?> environmentVariableReader
+    )
+    {
+        bool useWindowsConventions = FileSystemPathSemantics.UsesWindowsPaths(fileSystem);
+        string? first = environmentVariableReader(
+            useWindowsConventions ? "USERPROFILE" : "HOME"
+        );
+        string? second = environmentVariableReader(
+            useWindowsConventions ? "HOME" : "USERPROFILE"
+        );
+        foreach (string? candidate in new[] { first, second })
+        {
+            if (
+                !string.IsNullOrWhiteSpace(candidate)
+                && fileSystem.IsPathFullyQualified(candidate)
+            )
+            {
+                return fileSystem.GetFullPath(candidate);
+            }
+        }
+
+        string resolved = GetHomeDirectory();
+        if (!fileSystem.IsPathFullyQualified(resolved))
+        {
+            throw new InvalidOperationException(
+                "The effective user home directory must be fully qualified."
+            );
+        }
+        return fileSystem.GetFullPath(resolved);
+    }
+
+    private static string ResolveYarnUserConfigPath(
+        IFileSystem fileSystem,
+        Func<string, string?> environmentVariableReader
+    )
+    {
+        string home = ResolveUserHomeDirectory(fileSystem, environmentVariableReader);
+        string? configuredFilename = YarnRcFilenamePolicy.ReadValidatedOverride(
+            fileSystem,
+            environmentVariableReader
+        );
+
+        if (configuredFilename is not null && fileSystem.IsPathFullyQualified(configuredFilename))
+        {
+            return fileSystem.GetFullPath(configuredFilename);
+        }
+
+        return FileSystemPathSemantics.Combine(fileSystem, home, ".yarnrc.yml");
+    }
+
+    private static void RequireFullyQualifiedPath(
+        IFileSystem fileSystem,
+        string path,
+        string description
+    )
+    {
+        if (!fileSystem.IsPathFullyQualified(path))
+        {
+            throw new InvalidOperationException($"The {description} path must be fully qualified.");
+        }
+    }
+
+    private string GetOwnershipManifestPath(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope
+    )
+    {
+        string fileName = (ecosystem, scope) switch
+        {
+            (CredentialEcosystem.Python, ConfigurationPhase14Scope.User) =>
+                "python-user-ownership-manifest.json",
+            (CredentialEcosystem.Npm, ConfigurationPhase14Scope.User) =>
+                "npm-compatible-user-ownership-manifest.json",
+            (CredentialEcosystem.Npm, ConfigurationPhase14Scope.CiTemporary) =>
+                "npm-compatible-ci-temporary-ownership-manifest.json",
+            (CredentialEcosystem.Pnpm, ConfigurationPhase14Scope.User) =>
+                "npm-compatible-user-ownership-manifest.json",
+            (CredentialEcosystem.Pnpm, ConfigurationPhase14Scope.CiTemporary) =>
+                "npm-compatible-ci-temporary-ownership-manifest.json",
+            (CredentialEcosystem.Yarn, ConfigurationPhase14Scope.User) =>
+                "yarn-user-ownership-manifest.json",
+            (CredentialEcosystem.Yarn, ConfigurationPhase14Scope.CiTemporary) =>
+                "yarn-ci-temporary-ownership-manifest.json",
+            _ => throw new NotSupportedException(
+                "Phase 14.2 configuration orchestration supports Python user scope and "
+                    + "npm, pnpm, and Yarn user or CI temporary scopes."
+            ),
+        };
+
+        string manifestDirectory =
+            scope == ConfigurationPhase14Scope.CiTemporary
+                ? paths.CiTemporaryManifestDirectoryPath
+                : paths.ManifestDirectoryPath;
+        return FileSystemPathSemantics.Combine(fileSystem, manifestDirectory, fileName);
+    }
+
+    private void EnsureCiJobScope(ConfigurationPhase14Scope scope)
+    {
+        if (scope != ConfigurationPhase14Scope.CiTemporary)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(rawJobScopeId))
+        {
+            throw new InvalidOperationException(
+                "Azure Pipelines CI temporary configuration requires SYSTEM_JOBID."
+            );
+        }
+
+        if (jobScopeId is null)
+        {
+            throw new InvalidOperationException(
+                "Azure Pipelines SYSTEM_JOBID is invalid for temporary configuration."
+            );
+        }
+    }
+
+    private static bool IsValidJobScopeId(string? value)
+    {
+        if (
+            string.IsNullOrWhiteSpace(value)
+            || value.Length > MaximumJobScopeIdLength
+            || value is "." or ".."
+        )
+        {
+            return false;
+        }
+
+        return value.All(static character =>
+            char.IsAsciiLetterOrDigit(character) || character is '-' or '_' or '.'
+        );
+    }
+
+    private bool TryLoadOwnershipManifest(
+        string ownershipManifestPath,
+        [NotNullWhen(true)] out ConfigurationOwnershipManifest? manifest
+    )
+    {
+        manifest = null;
+        if (!fileSystem.FileExists(ownershipManifestPath))
+        {
+            return false;
+        }
+
+        manifest = ConfigurationOwnershipManifestSerializer.Deserialize(
+            fileSystem.ReadAllText(ownershipManifestPath)
+        );
+        return true;
+    }
+
+    private static string ToContractEcosystemName(CredentialEcosystem ecosystem) =>
+        ecosystem switch
+        {
+            CredentialEcosystem.Python => "python",
+            CredentialEcosystem.Npm => "npm",
+            CredentialEcosystem.Pnpm => "pnpm",
+            CredentialEcosystem.Yarn => "yarn",
+            _ => throw new ArgumentOutOfRangeException(nameof(ecosystem), ecosystem, null),
+        };
+
+    private string GetSingleNormalizedPath(IEnumerable<string> values) =>
+        GetSingleNormalizedPathOrDefault(values)
+        ?? throw new InvalidOperationException("A single physical target path is required.");
+
+    private string? GetSingleNormalizedPathOrDefault(IEnumerable<string> values)
+    {
+        string[] paths = values
+            .Select(NormalizePath)
+            .Distinct(FileSystemPathSemantics.GetComparer(fileSystem))
+            .Take(2)
+            .ToArray();
+        return paths.Length == 1 ? paths[0] : null;
+    }
+
+    private string NormalizePath(string path) => fileSystem.GetFullPath(path);
+
+    private bool PathEquals(string left, string right) =>
+        string.Equals(
+            NormalizePath(left),
+            NormalizePath(right),
+            FileSystemPathSemantics.GetComparison(fileSystem)
+        );
+}
+
+public enum ConfigurationPhase14Scope
+{
+    User,
+    CiTemporary,
+}

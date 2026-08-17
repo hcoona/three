@@ -167,7 +167,7 @@ def _provider_result(
         provider_implementation_id=PROVIDER_IMPLEMENTATION_ID,
         execution_mode=PROVIDER_EXECUTION_MODE,
         execution_class=PROVIDER_EXECUTION_CLASS,
-        toolchain=(("node", "v24.14.0"), ("pnpm", "11.17.0")),
+        toolchain=(("node", "v24.14.0"), ("pnpm", "11.21.0")),
         manifest_digest=SHA256_B,
         configuration_digest=canonical_sha256(
             {
@@ -1069,7 +1069,7 @@ def test_node_provider_result_schema_contains_every_approved_field() -> None:
     }
     assert cast("dict[str, object]", document["provider"])["toolchain"] == {
         "node": "v24.14.0",
-        "pnpm": "11.17.0",
+        "pnpm": "11.21.0",
     }
     assert document["global-inputs"] == [
         item.to_document() for item in result.global_inputs
@@ -1409,7 +1409,7 @@ def test_fact_bundle_schema_binds_complete_approved_contract() -> None:
         result.execution_mode,
         result.execution_class,
         "v24.14.0",
-        "11.17.0",
+        "11.21.0",
         result.result_digest,
         SHA256_A,
         101,
@@ -2287,7 +2287,7 @@ def test_exact_provider_result_and_repository_model_admission_preserve_concrete_
     assert result.nbgv.git_commit_id == TARGET
     assert result.nbgv.npm_package_version == NPM_VERSION
     assert result.result_digest == (
-        "sha256:d91a11cc7373641f3298bcf5970aab0b0a2ab9e4def3e37615ce8ad2183a52f7"
+        "sha256:fe55544be8ed1c0666dec70195675ec88941b2dcae2ff44d79d1bb79873fe440"
     )
     assert snapshot.release_units[0].builds[0].build_id == "npm-package"
     assert snapshot.quality[0].preset == "node/hcoona-release-smoke-npm-v1"

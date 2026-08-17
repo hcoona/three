@@ -1044,7 +1044,7 @@ def test_ci_scenario_coexistence_emits_no_authoritative_decision() -> None:
         "",
     )
     assert hashlib.sha256(V1_CI_PATH.read_bytes()).hexdigest() == (
-        "c908f1bcad41e931da8a9c961162a05bf48bcf1d9da4dc2ea0f1e2865ab0d95f"
+        "2b02594f67f05cceaa3207d3b803549884a8ab953694b24232d877b689034c42"
     )
     assert governance["live_enabled"] is False
     assert hashlib.sha256(
@@ -1268,7 +1268,7 @@ def test_ci_scenario_consumer_reference_blocks_except_acceptance_fixtures(  # no
             f"dependencies.{PACKAGE_NAME}",
             (
                 "sha256:"
-                "0dede06fe12d0fc5a5ff7fc943fe485c068b44b1cb609a98b4d980076b592ac7"
+                "a28d7f1e161df6948cdc2f122e78b9a38f425b481877178e29c8cd8ef30b0aa2"
             ),
         ),
         (

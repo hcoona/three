@@ -22,9 +22,9 @@ check_version() {
   #   key: 3.14     (unquoted scalar — valid YAML for simple version strings)
   # Skip bare declaration lines (e.g. `python_version:` with no value) by
   # requiring at least one non-space character after the colon separator.
-  mismatches=$(grep -n "^[[:space:]]*${key}:[[:space:]]*['\"]" "${WORKFLOW_FILE}" \
-    | grep -vF "'${expected}'" \
-    | grep -vF "\"${expected}\"" || true)
+  mismatches=$(grep -n "^[[:space:]]*${key}:[[:space:]]*['\"]" "${WORKFLOW_FILE}" |
+    grep -vF "'${expected}'" |
+    grep -vF "\"${expected}\"" || true)
   # Also check for unquoted scalar values (e.g. `node_version: 24` or `NODE_VERSION: 24`).
   # For ALL_CAPS env var keys, use a broader character class since values may start with
   # letters or dots; lowercase with: keys only expect digit-prefixed version strings.
@@ -35,9 +35,9 @@ check_version() {
     unquoted_start="[0-9]"
   fi
   local unquoted
-  unquoted=$(grep -n "^[[:space:]]*${key}:[[:space:]]*${unquoted_start}" "${WORKFLOW_FILE}" \
-    | grep -vP ":\s+${expected_re}([^0-9A-Za-z._]|$)" \
-    | grep -vP ":${expected_re}([^0-9A-Za-z._]|$)" || true)
+  unquoted=$(grep -n "^[[:space:]]*${key}:[[:space:]]*${unquoted_start}" "${WORKFLOW_FILE}" |
+    grep -vP ":\s+${expected_re}([^0-9A-Za-z._]|$)" |
+    grep -vP ":${expected_re}([^0-9A-Za-z._]|$)" || true)
   if [[ -n "${unquoted}" ]]; then
     mismatches="${mismatches}"$'\n'"${unquoted}"
   fi
@@ -58,17 +58,17 @@ check_version() {
 }
 
 check_version "python_version" "${EXPECTED_PYTHON_VERSION}"
-check_version "node_version"   "${EXPECTED_NODE_VERSION}"
-check_version "pnpm_version"   "${EXPECTED_PNPM_VERSION}"
-check_version "ruby_version"   "${EXPECTED_RUBY_VERSION}"
+check_version "node_version" "${EXPECTED_NODE_VERSION}"
+check_version "pnpm_version" "${EXPECTED_PNPM_VERSION}"
+check_version "ruby_version" "${EXPECTED_RUBY_VERSION}"
 # SYNC[add-new-language] — add check_version "<lang>_version" "${EXPECTED_<LANG>_VERSION}" call here
 
 # Also validate the top-level ALL_CAPS env: block so that runtime
 # tool versions stay in sync with the hardcoded with: values above.
 check_version "PYTHON_VERSION" "${EXPECTED_PYTHON_VERSION}"
-check_version "NODE_VERSION"   "${EXPECTED_NODE_VERSION}"
-check_version "PNPM_VERSION"   "${EXPECTED_PNPM_VERSION}"
-check_version "RUBY_VERSION"   "${EXPECTED_RUBY_VERSION}"
+check_version "NODE_VERSION" "${EXPECTED_NODE_VERSION}"
+check_version "PNPM_VERSION" "${EXPECTED_PNPM_VERSION}"
+check_version "RUBY_VERSION" "${EXPECTED_RUBY_VERSION}"
 # SYNC[add-new-language] — add check_version "<LANG>_VERSION" "${EXPECTED_<LANG>_VERSION}" call here
 
 if [[ "${FAIL}" -ne 0 ]]; then

@@ -34,13 +34,132 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up mise
-        uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
+        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
           experimental: true
           install: false
 
       - name: Validate lockfile
         run: mise install --locked --dry-run --monorepo
+
+  azureauth-foundation-artifacts:
+    name: AzureAuth Foundation Artifact (${{ matrix.build-os }} build, ${{ matrix.target-os }} target, ${{ matrix.target-rid }})
+    runs-on: ${{ matrix.build-runner }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - build-os: Windows
+            build-runner: windows-latest
+            target-os: Windows
+            target-rid: win-x64
+            run-host-tests: false
+            run-deployment-validation: true
+          - build-os: Linux
+            build-runner: ubuntu-latest
+            target-os: Linux
+            target-rid: linux-x64
+            run-host-tests: true
+            run-deployment-validation: true
+          - build-os: macOS
+            build-runner: macos-latest
+            target-os: macOS
+            target-rid: osx-x64
+            run-host-tests: true
+            run-deployment-validation: false
+
+    env:
+      NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: |
+            src/private/app/azureauth-credprovider/Hcoona.AzureAuth.CredProvider.Contracts/packages.lock.json
+            src/private/app/azureauth-credprovider/Hcoona.AzureAuth.CredProvider.Platform/packages.lock.json
+            tests/private/app/azureauth-credprovider/Hcoona.AzureAuth.CredProvider.Platform.Tests/packages.lock.json
+
+      - name: Restore dotnet tools for deployment validation
+        if: matrix.run-deployment-validation
+        run: dotnet tool restore
+
+      - name: Test AzureAuth host OS behavior
+        if: matrix.run-host-tests
+        timeout-minutes: 15
+        shell: pwsh
+        run: |
+          dotnet test `
+            --project tests/private/app/azureauth-credprovider/Hcoona.AzureAuth.CredProvider.Platform.Tests/Hcoona.AzureAuth.CredProvider.Platform.Tests.csproj `
+            --configuration Release `
+            --filter-class `
+              Hcoona.AzureAuth.CredProvider.Platform.Tests.SystemFileSystemTests `
+              Hcoona.AzureAuth.CredProvider.Platform.Tests.SystemProcessRunnerTests `
+            -p:RestoreLockedMode=true
+
+      - name: Test foundation artifact script
+        shell: pwsh
+        run: ./tests/private/app/azureauth-credprovider/New-FoundationArtifact.Tests.ps1
+
+      - name: Create internal foundation artifact
+        shell: pwsh
+        run: |
+          ./eng/scripts/azureauth-credprovider/New-FoundationArtifact.ps1 `
+            -BuildOs '${{ matrix.build-os }}' `
+            -TargetRid '${{ matrix.target-rid }}' `
+            -Configuration Release `
+            -ProductVersion '0.0.0-internal' `
+            -SourceRevision '${{ github.sha }}'
+
+      - name: Upload internal foundation artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: azureauth-credprovider-foundation-internal-${{ matrix.build-os }}-${{ matrix.target-rid }}
+          path: artifacts/azureauth-credprovider/foundation/azureauth-credprovider-foundation-internal-${{ matrix.build-os }}-${{ matrix.target-rid }}.zip
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Setup Python 3.14 for deployment validation
+        if: matrix.run-deployment-validation
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+
+      - name: Install uv for deployment validation
+        if: matrix.run-deployment-validation
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          python-version: '3.14'
+          enable-cache: false
+
+      - name: Create deployment validation bundle
+        if: matrix.run-deployment-validation
+        shell: pwsh
+        run: |
+          ./eng/scripts/azureauth-credprovider/New-DeploymentValidationBundle.ps1 `
+            -BuildOs '${{ matrix.build-os }}' `
+            -TargetRid '${{ matrix.target-rid }}' `
+            -Configuration Release
+
+      - name: Test deployment validation lifecycle
+        if: matrix.run-deployment-validation
+        shell: pwsh
+        run: |
+          ./tests/private/app/azureauth-credprovider/Install-DeploymentValidationBundle.Tests.ps1 `
+            -BundlePath (
+              'artifacts/azureauth-credprovider/deployment-validation/' +
+              'azureauth-credprovider-deployment-validation-internal-' +
+              '${{ matrix.build-os }}-${{ matrix.target-rid }}.zip'
+            )
 
   normalize-input:
     name: normalize-input
@@ -68,12 +187,12 @@ jobs:
       - name: Install uv
         id: setup-uv
         continue-on-error: true
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: '0.10.9'
       - name: Retry uv installation
         if: ${{ steps.setup-uv.outcome == 'failure' }}
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: '0.10.9'
       - name: Validate bootstrap CODEOWNERS coverage
@@ -343,12 +462,12 @@ jobs:
       - name: Install uv
         id: setup-uv
         continue-on-error: true
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: '0.10.9'
       - name: Retry uv installation
         if: ${{ steps.setup-uv.outcome == 'failure' }}
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: '0.10.9'
       - name: Install .NET for NBGV-backed release planning
@@ -489,12 +608,12 @@ jobs:
       - name: Install uv
         id: setup-uv
         continue-on-error: true
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: '0.10.9'
       - name: Retry uv installation
         if: ${{ steps.setup-uv.outcome == 'failure' }}
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: '0.10.9'
       - name: Verify planning artifact producer boundaries
@@ -597,12 +716,12 @@ jobs:
       - name: Install uv
         id: setup-uv
         continue-on-error: true
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: '0.10.9'
       - name: Retry uv installation
         if: ${{ steps.setup-uv.outcome == 'failure' }}
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: '0.10.9'
       - name: Install .NET for NBGV-backed release planning
@@ -653,9 +772,10 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-      - name: Enable pnpm for JavaScript/TypeScript validation
-        shell: bash
-        run: corepack enable pnpm
+      - name: Install pnpm for JavaScript/TypeScript validation
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          version: 11.21.0
       - name: Install Ruby for RubyGems validation
         uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
         with:
@@ -1380,12 +1500,12 @@ jobs:
       - name: Install uv
         id: setup-uv
         continue-on-error: true
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: '0.10.9'
       - name: Retry uv installation
         if: ${{ steps.setup-uv.outcome == 'failure' }}
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: '0.10.9'
       - name: Install .NET for NBGV-backed release planning
@@ -2152,12 +2272,12 @@ jobs:
       - name: Install uv
         id: setup-uv
         continue-on-error: true
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: '0.10.9'
       - name: Retry uv installation
         if: ${{ steps.setup-uv.outcome == 'failure' }}
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: '0.10.9'
       - name: Install .NET for NBGV-backed release planning
@@ -2931,7 +3051,7 @@ jobs:
       - name: Set up PNPM
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
-          version: 11.19.0
+          version: 11.21.0
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -2989,12 +3109,12 @@ jobs:
       - name: Install uv
         id: setup-uv
         continue-on-error: true
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: '0.10.9'
       - name: Retry uv installation
         if: ${{ steps.setup-uv.outcome == 'failure' }}
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: '0.10.9'
       - name: Prepare aggregate input directories

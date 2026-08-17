@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.3.5/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.8/schema.json",
   "vcs": {
     "enabled": true,
     "clientKind": "git",
@@ -19,6 +19,7 @@
       "**/*.mts",
       "**/*.tsx",
       "**/*.css",
+      "!.build-executor-*",
       "!src/public/lib/three-workflow-delivery-v3/tests/fixtures/**/*.json",
       "!.copilot",
       "!.three-workflow-release-planner"
@@ -42,28 +43,28 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true,
+      "preset": "recommended",
       "a11y": {
-        "recommended": true
+        "preset": "recommended"
       },
       "complexity": {
-        "recommended": true
+        "preset": "recommended"
       },
       "correctness": {
-        "recommended": true
+        "preset": "recommended"
       },
       "performance": {
-        "recommended": true
+        "preset": "recommended"
       },
       "security": {
-        "recommended": true
+        "preset": "recommended"
       },
       "style": {
-        "recommended": true,
+        "preset": "recommended",
         "useImportType": "error"
       },
       "suspicious": {
-        "recommended": true,
+        "preset": "recommended",
         "noConfusingVoidType": "error",
         "noConsole": {
           "level": "warn",
@@ -73,7 +74,7 @@
         }
       },
       "nursery": {
-        "recommended": false,
+        "preset": "none",
         "noFloatingPromises": "error"
       }
     }

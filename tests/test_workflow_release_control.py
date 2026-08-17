@@ -100,8 +100,9 @@ SHA_B = "b" * 64
 SHA_C = "c" * 64
 SIGNER_WORKFLOW = "hcoona/three/.github/workflows/release-orchestrate.yml"
 CHECKOUT_ACTION = "actions/checkout@v7"
-SETUP_UV_ACTION = "astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9"
-SETUP_UV_ACTION_WITH_VERSION_COMMENT = f"{SETUP_UV_ACTION} # v9.0.0"
+SETUP_UV_ACTION = "astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d"
+SETUP_UV_ACTION_WITH_VERSION_COMMENT = f"{SETUP_UV_ACTION} # v10.0.1"
+PNPM_SETUP_ACTION = "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
 RUBY_SETUP_ACTION_WITH_VERSION_COMMENT = (
     "ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0"
 )
@@ -110,8 +111,8 @@ RUBYGEMS_CREDENTIALS_ACTION_WITH_VERSION_COMMENT = (
     "rubygems/configure-rubygems-credentials@"
     "dc5a8d8553e6ee01fc26761a49e99e733d17954a # v2.1.0"
 )
-CODEQL_ACTION_DIGEST = "e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81"
-PREVIOUS_CODEQL_ACTION_DIGEST = "99df26d4f13ea111d4ec1a7dddef6063f76b97e9"
+CODEQL_ACTION_DIGEST = "ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd"
+PREVIOUS_CODEQL_ACTION_DIGEST = "e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81"
 CODEQL_ACTION_VERSION = "v4"
 FORBIDDEN_FAIL_CLOSED_OUTPUTS = {
     "release-plan.json",
@@ -21132,6 +21133,7 @@ def test_ci_validation_workflow_exposes_control_plane_boundaries() -> None:
         "${{ steps.upload-request.outputs.artifact-id }}"
     )
     assert set(jobs) >= {
+        "azureauth-foundation-artifacts",
         "normalize-input",
         "plan",
         "materialize-execution-batches",
@@ -21228,6 +21230,216 @@ def test_ci_validation_workflow_exposes_control_plane_boundaries() -> None:
         assert "nbgv.exe" in install_run
         assert "THREE_WORKFLOW_RELEASE_NBGV_PATH=${nbgv_path}" in install_run
         assert "NBGV_PYTHON_COMMAND=${nbgv_path}" in install_run
+
+    ubuntu_steps = jobs["execution-batch-ubuntu-orchestrator"]["steps"]
+    setup_node_index = next(
+        index
+        for index, step in enumerate(ubuntu_steps)
+        if step.get("name")
+        == "Install Node.js for JavaScript/TypeScript validation"
+    )
+    setup_pnpm_index, setup_pnpm = next(
+        (index, step)
+        for index, step in enumerate(ubuntu_steps)
+        if step.get("name")
+        == "Install pnpm for JavaScript/TypeScript validation"
+    )
+    assert setup_node_index < setup_pnpm_index
+    assert setup_pnpm["uses"] == PNPM_SETUP_ACTION
+    assert setup_pnpm["with"] == {"version": "11.21.0"}
+    assert not any(
+        "corepack enable pnpm" in str(step.get("run", ""))
+        for step in ubuntu_steps
+    )
+
+
+def test_ci_preserves_standalone_azureauth_foundation_artifacts_job() -> None:
+    """AzureAuth foundation artifacts remain independent of the v3 graph."""
+    workflow_text = _workflow("ci.yml")
+    workflow = yaml.safe_load(workflow_text)
+    jobs = workflow["jobs"]
+    job = jobs["azureauth-foundation-artifacts"]
+
+    assert "needs" not in job
+    assert "if" not in job
+    assert "continue-on-error" not in job
+    assert (
+        "azureauth-foundation-artifacts"
+        not in jobs["aggregate-evidence"]["needs"]
+    )
+    assert job["permissions"] == {"contents": "read"}
+    assert job["name"] == (
+        "AzureAuth Foundation Artifact (${{ matrix.build-os }} build, "
+        "${{ matrix.target-os }} target, ${{ matrix.target-rid }})"
+    )
+    assert job["runs-on"] == "${{ matrix.build-runner }}"
+    assert job["strategy"]["fail-fast"] is False
+    assert job["strategy"]["matrix"]["include"] == [
+        {
+            "build-os": "Windows",
+            "build-runner": "windows-latest",
+            "target-os": "Windows",
+            "target-rid": "win-x64",
+            "run-host-tests": False,
+            "run-deployment-validation": True,
+        },
+        {
+            "build-os": "Linux",
+            "build-runner": "ubuntu-latest",
+            "target-os": "Linux",
+            "target-rid": "linux-x64",
+            "run-host-tests": True,
+            "run-deployment-validation": True,
+        },
+        {
+            "build-os": "macOS",
+            "build-runner": "macos-latest",
+            "target-os": "macOS",
+            "target-rid": "osx-x64",
+            "run-host-tests": True,
+            "run-deployment-validation": False,
+        },
+    ]
+    assert job["env"] == {
+        "NUGET_PACKAGES": "${{ github.workspace }}/.nuget/packages"
+    }
+
+    steps = job["steps"]
+    assert [step["name"] for step in steps] == [
+        "Checkout",
+        "Setup .NET SDK",
+        "Restore dotnet tools for deployment validation",
+        "Test AzureAuth host OS behavior",
+        "Test foundation artifact script",
+        "Create internal foundation artifact",
+        "Upload internal foundation artifact",
+        "Setup Python 3.14 for deployment validation",
+        "Install uv for deployment validation",
+        "Create deployment validation bundle",
+        "Test deployment validation lifecycle",
+    ]
+    step_by_name = {step["name"]: step for step in steps}
+    assert all("continue-on-error" not in step for step in steps)
+    assert all(
+        "if" not in step_by_name[name]
+        for name in (
+            "Checkout",
+            "Setup .NET SDK",
+            "Test foundation artifact script",
+            "Create internal foundation artifact",
+            "Upload internal foundation artifact",
+        )
+    )
+
+    checkout = step_by_name["Checkout"]
+    assert checkout["uses"] == CHECKOUT_ACTION
+    assert checkout["with"] == {"fetch-depth": 0}
+
+    setup_dotnet = step_by_name["Setup .NET SDK"]
+    assert setup_dotnet["uses"] == "actions/setup-dotnet@v6"
+    assert setup_dotnet["with"]["global-json-file"] == "global.json"
+    assert setup_dotnet["with"]["cache"] is True
+    assert setup_dotnet["with"]["cache-dependency-path"].splitlines() == [
+        "src/private/app/azureauth-credprovider/"
+        "Hcoona.AzureAuth.CredProvider.Contracts/packages.lock.json",
+        "src/private/app/azureauth-credprovider/"
+        "Hcoona.AzureAuth.CredProvider.Platform/packages.lock.json",
+        "tests/private/app/azureauth-credprovider/"
+        "Hcoona.AzureAuth.CredProvider.Platform.Tests/packages.lock.json",
+    ]
+
+    restore_tools = step_by_name[
+        "Restore dotnet tools for deployment validation"
+    ]
+    assert restore_tools["if"] == "matrix.run-deployment-validation"
+    assert restore_tools["run"] == "dotnet tool restore"
+
+    host_tests = step_by_name["Test AzureAuth host OS behavior"]
+    assert host_tests["if"] == "matrix.run-host-tests"
+    assert host_tests["timeout-minutes"] == 15
+    assert host_tests["shell"] == "pwsh"
+    assert host_tests["run"].splitlines() == [
+        "dotnet test `",
+        "  --project tests/private/app/azureauth-credprovider/"
+        "Hcoona.AzureAuth.CredProvider.Platform.Tests/"
+        "Hcoona.AzureAuth.CredProvider.Platform.Tests.csproj `",
+        "  --configuration Release `",
+        "  --filter-class `",
+        "    Hcoona.AzureAuth.CredProvider.Platform.Tests.SystemFileSystemTests `",
+        "    Hcoona.AzureAuth.CredProvider.Platform.Tests.SystemProcessRunnerTests `",
+        "  -p:RestoreLockedMode=true",
+    ]
+    foundation_test = step_by_name["Test foundation artifact script"]
+    assert foundation_test["shell"] == "pwsh"
+    assert foundation_test["run"] == (
+        "./tests/private/app/azureauth-credprovider/"
+        "New-FoundationArtifact.Tests.ps1"
+    )
+    foundation_build = step_by_name["Create internal foundation artifact"]
+    assert foundation_build["shell"] == "pwsh"
+    assert foundation_build["run"].splitlines() == [
+        "./eng/scripts/azureauth-credprovider/New-FoundationArtifact.ps1 `",
+        "  -BuildOs '${{ matrix.build-os }}' `",
+        "  -TargetRid '${{ matrix.target-rid }}' `",
+        "  -Configuration Release `",
+        "  -ProductVersion '0.0.0-internal' `",
+        "  -SourceRevision '${{ github.sha }}'",
+    ]
+    foundation_upload = step_by_name["Upload internal foundation artifact"]
+    assert foundation_upload["uses"] == UPLOAD_ARTIFACT_ACTION
+    assert foundation_upload["with"] == {
+        "name": (
+            "azureauth-credprovider-foundation-internal-"
+            "${{ matrix.build-os }}-${{ matrix.target-rid }}"
+        ),
+        "path": (
+            "artifacts/azureauth-credprovider/foundation/"
+            "azureauth-credprovider-foundation-internal-"
+            "${{ matrix.build-os }}-${{ matrix.target-rid }}.zip"
+        ),
+        "if-no-files-found": "error",
+        "retention-days": 7,
+    }
+
+    setup_python = step_by_name["Setup Python 3.14 for deployment validation"]
+    assert setup_python["if"] == "matrix.run-deployment-validation"
+    assert setup_python["uses"] == "actions/setup-python@v7"
+    assert setup_python["with"] == {"python-version": "3.14"}
+
+    setup_uv = step_by_name["Install uv for deployment validation"]
+    assert setup_uv["if"] == "matrix.run-deployment-validation"
+    assert setup_uv["uses"] == SETUP_UV_ACTION
+    assert f"uses: {SETUP_UV_ACTION_WITH_VERSION_COMMENT}" in _step_block(
+        workflow_text, "Install uv for deployment validation"
+    )
+    assert setup_uv["with"] == {
+        "python-version": "3.14",
+        "enable-cache": False,
+    }
+
+    bundle = step_by_name["Create deployment validation bundle"]
+    assert bundle["if"] == "matrix.run-deployment-validation"
+    assert bundle["shell"] == "pwsh"
+    assert bundle["run"].splitlines() == [
+        "./eng/scripts/azureauth-credprovider/"
+        "New-DeploymentValidationBundle.ps1 `",
+        "  -BuildOs '${{ matrix.build-os }}' `",
+        "  -TargetRid '${{ matrix.target-rid }}' `",
+        "  -Configuration Release",
+    ]
+
+    lifecycle_test = step_by_name["Test deployment validation lifecycle"]
+    assert lifecycle_test["if"] == "matrix.run-deployment-validation"
+    assert lifecycle_test["shell"] == "pwsh"
+    assert lifecycle_test["run"].splitlines() == [
+        "./tests/private/app/azureauth-credprovider/"
+        "Install-DeploymentValidationBundle.Tests.ps1 `",
+        "  -BundlePath (",
+        "    'artifacts/azureauth-credprovider/deployment-validation/' +",
+        "    'azureauth-credprovider-deployment-validation-internal-' +",
+        "    '${{ matrix.build-os }}-${{ matrix.target-rid }}.zip'",
+        "  )",
+    ]
 
 
 def test_ci_validation_dotnet_setup_caches_trusted_execution_restores() -> None:
@@ -27073,17 +27285,32 @@ def test_ci_validation_workflow_checks_canonical_changed_paths() -> None:
 
 
 def test_ci_validation_workflow_checks_out_pull_request_head() -> None:
-    """PR validation executes on the confirmed head boundary, not merge refs."""
-    workflow = _workflow("ci.yml")
-    checkout_count = workflow.count(f"uses: {CHECKOUT_ACTION}")
-
-    assert checkout_count > 0
-    assert (
-        workflow.count(
-            "ref: ${{ github.event.pull_request.head.sha || github.sha }}",
-        )
-        == checkout_count
+    """The v3 control plane executes on the confirmed head boundary."""
+    workflow = yaml.safe_load(_workflow("ci.yml"))
+    control_plane_jobs = (
+        "normalize-input",
+        "plan",
+        "materialize-execution-batches",
+        "execution-batch-ubuntu-orchestrator",
+        "execution-batch-windows-orchestrator",
+        "execution-batch-macos-orchestrator",
+        "node-compatibility-tests",
+        "aggregate-evidence",
     )
+
+    for job_name in control_plane_jobs:
+        checkout_steps = [
+            step
+            for step in workflow["jobs"][job_name]["steps"]
+            if step.get("uses") == CHECKOUT_ACTION
+        ]
+
+        assert checkout_steps, job_name
+        assert all(
+            step["with"]["ref"]
+            == "${{ github.event.pull_request.head.sha || github.sha }}"
+            for step in checkout_steps
+        ), job_name
 
 
 def test_ci_validation_control_plane_uses_full_checkout_for_nbgv() -> None:
@@ -52401,21 +52628,6 @@ def test_ci_batch_writer_empty_manifest_has_no_bundle() -> None:
 def test_hk_runs_focused_workflow_release_validation() -> None:
     """HK must run focused control-plane tests for release workflow changes."""
     hk_config = (REPO_ROOT / "hk.pkl").read_text(encoding="utf-8")
-    pre_commit_config = (REPO_ROOT / ".pre-commit-config.yaml").read_text(
-        encoding="utf-8"
-    )
-    pre_commit = yaml.safe_load(pre_commit_config)
-    hooks = pre_commit["repos"][0]["hooks"]
-    workflow_release_hook = next(
-        hook
-        for hook in hooks
-        if hook.get("id") == "workflow-release-control-tests"
-    )
-    workflow_release_files = re.compile(
-        cast("str", workflow_release_hook["files"])
-    )
-    workflow_release_entry = cast("str", workflow_release_hook["entry"])
-    workflow_release_entry_args = shlex.split(workflow_release_entry)
 
     assert "workflow-release-control-tests" in hk_config
     assert "--timeout-seconds 300" in hk_config
@@ -52423,7 +52635,7 @@ def test_hk_runs_focused_workflow_release_validation() -> None:
         '["UV_PROJECT_ENVIRONMENT"] = ".venv-workflow-release-control"'
         in hk_config
     )
-    assert ".pre-commit-config.yaml" in hk_config
+    assert ".pre-commit-config.yaml" not in hk_config
     assert ".github/CODEOWNERS" in hk_config
     assert ".github/actionlint.yaml" in hk_config
     assert ".github/workflows/*.yml" in hk_config
@@ -52464,87 +52676,6 @@ def test_hk_runs_focused_workflow_release_validation() -> None:
         in hk_config
     )
     assert "actionlint" in hk_config
-    assert "id: workflow-release-control-tests" in pre_commit_config
-    assert r"\.pre-commit-config\.yaml$" in pre_commit_config
-    assert workflow_release_entry_args[:4] == [
-        "python",
-        "eng/scripts/hk_exec.py",
-        "--timeout-seconds",
-        "300",
-    ]
-    assert workflow_release_entry_args[4:] == [
-        "uv",
-        "run",
-        "python",
-        "eng/scripts/workflow_release_acceptance_gate.py",
-    ]
-    timeout_seconds, command_args, option_error = hk_exec.parse_wrapper_options(
-        workflow_release_entry_args[2:],
-    )
-    assert timeout_seconds == 300
-    assert command_args == workflow_release_entry_args[4:]
-    assert option_error is None
-    assert r"\.github/CODEOWNERS$" in pre_commit_config
-    assert r"\.github/actionlint\.yaml$" in pre_commit_config
-    assert r"\.github/workflows/[^/]*\.yml$" in pre_commit_config
-    assert r"\.github/workflows/[^/]*\.yaml$" in pre_commit_config
-    assert r"\.github/workflows/docs/DESIGN\.v2\.md$" in pre_commit_config
-    assert (
-        "docs/wiki/analyses/"
-        r"workflow-release-[^/]*\.md$" in pre_commit_config
-    )
-    assert r"eng/scripts/find_project_path\.py$" in pre_commit_config
-    assert r"eng/scripts/prepare_npm_publish\.py$" in pre_commit_config
-    assert r"eng/scripts/validate_pep440_version\.py$" in pre_commit_config
-    assert r"eng/scripts/validate_semver2_version\.py$" in pre_commit_config
-    assert r"eng/scripts/validate_rubygems_version\.py$" in pre_commit_config
-    assert r"eng/scripts/release_orchestrate_[^/]*\.sh$" in pre_commit_config
-    assert r"eng/scripts/publish_[^/]*_idempotent\.sh$" in pre_commit_config
-    assert r"eng/scripts/validate_pypi_remote_digests\.sh$" in pre_commit_config
-    assert (
-        r"eng/scripts/verify_python_distribution_exactness\.py$"
-        in pre_commit_config
-    )
-    assert (
-        r"eng/scripts/verify_python_artifact_version\.py$" in pre_commit_config
-    )
-    assert r"eng/scripts/hk_exec\.py$" in pre_commit_config
-    assert (
-        "src/private/app/llm-text-splitter/src/"
-        r"llm_text_splitter/text_splitter_manager\.py$" in pre_commit_config
-    )
-    assert r"tests/test_llm_text_splitter_logging\.py$" in pre_commit_config
-    assert (
-        r"tests/test_verify_python_distribution_exactness\.py$"
-        in pre_commit_config
-    )
-    for helper_path in (
-        ".github/workflows/codeql.yml",
-        ".pre-commit-config.yaml",
-        ".github/workflows/generated-test.yaml",
-        ".github/workflows/docs/DESIGN.v2.md",
-        "docs/wiki/analyses/workflow-release-descriptor-schema.md",
-        "docs/wiki/analyses/workflow-release-low-level-design.md",
-        "eng/scripts/find_project_path.py",
-        "eng/scripts/prepare_npm_publish.py",
-        "eng/scripts/validate_pep440_version.py",
-        "eng/scripts/validate_semver2_version.py",
-        "eng/scripts/validate_rubygems_version.py",
-        "eng/scripts/release_orchestrate_policy_publish_targets.sh",
-        "eng/scripts/validate_pypi_remote_digests.sh",
-        "eng/scripts/verify_python_distribution_exactness.py",
-        "eng/scripts/verify_python_artifact_version.py",
-        "eng/scripts/hk_exec.py",
-        "eng/scripts/publish_node_gpr_idempotent.sh",
-        "eng/scripts/publish_node_npmjs_idempotent.sh",
-        "eng/scripts/release_orchestrate_release_completed_check.sh",
-        "hk.pkl",
-        "src/private/app/llm-text-splitter/src/"
-        "llm_text_splitter/text_splitter_manager.py",
-        "tests/test_llm_text_splitter_logging.py",
-        "tests/test_verify_python_distribution_exactness.py",
-    ):
-        assert workflow_release_files.fullmatch(helper_path)
 
 
 def test_hk_exec_parses_timeout_wrapper_options() -> None:

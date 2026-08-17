@@ -1,0 +1,46 @@
+[build-system]
+requires = ["hatchling>=1.24.2", "nbgv-python"]
+build-backend = "hatchling.build"
+
+[project]
+name = "azureauth-credprovider-keyring"
+dynamic = ["version"]
+description = "Python keyring backend and shim for azureauth-credprovider."
+readme = "README.md"
+authors = [{ name = "Shuai Zhang", email = "zhangshuai.ustc@gmail.com" }]
+requires-python = ">=3.12"
+license = "LGPL-3.0-or-later WITH LGPL-3.0-linking-exception"
+classifiers = ["Private :: Do Not Upload"]
+dependencies = []
+
+[project.entry-points."keyring.backends"]
+azureauth = "azureauth_credprovider_keyring.backend:AzureAuthKeyringBackend"
+
+[project.scripts]
+azureauth-keyring = "azureauth_credprovider_keyring.shim:main"
+
+[dependency-groups]
+dev = ["keyring>=25.6.0", "pytest>=8.3.4"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/azureauth_credprovider_keyring"]
+
+[tool.hatch.version]
+source = "nbgv"
+
+[tool.hatch.version.nbgv]
+version-field = "SemVer2"
+
+[tool.ruff]
+extend = "../../../../../pyproject.toml"
+
+[tool.ruff.lint.per-file-ignores]
+"src/azureauth_credprovider_keyring/helper.py" = [
+  "S603", # The adapter intentionally invokes a validated absolute helper path.
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.uv.sources]
+nbgv-python = { workspace = true }

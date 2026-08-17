@@ -140,14 +140,8 @@ RETIRED_ACCEPTANCE_ROW_IDS = frozenset(
     }
 )
 REMOVED_LIVE_GATE_IDS = frozenset({"buddy-github-packages-live-publication"})
-RETIRED_MATRIX_TEST_NODEIDS = frozenset(
+RETIRED_MATRIX_ENTRY_ROUTE_TEST_NODEIDS = frozenset(
     {
-        "src/public/lib/three-workflow-release-planner/tests/test_planner.py::"
-        "test_buddy_force_official_frozen_version_fails_closed",
-        "src/public/lib/three-workflow-release-planner/tests/test_planner.py::"
-        "test_buddy_github_release_only_target_fails_closed_when_deactivated",
-        "src/public/lib/three-workflow-release-planner/tests/test_planner.py::"
-        "test_buddy_smoke_projects_plan_github_packages_publish",
         "tests/test_workflow_release_control.py::"
         "test_buddy_entry_authorizes_resolved_targets_by_reachability",
         "tests/test_workflow_release_control.py::"
@@ -158,16 +152,28 @@ RETIRED_MATRIX_TEST_NODEIDS = frozenset(
         "test_buddy_target_ref_policy_rejects_unsafe_refs",
     }
 )
-RETIRED_GATE_TEST_NODEIDS = frozenset(
+RETIRED_GATE_ENTRY_ROUTE_TEST_NODEIDS = frozenset(
     {
-        "src/public/lib/three-workflow-release-planner/tests/test_planner.py::"
-        "test_buddy_mixed_github_release_fails_closed_when_deactivated",
         "tests/test_workflow_release_control.py::"
         "test_acceptance_gate_pins_r41_release_completion_and_buddy_regressions",
         "tests/test_workflow_release_control.py::"
         "test_buddy_entry_is_not_restricted_by_public_release_ref",
         "tests/test_workflow_release_control.py::"
         "test_buddy_github_release_deactivation_blocks_publish_handoff",
+    }
+)
+PRESERVED_GENERIC_BUDDY_DOMAIN_TEST_NODEIDS = frozenset(
+    {
+        "src/public/lib/three-workflow-release-planner/tests/test_planner.py::"
+        "test_buddy_smoke_projects_plan_github_packages_publish",
+        "src/public/lib/three-workflow-release-planner/tests/test_planner.py::"
+        "test_buddy_mixed_github_release_fails_closed_when_deactivated",
+        "src/public/lib/three-workflow-release-planner/tests/test_planner.py::"
+        "test_buddy_github_release_only_target_fails_closed_when_deactivated",
+        "src/public/lib/three-workflow-release-planner/tests/test_planner.py::"
+        "test_buddy_force_official_frozen_version_fails_closed",
+        "src/public/lib/three-workflow-release-planner/tests/test_planner.py::"
+        "test_cli_passes_official_frozen_versions",
     }
 )
 PRESERVED_GATE_TEST_NODEIDS = frozenset(
@@ -489,7 +495,7 @@ def test_synthetic_renamed_and_new_compatibility_routes_are_rejected(
 def test_buddy_only_acceptance_rows_nodeids_and_live_gates_are_removed() -> (
     None
 ):
-    """Require exact retired matrix Buddy evidence to disappear."""
+    """Remove legacy Buddy rows without restoring their generic evidence."""
     matrix_path = (
         REPO_ROOT / "tests/fixtures/workflow-release-acceptance-matrix.json"
     )
@@ -507,7 +513,11 @@ def test_buddy_only_acceptance_rows_nodeids_and_live_gates_are_removed() -> (
 
     assert {row["id"] for row in rows}.isdisjoint(RETIRED_ACCEPTANCE_ROW_IDS)
     assert set(live_gates).isdisjoint(REMOVED_LIVE_GATE_IDS)
-    assert _test_nodeids(rows).isdisjoint(RETIRED_MATRIX_TEST_NODEIDS)
+    matrix_nodeids = _test_nodeids(rows)
+    assert matrix_nodeids.isdisjoint(RETIRED_MATRIX_ENTRY_ROUTE_TEST_NODEIDS)
+    assert matrix_nodeids.isdisjoint(
+        PRESERVED_GENERIC_BUDDY_DOMAIN_TEST_NODEIDS
+    )
     assert _evidence_path_values(active_rows).isdisjoint(
         FORBIDDEN_ACTIVE_MATRIX_EVIDENCE_PATHS
     )
@@ -534,8 +544,8 @@ def test_buddy_only_acceptance_rows_nodeids_and_live_gates_are_removed() -> (
         }
 
 
-def test_acceptance_gate_drops_buddy_nodes_and_retains_official_ci() -> None:
-    """Pin exact gate inventory changes without blanket token scans."""
+def test_acceptance_gate_drops_entry_routes_and_retains_domain_nodes() -> None:
+    """Retire legacy routes while preserving generic Buddy domain coverage."""
     nodeids = frozenset(
         _ast_tuple_assignment(
             REPO_ROOT / "eng/scripts/workflow_release_acceptance_gate.py",
@@ -543,7 +553,8 @@ def test_acceptance_gate_drops_buddy_nodes_and_retains_official_ci() -> None:
         )
     )
 
-    assert nodeids.isdisjoint(RETIRED_GATE_TEST_NODEIDS)
+    assert nodeids.isdisjoint(RETIRED_GATE_ENTRY_ROUTE_TEST_NODEIDS)
+    assert nodeids >= PRESERVED_GENERIC_BUDDY_DOMAIN_TEST_NODEIDS
     assert nodeids >= PRESERVED_GATE_TEST_NODEIDS
 
 

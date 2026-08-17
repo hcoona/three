@@ -75,11 +75,11 @@ _CONTRACT_FIXTURE_DIRECTORY = (
 _CONTRACT_FIXTURE_DIGESTS = {
     "node-provider-result": (
         "sha256:"
-        "d91a11cc7373641f3298bcf5970aab0b0a2ab9e4def3e37615ce8ad2183a52f7"
+        "fe55544be8ed1c0666dec70195675ec88941b2dcae2ff44d79d1bb79873fe440"
     ),
     "node-provider-fact-bundle": (
         "sha256:"
-        "83d86899571cdb736a9225550150b29583804d6fb0c909a4abac2cc8e3a252e5"
+        "7f691ee4d1a47ed9442372a51ad2a84794f001136dc8935ac66d8ec135ef7745"
     ),
 }
 _PHASE1_PREPARATION_FETCH_COMMAND = (
@@ -756,7 +756,7 @@ class RecordingRunner:
         if command == ("node", "--version"):
             return "v24.14.0\n"
         if command == ("pnpm", "--version"):
-            return "11.17.0\n"
+            return "11.21.0\n"
         message = f"unexpected command: {command}"
         raise AssertionError(message)
 
@@ -3197,7 +3197,7 @@ class _Phase3RecordingRunner(RecordingRunner):
     ) -> None:
         super().__init__(repo_root, project_root, target=target)
         self.node_version_output = "v24.14.0\n"
-        self.pnpm_version_output = "11.17.0\n"
+        self.pnpm_version_output = "11.21.0\n"
 
     def __call__(
         self,

@@ -13,6 +13,7 @@ resolution-markers = [
 [manifest]
 members = [
     "azure-document-intelligence-lab",
+    "azureauth-credprovider-keyring",
     "factorio-cycle-calculator",
     "git-commit-heatmap",
     "hcoona-release-smoke",
@@ -406,6 +407,24 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/8e/33/34152316dd244dcd43d5300ded3cf6e1b46d343e4e92620c23e533fa91df/backports_zstd-1.5.0-cp313-cp313-win32.whl", hash = "sha256:b932834c4d85360f46d1e7fbf3eee1e26ba594e0eb5c3ee1281e89bc1d48d06f", size = 289560, upload-time = "2026-05-11T19:53:59.274Z" },
     { url = "https://files.pythonhosted.org/packages/71/c5/f759bc87fd77c88f4fdad2d878535fb7e9537c6a05876d206e6690bf33c6/backports_zstd-1.5.0-cp313-cp313-win_amd64.whl", hash = "sha256:c71dfbeced720326a8917a6edf921c568dc2396228c6432205c6d7e7fe7f3707", size = 314812, upload-time = "2026-05-11T19:54:00.909Z" },
     { url = "https://files.pythonhosted.org/packages/47/96/d7970dbb2fef34b549b34146090f48f41903cc7268b1ed1c7542eaa1852e/backports_zstd-1.5.0-cp313-cp313-win_arm64.whl", hash = "sha256:7b5798b20ffff71ee4620a01f56fe0b50271724b4251db08c90a069446cc4752", size = 291411, upload-time = "2026-05-11T19:54:02.541Z" },
+]
+
+[[package]]
+name = "azureauth-credprovider-keyring"
+source = { editable = "src/private/app/azureauth-credprovider/python" }
+
+[package.dev-dependencies]
+dev = [
+    { name = "keyring" },
+    { name = "pytest" },
+]
+
+[package.metadata]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "keyring", specifier = ">=25.6.0" },
+    { name = "pytest", specifier = ">=8.3.4" },
 ]
 
 [[package]]

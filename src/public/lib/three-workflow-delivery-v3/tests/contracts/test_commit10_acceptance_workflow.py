@@ -40,6 +40,12 @@ EXPECTED_JOBS = (
 PROBE_JOBS = EXPECTED_JOBS[2:4]
 INPUT_EXPRESSION = re.compile(r"\$\{\{\s*inputs\.[^}]+\}\}")
 ACTION_PIN = re.compile(r"^[0-9a-f]{40}$")
+EXPECTED_ACTION_USES = {
+    "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+    "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+    "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+    "astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d",
+}
 CREDENTIAL_VALUE = re.compile(
     r"(?i)(\$\{\{\s*(github\.token|secrets\.[^}]+)\s*\}\}|"
     r"\b(NODE_AUTH_TOKEN|NPM_TOKEN|GH_TOKEN|GITHUB_TOKEN)\b|"
@@ -470,6 +476,7 @@ def test_acceptance_permissions_keep_package_write_only_in_probe_jobs(
     "required",
     [
         "actions/checkout@",
+        "actions/setup-node@",
         "astral-sh/setup-uv@",
         "actions/upload-artifact@",
     ],
@@ -482,6 +489,12 @@ def test_acceptance_action_pins_and_evidence_retention_are_exact(
 
     assert required in source
     assert "retention-days: 45" in source
+    assert {
+        str(step["uses"])
+        for job in document["jobs"].values()
+        for step in job.get("steps", [])
+        if "uses" in step
+    } == EXPECTED_ACTION_USES
     assert all(
         ACTION_PIN.fullmatch(str(step["uses"]).partition("@")[2])
         for job in document["jobs"].values()
