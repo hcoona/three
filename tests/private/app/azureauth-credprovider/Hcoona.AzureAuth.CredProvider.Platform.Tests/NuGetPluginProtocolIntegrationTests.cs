@@ -41,31 +41,40 @@ public sealed class NuGetPluginProtocolIntegrationTests
         );
         using Process process = StartPluginProcess();
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        try
+        {
+            Message outboundHandshakeResponse = await CreateOutboundHandshakeResponseAsync(
+                process,
+                cancellationToken
+            );
+            string pipelinedInput = await SerializeMessagesAsync(
+                outboundHandshakeResponse,
+                handshakeRequest,
+                closeRequest
+            );
 
-        Message outboundHandshakeResponse = await CreateOutboundHandshakeResponseAsync(
-            process,
-            cancellationToken
-        );
-        string pipelinedInput = await SerializeMessagesAsync(
-            outboundHandshakeResponse,
-            handshakeRequest,
-            closeRequest
-        );
+            await process.StandardInput.WriteAsync(pipelinedInput);
+            await process.StandardInput.FlushAsync(cancellationToken);
+            process.StandardInput.Close();
 
-        await process.StandardInput.WriteAsync(pipelinedInput);
-        await process.StandardInput.FlushAsync(cancellationToken);
-        process.StandardInput.Close();
+            string remainingOutput = await WaitForSuccessfulExitAsync(
+                process,
+                "NuGet plugin did not exit after the pipelined Close request.",
+                cancellationToken
+            );
 
-        string remainingOutput = await WaitForSuccessfulExitAsync(
-            process,
-            "NuGet plugin did not exit after the pipelined Close request.",
-            cancellationToken
-        );
-
-        string[] responseLines = ProcessTestApp
-            .NormalizeNewlines(remainingOutput)
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        await AssertHandshakeResponseAsync(Assert.Single(responseLines), currentProtocolVersion);
+            string[] responseLines = ProcessTestApp
+                .NormalizeNewlines(remainingOutput)
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            await AssertHandshakeResponseAsync(
+                Assert.Single(responseLines),
+                currentProtocolVersion
+            );
+        }
+        finally
+        {
+            await TerminateProcessAsync(process);
+        }
     }
 
     [Fact]
@@ -91,57 +100,66 @@ public sealed class NuGetPluginProtocolIntegrationTests
         );
         using Process process = StartPluginProcess();
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
-
-        Message outboundHandshakeResponse = await CreateOutboundHandshakeResponseAsync(
-            process,
-            cancellationToken
-        );
-        string requestInput = await SerializeMessagesAsync(
-            outboundHandshakeResponse,
-            handshakeRequest
-        );
-        requestInput += OperationClaimsRequestJson + "\n";
-        await process.StandardInput.WriteAsync(requestInput);
-        await process.StandardInput.FlushAsync(cancellationToken);
-
-        string handshakeResponseLine =
-            await process.StandardOutput.ReadLineAsync(cancellationToken)
-            ?? throw new InvalidOperationException(
-                "NuGet plugin closed standard output before responding to the handshake."
+        try
+        {
+            Message outboundHandshakeResponse = await CreateOutboundHandshakeResponseAsync(
+                process,
+                cancellationToken
             );
-        string operationClaimsResponseLine =
-            await process.StandardOutput.ReadLineAsync(cancellationToken)
-            ?? throw new InvalidOperationException(
-                "NuGet plugin closed standard output before responding to operation claims."
+            string handshakeInput = await SerializeMessagesAsync(
+                outboundHandshakeResponse,
+                handshakeRequest
+            );
+            await process.StandardInput.WriteAsync(handshakeInput);
+            await process.StandardInput.FlushAsync(cancellationToken);
+
+            string handshakeResponseLine = await ReadRequiredOutputLineAsync(
+                process,
+                "NuGet plugin closed standard output before responding to the handshake.",
+                "NuGet plugin did not respond to the handshake within the timeout.",
+                cancellationToken
+            );
+            await AssertHandshakeResponseAsync(handshakeResponseLine, currentProtocolVersion);
+
+            await process.StandardInput.WriteAsync(OperationClaimsRequestJson + "\n");
+            await process.StandardInput.FlushAsync(cancellationToken);
+            string operationClaimsResponseLine = await ReadRequiredOutputLineAsync(
+                process,
+                "NuGet plugin closed standard output before responding to operation claims.",
+                "NuGet plugin did not respond to operation claims within the timeout.",
+                cancellationToken
             );
 
-        await process.StandardInput.WriteAsync(await SerializeMessagesAsync(closeRequest));
-        await process.StandardInput.FlushAsync(cancellationToken);
-        process.StandardInput.Close();
-
-        string remainingOutput = await WaitForSuccessfulExitAsync(
-            process,
-            "NuGet plugin did not exit after the operation-claims response.",
-            cancellationToken
-        );
-
-        Assert.Equal(string.Empty, remainingOutput);
-        await AssertHandshakeResponseAsync(handshakeResponseLine, currentProtocolVersion);
-
-        Message operationClaimsResponse = await DeserializeMessageAsync(
-            operationClaimsResponseLine
-        );
-        Assert.Equal(OperationClaimsRequestId, operationClaimsResponse.RequestId);
-        Assert.Equal(MessageType.Response, operationClaimsResponse.Type);
-        Assert.Equal(MessageMethod.GetOperationClaims, operationClaimsResponse.Method);
-        GetOperationClaimsResponse operationClaimsPayload =
-            MessageUtilities.DeserializePayload<GetOperationClaimsResponse>(
-                operationClaimsResponse
-            )
-            ?? throw new InvalidDataException(
-                "NuGet plugin operation-claims response did not contain a valid payload."
+            Message operationClaimsResponse = await DeserializeMessageAsync(
+                operationClaimsResponseLine
             );
-        Assert.Empty(operationClaimsPayload.Claims);
+            Assert.Equal(OperationClaimsRequestId, operationClaimsResponse.RequestId);
+            Assert.Equal(MessageType.Response, operationClaimsResponse.Type);
+            Assert.Equal(MessageMethod.GetOperationClaims, operationClaimsResponse.Method);
+            GetOperationClaimsResponse operationClaimsPayload =
+                MessageUtilities.DeserializePayload<GetOperationClaimsResponse>(
+                    operationClaimsResponse
+                )
+                ?? throw new InvalidDataException(
+                    "NuGet plugin operation-claims response did not contain a valid payload."
+                );
+            Assert.Empty(operationClaimsPayload.Claims);
+
+            await process.StandardInput.WriteAsync(await SerializeMessagesAsync(closeRequest));
+            await process.StandardInput.FlushAsync(cancellationToken);
+            process.StandardInput.Close();
+
+            string remainingOutput = await WaitForSuccessfulExitAsync(
+                process,
+                "NuGet plugin did not exit after the operation-claims response.",
+                cancellationToken
+            );
+            Assert.Equal(string.Empty, remainingOutput);
+        }
+        finally
+        {
+            await TerminateProcessAsync(process);
+        }
     }
 
     private static Process StartPluginProcess()
@@ -176,6 +194,48 @@ public sealed class NuGetPluginProtocolIntegrationTests
 
         return Process.Start(startInfo)
             ?? throw new InvalidOperationException("Failed to start the NuGet protocol helper.");
+    }
+
+    private static async Task<string> ReadRequiredOutputLineAsync(
+        Process process,
+        string closedMessage,
+        string timeoutMessage,
+        CancellationToken cancellationToken
+    )
+    {
+        using var responseTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var responseCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            responseTimeout.Token
+        );
+        try
+        {
+            return await process.StandardOutput.ReadLineAsync(responseCancellation.Token)
+                ?? throw new InvalidOperationException(closedMessage);
+        }
+        catch (OperationCanceledException) when (responseTimeout.IsCancellationRequested)
+        {
+            throw new TimeoutException(timeoutMessage);
+        }
+    }
+
+    private static async Task TerminateProcessAsync(Process process)
+    {
+        if (process.HasExited)
+        {
+            return;
+        }
+
+        try
+        {
+            process.Kill(entireProcessTree: true);
+        }
+        catch (InvalidOperationException) when (process.HasExited)
+        {
+            return;
+        }
+
+        await process.WaitForExitAsync(CancellationToken.None);
     }
 
     private static async Task<string> WaitForSuccessfulExitAsync(
@@ -220,11 +280,12 @@ public sealed class NuGetPluginProtocolIntegrationTests
         CancellationToken cancellationToken
     )
     {
-        string outboundHandshakeLine =
-            await process.StandardOutput.ReadLineAsync(cancellationToken)
-            ?? throw new InvalidOperationException(
-                "NuGet plugin closed standard output before handshaking."
-            );
+        string outboundHandshakeLine = await ReadRequiredOutputLineAsync(
+            process,
+            "NuGet plugin closed standard output before handshaking.",
+            "NuGet plugin did not initiate the handshake within the timeout.",
+            cancellationToken
+        );
         Message outboundHandshake = await DeserializeMessageAsync(outboundHandshakeLine);
         Assert.Equal(MessageType.Request, outboundHandshake.Type);
         Assert.Equal(MessageMethod.Handshake, outboundHandshake.Method);
