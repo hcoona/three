@@ -3186,3 +3186,582 @@ uv run --python 3.13 pytest -q
 - [ ] No excluded surface or semantic is changed.
 
 <!-- END APPEND: current-2026-08-17-bounded-regression-plan -->
+
+<!-- BEGIN APPEND: 2026-08-18-v3-artifact-transport-plan -->
+
+## v3 artifact transport test-first plan
+
+1. Add failing YAML scenarios in
+   `test_buddy_workflows.py`:
+   - `test_reviewer_archive_is_decompressed_with_transport_and_payload_bindings`
+   - `test_authorization_raw_upload_materializes_exact_attempt_basename`
+   - `test_mutation_marker_raw_upload_and_consumers_use_attempt_basename`
+   - `test_authority_record_multidownload_is_comma_delimited_flat_merged_raw`
+2. Repair only the matching workflow transport:
+   - archive/decompress the three-file reviewer artifact;
+   - rename/materialize Authorization and mutation-marker raw files to their
+     propagated artifact basenames and update local consumers;
+   - use exact comma-separated multi-ID inputs with merged flat raw downloads.
+3. Preserve all other raw uploads, history admission, package endpoint, live
+   adapter context, Node version, concurrency, and GitHub platform client.
+4. Validate the canonical Buddy contracts plus the existing multi-file history
+   archive scenarios, then run Ruff, Pyrefly, actionlint, and
+   `git diff --check`.
+5. Perform pseudo-mutation and assertion-depth review. Completion requires each
+   listed defect mutation to be killed by an exact assertion and no
+   assertion-free or trivial-only generated test.
+
+<!-- END APPEND: 2026-08-18-v3-artifact-transport-plan -->
+
+<!-- BEGIN APPEND: 2026-08-18-bounded-wdv3-artifact-transport-sequential-plan -->
+
+# Sequential Implementation Plan — Bounded Workflow Delivery v3 Artifact-Transport Regression
+
+## Overview
+
+Use a targeted, test-first strategy for the newest bounded research inventory:
+one directly untested loader and one partially covered workflow contract. Treat
+the current uncommitted workflow and contract-test changes as authoritative.
+Extend or append tests in the existing pytest modules; do not delete, replace,
+or weaken existing scenarios.
+
+The implementation sequence is:
+
+1. Add direct loader regressions, observe the bounded failures, and make only
+   the transport-digest normalization fix in `cli.py`.
+2. Strengthen the existing live-attempt workflow scenarios for single-file raw
+   uploads, producer ordering, and complete reviewer/Authorization chains.
+3. Run bounded discovery, tests, linters, affected-package validation, and
+   root collection without repairing unrelated failures.
+4. Review bounded coverage and checklist evidence, run the mandatory
+   `test-gap-analysis` and `assertion-quality` skills against the final tests,
+   and append findings and handoff evidence to `.testagent/status.md`.
+
+No sibling package, other Workflow Delivery v3 defect, governance behavior, or
+unrelated workflow belongs to this plan.
+
+## Authoritative Target Inventory
+
+| Phase | Role | Exact path |
+|---|---|---|
+| 1 | Narrow production target | `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py` (`_load_mutation_marker`) |
+| 1 | Canonical loader tests | `src/public/lib/three-workflow-delivery-v3/tests/test_cli.py` |
+| 2 | Workflow contract tests | `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py` |
+| 2 | Primary asserted fixture | `.github/workflows/workflow-delivery-v3-live-attempt.yml` |
+| 4 | Append-only evidence | `.testagent/status.md` |
+
+The existing changes in
+`.github/workflows/workflow-delivery-v3-live-attempt.yml` and
+`tests/contracts/test_buddy_workflows.py` must be preserved. The workflow is an
+asserted artifact, not an automatic edit target: change it later only if a new
+bounded assertion proves that one of the listed transport requirements is
+still unsatisfied.
+
+These context fixtures remain unchanged:
+
+- `.github/workflows/workflow-delivery-v3-buddy-smoke.yml`
+- `.github/workflows/workflow-delivery-v3-buddy-smoke-acceptance.yml`
+
+## Commands
+
+- **Build**: No separate build command was identified for this bounded Python
+  scope. The affected-package HK-equivalent test gate is the project-level
+  validation gate.
+- **Bounded discovery**:
+
+```bash
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest --collect-only -q \
+  src/public/lib/three-workflow-delivery-v3/tests/test_cli.py \
+  src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py
+```
+
+- **Scoped fix-cycle tests**:
+
+```bash
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q \
+  src/public/lib/three-workflow-delivery-v3/tests/test_cli.py \
+  src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py \
+  -k 'load_mutation_marker or reviewer_archive_is_decompressed_with_transport_and_payload_bindings or authorization_raw_upload_materializes_exact_attempt_basename or mutation_marker_raw_upload_and_consumers_use_attempt_basename or authority_record_multidownload_is_comma_delimited_flat_merged_raw or user_item11_publisher_preflight_and_start_marker_are_separate'
+```
+
+- **Complete bounded modules**:
+
+```bash
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q \
+  src/public/lib/three-workflow-delivery-v3/tests/test_cli.py \
+  src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py
+```
+
+- **Affected-package gate**:
+
+```bash
+python eng/scripts/hk_exec.py --timeout-seconds 720 \
+  uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q \
+  src/public/lib/three-workflow-delivery-v3/tests
+```
+
+- **Root harness discovery**:
+
+```bash
+uv run --python 3.13 pytest --collect-only -q
+```
+
+- **Lint and format**:
+
+```bash
+uv run --python 3.13 ruff check --force-exclude -- \
+  src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py \
+  src/public/lib/three-workflow-delivery-v3/tests/test_cli.py \
+  src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py
+
+uv run --python 3.13 ruff format --check --force-exclude -- \
+  src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py \
+  src/public/lib/three-workflow-delivery-v3/tests/test_cli.py \
+  src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py
+
+python eng/scripts/hk_actionlint.py \
+  .github/workflows/workflow-delivery-v3-live-attempt.yml
+```
+
+- **Bounded whitespace validation**:
+
+```bash
+git --no-pager diff --check -- \
+  .github/workflows/workflow-delivery-v3-live-attempt.yml \
+  src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py \
+  src/public/lib/three-workflow-delivery-v3/tests/test_cli.py \
+  src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py \
+  .testagent/status.md
+```
+
+## Phase Summary
+
+| Phase | Focus | Files | Estimated test evidence |
+|---|---|---:|---:|
+| 1 | Loader transport normalization and malformed rejection | 2 | 3 test functions; at least 11 collected cases |
+| 2 | Raw-upload and end-to-end workflow contracts | 2 | 5 existing named scenarios strengthened |
+| 3 | Narrow and workspace-relevant validation | 0 new | Collection, scoped, module, package, lint, and workflow gates |
+| 4 | Coverage/checklist audit and append-only evidence | 1 | 2 mandatory skill reviews plus six requirement mappings |
+
+---
+
+## Phase 1: Canonical Mutation-Marker Transport Regression
+
+### Overview
+
+Test the leaf digest-normalization behavior through
+`_load_mutation_marker` before changing production. Every case must use an
+otherwise valid marker document so that the transport value is the only
+variable. Preserve the existing positive artifact-ID check, marker schema,
+marker-body canonical digest validation, and publication-attempt/action/lock/
+preflight substitutions.
+
+### Files
+
+#### `src/public/lib/three-workflow-delivery-v3/tests/test_cli.py`
+
+- Append direct module-level pytest scenarios in the existing style.
+- Use `tmp_path` and canonical JSON bytes as in the representative CLI test.
+- Call `cli._load_mutation_marker` directly and retain `# noqa: SLF001`.
+- Do not alter or remove the existing monkeypatched passthrough scenario.
+
+#### `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py`
+
+- Limit the production edit to `_load_mutation_marker`.
+- Reuse `_normalized_digest` for the upload transport digest and carry its
+  canonical `sha256:<64-lowercase-hex>` result forward.
+- Preserve the loader's existing malformed-transport error contract and every
+  marker-body binding check.
+- Do not conflate the upload action's transport digest with the marker
+  document's distinct canonical digest.
+
+### Tests to Add
+
+#### 1. `test_load_mutation_marker_accepts_upload_artifact_v7_bare_digest`
+
+Arrange a valid marker, a positive artifact ID, and the native
+`actions/upload-artifact` v7 digest `"a" * 64`.
+
+Assert all of the following:
+
+- the bare value is accepted;
+- the returned transport binding is canonicalized to
+  `"sha256:" + ("a" * 64)`;
+- the positive artifact ID is retained;
+- the returned value is the expected
+  `MutationMayHaveStartedMarker`;
+- attempt, first-materialized-action, lock-group, and preflight bindings still
+  equal the valid marker inputs;
+- the separate marker-body digest remains its own validated binding.
+
+This is the primary regression and must fail against the pre-fix
+`startswith("sha256:")` implementation.
+
+#### 2. `test_load_mutation_marker_accepts_canonical_prefixed_digest`
+
+Use the same otherwise valid marker and artifact ID with
+`"sha256:" + ("a" * 64)`.
+
+Assert that:
+
+- prefixed compatibility remains intact;
+- the returned transport digest is unchanged and canonical;
+- all nontransport marker bindings match the same expected object as the bare
+  case.
+
+#### 3. `test_load_mutation_marker_rejects_malformed_artifact_transport`
+
+Parameterize the transport input and artifact ID with descriptive IDs:
+
+| Parameter ID | Artifact ID | Digest |
+|---|---:|---|
+| `short-bare` | positive | 63 lowercase hex characters |
+| `long-bare` | positive | 65 lowercase hex characters |
+| `uppercase-bare` | positive | 64 uppercase hex characters |
+| `nonhex-bare` | positive | 63 valid characters plus `g` |
+| `empty-digest` | positive | empty string |
+| `prefix-only` | positive | `sha256:` |
+| `malformed-prefixed-nonhex` | positive | `sha256:not-a-digest` |
+| `zero-artifact-id` | `0` | valid 64-character bare digest |
+| `negative-artifact-id` | negative | valid 64-character bare digest |
+
+For every row:
+
+- retain a valid marker body to isolate transport validation;
+- assert the loader raises its existing malformed-transport exception with
+  the exact message `mutation-start marker transport is malformed`;
+- assert no partially populated marker is returned.
+
+The `malformed-prefixed-nonhex` row specifically kills the current false
+acceptance, while the bare short/long/uppercase/nonhex rows prove that only
+exactly 64 lowercase hexadecimal characters are accepted without a prefix.
+
+### Sequential Implementation Steps
+
+1. Append the three tests and collect their node IDs.
+2. Run the scoped command with `-k load_mutation_marker`.
+3. Record the expected pre-fix failures: native bare rejection and malformed
+   prefixed acceptance. Do not change unrelated CLI behavior.
+4. Replace the prefix-only transport check with positive-ID validation plus
+   `_normalized_digest` normalization, translating invalid transport input to
+   the existing loader error contract as necessary.
+5. Rerun all three loader tests, then the complete `test_cli.py` module.
+
+### Success Criteria
+
+- [ ] Exactly 64 lowercase bare hex is accepted and canonicalized.
+- [ ] Already canonical prefixed input remains accepted.
+- [ ] Every named malformed/nonpositive parameter is rejected.
+- [ ] Distinct marker-body validation and all existing substitutions remain
+      unchanged.
+- [ ] No production file other than `cli.py` is edited for this defect.
+
+---
+
+## Phase 2: Workflow Raw-Upload and Complete-Chain Contracts
+
+### Overview
+
+Strengthen the existing scenario-heavy contracts against the authoritative
+live-attempt YAML. Keep using `yaml.safe_load` and the existing
+`_document`/`_steps`/`_step`/`_run` helpers, exact mappings and expressions,
+explicit order comparisons, negative assertions, and named parameter IDs.
+Extend the named scenarios below rather than replacing them or adding
+unrelated topology coverage.
+
+### Files
+
+#### `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+
+Strengthen `_raw_artifact_name` (or its narrowly equivalent helper) so every
+asserted `archive: false` upload proves:
+
+1. `archive` is exactly `false`;
+2. `path` resolves to exactly one nonempty line/entry;
+3. that entry does not end in `/`;
+4. it contains none of the glob metacharacters `*`, `?`, or `[`;
+5. its physical basename exactly equals the artifact `name`.
+
+Do not merely compare basenames before checking entry cardinality and selector
+shape. Reuse this helper at every raw upload already covered by the named
+Authorization, mutation-marker, and user-item-11 scenarios.
+
+#### `.github/workflows/workflow-delivery-v3-live-attempt.yml`
+
+First run the stronger tests against the current authoritative workflow, which
+already contains the researched archive/decompression, attempt-basename,
+Base64, and comma-delimited raw-download changes. Preserve those changes.
+Only if a bounded assertion exposes a remaining checklist defect may the
+matching live-attempt step be adjusted. Do not edit either Buddy smoke
+workflow.
+
+### Existing Scenarios to Strengthen
+
+#### 1. `test_reviewer_archive_is_decompressed_with_transport_and_payload_bindings`
+
+Add exact assertions for this producer/transport order:
+
+1. `Materialize immutable publication and reviewer payload`
+2. `Materialize exact publication basenames`
+3. archived `Upload reviewer artifact`
+4. `Bind reviewer artifact transport to exact payloads`
+
+Then assert every reviewer formatter hop:
+
+- the bound reviewer file is the file Base64-encoded by the producer;
+- that Base64 value is exposed as
+  `materialize-publication.outputs.reviewer-formatter-input-base64`;
+- the approval job output and environment preserve the exact expression;
+- the authorization formatter receives/decodes that same value;
+- the approval-finalizer receives/decodes that same value;
+- the formatter/finalizer consume the expected reviewer payload path rather
+  than a directory, alternate file, or recomputed value.
+
+Retain the existing reviewer archive/decompression and payload-binding
+assertions. A mutation that moves upload before either producer, drops any
+output hop, or changes the decoded input must fail this scenario.
+
+#### 2. `test_authorization_raw_upload_materializes_exact_attempt_basename`
+
+Assert the complete Authorization producer and consumer chain:
+
+- the authorization formatter initially writes
+  `.wdv3/authorization.json`;
+- it derives the SHA-256 attempt basename and moves the file to
+  `.wdv3/${name}`;
+- Base64 is read from that same renamed file, not the original generic path;
+- formatter step outputs expose both exact `name` and Base64 values;
+- approval job outputs preserve those exact step-output expressions;
+- `approval-finalizer` explicitly needs `approval`;
+- its decode/materialization step writes the same basename and occurs before
+  the raw upload step;
+- the raw upload passes the strengthened one-literal-file helper;
+- approval-finalizer job outputs preserve the exact basename, upload artifact
+  ID, and upload artifact digest expressions;
+- exactly the three downstream consumer sites in the publisher and
+  release-finalizer paths use that basename and transport metadata under
+  `.wdv3/input`, with no fallback to a generic `authorization.json`.
+
+Use explicit step indices for producer-before-upload ordering and exact
+whole-mapping/expression assertions for every step-output/job-output hop.
+
+#### 3. `test_mutation_marker_raw_upload_and_consumers_use_attempt_basename`
+
+Assert that:
+
+- the producer writes the attempt-specific literal marker path;
+- the producer index is lower than the raw upload index;
+- the upload path passes the one-literal-file helper and its basename equals
+  the artifact name;
+- upload step ID and digest outputs are preserved exactly;
+- the publish command and capability-bundle consumer use the attempt basename
+  and the same transport ID/digest;
+- no generic marker path, multiline selector, directory, or glob is accepted.
+
+#### 4. `test_authority_record_multidownload_is_comma_delimited_flat_merged_raw`
+
+Retain and make exact the named-scenario whole mappings for:
+
+- comma-delimited multi-artifact IDs;
+- flat destination paths;
+- merged multiple downloads;
+- raw/nonarchive handling.
+
+This scenario protects the existing authority-record transport repair while
+the stronger raw-file contract is introduced; do not broaden it into unrelated
+topology behavior.
+
+#### 5. `test_user_item11_publisher_preflight_and_start_marker_are_separate`
+
+Retain the distinction between publisher preflight and mutation-start marker.
+Apply the strengthened raw-file helper wherever this scenario inspects a raw
+upload, and assert the two basenames/paths remain separate rather than aliases.
+
+### Sequential Implementation Steps
+
+1. Strengthen the shared raw-upload helper before adding chain assertions.
+2. Extend the five existing scenarios in the order listed above.
+3. Run each scenario by exact `-k` name while editing, then run the complete
+   scoped fix-cycle command.
+4. Prefer test-only changes when the authoritative YAML already satisfies the
+   assertions.
+5. If and only if one assertion reveals a bounded workflow mismatch, update
+   the corresponding live-attempt producer/output/consumer expression and
+   rerun all five scenarios. Preserve all unrelated YAML bytes and semantics.
+
+### Success Criteria
+
+- [ ] Every covered raw upload is one resolved literal file, never a
+      directory, glob, or multiline selector.
+- [ ] Reviewer and Authorization producers precede their uploads.
+- [ ] The reviewer formatter Base64 chain is asserted at every producer,
+      output, environment, decode, and consumer hop.
+- [ ] The Authorization basename/Base64 chain is asserted through formatter
+      steps, approval outputs, finalizer decode/upload, finalizer outputs, and
+      all three downstream consumers.
+- [ ] Mutation-marker and authority-record transport regressions remain
+      protected.
+- [ ] Existing tests are preserved and only extended/appended.
+- [ ] Context-only Buddy workflows remain unchanged.
+
+---
+
+## Phase 3: Narrow Gates and Final Relevant Workspace Validation
+
+### Overview
+
+Validate in widening order. A failure outside the bounded files is report-only
+unless the bounded diff directly caused it; do not expand the implementation
+inventory to make unrelated package or workspace failures green.
+
+### Validation Sequence
+
+1. Run bounded `--collect-only` for `test_cli.py` and
+   `test_buddy_workflows.py`. Record all three new loader test names and every
+   malformed parameter ID.
+2. Run the scoped fix-cycle command containing the loader and five named
+   workflow scenarios.
+3. Run both complete bounded test modules.
+4. Run Ruff check and Ruff format check on exactly `cli.py`, `test_cli.py`,
+   and `test_buddy_workflows.py`.
+5. Run `hk_actionlint.py` on exactly
+   `.github/workflows/workflow-delivery-v3-live-attempt.yml`.
+6. Run bounded `git diff --check`.
+7. Run the affected-package HK-equivalent test gate for all
+   `three-workflow-delivery-v3` tests.
+8. Run root pytest collection as the harness-equivalent workspace discovery
+   check.
+9. After any bounded correction, rerun its owning narrow command and then all
+   subsequent gates.
+
+For each command, retain the exact command text, exit status, and
+pass/fail/deselected/collected counts for the final status append. Record an
+unrelated failure as bounded report-only evidence rather than editing another
+file.
+
+### Bounded Coverage and Checklist Review
+
+Perform an explicit scenario-to-node review rather than inventing an
+unresearched coverage command:
+
+- `_load_mutation_marker`, previously direct-untested, must map to both
+  acceptance tests and every malformed parameter node.
+- Each raw upload assertion must be reachable from at least one of the named
+  workflow scenarios.
+- Each reviewer and Authorization data-flow arrow in Phase 2 must map to an
+  exact assertion in a collected test.
+- Check the mutation-kill matrix:
+  - reject a return to prefix-only transport validation;
+  - reject acceptance of `sha256:not-a-digest`;
+  - reject a second raw path line, trailing slash, or `*`/`?`/`[` selector;
+  - reject moving a producer after its upload;
+  - reject removal or rewiring of any reviewer Base64 hop;
+  - reject removal or rewiring of any Authorization name/Base64/ID/digest hop.
+- Confirm the two context-only workflows and all other v3 files have no
+  implementation diff.
+
+### Success Criteria
+
+- [ ] Bounded collection and scoped tests pass with all expected node IDs.
+- [ ] Both complete bounded modules pass.
+- [ ] Ruff, Ruff format, actionlint, and diff checks pass.
+- [ ] The affected-package gate and root collection pass, or any unrelated
+      failure is reported without scope expansion.
+- [ ] Every bounded target and defect mutation has concrete test evidence.
+
+---
+
+## Phase 4: Mandatory Quality Reviews and Append-Only Handoff Evidence
+
+### Overview
+
+Run quality analysis only after the tests and bounded implementation are final.
+Any in-scope finding returns to its owning phase; after correction, rerun all
+affected validation and both reviews.
+
+### Mandatory Reviews
+
+1. Invoke `test-gap-analysis` against:
+   - the final bounded implementation diff;
+   - the newest research inventory;
+   - acceptance checklist items 1–6;
+   - the collected loader parameter IDs and five named workflow scenarios.
+2. Resolve only findings tied to the loader transport or listed workflow
+   chains. Report unrelated suggestions without broadening scope.
+3. Invoke `assertion-quality` on the final changed tests in:
+   - `src/public/lib/three-workflow-delivery-v3/tests/test_cli.py`;
+   - `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`.
+4. Reject assertion-free, truthiness-only, self-referential, or
+   call-count-only evidence. Critical assertions must compare exact digest
+   values, IDs, paths, basenames, mappings, expressions, ordering, outputs,
+   and consumer inputs.
+5. If either review causes an in-scope test edit, rerun Phase 3 and then rerun
+   both skills until no bounded finding remains.
+
+### Append-Only Status Artifact
+
+Append one clearly delimited, timestamped section to the existing
+`.testagent/status.md`; never truncate, replace, or rewrite prior status
+content. Include these independent blocks:
+
+1. **Changed files**
+   - list every final modified production, test, workflow, plan/status path;
+   - distinguish pre-existing authoritative workflow/test changes from edits
+     made during implementation;
+   - state that both context-only Buddy workflows remained unchanged.
+2. **Exact tests**
+   - list the three loader test names;
+   - list every malformed parameter ID;
+   - list the five strengthened workflow scenario names.
+3. **Commands/results**
+   - copy each final command;
+   - include exit status and pass/deselect/collection counts;
+   - label any unrelated failure as report-only.
+4. **Quality findings**
+   - append the `test-gap-analysis` findings/dispositions;
+   - append the `assertion-quality` findings/dispositions;
+   - identify any resulting bounded edit and revalidation.
+5. **Requirement-to-evidence mapping**
+   - map each checklist item 1–6 separately to exact test assertions,
+     artifacts, and validation/review results.
+
+The final response must mirror the research handoff template with explicit
+**Changed files**, **Exact tests**, **Commands/results**, and
+**Requirement-to-evidence mapping** sections.
+
+### Success Criteria
+
+- [ ] Both mandatory skills run against the final changed tests.
+- [ ] No bounded gap or shallow-assertion finding remains unresolved.
+- [ ] Status evidence is appended, not rewritten.
+- [ ] The handoff distinguishes prior user changes from implementation edits.
+- [ ] All six checklist items have independent evidence.
+
+---
+
+## Requirement-to-Implementation Mapping
+
+| Checklist item | Concrete planned tests/assertions | Planned artifact/evidence |
+|---:|---|---|
+| 1 | The two exact acceptance tests prove native bare normalization and prefixed compatibility; the parametrized rejection test covers short, long, uppercase, nonhex, empty, prefix-only, malformed-prefixed, zero-ID, and negative-ID cases using a valid marker body. | Narrow `_normalized_digest` reuse in `cli.py`; exact collected nodes and results in the Phase 4 status append. |
+| 2 | The strengthened raw helper proves one nonempty literal file and rejects directory/glob/multiline shapes. The five exact workflow scenarios prove producer ordering, the complete reviewer formatter chain, and the complete Authorization basename/Base64/name/ID/digest chain through all consumers. | Assertions in `test_buddy_workflows.py` against the authoritative `workflow-delivery-v3-live-attempt.yml`; scenario results and chain mapping in status. |
+| 3 | All tests use existing module-level pytest style, `tmp_path`/canonical bytes for CLI cases, YAML helpers and exact mappings for contracts, descriptive names, explicit ordering/negative assertions, and named parameter IDs. Existing tests are extended/appended only. | Final diff review plus `assertion-quality` disposition. |
+| 4 | Run bounded collection/scoped tests, both full modules, Ruff check/format, actionlint, diff check, the affected-package gate, and root collection in the documented order. Do not repair unrelated failures. | Exact commands, statuses, and counts appended to status; unrelated failures explicitly marked report-only. |
+| 5 | Run `test-gap-analysis` and `assertion-quality` only after tests are final; resolve bounded findings and rerun validation/reviews. | Clearly delimited append-only findings and dispositions in `.testagent/status.md`. |
+| 6 | Produce four explicit handoff blocks listing changed files and provenance, exact tests/parameter IDs, commands/results, and a one-to-one requirement evidence map. | Final status section and final implementation response. |
+
+## Final File Budget
+
+Expected implementation edits are limited to:
+
+- `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/test_cli.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+- `.testagent/status.md` (append only)
+
+Preserve the already modified
+`.github/workflows/workflow-delivery-v3-live-attempt.yml`; edit it only for a
+remaining bounded failure proven by Phase 2. Do not modify either context-only
+Buddy workflow or any other production/test surface.
+
+<!-- END APPEND: 2026-08-18-bounded-wdv3-artifact-transport-sequential-plan -->

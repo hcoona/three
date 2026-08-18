@@ -6049,3 +6049,117 @@ format reported all three changed Python files already formatted, actionlint
 passed for the Buddy caller/callee pair, and `git diff --check` passed.
 
 <!-- END APPEND: current-2026-08-17-bounded-regression-c1-closure -->
+
+<!-- BEGIN APPEND: 2026-08-18-v3-artifact-transport-status -->
+
+## v3 artifact transport completion
+
+- Reviewer transport now uses normal archived upload and decompressed download;
+  upload digest and snapshot/summary payload digest bindings remain exact.
+- Authorization and mutation-marker raw uploads now materialize the exact
+  attempt-specific configured basename, and all local consumers use that path.
+- Publisher closure and release-finalization authority downloads now use exact
+  comma-delimited IDs with merged flat raw layout.
+- No package endpoint, live adapter context, Node version, concurrency, GitHub
+  platform client, or history-admission production code changed.
+
+### Validation
+
+| Command | Result |
+|---|---|
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py src/public/lib/three-workflow-delivery-v3/tests/platform/test_github.py::test_download_artifact_redirect_preserves_archive_validation src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_history_admission.py::test_discovery_skips_unrelated_json_non_json_and_multifile_artifacts` | 37 passed in 2.73s |
+| `uv run --python 3.13 ruff check --force-exclude -- src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py` | Passed |
+| `uv run --python 3.13 ruff format --check --force-exclude -- src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py` | 1 file already formatted |
+| `uv run --python 3.13 pyrefly check src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py` | 0 errors; 1 warning not shown |
+| `actionlint .github/workflows/workflow-delivery-v3-live-attempt.yml` | Passed |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py::test_testagent_plan_update_is_append_only_against_head` | 1 passed in 0.22s |
+
+### Test quality review
+
+- Pseudo-mutation review killed removal or substitution of reviewer
+  archive/decompression settings, upload and payload digest bindings, raw
+  basename materialization, renamed local consumers, comma delimiters,
+  `merge-multiple`, `skip-decompress`, flat paths, and every listed artifact
+  ID.
+- Assertion review found no assertion-free, trivial-only, or self-referential
+  generated tests. The scenarios combine exact structural equality, string
+  presence/absence, ordering, and invariant assertions.
+
+<!-- END APPEND: 2026-08-18-v3-artifact-transport-status -->
+
+<!-- BEGIN APPEND: 2026-08-18-v3-artifact-review-remediation -->
+
+## Adversarial review remediation
+
+Independent runtime and contract reviews produced four true positives:
+
+1. `upload-artifact@v7` emits a bare lowercase SHA-256 digest, while mutation
+   marker admission required a prefixed digest.
+2. Raw-upload tests did not reject directory, wildcard, or multi-path inputs.
+3. Reviewer and Authorization producer-before-upload ordering was not locked.
+4. Reviewer formatter and Authorization basename/Base64 handoffs were not
+   locked across step outputs, job outputs, environments, and consumers.
+
+The runtime now accepts both the native bare upload digest and the canonical
+`sha256:` form through the existing strict digest normalizer. Contract tests
+require one exact raw path with a matching physical basename, lock producer
+ordering, and assert each cross-job handoff through its final consumers.
+
+### Pseudo-mutation and assertion review
+
+- Removal of the positive artifact-ID guard is killed by zero and negative
+  boundary cases.
+- Removal of strict digest normalization is killed by malformed length,
+  uppercase, duplicate-prefix, wrong-algorithm, and whitespace cases.
+- Restoring the former prefixed-only behavior is killed by the native v7
+  bare-digest scenario.
+- Reviewer archive/decompression, producer ordering, output handoff, raw
+  basename, comma-delimited ID, and merged-layout mutations are all killed by
+  the workflow contract scenarios.
+- No in-scope mutation survived and no changed path lacks coverage.
+- The six generated test functions expand to fifteen pytest cases. None is
+  assertion-free, trivial-only, or self-referential. Assertions cover deep
+  structural equality, exact exceptions, ordering, collection membership,
+  string presence/absence, and negative invariants.
+
+### Focused validation
+
+`pytest` passed all 42 focused cases, including the complete Buddy workflow
+contract module and mutation-marker CLI cases. Ruff check and format passed for
+all three changed Python files, Pyrefly reported zero errors, actionlint passed,
+and `git diff --check` passed.
+
+<!-- END APPEND: 2026-08-18-v3-artifact-review-remediation -->
+
+<!-- BEGIN APPEND: 2026-08-18-v3-artifact-final-review -->
+
+## Final artifact transport review
+
+A follow-up adversarial review found two additional true positives. The
+reviewer archive could contain a substituted snapshot copy because binding
+read the separate raw snapshot path, and the malformed digest matrix omitted
+lowercase non-hex characters. The binding command now validates the exact
+`publication-snapshot.json` file placed in the reviewer archive. Bare and
+prefixed 64-character lowercase non-hex digests are both rejected by focused
+tests.
+
+Focused validation passed **44 tests**. Ruff, Pyrefly, actionlint, and
+`git diff --check` passed. The final independent reviewer reported
+`RAW_FINDINGS: none`.
+
+<!-- END APPEND: 2026-08-18-v3-artifact-final-review -->
+
+<!-- BEGIN APPEND: 2026-08-18-v3-artifact-full-validation -->
+
+## Full validation closure
+
+- Complete Workflow Delivery v3 suite: **2,991 passed**.
+- Complete repository HK pre-commit gate: **passed**.
+- Validation used the repository-pinned MISE toolchain and
+  `GIT_LFS_SKIP_SMUDGE=1`.
+- The initial full-suite retry was blocked by exhausted `/tmp` inodes, not a
+  product assertion. After removing only known stale v3 validation directories,
+  the two affected PNPM scenarios passed and the complete suite and HK gate
+  completed successfully.
+
+<!-- END APPEND: 2026-08-18-v3-artifact-full-validation -->
