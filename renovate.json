@@ -381,7 +381,8 @@
       "matchManagers": ["nuget"],
       "matchFileNames": ["Directory.Packages.props"],
       "matchPackageNames": ["NuGet.ProjectModel", "NuGet.Protocol"],
-      "groupName": "NuGet Client Libraries"
+      "groupName": "NuGet Client Libraries",
+      "minimumGroupSize": 2
     },
     {
       "description": "Group .NET test stack updates.",
