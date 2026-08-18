@@ -1124,7 +1124,6 @@ jobs:
           if-no-files-found: error
           retention-days: 45
           overwrite: false
-          archive: false
           include-hidden-files: true
       - name: Bind reviewer artifact transport to exact payloads
         id: bind
@@ -1133,7 +1132,7 @@ jobs:
           uv run --python 3.13 --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release bind-reviewer-artifact \
             --formatter-input ".wdv3/${{ steps.names.outputs.reviewer-name }}/reviewer-formatter-input.json" \
-            --publication-snapshot ".wdv3/${{ steps.names.outputs.publication-snapshot-name }}" \
+            --publication-snapshot ".wdv3/${{ steps.names.outputs.reviewer-name }}/publication-snapshot.json" \
             --reviewer-summary ".wdv3/${{ steps.names.outputs.reviewer-name }}/reviewer-summary.md" \
             --reviewer-artifact-id "${{ steps.upload-reviewer.outputs.artifact-id }}" \
             --reviewer-artifact-digest "${{ steps.upload-reviewer.outputs.artifact-digest }}" \
@@ -1266,8 +1265,10 @@ jobs:
             --github-output "${GITHUB_OUTPUT}"
           digest="$(sha256sum .wdv3/authorization.json | cut -d' ' -f1)"
           name="wdv3-live-buddy-authorization-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${digest}.json"
+          mv .wdv3/authorization.json ".wdv3/${name}"
+          authorization_base64="$(base64 -w0 ".wdv3/${name}")"
           echo "authorization-artifact-name=${name}" >> "${GITHUB_OUTPUT}"
-          echo "authorization-base64=$(base64 -w0 .wdv3/authorization.json)" >> "${GITHUB_OUTPUT}"
+          echo "authorization-base64=${authorization_base64}" >> "${GITHUB_OUTPUT}"
 
   approval-finalizer:
     name: Finalize approval and admit capability
@@ -1336,7 +1337,6 @@ jobs:
         with:
           artifact-ids: ${{ needs.materialize-publication.outputs.reviewer-artifact-id }}
           path: .wdv3/reviewer
-          skip-decompress: true
           digest-mismatch: error
       - name: Download Live Eligibility Decision by artifact ID
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -1359,7 +1359,7 @@ jobs:
             echo "capability-result=blocked" >> "${GITHUB_OUTPUT}"
             exit 0
           fi
-          printf '%s' "${AUTHORIZATION_BASE64}" | base64 -d > .wdv3/authorization.json
+          printf '%s' "${AUTHORIZATION_BASE64}" | base64 -d > ".wdv3/${{ needs.approval.outputs.authorization-artifact-name }}"
           if [[ "${{ needs.materialize-publication.outputs.publish-required }}" != "true" ]]; then
             {
               echo "capability-result=success"
@@ -1377,10 +1377,10 @@ jobs:
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
             --target "${{ inputs.target-sha }}" \
-            --authorization .wdv3/authorization.json \
+            --authorization ".wdv3/${{ needs.approval.outputs.authorization-artifact-name }}" \
             --authorization-digest "${{ needs.approval.outputs.authorization-digest }}" \
             --authorization-artifact-id "1" \
-            --authorization-artifact-digest "sha256:$(sha256sum .wdv3/authorization.json | cut -d' ' -f1)" \
+            --authorization-artifact-digest "sha256:$(sha256sum .wdv3/${{ needs.approval.outputs.authorization-artifact-name }} | cut -d' ' -f1)" \
             --publication-snapshot ".wdv3/input/${{ needs.materialize-publication.outputs.publication-snapshot-artifact-name }}" \
             --publication-snapshot-digest "${{ needs.materialize-publication.outputs.publication-snapshot-digest }}" \
             --publication-snapshot-artifact-id "${{ needs.materialize-publication.outputs.publication-snapshot-artifact-id }}" \
@@ -1412,7 +1412,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ${{ needs.approval.outputs.authorization-artifact-name }}
-          path: .wdv3/authorization.json
+          path: .wdv3/${{ needs.approval.outputs.authorization-artifact-name }}
           if-no-files-found: error
           retention-days: 45
           overwrite: false
@@ -1475,16 +1475,9 @@ jobs:
       - name: Download publisher closure by artifact ID
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          artifact-ids: |
-            ${{ needs.approval-finalizer.outputs.qualification-snapshot-artifact-id }}
-            ${{ needs.approval-finalizer.outputs.decision-artifact-id }}
-            ${{ needs.approval-finalizer.outputs.adapter-context-artifact-id }}
-            ${{ needs.approval-finalizer.outputs.release-artifact-artifact-id }}
-            ${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-id }}
-            ${{ needs.approval-finalizer.outputs.authorization-artifact-id }}
-            ${{ needs.approval-finalizer.outputs.capability-decision-artifact-id }}
-            ${{ needs.approval-finalizer.outputs.tarball-artifact-id }}
+          artifact-ids: ${{ needs.approval-finalizer.outputs.qualification-snapshot-artifact-id }},${{ needs.approval-finalizer.outputs.decision-artifact-id }},${{ needs.approval-finalizer.outputs.adapter-context-artifact-id }},${{ needs.approval-finalizer.outputs.release-artifact-artifact-id }},${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-id }},${{ needs.approval-finalizer.outputs.authorization-artifact-id }},${{ needs.approval-finalizer.outputs.capability-decision-artifact-id }},${{ needs.approval-finalizer.outputs.tarball-artifact-id }}
           path: .wdv3/input
+          merge-multiple: true
           skip-decompress: true
           digest-mismatch: error
       - name: Preflight publication without npm mutation
@@ -1543,14 +1536,14 @@ jobs:
             --publication-snapshot-artifact-digest "${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-digest }}" \
             --preflight .wdv3/publication-preflight.json \
             --preflight-digest "${{ steps.preflight.outputs.publication-preflight-digest }}" \
-            --marker-output .wdv3/mutation-may-have-started.json \
+            --marker-output ".wdv3/wdv3-live-buddy-mutation-may-have-started-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}" \
             --github-output "${GITHUB_OUTPUT}"
       - name: Upload mutation may-have-started marker
         id: upload-mutation-marker
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: wdv3-live-buddy-mutation-may-have-started-r${{ github.run_id }}-ra${{ github.run_attempt }}
-          path: .wdv3/mutation-may-have-started.json
+          path: .wdv3/wdv3-live-buddy-mutation-may-have-started-r${{ github.run_id }}-ra${{ github.run_attempt }}
           if-no-files-found: error
           retention-days: 45
           overwrite: false
@@ -1600,7 +1593,7 @@ jobs:
             --github-token "${GITHUB_TOKEN}" \
             --preflight .wdv3/publication-preflight.json \
             --preflight-digest "${{ steps.preflight.outputs.publication-preflight-digest }}" \
-            --mutation-marker .wdv3/mutation-may-have-started.json \
+            --mutation-marker ".wdv3/wdv3-live-buddy-mutation-may-have-started-r${{ github.run_id }}-ra${{ github.run_attempt }}" \
             --mutation-marker-digest "${{ steps.mark-mutation.outputs.mutation-may-have-started-digest }}" \
             --mutation-marker-artifact-id "${{ steps.upload-mutation-marker.outputs.artifact-id }}" \
             --mutation-marker-artifact-digest "${{ steps.upload-mutation-marker.outputs.artifact-digest }}" \
@@ -1641,7 +1634,7 @@ jobs:
           fi
           if [[ -n "${{ steps.upload-mutation-marker.outputs.artifact-id }}" ]]; then
             terminal_args+=(
-              --mutation-marker .wdv3/mutation-may-have-started.json
+              --mutation-marker ".wdv3/wdv3-live-buddy-mutation-may-have-started-r${{ github.run_id }}-ra${{ github.run_attempt }}"
               --mutation-marker-artifact-id "${{ steps.upload-mutation-marker.outputs.artifact-id }}"
             )
           fi
@@ -1718,10 +1711,9 @@ jobs:
       - name: Download finalization authority records by artifact ID
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          artifact-ids: |
-            ${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-id }}
-            ${{ needs.approval-finalizer.outputs.decision-artifact-id }}
+          artifact-ids: ${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-id }},${{ needs.approval-finalizer.outputs.decision-artifact-id }}
           path: .wdv3/input
+          merge-multiple: true
           skip-decompress: true
           digest-mismatch: error
       - name: Download Authorization Record by artifact ID

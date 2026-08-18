@@ -19,6 +19,7 @@ import pytest
 from three_workflow_delivery_v3 import cli as cli_module
 from three_workflow_delivery_v3.adapters.github_packages import (
     DeferredPublicationExecutionResult,
+    GitHubPackagesPublishPreflight,
     PublishClassification,
     PublishCommandResult,
     PublisherGovernanceRecheckRejectionError,
@@ -37,6 +38,9 @@ from three_workflow_delivery_v3.records.ci import (
 )
 from three_workflow_delivery_v3.records.release import (
     PUBLISHER_GOVERNANCE_RECHECK_FAILED_BEFORE_RUNNER,
+    BuddyExecutionIdentity,
+    PublicationSnapshot,
+    ReleaseAttemptIdentity,
 )
 from three_workflow_delivery_v3.release.identity import (
     OFFICIAL_SIMULATION_PRODUCER,
@@ -2497,3 +2501,166 @@ def test_acceptance_cli_does_not_reset_deadline_between_scenarios(
         "differing-race",
         "lost-response",
     ]
+
+
+def _valid_mutation_marker_fixture(
+    tmp_path: Path,
+) -> tuple[
+    Path,
+    PublicationSnapshot,
+    GitHubPackagesPublishPreflight,
+    cli_module.MutationMayHaveStartedMarker,
+]:
+    attempt = ReleaseAttemptIdentity(
+        execution=BuddyExecutionIdentity(
+            channel="buddy",
+            release_unit="hcoona-release-smoke-npm",
+            target="e" * 40,
+        ),
+        workflow_run_id=WORKFLOW_RUN_ID,
+        run_attempt=RUN_ATTEMPT,
+    )
+    action = SimpleNamespace(
+        action_digest="sha256:" + ("c" * 64),
+        lock_group="npm:@hcoona/hcoona-release-smoke-npm",
+    )
+    publication = cast(
+        "PublicationSnapshot",
+        SimpleNamespace(
+            attempt=attempt,
+            snapshot_digest="sha256:" + ("b" * 64),
+            materialized_actions=(action,),
+        ),
+    )
+    preflight = GitHubPackagesPublishPreflight(
+        attempt=attempt,
+        publication_snapshot_digest=publication.snapshot_digest,
+        action_digest=action.action_digest,
+        lock_group=action.lock_group,
+        tarball_sha256="sha256:" + ("1" * 64),
+        tarball_sha512="sha512:" + ("2" * 128),
+        npm_configuration_digest="sha256:" + ("3" * 64),
+        governance_provenance=(("repository", "hcoona/three"),),
+        governance_content_sha256="sha256:" + ("4" * 64),
+        governance_expires_at="2026-08-19T00:00:00Z",
+        governance_live_enabled=True,
+    )
+    expected = cli_module.MutationMayHaveStartedMarker(
+        attempt=attempt,
+        publication_snapshot_digest=publication.snapshot_digest,
+        action_digest=action.action_digest,
+        lock_group=action.lock_group,
+        preflight_digest=preflight.preflight_digest,
+    )
+    path = _write_canonical(
+        tmp_path / "mutation-may-have-started.json",
+        expected.to_document(),
+    )
+    return path, publication, preflight, expected
+
+
+@pytest.mark.parametrize(
+    ("artifact_id", "artifact_digest"),
+    [
+        pytest.param(1, NPM_ARTIFACT_DIGEST, id="v7-native-bare-digest"),
+        pytest.param(
+            NPM_ARTIFACT_ID,
+            f"sha256:{NPM_ARTIFACT_DIGEST}",
+            id="canonical-prefixed-digest",
+        ),
+    ],
+)
+def test_load_mutation_marker_accepts_supported_artifact_digest_forms(
+    tmp_path: Path,
+    artifact_id: int,
+    artifact_digest: str,
+) -> None:
+    """Accept native upload-artifact v7 and canonical digest forms."""
+    path, publication, preflight, expected = _valid_mutation_marker_fixture(
+        tmp_path
+    )
+
+    marker = cli_module._load_mutation_marker(  # noqa: SLF001
+        str(path),
+        expected_digest=expected.marker_digest,
+        artifact_id=artifact_id,
+        artifact_digest=artifact_digest,
+        publication=publication,
+        preflight=preflight,
+    )
+
+    assert marker.to_document() == expected.to_document()
+
+
+@pytest.mark.parametrize(
+    ("artifact_id", "artifact_digest"),
+    [
+        pytest.param(
+            NPM_ARTIFACT_ID,
+            "a" * 63,
+            id="short-bare",
+        ),
+        pytest.param(
+            NPM_ARTIFACT_ID,
+            "A" * 64,
+            id="uppercase-bare",
+        ),
+        pytest.param(
+            NPM_ARTIFACT_ID,
+            "g" * 64,
+            id="lowercase-nonhex-bare",
+        ),
+        pytest.param(
+            NPM_ARTIFACT_ID,
+            "sha256:" + ("g" * 64),
+            id="lowercase-nonhex-prefixed",
+        ),
+        pytest.param(
+            NPM_ARTIFACT_ID,
+            f"sha256:sha256:{NPM_ARTIFACT_DIGEST}",
+            id="duplicate-prefix",
+        ),
+        pytest.param(
+            NPM_ARTIFACT_ID,
+            f"sha512:{NPM_ARTIFACT_DIGEST}",
+            id="wrong-algorithm-prefix",
+        ),
+        pytest.param(
+            NPM_ARTIFACT_ID,
+            f"{NPM_ARTIFACT_DIGEST}\n",
+            id="trailing-whitespace",
+        ),
+        pytest.param(
+            0,
+            NPM_ARTIFACT_DIGEST,
+            id="zero-artifact-id",
+        ),
+        pytest.param(
+            -1,
+            NPM_ARTIFACT_DIGEST,
+            id="negative-artifact-id",
+        ),
+    ],
+)
+def test_load_mutation_marker_rejects_malformed_artifact_transport(
+    tmp_path: Path,
+    artifact_id: int,
+    artifact_digest: str,
+) -> None:
+    """Reject malformed upload transport before returning any marker."""
+    path, publication, preflight, expected = _valid_mutation_marker_fixture(
+        tmp_path
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"^mutation-start marker transport is malformed$",
+    ):
+        cli_module._load_mutation_marker(  # noqa: SLF001
+            str(path),
+            expected_digest=expected.marker_digest,
+            artifact_id=artifact_id,
+            artifact_digest=artifact_digest,
+            publication=publication,
+            preflight=preflight,
+        )

@@ -3653,8 +3653,14 @@ def _load_mutation_marker(  # noqa: PLR0913
     publication: PublicationSnapshot,
     preflight: GitHubPackagesPublishPreflight,
 ) -> MutationMayHaveStartedMarker:
-    if artifact_id <= 0 or not artifact_digest.startswith("sha256:"):
+    if artifact_id <= 0:
         raise ValueError("mutation-start marker transport is malformed")
+    try:
+        _normalized_digest(artifact_digest)
+    except ValueError as error:
+        raise ValueError(
+            "mutation-start marker transport is malformed"
+        ) from error
     value = json.loads(Path(path).read_bytes())
     action = publication.materialized_actions[0]
     if (

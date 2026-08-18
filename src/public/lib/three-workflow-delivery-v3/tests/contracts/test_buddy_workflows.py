@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 # ruff: noqa: D103, E501
+# ruff: noqa: PLR0915
 import json
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, cast
 
+import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
@@ -79,6 +81,77 @@ def _run(step: dict[str, Any]) -> str:
     value = step.get("run")
     assert isinstance(value, str)
     return value
+
+
+def _raw_artifact_name(settings: dict[str, Any]) -> str:
+    """Model upload-artifact v7 archive:false physical naming."""
+    assert settings["archive"] is False
+    path = settings["path"]
+    assert isinstance(path, str)
+    entries = path.splitlines()
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry
+    assert entry == entry.strip()
+    assert path == entry
+    assert not entry.endswith("/")
+    assert not any(character in entry for character in "*?[")
+    artifact_name = settings["name"]
+    assert isinstance(artifact_name, str)
+    assert artifact_name
+    assert PurePosixPath(entry).name == artifact_name
+    return PurePosixPath(path).name
+
+
+def _artifact_steps(
+    document: dict[str, Any],
+    action: str,
+) -> list[dict[str, Any]]:
+    return [
+        step
+        for job in document["jobs"].values()
+        for step in _steps(job)
+        if step.get("uses") == action
+    ]
+
+
+def _assert_existing_raw_uploads_keep_physical_names(
+    document: dict[str, Any],
+) -> None:
+    excluded = {
+        "Upload reviewer artifact",
+        "Upload Authorization Record",
+        "Upload mutation may-have-started marker",
+        "Upload final Attempt Outcome and summary",
+    }
+    expected = {
+        "Upload Execution History Admission Snapshot",
+        "Upload Release Attempt binding",
+        "Upload Qualification Snapshot",
+        "Upload Adapter context",
+        "Upload exact npm tarball",
+        "Upload Release Artifact record",
+        "Upload build Evidence",
+        "Upload project-test Evidence",
+        "Upload artifact-contents Evidence",
+        "Upload install-import Evidence",
+        "Upload Qualification Decision",
+        "Upload Observation Record set",
+        "Upload Publication Snapshot",
+        "Upload Capability Admission Decision",
+        "Upload exact Receipt",
+        "Upload Capability Group Result Bundle",
+    }
+    uploads = [
+        step
+        for step in _artifact_steps(document, UPLOAD)
+        if step["name"] not in excluded
+    ]
+
+    assert {step["name"] for step in uploads} == expected
+    for step in uploads:
+        assert step["with"]["archive"] is False
+        assert _raw_artifact_name(step["with"]) == step["with"]["name"]
 
 
 def _correlated_jobs(
@@ -249,30 +322,200 @@ def test_approval_uses_anonymous_exact_sha_fetch_and_no_artifact_credentials() -
     assert "refs/heads/" not in raw
 
 
-def test_reviewer_artifact_transport_is_raw_id_bound_and_retained_45_days() -> (
+def test_reviewer_archive_is_decompressed_with_transport_and_payload_bindings() -> (
     None
 ):
     document = _document(CALLEE)
-    uploads = []
-    downloads = []
-    for job in document["jobs"].values():
-        for step in _steps(job):
-            uses = str(step.get("uses", ""))
-            if uses.startswith("actions/upload-artifact@"):
-                uploads.append(step)
-            if uses.startswith("actions/download-artifact@"):
-                downloads.append(step)
-
-    reviewer = next(
-        step for step in uploads if step["name"] == "Upload reviewer artifact"
+    materializer = document["jobs"]["materialize-publication"]
+    finalizer = document["jobs"]["approval-finalizer"]
+    materializer_steps = _steps(materializer)
+    approval_job = document["jobs"]["approval"]
+    materialize_step = _step(
+        materializer,
+        "Materialize immutable publication and reviewer payload",
     )
-    assert reviewer["with"]["retention-days"] == RETENTION_DAYS
-    assert reviewer["with"]["overwrite"] is False
-    assert reviewer["with"]["archive"] is False
-    assert reviewer["with"]["include-hidden-files"] is True
-    assert reviewer["with"]["if-no-files-found"] == "error"
-    assert downloads
-    for step in downloads:
+    names_step = _step(materializer, "Materialize exact publication basenames")
+    reviewer_upload = _step(materializer, "Upload reviewer artifact")
+    reviewer_download = _step(
+        finalizer,
+        "Download reviewer payload by artifact ID",
+    )
+    bind_step = _step(
+        materializer,
+        "Bind reviewer artifact transport to exact payloads",
+    )
+    authorization_formatter_step = _step(
+        approval_job,
+        "Fetch exact public target and format Authorization",
+    )
+    capability_finalizer_step = _step(
+        finalizer,
+        "Admit exact capability closure",
+    )
+    materialize = _run(materialize_step)
+    authorization_formatter = _run(authorization_formatter_step)
+    capability_finalize = _run(capability_finalizer_step)
+    names = _run(_step(materializer, "Materialize exact publication basenames"))
+    bind = _run(bind_step)
+    admit = _run(_step(finalizer, "Admit exact capability closure"))
+    history = _run(
+        _step(
+            document["jobs"]["admit"],
+            "Discover exhaustive retained execution history",
+        )
+    )
+
+    upload_settings = reviewer_upload["with"]
+    assert reviewer_upload["uses"] == UPLOAD
+    assert upload_settings["name"] == "${{ steps.names.outputs.reviewer-name }}"
+    assert upload_settings["path"] == (
+        ".wdv3/${{ steps.names.outputs.reviewer-name }}"
+    )
+    assert upload_settings.get("archive", True) is True
+    assert upload_settings["retention-days"] == RETENTION_DAYS
+    assert upload_settings["overwrite"] is False
+    assert upload_settings["include-hidden-files"] is True
+    assert upload_settings["if-no-files-found"] == "error"
+    assert materializer["outputs"]["reviewer-artifact-digest"] == (
+        "${{ steps.upload-reviewer.outputs.artifact-digest }}"
+    )
+    assert materializer["outputs"]["reviewer-artifact-id"] == (
+        "${{ steps.upload-reviewer.outputs.artifact-id }}"
+    )
+    for payload_name in (
+        "publication-snapshot.json",
+        "reviewer-summary.md",
+        "reviewer-formatter-input.json",
+    ):
+        assert f"${{reviewer_name}}/{payload_name}" in names
+    assert materialize_step["id"] == "materialize"
+    assert names_step["id"] == "names"
+    assert reviewer_upload["id"] == "upload-reviewer"
+    assert bind_step["id"] == "bind"
+    assert (
+        materializer_steps.index(materialize_step)
+        < materializer_steps.index(names_step)
+        < materializer_steps.index(reviewer_upload)
+        < materializer_steps.index(bind_step)
+    )
+    assert materializer_steps.index(reviewer_upload) < materializer_steps.index(
+        bind_step
+    )
+    assert (
+        "--formatter-input-output .wdv3/reviewer-formatter-input.json"
+        in materialize
+    )
+    assert (
+        "mv .wdv3/reviewer-formatter-input.json "
+        '".wdv3/${reviewer_name}/reviewer-formatter-input.json"' in names
+    )
+    assert (
+        'cp ".wdv3/${snapshot_name}" '
+        '".wdv3/${reviewer_name}/publication-snapshot.json"' in names
+    )
+    assert (
+        "--formatter-input "
+        '".wdv3/${{ steps.names.outputs.reviewer-name }}/'
+        'reviewer-formatter-input.json"' in bind
+    )
+    assert (
+        "--publication-snapshot "
+        '".wdv3/${{ steps.names.outputs.reviewer-name }}/'
+        'publication-snapshot.json"' in bind
+    )
+    assert (
+        '--publication-snapshot ".wdv3/${{ steps.names.outputs.'
+        'publication-snapshot-name }}"' not in bind
+    )
+    assert "--output .wdv3/bound-reviewer-formatter-input.json" in bind
+    assert (
+        'echo "reviewer-formatter-input-base64=$(base64 -w0 '
+        '.wdv3/bound-reviewer-formatter-input.json)" >> "${GITHUB_OUTPUT}"'
+        in bind
+    )
+    assert bind.count("base64 -w0") == 1
+
+    materializer_formatter_output = (
+        "${{ steps.bind.outputs.reviewer-formatter-input-base64 }}"
+    )
+    materializer_formatter_need = (
+        "${{ needs.materialize-publication.outputs."
+        "reviewer-formatter-input-base64 }}"
+    )
+    approval_formatter_need = (
+        "${{ needs.approval.outputs.reviewer-formatter-input-base64 }}"
+    )
+    assert (
+        materializer["outputs"]["reviewer-formatter-input-base64"]
+        == materializer_formatter_output
+    )
+    assert (
+        approval_job["outputs"]["reviewer-formatter-input-base64"]
+        == materializer_formatter_need
+    )
+    assert authorization_formatter_step["env"] == {
+        "REVIEWER_FORMATTER_INPUT_BASE64": materializer_formatter_need,
+    }
+    assert capability_finalizer_step["env"] == {
+        "AUTHORIZATION_BASE64": (
+            "${{ needs.approval.outputs.authorization-base64 }}"
+        ),
+        "REVIEWER_FORMATTER_INPUT_BASE64": approval_formatter_need,
+        "GITHUB_TOKEN": "${{ github.token }}",
+    }
+
+    decoded_formatter_path = ".wdv3/bound-reviewer-formatter-input.json"
+    decode_formatter = (
+        "printf '%s' \"${REVIEWER_FORMATTER_INPUT_BASE64}\" | "
+        f"base64 -d > {decoded_formatter_path}"
+    )
+    assert authorization_formatter.count(decode_formatter) == 1
+    assert capability_finalize.count(decode_formatter) == 1
+    assert (
+        f"--formatter-input {decoded_formatter_path}" in authorization_formatter
+    )
+    for consumer in (authorization_formatter, capability_finalize):
+        assert "base64 -d > .wdv3/reviewer" not in consumer
+        assert f"base64 -w0 {decoded_formatter_path}" not in consumer
+
+    download_settings = reviewer_download["with"]
+    assert reviewer_download["uses"] == DOWNLOAD
+    assert download_settings["artifact-ids"] == (
+        "${{ needs.materialize-publication.outputs.reviewer-artifact-id }}"
+    )
+    assert download_settings["path"] == ".wdv3/reviewer"
+    assert download_settings.get("skip-decompress", False) is False
+    assert download_settings["digest-mismatch"] == "error"
+    assert '--reviewer-summary ".wdv3/reviewer/reviewer-summary.md"' in admit
+    assert (
+        '--reviewer-artifact-id "${{ steps.upload-reviewer.outputs.artifact-id }}"'
+        in bind
+    )
+    assert (
+        "--reviewer-artifact-digest "
+        '"${{ steps.upload-reviewer.outputs.artifact-digest }}"' in bind
+    )
+    assert (
+        "--snapshot-payload-digest "
+        '"${{ steps.materialize.outputs.publication-snapshot-payload-digest }}"'
+        in bind
+    )
+    assert (
+        '--summary-payload-digest "${{ steps.materialize.outputs.reviewer-digest }}"'
+        in bind
+    )
+    assert (
+        "--reviewer-summary-artifact-digest "
+        '"${{ needs.materialize-publication.outputs.reviewer-artifact-digest }}"'
+        in admit
+    )
+    assert re.findall(
+        r"\bthree-workflow-delivery-v3 release ([a-z0-9-]+)",
+        history,
+    ) == ["discover-execution-history"]
+    assert "--output .wdv3/execution-history-admission.json" in history
+
+    for step in _artifact_steps(document, DOWNLOAD):
         assert "artifact-ids" in step["with"]
         assert "name" not in step["with"]
         assert any(
@@ -280,8 +523,300 @@ def test_reviewer_artifact_transport_is_raw_id_bound_and_retained_45_days() -> (
             for source in ("needs.", "inputs.")
         )
         assert "steps." not in step["with"]["artifact-ids"]
-        assert step["with"]["skip-decompress"] is True
         assert step["with"]["digest-mismatch"] == "error"
+        if step["name"] != "Download reviewer payload by artifact ID":
+            assert step["with"]["skip-decompress"] is True
+
+
+def test_authorization_raw_upload_materializes_exact_attempt_basename() -> None:
+    document = _document(CALLEE)
+    _assert_existing_raw_uploads_keep_physical_names(document)
+    jobs = document["jobs"]
+    approval_job = jobs["approval"]
+    authorization_step = _step(
+        approval_job,
+        "Fetch exact public target and format Authorization",
+    )
+    approval = _run(
+        _step(
+            jobs["approval"],
+            "Fetch exact public target and format Authorization",
+        )
+    )
+    approval_finalizer = jobs["approval-finalizer"]
+    approval_finalizer_steps = _steps(approval_finalizer)
+    admit_step = _step(
+        approval_finalizer,
+        "Admit exact capability closure",
+    )
+    admit = _run(_step(approval_finalizer, "Admit exact capability closure"))
+    authorization_upload = _step(
+        approval_finalizer,
+        "Upload Authorization Record",
+    )
+    publisher = jobs["publish-github-packages"]
+    downstream_consumers = (
+        _run(_step(publisher, "Preflight publication without npm mutation")),
+        _run(_step(publisher, "Publish create-only package action")),
+        _run(_step(jobs["release-finalizer"], "Finalize Attempt Outcome")),
+    )
+
+    authorization_name = (
+        "${{ needs.approval.outputs.authorization-artifact-name }}"
+    )
+    authorization_path = f".wdv3/{authorization_name}"
+    assert authorization_step["id"] == "authorize"
+    assert approval_finalizer["needs"] == [
+        "materialize-publication",
+        "approval",
+    ]
+    assert "--output .wdv3/authorization.json --github-output" not in approval
+    assert "--output .wdv3/authorization.json \\" in approval
+    assert (
+        "digest=\"$(sha256sum .wdv3/authorization.json | cut -d' ' -f1)\""
+        in approval
+    )
+    assert (
+        'name="wdv3-live-buddy-authorization-r${GITHUB_RUN_ID}-'
+        'ra${GITHUB_RUN_ATTEMPT}-${digest}.json"' in approval
+    )
+    assert 'mv .wdv3/authorization.json ".wdv3/${name}"' in approval
+    assert 'base64 -w0 ".wdv3/${name}"' in approval
+    assert 'authorization_base64="$(base64 -w0 ".wdv3/${name}")"' in approval
+    assert approval.count("base64 -w0") == 1
+    assert "base64 -w0 .wdv3/authorization.json" not in approval
+    assert 'base64 -w0 ".wdv3/authorization.json"' not in approval
+    assert (
+        'echo "authorization-artifact-name=${name}" >> "${GITHUB_OUTPUT}"'
+        in approval
+    )
+    assert (
+        'echo "authorization-base64=${authorization_base64}" '
+        '>> "${GITHUB_OUTPUT}"' in approval
+    )
+    assert approval_job["outputs"]["authorization-artifact-name"] == (
+        "${{ steps.authorize.outputs.authorization-artifact-name }}"
+    )
+    assert approval_job["outputs"]["authorization-base64"] == (
+        "${{ steps.authorize.outputs.authorization-base64 }}"
+    )
+    assert admit_step["env"]["AUTHORIZATION_BASE64"] == (
+        "${{ needs.approval.outputs.authorization-base64 }}"
+    )
+    authorization_decode = (
+        "printf '%s' \"${AUTHORIZATION_BASE64}\" | base64 -d > "
+        f'"{authorization_path}"'
+    )
+    assert admit.count(authorization_decode) == 1
+    assert approval_finalizer_steps.index(
+        admit_step
+    ) < approval_finalizer_steps.index(authorization_upload)
+    assert authorization_upload["id"] == "upload-authorization"
+    assert authorization_upload["with"]["name"] == authorization_name
+    assert authorization_upload["with"]["path"] == authorization_path
+    assert authorization_upload["with"] == {
+        "name": authorization_name,
+        "path": authorization_path,
+        "if-no-files-found": "error",
+        "retention-days": RETENTION_DAYS,
+        "overwrite": False,
+        "archive": False,
+        "include-hidden-files": True,
+    }
+    assert approval_finalizer["outputs"]["authorization-artifact-name"] == (
+        authorization_name
+    )
+    assert approval_finalizer["outputs"]["authorization-artifact-id"] == (
+        "${{ steps.upload-authorization.outputs.artifact-id }}"
+    )
+    assert approval_finalizer["outputs"]["authorization-artifact-digest"] == (
+        "${{ steps.upload-authorization.outputs.artifact-digest }}"
+    )
+    assert (
+        _raw_artifact_name(authorization_upload["with"]) == authorization_name
+    )
+    for prefix in ("base64 -d >", "--authorization", "sha256sum"):
+        assert re.search(
+            rf"{re.escape(prefix)}\s+\"?{re.escape(authorization_path)}\"?",
+            admit,
+        )
+    assert ".wdv3/authorization.json" not in admit
+    downloaded_path = (
+        ".wdv3/input/${{ needs.approval-finalizer.outputs."
+        "authorization-artifact-name }}"
+    )
+    consumer_sites = tuple(
+        (job_name, step["name"])
+        for job_name in ("publish-github-packages", "release-finalizer")
+        for step in _steps(jobs[job_name])
+        if isinstance(step.get("run"), str) and downloaded_path in _run(step)
+    )
+    assert consumer_sites == (
+        (
+            "publish-github-packages",
+            "Preflight publication without npm mutation",
+        ),
+        ("publish-github-packages", "Publish create-only package action"),
+        ("release-finalizer", "Finalize Attempt Outcome"),
+    )
+    downstream_commands = "\n".join(downstream_consumers)
+    assert downstream_commands.count(downloaded_path) == len(consumer_sites)
+    assert ".wdv3/input/authorization.json" not in downstream_commands
+    for consumer in downstream_consumers:
+        assert downloaded_path in consumer
+        assert ".wdv3/input/authorization.json" not in consumer
+        assert (
+            "--authorization-artifact-id "
+            '"${{ needs.approval-finalizer.outputs.authorization-artifact-id }}"'
+            in consumer
+        )
+        assert (
+            "--authorization-artifact-digest "
+            '"${{ needs.approval-finalizer.outputs.'
+            'authorization-artifact-digest }}"' in consumer
+        )
+
+
+def test_mutation_marker_raw_upload_and_consumers_use_attempt_basename() -> (
+    None
+):
+    document = _document(CALLEE)
+    _assert_existing_raw_uploads_keep_physical_names(document)
+    publisher = document["jobs"]["publish-github-packages"]
+    publisher_steps = _steps(publisher)
+    marker_step = _step(
+        publisher,
+        "Form mutation may-have-started marker",
+    )
+    marker = _run(_step(publisher, "Form mutation may-have-started marker"))
+    marker_upload = _step(
+        publisher,
+        "Upload mutation may-have-started marker",
+    )
+    publish = _run(_step(publisher, "Publish create-only package action"))
+    bundle = _run(_step(publisher, "Form Capability Group Result Bundle"))
+
+    marker_name = (
+        "wdv3-live-buddy-mutation-may-have-started-"
+        "r${{ github.run_id }}-ra${{ github.run_attempt }}"
+    )
+    marker_path = f".wdv3/{marker_name}"
+    marker_shell_name = (
+        "wdv3-live-buddy-mutation-may-have-started-"
+        "r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}"
+    )
+    marker_shell_path = f".wdv3/{marker_shell_name}"
+    assert marker_step["id"] == "mark-mutation"
+    assert marker_upload["id"] == "upload-mutation-marker"
+    assert publisher_steps.index(marker_step) < publisher_steps.index(
+        marker_upload
+    )
+    assert f'--marker-output "{marker_shell_path}"' in marker
+    assert marker_upload["with"]["name"] == marker_name
+    assert marker_upload["with"]["path"] == marker_path
+    assert marker_upload["with"] == {
+        "name": marker_name,
+        "path": marker_path,
+        "if-no-files-found": "error",
+        "retention-days": RETENTION_DAYS,
+        "overwrite": False,
+        "archive": False,
+        "include-hidden-files": True,
+    }
+    assert _raw_artifact_name(marker_upload["with"]) == marker_name
+    assert publisher["outputs"]["mutation-marker-artifact-id"] == (
+        "${{ steps.upload-mutation-marker.outputs.artifact-id }}"
+    )
+    assert publisher["outputs"]["mutation-marker-artifact-digest"] == (
+        "${{ steps.upload-mutation-marker.outputs.artifact-digest }}"
+    )
+    assert (
+        f'marker_name="{marker_shell_name}"' in marker
+        or marker_shell_path in marker
+    )
+    assert (
+        f"--marker-output {marker_shell_path}" in marker
+        or f'--marker-output "{marker_shell_path}"' in marker
+        or (
+            "mv .wdv3/mutation-may-have-started.json "
+            f'"{marker_shell_path}"' in marker
+        )
+        or (
+            f'marker_name="{marker_shell_name}"' in marker
+            and (
+                "mv .wdv3/mutation-may-have-started.json "
+                '".wdv3/${marker_name}"' in marker
+            )
+        )
+    )
+    for consumer in (publish, bundle):
+        assert marker_path in consumer
+        assert ".wdv3/mutation-may-have-started.json" not in consumer
+    assert f'--mutation-marker "{marker_path}"' in publish
+    assert f'--mutation-marker "{marker_path}"' in bundle
+    assert (
+        "--mutation-marker-artifact-id "
+        '"${{ steps.upload-mutation-marker.outputs.artifact-id }}"' in bundle
+    )
+    assert (
+        '--mutation-marker-artifact-id "${{ steps.upload-mutation-marker.outputs.'
+        'artifact-id }}"' in publish
+    )
+    assert (
+        "--mutation-marker-artifact-digest "
+        '"${{ steps.upload-mutation-marker.outputs.artifact-digest }}"'
+        in publish
+    )
+
+
+@pytest.mark.parametrize(
+    ("job_name", "step_name", "expected_ids"),
+    [
+        (
+            "publish-github-packages",
+            "Download publisher closure by artifact ID",
+            (
+                "${{ needs.approval-finalizer.outputs."
+                "qualification-snapshot-artifact-id }}",
+                "${{ needs.approval-finalizer.outputs.decision-artifact-id }}",
+                "${{ needs.approval-finalizer.outputs.adapter-context-artifact-id }}",
+                "${{ needs.approval-finalizer.outputs."
+                "release-artifact-artifact-id }}",
+                "${{ needs.approval-finalizer.outputs."
+                "publication-snapshot-artifact-id }}",
+                "${{ needs.approval-finalizer.outputs.authorization-artifact-id }}",
+                "${{ needs.approval-finalizer.outputs."
+                "capability-decision-artifact-id }}",
+                "${{ needs.approval-finalizer.outputs.tarball-artifact-id }}",
+            ),
+        ),
+        (
+            "release-finalizer",
+            "Download finalization authority records by artifact ID",
+            (
+                "${{ needs.approval-finalizer.outputs."
+                "publication-snapshot-artifact-id }}",
+                "${{ needs.approval-finalizer.outputs.decision-artifact-id }}",
+            ),
+        ),
+    ],
+    ids=("publisher-closure", "release-finalization"),
+)
+def test_authority_record_multidownload_is_comma_delimited_flat_merged_raw(
+    job_name: str,
+    step_name: str,
+    expected_ids: tuple[str, ...],
+) -> None:
+    step = _step(_document(CALLEE)["jobs"][job_name], step_name)
+
+    assert step["uses"] == DOWNLOAD
+    assert step["with"] == {
+        "artifact-ids": ",".join(expected_ids),
+        "path": ".wdv3/input",
+        "merge-multiple": True,
+        "skip-decompress": True,
+        "digest-mismatch": "error",
+    }
 
 
 def test_all_actions_are_full_sha_pinned_with_version_comments() -> None:
@@ -693,9 +1228,37 @@ def test_user_item11_publisher_preflight_and_start_marker_are_separate() -> (
     upload = _step(publisher, "Upload mutation may-have-started marker")
     publish = _step(publisher, "Publish create-only package action")
     command = _run(publish)
+    preflight_command = _run(preflight)
+    marker_command = _run(marker)
+    preflight_path = ".wdv3/publication-preflight.json"
+    marker_name = (
+        "wdv3-live-buddy-mutation-may-have-started-"
+        "r${{ github.run_id }}-ra${{ github.run_attempt }}"
+    )
+    marker_path = f".wdv3/{marker_name}"
 
     assert steps.index(preflight) < steps.index(marker) < steps.index(upload)
     assert steps.index(upload) < steps.index(publish)
+    assert f"--preflight-output {preflight_path}" in preflight_command
+    assert f"--preflight {preflight_path}" in marker_command
+    assert (
+        '--marker-output ".wdv3/wdv3-live-buddy-mutation-may-have-started-'
+        'r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}"' in marker_command
+    )
+    assert marker_path not in preflight_command
+    assert ".wdv3/mutation-may-have-started.json" not in marker_command
+    assert preflight_path != marker_path
+    assert PurePosixPath(preflight_path).name != marker_name
+    assert upload["with"] == {
+        "name": marker_name,
+        "path": marker_path,
+        "if-no-files-found": "error",
+        "retention-days": RETENTION_DAYS,
+        "overwrite": False,
+        "archive": False,
+        "include-hidden-files": True,
+    }
+    assert _raw_artifact_name(upload["with"]) == marker_name
     assert "preflight-github-packages" in _run(preflight)
     assert "mark-github-packages-mutation-start" in _run(marker)
     assert "--mutation-marker-artifact-id" in command
