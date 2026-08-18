@@ -142,6 +142,30 @@ jobs:
           Set-Content -Path $renovateGitModule -Value $content.Replace($needle, $replacement) -NoNewline
           node --check $renovateGitModule
 
+      - name: Verify NBGV metadata in full clone
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $miseRoot = Join-Path $env:LOCALAPPDATA 'mise'
+          $env:Path = @(
+            (Join-Path $miseRoot 'shims')
+            (Join-Path $miseRoot 'bin')
+            $env:Path
+          ) -join [System.IO.Path]::PathSeparator
+
+          $repositoryPath = Join-Path $env:RENOVATE_BASE_DIR "repos/github/$env:GITHUB_REPOSITORY"
+          Push-Location $repositoryPath
+          try {
+            uv lock --upgrade --dry-run
+            if ($LASTEXITCODE -ne 0) {
+              throw "NBGV metadata smoke test failed with exit code $LASTEXITCODE."
+            }
+          }
+          finally {
+            Pop-Location
+          }
+
       - name: Create Renovate GitHub App token
         id: renovate-app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
