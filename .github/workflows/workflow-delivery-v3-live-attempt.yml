@@ -1978,8 +1978,6 @@ jobs:
           materialization_result="${{ needs.materialize-publication.result }}"
           snapshot_id="${{ needs.materialize-publication.outputs.publication-snapshot-artifact-id }}"
           snapshot_upload_digest="${{ needs.materialize-publication.outputs.publication-snapshot-artifact-digest }}"
-          snapshot_name="${{ needs.materialize-publication.outputs.publication-snapshot-artifact-name }}"
-          snapshot_payload_digest="${{ needs.materialize-publication.outputs.publication-snapshot-digest }}"
           forwarded_snapshot_id="${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-id }}"
           authorization_id="${{ needs.approval-finalizer.outputs.authorization-artifact-id }}"
           capability_decision_id="${{ needs.approval-finalizer.outputs.capability-decision-artifact-id }}"
@@ -1990,11 +1988,11 @@ jobs:
           workflow_cancelled="${{ steps.workflow-cancellation.outputs.workflow-cancelled || 'false' }}"
           publication_preparation_interrupted=false
           if [[ "${qualification_result}" == "success" && -z "${snapshot_id}" ]]; then
-            if [[ -n "${snapshot_upload_digest}" || -n "${snapshot_name}" || -n "${snapshot_payload_digest}" ]]; then
+            if [[ -n "${snapshot_upload_digest}" ]]; then
               echo "::error::Publication Snapshot transport is only partially absent" >&2
               exit 1
             fi
-            if [[ "${observation_result}" == "success" && "${materialization_result}" == "success" ]]; then
+            if [[ "${materialization_result}" == "success" ]]; then
               echo "::error::Successful publication preparation omitted its durable Snapshot" >&2
               exit 1
             fi
@@ -2008,8 +2006,12 @@ jobs:
                 interruption_is_legal=true
               fi
             fi
-            if [[ "${workflow_cancelled}" == "true" && ( "${observation_result}" != "success" || "${materialization_result}" != "success" ) ]]; then
-              interruption_is_legal=true
+            if [[ "${workflow_cancelled}" == "true" ]]; then
+              if [[ "${observation_result}" == "skipped" && "${materialization_result}" == "skipped" ]]; then
+                interruption_is_legal=true
+              elif [[ "${observation_result}" == "success" && "${materialization_result}" == "skipped" ]]; then
+                interruption_is_legal=true
+              fi
             fi
             if [[ "${interruption_is_legal}" != "true" ]]; then
               echo "::error::Publication preparation state is not an admitted interruption" >&2

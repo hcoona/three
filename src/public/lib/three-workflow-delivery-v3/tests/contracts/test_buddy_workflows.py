@@ -637,6 +637,26 @@ def test_unsuccessful_live_qualification_retains_a_publication_free_outcome() ->
         'publication-snapshot-artifact-id }}" ]]' in finalize
     )
     assert finalize.count("--publication-snapshot ") == 1
+    for option, output in (
+        ("publication-snapshot-digest", "publication-snapshot-digest"),
+        (
+            "publication-snapshot-artifact-id",
+            "publication-snapshot-artifact-id",
+        ),
+        (
+            "publication-snapshot-artifact-digest",
+            "publication-snapshot-artifact-digest",
+        ),
+    ):
+        assert (
+            f'--{option} "${{{{ needs.materialize-publication.outputs.'
+            f'{output} }}}}"' in finalize
+        )
+    assert (
+        '--publication-snapshot ".wdv3/input/'
+        "${{ needs.materialize-publication.outputs."
+        'publication-snapshot-artifact-name }}"' in finalize
+    )
     assert (
         "--attempt-binding "
         '".wdv3/input/${{ needs.admit.outputs.attempt-artifact-name }}"'
@@ -1296,10 +1316,9 @@ def test_publication_preparation_interruption_uses_direct_platform_facts() -> (
     assert (
         'qualification_result}" == "success" && -z "${snapshot_id}"' in command
     )
-    assert (
-        'observation_result}" == "success" && '
-        '"${materialization_result}" == "success"' in command
-    )
+    assert 'materialization_result}" == "success"' in command
+    assert "snapshot_name=" not in command
+    assert "snapshot_payload_digest=" not in command
     assert 'publish_result}" != "skipped"' in command
     assert "Publication Snapshot transport is only partially absent" in command
     assert "Publication preparation state is not an admitted interruption" in (
@@ -1311,6 +1330,53 @@ def test_publication_preparation_interruption_uses_direct_platform_facts() -> (
     assert "args+=(--publication-preparation-interrupted)" in command
     assert command.index("args+=(--publication-preparation-interrupted)") < (
         command.index("three-workflow-delivery-v3 release finalize-live")
+    )
+
+
+def test_publication_preparation_interruption_truth_table_is_exact() -> None:
+    cases = (
+        (False, "failure", "skipped", True),
+        (False, "cancelled", "skipped", True),
+        (False, "cancelled", "cancelled", True),
+        (False, "success", "failure", True),
+        (False, "success", "cancelled", True),
+        (False, "success", "skipped", False),
+        (False, "skipped", "skipped", False),
+        (True, "success", "skipped", True),
+        (True, "skipped", "skipped", True),
+        (True, "failure", "success", False),
+        (True, "skipped", "success", False),
+        (True, "success", "success", False),
+    )
+
+    for cancelled, observation, materialization, expected in cases:
+        legal = False
+        if materialization != "success":
+            if observation in {"failure", "cancelled"}:
+                legal = materialization in {"skipped", "cancelled"}
+            elif observation == "success":
+                legal = materialization in {"failure", "cancelled"}
+            if cancelled and (
+                (observation, materialization)
+                in {("skipped", "skipped"), ("success", "skipped")}
+            ):
+                legal = True
+
+        assert legal is expected
+
+    command = _run(
+        _step(
+            _document(CALLEE)["jobs"]["release-finalizer"],
+            "Finalize Attempt Outcome",
+        )
+    )
+    assert (
+        'observation_result}" == "skipped" && '
+        '"${materialization_result}" == "skipped"' in command
+    )
+    assert (
+        'observation_result}" == "success" && '
+        '"${materialization_result}" == "skipped"' in command
     )
 
 
@@ -1335,6 +1401,25 @@ def test_publication_preparation_diagnostics_are_retained_before_failure() -> (
     assert command.index("tee -a .wdv3/final-attempt/attempt-summary.md") < (
         command.index('outcome_digest="$(sha256sum')
     )
+
+
+def test_release_finalizer_propagates_failure_after_retention() -> None:
+    finalizer = _document(CALLEE)["jobs"]["release-finalizer"]
+    steps = _steps(finalizer)
+    finalize = _step(finalizer, "Finalize Attempt Outcome")
+    upload = _step(finalizer, "Upload final Attempt Outcome and summary")
+    propagate = _step(finalizer, "Propagate finalization status")
+    names = [step["name"] for step in steps]
+
+    assert names.index(finalize["name"]) < names.index(upload["name"])
+    assert names.index(upload["name"]) < names.index(propagate["name"])
+    assert propagate["if"] == "always()"
+    command = _run(propagate)
+    assert "steps.finalize.outcome" in command
+    assert "steps.upload-final.outcome" in command
+    assert "steps.finalize.outputs.finalizer-status" in command
+    assert '!= "0"' in command
+    assert "exit 1" in command
 
 
 def test_commit8_receipt_is_uploaded_before_bundle_uses_real_transport() -> (

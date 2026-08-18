@@ -558,6 +558,33 @@ def test_live_plan_build_transport_and_finalization_are_attempt_bound(  # noqa: 
     assert preparation_outcome.possibly_mutated is False
     assert preparation_outcome.next_action == "new-attempt"
 
+    missing_evidence_outcome_path = (
+        tmp_path / "missing-evidence-preparation-outcome.json"
+    )
+    assert (
+        cli_module.main(
+            [
+                "release",
+                "finalize-live",
+                *current,
+                *attempt_arguments,
+                *snapshot_arguments,
+                *build_evidence_arguments,
+                *project_evidence_arguments,
+                *contents_evidence_arguments,
+                *artifact_arguments,
+                *success_decision_arguments,
+                "--publication-preparation-interrupted",
+                "--outcome-output",
+                str(missing_evidence_outcome_path),
+                "--summary-output",
+                str(tmp_path / "missing-evidence-preparation-summary.md"),
+            ]
+        )
+        == 1
+    )
+    assert not missing_evidence_outcome_path.exists()
+
     artifact = admit_release_record(
         artifact_path.read_bytes(),
         expected_type=ReleaseArtifact,

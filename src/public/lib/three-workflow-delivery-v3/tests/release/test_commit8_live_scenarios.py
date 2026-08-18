@@ -619,8 +619,22 @@ def test_publication_preparation_interruption_terminalizes_without_snapshot(
 ) -> None:
     attempt, decision, publication, authorization = _closure(
         qualified_simulation,
-        with_action=False,
+        with_action=True,
     )
+    reviewer = _require_api("materialize_reviewer_artifact")(
+        snapshot_bytes=canonicalize(publication.to_document()),
+        summary_bytes=SUMMARY,
+        artifact_id=710,
+        upload_digest="sha256:" + ("2" * 64),
+    )
+    capability_decision = _require_api("admit_live_capability")(
+        attempt=attempt,
+        authorization=authorization,
+        publication_snapshot=publication,
+        reviewer_artifact=reviewer,
+    )
+    _, _, bundle, receipt = _successful_action_records(publication)
+    receipt_transport = _receipt_transport(receipt)
 
     outcome = finalize_attempt_outcome(
         attempt=attempt,
@@ -641,19 +655,65 @@ def test_publication_preparation_interruption_terminalizes_without_snapshot(
     assert outcome.possibly_mutated is False
     assert outcome.next_action == "new-attempt"
 
-    with pytest.raises(
-        ValueError,
-        match="contradictory records",
-    ):
+    def reject_contradiction(  # noqa: PLR0913
+        *,
+        publication_snapshot: PublicationSnapshot | None = None,
+        supplied_authorization: AuthorizationRecord | None = None,
+        capability_decisions: tuple[CapabilityAdmissionDecision, ...] = (),
+        group_bundles: tuple[CapabilityGroupResultBundle, ...] = (),
+        receipts: tuple[Receipt, ...] = (),
+        receipt_transport_references: tuple[
+            ReceiptTransportReference, ...
+        ] = (),
+        platform_terminated: bool = False,
+        capability_may_have_started: bool = False,
+    ) -> None:
+        with pytest.raises(
+            ValueError,
+            match="contradictory records",
+        ):
+            finalize_attempt_outcome(
+                attempt=attempt,
+                qualification_decision=decision,
+                publication_snapshot=publication_snapshot,
+                authorization=supplied_authorization,
+                capability_decisions=capability_decisions,
+                group_bundles=group_bundles,
+                receipts=receipts,
+                receipt_transport_references=receipt_transport_references,
+                publication_preparation_interrupted=True,
+                platform_terminated=platform_terminated,
+                capability_may_have_started=capability_may_have_started,
+            )
+
+    reject_contradiction(publication_snapshot=publication)
+    reject_contradiction(supplied_authorization=authorization)
+    reject_contradiction(capability_decisions=(capability_decision,))
+    reject_contradiction(group_bundles=(bundle,))
+    reject_contradiction(receipts=(receipt,))
+    reject_contradiction(receipt_transport_references=(receipt_transport,))
+    reject_contradiction(platform_terminated=True)
+    reject_contradiction(capability_may_have_started=True)
+
+
+def test_publication_preparation_interruption_rejects_non_boolean_fact(
+    qualified_simulation,
+) -> None:
+    attempt, decision, _publication, _authorization = _closure(
+        qualified_simulation,
+        with_action=False,
+    )
+
+    with pytest.raises(TypeError, match="exact Booleans"):
         finalize_attempt_outcome(
             attempt=attempt,
             qualification_decision=decision,
-            publication_snapshot=publication,
-            authorization=authorization,
+            publication_snapshot=None,
+            authorization=None,
             capability_decisions=(),
             group_bundles=(),
             receipts=(),
-            publication_preparation_interrupted=True,
+            publication_preparation_interrupted="true",  # type: ignore[arg-type]
         )
 
 
