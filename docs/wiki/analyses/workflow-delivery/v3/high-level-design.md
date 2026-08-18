@@ -676,6 +676,39 @@ namespaced, request-scoped Simulation Identity from those bindings. Shared
 record shapes are admissible across neither purpose boundary without an explicit
 matching discriminator.
 
+### Publication Preparation Interruption
+
+Successful Qualification does not imply that a Publication Snapshot exists.
+Remote-state Observation and the later sealing of exact artifacts,
+observations, and materialized actions are a separate staged planning boundary.
+Failure or cancellation before that second Snapshot is durably persisted stops
+approval and publication.
+
+When the Finalizer runs, it may classify this boundary as
+`publication-preparation` only when direct platform execution facts and the
+record set consistently prove all of the following:
+
+- the exact Qualification Decision succeeded;
+- no durable Publication Snapshot exists;
+- no Authorization or Capability Admission Decision exists;
+- no mutation marker, capability-group result bundle, or Receipt exists; and
+- the normal capability-bearing path did not start.
+
+The resulting Attempt is `incomplete`, uncertain about unfinished planning,
+not possibly mutated, and requires a new Attempt. The Finalizer does not invent
+a Publication Snapshot or copy platform results into a new domain Evidence
+type. A missing Snapshot by itself is not proof: contradictory job success,
+transport, or downstream mutation lineage remains a contract failure.
+
+The durable Publication Snapshot artifact is the lifecycle boundary. If it was
+persisted before a later reviewer-payload or approval-input failure, approval
+and publication still stop, but finalization retains the Snapshot and uses the
+existing Snapshot-bound outcome model. Only the read-only Release Finalizer may
+continue after either failure in order to retain facts and produce one
+authoritative Attempt Outcome. Platform cancellation may prevent even that
+Finalizer from running, and Workflow Delivery adds no watchdog to bypass this
+platform limitation.
+
 ### Partial Publication and Remediation
 
 Publication follows an append-only Saga. Independent capability groups may run

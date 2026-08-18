@@ -925,6 +925,26 @@ that the summary artifact matches the approved Snapshot.
 GitHub transports the snapshots as separate attempt-specific artifacts even
 though they share one logical Release Plan lineage.
 
+### Publication Preparation Interruption
+
+The terminal live-Attempt condition after an exact successful Qualification
+Decision but before a durable Publication Snapshot exists.
+
+Observation, Snapshot materialization, Snapshot upload, or platform
+cancellation may produce this condition only when direct platform facts prove
+that the capability-bearing path did not start and no Authorization, Capability
+Admission Decision, mutation marker, capability-group result bundle, or Receipt
+exists. Missing Snapshot transport alone is not proof.
+
+The sole Release Finalizer records terminal phase `publication-preparation`,
+result `incomplete`, uncertainty about unfinished planning,
+`possibly_mutated: false`, and next action `new-attempt`. It does not fabricate a
+Publication Snapshot or create a domain Evidence record that merely copies
+GitHub job results. A durably persisted Publication Snapshot ends this phase;
+later reviewer or approval-input failure retains that Snapshot and uses the
+Snapshot-bound lifecycle. Raw job results remain retained human diagnostics
+rather than canonical Attempt Outcome fields.
+
 ### Release Attempt
 
 One coherent plan, build, qualification, authorization, publication, and

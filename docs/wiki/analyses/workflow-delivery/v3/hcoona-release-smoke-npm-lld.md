@@ -438,7 +438,7 @@ preserves the request and creates a new Attempt or simulation pass.
 | Action Result                        | action, run/attempt, producer, enforced lock group, typed response, mutation disposition, diagnostic and Receipt reference                                                                                                                                                                                                           |
 | Capability-Group Result Bundle       | Attempt, Publication Snapshot, run/attempt, group ID, exact planned action IDs, per-action outcome/response/Receipt and diagnostic references, completion state, producer/control                                                                                                                                                    |
 | Receipt                              | compound action, complete frozen coordinate-plus-tag key set, enforced destination/package lock projection/group, artifact SHA-256/SHA-512, version create/exact-race result, dist-tag mapping, destination response identity, producer/run/attempt                                                                                  |
-| Attempt Outcome                      | Attempt, qualification, observation, applicable approval record, Capability Admission Decisions, actions/results/Receipts, uncertainty flag, terminal phase and next action; may be absent when platform termination prevents Finalizer execution                                                                                    |
+| Attempt Outcome                      | Attempt, exact Qualification Decision, optional Publication Snapshot and later records, uncertainty flag, terminal phase and next action; qualification or publication-preparation interruption may omit the Publication Snapshot, and the Outcome may be absent when platform termination prevents Finalizer execution              |
 | Simulation Outcome                   | Simulation Identity, Snapshot/Decision, observations, hypothetical actions/keys/capabilities, terminal result; explicitly no live records                                                                                                                                                                                            |
 | Governance Acceptance Evidence       | `destination-acceptance` purpose, protected workflow/ref/SHA, hard-bound target and fixed coordinate, confirmation digest, Environment/reviewer, every dependency result, available probe actions/responses/digests/diagnostics, mutation disposition including incomplete/unknown, producer/run, explicit no-Release-lineage marker |
 
@@ -743,7 +743,7 @@ request
             -> approval
             -> approval-finalizer (if the run continues)
             -> publish-github-packages (only authorized absent action)
-            -> release-finalizer (if the run continues)
+            -> release-finalizer (read-only finalization if the platform runs it)
 ```
 
 `run-live-attempt` uses concurrency
@@ -909,12 +909,22 @@ no safe platform projection can enforce them. This does not weaken
 
 `materialize-publication` canonicalizes the Publication Snapshot JSON and a
 deterministic Markdown reviewer summary that embeds the Snapshot digest. It
-uploads both files together as one immutable Actions artifact with the
+uploads the canonical Snapshot as its own immutable, non-archived artifact and
+uploads the reviewer payload as a separate immutable artifact, using the
 Renovate-selected current Node-24-compatible `actions/upload-artifact` major,
-full 40-character commit pin, and version comment. It captures the returned
-artifact ID, URL, and artifact digest and writes the same Markdown plus artifact
-link to its completed job summary. The `approval` job receives the artifact URL
-through a `needs` output and assigns it to `environment.url`.
+full 40-character commit pin, and version comment. It binds the reviewer
+artifact transport to the exact Snapshot and summary payloads, captures the
+returned IDs, URL, and artifact digests, and writes the Markdown plus artifact
+link to its completed job summary. The `approval` job receives the reviewer
+artifact URL through a `needs` output and assigns it to `environment.url`.
+
+Failure or cancellation before the Snapshot artifact is durably uploaded stops
+approval and publication and is eligible for a
+`publication-preparation` incomplete Outcome. If the Snapshot artifact was
+uploaded before a later reviewer-artifact or binding failure, approval and
+publication still stop, but the Release Finalizer retains the Snapshot and uses
+the existing Snapshot-bound outcome path rather than claiming that publication
+preparation never completed.
 
 GitHub's Environment approval dialog has no custom body. Reviewers follow the
 deployment URL or completed `materialize-publication` job summary to inspect the
@@ -996,6 +1006,28 @@ Authorization/Snapshot bindings and the same `contents: read` fixed-source
 mutation. Failure blocks mutation as defense in depth. This repeat adds no
 credential or service and does not make the target-revision publisher a
 malicious-writer boundary.
+
+`release-finalizer` uses `if: always()` and directly declares
+`observe-github-packages` and `materialize-publication` in `needs` in addition
+to its existing authoritative inputs. Direct dependencies expose exact GitHub
+job results and outputs; they do not continue approval or publication after a
+failure. The workflow adapter translates only the approved state combinations
+into `--publication-preparation-interrupted`. It requires successful
+Qualification, no durable Snapshot artifact, a skipped publisher, and no
+Authorization, Capability Admission Decision, mutation marker, result bundle,
+or Receipt. Job success without the required Snapshot, unexplained skips, failed
+Snapshot admission, or downstream lineage without a Snapshot are contract
+failures.
+
+The sole Release Finalizer then verifies the exact successful Qualification
+Decision and record absence before emitting
+`publication-preparation`/`incomplete` with uncertainty, no possible mutation,
+and next action `new-attempt`. It appends the direct Observation and
+materialization results, Snapshot presence, and capability-path state to the
+retained Attempt summary and GitHub Step Summary. The workflow uploads the
+Outcome and summary before propagating a failed release conclusion. GitHub may
+still cancel the entire run before the Finalizer executes; no watchdog is
+added.
 
 GitHub Environment `DeploymentReview` cannot produce authoritative
 current-attempt rejection Evidence because it lacks `run_attempt` and
@@ -1109,21 +1141,22 @@ SLO; missing the SLO does not convert failure to success.
 
 Top-level failure classes are:
 
-| Class                        | Examples                                                                                    | Result                                                           |
-| ---------------------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| invalid request/binding      | wrong target, purpose, run attempt, producer, digest                                        | blocked/contract failure                                         |
-| incomplete model/plan        | missing descriptor, graph, NBGV fact, variant, obligation, Adapter                          | blocked; no authoritative partial execution                      |
-| live eligibility blocked     | consumer found; `live_enabled: false`; missing, invalid, expired, or mismatched attestation | blocked before Execution/Attempt                                 |
-| quality failure              | build, test, tarball, install/import failure                                                | failed Decision                                                  |
-| destination partial/conflict | missing or mismatched dist-tag; differing bytes, ownership, or target provenance            | reconciliation-required                                          |
-| destination unknown          | denial, timeout, malformed response, unavailable tarball, unreadable tag                    | unknown/unprovable; fail closed                                  |
-| approval rejection unknown   | Environment rejection without exact attempt-bound denial proof                              | incomplete/replayable; diagnostic only, no Capability            |
-| approval-pending termination | cancellation/expiry before any capability group starts                                      | incomplete/replayable; platform conclusion proves no side effect |
-| Governance freshness blocked | `live_enabled: false`; attestation expired, changed, or invalidated after eligibility       | blocked; new Attempt required after Governance restoration       |
-| post-capability cancellation | capability job may have started                                                             | incomplete/possibly mutated; replay reobserves                   |
-| approval contract failure    | running Finalizer has neither applicable authorization nor terminal Evidence                | unknown; no Capability                                           |
-| action failure               | create conflict, transport failure, lost response                                           | replayable unless observation proves reconciliation state        |
-| Receipt failure              | mutation may have occurred but Receipt was not persisted                                    | incomplete; replay reobserves                                    |
+| Class                                | Examples                                                                                                    | Result                                                           |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| invalid request/binding              | wrong target, purpose, run attempt, producer, digest                                                        | blocked/contract failure                                         |
+| incomplete model/plan                | missing descriptor, graph, NBGV fact, variant, obligation, Adapter                                          | blocked; no authoritative partial execution                      |
+| live eligibility blocked             | consumer found; `live_enabled: false`; missing, invalid, expired, or mismatched attestation                 | blocked before Execution/Attempt                                 |
+| quality failure                      | build, test, tarball, install/import failure                                                                | failed Decision                                                  |
+| publication preparation interruption | Observation, Snapshot materialization, or Snapshot upload fails/cancels before durable Snapshot persistence | incomplete; no possible mutation; new Attempt                    |
+| destination partial/conflict         | missing or mismatched dist-tag; differing bytes, ownership, or target provenance                            | reconciliation-required                                          |
+| destination unknown                  | denial, timeout, malformed response, unavailable tarball, unreadable tag                                    | unknown/unprovable; fail closed                                  |
+| approval rejection unknown           | Environment rejection without exact attempt-bound denial proof                                              | incomplete/replayable; diagnostic only, no Capability            |
+| approval-pending termination         | cancellation/expiry before any capability group starts                                                      | incomplete/replayable; platform conclusion proves no side effect |
+| Governance freshness blocked         | `live_enabled: false`; attestation expired, changed, or invalidated after eligibility                       | blocked; new Attempt required after Governance restoration       |
+| post-capability cancellation         | capability job may have started                                                                             | incomplete/possibly mutated; replay reobserves                   |
+| approval contract failure            | running Finalizer has neither applicable authorization nor terminal Evidence                                | unknown; no Capability                                           |
+| action failure                       | create conflict, transport failure, lost response                                                           | replayable unless observation proves reconciliation state        |
+| Receipt failure                      | mutation may have occurred but Receipt was not persisted                                                    | incomplete; replay reobserves                                    |
 
 All authoritative JSON, summaries, artifacts, Evidence, Snapshots, observations,
 actions, approval records, control bundles, capability-group result bundles,

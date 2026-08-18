@@ -1354,6 +1354,57 @@ It does not:
 Remote uncertainty after execution is handled by the next Attempt's normal
 observation.
 
+### Publication Preparation Interruption
+
+The Finalizer remains the sole producer of Attempt Outcome when successful
+Qualification is followed by an interruption before a durable Publication
+Snapshot exists. Observation and Publication Snapshot materialization do not
+write a global Outcome themselves.
+
+The workflow adapter translates direct platform facts into one semantic
+`publication-preparation-interrupted` input. It may do so only for these
+consistent states:
+
+- Observation failed or was cancelled before materialization completed;
+- Observation succeeded, but materialization or Snapshot upload failed or was
+  cancelled before the Snapshot artifact was persisted; or
+- platform cancellation prevented those jobs from starting or completing while
+  the capability path remained unstarted.
+
+Qualification must have succeeded, the Publication Snapshot artifact identity
+must be absent, and the publisher must be skipped with no Authorization,
+Capability Admission Decision, mutation marker, result bundle, or Receipt.
+Qualification failure or incompleteness uses the existing qualification
+Outcome. A durably persisted Publication Snapshot uses the existing
+Snapshot-bound lifecycle even if a later step in the materialization job
+failed.
+
+The following are contract failures rather than normal interruptions:
+
+- Observation and materialization report success but no Snapshot artifact
+  identity exists;
+- required jobs are skipped without a platform cancellation fact;
+- a Snapshot artifact identity exists but transport or digest admission fails;
+  or
+- any authorization, capability, mutation, bundle, or Receipt lineage exists
+  without the Snapshot.
+
+The domain Finalizer validates the semantic input against the admitted record
+set and emits exactly:
+
+- terminal phase `publication-preparation`;
+- result `incomplete`;
+- `uncertainty: true`;
+- `possibly_mutated: false`; and
+- next action `new-attempt`.
+
+The canonical Outcome does not encode GitHub job names or raw result strings.
+The retained human summary records the direct Observation and materialization
+results, durable Snapshot presence, and whether the capability path started.
+The workflow retains the Outcome and summary before surfacing a failed release
+conclusion. Whole-workflow cancellation may still prevent the Finalizer from
+running.
+
 ### Completion Invariant
 
 A live Attempt is `completed` only when:

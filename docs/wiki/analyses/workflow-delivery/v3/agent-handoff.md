@@ -13,9 +13,14 @@ If it conflicts with the
 ## Current Checkpoint
 
 - Requirements, HLD, and all five MLDs are confirmed.
-- Implementation commits 1 through 10 of the approved first-slice LLD are
-  delivered; commit 10 was pushed at `e69675be`. Commit 11 is implemented
-  locally in the working tree and remains uncommitted until the parent commit.
+- Implementation commits 1 through 11 of the approved first-slice LLD are
+  delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the
+  legacy Buddy entry workflows at `f0f81d52`. The branch then integrated
+  current `main` at `e6482727`, repaired live qualification authority and
+  runtime boundaries at `2ddeeed1`, and committed durable unsuccessful
+  qualification Attempt Outcomes at `1e742b29`. Those later commits remain
+  local to `dev/shuaizhang/design-workflows`; nothing after `f0f81d52` has been
+  pushed.
   Commit 3 includes target-tree-bound
   Release Unit/Quality authoring validation, duplicate Release Unit rejection,
   exact-target Repository Model compilation, static catalogs, Node/NBGV
@@ -74,9 +79,9 @@ If it conflicts with the
   retention-dependent. The Environment and reviewer configuration are pending
   protected finalization, not asserted to exist at this boundary. Normal live remains
   blocked. The real bounded probe orchestration is present but unreachable
-  behind the zero-SHA sentinel. Commit 11 then retires the legacy
+  behind the zero-SHA sentinel. Commit 11 retired the legacy
   `.github/workflows/buddy.yml` and `.github/workflows/release-buddy.yml`
-  entries locally with no `legacy-buddy.yml`, dispatch, or caller-compatibility
+  entries with no `legacy-buddy.yml`, dispatch, or caller-compatibility
   route while preserving v1 Official/CI, generic/v2 behavior, normal v3 Buddy
   workflows, and the live-attempt/acceptance sentinel.
 - Commit 10's local acceptance boundary is closed around a real npm 11.9.0
@@ -90,11 +95,22 @@ If it conflicts with the
   runner facts remain incomplete, and complete Governance Acceptance Evidence
   rejects zero target and workflow SHAs while incomplete sentinel semantics
   remain available.
-- The current five-file acceptance inventory is 578 passing tests; full-package
-  validation passes all 2888 tests. This supersedes earlier expected-red
-  commit-10 notes. The protected
+- The current Workflow Delivery v3 package validation passes 3,015 tests. The
+  protected
   acceptance Environment and reviewer configuration are still pending; no live
   acceptance dispatch or package mutation has run.
+- Durable qualification terminalization now permits exact failed or incomplete
+  Qualification Decisions to produce publication-free Attempt Outcomes. The
+  `finalize-live` CLI replays the exact retained Qualification Snapshot,
+  Evidence, Release Artifact, and Decision before accepting that outcome.
+- The next approved slice handles successful Qualification followed by
+  Observation or Publication Snapshot materialization interruption before a
+  durable Publication Snapshot exists. The confirmed design uses terminal phase
+  `publication-preparation`, result `incomplete`, uncertainty, no possible
+  mutation, and next action `new-attempt`. Direct GitHub job/DAG facts are
+  normalized into one semantic Finalizer input; no new Evidence type,
+  fabricated Snapshot, or watchdog is added. A durable Publication Snapshot
+  remains the boundary into the existing Snapshot-bound lifecycle.
 - The first vertical slice is `hcoona-release-smoke-npm`.
 - The slice has one Node project, one package variant, and one npm artifact.
 - It covers CI Qualification, live Buddy publication to GitHub Packages, and
@@ -304,12 +320,15 @@ If it conflicts with the
   state blocks; no repository variable, PAT, App, service, ledger, OIDC, or
   additional token permission is added. Permanent root HK policy remains the
   repository-wide dependency gate.
-- Commit 11 is implemented but uncommitted until the parent commit. The next
-  operational LLD boundary remains post-merge commit 12: freeze dispatch,
-  repository-wide disable both old workflow identities, cancel or drain old
-  executions, and prove old-ref dispatch rejection. Do not run real acceptance
-  probes, finalize the sentinel target, activate normal live, or begin later
-  scopes without a separate explicit user task.
+- The immediate implementation boundary is the approved
+  `publication-preparation` interruption slice: update the canonical
+  Attempt Outcome invariant and Finalizer/CLI, then add direct workflow
+  Observation/materialization facts, retained diagnostics, and contract tests
+  in separate human-reviewable commits. After this slice, repair Buddy
+  concurrency around Execution identity, perform final v3 validation, and only
+  then prepare the implementation PR. Do not run real acceptance probes,
+  finalize the sentinel target, activate normal live, or begin later scopes
+  without a separate explicit user task.
 - Implementation must preserve the approved commit boundaries and keep live
   activation disabled until acceptance and the separate activation approval.
 

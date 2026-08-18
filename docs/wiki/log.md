@@ -1780,3 +1780,13 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Kept commit 11 uncommitted and performed no post-merge dispatch freeze,
   workflow disablement, run cancellation, acceptance execution, package
   mutation, target finalization, or activation.
+
+## [2026-08-18] query | Define publication preparation interruption
+
+- Recorded the confirmed live-Attempt boundary after successful Qualification
+  and before a durable Publication Snapshot exists.
+- Defined the `publication-preparation` incomplete Outcome, direct platform
+  fact admission, durable-Snapshot boundary, single Finalizer ownership,
+  retained operational diagnostics, and fail-after-retention behavior.
+- Updated the v3 handoff through durable qualification terminalization while
+  keeping live activation, acceptance dispatch, and package mutation disabled.

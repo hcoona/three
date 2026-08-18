@@ -202,6 +202,21 @@ against implementation and maintenance cost.
   Attempt must reobserve. When finalization does run and neither valid
   authorization nor an applicable admissible terminal result exists, it must
   report approval-contract failure rather than governed rejection.
+- **WD-REL-007A:** After successful Qualification and before a durable
+  Publication Snapshot exists, Observation, Publication Snapshot
+  materialization, artifact upload, or platform cancellation may leave the
+  Attempt incomplete without side effects. A running Finalizer may record this
+  only when direct platform job/DAG facts prove that no durable Publication
+  Snapshot exists and no Authorization, Capability Admission, mutation marker,
+  capability-group result bundle, or Receipt exists. Missing Snapshot transport
+  alone is not sufficient proof. The Outcome must bind the exact successful
+  Qualification Decision, use terminal phase `publication-preparation`, record
+  `incomplete`, preserve uncertainty, set `possibly_mutated` false, and require
+  a new Attempt. If the Publication Snapshot was durably persisted before a
+  later failure, the Finalizer must retain that lineage and use the existing
+  Snapshot-bound lifecycle instead. Platform termination may still prevent the
+  Finalizer itself from running; in that case the retained platform conclusion
+  remains the operational evidence.
 - **WD-REL-008:** Release must obtain short-lived, destination-specific
   Publication Capabilities only after qualification and observation establish
   the exact authorized action and a valid Authorization Record exists. Approval
