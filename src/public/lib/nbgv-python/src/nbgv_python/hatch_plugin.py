@@ -9,6 +9,7 @@ from hatchling.plugin import hookimpl
 from hatchling.version.source.plugin.interface import VersionSourceInterface
 
 from .config import PluginConfig
+from .errors import NbgvCommandError
 from .runner import NbgvRunner
 from .templating import build_template_fields
 from .versioning import normalize_version_field
@@ -39,7 +40,10 @@ class NbgvVersionSource(VersionSourceInterface):
         config = PluginConfig.from_mapping(Path(self.root), mapping)
         self._config = config
         runner = NbgvRunner(command=config.command)
-        version = runner.get_version(config.working_directory)
+        try:
+            version = runner.get_version(config.working_directory)
+        except NbgvCommandError as exc:
+            raise RuntimeError(str(exc)) from exc
         selected = version.get(config.version_field)
         if selected is None:
             message = (

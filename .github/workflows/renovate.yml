@@ -43,6 +43,7 @@ jobs:
       contents: read
     env:
       RENOVATE_VERSION: 43.200.1
+      RENOVATE_BASE_DIR: ${{ github.workspace }}/../renovate
       GIT_LFS_SKIP_SMUDGE: 1
     defaults:
       run:
@@ -62,6 +63,15 @@ jobs:
 
           # Renovate performs its own clone, so configure the runner globally.
           git lfs install --skip-smudge --skip-repo --force
+
+      - name: Seed Renovate repository with full clone
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $repositoryPath = Join-Path $env:RENOVATE_BASE_DIR "repos/github/$env:GITHUB_REPOSITORY"
+          New-Item -ItemType Directory -Path (Split-Path -Parent $repositoryPath) -Force | Out-Null
+          git clone --no-local $env:GITHUB_WORKSPACE $repositoryPath
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
