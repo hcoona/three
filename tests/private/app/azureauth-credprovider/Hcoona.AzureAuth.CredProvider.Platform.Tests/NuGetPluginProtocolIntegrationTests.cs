@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using Hcoona.AzureAuth.CredProvider.Contracts;
@@ -9,6 +10,8 @@ namespace Hcoona.AzureAuth.CredProvider.Platform.Tests;
 
 public sealed class NuGetPluginProtocolIntegrationTests
 {
+    private static readonly TimeSpan ProcessCleanupTimeout = TimeSpan.FromSeconds(5);
+
     private const string HandshakeRequestId = "11111111-1111-1111-1111-111111111111";
     private const string CloseRequestId = "22222222-2222-2222-2222-222222222222";
     private const string OperationClaimsRequestId = "33333333-3333-3333-3333-333333333333";
@@ -41,6 +44,7 @@ public sealed class NuGetPluginProtocolIntegrationTests
         );
         using Process process = StartPluginProcess();
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        bool completedSuccessfully = false;
         try
         {
             Message outboundHandshakeResponse = await CreateOutboundHandshakeResponseAsync(
@@ -70,10 +74,11 @@ public sealed class NuGetPluginProtocolIntegrationTests
                 Assert.Single(responseLines),
                 currentProtocolVersion
             );
+            completedSuccessfully = true;
         }
         finally
         {
-            await TerminateProcessAsync(process);
+            await CompleteProcessCleanupAsync(process, completedSuccessfully);
         }
     }
 
@@ -100,6 +105,7 @@ public sealed class NuGetPluginProtocolIntegrationTests
         );
         using Process process = StartPluginProcess();
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        bool completedSuccessfully = false;
         try
         {
             Message outboundHandshakeResponse = await CreateOutboundHandshakeResponseAsync(
@@ -155,10 +161,11 @@ public sealed class NuGetPluginProtocolIntegrationTests
                 cancellationToken
             );
             Assert.Equal(string.Empty, remainingOutput);
+            completedSuccessfully = true;
         }
         finally
         {
-            await TerminateProcessAsync(process);
+            await CompleteProcessCleanupAsync(process, completedSuccessfully);
         }
     }
 
@@ -219,23 +226,124 @@ public sealed class NuGetPluginProtocolIntegrationTests
         }
     }
 
-    private static async Task TerminateProcessAsync(Process process)
+    private static async Task CompleteProcessCleanupAsync(
+        Process process,
+        bool completedSuccessfully
+    )
     {
-        if (process.HasExited)
+        Exception? cleanupFailure = await TryTerminateProcessAsync(process);
+        if (cleanupFailure is null)
         {
             return;
         }
 
+        const string message = "NuGet protocol helper cleanup failed.";
+        if (completedSuccessfully)
+        {
+            throw new InvalidOperationException(message, cleanupFailure);
+        }
+
+        TestContext.Current.AddWarning(
+            message + Environment.NewLine + cleanupFailure
+        );
+    }
+
+    private static async Task<Exception?> TryTerminateProcessAsync(Process process)
+    {
+        if (process.HasExited)
+        {
+            return null;
+        }
+
+        Exception? killFailure = null;
         try
         {
             process.Kill(entireProcessTree: true);
         }
         catch (InvalidOperationException) when (process.HasExited)
         {
-            return;
+            return null;
+        }
+        catch (Exception exception)
+            when (exception
+                is InvalidOperationException
+                    or NotSupportedException
+                    or Win32Exception)
+        {
+            killFailure = exception;
         }
 
-        await process.WaitForExitAsync(CancellationToken.None);
+        using var cleanupCancellation = new CancellationTokenSource(
+            ProcessCleanupTimeout
+        );
+        try
+        {
+            await process.WaitForExitAsync(cleanupCancellation.Token);
+            return null;
+        }
+        catch (InvalidOperationException) when (process.HasExited)
+        {
+            return null;
+        }
+        catch (OperationCanceledException)
+            when (cleanupCancellation.IsCancellationRequested)
+        {
+            return new TimeoutException(
+                "NuGet protocol helper did not exit within "
+                    + $"{ProcessCleanupTimeout} after termination.",
+                killFailure
+            );
+        }
+        catch (Exception exception)
+            when (exception
+                is InvalidOperationException
+                    or NotSupportedException
+                    or Win32Exception)
+        {
+            return killFailure is null
+                ? exception
+                : new AggregateException(
+                    "NuGet protocol helper kill and exit wait both failed.",
+                    killFailure,
+                    exception
+                );
+        }
+    }
+
+    private static async Task<string> ReadProcessStreamAsync(
+        StreamReader reader,
+        string streamName
+    )
+    {
+        using var streamCancellation = new CancellationTokenSource(
+            ProcessCleanupTimeout
+        );
+        try
+        {
+            return await reader.ReadToEndAsync(streamCancellation.Token);
+        }
+        catch (OperationCanceledException)
+            when (streamCancellation.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                $"NuGet protocol helper {streamName} did not close within {ProcessCleanupTimeout}."
+            );
+        }
+    }
+
+    private static async Task<string> ReadProcessStreamForDiagnosticsAsync(
+        StreamReader reader,
+        string streamName
+    )
+    {
+        try
+        {
+            return await ReadProcessStreamAsync(reader, streamName);
+        }
+        catch (TimeoutException exception)
+        {
+            return $"<{exception.Message}>";
+        }
     }
 
     private static async Task<string> WaitForSuccessfulExitAsync(
@@ -244,8 +352,6 @@ public sealed class NuGetPluginProtocolIntegrationTests
         CancellationToken cancellationToken
     )
     {
-        Task<string> remainingOutput = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        Task<string> standardError = process.StandardError.ReadToEndAsync(cancellationToken);
         using var exitTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         using var exitCancellation = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken,
@@ -257,22 +363,42 @@ public sealed class NuGetPluginProtocolIntegrationTests
         }
         catch (OperationCanceledException) when (exitTimeout.IsCancellationRequested)
         {
-            process.Kill(entireProcessTree: true);
-            await process.WaitForExitAsync(cancellationToken);
+            Exception? cleanupFailure = await TryTerminateProcessAsync(process);
+            string remainingOutput = await ReadProcessStreamForDiagnosticsAsync(
+                process.StandardOutput,
+                "standard output"
+            );
+            string standardError = await ReadProcessStreamForDiagnosticsAsync(
+                process.StandardError,
+                "standard error"
+            );
             Assert.Fail(
                 timeoutMessage
                     + Environment.NewLine
                     + "stdout: "
-                    + await remainingOutput
+                    + remainingOutput
                     + Environment.NewLine
                     + "stderr: "
-                    + await standardError
+                    + standardError
+                    + (cleanupFailure is null
+                        ? string.Empty
+                        : Environment.NewLine
+                            + "cleanup: "
+                            + cleanupFailure)
             );
         }
 
-        Assert.Equal(string.Empty, await standardError);
+        string output = await ReadProcessStreamAsync(
+            process.StandardOutput,
+            "standard output"
+        );
+        string error = await ReadProcessStreamAsync(
+            process.StandardError,
+            "standard error"
+        );
+        Assert.Equal(string.Empty, error);
         Assert.Equal((int)AdapterHostExitCode.Success, process.ExitCode);
-        return await remainingOutput;
+        return output;
     }
 
     private static async Task<Message> CreateOutboundHandshakeResponseAsync(
