@@ -306,6 +306,8 @@ def test_live_attempt_dag_environments_and_capability_gate_are_exact() -> None:
     assert set(_needs(jobs["release-finalizer"])) == {
         "admit",
         "qualification-finalizer",
+        "observe-github-packages",
+        "materialize-publication",
         "approval-finalizer",
         "publish-github-packages",
     }
@@ -541,6 +543,8 @@ def test_unsuccessful_live_qualification_retains_a_publication_free_outcome() ->
     assert set(_needs(release_finalizer)) == {
         "admit",
         "qualification-finalizer",
+        "observe-github-packages",
+        "materialize-publication",
         "approval-finalizer",
         "publish-github-packages",
     }
@@ -620,12 +624,16 @@ def test_unsuccessful_live_qualification_retains_a_publication_free_outcome() ->
         "Download Publication Snapshot by artifact ID",
     )
     assert publication_download["if"] == (
-        "needs.approval-finalizer.outputs."
+        "needs.materialize-publication.outputs."
         "publication-snapshot-artifact-id != ''"
+    )
+    assert publication_download["with"]["artifact-ids"] == (
+        "${{ needs.materialize-publication.outputs."
+        "publication-snapshot-artifact-id }}"
     )
     finalize = _run(_step(release_finalizer, "Finalize Attempt Outcome"))
     assert (
-        'if [[ -n "${{ needs.approval-finalizer.outputs.'
+        'if [[ -n "${{ needs.materialize-publication.outputs.'
         'publication-snapshot-artifact-id }}" ]]' in finalize
     )
     assert finalize.count("--publication-snapshot ") == 1
@@ -1229,6 +1237,8 @@ def test_commit8_preobserved_noop_skips_publish_but_still_finalizes() -> None:
     assert _needs(jobs["release-finalizer"]) == (
         "admit",
         "qualification-finalizer",
+        "observe-github-packages",
+        "materialize-publication",
         "approval-finalizer",
         "publish-github-packages",
     )
@@ -1251,6 +1261,80 @@ def test_commit8_platform_termination_facts_are_derived_for_finalization() -> (
     assert "--platform-terminated" in command
     assert "--capability-may-have-started" in command
     assert "needs.publish-github-packages.result" in command
+
+
+def test_publication_preparation_interruption_uses_direct_platform_facts() -> (
+    None
+):
+    finalizer = _document(CALLEE)["jobs"]["release-finalizer"]
+    cancellation = _step(finalizer, "Record workflow cancellation")
+    finalize = _step(finalizer, "Finalize Attempt Outcome")
+    command = _run(finalize)
+
+    assert set(_needs(finalizer)) == {
+        "admit",
+        "qualification-finalizer",
+        "observe-github-packages",
+        "materialize-publication",
+        "approval-finalizer",
+        "publish-github-packages",
+    }
+    for fact in (
+        "needs.qualification-finalizer.outputs.qualification-result",
+        "needs.observe-github-packages.result",
+        "needs.materialize-publication.result",
+        (
+            "needs.materialize-publication.outputs."
+            "publication-snapshot-artifact-id"
+        ),
+        "needs.publish-github-packages.result",
+        "steps.workflow-cancellation.outputs.workflow-cancelled",
+    ):
+        assert fact in command
+    assert cancellation["if"] == "cancelled()"
+    assert finalize["if"] == "success() || cancelled()"
+    assert (
+        'qualification_result}" == "success" && -z "${snapshot_id}"' in command
+    )
+    assert (
+        'observation_result}" == "success" && '
+        '"${materialization_result}" == "success"' in command
+    )
+    assert 'publish_result}" != "skipped"' in command
+    assert "Publication Snapshot transport is only partially absent" in command
+    assert "Publication preparation state is not an admitted interruption" in (
+        command
+    )
+    assert "Publication preparation interruption has downstream lineage" in (
+        command
+    )
+    assert "args+=(--publication-preparation-interrupted)" in command
+    assert command.index("args+=(--publication-preparation-interrupted)") < (
+        command.index("three-workflow-delivery-v3 release finalize-live")
+    )
+
+
+def test_publication_preparation_diagnostics_are_retained_before_failure() -> (
+    None
+):
+    finalizer = _document(CALLEE)["jobs"]["release-finalizer"]
+    command = _run(_step(finalizer, "Finalize Attempt Outcome"))
+
+    assert "## Publication preparation interruption" in command
+    for diagnostic in (
+        "Qualification result:",
+        "Observation job result:",
+        "Materialization job result:",
+        "Durable Publication Snapshot: absent",
+        "Capability path started: no",
+        "Workflow cancellation observed:",
+    ):
+        assert diagnostic in command
+    assert "tee -a .wdv3/final-attempt/attempt-summary.md" in command
+    assert '>> "${GITHUB_STEP_SUMMARY}"' in command
+    assert command.index("tee -a .wdv3/final-attempt/attempt-summary.md") < (
+        command.index('outcome_digest="$(sha256sum')
+    )
 
 
 def test_commit8_receipt_is_uploaded_before_bundle_uses_real_transport() -> (

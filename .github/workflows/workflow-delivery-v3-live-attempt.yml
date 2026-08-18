@@ -1781,6 +1781,8 @@ jobs:
       [
         admit,
         qualification-finalizer,
+        observe-github-packages,
+        materialize-publication,
         approval-finalizer,
         publish-github-packages,
       ]
@@ -1861,10 +1863,10 @@ jobs:
           skip-decompress: true
           digest-mismatch: error
       - name: Download Publication Snapshot by artifact ID
-        if: needs.approval-finalizer.outputs.publication-snapshot-artifact-id != ''
+        if: needs.materialize-publication.outputs.publication-snapshot-artifact-id != ''
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          artifact-ids: ${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-id }}
+          artifact-ids: ${{ needs.materialize-publication.outputs.publication-snapshot-artifact-id }}
           path: .wdv3/input
           skip-decompress: true
           digest-mismatch: error
@@ -1900,8 +1902,13 @@ jobs:
           path: .wdv3/input
           skip-decompress: true
           digest-mismatch: error
+      - name: Record workflow cancellation
+        id: workflow-cancellation
+        if: cancelled()
+        run: echo "workflow-cancelled=true" >> "${GITHUB_OUTPUT}"
       - name: Finalize Attempt Outcome
         id: finalize
+        if: success() || cancelled()
         continue-on-error: true
         run: |
           args=()
@@ -1926,12 +1933,12 @@ jobs:
           add_record artifact-contents-evidence ".wdv3/input/${{ needs.qualification-finalizer.outputs.artifact-contents-evidence-artifact-name }}" "${{ needs.qualification-finalizer.outputs.artifact-contents-evidence-digest }}" "${{ needs.qualification-finalizer.outputs.artifact-contents-evidence-artifact-id }}" "${{ needs.qualification-finalizer.outputs.artifact-contents-evidence-artifact-digest }}"
           add_record install-import-evidence ".wdv3/input/${{ needs.qualification-finalizer.outputs.install-import-evidence-artifact-name }}" "${{ needs.qualification-finalizer.outputs.install-import-evidence-digest }}" "${{ needs.qualification-finalizer.outputs.install-import-evidence-artifact-id }}" "${{ needs.qualification-finalizer.outputs.install-import-evidence-artifact-digest }}"
           add_record release-artifact ".wdv3/input/${{ needs.qualification-finalizer.outputs.release-artifact-artifact-name }}" "${{ needs.qualification-finalizer.outputs.release-artifact-digest }}" "${{ needs.qualification-finalizer.outputs.release-artifact-artifact-id }}" "${{ needs.qualification-finalizer.outputs.release-artifact-artifact-digest }}"
-          if [[ -n "${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-id }}" ]]; then
+          if [[ -n "${{ needs.materialize-publication.outputs.publication-snapshot-artifact-id }}" ]]; then
             args+=(
-              --publication-snapshot ".wdv3/input/${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-name }}"
-              --publication-snapshot-digest "${{ needs.approval-finalizer.outputs.publication-snapshot-digest }}"
-              --publication-snapshot-artifact-id "${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-id }}"
-              --publication-snapshot-artifact-digest "${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-digest }}"
+              --publication-snapshot ".wdv3/input/${{ needs.materialize-publication.outputs.publication-snapshot-artifact-name }}"
+              --publication-snapshot-digest "${{ needs.materialize-publication.outputs.publication-snapshot-digest }}"
+              --publication-snapshot-artifact-id "${{ needs.materialize-publication.outputs.publication-snapshot-artifact-id }}"
+              --publication-snapshot-artifact-digest "${{ needs.materialize-publication.outputs.publication-snapshot-artifact-digest }}"
             )
           fi
           if [[ -n "${{ needs.approval-finalizer.outputs.authorization-artifact-id }}" ]]; then
@@ -1966,9 +1973,59 @@ jobs:
               --receipt-artifact-digest "${{ needs.publish-github-packages.outputs.receipt-artifact-digest }}"
             )
           fi
+          qualification_result="${{ needs.qualification-finalizer.outputs.qualification-result }}"
+          observation_result="${{ needs.observe-github-packages.result }}"
+          materialization_result="${{ needs.materialize-publication.result }}"
+          snapshot_id="${{ needs.materialize-publication.outputs.publication-snapshot-artifact-id }}"
+          snapshot_upload_digest="${{ needs.materialize-publication.outputs.publication-snapshot-artifact-digest }}"
+          snapshot_name="${{ needs.materialize-publication.outputs.publication-snapshot-artifact-name }}"
+          snapshot_payload_digest="${{ needs.materialize-publication.outputs.publication-snapshot-digest }}"
+          forwarded_snapshot_id="${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-id }}"
+          authorization_id="${{ needs.approval-finalizer.outputs.authorization-artifact-id }}"
+          capability_decision_id="${{ needs.approval-finalizer.outputs.capability-decision-artifact-id }}"
           publish_result="${{ needs.publish-github-packages.result }}"
           capability_marker_id="${{ needs.publish-github-packages.outputs.mutation-marker-artifact-id }}"
           capability_bundle_id="${{ needs.publish-github-packages.outputs.capability-group-bundle-artifact-id }}"
+          receipt_id="${{ needs.publish-github-packages.outputs.receipt-artifact-id }}"
+          workflow_cancelled="${{ steps.workflow-cancellation.outputs.workflow-cancelled || 'false' }}"
+          publication_preparation_interrupted=false
+          if [[ "${qualification_result}" == "success" && -z "${snapshot_id}" ]]; then
+            if [[ -n "${snapshot_upload_digest}" || -n "${snapshot_name}" || -n "${snapshot_payload_digest}" ]]; then
+              echo "::error::Publication Snapshot transport is only partially absent" >&2
+              exit 1
+            fi
+            if [[ "${observation_result}" == "success" && "${materialization_result}" == "success" ]]; then
+              echo "::error::Successful publication preparation omitted its durable Snapshot" >&2
+              exit 1
+            fi
+            interruption_is_legal=false
+            if [[ "${observation_result}" == "failure" || "${observation_result}" == "cancelled" ]]; then
+              if [[ "${materialization_result}" == "skipped" || "${materialization_result}" == "cancelled" ]]; then
+                interruption_is_legal=true
+              fi
+            elif [[ "${observation_result}" == "success" ]]; then
+              if [[ "${materialization_result}" == "failure" || "${materialization_result}" == "cancelled" ]]; then
+                interruption_is_legal=true
+              fi
+            fi
+            if [[ "${workflow_cancelled}" == "true" && ( "${observation_result}" != "success" || "${materialization_result}" != "success" ) ]]; then
+              interruption_is_legal=true
+            fi
+            if [[ "${interruption_is_legal}" != "true" ]]; then
+              echo "::error::Publication preparation state is not an admitted interruption" >&2
+              exit 1
+            fi
+            if [[ "${publish_result}" != "skipped" ]]; then
+              echo "::error::Publication preparation interruption did not skip the publisher" >&2
+              exit 1
+            fi
+            if [[ -n "${forwarded_snapshot_id}" || -n "${authorization_id}" || -n "${capability_decision_id}" || -n "${capability_marker_id}" || -n "${capability_bundle_id}" || -n "${receipt_id}" ]]; then
+              echo "::error::Publication preparation interruption has downstream lineage" >&2
+              exit 1
+            fi
+            publication_preparation_interrupted=true
+            args+=(--publication-preparation-interrupted)
+          fi
           platform_terminated=false
           capability_may_have_started=false
           if [[ "${publish_result}" == "cancelled" ]]; then
@@ -2011,6 +2068,17 @@ jobs:
             --github-output "${GITHUB_OUTPUT}"
           status=$?
           set -e
+          if [[ "${publication_preparation_interrupted}" == "true" && -f .wdv3/final-attempt/attempt-summary.md ]]; then
+            {
+              printf '\n## Publication preparation interruption\n\n'
+              printf '%s\n' "- Qualification result: ${qualification_result}"
+              printf '%s\n' "- Observation job result: ${observation_result}"
+              printf '%s\n' "- Materialization job result: ${materialization_result}"
+              printf '%s\n' "- Durable Publication Snapshot: absent"
+              printf '%s\n' "- Capability path started: no"
+              printf '%s\n' "- Workflow cancellation observed: ${workflow_cancelled}"
+            } | tee -a .wdv3/final-attempt/attempt-summary.md >> "${GITHUB_STEP_SUMMARY}"
+          fi
           outcome_digest="$(sha256sum .wdv3/final-attempt/attempt-outcome.json | cut -d' ' -f1)"
           echo "final-artifact-name=wdv3-live-buddy-attempt-outcome-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${outcome_digest}" >> "${GITHUB_OUTPUT}"
           echo "finalizer-status=${status}" >> "${GITHUB_OUTPUT}"
