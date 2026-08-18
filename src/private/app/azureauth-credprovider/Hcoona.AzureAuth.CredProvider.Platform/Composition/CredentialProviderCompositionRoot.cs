@@ -60,6 +60,8 @@ public sealed class CredentialProviderCompositionRoot
 {
     public const string ProviderConfigRecordName = "azureauth/provider-config.json";
     public const string BindingRecordName = "azureauth/account-binding.json";
+    public const string DevBoxWslSilentFirstWorkaroundReadinessCode =
+        "AzureAuthDevBoxWslSilentFirstWorkaroundReady";
 
     private readonly BoundedCredentialAcquisitionAdapter boundary;
 
@@ -401,7 +403,7 @@ public sealed class CredentialProviderCompositionRoot
                 && installation.HostPlatform == AzureAuthHostPlatform.Wsl
                 && enableDevBoxWslSilentFirstWorkaround
                     ? Ready(
-                        "AzureAuthDevBoxWslSilentFirstWorkaroundReady",
+                        DevBoxWslSilentFirstWorkaroundReadinessCode,
                         "The temporary Dev Box WSL silent-first workaround is enabled. "
                             + "AzureAuth may display interactive UI until AzureAuth issue #464 "
                             + "is implemented."

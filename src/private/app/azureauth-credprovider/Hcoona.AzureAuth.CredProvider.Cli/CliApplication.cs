@@ -3592,14 +3592,16 @@ internal static class CliApplication
         CredentialProviderCompositionRoot root,
         CredentialProviderReadiness readiness
     ) =>
-        readiness.Silent.Code == "AzureAuthDevBoxWslSilentFirstWorkaroundReady"
+        readiness.Silent.Code
+            == CredentialProviderCompositionRoot.DevBoxWslSilentFirstWorkaroundReadinessCode
             ? "devbox-wsl-wam-first-may-interact"
             : root.Installation.HostPlatform == AzureAuthHostPlatform.NativeLinux
                 ? "native-linux-cache-only"
                 : "unavailable";
 
     private static string GetDoctorLiveAuthProbingText(CredentialProviderReadiness readiness) =>
-        readiness.Silent.Code == "AzureAuthDevBoxWslSilentFirstWorkaroundReady"
+        readiness.Silent.Code
+            == CredentialProviderCompositionRoot.DevBoxWslSilentFirstWorkaroundReadinessCode
             ? "git-doctor-silent-only-may-interact"
             : "git-doctor-silent-only";
 
