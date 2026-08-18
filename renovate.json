@@ -377,6 +377,13 @@
       "groupName": "Microsoft Semantic Kernel Packages"
     },
     {
+      "description": "Keep directly referenced NuGet client libraries on a compatible release.",
+      "matchManagers": ["nuget"],
+      "matchFileNames": ["Directory.Packages.props"],
+      "matchPackageNames": ["NuGet.ProjectModel", "NuGet.Protocol"],
+      "groupName": "NuGet Client Libraries"
+    },
+    {
       "description": "Group .NET test stack updates.",
       "matchManagers": ["nuget"],
       "matchPackageNames": [
