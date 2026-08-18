@@ -114,9 +114,13 @@ not implemented.
 Windows and WSL interaction readiness means that the WAM-first launch path is
 available and may prompt. A WAM cache can satisfy that interaction-allowed
 request without prompting, but AzureAuth 0.9.5 exposes no cache-only command
-mode on those hosts. Status therefore reports Windows and WSL silent-only
-readiness as unavailable without claiming that the provider cache or account is
-absent.
+mode on those hosts. Status therefore reports Windows and ordinary WSL
+silent-only readiness as unavailable without claiming that the provider cache
+or account is absent. As a temporary exception pending this product's adoption
+and verification of an AzureAuth release containing the fix for issue #464,
+GCM-compatible Dev Box WSL hosts use a clearly reported WAM-first workaround
+that may display interactive UI. An environment override can force or disable
+that WSL-only workaround.
 
 The core must not assume a single protocol output format. Protocol adapters are responsible for host-tool input and output.
 
@@ -365,9 +369,10 @@ Capability reporting distinguishes structural local readiness from remote
 authorization. It does not contact package feeds, prove NuGet's runtime plugin
 selection, directly read or enumerate provider-managed cache storage, or verify
 the configured account preference. `status` performs no live authentication
-probe. Existing bounded Git `doctor` checks may invoke the provider in
-`SilentOnly` mode (cache-only on native Linux) and do not turn other ecosystem
-rows into live-authentication claims.
+probe. Existing bounded Git `doctor` checks may invoke the provider in `SilentOnly`
+mode. This is cache-only on native Linux; the temporary Dev Box WSL workaround
+is WAM-first and may display interactive UI. These checks do not turn other
+ecosystem rows into live-authentication claims.
 
 Diagnostics should never print access tokens, refresh tokens, PATs, Basic auth headers, npm tokens, NuGet API keys, or generated passwords.
 
