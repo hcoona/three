@@ -1176,7 +1176,7 @@ class QualificationSnapshot:
         self._validate_identity_closure()
         self._validate_obligation_dag()
 
-    def _validate_identity_closure(self) -> None:  # noqa: C901
+    def _validate_identity_closure(self) -> None:  # noqa: C901, PLR0912, PLR0915
         if len(set(self.builds)) != len(self.builds):
             message = "Qualification Snapshot contains duplicate builds"
             raise ValueError(message)
@@ -1214,19 +1214,52 @@ class QualificationSnapshot:
         ):
             message = "Qualification Snapshot projection output is not planned"
             raise ValueError(message)
+        if any(
+            projection.coordinate.channel != self.channel
+            for projection in self.destination_projections
+        ):
+            message = "Qualification Snapshot projection channel is not closed"
+            raise ValueError(message)
+        if any(
+            projection.coordinate.native_version
+            != self.nbgv.npm_package_version
+            for projection in self.destination_projections
+        ):
+            message = "Qualification Snapshot projection version is not closed"
+            raise ValueError(message)
         action_ids = {action.contract_id for action in self.potential_actions}
         if len(action_ids) != len(self.potential_actions):
             message = (
                 "Qualification Snapshot contains duplicate potential actions"
             )
             raise ValueError(message)
-        if any(
-            action.projection_id not in projection_ids
-            or action.output not in self.outputs
-            for action in self.potential_actions
-        ):
-            message = "Qualification Snapshot potential action is not closed"
+        action_by_id = {
+            action.contract_id: action for action in self.potential_actions
+        }
+        if len(self.destination_projections) != len(self.potential_actions):
+            message = "Qualification Snapshot projection action is not closed"
             raise ValueError(message)
+        for projection in self.destination_projections:
+            action = action_by_id.get(projection.potential_action_id)
+            if (
+                action is None
+                or action.projection_id != projection.projection_id
+                or action.operation != projection.operation
+                or action.output != projection.output
+            ):
+                message = (
+                    "Qualification Snapshot projection action is not closed"
+                )
+                raise ValueError(message)
+            if (
+                action.prerequisites != ()
+                or action.capability_requirements
+                != publication_capability_requirements(projection)
+                or action.mutable_resource_key_basis
+                != publication_mutable_resource_key_basis(projection)
+            ):
+                message = "Qualification Snapshot action policy is not closed"
+                raise ValueError(message)
         if isinstance(self.subject, SimulationBinding) and (
             self.subject.repository_model_digest != self.repository_model_digest
             or self.subject.target != self.target
@@ -1237,6 +1270,25 @@ class QualificationSnapshot:
                 "Qualification Snapshot Simulation Binding is inconsistent"
             )
             raise ValueError(message)
+        if isinstance(self.subject, ReleaseAttemptIdentity):
+            execution = self.subject.execution
+            if isinstance(execution, BuddyExecutionIdentity):
+                consistent = (
+                    execution.target == self.target
+                    and execution.channel == self.channel
+                    and execution.release_unit == self.release_unit
+                )
+            else:
+                consistent = (
+                    execution.target == self.target
+                    and execution.product.channel == self.channel
+                    and execution.product.release_unit == self.release_unit
+                    and execution.product.canonical_version
+                    == self.nbgv.canonical_version
+                )
+            if not consistent:
+                message = "Qualification Snapshot live Attempt is inconsistent"
+                raise ValueError(message)
 
     def _validate_obligation_dag(self) -> None:
         by_id = {
@@ -2298,6 +2350,16 @@ def publication_capability_requirements(
         return ("github/packages-write-v1",)
     message = "Publication Action capability is unsupported in commit 6"
     raise ValueError(message)
+
+
+def publication_mutable_resource_key_basis(
+    projection: DestinationProjection,
+) -> tuple[str, ...]:
+    """Return the exact mutable-key derivation basis for one projection."""
+    publication_capability_requirements(projection)
+    if projection.coordinate.channel == "official":
+        return ("external-package-coordinate",)
+    return ("external-package-coordinate", "npm-dist-tag")
 
 
 def publication_expected_result(projection: DestinationProjection) -> str:

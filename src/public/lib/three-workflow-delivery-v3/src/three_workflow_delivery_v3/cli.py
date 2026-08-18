@@ -1819,6 +1819,13 @@ def _release_bindings(
     )
 
 
+def _qualification_purpose(arguments: argparse.Namespace) -> str:
+    purpose = getattr(arguments, "purpose", "release-simulation")
+    if purpose not in {"release-simulation", "live-release"}:
+        raise ValueError("Release qualification purpose is unsupported")
+    return cast("str", purpose)
+
+
 def _load_release_record(  # noqa: PLR0913
     path: str,
     *,
@@ -1905,13 +1912,13 @@ def _live_model_context(intent: ReleaseIntent) -> CompilationContext:
         producer="compile-live-model",
         control=f"workflow-delivery-v3:{intent.target}",
         catalog_digest=catalog_digest(),
-        channel="buddy",
-        release_unit=intent.release_unit,
     )
 
 
 def _load_release_intent(
     arguments: argparse.Namespace,
+    *,
+    purpose: str = "release-simulation",
 ) -> ReleaseIntent:
     record = _load_release_record(
         arguments.intent,
@@ -1919,7 +1926,7 @@ def _load_release_intent(
         expected_digest=arguments.intent_digest,
         artifact_id=arguments.intent_artifact_id,
         artifact_digest=arguments.intent_artifact_digest,
-        bindings=_release_bindings(arguments),
+        bindings=_release_bindings(arguments, purpose=purpose),
     )
     return cast("ReleaseIntent", record)
 
@@ -2007,7 +2014,10 @@ def _load_qualification_snapshot(
         expected_digest=arguments.qualification_snapshot_digest,
         artifact_id=arguments.qualification_snapshot_artifact_id,
         artifact_digest=arguments.qualification_snapshot_artifact_digest,
-        bindings=_release_bindings(arguments),
+        bindings=_release_bindings(
+            arguments,
+            purpose=_qualification_purpose(arguments),
+        ),
     )
     return cast("QualificationSnapshot", record)
 
@@ -2058,7 +2068,11 @@ def _load_release_artifact_record(
         artifact_digest=(
             artifact_digest or arguments.release_artifact_artifact_digest
         ),
-        bindings=_release_bindings(arguments, producer="build-tarball"),
+        bindings=_release_bindings(
+            arguments,
+            producer="build-tarball",
+            purpose=_qualification_purpose(arguments),
+        ),
     )
     return cast("ReleaseArtifact", record)
 
@@ -2090,7 +2104,10 @@ def _load_qualification_decision(
         expected_digest=arguments.qualification_decision_digest,
         artifact_id=arguments.qualification_decision_artifact_id,
         artifact_digest=arguments.qualification_decision_artifact_digest,
-        bindings=_release_bindings(arguments),
+        bindings=_release_bindings(
+            arguments,
+            purpose=_qualification_purpose(arguments),
+        ),
     )
     return cast("QualificationDecision", record)
 
@@ -2129,7 +2146,10 @@ def _release_normalize_request_command(arguments: argparse.Namespace) -> int:
 
 
 def _release_admit_intent_command(arguments: argparse.Namespace) -> int:
-    _load_release_intent(arguments)
+    _load_release_intent(
+        arguments,
+        purpose=_qualification_purpose(arguments),
+    )
     return 0
 
 
@@ -2482,7 +2502,11 @@ def _optional_evidence(
             arguments,
             f"{prefix.replace('-', '_')}_artifact_digest",
         ),
-        bindings=_release_bindings(arguments, producer=producer),
+        bindings=_release_bindings(
+            arguments,
+            producer=producer,
+            purpose=_qualification_purpose(arguments),
+        ),
     )
     return cast("QualificationEvidence", record)
 
@@ -5028,6 +5052,16 @@ def _add_current_release_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--target", required=True)
 
 
+def _add_qualification_purpose_argument(
+    parser: argparse.ArgumentParser,
+) -> None:
+    parser.add_argument(
+        "--purpose",
+        choices=("release-simulation", "live-release"),
+        default="release-simulation",
+    )
+
+
 def _add_uploaded_record_arguments(
     parser: argparse.ArgumentParser,
     *,
@@ -5241,6 +5275,11 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     normalize_request.set_defaults(handler=_release_normalize_request_command)
 
     admit_intent = release_commands.add_parser("admit-intent")
+    admit_intent.add_argument(
+        "--purpose",
+        choices=("release-simulation", "live-release"),
+        default="release-simulation",
+    )
     _add_current_release_arguments(admit_intent)
     _add_uploaded_record_arguments(admit_intent, name="intent")
     admit_intent.set_defaults(handler=_release_admit_intent_command)
@@ -5297,6 +5336,7 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     run_build = release_commands.add_parser("run-build")
     run_build.add_argument("--repo-root", default=".")
     _add_current_release_arguments(run_build)
+    _add_qualification_purpose_argument(run_build)
     _add_snapshot_arguments(run_build)
     _add_adapter_context_arguments(run_build)
     run_build.add_argument("--tarball-output", required=True)
@@ -5307,6 +5347,7 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
 
     form_artifact = release_commands.add_parser("form-uploaded-artifact")
     _add_current_release_arguments(form_artifact)
+    _add_qualification_purpose_argument(form_artifact)
     _add_snapshot_arguments(form_artifact)
     _add_adapter_context_arguments(form_artifact)
     form_artifact.add_argument("--mechanical-result", required=True)
@@ -5327,6 +5368,7 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     project_test = release_commands.add_parser("run-project-test")
     project_test.add_argument("--repo-root", default=".")
     _add_current_release_arguments(project_test)
+    _add_qualification_purpose_argument(project_test)
     _add_snapshot_arguments(project_test)
     _add_adapter_context_arguments(project_test)
     project_test.add_argument("--output", required=True)
@@ -5335,6 +5377,7 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
 
     artifact_contents = release_commands.add_parser("run-artifact-contents")
     _add_current_release_arguments(artifact_contents)
+    _add_qualification_purpose_argument(artifact_contents)
     _add_snapshot_arguments(artifact_contents)
     _add_adapter_context_arguments(artifact_contents)
     _add_release_artifact_arguments(artifact_contents)
@@ -5345,6 +5388,7 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
 
     install_import = release_commands.add_parser("run-install-import")
     _add_current_release_arguments(install_import)
+    _add_qualification_purpose_argument(install_import)
     _add_snapshot_arguments(install_import)
     _add_adapter_context_arguments(install_import)
     _add_release_artifact_arguments(install_import)
@@ -5357,6 +5401,7 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "form-incomplete-evidence"
     )
     _add_current_release_arguments(incomplete_evidence)
+    _add_qualification_purpose_argument(incomplete_evidence)
     _add_snapshot_arguments(incomplete_evidence)
     incomplete_evidence.add_argument(
         "--obligation-id",
@@ -5384,6 +5429,7 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "finalize-qualification"
     )
     _add_current_release_arguments(finalize_qualification)
+    _add_qualification_purpose_argument(finalize_qualification)
     _add_snapshot_arguments(finalize_qualification)
     _add_optional_evidence_arguments(
         finalize_qualification,

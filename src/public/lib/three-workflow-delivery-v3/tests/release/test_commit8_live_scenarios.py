@@ -33,6 +33,7 @@ from three_workflow_delivery_v3.records.release import (
     publication_expected_result,
     publication_lock_group,
     publication_lock_projection,
+    publication_mutable_resource_key_basis,
     publication_mutable_resource_keys,
     publication_receipt_contract,
     release_artifact_transport_name,
@@ -191,7 +192,41 @@ def _closure(scenario, *, with_action: bool):
         workflow_run_id=scenario.binding.simulation.workflow_run_id,
         run_attempt=scenario.binding.simulation.run_attempt,
     )
-    snapshot = replace(scenario.snapshot, subject=attempt)
+    original = scenario.snapshot.destination_projections[0]
+    coordinate = ExternalPackageCoordinate(
+        channel="buddy",
+        destination_id="npm/github-packages-hcoona-three-v1",
+        package_name="@hcoona/hcoona-release-smoke-npm",
+        native_version=scenario.snapshot.nbgv.npm_package_version,
+    )
+    projection = replace(
+        original,
+        projection_id="projection:npm:github-packages",
+        destination_id=coordinate.destination_id,
+        registry="https://npm.pkg.github.com",
+        coordinate=coordinate,
+        operation="npm-publish-create-only",
+        observation_contract_id="npm/github-packages-observation-v1",
+        potential_action_id="publish-github-packages",
+    )
+    potential_action = replace(
+        scenario.snapshot.potential_actions[0],
+        contract_id=projection.potential_action_id,
+        projection_id=projection.projection_id,
+        operation=projection.operation,
+        output=projection.output,
+        capability_requirements=publication_capability_requirements(projection),
+        mutable_resource_key_basis=publication_mutable_resource_key_basis(
+            projection
+        ),
+    )
+    snapshot = replace(
+        scenario.snapshot,
+        subject=attempt,
+        channel="buddy",
+        destination_projections=(projection,),
+        potential_actions=(potential_action,),
+    )
     decision = replace(
         scenario.decision,
         subject=attempt,
@@ -199,39 +234,13 @@ def _closure(scenario, *, with_action: bool):
     )
     actions: tuple[PublicationAction, ...] = ()
     if with_action:
-        original = snapshot.destination_projections[0]
-        coordinate = ExternalPackageCoordinate(
-            channel="buddy",
-            destination_id="npm/github-packages-hcoona-three-v1",
-            package_name="@hcoona/hcoona-release-smoke-npm",
-            native_version=snapshot.nbgv.npm_package_version,
-        )
-        projection = replace(
-            original,
-            destination_id=coordinate.destination_id,
-            registry="https://npm.pkg.github.com",
-            coordinate=coordinate,
-            operation="npm-publish-create-only",
-            observation_contract_id="npm/github-packages-observation-v1",
-            potential_action_id="publish-github-packages",
-        )
-        snapshot = replace(
-            snapshot,
-            destination_projections=(projection,),
-        )
-        decision = replace(
-            decision,
-            qualification_snapshot_digest=snapshot.snapshot_digest,
-        )
         transport = replace(
             scenario.artifact.transport,
             artifact_name=release_artifact_transport_name(
                 repository=scenario.artifact.repository,
                 purpose="live-release",
                 output=scenario.artifact.output,
-                qualification_snapshot_digest=(
-                    scenario.artifact.qualification_snapshot_digest
-                ),
+                qualification_snapshot_digest=snapshot.snapshot_digest,
                 workflow_run_id=attempt.workflow_run_id,
                 run_attempt=attempt.run_attempt,
                 producer=scenario.artifact.transport.producer,
@@ -240,11 +249,13 @@ def _closure(scenario, *, with_action: bool):
         provenance = scenario.artifact.provenance_document()
         provenance["subject"] = attempt.to_document()
         provenance["purpose"] = "live-release"
+        provenance["qualification-snapshot-digest"] = snapshot.snapshot_digest
         provenance["transport"] = transport.to_document()
         artifact = replace(
             scenario.artifact,
             subject=attempt,
             purpose="live-release",
+            qualification_snapshot_digest=snapshot.snapshot_digest,
             transport=transport,
             provenance_digest=canonical_sha256(provenance),
         )

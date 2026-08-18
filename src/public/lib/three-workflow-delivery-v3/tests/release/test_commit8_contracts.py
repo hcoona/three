@@ -29,7 +29,9 @@ from three_workflow_delivery_v3.records.release import (
     Receipt,
     ReleaseAttemptBinding,
     ReleaseAttemptIdentity,
+    publication_capability_requirements,
     publication_lock_group,
+    publication_mutable_resource_key_basis,
     publication_mutable_resource_keys,
 )
 from three_workflow_delivery_v3.records.release_transport import (
@@ -632,13 +634,45 @@ def _live_noop_closure(scenario):
         workflow_run_id=scenario.binding.simulation.workflow_run_id,
         run_attempt=scenario.binding.simulation.run_attempt,
     )
-    live_snapshot = replace(scenario.snapshot, subject=attempt)
+    original = scenario.snapshot.destination_projections[0]
+    coordinate = ExternalPackageCoordinate(
+        channel="buddy",
+        destination_id="npm/github-packages-hcoona-three-v1",
+        package_name="@hcoona/hcoona-release-smoke-npm",
+        native_version=scenario.snapshot.nbgv.npm_package_version,
+    )
+    projection = replace(
+        original,
+        projection_id="projection:npm:github-packages",
+        destination_id=coordinate.destination_id,
+        registry="https://npm.pkg.github.com",
+        coordinate=coordinate,
+        observation_contract_id="npm/github-packages-observation-v1",
+        potential_action_id="publish-github-packages",
+    )
+    potential_action = replace(
+        scenario.snapshot.potential_actions[0],
+        contract_id=projection.potential_action_id,
+        projection_id=projection.projection_id,
+        operation=projection.operation,
+        output=projection.output,
+        capability_requirements=publication_capability_requirements(projection),
+        mutable_resource_key_basis=publication_mutable_resource_key_basis(
+            projection
+        ),
+    )
+    live_snapshot = replace(
+        scenario.snapshot,
+        subject=attempt,
+        channel="buddy",
+        destination_projections=(projection,),
+        potential_actions=(potential_action,),
+    )
     decision = replace(
         scenario.decision,
         subject=attempt,
         qualification_snapshot_digest=live_snapshot.snapshot_digest,
     )
-    projection = live_snapshot.destination_projections[0]
     publication = PublicationSnapshot(
         attempt=attempt,
         qualification_snapshot_digest=live_snapshot.snapshot_digest,

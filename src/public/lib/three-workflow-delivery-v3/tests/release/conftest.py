@@ -14,10 +14,13 @@ from three_workflow_delivery_v3.records.artifacts import (
     ArtifactTransportIdentity,
 )
 from three_workflow_delivery_v3.records.release import (
+    BuddyExecutionIdentity,
     QualificationDecision,
     QualificationEvidence,
     QualificationSnapshot,
     ReleaseArtifact,
+    ReleaseAttemptBinding,
+    ReleaseAttemptIdentity,
     ReleaseIntent,
     SimulationBinding,
     release_artifact_transport_name,
@@ -28,9 +31,11 @@ from three_workflow_delivery_v3.release.finalizer import (
 from three_workflow_delivery_v3.release.identity import (
     OFFICIAL_SIMULATION_PRODUCER,
     derive_simulation_binding,
+    normalize_buddy_live_intent,
     normalize_official_simulation_intent,
 )
 from three_workflow_delivery_v3.release.planner import (
+    plan_live_qualification,
     plan_official_simulation_qualification,
 )
 from three_workflow_delivery_v3.release.qualification import (
@@ -121,20 +126,23 @@ def intent() -> ReleaseIntent:
 def repository_model(
     intent: ReleaseIntent,
     policy: ReleasePolicy,
+    *,
+    context: CompilationContext | None = None,
 ) -> RepositoryModelSnapshot:
-    """Return the exact ready first-slice simulation Repository Model."""
-    context = CompilationContext(
-        request_id=intent.request_id,
-        purpose="release-simulation",
-        workflow_run_id=RUN_ID,
-        run_attempt=RUN_ATTEMPT,
-        target=TARGET,
-        producer=OFFICIAL_SIMULATION_PRODUCER,
-        control=f"workflow-delivery-v3:{TARGET}",
-        catalog_digest=catalog_digest(),
-        channel="official",
-        release_unit="hcoona-release-smoke-npm",
-    )
+    """Return the exact ready first-slice Repository Model."""
+    if context is None:
+        context = CompilationContext(
+            request_id=intent.request_id,
+            purpose="release-simulation",
+            workflow_run_id=RUN_ID,
+            run_attempt=RUN_ATTEMPT,
+            target=TARGET,
+            producer=OFFICIAL_SIMULATION_PRODUCER,
+            control=f"workflow-delivery-v3:{TARGET}",
+            catalog_digest=catalog_digest(),
+            channel="official",
+            release_unit="hcoona-release-smoke-npm",
+        )
     project = ProjectNode(
         project_id="@hcoona/hcoona-release-smoke-npm",
         package_name="@hcoona/hcoona-release-smoke-npm",
@@ -242,6 +250,102 @@ def qualification_snapshot(
         intent,
         binding,
         admitted_repository_model,
+    )
+
+
+@pytest.fixture
+def live_intent() -> ReleaseIntent:
+    """Return the normalized Buddy live Intent."""
+    return normalize_buddy_live_intent(
+        repository="hcoona/three",
+        selected_ref="refs/heads/feature/release",
+        target=TARGET,
+        actor="release-operator",
+        workflow_run_id=RUN_ID,
+        run_attempt=RUN_ATTEMPT,
+    )
+
+
+@pytest.fixture
+def live_admitted_repository_model(
+    live_intent: ReleaseIntent,
+    policy: ReleasePolicy,
+) -> AdmittedRepositoryModelSnapshot:
+    """Return the admitted live-purpose request-local Repository Model."""
+    context = CompilationContext(
+        request_id=live_intent.request_id,
+        purpose="live-release",
+        workflow_run_id=RUN_ID,
+        run_attempt=RUN_ATTEMPT,
+        target=TARGET,
+        producer="compile-live-model",
+        control=f"workflow-delivery-v3:{TARGET}",
+        catalog_digest=catalog_digest(),
+    )
+    snapshot = repository_model(live_intent, policy, context=context)
+    canonical_bytes = canonicalize(snapshot.to_document())
+    return admit_repository_model_snapshot(
+        canonical_bytes,
+        expected_context=context,
+        expected_digest=snapshot.snapshot_digest,
+    )
+
+
+@pytest.fixture
+def live_attempt_binding(
+    live_intent: ReleaseIntent,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+) -> ReleaseAttemptBinding:
+    """Return an exact Buddy Attempt binding for live qualification."""
+    execution = BuddyExecutionIdentity(
+        channel="buddy",
+        release_unit=live_intent.release_unit,
+        target=live_intent.target,
+    )
+    attempt = ReleaseAttemptIdentity(
+        execution=execution,
+        workflow_run_id=live_intent.workflow_run_id,
+        run_attempt=live_intent.run_attempt,
+    )
+    return ReleaseAttemptBinding(
+        intent_digest=live_intent.intent_digest,
+        request_id=live_intent.request_id,
+        execution=execution,
+        attempt=attempt,
+        repository_model_digest=(
+            live_admitted_repository_model.canonical_digest
+        ),
+        live_eligibility_artifact_id=7001,
+        live_eligibility_artifact_digest=DIGEST_A,
+        live_eligibility_payload_digest=DIGEST_B,
+        attestation_provenance=(
+            ("blob-oid", "governance-blob"),
+            ("content-sha256", DIGEST_A),
+            (
+                "path",
+                ".github/workflow-delivery/governance/"
+                "hcoona-release-smoke-npm.json",
+            ),
+            ("ref", "refs/heads/main"),
+            ("repository", "hcoona/three"),
+            ("resolved-commit", TARGET),
+        ),
+        history_snapshot_artifact_id=7002,
+        history_snapshot_artifact_digest=DIGEST_B,
+    )
+
+
+@pytest.fixture
+def live_qualification_snapshot(
+    live_intent: ReleaseIntent,
+    live_attempt_binding: ReleaseAttemptBinding,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+) -> QualificationSnapshot:
+    """Plan the complete Buddy live qualification Snapshot."""
+    return plan_live_qualification(
+        live_intent,
+        live_attempt_binding,
+        live_admitted_repository_model,
     )
 
 

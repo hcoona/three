@@ -20,10 +20,9 @@ from three_workflow_delivery_v3.records.artifacts import (
 from three_workflow_delivery_v3.records.release import (
     QualificationSnapshot,
     ReleaseArtifact,
+    ReleaseAttemptIdentity,
     SimulationBinding,
-)
-from three_workflow_delivery_v3.records.release_transport import (
-    simulation_identity_from_document,
+    SimulationIdentity,
 )
 from three_workflow_delivery_v3.release.qualification import (
     MechanicalBuildResult,
@@ -48,6 +47,22 @@ _FILES_ALLOWLIST = (
 )
 
 
+def _subject(
+    snapshot: QualificationSnapshot,
+) -> SimulationIdentity | ReleaseAttemptIdentity:
+    if isinstance(snapshot.subject, SimulationBinding):
+        return snapshot.subject.simulation
+    return snapshot.subject
+
+
+def _purpose(subject: SimulationIdentity | ReleaseAttemptIdentity) -> str:
+    return (
+        "release-simulation"
+        if isinstance(subject, SimulationIdentity)
+        else "live-release"
+    )
+
+
 def form_release_adapter_context(  # noqa: PLR0913
     snapshot: QualificationSnapshot,
     repository_model: AdmittedRepositoryModelSnapshot,
@@ -58,20 +73,22 @@ def form_release_adapter_context(  # noqa: PLR0913
     npm_version: str,
 ) -> ReleaseAdapterContext:
     """Freeze the exact Node Adapter inputs selected by the Release Plan."""
-    if not isinstance(snapshot.subject, SimulationBinding):
-        message = "Release Adapter context requires simulation Snapshot"
-        raise TypeError(message)
+    subject = _subject(snapshot)
+    purpose = _purpose(subject)
     model = repository_model.snapshot
     if (
         repository_model.canonical_digest != snapshot.repository_model_digest
         or model.context.target != snapshot.target
+        or model.context.purpose != purpose
+        or model.context.workflow_run_id != subject.workflow_run_id
+        or model.context.run_attempt != subject.run_attempt
     ):
         message = "Release Adapter context model binding mismatch"
         raise ValueError(message)
     control_digest = canonical_sha256(
         {
             "schema": "workflow-delivery/v3/control-identity",
-            "identity": snapshot.subject.control,
+            "identity": model.context.control,
         }
     )
     witness = PackageTargetWitness(
@@ -81,7 +98,7 @@ def form_release_adapter_context(  # noqa: PLR0913
         build_definition=snapshot.build_requests[0].build.definition_id,
         catalog_digest=model.context.catalog_digest,
         control_digest=control_digest,
-        purpose="release-simulation",
+        purpose=purpose,
     )
     if (
         canonical_sha256(witness.to_document())
@@ -90,7 +107,7 @@ def form_release_adapter_context(  # noqa: PLR0913
         message = "Release Adapter context witness does not match Plan"
         raise ValueError(message)
     return ReleaseAdapterContext(
-        simulation=snapshot.subject.simulation,
+        subject=subject,
         qualification_snapshot_digest=snapshot.snapshot_digest,
         repository_model_digest=snapshot.repository_model_digest,
         project_path=model.project_nodes[0].path,
@@ -222,13 +239,14 @@ def mechanical_build_from_bytes(
     if document["schema"] != MECHANICAL_BUILD_RESULT_SCHEMA:
         message = "Mechanical Build Result schema mismatch"
         raise ValueError(message)
-    if not isinstance(snapshot.subject, SimulationBinding):
-        message = "Mechanical Build Result requires simulation Snapshot"
-        raise TypeError(message)
+    expected_subject = _subject(snapshot)
     subject_document = _object(document["subject"], field="subject")
     output_document = _object(document["output"], field="output")
     content_document = _object(document["content"], field="content")
-    subject = simulation_identity_from_document(subject_document)
+    if subject_document != expected_subject.to_document():
+        message = "Mechanical Build Result subject binding mismatch"
+        raise ValueError(message)
+    subject = expected_subject
     if output_document != snapshot.outputs[0].to_document():
         message = "Mechanical Build Result output binding mismatch"
         raise ValueError(message)
@@ -309,12 +327,16 @@ def mechanical_build_from_bytes(
         message = "Mechanical Build Result is not normalized"
         raise ValueError(message)
     if (
-        subject != snapshot.subject.simulation
+        subject != expected_subject
+        or mechanics.repository != snapshot.repository
         or mechanics.qualification_snapshot_digest != snapshot.snapshot_digest
         or mechanics.repository_model_digest != snapshot.repository_model_digest
         or mechanics.target != snapshot.target
+        or mechanics.purpose != _purpose(expected_subject)
+        or mechanics.output != snapshot.outputs[0]
         or mechanics.build_request_digest
         != snapshot.build_requests[0].request_digest
+        or mechanics.witness_digest != snapshot.build_requests[0].witness_digest
     ):
         message = "Mechanical Build Result does not match current Snapshot"
         raise ValueError(message)
@@ -325,16 +347,15 @@ def _validate_context(
     snapshot: QualificationSnapshot,
     context: ReleaseAdapterContext,
 ) -> None:
-    if not isinstance(snapshot.subject, SimulationBinding):
-        message = "Release workflow mechanics require simulation Snapshot"
-        raise TypeError(message)
+    subject = _subject(snapshot)
     if (
-        context.simulation != snapshot.subject.simulation
+        context.subject != subject
         or context.qualification_snapshot_digest != snapshot.snapshot_digest
         or context.repository_model_digest != snapshot.repository_model_digest
         or context.witness.target != snapshot.target
         or context.witness.release_unit != snapshot.release_unit
         or context.witness.nbgv != snapshot.nbgv
+        or context.witness.purpose != _purpose(subject)
         or canonical_sha256(context.witness.to_document())
         != snapshot.build_requests[0].witness_digest
     ):

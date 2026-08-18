@@ -476,7 +476,9 @@ def _verify_toolchain(
     node_version = _run(("node", "--version"), request.source_root, environment)
     pnpm_version = _run(("pnpm", "--version"), request.source_root, environment)
     npm_version = _run(("npm", "--version"), request.source_root, environment)
-    if node_version.stdout.strip().removeprefix("v") != request.node_version:
+    if _canonical_node_version(
+        node_version.stdout.strip()
+    ) != _canonical_node_version(request.node_version):
         message = "runtime Node version differs from frozen Build Request"
         raise ValueError(message)
     if pnpm_version.stdout.strip() != request.pnpm_version:
@@ -493,13 +495,20 @@ def _verify_quality_toolchain(
     environment: Mapping[str, str],
 ) -> None:
     node_version = _run(("node", "--version"), cwd, environment)
-    if node_version.stdout.strip() != request.node_version:
+    if _canonical_node_version(
+        node_version.stdout.strip()
+    ) != _canonical_node_version(request.node_version):
         message = "runtime Node version differs from frozen Runtime Request"
         raise ValueError(message)
     npm_version = _run(("npm", "--version"), cwd, environment)
     if npm_version.stdout.strip() != request.npm_version:
         message = "runtime npm version differs from frozen Runtime Request"
         raise ValueError(message)
+
+
+def _canonical_node_version(value: str) -> str:
+    """Normalize Node's optional CLI-only leading version marker."""
+    return value.removeprefix("v")
 
 
 def _capture_input_sources(

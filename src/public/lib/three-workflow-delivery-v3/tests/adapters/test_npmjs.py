@@ -982,20 +982,14 @@ def test_npmjs_observer_does_not_fetch_after_failed_qualification(
     assert transport.requests == []
 
 
-@pytest.mark.parametrize(
-    ("field", "value"),
-    [
-        ("package_name", "@hcoona/other"),
-        ("native_version", "9.9.9"),
-    ],
-)
 def test_npmjs_observer_rejects_wrong_coordinate_before_network(
     qualified_simulation: QualifiedSimulation,
-    field: str,
-    value: str,
 ) -> None:
     projection = qualified_simulation.snapshot.destination_projections[0]
-    coordinate = replace(projection.coordinate, **{field: value})
+    coordinate = replace(
+        projection.coordinate,
+        package_name="@hcoona/other",
+    )
     snapshot = replace(
         qualified_simulation.snapshot,
         destination_projections=(replace(projection, coordinate=coordinate),),
@@ -1012,6 +1006,27 @@ def test_npmjs_observer_rejects_wrong_coordinate_before_network(
         )
 
     assert transport.requests == []
+
+
+def test_qualification_snapshot_rejects_wrong_native_version(
+    qualified_simulation: QualifiedSimulation,
+) -> None:
+    projection = qualified_simulation.snapshot.destination_projections[0]
+    coordinate = replace(
+        projection.coordinate,
+        native_version="9.9.9",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Qualification Snapshot projection version is not closed",
+    ):
+        replace(
+            qualified_simulation.snapshot,
+            destination_projections=(
+                replace(projection, coordinate=coordinate),
+            ),
+        )
 
 
 @pytest.mark.parametrize(

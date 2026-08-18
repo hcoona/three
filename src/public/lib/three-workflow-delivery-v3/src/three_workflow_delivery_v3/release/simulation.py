@@ -1,4 +1,4 @@
-"""Commit-7 simulation Adapter context and transport records."""
+"""Release Adapter context and commit-7 simulation transport records."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from three_workflow_delivery_v3.records.release import (
     ProjectionObservation,
     QualificationDecision,
     QualificationSnapshot,
+    ReleaseAttemptIdentity,
     SimulationBinding,
     SimulationIdentity,
 )
@@ -105,7 +106,7 @@ def _require_exact_producer(
 class ReleaseAdapterContext:
     """Frozen Node execution context emitted with a Qualification Snapshot."""
 
-    simulation: SimulationIdentity
+    subject: SimulationIdentity | ReleaseAttemptIdentity
     qualification_snapshot_digest: str
     repository_model_digest: str
     project_path: str
@@ -116,9 +117,12 @@ class ReleaseAdapterContext:
     witness: PackageTargetWitness
 
     def __post_init__(self) -> None:
-        """Reject context facts outside the current simulation."""
-        if type(self.simulation) is not SimulationIdentity:
-            message = "Release Adapter context requires SimulationIdentity"
+        """Reject context facts outside the current qualification subject."""
+        if type(self.subject) not in {
+            SimulationIdentity,
+            ReleaseAttemptIdentity,
+        }:
+            message = "Release Adapter context subject has the wrong type"
             raise TypeError(message)
         for field, value in (
             (
@@ -143,7 +147,12 @@ class ReleaseAdapterContext:
         _string(self.pnpm_version, field="adapter context.pnpm_version")
         _string(self.npm_version, field="adapter context.npm_version")
         validate_package_target_witness(self.witness)
-        if self.witness.purpose != "release-simulation":
+        expected_purpose = (
+            "release-simulation"
+            if isinstance(self.subject, SimulationIdentity)
+            else "live-release"
+        )
+        if self.witness.purpose != expected_purpose:
             message = "Release Adapter context witness is cross-purpose"
             raise ValueError(message)
 
@@ -151,7 +160,7 @@ class ReleaseAdapterContext:
         """Return the closed canonical Adapter context."""
         return {
             "schema": RELEASE_ADAPTER_CONTEXT_SCHEMA,
-            "simulation": self.simulation.to_document(),
+            "subject": self.subject.to_document(),
             "qualification-snapshot-digest": (
                 self.qualification_snapshot_digest
             ),
@@ -409,7 +418,7 @@ def release_adapter_context_from_bytes(
         schema=RELEASE_ADAPTER_CONTEXT_SCHEMA,
         fields=frozenset(
             {
-                "simulation",
+                "subject",
                 "qualification-snapshot-digest",
                 "repository-model-digest",
                 "project-path",
@@ -419,10 +428,18 @@ def release_adapter_context_from_bytes(
             }
         ),
     )
-    simulation_document = document["simulation"]
-    if not isinstance(simulation_document, dict):
-        message = "Release Adapter context simulation must be an object"
+    subject_document = document["subject"]
+    if not isinstance(subject_document, dict):
+        message = "Release Adapter context subject must be an object"
         raise TypeError(message)
+    expected_subject = (
+        snapshot.subject.simulation
+        if isinstance(snapshot.subject, SimulationBinding)
+        else snapshot.subject
+    )
+    if subject_document != expected_subject.to_document():
+        message = "Release Adapter context subject does not match Snapshot"
+        raise ValueError(message)
     toolchain = _closed(
         document["toolchain"],
         field="Release Adapter context toolchain",
@@ -433,7 +450,7 @@ def release_adapter_context_from_bytes(
         message = "Release Adapter context witness must be an object"
         raise TypeError(message)
     context = ReleaseAdapterContext(
-        simulation=simulation_identity_from_document(simulation_document),
+        subject=expected_subject,
         qualification_snapshot_digest=_string(
             document["qualification-snapshot-digest"],
             field="adapter context.snapshot",
@@ -458,17 +475,19 @@ def release_adapter_context_from_bytes(
     if context.context_digest != expected_digest:
         message = "Release Adapter context canonical digest mismatch"
         raise ValueError(message)
-    if not isinstance(snapshot.subject, SimulationBinding):
-        message = "Release Adapter context requires simulation Snapshot"
-        raise TypeError(message)
     if (
-        context.simulation != snapshot.subject.simulation
+        context.subject != expected_subject
         or context.qualification_snapshot_digest != snapshot.snapshot_digest
         or context.repository_model_digest != snapshot.repository_model_digest
         or context.witness.target != snapshot.target
         or context.witness.release_unit != snapshot.release_unit
         or context.witness.nbgv != snapshot.nbgv
-        or context.witness.purpose != snapshot.subject.purpose
+        or context.witness.purpose
+        != (
+            "release-simulation"
+            if isinstance(expected_subject, SimulationIdentity)
+            else "live-release"
+        )
         or canonical_sha256(context.witness.to_document())
         != snapshot.build_requests[0].witness_digest
     ):

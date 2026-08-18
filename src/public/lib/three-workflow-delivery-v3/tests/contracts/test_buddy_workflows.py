@@ -304,6 +304,86 @@ def test_live_attempt_dag_environments_and_capability_gate_are_exact() -> None:
     }
 
 
+def test_shared_qualification_commands_admit_live_purpose_explicitly() -> None:
+    jobs = _document(CALLEE)["jobs"]
+    commands = (
+        ("build-tarball", "Build tarball"),
+        (
+            "build-tarball",
+            "Form Release Artifact and build Evidence after upload",
+        ),
+        ("project-test", "Run project-test mechanics"),
+        ("npm-artifact-qualification", "Run artifact-contents mechanics"),
+        ("npm-artifact-qualification", "Run install-import mechanics"),
+        ("qualification-finalizer", "Close qualification Decision"),
+    )
+
+    for job_name, step_name in commands:
+        run = _run(_step(jobs[job_name], step_name))
+        assert '--purpose "${WDV3_PURPOSE}"' in run
+        assert run.count('--purpose "${WDV3_PURPOSE}"') == 1
+
+
+def test_live_compiler_and_qualification_toolchains_are_exact() -> None:
+    caller_jobs = _document(CALLER)["jobs"]
+    callee_jobs = _document(CALLEE)["jobs"]
+    compiler = _run(
+        _step(
+            caller_jobs["discover-node"],
+            "Run Node Provider once",
+        )
+    )
+    intent_admission = _run(
+        _step(
+            caller_jobs["discover-node"],
+            "Admit current Release Intent",
+        )
+    )
+
+    assert '--purpose "${WDV3_PURPOSE}"' in intent_admission
+    assert "--compiler-producer compile-live-model" in compiler
+    assert "--compiler-producer compile-model" not in compiler
+    for job_name in (
+        "plan-qualification",
+        "npm-artifact-qualification",
+        "publish-github-packages",
+    ):
+        mise_steps = [
+            step
+            for step in _steps(callee_jobs[job_name])
+            if step.get("uses") == MISE
+        ]
+        assert len(mise_steps) == 1
+        assert mise_steps[0]["with"] == {
+            "experimental": True,
+            "install": True,
+        }
+        if job_name == "publish-github-packages":
+            steps = _steps(callee_jobs[job_name])
+            assert steps.index(mise_steps[0]) < steps.index(
+                _step(
+                    callee_jobs[job_name],
+                    "Preflight publication without npm mutation",
+                )
+            )
+
+
+def test_live_build_uses_the_planned_tarball_artifact_name() -> None:
+    jobs = _document(CALLEE)["jobs"]
+    plan = jobs["plan-qualification"]
+    build = jobs["build-tarball"]
+
+    assert plan["outputs"]["tarball-artifact-name"] == (
+        "${{ steps.plan.outputs.tarball-artifact-name }}"
+    )
+    assert build["outputs"]["tarball-artifact-name"] == (
+        "${{ needs.plan-qualification.outputs.tarball-artifact-name }}"
+    )
+    assert _step(build, "Build tarball")["env"]["TARBALL_NAME"] == (
+        "${{ needs.plan-qualification.outputs.tarball-artifact-name }}"
+    )
+
+
 def test_approval_uses_anonymous_exact_sha_fetch_and_no_artifact_credentials() -> (
     None
 ):

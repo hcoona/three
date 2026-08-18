@@ -654,6 +654,69 @@ def test_build_rejects_runtime_toolchain_mismatch(
         )
 
 
+@pytest.mark.parametrize(
+    ("frozen_node", "reported_node"),
+    [
+        ("24.14.0", "v24.14.0"),
+        ("24.14.0", "24.14.0"),
+        ("v24.14.0", "v24.14.0"),
+        ("v24.14.0", "24.14.0"),
+    ],
+    ids=[
+        "plain-to-cli-prefixed",
+        "plain-to-plain",
+        "cli-prefixed-to-cli-prefixed",
+        "cli-prefixed-to-plain",
+    ],
+)
+@pytest.mark.parametrize(
+    "verification",
+    ["build", "quality"],
+    ids=["build", "quality"],
+)
+def test_node_runtime_version_accepts_only_the_optional_cli_prefix(
+    build_request: BuildRequest,
+    monkeypatch: pytest.MonkeyPatch,
+    frozen_node: str,
+    reported_node: str,
+    verification: str,
+) -> None:
+    """Treat Node's CLI marker consistently without normalizing npm or PNPM."""
+
+    def report_version(
+        command: tuple[str, ...],
+        _cwd: Path,
+        _environment: dict[str, str],
+    ) -> subprocess.CompletedProcess[str]:
+        versions: dict[tuple[str, ...], str] = {
+            ("node", "--version"): reported_node,
+            ("pnpm", "--version"): build_request.pnpm_version,
+            ("npm", "--version"): build_request.npm_version,
+        }
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            f"{versions[command]}\n",
+            "",
+        )
+
+    monkeypatch.setattr(node_adapter, "_run", report_version)
+    if verification == "build":
+        node_adapter._verify_toolchain(  # noqa: SLF001
+            replace(build_request, node_version=frozen_node),
+            {},
+        )
+        return
+    node_adapter._verify_quality_toolchain(  # noqa: SLF001
+        _make_runtime_request(
+            node_version=frozen_node,
+            npm_version=build_request.npm_version,
+        ),
+        PROJECT_ROOT,
+        {},
+    )
+
+
 def test_adapter_identity_is_pinned_and_not_request_forgeable(
     build_request: BuildRequest,
     built_result: node_adapter.BuildResult,
@@ -3306,7 +3369,7 @@ def test_subprocess_sequence_is_complete_and_forbids_nbgv_or_restoration_command
         npm_version="11.4.2",
     )
     runtime_request = _make_runtime_request(
-        node_version="v24.4.1",
+        node_version="24.4.1",
         npm_version="11.4.2",
     )
     observed_commands: list[tuple[str, ...]] = []

@@ -26,6 +26,8 @@ from three_workflow_delivery_v3.records.release import (
     ReleaseOutputIdentity,
     ReleaseAttemptBinding,
     SimulationBinding,
+    publication_capability_requirements,
+    publication_mutable_resource_key_basis,
 )
 from three_workflow_delivery_v3.repository.compiler import (
     AdmittedRepositoryModelSnapshot,
@@ -139,7 +141,7 @@ def _obligation(  # noqa: PLR0913
     )
 
 
-def _validate_inputs(
+def _validate_inputs(  # noqa: PLR0912
     intent: ReleaseIntent,
     binding: SimulationBinding | ReleaseAttemptBinding,
     admitted_repository_model: AdmittedRepositoryModelSnapshot,
@@ -162,11 +164,13 @@ def _validate_inputs(
         binding_request = binding.request_id
         binding_run_id = binding.attempt.workflow_run_id
         binding_run_attempt = binding.attempt.run_attempt
-        binding_control = snapshot.context.control
+        binding_control = f"workflow-delivery-v3:{intent.target}"
         if (
             intent.channel != "buddy"
             or intent.mode != "live"
             or intent.purpose != "live-release"
+            or binding_channel != intent.channel
+            or binding_unit != intent.release_unit
         ):
             raise ValueError("Release Planner live binding mismatch")
     else:
@@ -190,9 +194,8 @@ def _validate_inputs(
             binding.repository_model_digest,
             admitted_repository_model.canonical_digest,
         ),
+        ("purpose", snapshot.context.purpose, intent.purpose),
         ("target", binding_target, snapshot.context.target),
-        ("channel", binding_channel, snapshot.context.channel),
-        ("Release Unit", binding_unit, snapshot.context.release_unit),
         ("control", binding_control, snapshot.context.control),
         ("request", binding_request, snapshot.context.request_id),
         (
@@ -206,6 +209,11 @@ def _validate_inputs(
             snapshot.context.run_attempt,
         ),
     )
+    if not live:
+        checks += (
+            ("channel", binding_channel, snapshot.context.channel),
+            ("Release Unit", binding_unit, snapshot.context.release_unit),
+        )
     for field, actual, expected in checks:
         if actual != expected:
             message = f"Release Planner {field} binding mismatch"
@@ -356,8 +364,10 @@ def _plan_qualification(
         operation=projection.operation,
         output=output,
         prerequisites=(),
-        capability_requirements=destination.capability_requirements,
-        mutable_resource_key_basis=("external-package-coordinate",),
+        capability_requirements=publication_capability_requirements(projection),
+        mutable_resource_key_basis=publication_mutable_resource_key_basis(
+            projection
+        ),
     )
 
     snapshot_basis_digest = canonical_sha256(

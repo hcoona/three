@@ -25,7 +25,6 @@ from three_workflow_delivery_v3.records.release import (
     SimulationOutcome,
     publication_action_inputs,
     publication_capability_group,
-    publication_capability_requirements,
     publication_expected_result,
     publication_lock_group,
     publication_lock_projection,
@@ -189,10 +188,15 @@ def finalize_qualification(  # noqa: C901, PLR0912, PLR0915
         or evidence_artifact_digests == artifact_by_digest.keys()
     )
     outcomes = tuple(disposition.outcome for disposition in dispositions)
+    incomplete_next_action = (
+        "rerun-simulation"
+        if isinstance(snapshot.subject, SimulationBinding)
+        else "new-attempt"
+    )
     if not evidence_artifact_bindings_complete:
         terminal_result = "incomplete"
         failure_class = "incomplete-qualification"
-        next_action = "rerun-simulation"
+        next_action = incomplete_next_action
     elif "failed" in outcomes:
         terminal_result = "failure"
         failure_class = "quality-failure"
@@ -205,7 +209,7 @@ def finalize_qualification(  # noqa: C901, PLR0912, PLR0915
     ):
         terminal_result = "incomplete"
         failure_class = "incomplete-qualification"
-        next_action = "rerun-simulation"
+        next_action = incomplete_next_action
     elif all(outcome == "satisfied" for outcome in outcomes):
         terminal_result = "success"
         failure_class = "none"
@@ -589,7 +593,7 @@ def _materialize_publication_action(
         lock_projection=publication_lock_projection(projection),
         lock_group=publication_lock_group(projection),
         capability_group=publication_capability_group(projection),
-        capability_requirements=publication_capability_requirements(projection),
+        capability_requirements=potential.capability_requirements,
         expected_result=publication_expected_result(projection),
         receipt_contract=publication_receipt_contract(projection),
     )
