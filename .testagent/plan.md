@@ -2727,3 +2727,462 @@ phase.
 3. Check every exact retired matrix test node ID across the complete row set.
 4. Re-run collect-only, narrow expected-red pytest, and Ruff validation.
 <!-- END APPEND: commit11-calibration-mixed-node-correction-2026-08-15 -->
+<!-- BEGIN APPEND: current-2026-08-17-bounded-regression-plan -->
+
+# Test Implementation Plan
+
+## Overview
+
+Use a targeted three-phase regression strategy. Coverage is partial for the two
+Python findings and substantial-but-missing-one-assertion for the workflow
+finding. Add tests only to the existing canonical pytest modules:
+
+- `src/public/lib/three-workflow-delivery-v3/tests/platform/test_github.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+
+The repeated `github.py` target is partitioned by symbol: Phase 1 owns
+`read_blob`; Phase 2 owns `_open`/`_request` only as needed by
+`download_artifact`. Phase 3 owns the caller/callee YAML contract. Guard suites
+for CLI forwarding and history admission are validation-only and must not be
+edited unless a newly discovered, in-scope test gap requires it.
+
+No phase may change live adapter context, Node selection, the package-owner
+endpoint, artifact raw-mode/name/ID semantics, concurrency, or history
+admission semantics.
+
+## Commands
+
+Run from the repository root.
+
+- **Build**:
+  `uv build --package three-workflow-delivery-v3`
+- **Direct tests**:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/platform/test_github.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+- **Package tests**:
+  `python eng/scripts/hk_exec.py --timeout-seconds 720 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests`
+- **Workspace tests**:
+  `uv run --python 3.13 pytest -q`
+- **Collection check**:
+  `uv run --python 3.13 pytest --collect-only -q`
+- **Lint**:
+  `uv run --python 3.13 ruff check --force-exclude -- src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/platform/github.py src/public/lib/three-workflow-delivery-v3/tests/platform/test_github.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+- **Format check**:
+  `uv run --python 3.13 ruff format --check --force-exclude -- src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/platform/github.py src/public/lib/three-workflow-delivery-v3/tests/platform/test_github.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+
+## Phase Summary
+
+| Phase | Focus | Source surfaces | Planned pytest additions |
+|---|---|---:|---:|
+| 1 | Strict Base64 after CR/LF-only unwrapping | `github.py::read_blob` | 1 success matrix plus 1 malformed matrix/boundary group |
+| 2 | One credential-free artifact 302 follow | `github.py::_open`, `_request`, `download_artifact` | 7 focused tests/groups |
+| 3 | Caller-path history lookup through reusable callee | Both Buddy workflow YAML files | 1 composed contract regression |
+
+---
+
+## Phase 1: GitHub Contents CR/LF-Unwrapped Strict Base64
+
+### Overview
+
+First pin the leaf-level JSON decoding behavior. The tests must distinguish
+GitHub-permitted line wrapping from all other whitespace and malformed Base64.
+They should use the existing injected-response pattern and make no network
+request.
+
+### Files to Test
+
+#### `github.py::GitHubRestClient.read_blob`
+
+- **Source**:
+  `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/platform/github.py`
+- **Test File**:
+  `src/public/lib/three-workflow-delivery-v3/tests/platform/test_github.py`
+- **Test Module**: module-level pytest tests; retain the existing style
+
+**Proposed tests**
+
+1. `test_read_blob_accepts_cr_lf_wrapped_base64`
+   - Parameter IDs: `cr`, `lf`, `crlf`.
+   - Build a GitHub-shaped JSON response containing:
+     - a fixed 40-character `sha`;
+     - `encoding: "base64"`;
+     - the Base64 encoding of fixed nontrivial bytes such as
+       `b"policy\nbytes\x00"`, split at a fixed interior point with the selected
+       line separator.
+   - Assert the returned `GovernanceBlob` has exactly the supplied OID and
+     original bytes.
+   - Include CR/LF at more than one wrap point in at least one case so the test
+     does not merely permit a trailing newline.
+
+2. Extend the canonical parameterized malformed-contents test (or add
+   `test_read_blob_rejects_non_cr_lf_or_malformed_base64` if extension would
+   obscure it).
+   - Named cases:
+     - `invalid-alphabet`: an interior `*`;
+     - `space`: otherwise-valid content with an interior ASCII space;
+     - `tab`: otherwise-valid content with an interior tab;
+     - `missing-padding`: e.g. `Zg=`;
+     - `excess-padding`: e.g. `Zg===`.
+   - Include a malformed case also containing CRLF, proving removal of CR/LF
+     does not relax alphabet or padding validation.
+   - Every case must raise `GitHubRestError`, not leak `binascii.Error`,
+     `ValueError`, or another implementation exception.
+
+3. Keep malformed JSON and wrong/missing protocol fields in the same canonical
+   failure group.
+   - Preserve the existing malformed-JSON and non-`base64` encoding cases.
+   - Add a non-string `content` case only if it is not already covered.
+   - Assert the stable `GitHubRestError` boundary rather than overfitting the
+     complete message.
+
+### Smallest Permitted Production Change
+
+In `read_blob`, remove literal `"\r"` and `"\n"` characters from the JSON
+`content` immediately before the existing strict
+`base64.b64decode(..., validate=True)` call. Do not use `strip`, generic
+whitespace removal, `split`, or `validate=False`. Preserve the current
+`GitHubRestError` translation. Do not introduce a separate validator unless
+the explicit excess-padding regression proves the strict decoder insufficient;
+if it does, add only a local canonical-padding check.
+
+### Sequential Implementation
+
+1. **Step 1 — Add and run the Phase 1 regressions first.** Confirm the wrapped
+   success matrix fails for the expected reason while existing malformed cases
+   remain fail-closed.
+2. **Step 2 — Apply only the CR/LF normalization above**, then rerun the exact
+   Phase 1 nodes and the full platform module.
+
+### Narrow Validation
+
+```text
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q \
+  src/public/lib/three-workflow-delivery-v3/tests/platform/test_github.py::test_read_blob_accepts_cr_lf_wrapped_base64 \
+  src/public/lib/three-workflow-delivery-v3/tests/platform/test_github.py::test_read_blob_rejects_non_cr_lf_or_malformed_base64
+
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q \
+  src/public/lib/three-workflow-delivery-v3/tests/platform/test_github.py
+```
+
+### Success Criteria
+
+- [ ] CR, LF, and CRLF-wrapped GitHub Contents payloads decode exactly.
+- [ ] Spaces, tabs, invalid alphabet, and malformed/excess padding fail.
+- [ ] All malformed payloads remain behind `GitHubRestError`.
+- [ ] No behavior outside `read_blob` changes.
+
+---
+
+## Phase 2: One Credential-Stripped Artifact Archive Redirect
+
+### Overview
+
+Exercise the real `_open` path by monkeypatching
+`urllib.request.build_opener`; do not use the constructor's byte-returning
+callback for these tests. The sole new transport allowance is one initial
+artifact-archive `302` from the authenticated GitHub API URL to one absolute,
+off-origin HTTPS URL. The second request must be freshly constructed without
+credentials, and no third request is allowed.
+
+### Files to Test
+
+#### `github.py::_open`, `_request`, and `download_artifact`
+
+- **Source**:
+  `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/platform/github.py`
+- **Test File**:
+  `src/public/lib/three-workflow-delivery-v3/tests/platform/test_github.py`
+- **Test Module**: module-level pytest tests
+
+Keep any sequenced recording opener, context-managed byte response, redirect
+error factory, and single-member ZIP builder local to this test module. Reuse
+the existing `Message`/`HTTPError`/`BytesIO` conventions.
+
+**Proposed tests**
+
+1. `test_download_artifact_follows_one_off_origin_https_302_without_credentials`
+   - Configure a sentinel token that is easy to search in headers and a
+     non-default timeout such as `7.25`.
+   - First opener call:
+     `https://api.github.com/repos/octo/example/actions/artifacts/17/zip`;
+     raise `HTTPError(302)` with
+     `Location: https://objects.example.invalid/signed/archive.zip?...`.
+   - Second opener call returns a valid ZIP containing exactly one member,
+     `history.json`, with fixed bytes such as `b'{"runs":[]}'`.
+   - Assert:
+     - exactly two opener calls;
+     - the first request contains the normal `Authorization` header and token;
+     - the second request has no `Authorization` header;
+     - neither any second-request header name nor value contains the sentinel
+       token/credential;
+     - both calls receive timeout `7.25`;
+     - the returned artifact bytes equal the one member's bytes exactly.
+
+2. `test_download_artifact_rejects_unsafe_or_non_off_origin_location_before_follow_up`
+   - Parameterize `http://...`, `ftp://...`, a scheme-relative URL, a relative
+     URL, and an `https://api.github.com/...` same-origin target.
+   - The initial response is `302` with that `Location`.
+   - Assert `GitHubRestError` and exactly one opener call for every case.
+
+3. `test_list_runs_does_not_use_the_artifact_redirect_exception`
+   - Make a normal JSON API operation such as `list_runs` receive an
+     off-origin HTTPS `302`.
+   - Assert `GitHubRestError`, one opener call, and no request to the location.
+   - This is the generic-policy guard; do not test the exception through a
+     generic `_request` call alone.
+
+4. `test_download_artifact_rejects_non_302_initial_redirect`
+   - Parameterize `301`, `303`, `307`, and `308`, each with an otherwise valid
+     off-origin HTTPS location.
+   - Assert `GitHubRestError` and one opener call.
+
+5. `test_download_artifact_rejects_any_redirect_from_the_blob_without_a_third_request`
+   - The first API response is the permitted `302`.
+   - Parameterize a second redirect back to the API origin, to the same blob
+     URL, and to another HTTPS blob URL; cover `302` and at least one other 3xx
+     status.
+   - Assert exactly two calls, no credentials on call two, `GitHubRestError`,
+     and no third call. This pins the cycle/limit and extra-hop behavior.
+
+6. `test_download_artifact_rejects_302_without_location`
+   - Raise an initial `302` with no `Location`.
+   - Assert `GitHubRestError` and one opener call.
+
+7. Add two focused preservation groups:
+   - `test_download_artifact_redirect_preserves_http_and_network_errors`
+     parameterizes an initial non-redirect HTTP error, a blob HTTP error, and
+     an `OSError` at each call stage. Assert `GitHubRestError`, retained HTTP
+     status where applicable, and stage-appropriate call counts.
+   - `test_download_artifact_redirect_preserves_archive_validation`
+     parameterizes malformed ZIP bytes, an empty ZIP, and a multi-member ZIP
+     returned after the permitted redirect. Assert `GitHubRestError`; the
+     one-member success is covered by test 1.
+
+The full existing platform module remains the canonical guard for positive
+timeout validation and all pre-existing HTTP/protocol cases. The exact payload
+assertion and timeout assertions above ensure the redirect branch neither
+truncates output nor drops timeout forwarding. Do not add an artificial
+response-byte cap: research found none in this client.
+
+### Smallest Permitted Production Change
+
+Add a private, default-off artifact-redirect mode through only the minimum
+`download_artifact` → `_request` → `_open` call chain.
+
+When that mode is active:
+
+1. Validate and issue the original GitHub API request exactly as today, with
+   authentication.
+2. Permit only an initial `302` with a present, absolute URL whose scheme is
+   exactly HTTPS and whose origin differs from `api.github.com`.
+3. Build a fresh second `urllib.request.Request`; do not copy the first
+   request's headers. Carry no `Authorization` header and no token-bearing
+   header.
+4. Issue that request once with the same timeout.
+5. Treat every redirect from the second request as an error without recursion
+   or a third open.
+
+The default mode must retain generic fail-closed URL validation. Preserve
+existing exception translation, ZIP cardinality, artifact identity/raw
+semantics, and timeout behavior. Do not add host allowlists, response limits,
+retry behavior, or a general redirect policy.
+
+### Sequential Implementation
+
+3. **Step 3 — Add all Phase 2 tests against the unchanged client.** Verify the
+   valid off-origin artifact case fails while generic and unsafe cases already
+   remain closed.
+4. **Step 4 — Add the private artifact-only redirect path**, then run the
+   redirect node group followed by all of `test_github.py`.
+
+### Narrow Validation
+
+```text
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q \
+  src/public/lib/three-workflow-delivery-v3/tests/platform/test_github.py \
+  -k "download_artifact or list_runs_does_not_use_the_artifact_redirect_exception"
+
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q \
+  src/public/lib/three-workflow-delivery-v3/tests/platform/test_github.py
+```
+
+### Success Criteria
+
+- [ ] The initial artifact request is authenticated.
+- [ ] Exactly one off-origin HTTPS request is possible and is credential-free.
+- [ ] Generic, unsafe, non-302, repeated, cyclic, and extra redirects fail.
+- [ ] Missing location, HTTP/network errors, timeout forwarding, and ZIP
+      cardinality retain their existing behavior.
+- [ ] No unrelated size limit or artifact semantic is introduced.
+
+---
+
+## Phase 3: Caller Workflow History Lookup Across the Reusable Callee
+
+### Overview
+
+Add one composed YAML regression that starts at the Buddy caller, follows its
+reusable-workflow edge, locates the callee's history command, and verifies that
+the command queries caller history. Keep the existing exact job/DAG and
+artifact contract tests as the canonical topology guards.
+
+### Files to Test
+
+#### Buddy caller and reusable live-attempt callee
+
+- **Sources**:
+  - `.github/workflows/workflow-delivery-v3-buddy-smoke.yml`
+  - `.github/workflows/workflow-delivery-v3-live-attempt.yml`
+- **Test File**:
+  `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+- **Helpers**: `CALLER`, `CALLEE`, `_document`, `_step`, `_run`,
+  `EXPECTED_JOBS`
+
+**Proposed test**
+
+`test_history_discovery_uses_caller_path_through_reusable_live_attempt_topology`
+
+1. Load both documents with `_document`.
+2. Assert the caller's exact job set using the existing `EXPECTED_JOBS`
+   convention, including `run-live-attempt`.
+3. Assert
+   `caller["jobs"]["run-live-attempt"]["uses"]` is exactly
+   `./.github/workflows/workflow-delivery-v3-live-attempt.yml`.
+4. Assert the callee's exact twelve-job set with the existing
+   `EXPECTED_JOBS` convention. Do not create a competing topology list.
+5. Use `_step` to select `Discover exhaustive retained execution history`
+   from the callee's `admit` job and `_run` to inspect its command.
+6. Assert the command is `discover-execution-history` and supplies exactly one
+   `--workflow-path` value:
+   `.github/workflows/workflow-delivery-v3-buddy-smoke.yml`.
+7. Assert the command does not contain
+   `.github/workflows/workflow-delivery-v3-live-attempt.yml`.
+
+The existing tests in this module must continue to enforce the exact caller
+and callee DAG, artifact-ID downloads, raw upload settings, names, retention,
+permissions, and error propagation. Do not duplicate those detailed
+assertions in the new test.
+
+### Smallest Permitted Production Change
+
+Change only the callee history command's `--workflow-path` argument from
+`.github/workflows/workflow-delivery-v3-live-attempt.yml` to
+`.github/workflows/workflow-delivery-v3-buddy-smoke.yml`.
+
+Do not edit the caller workflow, `release/live.py`, `release/identity.py`,
+`cli.py`, or any admission logic. A failure in a guard test is a signal to
+shrink/revert the implementation, not permission to broaden it.
+
+### Sequential Implementation
+
+5. **Step 5 — Add the composed workflow regression first.** Confirm its only
+   failure is the callee-path assertion and that existing topology tests pass.
+6. **Step 6 — Make the one-line callee YAML correction**, then run the contract
+   module and the unchanged identity/CLI/history-admission guards.
+
+### Narrow Validation
+
+```text
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q \
+  src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py
+
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q \
+  src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_history_admission.py \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py \
+  src/public/lib/three-workflow-delivery-v3/tests/test_cli.py
+```
+
+### Success Criteria
+
+- [ ] The caller still invokes the reusable live-attempt workflow.
+- [ ] The callee command queries only the caller workflow path.
+- [ ] Exact job/DAG and artifact topology contracts remain green.
+- [ ] Identity, CLI forwarding, and admission behavior remain unchanged.
+
+---
+
+## Final Requirement Cross-Check
+
+| ID | Research checklist item | Concrete test/guard |
+|---|---|---|
+| B64-1 | Accept CR, LF, and CRLF wrapping | `test_read_blob_accepts_cr_lf_wrapped_base64[cr/lf/crlf]` |
+| B64-2 | Remove only CR/LF before strict decode | Wrapped success test plus `space` and `tab` rejection cases |
+| B64-3 | Reject alphabet, whitespace, and padding defects | `test_read_blob_rejects_non_cr_lf_or_malformed_base64` named cases |
+| B64-4 | GitHub-shaped success and malformed responses | Both Phase 1 groups use `sha`/`encoding`/`content` JSON |
+| B64-5 | Preserve `GitHubRestError` and protocol/JSON handling | Canonical malformed response group and full `test_github.py` |
+| REDIR-1 | One artifact-only API 302 to off-origin HTTPS | Single-redirect success test |
+| REDIR-2 | Initial API request authenticated | First-call header assertion in the success test |
+| REDIR-3 | Blob request has no credential and occurs once | Second-call all-header scan and exact call count |
+| REDIR-4 | Generic API redirects remain closed | `test_list_runs_does_not_use_the_artifact_redirect_exception` |
+| REDIR-5 | Unsafe/non-HTTPS target rejected pre-request | Unsafe/non-off-origin location matrix |
+| REDIR-6 | Second, extra, and non-302 redirects rejected | Initial-status matrix and no-third-request matrix |
+| REDIR-7 | Preserve location/cycle/timeout/status/network/ZIP checks | Missing-location, no-third-request, transport-error, archive-validation groups; full platform module |
+| REDIR-8 | Preserve size/time/error behavior without inventing a cap | Exact returned bytes and both timeout arguments; full platform module; explicit no-cap scope gate |
+| FLOW-1 | Query Buddy caller workflow | New composed workflow regression's positive path assertion |
+| FLOW-2 | Do not query reusable callee | Same regression's negative callee-path assertion |
+| FLOW-3 | Tie caller, reusable edge, callee command, and path | All four are asserted in the single composed regression |
+| FLOW-4 | Retain exact job/DAG and artifact topology | `EXPECTED_JOBS` assertions plus the complete existing Buddy contract module |
+| FLOW-5 | Do not broaden history/admission semantics | Unchanged commit8 identity, CLI, and history-admission guard suites |
+| EXCL-1 | No live adapter context change | Diff-scope check; no adapter production/test edit planned |
+| EXCL-2 | No Node version change | Diff-scope check; existing Buddy contract module remains green |
+| EXCL-3 | No package owner endpoint change | Diff-scope check; no package adapter edit planned |
+| EXCL-4 | No artifact raw/name/ID change | Existing Buddy artifact contract assertions plus platform artifact tests |
+| EXCL-5 | No concurrency change | Diff-scope check and complete Buddy contract module |
+| EXCL-6 | Production changes minimal/direct | Expected production diff is one local Base64 normalization, one private artifact redirect path, and one YAML argument |
+
+Any cross-check row lacking a passing named test/guard blocks completion and
+returns implementation to its owning phase.
+
+## Step 7: Mandatory Review Gate and Final Validation
+
+Step 7 is mandatory after all three phases and before marking verification
+complete.
+
+1. Run the `test-gap-analysis` skill against the bounded implementation diff
+   and this acceptance matrix. Resolve only gaps tied to B64, REDIR, or FLOW
+   rows.
+2. Run the `assertion-quality` skill on the two changed pytest modules. Reject
+   assertion-free, truthiness-only, self-referential, or call-count-only tests;
+   the critical tests must assert exact bytes, paths, URLs, headers, statuses,
+   and request counts.
+3. Perform prompt-scenario mapping: update/check every row above against actual
+   pytest node IDs and parameter IDs. There must be no unmapped prompt
+   scenario, and exclusions must have no out-of-scope diff.
+4. Review the final diff. Permitted files are only the two direct pytest files
+   as needed, `platform/github.py`, the callee YAML path line, and these
+   `.testagent` state files. The caller YAML should remain unchanged unless a
+   test-only fixture reference is strictly required; no guard-layer production
+   file may change.
+5. Run final relevant pytest validation:
+
+```text
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q \
+  src/public/lib/three-workflow-delivery-v3/tests/platform/test_github.py \
+  src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_history_admission.py \
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py \
+  src/public/lib/three-workflow-delivery-v3/tests/test_cli.py
+
+python eng/scripts/hk_exec.py --timeout-seconds 720 \
+  uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q \
+  src/public/lib/three-workflow-delivery-v3/tests
+
+uv run --python 3.13 pytest --collect-only -q
+uv run --python 3.13 pytest -q
+```
+
+6. Run the bounded lint, format, and build commands from **Commands**. Any
+   failure must be fixed within the owning bounded phase; do not expand scope.
+
+### Final Completion Criteria
+
+- [ ] All requirement-matrix rows map to passing tests or explicit immutable
+      scope guards.
+- [ ] `test-gap-analysis`, `assertion-quality`, and prompt-scenario mapping
+      complete with no unresolved finding.
+- [ ] Direct, guard, package, collection, and workspace pytest validations
+      pass.
+- [ ] Bounded lint, format, and build pass.
+- [ ] No excluded surface or semantic is changed.
+
+<!-- END APPEND: current-2026-08-17-bounded-regression-plan -->

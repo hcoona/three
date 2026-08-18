@@ -5,7 +5,9 @@
 from __future__ import annotations
 
 import base64
+import http.client
 import json
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -16,6 +18,8 @@ from typing import TYPE_CHECKING, Protocol, cast
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from http.client import HTTPMessage
+    from typing import IO
 
     from three_workflow_delivery_v3.release.eligibility import GovernanceBlob
 
@@ -130,11 +134,46 @@ class GitHubRestError(RuntimeError):
         self.status_code = status_code
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Surface redirect responses without parsing or following Location."""
+
+    def redirect_request(
+        self,
+        *_args: object,
+        **_kwargs: object,
+    ) -> None:
+        return None
+
+    def http_error_302(
+        self,
+        req: urllib.request.Request,
+        fp: IO[bytes],
+        code: int,
+        msg: str,
+        headers: HTTPMessage,
+    ) -> None:
+        raise urllib.error.HTTPError(
+            req.full_url,
+            code,
+            msg,
+            headers,
+            fp,
+        )
+
+    http_error_301 = http_error_302
+    http_error_303 = http_error_302
+    http_error_307 = http_error_302
+    http_error_308 = http_error_302
+
+
 class GitHubRestClient:
     """Fixed-origin GitHub REST implementation for live admission reads."""
 
     _MAX_REDIRECTS = 5
     _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+    _ARTIFACT_REDIRECT_HOSTNAME = re.compile(
+        r"productionresultssa[0-9]+\.blob\.core\.windows\.net\Z"
+    )
 
     def __init__(
         self,
@@ -160,19 +199,12 @@ class GitHubRestClient:
         self._workflow_path = workflow_path
         self._timeout = timeout
         self._opener = opener or self._open
+        self._artifact_opener = opener or self._open_artifact
         self._run_attempts: dict[int, int] = {}
         self._page_totals: dict[str, int] = {}
         self._page_counts: dict[str, int] = {}
 
     def _open(self, request: urllib.request.Request, timeout: int) -> bytes:
-        class _NoRedirect(urllib.request.HTTPRedirectHandler):
-            def redirect_request(
-                self,
-                *_args: object,
-                **_kwargs: object,
-            ) -> None:
-                return None
-
         opener = urllib.request.build_opener(_NoRedirect)
         current = request
         seen: set[str] = set()
@@ -191,7 +223,11 @@ class GitHubRestClient:
                         str(error),
                         status_code=error.code,
                     ) from error
-                location = error.headers.get("Location")
+                location = (
+                    error.headers.get("Location")
+                    if error.headers is not None
+                    else None
+                )
                 if location is None:
                     raise GitHubRestError(
                         "GitHub REST redirect location is missing"
@@ -205,6 +241,109 @@ class GitHubRestClient:
             except OSError as error:
                 raise GitHubRestError(str(error)) from error
         raise GitHubRestError("GitHub REST redirect limit exceeded")
+
+    def _open_artifact(
+        self,
+        request: urllib.request.Request,
+        timeout: int,
+    ) -> bytes:
+        opener = urllib.request.build_opener(_NoRedirect)
+        self._validate_api_url(request.full_url)
+        try:
+            with opener.open(request, timeout=timeout):
+                raise GitHubRestError(
+                    "GitHub artifact archive response did not redirect"
+                )
+        except urllib.error.HTTPError as error:
+            redirected_request = self._artifact_redirect_request(error)
+        except OSError as error:
+            raise GitHubRestError(str(error)) from error
+        try:
+            with opener.open(
+                redirected_request,
+                timeout=timeout,
+            ) as response:
+                return response.read()
+        except urllib.error.HTTPError as error:
+            if error.code in self._REDIRECT_STATUSES:
+                raise GitHubRestError(
+                    "GitHub artifact archive redirect limit exceeded",
+                    status_code=error.code,
+                ) from error
+            raise GitHubRestError(
+                str(error),
+                status_code=error.code,
+            ) from error
+        except OSError as error:
+            raise GitHubRestError(str(error)) from error
+        except (UnicodeError, http.client.InvalidURL) as error:
+            raise GitHubRestError(
+                "GitHub artifact archive redirect target is unsafe"
+            ) from error
+
+    def _artifact_redirect_request(
+        self,
+        error: urllib.error.HTTPError,
+    ) -> urllib.request.Request:
+        if error.code not in self._REDIRECT_STATUSES:
+            raise GitHubRestError(
+                str(error),
+                status_code=error.code,
+            ) from error
+        if error.code != 302:
+            raise GitHubRestError(
+                "GitHub artifact archive redirect must use HTTP 302",
+                status_code=error.code,
+            ) from error
+        location = error.headers.get("Location")
+        if location is None:
+            raise GitHubRestError(
+                "GitHub artifact archive redirect location is missing",
+                status_code=error.code,
+            ) from error
+        target = self._validate_artifact_redirect_url(location)
+        try:
+            return urllib.request.Request(target)
+        except (UnicodeError, ValueError) as request_error:
+            raise GitHubRestError(
+                "GitHub artifact archive redirect target is unsafe"
+            ) from request_error
+
+    @staticmethod
+    def _validate_artifact_redirect_url(location: str) -> str:
+        if not location.isascii() or any(
+            character.isspace()
+            or ord(character) < 0x20
+            or ord(character) == 0x7F
+            for character in location
+        ):
+            raise GitHubRestError(
+                "GitHub artifact archive redirect target is unsafe"
+            )
+        try:
+            parsed = urllib.parse.urlparse(location)
+            port = parsed.port
+        except ValueError as error:
+            raise GitHubRestError(
+                "GitHub artifact archive redirect target is unsafe"
+            ) from error
+        if (
+            parsed.scheme != "https"
+            or parsed.hostname is None
+            or "%" in parsed.netloc
+            or GitHubRestClient._ARTIFACT_REDIRECT_HOSTNAME.fullmatch(
+                parsed.hostname.casefold()
+            )
+            is None
+            or parsed.username is not None
+            or parsed.password is not None
+            or port not in {None, 443}
+            or parsed.fragment
+        ):
+            raise GitHubRestError(
+                "GitHub artifact archive redirect target is unsafe"
+            )
+        return location
 
     @staticmethod
     def _validate_api_url(url: str) -> None:
@@ -225,7 +364,12 @@ class GitHubRestClient:
         ):
             raise GitHubRestError("GitHub REST redirect left api.github.com")
 
-    def _request(self, path: str) -> bytes:
+    def _request(
+        self,
+        path: str,
+        *,
+        artifact_archive_redirect: bool = False,
+    ) -> bytes:
         if not path.startswith("/"):
             raise GitHubRestError("GitHub REST path is malformed")
         request = urllib.request.Request(
@@ -237,7 +381,10 @@ class GitHubRestClient:
                 "User-Agent": "three-workflow-delivery-v3",
             },
         )
-        return self._opener(request, self._timeout)
+        opener = (
+            self._artifact_opener if artifact_archive_redirect else self._opener
+        )
+        return opener(request, self._timeout)
 
     def _json(self, path: str) -> dict[str, object]:
         try:
@@ -481,7 +628,8 @@ class GitHubRestClient:
     def download_artifact(self, artifact_id: int) -> bytes:
         """Download one raw single-file artifact by numeric ID."""
         payload = self._request(
-            f"/repos/{self._repository}/actions/artifacts/{artifact_id}/zip"
+            f"/repos/{self._repository}/actions/artifacts/{artifact_id}/zip",
+            artifact_archive_redirect=True,
         )
         if payload.startswith(b"PK"):
             try:
@@ -555,7 +703,10 @@ class GitHubRestClient:
         ):
             raise GitHubRestError("Governance content response is malformed")
         try:
-            decoded = base64.b64decode(content, validate=True)
+            decoded = base64.b64decode(
+                content.replace("\r", "").replace("\n", ""),
+                validate=True,
+            )
         except ValueError as error:
             raise GitHubRestError(
                 "Governance content base64 is malformed"

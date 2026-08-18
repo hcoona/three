@@ -5737,3 +5737,315 @@ Next operational step remains post-merge commit 12.
 - Direct commit-11 contract rerun after the final closure passed with the
   updated collection count: 28 passed.
 <!-- END APPEND: workflow-delivery-v3-commit11-final-contract-count-2026-08-15 -->
+<!-- BEGIN APPEND: current-2026-08-17-bounded-regression-status -->
+
+# Test Agent Status
+
+**Request**: bounded regression repair for three adjudicated Workflow Delivery
+v3 findings.
+
+| Phase | Status |
+|---|---|
+| Research | **Complete** |
+| Plan | **Complete** |
+| Implement Phase 1 | **Complete** |
+| Implement Phase 2 | **Complete** |
+| Implement Phase 3 | **Complete** |
+| Focused verification | **Complete — 93 passed in 2.25s** |
+| Final package build | **Complete — success** |
+| Mandatory quality gate | **Complete** |
+
+## Research completion
+- Wrote the bounded research and acceptance checklist to
+  `.testagent/research.md`.
+- Ran the required polyglot `find-untested-sources` analyzer exactly once with
+  `--lang python --include-tested` against
+  `src/public/lib/three-workflow-delivery-v3`.
+- Identified the direct pairs:
+  `platform/github.py` ↔ `tests/platform/test_github.py`, and the Buddy caller
+  and callee YAML ↔ `tests/contracts/test_buddy_workflows.py`.
+- No production or test code was edited, and no test suite was executed during
+  Research.
+
+## Plan completion
+- Wrote the three sequential implementation phases to `.testagent/plan.md`:
+  CR/LF-only Base64 unwrapping, one credential-stripped artifact redirect, and
+  caller-path history lookup through the reusable callee.
+- Mapped the full research acceptance checklist to named pytest additions,
+  canonical guard suites, minimal directly coupled production changes, and
+  narrow validation commands.
+- Added the mandatory Step 7 `test-gap-analysis`, `assertion-quality`, and
+  prompt-scenario review gate followed by final relevant pytest validation.
+- No production or test code was edited, and no build, lint, or test command
+  was run during Plan.
+
+## Phase 1 completion
+
+### Files
+- `src/public/lib/three-workflow-delivery-v3/tests/platform/test_github.py`
+  - Added `test_read_blob_accepts_cr_lf_wrapped_base64` with `cr`, `lf`, and
+    `crlf` cases.
+  - Added `test_read_blob_rejects_non_cr_lf_or_malformed_base64` with eight
+    invalid-alphabet, space, tab, missing-padding, excess-padding, and wrapped
+    malformed cases.
+- `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/platform/github.py`
+  - Removed only literal CR and LF from Contents API Base64 immediately before
+    strict decoding with `validate=True`.
+
+### Commands and results
+- Initial focused regression:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/platform/test_github.py::test_read_blob_accepts_cr_lf_wrapped_base64 src/public/lib/three-workflow-delivery-v3/tests/platform/test_github.py::test_read_blob_rejects_non_cr_lf_or_malformed_base64`
+  - Result before the production fix: **3 failed, 8 passed**; only the three
+    wrapped-success cases failed.
+  - Result after the minimal fix: **11 passed in 0.16s**.
+- Canonical platform module:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/platform/test_github.py`
+  - Result: **37 passed in 0.17s**.
+- Bounded build:
+  `uv build --package three-workflow-delivery-v3`
+  - Result: **success**; both sdist and wheel built.
+- Harness discovery from the repository root:
+  `uv run --python 3.13 pytest --collect-only -q`
+  - Baseline: **5044 collected**.
+  - Phase 1: **5055 collected**.
+  - Discovery delta: **+11**, matching all generated parameter cases.
+
+### Quality review
+- Pseudo-mutation review found no Phase 1 gap: the tests kill removal of either
+  CR/LF normalization, generic-whitespace normalization, relaxed alphabet or
+  padding validation, incorrect decoded bytes/OID, and loss of the
+  `GitHubRestError` boundary.
+- Assertion review found no assertion-free, trivial-only, or self-referential
+  Phase 1 tests. The tests assert exact decoded state, exact failure identity
+  and message, timeout use, and the exact requested URL.
+- No Phase 2 or Phase 3 file or behavior was changed.
+
+## Phase 2 completion
+
+### Files
+- `src/public/lib/three-workflow-delivery-v3/tests/platform/test_github.py`
+  - Added 8 test functions collecting 27 cases:
+    - `test_download_artifact_follows_one_off_origin_https_302_without_credentials`
+      (1 case).
+    - `test_download_artifact_rejects_unsafe_or_non_off_origin_location_before_follow_up`
+      (9 cases).
+    - `test_list_runs_does_not_use_the_artifact_redirect_exception`
+      (1 case).
+    - `test_download_artifact_rejects_non_302_initial_redirect`
+      (4 cases).
+    - `test_download_artifact_rejects_any_redirect_from_the_blob_without_a_third_request`
+      (4 cases).
+    - `test_download_artifact_rejects_302_without_location` (1 case).
+    - `test_download_artifact_redirect_preserves_http_and_network_errors`
+      (4 cases).
+    - `test_download_artifact_redirect_preserves_archive_validation`
+      (3 cases).
+- `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/platform/github.py`
+  - Routed only `download_artifact` through a private one-redirect transport.
+  - The initial API request remains authenticated. The sole follow-up is a
+    fresh, header-free request to an absolute off-origin HTTPS URL.
+  - Generic requests retain the existing fixed-API-origin redirect path.
+- `.testagent/status.md`
+  - Recorded the Phase 2 files, tests, commands, results, and bounded
+    verification limitations.
+
+### Commands and results
+- Harness baseline before Phase 2:
+  `uv run --python 3.13 pytest --collect-only -q`
+  - Result: **5055 collected**.
+- Expected-red focused regression:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/platform/test_github.py -k "download_artifact or list_runs_does_not_use_the_artifact_redirect_exception"`
+  - Result before the production change: **3 passed, 20 failed, 37
+    deselected**.
+  - Final result after the minimum transport change and completed unsafe-URL
+    matrix: **27 passed, 37 deselected in 0.09s**.
+- Canonical platform module:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/platform/test_github.py`
+  - Result: **64 passed in 0.21s**.
+- History-admission guard:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_history_admission.py`
+  - Result: **44 passed in 0.07s**.
+- Bounded build:
+  `uv build --package three-workflow-delivery-v3`
+  - Result: **success**; both sdist and wheel built.
+- Final harness discovery from the repository root:
+  `uv run --python 3.13 pytest --collect-only -q`
+  - Result: **5082 collected**.
+  - Phase 2 discovery delta: **+27**, exactly matching the generated cases.
+- Phase 2 production lint and format checks:
+  `uv run --python 3.13 ruff check --force-exclude -- src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/platform/github.py`
+  and
+  `uv run --python 3.13 ruff format --check --force-exclude -- src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/platform/github.py`
+  - Result: **passed**.
+- Phase 2 test lint:
+  `uv run --python 3.13 ruff check --ignore PLR2004 --force-exclude -- src/public/lib/three-workflow-delivery-v3/tests/platform/test_github.py`
+  - Result: **passed**. The exact unignored module command still reports only
+    the two preserved Phase 1 `timeout == 20` `PLR2004` findings. Ruff's
+    remaining format diff likewise contains only the two preserved Phase 1
+    path literals; no Phase 2 line remains in that diff.
+
+### Quality review
+- Pseudo-mutation review found no Phase 2 acceptance gap. The tests kill
+  removal or broadening of artifact-only routing, reuse of authenticated
+  headers, unsafe/same-origin/relative targets, any non-302 first redirect,
+  any second redirect, lost timeout forwarding, changed HTTP/network error
+  identity, weakened ZIP cardinality/malformed checks, and changed returned
+  bytes.
+- Assertion review found no assertion-free, trivial-only, or
+  self-referential Phase 2 tests. Each case combines exact errors or bytes
+  with request count, URL, method, timeout, and/or header side effects.
+- Research found no explicit archive response-byte cap or absolute-deadline
+  mechanism in this client. Phase 2 therefore introduced or weakened neither;
+  existing timeout forwarding and archive format/cardinality checks are pinned
+  by the new tests.
+
+### Bounded verification issue
+- The package-wide command
+  `python eng/scripts/hk_exec.py --timeout-seconds 720 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests`
+  completed with **2787 passed, 21 failed, 147 errors**. The failures are
+  outside Phase 2: the dominant setup error is
+  `runtime PNPM version differs from frozen Build Request` in the explicitly
+  excluded Node surface; the remaining failures include pre-existing
+  working-tree contract expectations for `.testagent/plan.md` and historical
+  status text. No excluded source or pre-existing change was altered.
+
+No Phase 3 workflow or history-discovery behavior was changed.
+
+## Phase 3 completion
+
+### Files
+- `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+  - Added 1 test collecting 1 case:
+    `test_history_discovery_uses_caller_path_through_reusable_live_attempt_topology`.
+  - The regression composes the existing `CALLER`, `CALLEE`, `_document`,
+    `_step`, `_run`, and `EXPECTED_JOBS` helpers to pin the five-job caller,
+    reusable-callee edge, twelve-job callee, exact history subcommand, sole
+    caller `--workflow-path`, and absence of the callee path.
+- `.github/workflows/workflow-delivery-v3-live-attempt.yml`
+  - Changed only the history discovery `--workflow-path` from the reusable
+    callee to `.github/workflows/workflow-delivery-v3-buddy-smoke.yml`.
+- `.testagent/status.md`
+  - Recorded the Phase 3 files, exact test/count, commands, and results.
+
+### Commands and results
+- Harness baseline before Phase 3:
+  `uv run --python 3.13 pytest --collect-only -q`
+  - Result: **5082 collected**.
+- Expected-red focused regression:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py::test_history_discovery_uses_caller_path_through_reusable_live_attempt_topology`
+  - Result before the workflow correction: **1 failed in 0.24s**; the sole
+    failure was the callee path instead of the required caller path.
+  - Result after the one-line correction: **1 passed in 0.14s**.
+  - Result after the formatting-only fix: **1 passed in 0.22s**.
+- Canonical Buddy workflow contract module:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+  - Result: **29 passed in 2.07s**.
+- Phase 3 topology and unchanged admission guards:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_history_admission.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py`
+  - Result: **178 passed in 8.25s**.
+- Bounded build:
+  `uv build --package three-workflow-delivery-v3`
+  - Result: **success**; both sdist and wheel built.
+- Final harness discovery from the repository root:
+  `uv run --python 3.13 pytest --collect-only -q`
+  - Result: **5083 collected**.
+  - Phase 3 discovery delta: **+1**, exactly matching the generated case.
+- Phase 3 test lint and format checks:
+  `uv run --python 3.13 ruff check --force-exclude -- src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+  and
+  `uv run --python 3.13 ruff format --check --force-exclude -- src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+  - Result: **passed**.
+- `git diff --check`
+  - Result: **passed**.
+
+### Quality review
+- Pseudo-mutation review found no Phase 3 gap: the new test kills a changed or
+  duplicated history subcommand/path, restoration of the reusable-callee path,
+  removal or retargeting of the caller-to-callee edge, and caller/callee job-set
+  drift. Existing contract guards continue to kill artifact-ID, raw-mode,
+  naming, retention, DAG, permission, and error-propagation changes.
+- Assertion review found 6 meaningful assertions spanning exact collection,
+  command, path, and negative-presence checks. The test has no assertion-free,
+  trivial-only, or self-referential assertion and checks topology as secondary
+  evidence alongside the queried workflow identity.
+- The caller workflow, admission implementation, live adapter context, Node
+  version, package owner endpoint, artifact raw-mode/name/ID semantics,
+  concurrency, and unrelated workflow behavior were not changed.
+
+## Final coordinator closure
+
+### Fresh final results
+- Focused scoped verification:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/platform/test_github.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+  - Final result after lint-only cleanup: **93 passed in 2.30s**.
+- Final package build:
+  `uv build --package three-workflow-delivery-v3`
+  - Result: **success**.
+- Final bounded Ruff checks:
+  `uv run --python 3.13 ruff check --force-exclude -- <three modified Python files>`
+  and
+  `uv run --python 3.13 ruff format --check --force-exclude -- <three modified Python files>`
+  - Result: **passed; all three files are formatted**.
+- Append-only state-contract verification:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py::test_testagent_plan_update_is_append_only_against_head src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py::test_historical_status_identifier_and_typos_scope_are_exact`
+  - Final result: **2 passed in 0.21s**.
+- Workspace validation:
+  `uv run --python 3.13 pytest -q`
+  - Result: **4915 passed, 21 failed, 147 errors in 600.31s**.
+  - Of the 21 failures, **19 Node/toolchain/LFS failures** are outside the
+    bounded scope and explicitly excluded.
+  - All **147 Node errors** are likewise outside the bounded scope and
+    explicitly excluded.
+  - The remaining **two HK failures were caused by the overwritten
+    `.testagent` state artifacts**; this append-only state repair resolves
+    those two failures.
+
+### Mandatory quality gate
+- Research, Plan, all three Implement phases, focused verification, the final
+  package build, and the mandatory quality gate are complete.
+- Pseudo-mutation review concludes that **all requested mutation classes are
+  killed**.
+- Assertion-depth review finds **no assertion-free, trivial-only,
+  tautological, or missing-secondary-observable generated tests**.
+- Prompt-scenario mapping and final gap review find **no remaining in-scope
+  gap**.
+
+<!-- END APPEND: current-2026-08-17-bounded-regression-status -->
+
+<!-- BEGIN APPEND: current-2026-08-17-bounded-regression-review-closure -->
+
+## Independent review closure
+
+An independent adversarial review identified three test/validation gaps, all
+closed within the existing scope:
+
+- Redirect tests now assert that the installed urllib redirect handler returns
+  `None`, so removal of automatic-redirect suppression cannot evade the
+  credential-stripping regression.
+- Artifact redirect validation now rejects whitespace/control characters and
+  normalizes malformed URL parsing and request-construction failures to
+  `GitHubRestError`; the unsafe-location matrix adds malformed IPv6, leading
+  space, and trailing-control cases.
+- The caller/callee topology regression now requires the caller to be exactly
+  `workflow_dispatch` and the callee to be exactly `workflow_call`.
+
+Final targeted pytest after these changes passed **140 tests in 2.32s**.
+Final Ruff check passed, and Ruff format reported all three changed Python files
+already formatted.
+
+<!-- END APPEND: current-2026-08-17-bounded-regression-review-closure -->
+
+<!-- BEGIN APPEND: current-2026-08-17-bounded-regression-c1-closure -->
+
+## Final redirect character-set closure
+
+A focused follow-up review identified C1/non-ASCII URL characters as the final
+unsafe redirect gap. Artifact redirect targets are now required to be ASCII,
+and the unsafe-location matrix includes a `\x80` case proving rejection before
+the follow-up request. The focused reviewer then reported no findings.
+
+Final scoped pytest passed **141 tests in 2.28s**. Ruff check passed, Ruff
+format reported all three changed Python files already formatted, actionlint
+passed for the Buddy caller/callee pair, and `git diff --check` passed.
+
+<!-- END APPEND: current-2026-08-17-bounded-regression-c1-closure -->

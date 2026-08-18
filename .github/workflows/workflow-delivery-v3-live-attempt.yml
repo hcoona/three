@@ -130,7 +130,7 @@ jobs:
           uv run --python 3.13 --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release discover-execution-history \
             --repository "${GITHUB_REPOSITORY}" \
-            --workflow-path ".github/workflows/workflow-delivery-v3-live-attempt.yml" \
+            --workflow-path ".github/workflows/workflow-delivery-v3-buddy-smoke.yml" \
             --github-token "${GITHUB_TOKEN}" \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \

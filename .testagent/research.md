@@ -2724,3 +2724,246 @@ absent through `RETIRED_MIXED_BUDDY_TEST_NAMES`. Matrix node-ID retirement is
 evaluated across all rows; exact legacy workflow paths remain limited to
 active-row evidence checks.
 <!-- END APPEND: commit11-calibration-mixed-node-correction-2026-08-15 -->
+<!-- BEGIN APPEND: current-2026-08-17-bounded-regression-research -->
+
+# Test Generation Research
+
+## Acceptance / Requirement Checklist
+
+### 1. GitHub Contents JSON Base64
+- [ ] Accept GitHub Contents API objects whose `content` is Base64 wrapped with
+  `\r`, `\n`, or CRLF.
+- [ ] Remove **only** CR and LF before calling strict Base64 validation/decoding.
+- [ ] Continue rejecting invalid alphabet characters, non-CR/LF whitespace, and
+  malformed or excess padding.
+- [ ] Cover a GitHub-shaped successful response (`sha`, `encoding: "base64"`,
+  wrapped `content`) and malformed alphabet, padding, and whitespace responses.
+- [ ] Preserve the existing `GitHubRestError` boundary and malformed
+  JSON/protocol handling.
+
+### 2. Artifact archive redirect
+- [ ] Permit only the artifact archive download flow to follow exactly one
+  authenticated GitHub API `302` to a temporary off-origin HTTPS blob URL.
+- [ ] Prove the initial `api.github.com` request is authenticated.
+- [ ] Prove the off-origin request has no `Authorization` header, contains no
+  GitHub token/credential in any header, and is issued at most once.
+- [ ] Keep generic GitHub API redirects fail-closed; the exception must not
+  become a general redirect policy.
+- [ ] Reject non-HTTPS/unsafe redirect targets before a follow-up request.
+- [ ] Reject a second redirect, an extra hop, and non-`302` off-origin redirect
+  behavior as appropriate.
+- [ ] Preserve missing-location, cycle/limit, timeout propagation, non-redirect
+  HTTP status, network error, malformed ZIP, and one-file archive checks.
+- [ ] Preserve all existing size/time/error checks. The current bounded client
+  has timeout and archive-cardinality/error checks, but no explicit response
+  byte cap was found in `platform/github.py`; do not invent or weaken unrelated
+  limits during this repair.
+
+### 3. Live history caller/callee topology
+- [ ] The live history command must query
+  `.github/workflows/workflow-delivery-v3-buddy-smoke.yml`.
+- [ ] It must not query the reusable callee
+  `.github/workflows/workflow-delivery-v3-live-attempt.yml`.
+- [ ] Add one regression that ties together: caller workflow, reusable-callee
+  invocation, callee history command, and the caller path supplied to that
+  command.
+- [ ] Retain the exact reusable-attempt job set/DAG and artifact/job topology
+  checks already enforced by the contract and history-admission tests.
+- [ ] Do not broaden run, artifact, job, attempt, or admission semantics.
+
+### Explicit exclusions and change discipline
+- [ ] Do not touch live adapter context.
+- [ ] Do not touch Node version selection.
+- [ ] Do not touch the package owner endpoint.
+- [ ] Do not change artifact raw-mode, name, or ID semantics.
+- [ ] Do not change concurrency.
+- [ ] Any later production change must be minimal and directly required by
+  these regressions.
+
+## Project Overview
+- **Workspace**: `/workspace/three-workspaces/design-workflows`
+- **Bounded package**:
+  `src/public/lib/three-workflow-delivery-v3`
+- **Language**: Python 3.13+; two YAML workflow surfaces are contract-tested
+  from Python
+- **Packaging**: uv workspace, Hatchling build backend
+- **Test framework**: pytest 8.3+
+- **Relevant libraries**: stdlib `base64`, `urllib`, `zipfile`; PyYAML in
+  workflow contract tests
+
+## Scope
+- **Boundary**: only the three adjudicated findings above in the delivery-v3
+  package and its two Buddy workflow files.
+- **Direct Python target**:
+  `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/platform/github.py`
+- **Direct workflow targets**:
+  `.github/workflows/workflow-delivery-v3-buddy-smoke.yml` and
+  `.github/workflows/workflow-delivery-v3-live-attempt.yml`
+- **Direct regression files**:
+  `src/public/lib/three-workflow-delivery-v3/tests/platform/test_github.py` and
+  `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+- **Representative existing tests**: the two direct regression files above.
+
+## Bounded Target Inventory and Exact Pairing
+
+| Source surface | Relevant symbols/section | Exact test pair | Existing coverage |
+|---|---|---|---|
+| `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/platform/github.py` | `GitHubRestClient._open`, `_validate_api_url`, `_request`, `download_artifact`, `read_blob`, `list_runs` | `src/public/lib/three-workflow-delivery-v3/tests/platform/test_github.py` | **Partial**: pagination, authentication, API-origin rejection, HTTP errors, and malformed governance content exist; wrapped Base64 and artifact redirect/download behavior do not. |
+| `.github/workflows/workflow-delivery-v3-buddy-smoke.yml` | `run-live-attempt` reusable-workflow edge | `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py` | **Substantial overall, partial for finding**: caller DAG and callee `uses` edge are exact. |
+| `.github/workflows/workflow-delivery-v3-live-attempt.yml` | `admit` → `Discover exhaustive retained execution history` | `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py` | **Partial for finding**: job/artifact contracts exist, but no assertion covers the `--workflow-path` value. |
+
+### Relevant guard pairs, not direct edit targets
+- `src/.../release/live.py` ↔
+  `tests/release/test_commit8_history_admission.py`: substantial coverage of
+  exhaustive runs, artifact downloads, exact attempt jobs, finalizer/publisher
+  selection, and fail-closed admission. Preserve this behavior.
+- `src/.../release/identity.py` ↔
+  `tests/release/test_commit8_contracts.py`: the existing
+  `BUDDY_LIVE_WORKFLOW_PATH` already equals the required caller path.
+- `src/.../cli.py` ↔ `tests/test_cli.py`: the CLI parser requires
+  `--workflow-path`, and `_release_discover_history_command` forwards it
+  unchanged into `GitHubRestClient`. No CLI semantic change is indicated.
+
+## Static Source-to-Test Analysis
+- Executed exactly once against the narrow package root:
+  `python .agents/skills/find-untested-sources/scripts/find_untested_sources.py src/public/lib/three-workflow-delivery-v3 --lang python --include-tested`
+- Package result: 38 Python source files, 40 test files, 36 statically paired
+  source files, 2 unpaired source files, and 0 orphan tests.
+- Relevant analyzer result: `platform/github.py` is classified **tested** with
+  31 declarations and includes `tests/platform/test_github.py` as a covering
+  test. Relevant collaborators `cli.py`, `release/identity.py`, and
+  `release/live.py` are also classified tested.
+- Analyzer-relative paths above are prefixed with
+  `src/public/lib/three-workflow-delivery-v3/` elsewhere in this document.
+- **Caveat**: this is a static import/identifier-overlap heuristic, not line or
+  branch coverage. It can over-pair files through shared identifiers and cannot
+  demonstrate the missing redirect or Base64 branches.
+
+## Current Behavior and Test Gaps
+
+### Contents Base64
+- `read_blob` currently passes the JSON `content` directly to
+  `base64.b64decode(..., validate=True)`, so API-permitted CR/LF wrapping is
+  rejected.
+- The existing parameterized failure test covers invalid alphabet (`"***"`),
+  malformed JSON, and a wrong `encoding`, but has no successful REST-backed
+  `read_blob` case and no padding/non-CR-LF-whitespace cases.
+- A focused regression can build valid bytes, Base64-encode them, wrap the
+  encoded text with CRLF in a GitHub-shaped JSON object, and assert exact
+  `GovernanceBlob` OID/content. Parameterized malformed inputs should establish
+  that spaces/tabs are not normalized and padding remains strict.
+
+### Artifact redirect
+- `_open` installs a no-auto-redirect handler and manually processes redirect
+  `HTTPError`s. It currently validates every hop as `api.github.com` and copies
+  all request headers to the next hop.
+- Therefore a real off-origin artifact `302` currently fails, while merely
+  relaxing URL validation would leak the authenticated header.
+- `download_artifact` uses the same generic `_request` path as JSON and
+  governance calls. The exception must be scoped to the exact artifact archive
+  request, not `_request` globally.
+- To exercise real redirect logic, tests must monkeypatch
+  `urllib.request.build_opener`; passing the constructor's byte-returning
+  `opener` bypasses `_open`.
+- Reuse the existing local fake pattern: an opener object records URL, headers,
+  and timeout; raises `urllib.error.HTTPError(302)` with a `Message` containing
+  `Location`; then returns a context-managed byte response. Assert two calls for
+  success and one call for rejected targets/generic redirects.
+- Existing behavior to retain includes positive timeout validation and timeout
+  forwarding, non-redirect HTTP status preservation on `GitHubRestError`,
+  `OSError` translation, missing location/cycle/limit rejection, and
+  `download_artifact` malformed/multi-file ZIP handling.
+
+### Caller/callee history query
+- The caller correctly invokes
+  `./.github/workflows/workflow-delivery-v3-live-attempt.yml`.
+- The callee currently passes its own path to
+  `discover-execution-history`; this is the adjudicated one-line topology bug.
+- `release/identity.py` already binds Buddy intents to the caller path, providing
+  an existing invariant for the required value.
+- Existing workflow tests already enforce the exact five caller jobs, twelve
+  callee jobs, least privileges, artifact ID downloads, raw upload settings,
+  retention, and error propagation. The new assertion should compose the
+  existing `_document`, `_step`, and `_run` helpers rather than duplicate YAML
+  parsing or alter history admission.
+
+## Dependency Graph and Collaborator Seams
+- **Leaf/directly testable**:
+  - `GitHubRestClient` through an injected callback for ordinary responses and
+    a monkeypatched stdlib opener for redirect behavior.
+  - Workflow YAML through PyYAML and path-based contract helpers.
+- **Mid-layer, preserve only**:
+  - `cli._release_discover_history_command`, which forwards the workflow path.
+  - `release.identity.BUDDY_LIVE_WORKFLOW_PATH`, already the caller path.
+- **Top-layer, preserve only**:
+  - `release.live.discover_execution_history`, which consumes
+    `GitHubActionsHistoryClient` and validates retained run/artifact/exact-job
+    topology.
+- **External seams**: `urllib.request.build_opener`,
+  `urllib.error.HTTPError`, response context/read behavior, `base64`, `zipfile`,
+  and `yaml.safe_load`.
+
+## Existing Pytest Conventions and Helpers to Reuse
+- `tests/platform/test_github.py` uses nested fake openers, request inspection,
+  `pytest.MonkeyPatch`, `pytest.mark.parametrize`, named `pytest.param` cases,
+  and `pytest.raises(..., match=...)`; tests make no real network calls.
+- Its existing `ErrorOpener` pattern uses `email.message.Message` and
+  `io.BytesIO` to construct realistic `HTTPError` responses.
+- `tests/contracts/test_buddy_workflows.py` provides `CALLER`, `CALLEE`,
+  `_document`, `_steps`, `_step`, `_run`, and `EXPECTED_JOBS`; use these for the
+  caller/callee regression.
+- The only package `conftest.py` is release-specific and supplies no relevant
+  platform/workflow fixture. Keep new helpers local to the direct test module.
+- Assertions favor exact URLs, call sequences, job sets, headers, bytes, and
+  error messages over broad truthiness checks.
+- `tests/adapters/test_github_packages.py` is a useful convention reference for
+  recording two redirect calls and proving the second call has no
+  `Authorization`; do not couple the GitHub REST client to that adapter.
+
+## Files to Test
+
+### High Priority
+| File | Testability | Coverage classification | Reason |
+|---|---|---|---|
+| `src/.../platform/github.py` | High | Partial | Both Base64 and credential-safe redirect gaps are isolated behind injectable stdlib seams. |
+| `.github/workflows/workflow-delivery-v3-live-attempt.yml` | High | Partial for finding | Contains the wrong history workflow argument. |
+| `.github/workflows/workflow-delivery-v3-buddy-smoke.yml` | High | Substantial | Supplies the caller/callee side of the topology regression. |
+
+### Low Priority / Preserve
+| File | Reason |
+|---|---|
+| `src/.../release/live.py` | Existing admission tests are substantial; changing it would broaden semantics. |
+| `src/.../cli.py` | Correctly forwards the supplied workflow path. |
+| `src/.../release/identity.py` | Already declares the required caller path. |
+| Live adapter context, Node/version, package-owner endpoint, artifact raw/name/ID, concurrency surfaces | Explicitly excluded. |
+
+## Build and Test Commands
+Run from the repository root.
+
+- **Build (bounded package)**:
+  `uv build --package three-workflow-delivery-v3`
+- **Test (scoped fix cycles)**:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/platform/test_github.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+- **Test (package validation / repository HK equivalent)**:
+  `python eng/scripts/hk_exec.py --timeout-seconds 720 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests`
+- **Test (workspace-level Python validation from root configuration)**:
+  `uv run --python 3.13 pytest -q`
+- **Test (harness-equivalent discovery check)**:
+  `uv run --python 3.13 pytest --collect-only -q`
+- **Lint (bounded Python files)**:
+  `uv run --python 3.13 ruff check --force-exclude -- src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/platform/github.py src/public/lib/three-workflow-delivery-v3/tests/platform/test_github.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+- **Format check (bounded Python files)**:
+  `uv run --python 3.13 ruff format --check --force-exclude -- src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/platform/github.py src/public/lib/three-workflow-delivery-v3/tests/platform/test_github.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+
+## Recommendations
+1. Add the wrapped/malformed Base64 matrix in `test_github.py`.
+2. Add artifact-only redirect success and rejection tests in the same file,
+   explicitly asserting call count, URL, timeout, and absent credentials.
+3. Add one composed caller/callee history-path test in
+   `test_buddy_workflows.py`.
+4. Keep `release/live.py` admission tests green without changing their
+   semantics, then run the package and root discovery commands.
+5. Treat the absence of an explicit response-byte cap in the current client as
+   a research note, not permission to add unrelated transport behavior.
+
+<!-- END APPEND: current-2026-08-17-bounded-regression-research -->

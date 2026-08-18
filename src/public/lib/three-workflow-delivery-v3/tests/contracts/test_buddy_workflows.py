@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 
@@ -753,3 +753,55 @@ def test_user_item13_finalizer_always_retains_outcome_summary_with_exact_contrac
         "overwrite": False,
         "include-hidden-files": True,
     }
+
+
+def test_history_discovery_uses_caller_path_through_reusable_live_attempt_topology() -> (
+    None
+):
+    caller = _document(CALLER)
+    callee = _document(CALLEE)
+    caller_document = cast("dict[object, Any]", caller)
+    callee_document = cast("dict[object, Any]", callee)
+    caller_triggers = caller_document.get(
+        "on",
+        caller_document.get(True),
+    )
+    callee_triggers = callee_document.get(
+        "on",
+        callee_document.get(True),
+    )
+    caller_jobs = caller["jobs"]
+    callee_jobs = callee["jobs"]
+
+    assert caller_triggers == {"workflow_dispatch": None}
+    assert isinstance(callee_triggers, dict)
+    assert set(callee_triggers) == {"workflow_call"}
+    assert set(caller_jobs) == {
+        "request",
+        "discover-node",
+        "compile-model",
+        "evaluate-live-eligibility",
+        "run-live-attempt",
+    }
+    assert (
+        caller_jobs["run-live-attempt"]["uses"]
+        == "./.github/workflows/workflow-delivery-v3-live-attempt.yml"
+    )
+    assert set(callee_jobs) == EXPECTED_JOBS
+
+    command = _run(
+        _step(
+            callee_jobs["admit"],
+            "Discover exhaustive retained execution history",
+        )
+    )
+    assert re.findall(
+        r"\bthree-workflow-delivery-v3 release ([a-z0-9-]+)",
+        command,
+    ) == ["discover-execution-history"]
+    assert re.findall(r'--workflow-path "([^"]+)"', command) == [
+        ".github/workflows/workflow-delivery-v3-buddy-smoke.yml"
+    ]
+    assert (
+        ".github/workflows/workflow-delivery-v3-live-attempt.yml" not in command
+    )
