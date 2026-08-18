@@ -116,10 +116,11 @@ available and may prompt. A WAM cache can satisfy that interaction-allowed
 request without prompting, but AzureAuth 0.9.5 exposes no cache-only command
 mode on those hosts. Status therefore reports Windows and ordinary WSL
 silent-only readiness as unavailable without claiming that the provider cache
-or account is absent. As a temporary exception until AzureAuth issue #464 is
-implemented, GCM-compatible Dev Box WSL hosts use a clearly reported WAM-first
-workaround that may display interactive UI. An environment override can force
-or disable that WSL-only workaround.
+or account is absent. As a temporary exception pending this product's adoption
+and verification of an AzureAuth release containing the fix for issue #464,
+GCM-compatible Dev Box WSL hosts use a clearly reported WAM-first workaround
+that may display interactive UI. An environment override can force or disable
+that WSL-only workaround.
 
 The core must not assume a single protocol output format. Protocol adapters are responsible for host-tool input and output.
 

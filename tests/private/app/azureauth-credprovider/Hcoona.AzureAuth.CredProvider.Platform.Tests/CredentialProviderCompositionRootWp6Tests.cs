@@ -161,6 +161,68 @@ public sealed class CredentialProviderCompositionRootWp6Tests
         }
     }
 
+    [Fact]
+    public void CreateProductionDevBoxWslSilentOnlyPreservesWamFirstLaunchDefaults()
+    {
+        const string Token = "composition-devbox-wsl-token";
+        string rootPath = CreateTestDirectory();
+        var processRunner = new CompositionRecordingRunner(
+            new ProcessResult(0, Token, string.Empty)
+        );
+        try
+        {
+            AzureAuthProviderConfig config = AzureAuthProviderConfig.CreateAzureAuth();
+            AzureAuthBinding binding = AzureAuthBindingPolicy.CreateBound(
+                config,
+                "composition.user@example.com",
+                "tenant-composition",
+                DateTimeOffset.UtcNow
+            );
+            CredentialProviderCompositionRoot root =
+                CredentialProviderCompositionRoot.CreateProduction(
+                    new CredentialProviderProductionOptions
+                    {
+                        SecureStoreRootPath = rootPath,
+                        ProviderConfig = config,
+                        Binding = binding,
+                        InstallationDiscovery = new CountingDiscovery(
+                            AzureAuthInstallation.Available(
+                                @"C:\AzureAuth\azureauth.exe",
+                                "/mnt/c/AzureAuth/azureauth.exe",
+                                "0.9.5",
+                                AzureAuthHostPlatform.Wsl,
+                                isDevBox: true
+                            )
+                        ),
+                        ProcessRunner = processRunner,
+                        EnvironmentVariableReader = _ => null,
+                    }
+                );
+            CredentialRequestV2 request = CreateRequest() with
+            {
+                CredentialKind = CredentialKind.BasicPassword,
+                InteractivePolicy = InteractivePolicy.Never,
+                AcquisitionMode = AcquisitionMode.SilentOnly,
+            };
+
+            CredentialResult result = root.Boundary.Acquire(
+                request,
+                TestContext.Current.CancellationToken
+            );
+
+            Assert.Equal(CredentialResultStatus.Success, result.Status);
+            ProcessStartSpec startSpec = Assert.Single(processRunner.StartSpecs);
+            Assert.DoesNotContain("--mode", startSpec.Arguments);
+            Assert.Null(startSpec.Environment["AZUREAUTH_MODE"]);
+            Assert.Null(startSpec.Environment["AZUREAUTH_NO_USER"]);
+            Assert.Null(startSpec.Environment["Corext_NonInteractive"]);
+        }
+        finally
+        {
+            Directory.Delete(rootPath, recursive: true);
+        }
+    }
+
     [Theory]
     [InlineData("0")]
     [InlineData("")]

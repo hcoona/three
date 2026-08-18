@@ -102,9 +102,9 @@ default. WSL discovery uses Git Credential Manager's Dev Box definition in the
 a temporary workaround that lets a `SilentOnly` request use AzureAuth's default
 WAM-first flow. This usually completes from broker-backed state but may display
 interactive UI. It intentionally violates the non-interactive contract and must
-be removed when AzureAuth issue
-[#464](https://github.com/AzureAD/microsoft-authentication-cli/issues/464) is
-implemented.
+be removed only after this product adopts and verifies an AzureAuth release
+containing the fix for issue
+[#464](https://github.com/AzureAD/microsoft-authentication-cli/issues/464).
 
 `AZUREAUTH_CREDPROVIDER_ENABLE_DEVBOX_WSL_SILENT_FIRST_WORKAROUND` is an
 optional override. When unset, Dev Box detection decides. Value `1` forces the

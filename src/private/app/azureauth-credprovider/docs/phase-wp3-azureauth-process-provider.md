@@ -300,9 +300,10 @@ identity remains a best-effort preference.
 The process inherits the ordinary host integration environment.
 `OEAUTH_MSAL_DISABLE_CACHE` is not set: host MSAL cache reuse is an intentional
 product behavior. Windows and WSL AzureAuth have no cache-only CLI mode, so
-`SilentOnly` normally remains unavailable there and never launches. Until
-AzureAuth issue #464 is implemented, GCM-compatible Dev Box WSL hosts may use
-the temporary WAM-first workaround documented in
+`SilentOnly` normally remains unavailable there and never launches. Pending
+this product's adoption and verification of an AzureAuth release containing the
+fix for issue #464, GCM-compatible Dev Box WSL hosts may use the temporary
+WAM-first workaround documented in
 [`phase-wp6-production-composition.md`](phase-wp6-production-composition.md);
 that path may display UI. Native Linux `SilentOnly` launches AzureAuth with
 `AZUREAUTH_NO_USER=1`, preserving its cached-token attempt while suppressing
