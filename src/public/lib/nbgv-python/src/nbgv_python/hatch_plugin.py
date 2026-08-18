@@ -9,7 +9,7 @@ from hatchling.plugin import hookimpl
 from hatchling.version.source.plugin.interface import VersionSourceInterface
 
 from .config import PluginConfig
-from .errors import NbgvCommandError
+from .errors import NbgvError
 from .runner import NbgvRunner
 from .templating import build_template_fields
 from .versioning import normalize_version_field
@@ -39,21 +39,21 @@ class NbgvVersionSource(VersionSourceInterface):
             mapping = dict(self.config.get("nbgv", {}))
         config = PluginConfig.from_mapping(Path(self.root), mapping)
         self._config = config
-        runner = NbgvRunner(command=config.command)
         try:
+            runner = NbgvRunner(command=config.command)
             version = runner.get_version(config.working_directory)
-        except NbgvCommandError as exc:
-            raise RuntimeError(str(exc)) from exc
-        selected = version.get(config.version_field)
-        if selected is None:
-            message = (
-                f"Field '{config.version_field}' was not produced by "
-                "'nbgv get-version'"
+            selected = version.get(config.version_field)
+            if selected is None:
+                message = (
+                    f"Field '{config.version_field}' was not produced by "
+                    "'nbgv get-version'"
+                )
+                raise RuntimeError(message)
+            normalized = normalize_version_field(
+                selected, field=config.version_field
             )
-            raise RuntimeError(message)
-        normalized = normalize_version_field(
-            selected, field=config.version_field
-        )
+        except NbgvError as exc:
+            raise RuntimeError(str(exc)) from exc
         if config.epoch is not None:
             normalized = f"{config.epoch}!{normalized}"
         metadata = version.as_dict(include_raw=True)

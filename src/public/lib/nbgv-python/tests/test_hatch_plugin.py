@@ -5,7 +5,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
-from nbgv_python.errors import NbgvCommandError
+from nbgv_python.errors import (
+    NbgvCommandError,
+    NbgvJsonError,
+    NbgvVersionNormalizationError,
+)
 from nbgv_python.hatch_plugin import NbgvVersionSource
 from nbgv_python.models import GitVersion
 
@@ -37,6 +41,29 @@ class FailingRunner:
     def get_version(self, _cwd: Path) -> GitVersion:
         """Raise the same structured error as the real runner."""
         raise NbgvCommandError(("nbgv", "get-version"), 1, None, "missing blob")
+
+
+class InvalidJsonRunner:
+    """Mock runner that reports malformed NBGV JSON output."""
+
+    def __init__(self, *_, **__):
+        """Initialize the invalid JSON runner."""
+
+    def get_version(self, _cwd: Path) -> GitVersion:
+        """Raise the structured JSON parsing error from the real runner."""
+        message = "invalid NBGV JSON"
+        raise NbgvJsonError(message, "{")
+
+
+class InvalidVersionRunner:
+    """Mock runner that returns a version requiring normalization failure."""
+
+    def __init__(self, *_, **__):
+        """Initialize the invalid version runner."""
+
+    def get_version(self, _cwd: Path) -> GitVersion:
+        """Return an invalid version payload."""
+        return GitVersion.from_payload({"SimpleVersion": "not a version"})
 
 
 def test_hatch_plugin_writes_file(
@@ -93,15 +120,32 @@ def test_hatch_plugin_applies_epoch(
     assert fields["version_tuple"].startswith("(2, 1, 2, 3")
 
 
+@pytest.mark.parametrize(
+    ("runner_type", "expected_message"),
+    [
+        (FailingRunner, "missing blob"),
+        (InvalidJsonRunner, "invalid NBGV JSON"),
+        (InvalidVersionRunner, "not a valid PEP 440 version"),
+    ],
+)
 def test_hatch_plugin_raises_hatchling_compatible_runtime_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    runner_type: type,
+    expected_message: str,
 ) -> None:
     """Hatchling can reconstruct plugin failures without losing diagnostics."""
-    monkeypatch.setattr("nbgv_python.hatch_plugin.NbgvRunner", FailingRunner)
-    plugin = NbgvVersionSource(str(tmp_path), {"source": "nbgv"})
+    monkeypatch.setattr("nbgv_python.hatch_plugin.NbgvRunner", runner_type)
+    plugin = NbgvVersionSource(
+        str(tmp_path),
+        {"source": "nbgv", "nbgv": {"version-field": "SimpleVersion"}},
+    )
 
-    with pytest.raises(RuntimeError, match="missing blob") as exc:
+    with pytest.raises(RuntimeError, match=expected_message) as exc:
         plugin.get_version_data()
 
     assert type(exc.value) is RuntimeError
-    assert isinstance(exc.value.__cause__, NbgvCommandError)
+    assert isinstance(
+        exc.value.__cause__,
+        (NbgvCommandError, NbgvJsonError, NbgvVersionNormalizationError),
+    )
