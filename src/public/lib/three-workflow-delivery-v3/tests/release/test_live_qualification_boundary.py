@@ -507,6 +507,57 @@ def test_live_plan_build_transport_and_finalization_are_attempt_bound(  # noqa: 
     )
     assert isinstance(success_decision, QualificationDecision)
     assert success_decision.terminal_result == "success"
+    success_decision_arguments = _uploaded_arguments(
+        "qualification_decision",
+        success_decision_path,
+        success_decision.decision_digest,
+        113,
+    )
+    preparation_outcome_path = (
+        tmp_path / "publication-preparation-attempt-outcome.json"
+    )
+    assert (
+        cli_module.main(
+            [
+                "release",
+                "finalize-live",
+                *current,
+                *attempt_arguments,
+                *snapshot_arguments,
+                *build_evidence_arguments,
+                *project_evidence_arguments,
+                *contents_evidence_arguments,
+                *install_evidence_arguments,
+                *artifact_arguments,
+                *success_decision_arguments,
+                "--publication-preparation-interrupted",
+                "--outcome-output",
+                str(preparation_outcome_path),
+                "--summary-output",
+                str(tmp_path / "publication-preparation-summary.md"),
+            ]
+        )
+        == 1
+    )
+    preparation_outcome = admit_release_record(
+        preparation_outcome_path.read_bytes(),
+        expected_type=AttemptOutcome,
+        expected_digest=_transport_digest(preparation_outcome_path),
+        expected_bindings=ReleaseAdmissionBindings(
+            purpose="live-release",
+            workflow_run_id=live_intent.workflow_run_id,
+            run_attempt=live_intent.run_attempt,
+            target=live_intent.target,
+        ),
+    )
+    assert isinstance(preparation_outcome, AttemptOutcome)
+    assert preparation_outcome.terminal_phase == "publication-preparation"
+    assert preparation_outcome.result == "incomplete"
+    assert preparation_outcome.publication_snapshot_digest is None
+    assert preparation_outcome.uncertainty is True
+    assert preparation_outcome.possibly_mutated is False
+    assert preparation_outcome.next_action == "new-attempt"
+
     artifact = admit_release_record(
         artifact_path.read_bytes(),
         expected_type=ReleaseArtifact,
@@ -561,12 +612,6 @@ def test_live_plan_build_transport_and_finalization_are_attempt_bound(  # noqa: 
     authorization_path = _write(
         tmp_path / "live-authorization.json",
         canonicalize(authorization.to_document()),
-    )
-    success_decision_arguments = _uploaded_arguments(
-        "qualification_decision",
-        success_decision_path,
-        success_decision.decision_digest,
-        113,
     )
     publication_arguments = _uploaded_arguments(
         "publication_snapshot",

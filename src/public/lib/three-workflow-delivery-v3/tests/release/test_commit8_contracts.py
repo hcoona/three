@@ -461,6 +461,23 @@ def _qualification_outcome() -> AttemptOutcome:
     )
 
 
+def _publication_preparation_outcome() -> AttemptOutcome:
+    return AttemptOutcome(
+        attempt=ATTEMPT,
+        qualification_decision_digest="sha256:" + ("d" * 64),
+        publication_snapshot_digest=None,
+        authorization_digest=None,
+        capability_admission_digests=(),
+        capability_group_bundle_digests=(),
+        receipt_digests=(),
+        terminal_phase="publication-preparation",
+        result="incomplete",
+        uncertainty=True,
+        possibly_mutated=False,
+        next_action="new-attempt",
+    )
+
+
 @pytest.mark.parametrize(
     "record",
     [
@@ -472,6 +489,7 @@ def _qualification_outcome() -> AttemptOutcome:
         _group_bundle(),
         _attempt_outcome(),
         _qualification_outcome(),
+        _publication_preparation_outcome(),
     ],
 )
 def test_commit8_records_round_trip_through_closed_transport(record) -> None:
@@ -535,6 +553,24 @@ def test_commit8_records_round_trip_through_closed_transport(record) -> None:
             "next_action",
             "observe-destinations",
             "qualification-only",
+        ),
+        (
+            _publication_preparation_outcome(),
+            "uncertainty",
+            False,
+            "Publication preparation",
+        ),
+        (
+            _publication_preparation_outcome(),
+            "authorization_digest",
+            "sha256:" + ("f" * 64),
+            "Publication preparation",
+        ),
+        (
+            _publication_preparation_outcome(),
+            "publication_snapshot_digest",
+            "sha256:" + ("f" * 64),
+            "Publication preparation",
         ),
     ],
 )

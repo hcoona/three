@@ -888,6 +888,7 @@ def test_cli_exposes_only_the_commit7_release_transport_commands(
                 "--qualification-snapshot",
                 "--build-evidence",
                 "--release-artifact",
+                "--publication-preparation-interrupted",
                 "--outcome-output",
                 "--summary-output",
                 "--github-output",

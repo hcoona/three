@@ -1196,7 +1196,7 @@ def admit_live_capability(
     )
 
 
-def finalize_attempt_outcome(  # noqa: C901, PLR0912, PLR0915
+def finalize_attempt_outcome(  # noqa: C901, PLR0911, PLR0912, PLR0915
     *,
     attempt: ReleaseAttemptIdentity,
     qualification_decision: QualificationDecision,
@@ -1206,6 +1206,7 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0912, PLR0915
     group_bundles: tuple[CapabilityGroupResultBundle, ...],
     receipts: tuple[Receipt, ...],
     receipt_transport_references: tuple[ReceiptTransportReference, ...] = (),
+    publication_preparation_interrupted: bool = False,
     platform_terminated: bool = False,
     capability_may_have_started: bool = False,
 ) -> AttemptOutcome:
@@ -1219,9 +1220,13 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0912, PLR0915
     if qualification_decision.subject != attempt:
         message = "Live finalization Qualification binding mismatch"
         raise ValueError(message)
-    if (
-        type(platform_terminated) is not bool
-        or type(capability_may_have_started) is not bool
+    if any(
+        type(value) is not bool
+        for value in (
+            publication_preparation_interrupted,
+            platform_terminated,
+            capability_may_have_started,
+        )
     ):
         message = "Platform termination facts must be exact Booleans"
         raise TypeError(message)
@@ -1243,6 +1248,7 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0912, PLR0915
             or group_bundles
             or receipts
             or receipt_transport_references
+            or publication_preparation_interrupted
             or platform_terminated
             or capability_may_have_started
         ):
@@ -1263,6 +1269,35 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0912, PLR0915
             uncertainty=qualification_decision.terminal_result == "incomplete",
             possibly_mutated=False,
             next_action=qualification_decision.next_action,
+        )
+    if publication_preparation_interrupted:
+        if (
+            publication_snapshot is not None
+            or authorization is not None
+            or capability_decisions
+            or group_bundles
+            or receipts
+            or receipt_transport_references
+            or platform_terminated
+            or capability_may_have_started
+        ):
+            message = (
+                "Publication preparation interruption has contradictory records"
+            )
+            raise ValueError(message)
+        return AttemptOutcome(
+            attempt=attempt,
+            qualification_decision_digest=qualification_decision.decision_digest,
+            publication_snapshot_digest=None,
+            authorization_digest=None,
+            capability_admission_digests=(),
+            capability_group_bundle_digests=(),
+            receipt_digests=(),
+            terminal_phase="publication-preparation",
+            result="incomplete",
+            uncertainty=True,
+            possibly_mutated=False,
+            next_action="new-attempt",
         )
     if type(publication_snapshot) is not PublicationSnapshot:
         message = "Successful qualification requires Publication Snapshot"

@@ -4046,6 +4046,9 @@ def _release_finalize_live_command(arguments: argparse.Namespace) -> int:
                 payload_digest=receipt.receipt_digest,
             ),
         ),
+        publication_preparation_interrupted=(
+            arguments.publication_preparation_interrupted
+        ),
         platform_terminated=arguments.platform_terminated,
         capability_may_have_started=arguments.capability_may_have_started,
     )
@@ -5948,6 +5951,10 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         finalize_live,
         name="receipt",
         required=False,
+    )
+    finalize_live.add_argument(
+        "--publication-preparation-interrupted",
+        action="store_true",
     )
     finalize_live.add_argument(
         "--platform-terminated",

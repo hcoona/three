@@ -614,6 +614,49 @@ def test_successful_qualification_requires_publication_snapshot(
         )
 
 
+def test_publication_preparation_interruption_terminalizes_without_snapshot(
+    qualified_simulation,
+) -> None:
+    attempt, decision, publication, authorization = _closure(
+        qualified_simulation,
+        with_action=False,
+    )
+
+    outcome = finalize_attempt_outcome(
+        attempt=attempt,
+        qualification_decision=decision,
+        publication_snapshot=None,
+        authorization=None,
+        capability_decisions=(),
+        group_bundles=(),
+        receipts=(),
+        publication_preparation_interrupted=True,
+    )
+
+    assert outcome.publication_snapshot_digest is None
+    assert outcome.authorization_digest is None
+    assert outcome.terminal_phase == "publication-preparation"
+    assert outcome.result == "incomplete"
+    assert outcome.uncertainty is True
+    assert outcome.possibly_mutated is False
+    assert outcome.next_action == "new-attempt"
+
+    with pytest.raises(
+        ValueError,
+        match="contradictory records",
+    ):
+        finalize_attempt_outcome(
+            attempt=attempt,
+            qualification_decision=decision,
+            publication_snapshot=publication,
+            authorization=authorization,
+            capability_decisions=(),
+            group_bundles=(),
+            receipts=(),
+            publication_preparation_interrupted=True,
+        )
+
+
 def test_diagnostic_only_rejection_never_authorizes_or_starts_capability() -> (
     None
 ):

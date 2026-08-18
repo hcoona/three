@@ -3791,7 +3791,7 @@ class AttemptOutcome:
     possibly_mutated: bool
     next_action: str
 
-    def __post_init__(self) -> None:
+    def __post_init__(self) -> None:  # noqa: C901, PLR0912
         """Reject false completion and ambiguous replay classifications."""
         _exact(
             self.attempt,
@@ -3863,28 +3863,51 @@ class AttemptOutcome:
             message = "No-side-effect replay cannot be possibly mutated"
             raise ValueError(message)
         if self.publication_snapshot_digest is None:
-            expected_next_action = {
-                "failure": "fix-quality-failure-and-rerun",
-                "incomplete": "new-attempt",
-            }.get(self.result)
-            if (
-                self.terminal_phase != "qualification"
-                or self.authorization_digest is not None
+            has_later_records = bool(
+                self.authorization_digest is not None
                 or self.capability_admission_digests
                 or self.capability_group_bundle_digests
                 or self.receipt_digests
-                or self.result not in {"failure", "incomplete"}
-                or self.possibly_mutated
-                or (self.result == "failure" and self.uncertainty)
-                or (self.result == "incomplete" and not self.uncertainty)
-                or self.next_action != expected_next_action
-            ):
+            )
+            if self.terminal_phase == "qualification":
+                expected_next_action = {
+                    "failure": "fix-quality-failure-and-rerun",
+                    "incomplete": "new-attempt",
+                }.get(self.result)
+                if (
+                    has_later_records
+                    or self.result not in {"failure", "incomplete"}
+                    or self.possibly_mutated
+                    or (self.result == "failure" and self.uncertainty)
+                    or (self.result == "incomplete" and not self.uncertainty)
+                    or self.next_action != expected_next_action
+                ):
+                    message = (
+                        "Pre-publication Attempt Outcome is not "
+                        "qualification-only"
+                    )
+                    raise ValueError(message)
+            elif self.terminal_phase == "publication-preparation":
+                if (
+                    has_later_records
+                    or self.result != "incomplete"
+                    or not self.uncertainty
+                    or self.possibly_mutated
+                    or self.next_action != "new-attempt"
+                ):
+                    message = "Publication preparation Outcome is not exact"
+                    raise ValueError(message)
+            else:
                 message = (
-                    "Pre-publication Attempt Outcome is not qualification-only"
+                    "Publication-free Attempt Outcome has an invalid "
+                    "terminal phase"
                 )
                 raise ValueError(message)
         elif self.terminal_phase == "qualification":
             message = "Qualification-only outcome cannot bind publication"
+            raise ValueError(message)
+        elif self.terminal_phase == "publication-preparation":
+            message = "Publication preparation Outcome cannot bind publication"
             raise ValueError(message)
 
     def to_document(self) -> dict[str, JsonValue]:
