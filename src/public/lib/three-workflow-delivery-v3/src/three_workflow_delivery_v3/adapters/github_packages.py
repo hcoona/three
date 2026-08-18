@@ -1785,7 +1785,7 @@ def github_package_versions_url(
     page: int,
     per_page: int,
 ) -> str:
-    """Return the exact escaped organization npm package versions URL."""
+    """Return the exact escaped user-owned npm package versions URL."""
     if (
         owner != GITHUB_PACKAGES_OWNER
         or package_name != GITHUB_PACKAGES_PACKAGE
@@ -1801,7 +1801,7 @@ def github_package_versions_url(
         raise ValueError(message)
     encoded = urllib.parse.quote(package_name, safe="")
     return (
-        f"{GITHUB_API_ORIGIN}/orgs/{owner}/packages/npm/{encoded}/versions"
+        f"{GITHUB_API_ORIGIN}/users/{owner}/packages/npm/{encoded}/versions"
         f"?per_page={size}&page={page}"
     )
 

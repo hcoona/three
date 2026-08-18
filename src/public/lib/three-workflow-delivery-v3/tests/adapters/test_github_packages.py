@@ -251,7 +251,7 @@ def test_github_packages_requests_exact_escaped_endpoints_headers_and_pages() ->
         page=1,
         per_page=100,
     ) == (
-        "https://api.github.com/orgs/hcoona/packages/npm/"
+        "https://api.github.com/users/hcoona/packages/npm/"
         "%40hcoona%2Fhcoona-release-smoke-npm/versions?per_page=100&page=1"
     )
     assert adapter.github_package_versions_url(
@@ -260,7 +260,7 @@ def test_github_packages_requests_exact_escaped_endpoints_headers_and_pages() ->
         page=2,
         per_page=100,
     ) == (
-        "https://api.github.com/orgs/hcoona/packages/npm/"
+        "https://api.github.com/users/hcoona/packages/npm/"
         "%40hcoona%2Fhcoona-release-smoke-npm/versions?per_page=100&page=2"
     )
     assert adapter.npm_exact_metadata_url(
@@ -572,7 +572,7 @@ def test_concrete_transport_rejects_bad_redirects_and_off_origin() -> None:
 def test_github_packages_versions_link_next_is_authoritative() -> None:
     adapter = _adapter()
     requested = (
-        "https://api.github.com/orgs/hcoona/packages/npm/"
+        "https://api.github.com/users/hcoona/packages/npm/"
         "%40hcoona%2Fhcoona-release-smoke-npm/versions?per_page=100&page=1"
     )
     next_url = requested.replace("page=1", "page=2")
