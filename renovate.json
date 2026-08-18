@@ -33,7 +33,8 @@
   },
   "vulnerabilityAlerts": {
     "enabled": true,
-    "labels": ["security"]
+    "labels": ["security"],
+    "minimumGroupSize": 1
   },
   "packageRules": [
     {
@@ -375,6 +376,14 @@
       "matchManagers": ["nuget"],
       "matchPackageNames": ["/^Microsoft\\.SemanticKernel/"],
       "groupName": "Microsoft Semantic Kernel Packages"
+    },
+    {
+      "description": "Keep directly referenced NuGet client libraries on a compatible release.",
+      "matchManagers": ["nuget"],
+      "matchFileNames": ["Directory.Packages.props"],
+      "matchPackageNames": ["NuGet.ProjectModel", "NuGet.Protocol"],
+      "groupName": "NuGet Client Libraries",
+      "minimumGroupSize": 2
     },
     {
       "description": "Group .NET test stack updates.",
