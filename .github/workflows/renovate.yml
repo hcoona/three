@@ -125,6 +125,23 @@ jobs:
       - name: Install Renovate CLI
         run: npm install --global "renovate@${RENOVATE_VERSION}"
 
+      - name: Force full Renovate fallback clones
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $renovateGitModule = Join-Path (& npm root --global) 'renovate/dist/util/git/index.js'
+          $content = Get-Content -Path $renovateGitModule -Raw
+          $needle = 'const opts = [];'
+          $matchCount = ([regex]::Matches($content, [regex]::Escape($needle))).Count
+          if ($matchCount -ne 1) {
+            throw "Expected one Renovate clone-options initialization, but found $matchCount."
+          }
+
+          $replacement = "$needle`n`t`t`tconfig.fullClone = true;"
+          Set-Content -Path $renovateGitModule -Value $content.Replace($needle, $replacement) -NoNewline
+          node --check $renovateGitModule
+
       - name: Create Renovate GitHub App token
         id: renovate-app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
