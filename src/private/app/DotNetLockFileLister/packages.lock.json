@@ -33,11 +33,11 @@
       },
       "NuGet.ProjectModel": {
         "type": "Direct",
-        "requested": "[7.6.0, )",
-        "resolved": "7.6.0",
-        "contentHash": "riIgLhY6Ek+YGgAsw159wbeG+v9S5v7naFFg9tPCr8uNoqoP/dXy9sxCAPRQqoYxao6Gqe8nKN7NiI+EOfjSVw==",
+        "requested": "[7.9.0, )",
+        "resolved": "7.9.0",
+        "contentHash": "RIDWJdbA/1P+IA+QjjhG7RTAN1eEmJJFKtXMRz5dNoHX7EmIdpUURdiygmgykHHuhXX4aPAMZ49OONT3SITtOQ==",
         "dependencies": {
-          "NuGet.DependencyResolver.Core": "7.6.0"
+          "NuGet.DependencyResolver.Core": "7.9.0"
         }
       },
       "Microsoft.Build.Tasks.Git": {
@@ -77,12 +77,12 @@
       },
       "NuGet.DependencyResolver.Core": {
         "type": "Transitive",
-        "resolved": "7.6.0",
-        "contentHash": "4SfWqW1dNB1d5tIFhooCmKwVAYoT7on9jyIzMYBmvaQY0bBbbdYLjk4VbX1f1bVfq7AGXX32TXO//sH+JtWkig==",
+        "resolved": "7.9.0",
+        "contentHash": "0OVtQufJaPMJGdGpjuPmsDwvYX1SdE1L0XDCGfSnIPDj/tyUKILAuVrjHINPFl7smrsdtmoIlIJkEEDYpd1LMQ==",
         "dependencies": {
-          "NuGet.Configuration": "7.6.0",
-          "NuGet.LibraryModel": "7.6.0",
-          "NuGet.Protocol": "7.6.0"
+          "NuGet.Configuration": "7.9.0",
+          "NuGet.LibraryModel": "7.9.0",
+          "NuGet.Protocol": "7.9.0"
         }
       },
       "NuGet.Frameworks": {
@@ -92,11 +92,11 @@
       },
       "NuGet.LibraryModel": {
         "type": "Transitive",
-        "resolved": "7.6.0",
-        "contentHash": "Wmr4qdzde4G83YiqdxNFkGZYFrFj1Dr65+XAGuRKn+Ij+FtX35KJgcwm62yPi+Yp3tif0AwMHhTK4JYnVHI4QQ==",
+        "resolved": "7.9.0",
+        "contentHash": "96/6qeHY4CfOpMyk6XyOBbNF1QD50iFNFs2rs0ppBG3EYF5FyWZHvRHZoq3COXM2zlKmqrGt0EBCUkgdXvyGfw==",
         "dependencies": {
-          "NuGet.Common": "7.6.0",
-          "NuGet.Versioning": "7.6.0"
+          "NuGet.Common": "7.9.0",
+          "NuGet.Versioning": "7.9.0"
         }
       },
       "NuGet.Packaging": {

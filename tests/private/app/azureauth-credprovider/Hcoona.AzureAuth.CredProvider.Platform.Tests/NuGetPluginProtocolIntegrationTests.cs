@@ -74,9 +74,11 @@ public sealed class NuGetPluginProtocolIntegrationTests
         Message outboundHandshake = await DeserializeMessageAsync(outboundHandshakeLine);
         Assert.Equal(MessageType.Request, outboundHandshake.Type);
         Assert.Equal(MessageMethod.Handshake, outboundHandshake.Method);
-        HandshakeRequest outboundPayload = MessageUtilities.DeserializePayload<HandshakeRequest>(
-            outboundHandshake
-        );
+        HandshakeRequest outboundPayload =
+            MessageUtilities.DeserializePayload<HandshakeRequest>(outboundHandshake)
+            ?? throw new InvalidDataException(
+                "NuGet plugin handshake request did not contain a valid payload."
+            );
         Message outboundHandshakeResponse = MessageUtilities.Create(
             outboundHandshake.RequestId,
             MessageType.Response,
@@ -129,9 +131,11 @@ public sealed class NuGetPluginProtocolIntegrationTests
         Assert.Equal(HandshakeRequestId, handshakeResponse.RequestId);
         Assert.Equal(MessageType.Response, handshakeResponse.Type);
         Assert.Equal(MessageMethod.Handshake, handshakeResponse.Method);
-        HandshakeResponse handshakePayload = MessageUtilities.DeserializePayload<HandshakeResponse>(
-            handshakeResponse
-        );
+        HandshakeResponse handshakePayload =
+            MessageUtilities.DeserializePayload<HandshakeResponse>(handshakeResponse)
+            ?? throw new InvalidDataException(
+                "NuGet plugin handshake response did not contain a valid payload."
+            );
         Assert.Equal(MessageResponseCode.Success, handshakePayload.ResponseCode);
         Assert.Equal(currentProtocolVersion, handshakePayload.ProtocolVersion);
     }

@@ -95,7 +95,7 @@ public sealed class NuGetPluginAdapter
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        return request.PackageSourceRepository is null && request.ServiceIndex is null
+        return request.PackageSourceRepository is null && request.ServiceIndexJson is null
             ? new GetOperationClaimsResponse([OperationClaim.Authentication])
             : new GetOperationClaimsResponse([]);
     }
@@ -521,6 +521,7 @@ public sealed class NuGetPluginAdapter
     }
 
     private abstract class NuGetRequestHandler<TRequest, TResponse> : IRequestHandler
+        where TRequest : class
         where TResponse : class
     {
         public CancellationToken CancellationToken { get; } = CancellationToken.None;
@@ -537,7 +538,11 @@ public sealed class NuGetPluginAdapter
             ArgumentNullException.ThrowIfNull(responseHandler);
             cancellationToken.ThrowIfCancellationRequested();
 
-            TRequest payload = MessageUtilities.DeserializePayload<TRequest>(request);
+            TRequest payload =
+                MessageUtilities.DeserializePayload<TRequest>(request)
+                ?? throw new InvalidDataException(
+                    $"NuGet plugin request '{request.Method}' did not contain a valid payload."
+                );
             TResponse response;
             if (ShouldReportProgress(payload))
             {
