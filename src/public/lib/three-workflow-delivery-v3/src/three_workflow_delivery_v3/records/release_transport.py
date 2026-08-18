@@ -2477,7 +2477,7 @@ def _attempt_outcome(value: JsonValue) -> AttemptOutcome:
             document["qualification-decision-digest"],
             field="attempt outcome.qualification-decision-digest",
         ),
-        publication_snapshot_digest=_string(
+        publication_snapshot_digest=_nullable_string(
             document["publication-snapshot-digest"],
             field="attempt outcome.publication-snapshot-digest",
         ),

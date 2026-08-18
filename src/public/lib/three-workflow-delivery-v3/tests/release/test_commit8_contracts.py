@@ -444,6 +444,23 @@ def _attempt_outcome() -> AttemptOutcome:
     )
 
 
+def _qualification_outcome() -> AttemptOutcome:
+    return AttemptOutcome(
+        attempt=ATTEMPT,
+        qualification_decision_digest="sha256:" + ("d" * 64),
+        publication_snapshot_digest=None,
+        authorization_digest=None,
+        capability_admission_digests=(),
+        capability_group_bundle_digests=(),
+        receipt_digests=(),
+        terminal_phase="qualification",
+        result="incomplete",
+        uncertainty=True,
+        possibly_mutated=False,
+        next_action="new-attempt",
+    )
+
+
 @pytest.mark.parametrize(
     "record",
     [
@@ -454,6 +471,7 @@ def _attempt_outcome() -> AttemptOutcome:
         _action_result(),
         _group_bundle(),
         _attempt_outcome(),
+        _qualification_outcome(),
     ],
 )
 def test_commit8_records_round_trip_through_closed_transport(record) -> None:
@@ -505,6 +523,18 @@ def test_commit8_records_round_trip_through_closed_transport(record) -> None:
             "possibly_mutated",
             True,
             "Successful Attempt Outcome",
+        ),
+        (
+            _qualification_outcome(),
+            "receipt_digests",
+            ("sha256:" + ("e" * 64),),
+            "qualification-only",
+        ),
+        (
+            _qualification_outcome(),
+            "next_action",
+            "observe-destinations",
+            "qualification-only",
         ),
     ],
 )

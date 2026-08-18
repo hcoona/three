@@ -565,6 +565,7 @@ jobs:
 
   npm-artifact-qualification:
     name: Qualify exact npm artifact
+    if: always() && needs.build-tarball.result != 'skipped'
     needs: build-tarball
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -593,11 +594,11 @@ jobs:
       contents-evidence-artifact-id: ${{ steps.upload-contents.outputs.artifact-id }}
       contents-evidence-artifact-digest: ${{ steps.upload-contents.outputs.artifact-digest }}
       contents-evidence-artifact-name: ${{ steps.names.outputs.contents-evidence-name }}
-      contents-evidence-digest: ${{ steps.contents.outputs.artifact-contents-evidence-digest }}
+      contents-evidence-digest: ${{ steps.contents.outputs.artifact-contents-evidence-digest || steps.incomplete-contents.outputs.artifact-contents-evidence-digest }}
       install-evidence-artifact-id: ${{ steps.upload-install.outputs.artifact-id }}
       install-evidence-artifact-digest: ${{ steps.upload-install.outputs.artifact-digest }}
       install-evidence-artifact-name: ${{ steps.names.outputs.install-evidence-name }}
-      install-evidence-digest: ${{ steps.install.outputs.install-import-evidence-digest }}
+      install-evidence-digest: ${{ steps.install.outputs.install-import-evidence-digest || steps.incomplete-install.outputs.install-import-evidence-digest }}
     steps:
       - name: Check out exact selected target
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -629,6 +630,7 @@ jobs:
           skip-decompress: true
           digest-mismatch: error
       - name: Download exact tarball by artifact ID
+        if: needs.build-tarball.outputs.tarball-artifact-id != ''
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           artifact-ids: ${{ needs.build-tarball.outputs.tarball-artifact-id }}
@@ -636,6 +638,7 @@ jobs:
           skip-decompress: true
           digest-mismatch: error
       - name: Download Release Artifact record by artifact ID
+        if: needs.build-tarball.outputs.release-artifact-artifact-id != ''
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           artifact-ids: ${{ needs.build-tarball.outputs.release-artifact-artifact-id }}
@@ -644,6 +647,9 @@ jobs:
           digest-mismatch: error
       - name: Run artifact-contents mechanics
         id: contents
+        if: needs.build-tarball.outputs.release-artifact-artifact-id != '' && needs.build-tarball.outputs.tarball-artifact-id != ''
+        env:
+          TARBALL_NAME: ${{ needs.build-tarball.outputs.tarball-artifact-name }}
         run: |
           uv run --python 3.13 --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release run-artifact-contents \
@@ -663,11 +669,32 @@ jobs:
             --release-artifact-digest "${{ needs.build-tarball.outputs.release-artifact-digest }}" \
             --release-artifact-artifact-id "${{ needs.build-tarball.outputs.release-artifact-artifact-id }}" \
             --release-artifact-artifact-digest "${{ needs.build-tarball.outputs.release-artifact-artifact-digest }}" \
-            --tarball ".wdv3/input/${{ needs.build-tarball.outputs.tarball-artifact-name }}" \
+            --tarball ".wdv3/input/${TARBALL_NAME}" \
+            --output .wdv3/artifact-contents-evidence.json \
+            --github-output "${GITHUB_OUTPUT}"
+      - name: Form incomplete artifact-contents Evidence
+        id: incomplete-contents
+        if: needs.build-tarball.outputs.release-artifact-artifact-id == '' || needs.build-tarball.outputs.tarball-artifact-id == ''
+        run: |
+          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+            three-workflow-delivery-v3 release form-incomplete-evidence \
+            --workflow-run-id "${GITHUB_RUN_ID}" \
+            --run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --target "${{ inputs.target-sha }}" \
+            --purpose "${WDV3_PURPOSE}" \
+            --qualification-snapshot ".wdv3/input/${{ needs.build-tarball.outputs.qualification-snapshot-artifact-name }}" \
+            --qualification-snapshot-digest "${{ needs.build-tarball.outputs.qualification-snapshot-digest }}" \
+            --qualification-snapshot-artifact-id "${{ needs.build-tarball.outputs.qualification-snapshot-artifact-id }}" \
+            --qualification-snapshot-artifact-digest "${{ needs.build-tarball.outputs.qualification-snapshot-artifact-digest }}" \
+            --obligation-id release:quality:npm-artifact-contents \
+            --output-role artifact-contents-evidence \
             --output .wdv3/artifact-contents-evidence.json \
             --github-output "${GITHUB_OUTPUT}"
       - name: Run install-import mechanics
         id: install
+        if: needs.build-tarball.outputs.release-artifact-artifact-id != '' && needs.build-tarball.outputs.tarball-artifact-id != ''
+        env:
+          TARBALL_NAME: ${{ needs.build-tarball.outputs.tarball-artifact-name }}
         run: |
           uv run --python 3.13 --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release run-install-import \
@@ -687,16 +714,35 @@ jobs:
             --release-artifact-digest "${{ needs.build-tarball.outputs.release-artifact-digest }}" \
             --release-artifact-artifact-id "${{ needs.build-tarball.outputs.release-artifact-artifact-id }}" \
             --release-artifact-artifact-digest "${{ needs.build-tarball.outputs.release-artifact-artifact-digest }}" \
-            --tarball ".wdv3/input/${{ needs.build-tarball.outputs.tarball-artifact-name }}" \
+            --tarball ".wdv3/input/${TARBALL_NAME}" \
+            --output .wdv3/install-import-evidence.json \
+            --github-output "${GITHUB_OUTPUT}"
+      - name: Form incomplete install-import Evidence
+        id: incomplete-install
+        if: needs.build-tarball.outputs.release-artifact-artifact-id == '' || needs.build-tarball.outputs.tarball-artifact-id == ''
+        run: |
+          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+            three-workflow-delivery-v3 release form-incomplete-evidence \
+            --workflow-run-id "${GITHUB_RUN_ID}" \
+            --run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --target "${{ inputs.target-sha }}" \
+            --purpose "${WDV3_PURPOSE}" \
+            --qualification-snapshot ".wdv3/input/${{ needs.build-tarball.outputs.qualification-snapshot-artifact-name }}" \
+            --qualification-snapshot-digest "${{ needs.build-tarball.outputs.qualification-snapshot-digest }}" \
+            --qualification-snapshot-artifact-id "${{ needs.build-tarball.outputs.qualification-snapshot-artifact-id }}" \
+            --qualification-snapshot-artifact-digest "${{ needs.build-tarball.outputs.qualification-snapshot-artifact-digest }}" \
+            --obligation-id release:quality:npm-install-import \
+            --output-role install-import-evidence \
             --output .wdv3/install-import-evidence.json \
             --github-output "${GITHUB_OUTPUT}"
       - name: Materialize exact npm qualification basenames
         id: names
+        env:
+          CONTENTS_DIGEST: ${{ steps.contents.outputs.artifact-contents-evidence-digest || steps.incomplete-contents.outputs.artifact-contents-evidence-digest }}
+          INSTALL_DIGEST: ${{ steps.install.outputs.install-import-evidence-digest || steps.incomplete-install.outputs.install-import-evidence-digest }}
         run: |
-          contents_digest="${{ steps.contents.outputs.artifact-contents-evidence-digest }}"
-          install_digest="${{ steps.install.outputs.install-import-evidence-digest }}"
-          contents_name="wdv3-live-buddy-artifact-contents-evidence-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${contents_digest#sha256:}.json"
-          install_name="wdv3-live-buddy-install-import-evidence-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${install_digest#sha256:}.json"
+          contents_name="wdv3-live-buddy-artifact-contents-evidence-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${CONTENTS_DIGEST#sha256:}.json"
+          install_name="wdv3-live-buddy-install-import-evidence-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${INSTALL_DIGEST#sha256:}.json"
           mv .wdv3/artifact-contents-evidence.json ".wdv3/${contents_name}"
           mv .wdv3/install-import-evidence.json ".wdv3/${install_name}"
           echo "contents-evidence-name=${contents_name}" >> "${GITHUB_OUTPUT}"
@@ -726,8 +772,8 @@ jobs:
 
   qualification-finalizer:
     name: Finalize exact four-obligation qualification
-    if: always()
-    needs: [project-test, npm-artifact-qualification]
+    if: always() && needs.build-tarball.result != 'skipped'
+    needs: [build-tarball, project-test, npm-artifact-qualification]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -738,21 +784,37 @@ jobs:
       decision-artifact-name: ${{ steps.finalize.outputs.qualification-decision-artifact-name }}
       decision-digest: ${{ steps.finalize.outputs.qualification-decision-digest }}
       qualification-result: ${{ steps.finalize.outputs.qualification-result }}
-      qualification-snapshot-artifact-id: ${{ needs.npm-artifact-qualification.outputs.qualification-snapshot-artifact-id }}
-      qualification-snapshot-artifact-digest: ${{ needs.npm-artifact-qualification.outputs.qualification-snapshot-artifact-digest }}
-      qualification-snapshot-artifact-name: ${{ needs.npm-artifact-qualification.outputs.qualification-snapshot-artifact-name }}
-      qualification-snapshot-digest: ${{ needs.npm-artifact-qualification.outputs.qualification-snapshot-digest }}
-      adapter-context-artifact-id: ${{ needs.npm-artifact-qualification.outputs.adapter-context-artifact-id }}
-      adapter-context-artifact-digest: ${{ needs.npm-artifact-qualification.outputs.adapter-context-artifact-digest }}
-      adapter-context-artifact-name: ${{ needs.npm-artifact-qualification.outputs.adapter-context-artifact-name }}
-      adapter-context-digest: ${{ needs.npm-artifact-qualification.outputs.adapter-context-digest }}
-      release-artifact-artifact-id: ${{ needs.npm-artifact-qualification.outputs.release-artifact-artifact-id }}
-      release-artifact-artifact-digest: ${{ needs.npm-artifact-qualification.outputs.release-artifact-artifact-digest }}
-      release-artifact-artifact-name: ${{ needs.npm-artifact-qualification.outputs.release-artifact-artifact-name }}
-      release-artifact-digest: ${{ needs.npm-artifact-qualification.outputs.release-artifact-digest }}
-      tarball-artifact-id: ${{ needs.npm-artifact-qualification.outputs.tarball-artifact-id }}
-      tarball-artifact-digest: ${{ needs.npm-artifact-qualification.outputs.tarball-artifact-digest }}
-      tarball-artifact-name: ${{ needs.npm-artifact-qualification.outputs.tarball-artifact-name }}
+      build-evidence-artifact-id: ${{ needs.build-tarball.outputs.build-evidence-artifact-id }}
+      build-evidence-artifact-digest: ${{ needs.build-tarball.outputs.build-evidence-artifact-digest }}
+      build-evidence-artifact-name: ${{ needs.build-tarball.outputs.build-evidence-artifact-name }}
+      build-evidence-digest: ${{ needs.build-tarball.outputs.build-evidence-digest }}
+      project-test-evidence-artifact-id: ${{ needs.project-test.outputs.evidence-artifact-id }}
+      project-test-evidence-artifact-digest: ${{ needs.project-test.outputs.evidence-artifact-digest }}
+      project-test-evidence-artifact-name: ${{ needs.project-test.outputs.evidence-artifact-name }}
+      project-test-evidence-digest: ${{ needs.project-test.outputs.evidence-digest }}
+      artifact-contents-evidence-artifact-id: ${{ needs.npm-artifact-qualification.outputs.contents-evidence-artifact-id }}
+      artifact-contents-evidence-artifact-digest: ${{ needs.npm-artifact-qualification.outputs.contents-evidence-artifact-digest }}
+      artifact-contents-evidence-artifact-name: ${{ needs.npm-artifact-qualification.outputs.contents-evidence-artifact-name }}
+      artifact-contents-evidence-digest: ${{ needs.npm-artifact-qualification.outputs.contents-evidence-digest }}
+      install-import-evidence-artifact-id: ${{ needs.npm-artifact-qualification.outputs.install-evidence-artifact-id }}
+      install-import-evidence-artifact-digest: ${{ needs.npm-artifact-qualification.outputs.install-evidence-artifact-digest }}
+      install-import-evidence-artifact-name: ${{ needs.npm-artifact-qualification.outputs.install-evidence-artifact-name }}
+      install-import-evidence-digest: ${{ needs.npm-artifact-qualification.outputs.install-evidence-digest }}
+      qualification-snapshot-artifact-id: ${{ needs.build-tarball.outputs.qualification-snapshot-artifact-id }}
+      qualification-snapshot-artifact-digest: ${{ needs.build-tarball.outputs.qualification-snapshot-artifact-digest }}
+      qualification-snapshot-artifact-name: ${{ needs.build-tarball.outputs.qualification-snapshot-artifact-name }}
+      qualification-snapshot-digest: ${{ needs.build-tarball.outputs.qualification-snapshot-digest }}
+      adapter-context-artifact-id: ${{ needs.build-tarball.outputs.adapter-context-artifact-id }}
+      adapter-context-artifact-digest: ${{ needs.build-tarball.outputs.adapter-context-artifact-digest }}
+      adapter-context-artifact-name: ${{ needs.build-tarball.outputs.adapter-context-artifact-name }}
+      adapter-context-digest: ${{ needs.build-tarball.outputs.adapter-context-digest }}
+      release-artifact-artifact-id: ${{ needs.build-tarball.outputs.release-artifact-artifact-id }}
+      release-artifact-artifact-digest: ${{ needs.build-tarball.outputs.release-artifact-artifact-digest }}
+      release-artifact-artifact-name: ${{ needs.build-tarball.outputs.release-artifact-artifact-name }}
+      release-artifact-digest: ${{ needs.build-tarball.outputs.release-artifact-digest }}
+      tarball-artifact-id: ${{ needs.build-tarball.outputs.tarball-artifact-id }}
+      tarball-artifact-digest: ${{ needs.build-tarball.outputs.tarball-artifact-digest }}
+      tarball-artifact-name: ${{ needs.build-tarball.outputs.tarball-artifact-name }}
     steps:
       - name: Check out exact selected target
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -767,15 +829,15 @@ jobs:
       - name: Download Qualification Snapshot by artifact ID
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          artifact-ids: ${{ needs.npm-artifact-qualification.outputs.qualification-snapshot-artifact-id }}
+          artifact-ids: ${{ needs.build-tarball.outputs.qualification-snapshot-artifact-id }}
           path: .wdv3/input
           skip-decompress: true
           digest-mismatch: error
       - name: Download build Evidence by artifact ID
-        if: needs.npm-artifact-qualification.outputs.build-evidence-artifact-id != ''
+        if: needs.build-tarball.outputs.build-evidence-artifact-id != ''
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          artifact-ids: ${{ needs.npm-artifact-qualification.outputs.build-evidence-artifact-id }}
+          artifact-ids: ${{ needs.build-tarball.outputs.build-evidence-artifact-id }}
           path: .wdv3/input
           skip-decompress: true
           digest-mismatch: error
@@ -804,10 +866,10 @@ jobs:
           skip-decompress: true
           digest-mismatch: error
       - name: Download Release Artifact record by artifact ID
-        if: needs.npm-artifact-qualification.outputs.release-artifact-artifact-id != ''
+        if: needs.build-tarball.outputs.release-artifact-artifact-id != ''
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          artifact-ids: ${{ needs.npm-artifact-qualification.outputs.release-artifact-artifact-id }}
+          artifact-ids: ${{ needs.build-tarball.outputs.release-artifact-artifact-id }}
           path: .wdv3/input
           skip-decompress: true
           digest-mismatch: error
@@ -815,9 +877,9 @@ jobs:
         id: finalize
         if: always()
         env:
-          BUILD_ID: ${{ needs.npm-artifact-qualification.outputs.build-evidence-artifact-id }}
-          BUILD_DIGEST: ${{ needs.npm-artifact-qualification.outputs.build-evidence-digest }}
-          BUILD_UPLOAD: ${{ needs.npm-artifact-qualification.outputs.build-evidence-artifact-digest }}
+          BUILD_ID: ${{ needs.build-tarball.outputs.build-evidence-artifact-id }}
+          BUILD_DIGEST: ${{ needs.build-tarball.outputs.build-evidence-digest }}
+          BUILD_UPLOAD: ${{ needs.build-tarball.outputs.build-evidence-artifact-digest }}
           TEST_ID: ${{ needs.project-test.outputs.evidence-artifact-id }}
           TEST_DIGEST: ${{ needs.project-test.outputs.evidence-digest }}
           TEST_UPLOAD: ${{ needs.project-test.outputs.evidence-artifact-digest }}
@@ -827,9 +889,9 @@ jobs:
           INSTALL_ID: ${{ needs.npm-artifact-qualification.outputs.install-evidence-artifact-id }}
           INSTALL_DIGEST: ${{ needs.npm-artifact-qualification.outputs.install-evidence-digest }}
           INSTALL_UPLOAD: ${{ needs.npm-artifact-qualification.outputs.install-evidence-artifact-digest }}
-          ARTIFACT_ID: ${{ needs.npm-artifact-qualification.outputs.release-artifact-artifact-id }}
-          ARTIFACT_DIGEST: ${{ needs.npm-artifact-qualification.outputs.release-artifact-digest }}
-          ARTIFACT_UPLOAD: ${{ needs.npm-artifact-qualification.outputs.release-artifact-artifact-digest }}
+          ARTIFACT_ID: ${{ needs.build-tarball.outputs.release-artifact-artifact-id }}
+          ARTIFACT_DIGEST: ${{ needs.build-tarball.outputs.release-artifact-digest }}
+          ARTIFACT_UPLOAD: ${{ needs.build-tarball.outputs.release-artifact-artifact-digest }}
         run: |
           args=()
           add_record() {
@@ -852,21 +914,21 @@ jobs:
               "--${role}-artifact-digest" "${upload}"
             )
           }
-          add_record build-evidence ".wdv3/input/${{ needs.npm-artifact-qualification.outputs.build-evidence-artifact-name }}" "${BUILD_DIGEST}" "${BUILD_ID}" "${BUILD_UPLOAD}"
+          add_record build-evidence ".wdv3/input/${{ needs.build-tarball.outputs.build-evidence-artifact-name }}" "${BUILD_DIGEST}" "${BUILD_ID}" "${BUILD_UPLOAD}"
           add_record project-test-evidence ".wdv3/input/${{ needs.project-test.outputs.evidence-artifact-name }}" "${TEST_DIGEST}" "${TEST_ID}" "${TEST_UPLOAD}"
           add_record artifact-contents-evidence ".wdv3/input/${{ needs.npm-artifact-qualification.outputs.contents-evidence-artifact-name }}" "${CONTENTS_DIGEST}" "${CONTENTS_ID}" "${CONTENTS_UPLOAD}"
           add_record install-import-evidence ".wdv3/input/${{ needs.npm-artifact-qualification.outputs.install-evidence-artifact-name }}" "${INSTALL_DIGEST}" "${INSTALL_ID}" "${INSTALL_UPLOAD}"
-          add_record release-artifact ".wdv3/input/${{ needs.npm-artifact-qualification.outputs.release-artifact-artifact-name }}" "${ARTIFACT_DIGEST}" "${ARTIFACT_ID}" "${ARTIFACT_UPLOAD}"
+          add_record release-artifact ".wdv3/input/${{ needs.build-tarball.outputs.release-artifact-artifact-name }}" "${ARTIFACT_DIGEST}" "${ARTIFACT_ID}" "${ARTIFACT_UPLOAD}"
           uv run --python 3.13 --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release finalize-qualification \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
             --target "${{ inputs.target-sha }}" \
             --purpose "${WDV3_PURPOSE}" \
-            --qualification-snapshot ".wdv3/input/${{ needs.npm-artifact-qualification.outputs.qualification-snapshot-artifact-name }}" \
-            --qualification-snapshot-digest "${{ needs.npm-artifact-qualification.outputs.qualification-snapshot-digest }}" \
-            --qualification-snapshot-artifact-id "${{ needs.npm-artifact-qualification.outputs.qualification-snapshot-artifact-id }}" \
-            --qualification-snapshot-artifact-digest "${{ needs.npm-artifact-qualification.outputs.qualification-snapshot-artifact-digest }}" \
+            --qualification-snapshot ".wdv3/input/${{ needs.build-tarball.outputs.qualification-snapshot-artifact-name }}" \
+            --qualification-snapshot-digest "${{ needs.build-tarball.outputs.qualification-snapshot-digest }}" \
+            --qualification-snapshot-artifact-id "${{ needs.build-tarball.outputs.qualification-snapshot-artifact-id }}" \
+            --qualification-snapshot-artifact-digest "${{ needs.build-tarball.outputs.qualification-snapshot-artifact-digest }}" \
             "${args[@]}" \
             --output .wdv3/qualification-decision.json \
             --github-output "${GITHUB_OUTPUT}"
@@ -888,6 +950,7 @@ jobs:
 
   observe-github-packages:
     name: Observe GitHub Packages destination
+    if: needs.qualification-finalizer.outputs.qualification-result == 'success'
     needs: qualification-finalizer
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -1289,7 +1352,7 @@ jobs:
 
   approval-finalizer:
     name: Finalize approval and admit capability
-    if: always()
+    if: always() && needs.materialize-publication.result != 'skipped'
     needs: [materialize-publication, approval]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -1714,7 +1777,13 @@ jobs:
   release-finalizer:
     name: Finalize live Attempt outcome
     if: always()
-    needs: [approval-finalizer, publish-github-packages]
+    needs:
+      [
+        admit,
+        qualification-finalizer,
+        approval-finalizer,
+        publish-github-packages,
+      ]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -1730,12 +1799,73 @@ jobs:
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: '0.10.9'
-      - name: Download finalization authority records by artifact ID
+      - name: Download Release Attempt binding by artifact ID
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          artifact-ids: ${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-id }},${{ needs.approval-finalizer.outputs.decision-artifact-id }}
+          artifact-ids: ${{ needs.admit.outputs.attempt-artifact-id }}
           path: .wdv3/input
-          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Download Qualification Snapshot by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.qualification-finalizer.outputs.qualification-snapshot-artifact-id }}
+          path: .wdv3/input
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Download Qualification Decision by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.qualification-finalizer.outputs.decision-artifact-id }}
+          path: .wdv3/input
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Download build Evidence by artifact ID
+        if: needs.qualification-finalizer.outputs.build-evidence-artifact-id != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.qualification-finalizer.outputs.build-evidence-artifact-id }}
+          path: .wdv3/input
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Download project-test Evidence by artifact ID
+        if: needs.qualification-finalizer.outputs.project-test-evidence-artifact-id != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.qualification-finalizer.outputs.project-test-evidence-artifact-id }}
+          path: .wdv3/input
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Download artifact-contents Evidence by artifact ID
+        if: needs.qualification-finalizer.outputs.artifact-contents-evidence-artifact-id != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.qualification-finalizer.outputs.artifact-contents-evidence-artifact-id }}
+          path: .wdv3/input
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Download install-import Evidence by artifact ID
+        if: needs.qualification-finalizer.outputs.install-import-evidence-artifact-id != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.qualification-finalizer.outputs.install-import-evidence-artifact-id }}
+          path: .wdv3/input
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Download Release Artifact record by artifact ID
+        if: needs.qualification-finalizer.outputs.release-artifact-artifact-id != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.qualification-finalizer.outputs.release-artifact-artifact-id }}
+          path: .wdv3/input
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Download Publication Snapshot by artifact ID
+        if: needs.approval-finalizer.outputs.publication-snapshot-artifact-id != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-id }}
+          path: .wdv3/input
           skip-decompress: true
           digest-mismatch: error
       - name: Download Authorization Record by artifact ID
@@ -1775,6 +1905,35 @@ jobs:
         continue-on-error: true
         run: |
           args=()
+          add_record() {
+            local role="$1" path="$2" digest="$3" id="$4" upload="$5"
+            if [[ -z "${id}" ]]; then
+              return 0
+            fi
+            if [[ -z "${digest}" || -z "${upload}" || ! -f "${path}" ]]; then
+              echo "::error::${role} finalization input is incomplete" >&2
+              exit 1
+            fi
+            args+=(
+              "--${role}" "${path}"
+              "--${role}-digest" "${digest}"
+              "--${role}-artifact-id" "${id}"
+              "--${role}-artifact-digest" "${upload}"
+            )
+          }
+          add_record build-evidence ".wdv3/input/${{ needs.qualification-finalizer.outputs.build-evidence-artifact-name }}" "${{ needs.qualification-finalizer.outputs.build-evidence-digest }}" "${{ needs.qualification-finalizer.outputs.build-evidence-artifact-id }}" "${{ needs.qualification-finalizer.outputs.build-evidence-artifact-digest }}"
+          add_record project-test-evidence ".wdv3/input/${{ needs.qualification-finalizer.outputs.project-test-evidence-artifact-name }}" "${{ needs.qualification-finalizer.outputs.project-test-evidence-digest }}" "${{ needs.qualification-finalizer.outputs.project-test-evidence-artifact-id }}" "${{ needs.qualification-finalizer.outputs.project-test-evidence-artifact-digest }}"
+          add_record artifact-contents-evidence ".wdv3/input/${{ needs.qualification-finalizer.outputs.artifact-contents-evidence-artifact-name }}" "${{ needs.qualification-finalizer.outputs.artifact-contents-evidence-digest }}" "${{ needs.qualification-finalizer.outputs.artifact-contents-evidence-artifact-id }}" "${{ needs.qualification-finalizer.outputs.artifact-contents-evidence-artifact-digest }}"
+          add_record install-import-evidence ".wdv3/input/${{ needs.qualification-finalizer.outputs.install-import-evidence-artifact-name }}" "${{ needs.qualification-finalizer.outputs.install-import-evidence-digest }}" "${{ needs.qualification-finalizer.outputs.install-import-evidence-artifact-id }}" "${{ needs.qualification-finalizer.outputs.install-import-evidence-artifact-digest }}"
+          add_record release-artifact ".wdv3/input/${{ needs.qualification-finalizer.outputs.release-artifact-artifact-name }}" "${{ needs.qualification-finalizer.outputs.release-artifact-digest }}" "${{ needs.qualification-finalizer.outputs.release-artifact-artifact-id }}" "${{ needs.qualification-finalizer.outputs.release-artifact-artifact-digest }}"
+          if [[ -n "${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-id }}" ]]; then
+            args+=(
+              --publication-snapshot ".wdv3/input/${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-name }}"
+              --publication-snapshot-digest "${{ needs.approval-finalizer.outputs.publication-snapshot-digest }}"
+              --publication-snapshot-artifact-id "${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-id }}"
+              --publication-snapshot-artifact-digest "${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-digest }}"
+            )
+          fi
           if [[ -n "${{ needs.approval-finalizer.outputs.authorization-artifact-id }}" ]]; then
             args+=(
               --authorization ".wdv3/input/${{ needs.approval-finalizer.outputs.authorization-artifact-name }}"
@@ -1833,14 +1992,18 @@ jobs:
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
             --target "${{ inputs.target-sha }}" \
-            --qualification-decision ".wdv3/input/${{ needs.approval-finalizer.outputs.decision-artifact-name }}" \
-            --qualification-decision-digest "${{ needs.approval-finalizer.outputs.decision-digest }}" \
-            --qualification-decision-artifact-id "${{ needs.approval-finalizer.outputs.decision-artifact-id }}" \
-            --qualification-decision-artifact-digest "${{ needs.approval-finalizer.outputs.decision-artifact-digest }}" \
-            --publication-snapshot ".wdv3/input/${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-name }}" \
-            --publication-snapshot-digest "${{ needs.approval-finalizer.outputs.publication-snapshot-digest }}" \
-            --publication-snapshot-artifact-id "${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-id }}" \
-            --publication-snapshot-artifact-digest "${{ needs.approval-finalizer.outputs.publication-snapshot-artifact-digest }}" \
+            --attempt-binding ".wdv3/input/${{ needs.admit.outputs.attempt-artifact-name }}" \
+            --attempt-binding-digest "${{ needs.admit.outputs.attempt-digest }}" \
+            --attempt-binding-artifact-id "${{ needs.admit.outputs.attempt-artifact-id }}" \
+            --attempt-binding-artifact-digest "${{ needs.admit.outputs.attempt-artifact-digest }}" \
+            --qualification-snapshot ".wdv3/input/${{ needs.qualification-finalizer.outputs.qualification-snapshot-artifact-name }}" \
+            --qualification-snapshot-digest "${{ needs.qualification-finalizer.outputs.qualification-snapshot-digest }}" \
+            --qualification-snapshot-artifact-id "${{ needs.qualification-finalizer.outputs.qualification-snapshot-artifact-id }}" \
+            --qualification-snapshot-artifact-digest "${{ needs.qualification-finalizer.outputs.qualification-snapshot-artifact-digest }}" \
+            --qualification-decision ".wdv3/input/${{ needs.qualification-finalizer.outputs.decision-artifact-name }}" \
+            --qualification-decision-digest "${{ needs.qualification-finalizer.outputs.decision-digest }}" \
+            --qualification-decision-artifact-id "${{ needs.qualification-finalizer.outputs.decision-artifact-id }}" \
+            --qualification-decision-artifact-digest "${{ needs.qualification-finalizer.outputs.decision-artifact-digest }}" \
             "${args[@]}" \
             --outcome-output .wdv3/final-attempt/attempt-outcome.json \
             --summary-output .wdv3/final-attempt/attempt-summary.md \

@@ -883,7 +883,15 @@ def test_cli_exposes_only_the_commit7_release_transport_commands(
         ),
         (
             "finalize-live",
-            ("--outcome-output", "--summary-output", "--github-output"),
+            (
+                "--attempt-binding",
+                "--qualification-snapshot",
+                "--build-evidence",
+                "--release-artifact",
+                "--outcome-output",
+                "--summary-output",
+                "--github-output",
+            ),
         ),
     ],
 )

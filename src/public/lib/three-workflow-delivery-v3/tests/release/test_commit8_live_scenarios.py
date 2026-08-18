@@ -15,6 +15,7 @@ import three_workflow_delivery_v3.cli as cli_module
 from three_workflow_delivery_v3.canonical import canonical_sha256, canonicalize
 from three_workflow_delivery_v3.records.release import (
     ActionResult,
+    AttemptOutcome,
     AuthorizationRecord,
     BuddyExecutionIdentity,
     CapabilityAdmissionDecision,
@@ -527,6 +528,92 @@ def test_exact_noop_still_requires_authorization_and_emits_no_capability(
     assert outcome.receipt_digests == ()
 
 
+@pytest.mark.parametrize(
+    ("terminal_result", "failure_class", "next_action", "uncertainty"),
+    [
+        (
+            "failure",
+            "quality-failure",
+            "fix-quality-failure-and-rerun",
+            False,
+        ),
+        ("incomplete", "incomplete-qualification", "new-attempt", True),
+    ],
+)
+def test_unsuccessful_qualification_terminalizes_without_publication(
+    qualified_simulation,
+    terminal_result: str,
+    failure_class: str,
+    next_action: str,
+    uncertainty: bool,
+) -> None:
+    attempt, decision, publication, _authorization = _closure(
+        qualified_simulation,
+        with_action=False,
+    )
+    unsuccessful = replace(
+        decision,
+        terminal_result=terminal_result,
+        failure_class=failure_class,
+        next_action=next_action,
+    )
+
+    outcome = finalize_attempt_outcome(
+        attempt=attempt,
+        qualification_decision=unsuccessful,
+        publication_snapshot=None,
+        authorization=None,
+        capability_decisions=(),
+        group_bundles=(),
+        receipts=(),
+    )
+
+    assert isinstance(outcome, AttemptOutcome)
+    assert outcome.publication_snapshot_digest is None
+    assert outcome.terminal_phase == "qualification"
+    assert outcome.result == terminal_result
+    assert outcome.uncertainty is uncertainty
+    assert outcome.possibly_mutated is False
+    assert outcome.next_action == next_action
+
+    with pytest.raises(
+        ValueError,
+        match="cannot bind publication records",
+    ):
+        finalize_attempt_outcome(
+            attempt=attempt,
+            qualification_decision=unsuccessful,
+            publication_snapshot=publication,
+            authorization=None,
+            capability_decisions=(),
+            group_bundles=(),
+            receipts=(),
+        )
+
+
+def test_successful_qualification_requires_publication_snapshot(
+    qualified_simulation,
+) -> None:
+    attempt, decision, _publication, _authorization = _closure(
+        qualified_simulation,
+        with_action=False,
+    )
+
+    with pytest.raises(
+        TypeError,
+        match="Successful qualification requires Publication Snapshot",
+    ):
+        finalize_attempt_outcome(
+            attempt=attempt,
+            qualification_decision=decision,
+            publication_snapshot=None,
+            authorization=None,
+            capability_decisions=(),
+            group_bundles=(),
+            receipts=(),
+        )
+
+
 def test_diagnostic_only_rejection_never_authorizes_or_starts_capability() -> (
     None
 ):
@@ -540,6 +627,37 @@ def test_diagnostic_only_rejection_never_authorizes_or_starts_capability() -> (
             schedule_capability=lambda: calls.append("scheduled"),
         )
     assert calls == []
+
+
+def test_publication_snapshot_requires_exact_qualification_lineage(
+    qualified_simulation,
+) -> None:
+    attempt, decision, publication, authorization = _closure(
+        qualified_simulation,
+        with_action=False,
+    )
+    substituted = replace(
+        publication,
+        qualification_snapshot_digest="sha256:" + ("9" * 64),
+    )
+    rebound_authorization = replace(
+        authorization,
+        publication_snapshot_digest=substituted.snapshot_digest,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Qualification binding mismatch",
+    ):
+        finalize_attempt_outcome(
+            attempt=attempt,
+            qualification_decision=decision,
+            publication_snapshot=substituted,
+            authorization=rebound_authorization,
+            capability_decisions=(),
+            group_bundles=(),
+            receipts=(),
+        )
 
 
 def test_successful_approval_only_forms_bound_authorization_without_scheduling(

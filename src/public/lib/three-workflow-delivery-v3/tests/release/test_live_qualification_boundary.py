@@ -11,11 +11,16 @@ from three_workflow_delivery_v3 import cli as cli_module
 from three_workflow_delivery_v3.adapters import node as node_adapter
 from three_workflow_delivery_v3.canonical import canonicalize
 from three_workflow_delivery_v3.records.release import (
+    AttemptOutcome,
+    AuthorizationRecord,
     BuddyExecutionIdentity,
     OfficialExecutionIdentity,
     OfficialProductIdentity,
+    PublicationObservationReference,
+    PublicationSnapshot,
     QualificationDecision,
     QualificationSnapshot,
+    ReleaseArtifact,
     ReleaseAttemptIdentity,
     admit_release_record,
     publication_capability_requirements,
@@ -64,7 +69,7 @@ def _uploaded_arguments(
     ]
 
 
-def test_live_plan_build_transport_and_finalization_are_attempt_bound(  # noqa: PLR0913
+def test_live_plan_build_transport_and_finalization_are_attempt_bound(  # noqa: PLR0913, PLR0915
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     qualified_simulation,
@@ -205,6 +210,12 @@ def test_live_plan_build_transport_and_finalization_are_attempt_bound(  # noqa: 
         live_qualification_snapshot.snapshot_digest,
         104,
     )
+    attempt_arguments = _uploaded_arguments(
+        "attempt_binding",
+        binding_path,
+        live_attempt_binding.binding_digest,
+        103,
+    )
     context_arguments = _uploaded_arguments(
         "adapter_context",
         context_path,
@@ -313,6 +324,394 @@ def test_live_plan_build_transport_and_finalization_are_attempt_bound(  # noqa: 
     assert decision.subject == live_attempt_binding.attempt
     assert decision.terminal_result == "incomplete"
     assert decision.next_action == "new-attempt"
+
+    outcome_path = tmp_path / "live-attempt-outcome.json"
+    summary_path = tmp_path / "live-attempt-summary.md"
+    assert (
+        cli_module.main(
+            [
+                "release",
+                "finalize-live",
+                *current,
+                *attempt_arguments,
+                *snapshot_arguments,
+                *_uploaded_arguments(
+                    "build_evidence",
+                    evidence_path,
+                    _transport_digest(evidence_path),
+                    107,
+                ),
+                *_uploaded_arguments(
+                    "release_artifact",
+                    artifact_path,
+                    _transport_digest(artifact_path),
+                    108,
+                ),
+                *_uploaded_arguments(
+                    "qualification_decision",
+                    decision_path,
+                    decision.decision_digest,
+                    109,
+                ),
+                "--outcome-output",
+                str(outcome_path),
+                "--summary-output",
+                str(summary_path),
+            ]
+        )
+        == 1
+    )
+    outcome = admit_release_record(
+        outcome_path.read_bytes(),
+        expected_type=AttemptOutcome,
+        expected_digest=_transport_digest(outcome_path),
+        expected_bindings=ReleaseAdmissionBindings(
+            purpose="live-release",
+            workflow_run_id=live_intent.workflow_run_id,
+            run_attempt=live_intent.run_attempt,
+            target=live_intent.target,
+        ),
+    )
+    assert isinstance(outcome, AttemptOutcome)
+    assert outcome.attempt == live_attempt_binding.attempt
+    assert outcome.terminal_phase == "qualification"
+    assert outcome.result == "incomplete"
+    assert outcome.publication_snapshot_digest is None
+    assert outcome.authorization_digest is None
+    assert outcome.uncertainty is True
+    assert outcome.possibly_mutated is False
+    assert outcome.next_action == "new-attempt"
+
+    project_evidence_path = tmp_path / "live-project-test-evidence.json"
+    assert (
+        cli_module.main(
+            [
+                "release",
+                "run-project-test",
+                "--repo-root",
+                str(REPO_ROOT),
+                *current,
+                "--purpose",
+                "live-release",
+                *snapshot_arguments,
+                *context_arguments,
+                "--output",
+                str(project_evidence_path),
+            ]
+        )
+        == 0
+    )
+    artifact_arguments = _uploaded_arguments(
+        "release_artifact",
+        artifact_path,
+        _transport_digest(artifact_path),
+        108,
+    )
+    contents_evidence_path = tmp_path / "live-artifact-contents-evidence.json"
+    assert (
+        cli_module.main(
+            [
+                "release",
+                "run-artifact-contents",
+                *current,
+                "--purpose",
+                "live-release",
+                *snapshot_arguments,
+                *context_arguments,
+                *artifact_arguments,
+                "--tarball",
+                str(tarball_path),
+                "--output",
+                str(contents_evidence_path),
+            ]
+        )
+        == 0
+    )
+    install_evidence_path = tmp_path / "live-install-import-evidence.json"
+    assert (
+        cli_module.main(
+            [
+                "release",
+                "run-install-import",
+                *current,
+                "--purpose",
+                "live-release",
+                *snapshot_arguments,
+                *context_arguments,
+                *artifact_arguments,
+                "--tarball",
+                str(tarball_path),
+                "--output",
+                str(install_evidence_path),
+            ]
+        )
+        == 0
+    )
+    build_evidence_arguments = _uploaded_arguments(
+        "build_evidence",
+        evidence_path,
+        _transport_digest(evidence_path),
+        107,
+    )
+    project_evidence_arguments = _uploaded_arguments(
+        "project_test_evidence",
+        project_evidence_path,
+        _transport_digest(project_evidence_path),
+        110,
+    )
+    contents_evidence_arguments = _uploaded_arguments(
+        "artifact_contents_evidence",
+        contents_evidence_path,
+        _transport_digest(contents_evidence_path),
+        111,
+    )
+    install_evidence_arguments = _uploaded_arguments(
+        "install_import_evidence",
+        install_evidence_path,
+        _transport_digest(install_evidence_path),
+        112,
+    )
+    success_decision_path = (
+        tmp_path / "successful-live-qualification-decision.json"
+    )
+    assert (
+        cli_module.main(
+            [
+                "release",
+                "finalize-qualification",
+                *current,
+                "--purpose",
+                "live-release",
+                *snapshot_arguments,
+                *build_evidence_arguments,
+                *project_evidence_arguments,
+                *contents_evidence_arguments,
+                *install_evidence_arguments,
+                *artifact_arguments,
+                "--output",
+                str(success_decision_path),
+            ]
+        )
+        == 0
+    )
+    success_decision = admit_release_record(
+        success_decision_path.read_bytes(),
+        expected_type=QualificationDecision,
+        expected_digest=_transport_digest(success_decision_path),
+        expected_bindings=ReleaseAdmissionBindings(
+            purpose="live-release",
+            workflow_run_id=live_intent.workflow_run_id,
+            run_attempt=live_intent.run_attempt,
+            target=live_intent.target,
+        ),
+    )
+    assert isinstance(success_decision, QualificationDecision)
+    assert success_decision.terminal_result == "success"
+    artifact = admit_release_record(
+        artifact_path.read_bytes(),
+        expected_type=ReleaseArtifact,
+        expected_digest=_transport_digest(artifact_path),
+        expected_bindings=ReleaseAdmissionBindings(
+            producer="build-tarball",
+            purpose="live-release",
+            workflow_run_id=live_intent.workflow_run_id,
+            run_attempt=live_intent.run_attempt,
+            target=live_intent.target,
+        ),
+    )
+    assert isinstance(artifact, ReleaseArtifact)
+    projection = live_qualification_snapshot.destination_projections[0]
+    publication = PublicationSnapshot(
+        attempt=live_attempt_binding.attempt,
+        qualification_snapshot_digest=live_qualification_snapshot.snapshot_digest,
+        qualification_decision_digest=success_decision.decision_digest,
+        qualification_result="success",
+        projection_ids=(projection.projection_id,),
+        artifact_digests=(artifact.artifact_digest,),
+        artifact_output_ids=(artifact.output.output_id,),
+        observation_references=(
+            PublicationObservationReference(
+                projection_id=projection.projection_id,
+                observation_digest="sha256:" + ("f" * 64),
+                classification="exact-satisfied",
+            ),
+        ),
+        materialized_actions=(),
+    )
+    authorization = AuthorizationRecord(
+        attempt=live_attempt_binding.attempt,
+        publication_snapshot_digest=publication.snapshot_digest,
+        reviewer_summary_artifact_id=114,
+        reviewer_summary_upload_digest="sha256:" + ("2" * 64),
+        reviewer_summary_payload_digest="sha256:" + ("3" * 64),
+        workflow_run_id=live_intent.workflow_run_id,
+        run_attempt=live_intent.run_attempt,
+        approval_job_id=711,
+        approval_job="approval",
+        environment="workflow-delivery-v3-buddy-smoke-approval",
+        channel="buddy",
+        completed_at="2026-08-13T16:00:00Z",
+        producer="approval",
+        control=f"workflow-delivery-v3:{live_intent.target}",
+    )
+    publication_path = _write(
+        tmp_path / "live-publication-snapshot.json",
+        canonicalize(publication.to_document()),
+    )
+    authorization_path = _write(
+        tmp_path / "live-authorization.json",
+        canonicalize(authorization.to_document()),
+    )
+    success_decision_arguments = _uploaded_arguments(
+        "qualification_decision",
+        success_decision_path,
+        success_decision.decision_digest,
+        113,
+    )
+    publication_arguments = _uploaded_arguments(
+        "publication_snapshot",
+        publication_path,
+        publication.snapshot_digest,
+        114,
+    )
+    authorization_arguments = _uploaded_arguments(
+        "authorization",
+        authorization_path,
+        authorization.authorization_digest,
+        115,
+    )
+    success_outcome_path = tmp_path / "successful-live-attempt-outcome.json"
+    assert (
+        cli_module.main(
+            [
+                "release",
+                "finalize-live",
+                *current,
+                *attempt_arguments,
+                *snapshot_arguments,
+                *build_evidence_arguments,
+                *project_evidence_arguments,
+                *contents_evidence_arguments,
+                *install_evidence_arguments,
+                *artifact_arguments,
+                *success_decision_arguments,
+                *publication_arguments,
+                *authorization_arguments,
+                "--outcome-output",
+                str(success_outcome_path),
+                "--summary-output",
+                str(tmp_path / "successful-live-attempt-summary.md"),
+            ]
+        )
+        == 0
+    )
+    success_outcome = admit_release_record(
+        success_outcome_path.read_bytes(),
+        expected_type=AttemptOutcome,
+        expected_digest=_transport_digest(success_outcome_path),
+        expected_bindings=ReleaseAdmissionBindings(
+            purpose="live-release",
+            workflow_run_id=live_intent.workflow_run_id,
+            run_attempt=live_intent.run_attempt,
+            target=live_intent.target,
+        ),
+    )
+    assert isinstance(success_outcome, AttemptOutcome)
+    assert success_outcome.result == "success"
+    assert success_outcome.terminal_phase == "finalized-no-op"
+    assert success_outcome.publication_snapshot_digest == (
+        publication.snapshot_digest
+    )
+    assert success_outcome.authorization_digest == (
+        authorization.authorization_digest
+    )
+
+    wrong_binding = replace(
+        live_attempt_binding,
+        repository_model_digest=(
+            f"sha256:{hashlib.sha256(b'wrong-repository-model').hexdigest()}"
+        ),
+    )
+    wrong_binding_path = _write(
+        tmp_path / "wrong-live-attempt-binding.json",
+        canonicalize(wrong_binding.to_document()),
+    )
+    wrong_outcome_path = tmp_path / "wrong-attempt-outcome.json"
+    assert (
+        cli_module.main(
+            [
+                "release",
+                "finalize-live",
+                *current,
+                *_uploaded_arguments(
+                    "attempt_binding",
+                    wrong_binding_path,
+                    wrong_binding.binding_digest,
+                    116,
+                ),
+                *snapshot_arguments,
+                *build_evidence_arguments,
+                *project_evidence_arguments,
+                *contents_evidence_arguments,
+                *install_evidence_arguments,
+                *artifact_arguments,
+                *success_decision_arguments,
+                *publication_arguments,
+                *authorization_arguments,
+                "--outcome-output",
+                str(wrong_outcome_path),
+                "--summary-output",
+                str(tmp_path / "wrong-attempt-summary.md"),
+            ]
+        )
+        == 1
+    )
+    assert not wrong_outcome_path.exists()
+
+    malformed_decision = replace(
+        decision,
+        failure_class="substituted-incomplete-qualification",
+    )
+    malformed_decision_path = _write(
+        tmp_path / "malformed-live-qualification-decision.json",
+        canonicalize(malformed_decision.to_document()),
+    )
+    malformed_outcome_path = tmp_path / "malformed-attempt-outcome.json"
+    assert (
+        cli_module.main(
+            [
+                "release",
+                "finalize-live",
+                *current,
+                *attempt_arguments,
+                *snapshot_arguments,
+                *_uploaded_arguments(
+                    "build_evidence",
+                    evidence_path,
+                    _transport_digest(evidence_path),
+                    107,
+                ),
+                *_uploaded_arguments(
+                    "release_artifact",
+                    artifact_path,
+                    _transport_digest(artifact_path),
+                    108,
+                ),
+                *_uploaded_arguments(
+                    "qualification_decision",
+                    malformed_decision_path,
+                    malformed_decision.decision_digest,
+                    117,
+                ),
+                "--outcome-output",
+                str(malformed_outcome_path),
+                "--summary-output",
+                str(tmp_path / "malformed-attempt-summary.md"),
+            ]
+        )
+        == 1
+    )
+    assert not malformed_outcome_path.exists()
 
 
 def test_live_qualification_snapshot_closes_attempt_execution_identity(

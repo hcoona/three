@@ -1200,7 +1200,7 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0912, PLR0915
     *,
     attempt: ReleaseAttemptIdentity,
     qualification_decision: QualificationDecision,
-    publication_snapshot: PublicationSnapshot,
+    publication_snapshot: PublicationSnapshot | None,
     authorization: AuthorizationRecord | None,
     capability_decisions: tuple[CapabilityAdmissionDecision, ...],
     group_bundles: tuple[CapabilityGroupResultBundle, ...],
@@ -1213,20 +1213,10 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0912, PLR0915
     if type(attempt) is not ReleaseAttemptIdentity:
         message = "Live finalization requires an exact Attempt"
         raise TypeError(message)
-    if (
-        type(qualification_decision) is not QualificationDecision
-        or type(publication_snapshot) is not PublicationSnapshot
-    ):
-        message = "Live finalization requires exact current Snapshots"
+    if type(qualification_decision) is not QualificationDecision:
+        message = "Live finalization requires an exact Qualification Decision"
         raise TypeError(message)
-    if publication_snapshot.attempt != attempt:
-        message = "Live finalization Publication Snapshot Attempt mismatch"
-        raise ValueError(message)
-    if (
-        qualification_decision.subject != attempt
-        or publication_snapshot.qualification_decision_digest
-        != qualification_decision.decision_digest
-    ):
+    if qualification_decision.subject != attempt:
         message = "Live finalization Qualification binding mismatch"
         raise ValueError(message)
     if (
@@ -1245,6 +1235,49 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0912, PLR0915
         if type(values) is not tuple:
             message = f"Live finalization {name} must be an exact tuple"
             raise TypeError(message)
+    if qualification_decision.terminal_result != "success":
+        if (
+            publication_snapshot is not None
+            or authorization is not None
+            or capability_decisions
+            or group_bundles
+            or receipts
+            or receipt_transport_references
+            or platform_terminated
+            or capability_may_have_started
+        ):
+            message = (
+                "Unsuccessful qualification cannot bind publication records"
+            )
+            raise ValueError(message)
+        return AttemptOutcome(
+            attempt=attempt,
+            qualification_decision_digest=qualification_decision.decision_digest,
+            publication_snapshot_digest=None,
+            authorization_digest=None,
+            capability_admission_digests=(),
+            capability_group_bundle_digests=(),
+            receipt_digests=(),
+            terminal_phase="qualification",
+            result=qualification_decision.terminal_result,
+            uncertainty=qualification_decision.terminal_result == "incomplete",
+            possibly_mutated=False,
+            next_action=qualification_decision.next_action,
+        )
+    if type(publication_snapshot) is not PublicationSnapshot:
+        message = "Successful qualification requires Publication Snapshot"
+        raise TypeError(message)
+    if publication_snapshot.attempt != attempt:
+        message = "Live finalization Publication Snapshot Attempt mismatch"
+        raise ValueError(message)
+    if (
+        publication_snapshot.qualification_decision_digest
+        != qualification_decision.decision_digest
+        or publication_snapshot.qualification_snapshot_digest
+        != qualification_decision.qualification_snapshot_digest
+    ):
+        message = "Live finalization Qualification binding mismatch"
+        raise ValueError(message)
     if authorization is not None:
         if type(authorization) is not AuthorizationRecord:
             message = "Live finalization Authorization has the wrong type"

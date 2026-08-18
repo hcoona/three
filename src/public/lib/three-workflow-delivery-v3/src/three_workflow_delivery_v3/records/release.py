@@ -3780,7 +3780,7 @@ class AttemptOutcome:
 
     attempt: ReleaseAttemptIdentity
     qualification_decision_digest: str
-    publication_snapshot_digest: str
+    publication_snapshot_digest: str | None
     authorization_digest: str | None
     capability_admission_digests: tuple[str, ...]
     capability_group_bundle_digests: tuple[str, ...]
@@ -3802,7 +3802,7 @@ class AttemptOutcome:
             self.qualification_decision_digest,
             field="attempt outcome.qualification_decision_digest",
         )
-        _digest(
+        _optional_digest(
             self.publication_snapshot_digest,
             field="attempt outcome.publication_snapshot_digest",
         )
@@ -3847,7 +3847,8 @@ class AttemptOutcome:
         )
         _string(self.next_action, field="attempt outcome.next_action")
         if self.result == "success" and (
-            self.authorization_digest is None
+            self.publication_snapshot_digest is None
+            or self.authorization_digest is None
             or self.uncertainty
             or self.possibly_mutated
         ):
@@ -3860,6 +3861,30 @@ class AttemptOutcome:
             raise ValueError(message)
         if self.result == "replayable-no-side-effect" and self.possibly_mutated:
             message = "No-side-effect replay cannot be possibly mutated"
+            raise ValueError(message)
+        if self.publication_snapshot_digest is None:
+            expected_next_action = {
+                "failure": "fix-quality-failure-and-rerun",
+                "incomplete": "new-attempt",
+            }.get(self.result)
+            if (
+                self.terminal_phase != "qualification"
+                or self.authorization_digest is not None
+                or self.capability_admission_digests
+                or self.capability_group_bundle_digests
+                or self.receipt_digests
+                or self.result not in {"failure", "incomplete"}
+                or self.possibly_mutated
+                or (self.result == "failure" and self.uncertainty)
+                or (self.result == "incomplete" and not self.uncertainty)
+                or self.next_action != expected_next_action
+            ):
+                message = (
+                    "Pre-publication Attempt Outcome is not qualification-only"
+                )
+                raise ValueError(message)
+        elif self.terminal_phase == "qualification":
+            message = "Qualification-only outcome cannot bind publication"
             raise ValueError(message)
 
     def to_document(self) -> dict[str, JsonValue]:

@@ -120,6 +120,7 @@ from three_workflow_delivery_v3.records.release import (
     ReceiptTransportReference,
     ReleaseArtifact,
     ReleaseAttemptBinding,
+    ReleaseAttemptIdentity,
     ReleaseIntent,
     SimulationBinding,
     SimulationOutcome,
@@ -2483,6 +2484,7 @@ def _optional_evidence(
     *,
     prefix: str,
     producer: str,
+    purpose: str | None = None,
 ) -> QualificationEvidence | None:
     path = getattr(arguments, prefix.replace("-", "_"))
     if path is None:
@@ -2505,7 +2507,11 @@ def _optional_evidence(
         bindings=_release_bindings(
             arguments,
             producer=producer,
-            purpose=_qualification_purpose(arguments),
+            purpose=(
+                _qualification_purpose(arguments)
+                if purpose is None
+                else purpose
+            ),
         ),
     )
     return cast("QualificationEvidence", record)
@@ -3908,8 +3914,71 @@ def _release_form_github_packages_result_command(
 
 
 def _release_finalize_live_command(arguments: argparse.Namespace) -> int:
-    publication = _load_publication_snapshot(arguments)
+    binding = _load_attempt_binding(arguments)
+    snapshot = _load_live_qualification_snapshot(arguments)
     decision = _load_live_qualification_decision(arguments)
+    attempt = binding.attempt
+    if type(decision.subject) is not ReleaseAttemptIdentity:
+        message = "Live finalization Decision has the wrong subject"
+        raise TypeError(message)
+    if (
+        snapshot.subject != attempt
+        or decision.subject != attempt
+        or decision.qualification_snapshot_digest != snapshot.snapshot_digest
+        or snapshot.repository_model_digest != binding.repository_model_digest
+    ):
+        message = "Live finalization Attempt authority binding mismatch"
+        raise ValueError(message)
+    qualification_evidence = tuple(
+        item
+        for item in (
+            _optional_evidence(
+                arguments,
+                prefix="build-evidence",
+                producer="build-tarball",
+                purpose="live-release",
+            ),
+            _optional_evidence(
+                arguments,
+                prefix="project-test-evidence",
+                producer="project-test",
+                purpose="live-release",
+            ),
+            _optional_evidence(
+                arguments,
+                prefix="artifact-contents-evidence",
+                producer="npm-artifact-qualification",
+                purpose="live-release",
+            ),
+            _optional_evidence(
+                arguments,
+                prefix="install-import-evidence",
+                producer="npm-artifact-qualification",
+                purpose="live-release",
+            ),
+        )
+        if item is not None
+    )
+    qualification_artifacts = (
+        ()
+        if arguments.release_artifact is None
+        else (_load_live_release_artifact_record(arguments),)
+    )
+    if (
+        finalize_qualification(
+            snapshot,
+            qualification_evidence,
+            qualification_artifacts,
+        )
+        != decision
+    ):
+        message = "Live finalization Qualification Decision is not exact"
+        raise ValueError(message)
+    publication = (
+        None
+        if arguments.publication_snapshot is None
+        else _load_publication_snapshot(arguments)
+    )
     authorization = (
         None
         if arguments.authorization is None
@@ -3953,7 +4022,7 @@ def _release_finalize_live_command(arguments: argparse.Namespace) -> int:
             ),
         )
     outcome = finalize_attempt_outcome(
-        attempt=publication.attempt,
+        attempt=attempt,
         qualification_decision=decision,
         publication_snapshot=publication,
         authorization=authorization,
@@ -5835,8 +5904,31 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
 
     finalize_live = release_commands.add_parser("finalize-live")
     _add_current_release_arguments(finalize_live)
+    _add_uploaded_record_arguments(finalize_live, name="attempt_binding")
+    _add_snapshot_arguments(finalize_live)
     _add_decision_arguments(finalize_live)
-    _add_uploaded_record_arguments(finalize_live, name="publication_snapshot")
+    _add_optional_evidence_arguments(
+        finalize_live,
+        name="build_evidence",
+    )
+    _add_optional_evidence_arguments(
+        finalize_live,
+        name="project_test_evidence",
+    )
+    _add_optional_evidence_arguments(
+        finalize_live,
+        name="artifact_contents_evidence",
+    )
+    _add_optional_evidence_arguments(
+        finalize_live,
+        name="install_import_evidence",
+    )
+    _add_release_artifact_arguments(finalize_live, required=False)
+    _add_uploaded_record_arguments(
+        finalize_live,
+        name="publication_snapshot",
+        required=False,
+    )
     _add_uploaded_record_arguments(
         finalize_live,
         name="authorization",

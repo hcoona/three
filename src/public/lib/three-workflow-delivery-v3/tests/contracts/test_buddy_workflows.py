@@ -272,11 +272,16 @@ def test_live_attempt_dag_environments_and_capability_gate_are_exact() -> None:
     assert _needs(jobs["project-test"]) == ("plan-qualification",)
     assert _needs(jobs["npm-artifact-qualification"]) == ("build-tarball",)
     assert set(_needs(jobs["qualification-finalizer"])) == {
+        "build-tarball",
         "project-test",
         "npm-artifact-qualification",
     }
     assert _needs(jobs["observe-github-packages"]) == (
         "qualification-finalizer",
+    )
+    assert jobs["observe-github-packages"]["if"] == (
+        "needs.qualification-finalizer.outputs.qualification-result "
+        "== 'success'"
     )
     assert _needs(jobs["materialize-publication"]) == (
         "observe-github-packages",
@@ -299,6 +304,8 @@ def test_live_attempt_dag_environments_and_capability_gate_are_exact() -> None:
     assert publisher["concurrency"]["cancel-in-progress"] is False
     assert publisher["concurrency"]["group"].startswith("wdv3-resource-")
     assert set(_needs(jobs["release-finalizer"])) == {
+        "admit",
+        "qualification-finalizer",
         "approval-finalizer",
         "publish-github-packages",
     }
@@ -314,7 +321,15 @@ def test_shared_qualification_commands_admit_live_purpose_explicitly() -> None:
         ),
         ("project-test", "Run project-test mechanics"),
         ("npm-artifact-qualification", "Run artifact-contents mechanics"),
+        (
+            "npm-artifact-qualification",
+            "Form incomplete artifact-contents Evidence",
+        ),
         ("npm-artifact-qualification", "Run install-import mechanics"),
+        (
+            "npm-artifact-qualification",
+            "Form incomplete install-import Evidence",
+        ),
         ("qualification-finalizer", "Close qualification Decision"),
     )
 
@@ -382,6 +397,262 @@ def test_live_build_uses_the_planned_tarball_artifact_name() -> None:
     assert _step(build, "Build tarball")["env"]["TARBALL_NAME"] == (
         "${{ needs.plan-qualification.outputs.tarball-artifact-name }}"
     )
+
+
+def test_unsuccessful_live_qualification_retains_a_publication_free_outcome() -> (
+    None
+):
+    jobs = _document(CALLEE)["jobs"]
+    npm_qualification = jobs["npm-artifact-qualification"]
+    qualification_finalizer = jobs["qualification-finalizer"]
+    release_finalizer = jobs["release-finalizer"]
+
+    assert npm_qualification["if"] == (
+        "always() && needs.build-tarball.result != 'skipped'"
+    )
+    prerequisite = (
+        "needs.build-tarball.outputs.release-artifact-artifact-id != '' && "
+        "needs.build-tarball.outputs.tarball-artifact-id != ''"
+    )
+    blocked = (
+        "needs.build-tarball.outputs.release-artifact-artifact-id == '' || "
+        "needs.build-tarball.outputs.tarball-artifact-id == ''"
+    )
+    assert (
+        _step(
+            npm_qualification,
+            "Download exact tarball by artifact ID",
+        )["if"]
+        == "needs.build-tarball.outputs.tarball-artifact-id != ''"
+    )
+    assert _step(
+        npm_qualification,
+        "Download Release Artifact record by artifact ID",
+    )["if"] == (
+        "needs.build-tarball.outputs.release-artifact-artifact-id != ''"
+    )
+    assert (
+        _step(
+            npm_qualification,
+            "Run artifact-contents mechanics",
+        )["if"]
+        == prerequisite
+    )
+    assert (
+        _step(
+            npm_qualification,
+            "Run install-import mechanics",
+        )["if"]
+        == prerequisite
+    )
+    assert (
+        _step(
+            npm_qualification,
+            "Form incomplete artifact-contents Evidence",
+        )["if"]
+        == blocked
+    )
+    assert (
+        _step(
+            npm_qualification,
+            "Form incomplete install-import Evidence",
+        )["if"]
+        == blocked
+    )
+    assert (
+        "steps.incomplete-contents.outputs"
+        in (npm_qualification["outputs"]["contents-evidence-digest"])
+    )
+    assert (
+        "steps.incomplete-install.outputs"
+        in (npm_qualification["outputs"]["install-evidence-digest"])
+    )
+
+    assert qualification_finalizer["if"] == (
+        "always() && needs.build-tarball.result != 'skipped'"
+    )
+    assert set(_needs(qualification_finalizer)) == {
+        "build-tarball",
+        "project-test",
+        "npm-artifact-qualification",
+    }
+    assert qualification_finalizer["outputs"][
+        "qualification-snapshot-artifact-id"
+    ] == (
+        "${{ needs.build-tarball.outputs.qualification-snapshot-artifact-id }}"
+    )
+    assert (
+        qualification_finalizer["outputs"]["build-evidence-artifact-id"]
+        == "${{ needs.build-tarball.outputs.build-evidence-artifact-id }}"
+    )
+    assert (
+        qualification_finalizer["outputs"]["project-test-evidence-artifact-id"]
+        == "${{ needs.project-test.outputs.evidence-artifact-id }}"
+    )
+    assert qualification_finalizer["outputs"][
+        "artifact-contents-evidence-artifact-id"
+    ] == (
+        "${{ needs.npm-artifact-qualification.outputs."
+        "contents-evidence-artifact-id }}"
+    )
+    assert qualification_finalizer["outputs"][
+        "install-import-evidence-artifact-id"
+    ] == (
+        "${{ needs.npm-artifact-qualification.outputs."
+        "install-evidence-artifact-id }}"
+    )
+    close = _run(_step(qualification_finalizer, "Close qualification Decision"))
+    assert "needs.build-tarball.outputs.build-evidence" in close
+    assert "needs.build-tarball.outputs.release-artifact" in close
+
+    assert jobs["observe-github-packages"]["if"] == (
+        "needs.qualification-finalizer.outputs.qualification-result "
+        "== 'success'"
+    )
+    assert jobs["approval-finalizer"]["if"] == (
+        "always() && needs.materialize-publication.result != 'skipped'"
+    )
+    assert {
+        name: jobs["approval-finalizer"]["outputs"][name]
+        for name in (
+            "publication-snapshot-artifact-id",
+            "publication-snapshot-artifact-digest",
+            "publication-snapshot-artifact-name",
+            "publication-snapshot-digest",
+        )
+    } == {
+        "publication-snapshot-artifact-id": (
+            "${{ needs.materialize-publication.outputs."
+            "publication-snapshot-artifact-id }}"
+        ),
+        "publication-snapshot-artifact-digest": (
+            "${{ needs.materialize-publication.outputs."
+            "publication-snapshot-artifact-digest }}"
+        ),
+        "publication-snapshot-artifact-name": (
+            "${{ needs.materialize-publication.outputs."
+            "publication-snapshot-artifact-name }}"
+        ),
+        "publication-snapshot-digest": (
+            "${{ needs.materialize-publication.outputs."
+            "publication-snapshot-digest }}"
+        ),
+    }
+    assert set(_needs(release_finalizer)) == {
+        "admit",
+        "qualification-finalizer",
+        "approval-finalizer",
+        "publish-github-packages",
+    }
+
+    attempt_download = _step(
+        release_finalizer,
+        "Download Release Attempt binding by artifact ID",
+    )
+    assert attempt_download["with"] == {
+        "artifact-ids": "${{ needs.admit.outputs.attempt-artifact-id }}",
+        "path": ".wdv3/input",
+        "skip-decompress": True,
+        "digest-mismatch": "error",
+    }
+    snapshot_download = _step(
+        release_finalizer,
+        "Download Qualification Snapshot by artifact ID",
+    )
+    assert snapshot_download["with"] == {
+        "artifact-ids": (
+            "${{ needs.qualification-finalizer.outputs."
+            "qualification-snapshot-artifact-id }}"
+        ),
+        "path": ".wdv3/input",
+        "skip-decompress": True,
+        "digest-mismatch": "error",
+    }
+    decision_download = _step(
+        release_finalizer,
+        "Download Qualification Decision by artifact ID",
+    )
+    assert decision_download["with"] == {
+        "artifact-ids": (
+            "${{ needs.qualification-finalizer.outputs.decision-artifact-id }}"
+        ),
+        "path": ".wdv3/input",
+        "skip-decompress": True,
+        "digest-mismatch": "error",
+    }
+    for step_name, output_prefix in (
+        ("Download build Evidence by artifact ID", "build-evidence"),
+        (
+            "Download project-test Evidence by artifact ID",
+            "project-test-evidence",
+        ),
+        (
+            "Download artifact-contents Evidence by artifact ID",
+            "artifact-contents-evidence",
+        ),
+        (
+            "Download install-import Evidence by artifact ID",
+            "install-import-evidence",
+        ),
+        (
+            "Download Release Artifact record by artifact ID",
+            "release-artifact",
+        ),
+    ):
+        download = _step(release_finalizer, step_name)
+        artifact_id = (
+            "${{ needs.qualification-finalizer.outputs."
+            + output_prefix
+            + "-artifact-id }}"
+        )
+        assert download["if"] == (
+            "needs.qualification-finalizer.outputs."
+            f"{output_prefix}-artifact-id != ''"
+        )
+        assert download["with"] == {
+            "artifact-ids": artifact_id,
+            "path": ".wdv3/input",
+            "skip-decompress": True,
+            "digest-mismatch": "error",
+        }
+    publication_download = _step(
+        release_finalizer,
+        "Download Publication Snapshot by artifact ID",
+    )
+    assert publication_download["if"] == (
+        "needs.approval-finalizer.outputs."
+        "publication-snapshot-artifact-id != ''"
+    )
+    finalize = _run(_step(release_finalizer, "Finalize Attempt Outcome"))
+    assert (
+        'if [[ -n "${{ needs.approval-finalizer.outputs.'
+        'publication-snapshot-artifact-id }}" ]]' in finalize
+    )
+    assert finalize.count("--publication-snapshot ") == 1
+    assert (
+        "--attempt-binding "
+        '".wdv3/input/${{ needs.admit.outputs.attempt-artifact-name }}"'
+        in finalize
+    )
+    assert (
+        "--qualification-snapshot "
+        '".wdv3/input/${{ needs.qualification-finalizer.outputs.'
+        'qualification-snapshot-artifact-name }}"' in finalize
+    )
+    assert (
+        "--qualification-decision "
+        '".wdv3/input/${{ needs.qualification-finalizer.outputs.'
+        'decision-artifact-name }}"' in finalize
+    )
+    for role in (
+        "build-evidence",
+        "project-test-evidence",
+        "artifact-contents-evidence",
+        "install-import-evidence",
+        "release-artifact",
+    ):
+        assert f"add_record {role} " in finalize
+    assert "needs.approval-finalizer.outputs.decision-" not in finalize
 
 
 def test_approval_uses_anonymous_exact_sha_fetch_and_no_artifact_credentials() -> (
@@ -870,17 +1141,8 @@ def test_mutation_marker_raw_upload_and_consumers_use_attempt_basename() -> (
                 "${{ needs.approval-finalizer.outputs.tarball-artifact-id }}",
             ),
         ),
-        (
-            "release-finalizer",
-            "Download finalization authority records by artifact ID",
-            (
-                "${{ needs.approval-finalizer.outputs."
-                "publication-snapshot-artifact-id }}",
-                "${{ needs.approval-finalizer.outputs.decision-artifact-id }}",
-            ),
-        ),
     ],
-    ids=("publisher-closure", "release-finalization"),
+    ids=("publisher-closure",),
 )
 def test_authority_record_multidownload_is_comma_delimited_flat_merged_raw(
     job_name: str,
@@ -965,6 +1227,8 @@ def test_commit8_preobserved_noop_skips_publish_but_still_finalizes() -> None:
 
     assert "publish-required == 'true'" in jobs["publish-github-packages"]["if"]
     assert _needs(jobs["release-finalizer"]) == (
+        "admit",
+        "qualification-finalizer",
         "approval-finalizer",
         "publish-github-packages",
     )
@@ -1110,7 +1374,9 @@ def test_commit8_missing_authorization_reaches_approval_finalizer() -> None:
     finalizer = _document(CALLEE)["jobs"]["approval-finalizer"]
     command = _run(_step(finalizer, "Admit exact capability closure"))
 
-    assert finalizer["if"] == "always()"
+    assert finalizer["if"] == (
+        "always() && needs.materialize-publication.result != 'skipped'"
+    )
     assert set(_needs(finalizer)) == {"materialize-publication", "approval"}
     assert "needs.approval.result" in command
     assert "--authorization" in command
@@ -1120,8 +1386,12 @@ def test_commit8_missing_authorization_reaches_approval_finalizer() -> None:
 def test_commit8_dag_order_retention_and_error_propagation_are_exact() -> None:
     jobs = _document(CALLEE)["jobs"]
     assert set(jobs) == EXPECTED_JOBS
-    assert jobs["qualification-finalizer"]["if"] == "always()"
-    assert jobs["approval-finalizer"]["if"] == "always()"
+    assert jobs["qualification-finalizer"]["if"] == (
+        "always() && needs.build-tarball.result != 'skipped'"
+    )
+    assert jobs["approval-finalizer"]["if"] == (
+        "always() && needs.materialize-publication.result != 'skipped'"
+    )
     assert jobs["release-finalizer"]["if"] == "always()"
 
     for job in jobs.values():
