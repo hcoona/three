@@ -80,7 +80,13 @@ export const applyStaticHighlighting = (html: string): string => {
     const lang = getPreferredLanguage(codeElement.attribs?.['data-lang'], preElement.attribs?.['lang']);
     const sourceCodeText = decodeXML($(codeElement).text());
     const highlightOptions = { ...BASE_HIGHLIGHT_OPTIONS, lang };
-    const rendered = hexoUtil.highlight(sourceCodeText, highlightOptions);
+    let rendered = hexoUtil.highlight(sourceCodeText, highlightOptions);
+
+    if ($(preElement).hasClass('nowrap')) {
+      const renderedFragment = cheerio.load(rendered, CHEERIO_LOAD_OPTIONS, false);
+      renderedFragment('pre').first().addClass('nowrap');
+      rendered = renderedFragment.html();
+    }
 
     $(preElement).replaceWith(rendered);
   });

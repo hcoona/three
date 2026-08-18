@@ -52,7 +52,7 @@ end</code></pre>
 exports[`DocTest:listing > source-nowrap 1`] = `
 "<div class="listingblock">
 <div class="content">
-<pre><code class="highlight plaintext">public class ApplicationConfigurationProvider extends HttpConfigurationProvider &#123;
+<pre class="nowrap"><code class="highlight plaintext">public class ApplicationConfigurationProvider extends HttpConfigurationProvider &#123;
 
   public Configuration getConfiguration(ServletContext context) &#123;
     return ConfigurationBuilder.begin()
