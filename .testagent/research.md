@@ -3344,3 +3344,426 @@ The implementation handoff must contain four explicit blocks:
    appended test-gap/assertion-quality status sections.
 
 <!-- END APPEND: 2026-08-18-wdv3-artifact-transport-regression-research -->
+
+
+<!-- APPENDED PUBLICATION-PREPARATION RESEARCH: preserved in full from the research phase -->
+
+---
+
+# Test Generation Research
+
+## Project Overview
+
+- **Path**: `/workspace/three-workspaces/design-workflows`
+- **Bounded package**:
+  `src/public/lib/three-workflow-delivery-v3`
+- **Language**: Python 3.13 plus GitHub Actions YAML/Bash
+- **Framework**: Workflow Delivery v3 control package and one reusable GitHub
+  Actions workflow
+- **Test framework**: pytest 8.x; PyYAML is used for workflow contract tests
+- **Authority**: current tracked tree and `1e742b29..HEAD`. The tracked worktree
+  was clean when researched.
+- **Baseline checked**:
+  - the five relevant test files pass: `232 passed in 11.60s`;
+  - `actionlint .github/workflows/workflow-delivery-v3-live-attempt.yml`
+    passes.
+
+The existing green tests do not establish the requested regressions: several
+tests inspect shell text or duplicate its truth table in Python rather than
+executing the workflow shell.
+
+## Explicit Requirement Checklist
+
+1. **Execute the actual publication-preparation classifier shell**
+   - Load the current workflow YAML and execute the exact `run` value of
+     `release-finalizer` / `Finalize Attempt Outcome`; do not copy its
+     classifier into Python.
+   - Cover successful Qualification followed by the admitted Observation and
+     materialization combinations:
+     - Observation `failure|cancelled`, materialization `skipped|cancelled`;
+     - Observation `success`, materialization `failure|cancelled` (including
+       Snapshot upload failure);
+     - workflow cancellation with Observation/materialization
+       `skipped/skipped` or `success/skipped`.
+   - Reject unexplained skips, Observation/materialization success without a
+     durable Snapshot, partial Snapshot transport, non-admitted publisher
+     results, and each downstream lineage fact.
+   - Cover Snapshot ID/upload digest presence and absence, forwarded Snapshot,
+     Authorization, Capability Admission, mutation marker, result bundle, and
+     Receipt.
+   - Admit an **unstarted** publisher whose GitHub result is `cancelled` only
+     when `workflow_cancelled=true`, Snapshot transport is absent, and all
+     downstream/mutation lineage is absent. It must be translated as
+     publication-preparation interruption, not also as post-Snapshot platform
+     termination.
+
+2. **Lock Publication Snapshot lifecycle ordering and output identity**
+   - Assert the exact lifecycle:
+     `materialize -> names -> upload-snapshot -> upload-reviewer -> bind`.
+   - Assert materialization job transport outputs use
+     `steps.upload-snapshot.outputs.artifact-id` and
+     `steps.upload-snapshot.outputs.artifact-digest`; the canonical Snapshot
+     payload digest remains sourced from `steps.materialize`.
+   - Assert release-finalizer downloads and passes the Snapshot directly from
+     `needs.materialize-publication`, not from approval forwarding.
+   - Execute a later reviewer upload/binding failure scenario with a durable
+     Snapshot and prove the shell preserves Snapshot arguments and does not add
+     `--publication-preparation-interrupted`.
+
+3. **Directly cover every publication-preparation `AttemptOutcome` negative**
+   - Retain current direct substitutions for `uncertainty`,
+     `authorization_digest`, and `publication_snapshot_digest`.
+   - Add one direct substitution each for:
+     `capability_admission_digests`,
+     `capability_group_bundle_digests`, `receipt_digests`, `result`,
+     `possibly_mutated`, and `next_action`.
+   - Each case must construct/replace the real `AttemptOutcome` and fail with
+     the publication-preparation invariant; do not test through a mock.
+
+4. **Execute the release-finalizer postamble**
+   - Use the repository Bash harness pattern to execute the real finalizer
+     shell with a CLI boundary double that writes Outcome/summary files and
+     returns the real incomplete status (`1`).
+   - Prove the retained Attempt summary and GitHub Step Summary contain the
+     publication-preparation diagnostics, the final artifact name/status are
+     emitted, and files still exist after the nonzero finalize status.
+   - Keep the structural assertion that the `if: always()` upload is between
+     finalize and propagation.
+   - Execute the exact `Propagate finalization status` shell with a successful
+     retention upload and prove the job exits nonzero afterward.
+
+5. **Link the uploaded reviewer artifact from the completed job summary**
+   - Add a workflow contract assertion that the reviewer artifact URL is
+     appended only after `upload-reviewer` and exact payload binding succeed.
+   - The summary/link step must follow `bind`; a binding failure must not
+     present an unbound reviewer payload as a completed review surface.
+   - Assert the immutable `reviewer-summary.md` is only read; the URL is written
+     to `GITHUB_STEP_SUMMARY`, never appended to or rewritten into the reviewer
+     payload.
+
+6. **Update publisher-result truth-table coverage**
+   - Replace or fold the current Python-only publisher-result calculation into
+     the executable shell scenarios.
+   - Include the accepted whole-run cancellation case, rejection without
+     workflow-cancellation ownership, rejection with any lineage, and ordinary
+     post-Snapshot publisher cancellation mapping to platform termination.
+
+7. **Non-behavioral constraints**
+   - Add tests first. Make only the smallest workflow/production change exposed
+     by those tests; no unrelated refactors, gratuitous tests, or formatting
+     locks.
+   - Never restore missing source or mutate version-control state.
+   - Keep `.testagent/research.md`, `.testagent/plan.md`, and
+     `.testagent/status.md` current across the full Research -> Plan ->
+     Implement pipeline. This phase updates only `research.md`.
+   - Run a narrow test after each implementation phase, then the complete
+     affected package and applicable workflow/HK validation as practical.
+
+## Relevant Diff Facts (`1e742b29..HEAD`)
+
+The range contains five commits:
+
+- `62ac4bb2`: records the publication-preparation interruption design;
+- `fca9862d`: adds the `AttemptOutcome`, live finalizer, and CLI contract;
+- `8377343b`: adds direct workflow facts, diagnostics, retention, and
+  fail-after-retention behavior;
+- `14b40c75`: closes review findings in workflow and tests;
+- `5f8449d7` (`HEAD`): reconciles the v3 documentation.
+
+Relevant current behavior:
+
+- `records/release.py::AttemptOutcome.__post_init__` admits a Snapshot-free
+  `publication-preparation` Outcome only as `incomplete`, uncertain,
+  not-possibly-mutated, with no later records and `new-attempt`.
+- `release/live.py::finalize_attempt_outcome` accepts the semantic
+  `publication_preparation_interrupted` fact, rejects contradictory domain
+  records/facts, and forms that exact Outcome.
+- `cli.py::_release_finalize_live_command` exposes/forwards
+  `--publication-preparation-interrupted`, writes Outcome and summary before
+  returning status `1` for `incomplete`.
+- The workflow now gives `release-finalizer` direct `needs` access to
+  Observation and materialization, sources Snapshot transport directly from
+  materialization, records workflow cancellation, classifies interruption,
+  appends diagnostics, uploads final files with `if: always()`, then propagates
+  failure.
+
+Observed regression gaps in the current tree:
+
+- `test_publication_preparation_interruption_truth_table_is_exact` duplicates
+  the classifier in Python and only checks two shell substrings.
+- Diagnostics and propagation tests are text/order assertions; no finalizer
+  shell postamble is executed.
+- Lifecycle tests omit `upload-snapshot` from their ordering chain.
+- No executable case proves Snapshot lineage survives a later reviewer failure.
+- The publication-preparation record substitution table covers only
+  uncertainty, Authorization, and Snapshot among the requested core fields.
+- The current shell requires publisher result `skipped` unconditionally and
+  later maps every `cancelled` publisher to `--platform-terminated`; this cannot
+  represent the newly approved unstarted/whole-run cancellation case.
+- `Materialize exact publication basenames` currently copies the reviewer
+  summary to `GITHUB_STEP_SUMMARY` **before** either upload. No later step
+  appends `steps.upload-reviewer.outputs.artifact-url`.
+
+The current MLD/LLD text says the publisher “must be skipped.” The request
+explicitly approves GitHub result `cancelled` only as the platform spelling of
+an unstarted publisher under whole-workflow cancellation. Implementation must
+keep that exception narrow; a minimal normative wording reconciliation may be
+needed, but this is not permission to broaden cancellation admission.
+
+## Scope
+
+- **Boundary**: publication preparation, reviewer transport/summary, and the
+  sole live release-finalizer in
+  `.github/workflows/workflow-delivery-v3-live-attempt.yml`, plus the exact
+  Python Outcome/finalizer/CLI contracts it invokes.
+- **Production/workflow targets**:
+  - `.github/workflows/workflow-delivery-v3-live-attempt.yml`
+    - job `materialize-publication`;
+    - job `release-finalizer`, especially steps `Finalize Attempt Outcome`,
+      `Upload final Attempt Outcome and summary`, and
+      `Propagate finalization status`.
+  - `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/records/release.py`
+    - `AttemptOutcome`.
+  - `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/release/live.py`
+    - `finalize_attempt_outcome`.
+  - `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py`
+    - `_release_finalize_live_command`, parser flag, and
+      `LIVE_OUTCOME_EXIT_STATUS`.
+- **Test targets**:
+  - `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+  - `src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py`
+  - existing integration protection in
+    `tests/release/test_commit8_live_scenarios.py`,
+    `tests/release/test_live_qualification_boundary.py`, and
+    `tests/test_cli.py`.
+- **Representative existing tests**:
+  - `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+  - `src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_live_scenarios.py`
+- **Excluded**: sibling projects, unrelated v1/v2 workflows, remote GitHub
+  execution, real publication, and unrelated release adapters. The Python
+  `release/finalizer.py` materialization algorithms are unchanged and are not a
+  target for this shell/workflow regression.
+
+## Dependency Graph
+
+- **Leaf/core record**:
+  `AttemptOutcome` (exact field validation and canonical document; depends on
+  existing `ReleaseAttemptIdentity` and validation helpers).
+- **Mid-layer domain finalizer**:
+  `finalize_attempt_outcome` (consumes Qualification Decision, optional
+  Snapshot/Authorization/Capability/bundle/Receipt records and forms
+  `AttemptOutcome`).
+- **Top-layer adapter**:
+  `_release_finalize_live_command` (loads exact retained records, calls the
+  domain finalizer, writes Outcome/summary/output metadata, maps result to exit
+  status).
+- **Workflow layer**:
+  `materialize-publication` supplies durable Snapshot/reviewer transport;
+  `release-finalizer` translates direct GitHub job/output facts into CLI flags,
+  retains diagnostics, and propagates failure.
+
+Tests should therefore proceed record invariant -> domain/CLI preservation ->
+actual workflow shell. No mocking is needed for `AttemptOutcome`; the shell
+harness should double only the already-tested CLI process boundary.
+
+## Exact Source-to-Test Pairs
+
+| Source/workflow target | Exact relevant test pair(s) | Current classification |
+|---|---|---|
+| `.github/workflows/workflow-delivery-v3-live-attempt.yml` / `materialize-publication`, `release-finalizer` | `tests/contracts/test_buddy_workflows.py` | **Partial**: strong static topology checks, but classifier/postamble are not executed and reviewer URL is absent |
+| `records/release.py::AttemptOutcome` | `tests/release/test_commit8_contracts.py` | **Partial** for this slice: canonical case exists; six requested direct negative fields are missing |
+| `release/live.py::finalize_attempt_outcome` | `tests/release/test_commit8_live_scenarios.py` | **Substantial** semantic coverage: exact Outcome and contradictory records/facts are covered |
+| `cli.py::_release_finalize_live_command` | `tests/release/test_live_qualification_boundary.py`, `tests/test_cli.py` | **Substantial**: real CLI transport, incomplete exit status, and parser flag are covered |
+
+The required `find-untested-sources` tree-sitter analyzer was run once at the
+bounded package root with `--lang python --include-tested`: 38 source files and
+41 tests were parsed; all four Python target files are statically paired with
+tests. This is a parse-only identifier/import heuristic, not line or branch
+coverage evidence. YAML-to-contract-test pairing is manual because the analyzer
+does not pair workflow YAML.
+
+## Files to Test
+
+### High Priority
+
+| File | Classes/functions/jobs | Testability | Estimated coverage | Notes |
+|---|---|---:|---|---|
+| `.github/workflows/workflow-delivery-v3-live-attempt.yml` | `materialize-publication`, `release-finalizer` shell | High | Partial | Primary regression surface; execute extracted Bash with a CLI boundary double |
+| `tests/contracts/test_buddy_workflows.py` | workflow topology and shell scenarios | High | Partial | Replace duplicated truth tables; add reusable renderer/executor |
+| `records/release.py` | `AttemptOutcome.__post_init__` | High | Partial for requested invariant | Direct dataclass substitutions, no mocks |
+| `tests/release/test_commit8_contracts.py` | publication-preparation substitution matrix | High | Partial | Add only the six missing field cases |
+
+### Medium Priority
+
+| File | Classes/functions | Testability | Estimated coverage | Notes |
+|---|---|---:|---|---|
+| `release/live.py` | `finalize_attempt_outcome` | High | Substantial | Retain existing scenario protection; production change is not currently indicated |
+| `cli.py` | live finalization command/parser/status map | High | Substantial | Existing integration proves incomplete writes files then returns `1` |
+| `tests/release/test_commit8_live_scenarios.py` | publication-preparation domain scenarios | High | Substantial | Run after workflow changes; add only if an uncovered domain behavior emerges |
+| `tests/release/test_live_qualification_boundary.py` and `tests/test_cli.py` | CLI transport/parser | High | Substantial | Regression validation, not first-choice edit targets |
+
+### Low Priority / Skip
+
+| File | Reason |
+|---|---|
+| `src/.../release/finalizer.py` | Publication Snapshot materialization logic is unchanged; the requested “release-finalizer shell” is the workflow job |
+| Other Workflow Delivery projects/workflows | Outside the bounded v3 live-attempt request |
+| v1/v2 sources | Non-normative and explicitly out of scope |
+
+## Existing Tests & Coverage Classification
+
+- Workflow pairing is partial: exact action pins, permissions, output strings,
+  artifact settings, and many orderings are checked, but the new classifier and
+  failure postamble are only inspected as text.
+- `AttemptOutcome` pairing is partial for this request: the positive
+  publication-preparation shape and three negative substitutions exist.
+- Domain live finalization is substantial: successful/unsuccessful
+  Qualification, required Snapshot, preparation interruption, all contradictory
+  record categories, exact Boolean facts, platform termination, and receipt
+  closure already have scenarios.
+- CLI coverage is substantial: a real successful Qualification can be
+  terminalized as publication-preparation, the retained Outcome is admitted
+  back through transport, and the command returns nonzero for incomplete.
+- No numeric coverage percentage is claimed because no coverage report was
+  produced.
+
+## Existing Test Project
+
+- **Project file**:
+  `src/public/lib/three-workflow-delivery-v3/pyproject.toml`
+- **Target source project**: same Python package under `src/`
+- **Test root**:
+  `src/public/lib/three-workflow-delivery-v3/tests`
+- **Runner/config**: root `pyproject.toml` supplies pytest
+  `--import-mode=importlib`; the package dev group supplies pytest.
+
+## Scenario-First Testing Patterns
+
+- Use descriptive `test_<scenario>_<expected_behavior>` functions, no test
+  classes.
+- Use `pytest.mark.parametrize` with named tuple columns and readable case IDs
+  for platform-state scenarios.
+- Reuse `_document`, `_steps`, `_step`, and `_run`; assert semantic job/step
+  identity and security/lifecycle boundaries rather than incidental YAML
+  formatting.
+- Use bare pytest assertions and `pytest.raises(..., match=...)`.
+- For core records, use immutable `dataclasses.replace` to vary one field at a
+  time.
+- Do not add a second Python model of shell behavior. Consolidate the existing
+  preparation and publisher truth tables into shell-driven scenarios where
+  practical.
+
+Suggested scenario-oriented names:
+
+- `test_publication_preparation_classifier_executes_workflow_shell`
+- `test_durable_snapshot_survives_later_reviewer_failure`
+- `test_publication_preparation_outcome_rejects_each_forbidden_fact`
+- `test_incomplete_preparation_retains_diagnostics_before_job_failure`
+- `test_completed_materialization_summary_links_immutable_reviewer_artifact`
+
+## Actual Shell Execution Harness Pattern
+
+Follow the established pattern in
+`tests/contracts/test_commit10_acceptance_workflow.py`:
+
+1. Parse the workflow with `yaml.safe_load` and extract the exact step `run`
+   string.
+2. Render every `${{ ... }}` occurrence from one explicit scenario fact map and
+   assert no unresolved expression remains.
+3. Use `tmp_path`; set `GITHUB_OUTPUT`, `GITHUB_STEP_SUMMARY`,
+   `GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT`, and `WDV3_PACKAGE`.
+4. Put a tiny executable `uv` boundary double first on `PATH`. It should record
+   the received CLI arguments, write the requested Outcome and summary paths,
+   optionally emit CLI outputs, and return the configured status. Do not mock
+   or rewrite the classifier.
+5. Execute with an argv tuple, not `shell=True`:
+   `bash --noprofile --norc -euo pipefail -c <exact-run>`, with `cwd=tmp_path`.
+6. For admitted cases, inspect captured CLI argv for the exact semantic flags.
+   For rejected cases, assert nonzero status, the specific workflow diagnostic,
+   and that the CLI double was not invoked.
+7. Execute the exact propagation step separately with rendered step outcomes
+   to prove retention succeeds before final nonzero job status.
+
+Minimum shell scenario set:
+
+| Cancellation | Observation | Materialization | Publisher | Snapshot/lineage | Expected |
+|---:|---|---|---|---|---|
+| no | failure | skipped | skipped | absent | preparation flag |
+| no | cancelled | cancelled | skipped | absent | preparation flag |
+| no | success | failure | skipped | absent (upload failed) | preparation flag |
+| no | success | cancelled | skipped | absent | preparation flag |
+| yes | skipped | skipped | skipped | absent | preparation flag |
+| yes | success | skipped | skipped | absent | preparation flag |
+| yes | skipped | skipped | cancelled, unstarted | absent | preparation flag only |
+| no | skipped | skipped | cancelled | absent | reject |
+| no | success | skipped | skipped | absent | reject unexplained skip |
+| no | success | success | skipped | absent | reject missing durable Snapshot |
+| any admitted row | same | same | same | digest without ID | reject partial transport |
+| any admitted row | same | same | success/failure | absent | reject publisher result |
+| any admitted row | same | same | skipped/cancelled | each downstream lineage field in turn | reject |
+| no | success | failure | skipped | durable Snapshot ID/digest | preserve Snapshot path; no preparation flag |
+| no | any post-Snapshot state | cancelled | durable Snapshot | ordinary platform-termination mapping |
+
+This set covers the approved cancellation rule without a combinatorial
+cross-product or gratuitous cases.
+
+## Build & Test Commands
+
+- **Build**:
+  `uv build --package three-workflow-delivery-v3`
+- **Test (workflow fix cycle)**:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+- **Test (record fix cycle)**:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py`
+- **Test (bounded integration)**:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_live_scenarios.py src/public/lib/three-workflow-delivery-v3/tests/release/test_live_qualification_boundary.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py`
+- **Test (harness-equivalent discovery check, repo root)**:
+  `uv run --python 3.13 pytest --collect-only -q`
+- **Final affected package**:
+  `python eng/scripts/hk_exec.py --timeout-seconds 720 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests`
+- **Workflow lint**:
+  `actionlint .github/workflows/workflow-delivery-v3-live-attempt.yml`
+- **Python lint/format**:
+  `uv run --python 3.13 ruff check --force-exclude -- <changed-python-paths>`
+  and
+  `uv run --python 3.13 ruff format --check --force-exclude -- <changed-python-paths>`
+- **Type check**:
+  `uv run --python 3.13 pyrefly check <changed-python-paths>`
+- **Affected-file HK gate**:
+  `hk check --check .github/workflows/workflow-delivery-v3-live-attempt.yml src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py`
+
+Use only paths actually changed when running Ruff/Pyrefly/HK. If Python
+production remains unchanged, do not include it merely to enlarge validation.
+
+## Likely Gaps / Blockers
+
+- **Likely required workflow change**: narrowly admit `publish_result=cancelled`
+  for the approved whole-run/unstarted case and prevent that same fact from also
+  adding `--platform-terminated` to a preparation Outcome.
+- **Likely required workflow change**: move completed-summary rendering after
+  reviewer upload and append the returned artifact URL without mutating
+  `reviewer-summary.md`.
+- **Likely test-only changes**: exact Snapshot upload ordering/output identity,
+  later reviewer failure lineage, all missing `AttemptOutcome` substitutions,
+  and executable postamble coverage.
+- **Normative wording mismatch**: current MLD/LLD says “publisher must be
+  skipped”; the approved exception must be documented or explicitly treated as
+  GitHub's cancelled result for an unstarted job. It is bounded enough to test
+  now, but must not become general cancellation admission.
+- **Harness boundary**: upload-artifact itself cannot be run locally. Test its
+  `if: always()`, ordering, path, and outputs structurally; execute both adjacent
+  shell steps with simulated action outputs.
+- **No dependency blocker**: Bash, PyYAML, pytest, and stdlib subprocess/path
+  tools already exist. No new package or generalized workflow abstraction is
+  justified.
+
+## Recommendations
+
+1. Add the direct `AttemptOutcome` substitutions first.
+2. Add one reusable exact-workflow-shell harness and replace duplicated
+   preparation/publisher calculations with scenario rows.
+3. Add lifecycle/output/summary contracts, including the durable-Snapshot later
+   failure scenario.
+4. Let the failing tests drive only the two likely YAML corrections.
+5. Run the narrow file after each step, then bounded integration, full package,
+   discovery, actionlint, and the affected HK gate.

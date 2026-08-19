@@ -6163,3 +6163,821 @@ Focused validation passed **44 tests**. Ruff, Pyrefly, actionlint, and
   completed successfully.
 
 <!-- END APPEND: 2026-08-18-v3-artifact-full-validation -->
+
+<!-- BEGIN APPEND: 2026-08-19-publication-preparation-phase-1-start -->
+
+## Phase 1 start: Publication-Preparation Record Invariants
+
+- Started: `2026-08-19T01:16:18.875Z`.
+- Scope: extend
+  `test_publication_preparation_outcome_rejects_each_forbidden_fact` only;
+  do not begin Phase 2.
+- Required parameter IDs:
+  `uncertainty`, `authorization-digest`,
+  `publication-snapshot-digest`, `capability-admission-digests`,
+  `capability-group-bundle-digests`, `receipt-digests`, `result`,
+  `possibly-mutated`, and `next-action`.
+- Planned narrow command:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py`
+- Planned handoff command:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_live_scenarios.py src/public/lib/three-workflow-delivery-v3/tests/release/test_live_qualification_boundary.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py`
+- Changed paths at phase start: `.testagent/status.md`.
+- Production changed: no.
+
+<!-- END APPEND: 2026-08-19-publication-preparation-phase-1-start -->
+
+<!-- BEGIN APPEND: 2026-08-19-publication-preparation-phase-1-characterization -->
+
+## Phase 1 characterization
+
+- Harness baseline:
+  `uv run --python 3.13 pytest --collect-only -q` collected **5,152 tests**
+  in 0.86s.
+- Narrow characterization:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py`
+  passed **45 tests** in 0.15s.
+- Existing exact collected publication-preparation cases:
+  - `test_commit8_records_reject_independent_binding_substitutions[record9-uncertainty-False-Publication preparation]`
+  - `test_commit8_records_reject_independent_binding_substitutions[record10-authorization_digest-sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff-Publication preparation]`
+  - `test_commit8_records_reject_independent_binding_substitutions[record11-publication_snapshot_digest-sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff-Publication preparation]`
+- Characterization result: green baseline; the table does not yet collect the
+  six required direct substitutions.
+- Changed paths: `.testagent/status.md`.
+- Production changed: no.
+
+<!-- END APPEND: 2026-08-19-publication-preparation-phase-1-characterization -->
+
+<!-- BEGIN APPEND: 2026-08-19-publication-preparation-phase-1-green -->
+
+## Phase 1 green result
+
+- Exact retained test function:
+  `test_commit8_records_reject_independent_binding_substitutions`.
+- Exact publication-preparation parameter IDs:
+  - `uncertainty`
+  - `authorization-digest`
+  - `publication-snapshot-digest`
+  - `capability-admission-digests`
+  - `capability-group-bundle-digests`
+  - `receipt-digests`
+  - `result`
+  - `possibly-mutated`
+  - `next-action`
+- Direct substitutions use `dataclasses.replace` against the canonical real
+  `AttemptOutcome`; every row requires `ValueError` matching
+  `(?i)publication[- ]preparation`.
+- `uv build --package three-workflow-delivery-v3` succeeded and produced the
+  source distribution and wheel.
+- Narrow record command:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py`
+  passed **51 tests** in 0.18s.
+- Focused collection of the retained test function found **18 cases**,
+  including the nine exact IDs above.
+- Test-first result: all six added cases passed on their first execution, so
+  no missing production invariant was demonstrated.
+- Changed paths:
+  `.testagent/status.md`;
+  `src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py`.
+- Production changed: no; `records/release.py` is unchanged.
+
+<!-- END APPEND: 2026-08-19-publication-preparation-phase-1-green -->
+
+<!-- BEGIN APPEND: 2026-08-19-publication-preparation-phase-1-handoff -->
+
+## Phase 1 handoff
+
+### Exact collected publication-preparation cases
+
+- `test_commit8_records_reject_independent_binding_substitutions[uncertainty]`
+- `test_commit8_records_reject_independent_binding_substitutions[authorization-digest]`
+- `test_commit8_records_reject_independent_binding_substitutions[publication-snapshot-digest]`
+- `test_commit8_records_reject_independent_binding_substitutions[capability-admission-digests]`
+- `test_commit8_records_reject_independent_binding_substitutions[capability-group-bundle-digests]`
+- `test_commit8_records_reject_independent_binding_substitutions[receipt-digests]`
+- `test_commit8_records_reject_independent_binding_substitutions[result]`
+- `test_commit8_records_reject_independent_binding_substitutions[possibly-mutated]`
+- `test_commit8_records_reject_independent_binding_substitutions[next-action]`
+
+### Commands and results
+
+| Command | Result |
+|---|---|
+| `uv run --python 3.13 pytest --collect-only -q` before the test change | 5,152 tests collected in 0.86s |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py` before the test change | 45 passed in 0.15s |
+| `uv build --package three-workflow-delivery-v3` | Source distribution and wheel built successfully |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py` after the test change | 51 passed in 0.18s |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_live_scenarios.py src/public/lib/three-workflow-delivery-v3/tests/release/test_live_qualification_boundary.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py` | 198 passed in 8.04s |
+| `uv run --python 3.13 pytest --collect-only -q` after the test change | 5,158 tests collected in 0.95s; harness delta **+6**, matching the six added rows |
+| `git diff --check` | Passed |
+
+### Quality review and scope
+
+- Pseudo-mutation review found no in-scope gap: removing any one
+  publication-preparation condition is killed by its direct one-field row,
+  while the retained canonical round-trip case prevents unconditional
+  rejection.
+- Assertion-quality review found no assertion-free, trivial, or
+  self-referential case. Each negative checks the exact exception type and the
+  publication-preparation diagnostic; the canonical case checks deep record
+  and document equality.
+- Phase-changed paths:
+  `.testagent/status.md`;
+  `src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py`.
+- Pre-existing modified `.testagent/plan.md` and `.testagent/research.md` were
+  treated as authoritative and left untouched.
+- Production changed: no; `records/release.py` required no change.
+- Phase 2 was not begun.
+
+<!-- END APPEND: 2026-08-19-publication-preparation-phase-1-handoff -->
+
+<!-- BEGIN APPEND: 2026-08-19-publication-preparation-phase-2-start -->
+
+## Phase 2 start: Classifier and Publisher Truth Table
+
+- Started: `2026-08-19T01:22:42.081Z`.
+- Scope: execute the exact workflow YAML `release-finalizer` /
+  `Finalize Attempt Outcome` shell through a CLI boundary double; do not begin
+  Phase 3.
+- Planned test functions:
+  - `test_publication_preparation_classifier_executes_workflow_shell`
+  - `test_publication_preparation_classifier_rejects_invalid_workflow_facts`
+  - `test_publisher_result_truth_table_executes_workflow_shell`
+- Required admitted-case IDs:
+  `observation-failure__materialization-skipped`,
+  `observation-cancelled__materialization-cancelled`,
+  `observation-success__snapshot-upload-failure`,
+  `observation-success__materialization-cancelled`,
+  `workflow-cancelled__observation-skipped__materialization-skipped`, and
+  `workflow-cancelled__observation-success__materialization-skipped`.
+- Required invalid-fact IDs:
+  `unexplained-observation-skip`,
+  `materialization-success-without-durable-snapshot`,
+  `snapshot-artifact-id-without-upload-digest`,
+  `snapshot-upload-digest-without-artifact-id`,
+  `publisher-success`, and `publisher-failure`.
+- Required publisher IDs:
+  `whole-run-cancelled-unstarted`,
+  `cancelled-without-workflow-ownership`,
+  `cancelled-with-forwarded-snapshot`,
+  `cancelled-with-authorization`,
+  `cancelled-with-capability-admission`,
+  `cancelled-with-mutation-marker`,
+  `cancelled-with-result-bundle`,
+  `cancelled-with-receipt`, and `post-snapshot-cancelled`.
+- Harness discovery baseline:
+  `uv run --python 3.13 pytest --collect-only -q` collected **5,158 tests**
+  in 0.89s.
+- Workflow characterization baseline:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+  passed **40 tests** in 3.56s.
+- Changed paths at phase start:
+  `.testagent/status.md`; pre-existing Phase 1 and planning changes remain
+  authoritative and untouched.
+- Production changed: no.
+
+<!-- END APPEND: 2026-08-19-publication-preparation-phase-2-start -->
+
+<!-- BEGIN APPEND: 2026-08-19-publication-preparation-phase-2-initial-red -->
+
+## Phase 2 initial tests-first result
+
+- Package build:
+  `uv build --package three-workflow-delivery-v3` succeeded.
+- Required workflow command:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+  produced **45 passed, 15 failed**.
+- Seven admitted shell executions reached the CLI exactly once but exposed an
+  over-specific harness assertion: argv correctly contains
+  `three-workflow-delivery-v3` twice, once as the `--package` value and once as
+  the executable. Affected IDs:
+  - `test_publication_preparation_classifier_executes_workflow_shell[observation-failure__materialization-skipped]`
+  - `test_publication_preparation_classifier_executes_workflow_shell[observation-cancelled__materialization-cancelled]`
+  - `test_publication_preparation_classifier_executes_workflow_shell[observation-success__snapshot-upload-failure]`
+  - `test_publication_preparation_classifier_executes_workflow_shell[observation-success__materialization-cancelled]`
+  - `test_publication_preparation_classifier_executes_workflow_shell[workflow-cancelled__observation-skipped__materialization-skipped]`
+  - `test_publication_preparation_classifier_executes_workflow_shell[workflow-cancelled__observation-success__materialization-skipped]`
+  - `test_publisher_result_truth_table_executes_workflow_shell[post-snapshot-cancelled]`
+- One symmetric partial-transport production gap was exposed:
+  `test_publication_preparation_classifier_rejects_invalid_workflow_facts[snapshot-artifact-id-without-upload-digest]`
+  reached the CLI and returned zero instead of rejecting before invocation.
+- The approved cancellation row failed as expected:
+  `test_publisher_result_truth_table_executes_workflow_shell[whole-run-cancelled-unstarted]`
+  rejected `publish_result=cancelled` with
+  `Publication preparation interruption did not skip the publisher`.
+- Each cancellation-with-lineage row rejected at the older publisher-result
+  gate rather than the downstream-lineage gate:
+  - `test_publisher_result_truth_table_executes_workflow_shell[cancelled-with-forwarded-snapshot]`
+  - `test_publisher_result_truth_table_executes_workflow_shell[cancelled-with-authorization]`
+  - `test_publisher_result_truth_table_executes_workflow_shell[cancelled-with-capability-admission]`
+  - `test_publisher_result_truth_table_executes_workflow_shell[cancelled-with-mutation-marker]`
+  - `test_publisher_result_truth_table_executes_workflow_shell[cancelled-with-result-bundle]`
+  - `test_publisher_result_truth_table_executes_workflow_shell[cancelled-with-receipt]`
+- No workflow or Python production file had been changed at this red point.
+
+<!-- END APPEND: 2026-08-19-publication-preparation-phase-2-initial-red -->
+
+<!-- BEGIN APPEND: 2026-08-19-publication-preparation-phase-2-confirmed-red -->
+
+## Phase 2 confirmed production failures
+
+After correcting only the CLI-prefix assertion in the new harness, the same
+required workflow command produced **52 passed, 8 failed** in 6.51s:
+
+- `test_publication_preparation_classifier_rejects_invalid_workflow_facts[snapshot-artifact-id-without-upload-digest]`
+  returned zero and invoked the CLI instead of rejecting partial transport.
+- `test_publisher_result_truth_table_executes_workflow_shell[whole-run-cancelled-unstarted]`
+  rejected the approved cancellation at the skipped-only publisher gate.
+- The following six cases also stopped at that publisher gate instead of
+  independently reaching downstream-lineage rejection:
+  - `test_publisher_result_truth_table_executes_workflow_shell[cancelled-with-forwarded-snapshot]`
+  - `test_publisher_result_truth_table_executes_workflow_shell[cancelled-with-authorization]`
+  - `test_publisher_result_truth_table_executes_workflow_shell[cancelled-with-capability-admission]`
+  - `test_publisher_result_truth_table_executes_workflow_shell[cancelled-with-mutation-marker]`
+  - `test_publisher_result_truth_table_executes_workflow_shell[cancelled-with-result-bundle]`
+  - `test_publisher_result_truth_table_executes_workflow_shell[cancelled-with-receipt]`
+
+This is the final red state before the workflow edit.
+
+<!-- END APPEND: 2026-08-19-publication-preparation-phase-2-confirmed-red -->
+
+<!-- BEGIN APPEND: 2026-08-19-publication-preparation-phase-2-green -->
+
+## Phase 2 green result: Classifier and Publisher Truth Table
+
+### Exact executable tests and parameter IDs
+
+`test_publication_preparation_classifier_executes_workflow_shell`:
+
+- `observation-failure__materialization-skipped`
+- `observation-cancelled__materialization-cancelled`
+- `observation-success__snapshot-upload-failure`
+- `observation-success__materialization-cancelled`
+- `workflow-cancelled__observation-skipped__materialization-skipped`
+- `workflow-cancelled__observation-success__materialization-skipped`
+
+`test_publication_preparation_classifier_rejects_invalid_workflow_facts`:
+
+- `unexplained-observation-skip`
+- `materialization-success-without-durable-snapshot`
+- `snapshot-artifact-id-without-upload-digest`
+- `snapshot-upload-digest-without-artifact-id`
+- `publisher-success`
+- `publisher-failure`
+
+`test_publisher_result_truth_table_executes_workflow_shell`:
+
+- `whole-run-cancelled-unstarted`
+- `cancelled-without-workflow-ownership`
+- `cancelled-with-forwarded-snapshot`
+- `cancelled-with-authorization`
+- `cancelled-with-capability-admission`
+- `cancelled-with-mutation-marker`
+- `cancelled-with-result-bundle`
+- `cancelled-with-receipt`
+- `post-snapshot-cancelled`
+- `post-snapshot-skipped`
+- `post-snapshot-success-with-mutation-marker`
+- `post-snapshot-failure-with-result-bundle`
+- `post-snapshot-failure-without-result-bundle`
+- `post-snapshot-failure-with-mutation-marker`
+- `post-snapshot-cancelled-with-mutation-marker`
+
+The last six IDs retain the non-cancellation publisher-result,
+result-bundle, and mutation-marker semantics formerly calculated only in
+Python. The two duplicated Python-only truth-calculation tests are retained in
+source to honor the existing-test append-only boundary but marked
+non-collectable; all of their semantic rows now execute the exact workflow
+shell.
+
+### Harness and exact workflow change
+
+- The harness parses the current YAML with `yaml.safe_load`, locates exactly
+  `release-finalizer` / `Finalize Attempt Outcome`, renders an explicit map for
+  every `${{ ... }}` fact, and asserts no expression remains.
+- It runs the exact extracted `run` value with
+  `bash --noprofile --norc -euo pipefail -c`, a `tmp_path` working directory,
+  explicit GitHub environment files/facts, and one executable `uv` CLI
+  boundary double. No Python classifier was added.
+- The CLI double records the exact argv, writes Outcome and summary files, and
+  exposes a secondary GitHub-output observable. Rejected rows prove the double
+  was never invoked.
+- `.github/workflows/workflow-delivery-v3-live-attempt.yml` changed by only
+  three narrow classifier decisions:
+  1. reject a Snapshot artifact ID with a missing upload digest, complementing
+     the existing digest-without-ID rejection;
+  2. allow `publish_result=cancelled` through the preparation publisher gate
+     only when `workflow_cancelled=true`; the surrounding no-Snapshot branch
+     and existing downstream-lineage guard remain mandatory;
+  3. add `--platform-terminated` for publisher cancellation only when the same
+     row was not classified as publication-preparation interruption.
+- Ordinary post-Snapshot cancellation still emits
+  `--platform-terminated`; the approved unstarted whole-run cancellation emits
+  exactly one `--publication-preparation-interrupted` and no platform flag.
+
+### Commands and exact results
+
+| Command | Result |
+|---|---|
+| `uv build --package three-workflow-delivery-v3` | Succeeded; sdist and wheel built |
+| Workflow command before new tests | 40 passed in 3.56s |
+| First tests-first workflow run | 45 passed, 15 failed; seven failures were one over-specific CLI-prefix assertion |
+| Confirmed red workflow run after the harness-only correction | 52 passed, 8 failed in 6.51s; exact production rows are recorded above |
+| Workflow run immediately after the YAML fix | 60 passed in 6.26s |
+| Final workflow run after folding the legacy publisher calculation | **65 passed in 7.21s** |
+| `uv run --python 3.13 pytest --collect-only -q` | **5,183 collected** in 0.85s; delta **+25** from 5,158, matching 27 shell scenarios minus two folded Python-only tests |
+| Ruff check and format check on `test_buddy_workflows.py` | Passed |
+| `pyrefly check test_buddy_workflows.py` | 0 errors |
+| `actionlint .github/workflows/workflow-delivery-v3-live-attempt.yml` | Passed |
+| `git diff --check` | Passed |
+
+The complete affected package command ran **3,051** tests: **3,049 passed**
+and two unrelated authoritative-worktree checks failed after 407.21s:
+
+1. `test_installed_nbgv_api_returns_exact_head_and_native_projection` was
+   blocked by the repository's exhausted Git LFS budget.
+2. `test_testagent_plan_update_is_append_only_against_head` rejects the
+   pre-existing non-append-only `.testagent/plan.md` replacement.
+
+The first documented affected-file HK invocation,
+`hk check --check <files>`, was rejected by this HK build because `--check`
+cannot be combined with explicit files. The non-mutating equivalent
+`HK_FIX=0 hk check <files>` passed `typos`, `actionlint`,
+`editorconfig-check`, Ruff check/format, consumer policy, and
+`workflow-release-control-tests` (**1,257 passed**). Its package-test step
+reported the same two unrelated blockers above; no Phase 2 check failed.
+
+### Test-gap and assertion-quality review
+
+- Pseudo-mutations of every in-scope Observation/materialization branch,
+  workflow-cancellation ownership, either half of Snapshot transport,
+  publisher-result admission, each of the six lineage operands, preparation
+  versus platform flag selection, publisher failure with/without a result
+  bundle, and mutation-marker independence are killed by distinct shell rows.
+- No in-scope mutation survived. Qualification failure and CLI domain-record
+  validation remain deliberately outside this workflow-classifier phase and
+  retain their existing dedicated tests.
+- All 27 generated shell scenarios have meaningful assertions. Successful
+  rows verify status, one exact CLI invocation/prefix, exact positive and
+  negative semantic flags, durable Snapshot argument values where applicable,
+  and GitHub-output side effects. Rejected rows verify nonzero status, a
+  relevant diagnostic, and zero CLI invocations.
+- There are no assertion-free, trivial-only, or self-referential generated
+  cases. Assertions span equality, comparison, string, collection, negative,
+  structural, and state/side-effect categories.
+
+### Changed paths and handoff
+
+Phase 2 changed:
+
+- `.github/workflows/workflow-delivery-v3-live-attempt.yml`
+- `.testagent/status.md`
+- `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+
+Pre-existing `.testagent/plan.md`, `.testagent/research.md`, and
+`tests/release/test_commit8_contracts.py` changes remain authoritative and were
+not modified by Phase 2. No Python production file changed. Phase 2 is green;
+Phase 3 has not begun.
+
+<!-- END APPEND: 2026-08-19-publication-preparation-phase-2-green -->
+
+<!-- BEGIN APPEND: 2026-08-19-publication-preparation-phase-3-start -->
+
+## Phase 3 start: Snapshot Lifecycle, Reviewer Diagnostics, and Retention
+
+- Started: `2026-08-19T01:58:32.572Z`.
+- Scope: implement only the six Phase 3 tests in
+  `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`,
+  reusing Phase 2's exact-workflow-shell harness, then make only the expected
+  completed reviewer-summary workflow correction proven by the tests.
+- Planned exact tests:
+  - `test_publication_snapshot_lifecycle_and_transport_identity_are_exact`
+  - `test_release_finalizer_downloads_snapshot_directly_from_materialization`
+  - `test_durable_snapshot_survives_later_reviewer_failure`
+  - `test_completed_materialization_summary_links_immutable_reviewer_artifact`
+  - `test_incomplete_preparation_retains_diagnostics_before_job_failure`
+  - `test_propagation_fails_after_successful_retention`
+- Required validation: the narrow workflow command followed by the five-file
+  bounded integration command. The final global quality gate is explicitly
+  deferred.
+- Changed paths at phase start: `.testagent/status.md`.
+- Production changed: no.
+- Blockers: none.
+
+<!-- END APPEND: 2026-08-19-publication-preparation-phase-3-start -->
+
+<!-- BEGIN APPEND: 2026-08-19-publication-preparation-phase-3-red -->
+
+## Phase 3 tests-first red result
+
+- Recorded: `2026-08-19T02:03:09.247Z`.
+- Harness discovery baseline from the repository root:
+  `uv run --python 3.13 pytest --collect-only -q` collected **5,183 tests**
+  in 0.95s.
+- Pre-change workflow baseline:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+  passed **65 tests** in 7.10s.
+- Tests-first workflow command after appending all six Phase 3 tests produced
+  **70 passed, 1 failed** in 8.12s.
+- Exact expected failure:
+  `test_completed_materialization_summary_links_immutable_reviewer_artifact`
+  could not find the required post-upload
+  `Publish completed reviewer summary and artifact link` step. The current
+  workflow still writes `reviewer-summary.md` to `GITHUB_STEP_SUMMARY` from
+  `names`, before either upload, and never appends
+  `steps.upload-reviewer.outputs.artifact-url`.
+- The other five exact Phase 3 tests passed against the authoritative current
+  workflow, proving no additional lifecycle, direct-Snapshot, durable-Snapshot,
+  finalizer-postamble, or propagation production change is indicated.
+- Changed paths at the red point:
+  `.testagent/status.md`;
+  `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`.
+- Workflow/production changed after the new tests: no.
+- Blockers: none; the failure authorizes only the planned reviewer-summary
+  workflow correction.
+
+<!-- END APPEND: 2026-08-19-publication-preparation-phase-3-red -->
+
+<!-- BEGIN APPEND: 2026-08-19-publication-preparation-phase-3-green -->
+
+## Phase 3 green result: Snapshot Lifecycle, Reviewer Diagnostics, and Retention
+
+- Recorded: `2026-08-19T02:06:04.090Z`.
+- Exact tests now green:
+  - `test_publication_snapshot_lifecycle_and_transport_identity_are_exact`
+  - `test_release_finalizer_downloads_snapshot_directly_from_materialization`
+  - `test_durable_snapshot_survives_later_reviewer_failure`
+  - `test_completed_materialization_summary_links_immutable_reviewer_artifact`
+  - `test_incomplete_preparation_retains_diagnostics_before_job_failure`
+  - `test_propagation_fails_after_successful_retention`
+- `test_durable_snapshot_survives_later_reviewer_failure` executes the exact
+  Phase 2 finalizer shell with materialization result `failure` after a durable
+  Snapshot and proves one CLI call preserves the Snapshot path, payload digest,
+  artifact ID, and upload digest without either interruption flag.
+- `test_incomplete_preparation_retains_diagnostics_before_job_failure`
+  executes the exact finalizer shell with a status-`1` CLI boundary, proving
+  the retained Outcome, Attempt summary, job summary, CLI outputs, derived
+  retention artifact name, and status survive the nonzero result.
+- `test_propagation_fails_after_successful_retention` retains exact
+  finalize/upload/propagate ordering and `if: always()` protection, then
+  executes the exact propagation shell with a successful upload and proves
+  status `1` alone produces the later nonzero result.
+- Minimal workflow correction:
+  - removed the pre-upload `reviewer-summary.md` read from `names`;
+  - added `Publish completed reviewer summary and artifact link` after
+    `upload-reviewer` and before `bind`;
+  - gated it on successful reviewer upload;
+  - read the immutable reviewer payload into `GITHUB_STEP_SUMMARY` and appended
+    `steps.upload-reviewer.outputs.artifact-url` only to the job summary.
+  No Python production code or other workflow section changed in Phase 3.
+
+### Commands and results
+
+| Command | Result |
+|---|---|
+| `uv build --package three-workflow-delivery-v3` | Succeeded; sdist and wheel built |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py` | **71 passed** in 7.74s |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_live_scenarios.py src/public/lib/three-workflow-delivery-v3/tests/release/test_live_qualification_boundary.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py` | **269 passed** in 15.34s |
+| `uv run --python 3.13 pytest --collect-only -q` | **5,189 collected** in 0.86s; delta **+6** from 5,183, exactly matching the six added tests |
+
+- Phase 3 changed paths:
+  `.github/workflows/workflow-delivery-v3-live-attempt.yml`;
+  `.testagent/status.md`;
+  `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`.
+- Blockers: none.
+- Per the user instruction, the final global quality gate has not been run.
+
+<!-- END APPEND: 2026-08-19-publication-preparation-phase-3-green -->
+
+<!-- BEGIN APPEND: 2026-08-19-publication-preparation-phase-3-handoff -->
+
+## Phase 3 handoff
+
+- Completed: `2026-08-19T02:06:55.252Z`.
+- Status: **green**.
+- Tests created: **6**; Phase 3 tests passing: **6**.
+- Harness discovery: **+6** tests, from 5,183 to 5,189.
+- Narrow workflow result: **71 passed**.
+- Five-file bounded integration result: **269 passed**.
+- Package build: succeeded.
+- `git diff --check`: passed.
+- Phase 3 changed paths:
+  - `.github/workflows/workflow-delivery-v3-live-attempt.yml`
+  - `.testagent/status.md`
+  - `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+- Pre-existing authoritative changes in `.testagent/plan.md`,
+  `.testagent/research.md`, and
+  `src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py`
+  were not modified by Phase 3. No Python production file changed.
+- Blockers: none.
+- Next action: run the separately requested final global quality gate; it was
+  deliberately not run during this handoff.
+
+<!-- END APPEND: 2026-08-19-publication-preparation-phase-3-handoff -->
+
+## Validation fix - 2026-08-19
+
+- Corrected `.testagent/plan.md` so the exact `HEAD` plan bytes are the unchanged prefix, followed by a separator and the complete current publication-preparation plan.
+- Prefix verification: **PASS** (`starts_byte_for_byte_with_HEAD=True`; 183904-byte prefix).
+- Command: `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py::test_testagent_plan_update_is_append_only_against_head`
+- Result: **PASS** (exit 0; `1 passed in 0.20s`).
+
+<!-- BEGIN APPEND: 2026-08-19-publication-preparation-final-quality-gate -->
+
+## Publication-Preparation Mandatory Final Quality-Gate Remediation
+
+### Result
+
+- Status: **PARTIAL**. Every requested behavioral, pseudo-mutation,
+  assertion-quality, prompt-scenario, workflow, plan-prefix, and focused-test
+  gate is green. The two mandatory Ruff commands remain blocked only by three
+  lines that already existed in
+  `tests/contracts/test_buddy_workflows.py` when this append-only remediation
+  began; changing them would violate the test-file append-only boundary.
+- Initial bounded baseline:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py`
+  passed **122 tests** in 8.03s.
+- No version-control-mutating operation, restoration, full package suite, or
+  documentation edit was performed.
+
+### Additive tests and exact collected IDs
+
+- `test_publisher_cancellation_without_workflow_ownership_is_rejected_by_publisher_gate[cancelled-without-workflow-ownership]`
+  uses otherwise-legal Observation `failure` / materialization `skipped`
+  preparation facts, publisher `cancelled`, workflow cancellation `false`,
+  and no lineage. It requires the publisher-specific diagnostic and zero CLI
+  invocations.
+- `test_workflow_cancellation_fact_recorder_executes_exact_step_shell`
+  asserts step ID `workflow-cancellation`, condition `cancelled()`, executes
+  the YAML-extracted `run`, and requires exact
+  `workflow-cancelled=true\n` output.
+- `test_publication_preparation_classifier_executes_missing_legal_combinations`
+  adds:
+  - `observation-failure__materialization-cancelled`
+  - `observation-cancelled__materialization-skipped`
+  Both require exactly one preparation flag, no platform-termination flag,
+  and no Snapshot/downstream-lineage argv.
+- `test_durable_snapshot_reviewer_failure_omits_preparation_diagnostics`
+  seeds the job summary, preserves the durable Snapshot/no-interruption
+  semantics, and proves no publication-preparation diagnostic is appended.
+- `test_incomplete_preparation_diagnostics_report_exact_workflow_facts`
+  requires exact retained and job-summary values for successful
+  Qualification, failed Observation, skipped materialization, skipped
+  publisher, workflow cancellation `false`, and absent durable Snapshot.
+- `test_completed_materialization_summary_is_sole_post_upload_writer_and_appends`
+  seeds prior summary content, proves exact append behavior and byte identity,
+  keeps the artifact URL out of `reviewer-summary.md`, and statically requires
+  the post-upload summary/link step to be the sole workflow shell line that
+  moves reviewer-summary content into `GITHUB_STEP_SUMMARY`.
+
+These seven collected cases are additive companions to the prior Phase 2/3
+tests, preserving every line that existed in the test file at gate start.
+
+### Tests-first production evidence
+
+- The first new-case run produced **6 passed, 1 failed, 71 deselected**.
+- The sole failure was
+  `test_incomplete_preparation_diagnostics_report_exact_workflow_facts`: the
+  exact workflow shell omitted `- Publisher job result: skipped`.
+- That failure authorized the only workflow-source change in this gate:
+  `Finalize Attempt Outcome` now appends
+  `- Publisher job result: ${publish_result}` beside its existing exact
+  preparation diagnostics.
+- Re-running the same focused selection passed **7 tests**; the complete
+  workflow contract file then passed **78 tests**.
+
+### Plan correction and append-only proof
+
+- The uncommitted publication-preparation suffix now names the real
+  `test_commit8_records_reject_independent_binding_substitutions` test and all
+  nine exact IDs:
+  `uncertainty`, `authorization-digest`, `publication-snapshot-digest`,
+  `capability-admission-digests`, `capability-group-bundle-digests`,
+  `receipt-digests`, `result`, `possibly-mutated`, and `next-action`.
+- The nonexistent
+  `test_publication_preparation_outcome_rejects_each_forbidden_fact` reference
+  is absent from the current plan.
+- Byte-prefix verification passed:
+  `head_bytes=183904 current_bytes=209375 prefix_exact=True`.
+- The repository append-only contract passed:
+  `test_testagent_plan_update_is_append_only_against_head` — **1 passed in
+  0.22s**.
+
+### Mandatory quality-gate review
+
+- `test-gap-analysis` and `assertion-quality` were invoked after the test
+  changes. Their required `test-analysis-extensions` helper was attempted and
+  unavailable, so the focused Python/pytest review was completed inline.
+- Pseudo-mutation result: **no remaining in-scope behavioral survivor**.
+  Distinct executable cases kill removal of publisher cancellation ownership,
+  either newly covered classifier conjunction, the recorder ID/condition or
+  exact output, accidental preparation diagnostics after a durable Snapshot,
+  omission or substitution of any required diagnostic fact, summary overwrite,
+  return of the old pre-upload writer, reviewer-payload mutation, and URL
+  leakage into the immutable payload.
+- Assertion-quality result: the seven added cases have no assertion-free,
+  trivial-only, self-referential, or tautological collected test. Assertions
+  cover exact equality, strings, collections, negative behavior, process
+  status, filesystem/GitHub-output side effects, ordering, and structural
+  workflow identity.
+- Prompt-scenario result: every numbered remediation request maps to at least
+  one exact test/case above. The nine record IDs were also confirmed by
+  focused pytest collection.
+
+### Commands and results
+
+| Command | Result |
+|---|---|
+| `uv build --package three-workflow-delivery-v3` | Passed; sdist and wheel built |
+| Required two-file pytest command | **129 passed in 9.16s**, exit 0 |
+| Focused two-file collection | **129 collected** |
+| `actionlint .github/workflows/workflow-delivery-v3-live-attempt.yml` | Passed, exit 0 |
+| Append-only plan test | **1 passed in 0.22s**, exit 0 |
+| `uv run --python 3.13 ruff check --force-exclude -- <two test files>` | Blocked: pre-existing `Q003` at `test_buddy_workflows.py:2729` |
+| `uv run --python 3.13 ruff format --check --force-exclude -- <two test files>` | Blocked: pre-existing formatting at lines 2728-2730, 2858, and 2889; `test_commit8_contracts.py` is formatted |
+| `git diff --check` | Passed after this status append |
+
+### Exact changed paths for this remediation
+
+- `.github/workflows/workflow-delivery-v3-live-attempt.yml`
+- `.testagent/plan.md`
+- `.testagent/status.md`
+- `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+
+`src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py`
+was read and validated but not changed by this remediation. No Python
+production source changed. The workflow source needed the one diagnostic-line
+change proven by the exact red test above.
+
+<!-- END APPEND: 2026-08-19-publication-preparation-final-quality-gate -->
+
+<!-- BEGIN APPEND: 2026-08-19-publication-preparation-formatting-validation -->
+
+## Publication-preparation formatting validation
+
+- Ruff changed only the appended `test_buddy_workflows.py` lines: it removed
+  the Q003 quote escape/collapsed assertion, wrapped the SHA-256 call, and
+  joined the dictionary-union argument. Test semantics, names, cases, and
+  assertions are unchanged.
+- The test-file diff remains one additions-only hunk after HEAD line 1889;
+  `test_commit8_contracts.py`, workflow/production files, and other tests were
+  not edited.
+- Required Ruff check passed; Ruff format check reported both files formatted;
+  the required pytest command passed **129 tests in 9.03s**; `git diff
+  --check` passed.
+
+<!-- END APPEND: 2026-08-19-publication-preparation-formatting-validation -->
+
+<!-- BEGIN APPEND: 2026-08-19-publication-preparation-final-validation -->
+
+## Publication-preparation final validation
+
+- Final behavioral quality gate: **PASS — no in-scope gaps**. Independent
+  pseudo-mutation, assertion-quality, and prompt-scenario review found no
+  remaining findings after the seven remediation cases.
+- Final discovery:
+  `uv run --python 3.13 pytest --collect-only -q` collected **5,196 tests**.
+- Final affected build:
+  `uv build --package three-workflow-delivery-v3` passed and produced the sdist
+  and wheel.
+- Final focused tests after formatting:
+  the workflow-contract and record-contract files passed **129 tests**.
+- Final full affected-package command:
+  `python eng/scripts/hk_exec.py --timeout-seconds 720 uv run --python 3.13
+  --package three-workflow-delivery-v3 pytest -q
+  src/public/lib/three-workflow-delivery-v3/tests` completed with **3,068
+  passed, 1 failed**. The sole failure,
+  `test_installed_nbgv_api_returns_exact_head_and_native_projection`, is an
+  external Git LFS quota failure while checking out
+  `src/private/app/OxfordDictExtractor/wordlist.tsv.zip`; no generated
+  regression test failed.
+- Final affected-file hook command:
+  `HK_FIX=0 hk check
+  .github/workflows/workflow-delivery-v3-live-attempt.yml
+  src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py
+  src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py
+  .testagent/research.md .testagent/plan.md .testagent/status.md`.
+  Actionlint, Ruff, Ruff format, editorconfig, typos, consumer policy, and the
+  1,257-test workflow-release control gate passed. The hook command failed only
+  because its embedded v3 full-package run encountered the same Git LFS quota
+  failure (**3,068 passed, 1 failed**).
+- `uv run --python 3.13 pyrefly check` on both changed Python test files passed
+  with 0 errors and 1 suppressed warning.
+- `git diff --check` passed.
+- Remaining documentation reconciliation: the accepted GitHub
+  whole-run-cancellation spelling is implemented and regression-locked, but
+  `release-delivery-mld.md` and `hcoona-release-smoke-npm-lld.md` still say the
+  publisher must be `skipped`. They should later state the narrow exception:
+  an unstarted publisher may be reported `cancelled` only when workflow
+  cancellation owns the stop and no Snapshot or downstream/mutation lineage
+  exists.
+
+<!-- END APPEND: 2026-08-19-publication-preparation-final-validation -->
+
+<!-- BEGIN APPEND: 2026-08-19-publication-preparation-coordinator-gate -->
+
+## Publication-preparation coordinator completion gate
+
+### Final test-set corrections
+
+- Removed the temporary pytest de-collection of the two pre-existing Python
+  truth-table tests. Their stale Python classifiers were replaced with
+  execution of the YAML-extracted finalizer shell:
+  - `test_publication_preparation_rejects_crossed_interruption_states`
+  - `test_release_finalizer_platform_fact_mapping_executes_workflow_shell`
+- Folded the two missing admitted Observation/materialization combinations
+  into `test_publication_preparation_classifier_executes_workflow_shell`.
+- Consolidated duplicate gate-remediation tests into the primary scenario
+  tests. The retained tests assert semantic facts and concrete side effects
+  without requiring an exact Markdown layout or shell-line formatting.
+- No production/workflow behavior changed during this final consolidation.
+
+### Final quality review
+
+- Invoked `test-gap-analysis` and `assertion-quality`. Their requested
+  `test-analysis-extensions` helper was attempted but is unavailable in this
+  environment, so the Python/pytest classifications were completed inline.
+- Pseudo-mutation result: **no remaining in-scope survivor**. Executable cases
+  independently kill removal or inversion of workflow-cancellation ownership,
+  either partial Snapshot-transport check, every accepted
+  Observation/materialization branch, crossed interruption states, every
+  downstream-lineage exclusion, and the distinction between preparation
+  cancellation and post-Snapshot platform termination.
+- Assertion-depth result: **pass**. The generated scenarios assert concrete
+  process status, exact CLI flags and values, no-call behavior, diagnostics,
+  filesystem bytes, GitHub output/summary side effects, workflow step order,
+  transport-output identity, and direct invariant exceptions. There are no
+  assertion-free, trivial-only, self-referential, or tautological generated
+  tests.
+- Prompt-scenario review: every numbered request remains mapped by the
+  Requirement Traceability table in `.testagent/plan.md`.
+
+### Final validation
+
+| Command/gate | Result |
+|---|---|
+| Focused workflow + record tests | **128 passed** |
+| Bounded five-file integration | **275 passed** |
+| Full affected v3 package | **3,067 passed, 1 failed** |
+| Package build | Passed |
+| Actionlint | Passed |
+| Ruff check and format check | Passed |
+| Pyrefly | Passed with 0 errors |
+| `git diff --check` | Passed |
+
+The sole full-package failure remains environmental and unrelated:
+`test_installed_nbgv_api_returns_exact_head_and_native_projection` cannot
+download `src/private/app/OxfordDictExtractor/wordlist.tsv.zip` because the
+repository Git LFS budget is exhausted.
+
+### Remaining handoff
+
+- No known production-code work remains.
+- Normative documentation reconciliation remains for
+  `release-delivery-mld.md` and `hcoona-release-smoke-npm-lld.md`, which still
+  state that the publisher must be `skipped`. They should describe the narrow
+  accepted GitHub spelling: an unstarted publisher may be `cancelled` only
+  when whole-workflow cancellation owns the stop and no Snapshot or downstream
+  mutation lineage exists.
+
+<!-- END APPEND: 2026-08-19-publication-preparation-coordinator-gate -->
+
+<!-- BEGIN APPEND: 2026-08-19-publication-preparation-binding-order-correction -->
+
+## Publication-preparation reviewer binding-order correction
+
+- The completed reviewer summary and artifact link now run after
+  `Bind reviewer artifact transport to exact payloads`, not between upload and
+  binding.
+- This preserves the immutable reviewer payload while ensuring a binding
+  failure cannot present an unbound artifact as the completed reviewer
+  surface.
+- `test_completed_materialization_summary_links_immutable_reviewer_artifact`
+  asserts `upload-reviewer < bind < summary`, executes the exact summary shell,
+  and proves the reviewer payload bytes remain unchanged.
+- The focused workflow and record contract command passes **128 tests** after
+  the correction, and `git diff --check` passes.
+
+<!-- END APPEND: 2026-08-19-publication-preparation-binding-order-correction -->
+
+<!-- BEGIN APPEND: 2026-08-19-publication-preparation-reviewed-repair-validation -->
+
+## Publication-preparation reviewed repair validation
+
+- Runtime, regression, and normative wording repairs were committed as
+  `91deece4`.
+- The final reviewer-summary sequence is
+  `upload-reviewer -> bind -> completed summary/link`.
+- The narrow workflow and record contract command passes **128 tests**.
+- The complete `test_hk_trigger.py` append-only contract passes **62 tests**.
+- Ruff check, Ruff format check, Pyrefly, and actionlint pass for the changed
+  workflow and Python test files.
+- With the repository-required `GIT_LFS_SKIP_SMUDGE=1` environment, the full
+  Workflow Delivery v3 package passes **3,068 tests**.
+- With the same environment, `hk check --check --no-progress` passes for the
+  complete working tree.
+- `release-delivery-mld.md` and `hcoona-release-smoke-npm-lld.md` now document
+  the narrow cancellation-owned `publisher=cancelled` spelling and the
+  post-binding completed-summary boundary.
+- `git diff --check` passes.
+
+<!-- END APPEND: 2026-08-19-publication-preparation-reviewed-repair-validation -->
