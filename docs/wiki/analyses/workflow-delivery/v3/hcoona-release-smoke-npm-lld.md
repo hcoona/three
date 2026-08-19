@@ -1033,11 +1033,11 @@ GitHub Environment `DeploymentReview` cannot produce authoritative
 current-attempt rejection Evidence because it lacks `run_attempt` and
 approval-job binding and has no documented append-only/consistency contract for
 safe review-ID delta inference. Rejection or denial therefore emits no
-admissible Approval Outcome Evidence in this LLD. If `approval-finalizer` runs,
-it records unknown approval-contract failure and a replayable incomplete
-Attempt; otherwise the run remains replayable incomplete without a
-context-owned outcome. Observable review information is a non-authoritative
-human diagnostic only. No capability group starts.
+admissible Approval Outcome Evidence in this LLD. If `release-finalizer` runs,
+the sole Release Finalizer records unknown approval-contract failure and a
+replayable incomplete Attempt Outcome; otherwise the run remains replayable
+incomplete without a context-owned outcome. Observable review information is a
+non-authoritative human diagnostic only. No capability group starts.
 
 Workflow Delivery adds no approval watchdog. If GitHub cancels or expires the
 run while approval remains pending, `approval-finalizer` may not run. When no
@@ -1366,13 +1366,15 @@ SHA-512, tarball manifest, lifecycle scripts, and exact action summary.
    the permanent HK no-consumer dependency-policy gate passes.
 9. The one-action capability group emits one exact result bundle; missing,
    duplicate, mismatched, or extra action coverage blocks finalization.
-10. `materialize-publication` uploads one immutable Actions artifact containing
-    canonical JSON and deterministic Markdown through the Renovate-selected
-    current Node-24-compatible action major and full-SHA pin, exposes its URL
-    through `environment.url`, and writes the same link/summary to the completed
-    job summary. The
-    reviewer-summary artifact ID/digest and Snapshot digest match the
-    Authorization Record; mismatches block publisher admission.
+10. `materialize-publication` uploads the canonical Publication Snapshot as one
+    immutable non-archived Actions artifact and uploads deterministic Markdown
+    plus reviewer inputs as a separate immutable reviewer artifact through the
+    Renovate-selected current Node-24-compatible action major and full-SHA pin.
+    It exposes only the reviewer artifact URL through `environment.url` and
+    writes the same link/summary to the completed job summary. The reviewer
+    artifact transport is bound to the exact Snapshot and summary payloads; the
+    reviewer artifact ID/digest and Snapshot digest match the Authorization
+    Record, and mismatches block publisher admission.
 11. Inspection records token permissions and grants, proves no known Official or
     production reach, and safely probes only enumerated unrelated assets without
     claiming universal negative reach proof.

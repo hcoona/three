@@ -560,10 +560,13 @@ Each Release Attempt has one logical Plan lineage with two immutable snapshots.
   Receipt contracts, and Decision.
 
 The Publication Snapshot cannot alter fields frozen by the Qualification
-Snapshot. A deterministic reviewer summary and canonical Snapshot JSON travel
-as one immutable artifact. Governance approval and the Authorization Record bind
-the Publication Snapshot digest plus that summary artifact's ID and digest;
-mismatch fails closed.
+Snapshot. Canonical Snapshot JSON travels as its own immutable artifact. A
+deterministic reviewer summary travels in a separate immutable reviewer
+artifact whose transport is bound to the exact Snapshot and summary payloads.
+The standalone Snapshot artifact is the durable lifecycle boundary; the
+reviewer artifact URL is the human approval entry point. Governance approval
+and the Authorization Record bind the Publication Snapshot digest plus that
+reviewer artifact's ID and digest; mismatch fails closed.
 
 For the first slice, live Buddy and Official simulation each qualify the built
 npm tarball through distinct artifact-content and install/import obligations.

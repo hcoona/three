@@ -1790,3 +1790,14 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   retained operational diagnostics, and fail-after-retention behavior.
 - Updated the v3 handoff through durable qualification terminalization while
   keeping live activation, acceptance dispatch, and package mutation disabled.
+
+## [2026-08-18] query | Close publication preparation interruption
+
+- Implemented and reviewed the canonical Outcome, exact Qualification replay,
+  direct platform-fact truth table, durable Snapshot boundary, retained
+  diagnostics, and fail-after-retention workflow behavior.
+- Corrected Snapshot upload-failure admission, cancellation truth-table
+  contradictions, separate Snapshot/reviewer artifact documentation, and sole
+  Release Finalizer ownership.
+- Advanced the next implementation boundary to Buddy caller-held concurrency
+  around Release Execution identity while keeping live activation disabled.

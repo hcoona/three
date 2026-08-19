@@ -95,7 +95,7 @@ If it conflicts with the
   runner facts remain incomplete, and complete Governance Acceptance Evidence
   rejects zero target and workflow SHAs while incomplete sentinel semantics
   remain available.
-- The current Workflow Delivery v3 package validation passes 3,015 tests. The
+- The current Workflow Delivery v3 package validation passes 3,025 tests. The
   protected
   acceptance Environment and reviewer configuration are still pending; no live
   acceptance dispatch or package mutation has run.
@@ -103,14 +103,15 @@ If it conflicts with the
   Qualification Decisions to produce publication-free Attempt Outcomes. The
   `finalize-live` CLI replays the exact retained Qualification Snapshot,
   Evidence, Release Artifact, and Decision before accepting that outcome.
-- The next approved slice handles successful Qualification followed by
-  Observation or Publication Snapshot materialization interruption before a
-  durable Publication Snapshot exists. The confirmed design uses terminal phase
-  `publication-preparation`, result `incomplete`, uncertainty, no possible
-  mutation, and next action `new-attempt`. Direct GitHub job/DAG facts are
-  normalized into one semantic Finalizer input; no new Evidence type,
-  fabricated Snapshot, or watchdog is added. A durable Publication Snapshot
-  remains the boundary into the existing Snapshot-bound lifecycle.
+- The publication-preparation interruption slice is implemented and committed:
+  `62ac4bb2` records the confirmed design, `fca9862d` adds the canonical
+  Outcome/Finalizer/CLI contract, and `8377343b` adds direct GitHub job facts,
+  retained diagnostics, and fail-after-retention workflow behavior. The slice
+  uses terminal phase `publication-preparation`, result `incomplete`,
+  uncertainty, no possible mutation, and next action `new-attempt`. It adds no
+  Evidence type, fabricated Snapshot, artifact API lookup, or watchdog. A
+  durable Publication Snapshot remains the boundary into the existing
+  Snapshot-bound lifecycle.
 - The first vertical slice is `hcoona-release-smoke-npm`.
 - The slice has one Node project, one package variant, and one npm artifact.
 - It covers CI Qualification, live Buddy publication to GitHub Packages, and
@@ -320,13 +321,9 @@ If it conflicts with the
   state blocks; no repository variable, PAT, App, service, ledger, OIDC, or
   additional token permission is added. Permanent root HK policy remains the
   repository-wide dependency gate.
-- The immediate implementation boundary is the approved
-  `publication-preparation` interruption slice: update the canonical
-  Attempt Outcome invariant and Finalizer/CLI, then add direct workflow
-  Observation/materialization facts, retained diagnostics, and contract tests
-  in separate human-reviewable commits. After this slice, repair Buddy
-  concurrency around Execution identity, perform final v3 validation, and only
-  then prepare the implementation PR. Do not run real acceptance probes,
+- The immediate implementation boundary is Buddy caller-held concurrency around
+  Release Execution identity. After that repair, perform final v3 validation
+  and prepare the implementation PR. Do not run real acceptance probes,
   finalize the sentinel target, activate normal live, or begin later scopes
   without a separate explicit user task.
 - Implementation must preserve the approved commit boundaries and keep live
