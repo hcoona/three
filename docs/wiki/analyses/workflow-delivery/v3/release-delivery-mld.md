@@ -1094,9 +1094,12 @@ If only part of a projection exists, the next observation returns `partial` and
 requires reconciliation. Action records explain the state and support a
 separately authorized remediation workflow.
 
-### Publication Control Bundle
+### Publication Control Closure
 
-The system emits one small immutable control bundle containing:
+The system does not emit an additional aggregate Publication Control Bundle
+artifact. The control closure is the exact set of separately persisted,
+immutable artifacts and canonical records whose IDs, upload digests, payload
+digests, and cross-bindings prove:
 
 - Publication Snapshot;
 - Authorization binding inputs;
@@ -1108,9 +1111,18 @@ The system emits one small immutable control bundle containing:
 - capability-group manifests; and
 - expected Receipt contracts.
 
-Variant artifacts remain separate immutable Actions artifacts. Each active
-capability group downloads the control bundle once and only the artifact IDs it
-needs.
+Each member remains independently retained and admitted. An active capability
+group downloads only the closure members it needs by explicit artifact ID. A
+transport may combine those IDs into one bounded download operation, but no
+synthetic aggregate artifact identity, name fallback, or latest-artifact
+selection is valid. The first slice uses one comma-delimited, merged,
+explicit-ID download for the publisher's exact eight inputs. Reviewer and Live
+Eligibility artifacts are not downloaded again by the publisher because the
+Authorization and Capability Admission Decision bind their exact identities
+and Governance provenance, and the publisher repeats the required freshness
+checks.
+
+Variant artifacts remain separate immutable Actions artifacts.
 
 Artifact names are deterministic and unique across the complete producing
 workflow run, with overwrite disabled. Every physical name includes
@@ -1382,13 +1394,22 @@ uses the existing qualification Outcome. A durably persisted Publication
 Snapshot uses the existing Snapshot-bound lifecycle even if a later step in the
 materialization job failed.
 
+For failed or incomplete Qualification, a whole-workflow cancellation may also
+report the unstarted publisher as `cancelled`. When Observation and
+materialization are both skipped and no Snapshot or downstream lineage exists,
+the workflow does not translate that result into platform termination; the
+Finalizer emits the existing qualification-only Outcome. Any contradictory
+Snapshot, authorization, capability, mutation, bundle, or Receipt lineage
+retains the normal domain rejection.
+
 The following are contract failures rather than normal interruptions:
 
 - Observation and materialization report success but no Snapshot artifact
   identity exists;
 - required jobs are skipped without a platform cancellation fact;
 - a Snapshot artifact identity exists but transport or digest admission fails;
-  or
+- any optional Finalizer record transport provides only part of its path,
+  record digest, artifact ID, and artifact digest; or
 - any authorization, capability, mutation, bundle, or Receipt lineage exists
   without the Snapshot.
 
@@ -1789,7 +1810,7 @@ Within GitHub Actions retention, each Attempt preserves:
 - Receipts; and
 - outcomes.
 
-For the first slice, Release control bundles, artifacts, records, and outcomes
+For the first slice, Release control-closure artifacts, records, and outcomes
 use 45-day retention, exceeding GitHub's Environment gate-expiry window,
 currently up to 30 days. Activation is blocked if repository policy cannot
 provide that supported margin. The approval interval does not freeze the

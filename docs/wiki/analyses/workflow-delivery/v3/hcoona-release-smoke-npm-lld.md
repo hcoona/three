@@ -1003,6 +1003,18 @@ binding change, or other invalidation produces a blocking Decision. Re-enabling
 live or merging a replacement valid attestation does not resume this Attempt; a
 new Attempt must repeat eligibility, planning, build, qualification,
 observation, and approval.
+
+The slice creates no additional aggregate Publication Control Bundle artifact.
+Its control closure is the exact set of separately retained Snapshot,
+reviewer, Qualification, Adapter Context, Release Artifact, Live Eligibility,
+Authorization, Capability Admission, and package artifacts plus their canonical
+cross-bindings. `approval-finalizer` acquires the Snapshot, reviewer artifact,
+and Live Eligibility Decision by explicit ID. The publisher then acquires its
+exact eight required closure members in one comma-delimited,
+`merge-multiple: true`, explicit-ID download. It never selects by name or
+latest artifact, and the durable Publication Snapshot remains the lifecycle
+boundary rather than any synthetic closure identity.
+
 `publish-github-packages` has `needs: approval-finalizer` and a strict admitted
 condition; GitHub may not schedule or start that package-write job before gate
 success. This LLD elects to have the publisher repeat the
@@ -1016,16 +1028,25 @@ malicious-writer boundary.
 `observe-github-packages` and `materialize-publication` in `needs` in addition
 to its existing authoritative inputs. Direct dependencies expose exact GitHub
 job results and outputs; they do not continue approval or publication after a
-failure. The workflow adapter translates only the approved state combinations
-into `--publication-preparation-interrupted`. It requires successful
-Qualification and no durable Snapshot artifact. The publisher result must be
-`skipped`, or may be `cancelled` only when whole-workflow cancellation is
-directly observed and no downstream lineage exists. The cancellation-owned
-result is not also translated as post-Snapshot platform termination. No
-Authorization, Capability Admission Decision, mutation marker, result bundle,
-or Receipt may exist. Job success without the required Snapshot, unexplained
-skips, failed Snapshot admission, or downstream lineage without a Snapshot are
-contract failures.
+failure. Its checkout, tool setup, and required and optional artifact
+acquisition steps explicitly admit cancellation so retained inputs remain
+available when GitHub schedules cancellation finalization. The workflow adapter
+translates only the approved state combinations into
+`--publication-preparation-interrupted`. It requires successful Qualification
+and no durable Snapshot artifact. The publisher result must be `skipped`, or
+may be `cancelled` only when whole-workflow cancellation is directly observed
+and no downstream lineage exists. The cancellation-owned result is not also
+translated as post-Snapshot platform termination. No Authorization, Capability
+Admission Decision, mutation marker, result bundle, or Receipt may exist. Job
+success without the required Snapshot, unexplained skips, failed Snapshot
+admission, partial optional record transport, or downstream lineage without a
+Snapshot are contract failures.
+
+If Qualification is `failure` or `incomplete`, whole-workflow cancellation may
+likewise report the unstarted publisher as `cancelled`. With Observation and
+materialization skipped and no Snapshot or downstream lineage, this does not
+become platform termination; the existing qualification-only Outcome is
+retained. Contradictory lineage continues through the normal domain rejection.
 
 The sole Release Finalizer then verifies the exact successful Qualification
 Decision and record absence before emitting
@@ -1167,13 +1188,14 @@ Top-level failure classes are:
 | Receipt failure                      | mutation may have occurred but Receipt was not persisted                                                    | incomplete; replay reobserves                                    |
 
 All authoritative JSON, summaries, artifacts, Evidence, Snapshots, observations,
-actions, approval records, control bundles, capability-group result bundles,
-Receipts, and outcomes use 45-day Actions retention. This provides margin over
-the platform approval-expiry window. Activation is blocked if repository
-retention policy cannot provide 45 days. Registry state is durable external
-state, not an Actions retention substitute. Expired lineage never turns present
-unprovable state into exact. The retention margin does not extend attestation
-expiry or defer the prompt protected commit setting `live_enabled: false`.
+actions, approval records, control-closure artifacts, capability-group result
+bundles, Receipts, and outcomes use 45-day Actions retention. This provides
+margin over the platform approval-expiry window. Activation is blocked if
+repository retention policy cannot provide 45 days. Registry state is durable
+external state, not an Actions retention substitute. Expired lineage never
+turns present unprovable state into exact. The retention margin does not extend
+attestation expiry or defer the prompt protected commit setting
+`live_enabled: false`.
 
 Every Finalizer writes a human summary containing identity, target, mode,
 version facts, Repository Model and Live Eligibility Decision IDs/digests,
