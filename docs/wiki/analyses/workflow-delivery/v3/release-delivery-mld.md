@@ -1810,13 +1810,13 @@ Within GitHub Actions retention, each Attempt preserves:
 - Receipts; and
 - outcomes.
 
-For the first slice, Release control-closure artifacts, records, and outcomes
-use 45-day retention, exceeding GitHub's Environment gate-expiry window,
-currently up to 30 days. Activation is blocked if repository policy cannot
-provide that supported margin. The approval interval does not freeze the
-pre-Attempt eligibility result or extend the at-most-90-day attestation:
-capability admission must observe live still enabled and the same attestation
-provenance/content still valid and unexpired.
+For the first slice, each Publication Control Closure member is retained
+independently for 45 days, as is each Release outcome, exceeding GitHub's
+Environment gate-expiry window, currently up to 30 days. Activation is blocked
+if repository policy cannot provide that supported margin. The approval
+interval does not freeze the pre-Attempt eligibility result or extend the
+at-most-90-day attestation: capability admission must observe live still
+enabled and the same attestation provenance/content still valid and unexpired.
 
 If a Finalizer runs after the approval job completed but neither a valid
 Authorization Record nor applicable admissible terminal Approval Outcome
@@ -2293,7 +2293,8 @@ The first Release LLD must define:
   writer is outside the trusted publisher TCB, and does not extend the exception
   to another Buddy destination;
 - manual workflow inputs and selected-ref validation;
-- artifact and control-bundle naming and retention;
+- exact Publication Control Closure member naming, independent retention, and
+  cross-binding without an aggregate control bundle;
 - artifact production with workflow-run-unique deterministic physical names
   that include `github.run_attempt` directly or in the hash preimage, overwrite
   disabled, ID/digest/URL transport, ID-only consumption, and rejection of

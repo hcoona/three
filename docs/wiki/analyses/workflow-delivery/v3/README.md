@@ -138,11 +138,12 @@ Buddy publication disabled. No legacy Buddy compatibility remains;
 former Buddy projects are unsupported until migrated, while v1 Official and CI
 assets remain unchanged. Legacy Buddy workflows, Buddy-specific tests/matrices,
 and Buddy docs are excluded from that preservation and are retired or
-rewritten. No coding or workflow activation may begin until approval.
+rewritten. The publication-preparation/cancellation closure is complete. Do not
+activate normal live delivery, run real acceptance probes, finalize the
+sentinel target, mutate any package, or begin later-scope work without separate
+explicit approval.
 
 Next:
 
-1. review and explicitly approve or revise the draft LLD;
-2. implement only the approved vertical slice;
-3. validate governance and destination guarantees before activation; and
-4. expand by ecosystem and destination only after acceptance.
+1. implement Buddy caller-held Release Execution concurrency; and
+2. perform final v3 validation and prepare the implementation PR.

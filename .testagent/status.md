@@ -7216,3 +7216,87 @@ repository Git LFS budget is exhausted.
   rewritten, and no production/workflow behavior was changed.
 
 <!-- END APPEND: 2026-08-19-wdv3-bounded-test-gap-resolution -->
+<!-- BEGIN APPEND: 2026-08-19-wdv3-six-final-review-repairs-status -->
+
+## Workflow Delivery v3 six final-review repairs status
+
+**Result:** complete; no commit created and no blocker remains.
+
+### Changed implementation/test/document files
+
+- `.github/workflows/workflow-delivery-v3-live-attempt.yml`
+- `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_live_scenarios.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/release/test_live_qualification_boundary.py`
+- `docs/wiki/analyses/workflow-delivery/v3/release-delivery-mld.md`
+- `docs/wiki/analyses/workflow-delivery/v3/README.md`
+
+The three `.testagent` artifacts contain only this run's EOF append after their
+complete `HEAD` prefixes.
+
+### Requirement evidence
+
+- Witness:
+  `test_workflow_cancellation_witness_has_exact_job_contract[non-cancelled-witness-skipped-defaults-false]`.
+- Mandatory guards:
+  `test_release_finalizer_prerequisite_actions_are_cancellation_admitting`
+  IDs `attempt-binding`, `qualification-snapshot`, and
+  `qualification-decision`.
+- Propagation:
+  `test_propagation_fails_after_successful_retention` IDs `all-success`,
+  `finalizer-status-nonzero`, `finalize-step-failure`, and
+  `upload-step-failure`.
+- Domain guard:
+  `test_unsuccessful_qualification_rejects_each_independent_publication_operand`
+  IDs `{failure,incomplete}-{publication-snapshot,authorization,capability-admission-decision,capability-group-result-bundle,receipt,receipt-transport-reference,publication-preparation-interrupted,platform-terminated,capability-may-have-started}`.
+- CLI:
+  `test_finalize_live_forwards_loaded_downstream_records_transport_and_platform_facts`.
+- Documentation:
+  exact Publication Control Closure naming/independent retention/cross-binding
+  and the current concurrency→validation/PR checkpoint; smoke LLD unchanged.
+
+### Validation
+
+| Gate | Result |
+|---|---|
+| Six focused workflow/domain/CLI/transport/HK files | 402 passed |
+| Full v3 package with `GIT_LFS_SKIP_SMUDGE=1` | 3,179 passed |
+| Ruff check / format | Passed; 3 files formatted |
+| Pyrefly v3 package | 0 errors |
+| actionlint | Passed |
+| Markdownlint + Prettier (`HK_FIX=0 hk check`) | Passed |
+| Append-only/HK artifact tests | 62 passed within focused run; byte-prefix guard passed |
+| `dotnet build dirs.proj --no-incremental` | Passed; 0 warnings/errors |
+| `uv build --package three-workflow-delivery-v3` | Passed |
+| `git diff --check` | Passed |
+
+Pseudo-mutation found no surviving in-scope operand or forwarding mutation.
+Assertion review found no assertion-free, trivial-only, tautological, skipped,
+or xfailed changed test. Prompt-scenario mapping is complete. No artifact REST
+lookup, package mutation, activation, acceptance probe, sentinel finalization,
+or smoke-LLD edit was introduced.
+
+<!-- END APPEND: 2026-08-19-wdv3-six-final-review-repairs-status -->
+
+<!-- BEGIN APPEND: 2026-08-19-wdv3-six-final-review-repairs-one-hot-closure -->
+
+## Final one-hot CLI forwarding closure
+
+- The repeated bounded pseudo-mutation and assertion-quality gates identified
+  one real weakness: the CLI forwarding scenario enabled all three platform
+  facts together, so swapping or coupling those Boolean sources could survive.
+- `test_finalize_live_forwards_loaded_downstream_records_transport_and_platform_facts`
+  now runs three one-hot cases:
+  `publication-preparation-interrupted`, `platform-terminated`, and
+  `capability-may-have-started`.
+- Each case asserts the exact forwarded Boolean tuple while retaining the
+  existing loaded-record, Receipt transport, canonical Outcome, and summary
+  assertions.
+- The focused one-hot scenarios pass **3 tests**. Ruff check, Ruff format,
+  Pyrefly, and `git diff --check` pass for the changed test.
+- Repeated independent bounded test-gap and assertion-quality reviews returned
+  no findings after the correction.
+- The final Workflow Delivery v3 package passes **3,181 tests** with
+  `GIT_LFS_SKIP_SMUDGE=1`.
+
+<!-- END APPEND: 2026-08-19-wdv3-six-final-review-repairs-one-hot-closure -->

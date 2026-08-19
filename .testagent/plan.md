@@ -4597,3 +4597,47 @@ or Publication Control Closure documentation edit.
   `with-result-bundle`, and `with-receipt`.
 
 <!-- END APPEND: 2026-08-19-wdv3-four-repairs-quality-gate-plan-correction -->
+<!-- BEGIN APPEND: 2026-08-19-wdv3-six-final-review-repairs-plan -->
+
+## Workflow Delivery v3 six final-review repairs plan
+
+1. **Workflow contracts first**
+   - Replace the obsolete recorder test with
+     `test_workflow_cancellation_witness_has_exact_job_contract`.
+   - Update the exact fact map/scenario overrides and three prerequisite rows.
+   - Parameterize `test_propagation_fails_after_successful_retention` over
+     all-success and the three independent failure inputs.
+2. **Minimal workflow implementation**
+   - Add only the witness job/dependency/output/fallback and the three nonempty
+     mandatory-download guards.
+   - Run the complete workflow contract file and actionlint.
+3. **Domain scenarios**
+   - Add `failure`/`incomplete` × nine-operand cases to
+     `test_commit8_live_scenarios.py`, each calling real
+     `finalize_attempt_outcome` and checking the exact rejection.
+4. **CLI/live boundary**
+   - Add one parser-to-handler test using valid transported typed records.
+     Capture only `finalize_attempt_outcome`; assert all downstream values,
+     constructed Receipt transport fields, platform facts, output, and summary.
+5. **Documentation**
+   - Update only `release-delivery-mld.md` and the v3 `README.md`; verify the
+     smoke LLD remains byte-identical.
+6. **Validation and review**
+   - Run the six focused pytest files, Ruff check/format, Pyrefly, actionlint,
+     both documentation hooks, append-only/HK artifact tests, builds, and
+     `git diff --check`.
+   - After focused success, run the full v3 test package with
+     `GIT_LFS_SKIP_SMUDGE=1`.
+   - Apply pseudo-mutation, assertion-depth, and prompt-scenario gates to the
+     final tests; strengthen any surviving requirement before reporting.
+
+| Requirement | Planned evidence |
+|---|---|
+| Job cancellation witness | Exact job contract plus real recorder/fallback shell |
+| Mandatory downloads | `attempt-binding`, `qualification-snapshot`, `qualification-decision` rows |
+| Unsuccessful guard | 18 named real-domain cases |
+| CLI forwarding | One real parser/loader/handler boundary test |
+| Propagation | Four executable shell cases |
+| Documentation/scope | Two-document diff and unchanged-smoke-LLD guard |
+
+<!-- END APPEND: 2026-08-19-wdv3-six-final-review-repairs-plan -->

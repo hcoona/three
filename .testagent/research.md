@@ -4004,3 +4004,56 @@ existing `_load_attempt_binding` seam. Production uses the typed
 the established all-present loaders unchanged.
 
 <!-- END APPEND: 2026-08-19-wdv3-four-repairs-research-correction -->
+<!-- BEGIN APPEND: 2026-08-19-wdv3-six-final-review-repairs-research -->
+
+## Workflow Delivery v3 six final-review repairs
+
+### Scope and authority
+
+- Read `docs/wiki/analyses/workflow-delivery/v3/agent-handoff.md`,
+  `docs/AGENTS.md`, and the bounded workflow/source/test files below.
+- Treat the current tree as authoritative; do not commit or mutate package,
+  acceptance, activation, sentinel, smoke-LLD, or artifact-REST behavior.
+- `code-testing-extensions` was unavailable. Existing Python/pytest, parsed
+  YAML, and extracted-shell conventions are sufficient.
+
+### Acceptance checklist
+
+1. Replace the finalizer step cancellation recorder with a no-permission
+   `workflow-cancellation` job: exact `if: cancelled()`, six authoritative
+   dependencies, exposed output, exact recorder shell, finalizer dependency,
+   and skipped-job `false` fallback.
+2. Guard the three mandatory finalizer downloads with `always()` plus a
+   nonempty artifact ID; preserve optional predicates.
+3. Execute both unsuccessful Qualification results against each of nine
+   independent publication/platform operands through real
+   `finalize_attempt_outcome`.
+4. Exercise real `finalize-live` parser, record loading, Receipt transport
+   construction, and forwarding of five downstream record groups plus all
+   three platform facts.
+5. Execute the retained propagation shell for all-success and each independent
+   failure input.
+6. Repair the two current documents without changing the historical smoke LLD
+   or weakening activation/probe/sentinel/package-mutation prohibitions.
+7. Run focused tests, quality/workflow/docs/artifact gates, then the full v3
+   package with `GIT_LFS_SKIP_SMUDGE=1`.
+
+### Bounded inventory and conventions
+
+| Target | Existing convention / required pairing |
+|---|---|
+| `.github/workflows/workflow-delivery-v3-live-attempt.yml` | Parsed YAML and authoritative extracted Bash in `tests/contracts/test_buddy_workflows.py` |
+| `release/live.py::finalize_attempt_outcome` | Scenario-first typed records in `tests/release/test_commit8_live_scenarios.py` |
+| `cli.py::_release_finalize_live_command` | Real parser/loaders with only the domain call captured in `tests/release/test_live_qualification_boundary.py` |
+| `release-delivery-mld.md`, v3 `README.md` | Current normative terminology/checkpoint; smoke LLD is read-only |
+| `.testagent/{research,plan,status}.md` | Preserve the complete `HEAD` byte prefix and append only |
+
+The workflow's six authoritative fact owners are `admit`,
+`qualification-finalizer`, `observe-github-packages`,
+`materialize-publication`, `approval-finalizer`, and
+`publish-github-packages`. The unsuccessful domain guard already owns all nine
+operands; missing coverage is independent execution, not production logic.
+The CLI already loads/forwards the requested values; its missing evidence is a
+single real handler-boundary test.
+
+<!-- END APPEND: 2026-08-19-wdv3-six-final-review-repairs-research -->

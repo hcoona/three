@@ -1827,3 +1827,12 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   artifacts and canonical cross-bindings.
 - Closed pseudo-mutation and assertion-quality gaps; the full v3 package passes
   3,157 tests with `GIT_LFS_SKIP_SMUDGE=1`, and the complete hook gate passes.
+
+## [2026-08-19] query | Close final cancellation runtime gaps
+
+- Added a job-level inherited-cancellation witness and guarded mandatory
+  artifact downloads against empty IDs.
+- Completed independent propagation, unsuccessful-Qualification lineage, and
+  one-hot CLI platform-fact forwarding coverage.
+- Committed the runtime/test closure at `646060e5`; the full v3 package passes
+  3,181 tests with `GIT_LFS_SKIP_SMUDGE=1`.

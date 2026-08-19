@@ -18,9 +18,10 @@ If it conflicts with the
   legacy Buddy entry workflows at `f0f81d52`. The branch then integrated
   current `main` at `e6482727`, repaired live qualification authority and
   runtime boundaries at `2ddeeed1`, and committed durable unsuccessful
-  qualification Attempt Outcomes at `1e742b29`. Those later commits remain
-  local to `dev/shuaizhang/design-workflows`; nothing after `f0f81d52` has been
-  pushed.
+  qualification Attempt Outcomes at `1e742b29`. The current local closure ends
+  at `646060e5`, which hardens cancellation finalization after the
+  publication-preparation review. Those later commits remain local to
+  `dev/shuaizhang/design-workflows`; nothing after `f0f81d52` has been pushed.
   Commit 3 includes target-tree-bound
   Release Unit/Quality authoring validation, duplicate Release Unit rejection,
   exact-target Repository Model compilation, static catalogs, Node/NBGV
@@ -96,7 +97,7 @@ If it conflicts with the
   rejects zero target and workflow SHAs while incomplete sentinel semantics
   remain available.
 - With `GIT_LFS_SKIP_SMUDGE=1`, the current Workflow Delivery v3 package
-  validation passes 3,157 tests. The protected acceptance Environment and
+  validation passes 3,181 tests. The protected acceptance Environment and
   reviewer configuration are still pending; no live acceptance dispatch or
   package mutation has run.
 - Durable qualification terminalization now permits exact failed or incomplete
@@ -115,7 +116,12 @@ If it conflicts with the
   under cancellation, and rejects partial optional CLI transports.
   `6857617d` replaces the stale aggregate control-bundle requirement with the
   implemented separate-artifact Publication Control Closure, and `2b573fe4`
-  records the final regression evidence. The slice uses terminal phase
+  records that regression evidence. Subsequent review closure through
+  `8ef930fe` makes acquisition cancellation-admitting and preserves exact
+  qualification-only finalization. `646060e5` adds the job-level inherited
+  cancellation witness, nonempty mandatory artifact-ID guards, independent
+  propagation and unsuccessful-Qualification operand coverage, and one-hot
+  CLI platform-fact forwarding. The slice uses terminal phase
   `publication-preparation`, result `incomplete`, uncertainty, no possible
   mutation, and next action `new-attempt`. Whole-workflow cancellation may
   report an unstarted publisher as `cancelled` only when no Snapshot or
