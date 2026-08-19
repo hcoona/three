@@ -1836,3 +1836,13 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   one-hot CLI platform-fact forwarding coverage.
 - Committed the runtime/test closure at `646060e5`; the full v3 package passes
   3,181 tests with `GIT_LFS_SKIP_SMUDGE=1`.
+
+## [2026-08-19] query | Close adjudicated cancellation test gaps
+
+- Independently classified two final test-review findings as true positives
+  and the commit-state documentation finding as a false positive.
+- Locked exact producer-specific Qualification digest forwarding and the
+  cancellation combination where Observation succeeded before materialization
+  was skipped and the publisher was cancelled.
+- Committed the test closure at `1daf3202`; the full v3 package passes 3,182
+  tests with `GIT_LFS_SKIP_SMUDGE=1`, and the workspace hook gate passes.

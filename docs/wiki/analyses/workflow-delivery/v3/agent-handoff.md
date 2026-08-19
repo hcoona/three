@@ -19,8 +19,9 @@ If it conflicts with the
   current `main` at `e6482727`, repaired live qualification authority and
   runtime boundaries at `2ddeeed1`, and committed durable unsuccessful
   qualification Attempt Outcomes at `1e742b29`. The current local closure ends
-  at `646060e5`, which hardens cancellation finalization after the
-  publication-preparation review. Those later commits remain local to
+  at `1daf3202`, which follows the cancellation-finalization runtime hardening
+  at `646060e5` and closes the independently adjudicated final-review test
+  gaps. Those later commits remain local to
   `dev/shuaizhang/design-workflows`; nothing after `f0f81d52` has been pushed.
   Commit 3 includes target-tree-bound
   Release Unit/Quality authoring validation, duplicate Release Unit rejection,
@@ -97,7 +98,7 @@ If it conflicts with the
   rejects zero target and workflow SHAs while incomplete sentinel semantics
   remain available.
 - With `GIT_LFS_SKIP_SMUDGE=1`, the current Workflow Delivery v3 package
-  validation passes 3,181 tests. The protected acceptance Environment and
+  validation passes 3,182 tests. The protected acceptance Environment and
   reviewer configuration are still pending; no live acceptance dispatch or
   package mutation has run.
 - Durable qualification terminalization now permits exact failed or incomplete
@@ -121,7 +122,10 @@ If it conflicts with the
   qualification-only finalization. `646060e5` adds the job-level inherited
   cancellation witness, nonempty mandatory artifact-ID guards, independent
   propagation and unsuccessful-Qualification operand coverage, and one-hot
-  CLI platform-fact forwarding. The slice uses terminal phase
+  CLI platform-fact forwarding. `1daf3202` locks exact producer-specific
+  Qualification digest forwarding and the valid cancellation combination
+  where Observation succeeded before materialization was skipped and the
+  publisher was cancelled. The slice uses terminal phase
   `publication-preparation`, result `incomplete`, uncertainty, no possible
   mutation, and next action `new-attempt`. Whole-workflow cancellation may
   report an unstarted publisher as `cancelled` only when no Snapshot or
