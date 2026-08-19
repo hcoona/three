@@ -1801,3 +1801,15 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   Release Finalizer ownership.
 - Advanced the next implementation boundary to Buddy caller-held concurrency
   around Release Execution identity while keeping live activation disabled.
+
+## [2026-08-19] query | Close publication preparation review repairs
+
+- Admitted GitHub's cancellation-owned `cancelled` result for an unstarted
+  publisher only when no Snapshot or downstream lineage exists, without also
+  classifying it as post-Snapshot platform termination.
+- Executed the actual workflow classifier and retention shells in scenario
+  tests, locked Snapshot transport ordering and lineage, completed the
+  `AttemptOutcome` negative matrix, and added the post-binding reviewer
+  artifact link to the completed job summary.
+- Reconciled the Release MLD, smoke LLD, and handoff; the full v3 package passes
+  3,068 tests with `GIT_LFS_SKIP_SMUDGE=1`, and the complete hook gate passes.

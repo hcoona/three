@@ -95,10 +95,10 @@ If it conflicts with the
   runner facts remain incomplete, and complete Governance Acceptance Evidence
   rejects zero target and workflow SHAs while incomplete sentinel semantics
   remain available.
-- The current Workflow Delivery v3 package validation passes 3,025 tests. The
-  protected
-  acceptance Environment and reviewer configuration are still pending; no live
-  acceptance dispatch or package mutation has run.
+- With `GIT_LFS_SKIP_SMUDGE=1`, the current Workflow Delivery v3 package
+  validation passes 3,068 tests. The protected acceptance Environment and
+  reviewer configuration are still pending; no live acceptance dispatch or
+  package mutation has run.
 - Durable qualification terminalization now permits exact failed or incomplete
   Qualification Decisions to produce publication-free Attempt Outcomes. The
   `finalize-live` CLI replays the exact retained Qualification Snapshot,
@@ -106,12 +106,18 @@ If it conflicts with the
 - The publication-preparation interruption slice is implemented and committed:
   `62ac4bb2` records the confirmed design, `fca9862d` adds the canonical
   Outcome/Finalizer/CLI contract, and `8377343b` adds direct GitHub job facts,
-  retained diagnostics, and fail-after-retention workflow behavior. The slice
-  uses terminal phase `publication-preparation`, result `incomplete`,
-  uncertainty, no possible mutation, and next action `new-attempt`. It adds no
-  Evidence type, fabricated Snapshot, artifact API lookup, or watchdog. A
-  durable Publication Snapshot remains the boundary into the existing
-  Snapshot-bound lifecycle.
+  retained diagnostics, and fail-after-retention workflow behavior.
+  `14b40c75` closes the first runtime review, `5f8449d7` reconciles the
+  Snapshot/reviewer documentation, `91deece4` closes the executable
+  classifier, cancellation, lifecycle, retention, and reviewer-link review
+  gaps, and `297d5adf` records the append-only test evidence. The slice uses
+  terminal phase `publication-preparation`, result `incomplete`, uncertainty,
+  no possible mutation, and next action `new-attempt`. Whole-workflow
+  cancellation may report an unstarted publisher as `cancelled` only when no
+  Snapshot or downstream lineage exists; that state is not also platform
+  termination. It adds no Evidence type, fabricated Snapshot, artifact API
+  lookup, or watchdog. A durable Publication Snapshot remains the boundary
+  into the existing Snapshot-bound lifecycle.
 - The first vertical slice is `hcoona-release-smoke-npm`.
 - The slice has one Node project, one package variant, and one npm artifact.
 - It covers CI Qualification, live Buddy publication to GitHub Packages, and
