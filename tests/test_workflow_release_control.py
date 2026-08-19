@@ -1,4 +1,4 @@
-# ruff: noqa: ARG001, E501, EM102, F841, ISC004, PLR0913, PLR0915, PLR0917, PT018, RUF043, S105, S603, S607, SLF001, TRY003
+# ruff: noqa: ARG001, E501, EM102, F841, PLR0913, PLR0915, PT018, RUF043, S105, S603, S607, SLF001, TRY003
 """Tests for workflow-release control-plane helper script."""
 
 from __future__ import annotations
