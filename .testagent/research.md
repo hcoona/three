@@ -4057,3 +4057,44 @@ The CLI already loads/forwards the requested values; its missing evidence is a
 single real handler-boundary test.
 
 <!-- END APPEND: 2026-08-19-wdv3-six-final-review-repairs-research -->
+
+<!-- BEGIN APPEND: 2026-08-19-wdv3-two-adjudicated-test-gaps-research -->
+
+## Workflow Delivery v3 two adjudicated test gaps
+
+### Scope and strategy
+
+- **Strategy:** Direct. The bounded change strengthens one existing pytest
+  workflow-contract file and does not require production changes.
+- **Authority:** current
+  `.github/workflows/workflow-delivery-v3-live-attempt.yml`, parsed and executed
+  by
+  `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`.
+- Preserve the current tree, all existing tests, and all package/workflow
+  behavior. Do not run publication, acceptance, activation, sentinel, package
+  mutation, or repository-wide validation.
+
+### Requirement checklist and bounded inventory
+
+1. Assert the exact producer expression for every digest-valued output of the
+   `qualification-finalizer` job, so swapping record or upload digest producers
+   is observable from the real parsed workflow.
+2. In an existing executable successful-Qualification finalizer scenario, use
+   distinct record-digest and upload-digest sentinels for each retained
+   Qualification/Release record and assert the exact emitted record argv.
+3. Execute successful Qualification with workflow cancellation witnessed,
+   Observation `success`, materialization `skipped`, publisher `cancelled`, and
+   no Publication Snapshot or downstream lineage. Require success and exactly
+   `--publication-preparation-interrupted` among semantic platform/cancellation
+   flags.
+4. Keep the change test-only apart from EOF appends to `.testagent`; run only
+   the three directly affected pytest nodes.
+5. Run bounded pseudo-mutation and assertion-depth review, repair any true
+   positive in this scope, and append the outcome to `.testagent/status.md`.
+
+The existing test conventions are parsed-YAML source contracts plus execution
+of the exact extracted Bash with a recording `uv` boundary double. The relevant
+pair is only the live-attempt workflow and `test_buddy_workflows.py`; no
+unrelated source inventory or coverage scan is needed.
+
+<!-- END APPEND: 2026-08-19-wdv3-two-adjudicated-test-gaps-research -->

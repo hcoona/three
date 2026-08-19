@@ -4641,3 +4641,34 @@ or Publication Control Closure documentation edit.
 | Documentation/scope | Two-document diff and unchanged-smoke-LLD guard |
 
 <!-- END APPEND: 2026-08-19-wdv3-six-final-review-repairs-plan -->
+
+<!-- BEGIN APPEND: 2026-08-19-wdv3-two-adjudicated-test-gaps-plan -->
+
+## Workflow Delivery v3 two adjudicated test gaps plan
+
+1. Extend
+   `test_unsuccessful_live_qualification_retains_a_publication_free_outcome`
+   with an exact map of every digest output to its real producer expression.
+2. Strengthen
+   `test_incomplete_preparation_retains_diagnostics_before_job_failure` with
+   distinct per-record record/upload digest sentinels and an exact record-argv
+   assertion against the extracted workflow shell.
+3. Add the
+   `whole-run-cancelled-after-successful-observation` row to
+   `test_publisher_result_truth_table_executes_workflow_shell`; rely on its
+   existing exact semantic-flag and no-lineage assertions.
+4. Run precisely those three pytest nodes, then invoke `test-gap-analysis` and
+   `assertion-quality` on the bounded workflow/test pair. Fix only confirmed
+   findings and rerun affected nodes.
+5. Append validation and review results to `.testagent/status.md`; verify
+   append-only prefixes and diff integrity without running package/HK or
+   repository-wide gates.
+
+| Requirement | Planned evidence |
+|---|---|
+| Producer-specific digest wiring | Exact parsed-workflow digest-output map plus distinct executable argv |
+| Independent cancellation combination | `test_publisher_result_truth_table_executes_workflow_shell[whole-run-cancelled-after-successful-observation]` |
+| Surgical scope | Test-only diff and EOF-only `.testagent` appends |
+| Quality gate | Recorded pseudo-mutation and assertion-quality outcomes |
+
+<!-- END APPEND: 2026-08-19-wdv3-two-adjudicated-test-gaps-plan -->

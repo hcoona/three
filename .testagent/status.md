@@ -7300,3 +7300,48 @@ or smoke-LLD edit was introduced.
   `GIT_LFS_SKIP_SMUDGE=1`.
 
 <!-- END APPEND: 2026-08-19-wdv3-six-final-review-repairs-one-hot-closure -->
+
+<!-- BEGIN APPEND: 2026-08-19-wdv3-two-adjudicated-test-gaps-status -->
+
+## Workflow Delivery v3 two adjudicated test gaps status
+
+**Result:** complete; no production/workflow behavior or package state changed.
+
+### Implemented evidence
+
+- `test_unsuccessful_live_qualification_retains_a_publication_free_outcome`
+  now compares every digest-valued `qualification-finalizer` output with its
+  exact producer expression from the parsed live workflow.
+- `test_incomplete_preparation_retains_diagnostics_before_job_failure` now
+  executes the real finalizer shell with five distinct record-digest sentinels,
+  five separate upload-digest sentinels, and exact retained-record argv.
+- Added parameter row
+  `test_publisher_result_truth_table_executes_workflow_shell[whole-run-cancelled-after-successful-observation]`
+  for successful Qualification, cancellation witness `true`, Observation
+  `success`, materialization `skipped`, publisher `cancelled`, and absent
+  Snapshot/downstream lineage. It admits only
+  `--publication-preparation-interrupted` among semantic flags.
+
+### Targeted validation
+
+The exact three-node pytest command passed **3 tests in 0.80s**. Ruff check,
+Ruff format check, and `git diff --check` also passed. Per the bounded request,
+no full package, HK, repository build, acceptance, publication, activation,
+sentinel, or package-mutation command ran.
+
+### Pre-completion review
+
+- **Pseudo-mutation:** the exact parsed-workflow map kills any one-line digest
+  producer swap; distinct shell sentinels kill role or record/upload swaps; the
+  new cancellation row kills a classifier mutation that admits cancelled
+  publisher only after skipped Observation. Existing exact flag counts and
+  lineage exclusions kill coupled platform/capability forwarding. No remaining
+  true positive exists in the two approved gaps.
+- **Assertion quality:** the affected tests use concrete deep equality, exact
+  argv/value assertions, status/invocation/output side effects, and negative
+  flag/lineage assertions. No assertion-free, trivial-only, tautological,
+  skipped, or xfailed case was introduced.
+- **Prompt scenarios:** both adjudicated gaps map to the exact tests named
+  above; no adjacent helper substitutes for the real parsed/executed workflow.
+
+<!-- END APPEND: 2026-08-19-wdv3-two-adjudicated-test-gaps-status -->

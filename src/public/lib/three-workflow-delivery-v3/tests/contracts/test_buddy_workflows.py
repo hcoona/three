@@ -517,6 +517,69 @@ def test_unsuccessful_live_qualification_retains_a_publication_free_outcome() ->
         "${{ needs.npm-artifact-qualification.outputs."
         "install-evidence-artifact-id }}"
     )
+    assert {
+        name: expression
+        for name, expression in qualification_finalizer["outputs"].items()
+        if name.endswith("digest")
+    } == {
+        "decision-artifact-digest": (
+            "${{ steps.upload.outputs.artifact-digest }}"
+        ),
+        "decision-digest": (
+            "${{ steps.finalize.outputs.qualification-decision-digest }}"
+        ),
+        "build-evidence-artifact-digest": (
+            "${{ needs.build-tarball.outputs.build-evidence-artifact-digest }}"
+        ),
+        "build-evidence-digest": (
+            "${{ needs.build-tarball.outputs.build-evidence-digest }}"
+        ),
+        "project-test-evidence-artifact-digest": (
+            "${{ needs.project-test.outputs.evidence-artifact-digest }}"
+        ),
+        "project-test-evidence-digest": (
+            "${{ needs.project-test.outputs.evidence-digest }}"
+        ),
+        "artifact-contents-evidence-artifact-digest": (
+            "${{ needs.npm-artifact-qualification.outputs."
+            "contents-evidence-artifact-digest }}"
+        ),
+        "artifact-contents-evidence-digest": (
+            "${{ needs.npm-artifact-qualification.outputs."
+            "contents-evidence-digest }}"
+        ),
+        "install-import-evidence-artifact-digest": (
+            "${{ needs.npm-artifact-qualification.outputs."
+            "install-evidence-artifact-digest }}"
+        ),
+        "install-import-evidence-digest": (
+            "${{ needs.npm-artifact-qualification.outputs."
+            "install-evidence-digest }}"
+        ),
+        "qualification-snapshot-artifact-digest": (
+            "${{ needs.build-tarball.outputs."
+            "qualification-snapshot-artifact-digest }}"
+        ),
+        "qualification-snapshot-digest": (
+            "${{ needs.build-tarball.outputs.qualification-snapshot-digest }}"
+        ),
+        "adapter-context-artifact-digest": (
+            "${{ needs.build-tarball.outputs.adapter-context-artifact-digest }}"
+        ),
+        "adapter-context-digest": (
+            "${{ needs.build-tarball.outputs.adapter-context-digest }}"
+        ),
+        "release-artifact-artifact-digest": (
+            "${{ needs.build-tarball.outputs."
+            "release-artifact-artifact-digest }}"
+        ),
+        "release-artifact-digest": (
+            "${{ needs.build-tarball.outputs.release-artifact-digest }}"
+        ),
+        "tarball-artifact-digest": (
+            "${{ needs.build-tarball.outputs.tarball-artifact-digest }}"
+        ),
+    }
     close = _run(_step(qualification_finalizer, "Close qualification Decision"))
     assert "needs.build-tarball.outputs.build-evidence" in close
     assert "needs.build-tarball.outputs.release-artifact" in close
@@ -2262,6 +2325,16 @@ _PHASE2_RESULT_BUNDLE_OVERRIDES = {
         ),
         (
             {
+                "needs.observe-github-packages.result": "success",
+                "needs.materialize-publication.result": "skipped",
+                "needs.publish-github-packages.result": "cancelled",
+                "needs.workflow-cancellation.outputs.workflow-cancelled || 'false'": "true",
+            },
+            ("--publication-preparation-interrupted",),
+            (),
+        ),
+        (
+            {
                 "needs.observe-github-packages.result": "failure",
                 "needs.materialize-publication.result": "skipped",
                 "needs.publish-github-packages.result": "cancelled",
@@ -2400,6 +2473,7 @@ _PHASE2_RESULT_BUNDLE_OVERRIDES = {
     ],
     ids=[
         "whole-run-cancelled-unstarted",
+        "whole-run-cancelled-after-successful-observation",
         "cancelled-without-workflow-ownership",
         "cancelled-with-forwarded-snapshot",
         "cancelled-with-authorization",
@@ -2825,9 +2899,57 @@ def test_incomplete_preparation_retains_diagnostics_before_job_failure(
     finalizer = _document(CALLEE)["jobs"]["release-finalizer"]
     finalize = _step(finalizer, "Finalize Attempt Outcome")
     upload = _step(finalizer, "Upload final Attempt Outcome and summary")
+    retained_records = (
+        ("build-evidence", "build-evidence.json", "102", "0", "5"),
+        (
+            "project-test-evidence",
+            "project-test-evidence.json",
+            "103",
+            "1",
+            "6",
+        ),
+        (
+            "artifact-contents-evidence",
+            "artifact-contents-evidence.json",
+            "104",
+            "2",
+            "7",
+        ),
+        (
+            "install-import-evidence",
+            "install-import-evidence.json",
+            "105",
+            "3",
+            "8",
+        ),
+        ("release-artifact", "release-artifact.json", "106", "4", "9"),
+    )
+    sentinels = {
+        sentinel
+        for *_, record_sentinel, upload_sentinel in retained_records
+        for sentinel in (record_sentinel, upload_sentinel)
+    }
+    assert len(sentinels) == 2 * len(retained_records)
+    facts = _phase2_finalizer_facts(
+        **{
+            key: value
+            for role, _, _, record_sentinel, upload_sentinel in retained_records
+            for key, value in (
+                (
+                    f"needs.qualification-finalizer.outputs.{role}-digest",
+                    f"sha256:{record_sentinel * 64}",
+                ),
+                (
+                    "needs.qualification-finalizer.outputs."
+                    f"{role}-artifact-digest",
+                    f"sha256:{upload_sentinel * 64}",
+                ),
+            )
+        }
+    )
     execution = _phase3_execute_incomplete_finalizer_shell(
         tmp_path,
-        _phase2_finalizer_facts(),
+        facts,
     )
 
     assert finalize["continue-on-error"] is True
@@ -2835,6 +2957,30 @@ def test_incomplete_preparation_retains_diagnostics_before_job_failure(
     assert execution["status"] == 1
     assert len(execution["invocations"]) == 1
     argv = execution["invocations"][0]
+    expected_record_argv = tuple(
+        argument
+        for role, filename, artifact_id, record_sentinel, upload_sentinel in (
+            retained_records
+        )
+        for argument in (
+            f"--{role}",
+            f".wdv3/input/{filename}",
+            f"--{role}-digest",
+            f"sha256:{record_sentinel * 64}",
+            f"--{role}-artifact-id",
+            artifact_id,
+            f"--{role}-artifact-digest",
+            f"sha256:{upload_sentinel * 64}",
+        )
+    )
+    assert (
+        argv[
+            argv.index("--build-evidence") : argv.index(
+                "--publication-preparation-interrupted"
+            )
+        ]
+        == expected_record_argv
+    )
     assert argv.count("--publication-preparation-interrupted") == 1
     assert "--platform-terminated" not in argv
     assert execution["outcome"].is_file()
