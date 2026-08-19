@@ -1778,6 +1778,27 @@ jobs:
             exit 1
           fi
 
+  workflow-cancellation:
+    name: Record workflow cancellation
+    if: cancelled()
+    needs:
+      [
+        admit,
+        qualification-finalizer,
+        observe-github-packages,
+        materialize-publication,
+        approval-finalizer,
+        publish-github-packages,
+      ]
+    runs-on: ubuntu-24.04
+    permissions: {}
+    outputs:
+      workflow-cancelled: ${{ steps.record.outputs.workflow-cancelled }}
+    steps:
+      - name: Record workflow cancellation
+        id: record
+        run: echo "workflow-cancelled=true" >> "${GITHUB_OUTPUT}"
+
   release-finalizer:
     name: Finalize live Attempt outcome
     if: always()
@@ -1789,6 +1810,7 @@ jobs:
         materialize-publication,
         approval-finalizer,
         publish-github-packages,
+        workflow-cancellation,
       ]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -1808,7 +1830,7 @@ jobs:
         with:
           version: '0.10.9'
       - name: Download Release Attempt binding by artifact ID
-        if: always()
+        if: always() && needs.admit.outputs.attempt-artifact-id != ''
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           artifact-ids: ${{ needs.admit.outputs.attempt-artifact-id }}
@@ -1816,7 +1838,7 @@ jobs:
           skip-decompress: true
           digest-mismatch: error
       - name: Download Qualification Snapshot by artifact ID
-        if: always()
+        if: always() && needs.qualification-finalizer.outputs.qualification-snapshot-artifact-id != ''
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           artifact-ids: ${{ needs.qualification-finalizer.outputs.qualification-snapshot-artifact-id }}
@@ -1824,7 +1846,7 @@ jobs:
           skip-decompress: true
           digest-mismatch: error
       - name: Download Qualification Decision by artifact ID
-        if: always()
+        if: always() && needs.qualification-finalizer.outputs.decision-artifact-id != ''
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           artifact-ids: ${{ needs.qualification-finalizer.outputs.decision-artifact-id }}
@@ -1911,10 +1933,6 @@ jobs:
           path: .wdv3/input
           skip-decompress: true
           digest-mismatch: error
-      - name: Record workflow cancellation
-        id: workflow-cancellation
-        if: cancelled()
-        run: echo "workflow-cancelled=true" >> "${GITHUB_OUTPUT}"
       - name: Finalize Attempt Outcome
         id: finalize
         if: success() || cancelled()
@@ -1994,7 +2012,7 @@ jobs:
           capability_marker_id="${{ needs.publish-github-packages.outputs.mutation-marker-artifact-id }}"
           capability_bundle_id="${{ needs.publish-github-packages.outputs.capability-group-bundle-artifact-id }}"
           receipt_id="${{ needs.publish-github-packages.outputs.receipt-artifact-id }}"
-          workflow_cancelled="${{ steps.workflow-cancellation.outputs.workflow-cancelled || 'false' }}"
+          workflow_cancelled="${{ needs.workflow-cancellation.outputs.workflow-cancelled || 'false' }}"
           publication_preparation_interrupted=false
           if [[ -n "${snapshot_id}" && -z "${snapshot_upload_digest}" ]]; then
             echo "::error::Publication Snapshot transport is only partially absent" >&2

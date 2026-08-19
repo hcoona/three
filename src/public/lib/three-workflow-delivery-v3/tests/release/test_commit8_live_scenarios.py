@@ -1898,3 +1898,236 @@ def test_after_marker_governance_failure_retains_uncertainty(
     assert outcome.uncertainty is True
     assert outcome.possibly_mutated is True
     assert outcome.next_action == "reobserve-and-replay"
+
+
+@pytest.mark.parametrize(
+    ("terminal_result", "failure_class", "next_action", "operand"),
+    [
+        pytest.param(
+            "failure",
+            "quality-failure",
+            "fix-quality-failure-and-rerun",
+            "publication-snapshot",
+            id="failure-publication-snapshot",
+        ),
+        pytest.param(
+            "failure",
+            "quality-failure",
+            "fix-quality-failure-and-rerun",
+            "authorization",
+            id="failure-authorization",
+        ),
+        pytest.param(
+            "failure",
+            "quality-failure",
+            "fix-quality-failure-and-rerun",
+            "capability-admission-decision",
+            id="failure-capability-admission-decision",
+        ),
+        pytest.param(
+            "failure",
+            "quality-failure",
+            "fix-quality-failure-and-rerun",
+            "capability-group-result-bundle",
+            id="failure-capability-group-result-bundle",
+        ),
+        pytest.param(
+            "failure",
+            "quality-failure",
+            "fix-quality-failure-and-rerun",
+            "receipt",
+            id="failure-receipt",
+        ),
+        pytest.param(
+            "failure",
+            "quality-failure",
+            "fix-quality-failure-and-rerun",
+            "receipt-transport-reference",
+            id="failure-receipt-transport-reference",
+        ),
+        pytest.param(
+            "failure",
+            "quality-failure",
+            "fix-quality-failure-and-rerun",
+            "publication-preparation-interrupted",
+            id="failure-publication-preparation-interrupted",
+        ),
+        pytest.param(
+            "failure",
+            "quality-failure",
+            "fix-quality-failure-and-rerun",
+            "platform-terminated",
+            id="failure-platform-terminated",
+        ),
+        pytest.param(
+            "failure",
+            "quality-failure",
+            "fix-quality-failure-and-rerun",
+            "capability-may-have-started",
+            id="failure-capability-may-have-started",
+        ),
+        pytest.param(
+            "incomplete",
+            "incomplete-qualification",
+            "new-attempt",
+            "publication-snapshot",
+            id="incomplete-publication-snapshot",
+        ),
+        pytest.param(
+            "incomplete",
+            "incomplete-qualification",
+            "new-attempt",
+            "authorization",
+            id="incomplete-authorization",
+        ),
+        pytest.param(
+            "incomplete",
+            "incomplete-qualification",
+            "new-attempt",
+            "capability-admission-decision",
+            id="incomplete-capability-admission-decision",
+        ),
+        pytest.param(
+            "incomplete",
+            "incomplete-qualification",
+            "new-attempt",
+            "capability-group-result-bundle",
+            id="incomplete-capability-group-result-bundle",
+        ),
+        pytest.param(
+            "incomplete",
+            "incomplete-qualification",
+            "new-attempt",
+            "receipt",
+            id="incomplete-receipt",
+        ),
+        pytest.param(
+            "incomplete",
+            "incomplete-qualification",
+            "new-attempt",
+            "receipt-transport-reference",
+            id="incomplete-receipt-transport-reference",
+        ),
+        pytest.param(
+            "incomplete",
+            "incomplete-qualification",
+            "new-attempt",
+            "publication-preparation-interrupted",
+            id="incomplete-publication-preparation-interrupted",
+        ),
+        pytest.param(
+            "incomplete",
+            "incomplete-qualification",
+            "new-attempt",
+            "platform-terminated",
+            id="incomplete-platform-terminated",
+        ),
+        pytest.param(
+            "incomplete",
+            "incomplete-qualification",
+            "new-attempt",
+            "capability-may-have-started",
+            id="incomplete-capability-may-have-started",
+        ),
+    ],
+)
+def test_unsuccessful_qualification_rejects_each_independent_publication_operand(
+    qualified_simulation,
+    terminal_result: str,
+    failure_class: str,
+    next_action: str,
+    operand: str,
+) -> None:
+    attempt, decision, publication, authorization = _closure(
+        qualified_simulation,
+        with_action=True,
+    )
+    reviewer = _require_api("materialize_reviewer_artifact")(
+        snapshot_bytes=canonicalize(publication.to_document()),
+        summary_bytes=SUMMARY,
+        artifact_id=710,
+        upload_digest="sha256:" + ("2" * 64),
+    )
+    capability_decision = _require_api("admit_live_capability")(
+        attempt=attempt,
+        authorization=authorization,
+        publication_snapshot=publication,
+        reviewer_artifact=reviewer,
+    )
+    _action, _result, bundle, receipt = _successful_action_records(publication)
+    receipt_transport = _receipt_transport(receipt)
+    unsuccessful = replace(
+        decision,
+        terminal_result=terminal_result,
+        failure_class=failure_class,
+        next_action=next_action,
+    )
+
+    supplied_publication: PublicationSnapshot | None = None
+    supplied_authorization: AuthorizationRecord | None = None
+    capability_decisions: tuple[CapabilityAdmissionDecision, ...] = ()
+    group_bundles: tuple[CapabilityGroupResultBundle, ...] = ()
+    receipts: tuple[Receipt, ...] = ()
+    receipt_transport_references: tuple[ReceiptTransportReference, ...] = ()
+    publication_preparation_interrupted = False
+    platform_terminated = False
+    capability_may_have_started = False
+
+    if operand == "publication-snapshot":
+        supplied_publication = publication
+    elif operand == "authorization":
+        supplied_authorization = authorization
+    elif operand == "capability-admission-decision":
+        capability_decisions = (capability_decision,)
+    elif operand == "capability-group-result-bundle":
+        group_bundles = (bundle,)
+    elif operand == "receipt":
+        receipts = (receipt,)
+    elif operand == "receipt-transport-reference":
+        receipt_transport_references = (receipt_transport,)
+    elif operand == "publication-preparation-interrupted":
+        publication_preparation_interrupted = True
+    elif operand == "platform-terminated":
+        platform_terminated = True
+    elif operand == "capability-may-have-started":
+        capability_may_have_started = True
+    else:
+        message = f"Unhandled unsuccessful guard operand: {operand}"
+        raise AssertionError(message)
+
+    supplied_operands = (
+        supplied_publication is not None,
+        supplied_authorization is not None,
+        bool(capability_decisions),
+        bool(group_bundles),
+        bool(receipts),
+        bool(receipt_transport_references),
+        publication_preparation_interrupted,
+        platform_terminated,
+        capability_may_have_started,
+    )
+    assert sum(supplied_operands) == 1
+
+    with pytest.raises(
+        ValueError,
+        match=r"^Unsuccessful qualification cannot bind publication records$",
+    ) as error:
+        finalize_attempt_outcome(
+            attempt=attempt,
+            qualification_decision=unsuccessful,
+            publication_snapshot=supplied_publication,
+            authorization=supplied_authorization,
+            capability_decisions=capability_decisions,
+            group_bundles=group_bundles,
+            receipts=receipts,
+            receipt_transport_references=receipt_transport_references,
+            publication_preparation_interrupted=(
+                publication_preparation_interrupted
+            ),
+            platform_terminated=platform_terminated,
+            capability_may_have_started=capability_may_have_started,
+        )
+
+    assert str(error.value) == (
+        "Unsuccessful qualification cannot bind publication records"
+    )

@@ -32,6 +32,20 @@ APPROVAL_CORRELATION_NAME = (
 PUBLISHER_CORRELATION_NAME = (
     "Run same-revision Buddy live Attempt / Publish to GitHub Packages"
 )
+_WORKFLOW_CANCELLATION_AUTHORITIES = (
+    "admit",
+    "qualification-finalizer",
+    "observe-github-packages",
+    "materialize-publication",
+    "approval-finalizer",
+    "publish-github-packages",
+)
+_WORKFLOW_CANCELLATION_FACT = (
+    "needs.workflow-cancellation.outputs.workflow-cancelled || 'false'"
+)
+_LEGACY_WORKFLOW_CANCELLATION_FACT = (
+    "steps.workflow-cancellation.outputs.workflow-cancelled || 'false'"
+)
 EXPECTED_JOBS = {
     "admit",
     "plan-qualification",
@@ -44,6 +58,7 @@ EXPECTED_JOBS = {
     "approval",
     "approval-finalizer",
     "publish-github-packages",
+    "workflow-cancellation",
     "release-finalizer",
 }
 
@@ -303,14 +318,13 @@ def test_live_attempt_dag_environments_and_capability_gate_are_exact() -> None:
     assert "success" in publisher["if"]
     assert publisher["concurrency"]["cancel-in-progress"] is False
     assert publisher["concurrency"]["group"].startswith("wdv3-resource-")
-    assert set(_needs(jobs["release-finalizer"])) == {
-        "admit",
-        "qualification-finalizer",
-        "observe-github-packages",
-        "materialize-publication",
-        "approval-finalizer",
-        "publish-github-packages",
-    }
+    assert _needs(jobs["workflow-cancellation"]) == (
+        _WORKFLOW_CANCELLATION_AUTHORITIES
+    )
+    assert _needs(jobs["release-finalizer"]) == (
+        *_WORKFLOW_CANCELLATION_AUTHORITIES,
+        "workflow-cancellation",
+    )
 
 
 def test_shared_qualification_commands_admit_live_purpose_explicitly() -> None:
@@ -547,6 +561,7 @@ def test_unsuccessful_live_qualification_retains_a_publication_free_outcome() ->
         "materialize-publication",
         "approval-finalizer",
         "publish-github-packages",
+        "workflow-cancellation",
     }
 
     attempt_download = _step(
@@ -1255,12 +1270,8 @@ def test_commit8_preobserved_noop_skips_publish_but_still_finalizes() -> None:
 
     assert "publish-required == 'true'" in jobs["publish-github-packages"]["if"]
     assert _needs(jobs["release-finalizer"]) == (
-        "admit",
-        "qualification-finalizer",
-        "observe-github-packages",
-        "materialize-publication",
-        "approval-finalizer",
-        "publish-github-packages",
+        *_WORKFLOW_CANCELLATION_AUTHORITIES,
+        "workflow-cancellation",
     )
     assert jobs["release-finalizer"]["if"] == "always()"
 
@@ -1286,19 +1297,15 @@ def test_commit8_platform_termination_facts_are_derived_for_finalization() -> (
 def test_publication_preparation_interruption_uses_direct_platform_facts() -> (
     None
 ):
-    finalizer = _document(CALLEE)["jobs"]["release-finalizer"]
-    cancellation = _step(finalizer, "Record workflow cancellation")
+    jobs = _document(CALLEE)["jobs"]
+    finalizer = jobs["release-finalizer"]
     finalize = _step(finalizer, "Finalize Attempt Outcome")
     command = _run(finalize)
 
-    assert set(_needs(finalizer)) == {
-        "admit",
-        "qualification-finalizer",
-        "observe-github-packages",
-        "materialize-publication",
-        "approval-finalizer",
-        "publish-github-packages",
-    }
+    assert _needs(finalizer) == (
+        *_WORKFLOW_CANCELLATION_AUTHORITIES,
+        "workflow-cancellation",
+    )
     for fact in (
         "needs.qualification-finalizer.outputs.qualification-result",
         "needs.observe-github-packages.result",
@@ -1308,10 +1315,15 @@ def test_publication_preparation_interruption_uses_direct_platform_facts() -> (
             "publication-snapshot-artifact-id"
         ),
         "needs.publish-github-packages.result",
-        "steps.workflow-cancellation.outputs.workflow-cancelled",
+        _WORKFLOW_CANCELLATION_FACT,
     ):
         assert fact in command
-    assert cancellation["if"] == "cancelled()"
+    assert all(
+        step.get("name") != "Record workflow cancellation"
+        for step in _steps(finalizer)
+    )
+    assert jobs["workflow-cancellation"]["if"] == "cancelled()"
+    assert _LEGACY_WORKFLOW_CANCELLATION_FACT not in command
     assert finalize["if"] == "success() || cancelled()"
     assert (
         'qualification_result}" == "success" && -z "${snapshot_id}"' in command
@@ -1931,7 +1943,7 @@ def _phase2_finalizer_facts(**overrides: str) -> dict[str, str]:
         "needs.qualification-finalizer.outputs.release-artifact-artifact-id": "106",
         "needs.qualification-finalizer.outputs.release-artifact-artifact-name": "release-artifact.json",
         "needs.qualification-finalizer.outputs.release-artifact-digest": record_digest,
-        "steps.workflow-cancellation.outputs.workflow-cancelled || 'false'": "false",
+        "needs.workflow-cancellation.outputs.workflow-cancelled || 'false'": "false",
     }
     unknown = set(overrides) - facts.keys()
     assert not unknown, f"unknown finalizer facts: {sorted(unknown)}"
@@ -2117,7 +2129,7 @@ def test_publication_preparation_classifier_executes_workflow_shell(
         **{
             "needs.materialize-publication.result": materialization_result,
             "needs.observe-github-packages.result": observation_result,
-            "steps.workflow-cancellation.outputs.workflow-cancelled || 'false'": workflow_cancelled,
+            "needs.workflow-cancellation.outputs.workflow-cancelled || 'false'": workflow_cancelled,
         }
     )
 
@@ -2243,7 +2255,7 @@ _PHASE2_RESULT_BUNDLE_OVERRIDES = {
                 "needs.observe-github-packages.result": "skipped",
                 "needs.materialize-publication.result": "skipped",
                 "needs.publish-github-packages.result": "cancelled",
-                "steps.workflow-cancellation.outputs.workflow-cancelled || 'false'": "true",
+                "needs.workflow-cancellation.outputs.workflow-cancelled || 'false'": "true",
             },
             ("--publication-preparation-interrupted",),
             (),
@@ -2265,7 +2277,7 @@ _PHASE2_RESULT_BUNDLE_OVERRIDES = {
                 "needs.materialize-publication.result": "skipped",
                 "needs.publish-github-packages.result": "cancelled",
                 "needs.approval-finalizer.outputs.publication-snapshot-artifact-id": "forwarded-snapshot-731",
-                "steps.workflow-cancellation.outputs.workflow-cancelled || 'false'": "true",
+                "needs.workflow-cancellation.outputs.workflow-cancelled || 'false'": "true",
             },
             None,
             ("downstream lineage",),
@@ -2276,7 +2288,7 @@ _PHASE2_RESULT_BUNDLE_OVERRIDES = {
                 "needs.materialize-publication.result": "skipped",
                 "needs.publish-github-packages.result": "cancelled",
                 "needs.approval-finalizer.outputs.authorization-artifact-id": "authorization-732",
-                "steps.workflow-cancellation.outputs.workflow-cancelled || 'false'": "true",
+                "needs.workflow-cancellation.outputs.workflow-cancelled || 'false'": "true",
             },
             None,
             ("downstream lineage",),
@@ -2287,7 +2299,7 @@ _PHASE2_RESULT_BUNDLE_OVERRIDES = {
                 "needs.materialize-publication.result": "skipped",
                 "needs.publish-github-packages.result": "cancelled",
                 "needs.approval-finalizer.outputs.capability-decision-artifact-id": "capability-admission-733",
-                "steps.workflow-cancellation.outputs.workflow-cancelled || 'false'": "true",
+                "needs.workflow-cancellation.outputs.workflow-cancelled || 'false'": "true",
             },
             None,
             ("downstream lineage",),
@@ -2298,7 +2310,7 @@ _PHASE2_RESULT_BUNDLE_OVERRIDES = {
                 "needs.materialize-publication.result": "skipped",
                 "needs.publish-github-packages.result": "cancelled",
                 "needs.publish-github-packages.outputs.mutation-marker-artifact-id": "mutation-marker-734",
-                "steps.workflow-cancellation.outputs.workflow-cancelled || 'false'": "true",
+                "needs.workflow-cancellation.outputs.workflow-cancelled || 'false'": "true",
             },
             None,
             ("downstream lineage",),
@@ -2309,7 +2321,7 @@ _PHASE2_RESULT_BUNDLE_OVERRIDES = {
                 "needs.materialize-publication.result": "skipped",
                 "needs.publish-github-packages.result": "cancelled",
                 "needs.publish-github-packages.outputs.capability-group-bundle-artifact-id": "result-bundle-735",
-                "steps.workflow-cancellation.outputs.workflow-cancelled || 'false'": "true",
+                "needs.workflow-cancellation.outputs.workflow-cancelled || 'false'": "true",
             },
             None,
             ("downstream lineage",),
@@ -2320,7 +2332,7 @@ _PHASE2_RESULT_BUNDLE_OVERRIDES = {
                 "needs.materialize-publication.result": "skipped",
                 "needs.publish-github-packages.result": "cancelled",
                 "needs.publish-github-packages.outputs.receipt-artifact-id": "receipt-736",
-                "steps.workflow-cancellation.outputs.workflow-cancelled || 'false'": "true",
+                "needs.workflow-cancellation.outputs.workflow-cancelled || 'false'": "true",
             },
             None,
             ("downstream lineage",),
@@ -2855,7 +2867,45 @@ def test_incomplete_preparation_retains_diagnostics_before_job_failure(
     )
 
 
-def test_propagation_fails_after_successful_retention(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    (
+        "finalizer_status",
+        "finalize_outcome",
+        "upload_outcome",
+        "expected_status",
+    ),
+    [
+        pytest.param("0", "success", "success", 0, id="all-success"),
+        pytest.param(
+            "17",
+            "success",
+            "success",
+            1,
+            id="finalizer-status-nonzero",
+        ),
+        pytest.param(
+            "0",
+            "failure",
+            "success",
+            1,
+            id="finalize-step-failure",
+        ),
+        pytest.param(
+            "0",
+            "success",
+            "failure",
+            1,
+            id="upload-step-failure",
+        ),
+    ],
+)
+def test_propagation_fails_after_successful_retention(
+    tmp_path: Path,
+    finalizer_status: str,
+    finalize_outcome: str,
+    upload_outcome: str,
+    expected_status: int,
+) -> None:
     finalizer = _document(CALLEE)["jobs"]["release-finalizer"]
     steps = _steps(finalizer)
     finalize = _step(finalizer, "Finalize Attempt Outcome")
@@ -2863,49 +2913,97 @@ def test_propagation_fails_after_successful_retention(tmp_path: Path) -> None:
     propagate = _step(finalizer, "Propagate finalization status")
 
     assert steps.index(finalize) < steps.index(upload) < steps.index(propagate)
+    assert finalize["continue-on-error"] is True
     assert upload["if"] == "always()"
+    assert upload["with"]["path"] == ".wdv3/final-attempt"
+    assert upload["with"]["retention-days"] == RETENTION_DAYS
+    assert upload["with"]["if-no-files-found"] == "error"
     assert propagate["if"] == "always()"
-    successful_retention = {
-        "steps.finalize.outcome": "success",
-        "steps.finalize.outputs.finalizer-status": "0",
-        "steps.upload-final.outcome": "success",
-    }
-    retained_success = _phase3_execute_workflow_run(
-        tmp_path,
-        _run(propagate),
-        successful_retention,
-    )
-    assert retained_success["status"] == 0, retained_success["output"]
-
-    retained_incomplete = _phase3_execute_workflow_run(
-        tmp_path,
-        _run(propagate),
-        successful_retention | {"steps.finalize.outputs.finalizer-status": "1"},
-    )
-    assert retained_incomplete["status"] != 0
-
-
-def test_workflow_cancellation_fact_recorder_executes_exact_step_shell(
-    tmp_path: Path,
-) -> None:
-    finalizer = _document(CALLEE)["jobs"]["release-finalizer"]
-    recorder = _step(finalizer, "Record workflow cancellation")
-
-    assert recorder["id"] == "workflow-cancellation"
-    assert recorder["if"] == "cancelled()"
-    run = _run(recorder)
-    github_output = tmp_path / "github-output.txt"
 
     execution = _phase3_execute_workflow_run(
+        tmp_path,
+        _run(propagate),
+        {
+            "steps.finalize.outcome": finalize_outcome,
+            "steps.finalize.outputs.finalizer-status": finalizer_status,
+            "steps.upload-final.outcome": upload_outcome,
+        },
+    )
+
+    assert execution["status"] == expected_status, execution["output"]
+    assert execution["output"] == ""
+
+
+@pytest.mark.parametrize(
+    "expected_skipped_value",
+    [
+        pytest.param(
+            "false",
+            id="non-cancelled-witness-skipped-defaults-false",
+        ),
+    ],
+)
+def test_workflow_cancellation_witness_has_exact_job_contract(
+    tmp_path: Path,
+    expected_skipped_value: str,
+) -> None:
+    jobs = _document(CALLEE)["jobs"]
+
+    assert set(jobs) == EXPECTED_JOBS
+    witness = jobs["workflow-cancellation"]
+    assert witness["if"] == "cancelled()"
+    assert _needs(witness) == _WORKFLOW_CANCELLATION_AUTHORITIES
+    assert witness["permissions"] == {}
+    assert [step.get("name") for step in _steps(witness)] == [
+        "Record workflow cancellation"
+    ]
+    recorder = _step(witness, "Record workflow cancellation")
+    recorder_id = recorder.get("id")
+    assert isinstance(recorder_id, str)
+    assert recorder_id
+    assert witness["outputs"] == {
+        "workflow-cancelled": (
+            f"${{{{ steps.{recorder_id}.outputs.workflow-cancelled }}}}"
+        )
+    }
+    run = _run(recorder)
+    assert run == 'echo "workflow-cancelled=true" >> "${GITHUB_OUTPUT}"'
+
+    finalizer = jobs["release-finalizer"]
+    assert _needs(finalizer) == (
+        *_WORKFLOW_CANCELLATION_AUTHORITIES,
+        "workflow-cancellation",
+    )
+    assert all(
+        step.get("name") != "Record workflow cancellation"
+        for step in _steps(finalizer)
+    )
+    finalizer_run = _run(_step(finalizer, "Finalize Attempt Outcome"))
+    assert finalizer_run.count(_WORKFLOW_CANCELLATION_FACT) == 1
+    assert _LEGACY_WORKFLOW_CANCELLATION_FACT not in finalizer_run
+
+    github_output = tmp_path / "cancellation-output.txt"
+    recorder_execution = _phase3_execute_workflow_run(
         tmp_path,
         run,
         {},
         environment={"GITHUB_OUTPUT": str(github_output)},
     )
-
-    assert execution["status"] == 0, execution["output"]
-    assert execution["rendered"] == run
+    assert recorder_execution["status"] == 0, recorder_execution["output"]
+    assert recorder_execution["rendered"] == run
     assert github_output.read_bytes() == b"workflow-cancelled=true\n"
+
+    facts = _phase2_finalizer_facts(**_PHASE2_POST_SNAPSHOT_OVERRIDES)
+    assert facts[_WORKFLOW_CANCELLATION_FACT] == expected_skipped_value
+    assert _LEGACY_WORKFLOW_CANCELLATION_FACT not in facts
+    finalizer_execution = _phase2_execute_finalizer_shell(tmp_path, facts)
+    argv = _phase2_assert_successful_finalizer(finalizer_execution)
+    assert argv.count("--publication-snapshot") == 1
+    assert {
+        "--capability-may-have-started",
+        "--platform-terminated",
+        "--publication-preparation-interrupted",
+    }.isdisjoint(argv)
 
 
 def test_durable_snapshot_reviewer_failure_omits_preparation_diagnostics(
@@ -2953,19 +3051,25 @@ def test_durable_snapshot_reviewer_failure_omits_preparation_diagnostics(
         pytest.param(
             "Download Release Attempt binding by artifact ID",
             DOWNLOAD,
-            "always()",
+            "always() && needs.admit.outputs.attempt-artifact-id != ''",
             id="attempt-binding",
         ),
         pytest.param(
             "Download Qualification Snapshot by artifact ID",
             DOWNLOAD,
-            "always()",
+            (
+                "always() && needs.qualification-finalizer.outputs."
+                "qualification-snapshot-artifact-id != ''"
+            ),
             id="qualification-snapshot",
         ),
         pytest.param(
             "Download Qualification Decision by artifact ID",
             DOWNLOAD,
-            "always()",
+            (
+                "always() && needs.qualification-finalizer.outputs."
+                "decision-artifact-id != ''"
+            ),
             id="qualification-decision",
         ),
         pytest.param(
@@ -3104,7 +3208,7 @@ def _phase2_cancelled_unsuccessful_qualification_facts(
                 "needs.observe-github-packages.result": "skipped",
                 "needs.publish-github-packages.result": "cancelled",
                 "needs.qualification-finalizer.outputs.qualification-result": qualification_result,
-                "steps.workflow-cancellation.outputs.workflow-cancelled || 'false'": workflow_cancelled,
+                "needs.workflow-cancellation.outputs.workflow-cancelled || 'false'": workflow_cancelled,
             }
             | (lineage or {})
         )
@@ -3199,7 +3303,7 @@ def test_cancelled_unsuccessful_qualification_retains_qualification_record_argv(
             "needs.observe-github-packages.result": "skipped",
             "needs.publish-github-packages.result": "cancelled",
             "needs.qualification-finalizer.outputs.qualification-result": qualification_result,
-            "steps.workflow-cancellation.outputs.workflow-cancelled || 'false'": "true",
+            "needs.workflow-cancellation.outputs.workflow-cancelled || 'false'": "true",
         }
     )
 

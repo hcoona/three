@@ -1239,3 +1239,433 @@ def test_finalize_live_rejects_each_partial_optional_transport_group(  # noqa: P
     assert not outcome_path.exists()
     assert not summary_path.exists()
     load_attempt_binding.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("platform_flag", "expected_platform_facts"),
+    [
+        pytest.param(
+            "--publication-preparation-interrupted",
+            (True, False, False),
+            id="publication-preparation-interrupted",
+        ),
+        pytest.param(
+            "--platform-terminated",
+            (False, True, False),
+            id="platform-terminated",
+        ),
+        pytest.param(
+            "--capability-may-have-started",
+            (False, False, True),
+            id="capability-may-have-started",
+        ),
+    ],
+)
+def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform_facts(  # noqa: E501, PLR0913, PLR0915
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    live_intent,
+    live_attempt_binding,
+    live_qualification_snapshot,
+    platform_flag: str,
+    expected_platform_facts: tuple[bool, bool, bool],
+) -> None:
+    """Forward admitted downstream records and exact platform facts."""
+    from three_workflow_delivery_v3.records.artifacts import (  # noqa: PLC0415
+        ArtifactTransportIdentity,
+    )
+    from three_workflow_delivery_v3.records.release import (  # noqa: PLC0415
+        ActionResult,
+        CapabilityAdmissionDecision,
+        CapabilityGroupResultBundle,
+        Receipt,
+        ReceiptTransportReference,
+        publication_capability_group,
+        publication_lock_group,
+        publication_mutable_resource_keys,
+    )
+
+    attempt = live_attempt_binding.attempt
+    decision = cli_module.finalize_qualification(
+        live_qualification_snapshot,
+        (),
+        (),
+    )
+    projection = live_qualification_snapshot.destination_projections[0]
+    artifact_digest = "sha256:" + ("4" * 64)
+    action_digest = "sha256:" + ("5" * 64)
+    action_id = projection.potential_action_id
+    capability_group = publication_capability_group(projection)
+    mutable_resource_keys = publication_mutable_resource_keys(
+        projection,
+        attempt,
+    )
+    lock_group = publication_lock_group(projection)
+    control = f"workflow-delivery-v3:{live_intent.target}"
+    publication = PublicationSnapshot(
+        attempt=attempt,
+        qualification_snapshot_digest=live_qualification_snapshot.snapshot_digest,
+        qualification_decision_digest=decision.decision_digest,
+        qualification_result="success",
+        projection_ids=(projection.projection_id,),
+        artifact_digests=(artifact_digest,),
+        artifact_output_ids=(projection.output.output_id,),
+        observation_references=(
+            PublicationObservationReference(
+                projection_id=projection.projection_id,
+                observation_digest="sha256:" + ("6" * 64),
+                classification="exact-satisfied",
+            ),
+        ),
+        materialized_actions=(),
+    )
+    authorization = AuthorizationRecord(
+        attempt=attempt,
+        publication_snapshot_digest=publication.snapshot_digest,
+        reviewer_summary_artifact_id=911,
+        reviewer_summary_upload_digest="sha256:" + ("7" * 64),
+        reviewer_summary_payload_digest="sha256:" + ("8" * 64),
+        workflow_run_id=attempt.workflow_run_id,
+        run_attempt=attempt.run_attempt,
+        approval_job_id=912,
+        approval_job="approval",
+        environment="workflow-delivery-v3-buddy-smoke-approval",
+        channel="buddy",
+        completed_at="2026-08-19T08:00:00Z",
+        producer="approval",
+        control=control,
+    )
+    capability_decision = CapabilityAdmissionDecision(
+        attempt=attempt,
+        authorization_digest=authorization.authorization_digest,
+        publication_snapshot_digest=publication.snapshot_digest,
+        reviewer_summary_artifact_id=authorization.reviewer_summary_artifact_id,
+        reviewer_summary_upload_digest=(
+            authorization.reviewer_summary_upload_digest
+        ),
+        reviewer_summary_payload_digest=(
+            authorization.reviewer_summary_payload_digest
+        ),
+        action_digests=(action_digest,),
+        artifact_digests=(artifact_digest,),
+        resource_key_sets=((action_id, mutable_resource_keys),),
+        lock_groups=((action_id, lock_group),),
+        capability_group_manifest=((capability_group, (action_id,)),),
+        live_eligibility_artifact_id=(
+            live_attempt_binding.live_eligibility_artifact_id
+        ),
+        live_eligibility_artifact_digest=(
+            live_attempt_binding.live_eligibility_artifact_digest
+        ),
+        governance_provenance=live_attempt_binding.attestation_provenance,
+        governance_content_sha256=dict(
+            live_attempt_binding.attestation_provenance
+        )["content-sha256"],
+        governance_expires_at="2026-09-01T00:00:00Z",
+        governance_live_enabled=True,
+        producer="approval-finalizer",
+        control=control,
+        workflow_run_id=attempt.workflow_run_id,
+        run_attempt=attempt.run_attempt,
+        result="success",
+        diagnostics=(),
+    )
+    artifact_transport = ArtifactTransportIdentity(
+        artifact_id=913,
+        artifact_name="forwarded-release.tgz",
+        artifact_url="https://example.test/artifacts/913",
+        transport_digest=artifact_digest,
+        producer="build-tarball",
+        workflow_run_id=attempt.workflow_run_id,
+        run_attempt=attempt.run_attempt,
+    )
+    receipt = Receipt(
+        attempt=attempt,
+        publication_snapshot_digest=publication.snapshot_digest,
+        action_id=action_id,
+        action_digest=action_digest,
+        coordinate=projection.coordinate,
+        mutable_resource_keys=mutable_resource_keys,
+        lock_group=lock_group,
+        artifact_transport=artifact_transport,
+        artifact_content_sha256="sha256:" + ("9" * 64),
+        artifact_content_sha512="sha512:" + ("a" * 128),
+        witness_digest="sha256:" + ("b" * 64),
+        creation_result="created",
+        tag_mapping=(
+            (
+                f"buddy-sha-{attempt.execution.target}",
+                projection.coordinate.native_version,
+            ),
+        ),
+        response_identity_digest="sha256:" + ("c" * 64),
+        producer="publish-github-packages",
+        control=control,
+        workflow_run_id=attempt.workflow_run_id,
+        run_attempt=attempt.run_attempt,
+    )
+
+    binding_path = _write(
+        tmp_path / "forwarded-attempt-binding.json",
+        canonicalize(live_attempt_binding.to_document()),
+    )
+    snapshot_path = _write(
+        tmp_path / "forwarded-qualification-snapshot.json",
+        canonicalize(live_qualification_snapshot.to_document()),
+    )
+    decision_path = _write(
+        tmp_path / "forwarded-qualification-decision.json",
+        canonicalize(decision.to_document()),
+    )
+    publication_path = _write(
+        tmp_path / "forwarded-publication-snapshot.json",
+        canonicalize(publication.to_document()),
+    )
+    authorization_path = _write(
+        tmp_path / "forwarded-authorization.json",
+        canonicalize(authorization.to_document()),
+    )
+    capability_path = _write(
+        tmp_path / "forwarded-capability-admission-decision.json",
+        canonicalize(capability_decision.to_document()),
+    )
+    receipt_path = _write(
+        tmp_path / "forwarded-publication-receipt.json",
+        canonicalize(receipt.to_document()),
+    )
+    receipt_artifact_id = 919
+    receipt_upload_digest = _transport_digest(receipt_path)
+    action_result = ActionResult(
+        attempt=attempt,
+        publication_snapshot_digest=publication.snapshot_digest,
+        action_id=action_id,
+        action_digest=action_digest,
+        lock_group=lock_group,
+        outcome="success",
+        mutation_disposition="created",
+        response_identity_digest=receipt.response_identity_digest,
+        receipt_artifact_id=receipt_artifact_id,
+        receipt_artifact_name=receipt_path.name,
+        receipt_artifact_digest=receipt_upload_digest,
+        receipt_payload_digest=receipt.receipt_digest,
+        receipt_digest=receipt.receipt_digest,
+        diagnostic_reference=None,
+        producer="publish-github-packages",
+        control=control,
+        workflow_run_id=attempt.workflow_run_id,
+        run_attempt=attempt.run_attempt,
+    )
+    group_bundle = CapabilityGroupResultBundle(
+        attempt=attempt,
+        publication_snapshot_digest=publication.snapshot_digest,
+        capability_group=capability_group,
+        planned_action_ids=(action_id,),
+        action_results=(action_result,),
+        completion_state="complete",
+        producer="publish-github-packages",
+        control=control,
+        workflow_run_id=attempt.workflow_run_id,
+        run_attempt=attempt.run_attempt,
+    )
+    group_bundle_path = _write(
+        tmp_path / "forwarded-capability-group-result-bundle.json",
+        canonicalize(group_bundle.to_document()),
+    )
+    expected_receipt_transport = ReceiptTransportReference(
+        action_id=receipt.action_id,
+        artifact_id=receipt_artifact_id,
+        artifact_name=receipt_path.name,
+        upload_digest=receipt_upload_digest,
+        payload_digest=receipt.receipt_digest,
+    )
+    expected_outcome = AttemptOutcome(
+        attempt=attempt,
+        qualification_decision_digest=decision.decision_digest,
+        publication_snapshot_digest=publication.snapshot_digest,
+        authorization_digest=authorization.authorization_digest,
+        capability_admission_digests=(capability_decision.decision_digest,),
+        capability_group_bundle_digests=(group_bundle.bundle_digest,),
+        receipt_digests=(receipt.receipt_digest,),
+        terminal_phase="finalized",
+        result="success",
+        uncertainty=False,
+        possibly_mutated=False,
+        next_action="none",
+    )
+    captured_calls: list[dict[str, object]] = []
+
+    def capture_finalize_attempt_outcome(  # noqa: PLR0913
+        *,
+        attempt: ReleaseAttemptIdentity,
+        qualification_decision: QualificationDecision,
+        publication_snapshot: PublicationSnapshot | None,
+        authorization: AuthorizationRecord | None,
+        capability_decisions: tuple[CapabilityAdmissionDecision, ...],
+        group_bundles: tuple[CapabilityGroupResultBundle, ...],
+        receipts: tuple[Receipt, ...],
+        receipt_transport_references: tuple[
+            ReceiptTransportReference, ...
+        ] = (),
+        publication_preparation_interrupted: bool = False,
+        platform_terminated: bool = False,
+        capability_may_have_started: bool = False,
+    ) -> AttemptOutcome:
+        captured_calls.append(
+            {
+                "attempt": attempt,
+                "qualification_decision": qualification_decision,
+                "publication_snapshot": publication_snapshot,
+                "authorization": authorization,
+                "capability_decisions": capability_decisions,
+                "group_bundles": group_bundles,
+                "receipts": receipts,
+                "receipt_transport_references": (receipt_transport_references),
+                "publication_preparation_interrupted": (
+                    publication_preparation_interrupted
+                ),
+                "platform_terminated": platform_terminated,
+                "capability_may_have_started": capability_may_have_started,
+            }
+        )
+        return expected_outcome
+
+    monkeypatch.setattr(
+        cli_module,
+        "finalize_attempt_outcome",
+        capture_finalize_attempt_outcome,
+    )
+    outcome_path = tmp_path / "forwarded-attempt-outcome.json"
+    summary_path = tmp_path / "forwarded-attempt-summary.md"
+
+    status = cli_module.main(
+        [
+            "release",
+            "finalize-live",
+            "--workflow-run-id",
+            str(live_intent.workflow_run_id),
+            "--run-attempt",
+            str(live_intent.run_attempt),
+            "--target",
+            live_intent.target,
+            *_uploaded_arguments(
+                "attempt_binding",
+                binding_path,
+                live_attempt_binding.binding_digest,
+                914,
+            ),
+            *_uploaded_arguments(
+                "qualification_snapshot",
+                snapshot_path,
+                live_qualification_snapshot.snapshot_digest,
+                915,
+            ),
+            *_uploaded_arguments(
+                "qualification_decision",
+                decision_path,
+                decision.decision_digest,
+                916,
+            ),
+            *_uploaded_arguments(
+                "publication_snapshot",
+                publication_path,
+                publication.snapshot_digest,
+                917,
+            ),
+            *_uploaded_arguments(
+                "authorization",
+                authorization_path,
+                authorization.authorization_digest,
+                918,
+            ),
+            *_uploaded_arguments(
+                "capability_decision",
+                capability_path,
+                capability_decision.decision_digest,
+                920,
+            ),
+            *_uploaded_arguments(
+                "capability_group_bundle",
+                group_bundle_path,
+                group_bundle.bundle_digest,
+                921,
+            ),
+            *_uploaded_arguments(
+                "receipt",
+                receipt_path,
+                receipt.receipt_digest,
+                receipt_artifact_id,
+            ),
+            platform_flag,
+            "--outcome-output",
+            str(outcome_path),
+            "--summary-output",
+            str(summary_path),
+        ]
+    )
+
+    assert status == 0
+    assert len(captured_calls) == 1
+    captured = captured_calls[0]
+    assert captured["attempt"] == attempt
+    assert captured["attempt"] is not attempt
+    assert captured["qualification_decision"] == decision
+    assert captured["qualification_decision"] is not decision
+    assert type(captured["publication_snapshot"]) is PublicationSnapshot
+    assert captured["publication_snapshot"] == publication
+    assert captured["publication_snapshot"] is not publication
+    assert type(captured["authorization"]) is AuthorizationRecord
+    assert captured["authorization"] == authorization
+    assert captured["authorization"] is not authorization
+
+    loaded_capability_decisions = captured["capability_decisions"]
+    assert isinstance(loaded_capability_decisions, tuple)
+    assert loaded_capability_decisions == (capability_decision,)
+    assert type(loaded_capability_decisions[0]) is CapabilityAdmissionDecision
+    assert loaded_capability_decisions[0] is not capability_decision
+    loaded_group_bundles = captured["group_bundles"]
+    assert isinstance(loaded_group_bundles, tuple)
+    assert loaded_group_bundles == (group_bundle,)
+    assert type(loaded_group_bundles[0]) is CapabilityGroupResultBundle
+    assert loaded_group_bundles[0] is not group_bundle
+    loaded_receipts = captured["receipts"]
+    assert isinstance(loaded_receipts, tuple)
+    assert loaded_receipts == (receipt,)
+    assert type(loaded_receipts[0]) is Receipt
+    assert loaded_receipts[0] is not receipt
+
+    loaded_receipt_transports = captured["receipt_transport_references"]
+    assert isinstance(loaded_receipt_transports, tuple)
+    assert loaded_receipt_transports == (expected_receipt_transport,)
+    assert type(loaded_receipt_transports[0]) is ReceiptTransportReference
+    assert loaded_receipt_transports[0].artifact_id == receipt_artifact_id
+    assert loaded_receipt_transports[0].artifact_name == receipt_path.name
+    assert loaded_receipt_transports[0].upload_digest == receipt_upload_digest
+    assert loaded_receipt_transports[0].payload_digest == receipt.receipt_digest
+    assert (
+        captured["publication_preparation_interrupted"],
+        captured["platform_terminated"],
+        captured["capability_may_have_started"],
+    ) == expected_platform_facts
+
+    admitted_outcome = admit_release_record(
+        outcome_path.read_bytes(),
+        expected_type=AttemptOutcome,
+        expected_digest=expected_outcome.outcome_digest,
+        expected_bindings=ReleaseAdmissionBindings(
+            purpose="live-release",
+            workflow_run_id=live_intent.workflow_run_id,
+            run_attempt=live_intent.run_attempt,
+            target=live_intent.target,
+        ),
+    )
+    assert type(admitted_outcome) is AttemptOutcome
+    assert admitted_outcome == expected_outcome
+    assert outcome_path.read_bytes() == canonicalize(
+        expected_outcome.to_document()
+    )
+    assert summary_path.read_text(encoding="utf-8") == (
+        "# Workflow Delivery v3 live finalization\n\n"
+        "- Result: `success`\n"
+        "- Terminal phase: `finalized`\n"
+        "- Next action: `none`\n"
+    )
