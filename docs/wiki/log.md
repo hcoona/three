@@ -1870,3 +1870,20 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   findings after adjudication and repair.
 - Kept normal live delivery, acceptance probes, sentinel finalization, and
   package mutation disabled.
+
+## [2026-08-19] query | Complete Workflow Delivery v3 PR preparation
+
+- Integrated `origin/main` at `3cc079ee` through non-rewriting merge commit
+  `e4dfea3d`, preserving the deliberate legacy CI-job retirement while
+  regenerating the merged PNPM and UV locks.
+- Independently adjudicated and repaired the standalone Hexo override, active
+  CI PNPM pins, v3 runtime toolchain expectations, and merged CI digest; all
+  four merge re-reviewers then reported no findings.
+- Made the post-merge lint boundary explicit at `f3eb3b81` by pinning Ruff
+  0.14.4 until a separately scoped Ruff 0.16 migration; all three tooling
+  re-reviewers reported no findings.
+- Passed the complete workspace gate and authoritative 574-file
+  `origin/main..HEAD` gate, including 1,257 workflow-release tests and 3,189 v3
+  tests.
+- Kept the branch local: no push, PR creation, acceptance probe, sentinel
+  finalization, live activation, publication, or package mutation occurred.

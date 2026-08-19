@@ -8095,3 +8095,43 @@ publication, sentinel finalization, package mutation, commit, push, or PR
 operation was performed.
 
 <!-- END APPEND: 2026-08-19-wdv3-buddy-concurrency-review-corrections -->
+
+<!-- BEGIN APPEND: 2026-08-19-wdv3-final-pr-preparation-status -->
+
+## Workflow Delivery v3 final PR preparation
+
+PHASE: Final validation and local PR preparation
+STATUS: SUCCESS
+WORKFLOW_RELEASE_TESTS_PASSING: 1257
+V3_TESTS_PASSING: 3189
+COMMITTED_RANGE_FILES: 574
+BLOCKER: Push and PR creation require explicit user authorization
+
+### Durable closure
+
+- Merge commit `e4dfea3d` integrates `origin/main` at `3cc079ee` without
+  rewriting history.
+- Conflict resolution preserves the branch's deliberate legacy CI-job
+  retirement, regenerates the root and standalone PNPM locks plus `uv.lock`,
+  and retains the standalone Hexo `hexo@<7.2.0` override.
+- Merge review findings were independently adjudicated. The true positives
+  were repaired, and all four merge re-reviewers reported no findings.
+- The merged UV lock exposed Ruff 0.16 diagnostics across otherwise unchanged
+  branch files. Commit `f3eb3b81` explicitly pins the previously validated Ruff
+  0.14.4 baseline until a separately scoped Ruff 0.16 migration. All three
+  tooling re-reviewers reported no findings.
+
+### Final validation
+
+| Command | Result |
+|---|---|
+| `GIT_LFS_SKIP_SMUDGE=1 mise exec -- hk check --check --no-progress` | Exit 0 on the final merge workspace. |
+| `GIT_LFS_SKIP_SMUDGE=1 mise exec -- hk check --check --no-progress --from-ref origin/main --to-ref HEAD` | Exit 0 across 574 committed-range files; 1,257 workflow-release tests and 3,189 v3 tests passed. |
+| `mise exec -- uv lock --check` | Exit 0 with Ruff 0.14.4 constrained by `pyproject.toml`. |
+| `mise exec -- pnpm install --lockfile-only --frozen-lockfile --ignore-scripts` | Exit 0 for the root PNPM workspace. |
+| `mise exec -- pnpm --dir src/public/lib/hexo-renderer-asciidoc/examples/hexo-site install --lockfile-only --frozen-lockfile --ignore-scripts` | Exit 0 with the standalone Hexo override retained. |
+
+No push, PR creation, acceptance probe, sentinel finalization, live activation,
+publication, or package mutation was performed.
+
+<!-- END APPEND: 2026-08-19-wdv3-final-pr-preparation-status -->

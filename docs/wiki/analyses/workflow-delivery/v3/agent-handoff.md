@@ -18,11 +18,14 @@ If it conflicts with the
   legacy Buddy entry workflows at `f0f81d52`. The branch then integrated
   current `main` at `e6482727`, repaired live qualification authority and
   runtime boundaries at `2ddeeed1`, and committed durable unsuccessful
-  qualification Attempt Outcomes at `1e742b29`. The current local closure ends
-  at `3a2df043`, which follows the cancellation-finalization runtime hardening
-  at `646060e5`, closes the independently adjudicated final-review and
-  re-review test gaps, and keys Buddy caller-held concurrency by canonical
-  Release Execution identity. Those later commits remain local to
+  qualification Attempt Outcomes at `1e742b29`. The current implementation and
+  validation closure ends at `f3eb3b81`. It follows the
+  cancellation-finalization runtime hardening at `646060e5`, closes the
+  independently adjudicated final-review and re-review test gaps, keys Buddy
+  caller-held concurrency by canonical Release Execution identity at
+  `3a2df043`, integrates `origin/main` at `3cc079ee` through non-rewriting merge
+  commit `e4dfea3d`, and explicitly preserves Ruff 0.14.4 until a separately
+  scoped Ruff 0.16 migration. Those later commits remain local to
   `dev/shuaizhang/design-workflows`; nothing after `f0f81d52` has been pushed.
   Commit 3 includes target-tree-bound
   Release Unit/Quality authoring validation, duplicate Release Unit rejection,
@@ -99,9 +102,11 @@ If it conflicts with the
   rejects zero target and workflow SHAs while incomplete sentinel semantics
   remain available.
 - With `GIT_LFS_SKIP_SMUDGE=1`, the current Workflow Delivery v3 package
-  validation passes 3,189 tests. The protected acceptance Environment and
-  reviewer configuration are still pending; no live acceptance dispatch or
-  package mutation has run.
+  validation passes 3,189 tests, and the workflow-release control suite passes
+  1,257 tests. The complete workspace gate and authoritative 574-file
+  `origin/main..HEAD` gate pass after the merge and explicit Ruff compatibility
+  pin. The protected acceptance Environment and reviewer configuration are
+  still pending; no live acceptance dispatch or package mutation has run.
 - Durable qualification terminalization now permits exact failed or incomplete
   Qualification Decisions to produce publication-free Attempt Outcomes. The
   `finalize-live` CLI replays the exact retained Qualification Snapshot,
@@ -144,6 +149,14 @@ If it conflicts with the
   bound Attempt transport but cannot partition the Execution group. The
   caller holds that group across the complete reusable live Attempt with
   `cancel-in-progress: false`; different targets retain distinct groups.
+- `e4dfea3d` completes the non-rewriting integration of `origin/main` at
+  `3cc079ee`. Conflict resolution preserves the branch's deliberate retirement
+  of the misleading legacy `validation` and `dotnet-tests` jobs, retains both
+  active CI PNPM 11.22.0 pins, and regenerates the root PNPM, standalone Hexo,
+  and UV locks from merged manifests. The standalone Hexo lock retains its
+  `hexo@<7.2.0` override. `f3eb3b81` makes the resulting lint compatibility
+  boundary explicit by pinning Ruff 0.14.4 until a separately approved Ruff
+  0.16 migration. Independent merge and tooling re-reviews report no findings.
 - The first vertical slice is `hcoona-release-smoke-npm`.
 - The slice has one Node project, one package variant, and one npm artifact.
 - It covers CI Qualification, live Buddy publication to GitHub Packages, and
@@ -353,10 +366,11 @@ If it conflicts with the
   state blocks; no repository variable, PAT, App, service, ledger, OIDC, or
   additional token permission is added. Permanent root HK policy remains the
   repository-wide dependency gate.
-- The immediate boundary is final v3 validation and implementation PR
-  preparation. Do not run real acceptance probes,
-  finalize the sentinel target, activate normal live, or begin later scopes
-  without a separate explicit user task.
+- Final v3 validation and local implementation PR preparation are complete.
+  The immediate boundary is explicit authorization to push the local branch or
+  open the implementation PR. Do not push, open the PR, run real acceptance
+  probes, finalize the sentinel target, activate normal live, or begin later
+  scopes without a separate explicit user task.
 - Implementation must preserve the approved commit boundaries and keep live
   activation disabled until acceptance and the separate activation approval.
 

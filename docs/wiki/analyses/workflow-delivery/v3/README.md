@@ -149,6 +149,16 @@ target; request and workflow-run identity remain Attempt transport but do not
 partition the concurrency group. The caller holds the group across the complete
 reusable live Attempt with `cancel-in-progress: false`.
 
+Final PR preparation is complete locally. Merge commit `e4dfea3d` integrates
+`origin/main` at `3cc079ee` without rewriting history, preserves the deliberate
+legacy CI-job retirement, and regenerates the merged PNPM and UV locks. Follow-up
+`f3eb3b81` explicitly pins Ruff 0.14.4 until a separately scoped Ruff 0.16
+migration. The complete workspace gate and authoritative 574-file
+`origin/main..HEAD` gate pass, including 1,257 workflow-release tests and 3,189
+Workflow Delivery v3 tests. Independent merge and tooling re-reviews report no
+findings.
+
 Next:
 
-1. perform final v3 validation and prepare the implementation PR.
+1. obtain explicit authorization before pushing the branch or opening the
+   implementation PR.
