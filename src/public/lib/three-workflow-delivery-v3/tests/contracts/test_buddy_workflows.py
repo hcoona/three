@@ -1333,51 +1333,22 @@ def test_publication_preparation_interruption_uses_direct_platform_facts() -> (
     )
 
 
-def test_publication_preparation_interruption_truth_table_is_exact() -> None:
-    cases = (
-        (False, "failure", "skipped", True),
-        (False, "cancelled", "skipped", True),
-        (False, "cancelled", "cancelled", True),
-        (False, "success", "failure", True),
-        (False, "success", "cancelled", True),
-        (False, "success", "skipped", False),
-        (False, "skipped", "skipped", False),
-        (True, "success", "skipped", True),
-        (True, "skipped", "skipped", True),
-        (True, "failure", "success", False),
-        (True, "skipped", "success", False),
-        (True, "success", "success", False),
+def test_publication_preparation_rejects_crossed_interruption_states(
+    tmp_path: Path,
+) -> None:
+    execution = _phase2_execute_finalizer_shell(
+        tmp_path,
+        _phase2_finalizer_facts(
+            **{
+                "needs.observe-github-packages.result": "cancelled",
+                "needs.materialize-publication.result": "failure",
+            }
+        ),
     )
 
-    for cancelled, observation, materialization, expected in cases:
-        legal = False
-        if materialization != "success":
-            if observation in {"failure", "cancelled"}:
-                legal = materialization in {"skipped", "cancelled"}
-            elif observation == "success":
-                legal = materialization in {"failure", "cancelled"}
-            if cancelled and (
-                (observation, materialization)
-                in {("skipped", "skipped"), ("success", "skipped")}
-            ):
-                legal = True
-
-        assert legal is expected
-
-    command = _run(
-        _step(
-            _document(CALLEE)["jobs"]["release-finalizer"],
-            "Finalize Attempt Outcome",
-        )
-    )
-    assert (
-        'observation_result}" == "skipped" && '
-        '"${materialization_result}" == "skipped"' in command
-    )
-    assert (
-        'observation_result}" == "success" && '
-        '"${materialization_result}" == "skipped"' in command
-    )
+    assert execution["status"] != 0
+    assert execution["invocations"] == ()
+    assert "not an admitted interruption" in execution["output"]
 
 
 def test_publication_preparation_diagnostics_are_retained_before_failure() -> (
@@ -1632,26 +1603,27 @@ def test_user_item9_finalizer_derives_conservative_phase_from_retained_outputs()
     assert 'if [[ -n "${capability_marker_id}" ]]' in command
 
 
-def test_release_finalizer_platform_fact_truth_table_is_independent() -> None:
-    cases = (
-        ("skipped", False, False, (False, False)),
-        ("success", True, True, (False, True)),
-        ("failure", False, True, (False, False)),
-        ("failure", False, False, (True, False)),
-        ("failure", True, False, (True, True)),
-        ("cancelled", False, False, (True, False)),
-        ("cancelled", True, False, (True, True)),
+def test_release_finalizer_platform_fact_mapping_executes_workflow_shell(
+    tmp_path: Path,
+) -> None:
+    execution = _phase2_execute_finalizer_shell(
+        tmp_path,
+        _phase2_finalizer_facts(
+            **(
+                _PHASE2_POST_SNAPSHOT_OVERRIDES
+                | _PHASE2_RESULT_BUNDLE_OVERRIDES
+                | {
+                    "needs.publish-github-packages.outputs.mutation-marker-artifact-id": "734",
+                    "needs.publish-github-packages.result": "failure",
+                }
+            )
+        ),
     )
-    for publish_result, marker_present, bundle_present, expected in cases:
-        platform_terminated = publish_result == "cancelled" or (
-            publish_result == "failure" and not bundle_present
-        )
-        capability_may_have_started = marker_present
 
-        assert (
-            platform_terminated,
-            capability_may_have_started,
-        ) == expected
+    argv = _phase2_assert_successful_finalizer(execution)
+    assert argv.count("--capability-may-have-started") == 1
+    assert "--platform-terminated" not in argv
+    assert "--publication-preparation-interrupted" not in argv
 
 
 def test_user_item10_correlation_names_are_exact_and_unambiguous() -> None:
@@ -1887,3 +1859,1075 @@ def test_history_discovery_uses_caller_path_through_reusable_live_attempt_topolo
     assert (
         ".github/workflows/workflow-delivery-v3-live-attempt.yml" not in command
     )
+
+
+_PHASE2_FINALIZER_EXPRESSION = re.compile(r"\$\{\{\s*(?P<fact>.*?)\s*\}\}")
+_PHASE2_SNAPSHOT_NAME = "phase2-publication-snapshot.json"
+_PHASE2_SNAPSHOT_PAYLOAD_DIGEST = "sha256:" + ("b" * 64)
+_PHASE2_SNAPSHOT_ARTIFACT_ID = "731"
+_PHASE2_SNAPSHOT_UPLOAD_DIGEST = "sha256:" + ("c" * 64)
+
+
+def _phase2_finalizer_facts(**overrides: str) -> dict[str, str]:
+    record_digest = "sha256:" + ("a" * 64)
+    upload_digest = "sha256:" + ("d" * 64)
+    facts = {
+        "inputs.target-sha": "1" * 40,
+        "needs.admit.outputs.attempt-artifact-digest": upload_digest,
+        "needs.admit.outputs.attempt-artifact-id": "101",
+        "needs.admit.outputs.attempt-artifact-name": "attempt-binding.json",
+        "needs.admit.outputs.attempt-digest": record_digest,
+        "needs.approval-finalizer.outputs.authorization-artifact-digest": "",
+        "needs.approval-finalizer.outputs.authorization-artifact-id": "",
+        "needs.approval-finalizer.outputs.authorization-artifact-name": "",
+        "needs.approval-finalizer.outputs.authorization-digest": "",
+        "needs.approval-finalizer.outputs.capability-decision-artifact-digest": "",
+        "needs.approval-finalizer.outputs.capability-decision-artifact-id": "",
+        "needs.approval-finalizer.outputs.capability-decision-artifact-name": "",
+        "needs.approval-finalizer.outputs.capability-decision-digest": "",
+        "needs.approval-finalizer.outputs.publication-snapshot-artifact-id": "",
+        "needs.materialize-publication.outputs.publication-snapshot-artifact-digest": "",
+        "needs.materialize-publication.outputs.publication-snapshot-artifact-id": "",
+        "needs.materialize-publication.outputs.publication-snapshot-artifact-name": "",
+        "needs.materialize-publication.outputs.publication-snapshot-digest": "",
+        "needs.materialize-publication.result": "skipped",
+        "needs.observe-github-packages.result": "failure",
+        "needs.publish-github-packages.outputs.capability-group-bundle-artifact-digest": "",
+        "needs.publish-github-packages.outputs.capability-group-bundle-artifact-id": "",
+        "needs.publish-github-packages.outputs.capability-group-bundle-artifact-name": "",
+        "needs.publish-github-packages.outputs.capability-group-bundle-digest": "",
+        "needs.publish-github-packages.outputs.mutation-marker-artifact-id": "",
+        "needs.publish-github-packages.outputs.receipt-artifact-digest": "",
+        "needs.publish-github-packages.outputs.receipt-artifact-id": "",
+        "needs.publish-github-packages.outputs.receipt-artifact-name": "",
+        "needs.publish-github-packages.outputs.receipt-digest": "",
+        "needs.publish-github-packages.result": "skipped",
+        "needs.qualification-finalizer.outputs.artifact-contents-evidence-artifact-digest": upload_digest,
+        "needs.qualification-finalizer.outputs.artifact-contents-evidence-artifact-id": "104",
+        "needs.qualification-finalizer.outputs.artifact-contents-evidence-artifact-name": "artifact-contents-evidence.json",
+        "needs.qualification-finalizer.outputs.artifact-contents-evidence-digest": record_digest,
+        "needs.qualification-finalizer.outputs.build-evidence-artifact-digest": upload_digest,
+        "needs.qualification-finalizer.outputs.build-evidence-artifact-id": "102",
+        "needs.qualification-finalizer.outputs.build-evidence-artifact-name": "build-evidence.json",
+        "needs.qualification-finalizer.outputs.build-evidence-digest": record_digest,
+        "needs.qualification-finalizer.outputs.decision-artifact-digest": upload_digest,
+        "needs.qualification-finalizer.outputs.decision-artifact-id": "108",
+        "needs.qualification-finalizer.outputs.decision-artifact-name": "qualification-decision.json",
+        "needs.qualification-finalizer.outputs.decision-digest": record_digest,
+        "needs.qualification-finalizer.outputs.install-import-evidence-artifact-digest": upload_digest,
+        "needs.qualification-finalizer.outputs.install-import-evidence-artifact-id": "105",
+        "needs.qualification-finalizer.outputs.install-import-evidence-artifact-name": "install-import-evidence.json",
+        "needs.qualification-finalizer.outputs.install-import-evidence-digest": record_digest,
+        "needs.qualification-finalizer.outputs.project-test-evidence-artifact-digest": upload_digest,
+        "needs.qualification-finalizer.outputs.project-test-evidence-artifact-id": "103",
+        "needs.qualification-finalizer.outputs.project-test-evidence-artifact-name": "project-test-evidence.json",
+        "needs.qualification-finalizer.outputs.project-test-evidence-digest": record_digest,
+        "needs.qualification-finalizer.outputs.qualification-result": "success",
+        "needs.qualification-finalizer.outputs.qualification-snapshot-artifact-digest": upload_digest,
+        "needs.qualification-finalizer.outputs.qualification-snapshot-artifact-id": "107",
+        "needs.qualification-finalizer.outputs.qualification-snapshot-artifact-name": "qualification-snapshot.json",
+        "needs.qualification-finalizer.outputs.qualification-snapshot-digest": record_digest,
+        "needs.qualification-finalizer.outputs.release-artifact-artifact-digest": upload_digest,
+        "needs.qualification-finalizer.outputs.release-artifact-artifact-id": "106",
+        "needs.qualification-finalizer.outputs.release-artifact-artifact-name": "release-artifact.json",
+        "needs.qualification-finalizer.outputs.release-artifact-digest": record_digest,
+        "steps.workflow-cancellation.outputs.workflow-cancelled || 'false'": "false",
+    }
+    unknown = set(overrides) - facts.keys()
+    assert not unknown, f"unknown finalizer facts: {sorted(unknown)}"
+    facts.update(overrides)
+    return facts
+
+
+def _phase2_render_finalizer_run(facts: dict[str, str]) -> str:
+    run = _run(
+        _step(
+            _document(CALLEE)["jobs"]["release-finalizer"],
+            "Finalize Attempt Outcome",
+        )
+    )
+    expressions = {
+        match.group("fact").strip()
+        for match in _PHASE2_FINALIZER_EXPRESSION.finditer(run)
+    }
+    assert expressions == set(facts)
+    rendered = _PHASE2_FINALIZER_EXPRESSION.sub(
+        lambda match: facts[match.group("fact").strip()],
+        run,
+    )
+    assert "${{" not in rendered
+    return rendered
+
+
+def _phase2_execute_finalizer_shell(
+    tmp_path: Path,
+    facts: dict[str, str],
+) -> dict[str, Any]:
+    import os  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+
+    run = _phase2_render_finalizer_run(facts)
+    input_directory = tmp_path / ".wdv3/input"
+    input_directory.mkdir(parents=True)
+    for expression, value in facts.items():
+        if expression.endswith("-artifact-name") and value:
+            (input_directory / value).write_text("{}\n", encoding="utf-8")
+
+    bin_directory = tmp_path / "bin"
+    bin_directory.mkdir()
+    invocations = tmp_path / "cli-invocations.jsonl"
+    uv = bin_directory / "uv"
+    uv.write_text(
+        r"""#!/usr/bin/env python3
+import json
+import os
+import pathlib
+import sys
+
+args = sys.argv[1:]
+invocations = pathlib.Path(os.environ["PHASE2_CLI_INVOCATIONS"])
+with invocations.open("a", encoding="utf-8") as handle:
+    handle.write(json.dumps(args) + "\n")
+
+def write_flag(flag, content):
+    path = pathlib.Path(args[args.index(flag) + 1])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+write_flag("--outcome-output", '{"phase":"publication-preparation"}\n')
+write_flag("--summary-output", "# Attempt summary\n")
+github_output = pathlib.Path(args[args.index("--github-output") + 1])
+with github_output.open("a", encoding="utf-8") as handle:
+    handle.write("cli-boundary-invoked=true\n")
+raise SystemExit(int(os.environ.get("PHASE2_CLI_STATUS", "0")))
+""",
+        encoding="utf-8",
+    )
+    uv.chmod(0o755)
+
+    github_output = tmp_path / "github-output.txt"
+    github_summary = tmp_path / "github-step-summary.md"
+    environment = os.environ | {
+        "GITHUB_OUTPUT": str(github_output),
+        "GITHUB_RUN_ATTEMPT": "3",
+        "GITHUB_RUN_ID": "424242",
+        "GITHUB_STEP_SUMMARY": str(github_summary),
+        "PATH": f"{bin_directory}{os.pathsep}{os.environ['PATH']}",
+        "PHASE2_CLI_INVOCATIONS": str(invocations),
+        "PHASE2_CLI_STATUS": "0",
+        "WDV3_PACKAGE": "three-workflow-delivery-v3",
+    }
+    completed = subprocess.run(  # noqa: S603
+        (
+            "bash",
+            "--noprofile",
+            "--norc",
+            "-euo",
+            "pipefail",
+            "-c",
+            run,
+        ),
+        check=False,
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    invocation_rows = (
+        tuple(
+            tuple(json.loads(line))
+            for line in invocations.read_text(encoding="utf-8").splitlines()
+        )
+        if invocations.exists()
+        else ()
+    )
+    return {
+        "github_output": (
+            github_output.read_text(encoding="utf-8")
+            if github_output.exists()
+            else ""
+        ),
+        "invocations": invocation_rows,
+        "output": completed.stdout + completed.stderr,
+        "status": completed.returncode,
+    }
+
+
+def _phase2_assert_successful_finalizer(
+    execution: dict[str, Any],
+) -> tuple[str, ...]:
+    assert execution["status"] == 0, execution["output"]
+    assert len(execution["invocations"]) == 1
+    argv = execution["invocations"][0]
+    assert argv[:8] == (
+        "run",
+        "--python",
+        "3.13",
+        "--package",
+        "three-workflow-delivery-v3",
+        "three-workflow-delivery-v3",
+        "release",
+        "finalize-live",
+    )
+    assert "cli-boundary-invoked=true" in execution["github_output"]
+    assert "finalizer-status=0" in execution["github_output"]
+    assert re.search(
+        r"final-artifact-name=wdv3-live-buddy-attempt-outcome-"
+        r"r424242-ra3-[0-9a-f]{64}",
+        execution["github_output"],
+    )
+    return argv
+
+
+@pytest.mark.parametrize(
+    (
+        "workflow_cancelled",
+        "observation_result",
+        "materialization_result",
+    ),
+    [
+        ("false", "failure", "skipped"),
+        ("false", "failure", "cancelled"),
+        ("false", "cancelled", "skipped"),
+        ("false", "cancelled", "cancelled"),
+        ("false", "success", "failure"),
+        ("false", "success", "cancelled"),
+        ("true", "skipped", "skipped"),
+        ("true", "success", "skipped"),
+    ],
+    ids=[
+        "observation-failure__materialization-skipped",
+        "observation-failure__materialization-cancelled",
+        "observation-cancelled__materialization-skipped",
+        "observation-cancelled__materialization-cancelled",
+        "observation-success__snapshot-upload-failure",
+        "observation-success__materialization-cancelled",
+        "workflow-cancelled__observation-skipped__materialization-skipped",
+        "workflow-cancelled__observation-success__materialization-skipped",
+    ],
+)
+def test_publication_preparation_classifier_executes_workflow_shell(
+    tmp_path: Path,
+    workflow_cancelled: str,
+    observation_result: str,
+    materialization_result: str,
+) -> None:
+    facts = _phase2_finalizer_facts(
+        **{
+            "needs.materialize-publication.result": materialization_result,
+            "needs.observe-github-packages.result": observation_result,
+            "steps.workflow-cancellation.outputs.workflow-cancelled || 'false'": workflow_cancelled,
+        }
+    )
+
+    execution = _phase2_execute_finalizer_shell(tmp_path, facts)
+
+    argv = _phase2_assert_successful_finalizer(execution)
+    assert argv.count("--publication-preparation-interrupted") == 1
+    assert "--platform-terminated" not in argv
+    assert {
+        "--authorization",
+        "--capability-decision",
+        "--capability-group-bundle",
+        "--capability-may-have-started",
+        "--publication-snapshot",
+        "--receipt",
+    }.isdisjoint(argv)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "diagnostic_tokens"),
+    [
+        (
+            {
+                "needs.observe-github-packages.result": "success",
+                "needs.materialize-publication.result": "skipped",
+            },
+            ("Publication preparation state", "admitted interruption"),
+        ),
+        (
+            {
+                "needs.observe-github-packages.result": "success",
+                "needs.materialize-publication.result": "success",
+            },
+            ("Snapshot",),
+        ),
+        (
+            {
+                "needs.observe-github-packages.result": "success",
+                "needs.materialize-publication.result": "failure",
+                "needs.materialize-publication.outputs.publication-snapshot-artifact-id": _PHASE2_SNAPSHOT_ARTIFACT_ID,
+            },
+            ("Snapshot", "transport"),
+        ),
+        (
+            {
+                "needs.observe-github-packages.result": "success",
+                "needs.materialize-publication.result": "failure",
+                "needs.materialize-publication.outputs.publication-snapshot-artifact-digest": _PHASE2_SNAPSHOT_UPLOAD_DIGEST,
+            },
+            ("Snapshot", "transport"),
+        ),
+        (
+            {"needs.publish-github-packages.result": "success"},
+            ("publisher",),
+        ),
+        (
+            {"needs.publish-github-packages.result": "failure"},
+            ("publisher",),
+        ),
+    ],
+    ids=[
+        "unexplained-observation-skip",
+        "materialization-success-without-durable-snapshot",
+        "snapshot-artifact-id-without-upload-digest",
+        "snapshot-upload-digest-without-artifact-id",
+        "publisher-success",
+        "publisher-failure",
+    ],
+)
+def test_publication_preparation_classifier_rejects_invalid_workflow_facts(
+    tmp_path: Path,
+    overrides: dict[str, str],
+    diagnostic_tokens: tuple[str, ...],
+) -> None:
+    execution = _phase2_execute_finalizer_shell(
+        tmp_path,
+        _phase2_finalizer_facts(**overrides),
+    )
+
+    assert execution["status"] != 0
+    assert execution["invocations"] == ()
+    diagnostic = execution["output"].casefold()
+    for token in diagnostic_tokens:
+        assert token.casefold() in diagnostic
+
+
+_PHASE2_POST_SNAPSHOT_OVERRIDES = {
+    "needs.observe-github-packages.result": "success",
+    "needs.materialize-publication.result": "success",
+    "needs.materialize-publication.outputs.publication-snapshot-artifact-digest": _PHASE2_SNAPSHOT_UPLOAD_DIGEST,
+    "needs.materialize-publication.outputs.publication-snapshot-artifact-id": _PHASE2_SNAPSHOT_ARTIFACT_ID,
+    "needs.materialize-publication.outputs.publication-snapshot-artifact-name": _PHASE2_SNAPSHOT_NAME,
+    "needs.materialize-publication.outputs.publication-snapshot-digest": _PHASE2_SNAPSHOT_PAYLOAD_DIGEST,
+    "needs.approval-finalizer.outputs.publication-snapshot-artifact-id": _PHASE2_SNAPSHOT_ARTIFACT_ID,
+    "needs.approval-finalizer.outputs.authorization-artifact-digest": "sha256:"
+    + ("e" * 64),
+    "needs.approval-finalizer.outputs.authorization-artifact-id": "732",
+    "needs.approval-finalizer.outputs.authorization-artifact-name": "authorization.json",
+    "needs.approval-finalizer.outputs.authorization-digest": "sha256:"
+    + ("f" * 64),
+    "needs.approval-finalizer.outputs.capability-decision-artifact-digest": "sha256:"
+    + ("2" * 64),
+    "needs.approval-finalizer.outputs.capability-decision-artifact-id": "733",
+    "needs.approval-finalizer.outputs.capability-decision-artifact-name": "capability-admission.json",
+    "needs.approval-finalizer.outputs.capability-decision-digest": "sha256:"
+    + ("3" * 64),
+}
+_PHASE2_RESULT_BUNDLE_OVERRIDES = {
+    "needs.publish-github-packages.outputs.capability-group-bundle-artifact-digest": "sha256:"
+    + ("4" * 64),
+    "needs.publish-github-packages.outputs.capability-group-bundle-artifact-id": "735",
+    "needs.publish-github-packages.outputs.capability-group-bundle-artifact-name": "capability-result-bundle.json",
+    "needs.publish-github-packages.outputs.capability-group-bundle-digest": "sha256:"
+    + ("5" * 64),
+}
+
+
+@pytest.mark.parametrize(
+    ("overrides", "expected_flags", "diagnostic_tokens"),
+    [
+        (
+            {
+                "needs.observe-github-packages.result": "skipped",
+                "needs.materialize-publication.result": "skipped",
+                "needs.publish-github-packages.result": "cancelled",
+                "steps.workflow-cancellation.outputs.workflow-cancelled || 'false'": "true",
+            },
+            ("--publication-preparation-interrupted",),
+            (),
+        ),
+        (
+            {
+                "needs.observe-github-packages.result": "skipped",
+                "needs.materialize-publication.result": "skipped",
+                "needs.publish-github-packages.result": "cancelled",
+            },
+            None,
+            ("admitted interruption",),
+        ),
+        (
+            {
+                "needs.observe-github-packages.result": "skipped",
+                "needs.materialize-publication.result": "skipped",
+                "needs.publish-github-packages.result": "cancelled",
+                "needs.approval-finalizer.outputs.publication-snapshot-artifact-id": "forwarded-snapshot-731",
+                "steps.workflow-cancellation.outputs.workflow-cancelled || 'false'": "true",
+            },
+            None,
+            ("downstream lineage",),
+        ),
+        (
+            {
+                "needs.observe-github-packages.result": "skipped",
+                "needs.materialize-publication.result": "skipped",
+                "needs.publish-github-packages.result": "cancelled",
+                "needs.approval-finalizer.outputs.authorization-artifact-id": "authorization-732",
+                "steps.workflow-cancellation.outputs.workflow-cancelled || 'false'": "true",
+            },
+            None,
+            ("downstream lineage",),
+        ),
+        (
+            {
+                "needs.observe-github-packages.result": "skipped",
+                "needs.materialize-publication.result": "skipped",
+                "needs.publish-github-packages.result": "cancelled",
+                "needs.approval-finalizer.outputs.capability-decision-artifact-id": "capability-admission-733",
+                "steps.workflow-cancellation.outputs.workflow-cancelled || 'false'": "true",
+            },
+            None,
+            ("downstream lineage",),
+        ),
+        (
+            {
+                "needs.observe-github-packages.result": "skipped",
+                "needs.materialize-publication.result": "skipped",
+                "needs.publish-github-packages.result": "cancelled",
+                "needs.publish-github-packages.outputs.mutation-marker-artifact-id": "mutation-marker-734",
+                "steps.workflow-cancellation.outputs.workflow-cancelled || 'false'": "true",
+            },
+            None,
+            ("downstream lineage",),
+        ),
+        (
+            {
+                "needs.observe-github-packages.result": "skipped",
+                "needs.materialize-publication.result": "skipped",
+                "needs.publish-github-packages.result": "cancelled",
+                "needs.publish-github-packages.outputs.capability-group-bundle-artifact-id": "result-bundle-735",
+                "steps.workflow-cancellation.outputs.workflow-cancelled || 'false'": "true",
+            },
+            None,
+            ("downstream lineage",),
+        ),
+        (
+            {
+                "needs.observe-github-packages.result": "skipped",
+                "needs.materialize-publication.result": "skipped",
+                "needs.publish-github-packages.result": "cancelled",
+                "needs.publish-github-packages.outputs.receipt-artifact-id": "receipt-736",
+                "steps.workflow-cancellation.outputs.workflow-cancelled || 'false'": "true",
+            },
+            None,
+            ("downstream lineage",),
+        ),
+        (
+            _PHASE2_POST_SNAPSHOT_OVERRIDES
+            | {
+                "needs.publish-github-packages.result": "cancelled",
+            },
+            ("--platform-terminated",),
+            (),
+        ),
+        (
+            _PHASE2_POST_SNAPSHOT_OVERRIDES,
+            (),
+            (),
+        ),
+        (
+            _PHASE2_POST_SNAPSHOT_OVERRIDES
+            | _PHASE2_RESULT_BUNDLE_OVERRIDES
+            | {
+                "needs.publish-github-packages.outputs.mutation-marker-artifact-id": "734",
+                "needs.publish-github-packages.result": "success",
+            },
+            ("--capability-may-have-started",),
+            (),
+        ),
+        (
+            _PHASE2_POST_SNAPSHOT_OVERRIDES
+            | _PHASE2_RESULT_BUNDLE_OVERRIDES
+            | {"needs.publish-github-packages.result": "failure"},
+            (),
+            (),
+        ),
+        (
+            _PHASE2_POST_SNAPSHOT_OVERRIDES
+            | {"needs.publish-github-packages.result": "failure"},
+            ("--platform-terminated",),
+            (),
+        ),
+        (
+            _PHASE2_POST_SNAPSHOT_OVERRIDES
+            | {
+                "needs.publish-github-packages.outputs.mutation-marker-artifact-id": "734",
+                "needs.publish-github-packages.result": "failure",
+            },
+            (
+                "--platform-terminated",
+                "--capability-may-have-started",
+            ),
+            (),
+        ),
+        (
+            _PHASE2_POST_SNAPSHOT_OVERRIDES
+            | {
+                "needs.publish-github-packages.outputs.mutation-marker-artifact-id": "734",
+                "needs.publish-github-packages.result": "cancelled",
+            },
+            (
+                "--platform-terminated",
+                "--capability-may-have-started",
+            ),
+            (),
+        ),
+    ],
+    ids=[
+        "whole-run-cancelled-unstarted",
+        "cancelled-without-workflow-ownership",
+        "cancelled-with-forwarded-snapshot",
+        "cancelled-with-authorization",
+        "cancelled-with-capability-admission",
+        "cancelled-with-mutation-marker",
+        "cancelled-with-result-bundle",
+        "cancelled-with-receipt",
+        "post-snapshot-cancelled",
+        "post-snapshot-skipped",
+        "post-snapshot-success-with-mutation-marker",
+        "post-snapshot-failure-with-result-bundle",
+        "post-snapshot-failure-without-result-bundle",
+        "post-snapshot-failure-with-mutation-marker",
+        "post-snapshot-cancelled-with-mutation-marker",
+    ],
+)
+def test_publisher_result_truth_table_executes_workflow_shell(
+    tmp_path: Path,
+    overrides: dict[str, str],
+    expected_flags: tuple[str, ...] | None,
+    diagnostic_tokens: tuple[str, ...],
+) -> None:
+    execution = _phase2_execute_finalizer_shell(
+        tmp_path,
+        _phase2_finalizer_facts(**overrides),
+    )
+
+    if expected_flags is None:
+        assert execution["status"] != 0
+        assert execution["invocations"] == ()
+        diagnostic = execution["output"].casefold()
+        for token in diagnostic_tokens:
+            assert token.casefold() in diagnostic
+        return
+
+    argv = _phase2_assert_successful_finalizer(execution)
+    semantic_flags = {
+        "--capability-may-have-started",
+        "--platform-terminated",
+        "--publication-preparation-interrupted",
+    }
+    for flag in semantic_flags:
+        assert argv.count(flag) == (1 if flag in expected_flags else 0)
+    if "--publication-preparation-interrupted" in expected_flags:
+        assert {
+            "--authorization",
+            "--capability-decision",
+            "--capability-group-bundle",
+            "--capability-may-have-started",
+            "--publication-snapshot",
+            "--receipt",
+        }.isdisjoint(argv)
+        return
+
+    expected_snapshot_arguments = {
+        "--publication-snapshot": f".wdv3/input/{_PHASE2_SNAPSHOT_NAME}",
+        "--publication-snapshot-digest": _PHASE2_SNAPSHOT_PAYLOAD_DIGEST,
+        "--publication-snapshot-artifact-id": _PHASE2_SNAPSHOT_ARTIFACT_ID,
+        "--publication-snapshot-artifact-digest": _PHASE2_SNAPSHOT_UPLOAD_DIGEST,
+    }
+    for flag, value in expected_snapshot_arguments.items():
+        assert argv.count(flag) == 1
+        assert argv[argv.index(flag) + 1] == value
+    bundle_id = overrides.get(
+        "needs.publish-github-packages.outputs."
+        "capability-group-bundle-artifact-id",
+        "",
+    )
+    assert ("--capability-group-bundle" in argv) is bool(bundle_id)
+
+
+def _phase3_render_workflow_run(
+    run: str,
+    facts: dict[str, str],
+) -> str:
+    expressions = {
+        match.group("fact").strip()
+        for match in _PHASE2_FINALIZER_EXPRESSION.finditer(run)
+    }
+    assert expressions == set(facts)
+    rendered = _PHASE2_FINALIZER_EXPRESSION.sub(
+        lambda match: facts[match.group("fact").strip()],
+        run,
+    )
+    assert "${{" not in rendered
+    return rendered
+
+
+def _phase3_execute_workflow_run(
+    tmp_path: Path,
+    run: str,
+    facts: dict[str, str],
+    *,
+    environment: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    import os  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+
+    rendered = _phase3_render_workflow_run(run, facts)
+    completed = subprocess.run(  # noqa: S603
+        (
+            "bash",
+            "--noprofile",
+            "--norc",
+            "-euo",
+            "pipefail",
+            "-c",
+            rendered,
+        ),
+        check=False,
+        cwd=tmp_path,
+        env=os.environ | (environment or {}),
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    return {
+        "output": completed.stdout + completed.stderr,
+        "rendered": rendered,
+        "status": completed.returncode,
+    }
+
+
+def _phase3_execute_incomplete_finalizer_shell(
+    tmp_path: Path,
+    facts: dict[str, str],
+) -> dict[str, Any]:
+    import os  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+
+    run = _phase2_render_finalizer_run(facts)
+    input_directory = tmp_path / ".wdv3/input"
+    input_directory.mkdir(parents=True)
+    for expression, value in facts.items():
+        if expression.endswith("-artifact-name") and value:
+            (input_directory / value).write_text("{}\n", encoding="utf-8")
+
+    bin_directory = tmp_path / "bin"
+    bin_directory.mkdir()
+    invocations = tmp_path / "cli-invocations.jsonl"
+    uv = bin_directory / "uv"
+    uv.write_text(
+        r"""#!/usr/bin/env python3
+import json
+import os
+import pathlib
+import sys
+
+args = sys.argv[1:]
+invocations = pathlib.Path(os.environ["PHASE3_CLI_INVOCATIONS"])
+with invocations.open("a", encoding="utf-8") as handle:
+    handle.write(json.dumps(args) + "\n")
+
+def write_flag(flag, content):
+    path = pathlib.Path(args[args.index(flag) + 1])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+write_flag(
+    "--outcome-output",
+    '{"phase":"publication-preparation","result":"incomplete"}\n',
+)
+attempt_summary = "# Attempt summary\n\n- CLI finalization status: incomplete\n"
+write_flag("--summary-output", attempt_summary)
+github_summary = pathlib.Path(args[args.index("--github-step-summary") + 1])
+with github_summary.open("a", encoding="utf-8") as handle:
+    handle.write(attempt_summary)
+status = os.environ["PHASE3_CLI_STATUS"]
+github_output = pathlib.Path(args[args.index("--github-output") + 1])
+with github_output.open("a", encoding="utf-8") as handle:
+    handle.write(f"artifact-name={os.environ['PHASE3_ARTIFACT_NAME']}\n")
+    handle.write(f"status={status}\n")
+    handle.write("cli-boundary-invoked=true\n")
+raise SystemExit(int(status))
+""",
+        encoding="utf-8",
+    )
+    uv.chmod(0o755)
+
+    github_output = tmp_path / "github-output.txt"
+    github_summary = tmp_path / "github-step-summary.md"
+    environment = os.environ | {
+        "GITHUB_OUTPUT": str(github_output),
+        "GITHUB_RUN_ATTEMPT": "3",
+        "GITHUB_RUN_ID": "424242",
+        "GITHUB_STEP_SUMMARY": str(github_summary),
+        "PATH": f"{bin_directory}{os.pathsep}{os.environ['PATH']}",
+        "PHASE3_ARTIFACT_NAME": "phase3-retained-attempt-outcome",
+        "PHASE3_CLI_INVOCATIONS": str(invocations),
+        "PHASE3_CLI_STATUS": "1",
+        "WDV3_PACKAGE": "three-workflow-delivery-v3",
+    }
+    completed = subprocess.run(  # noqa: S603
+        (
+            "bash",
+            "--noprofile",
+            "--norc",
+            "-euo",
+            "pipefail",
+            "-c",
+            run,
+        ),
+        check=False,
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    output_values = {
+        key: value
+        for line in github_output.read_text(encoding="utf-8").splitlines()
+        for key, value in (line.split("=", 1),)
+    }
+    return {
+        "github_output": output_values,
+        "github_summary": github_summary,
+        "invocations": tuple(
+            tuple(json.loads(line))
+            for line in invocations.read_text(encoding="utf-8").splitlines()
+        ),
+        "outcome": tmp_path / ".wdv3/final-attempt/attempt-outcome.json",
+        "output": completed.stdout + completed.stderr,
+        "status": completed.returncode,
+        "summary": tmp_path / ".wdv3/final-attempt/attempt-summary.md",
+    }
+
+
+def test_publication_snapshot_lifecycle_and_transport_identity_are_exact() -> (
+    None
+):
+    materializer = _document(CALLEE)["jobs"]["materialize-publication"]
+    lifecycle_ids = {
+        "bind",
+        "materialize",
+        "names",
+        "upload-reviewer",
+        "upload-snapshot",
+    }
+
+    assert tuple(
+        step["id"]
+        for step in _steps(materializer)
+        if step.get("id") in lifecycle_ids
+    ) == (
+        "materialize",
+        "names",
+        "upload-snapshot",
+        "upload-reviewer",
+        "bind",
+    )
+    assert materializer["outputs"]["publication-snapshot-artifact-id"] == (
+        "${{ steps.upload-snapshot.outputs.artifact-id }}"
+    )
+    assert materializer["outputs"]["publication-snapshot-artifact-digest"] == (
+        "${{ steps.upload-snapshot.outputs.artifact-digest }}"
+    )
+    assert materializer["outputs"]["publication-snapshot-digest"] == (
+        "${{ steps.materialize.outputs.publication-snapshot-digest }}"
+    )
+
+
+def test_release_finalizer_downloads_snapshot_directly_from_materialization() -> (
+    None
+):
+    finalizer = _document(CALLEE)["jobs"]["release-finalizer"]
+    download = _step(
+        finalizer,
+        "Download Publication Snapshot by artifact ID",
+    )
+    run = _run(_step(finalizer, "Finalize Attempt Outcome"))
+
+    assert "materialize-publication" in _needs(finalizer)
+    assert download["if"] == (
+        "needs.materialize-publication.outputs."
+        "publication-snapshot-artifact-id != ''"
+    )
+    assert download["with"]["artifact-ids"] == (
+        "${{ needs.materialize-publication.outputs."
+        "publication-snapshot-artifact-id }}"
+    )
+    expected_arguments = (
+        (
+            "--publication-snapshot",
+            '".wdv3/input/${{ needs.materialize-publication.outputs.'
+            'publication-snapshot-artifact-name }}"',
+        ),
+        (
+            "--publication-snapshot-digest",
+            '"${{ needs.materialize-publication.outputs.'
+            'publication-snapshot-digest }}"',
+        ),
+        (
+            "--publication-snapshot-artifact-id",
+            '"${{ needs.materialize-publication.outputs.'
+            'publication-snapshot-artifact-id }}"',
+        ),
+        (
+            "--publication-snapshot-artifact-digest",
+            '"${{ needs.materialize-publication.outputs.'
+            'publication-snapshot-artifact-digest }}"',
+        ),
+    )
+    for option, expression in expected_arguments:
+        assert f"{option} {expression}" in run
+        assert f'{option} "${{{{ needs.approval-finalizer.outputs.' not in run
+
+
+def test_durable_snapshot_survives_later_reviewer_failure(
+    tmp_path: Path,
+) -> None:
+    facts = _phase2_finalizer_facts(
+        **{
+            "needs.materialize-publication.outputs.publication-snapshot-artifact-digest": _PHASE2_SNAPSHOT_UPLOAD_DIGEST,
+            "needs.materialize-publication.outputs.publication-snapshot-artifact-id": _PHASE2_SNAPSHOT_ARTIFACT_ID,
+            "needs.materialize-publication.outputs.publication-snapshot-artifact-name": _PHASE2_SNAPSHOT_NAME,
+            "needs.materialize-publication.outputs.publication-snapshot-digest": _PHASE2_SNAPSHOT_PAYLOAD_DIGEST,
+            "needs.materialize-publication.result": "failure",
+            "needs.observe-github-packages.result": "success",
+        }
+    )
+
+    execution = _phase2_execute_finalizer_shell(tmp_path, facts)
+
+    argv = _phase2_assert_successful_finalizer(execution)
+    expected_snapshot_arguments = {
+        "--publication-snapshot": f".wdv3/input/{_PHASE2_SNAPSHOT_NAME}",
+        "--publication-snapshot-artifact-digest": _PHASE2_SNAPSHOT_UPLOAD_DIGEST,
+        "--publication-snapshot-artifact-id": _PHASE2_SNAPSHOT_ARTIFACT_ID,
+        "--publication-snapshot-digest": _PHASE2_SNAPSHOT_PAYLOAD_DIGEST,
+    }
+    for flag, value in expected_snapshot_arguments.items():
+        assert argv.count(flag) == 1
+        assert argv[argv.index(flag) + 1] == value
+    assert "--publication-preparation-interrupted" not in argv
+    assert "--platform-terminated" not in argv
+
+
+def test_completed_materialization_summary_links_immutable_reviewer_artifact(
+    tmp_path: Path,
+) -> None:
+    materializer = _document(CALLEE)["jobs"]["materialize-publication"]
+    steps = _steps(materializer)
+    upload = _step(materializer, "Upload reviewer artifact")
+    summary = _step(
+        materializer,
+        "Publish completed reviewer summary and artifact link",
+    )
+    bind = _step(
+        materializer,
+        "Bind reviewer artifact transport to exact payloads",
+    )
+
+    assert steps.index(upload) < steps.index(bind) < steps.index(summary)
+    assert summary["if"] == "steps.upload-reviewer.outcome == 'success'"
+    run = _run(summary)
+    assert "${{ steps.upload-reviewer.outputs.artifact-url }}" in run
+    assert "${GITHUB_STEP_SUMMARY}" in run
+
+    reviewer_name = "phase3-reviewer-payload"
+    reviewer_directory = tmp_path / ".wdv3" / reviewer_name
+    reviewer_directory.mkdir(parents=True)
+    reviewer = reviewer_directory / "reviewer-summary.md"
+    reviewer_bytes = (
+        b"# Immutable reviewer summary\n\n"
+        b"- Target: 1111111111111111111111111111111111111111\n"
+        b"- Coordinate: @hcoona/release-smoke@0.1.0\n"
+    )
+    reviewer.write_bytes(reviewer_bytes)
+    artifact_url = (
+        "https://github.com/hcoona/three/actions/runs/424242/artifacts/987654"
+    )
+    github_summary = tmp_path / "github-step-summary.md"
+    prior_summary = (
+        b"# Prior job summary\n\n- Qualification diagnostics retained\n"
+    )
+    github_summary.write_bytes(prior_summary)
+
+    execution = _phase3_execute_workflow_run(
+        tmp_path,
+        run,
+        {
+            "steps.names.outputs.reviewer-name": reviewer_name,
+            "steps.upload-reviewer.outputs.artifact-url": artifact_url,
+        },
+        environment={"GITHUB_STEP_SUMMARY": str(github_summary)},
+    )
+
+    assert execution["status"] == 0, execution["output"]
+    assert reviewer.read_bytes() == reviewer_bytes
+    job_summary = github_summary.read_bytes()
+    assert job_summary.startswith(prior_summary + reviewer_bytes)
+    assert artifact_url.encode() in job_summary
+    assert artifact_url.encode() not in reviewer.read_bytes()
+    reviewer_summary_writers = [
+        (job_name, step.get("name"))
+        for job_name, job in _document(CALLEE)["jobs"].items()
+        for step in _steps(job)
+        for shell in (step.get("run"),)
+        if isinstance(shell, str)
+        if "reviewer-summary.md" in shell and "GITHUB_STEP_SUMMARY" in shell
+    ]
+    assert reviewer_summary_writers == [
+        (
+            "materialize-publication",
+            "Publish completed reviewer summary and artifact link",
+        )
+    ]
+    redirection_to_reviewer = re.compile(
+        r"(?:>>?|tee(?:\s+-a)?)\s+[\"']?[^\n\"']*reviewer-summary\.md"
+    )
+    for step in steps:
+        shell = step.get("run")
+        if isinstance(shell, str):
+            assert redirection_to_reviewer.search(shell) is None
+
+
+def test_incomplete_preparation_retains_diagnostics_before_job_failure(
+    tmp_path: Path,
+) -> None:
+    import hashlib  # noqa: PLC0415
+
+    finalizer = _document(CALLEE)["jobs"]["release-finalizer"]
+    finalize = _step(finalizer, "Finalize Attempt Outcome")
+    upload = _step(finalizer, "Upload final Attempt Outcome and summary")
+    execution = _phase3_execute_incomplete_finalizer_shell(
+        tmp_path,
+        _phase2_finalizer_facts(),
+    )
+
+    assert finalize["continue-on-error"] is True
+    assert upload["with"]["path"] == ".wdv3/final-attempt"
+    assert execution["status"] == 1
+    assert len(execution["invocations"]) == 1
+    argv = execution["invocations"][0]
+    assert argv.count("--publication-preparation-interrupted") == 1
+    assert "--platform-terminated" not in argv
+    assert execution["outcome"].is_file()
+    assert execution["summary"].is_file()
+    retained_summary = execution["summary"].read_text(encoding="utf-8")
+    job_summary = execution["github_summary"].read_text(encoding="utf-8")
+    for diagnostic in (
+        "## Publication preparation interruption",
+        "- Qualification result: success",
+        "- Observation job result: failure",
+        "- Materialization job result: skipped",
+        "- Publisher job result: skipped",
+        "- Durable Publication Snapshot: absent",
+        "- Capability path started: no",
+        "- Workflow cancellation observed: false",
+    ):
+        assert diagnostic in retained_summary
+        assert diagnostic in job_summary
+    assert retained_summary == job_summary
+    outputs = execution["github_output"]
+    assert outputs["artifact-name"] == "phase3-retained-attempt-outcome"
+    assert outputs["status"] == "1"
+    assert outputs["cli-boundary-invoked"] == "true"
+    assert outputs["finalizer-status"] == "1"
+    outcome_digest = hashlib.sha256(
+        execution["outcome"].read_bytes()
+    ).hexdigest()
+    assert outputs["final-artifact-name"] == (
+        "wdv3-live-buddy-attempt-outcome-r424242-ra3-" + outcome_digest
+    )
+
+
+def test_propagation_fails_after_successful_retention(tmp_path: Path) -> None:
+    finalizer = _document(CALLEE)["jobs"]["release-finalizer"]
+    steps = _steps(finalizer)
+    finalize = _step(finalizer, "Finalize Attempt Outcome")
+    upload = _step(finalizer, "Upload final Attempt Outcome and summary")
+    propagate = _step(finalizer, "Propagate finalization status")
+
+    assert steps.index(finalize) < steps.index(upload) < steps.index(propagate)
+    assert upload["if"] == "always()"
+    assert propagate["if"] == "always()"
+    successful_retention = {
+        "steps.finalize.outcome": "success",
+        "steps.finalize.outputs.finalizer-status": "0",
+        "steps.upload-final.outcome": "success",
+    }
+    retained_success = _phase3_execute_workflow_run(
+        tmp_path,
+        _run(propagate),
+        successful_retention,
+    )
+    assert retained_success["status"] == 0, retained_success["output"]
+
+    retained_incomplete = _phase3_execute_workflow_run(
+        tmp_path,
+        _run(propagate),
+        successful_retention | {"steps.finalize.outputs.finalizer-status": "1"},
+    )
+    assert retained_incomplete["status"] != 0
+
+
+def test_workflow_cancellation_fact_recorder_executes_exact_step_shell(
+    tmp_path: Path,
+) -> None:
+    finalizer = _document(CALLEE)["jobs"]["release-finalizer"]
+    recorder = _step(finalizer, "Record workflow cancellation")
+
+    assert recorder["id"] == "workflow-cancellation"
+    assert recorder["if"] == "cancelled()"
+    run = _run(recorder)
+    github_output = tmp_path / "github-output.txt"
+
+    execution = _phase3_execute_workflow_run(
+        tmp_path,
+        run,
+        {},
+        environment={"GITHUB_OUTPUT": str(github_output)},
+    )
+
+    assert execution["status"] == 0, execution["output"]
+    assert execution["rendered"] == run
+    assert github_output.read_bytes() == b"workflow-cancelled=true\n"
+
+
+def test_durable_snapshot_reviewer_failure_omits_preparation_diagnostics(
+    tmp_path: Path,
+) -> None:
+    prior_summary = "# Prior qualification summary\n"
+    github_summary = tmp_path / "github-step-summary.md"
+    github_summary.write_text(prior_summary, encoding="utf-8")
+    facts = _phase2_finalizer_facts(
+        **{
+            "needs.materialize-publication.outputs.publication-snapshot-artifact-digest": _PHASE2_SNAPSHOT_UPLOAD_DIGEST,
+            "needs.materialize-publication.outputs.publication-snapshot-artifact-id": _PHASE2_SNAPSHOT_ARTIFACT_ID,
+            "needs.materialize-publication.outputs.publication-snapshot-artifact-name": _PHASE2_SNAPSHOT_NAME,
+            "needs.materialize-publication.outputs.publication-snapshot-digest": _PHASE2_SNAPSHOT_PAYLOAD_DIGEST,
+            "needs.materialize-publication.result": "failure",
+            "needs.observe-github-packages.result": "success",
+        }
+    )
+
+    execution = _phase2_execute_finalizer_shell(tmp_path, facts)
+
+    argv = _phase2_assert_successful_finalizer(execution)
+    assert "--publication-preparation-interrupted" not in argv
+    assert "--platform-terminated" not in argv
+    job_summary = github_summary.read_text(encoding="utf-8")
+    assert job_summary == prior_summary
+    assert "Publication preparation interruption" not in job_summary

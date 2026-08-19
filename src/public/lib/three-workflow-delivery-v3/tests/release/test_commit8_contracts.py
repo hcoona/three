@@ -554,23 +554,68 @@ def test_commit8_records_round_trip_through_closed_transport(record) -> None:
             "observe-destinations",
             "qualification-only",
         ),
-        (
+        pytest.param(
             _publication_preparation_outcome(),
             "uncertainty",
             False,
-            "Publication preparation",
+            r"(?i)publication[- ]preparation",
+            id="uncertainty",
         ),
-        (
+        pytest.param(
             _publication_preparation_outcome(),
             "authorization_digest",
             "sha256:" + ("f" * 64),
-            "Publication preparation",
+            r"(?i)publication[- ]preparation",
+            id="authorization-digest",
         ),
-        (
+        pytest.param(
             _publication_preparation_outcome(),
             "publication_snapshot_digest",
             "sha256:" + ("f" * 64),
-            "Publication preparation",
+            r"(?i)publication[- ]preparation",
+            id="publication-snapshot-digest",
+        ),
+        pytest.param(
+            _publication_preparation_outcome(),
+            "capability_admission_digests",
+            ("sha256:" + ("f" * 64),),
+            r"(?i)publication[- ]preparation",
+            id="capability-admission-digests",
+        ),
+        pytest.param(
+            _publication_preparation_outcome(),
+            "capability_group_bundle_digests",
+            ("sha256:" + ("f" * 64),),
+            r"(?i)publication[- ]preparation",
+            id="capability-group-bundle-digests",
+        ),
+        pytest.param(
+            _publication_preparation_outcome(),
+            "receipt_digests",
+            ("sha256:" + ("f" * 64),),
+            r"(?i)publication[- ]preparation",
+            id="receipt-digests",
+        ),
+        pytest.param(
+            _publication_preparation_outcome(),
+            "result",
+            "failure",
+            r"(?i)publication[- ]preparation",
+            id="result",
+        ),
+        pytest.param(
+            _publication_preparation_outcome(),
+            "possibly_mutated",
+            True,
+            r"(?i)publication[- ]preparation",
+            id="possibly-mutated",
+        ),
+        pytest.param(
+            _publication_preparation_outcome(),
+            "next_action",
+            "none",
+            r"(?i)publication[- ]preparation",
+            id="next-action",
         ),
     ],
 )
@@ -580,7 +625,7 @@ def test_commit8_records_reject_independent_binding_substitutions(
     replacement,
     message: str,
 ) -> None:
-    with pytest.raises((TypeError, ValueError), match=message):
+    with pytest.raises(ValueError, match=message):
         replace(record, **{field: replacement})
 
 

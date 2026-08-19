@@ -1183,7 +1183,6 @@ jobs:
           mv .wdv3/reviewer-formatter-input.json ".wdv3/${reviewer_name}/reviewer-formatter-input.json"
           echo "publication-snapshot-name=${snapshot_name}" >> "${GITHUB_OUTPUT}"
           echo "reviewer-name=${reviewer_name}" >> "${GITHUB_OUTPUT}"
-          cat ".wdv3/${reviewer_name}/reviewer-summary.md" >> "${GITHUB_STEP_SUMMARY}"
       - name: Upload Publication Snapshot
         id: upload-snapshot
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -1221,6 +1220,11 @@ jobs:
             --output .wdv3/bound-reviewer-formatter-input.json \
             --github-output "${GITHUB_OUTPUT}"
           echo "reviewer-formatter-input-base64=$(base64 -w0 .wdv3/bound-reviewer-formatter-input.json)" >> "${GITHUB_OUTPUT}"
+      - name: Publish completed reviewer summary and artifact link
+        if: steps.upload-reviewer.outcome == 'success'
+        run: |
+          cat ".wdv3/${{ steps.names.outputs.reviewer-name }}/reviewer-summary.md" >> "${GITHUB_STEP_SUMMARY}"
+          printf '\n[Download immutable reviewer artifact](%s)\n' "${{ steps.upload-reviewer.outputs.artifact-url }}" >> "${GITHUB_STEP_SUMMARY}"
 
   approval:
     name: Human approval and same-revision Authorization
@@ -1987,6 +1991,10 @@ jobs:
           receipt_id="${{ needs.publish-github-packages.outputs.receipt-artifact-id }}"
           workflow_cancelled="${{ steps.workflow-cancellation.outputs.workflow-cancelled || 'false' }}"
           publication_preparation_interrupted=false
+          if [[ -n "${snapshot_id}" && -z "${snapshot_upload_digest}" ]]; then
+            echo "::error::Publication Snapshot transport is only partially absent" >&2
+            exit 1
+          fi
           if [[ "${qualification_result}" == "success" && -z "${snapshot_id}" ]]; then
             if [[ -n "${snapshot_upload_digest}" ]]; then
               echo "::error::Publication Snapshot transport is only partially absent" >&2
@@ -2017,7 +2025,7 @@ jobs:
               echo "::error::Publication preparation state is not an admitted interruption" >&2
               exit 1
             fi
-            if [[ "${publish_result}" != "skipped" ]]; then
+            if [[ "${publish_result}" != "skipped" && ! ( "${publish_result}" == "cancelled" && "${workflow_cancelled}" == "true" ) ]]; then
               echo "::error::Publication preparation interruption did not skip the publisher" >&2
               exit 1
             fi
@@ -2030,7 +2038,7 @@ jobs:
           fi
           platform_terminated=false
           capability_may_have_started=false
-          if [[ "${publish_result}" == "cancelled" ]]; then
+          if [[ "${publish_result}" == "cancelled" && "${publication_preparation_interrupted}" != "true" ]]; then
             platform_terminated=true
           elif [[ "${publish_result}" == "failure" && -z "${capability_bundle_id}" ]]; then
             platform_terminated=true
@@ -2076,6 +2084,7 @@ jobs:
               printf '%s\n' "- Qualification result: ${qualification_result}"
               printf '%s\n' "- Observation job result: ${observation_result}"
               printf '%s\n' "- Materialization job result: ${materialization_result}"
+              printf '%s\n' "- Publisher job result: ${publish_result}"
               printf '%s\n' "- Durable Publication Snapshot: absent"
               printf '%s\n' "- Capability path started: no"
               printf '%s\n' "- Workflow cancellation observed: ${workflow_cancelled}"

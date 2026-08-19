@@ -1371,13 +1371,16 @@ consistent states:
 - platform cancellation prevented those jobs from starting or completing while
   the capability path remained unstarted.
 
-Qualification must have succeeded, the Publication Snapshot artifact identity
-must be absent, and the publisher must be skipped with no Authorization,
-Capability Admission Decision, mutation marker, result bundle, or Receipt.
-Qualification failure or incompleteness uses the existing qualification
-Outcome. A durably persisted Publication Snapshot uses the existing
-Snapshot-bound lifecycle even if a later step in the materialization job
-failed.
+Qualification must have succeeded and the Publication Snapshot artifact
+identity must be absent. The publisher result must be `skipped`, or may be
+`cancelled` only when whole-workflow cancellation is directly observed and no
+Snapshot or downstream lineage exists. That cancellation-owned result
+represents an unstarted capability path, not post-Snapshot platform
+termination. No Authorization, Capability Admission Decision, mutation marker,
+result bundle, or Receipt may exist. Qualification failure or incompleteness
+uses the existing qualification Outcome. A durably persisted Publication
+Snapshot uses the existing Snapshot-bound lifecycle even if a later step in the
+materialization job failed.
 
 The following are contract failures rather than normal interruptions:
 
@@ -1399,11 +1402,11 @@ set and emits exactly:
 - next action `new-attempt`.
 
 The canonical Outcome does not encode GitHub job names or raw result strings.
-The retained human summary records the direct Observation and materialization
-results, durable Snapshot presence, and whether the capability path started.
-The workflow retains the Outcome and summary before surfacing a failed release
-conclusion. Whole-workflow cancellation may still prevent the Finalizer from
-running.
+The retained human summary records the direct Observation, materialization, and
+publisher results, durable Snapshot presence, and whether the capability path
+started. The workflow retains the Outcome and summary before surfacing a failed
+release conclusion. Whole-workflow cancellation may still prevent the
+Finalizer from running.
 
 ### Completion Invariant
 

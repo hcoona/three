@@ -914,9 +914,10 @@ uploads the reviewer payload as a separate immutable artifact, using the
 Renovate-selected current Node-24-compatible `actions/upload-artifact` major,
 full 40-character commit pin, and version comment. It binds the reviewer
 artifact transport to the exact Snapshot and summary payloads, captures the
-returned IDs, URL, and artifact digests, and writes the Markdown plus artifact
-link to its completed job summary. The `approval` job receives the reviewer
-artifact URL through a `needs` output and assigns it to `environment.url`.
+returned IDs, URL, and artifact digests, and, after successful binding, writes
+the Markdown plus artifact link to its completed job summary. The `approval`
+job receives the reviewer artifact URL through a `needs` output and assigns it
+to `environment.url`.
 
 Failure or cancellation before the Snapshot artifact is durably uploaded stops
 approval and publication and is eligible for a
@@ -924,7 +925,11 @@ approval and publication and is eligible for a
 uploaded before a later reviewer-artifact or binding failure, approval and
 publication still stop, but the Release Finalizer retains the Snapshot and uses
 the existing Snapshot-bound outcome path rather than claiming that publication
-preparation never completed.
+preparation never completed. During whole-workflow cancellation, an unstarted
+publisher may be reported as `cancelled`; that result is admitted as
+publication preparation only when cancellation is directly observed and no
+Snapshot, authorization, capability, mutation, bundle, or Receipt lineage
+exists.
 
 GitHub's Environment approval dialog has no custom body. Reviewers follow the
 deployment URL or completed `materialize-publication` job summary to inspect the
@@ -1013,21 +1018,24 @@ to its existing authoritative inputs. Direct dependencies expose exact GitHub
 job results and outputs; they do not continue approval or publication after a
 failure. The workflow adapter translates only the approved state combinations
 into `--publication-preparation-interrupted`. It requires successful
-Qualification, no durable Snapshot artifact, a skipped publisher, and no
+Qualification and no durable Snapshot artifact. The publisher result must be
+`skipped`, or may be `cancelled` only when whole-workflow cancellation is
+directly observed and no downstream lineage exists. The cancellation-owned
+result is not also translated as post-Snapshot platform termination. No
 Authorization, Capability Admission Decision, mutation marker, result bundle,
-or Receipt. Job success without the required Snapshot, unexplained skips, failed
-Snapshot admission, or downstream lineage without a Snapshot are contract
-failures.
+or Receipt may exist. Job success without the required Snapshot, unexplained
+skips, failed Snapshot admission, or downstream lineage without a Snapshot are
+contract failures.
 
 The sole Release Finalizer then verifies the exact successful Qualification
 Decision and record absence before emitting
 `publication-preparation`/`incomplete` with uncertainty, no possible mutation,
 and next action `new-attempt`. It appends the direct Observation and
-materialization results, Snapshot presence, and capability-path state to the
-retained Attempt summary and GitHub Step Summary. The workflow uploads the
-Outcome and summary before propagating a failed release conclusion. GitHub may
-still cancel the entire run before the Finalizer executes; no watchdog is
-added.
+materialization and publisher results, Snapshot presence, and capability-path
+state to the retained Attempt summary and GitHub Step Summary. The workflow
+uploads the Outcome and summary before propagating a failed release conclusion.
+GitHub may still cancel the entire run before the Finalizer executes; no
+watchdog is added.
 
 GitHub Environment `DeploymentReview` cannot produce authoritative
 current-attempt rejection Evidence because it lacks `run_attempt` and
@@ -1371,10 +1379,11 @@ SHA-512, tarball manifest, lifecycle scripts, and exact action summary.
     plus reviewer inputs as a separate immutable reviewer artifact through the
     Renovate-selected current Node-24-compatible action major and full-SHA pin.
     It exposes only the reviewer artifact URL through `environment.url` and
-    writes the same link/summary to the completed job summary. The reviewer
-    artifact transport is bound to the exact Snapshot and summary payloads; the
-    reviewer artifact ID/digest and Snapshot digest match the Authorization
-    Record, and mismatches block publisher admission.
+    writes the same link/summary to the completed job summary after successful
+    reviewer transport binding. The reviewer artifact transport is bound to the
+    exact Snapshot and summary payloads; the reviewer artifact ID/digest and
+    Snapshot digest match the Authorization Record, and mismatches block
+    publisher admission.
 11. Inspection records token permissions and grants, proves no known Official or
     production reach, and safely probes only enumerated unrelated assets without
     claiming universal negative reach proof.
