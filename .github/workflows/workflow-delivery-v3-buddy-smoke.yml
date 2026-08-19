@@ -227,9 +227,7 @@ jobs:
           digest="$(sha256sum .wdv3/repository-model.json | cut -d' ' -f1)"
           artifact_name="wdv3-live-buddy-repository-model-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${digest}.json"
           mv .wdv3/repository-model.json ".wdv3/${artifact_name}"
-          execution_key="$(printf '%s' "${{ needs.discover-node.outputs.request-id }}:${GITHUB_SHA}:buddy" | sha256sum | cut -d' ' -f1)"
           echo "repository-model-artifact-name=${artifact_name}" >> "${GITHUB_OUTPUT}"
-          echo "execution-concurrency-key=${execution_key}" >> "${GITHUB_OUTPUT}"
       - name: Upload admitted Repository Model
         id: upload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

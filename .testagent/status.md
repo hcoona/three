@@ -7411,3 +7411,687 @@ ran.
   and bounded direct review supplied the required language guidance.
 
 <!-- END APPEND: 2026-08-19-wdv3-final-rereview-two-test-gaps-status -->
+
+<!-- BEGIN APPEND: 2026-08-19-wdv3-buddy-concurrency-phase-1-status -->
+
+## Workflow Delivery v3 Buddy concurrency repair — Phase 1 result
+
+**Status:** SUCCESS. Phase 1 characterized the existing canonical Buddy
+Execution Identity and caller equality domain without changing production.
+The same-group scenario proves only eligibility for GitHub's documented
+coalescing semantics; it does not model ordering, fairness, or hosted
+scheduler behavior.
+
+### Files
+
+- Modified
+  `src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py`
+  by appending 3 tests.
+- Modified `.testagent/status.md` by appending this result section.
+- Read but did not modify `release/identity.py`, `records/release.py`, and
+  `canonical.py`.
+
+### Exact Phase 1 tests
+
+- Retained
+  `test_buddy_request_normalization_and_execution_derivation_are_strict`.
+- Added
+  `test_buddy_execution_identity_document_and_concurrency_key_are_exact`.
+- Added
+  `test_three_same_target_dispatches_share_one_caller_group_for_github_coalescing`.
+- Added
+  `test_different_buddy_targets_derive_different_execution_concurrency_keys`.
+
+The new scenarios pin the exact four-member document, literal prefixed and
+unprefixed SHA-256 values, exact caller groups, three distinct request/run
+contexts sharing one group, and different target SHAs producing distinct
+documents, digests, keys, and groups. Exact document membership excludes
+request ID, workflow run ID, run attempt, version, package coordinate,
+destination adapter, and destination projection.
+
+### Commands and results
+
+1. Baseline harness discovery:
+
+   ```text
+   uv run --python 3.13 pytest --collect-only -q
+   ```
+
+   Result: exit 0; 5310 tests collected in 0.86s.
+
+2. Narrow syntax build:
+
+   ```text
+   uv run --python 3.13 --package three-workflow-delivery-v3 python -m py_compile src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py
+   ```
+
+   Result: exit 0; no output.
+
+3. Exact Phase 1 increment:
+
+   ```text
+   uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py::test_buddy_request_normalization_and_execution_derivation_are_strict src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py::test_buddy_execution_identity_document_and_concurrency_key_are_exact src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py::test_three_same_target_dispatches_share_one_caller_group_for_github_coalescing src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py::test_different_buddy_targets_derive_different_execution_concurrency_keys
+   ```
+
+   Result: exit 0; 4 passed, 0 failed in 0.07s.
+
+4. Post-change harness discovery:
+
+   ```text
+   uv run --python 3.13 pytest --collect-only -q
+   ```
+
+   Result: exit 0; 5313 tests collected in 0.91s; discovery delta +3, matching
+   the 3 added tests.
+
+5. Scoped whitespace validation:
+
+   ```text
+   git --no-pager diff --check -- src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py
+   ```
+
+   Result: exit 0; no output.
+
+### Pre-completion review and blockers
+
+- Pseudo-mutation review found no in-scope gap: exact document equality kills
+  member/schema/value changes; committed digest/key literals kill canonical
+  hash or prefix changes; same-target equality kills request/run salts; and
+  different-target exact inequalities kill a dropped or fixed target.
+- Assertion-quality review found 18 meaningful assertions across the 3 new
+  tests, with exact/deep equality, structural exclusion, collection equality,
+  and distinctness checks. There are no assertion-free, trivial-only,
+  self-referential, skipped, or xfailed tests.
+- Blockers: none.
+- No later phase, production source, workflow, package manifest/lock,
+  acceptance probe, sentinel, publication, full-package test, or HK command
+  was implemented or run.
+
+<!-- END APPEND: 2026-08-19-wdv3-buddy-concurrency-phase-1-status -->
+
+<!-- BEGIN APPEND: 2026-08-19-wdv3-buddy-concurrency-phase-2-status -->
+
+## Workflow Delivery v3 Buddy concurrency repair — Phase 2 result
+
+**Status:** SUCCESS. The real request-local `compile-live-model` path now
+emits the canonical Buddy Execution concurrency key only after successful
+Repository Model compilation. Phase 3 workflow forwarding was not implemented.
+
+### Files
+
+- Modified production:
+  `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py`.
+- Appended 2 tests to:
+  `src/public/lib/three-workflow-delivery-v3/tests/test_cli.py`.
+- Appended this bounded result to `.testagent/status.md`.
+- Preserved all prior Phase 1, research, plan, test, and working-tree changes.
+
+### Exact production behavior
+
+After `_release_compile_live_model_command` has loaded the admitted live Intent,
+admitted the uploaded Provider result, compiled and admitted the request-local
+Repository Model, and written that model, its existing GitHub output emission
+now appends:
+
+```python
+canonical_sha256(
+    derive_buddy_execution_identity(intent).to_document()
+).removeprefix("sha256:")
+```
+
+as `execution-concurrency-key`. The command reuses the existing admitted
+`intent`, identity derivation, and canonical hash. It does not rerun the
+Provider, reproduce identity fields, add an abstraction, or include model,
+version, package, destination, request, or run facts. Existing
+`repository-model-digest` and `repository-model-digest-hex` outputs remain in
+their original order. Compilation failure reaches no GitHub-output emission,
+so no key is written.
+
+### Exact Phase 2 tests
+
+- `test_compile_live_model_emits_canonical_buddy_execution_concurrency_key`
+  runs the real parser, uploaded-Intent admission, uploaded Provider admission,
+  and request-local compiler against the existing canonical temporary
+  repository and Provider fixture pattern. It pins the Phase 1 literal
+  `a71c896702fc7f6869d6dc6714840eba7393c9e98eaf820d3254299d664534a6`,
+  exact Repository Model output lines, absence of the `sha256:` prefix, exact
+  compiled NBGV/version facts, exact Buddy package/destination projection, a
+  ready admitted Snapshot, no stdout/stderr, and no Provider rerun.
+- `test_compile_live_model_does_not_emit_execution_concurrency_key_when_compilation_fails`
+  drives the same real command through established malformed target Quality
+  authoring. It pins exit 1, the existing diagnostic, no model artifact, and no
+  GitHub output/key artifact.
+
+### Commands and results
+
+1. Baseline harness discovery:
+
+   ```text
+   uv run --python 3.13 pytest --collect-only -q
+   ```
+
+   Result: exit 0; 5313 tests collected in 0.91s.
+
+2. Test-first Phase 2 nodes:
+
+   ```text
+   uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/test_cli.py::test_compile_live_model_emits_canonical_buddy_execution_concurrency_key src/public/lib/three-workflow-delivery-v3/tests/test_cli.py::test_compile_live_model_does_not_emit_execution_concurrency_key_when_compilation_fails
+   ```
+
+   Initial result: exit 1; 1 failed and 1 passed in 0.67s. The first draft
+   incorrectly expected a serialized `snapshot-digest` member; that test-only
+   assertion was corrected to the existing canonical Snapshot contract.
+   Confirmed red result before production editing: exit 1; 1 failed and 1
+   passed in 0.67s, solely because `execution-concurrency-key` was absent.
+
+3. Syntax build:
+
+   ```text
+   uv run --python 3.13 --package three-workflow-delivery-v3 python -m py_compile src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py
+   ```
+
+   Result: exit 0; no output. A preceding delegated invocation accidentally
+   included `.` as a third compile target and exited 1 with
+   `[Errno 21] Is a directory: '.'`; the corrected exact command above passed.
+
+4. Post-edit Phase 2 nodes:
+
+   ```text
+   uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/test_cli.py::test_compile_live_model_emits_canonical_buddy_execution_concurrency_key src/public/lib/three-workflow-delivery-v3/tests/test_cli.py::test_compile_live_model_does_not_emit_execution_concurrency_key_when_compilation_fails
+   ```
+
+   First result: exit 1; 1 failed and 1 passed in 0.61s, exposing that the
+   initial in-scope edit had matched the adjacent simulation output block.
+   The block was removed there and placed only in
+   `_release_compile_live_model_command`. Final result: exit 0; 2 passed and 0
+   failed in 0.58s.
+
+5. Final syntax build:
+
+   ```text
+   uv run --python 3.13 --package three-workflow-delivery-v3 python -m py_compile src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py
+   ```
+
+   Result: exit 0; no output.
+
+6. Full canonical CLI regression:
+
+   ```text
+   uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/test_cli.py
+   ```
+
+   Result: exit 0; 80 passed and 0 failed in 7.00s.
+
+7. Post-change harness discovery:
+
+   ```text
+   uv run --python 3.13 pytest --collect-only -q
+   ```
+
+   Result: exit 0; 5315 tests collected in 0.82s; discovery delta +2, matching
+   the 2 appended tests.
+
+8. Scoped whitespace validation:
+
+   ```text
+   git --no-pager diff --check -- src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py .testagent/status.md
+   ```
+
+   Result: exit 0; no output before this append.
+
+### Pre-completion review and blockers
+
+- Pseudo-mutation review found no in-scope gap. Exact output-list equality
+  kills omitted, reordered, prefixed, or model-derived keys and changes to
+  existing Repository Model outputs. Exact model facts kill degenerate fixture
+  behavior. The malformed-authoring scenario kills emission moved before
+  successful compilation. The Provider-rerun guard kills a second Provider
+  invocation.
+- Assertion-quality review counted 13 meaningful assertions across the 2
+  tests, covering exact/deep equality, Boolean readiness, diagnostics,
+  negative prefix/artifact assertions, and file side effects. There are no
+  assertion-free, trivial-only, self-referential, skipped, or xfailed tests.
+- Blockers: none.
+- No workflow Phase 3, package/lock mutation, full-package/HK gate,
+  acceptance probe, publication, sentinel finalization, commit, push, or PR
+  operation was implemented or run.
+
+<!-- END APPEND: 2026-08-19-wdv3-buddy-concurrency-phase-2-status -->
+
+<!-- BEGIN APPEND: 2026-08-19-wdv3-buddy-concurrency-phase-3-status -->
+
+## Phase 3 — Exact caller forwarding and reusable-job concurrency
+
+PHASE: 3
+STATUS: SUCCESS
+TESTS_CREATED: 0 (1 existing canonical scenario strengthened append-only)
+TESTS_PASSING: 1
+HARNESS_DISCOVERY: Not run; repository-wide discovery belongs to Phase 4
+
+### Changed files
+
+- `.github/workflows/workflow-delivery-v3-buddy-smoke.yml`
+  - Removed the request-specific
+    `request-id:GITHUB_SHA:buddy` `printf | sha256sum` computation and its
+    `execution-concurrency-key` shell emission.
+  - The unchanged `compile-model` job output now consumes the real
+    `${{ steps.compile.outputs.execution-concurrency-key }}` emitted by
+    `release compile-live-model --github-output`.
+  - The unchanged eligibility output forwards exactly
+    `${{ needs.compile-model.outputs.execution-concurrency-key }}`.
+  - The unchanged reusable caller owns exact group
+    `wdv3-execution-${{ needs.evaluate-live-eligibility.outputs.execution-concurrency-key }}`
+    with YAML Boolean `cancel-in-progress: false`.
+- `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+  - Appended focused assertions to
+    `test_buddy_caller_dag_concurrency_and_reusable_boundary_are_exact`.
+- `.testagent/status.md`
+  - Appended this bounded Phase 3 result without rewriting prior content.
+
+### Exact canonical test evidence
+
+`test_buddy_caller_dag_concurrency_and_reusable_boundary_are_exact` now pins:
+
+- the exact five-job pre-Attempt DAG and the absence of concurrency on
+  request normalization, Provider discovery, request-local Repository Model
+  compilation, and live eligibility;
+- the real `compile-live-model --github-output` producer step and exact
+  `steps.compile.outputs.execution-concurrency-key` job output;
+- exact eligibility forwarding and the exact final caller group expression;
+- YAML Boolean false cancellation and the unchanged live-eligibility gate;
+- the reusable `uses`-only boundary with neither `runs-on` nor `steps`;
+- absence of request-ID forwarding, `printf`, any shell key assignment or
+  emission, and any request/run/SHA-bearing key hash; the sole remaining
+  `sha256sum` line is exactly the Repository Model artifact digest.
+
+`test_buddy_request_normalization_and_execution_derivation_are_strict` remains
+unchanged in its canonical test file. It was not rerun because the Phase 3
+increment is the caller-workflow contract node; prior-phase regression reruns
+belong to Phase 4.
+
+### Commands and results
+
+1. Test-first Phase 3 node:
+
+   ```text
+   uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py::test_buddy_caller_dag_concurrency_and_reusable_boundary_are_exact
+   ```
+
+   Initial result: exit 1; 1 failed in 0.32s. The strengthened assertion
+   detected the old request-ID/GitHub-SHA/Buddy shell hash.
+
+2. Scoped syntax build:
+
+   ```text
+   uv run --python 3.13 --package three-workflow-delivery-v3 python -m py_compile src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py
+   ```
+
+   Result: exit 0; no output.
+
+3. Post-edit Phase 3 node:
+
+   ```text
+   uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py::test_buddy_caller_dag_concurrency_and_reusable_boundary_are_exact
+   ```
+
+   Result: exit 0; 1 passed in 0.07s.
+
+4. Caller-only workflow lint required by Phase 3:
+
+   ```text
+   python eng/scripts/hk_actionlint.py .github/workflows/workflow-delivery-v3-buddy-smoke.yml
+   ```
+
+   Result: exit 0; 1/1 workflow finished successfully in 1.0s.
+
+5. Scoped whitespace and diff review:
+
+   ```text
+   git --no-pager diff --check -- .github/workflows/workflow-delivery-v3-buddy-smoke.yml src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py
+   git --no-pager diff -- .github/workflows/workflow-delivery-v3-buddy-smoke.yml src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py
+   ```
+
+   Result: exit 0; no whitespace errors. The reviewed workflow diff removes
+   only the two request-specific key lines, and the test diff only appends
+   focused assertions to the named scenario.
+
+### Bounded quality review and exclusions
+
+- Pseudo-mutation review found no in-scope gap: changing either forwarding
+  expression, the group, cancellation, gate, DAG ownership, reusable boundary,
+  producer command/output, or reintroducing shell key construction is killed
+  by a concrete assertion.
+- Assertion-quality review found meaningful equality/deep-structure, Boolean,
+  string-presence, and negative-absence checks with no trivial,
+  self-referential, assertion-free, skipped, or xfailed coverage.
+- The reusable workflow and all unrelated files were unchanged. No
+  ledger/lock/tag/abstraction, package mutation, full package/HK, harness-wide
+  discovery, acceptance probe, sentinel finalization, publication, live
+  activation, commit, push, or PR operation was performed. Phase 4 was not
+  performed.
+- Issues: none.
+
+<!-- END APPEND: 2026-08-19-wdv3-buddy-concurrency-phase-3-status -->
+
+<!-- BEGIN APPEND: 2026-08-19T203357Z-wdv3-buddy-concurrency-phase-4-status -->
+
+## Phase 4 — Bounded validation and append-only evidence
+
+Timestamp: `2026-08-19T20:33:57Z`
+
+PHASE: 4
+STATUS: SUCCESS
+TESTS_CREATED: 0
+TESTS_PASSING: 312 unique tests in the bounded four-file regression; 319
+command-level passes when the 7 independently invoked Phase 1-3 nodes are
+included.
+HARNESS_DISCOVERY: Not run by explicit scope; no full-package or
+harness-wide command was permitted for this parent-bounded validation.
+
+### Current touched files
+
+- `.github/workflows/workflow-delivery-v3-buddy-smoke.yml`
+- `.testagent/plan.md`
+- `.testagent/research.md`
+- `.testagent/status.md`
+- `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/test_cli.py`
+
+No new path was added or removed. The reusable workflow, identity/record/
+canonical sources, canonical tests, manifests, locks, packages, and unrelated
+worktree changes remain untouched.
+
+### Exact commands and results
+
+| Command | Result |
+|---|---|
+| `cp .testagent/research.md /tmp/wdv3-buddy-concurrency-implementation-research-prefix.md` | Exit 0; captured the complete pre-Phase-4 research prefix. |
+| `cp .testagent/plan.md /tmp/wdv3-buddy-concurrency-implementation-plan-prefix.md` | Exit 0; captured the complete pre-Phase-4 plan prefix. |
+| `cp .testagent/status.md /tmp/wdv3-buddy-concurrency-implementation-status-prefix.md` | Exit 0; captured the complete pre-Phase-4 status prefix before this append. |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py::test_buddy_request_normalization_and_execution_derivation_are_strict src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py::test_buddy_execution_identity_document_and_concurrency_key_are_exact src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py::test_three_same_target_dispatches_share_one_caller_group_for_github_coalescing src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py::test_different_buddy_targets_derive_different_execution_concurrency_keys` | Fresh result before lint repair: exit 0, `4 passed in 0.04s`. Final result after the repair: exit 0, `4 passed in 0.07s`. |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/test_cli.py::test_compile_live_model_emits_canonical_buddy_execution_concurrency_key src/public/lib/three-workflow-delivery-v3/tests/test_cli.py::test_compile_live_model_does_not_emit_execution_concurrency_key_when_compilation_fails` | Fresh result before lint repair: exit 0, `2 passed in 0.57s`. Final result after the repair: exit 0, `2 passed in 0.67s`. |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py::test_buddy_caller_dag_concurrency_and_reusable_boundary_are_exact` | Fresh result before lint repair: exit 0, `1 passed in 0.07s`. Final result after the repair: exit 0, `1 passed in 0.27s`. |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/test_cli.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py src/public/lib/three-workflow-delivery-v3/tests/test_canonical.py` | Fresh result before lint repair: exit 0, `312 passed in 23.82s`. Final result after the repair: exit 0, `312 passed in 23.83s`. |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 python -m py_compile src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py` | Exit 0 with no output before the repair, after the repair, and in the final pass. |
+| `uv run --python 3.13 ruff check --force-exclude -- src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py` | Initial exit 1: 10 repair-owned findings (`E501`, `C401`, `PLR2004`, and `D103`). After the smallest test-only formatting/lint repair, a second exit 1 exposed one unused `E501` `noqa`; it was removed. Final exit 0: `All checks passed!`. |
+| `uv run --python 3.13 ruff format --check --force-exclude -- src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py` | Initial exit 1: two repair-owned test files would be reformatted. After the smallest test-only formatting repair, exit 0: `4 files already formatted`; the final pass also exited 0 with the same result. |
+| `python eng/scripts/hk_actionlint.py .github/workflows/workflow-delivery-v3-buddy-smoke.yml` | Exit 0; `1/1 workflow finished successfully in 1.0s`. No other workflow was linted. |
+
+The repair-owned Ruff failures changed no production behavior. The minimal
+correction formatted only the touched test additions, added two test
+docstrings/one necessary long-name suppression, and replaced a generator/
+magic-count distinctness check with an exact target set plus fixture-sized
+distinctness assertions. All affected node and four-file tests were rerun.
+
+### Live-disabled and hosted-boundary evidence
+
+- `test_buddy_workflow_files_are_the_disabled_commit8_pair_only` passed in the
+  312-test bounded regression and retains the checked-in live-disabled
+  workflow contract.
+- `test_buddy_caller_dag_concurrency_and_reusable_boundary_are_exact` passed
+  both independently and in the bounded regression. It pins the unchanged
+  eligibility `if` gate, the caller-held reusable boundary, exact domain-key
+  forwarding, and `cancel-in-progress: false`.
+- No live probe, workflow dispatch, publication, acceptance probe, or timing
+  assertion was used. Hosted GitHub pending-run replacement order/fairness
+  remains the sole evidence boundary, not a local repair blocker.
+
+### Requirement-to-evidence map
+
+| # | Evidence |
+|---:|---|
+| 1 | `test_buddy_execution_identity_document_and_concurrency_key_are_exact` passed. |
+| 2 | `test_three_same_target_dispatches_share_one_caller_group_for_github_coalescing` and the exact caller DAG test passed; hosted replacement timing/order remains intentionally unclaimed. |
+| 3 | The exact caller DAG test passed and pins concurrency before the reusable Attempt; hosted pending replacement is not locally emulated. |
+| 4 | `test_different_buddy_targets_derive_different_execution_concurrency_keys` passed. |
+| 5 | Exact identity, same-target, CLI-output, and workflow-shell-negative scenarios passed. |
+| 6 | `test_compile_live_model_does_not_emit_execution_concurrency_key_when_compilation_fails` and the exact unchanged caller eligibility gate passed. |
+| 7 | The exact caller DAG test pins `run-live-attempt` as a `uses`-only whole-Attempt job. |
+| 8 | The exact caller DAG test pins YAML Boolean `cancel-in-progress: false`. |
+| 9 | Exact literal document/digest and real CLI key scenarios passed. |
+| 10 | `test_compile_live_model_emits_canonical_buddy_execution_concurrency_key` passed. |
+| 11 | The exact caller DAG test pins the producer, both forwarding hops, final group, and shell negatives. |
+| 12 | The bounded touched-file inventory and diff contain no added ledger, lock, tag, service, credential, destination lock, or general abstraction. |
+| 13 | The 312-test four-file regression, live-disabled contract, actionlint, Ruff, and compile checks passed; the reusable workflow stayed untouched. |
+| 14 | All 5 added tests and the 1 strengthened workflow scenario passed; canonical helper/source files stayed untouched. |
+| 15 | The recorded research/plan/status prefixes and historical research hash are checked below; only this uniquely delimited status append was added in Phase 4. |
+
+### Exclusions and blockers
+
+- Intentionally not run: full package, package build/mutation, full HK,
+  harness-wide discovery, acceptance probes, live workflows/publication,
+  sentinel finalization, coverage, installs, Pyrefly outside the exact
+  user-selected Phase 4 command set, commit, push, or PR operations.
+- Local blockers: none.
+- Evidence boundary: GitHub-hosted same-group pending replacement
+  timing/order/fairness cannot be proven locally.
+
+### Terminal append-only and diff outcomes
+
+| Command | Result |
+|---|---|
+| `python -c 'from pathlib import Path; prefix=Path("/tmp/wdv3-buddy-concurrency-implementation-research-prefix.md").read_bytes(); current=Path(".testagent/research.md").read_bytes(); assert current.startswith(prefix), "research.md prefix changed"'` | Exit 0; the complete pre-Phase-4 research capture remains a byte-identical prefix. Captured SHA-256: `e68b42e6551f1958b98fb189cdb6af811b55ec4c934eea839764f306007043f7`. |
+| `python -c 'from pathlib import Path; prefix=Path("/tmp/wdv3-buddy-concurrency-implementation-plan-prefix.md").read_bytes(); current=Path(".testagent/plan.md").read_bytes(); assert current.startswith(prefix), "plan.md prefix changed"'` | Exit 0; the complete pre-Phase-4 plan capture remains a byte-identical prefix. Captured SHA-256: `5a0a5c9d040ef0ce581605473bcfb20d54c3889c6bfbd131a0367b8a4f9a555f`. |
+| `python -c 'from pathlib import Path; prefix=Path("/tmp/wdv3-buddy-concurrency-implementation-status-prefix.md").read_bytes(); current=Path(".testagent/status.md").read_bytes(); assert current.startswith(prefix), "status.md prefix changed"'` | Exit 0; the complete pre-Phase-4 status capture remains a byte-identical prefix. Captured SHA-256: `0d372b2a9640aa7a79e798f027e93c196313c1dec927086f2bcfba0fc84ad9a3`. |
+| `python -c 'from pathlib import Path; import hashlib; prefix=Path(".testagent/research.md").read_bytes()[:247073]; assert len(prefix)==247073 and hashlib.sha256(prefix).hexdigest()=="64ab82657e5865817d91df5db3b3f5be6899f4aa05fe7496b9b5ef83cab7e5c2"'` | Exit 0; the recorded 247,073-byte historical research prefix hash remains exact. |
+| `python -c 'from pathlib import Path; prefix=Path("/tmp/wdv3-buddy-concurrency-research-prefix.md").read_bytes(); current=Path(".testagent/research.md").read_bytes(); assert current.startswith(prefix), "research.md prefix changed"'` | Exit 0; the research-phase capture is also an exact current prefix. Its SHA-256 equals the implementation capture: `e68b42e6551f1958b98fb189cdb6af811b55ec4c934eea839764f306007043f7`. |
+| `python -c 'from pathlib import Path; import subprocess; paths=(".testagent/research.md",".testagent/plan.md",".testagent/status.md"); assert all(Path(path).read_bytes().startswith(subprocess.check_output(("git","show",f"HEAD:{path}"))) for path in paths)'` | Exit 0; all three artifacts retain their exact recorded `HEAD` bytes as a prefix. |
+| `git --no-pager diff --check -- .github/workflows/workflow-delivery-v3-buddy-smoke.yml src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/release/identity.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/records/release.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/canonical.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py src/public/lib/three-workflow-delivery-v3/tests/test_canonical.py .testagent/research.md .testagent/plan.md .testagent/status.md` | Exit 0 with no output; the complete bounded diff has no whitespace errors. |
+
+No test-gap-analysis, assertion-quality, full-package, full-HK, acceptance,
+live, publication, coverage, install, package mutation, or repository
+publication operation was performed.
+
+<!-- END APPEND: 2026-08-19T203357Z-wdv3-buddy-concurrency-phase-4-status -->
+
+<!-- BEGIN APPEND: 2026-08-19T203803Z-wdv3-buddy-step-7-8-pseudo-mutation-gap-repair-status -->
+
+## Step 7/8 pseudo-mutation gap repair
+
+PHASE: Step 7/8 bounded follow-up
+STATUS: SUCCESS
+TESTS_CREATED: 1
+TESTS_PASSING: 81 in the full touched `test_cli.py`
+BLOCKER: None
+
+### Exact changed files
+
+- `src/public/lib/three-workflow-delivery-v3/tests/test_cli.py`
+- `.testagent/status.md` (this append only)
+
+No production, workflow, other test, package, manifest, or lock file was
+changed.
+
+### Survived mutation and repair evidence
+
+The prior real CLI integration scenario used only target `"a" * 40`.
+Consequently, a mutation replacing
+`derive_buddy_execution_identity(intent)` in the real
+`compile-live-model` producer with a constant identity/key for that single
+fixture could survive even though helper-level different-target coverage
+passed.
+
+The new exact scenario
+`test_compile_live_model_execution_concurrency_key_changes_with_target` runs
+the real CLI twice in isolated temporary subdirectories for immutable targets
+`"a" * 40` and `"b" * 40`. It pins the unprefixed keys to:
+
+- `a71c896702fc7f6869d6dc6714840eba7393c9e98eaf820d3254299d664534a6`;
+- `9eeac4fd6533b5afb39ebb70ed223833578e268b6d9b0bd46111687465778bd6`.
+
+It also asserts key inequality, both zero results, both model and GitHub-output
+files, exact Repository Model digest output lines, exact Snapshot context and
+NBGV target SHAs, and empty stdout/stderr. Fixed expected values are used; the
+test does not call or reproduce the production identity derivation. The
+existing success and failure scenarios remain intact, while their shared
+runner now accepts an explicit target with the original `"a" * 40` default.
+
+Pseudo-mutation review now classifies the constant-identity/key substitution as
+killed: either constant value necessarily disagrees with one of the two fixed
+CLI output literals. Prefix insertion, target omission, output omission or
+reordering, failed result, wrong compiled target, and missing output creation
+are independently killed by exact assertions. No in-scope mutation remains.
+
+Assertion-quality review found 13 runtime assertions in the new two-target
+scenario, spanning exact/deep equality, negative inequality, file side
+effects, result state, compiled target structure, and stdout/stderr absence.
+There are no assertion-free, trivial-only, tautological, skipped, xfailed, or
+timing-dependent checks. `test-analysis-extensions` was unavailable, so the
+already-loaded Python/pytest guidance was applied directly.
+
+### Exact commands and results
+
+| Command | Result |
+|---|---|
+| `cp .testagent/status.md /tmp/wdv3-buddy-pseudo-mutation-status-prefix-20260819T203803Z.md && python -c 'from pathlib import Path; import hashlib; data=Path(".testagent/status.md").read_bytes(); print(len(data), hashlib.sha256(data).hexdigest())'` | Exit 0; captured the complete pre-repair status prefix: 505824 bytes, SHA-256 `066856c5f0ed1df449ca2de40cf3e729ed96bff22f58e172b2bccf6c13aa33f5`. |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/test_cli.py::test_compile_live_model_execution_concurrency_key_changes_with_target` | Exit 0; `1 passed in 0.63s`. |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/test_cli.py::test_compile_live_model_emits_canonical_buddy_execution_concurrency_key src/public/lib/three-workflow-delivery-v3/tests/test_cli.py::test_compile_live_model_does_not_emit_execution_concurrency_key_when_compilation_fails src/public/lib/three-workflow-delivery-v3/tests/test_cli.py::test_compile_live_model_execution_concurrency_key_changes_with_target` | Exit 0; `3 passed in 1.09s`. |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/test_cli.py` | Exit 0; `81 passed in 7.82s`. |
+| `uv run --python 3.13 --package three-workflow-delivery-v3 python -m py_compile src/public/lib/three-workflow-delivery-v3/tests/test_cli.py` | Exit 0; no output. |
+| `uv run --python 3.13 ruff check --force-exclude -- src/public/lib/three-workflow-delivery-v3/tests/test_cli.py` | Exit 0; `All checks passed!`. |
+| `uv run --python 3.13 ruff format --check --force-exclude -- src/public/lib/three-workflow-delivery-v3/tests/test_cli.py` | Initial exit 1; the new test needed formatting: `1 file would be reformatted`. |
+| `uv run --python 3.13 ruff format --force-exclude -- src/public/lib/three-workflow-delivery-v3/tests/test_cli.py` | Exit 0; formatted only the touched test file. |
+| `uv run --python 3.13 ruff check --force-exclude -- src/public/lib/three-workflow-delivery-v3/tests/test_cli.py && uv run --python 3.13 ruff format --check --force-exclude -- src/public/lib/three-workflow-delivery-v3/tests/test_cli.py` | Exit 0; `All checks passed!` and `1 file already formatted`. |
+| `git --no-pager diff --check -- src/public/lib/three-workflow-delivery-v3/tests/test_cli.py .testagent/status.md` | Pre-append exit 0; no output. |
+
+No full package, package build, HK, actionlint, acceptance, live probe,
+network, timing, install, package mutation, or VCS mutation command was run.
+
+### Terminal append-prefix integrity
+
+| Command | Result |
+|---|---|
+| `python -c 'from pathlib import Path; import hashlib; prefix=Path("/tmp/wdv3-buddy-pseudo-mutation-status-prefix-20260819T203803Z.md").read_bytes(); current=Path(".testagent/status.md").read_bytes(); assert current.startswith(prefix), "status.md prefix changed"; print(len(prefix), hashlib.sha256(prefix).hexdigest(), len(current))'` | Exit 0; the exact 505824-byte captured prefix remains unchanged with SHA-256 `066856c5f0ed1df449ca2de40cf3e729ed96bff22f58e172b2bccf6c13aa33f5`; current length at this check was 511046 bytes. |
+| `git --no-pager diff --check -- src/public/lib/three-workflow-delivery-v3/tests/test_cli.py .testagent/status.md` | Exit 0 after the main status append; no output. |
+| `git --no-pager status --short -- src/public/lib/three-workflow-delivery-v3/tests/test_cli.py .testagent/status.md` | Exit 0; exactly the two authorized bounded paths are modified. |
+
+<!-- END APPEND: 2026-08-19T203803Z-wdv3-buddy-step-7-8-pseudo-mutation-gap-repair-status -->
+
+<!-- BEGIN APPEND: 2026-08-19T204500Z-wdv3-buddy-final-test-review-status -->
+
+## Final bounded test-gap and assertion-quality review
+
+STATUS: SUCCESS
+SCOPE: Six added scenarios and one strengthened workflow contract
+BLOCKERS: None locally
+
+The `test-analysis-extensions` skill entry point was unavailable. Its checked-in
+Python/pytest base extension was read directly before classification.
+
+### Pseudo-mutation result
+
+The first bounded review found one true positive: the real CLI path had only
+one target fixture, so a constant key matching that fixture could survive.
+`test_compile_live_model_execution_concurrency_key_changes_with_target` repaired
+the gap with two real CLI compilations and fixed expected digests.
+
+The final review found no remaining in-scope survived mutation or no-coverage
+zone. The final tests kill removal/renaming of the GitHub output, a retained
+`sha256:` prefix, constant or target-insensitive keys, inclusion of request/run
+facts, output before failed compilation, caller-side shell recomputation,
+incorrect forwarding hops, a changed group prefix/source, cancellation of the
+running Attempt, and movement of concurrency away from `run-live-attempt`.
+
+### Assertion-quality result
+
+- Assertion-free tests: 0.
+- Trivial-only tests: 0.
+- Tautological/self-referential tests: 0.
+- Skipped/xfail tests: 0.
+- Meaningful categories present: exact/deep equality, Boolean state, strings,
+  collections, negative assertions, file/output side effects, and structural
+  document checks.
+- The tests pin concrete canonical documents and SHA-256 values and also verify
+  secondary observables: Repository Model content, Provider non-rerun,
+  output-file presence/absence, diagnostics, DAG ownership, eligibility order,
+  and `cancel-in-progress: false`.
+
+### Prompt-scenario coverage
+
+Every requested scenario maps to an exact test: same-target request/run
+variation, different targets, canonical identity exclusions, real successful
+and failed CLI output, target-sensitive real CLI output, exact workflow
+forwarding/no shell key, caller-held reusable-job concurrency, and preserved
+live-disabled behavior. Hosted GitHub pending-run replacement timing/fairness
+is intentionally not claimed beyond documented same-group coalescing semantics.
+
+### Final validation
+
+| Command | Result |
+|---|---|
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/test_cli.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py src/public/lib/three-workflow-delivery-v3/tests/test_canonical.py` | Exit 0; `313 passed in 25.11s`. |
+| `uv run --python 3.13 ruff check --force-exclude -- src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py` | Exit 0; all checks passed. |
+| `uv run --python 3.13 ruff format --check --force-exclude -- src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py` | Exit 0; four files already formatted. |
+| `python eng/scripts/hk_actionlint.py .github/workflows/workflow-delivery-v3-buddy-smoke.yml` | Exit 0; `1/1` workflow passed. |
+| `git --no-pager diff --check` | Exit 0; no output. |
+
+The exact 512,058-byte pre-review `.testagent/status.md` content had SHA-256
+`748cb1f2b77eb3eaf5446e12f3e80e121978d2448668d455662832bd61c12439`
+and is retained as the prefix of this append.
+
+No full package/HK, acceptance probe, live publication, sentinel finalization,
+package mutation, commit, push, or PR operation was performed.
+
+<!-- END APPEND: 2026-08-19T204500Z-wdv3-buddy-final-test-review-status -->
+
+<!-- BEGIN APPEND: 2026-08-19-wdv3-buddy-concurrency-review-corrections -->
+
+## Buddy concurrency review adjudication corrections
+
+PHASE: Post-implementation review adjudication
+STATUS: SUCCESS
+TESTS_PASSING: 313 in the bounded concurrency regression
+BLOCKER: None
+
+### Evidence clarification
+
+The earlier Phase 3 phrase "absence of request-ID forwarding" was imprecise.
+Request ID remains intentionally transported through the caller jobs and into
+the reusable live Attempt as required current-Attempt identity. The repair
+removes request ID only from caller-side Release Execution concurrency-key
+derivation and shell computation.
+
+### Test-scope correction
+
+Independent review correctly identified two groups of unrelated assertions:
+
+- exact request-ID hashes and exact actor/ref/run tuples in the same-target
+  concurrency scenario; and
+- full NBGV and destination-projection serialization in the successful
+  `compile-live-model` concurrency-output scenario.
+
+The same-target scenario now proves only that every intentionally excluded
+request fact is distinct while all canonical Buddy Execution identities and
+groups remain equal. The real CLI scenario still proves successful admitted
+compilation and exact concurrency output without pinning unrelated Repository
+Model contracts that have dedicated coverage elsewhere.
+
+### Independent finding disposition
+
+- Request-ID evidence wording: true positive; corrected by this append.
+- Unrelated test over-pinning: true positive; corrected in the two affected
+  tests.
+- Immediate README/handoff update: false positive at the uncommitted review
+  stage. Documentation must advance after the repair is review-clean and
+  committed.
+- Additional workflow regex validation against arbitrary same-revision shell
+  corruption: false positive. The trusted CLI is the sole producer, canonical
+  SHA-256 emits exactly 64 lowercase hexadecimal characters, and real CLI
+  success, target sensitivity, and failure ordering are already covered.
+
+### Validation
+
+| Command | Result |
+|---|---|
+| `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/test_cli.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py src/public/lib/three-workflow-delivery-v3/tests/test_canonical.py` | Exit 0; `313 passed in 25.30s`. |
+| `uv run --python 3.13 ruff check --force-exclude -- <four touched Python files>` | Exit 0; all checks passed. |
+| `uv run --python 3.13 ruff format --check --force-exclude -- <four touched Python files>` | Exit 0; four files already formatted. |
+| `git --no-pager diff --check` | Exit 0; no output. |
+
+No production behavior changed during review repair. No acceptance probe, live
+publication, sentinel finalization, package mutation, commit, push, or PR
+operation was performed.
+
+<!-- END APPEND: 2026-08-19-wdv3-buddy-concurrency-review-corrections -->

@@ -898,3 +898,184 @@ def test_platform_termination_maps_by_capability_phase(
     assert outcome.result == result
     assert outcome.next_action == next_action
     assert outcome.possibly_mutated is capability_started
+
+
+def test_buddy_execution_identity_document_and_concurrency_key_are_exact() -> (
+    None
+):
+    intent = normalize_buddy_live_intent(
+        repository="hcoona/three",
+        selected_ref="refs/heads/feature",
+        target=TARGET,
+        actor="reviewed-actor",
+        workflow_run_id=101,
+        run_attempt=2,
+    )
+    document = derive_buddy_execution_identity(intent).to_document()
+    expected_document = {
+        "schema": "workflow-delivery/v3/buddy-execution-identity",
+        "channel": "buddy",
+        "release-unit": "hcoona-release-smoke-npm",
+        "target": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    }
+    excluded_members = {
+        "canonical-version",
+        "native-version",
+        "version",
+        "external-package-coordinate",
+        "package-coordinate",
+        "destination-adapter",
+        "destination-projection",
+        "request",
+        "request-id",
+        "workflow-run-id",
+        "run-attempt",
+    }
+
+    assert document == expected_document
+    assert set(document).isdisjoint(excluded_members)
+    digest = canonical_sha256(document)
+    assert (
+        digest == "sha256:a71c896702fc7f6869d6dc6714840eba7393c9e98eaf820d"
+        "3254299d664534a6"
+    )
+    assert (
+        digest.removeprefix("sha256:")
+        == "a71c896702fc7f6869d6dc6714840eba7393c9e98eaf820d3254299d664534a6"
+    )
+
+
+def test_three_same_target_dispatches_share_one_caller_group_for_github_coalescing() -> (  # noqa: E501
+    None
+):
+    intents = (
+        normalize_buddy_live_intent(
+            repository="hcoona/three",
+            selected_ref="refs/heads/feature/one",
+            target=TARGET,
+            actor="actor-one",
+            workflow_run_id=201,
+            run_attempt=1,
+        ),
+        normalize_buddy_live_intent(
+            repository="hcoona/three",
+            selected_ref="refs/tags/release-candidate",
+            target=TARGET,
+            actor="actor-two",
+            workflow_run_id=202,
+            run_attempt=2,
+        ),
+        normalize_buddy_live_intent(
+            repository="hcoona/three",
+            selected_ref="refs/heads/hotfix/concurrency",
+            target=TARGET,
+            actor="actor-three",
+            workflow_run_id=203,
+            run_attempt=7,
+        ),
+    )
+    expected_document = {
+        "schema": "workflow-delivery/v3/buddy-execution-identity",
+        "channel": "buddy",
+        "release-unit": "hcoona-release-smoke-npm",
+        "target": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    }
+
+    documents = tuple(
+        derive_buddy_execution_identity(intent).to_document()
+        for intent in intents
+    )
+    digests = tuple(canonical_sha256(document) for document in documents)
+    keys = tuple(digest.removeprefix("sha256:") for digest in digests)
+    groups = tuple(f"wdv3-execution-{key}" for key in keys)
+
+    for field in (
+        "request_id",
+        "workflow_run_id",
+        "run_attempt",
+        "selected_ref",
+        "actor",
+    ):
+        values = {getattr(intent, field) for intent in intents}
+        assert len(values) == len(intents)
+    assert documents == (expected_document,) * 3
+    assert (
+        digests
+        == (
+            "sha256:a71c896702fc7f6869d6dc6714840eba7393c9e98eaf820d"
+            "3254299d664534a6",
+        )
+        * 3
+    )
+    assert (
+        groups
+        == (
+            "wdv3-execution-"
+            "a71c896702fc7f6869d6dc6714840eba7393c9e98eaf820d3254299d664534a6",
+        )
+        * 3
+    )
+    # Equality proves only eligibility for GitHub's documented same-group
+    # coalescing; it does not model scheduler ordering or fairness.
+    assert len(set(groups)) == 1
+
+
+def test_different_buddy_targets_derive_different_execution_concurrency_keys() -> (  # noqa: E501
+    None
+):
+    intents = tuple(
+        normalize_buddy_live_intent(
+            repository="hcoona/three",
+            selected_ref="refs/heads/feature",
+            target=target,
+            actor="reviewed-actor",
+            workflow_run_id=301,
+            run_attempt=1,
+        )
+        for target in (TARGET, "b" * 40)
+    )
+    documents = tuple(
+        derive_buddy_execution_identity(intent).to_document()
+        for intent in intents
+    )
+    digests = tuple(canonical_sha256(document) for document in documents)
+    keys = tuple(digest.removeprefix("sha256:") for digest in digests)
+    groups = tuple(f"wdv3-execution-{key}" for key in keys)
+
+    assert documents == (
+        {
+            "schema": "workflow-delivery/v3/buddy-execution-identity",
+            "channel": "buddy",
+            "release-unit": "hcoona-release-smoke-npm",
+            "target": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        },
+        {
+            "schema": "workflow-delivery/v3/buddy-execution-identity",
+            "channel": "buddy",
+            "release-unit": "hcoona-release-smoke-npm",
+            "target": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        },
+    )
+    assert digests == (
+        "sha256:a71c896702fc7f6869d6dc6714840eba7393c9e98eaf820d"
+        "3254299d664534a6",
+        "sha256:9eeac4fd6533b5afb39ebb70ed223833578e268b6d9b0bd4"
+        "6111687465778bd6",
+    )
+    assert keys == (
+        "a71c896702fc7f6869d6dc6714840eba7393c9e98eaf820d3254299d664534a6",
+        "9eeac4fd6533b5afb39ebb70ed223833578e268b6d9b0bd46111687465778bd6",
+    )
+    assert groups == (
+        "wdv3-execution-"
+        "a71c896702fc7f6869d6dc6714840eba7393c9e98eaf820d3254299d664534a6",
+        "wdv3-execution-"
+        "9eeac4fd6533b5afb39ebb70ed223833578e268b6d9b0bd46111687465778bd6",
+    )
+    assert {document["target"] for document in documents} == {
+        "a" * 40,
+        "b" * 40,
+    }
+    assert len(set(digests)) == len(intents)
+    assert len(set(keys)) == len(intents)
+    assert len(set(groups)) == len(intents)

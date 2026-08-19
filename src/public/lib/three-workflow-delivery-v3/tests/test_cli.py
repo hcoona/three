@@ -2673,3 +2673,243 @@ def test_load_mutation_marker_rejects_malformed_artifact_transport(
             publication=publication,
             preflight=preflight,
         )
+
+
+def _run_compile_live_model_scenario(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    target: str = "a" * 40,
+    malformed_authoring: str | None = None,
+) -> tuple[int, Path, Path]:
+    repo, actual_target = _target_authoring_repo(
+        tmp_path,
+        malformed_authoring=malformed_authoring,
+    )
+    # Keep the Phase 1 target literal while Git reads the real fixture commit.
+    _write(
+        repo / ".git/refs/replace" / target,
+        f"{actual_target}\n",
+    )
+    intent = cli_module.normalize_buddy_live_intent(
+        repository="hcoona/three",
+        selected_ref="refs/heads/feature/release",
+        target=target,
+        actor="release-operator",
+        workflow_run_id=WORKFLOW_RUN_ID,
+        run_attempt=RUN_ATTEMPT,
+    )
+    intent_path = _write_canonical(
+        tmp_path / "live-release-intent.json",
+        intent.to_document(),
+    )
+    context = CompilationContext(
+        request_id=intent.request_id,
+        purpose="live-release",
+        workflow_run_id=WORKFLOW_RUN_ID,
+        run_attempt=RUN_ATTEMPT,
+        target=target,
+        producer="compile-live-model",
+        control=f"workflow-delivery-v3:{target}",
+        catalog_digest=cli_module.catalog_digest(),
+    )
+    manifest = first_slice_provider_manifest(
+        context,
+        provider_producer="discover-node",
+    )
+    provider = _fake_provider_result(
+        provider_binding(manifest, "node-first-slice")
+    )
+    provider_document = provider.to_document()
+    provider_document["provider-request-manifest-digest"] = (
+        manifest.manifest_digest
+    )
+    provider_document["result-digest"] = provider.result_digest
+    provider_path = _write_canonical(
+        tmp_path / "live-provider-result.json",
+        provider_document,
+    )
+    model_output = tmp_path / "live-repository-model.json"
+    github_output = tmp_path / "github-output"
+
+    def reject_provider_rerun(*_arguments: object, **_keywords: object) -> None:
+        message = "Provider must not rerun during live compilation"
+        raise AssertionError(message)
+
+    monkeypatch.setattr(
+        cli_module,
+        "provide_node_repository_facts",
+        reject_provider_rerun,
+    )
+    result = cli_module.main(
+        [
+            "release",
+            "compile-live-model",
+            "--repo-root",
+            str(repo),
+            "--workflow-run-id",
+            str(WORKFLOW_RUN_ID),
+            "--run-attempt",
+            str(RUN_ATTEMPT),
+            "--target",
+            target,
+            "--intent",
+            str(intent_path),
+            "--intent-digest",
+            intent.intent_digest,
+            "--intent-artifact-id",
+            "101",
+            "--intent-artifact-digest",
+            f"sha256:{hashlib.sha256(intent_path.read_bytes()).hexdigest()}",
+            "--provider-result",
+            str(provider_path),
+            "--provider-artifact-id",
+            "102",
+            "--provider-artifact-digest",
+            f"sha256:{hashlib.sha256(provider_path.read_bytes()).hexdigest()}",
+            "--output",
+            str(model_output),
+            "--github-output",
+            str(github_output),
+        ]
+    )
+    return result, model_output, github_output
+
+
+def test_compile_live_model_emits_canonical_buddy_execution_concurrency_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Emit the canonical Buddy concurrency key after successful compilation."""
+    result, model_output, github_output = _run_compile_live_model_scenario(
+        tmp_path,
+        monkeypatch,
+    )
+    captured = capsys.readouterr()
+    model_document = cast(
+        "dict[str, JsonValue]",
+        json.loads(model_output.read_bytes()),
+    )
+    admitted = admit_repository_model_snapshot(
+        model_output.read_bytes(),
+        expected_context=CompilationContext(
+            request_id=cast(
+                "str",
+                model_document["context"]["request-id"],  # type: ignore[index]
+            ),
+            purpose="live-release",
+            workflow_run_id=WORKFLOW_RUN_ID,
+            run_attempt=RUN_ATTEMPT,
+            target="a" * 40,
+            producer="compile-live-model",
+            control=f"workflow-delivery-v3:{'a' * 40}",
+            catalog_digest=cli_module.catalog_digest(),
+        ),
+        expected_digest=canonical_sha256(model_document),
+    )
+    output_lines = github_output.read_text(encoding="utf-8").splitlines()
+
+    assert result == 0
+    assert captured.out == ""
+    assert captured.err == ""
+    assert admitted.snapshot.ready is True
+    assert output_lines == [
+        f"repository-model-digest={admitted.canonical_digest}",
+        (
+            "repository-model-digest-hex="
+            f"{admitted.canonical_digest.removeprefix('sha256:')}"
+        ),
+        (
+            "execution-concurrency-key="
+            "a71c896702fc7f6869d6dc6714840eba7393c9e98eaf820d"
+            "3254299d664534a6"
+        ),
+    ]
+    assert "sha256:" not in output_lines[2]
+
+
+def test_compile_live_model_does_not_emit_execution_concurrency_key_when_compilation_fails(  # noqa: E501
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Do not emit a concurrency key when compilation fails."""
+    result, model_output, github_output = _run_compile_live_model_scenario(
+        tmp_path,
+        monkeypatch,
+        malformed_authoring="quality",
+    )
+    captured = capsys.readouterr()
+
+    assert result == 1
+    assert captured.out == ""
+    assert "malformed YAML authoring" in captured.err
+    assert not model_output.exists()
+    assert not github_output.exists()
+
+
+def test_compile_live_model_execution_concurrency_key_changes_with_target(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Derive distinct canonical execution keys through the real CLI path."""
+    targets = ("a" * 40, "b" * 40)
+    expected_keys = (
+        "a71c896702fc7f6869d6dc6714840eba7393c9e98eaf820d3254299d664534a6",
+        "9eeac4fd6533b5afb39ebb70ed223833578e268b6d9b0bd46111687465778bd6",
+    )
+    results: list[int] = []
+    model_documents: list[dict[str, JsonValue]] = []
+    output_lines_by_target: list[list[str]] = []
+
+    for index, target in enumerate(targets):
+        scenario_root = tmp_path / f"target-{index}"
+        scenario_root.mkdir()
+        result, model_output, github_output = _run_compile_live_model_scenario(
+            scenario_root,
+            monkeypatch,
+            target=target,
+        )
+
+        assert model_output.is_file()
+        assert github_output.is_file()
+        model_document = cast(
+            "dict[str, JsonValue]",
+            json.loads(model_output.read_bytes()),
+        )
+        model_digest = canonical_sha256(model_document)
+        output_lines = github_output.read_text(encoding="utf-8").splitlines()
+
+        results.append(result)
+        model_documents.append(model_document)
+        output_lines_by_target.append(output_lines)
+        assert output_lines == [
+            f"repository-model-digest={model_digest}",
+            (
+                "repository-model-digest-hex="
+                f"{model_digest.removeprefix('sha256:')}"
+            ),
+            f"execution-concurrency-key={expected_keys[index]}",
+        ]
+
+    captured = capsys.readouterr()
+    actual_keys = tuple(
+        output_lines[2].removeprefix("execution-concurrency-key=")
+        for output_lines in output_lines_by_target
+    )
+
+    assert results == [0, 0]
+    assert actual_keys == expected_keys
+    assert actual_keys[0] != actual_keys[1]
+    assert [
+        model_document["context"]["target"]  # type: ignore[index]
+        for model_document in model_documents
+    ] == list(targets)
+    assert [
+        model_document["nbgv"]["canonical"]["gitCommitId"]  # type: ignore[index]
+        for model_document in model_documents
+    ] == list(targets)
+    assert captured.out == ""
+    assert captured.err == ""

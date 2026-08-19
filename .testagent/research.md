@@ -4141,3 +4141,247 @@ The current helper already executes the exact YAML shell with a recording CLI
 boundary double; it only needs to expose the two generated summary paths.
 
 <!-- END APPEND: 2026-08-19-wdv3-final-rereview-two-test-gaps-research -->
+
+<!-- BEGIN APPEND: 2026-08-19T20:01:25Z-wdv3-buddy-caller-held-release-execution-concurrency-repair-research -->
+
+## Workflow Delivery v3 Buddy caller-held Release Execution concurrency repair research (2026-08-19T20:01:25Z)
+
+### Project overview and bounded authority
+
+- **Workspace**: `/workspace/three-workspaces/design-workflows`
+- **Boundary**: only
+  `.github/workflows/workflow-delivery-v3-buddy-smoke.yml`, the real
+  `compile-live-model` CLI path, the existing Buddy identity/canonical digest
+  helpers that path must use, their canonical tests, and directly relevant
+  Buddy workflow/business-scenario tests.
+- **Language/framework**: Python 3.13 in a UV workspace, Hatchling package
+  `three-workflow-delivery-v3`, pytest 8 with
+  `--import-mode=importlib`, PyYAML workflow contract tests, RFC 8785
+  canonical JSON, and GitHub Actions YAML.
+- **Instructions read first**: root `AGENTS.md`, `docs/AGENTS.md`, the complete
+  applicable v3 handoff context, `requirements.md` for WD-REL-001 and
+  WD-CON-002/003/006, HLD **Concurrency Design**, Release MLD request-local
+  compilation/identity/duplicate-request/coalescing sections and scenarios,
+  the smoke LLD caller DAG/concurrency section, and
+  `.agents/skills/code-testing-agent/unit-test-generation.prompt.md`.
+  No `AGENTS.local.md` exists in the workspace.
+- The parent-reported `code-testing-extensions` skill is unavailable. The
+  checked-in base Python extension at
+  `.agents/skills/code-testing-extensions/extensions/python.md` exists and was
+  read directly; no language example was read.
+- This is research only. Production, workflows, tests, package manifests,
+  locks, `.testagent/plan.md`, and `.testagent/status.md` were not changed.
+
+### Confirmed requirement checklist
+
+Keep these as separate implementation/evidence items:
+
+1. [ ] Buddy Release Execution Identity is exactly channel `buddy`, Release
+   Unit `hcoona-release-smoke-npm`, and immutable 40-lowercase-hex target SHA.
+2. [ ] For three same-identity dispatches, model GitHub's documented
+   one-running/one-pending behavior: the first may run, the second is pending,
+   and a later same-group dispatch replaces the pending one without canceling
+   the running one. Do not claim ordering/fairness beyond GitHub's documented
+   concurrency behavior.
+3. [ ] Only dispatches that survive caller coalescing and reach reusable
+   admission create Attempts. The replaced pending caller never invokes the
+   reusable workflow and creates no Attempt; each surviving admitted request
+   creates its own Attempt in the same Execution.
+4. [ ] Different immutable target SHAs derive different Execution identities
+   and deterministic groups.
+5. [ ] Request ID, workflow run ID, run attempt, canonical/native version,
+   External Package Coordinate, Destination Adapter, and destination
+   projection cannot enter or alter the Execution concurrency key.
+6. [ ] Request normalization, request-local Repository Model compilation, and
+   live eligibility remain before caller concurrency. Compilation or
+   eligibility failure remains pre-Attempt.
+7. [ ] `run-live-attempt`, the `uses`-only caller job, owns the concurrency
+   group while the same-revision reusable Attempt runs from admission through
+   finalization.
+8. [ ] `cancel-in-progress` remains exactly `false`.
+9. [ ] Derive the key as
+   `canonical_sha256(derive_buddy_execution_identity(intent).to_document())`
+   with only the leading `sha256:` removed. Use the repository's existing
+   helpers; add no hash/key abstraction.
+10. [ ] A successful real `release compile-live-model --github-output ...`
+    invocation emits the 64-lowercase-hex `execution-concurrency-key` in
+    addition to existing Repository Model outputs.
+11. [ ] Remove the request-specific shell hash from the caller. Forward only
+    the CLI output through `compile-model` ->
+    `evaluate-live-eligibility` -> `run-live-attempt`, whose group remains
+    `wdv3-execution-${{ ...execution-concurrency-key }}`.
+12. [ ] Add no ledger, application lock, tag witness, service, credential,
+    destination lock, or generalized abstraction.
+13. [ ] Preserve the current live-disabled gate, permissions, action pins,
+    artifact transport, DAG, reusable workflow behavior, and every unrelated
+    behavior/test.
+14. [ ] Tests are scenario-first and mutation-sensitive: exact same-target
+    equality, different-target inequality, exact identity document/hash,
+    successful real CLI output, exact workflow producer/forwarding chain,
+    absence of the shell/request hash, and whole-reusable-job concurrency.
+15. [ ] Later Plan/Implement phases append uniquely delimited sections to
+    `.testagent/plan.md` and `.testagent/status.md`. Status must map each item
+    above to named tests/files and record exact command results, discovery,
+    lint/format/actionlint, append-prefix, and diff evidence. Do not rewrite
+    prior report content.
+
+GitHub concurrency is a best-effort equality-group execution mechanism, not a
+distributed correctness lock. Local tests can pin identity/group derivation and
+caller topology; they cannot emulate or strengthen GitHub's hosted scheduling
+contract.
+
+### Bounded target inventory
+
+| Priority | Path / symbol | Testability | Current classification | Relevant dependency/observation |
+|---|---|---:|---|---|
+| High | `.github/workflows/workflow-delivery-v3-buddy-smoke.yml` (`compile-model`, `evaluate-live-eligibility`, `run-live-attempt`) | High | Partial | The DAG and `cancel-in-progress: false` are tested, but the exact key producer and forwarding chain are not. The compile shell currently hashes `request-id:GITHUB_SHA:buddy`, so same-target manual requests receive different groups. |
+| High | `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py::_release_compile_live_model_command` | High | Untested directly | Successful compilation currently records only Repository Model digest outputs. It already imports `derive_buddy_execution_identity` and `canonical_sha256`. |
+| High | `src/public/lib/three-workflow-delivery-v3/tests/test_cli.py` | High | Missing live-compile key scenario | The adjacent simulation compile test supplies the canonical temp-repository/provider pattern and proves the Provider is not rerun. |
+| High | `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py::test_buddy_caller_dag_concurrency_and_reusable_boundary_are_exact` | High | Partial | Parses the real caller YAML and already pins the five-job DAG, reusable `uses` job, group prefix, and no cancellation. Strengthen exact expressions and negative shell assertions. |
+| Medium | `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/release/identity.py::derive_buddy_execution_identity` | High | Partial | Strictly validates the normalized first-slice live Intent and returns only channel, Release Unit, and target. |
+| Medium | `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/records/release.py::BuddyExecutionIdentity` / `to_document` | High | Partial | Frozen/slotted ordered value object; `to_document()` emits the canonical schema plus only `channel`, `release-unit`, and `target`. |
+| Medium | `src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py::test_buddy_request_normalization_and_execution_derivation_are_strict` | High | Partial | Existing direct Buddy derivation scenario; suitable for same-target/different-target and excluded-input identity assertions. |
+| Low / dependency only | `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/canonical.py::canonical_sha256` | High | Substantial | Existing canonical RFC 8785 SHA-256 implementation returns `sha256:<64 lowercase hex>`; no production change is indicated. |
+| Low / preserve | `src/public/lib/three-workflow-delivery-v3/tests/test_canonical.py` | High | Substantial | Golden digest, insertion-order stability, prefix, and lowercase shape are already pinned. |
+
+The reusable workflow
+`.github/workflows/workflow-delivery-v3-live-attempt.yml` is read-only topology
+context: the caller's `uses` job spans its complete execution. No callee change
+is required or in scope.
+
+### Dependency graph for targets only
+
+- **Leaf mechanisms**:
+  `canonical.py::canonical_sha256`; and
+  `records/release.py::BuddyExecutionIdentity.to_document` plus its existing
+  exact-value validation.
+- **Mid layer**:
+  `release/identity.py::derive_buddy_execution_identity(ReleaseIntent)`.
+- **Top layer**:
+  `cli.py::_release_compile_live_model_command`, which has the admitted
+  normalized Intent and successful compiled Snapshot; then caller workflow
+  output forwarding and the `run-live-attempt` concurrency group.
+- No mock is needed for leaf identity/hash behavior. The CLI test should reuse
+  existing canonical local fixtures and monkeypatch only the already
+  established Provider-rerun boundary; workflow tests statically parse the
+  authoritative YAML and make no external call.
+
+### Canonical source-to-test pairing
+
+| Source | Direct canonical test pair | Evidence/gap |
+|---|---|---|
+| `.github/workflows/workflow-delivery-v3-buddy-smoke.yml` | `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py` | Partial parsed-YAML contract; exact key source and three-hop forwarding are missing. |
+| `.../three_workflow_delivery_v3/cli.py::_release_compile_live_model_command` | `src/public/lib/three-workflow-delivery-v3/tests/test_cli.py` | No direct `compile-live-model` success/output test; only the analogous simulation compiler is covered. |
+| `.../release/identity.py::derive_buddy_execution_identity` and `.../records/release.py::BuddyExecutionIdentity` | `src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py` | One strict normalized-Intent derivation test; key invariance and target separation are missing. |
+| `.../canonical.py::canonical_sha256` | `src/public/lib/three-workflow-delivery-v3/tests/test_canonical.py` | Substantial direct golden/shape/order coverage; reuse rather than duplicate. |
+
+The polyglot analyzer was run exactly once, at the narrowest package root, with
+`--include-tested`:
+
+```bash
+python /workspace/three-workspaces/design-workflows/.agents/skills/find-untested-sources/scripts/find_untested_sources.py \
+  /workspace/three-workspaces/design-workflows/src/public/lib/three-workflow-delivery-v3 \
+  --lang python --include-tested
+```
+
+Result: 38 Python source files, 41 test files, 36 heuristically paired sources,
+2 unpaired zero-declaration `__init__.py` files, and 0 orphan tests. All four
+Python source files above appeared in `tested_sources`; in particular,
+`identity.py` was paired to six files and `cli.py` to many broad integration
+references. **Do not rerun this analyzer in later phases.** Its result is a
+static parse/identifier heuristic, not line or branch coverage; broad
+identifier overlap materially overstates coverage of the specific
+`compile-live-model` handler.
+
+### Existing test conventions and recommended scenarios
+
+- Tests are module-level pytest scenarios with descriptive
+  `test_<behavior>` names, bare exact assertions, `tmp_path`,
+  `monkeypatch`, canonical bytes, and readable parameter IDs.
+- Workflow contracts load the real YAML with `yaml.safe_load` and use
+  `_document`, `_steps`, `_step`, `_run`, and exact whole-expression/mapping
+  assertions. Keep the existing test and strengthen it instead of adding a
+  string-only duplicate.
+- CLI behavior is exercised through `cli_module.main([...])`, real parser
+  dispatch, canonical temp files, and exact GitHub output file contents.
+- Recommended scenario evidence:
+  - strengthen
+    `test_buddy_caller_dag_concurrency_and_reusable_boundary_are_exact` to pin
+    the exact compile output, eligibility forwarding, final group expression,
+    absence of `printf`/`sha256sum`/request-specific key construction, and the
+    `uses`-only whole-Attempt boundary;
+  - add a direct CLI scenario such as
+    `test_compile_live_model_emits_canonical_buddy_execution_concurrency_key`;
+  - expand or pair the strict Buddy identity scenario with three same-target
+    Intents carrying different request/run/attempt/ref/actor facts and one
+    different target. Require exact same-target key equality, different-target
+    inequality, and the exact four-member canonical identity document
+    (`schema` plus the three identity fields). Version, coordinate, and
+    destination are structurally absent, not test-supplied key salts.
+- Do not invoke GitHub, dispatch a workflow, publish a package, probe
+  acceptance, alter Governance, or depend on timing.
+
+### Exact commands
+
+Run from the repository root. The static analyzer command above is historical
+evidence and must not be run a second time.
+
+- **Build**:
+  `uv build --package three-workflow-delivery-v3`
+- **Scoped fix-cycle tests**:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/test_cli.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py src/public/lib/three-workflow-delivery-v3/tests/test_canonical.py`
+- **Affected-package test gate**:
+  `GIT_LFS_SKIP_SMUDGE=1 python eng/scripts/hk_exec.py --timeout-seconds 720 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests`
+- **Harness-equivalent discovery from repository root, no test path**:
+  `uv run --python 3.13 pytest --collect-only -q`
+- **Pyrefly**:
+  `uv run --python 3.13 pyrefly check src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/release/identity.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/records/release.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/canonical.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py src/public/lib/three-workflow-delivery-v3/tests/test_canonical.py`
+- **Ruff lint**:
+  `uv run --python 3.13 ruff check --force-exclude -- src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/release/identity.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/records/release.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/canonical.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py src/public/lib/three-workflow-delivery-v3/tests/test_canonical.py`
+- **Ruff format check**:
+  `uv run --python 3.13 ruff format --check --force-exclude -- src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/release/identity.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/records/release.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/canonical.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py src/public/lib/three-workflow-delivery-v3/tests/test_canonical.py`
+- **Actionlint through the repository HK wrapper**:
+  `python eng/scripts/hk_actionlint.py .github/workflows/workflow-delivery-v3-buddy-smoke.yml`
+- **Capture the full research prefix before Plan/Implement append work**:
+  `cp .testagent/research.md /tmp/wdv3-buddy-concurrency-research-prefix.md`
+- **Validate that captured append-only prefix afterward**:
+  `python -c 'from pathlib import Path; prefix=Path("/tmp/wdv3-buddy-concurrency-research-prefix.md").read_bytes(); current=Path(".testagent/research.md").read_bytes(); assert current.startswith(prefix), "research.md prefix changed"'`
+- **Validate the pre-research prefix retained by this append**:
+  `python -c 'from pathlib import Path; import hashlib; prefix=Path(".testagent/research.md").read_bytes()[:247073]; assert len(prefix)==247073 and hashlib.sha256(prefix).hexdigest()=="64ab82657e5865817d91df5db3b3f5be6899f4aa05fe7496b9b5ef83cab7e5c2"'`
+- **Whitespace/diff check for the complete bounded run**:
+  `git --no-pager diff --check -- .github/workflows/workflow-delivery-v3-buddy-smoke.yml src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/release/identity.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/records/release.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/canonical.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py src/public/lib/three-workflow-delivery-v3/tests/test_canonical.py .testagent/research.md .testagent/plan.md .testagent/status.md`
+- **Review only the bounded diff**:
+  `git --no-pager diff -- .github/workflows/workflow-delivery-v3-buddy-smoke.yml src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/release/identity.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/records/release.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/canonical.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit8_contracts.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py src/public/lib/three-workflow-delivery-v3/tests/test_canonical.py .testagent/research.md .testagent/plan.md .testagent/status.md`
+
+### Existing dirty-worktree considerations
+
+- Both `git status --short --untracked-files=all` and porcelain-v2 status were
+  empty before this research append; there were no pre-existing dirty files to
+  preserve or attribute.
+- The only expected research-phase change is this tracked
+  `.testagent/research.md` EOF append. Any other dirty path in a later phase is
+  either that phase's bounded work or an external concurrent change; inspect
+  and preserve it. Never restore, reconstruct, clean, or delete tracked files.
+- Do not mutate `pyproject.toml`, `uv.lock`, package manifests, or lockfiles,
+  and do not install packages for this repair.
+
+### Risks and blockers
+
+- The checked-in Python extension was available, but the extension skill
+  itself remains unavailable; established pytest/YAML conventions supply the
+  needed guidance.
+- Static pairing reports `cli.py` as tested because many tests mention its
+  declarations. That does not cover this handler; a successful real
+  `compile-live-model --github-output` regression is mandatory.
+- GitHub's hosted queue replacement cannot be integration-tested locally.
+  Keep tests and status language to exact group equality, placement,
+  `cancel-in-progress: false`, and the documented at-most-one-running/
+  one-pending behavior; do not promise start order.
+- A YAML syntax pass cannot prove the business identity. The CLI and pure
+  identity scenarios must independently pin canonical bytes/hash inputs, while
+  the workflow contract pins transport and caller ownership.
+- The current downstream output forwarding is already mostly present; the
+  defect is the shell-generated request-specific value. Avoid unrelated DAG,
+  callee, eligibility, permission, or artifact changes.
+
+<!-- END APPEND: 2026-08-19T20:01:25Z-wdv3-buddy-caller-held-release-execution-concurrency-repair-research -->

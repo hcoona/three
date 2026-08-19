@@ -229,6 +229,55 @@ def test_buddy_caller_dag_concurrency_and_reusable_boundary_are_exact() -> None:
     assert invoke["concurrency"]["cancel-in-progress"] is False
     assert invoke["concurrency"]["group"].startswith("wdv3-execution-")
 
+    compile_model = jobs["compile-model"]
+    compile_step = _step(
+        compile_model,
+        "Compile without rerunning Provider",
+    )
+    compile_shell = _run(compile_step)
+    evaluate = jobs["evaluate-live-eligibility"]
+
+    assert compile_step["id"] == "compile"
+    assert "release compile-live-model \\" in compile_shell
+    assert '--github-output "${GITHUB_OUTPUT}"' in compile_shell
+    assert compile_model["outputs"]["execution-concurrency-key"] == (
+        "${{ steps.compile.outputs.execution-concurrency-key }}"
+    )
+    assert evaluate["outputs"]["execution-concurrency-key"] == (
+        "${{ needs.compile-model.outputs.execution-concurrency-key }}"
+    )
+    assert invoke["concurrency"] == {
+        "group": (
+            "wdv3-execution-${{ "
+            "needs.evaluate-live-eligibility.outputs.execution-concurrency-key }}"
+        ),
+        "cancel-in-progress": False,
+    }
+    assert invoke["if"] == (
+        "needs.evaluate-live-eligibility.outputs.live-result == 'admitted'"
+    )
+    assert "runs-on" not in invoke
+    for job_name in (
+        "request",
+        "discover-node",
+        "compile-model",
+        "evaluate-live-eligibility",
+    ):
+        assert "concurrency" not in jobs[job_name]
+
+    assert "${{ needs.discover-node.outputs.request-id }}" not in compile_shell
+    assert "printf " not in compile_shell
+    assert [
+        line.strip()
+        for line in compile_shell.splitlines()
+        if "sha256sum" in line
+    ] == ["digest=\"$(sha256sum .wdv3/repository-model.json | cut -d' ' -f1)\""]
+    assert [
+        line.strip()
+        for line in compile_shell.splitlines()
+        if "execution-concurrency-key" in line or "execution_key" in line
+    ] == []
+
 
 def test_buddy_permission_ceiling_and_effective_permissions_are_exact() -> None:
     caller = _document(CALLER)

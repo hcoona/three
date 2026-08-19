@@ -2853,6 +2853,14 @@ def _release_compile_live_model_command(arguments: argparse.Namespace) -> int:
         arguments.github_output,
         role="repository-model",
         digest=admitted_model.canonical_digest,
+        extra=(
+            (
+                "execution-concurrency-key",
+                canonical_sha256(
+                    derive_buddy_execution_identity(intent).to_document()
+                ).removeprefix("sha256:"),
+            ),
+        ),
     )
     return 0
 
