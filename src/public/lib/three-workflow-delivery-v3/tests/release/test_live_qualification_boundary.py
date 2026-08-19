@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 from three_workflow_delivery_v3 import cli as cli_module
@@ -1068,3 +1069,173 @@ def test_official_live_snapshot_closes_each_product_identity_field(
                 official_snapshot,
                 subject=replace(attempt, execution=invalid_execution),
             )
+
+
+_OPTIONAL_TRANSPORT_GROUPS = (
+    "publication_snapshot",
+    "authorization",
+    "capability_decision",
+    "capability_group_bundle",
+    "receipt",
+)
+_OPTIONAL_TRANSPORT_MEMBERS = (
+    "path",
+    "record-digest",
+    "artifact-id",
+    "artifact-digest",
+)
+_PARTIAL_OPTIONAL_TRANSPORT_CASES = [
+    *(
+        pytest.param(
+            group,
+            member,
+            "missing",
+            id=f"{group.replace('_', '-')}-missing-{member}",
+        )
+        for group in _OPTIONAL_TRANSPORT_GROUPS
+        for member in _OPTIONAL_TRANSPORT_MEMBERS
+    ),
+    *(
+        pytest.param(
+            group,
+            member,
+            "only",
+            id=f"{group.replace('_', '-')}-only-{member}",
+        )
+        for group in _OPTIONAL_TRANSPORT_GROUPS
+        for member in _OPTIONAL_TRANSPORT_MEMBERS
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("group", "selected_member", "provided_member_mode"),
+    _PARTIAL_OPTIONAL_TRANSPORT_CASES,
+)
+def test_finalize_live_rejects_each_partial_optional_transport_group(  # noqa: PLR0913
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    live_intent,
+    live_attempt_binding,
+    live_qualification_snapshot,
+    group: str,
+    selected_member: str,
+    provided_member_mode: str,
+) -> None:
+    """Reject every partial downstream transport before finalization writes."""
+    binding_path = _write(
+        tmp_path / "live-attempt-binding.json",
+        canonicalize(live_attempt_binding.to_document()),
+    )
+    snapshot_path = _write(
+        tmp_path / "live-qualification-snapshot.json",
+        canonicalize(live_qualification_snapshot.to_document()),
+    )
+    decision = cli_module.finalize_qualification(
+        live_qualification_snapshot,
+        (),
+        (),
+    )
+    decision_path = _write(
+        tmp_path / "live-qualification-decision.json",
+        canonicalize(decision.to_document()),
+    )
+    optional_path = _write(
+        tmp_path / f"{group.replace('_', '-')}.json",
+        canonicalize({}),
+    )
+    option = group.replace("_", "-")
+    optional_members = {
+        "path": (f"--{option}", str(optional_path)),
+        "record-digest": (
+            f"--{option}-digest",
+            _transport_digest(optional_path),
+        ),
+        "artifact-id": (f"--{option}-artifact-id", "901"),
+        "artifact-digest": (
+            f"--{option}-artifact-digest",
+            _transport_digest(optional_path),
+        ),
+    }
+    provided_members = (
+        {selected_member}
+        if provided_member_mode == "only"
+        else set(optional_members) - {selected_member}
+    )
+    partial_arguments = [
+        value
+        for member, option_and_value in optional_members.items()
+        if member in provided_members
+        for value in option_and_value
+    ]
+    outcome_path = tmp_path / "live-attempt-outcome.json"
+    summary_path = tmp_path / "live-attempt-summary.md"
+    load_attempt_binding = Mock(
+        spec=cli_module._load_attempt_binding,  # noqa: SLF001
+        side_effect=AssertionError(
+            "optional transport preflight must precede record loading"
+        ),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_load_attempt_binding",
+        load_attempt_binding,
+    )
+
+    status = cli_module.main(
+        [
+            "release",
+            "finalize-live",
+            "--workflow-run-id",
+            str(live_intent.workflow_run_id),
+            "--run-attempt",
+            str(live_intent.run_attempt),
+            "--target",
+            live_intent.target,
+            *_uploaded_arguments(
+                "attempt_binding",
+                binding_path,
+                live_attempt_binding.binding_digest,
+                101,
+            ),
+            *_uploaded_arguments(
+                "qualification_snapshot",
+                snapshot_path,
+                live_qualification_snapshot.snapshot_digest,
+                102,
+            ),
+            *_uploaded_arguments(
+                "qualification_decision",
+                decision_path,
+                decision.decision_digest,
+                103,
+            ),
+            *partial_arguments,
+            "--outcome-output",
+            str(outcome_path),
+            "--summary-output",
+            str(summary_path),
+        ]
+    )
+    error = capsys.readouterr().err
+
+    assert status == 1
+    missing_labels = ", ".join(
+        "artifact ID" if member == "artifact-id" else member.replace("-", " ")
+        for member in optional_members
+        if member not in provided_members
+    )
+    expected_error = (
+        f"{group} uploaded record transport is partial: "
+        f"missing {missing_labels}; path, record digest, artifact ID, and "
+        "artifact digest must be all "
+        "present or all absent"
+    )
+    assert expected_error in error
+    assert len(partial_arguments) == (
+        2 if provided_member_mode == "only" else 6
+    )
+    assert not outcome_path.exists()
+    assert not summary_path.exists()
+    load_attempt_binding.assert_not_called()

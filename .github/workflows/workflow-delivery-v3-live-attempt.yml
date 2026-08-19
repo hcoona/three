@@ -1796,16 +1796,19 @@ jobs:
       contents: read
     steps:
       - name: Check out exact selected target
+        if: always()
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           persist-credentials: false
           ref: ${{ inputs.target-sha }}
       - name: Install uv
+        if: always()
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: '0.10.9'
       - name: Download Release Attempt binding by artifact ID
+        if: always()
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           artifact-ids: ${{ needs.admit.outputs.attempt-artifact-id }}
@@ -1813,6 +1816,7 @@ jobs:
           skip-decompress: true
           digest-mismatch: error
       - name: Download Qualification Snapshot by artifact ID
+        if: always()
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           artifact-ids: ${{ needs.qualification-finalizer.outputs.qualification-snapshot-artifact-id }}
@@ -1820,6 +1824,7 @@ jobs:
           skip-decompress: true
           digest-mismatch: error
       - name: Download Qualification Decision by artifact ID
+        if: always()
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           artifact-ids: ${{ needs.qualification-finalizer.outputs.decision-artifact-id }}
@@ -1827,7 +1832,7 @@ jobs:
           skip-decompress: true
           digest-mismatch: error
       - name: Download build Evidence by artifact ID
-        if: needs.qualification-finalizer.outputs.build-evidence-artifact-id != ''
+        if: always() && needs.qualification-finalizer.outputs.build-evidence-artifact-id != ''
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           artifact-ids: ${{ needs.qualification-finalizer.outputs.build-evidence-artifact-id }}
@@ -1835,7 +1840,7 @@ jobs:
           skip-decompress: true
           digest-mismatch: error
       - name: Download project-test Evidence by artifact ID
-        if: needs.qualification-finalizer.outputs.project-test-evidence-artifact-id != ''
+        if: always() && needs.qualification-finalizer.outputs.project-test-evidence-artifact-id != ''
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           artifact-ids: ${{ needs.qualification-finalizer.outputs.project-test-evidence-artifact-id }}
@@ -1843,7 +1848,7 @@ jobs:
           skip-decompress: true
           digest-mismatch: error
       - name: Download artifact-contents Evidence by artifact ID
-        if: needs.qualification-finalizer.outputs.artifact-contents-evidence-artifact-id != ''
+        if: always() && needs.qualification-finalizer.outputs.artifact-contents-evidence-artifact-id != ''
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           artifact-ids: ${{ needs.qualification-finalizer.outputs.artifact-contents-evidence-artifact-id }}
@@ -1851,7 +1856,7 @@ jobs:
           skip-decompress: true
           digest-mismatch: error
       - name: Download install-import Evidence by artifact ID
-        if: needs.qualification-finalizer.outputs.install-import-evidence-artifact-id != ''
+        if: always() && needs.qualification-finalizer.outputs.install-import-evidence-artifact-id != ''
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           artifact-ids: ${{ needs.qualification-finalizer.outputs.install-import-evidence-artifact-id }}
@@ -1859,7 +1864,7 @@ jobs:
           skip-decompress: true
           digest-mismatch: error
       - name: Download Release Artifact record by artifact ID
-        if: needs.qualification-finalizer.outputs.release-artifact-artifact-id != ''
+        if: always() && needs.qualification-finalizer.outputs.release-artifact-artifact-id != ''
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           artifact-ids: ${{ needs.qualification-finalizer.outputs.release-artifact-artifact-id }}
@@ -1867,7 +1872,7 @@ jobs:
           skip-decompress: true
           digest-mismatch: error
       - name: Download Publication Snapshot by artifact ID
-        if: needs.materialize-publication.outputs.publication-snapshot-artifact-id != ''
+        if: always() && needs.materialize-publication.outputs.publication-snapshot-artifact-id != ''
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           artifact-ids: ${{ needs.materialize-publication.outputs.publication-snapshot-artifact-id }}
@@ -1875,7 +1880,7 @@ jobs:
           skip-decompress: true
           digest-mismatch: error
       - name: Download Authorization Record by artifact ID
-        if: needs.approval-finalizer.outputs.authorization-artifact-id != ''
+        if: always() && needs.approval-finalizer.outputs.authorization-artifact-id != ''
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           artifact-ids: ${{ needs.approval-finalizer.outputs.authorization-artifact-id }}
@@ -1883,7 +1888,7 @@ jobs:
           skip-decompress: true
           digest-mismatch: error
       - name: Download Capability Admission Decision by artifact ID
-        if: needs.approval-finalizer.outputs.capability-decision-artifact-id != ''
+        if: always() && needs.approval-finalizer.outputs.capability-decision-artifact-id != ''
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           artifact-ids: ${{ needs.approval-finalizer.outputs.capability-decision-artifact-id }}
@@ -1891,7 +1896,7 @@ jobs:
           skip-decompress: true
           digest-mismatch: error
       - name: Download capability result bundle by artifact ID
-        if: needs.publish-github-packages.outputs.capability-group-bundle-artifact-id != ''
+        if: always() && needs.publish-github-packages.outputs.capability-group-bundle-artifact-id != ''
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           artifact-ids: ${{ needs.publish-github-packages.outputs.capability-group-bundle-artifact-id }}
@@ -1899,7 +1904,7 @@ jobs:
           skip-decompress: true
           digest-mismatch: error
       - name: Download Receipt by artifact ID
-        if: needs.publish-github-packages.outputs.receipt-artifact-id != ''
+        if: always() && needs.publish-github-packages.outputs.receipt-artifact-id != ''
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           artifact-ids: ${{ needs.publish-github-packages.outputs.receipt-artifact-id }}
@@ -2036,9 +2041,13 @@ jobs:
             publication_preparation_interrupted=true
             args+=(--publication-preparation-interrupted)
           fi
+          qualification_only_cancellation=false
+          if [[ ( "${qualification_result}" == "failure" || "${qualification_result}" == "incomplete" ) && "${observation_result}" == "skipped" && "${materialization_result}" == "skipped" && "${publish_result}" == "cancelled" && "${workflow_cancelled}" == "true" && -z "${snapshot_id}" && -z "${snapshot_upload_digest}" && -z "${forwarded_snapshot_id}" && -z "${authorization_id}" && -z "${capability_decision_id}" && -z "${capability_marker_id}" && -z "${capability_bundle_id}" && -z "${receipt_id}" ]]; then
+            qualification_only_cancellation=true
+          fi
           platform_terminated=false
           capability_may_have_started=false
-          if [[ "${publish_result}" == "cancelled" && "${publication_preparation_interrupted}" != "true" ]]; then
+          if [[ "${publish_result}" == "cancelled" && "${publication_preparation_interrupted}" != "true" && "${qualification_only_cancellation}" != "true" ]]; then
             platform_terminated=true
           elif [[ "${publish_result}" == "failure" && -z "${capability_bundle_id}" ]]; then
             platform_terminated=true

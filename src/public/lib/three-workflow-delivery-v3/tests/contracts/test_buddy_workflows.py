@@ -610,7 +610,7 @@ def test_unsuccessful_live_qualification_retains_a_publication_free_outcome() ->
             + "-artifact-id }}"
         )
         assert download["if"] == (
-            "needs.qualification-finalizer.outputs."
+            "always() && needs.qualification-finalizer.outputs."
             f"{output_prefix}-artifact-id != ''"
         )
         assert download["with"] == {
@@ -624,7 +624,7 @@ def test_unsuccessful_live_qualification_retains_a_publication_free_outcome() ->
         "Download Publication Snapshot by artifact ID",
     )
     assert publication_download["if"] == (
-        "needs.materialize-publication.outputs."
+        "always() && needs.materialize-publication.outputs."
         "publication-snapshot-artifact-id != ''"
     )
     assert publication_download["with"]["artifact-ids"] == (
@@ -2250,12 +2250,14 @@ _PHASE2_RESULT_BUNDLE_OVERRIDES = {
         ),
         (
             {
-                "needs.observe-github-packages.result": "skipped",
+                "needs.observe-github-packages.result": "failure",
                 "needs.materialize-publication.result": "skipped",
                 "needs.publish-github-packages.result": "cancelled",
             },
             None,
-            ("admitted interruption",),
+            (
+                "Publication preparation interruption did not skip the publisher",
+            ),
         ),
         (
             {
@@ -2660,7 +2662,7 @@ def test_release_finalizer_downloads_snapshot_directly_from_materialization() ->
 
     assert "materialize-publication" in _needs(finalizer)
     assert download["if"] == (
-        "needs.materialize-publication.outputs."
+        "always() && needs.materialize-publication.outputs."
         "publication-snapshot-artifact-id != ''"
     )
     assert download["with"]["artifact-ids"] == (
@@ -2931,3 +2933,498 @@ def test_durable_snapshot_reviewer_failure_omits_preparation_diagnostics(
     job_summary = github_summary.read_text(encoding="utf-8")
     assert job_summary == prior_summary
     assert "Publication preparation interruption" not in job_summary
+
+
+@pytest.mark.parametrize(
+    ("step_name", "expected_action", "expected_condition"),
+    [
+        pytest.param(
+            "Check out exact selected target",
+            CHECKOUT,
+            "always()",
+            id="checkout-target",
+        ),
+        pytest.param(
+            "Install uv",
+            UV,
+            "always()",
+            id="install-uv",
+        ),
+        pytest.param(
+            "Download Release Attempt binding by artifact ID",
+            DOWNLOAD,
+            "always()",
+            id="attempt-binding",
+        ),
+        pytest.param(
+            "Download Qualification Snapshot by artifact ID",
+            DOWNLOAD,
+            "always()",
+            id="qualification-snapshot",
+        ),
+        pytest.param(
+            "Download Qualification Decision by artifact ID",
+            DOWNLOAD,
+            "always()",
+            id="qualification-decision",
+        ),
+        pytest.param(
+            "Download build Evidence by artifact ID",
+            DOWNLOAD,
+            (
+                "always() && needs.qualification-finalizer.outputs."
+                "build-evidence-artifact-id != ''"
+            ),
+            id="build",
+        ),
+        pytest.param(
+            "Download project-test Evidence by artifact ID",
+            DOWNLOAD,
+            (
+                "always() && needs.qualification-finalizer.outputs."
+                "project-test-evidence-artifact-id != ''"
+            ),
+            id="project-test",
+        ),
+        pytest.param(
+            "Download artifact-contents Evidence by artifact ID",
+            DOWNLOAD,
+            (
+                "always() && needs.qualification-finalizer.outputs."
+                "artifact-contents-evidence-artifact-id != ''"
+            ),
+            id="artifact-contents",
+        ),
+        pytest.param(
+            "Download install-import Evidence by artifact ID",
+            DOWNLOAD,
+            (
+                "always() && needs.qualification-finalizer.outputs."
+                "install-import-evidence-artifact-id != ''"
+            ),
+            id="install-import",
+        ),
+        pytest.param(
+            "Download Release Artifact record by artifact ID",
+            DOWNLOAD,
+            (
+                "always() && needs.qualification-finalizer.outputs."
+                "release-artifact-artifact-id != ''"
+            ),
+            id="release-artifact",
+        ),
+        pytest.param(
+            "Download Publication Snapshot by artifact ID",
+            DOWNLOAD,
+            (
+                "always() && needs.materialize-publication.outputs."
+                "publication-snapshot-artifact-id != ''"
+            ),
+            id="publication-snapshot",
+        ),
+        pytest.param(
+            "Download Authorization Record by artifact ID",
+            DOWNLOAD,
+            (
+                "always() && needs.approval-finalizer.outputs."
+                "authorization-artifact-id != ''"
+            ),
+            id="authorization",
+        ),
+        pytest.param(
+            "Download Capability Admission Decision by artifact ID",
+            DOWNLOAD,
+            (
+                "always() && needs.approval-finalizer.outputs."
+                "capability-decision-artifact-id != ''"
+            ),
+            id="capability-admission-decision",
+        ),
+        pytest.param(
+            "Download capability result bundle by artifact ID",
+            DOWNLOAD,
+            (
+                "always() && needs.publish-github-packages.outputs."
+                "capability-group-bundle-artifact-id != ''"
+            ),
+            id="capability-result-bundle",
+        ),
+        pytest.param(
+            "Download Receipt by artifact ID",
+            DOWNLOAD,
+            (
+                "always() && needs.publish-github-packages.outputs."
+                "receipt-artifact-id != ''"
+            ),
+            id="receipt",
+        ),
+    ],
+)
+def test_release_finalizer_prerequisite_actions_are_cancellation_admitting(
+    step_name: str,
+    expected_action: str,
+    expected_condition: str,
+) -> None:
+    finalizer = _document(CALLEE)["jobs"]["release-finalizer"]
+    prerequisite = _step(finalizer, step_name)
+
+    assert prerequisite["uses"] == expected_action
+    assert prerequisite["if"] == expected_condition
+
+
+_PHASE2_ABSENT_QUALIFICATION_RECORDS = {
+    f"needs.qualification-finalizer.outputs.{record}-{field}": ""
+    for record in (
+        "build-evidence",
+        "project-test-evidence",
+        "artifact-contents-evidence",
+        "install-import-evidence",
+        "release-artifact",
+    )
+    for field in (
+        "artifact-digest",
+        "artifact-id",
+        "artifact-name",
+        "digest",
+    )
+}
+
+
+def _phase2_cancelled_unsuccessful_qualification_facts(
+    qualification_result: str,
+    *,
+    workflow_cancelled: str = "true",
+    lineage: dict[str, str] | None = None,
+) -> dict[str, str]:
+    return _phase2_finalizer_facts(
+        **(
+            _PHASE2_ABSENT_QUALIFICATION_RECORDS
+            | {
+                "needs.materialize-publication.result": "skipped",
+                "needs.observe-github-packages.result": "skipped",
+                "needs.publish-github-packages.result": "cancelled",
+                "needs.qualification-finalizer.outputs.qualification-result": qualification_result,
+                "steps.workflow-cancellation.outputs.workflow-cancelled || 'false'": workflow_cancelled,
+            }
+            | (lineage or {})
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    "qualification_result",
+    [
+        pytest.param("failure", id="failure"),
+        pytest.param("incomplete", id="incomplete"),
+    ],
+)
+def test_cancelled_unsuccessful_qualification_uses_exact_qualification_only_argv(
+    tmp_path: Path,
+    qualification_result: str,
+) -> None:
+    facts = _phase2_cancelled_unsuccessful_qualification_facts(
+        qualification_result
+    )
+
+    execution = _phase2_execute_finalizer_shell(tmp_path, facts)
+
+    argv = _phase2_assert_successful_finalizer(execution)
+    expected_argv = (
+        "run",
+        "--python",
+        "3.13",
+        "--package",
+        "three-workflow-delivery-v3",
+        "three-workflow-delivery-v3",
+        "release",
+        "finalize-live",
+        "--workflow-run-id",
+        "424242",
+        "--run-attempt",
+        "3",
+        "--target",
+        "1" * 40,
+        "--attempt-binding",
+        ".wdv3/input/attempt-binding.json",
+        "--attempt-binding-digest",
+        "sha256:" + ("a" * 64),
+        "--attempt-binding-artifact-id",
+        "101",
+        "--attempt-binding-artifact-digest",
+        "sha256:" + ("d" * 64),
+        "--qualification-snapshot",
+        ".wdv3/input/qualification-snapshot.json",
+        "--qualification-snapshot-digest",
+        "sha256:" + ("a" * 64),
+        "--qualification-snapshot-artifact-id",
+        "107",
+        "--qualification-snapshot-artifact-digest",
+        "sha256:" + ("d" * 64),
+        "--qualification-decision",
+        ".wdv3/input/qualification-decision.json",
+        "--qualification-decision-digest",
+        "sha256:" + ("a" * 64),
+        "--qualification-decision-artifact-id",
+        "108",
+        "--qualification-decision-artifact-digest",
+        "sha256:" + ("d" * 64),
+        "--outcome-output",
+        ".wdv3/final-attempt/attempt-outcome.json",
+        "--summary-output",
+        ".wdv3/final-attempt/attempt-summary.md",
+        "--github-step-summary",
+        str(tmp_path / "github-step-summary.md"),
+        "--github-output",
+        str(tmp_path / "github-output.txt"),
+    )
+    assert argv == expected_argv
+    assert "--publication-preparation-interrupted" not in argv
+    assert "--platform-terminated" not in argv
+
+
+@pytest.mark.parametrize(
+    "qualification_result",
+    [
+        pytest.param("failure", id="failure"),
+        pytest.param("incomplete", id="incomplete"),
+    ],
+)
+def test_cancelled_unsuccessful_qualification_retains_qualification_record_argv(
+    tmp_path: Path,
+    qualification_result: str,
+) -> None:
+    facts = _phase2_finalizer_facts(
+        **{
+            "needs.materialize-publication.result": "skipped",
+            "needs.observe-github-packages.result": "skipped",
+            "needs.publish-github-packages.result": "cancelled",
+            "needs.qualification-finalizer.outputs.qualification-result": qualification_result,
+            "steps.workflow-cancellation.outputs.workflow-cancelled || 'false'": "true",
+        }
+    )
+
+    execution = _phase2_execute_finalizer_shell(tmp_path, facts)
+
+    argv = _phase2_assert_successful_finalizer(execution)
+    retained_records = (
+        ("build-evidence", "build-evidence.json", "102"),
+        ("project-test-evidence", "project-test-evidence.json", "103"),
+        (
+            "artifact-contents-evidence",
+            "artifact-contents-evidence.json",
+            "104",
+        ),
+        ("install-import-evidence", "install-import-evidence.json", "105"),
+        ("release-artifact", "release-artifact.json", "106"),
+    )
+    expected_record_argv = tuple(
+        argument
+        for role, filename, artifact_id in retained_records
+        for argument in (
+            f"--{role}",
+            f".wdv3/input/{filename}",
+            f"--{role}-digest",
+            "sha256:" + ("a" * 64),
+            f"--{role}-artifact-id",
+            artifact_id,
+            f"--{role}-artifact-digest",
+            "sha256:" + ("d" * 64),
+        )
+    )
+    record_start = argv.index("--build-evidence")
+    record_end = argv.index("--outcome-output")
+    assert argv[record_start:record_end] == expected_record_argv
+    assert "--platform-terminated" not in argv
+    assert "--publication-preparation-interrupted" not in argv
+
+
+@pytest.mark.parametrize(
+    (
+        "workflow_cancelled",
+        "lineage",
+        "expected_record_flag",
+        "expected_capability_flag",
+    ),
+    [
+        pytest.param(
+            "false",
+            {},
+            None,
+            None,
+            id="without-workflow-ownership",
+        ),
+        pytest.param(
+            "true",
+            {
+                "needs.observe-github-packages.result": "failure",
+            },
+            None,
+            None,
+            id="with-observation-work",
+        ),
+        pytest.param(
+            "true",
+            {
+                "needs.observe-github-packages.result": "success",
+            },
+            None,
+            None,
+            id="with-observation-success",
+        ),
+        pytest.param(
+            "true",
+            {
+                "needs.observe-github-packages.result": "cancelled",
+            },
+            None,
+            None,
+            id="with-observation-cancelled",
+        ),
+        pytest.param(
+            "true",
+            {
+                "needs.materialize-publication.result": "failure",
+            },
+            None,
+            None,
+            id="with-materialization-work",
+        ),
+        pytest.param(
+            "true",
+            {
+                "needs.materialize-publication.result": "success",
+            },
+            None,
+            None,
+            id="with-materialization-success",
+        ),
+        pytest.param(
+            "true",
+            {
+                "needs.materialize-publication.result": "cancelled",
+            },
+            None,
+            None,
+            id="with-materialization-cancelled",
+        ),
+        pytest.param(
+            "true",
+            {
+                "needs.materialize-publication.outputs.publication-snapshot-artifact-digest": _PHASE2_SNAPSHOT_UPLOAD_DIGEST,
+                "needs.materialize-publication.outputs.publication-snapshot-artifact-id": _PHASE2_SNAPSHOT_ARTIFACT_ID,
+                "needs.materialize-publication.outputs.publication-snapshot-artifact-name": _PHASE2_SNAPSHOT_NAME,
+                "needs.materialize-publication.outputs.publication-snapshot-digest": _PHASE2_SNAPSHOT_PAYLOAD_DIGEST,
+            },
+            "--publication-snapshot",
+            None,
+            id="with-publication-snapshot",
+        ),
+        pytest.param(
+            "true",
+            {
+                "needs.materialize-publication.outputs.publication-snapshot-artifact-digest": _PHASE2_SNAPSHOT_UPLOAD_DIGEST,
+            },
+            None,
+            None,
+            id="with-orphaned-snapshot-upload-digest",
+        ),
+        pytest.param(
+            "true",
+            {
+                "needs.approval-finalizer.outputs.publication-snapshot-artifact-id": _PHASE2_SNAPSHOT_ARTIFACT_ID,
+            },
+            None,
+            None,
+            id="with-forwarded-snapshot",
+        ),
+        pytest.param(
+            "true",
+            {
+                "needs.approval-finalizer.outputs.authorization-artifact-digest": "sha256:"
+                + ("e" * 64),
+                "needs.approval-finalizer.outputs.authorization-artifact-id": "732",
+                "needs.approval-finalizer.outputs.authorization-artifact-name": "authorization.json",
+                "needs.approval-finalizer.outputs.authorization-digest": "sha256:"
+                + ("f" * 64),
+            },
+            "--authorization",
+            None,
+            id="with-authorization",
+        ),
+        pytest.param(
+            "true",
+            {
+                "needs.approval-finalizer.outputs.capability-decision-artifact-digest": "sha256:"
+                + ("2" * 64),
+                "needs.approval-finalizer.outputs.capability-decision-artifact-id": "733",
+                "needs.approval-finalizer.outputs.capability-decision-artifact-name": "capability-admission.json",
+                "needs.approval-finalizer.outputs.capability-decision-digest": "sha256:"
+                + ("3" * 64),
+            },
+            "--capability-decision",
+            None,
+            id="with-capability-admission",
+        ),
+        pytest.param(
+            "true",
+            {
+                "needs.publish-github-packages.outputs.mutation-marker-artifact-id": "734",
+            },
+            None,
+            "--capability-may-have-started",
+            id="with-mutation-marker",
+        ),
+        pytest.param(
+            "true",
+            _PHASE2_RESULT_BUNDLE_OVERRIDES,
+            "--capability-group-bundle",
+            None,
+            id="with-result-bundle",
+        ),
+        pytest.param(
+            "true",
+            {
+                "needs.publish-github-packages.outputs.receipt-artifact-digest": "sha256:"
+                + ("6" * 64),
+                "needs.publish-github-packages.outputs.receipt-artifact-id": "736",
+                "needs.publish-github-packages.outputs.receipt-artifact-name": "receipt.json",
+                "needs.publish-github-packages.outputs.receipt-digest": "sha256:"
+                + ("7" * 64),
+            },
+            "--receipt",
+            None,
+            id="with-receipt",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "qualification_result",
+    [
+        pytest.param("failure", id="failure"),
+        pytest.param("incomplete", id="incomplete"),
+    ],
+)
+def test_unsuccessful_qualification_cancellation_is_not_clean_with_contradictions(  # noqa: PLR0913
+    tmp_path: Path,
+    qualification_result: str,
+    workflow_cancelled: str,
+    lineage: dict[str, str],
+    expected_record_flag: str | None,
+    expected_capability_flag: str | None,
+) -> None:
+    facts = _phase2_cancelled_unsuccessful_qualification_facts(
+        qualification_result,
+        workflow_cancelled=workflow_cancelled,
+        lineage=lineage,
+    )
+
+    execution = _phase2_execute_finalizer_shell(tmp_path, facts)
+
+    argv = _phase2_assert_successful_finalizer(execution)
+    assert argv.count("--platform-terminated") == 1
+    assert "--publication-preparation-interrupted" not in argv
+    assert argv.count("--capability-may-have-started") == (
+        1 if expected_capability_flag is not None else 0
+    )
+    if expected_record_flag is not None:
+        assert argv.count(expected_record_flag) == 1

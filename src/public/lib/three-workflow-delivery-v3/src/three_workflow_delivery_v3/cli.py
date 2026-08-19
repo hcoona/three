@@ -1827,6 +1827,44 @@ def _qualification_purpose(arguments: argparse.Namespace) -> str:
     return cast("str", purpose)
 
 
+def _validate_optional_uploaded_record_transport(
+    group: str,
+    *,
+    path: str | None,
+    record_digest: str | None,
+    artifact_id: int | None,
+    artifact_digest: str | None,
+) -> None:
+    if (
+        path is None
+        and record_digest is None
+        and artifact_id is None
+        and artifact_digest is None
+    ):
+        return
+    if (
+        path is None
+        or record_digest is None
+        or artifact_id is None
+        or artifact_digest is None
+    ):
+        missing = ", ".join(
+            name
+            for name, value in (
+                ("path", path),
+                ("record digest", record_digest),
+                ("artifact ID", artifact_id),
+                ("artifact digest", artifact_digest),
+            )
+            if value is None
+        )
+        raise ValueError(
+            f"{group} uploaded record transport is partial: missing {missing}; "
+            "path, record digest, artifact ID, and artifact digest must be all "
+            "present or all absent"
+        )
+
+
 def _load_release_record(  # noqa: PLR0913
     path: str,
     *,
@@ -3914,6 +3952,41 @@ def _release_form_github_packages_result_command(
 
 
 def _release_finalize_live_command(arguments: argparse.Namespace) -> int:
+    _validate_optional_uploaded_record_transport(
+        "publication_snapshot",
+        path=arguments.publication_snapshot,
+        record_digest=arguments.publication_snapshot_digest,
+        artifact_id=arguments.publication_snapshot_artifact_id,
+        artifact_digest=arguments.publication_snapshot_artifact_digest,
+    )
+    _validate_optional_uploaded_record_transport(
+        "authorization",
+        path=arguments.authorization,
+        record_digest=arguments.authorization_digest,
+        artifact_id=arguments.authorization_artifact_id,
+        artifact_digest=arguments.authorization_artifact_digest,
+    )
+    _validate_optional_uploaded_record_transport(
+        "capability_decision",
+        path=arguments.capability_decision,
+        record_digest=arguments.capability_decision_digest,
+        artifact_id=arguments.capability_decision_artifact_id,
+        artifact_digest=arguments.capability_decision_artifact_digest,
+    )
+    _validate_optional_uploaded_record_transport(
+        "capability_group_bundle",
+        path=arguments.capability_group_bundle,
+        record_digest=arguments.capability_group_bundle_digest,
+        artifact_id=arguments.capability_group_bundle_artifact_id,
+        artifact_digest=arguments.capability_group_bundle_artifact_digest,
+    )
+    _validate_optional_uploaded_record_transport(
+        "receipt",
+        path=arguments.receipt,
+        record_digest=arguments.receipt_digest,
+        artifact_id=arguments.receipt_artifact_id,
+        artifact_digest=arguments.receipt_artifact_digest,
+    )
     binding = _load_attempt_binding(arguments)
     snapshot = _load_live_qualification_snapshot(arguments)
     decision = _load_live_qualification_decision(arguments)
