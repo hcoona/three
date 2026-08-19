@@ -1856,3 +1856,17 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   summaries.
 - Committed the re-review test closure at `b5c4b38e`; the full v3 package passes
   3,183 tests with `GIT_LFS_SKIP_SMUDGE=1`, and the workspace hook gate passes.
+
+## [2026-08-19] query | Complete Buddy execution concurrency
+
+- Moved the caller-held concurrency key from request-specific shell hashing to
+  canonical Buddy Release Execution identity: channel, Release Unit, and
+  immutable target.
+- Preserved request ID and workflow-run identity as Attempt transport, kept
+  compilation and eligibility before coalescing, and held the group across the
+  complete reusable live Attempt with `cancel-in-progress: false`.
+- Committed the repair at `3a2df043`; the full v3 package passes 3,189 tests,
+  the workspace hook gate passes, and all four independent reviewers report no
+  findings after adjudication and repair.
+- Kept normal live delivery, acceptance probes, sentinel finalization, and
+  package mutation disabled.

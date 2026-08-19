@@ -143,7 +143,12 @@ activate normal live delivery, run real acceptance probes, finalize the
 sentinel target, mutate any package, or begin later-scope work without separate
 explicit approval.
 
+Buddy caller-held Release Execution concurrency is complete at `3a2df043`.
+The canonical key derives only from channel, Release Unit, and immutable
+target; request and workflow-run identity remain Attempt transport but do not
+partition the concurrency group. The caller holds the group across the complete
+reusable live Attempt with `cancel-in-progress: false`.
+
 Next:
 
-1. implement Buddy caller-held Release Execution concurrency; and
-2. perform final v3 validation and prepare the implementation PR.
+1. perform final v3 validation and prepare the implementation PR.

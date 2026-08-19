@@ -19,9 +19,10 @@ If it conflicts with the
   current `main` at `e6482727`, repaired live qualification authority and
   runtime boundaries at `2ddeeed1`, and committed durable unsuccessful
   qualification Attempt Outcomes at `1e742b29`. The current local closure ends
-  at `b5c4b38e`, which follows the cancellation-finalization runtime hardening
-  at `646060e5` and closes the independently adjudicated final-review and
-  re-review test gaps. Those later commits remain local to
+  at `3a2df043`, which follows the cancellation-finalization runtime hardening
+  at `646060e5`, closes the independently adjudicated final-review and
+  re-review test gaps, and keys Buddy caller-held concurrency by canonical
+  Release Execution identity. Those later commits remain local to
   `dev/shuaizhang/design-workflows`; nothing after `f0f81d52` has been pushed.
   Commit 3 includes target-tree-bound
   Release Unit/Quality authoring validation, duplicate Release Unit rejection,
@@ -98,7 +99,7 @@ If it conflicts with the
   rejects zero target and workflow SHAs while incomplete sentinel semantics
   remain available.
 - With `GIT_LFS_SKIP_SMUDGE=1`, the current Workflow Delivery v3 package
-  validation passes 3,183 tests. The protected acceptance Environment and
+  validation passes 3,189 tests. The protected acceptance Environment and
   reviewer configuration are still pending; no live acceptance dispatch or
   package mutation has run.
 - Durable qualification terminalization now permits exact failed or incomplete
@@ -137,6 +138,12 @@ If it conflicts with the
   Evidence type, fabricated Snapshot, aggregate control artifact, artifact API
   lookup, or watchdog. A durable Publication Snapshot remains the boundary
   into the existing Snapshot-bound lifecycle.
+- `3a2df043` completes Buddy caller-held Release Execution concurrency. The
+  real model compiler emits the canonical SHA-256 key for channel, Release
+  Unit, and immutable target only. Request ID and workflow-run identity remain
+  bound Attempt transport but cannot partition the Execution group. The
+  caller holds that group across the complete reusable live Attempt with
+  `cancel-in-progress: false`; different targets retain distinct groups.
 - The first vertical slice is `hcoona-release-smoke-npm`.
 - The slice has one Node project, one package variant, and one npm artifact.
 - It covers CI Qualification, live Buddy publication to GitHub Packages, and
@@ -346,9 +353,8 @@ If it conflicts with the
   state blocks; no repository variable, PAT, App, service, ledger, OIDC, or
   additional token permission is added. Permanent root HK policy remains the
   repository-wide dependency gate.
-- The immediate implementation boundary is Buddy caller-held concurrency around
-  Release Execution identity. After that repair, perform final v3 validation
-  and prepare the implementation PR. Do not run real acceptance probes,
+- The immediate boundary is final v3 validation and implementation PR
+  preparation. Do not run real acceptance probes,
   finalize the sentinel target, activate normal live, or begin later scopes
   without a separate explicit user task.
 - Implementation must preserve the approved commit boundaries and keep live
