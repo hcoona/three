@@ -4672,3 +4672,35 @@ or Publication Control Closure documentation edit.
 | Quality gate | Recorded pseudo-mutation and assertion-quality outcomes |
 
 <!-- END APPEND: 2026-08-19-wdv3-two-adjudicated-test-gaps-plan -->
+
+<!-- BEGIN APPEND: 2026-08-19-wdv3-final-rereview-two-test-gaps-plan -->
+
+## Workflow Delivery v3 final re-review test-gap plan
+
+1. Consolidate the existing partial Qualification Finalizer ID assertions into
+   one exact parsed-workflow map for all eight retained record transports,
+   covering both `artifact-id` and `artifact-name` producers while preserving
+   the existing exact digest map.
+2. Expose the retained Attempt summary and GitHub Step Summary paths from the
+   existing real-shell execution helper.
+3. Add one scenario-first test for successful Qualification, cancellation
+   witness `true`, Observation `success`, materialization `skipped`, publisher
+   `cancelled`, and absent Snapshot/downstream lineage. Assert the exact
+   retained diagnostics on both summary surfaces and the sole admitted
+   interruption semantic.
+4. Run the two affected pytest nodes and Ruff check/format on the changed test
+   file.
+5. Invoke bounded `test-gap-analysis` and `assertion-quality`, repair only
+   in-scope findings, rerun affected validation, and append results to
+   `.testagent/status.md`.
+6. Prove all three `.testagent` files retain their complete `HEAD` byte
+   prefixes; run scoped diff, scope, and whitespace checks.
+
+| Requirement | Planned evidence |
+|---|---|
+| Exact retained transport producers | `test_unsuccessful_live_qualification_retains_a_publication_free_outcome` |
+| Retained cancellation diagnostics | `test_successful_observation_cancellation_retains_exact_job_diagnostics` |
+| Surgical scope | Scoped `git diff` plus changed-path allowlist |
+| Quality and append-only gates | Skill outcomes, Ruff/pytest results, and byte-prefix validation |
+
+<!-- END APPEND: 2026-08-19-wdv3-final-rereview-two-test-gaps-plan -->

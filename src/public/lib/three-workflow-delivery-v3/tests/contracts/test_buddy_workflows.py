@@ -492,31 +492,80 @@ def test_unsuccessful_live_qualification_retains_a_publication_free_outcome() ->
         "project-test",
         "npm-artifact-qualification",
     }
-    assert qualification_finalizer["outputs"][
-        "qualification-snapshot-artifact-id"
-    ] == (
-        "${{ needs.build-tarball.outputs.qualification-snapshot-artifact-id }}"
-    )
-    assert (
-        qualification_finalizer["outputs"]["build-evidence-artifact-id"]
-        == "${{ needs.build-tarball.outputs.build-evidence-artifact-id }}"
-    )
-    assert (
-        qualification_finalizer["outputs"]["project-test-evidence-artifact-id"]
-        == "${{ needs.project-test.outputs.evidence-artifact-id }}"
-    )
-    assert qualification_finalizer["outputs"][
-        "artifact-contents-evidence-artifact-id"
-    ] == (
-        "${{ needs.npm-artifact-qualification.outputs."
-        "contents-evidence-artifact-id }}"
-    )
-    assert qualification_finalizer["outputs"][
-        "install-import-evidence-artifact-id"
-    ] == (
-        "${{ needs.npm-artifact-qualification.outputs."
-        "install-evidence-artifact-id }}"
-    )
+    assert {
+        name: qualification_finalizer["outputs"][name]
+        for name in (
+            "decision-artifact-id",
+            "decision-artifact-name",
+            "build-evidence-artifact-id",
+            "build-evidence-artifact-name",
+            "project-test-evidence-artifact-id",
+            "project-test-evidence-artifact-name",
+            "artifact-contents-evidence-artifact-id",
+            "artifact-contents-evidence-artifact-name",
+            "install-import-evidence-artifact-id",
+            "install-import-evidence-artifact-name",
+            "qualification-snapshot-artifact-id",
+            "qualification-snapshot-artifact-name",
+            "adapter-context-artifact-id",
+            "adapter-context-artifact-name",
+            "release-artifact-artifact-id",
+            "release-artifact-artifact-name",
+        )
+    } == {
+        "decision-artifact-id": "${{ steps.upload.outputs.artifact-id }}",
+        "decision-artifact-name": (
+            "${{ steps.finalize.outputs.qualification-decision-artifact-name }}"
+        ),
+        "build-evidence-artifact-id": (
+            "${{ needs.build-tarball.outputs.build-evidence-artifact-id }}"
+        ),
+        "build-evidence-artifact-name": (
+            "${{ needs.build-tarball.outputs.build-evidence-artifact-name }}"
+        ),
+        "project-test-evidence-artifact-id": (
+            "${{ needs.project-test.outputs.evidence-artifact-id }}"
+        ),
+        "project-test-evidence-artifact-name": (
+            "${{ needs.project-test.outputs.evidence-artifact-name }}"
+        ),
+        "artifact-contents-evidence-artifact-id": (
+            "${{ needs.npm-artifact-qualification.outputs."
+            "contents-evidence-artifact-id }}"
+        ),
+        "artifact-contents-evidence-artifact-name": (
+            "${{ needs.npm-artifact-qualification.outputs."
+            "contents-evidence-artifact-name }}"
+        ),
+        "install-import-evidence-artifact-id": (
+            "${{ needs.npm-artifact-qualification.outputs."
+            "install-evidence-artifact-id }}"
+        ),
+        "install-import-evidence-artifact-name": (
+            "${{ needs.npm-artifact-qualification.outputs."
+            "install-evidence-artifact-name }}"
+        ),
+        "qualification-snapshot-artifact-id": (
+            "${{ needs.build-tarball.outputs."
+            "qualification-snapshot-artifact-id }}"
+        ),
+        "qualification-snapshot-artifact-name": (
+            "${{ needs.build-tarball.outputs."
+            "qualification-snapshot-artifact-name }}"
+        ),
+        "adapter-context-artifact-id": (
+            "${{ needs.build-tarball.outputs.adapter-context-artifact-id }}"
+        ),
+        "adapter-context-artifact-name": (
+            "${{ needs.build-tarball.outputs.adapter-context-artifact-name }}"
+        ),
+        "release-artifact-artifact-id": (
+            "${{ needs.build-tarball.outputs.release-artifact-artifact-id }}"
+        ),
+        "release-artifact-artifact-name": (
+            "${{ needs.build-tarball.outputs.release-artifact-artifact-name }}"
+        ),
+    }
     assert {
         name: expression
         for name, expression in qualification_finalizer["outputs"].items()
@@ -2123,9 +2172,11 @@ raise SystemExit(int(os.environ.get("PHASE2_CLI_STATUS", "0")))
             if github_output.exists()
             else ""
         ),
+        "github_summary": github_summary,
         "invocations": invocation_rows,
         "output": completed.stdout + completed.stderr,
         "status": completed.returncode,
+        "summary": tmp_path / ".wdv3/final-attempt/attempt-summary.md",
     }
 
 
@@ -2209,6 +2260,52 @@ def test_publication_preparation_classifier_executes_workflow_shell(
         "--publication-snapshot",
         "--receipt",
     }.isdisjoint(argv)
+
+
+def test_successful_observation_cancellation_retains_exact_job_diagnostics(
+    tmp_path: Path,
+) -> None:
+    execution = _phase2_execute_finalizer_shell(
+        tmp_path,
+        _phase2_finalizer_facts(
+            **{
+                "needs.observe-github-packages.result": "success",
+                "needs.materialize-publication.result": "skipped",
+                "needs.publish-github-packages.result": "cancelled",
+                "needs.workflow-cancellation.outputs.workflow-cancelled || 'false'": "true",
+            }
+        ),
+    )
+
+    argv = _phase2_assert_successful_finalizer(execution)
+    assert argv.count("--publication-preparation-interrupted") == 1
+    assert {
+        "--authorization",
+        "--capability-decision",
+        "--capability-group-bundle",
+        "--capability-may-have-started",
+        "--platform-terminated",
+        "--publication-snapshot",
+        "--receipt",
+    }.isdisjoint(argv)
+
+    expected_diagnostics = (
+        "\n## Publication preparation interruption\n\n"
+        "- Qualification result: success\n"
+        "- Observation job result: success\n"
+        "- Materialization job result: skipped\n"
+        "- Publisher job result: cancelled\n"
+        "- Durable Publication Snapshot: absent\n"
+        "- Capability path started: no\n"
+        "- Workflow cancellation observed: true\n"
+    )
+    assert execution["summary"].read_text(encoding="utf-8") == (
+        "# Attempt summary\n" + expected_diagnostics
+    )
+    assert (
+        execution["github_summary"].read_text(encoding="utf-8")
+        == expected_diagnostics
+    )
 
 
 @pytest.mark.parametrize(

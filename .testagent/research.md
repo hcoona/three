@@ -4098,3 +4098,46 @@ pair is only the live-attempt workflow and `test_buddy_workflows.py`; no
 unrelated source inventory or coverage scan is needed.
 
 <!-- END APPEND: 2026-08-19-wdv3-two-adjudicated-test-gaps-research -->
+
+<!-- BEGIN APPEND: 2026-08-19-wdv3-final-rereview-two-test-gaps-research -->
+
+## Workflow Delivery v3 final re-review test gaps
+
+### Scope and strategy
+
+- **Strategy:** Direct. Both independently adjudicated true positives belong
+  to one existing pytest workflow-contract file.
+- **Authority:** the parsed and executable Release Finalizer shell in
+  `.github/workflows/workflow-delivery-v3-live-attempt.yml`.
+- `code-testing-extensions` was unavailable. The existing Python/pytest,
+  parsed-YAML, and extracted-shell conventions remain authoritative.
+- Production behavior, dependencies, publication/acceptance/activation,
+  sentinel state, package state, and repository history are out of scope.
+
+### Requirement checklist and bounded inventory
+
+1. Lock the exact `artifact-id` and `artifact-name` producer expressions for
+   retained build Evidence, project-test Evidence, artifact-contents Evidence,
+   install-import Evidence, Qualification Snapshot, Adapter Context, Release
+   Artifact, and Qualification Decision transports. In particular,
+   `release-artifact-artifact-id` must come from the Release Artifact output,
+   not the build Evidence output.
+2. Execute successful Qualification with cancellation witnessed, Observation
+   `success`, materialization `skipped`, publisher `cancelled`, and no
+   Publication Snapshot/downstream lineage through the real workflow shell.
+   Require publication-preparation interruption semantics and exact
+   materialization/publisher facts in both retained summary surfaces.
+3. Preserve all existing behavior and tests; add no combinatorial matrix or
+   syntax-only substitute for the executable retention scenario.
+4. Run the two affected pytest nodes, Ruff check/format, append-only prefix
+   validation, and diff checks. The parent agent owns the full package/HK gate.
+5. Run bounded pseudo-mutation and assertion-quality review, fix any in-scope
+   true positive, and append the final evidence to `.testagent/status.md`.
+
+The bounded source-to-test pair is only
+`.github/workflows/workflow-delivery-v3-live-attempt.yml` and
+`src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`.
+The current helper already executes the exact YAML shell with a recording CLI
+boundary double; it only needs to expose the two generated summary paths.
+
+<!-- END APPEND: 2026-08-19-wdv3-final-rereview-two-test-gaps-research -->

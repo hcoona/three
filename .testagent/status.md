@@ -7345,3 +7345,69 @@ sentinel, or package-mutation command ran.
   above; no adjacent helper substitutes for the real parsed/executed workflow.
 
 <!-- END APPEND: 2026-08-19-wdv3-two-adjudicated-test-gaps-status -->
+
+<!-- BEGIN APPEND: 2026-08-19-wdv3-final-rereview-two-test-gaps-status -->
+
+## Workflow Delivery v3 final re-review test-gap status
+
+**Result:** complete; no production/workflow behavior, dependency, package
+state, sentinel, publication, acceptance, activation, or repository history
+changed.
+
+### Implemented evidence
+
+- `test_unsuccessful_live_qualification_retains_a_publication_free_outcome`
+  now locks the exact `artifact-id` and `artifact-name` producer expressions
+  for the retained build Evidence, project-test Evidence, artifact-contents
+  Evidence, install-import Evidence, Qualification Snapshot, Adapter Context,
+  Release Artifact, and Qualification Decision transports. The existing exact
+  digest-producer map remains intact.
+- Added
+  `test_successful_observation_cancellation_retains_exact_job_diagnostics`.
+  It executes the real Release Finalizer workflow shell for successful
+  Qualification, cancellation witness `true`, Observation `success`,
+  materialization `skipped`, publisher `cancelled`, and absent
+  Snapshot/downstream lineage. It requires exactly the interruption semantic,
+  rejects downstream/platform flags, and compares the complete diagnostic
+  block in both retained summary surfaces.
+- The existing shell harness now exposes only the two generated summary paths;
+  its execution behavior is unchanged.
+
+### Targeted validation
+
+| Gate | Result |
+|---|---|
+| Two affected pytest nodes | 2 passed in 0.55s |
+| Ruff check | Passed |
+| Ruff format check | Passed; file already formatted |
+| All three `.testagent` `HEAD` byte prefixes | Passed |
+| Changed-path allowlist | Passed |
+| `git diff --check` | Passed |
+
+The parent agent owns the full package/HK gate, so no package-wide, HK,
+publication, acceptance, activation, sentinel, or package-mutation command
+ran.
+
+### Pre-completion review
+
+- **Pseudo-mutation:** changing
+  `release-artifact-artifact-id` to the build Evidence artifact ID now fails
+  the exact parsed-workflow producer map. Any selected ID/name producer swap
+  also fails. Replacing `${publish_result}` with
+  `${materialization_result}` in the publisher diagnostic changes
+  `cancelled` to `skipped` and fails exact equality on both summaries; removing
+  either write fails the corresponding retained-surface assertion. The
+  executable scenario also kills removal/coupling of the interruption flag,
+  addition of platform/capability state, or downstream transport forwarding.
+  No in-scope mutation survives.
+- **Assertion quality:** both affected tests use concrete deep equality,
+  exact count/value assertions, negative set membership, and retained file
+  side effects. No assertion-free, trivial-only, self-referential,
+  tautological, skipped, or xfailed test was introduced.
+- **Prompt scenarios:** every enumerated transport is present in the exact map;
+  the cancellation scenario directly exercises the named shell and both named
+  summary surfaces. `code-testing-extensions` and
+  `test-analysis-extensions` were unavailable; existing pytest conventions
+  and bounded direct review supplied the required language guidance.
+
+<!-- END APPEND: 2026-08-19-wdv3-final-rereview-two-test-gaps-status -->
