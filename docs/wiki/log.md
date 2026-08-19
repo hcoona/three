@@ -1846,3 +1846,13 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   was skipped and the publisher was cancelled.
 - Committed the test closure at `1daf3202`; the full v3 package passes 3,182
   tests with `GIT_LFS_SKIP_SMUDGE=1`, and the workspace hook gate passes.
+
+## [2026-08-19] query | Close cancellation re-review test gaps
+
+- Independently classified the two test re-review findings as true positives;
+  the runtime, workflow, and design/evidence re-reviews reported no findings.
+- Locked every retained Qualification artifact ID and name producer and
+  executed the cancellation state through durable Attempt and GitHub job
+  summaries.
+- Committed the re-review test closure at `b5c4b38e`; the full v3 package passes
+  3,183 tests with `GIT_LFS_SKIP_SMUDGE=1`, and the workspace hook gate passes.
