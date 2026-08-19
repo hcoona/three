@@ -1813,3 +1813,17 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   artifact link to the completed job summary.
 - Reconciled the Release MLD, smoke LLD, and handoff; the full v3 package passes
   3,068 tests with `GIT_LFS_SKIP_SMUDGE=1`, and the complete hook gate passes.
+
+## [2026-08-19] query | Close cancellation finalization review
+
+- Made Release Finalizer checkout, tool setup, and exact artifact acquisition
+  cancellation-admitting so retained inputs remain available when GitHub runs
+  cancellation finalization.
+- Preserved failed and incomplete Qualification Outcomes when an unstarted
+  publisher is reported `cancelled`, and rejected partial downstream
+  `finalize-live` transport groups before record loading.
+- Replaced the stale singular Publication Control Bundle requirement with the
+  implemented logical closure of separately retained, explicitly selected
+  artifacts and canonical cross-bindings.
+- Closed pseudo-mutation and assertion-quality gaps; the full v3 package passes
+  3,157 tests with `GIT_LFS_SKIP_SMUDGE=1`, and the complete hook gate passes.

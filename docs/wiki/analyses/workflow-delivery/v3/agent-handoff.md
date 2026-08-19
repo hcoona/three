@@ -96,7 +96,7 @@ If it conflicts with the
   rejects zero target and workflow SHAs while incomplete sentinel semantics
   remain available.
 - With `GIT_LFS_SKIP_SMUDGE=1`, the current Workflow Delivery v3 package
-  validation passes 3,068 tests. The protected acceptance Environment and
+  validation passes 3,157 tests. The protected acceptance Environment and
   reviewer configuration are still pending; no live acceptance dispatch or
   package mutation has run.
 - Durable qualification terminalization now permits exact failed or incomplete
@@ -110,12 +110,19 @@ If it conflicts with the
   `14b40c75` closes the first runtime review, `5f8449d7` reconciles the
   Snapshot/reviewer documentation, `91deece4` closes the executable
   classifier, cancellation, lifecycle, retention, and reviewer-link review
-  gaps, and `297d5adf` records the append-only test evidence. The slice uses
-  terminal phase `publication-preparation`, result `incomplete`, uncertainty,
-  no possible mutation, and next action `new-attempt`. Whole-workflow
-  cancellation may report an unstarted publisher as `cancelled` only when no
-  Snapshot or downstream lineage exists; that state is not also platform
-  termination. It adds no Evidence type, fabricated Snapshot, artifact API
+  gaps, and `297d5adf` records that test evidence. `c295f612` makes finalizer
+  acquisition cancellation-admitting, preserves qualification-only outcomes
+  under cancellation, and rejects partial optional CLI transports.
+  `6857617d` replaces the stale aggregate control-bundle requirement with the
+  implemented separate-artifact Publication Control Closure, and `2b573fe4`
+  records the final regression evidence. The slice uses terminal phase
+  `publication-preparation`, result `incomplete`, uncertainty, no possible
+  mutation, and next action `new-attempt`. Whole-workflow cancellation may
+  report an unstarted publisher as `cancelled` only when no Snapshot or
+  downstream lineage exists; that state is not also platform termination.
+  Failed or incomplete Qualification retains its qualification-only Outcome
+  under the corresponding cancellation-owned no-lineage state. It adds no
+  Evidence type, fabricated Snapshot, aggregate control artifact, artifact API
   lookup, or watchdog. A durable Publication Snapshot remains the boundary
   into the existing Snapshot-bound lifecycle.
 - The first vertical slice is `hcoona-release-smoke-npm`.
