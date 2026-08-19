@@ -6,11 +6,23 @@ public sealed record AzureAuthProcessLaunchOptions
 {
     private const int DefaultOutputLimit = 8192;
 
+    public const string DevBoxWslSilentFirstWorkaroundEnvironmentVariable =
+        "AZUREAUTH_CREDPROVIDER_ENABLE_DEVBOX_WSL_SILENT_FIRST_WORKAROUND";
+
     public required string ExecutablePath { get; init; }
 
     public required string WorkingDirectory { get; init; }
 
     public AzureAuthHostPlatform HostPlatform { get; init; } = AzureAuthHostPlatform.Windows;
+
+    /// <summary>
+    /// Enables the Dev Box-only WSL workaround that lets AzureAuth attempt its WAM-first
+    /// default flow for SilentOnly requests until AzureAuth issue #464 is implemented.
+    /// The fallback can display UI and therefore intentionally violates SilentOnly semantics.
+    /// When the environment override is unset, WSL installation discovery enables this only
+    /// for hosts matching Git Credential Manager's Dev Box PartnerId.
+    /// </summary>
+    public bool EnableDevBoxWslSilentFirstWorkaround { get; init; }
 
     public TimeSpan Timeout { get; init; } = TimeSpan.FromMinutes(15);
 

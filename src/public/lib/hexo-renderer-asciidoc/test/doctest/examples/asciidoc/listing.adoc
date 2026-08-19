@@ -56,7 +56,7 @@ end
 ----
 
 // .source-nowrap
-[source, java, options="nowrap"]
+[source, plaintext, options="nowrap"]
 ----
 public class ApplicationConfigurationProvider extends HttpConfigurationProvider {
 

@@ -26,6 +26,8 @@ public enum AzureAuthInstallationStatus
 
 public sealed record AzureAuthInstallation
 {
+    internal const string DevBoxPartnerId = "e3171dd9-9a5f-e5be-b36c-cc7c4f3f3bcf";
+
     public required AzureAuthInstallationStatus Status { get; init; }
 
     public string? InstalledExecutablePath { get; init; }
@@ -35,6 +37,8 @@ public sealed record AzureAuthInstallation
     public string? Version { get; init; }
 
     public AzureAuthHostPlatform HostPlatform { get; init; }
+
+    public bool IsDevBox { get; init; }
 
     public required string Code { get; init; }
 
@@ -50,7 +54,8 @@ public sealed record AzureAuthInstallation
         string installedExecutablePath,
         string hostExecutablePath,
         string version,
-        AzureAuthHostPlatform hostPlatform = AzureAuthHostPlatform.Windows
+        AzureAuthHostPlatform hostPlatform = AzureAuthHostPlatform.Windows,
+        bool isDevBox = false
     ) =>
         new()
         {
@@ -59,6 +64,7 @@ public sealed record AzureAuthInstallation
             HostExecutablePath = hostExecutablePath,
             Version = version,
             HostPlatform = hostPlatform,
+            IsDevBox = isDevBox,
             Code = "AzureAuthInstallationAvailable",
             SafeMessage = "The supported AzureAuth installation is available.",
         };
@@ -185,7 +191,32 @@ public sealed class SystemAzureAuthInstallationDiscovery : IAzureAuthInstallatio
         + "$version=if ($exists) { "
         + "[Diagnostics.FileVersionInfo]::GetVersionInfo($path).FileVersion "
         + "} else { $null }\n"
-        + "@{localApplicationData=$localAppData;exists=$exists;fileVersion=$version} |\n"
+        + "$isDevBox=$false\n"
+        + "$hklm64=$null\n"
+        + "$w365=$null\n"
+        + "try {\n"
+        + "  $hklm64=[Microsoft.Win32.RegistryKey]::OpenBaseKey("
+        + "[Microsoft.Win32.RegistryHive]::LocalMachine,"
+        + "[Microsoft.Win32.RegistryView]::Registry64)\n"
+        + "  $w365=$hklm64.OpenSubKey('SOFTWARE\\Microsoft\\Windows365')\n"
+        + "  if ($null -ne $w365) {\n"
+        + "    $w365Marker=$w365.GetValue('IsW365Environment')\n"
+        + "    $partnerText=[string]$w365.GetValue('PartnerId')\n"
+        + "    $partnerId=[Guid]::Empty\n"
+        + "    $isDevBox=$null -ne $w365Marker -and "
+        + "[Guid]::TryParse($partnerText,[ref]$partnerId) -and "
+        + "$partnerId -eq [Guid]'"
+        + AzureAuthInstallation.DevBoxPartnerId
+        + "'\n"
+        + "  }\n"
+        + "} catch {\n"
+        + "  $isDevBox=$false\n"
+        + "} finally {\n"
+        + "  if ($null -ne $w365) { try { $w365.Dispose() } catch {} }\n"
+        + "  if ($null -ne $hklm64) { try { $hklm64.Dispose() } catch {} }\n"
+        + "}\n"
+        + "@{localApplicationData=$localAppData;exists=$exists;"
+        + "fileVersion=$version;isDevBox=$isDevBox} |\n"
         + "  ConvertTo-Json -Compress";
 
     private readonly IProcessRunner processRunner;
@@ -321,7 +352,8 @@ public sealed class SystemAzureAuthInstallationDiscovery : IAzureAuthInstallatio
             windowsPath,
             hostPath,
             AzureAuthProviderConfig.SupportedAzureAuthVersion,
-            AzureAuthHostPlatform.Wsl
+            AzureAuthHostPlatform.Wsl,
+            output.IsDevBox
         );
     }
 
@@ -572,6 +604,7 @@ public sealed class SystemAzureAuthInstallationDiscovery : IAzureAuthInstallatio
         public string? LocalApplicationData { get; init; }
         public bool Exists { get; init; }
         public string? FileVersion { get; init; }
+        public bool IsDevBox { get; init; }
     }
 }
 

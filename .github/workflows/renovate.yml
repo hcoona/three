@@ -43,6 +43,7 @@ jobs:
       contents: read
     env:
       RENOVATE_VERSION: 43.200.1
+      RENOVATE_BASE_DIR: ${{ github.workspace }}/../renovate
       GIT_LFS_SKIP_SMUDGE: 1
     defaults:
       run:
@@ -62,6 +63,15 @@ jobs:
 
           # Renovate performs its own clone, so configure the runner globally.
           git lfs install --skip-smudge --skip-repo --force
+
+      - name: Seed Renovate repository with full clone
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $repositoryPath = Join-Path $env:RENOVATE_BASE_DIR "repos/github/$env:GITHUB_REPOSITORY"
+          New-Item -ItemType Directory -Path (Split-Path -Parent $repositoryPath) -Force | Out-Null
+          git clone --no-local $env:GITHUB_WORKSPACE $repositoryPath
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -114,6 +124,47 @@ jobs:
 
       - name: Install Renovate CLI
         run: npm install --global "renovate@${RENOVATE_VERSION}"
+
+      - name: Force full Renovate fallback clones
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $renovateGitModule = Join-Path (& npm root --global) 'renovate/dist/util/git/index.js'
+          $content = Get-Content -Path $renovateGitModule -Raw
+          $needle = 'const opts = [];'
+          $matchCount = ([regex]::Matches($content, [regex]::Escape($needle))).Count
+          if ($matchCount -ne 1) {
+            throw "Expected one Renovate clone-options initialization, but found $matchCount."
+          }
+
+          $replacement = "$needle`n`t`t`tconfig.fullClone = true;"
+          Set-Content -Path $renovateGitModule -Value $content.Replace($needle, $replacement) -NoNewline
+          node --check $renovateGitModule
+
+      - name: Verify NBGV metadata in full clone
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $miseRoot = Join-Path $env:LOCALAPPDATA 'mise'
+          $env:Path = @(
+            (Join-Path $miseRoot 'shims')
+            (Join-Path $miseRoot 'bin')
+            $env:Path
+          ) -join [System.IO.Path]::PathSeparator
+
+          $repositoryPath = Join-Path $env:RENOVATE_BASE_DIR "repos/github/$env:GITHUB_REPOSITORY"
+          Push-Location $repositoryPath
+          try {
+            uv lock --upgrade --dry-run
+            if ($LASTEXITCODE -ne 0) {
+              throw "NBGV metadata smoke test failed with exit code $LASTEXITCODE."
+            }
+          }
+          finally {
+            Pop-Location
+          }
 
       - name: Create Renovate GitHub App token
         id: renovate-app-token

@@ -3,7 +3,6 @@ using Hcoona.AzureAuth.CredProvider.Contracts;
 using Hcoona.AzureAuth.CredProvider.Platform.AdapterHost;
 using Hcoona.AzureAuth.CredProvider.Platform.Composition;
 using Hcoona.AzureAuth.CredProvider.Platform.CredentialCore;
-using Newtonsoft.Json.Linq;
 using NuGet.Common;
 using NuGet.Protocol.Plugins;
 using Xunit;
@@ -43,7 +42,7 @@ public sealed class NuGetPluginAdapterTests
     [Fact]
     public void SourceAgnosticOperationClaimsAdvertiseAuthentication()
     {
-        var request = new GetOperationClaimsRequest((string)null!, (JObject)null!);
+        var request = new GetOperationClaimsRequest((string)null!, (string)null!);
 
         GetOperationClaimsResponse response = NuGetPluginAdapter.HandleGetOperationClaims(request);
 
@@ -55,8 +54,18 @@ public sealed class NuGetPluginAdapterTests
     {
         var request = new GetOperationClaimsRequest(
             "https://pkgs.dev.azure.com/org/_packaging/feed/nuget/v3/index.json",
-            new JObject()
+            "{}"
         );
+
+        GetOperationClaimsResponse response = NuGetPluginAdapter.HandleGetOperationClaims(request);
+
+        Assert.Empty(response.Claims);
+    }
+
+    [Fact]
+    public void ServiceIndexOperationClaimsDoNotAdvertiseAuthentication()
+    {
+        var request = new GetOperationClaimsRequest((string)null!, "{}");
 
         GetOperationClaimsResponse response = NuGetPluginAdapter.HandleGetOperationClaims(request);
 

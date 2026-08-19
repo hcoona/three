@@ -1044,7 +1044,7 @@ def test_ci_scenario_coexistence_emits_no_authoritative_decision() -> None:
         "",
     )
     assert hashlib.sha256(V1_CI_PATH.read_bytes()).hexdigest() == (
-        "2b02594f67f05cceaa3207d3b803549884a8ab953694b24232d877b689034c42"
+        "ef41b8486113d16d6e9c73b43435104d1d090282275f00143cdaac6ca5fede51"
     )
     assert governance["live_enabled"] is False
     assert hashlib.sha256(

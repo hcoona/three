@@ -79,7 +79,8 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
     {
         AzureAuthRequestPreflightFailure? requestFailure = AzureAuthRequestPreflightPolicy.Evaluate(
             request,
-            launchOptions.HostPlatform
+            launchOptions.HostPlatform,
+            launchOptions.EnableDevBoxWslSilentFirstWorkaround
         );
         if (requestFailure is not null)
         {
@@ -214,7 +215,7 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
                 when request.AcquisitionMode == AcquisitionMode.SilentOnly => Failure(
                 AcquiredAccessTokenStatus.InteractionRequired,
                 "AzureAuthSilentTokenUnavailable",
-                "AzureAuth did not find a reusable native Linux cached token."
+                "AzureAuth did not return a token for the silent-only request."
             ),
             ProcessExecutionStatus.NonZeroExit => Failure(
                 AcquiredAccessTokenStatus.ProcessFailed,

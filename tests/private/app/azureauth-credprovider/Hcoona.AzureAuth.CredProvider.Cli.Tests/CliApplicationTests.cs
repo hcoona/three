@@ -7070,6 +7070,78 @@ public sealed class CliApplicationTests
         }
     }
 
+    [Fact]
+    public void StatusDisclosesDevBoxWslSilentFirstWorkaround()
+    {
+        string rootPath = CreateTestDirectory();
+        var runner = new PromptingResultProcessRunner(
+            new ProcessResult(0, "unused-private-token", string.Empty)
+        );
+        try
+        {
+            CredentialProviderCompositionRoot root = CreatePhase2ProductionRoot(
+                rootPath,
+                CreatePhase2Installation(AzureAuthHostPlatform.Wsl, isDevBox: true),
+                runner,
+                promptWriter: null
+            );
+            var runtime = new CliRuntimeOptions
+            {
+                CompositionRoot = root,
+                ConfigurationPhase14Options = CreateConfigurationPhase14Options(rootPath),
+            };
+
+            CommandResult result = InvokeWithRuntime(runtime, "status");
+
+            Assert.Equal(0, result.ExitCode);
+            Assert.Contains(
+                "silent-only-readiness-code: AzureAuthDevBoxWslSilentFirstWorkaroundReady\n",
+                result.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Contains(
+                "silent-only-mechanism: devbox-wsl-wam-first-may-interact\n",
+                result.StdOut,
+                StringComparison.Ordinal
+            );
+            Assert.Equal(string.Empty, result.StdErr);
+            Assert.Equal(0, runner.InvocationCount);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(rootPath);
+        }
+    }
+
+    [Fact]
+    public void DoctorDisclosesDevBoxWslSilentFirstWorkaroundMayInteract()
+    {
+        using var pythonFixture = new PythonDoctorFixture(PythonDoctorFixtureMode.Healthy);
+        CliRuntimeOptions runtime = CreateHealthyDoctorRuntimeOptions(
+            pythonFixture,
+            new ProcessResult(0, "unused-private-token", "unused-private-diagnostic"),
+            out _,
+            out _,
+            CreatePhase2Installation(AzureAuthHostPlatform.Wsl, isDevBox: true)
+        );
+
+        Assert.Equal(0, InvokeWithRuntime(runtime, "configure", "git").ExitCode);
+
+        CommandResult result = InvokeWithRuntime(runtime, "doctor");
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains(
+            "silent-only-mechanism: devbox-wsl-wam-first-may-interact\n",
+            result.StdOut,
+            StringComparison.Ordinal
+        );
+        Assert.Contains(
+            "live-auth-probing: git-doctor-silent-only-may-interact\n",
+            result.StdOut,
+            StringComparison.Ordinal
+        );
+    }
+
     [Theory]
     [InlineData(AzureAuthHostPlatform.Windows, true, true)]
     [InlineData(AzureAuthHostPlatform.Wsl, true, true)]
@@ -7281,12 +7353,14 @@ public sealed class CliApplicationTests
                 InstallationDiscovery = new StaticPhase2InstallationDiscovery(installation),
                 ProcessRunner = processRunner,
                 DeviceCodePromptWriter = promptWriter,
+                EnvironmentVariableReader = _ => null,
             }
         );
     }
 
     private static AzureAuthInstallation CreatePhase2Installation(
-        AzureAuthHostPlatform hostPlatform
+        AzureAuthHostPlatform hostPlatform,
+        bool isDevBox = false
     ) =>
         AzureAuthInstallation.Available(
             hostPlatform == AzureAuthHostPlatform.Windows
@@ -7296,7 +7370,8 @@ public sealed class CliApplicationTests
                 ? @"C:\Program Files\AzureAuth\azureauth.exe"
                 : "/opt/azureauth/azureauth",
             "0.9.5",
-            hostPlatform
+            hostPlatform,
+            isDevBox
         );
 
     private sealed class StaticPhase2InstallationDiscovery(AzureAuthInstallation installation)
@@ -8325,7 +8400,8 @@ public sealed class CliApplicationTests
         PythonDoctorFixture pythonFixture,
         ProcessResult healthProbeResult,
         out PromptingResultProcessRunner healthProbeRunner,
-        out HealthyDoctorGitDiscoveryProcessRunner gitDiscoveryRunner
+        out HealthyDoctorGitDiscoveryProcessRunner gitDiscoveryRunner,
+        AzureAuthInstallation? installation = null
     )
     {
         var promptWriter = new StringWriter();
@@ -8335,7 +8411,7 @@ public sealed class CliApplicationTests
         );
         CredentialProviderCompositionRoot productionRoot = CreatePhase2ProductionRoot(
             pythonFixture.RootPath,
-            CreatePhase2Installation(AzureAuthHostPlatform.NativeLinux),
+            installation ?? CreatePhase2Installation(AzureAuthHostPlatform.NativeLinux),
             healthProbeRunner,
             promptWriter
         );

@@ -171,6 +171,11 @@ Windows, WSL, and native Linux identity path. The provider is selected and bound
 explicitly. Windows and WSL derive the executable from the official per-user
 installation layout; native Linux uses the official package payload. Direct
 MSAL remains unimplemented behind the same identity-provider abstraction.
+Pending this product's adoption and verification of an AzureAuth release
+containing the fix for issue #464, GCM-compatible Dev Box WSL hosts temporarily
+route `SilentOnly` requests through AzureAuth's WAM-first default flow. The
+behavior may display UI, is reported as a distinct mechanism, and can be forced
+or disabled by a WSL-only environment override.
 
 ### Core Submodules
 

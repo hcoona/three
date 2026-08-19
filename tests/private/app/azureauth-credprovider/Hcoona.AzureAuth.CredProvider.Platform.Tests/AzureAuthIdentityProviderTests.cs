@@ -26,6 +26,48 @@ public sealed class AzureAuthIdentityProviderTests
     }
 
     [Fact]
+    public async Task DevBoxWslWorkaroundLaunchesWamFirstFlowForSilentOnly()
+    {
+        var runner = new RecordingRunner(new ProcessResult(0, CreateToken(), ""));
+        AzureAuthIdentityProvider provider = CreateProvider(
+            runner,
+            enableDevBoxWslSilentFirstWorkaround: true
+        );
+
+        AcquiredAccessTokenResult result = await provider.AcquireAccessTokenAsync(
+            CreateRequest(AcquisitionMode.SilentOnly, interactivePolicy: InteractivePolicy.Never),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(AcquiredAccessTokenStatus.Success, result.Status);
+        ProcessStartSpec start = Assert.IsType<ProcessStartSpec>(runner.StartSpec);
+        Assert.DoesNotContain("--mode", start.Arguments);
+        Assert.Null(start.Environment["AZUREAUTH_MODE"]);
+        Assert.Null(start.Environment["AZUREAUTH_NO_USER"]);
+        Assert.Null(start.Environment["Corext_NonInteractive"]);
+    }
+
+    [Fact]
+    public async Task DevBoxWslWorkaroundDoesNotExpandToWindows()
+    {
+        var runner = new RecordingRunner(new ProcessResult(0, CreateToken(), ""));
+        AzureAuthIdentityProvider provider = CreateProvider(
+            runner,
+            AzureAuthHostPlatform.Windows,
+            enableDevBoxWslSilentFirstWorkaround: true
+        );
+
+        AcquiredAccessTokenResult result = await provider.AcquireAccessTokenAsync(
+            CreateRequest(AcquisitionMode.SilentOnly, interactivePolicy: InteractivePolicy.Never),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(AcquiredAccessTokenStatus.InteractionRequired, result.Status);
+        Assert.Equal("SilentAcquisitionUnavailable", result.Code);
+        Assert.Null(runner.StartSpec);
+    }
+
+    [Fact]
     public async Task NativeLinuxSilentOnlySanitizesAmbientControlsAndSetsNoUser()
     {
         var runner = new RecordingRunner(new ProcessResult(0, CreateToken(), ""));
@@ -406,7 +448,8 @@ public sealed class AzureAuthIdentityProviderTests
 
     private static AzureAuthIdentityProvider CreateProvider(
         IProcessRunner runner,
-        AzureAuthHostPlatform hostPlatform = AzureAuthHostPlatform.Wsl
+        AzureAuthHostPlatform hostPlatform = AzureAuthHostPlatform.Wsl,
+        bool enableDevBoxWslSilentFirstWorkaround = false
     )
     {
         AzureAuthProviderConfig config = AzureAuthProviderConfig.CreateAzureAuth();
@@ -419,7 +462,11 @@ public sealed class AzureAuthIdentityProviderTests
         return new AzureAuthIdentityProvider(
             config,
             binding,
-            CreateLaunchOptions(hostPlatform),
+            CreateLaunchOptions(hostPlatform) with
+            {
+                EnableDevBoxWslSilentFirstWorkaround =
+                    enableDevBoxWslSilentFirstWorkaround,
+            },
             runner
         );
     }

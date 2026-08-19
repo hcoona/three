@@ -60,6 +60,8 @@ public sealed class CredentialProviderCompositionRoot
 {
     public const string ProviderConfigRecordName = "azureauth/provider-config.json";
     public const string BindingRecordName = "azureauth/account-binding.json";
+    public const string DevBoxWslSilentFirstWorkaroundReadinessCode =
+        "AzureAuthDevBoxWslSilentFirstWorkaroundReady";
 
     private readonly BoundedCredentialAcquisitionAdapter boundary;
 
@@ -106,13 +108,15 @@ public sealed class CredentialProviderCompositionRoot
     )
     {
         options ??= new CredentialProviderProductionOptions();
+        Func<string, string?> environmentVariableReader =
+            options.EnvironmentVariableReader ?? Environment.GetEnvironmentVariable;
         IAzureAuthSecureRecordStore store =
             options.SecureRecordStore
             ?? new SystemAzureAuthSecureRecordStore(
                 new SystemAzureAuthSecureRecordStoreOptions
                 {
                     ConfigRootPath = options.SecureStoreRootPath,
-                    EnvironmentVariableReader = options.EnvironmentVariableReader,
+                    EnvironmentVariableReader = environmentVariableReader,
                 }
             );
         AzureAuthPersistedRecord<AzureAuthProviderConfig> configRecord =
@@ -156,8 +160,7 @@ public sealed class CredentialProviderCompositionRoot
                     LocalApplicationDataPath = options.WindowsLocalApplicationDataPath,
                     WindowsPowerShellPath = options.WindowsPowerShellPath,
                     NativeLinuxExecutablePath = options.NativeLinuxAzureAuthExecutablePath,
-                    EnvironmentVariableReader =
-                        options.EnvironmentVariableReader ?? Environment.GetEnvironmentVariable,
+                    EnvironmentVariableReader = environmentVariableReader,
                 }
             );
         AzureAuthInstallation installation =
@@ -174,6 +177,24 @@ public sealed class CredentialProviderCompositionRoot
                 );
         AzureAuthProcessLaunchOptions? launchOptions =
             AzureAuthProcessLaunchOptions.FromInstallation(installation);
+        string? workaroundOverride = environmentVariableReader(
+            AzureAuthProcessLaunchOptions.DevBoxWslSilentFirstWorkaroundEnvironmentVariable
+        );
+        bool enableDevBoxWslSilentFirstWorkaround =
+            installation.HostPlatform == AzureAuthHostPlatform.Wsl
+            && (
+                workaroundOverride is null
+                    ? installation.IsDevBox
+                    : string.Equals(workaroundOverride, "1", StringComparison.Ordinal)
+            );
+        if (launchOptions is not null)
+        {
+            launchOptions = launchOptions with
+            {
+                EnableDevBoxWslSilentFirstWorkaround =
+                    enableDevBoxWslSilentFirstWorkaround,
+            };
+        }
         AzureAuthProductionPrerequisiteFailure? prerequisite =
             AzureAuthProductionPrerequisitePolicy.Evaluate(
                 config,
@@ -199,12 +220,18 @@ public sealed class CredentialProviderCompositionRoot
             _ => identityProvider,
             new CredentialMaterializationService(exchange, options.TimeProvider)
         );
-        CredentialProviderReadiness readiness = CreateReadiness(config, prerequisite, installation);
+        CredentialProviderReadiness readiness = CreateReadiness(
+            config,
+            prerequisite,
+            installation,
+            enableDevBoxWslSilentFirstWorkaround
+        );
         CredentialProviderProductionOptions effectiveOptions = options with
         {
             SecureRecordStore = store,
             InstallationDiscovery = discovery,
             ProcessRunner = processRunner,
+            EnvironmentVariableReader = environmentVariableReader,
         };
         return new CredentialProviderCompositionRoot(
             CredentialProviderCompositionMode.Production,
@@ -346,7 +373,8 @@ public sealed class CredentialProviderCompositionRoot
     private static CredentialProviderReadiness CreateReadiness(
         AzureAuthProviderConfig config,
         AzureAuthProductionPrerequisiteFailure? prerequisite,
-        AzureAuthInstallation installation
+        AzureAuthInstallation installation,
+        bool enableDevBoxWslSilentFirstWorkaround
     )
     {
         CredentialProviderCapabilityReadiness interactive = prerequisite is null
@@ -370,6 +398,15 @@ public sealed class CredentialProviderCompositionRoot
                     ? Ready(
                         "AzureAuthSilentReady",
                         "AzureAuth native Linux cache-only acquisition is ready."
+                    )
+                : config.Selection == AzureAuthProviderSelection.AzureAuth
+                && installation.HostPlatform == AzureAuthHostPlatform.Wsl
+                && enableDevBoxWslSilentFirstWorkaround
+                    ? Ready(
+                        DevBoxWslSilentFirstWorkaroundReadinessCode,
+                        "The temporary Dev Box WSL silent-first workaround is enabled. "
+                            + "AzureAuth may display interactive UI until AzureAuth issue #464 "
+                            + "is implemented."
                     )
                 : config.Selection == AzureAuthProviderSelection.AzureAuth
                     ? Unavailable(

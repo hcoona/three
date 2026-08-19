@@ -17,7 +17,8 @@ internal static class AzureAuthRequestPreflightPolicy
 {
     internal static AzureAuthRequestPreflightFailure? Evaluate(
         CredentialRequestV2 request,
-        AzureAuthHostPlatform hostPlatform
+        AzureAuthHostPlatform hostPlatform,
+        bool enableDevBoxWslSilentFirstWorkaround = false
     )
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -31,7 +32,13 @@ internal static class AzureAuthRequestPreflightPolicy
                     "AzureAuth requires an explicit acquisition mode."
                 );
             case AcquisitionMode.SilentOnly:
-                if (hostPlatform != AzureAuthHostPlatform.NativeLinux)
+                if (
+                    hostPlatform != AzureAuthHostPlatform.NativeLinux
+                    && !(
+                        hostPlatform == AzureAuthHostPlatform.Wsl
+                        && enableDevBoxWslSilentFirstWorkaround
+                    )
+                )
                 {
                     return new AzureAuthRequestPreflightFailure(
                         AcquiredAccessTokenStatus.InteractionRequired,

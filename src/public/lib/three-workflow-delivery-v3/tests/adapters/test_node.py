@@ -120,7 +120,7 @@ def build_request(witness: PackageTargetWitness) -> BuildRequest:
         witness=witness,
         source_date_epoch=1_700_000_000,
         node_version="24.14.0",
-        pnpm_version="11.21.0",
+        pnpm_version="11.22.0",
         npm_version="11.9.0",
     )
 
@@ -145,7 +145,7 @@ def built_result() -> node_adapter.BuildResult:
             witness=witness,
             source_date_epoch=1_700_000_000,
             node_version="24.14.0",
-            pnpm_version="11.21.0",
+            pnpm_version="11.22.0",
             npm_version="11.9.0",
         )
     )
@@ -554,7 +554,7 @@ def test_build_rejects_non_first_slice_package_identity_before_build(
         if command == ("node", "--version"):
             return subprocess.CompletedProcess(command, 0, "v24.14.0\n", "")
         if command == ("pnpm", "--version"):
-            return subprocess.CompletedProcess(command, 0, "11.21.0\n", "")
+            return subprocess.CompletedProcess(command, 0, "11.22.0\n", "")
         if command == ("npm", "--version"):
             return subprocess.CompletedProcess(command, 0, "11.9.0\n", "")
         pytest.fail(
@@ -629,7 +629,7 @@ def test_build_rejects_non_exact_source_package_files_allowlist(
             replace(
                 build_request,
                 source_root=project,
-                pnpm_version="11.21.0",
+                pnpm_version="11.22.0",
             )
         )
 
@@ -773,7 +773,7 @@ def test_build_is_deterministic_and_preserves_source_checkout(
     assert first.witness == build_request.witness.canonical_bytes
     assert first.toolchain == (
         ("node", "24.14.0"),
-        ("pnpm", "11.21.0"),
+        ("pnpm", "11.22.0"),
         ("npm", "11.9.0"),
         ("adapter", "node/npm-package-v1"),
     )
@@ -972,7 +972,7 @@ def test_lifecycle_evidence_binds_every_manifest_script(
         replace(
             build_request,
             source_root=project,
-            pnpm_version="11.21.0",
+            pnpm_version="11.22.0",
         ),
     )
 
@@ -1018,7 +1018,7 @@ def test_failure_paths_preserve_complete_source_checkout(
         if command == ("node", "--version"):
             return subprocess.CompletedProcess(command, 0, "v24.14.0\n", "")
         if command == ("pnpm", "--version"):
-            return subprocess.CompletedProcess(command, 0, "11.21.0\n", "")
+            return subprocess.CompletedProcess(command, 0, "11.22.0\n", "")
         if command == ("npm", "--version"):
             return subprocess.CompletedProcess(command, 0, "11.9.0\n", "")
         is_selected = (
@@ -1775,7 +1775,7 @@ def test_build_reads_declared_inputs_once_and_reuses_immutable_bytes(  # noqa: P
         if command == ("node", "--version"):
             return subprocess.CompletedProcess(command, 0, "v24.14.0\n", "")
         if command == ("pnpm", "--version"):
-            return subprocess.CompletedProcess(command, 0, "11.21.0\n", "")
+            return subprocess.CompletedProcess(command, 0, "11.22.0\n", "")
         if command == ("npm", "--version"):
             return subprocess.CompletedProcess(command, 0, "11.9.0\n", "")
         if command == ("node", "scripts/build.mjs"):

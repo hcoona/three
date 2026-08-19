@@ -120,6 +120,26 @@ describe('applyStaticHighlighting', () => {
     });
   });
 
+  it('preserves the nowrap option on highlighted source blocks', () => {
+    const highlightMock = vi
+      .spyOn(hexoUtil, 'highlight')
+      .mockReturnValue(
+        '<pre><code class="highlight java"><span class="keyword">class</span> Example &#123;&#125;</code></pre>',
+      );
+
+    const result = applyStaticHighlighting(
+      wrapCanonicalListingBlock('<pre class="highlight nowrap"><code data-lang="java">class Example {}</code></pre>'),
+    );
+
+    expect(highlightMock).toHaveBeenCalledWith('class Example {}', {
+      ...FIXED_HIGHLIGHT_OPTIONS,
+      lang: 'java',
+    });
+    expect(result).toContain(
+      '<pre class="nowrap"><code class="highlight java"><span class="keyword">class</span> Example &#123;&#125;</code></pre>',
+    );
+  });
+
   it('highlights multiple canonical blocks in document order with isolated language detection', () => {
     const highlightMock = vi
       .spyOn(hexoUtil, 'highlight')

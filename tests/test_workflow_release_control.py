@@ -1,4 +1,4 @@
-# ruff: noqa: ARG001, E501, EM102, F841, PLR0913, PLR0915, PT018, RUF043, S105, S603, S607, SLF001, TRY003
+# ruff: noqa: ARG001, E501, EM102, F841, ISC004, PLR0913, PLR0915, PLR0917, PT018, RUF043, S105, S603, S607, SLF001, TRY003
 """Tests for workflow-release control-plane helper script."""
 
 from __future__ import annotations
@@ -8620,16 +8620,18 @@ def test_github_release_attestation_backed_content_proof_is_exact_satisfied(
     monkeypatch.setattr(
         control,
         "_download_and_verify_github_release_asset_attestation",
-        lambda **kwargs: verified.append(
-            (
-                kwargs["asset_name"],
-                kwargs["expected_size"],
-                kwargs["expected_sha256"],
-                kwargs["signer_workflow"],
-                kwargs["commit_sha"],
+        lambda **kwargs: (
+            verified.append(
+                (
+                    kwargs["asset_name"],
+                    kwargs["expected_size"],
+                    kwargs["expected_sha256"],
+                    kwargs["signer_workflow"],
+                    kwargs["commit_sha"],
+                )
             )
-        )
-        is None,
+            is None
+        ),
     )
     monkeypatch.setattr(
         control,
@@ -21246,7 +21248,7 @@ def test_ci_validation_workflow_exposes_control_plane_boundaries() -> None:
     )
     assert setup_node_index < setup_pnpm_index
     assert setup_pnpm["uses"] == PNPM_SETUP_ACTION
-    assert setup_pnpm["with"] == {"version": "11.21.0"}
+    assert setup_pnpm["with"] == {"version": "11.22.0"}
     assert not any(
         "corepack enable pnpm" in str(step.get("run", ""))
         for step in ubuntu_steps
