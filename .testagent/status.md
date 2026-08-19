@@ -6981,3 +6981,238 @@ repository Git LFS budget is exhausted.
 - `git diff --check` passes.
 
 <!-- END APPEND: 2026-08-19-publication-preparation-reviewed-repair-validation -->
+
+<!-- BEGIN APPEND: 2026-08-19-wdv3-four-accepted-repairs-phase-1-result-4a38b286 -->
+
+## Phase 1 result — Acquisition guards
+
+- **Status**: SUCCESS.
+- **Exact test**:
+  `test_release_finalizer_prerequisite_actions_are_cancellation_admitting`
+  (15 parameter IDs).
+- **Red command**:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py -k 'release_finalizer_prerequisite_actions_are_cancellation_admitting or unsuccessful_live_qualification_retains_a_publication_free_outcome or release_finalizer_downloads_snapshot_directly_from_materialization'`
+  — exit 1; **17 failed, 75 deselected**, exposing all 15 missing guards
+  plus both stale existing-condition contracts.
+- **Green command**: the same narrow command — exit 0; **17 passed,
+  75 deselected**. The complete canonical contract file also passed:
+  **92 passed**.
+- **Harness discovery**: `uv run --python 3.13 pytest --collect-only -q`
+  increased from **5,195** to **5,210** collected tests, exactly **+15**.
+- **Files changed by Phase 1**:
+  `.github/workflows/workflow-delivery-v3-live-attempt.yml`,
+  `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`,
+  and `.testagent/status.md`.
+- **Append-only check**:
+  `python -c 'from pathlib import Path; import subprocess; paths=(".testagent/research.md",".testagent/plan.md",".testagent/status.md"); assert all(Path(path).read_bytes().startswith(subprocess.check_output(("git","show",f"HEAD:{path}"))) for path in paths)'`
+  passed before this EOF-only status append; research and plan were unchanged
+  by Phase 1. `git diff --check` also passed.
+- **Focused quality review**: exact action and complete-condition equality
+  assertions kill step removal/rename, action substitution, omitted
+  `always()`, changed conjunction, and artifact-ID guard mutations; no
+  assertion-free, trivial, or self-referential rows were found.
+
+<!-- END APPEND: 2026-08-19-wdv3-four-accepted-repairs-phase-1-result-4a38b286 -->
+
+<!-- BEGIN APPEND: 2026-08-19-wdv3-four-accepted-repairs-phase-2-result-4a38b286 -->
+
+## Phase 2 result — Cancellation ownership and qualification-only argv
+
+- **Status**: SUCCESS.
+- **Exact cases**:
+  `test_cancelled_unsuccessful_qualification_uses_exact_qualification_only_argv[failure]`,
+  `[incomplete]`;
+  `test_publisher_result_truth_table_executes_workflow_shell[cancelled-without-workflow-ownership]`,
+  `[post-snapshot-cancelled]`, `[cancelled-with-forwarded-snapshot]`,
+  `[cancelled-with-authorization]`, `[cancelled-with-capability-admission]`,
+  `[cancelled-with-mutation-marker]`, `[cancelled-with-result-bundle]`, and
+  `[cancelled-with-receipt]`; plus
+  `test_publication_preparation_classifier_rejects_invalid_workflow_facts[snapshot-artifact-id-without-upload-digest]`
+  and `[snapshot-upload-digest-without-artifact-id]`.
+- **Red command**:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py -k 'publisher_result_truth_table_executes_workflow_shell or cancelled_unsuccessful_qualification_uses_exact_qualification_only_argv'`
+  — exit 1; **15 passed, 2 failed, 77 deselected**; both new rows exposed
+  the extra `--platform-terminated` argument.
+- **Green commands**: the same targeted command — exit 0; **17 passed,
+  77 deselected**. The complete canonical workflow contract command
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+  — exit 0; **94 passed**.
+- **Build/discovery**: `uv build --package three-workflow-delivery-v3`
+  succeeded; root discovery increased from **5,210** to **5,212**, exactly
+  **+2**.
+- **Changed by Phase 2**:
+  `.github/workflows/workflow-delivery-v3-live-attempt.yml`,
+  `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`,
+  and this EOF-only `.testagent/status.md` section. Research, plan, domain
+  records, CLI, and Publication Control Closure documentation were untouched.
+- **Append-only proof**: the three-file HEAD byte-prefix command passed before
+  this uniquely delimited section was added via `apply_patch` at EOF.
+- **Focused quality review**: exact full-argv equality, explicit flag absence,
+  CLI-call cardinality, diagnostics, and retained post-Snapshot/lineage
+  negatives cover the plausible classifier mutations; no generated row is
+  assertion-free, trivial, or self-referential.
+
+<!-- END APPEND: 2026-08-19-wdv3-four-accepted-repairs-phase-2-result-4a38b286 -->
+
+<!-- BEGIN APPEND: 2026-08-19-wdv3-four-accepted-repairs-phase-3-result-4a38b286 -->
+
+## Phase 3 result — Typed finalize-live optional transport preflight
+
+- **Status**: SUCCESS. Added **21 collected cases**: 20 omission rows in
+  `test_finalize_live_rejects_each_partial_optional_transport_group` and the
+  parser contract
+  `test_cli_exposes_strict_commit8_live_transport_commands_for_finalize_live_groups`.
+- **Exact omission IDs**:
+  `publication-snapshot-missing-path`,
+  `publication-snapshot-missing-record-digest`,
+  `publication-snapshot-missing-artifact-id`,
+  `publication-snapshot-missing-artifact-digest`,
+  `authorization-missing-path`,
+  `authorization-missing-record-digest`,
+  `authorization-missing-artifact-id`,
+  `authorization-missing-artifact-digest`,
+  `capability-decision-missing-path`,
+  `capability-decision-missing-record-digest`,
+  `capability-decision-missing-artifact-id`,
+  `capability-decision-missing-artifact-digest`,
+  `capability-group-bundle-missing-path`,
+  `capability-group-bundle-missing-record-digest`,
+  `capability-group-bundle-missing-artifact-id`,
+  `capability-group-bundle-missing-artifact-digest`,
+  `receipt-missing-path`, `receipt-missing-record-digest`,
+  `receipt-missing-artifact-id`, and
+  `receipt-missing-artifact-digest`.
+- **Production symbols**: `_UploadedRecordTransport` and
+  `_optional_uploaded_record_transport` validate all five groups before
+  `_load_attempt_binding`; the narrowed states feed the existing loaders.
+  `_add_uploaded_record_arguments(..., explicit_member_options=True)` exposes
+  `-path`/`-record-digest` aliases only for these five `finalize-live` groups
+  while preserving their legacy option names. No cast or broad catch was
+  added.
+- **Red command**:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/release/test_live_qualification_boundary.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py -k 'finalize_live_rejects_each_partial_optional_transport_group or cli_exposes_strict_commit8_live_transport_commands'`
+  — exit 1; **21 failed, 9 passed, 75 deselected**, with all 20 rows rejected
+  by the absent explicit parser members and the parser contract missing them.
+- **Green results**: the same command passed **30 tests, 75 deselected**;
+  the complete live Qualification CLI file passed **26 tests**; the complete
+  CLI parser/behavior file passed **79 tests**; both direct files together
+  passed **105 tests**. `uv build --package three-workflow-delivery-v3`
+  succeeded.
+- **Harness discovery**:
+  `uv run --python 3.13 pytest --collect-only -q` increased from **5,212** to
+  **5,233**, exactly **+21**.
+- **Optional Qualification Evidence**: unchanged. `_optional_evidence` and its
+  parser semantics were not edited, and the complete live Qualification CLI
+  regression is green.
+- **Changed by Phase 3**:
+  `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py`,
+  `src/public/lib/three-workflow-delivery-v3/tests/release/test_live_qualification_boundary.py`,
+  `src/public/lib/three-workflow-delivery-v3/tests/test_cli.py`, and this
+  EOF-only `.testagent/status.md` section. All Phase 1–2 edits were preserved;
+  research and plan were not altered by Phase 3.
+- **Depth and state proof**: each omission row asserts exact status, group,
+  missing member, all-present/all-absent contract, and absence of both Outcome
+  and summary; the parser test asserts every explicit member. Focused
+  pseudo-mutation and assertion review found no assertion-free, trivial,
+  self-referential, or uncovered planned row. The three-file HEAD byte-prefix
+  proof, both test-file HEAD-prefix proofs, and `git diff --check` passed
+  before this `apply_patch` EOF append. The prior status prefix was **458,757
+  bytes**, SHA-256
+  `7f8b0652c67578f1132d03ad279da8f9a90acc767b691f7e2e10ce8817f50c6e`.
+- **Next**: stop here; Phase 4 final validation/quality gate has not begun.
+
+<!-- END APPEND: 2026-08-19-wdv3-four-accepted-repairs-phase-3-result-4a38b286 -->
+
+<!-- BEGIN APPEND: 2026-08-19-wdv3-four-repairs-precompletion-correction -->
+
+## Pre-completion quality-gate correction
+
+- Removed the unnecessary Phase 3 CLI aliases and parser test; the 20 direct
+  rows now use the established options and assert preflight precedes every
+  record load.
+- Replaced the interim transport tuple/loader refactor with the typed
+  `_validate_optional_uploaded_record_transport` validator, preserving the
+  established all-present loaders byte-for-byte.
+- Added 11 unsuccessful-Qualification contradiction rows covering workflow
+  ownership, Observation/materialization work, Snapshot transport, forwarded
+  Snapshot, Authorization, Capability Admission, mutation marker, result
+  bundle, and Receipt lineage.
+- Focused results after correction: workflow scenarios **43 passed**; optional
+  transport matrix **20 passed**; Ruff check/format and `git diff --check`
+  passed.
+- `test-gap-analysis` and `assertion-quality` were invoked. Their extension
+  discovery skill was unavailable, so
+  `.agents/skills/test-analysis-extensions/extensions/python.md` was read
+  directly. The corrected tests kill condition removal/inversion, each
+  all-or-none member omission, preflight reordering, ownership removal, and
+  downstream-lineage admission; assertions use exact argv, exact conditions,
+  diagnostics, call cardinality, and filesystem non-creation rather than
+  trivial or self-referential checks.
+
+<!-- END APPEND: 2026-08-19-wdv3-four-repairs-precompletion-correction -->
+
+<!-- BEGIN APPEND: 2026-08-19-wdv3-four-repairs-final-validation -->
+
+## Four-repair final validation
+
+- Workflow contract: **105 passed**.
+- Live Qualification CLI: **26 passed**.
+- CLI parser/behavior: **78 passed**.
+- Closed transport regression: **5 passed**.
+- Bounded four-file run: **214 passed**.
+- Append-only/HK artifact contract: **62 passed**.
+- Root collection: **5,243 tests collected**.
+- Full Workflow Delivery v3 package with `GIT_LFS_SKIP_SMUDGE=1`:
+  **3,116 passed**.
+- `uv build --package three-workflow-delivery-v3`: source distribution and
+  wheel built successfully.
+- Ruff check, Ruff format check, Pyrefly (**0 errors**), and actionlint passed.
+- All three `.testagent` files retain their exact `HEAD` byte prefixes;
+  `git diff --check` passed.
+- Final pseudo-mutation review found no remaining in-scope survivor: every
+  acquisition condition, failed/incomplete qualification-only branch,
+  ownership/Observation/materialization/lineage exclusion, optional group,
+  missing member, and preflight-order boundary has a concrete killing
+  assertion. Final assertion-depth review found no assertion-free,
+  trivial-only, or self-referential generated test.
+- No Marketplace action, GitHub API, package publication, commit, or
+  Publication Control Closure documentation change was performed.
+
+<!-- END APPEND: 2026-08-19-wdv3-four-repairs-final-validation -->
+
+<!-- BEGIN APPEND: 2026-08-19-wdv3-bounded-test-gap-resolution -->
+
+## Bounded test-only Workflow Delivery v3 gap resolution
+
+- Expanded
+  `test_unsuccessful_qualification_cancellation_is_not_clean_with_contradictions`
+  to **30 cases**: 15 contradiction scenarios for each of failed and
+  incomplete Qualification. This includes **12 independent non-skipped job
+  cases** spanning success, failure, and cancellation for Observation and
+  materialization under both Qualification results; every row requires exactly
+  one `--platform-terminated` and excludes
+  `--publication-preparation-interrupted`.
+- Added **2 cases** to
+  `test_cancelled_unsuccessful_qualification_retains_qualification_record_argv`
+  for failed and incomplete Qualification. Both assert the exact contiguous CLI
+  transports for four retained Qualification Evidence records and the Release
+  Artifact, with neither cancellation semantic flag.
+- Expanded
+  `test_finalize_live_rejects_each_partial_optional_transport_group` to
+  **40 cases**: the 20 readable missing-one cases remain, and 20 new
+  `<group>-only-<member>` cases supply exactly one member across all five
+  optional groups. Every row asserts the complete preflight diagnostic, no
+  Outcome or summary, and no `_load_attempt_binding` call.
+- Focused pseudo-mutation and assertion-depth review found no remaining
+  in-scope survivor, trivial-only assertion, tautology, or unverified prompt
+  scenario.
+- Validation passed: workflow contract **126 passed**; live Qualification
+  boundary **46 passed**; full affected package **3,157 passed**; package build,
+  Ruff check, Ruff format check, Pyrefly (**0 errors**), append-only/HK tests
+  (**62 passed**), all three `.testagent` HEAD byte prefixes, and
+  `git diff --check`.
+- This repair changed only the two requested test files and this EOF-only
+  status section; existing research and plan content was not appended or
+  rewritten, and no production/workflow behavior was changed.
+
+<!-- END APPEND: 2026-08-19-wdv3-bounded-test-gap-resolution -->

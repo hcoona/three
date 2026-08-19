@@ -4258,3 +4258,342 @@ After all three implementation phases are green:
 10. Record command results and all three quality-gate outcomes in
     `.testagent/status.md`. Any unresolved checklist row, quality finding,
     normative-doc blocker, or validation failure blocks completion.
+
+<!-- BEGIN APPEND: 2026-08-19-wdv3-four-accepted-repairs-plan-4a38b286 -->
+
+# Workflow Delivery v3 Four Accepted Repairs — Test Implementation Plan
+
+## Overview
+
+Use a targeted, single-pass, tests-first sequence against `HEAD` `4a38b286`.
+Only the partial workflow/CLI surfaces identified by the bounded research are
+in scope. Reuse the exact-workflow-shell helpers already in
+`test_buddy_workflows.py`; do not add another renderer, fact model, or Bash
+harness. Publication Control Closure documentation is out of scope.
+
+Expected production edits are limited to:
+
+- `.github/workflows/workflow-delivery-v3-live-attempt.yml`
+- `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py`
+
+Use the canonical tests:
+
+- `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/release/test_live_qualification_boundary.py`
+- `src/public/lib/three-workflow-delivery-v3/tests/test_cli.py`
+
+Do not change `records/release.py`, `records/release_transport.py`, or
+`test_commit6_transport_cli.py` unless the CLI-local typed helper cannot remain
+local; if one changes, retain and run the closed-transport regression.
+
+## Commands
+
+- **Build**: `uv build --package three-workflow-delivery-v3`
+- **Bounded tests**: `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py src/public/lib/three-workflow-delivery-v3/tests/release/test_live_qualification_boundary.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit6_transport_cli.py`
+- **Lint/type**: use the exact Ruff, Pyrefly, and actionlint commands in the
+  Final Validation Gate below.
+
+## Prompt-Scenario and State Gate
+
+Before Phase 1, map every row below to a collected test and append the mapping
+to `.testagent/status.md`; no production edit precedes its failing test.
+
+| Requirement | Exact planned test/scenario |
+|---|---|
+| Five required and ten optional acquisition guards | `test_release_finalizer_prerequisite_actions_are_cancellation_admitting` with the 15 Phase 1 IDs |
+| Existing acquisition assertions | `test_unsuccessful_live_qualification_retains_a_publication_free_outcome`; `test_release_finalizer_downloads_snapshot_directly_from_materialization` |
+| No workflow ownership | `test_publisher_result_truth_table_executes_workflow_shell[cancelled-without-workflow-ownership]` |
+| Qualification-only cancellation | `test_cancelled_unsuccessful_qualification_uses_exact_qualification_only_argv[failure]` and `[incomplete]` |
+| Ordinary post-Snapshot cancellation | `test_publisher_result_truth_table_executes_workflow_shell[post-snapshot-cancelled]` |
+| Contradictory/downstream cancellation | The same truth-table function's six existing `cancelled-with-*` IDs and existing partial-Snapshot IDs, retained verbatim |
+| Five all-or-none optional groups | `test_finalize_live_rejects_each_partial_optional_transport_group` with the 20 Phase 3 IDs |
+| All 20 parser options | `test_cli_exposes_strict_commit8_live_transport_commands` (single existing scenario, extended in place) |
+| Optional Qualification Evidence unchanged | Entire `test_live_qualification_boundary.py` regression; no `_optional_evidence` or parser-semantic edit |
+| Append-only artifacts | `test_hk_trigger.py` plus the three-byte-prefix command in the Final Validation Gate |
+
+At entry and after every phase, run:
+
+`python -c 'from pathlib import Path; import subprocess; paths=(".testagent/research.md",".testagent/plan.md",".testagent/status.md"); assert all(Path(path).read_bytes().startswith(subprocess.check_output(("git","show",f"HEAD:{path}"))) for path in paths)'`
+
+Keep research and plan unchanged during implementation. Any status update must
+be a concise, uniquely delimited EOF append. Do not commit, stage, reset, or
+otherwise mutate VCS state.
+
+## Phase Summary
+
+| Phase | Focus | Files | Estimated scenarios |
+|---|---|---:|---:|
+| 1 | Cancellation-admitting acquisition guards | 2 | 15 parameter rows + 2 updated contracts |
+| 2 | Publisher ownership and cancellation argv | 2 | 3 focused rows + existing negative matrix |
+| 3 | Typed finalize-live optional-group preflight | 3 | 20 direct CLI rows + parser contract |
+| 4 | Narrow-to-final validation and state proof | 0 | All required command gates |
+
+---
+
+## Phase 1: Release-Finalizer Acquisition Guards
+
+### Files
+
+- **Source**: `.github/workflows/workflow-delivery-v3-live-attempt.yml`
+  (`release-finalizer` acquisition steps)
+- **Test**:
+  `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+- **Test module**: module-level workflow contracts; no test class
+
+### Tests First
+
+Add
+`test_release_finalizer_prerequisite_actions_are_cancellation_admitting` as
+one parameterized structural contract. Its exact IDs are:
+
+- Required / exact `if: always()`: `checkout-target`, `install-uv`,
+  `attempt-binding`, `qualification-snapshot`, `qualification-decision`.
+- Optional / exact `if: always() && <existing artifact-id expression> != ''`:
+  `build`, `project-test`, `artifact-contents`, `install-import`,
+  `release-artifact`, `publication-snapshot`, `authorization`,
+  `capability-admission-decision`, `capability-result-bundle`, `receipt`.
+
+Each parameter must identify the actual step by name and compare the complete
+YAML `if` string, not merely search for `always()`. Update the old-condition
+assertions in:
+
+- `test_unsuccessful_live_qualification_retains_a_publication_free_outcome`
+- `test_release_finalizer_downloads_snapshot_directly_from_materialization`
+
+**Red command** (after test edits, before workflow edits):
+
+`uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py -k 'release_finalizer_prerequisite_actions_are_cancellation_admitting or unsuccessful_live_qualification_retains_a_publication_free_outcome or release_finalizer_downloads_snapshot_directly_from_materialization'`
+
+### Production Response
+
+Add `if: always()` to exactly the five required acquisition actions. Prefix
+each of the ten existing optional artifact-ID predicates with `always() &&`;
+preserve each current artifact expression, action version, `with` block, and
+step order. Marketplace actions remain structural-only and are not executed
+locally.
+
+**Green command**: rerun the Red command, then:
+
+`uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+
+### Success Criteria
+
+- [ ] All 15 exact conditions pass.
+- [ ] Existing publication-free and direct-Snapshot contracts use the new conditions.
+- [ ] No workflow behavior outside acquisition conditions changes.
+
+---
+
+## Phase 2: Ownership Rejection and Qualification-Only Cancellation
+
+### Files
+
+- **Source**: `.github/workflows/workflow-delivery-v3-live-attempt.yml`
+  (`Finalize Attempt Outcome` shell only)
+- **Test**:
+  `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+
+### Tests First
+
+1. Correct
+   `test_publisher_result_truth_table_executes_workflow_shell[cancelled-without-workflow-ownership]`
+   to use Observation=`failure`, materialization=`skipped`,
+   publisher=`cancelled`, and workflow cancellation=`false`. Assert the
+   publisher-ownership diagnostic and zero captured CLI invocations.
+2. Add
+   `test_cancelled_unsuccessful_qualification_uses_exact_qualification_only_argv`
+   with IDs `failure` and `incomplete`. Both rows use
+   Observation/materialization=`skipped`, publisher=`cancelled`, workflow
+   cancellation=`true`, and no Snapshot, Authorization, capability, bundle,
+   Receipt, or mutation-marker lineage. Compare the complete captured argv to
+   a literal expected argv made only from the canonical Attempt binding,
+   Qualification Snapshot/Decision replay arguments, and current Outcome and
+   summary outputs. Do not derive the expectation by filtering actual argv.
+   Neither row may contain `--publication-preparation-interrupted` or
+   `--platform-terminated`.
+3. Keep
+   `test_publisher_result_truth_table_executes_workflow_shell[post-snapshot-cancelled]`
+   asserting exactly one `--platform-terminated` and no preparation flag.
+   Run the whole parameterization so its six existing `cancelled-with-*`
+   lineage IDs, partial-Snapshot IDs, and contradictory cases remain rejected
+   with no CLI call. Do not rename those established IDs.
+
+All shell execution must continue through `_phase2_finalizer_facts`,
+`_phase2_render_finalizer_run`, `_phase2_execute_finalizer_shell`, and
+`_phase2_assert_successful_finalizer`.
+
+**Red command** (after test edits, before shell edits):
+
+`uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py -k 'publisher_result_truth_table_executes_workflow_shell or cancelled_unsuccessful_qualification_uses_exact_qualification_only_argv'`
+
+### Production Response
+
+In the existing finalizer shell, classify an owned whole-workflow cancellation
+after exact failed/incomplete Qualification and before any downstream lineage
+as qualification-only: append neither semantic flag. Keep publication
+preparation interruption classification and ordinary post-Snapshot
+`--platform-terminated` classification unchanged. Do not weaken publisher
+ownership, partial transport, contradictory fact, or downstream-lineage
+rejections, and do not change `finalize_attempt_outcome` or `AttemptOutcome`.
+
+**Green command**: rerun the Red command, then the complete workflow-contract
+command from Phase 1.
+
+### Success Criteria
+
+- [ ] The no-ownership row reaches publisher ownership rejection.
+- [ ] `failure` and `incomplete` match complete qualification-only argv.
+- [ ] Post-Snapshot cancellation remains platform termination.
+- [ ] Every established ownership/lineage/partial-Snapshot negative remains closed.
+
+---
+
+## Phase 3: Typed All-or-None Finalize-Live Preflight
+
+### Files
+
+- **Source**:
+  `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py`
+- **Behavior tests**:
+  `src/public/lib/three-workflow-delivery-v3/tests/release/test_live_qualification_boundary.py`
+- **Parser test**:
+  `src/public/lib/three-workflow-delivery-v3/tests/test_cli.py`
+
+### Tests First
+
+Add `test_finalize_live_rejects_each_partial_optional_transport_group` using
+valid exact mandatory Qualification replay. The exact 20 IDs are:
+
+- `publication-snapshot-missing-path`,
+  `publication-snapshot-missing-record-digest`,
+  `publication-snapshot-missing-artifact-id`,
+  `publication-snapshot-missing-artifact-digest`
+- `authorization-missing-path`,
+  `authorization-missing-record-digest`,
+  `authorization-missing-artifact-id`,
+  `authorization-missing-artifact-digest`
+- `capability-decision-missing-path`,
+  `capability-decision-missing-record-digest`,
+  `capability-decision-missing-artifact-id`,
+  `capability-decision-missing-artifact-digest`
+- `capability-group-bundle-missing-path`,
+  `capability-group-bundle-missing-record-digest`,
+  `capability-group-bundle-missing-artifact-id`,
+  `capability-group-bundle-missing-artifact-digest`
+- `receipt-missing-path`, `receipt-missing-record-digest`,
+  `receipt-missing-artifact-id`, `receipt-missing-artifact-digest`
+
+For each row, supply exactly three of that group's four members, leave the
+other optional groups absent, dispatch through the real parser, and assert
+status `1`, stderr naming that group and saying all four members must be all
+present or all absent, and non-creation of both Attempt Outcome and summary.
+
+Extend `test_cli_exposes_strict_commit8_live_transport_commands` in place to
+lock these exact option families for each of `publication-snapshot`,
+`authorization`, `capability-decision`, `capability-group-bundle`, and
+`receipt`: `--<group>-path`, `--<group>-record-digest`,
+`--<group>-artifact-id`, and `--<group>-artifact-digest`. This is a
+single-case existing test with no parameter ID.
+
+**Red command** (after test edits, before CLI edits):
+
+`uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/release/test_live_qualification_boundary.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py -k 'finalize_live_rejects_each_partial_optional_transport_group or cli_exposes_strict_commit8_live_transport_commands'`
+
+### Production Response
+
+Add one CLI-local typed helper,
+`_optional_uploaded_record_transport`, taking group name plus
+`Path | None`, record digest, artifact ID, and artifact digest, and returning
+`tuple[Path, str, str, str] | None`. It must:
+
+1. return `None` when all four values are absent;
+2. return the fully narrowed tuple when all four are present; and
+3. otherwise raise a group-specific `ValueError` stating that all four values
+   must be all present or all absent.
+
+Call it for `publication_snapshot`, `authorization`, `capability_decision`,
+`capability_group_bundle`, and `receipt` at the start of
+`_release_finalize_live_command`, before `_load_attempt_binding` or any other
+record load. Consume the returned typed states in the existing loaders. Add no
+`cast`, broad catch, or new exception mapping; retain `main`'s existing
+`ValueError` handling. Do not apply the helper to Qualification Evidence or
+change `_optional_evidence`.
+
+**Green command**: rerun the Red command, then:
+
+`uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/release/test_live_qualification_boundary.py`
+
+`uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/test_cli.py`
+
+### Success Criteria
+
+- [ ] All 20 one-member-omitted cases fail clearly before Outcome/summary creation.
+- [ ] All-present and all-absent transports retain existing behavior.
+- [ ] Optional Qualification Evidence semantics remain unchanged.
+- [ ] The implementation is typed without casts or broad catches.
+
+---
+
+## Phase 4: Final Validation and Append-Only Proof
+
+There is no production response and no expected red test in this phase. If a
+command fails, stop, repair only its owning earlier phase tests-first, and
+restart this ordered gate. The prompt-scenario gate passes only when collected
+tests show every exact new ID above, the no-ownership and post-Snapshot IDs,
+and all pre-existing `cancelled-with-*`/partial-Snapshot IDs.
+
+Run, in order:
+
+1. **Narrow workflow contract**
+   `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+2. **Live Qualification CLI**
+   `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/release/test_live_qualification_boundary.py`
+3. **CLI parser/behavior**
+   `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/test_cli.py`
+4. **Closed transport regression**
+   `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/release/test_commit6_transport_cli.py`
+5. **Bounded combined tests**
+   `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py src/public/lib/three-workflow-delivery-v3/tests/release/test_live_qualification_boundary.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py src/public/lib/three-workflow-delivery-v3/tests/release/test_commit6_transport_cli.py`
+6. **Discovery / prompt-scenario collection gate**
+   `uv run --python 3.13 pytest --collect-only -q`
+7. **Full affected package**
+   `GIT_LFS_SKIP_SMUDGE=1 python eng/scripts/hk_exec.py --timeout-seconds 720 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests`
+8. **Build**
+   `uv build --package three-workflow-delivery-v3`
+9. **Ruff check**
+   `uv run --python 3.13 ruff check --force-exclude -- src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/records/release.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/records/release_transport.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py src/public/lib/three-workflow-delivery-v3/tests/release/test_live_qualification_boundary.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py`
+10. **Ruff format check**
+    `uv run --python 3.13 ruff format --check --force-exclude -- src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/records/release.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/records/release_transport.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py src/public/lib/three-workflow-delivery-v3/tests/release/test_live_qualification_boundary.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py`
+11. **Pyrefly**
+    `uv run --python 3.13 pyrefly check src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/records/release.py src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/records/release_transport.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py src/public/lib/three-workflow-delivery-v3/tests/release/test_live_qualification_boundary.py src/public/lib/three-workflow-delivery-v3/tests/test_cli.py`
+12. **actionlint**
+    `actionlint .github/workflows/workflow-delivery-v3-live-attempt.yml`
+13. **Append-only artifact tests**
+    `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py`
+14. **All three append-only byte prefixes**
+    `python -c 'from pathlib import Path; import subprocess; paths=(".testagent/research.md",".testagent/plan.md",".testagent/status.md"); assert all(Path(path).read_bytes().startswith(subprocess.check_output(("git","show",f"HEAD:{path}"))) for path in paths)'`
+15. **Whitespace/diff integrity**
+    `git diff --check`
+
+Completion requires every command green, every prompt scenario collected and
+asserted, only bounded files changed, append-only state intact, and no commit
+or Publication Control Closure documentation edit.
+
+<!-- END APPEND: 2026-08-19-wdv3-four-accepted-repairs-plan-4a38b286 -->
+
+<!-- BEGIN APPEND: 2026-08-19-wdv3-four-repairs-quality-gate-plan-correction -->
+
+## Quality-gate correction
+
+- Phase 3 uses canonical `--<group>` / `--<group>-digest` options; the planned
+  alias/parser-surface addition is superseded as unnecessary.
+- Every partial-group row also proves `_load_attempt_binding` is not called.
+- Phase 2 additionally maps
+  `test_unsuccessful_qualification_cancellation_is_not_clean_with_contradictions`
+  IDs `without-workflow-ownership`, `with-observation-work`,
+  `with-materialization-work`, `with-publication-snapshot`,
+  `with-orphaned-snapshot-upload-digest`, `with-forwarded-snapshot`,
+  `with-authorization`, `with-capability-admission`, `with-mutation-marker`,
+  `with-result-bundle`, and `with-receipt`.
+
+<!-- END APPEND: 2026-08-19-wdv3-four-repairs-quality-gate-plan-correction -->
