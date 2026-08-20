@@ -8372,3 +8372,383 @@ No workflow, manifest, lockfile, package, live-delivery state, global
 environment, or global Git configuration was changed.
 
 <!-- END APPEND: 2026-08-20-wdv3-node-provider-lfs-review-status -->
+
+<!-- BEGIN APPEND: 2026-08-20T051623Z-pr552-codeql-closure-phase5-status -->
+
+## PR #552 CodeQL-closure regression Phase 5
+
+STRATEGY: Single pass
+PHASE: 5
+STATUS: COMPLETE_WITH_INTENTIONAL_RED
+TARGETED_TEST_NODES: 40
+TARGETED_PASSING: 17
+TARGETED_INTENTIONAL_FAILING: 23
+HARNESS_DISCOVERY_DELTA: +38 net nodes
+
+### Bounded files and nodes
+
+Only the four planned test modules were changed for the regression suite:
+
+- `src/public/lib/three-workflow-delivery-v3/tests/ci/test_consumer_policy.py`:
+  10 added parameter nodes.
+- `src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py`:
+  10 added parameter nodes and the existing authenticated-metadata node
+  strengthened. The Phase 5 review added the three exact-origin
+  `explicit-port`, `userinfo`, and `scheme-prefix` nodes.
+- `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`:
+  16 added parameter nodes. The Phase 5 review added
+  `test_live_attempt_has_no_nonlocal_or_revision_qualified_callers`.
+- `tests/test_workflow_release_control.py`: three nodes replace the single stale
+  positive `test_release_build_variant_runs_control_from_trusted_checkout`.
+
+The diff therefore adds 39 test nodes, strengthens one existing metadata node,
+and removes/replaces one stale node, for a net discovery increase of 38.
+
+### Exact commands and final outcomes
+
+Syntax:
+
+```text
+uv run --python 3.13 --package three-workflow-delivery-v3 python -m py_compile src/public/lib/three-workflow-delivery-v3/tests/ci/test_consumer_policy.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py tests/test_workflow_release_control.py
+```
+
+Exit `0`; no syntax output.
+
+Focused regressions:
+
+```text
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/ci/test_consumer_policy.py -k 'token and (unterminated or escaped)'
+```
+
+Exit `1`: `6 failed, 4 passed, 148 deselected in 4.27s`. All failures are the
+intended production `_TOKEN` blocker.
+
+```text
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py -k 'closure_bound or absolute_form or upstream_response_header or authenticated_github_package_version_metadata or exact_github_api_origin'
+```
+
+Exit `1`: `5 failed, 6 passed, 177 deselected in 1.07s`. All failures are the
+intended production proxy blockers.
+
+```text
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py -k 'exact_target_checkouts or only_dispatch_same_commit or target_sha_stays_bound or no_nonlocal_or_revision_qualified'
+```
+
+Exit `1`: `11 failed, 5 passed, 131 deselected in 3.59s`. All failures are the
+intended live-attempt checkout-ref workflow blocker.
+
+```text
+uv run --python 3.13 pytest -q tests/test_workflow_release_control.py -k 'release_build_variant'
+```
+
+Exit `1`: `1 failed, 2 passed, 994 deselected in 1.16s`. The failure is the
+intended existing-orphan blocker.
+
+Combined focused result: `23 failed, 17 passed`; there were no import,
+collection, fixture, timing-race, or external-network failures in these four
+test runs.
+
+Collection:
+
+```text
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest --collect-only -q src/public/lib/three-workflow-delivery-v3/tests/ci/test_consumer_policy.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py
+```
+
+Exit `0`: `493 tests collected in 0.29s`. The unchanged pre-regression inventory
+is 457 nodes, so the scoped v3 delta is `+36`.
+
+```text
+uv run --python 3.13 pytest --collect-only -q
+```
+
+Exit `2`: `5293 tests collected, 2 errors in 1.05s`. Every generated root node
+was enumerated before two unrelated environment/import errors:
+
+- `test_backend_and_shim.py`: no module
+  `azureauth_credprovider_keyring`;
+- `test_final_package_regressions.py`: no module `keyring`.
+
+These are root harness dependency errors, not generated-test failures. The
+root inventory delta attributable to the three v3 files is `+36`
+(`5257 -> 5293`); all route/quote, proxy/header/origin, checkout, binding, and
+caller parameter IDs are present in the root collection output.
+
+```text
+uv run --python 3.13 pytest --collect-only -q tests/test_workflow_release_control.py -k 'release_build_variant'
+```
+
+Exit `0`: `3/997 tests collected (994 deselected) in 0.27s`. This replaces one
+selected stale node with three selected nodes, a net `+2`. Combined harness
+delta is therefore `+38`.
+
+Lint and formatting:
+
+```text
+uv run --python 3.13 ruff check --force-exclude -- src/public/lib/three-workflow-delivery-v3/tests/ci/test_consumer_policy.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py tests/test_workflow_release_control.py
+uv run --python 3.13 ruff format --check --force-exclude -- src/public/lib/three-workflow-delivery-v3/tests/ci/test_consumer_policy.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py tests/test_workflow_release_control.py
+```
+
+The first pre-final format check identified only the newly appended caller
+test. After formatting those test-only lines, the complete validation gate was
+rerun. Final outcomes are exit `0`, `All checks passed!`, and exit `0`,
+`4 files already formatted`. A later optional `/usr/bin/time` wrapper attempt
+exited `127` because that binary is unavailable; it did not replace or affect
+the canonical successful Ruff commands.
+
+Predicate and diff gates:
+
+```text
+rg -n '"api\.github\.com" in url|"api\.github\.com" in call\[0\]' src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py
+git --no-pager diff --check
+```
+
+The raw `rg` command returned the expected exit `1` with zero matches;
+`git diff --check` returned exit `0`. A bounded zero-context diff count found
+exactly three removed substring predicates: the two fake response branches and
+the `api_calls` filter. All three now call the same `urlsplit`-based exact
+`scheme == "https"` and exact `netloc == "api.github.com"` predicate.
+
+### Intentional red production/workflow/file omissions
+
+Consumer structural fallback:
+
+- `test_unterminated_quoted_token_is_not_reclassified_as_ordinary[double]`
+  receives a match for `"\\a`.
+- `test_unterminated_quoted_token_is_not_reclassified_as_ordinary[single]`
+  receives a match for `'\\a`.
+
+Consumer bounded execution; each child was terminated and reaped by
+`subprocess.run` after the 1.0-second safety bound:
+
+- `test_unterminated_escaped_quoted_tokenization_completes_without_consumer_match[command-argument-double]`
+- `test_unterminated_escaped_quoted_tokenization_completes_without_consumer_match[command-argument-single]`
+- `test_unterminated_escaped_quoted_tokenization_completes_without_consumer_match[bun-lock-double]`
+- `test_unterminated_escaped_quoted_tokenization_completes_without_consumer_match[bun-lock-single]`
+
+The four well-formed escaped controls pass, proving the failures are not a
+blanket rejection of escaped quoted tokens.
+
+Proxy closure and response headers:
+
+- `test_acceptance_proxy_uses_closure_bound_method_and_path_after_handler_mutation`
+  observes upstream method `DELETE` and path
+  `https://api.github.com.example.invalid/attacker`, rather than the qualified
+  closure-bound `PUT` and fixed package path.
+- `test_acceptance_proxy_rejects_illegal_upstream_response_header[header-name-cr]`
+- `test_acceptance_proxy_rejects_illegal_upstream_response_header[header-name-lf]`
+- `test_acceptance_proxy_rejects_illegal_upstream_response_header[header-value-cr]`
+- `test_acceptance_proxy_rejects_illegal_upstream_response_header[header-value-lf]`
+
+Each illegal-header node receives local status `201` instead of `502`; the
+remaining assertions require no illegal relay, `proof is None`, and
+`processed` false once the status guard is repaired.
+
+Live-attempt checkout refs; every actual value is
+`${{ inputs.target-sha }}` instead of `${{ github.sha }}`:
+
+- `test_live_attempt_exact_target_checkouts_use_github_sha[admit]`
+- `test_live_attempt_exact_target_checkouts_use_github_sha[plan-qualification]`
+- `test_live_attempt_exact_target_checkouts_use_github_sha[build-tarball]`
+- `test_live_attempt_exact_target_checkouts_use_github_sha[project-test]`
+- `test_live_attempt_exact_target_checkouts_use_github_sha[npm-artifact-qualification]`
+- `test_live_attempt_exact_target_checkouts_use_github_sha[qualification-finalizer]`
+- `test_live_attempt_exact_target_checkouts_use_github_sha[observe-github-packages]`
+- `test_live_attempt_exact_target_checkouts_use_github_sha[materialize-publication]`
+- `test_live_attempt_exact_target_checkouts_use_github_sha[approval-finalizer]`
+- `test_live_attempt_exact_target_checkouts_use_github_sha[publish-github-packages]`
+- `test_live_attempt_exact_target_checkouts_use_github_sha[release-finalizer]`
+
+Orphan file:
+
+- `test_release_build_variant_workflow_is_absent` fails because
+  `.github/workflows/release-build-variant.yml` still exists.
+
+These four omission groups are deliberately left for parent
+production/workflow remediation. No test was skipped, xfailed, weakened, or
+made conditional.
+
+### Green controls
+
+- `test_escaped_quoted_token_preserves_consumer_match` passes for both quote
+  kinds through both command-argument and Bun-lock routes.
+- `test_acceptance_observation_requires_authenticated_github_package_version_metadata`
+  passes: the exact two GitHub API URLs are authenticated; the
+  `api.github.com.example.invalid` tarball is served as a tarball and excluded
+  from `api_calls`; path and suffix-host lookalikes plus HTTP are negative.
+- `test_exact_github_api_origin_requires_exact_scheme_and_netloc` passes for
+  explicit-port, userinfo, and scheme-prefix confusables.
+- `test_acceptance_proxy_rejects_absolute_form_target_before_upstream` passes
+  with local `400`, zero HTTPS constructors/requests, and no proof or state
+  transition.
+- `test_acceptance_proxy_relays_legal_upstream_response_headers_status_and_body`
+  passes with exact `201`, body, legal headers, proof digests, request, close,
+  and processed state.
+- `test_live_attempt_exact_target_checkouts_inventory_is_complete` passes,
+  including the protected
+  `workflow-delivery-v3-buddy-smoke-github-packages` publisher environment.
+- Both caller/callee SHA-binding tests, the sole exact local dispatch-caller
+  test, and the nonlocal/revision-qualified caller inventory test pass.
+- Both
+  `test_release_build_variant_has_no_active_workflow_reference[official.yml]`
+  and `[release-orchestrate.yml]` pass; `official.yml` still delegates to the
+  active orchestrator.
+
+All proxy HTTPS boundaries were monkeypatched. Only loopback HTTP reached the
+proxy; no external URL, npm registry operation, or real package-network call
+occurred. The metadata test also monkeypatched the npm subprocess.
+
+### Pseudo-mutation/test-gap review
+
+| Plausible mutation | Concrete killing evidence | Result |
+|---|---|---|
+| Escaped and ordinary `_TOKEN` branches overlap | Two small quote-specific `fullmatch is None` nodes | Killed; currently red |
+| Large unterminated quoted input hangs or reports a match | Four child-bound route/quote nodes require normal exit and exact JSON `false` | Killed; currently red |
+| Well-formed escaped quoted behavior is lost | Four decoy-negative plus exact-consumer-positive controls | Killed |
+| Upstream uses mutable `self.command` or `self.path` | Post-qualification mutation plus exact/negative request assertions for both fields | Killed; currently red |
+| Absolute-form target is accepted | Exact local `400`, zero upstream, and three unchanged proxy-state assertions | Killed |
+| CR/LF response-header guard is removed or partial | CR and LF independently in name and value; exact `502`, no proof/processed, no attack header | Killed; currently red |
+| GitHub origin uses substring, hostname-only, or scheme-prefix matching | Exact calls plus host/path lookalikes, HTTP, explicit port, userinfo, and `httpsx` negatives | Killed |
+| A checkout switches to `inputs.target-sha` or an inventory member disappears | Exact 11-job inventory and 11 independent `${{ github.sha }}` assertions | Killed; currently red |
+| An extra, nonlocal, or revision-qualified live-attempt caller appears | Exact local-caller singleton plus suffix inventory that strips and detects `@revision` | Killed |
+| Caller/callee target binding or binding/publication order is removed | Exact output chain, target-argument maps, DAG, Attempt upload order, and publisher order | Killed |
+| Orphan file remains or an active workflow references it | Exact absence node plus two independently parsed active-workflow no-reference nodes | Killed; absence currently red |
+
+All 11 requested feasible mutation classes are killed by concrete assertions.
+No in-scope mutation survived the final review. The Phase 5 additions close
+the two review gaps that could otherwise have survived hostname-only origin
+matching and nonlocal/revision-qualified caller insertion. The remaining red
+results are the intended production/workflow/file remediation list above, not
+test-generation gaps.
+
+### Assertion-quality review
+
+- Semantic scope: 40 selected parameter nodes across 17 changed test
+  functions.
+- Assertion-free nodes: `0`. The four large token cases delegate to a helper
+  that has an explicit timeout failure plus exact child return-code and stdout
+  assertions.
+- Trivial-only nodes: `0`.
+- Self-referential or tautological nodes: `0`.
+- Skip/xfail/inconclusive nodes: `0`.
+- Assertions cover exact values, negative evidence, parsed collection
+  inventories, call counts/arguments, proxy state, proof digests, headers,
+  ordering, DAG edges, environment, and file topology.
+- The small regex and orphan-absence nodes intentionally have one primary
+  assertion because each pins one atomic fact. Their surrounding parameter
+  and topology controls independently cover quote symmetry and active
+  references.
+- No test depends on precise elapsed time. The mandated child timeout is a
+  fail-fast safety bound, not a performance assertion. There is no external
+  network test; the proxy uses loopback plus a fake HTTPS seam.
+
+The repeat review after the two Phase 5 additions and Ruff-only formatting
+found no weak assertion requiring another test edit.
+
+### Prompt and checklist map
+
+| Prompt qualifier | Exact evidence |
+|---|---|
+| Both quote kinds x both tokenization routes | Four IDs on each of `test_unterminated_escaped_quoted_tokenization_completes_without_consumer_match` and `test_escaped_quoted_token_preserves_consumer_match`; two structural quote IDs |
+| CR and LF x header name/value | Four IDs on `test_acceptance_proxy_rejects_illegal_upstream_response_header` |
+| Closure-bound method AND path | `test_acceptance_proxy_uses_closure_bound_method_and_path_after_handler_mutation` asserts both exact fields and both attacker-field exclusions |
+| Absolute-form target | `test_acceptance_proxy_rejects_absolute_form_target_before_upstream` |
+| Legal status/body/headers | `test_acceptance_proxy_relays_legal_upstream_response_headers_status_and_body` |
+| Exact GitHub origin and lookalikes | Authenticated metadata node plus three exact-origin confusable IDs; exact three-predicate zero-match gate |
+| Every exact-target checkout, including Environment publisher | Complete 11-job inventory, 11 ref IDs, and exact publisher environment |
+| Sole local same-commit dispatch caller | `test_buddy_is_only_dispatch_same_commit_local_live_attempt_caller` plus `test_live_attempt_has_no_nonlocal_or_revision_qualified_callers` |
+| Target binding before Attempt creation/publication | Both `target_sha_stays_bound` tests, exact target maps, and step-order assertions |
+| Absent orphan plus no active references | One intentional-red absence node and two independent green active-workflow nodes |
+| Final bounded gate and reporting | Syntax, four focused selections, three collection commands, Ruff/check, predicate count, `diff --check`, and this append |
+
+Every C1.1-C7.3 checklist item has concrete test or process evidence. No numeric
+line/branch coverage percentage is claimed: the supplied source-to-test
+pairing was a static identifier/import heuristic only and cannot establish
+runtime coverage. Scenario/checklist coverage, not that static pairing, is the
+completion criterion used here.
+
+### Scope confirmation
+
+The final bounded path check contains no production Python, workflow YAML,
+CodeQL configuration, suppression/dismissal, or Node Provider LFS path. Commit
+`2c0c1c24` remains out of scope. No production/workflow/orphan repair was made.
+Research and plan were not edited during Phase 5; this status section is an
+EOF-only append.
+
+<!-- END APPEND: 2026-08-20T051623Z-pr552-codeql-closure-phase5-status -->
+
+<!-- BEGIN APPEND: 2026-08-20T071044Z-pr552-codeql-closure-implementation-status -->
+
+## PR #552 CodeQL closure implementation
+
+PHASE: Production repair, consolidation, validation, and review
+STATUS: COMPLETE
+ORIGINAL_ALERTS: 20
+REMAINING_KNOWN_ALERTS_IN_CHANGED_SOURCE: 0
+CODEQL_SUPPRESSIONS_ADDED: 0
+CODEQL_ALERTS_DISMISSED: 0
+
+This append supersedes the historical red test-generation status above. The
+generated scenarios were consolidated for human review before the production
+repair was finalized; obsolete generated test names and child-timeout wording
+in the historical section are not the delivered test inventory.
+
+### Delivered repair
+
+| Alert family | Delivered behavior | Final evidence |
+|---|---|---|
+| Partial SSRF | The acceptance proxy sends the closure-bound expected method and path after exact request qualification | `test_acceptance_proxy_uses_closure_bound_method_and_path_after_handler_mutation` |
+| HTTP response splitting | Upstream header names and values are newline-sanitized, rejected on any change or carriage return, and only sanitized values enter proof or response relay | `test_acceptance_proxy_rejects_illegal_upstream_response_header` |
+| Test URL substring matching | Fake GitHub API routing uses parsed exact HTTPS scheme and exact `api.github.com` netloc | `test_exact_github_api_origin_requires_exact_scheme_and_netloc` and the authenticated metadata scenario |
+| Consumer-policy ReDoS | Quoted-token escape and ordinary branches are disjoint and newline-complete with `\\[\s\S]` | `test_quoted_token_branches_are_disjoint`, `test_large_unterminated_escaped_quote_is_not_a_consumer`, and `test_backslash_newline_continuation_keeps_quoted_package_hidden` |
+| Live Attempt untrusted checkout | All 11 exact-target checkouts use trusted caller `${{ github.sha }}` while domain records remain bound to `${{ inputs.target-sha }}` | `test_live_attempt_exact_target_checkout_inventory_is_exact` |
+| Reusable same-revision admission | The first `admit` step requires repository `hcoona/three`, lowercase target SHA, and equality with caller and caller-workflow SHA; only successful admission exposes `identity-admitted=true` | `test_buddy_target_sha_binding_chain_is_exact` |
+| Invalid-identity finalization | The release finalizer preserves `always()` only when the shell-validated identity output is true | Existing cancellation/finalizer contracts plus `test_buddy_target_sha_binding_chain_is_exact` |
+| Orphan release workflow | The documented superseded `release-build-variant.yml` workflow is deleted, active orchestrators remain, and the mandatory acceptance node now names the negative topology test | `test_release_build_variant_workflow_is_absent`, `test_release_build_variant_has_no_active_workflow_reference`, and the acceptance-gate inventory test |
+
+### Review and adjudication
+
+Five independent reviews covered proxy security, regex behavior, live
+same-revision semantics, release topology, and CodeQL test effectiveness.
+Independent adjudicators classified and repaired these true positives:
+
+- backslash-newline escaped tokens were no longer preserved;
+- the reusable boundary lacked a runtime target/caller equality guard;
+- hostile unterminated and escaped-decoy token regressions were lost during
+  consolidation;
+- case-insensitive expression equality could schedule the release finalizer
+  after lowercase identity admission failed.
+
+The proposed `job.workflow_sha` callee-binding finding was independently
+rejected: that context property is not available, and the tracked topology has
+one platform same-commit local caller. Repository-wide caller inventory remains
+locked, and future caller changes remain reviewed workflow-TCB changes.
+
+After all adjudicated repairs, the terminal regex, live-workflow, proxy, and
+whole-CodeQL re-reviews reported no findings.
+
+### Final validation
+
+| Validation | Result |
+|---|---|
+| Acceptance-probe test module | `189 passed` |
+| Consumer-policy test module | `161 passed` |
+| Buddy workflow contract module | `134 passed` |
+| Workflow-release acceptance gate | `1257 passed` |
+| Complete Workflow Delivery v3 suite | `3218 passed` |
+| Actionlint | passed |
+| Ruff check and format check | passed |
+| Focused Pyrefly checks | `0 errors` |
+| Consumer-policy repository scan | clean; `consumers: []` |
+| `git diff --check` | passed |
+
+An exploratory direct run of the complete root
+`tests/test_workflow_release_control.py` also exposed two unrelated action-pin
+consistency failures. Both reproduce unchanged in a detached worktree at
+committed baseline `2c0c1c24`; they are outside this repair. The authoritative
+workflow-release acceptance gate above passes all 1,257 required nodes.
+
+No package mutation, live activation, acceptance probe, sentinel finalization,
+CodeQL configuration change, alert dismissal, workflow compatibility route, or
+global Git/environment change was performed.
+
+<!-- END APPEND: 2026-08-20T071044Z-pr552-codeql-closure-implementation-status -->

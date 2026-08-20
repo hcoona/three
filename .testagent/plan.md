@@ -5146,3 +5146,596 @@ The delivered production omission is a reportable blocker, not permission to
 implement the production fix.
 
 <!-- END APPEND: 2026-08-20T014646Z-wdv3-node-provider-lfs-regression-plan -->
+
+<!-- BEGIN APPEND: 2026-08-20T042859Z-pr552-codeql-closure-regression-plan -->
+
+## PR #552 CodeQL-Closure Test Implementation Plan
+
+### Overview
+
+Use a **targeted, scenario-first** strategy because every bounded surface is
+partially covered or has a contradictory stale test. Implement only tests and
+minimal test-local helpers in the four canonical test modules below. Production
+Python, workflow YAML, CodeQL configuration, and existing source inventory are
+read-only. Do not skip, xfail, suppress, or repair the intentional red
+regressions.
+
+Node Provider LFS repair `2c0c1c24`, its source, and its tests are expressly out
+of scope. The current workspace is authoritative; do not restore missing or
+orphaned source.
+
+### Edit boundary
+
+Permitted implementation edits:
+
+1. `src/public/lib/three-workflow-delivery-v3/tests/ci/test_consumer_policy.py`
+2. `src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py`
+3. `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+4. `tests/test_workflow_release_control.py`
+5. one uniquely delimited EOF append to `.testagent/status.md`
+
+This plan append is the only permitted `.testagent/plan.md` change. Keep
+`.testagent/research.md` unchanged during implementation. Do not edit or delete:
+
+- `eng/scripts/workflow_delivery_v3_consumer_policy.py`
+- `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py`
+- `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/adapters/github_packages.py`
+- any `.github/workflows/*` file, including
+  `release-build-variant.yml`
+- CodeQL configuration, alert state, manifests, locks, or unrelated tests
+
+Before Phase 1, capture the authoritative state:
+
+```bash
+cp .testagent/research.md /tmp/pr552-codeql-research-prefix.md
+cp .testagent/plan.md /tmp/pr552-codeql-plan-prefix.md
+cp .testagent/status.md /tmp/pr552-codeql-status-prefix.md
+git status --short
+```
+
+Retain the initial status as the ownership boundary; never revert unrelated
+workspace changes.
+
+### Commands
+
+- **Build**: not required for this tests/docs-only scope.
+- **Consumer tests**:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/ci/test_consumer_policy.py -k 'token and (unterminated or escaped)'`
+- **Proxy and fake-transport tests**:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py -k 'closure_bound or absolute_form or upstream_response_header or authenticated_github_package_version_metadata'`
+- **Workflow contracts**:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py -k 'exact_target_checkouts or only_dispatch_same_commit or target_sha_stays_bound'`
+- **Release topology**:
+  `uv run --python 3.13 pytest -q tests/test_workflow_release_control.py -k 'release_build_variant'`
+- **Scoped v3 collection**:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest --collect-only -q src/public/lib/three-workflow-delivery-v3/tests/ci/test_consumer_policy.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+- **Root collection**:
+  `uv run --python 3.13 pytest --collect-only -q`
+- **Explicit root release collection**:
+  `uv run --python 3.13 pytest --collect-only -q tests/test_workflow_release_control.py -k 'release_build_variant'`
+- **Lint**:
+  `uv run --python 3.13 ruff check --force-exclude -- src/public/lib/three-workflow-delivery-v3/tests/ci/test_consumer_policy.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py tests/test_workflow_release_control.py`
+- **Format**:
+  `uv run --python 3.13 ruff format --check --force-exclude -- src/public/lib/three-workflow-delivery-v3/tests/ci/test_consumer_policy.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py tests/test_workflow_release_control.py`
+- **Optional focused type check**:
+  `uv run --python 3.13 pyrefly check src/public/lib/three-workflow-delivery-v3/tests/ci/test_consumer_policy.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py tests/test_workflow_release_control.py`
+- **Three-alert predicate check**:
+  `rg -n '"api\.github\.com" in url|"api\.github\.com" in call\[0\]' src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py`
+  must return no matches.
+- **Whitespace**: `git --no-pager diff --check`
+
+Do not replace these commands with the recursive pnpm suite, full package/HK
+execution, live acceptance probes, or any networked workflow run.
+
+### Expected current-workspace classification
+
+| Focused command | Expected green evidence | Expected intentional red evidence |
+|---|---|---|
+| Consumer | four escaped-valid controls | two small structural quote cases and four child-process large-payload cases |
+| Proxy/fake | exact API/lookalike fake, absolute-form rejection, legal response relay | closure-bound method/path case and four CR/LF header cases |
+| Workflow | exact inventory, sole caller, caller chain, callee binding/publication equality | 11 checkout-ref parameter cases, each reporting `${{ inputs.target-sha }}` instead of `${{ github.sha }}` |
+| Release | two active-workflow no-reference cases | orphan-file absence case |
+| Collection/Ruff/format/predicate check | green | none |
+
+The intentional reds must remain ordinary collected failures, not
+`skip`/`xfail`. A different failure shape is diagnostic and must be recorded
+verbatim rather than normalized away.
+
+### Phase Summary
+
+| Phase | Focus | Assigned test file | Estimated selected nodes |
+|---|---|---|---:|
+| 1 | `_TOKEN` overlap, bounded ReDoS, escaped controls | `tests/ci/test_consumer_policy.py` | 10 |
+| 2 | exact fake URL matching and acceptance proxy boundary | `tests/adapters/test_commit10_acceptance_probes.py` | 8 |
+| 3 | same-commit caller/callee and all live checkouts | `tests/contracts/test_buddy_workflows.py` | 15 |
+| 4 | orphan release-workflow topology | `tests/test_workflow_release_control.py` | 3 |
+| 5 | bounded validation, reviews, append-only evidence | no test-file edits | 0 |
+
+Each target test file belongs to exactly one phase. Finish and run each phase's
+focused command before starting the next.
+
+---
+
+## Phase 1: Consumer `_TOKEN` overlap and bounded tokenization
+
+### Overview
+
+Establish the leaf/core regression first. The small direct invariant gives a
+fast structural failure, while every expensive payload runs in a separately
+reaped child process. No mock is required.
+
+### File to Test
+
+#### `workflow_delivery_v3_consumer_policy.py`
+
+- **Source (read-only)**:
+  `eng/scripts/workflow_delivery_v3_consumer_policy.py`
+- **Test file**:
+  `src/public/lib/three-workflow-delivery-v3/tests/ci/test_consumer_policy.py`
+- **Test module**: `test_consumer_policy`
+- **Symbols**: `_TOKEN.fullmatch`, `_manager_references`, `_lockfile`
+
+### Minimal test-local helper
+
+Add `_run_tokenization_probe_in_child(route, payload)`:
+
+- invoke `sys.executable` without `shell=True`;
+- pass `POLICY_IMPLEMENTATION_PATH`, route, and payload to a small child
+  importer;
+- route `command-argument` calls
+  `_manager_references("npm install " + payload)`;
+- route `bun-lock` calls `_lockfile("bun.lock", payload.encode())`;
+- emit one exact JSON boolean indicating whether a consumer was found;
+- use `subprocess.run(..., timeout=1.0, check=False, capture_output=True,
+  text=True)`;
+- convert `TimeoutExpired` into `pytest.fail` containing the route and quote
+  ID; rely on `subprocess.run` to kill and wait for the child;
+- assert exact return code and stdout so child import/runtime errors cannot be
+  mistaken for a safe result.
+
+Never evaluate the 64-pair payload in the pytest process.
+
+### Tests
+
+1. `test_unterminated_quoted_token_is_not_reclassified_as_ordinary`
+   - **Parameters**:
+     - `double`: payload is an opening `"` followed by `\a`, with no close.
+     - `single`: payload is an opening `'` followed by `\a`, with no close.
+   - **Assertion**:
+     `policy._TOKEN.fullmatch(payload) is None`.
+   - This is a functional token-boundary invariant only. Do not assert the
+     regex text, branch order, or scanner implementation.
+   - **Expected now**: red for both IDs because the ordinary fallback accepts
+     the quote-bearing token.
+
+2. `test_unterminated_escaped_quoted_tokenization_completes_without_consumer_match`
+   - **Parameter IDs**:
+     `command-argument-double`, `command-argument-single`,
+     `bun-lock-double`, `bun-lock-single`.
+   - **Payload**: selected opening quote + exactly 64 `\a` pairs, with no
+     closing quote or consumer package token.
+   - **Mocks/fakes**: child process only; no monkeypatch of the policy.
+   - **Assertions**:
+     each child exits normally inside one second, returns exact JSON `false`,
+     and emits no false consumer match. Timeout or nonzero exit is a focused
+     failure naming the case.
+   - **Expected now**: red for all four IDs, normally by timeout.
+
+3. `test_escaped_quoted_token_preserves_consumer_match`
+   - **Parameter IDs**: the same four route/quote combinations.
+   - **Inputs**:
+     - double-quoted decoy: `"ordinary \" quoted content"`;
+     - single-quoted decoy: `'ordinary \' quoted content'`;
+     - append the exact canonical consumer token already used by the adjacent
+       command and `bun.lock` positive tests (the repository's
+       `@hcoona/hcoona-release-smoke-npm` token);
+     - command form remains rooted at `npm install`; lock form is UTF-8 bytes
+       passed with path `bun.lock`.
+   - **Assertions**:
+     command cases return `True`; Bun cases' returned reference set contains
+     the exact canonical token. The escaped quote and embedded whitespace must
+     not consume or hide the following valid token.
+   - **Expected now**: green for all four IDs.
+
+### Phase 1 success criteria
+
+- [ ] Large risky inputs only execute in child processes.
+- [ ] Four route/quote combinations have descriptive, independent node IDs.
+- [ ] Both quote forms have fast direct fallback evidence.
+- [ ] Four well-formed escaped controls preserve existing detection behavior.
+- [ ] Focused command is run and its exact red/green nodes retained.
+
+---
+
+## Phase 2: Exact fake GitHub URL matching and acceptance proxy closure
+
+### Overview
+
+First repair only the three alerted predicates in the existing test fake.
+Then add behavioral proxy scenarios using loopback HTTP and a monkeypatched
+HTTPS boundary. No request may reach an external network.
+
+### File to Test
+
+#### Acceptance transport and proxy boundaries
+
+- **Sources (read-only)**:
+  - `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py`
+  - `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/adapters/github_packages.py`
+- **Test file**:
+  `src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py`
+- **Test module**: `test_commit10_acceptance_probes`
+- **Symbols**:
+  `AcceptanceMutationProxy`, `ValidatedAcceptanceRequestProof`,
+  `_AcceptanceNpmTransport.observe`
+
+### Minimal test-only helpers
+
+1. Add one narrowly named exact-origin predicate, for example
+   `_is_exact_github_api_url(url)`:
+   - parse once with `urllib.parse.urlsplit(url)`;
+   - return only
+     `parts.scheme == "https" and parts.netloc == "api.github.com"`.
+   - Do not use substring, suffix, hostname-lookalike, regex, or suppression
+     logic.
+
+2. Add or extend a loopback request helper that returns the local response's
+   exact status, complete headers, and body. Always close the loopback
+   connection and proxy in `finally`/context cleanup.
+
+3. Keep fake upstream objects at the documented
+   `Connection`/`Response` shape. Every proxy test below must monkeypatch
+   `cli_module.http.client.HTTPSConnection`; constructors and requests must be
+   recorded.
+
+### Tests
+
+1. Modify only
+   `test_acceptance_observation_requires_authenticated_github_package_version_metadata`
+   - Replace its two `MetadataTransport.get` API-response branch predicates and
+     its `api_calls` filter with the exact parsed-origin predicate.
+   - Change the fake tarball URL to
+     `https://api.github.com.example.invalid/tar.tgz`.
+   - Keep existing exact API metadata URLs and authentication assertions.
+   - Assert the lookalike URL returns the tarball bytes, appears in the full
+     call log, and does **not** appear in `api_calls`; every retained API call
+     parses to exact HTTPS + exact `api.github.com`.
+   - **Expected now after this test-only edit**: green.
+
+2. `test_acceptance_proxy_uses_closure_bound_method_and_path_after_handler_mutation`
+   - **Inputs**:
+     `expected_method="PUT"`,
+     canonical fixed scoped-package path
+     `/@hcoona%2fhcoona-release-smoke-npm`, and
+     `_adversarial_publish_body(...)`.
+   - Capture the live handler by wrapping
+     `proxy._server.RequestHandlerClass._forward` and retaining `self` before
+     delegating.
+   - In fake `HTTPSConnection.__init__`, after qualification and before
+     `.request`, mutate that retained handler to
+     `command="DELETE"` and
+     `path="https://api.github.com.example.invalid/attacker"`.
+   - Record fake `.request(method, path, body, headers)`.
+   - **Assertions**:
+     the only upstream request uses exactly `PUT` and the fixed canonical path,
+     never either mutated value; body/auth remain the already-qualified values.
+   - **Expected now**: red because production forwards mutable handler fields.
+
+3. `test_acceptance_proxy_rejects_absolute_form_target_before_upstream`
+   - Send a loopback `PUT` whose request target is the absolute form
+     `https://npm.pkg.github.com/@hcoona%2fhcoona-release-smoke-npm`.
+   - The proxy still expects the canonical origin-form path.
+   - Install a fail-on-construction fake `HTTPSConnection`.
+   - **Assertions**:
+     preserve the exact local rejection status already used by the adjacent
+     method/path rejection matrix; connection-constructor count and request
+     count are zero; `proxy.proof is None`; and
+     `proxy.processed.is_set() is False`.
+   - **Expected now**: green.
+
+4. `test_acceptance_proxy_relays_legal_upstream_response_headers_status_and_body`
+   - Configure `drop_accepted_response=False`.
+   - Fake response:
+     status `201`, body `b'{"ok":true}'`, headers
+     `("Content-Type", "application/json")` and
+     `("X-GitHub-Request-Id", "request-123")`.
+   - **Assertions**:
+     the loopback client receives exact status, exact body, and both legal
+     non-hop-by-hop headers; proof records exact upstream response evidence and
+     `processed` is set only for this accepted exchange.
+   - **Expected now**: green.
+
+5. `test_acceptance_proxy_rejects_illegal_upstream_response_header`
+   - **Parameter IDs and fake headers**:
+     - `header-name-cr`: `("X-Bad\rName", "value")`
+     - `header-name-lf`: `("X-Bad\nName", "value")`
+     - `header-value-cr`: `("X-Bad", "before\rafter")`
+     - `header-value-lf`: `("X-Bad", "before\nafter")`
+   - Each fake response otherwise uses status `201`, a legal body, and
+     `drop_accepted_response=False`.
+   - **Assertions for every ID**:
+     local response status is exactly `502`; no illegal header is accepted or
+     relayed; `proxy.proof is None`; and
+     `proxy.processed.is_set() is False`.
+   - **Expected now**: red for all four IDs because proof/processed currently
+     precede header validation and CR/LF is not rejected.
+
+### Phase 2 success criteria
+
+- [ ] Exactly two fake response branches and one call filter use `urlsplit`.
+- [ ] The lookalike host is positive tarball evidence and negative API evidence.
+- [ ] Every proxy scenario monkeypatches `HTTPSConnection`.
+- [ ] Only loopback traffic occurs; no npm invocation or external request.
+- [ ] Legal relay and four independent illegal-header cases assert deep state.
+- [ ] Focused command and the zero-match predicate check are run.
+
+---
+
+## Phase 3: Canonical same-commit workflow contracts
+
+### Overview
+
+Parse the authoritative workflows with existing YAML helpers. Do not mock or
+snapshot raw files. Separate inventory from per-job ref checks so all 11
+omissions receive distinct node IDs.
+
+### File to Test
+
+#### Buddy caller and live-attempt workflow
+
+- **Contracts (read-only)**:
+  - `.github/workflows/workflow-delivery-v3-live-attempt.yml`
+  - `.github/workflows/workflow-delivery-v3-buddy-smoke.yml`
+- **Test file**:
+  `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+- **Test module**: `test_buddy_workflows`
+- **Helpers**:
+  `_document`, `_needs`, `_steps`, `_step`, `_run`
+
+### Tests
+
+1. `test_live_attempt_exact_target_checkouts_inventory_is_complete`
+   - Parse every step named `Check out exact selected target`.
+   - Assert exactly one such step in each and only each of:
+     `admit`, `plan-qualification`, `build-tarball`, `project-test`,
+     `npm-artifact-qualification`, `qualification-finalizer`,
+     `observe-github-packages`, `materialize-publication`,
+     `approval-finalizer`, `publish-github-packages`, and
+     `release-finalizer`.
+   - Assert the publisher job remains protected by environment
+     `workflow-delivery-v3-buddy-smoke-github-packages`.
+   - **Expected now**: green.
+
+2. `test_live_attempt_exact_target_checkouts_use_github_sha`
+   - Parameterize the exact 11-job tuple above, with each job name as its node
+     ID.
+   - For each job, locate the unique named checkout and assert
+     `step["with"]["ref"] == "${{ github.sha }}"`.
+   - The `publish-github-packages` parameter is mandatory and must not be
+     split into weaker publisher-only logic.
+   - **Expected now**: 11 red nodes; actual value is
+     `${{ inputs.target-sha }}` in every case.
+
+3. `test_buddy_is_only_dispatch_same_commit_local_live_attempt_caller`
+   - Parse both `*.yml` and `*.yaml` under `.github/workflows`.
+   - Collect jobs whose `uses` is exactly
+     `./.github/workflows/workflow-delivery-v3-live-attempt.yml`.
+   - **Assertions**:
+     the exact singleton is
+     `(workflow-delivery-v3-buddy-smoke.yml, run-live-attempt)`; the caller's
+     trigger map has only `workflow_dispatch` (using
+     `document.get("on", document.get(True))`); and its local `uses` string is
+     unchanged.
+   - **Expected now**: green.
+
+4. `test_buddy_target_sha_stays_bound_from_github_sha_to_live_attempt`
+   - Assert the request shell emits exact `target-sha=${GITHUB_SHA}` and the
+     step receives the workflow's `github.sha` as `GITHUB_SHA`.
+   - Assert exact edge equality, without recomputation or fallback, through:
+     `steps.request.outputs.target-sha` -> request job output -> discovery job
+     output -> compile job output -> eligibility job output ->
+     `run-live-attempt.with.target-sha`.
+   - Also assert each of the caller's four pre-Attempt
+     `Check out exact selected target` steps has
+     `with.ref == "${{ github.sha }}"`.
+   - **Expected now**: green.
+
+5. `test_live_attempt_target_sha_stays_bound_before_attempt_creation_and_publication`
+   - Assert `admit.outputs.target-sha` is exactly
+     `${{ inputs.target-sha }}`.
+   - Assert the Release Attempt binding command consumes that same input, and
+     its step occurs before the `Upload Release Attempt binding` step.
+   - Assert publication consumes the same admitted/input target, with no
+     alternate SHA expression, before/at the
+     `publish-github-packages` publication boundary.
+   - Assert ordering by step indexes and exact parsed expressions, not broad
+     text position.
+   - **Expected now**: green.
+
+### Phase 3 success criteria
+
+- [ ] Inventory proves exactly 11 named checkout owners.
+- [ ] Eleven parameterized ref nodes expose all current omissions.
+- [ ] Environment-protected publisher is covered by inventory and ref checks.
+- [ ] Sole local caller and dispatch-only trigger are independently proven.
+- [ ] Caller and callee target equality/order are independently proven.
+- [ ] No workflow YAML is edited.
+
+---
+
+## Phase 4: Negative release-variant topology
+
+### Overview
+
+Replace only the stale positive orphan-workflow test. Keep file absence
+separate from active-workflow no-reference evidence so the existing orphan
+produces one intentional red without hiding the green topology controls.
+
+### File to Test
+
+#### Release workflow topology
+
+- **Contracts (read-only)**:
+  - `.github/workflows/release-build-variant.yml`
+  - `.github/workflows/official.yml`
+  - `.github/workflows/release-orchestrate.yml`
+- **Test file**: `tests/test_workflow_release_control.py`
+- **Test module**: `test_workflow_release_control`
+- **Helpers**: `_workflow`, `_workflow_yaml`
+
+### Tests
+
+1. Delete only the stale test function
+   `test_release_build_variant_runs_control_from_trusted_checkout`.
+   Do not alter adjacent release-control tests.
+
+2. Add `test_release_build_variant_workflow_is_absent`
+   - Resolve `_workflow("release-build-variant.yml")`.
+   - Assert the path does not exist; do not parse, delete, rename, or ignore
+     the orphan.
+   - **Expected now**: red while the file exists.
+
+3. Add `test_release_build_variant_has_no_active_workflow_reference`
+   - Parameterize exact IDs `official.yml` and `release-orchestrate.yml`.
+   - For each, assert the active workflow itself exists, read it through
+     `_workflow_yaml(name)`, and assert
+     `release-build-variant.yml` is absent from its local workflow references.
+   - Retain the active topology distinction: `official.yml` delegates to
+     `release-orchestrate.yml`; neither delegates to the orphan.
+   - **Expected now**: green for both IDs.
+
+### Phase 4 success criteria
+
+- [ ] Exactly one stale positive function is removed.
+- [ ] Absence and no-reference facts are separate tests.
+- [ ] The orphan file remains untouched and yields one ordinary red failure.
+- [ ] Both active workflows yield independently named green nodes.
+
+---
+
+## Phase 5: Validation, quality review, and append-only status
+
+### Validation order
+
+1. Re-run each phase's exact focused pytest command independently.
+2. Run scoped v3 collection, root collection, and explicit release collection.
+3. Run Ruff check, Ruff format check, the three-alert zero-match query, and
+   `git --no-pager diff --check`.
+4. Optionally run the exact focused Pyrefly command; report it as optional, not
+   as a substitute for Ruff.
+5. Inspect only the bounded diff. Confirm no production Python, workflow YAML,
+   CodeQL configuration, or Node Provider LFS path was changed.
+6. Run the `test-gap-analysis` review against the four canonical
+   source/contract-to-test pairs. Require it to check route × quote coverage,
+   post-qualification mutation, all four CR/LF positions, all 11 checkout
+   jobs, and independent release topology facts.
+7. Run the `assertion-quality` review against the four changed test modules.
+   Require exact values/call counts/state assertions; reject truthiness-only,
+   self-referential, source-string, or assertion-free scenarios.
+8. Perform a final prompt-coverage review using the independent C1.1-C7.3 map
+   below. Confirm every parameter ID is collected and every expected red is
+   attributable to the documented production/workflow/file omission.
+9. Append one uniquely delimited timestamped PR #552 result section to
+   `.testagent/status.md`; do not edit earlier bytes.
+10. Stop. Do not repair the red blockers.
+
+### Exact expected node classification
+
+| Proposed node(s) | Current expectation |
+|---|---|
+| `test_unterminated_quoted_token_is_not_reclassified_as_ordinary[double|single]` | red |
+| `test_unterminated_escaped_quoted_tokenization_completes_without_consumer_match[command-argument-double|command-argument-single|bun-lock-double|bun-lock-single]` | red |
+| `test_escaped_quoted_token_preserves_consumer_match[...]` (4 IDs) | green |
+| `test_acceptance_observation_requires_authenticated_github_package_version_metadata` | green |
+| `test_acceptance_proxy_uses_closure_bound_method_and_path_after_handler_mutation` | red |
+| `test_acceptance_proxy_rejects_absolute_form_target_before_upstream` | green |
+| `test_acceptance_proxy_relays_legal_upstream_response_headers_status_and_body` | green |
+| `test_acceptance_proxy_rejects_illegal_upstream_response_header[...]` (4 IDs) | red |
+| `test_live_attempt_exact_target_checkouts_inventory_is_complete` | green |
+| `test_live_attempt_exact_target_checkouts_use_github_sha[...]` (11 job IDs) | red |
+| `test_buddy_is_only_dispatch_same_commit_local_live_attempt_caller` | green |
+| both `target_sha_stays_bound` tests | green |
+| `test_release_build_variant_workflow_is_absent` | red |
+| `test_release_build_variant_has_no_active_workflow_reference[official.yml|release-orchestrate.yml]` | green |
+
+### Append-only status content
+
+The status append must record:
+
+- exact commands, pass/fail counts, durations, and full failing node IDs;
+- timeout versus structural-fallback evidence for each consumer case;
+- mutable method/path and each CR/LF header failure;
+- all 11 checkout job IDs and their actual `${{ inputs.target-sha }}` value;
+- the existing orphan path failure;
+- green control nodes, including lookalike exclusion, absolute-form rejection,
+  legal relay, caller/callee SHA binding, and both active no-reference cases;
+- Ruff/format/collection/predicate-check results;
+- `test-gap-analysis`, `assertion-quality`, and manual prompt-review findings;
+- confirmation that no real upstream network/npm call occurred;
+- confirmation that only the three fake substring predicates changed in the
+  fake matcher;
+- confirmation of no production/workflow/LFS/config/suppression/dismissal
+  change.
+
+After the append, prove the implementation did not alter research or this plan
+and preserved the status prefix:
+
+```bash
+python -c 'from pathlib import Path; assert Path(".testagent/research.md").read_bytes() == Path("/tmp/pr552-codeql-research-prefix.md").read_bytes(), "research.md changed"'
+python -c 'from pathlib import Path; assert Path(".testagent/plan.md").read_bytes() == Path("/tmp/pr552-codeql-plan-prefix.md").read_bytes(), "plan.md changed"'
+python -c 'from pathlib import Path; prefix=Path("/tmp/pr552-codeql-status-prefix.md").read_bytes(); current=Path(".testagent/status.md").read_bytes(); assert current.startswith(prefix) and len(current) > len(prefix), "status.md was not append-only"'
+```
+
+---
+
+## Independent requirement-to-test/evidence map
+
+| ID | Exact file and proposed test/evidence | Inputs and mocks/fakes | Required assertions | Expected now |
+|---|---|---|---|---|
+| C1.1 | `tests/ci/test_consumer_policy.py::test_unterminated_escaped_quoted_tokenization_completes_without_consumer_match` | 64-pair payload; `sys.executable` child; 1.0-second timeout | Child is killed/reaped on timeout; normal completion is required and false consumer result is exact | red |
+| C1.2 | Same test, IDs `command-argument-double`, `command-argument-single`, `bun-lock-double`, `bun-lock-single` | `_manager_references("npm install " + payload)` or `_lockfile("bun.lock", payload.encode())` | All four IDs collect independently and identify route/quote in failures | red ×4 |
+| C1.3 | Same four nodes | Opening quote + 64 `\a` pairs, no close/token; no policy mock | Completion within bound and exact no-match; nonzero child exit cannot pass | red ×4 |
+| C1.4 | `tests/ci/test_consumer_policy.py::test_escaped_quoted_token_preserves_consumer_match` (same four IDs) | Closed escaped single/double decoy with whitespace followed by canonical package token; no mocks | Command result is true; Bun result contains the exact token | green ×4 |
+| C1.5 | `tests/ci/test_consumer_policy.py::test_unterminated_quoted_token_is_not_reclassified_as_ordinary[double|single]` | Small `"\a` / `'\a` inputs; direct `_TOKEN.fullmatch` | Both full matches are `None`; no regex-string assertion | red ×2 |
+| C2.1 | `tests/adapters/test_commit10_acceptance_probes.py::test_acceptance_proxy_uses_closure_bound_method_and_path_after_handler_mutation` | Expected `PUT` + fixed package path; captured handler mutated to `DELETE` + attacker absolute path; fake HTTPS connection | Sole fake upstream call receives closure-bound method/path and never mutated fields | red |
+| C2.2 | `...::test_acceptance_proxy_rejects_absolute_form_target_before_upstream` | Absolute-form HTTPS target over loopback; fail-on-construction HTTPS fake | Exact local rejection, zero constructors/requests, no proof, processed false | green |
+| C2.3 | `...::test_acceptance_proxy_relays_legal_upstream_response_headers_status_and_body` | Fake 201, JSON body, `Content-Type`, request-ID; `drop_accepted_response=False` | Exact local status/body/legal headers plus accepted proof/processed state | green |
+| C2.4 | `...::test_acceptance_proxy_rejects_illegal_upstream_response_header` IDs `header-name-cr`, `header-name-lf`, `header-value-cr`, `header-value-lf` | Four fake `getheaders()` results; fake 201 | Four independently collected cases cover CR/LF × name/value | red ×4 |
+| C2.5 | Same four illegal-header nodes | As above | Exact local 502, `proof is None`, `processed.is_set() is False`, no illegal relay | red ×4 |
+| C2.6 | All four Phase 2 proxy tests | Monkeypatched `cli_module.http.client.HTTPSConnection`; loopback client only | Constructor/request logs prove no external network; resources close | mixed by scenario |
+| C3.1 | Existing `...::test_acceptance_observation_requires_authenticated_github_package_version_metadata` | Exact-origin helper used at only two response branches and one `api_calls` filter | Those three substring predicates are replaced and zero-match `rg` succeeds | green |
+| C3.2 | Same existing test | `urlsplit`; exact API URLs and `https://api.github.com.example.invalid/tar.tgz` | Scheme equals `https`, netloc equals `api.github.com`; lookalike serves tarball but is excluded from API calls | green |
+| C3.3 | Same test plus bounded diff/predicate evidence | Test fake only; no production transport mock change or suppression | Existing metadata/auth behavior passes; no alerted predicate remains; production diff is empty | green |
+| C4.1 | `tests/contracts/test_buddy_workflows.py::test_live_attempt_exact_target_checkouts_inventory_is_complete` and parameterized `test_live_attempt_exact_target_checkouts_use_github_sha` | Parsed live workflow; exact 11-job tuple; no mocks | Exact inventory and each unique checkout ref equals `${{ github.sha }}` | inventory green, refs red ×11 |
+| C4.2 | `...::test_buddy_is_only_dispatch_same_commit_local_live_attempt_caller` | Parsed `*.yml`/`*.yaml`; exact local callee `uses` | Singleton Buddy/run-live-attempt caller and workflow_dispatch-only trigger | green |
+| C4.3 | `...::test_buddy_target_sha_stays_bound_from_github_sha_to_live_attempt` | Parsed caller outputs/run/env; no mocks | `GITHUB_SHA` emission and unchanged request -> discovery -> compile -> eligibility -> callee equality | green |
+| C4.4 | `...::test_live_attempt_target_sha_stays_bound_before_attempt_creation_and_publication` | Parsed admit outputs, binding/upload step order, publisher expression | Input equality at admit/bind/publication and binding before upload/publication | green |
+| C4.5 | Checkout inventory and per-job ref tests, especially ID `publish-github-packages` | Publisher environment and named checkout | Exact protected environment plus same `${{ github.sha }}` requirement | environment green, ref red |
+| C4.6 | `test_live_attempt_exact_target_checkouts_use_github_sha` with 11 job IDs | Current parsed refs | Ordinary failure output identifies every `${{ inputs.target-sha }}` omission; no xfail/workflow edit | red ×11 |
+| C5.1 | `tests/test_workflow_release_control.py`: remove only `test_release_build_variant_runs_control_from_trusted_checkout`; add the two tests below | No mocks | Adjacent tests and helpers remain unchanged | bounded edit |
+| C5.2 | `...::test_release_build_variant_workflow_is_absent` | `_workflow("release-build-variant.yml")` | Exact path does not exist | red |
+| C5.3 | `...::test_release_build_variant_has_no_active_workflow_reference[official.yml|release-orchestrate.yml]` | Existing active YAML text | Each active file exists and independently lacks the orphan reference; official still delegates to orchestrator | green ×2 |
+| C5.4 | Absence node plus bounded diff | Existing orphan is read-only | Failure is retained and YAML is neither deleted nor modified | red |
+| C6.1 | All four bounded test files; final scoped diff and status evidence | No production/workflow edits, suppression, config, dismissal, or source restore | Only allowed tests/helpers and append-only status are implementation-owned changes | green process gate |
+| C7.1 | Four exact focused commands, collection, Ruff/format, predicate query, diff check | Current workspace with intentional omissions | Exact red/green counts and failing node IDs are retained; lint/collection remain green | mixed tests, green tooling |
+| C7.2 | `.testagent/status.md` uniquely delimited EOF append | Captured prefix plus exact command/review results | Prior bytes preserved; all blockers and self-review items recorded | green process gate |
+| C7.3 | Phase 5 stop condition | No repair step after evidence collection | Stop after tests, lint, reviews, and status append; no production/workflow/orphan repair | enforced |
+
+### Prompt coverage check
+
+| User scenario | Covered by |
+|---|---|
+| 1. `_TOKEN` structural/large/escaped routes | Phase 1; C1.1-C1.5 |
+| 2. proxy closure, absolute form, relay, CR/LF, no network | Phase 2 proxy tests; C2.1-C2.6 |
+| 3. exactly three fake GitHub matcher repairs | Phase 2 existing metadata test; C3.1-C3.3 |
+| 4. all v3 checkouts, publisher, sole caller, target binding | Phase 3; C4.1-C4.6 |
+| 5. absent orphan and no active references | Phase 4; C5.1-C5.4 |
+| 6. exact commands, red/green report, quality reviews, append-only status | Phase 5; C6.1-C7.3 |
+
+### Final stop condition
+
+Stop with the intentional regressions red and fully reported. Do not modify
+production Python, workflow YAML, the orphan file, CodeQL state, or Node
+Provider LFS work to obtain a green suite.
+
+<!-- END APPEND: 2026-08-20T042859Z-pr552-codeql-closure-regression-plan -->
