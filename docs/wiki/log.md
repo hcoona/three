@@ -1887,3 +1887,16 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   tests.
 - Kept the branch local: no push, PR creation, acceptance probe, sentinel
   finalization, live activation, publication, or package mutation occurred.
+
+## [2026-08-20] query | Open Workflow Delivery v3 implementation PR
+
+- Pushed `dev/shuaizhang/design-workflows` non-force after refreshing both
+  remote `main` and the existing branch ref.
+- Opened [PR #552](https://github.com/hcoona/three/pull/552) against `main` with
+  the direct-cutover warning, validation evidence, disabled-live state, and
+  required post-merge drain steps.
+- Left the PR unmerged. Checks and review remain the active boundary, and merge
+  requires separate explicit authorization with the operator ready for the
+  immediate intentional Buddy outage and legacy drain.
+- Performed no acceptance probe, sentinel finalization, live activation,
+  publication, or package mutation.

@@ -8135,3 +8135,32 @@ No push, PR creation, acceptance probe, sentinel finalization, live activation,
 publication, or package mutation was performed.
 
 <!-- END APPEND: 2026-08-19-wdv3-final-pr-preparation-status -->
+
+<!-- BEGIN APPEND: 2026-08-20-wdv3-implementation-pr-status -->
+
+## Workflow Delivery v3 implementation PR
+
+PHASE: Branch publication and PR creation
+STATUS: SUCCESS
+PR: https://github.com/hcoona/three/pull/552
+MERGED: false
+BLOCKER: PR checks, review, and separate explicit merge authorization
+
+### Publication result
+
+- Refreshed `origin/main` and
+  `origin/dev/shuaizhang/design-workflows`; both remained ancestors of the
+  validated local `HEAD`.
+- Pushed the 90-commit local range non-force to
+  `dev/shuaizhang/design-workflows`.
+- Opened ready-for-review PR #552 against `main`.
+- The PR body explicitly states that merge removes `buddy.yml` and
+  `release-buddy.yml`, preserves no compatibility route, begins the intentional
+  Buddy outage, and lands v3 with `live_enabled: false`.
+- Initial GitHub checks entered queued or in-progress state. No merge was
+  attempted.
+
+No acceptance probe, sentinel finalization, live activation, publication, or
+package mutation was performed.
+
+<!-- END APPEND: 2026-08-20-wdv3-implementation-pr-status -->

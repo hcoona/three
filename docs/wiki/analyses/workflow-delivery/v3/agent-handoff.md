@@ -25,8 +25,10 @@ If it conflicts with the
   caller-held concurrency by canonical Release Execution identity at
   `3a2df043`, integrates `origin/main` at `3cc079ee` through non-rewriting merge
   commit `e4dfea3d`, and explicitly preserves Ruff 0.14.4 until a separately
-  scoped Ruff 0.16 migration. Those later commits remain local to
-  `dev/shuaizhang/design-workflows`; nothing after `f0f81d52` has been pushed.
+  scoped Ruff 0.16 migration. The validated implementation branch is published
+  at `dev/shuaizhang/design-workflows`, and
+  [PR #552](https://github.com/hcoona/three/pull/552) is open against `main`.
+  Nothing from that PR has merged.
   Commit 3 includes target-tree-bound
   Release Unit/Quality authoring validation, duplicate Release Unit rejection,
   exact-target Repository Model compilation, static catalogs, Node/NBGV
@@ -366,11 +368,13 @@ If it conflicts with the
   state blocks; no repository variable, PAT, App, service, ledger, OIDC, or
   additional token permission is added. Permanent root HK policy remains the
   repository-wide dependency gate.
-- Final v3 validation and local implementation PR preparation are complete.
-  The immediate boundary is explicit authorization to push the local branch or
-  open the implementation PR. Do not push, open the PR, run real acceptance
-  probes, finalize the sentinel target, activate normal live, or begin later
-  scopes without a separate explicit user task.
+- Final v3 validation, branch publication, and implementation PR creation are
+  complete. The immediate boundary is PR #552 checks and review, followed by
+  separate explicit authorization to merge. Merge starts the direct cutover and
+  intentional Buddy outage, so the operator must be ready to execute the
+  immediate post-merge legacy drain and old-ref rejection proof. Do not merge,
+  run real acceptance probes, finalize the sentinel target, activate normal
+  live, or begin later scopes without a separate explicit user task.
 - Implementation must preserve the approved commit boundaries and keep live
   activation disabled until acceptance and the separate activation approval.
 

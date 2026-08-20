@@ -158,7 +158,15 @@ migration. The complete workspace gate and authoritative 574-file
 Workflow Delivery v3 tests. Independent merge and tooling re-reviews report no
 findings.
 
+The validated implementation branch is pushed, and
+[PR #552](https://github.com/hcoona/three/pull/552) is open against `main`.
+The PR is ready for review but not authorized to merge. Merge starts the direct
+v1 Buddy-to-v3 Buddy cutover and intentional Buddy outage while v3 remains
+disabled.
+
 Next:
 
-1. obtain explicit authorization before pushing the branch or opening the
-   implementation PR.
+1. complete PR checks and review;
+2. obtain separate explicit authorization before merging, with the operator
+   ready to execute the immediate post-merge legacy drain and old-ref rejection
+   proof.
