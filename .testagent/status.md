@@ -8164,3 +8164,211 @@ No acceptance probe, sentinel finalization, live activation, publication, or
 package mutation was performed.
 
 <!-- END APPEND: 2026-08-20-wdv3-implementation-pr-status -->
+
+<!-- BEGIN APPEND: 2026-08-20T025500Z-wdv3-node-provider-lfs-regression-status -->
+
+## Workflow Delivery v3 Node Provider LFS-smudge regression
+
+PHASE: Focused test-only regression
+STATUS: BLOCKED_BY_REMAINING_PRODUCTION_FAILURE
+PRODUCTION_CHANGED: false
+WORKFLOWS_CHANGED: false
+GENERATED_CASES: 2
+GENERATED_PASSING_ON_DELIVERED_TREE: 0
+GENERATED_FAILING_ON_DELIVERED_TREE: 2
+
+### Generated test cases
+
+- `test_internal_exact_target_git_materialization_skips_lfs_smudge_in_closed_environment[lfs-budget-exhausted]`
+- `test_internal_exact_target_git_materialization_skips_lfs_smudge_in_closed_environment[ordinary-checkout-failure]`
+
+Both cases are in
+`src/public/lib/three-workflow-delivery-v3/tests/repository/test_node_provider.py`.
+They use the existing real local exact-target/NBGV fixture and a subprocess
+boundary that reproduces the LFS-budget failure unless the internal detached
+checkout receives an explicit `GIT_LFS_SKIP_SMUDGE=1`.
+
+### Remaining production failure
+
+`node_provider.py::_run_command` calls `subprocess.run` without `env=`.
+Consequently
+`_isolated_exact_target_repository` invokes
+`git checkout --detach <target>` with `env=None`; the command only inherits the
+ambient process environment and the Provider cannot guarantee LFS smudge
+suppression. The regression deliberately removes the ambient variable and
+fails with:
+
+```text
+AssertionError: internal target checkout inherited ambient environment:
+('git', 'checkout', '--detach', '<exact-target>')
+```
+
+No skip, xfail, swallowed command failure, global LFS disablement, production
+repair, or workflow workaround was added.
+
+### Validation
+
+| Command/evidence | Result |
+|---|---|
+| Baseline `test_isolated_exact_target_materialization_preserves_source_and_cleans_up` | `5 passed` before the test edit |
+| Canonical success case `[success]` | `1 passed` after the edit |
+| Canonical propagated failure case `[git-preparation]` | `1 passed` after the edit |
+| Generated focused regression on delivered production | `2 failed` at the explicit checkout environment assertion |
+| Temporary diagnostic runner adding only checkout `GIT_LFS_SKIP_SMUDGE=1` | `2 passed`; this probe lived under `/tmp` and did not modify production |
+| Focused Pyrefly check of source/test pair | `0 errors` |
+| Ruff check and format check of canonical test file | passed |
+| Append-only prefix checks for all three `.testagent` files | passed before this status append; final check remains below |
+
+The temporary diagnostic probe is not a substitute for the delivered-tree
+result. It demonstrates that both generated scenarios become green with the
+minimal intended checkout environment behavior and that the ordinary checkout
+failure is still propagated.
+
+### Pre-completion gate
+
+#### Pseudo-mutation review (`test-gap-analysis`)
+
+- Removing or misspelling `GIT_LFS_SKIP_SMUDGE=1` is killed by the modeled LFS
+  boundary and exact safe environment projection.
+- Letting clone materialize a worktree is killed by the exact
+  `--no-checkout` clone assertion.
+- Changing or omitting the detached exact target is killed by the exact
+  checkout command and checkout/NBGV target assertions.
+- Removing shallow, parent-history, missing-object, or authoritative-tag
+  checks is killed by concrete command assertions plus returned checkout
+  evidence.
+- Removing the authoritative remote replacement is killed by the exact local
+  authoritative URL assertion.
+- Reporting persisted credentials is killed by the exact `False` assertion.
+- Swallowing, changing, or losing the cause of an ordinary checkout failure is
+  killed by the exact error text, `CalledProcessError` cause, and no-PNPM/NBGV
+  assertions.
+- Leaking network transport or adding global Git configuration is killed by
+  explicit negative command assertions.
+- Removing temporary cleanup or mutating caller state is killed by target-path
+  absence and complete before/after snapshot equality.
+
+No additional in-scope test gap was found. The sole unresolved mutation is the
+actual delivered production omission that intentionally leaves the regression
+red.
+
+#### Assertion-depth review (`assertion-quality`)
+
+- Zero assertion-free or trivial-only generated cases.
+- Concrete assertions cover command tuples, environment values, exact target,
+  checkout fields, remote/refspec, error text/type/cause, source state,
+  cleanup, and negative metadata/network/global-config observables.
+- The `result is not None` assertion is only a guard and is followed by
+  concrete field assertions.
+- No tautological round-trip assertion exists.
+- Both cases assert secondary observables beyond return values: subprocess
+  environment/commands, caller state, temporary cleanup, and downstream
+  command non-execution.
+
+### Requirement coverage
+
+| Requirement | Evidence |
+|---|---|
+| LFS suppression at internal materialization | Generated `lfs-budget-exhausted` case gates and records the exact detached-checkout subprocess environment |
+| Preserve closed/minimal environment | Same case compares every existing `_OFFLINE_ENVIRONMENT` control plus only the required suppression value |
+| Exact target | Exact checkout tuple and checkout target/head plus NBGV `gitCommitId` assertions |
+| Complete history/tags | Shallow/parents/missing-object command assertions, exact tag fetch, and checkout evidence |
+| Authoritative remote | Exact local `origin` URI and tag refspec assertions |
+| Credential non-persistence | Exact `credentials_persisted is False` assertion |
+| Failure propagation | Generated `ordinary-checkout-failure` case checks exact `ValueError`, original cause, and no PNPM/NBGV |
+| No network/global LFS weakening | Local-only URI plus negative network and `git config` command assertions |
+| Test-only scope | Bounded Git status contains only the canonical test and append-only `.testagent` documents |
+
+### Completion boundary
+
+The test-generation contract cannot be reported green because production does
+not yet implement the required behavior. This is the requested remaining
+production failure, not a test defect: the same generated cases pass under the
+temporary one-variable checkout-environment diagnostic.
+
+<!-- END APPEND: 2026-08-20T025500Z-wdv3-node-provider-lfs-regression-status -->
+
+<!-- BEGIN APPEND: 2026-08-20-wdv3-node-provider-lfs-implementation-status -->
+
+## Workflow Delivery v3 Node Provider LFS-smudge repair
+
+PHASE: Production repair and verification
+STATUS: COMPLETE
+PRODUCTION_CHANGED: true
+WORKFLOWS_CHANGED: false
+GENERATED_CASES: 2
+GENERATED_PASSING_ON_DELIVERED_TREE: 2
+GENERATED_FAILING_ON_DELIVERED_TREE: 0
+
+### Implementation
+
+`node_provider.py::_run_command` now gives every Git subprocess an explicit copy
+of the Provider process environment with `GIT_LFS_SKIP_SMUDGE=1`. Non-Git
+commands retain their existing inherited-environment behavior. This suppresses
+Git LFS object materialization during the internal detached exact-target
+checkout without changing the checkout command, global Git configuration,
+network boundaries, or subprocess failure propagation.
+
+### Validation
+
+| Command/evidence | Result |
+|---|---|
+| Complete `test_node_provider.py` | `160 passed` |
+| Full Workflow Delivery v3 package suite | `3191 passed` |
+| Focused Ruff check and format check | passed |
+| Focused Pyrefly check | `0 errors` |
+| Focused `git diff --check` | passed |
+
+The generated `lfs-budget-exhausted` case now proves the exact internal checkout
+receives the closed test environment plus only
+`GIT_LFS_SKIP_SMUDGE=1`. The generated `ordinary-checkout-failure` case still
+proves that an unrelated checkout error becomes the existing `ValueError` with
+the original `CalledProcessError` as its cause and prevents PNPM and NBGV
+execution.
+
+No acceptance probe, sentinel finalization, live activation, publication,
+package mutation, workflow workaround, global environment mutation, or global
+Git configuration change was performed.
+
+<!-- END APPEND: 2026-08-20-wdv3-node-provider-lfs-implementation-status -->
+
+<!-- BEGIN APPEND: 2026-08-20-wdv3-node-provider-lfs-review-status -->
+
+## Workflow Delivery v3 Node Provider LFS-smudge review closure
+
+PHASE: Multi-angle review and independent adjudication
+STATUS: COMPLETE
+FINAL_REVIEW_FINDINGS: 0
+
+Four independent reviews covered subprocess environment scope, exact-target
+semantics, regression effectiveness, and the v3 design boundary. Every finding
+was independently adjudicated before repair:
+
+| Finding | Decision | Disposition |
+|---|---|---|
+| Process-global environment mutation was not observable | TP | The regression now compares per-variable environment digests, reports only changed variable names, and records the ambient LFS value at every intercepted subprocess |
+| Original checkout exception identity was not asserted | TP | The injected `CalledProcessError` is retained and required as the exact `ValueError` cause |
+| Pre-clone global Git configuration was outside the negative assertion | TP | The test now rejects `git config` across all observed Provider commands |
+| Literal `node`/`pnpm` matching did not model arbitrary wrappers | FP | Existing Provider commands are literal and checkout failure exits before the context yields; wrapper mutations are outside this bounded repair |
+| The subprocess spy did not accept arbitrary calling conventions | FP | The spy faithfully models the existing `_run_command` boundary; unrelated subprocess refactoring is outside scope |
+| The test did not lock the environment shape of every Git and non-Git command | FP | Checkout materialization is the failing business boundary; the all-Git implementation split remains private behavior |
+| Raw full-environment equality could disclose credentials on failure | TP | The assertion now compares canonical digests and exposes only changed variable names |
+| Raw environment membership could disclose unrelated values | TP | The assertion now uses a derived Boolean |
+
+The environment, exact-target, regression, and design re-reviews reported no
+findings after the first adjudicated repairs. A credential-diagnostics
+re-review found the two safe-output issues above; both were repaired and the
+terminal changed-lines re-review reported no findings.
+
+Final delivered-tree validation after all review repairs:
+
+- focused generated regression: `2 passed`;
+- complete Workflow Delivery v3 suite: `3191 passed`;
+- focused Ruff check and format check: passed;
+- focused Pyrefly check: `0 errors`;
+- `git diff --check`: passed.
+
+No workflow, manifest, lockfile, package, live-delivery state, global
+environment, or global Git configuration was changed.
+
+<!-- END APPEND: 2026-08-20-wdv3-node-provider-lfs-review-status -->

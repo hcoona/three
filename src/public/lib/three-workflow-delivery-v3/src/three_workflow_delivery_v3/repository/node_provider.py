@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import subprocess
 from collections.abc import Callable, Iterator
@@ -413,10 +414,15 @@ def create_node_provider_fact_bundle(  # noqa: PLR0913
 
 
 def _run_command(command: tuple[str, ...], cwd: Path) -> str:
+    environment: dict[str, str] | None = None
+    if command[:1] == ("git",):
+        environment = dict(os.environ)
+        environment["GIT_LFS_SKIP_SMUDGE"] = "1"
     try:
         return subprocess.run(  # noqa: S603
             command,
             cwd=cwd,
+            env=environment,
             check=True,
             capture_output=True,
             text=True,

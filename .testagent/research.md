@@ -4385,3 +4385,131 @@ evidence and must not be run a second time.
   callee, eligibility, permission, or artifact changes.
 
 <!-- END APPEND: 2026-08-19T20:01:25Z-wdv3-buddy-caller-held-release-execution-concurrency-repair-research -->
+
+<!-- BEGIN APPEND: 2026-08-20T014646Z-wdv3-node-provider-lfs-regression-research -->
+
+## Workflow Delivery v3 Node Provider LFS-smudge regression
+
+### Scope and strategy
+
+- **Strategy:** Direct. The request is bounded to one Python Provider and its
+  canonical pytest module.
+- **Production target:**
+  `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/repository/node_provider.py`
+- **Canonical test target:**
+  `src/public/lib/three-workflow-delivery-v3/tests/repository/test_node_provider.py`
+- No workflow, manifest, lockfile, global Git configuration, or unrelated
+  source is in scope.
+
+### Remote failure evidence supplied by the request
+
+- PR: `#552`
+- Workflow run: `32322124132`
+- Job: `96286306051`
+- Boundary: `Discover Node facts` / `Produce exact Provider Result`
+- The workflow checkout succeeded. The Provider subsequently created its own
+  exact-target repository, and `git checkout --detach <target>` attempted to
+  smudge `src/private/app/OxfordDictExtractor/wordlist.tsv.zip`.
+- GitHub LFS budget exhaustion made that internal checkout fail because the
+  Provider did not supply `GIT_LFS_SKIP_SMUDGE=1`.
+
+### Bounded implementation findings
+
+- `_isolated_exact_target_repository` runs a local
+  `git clone --no-local --no-checkout --no-tags`, restores the authoritative
+  `origin`, then runs `git checkout --detach <target>`.
+- `_run_command` delegates to `subprocess.run` without an explicit
+  environment. Therefore the Provider cannot currently guarantee LFS smudge
+  suppression when the ambient workflow environment omits it.
+- `verify_exact_checkout` independently proves exact HEAD, non-shallow and
+  complete ancestry/objects, fetches the exact authoritative tag refspec, and
+  records credential non-persistence and the authoritative remote.
+- Existing real-local-repository scenarios already establish the canonical
+  fixture style: local-only remotes, a closed noninteractive Git/PNPM
+  environment, detached exact targets, complete history and annotated plus
+  lightweight tags, temporary-repository cleanup, and propagated command
+  failures.
+- The checked-in Python extension was read. The extension skill entry point
+  was unavailable, so the base extension was read directly. This project uses
+  pytest through the root UV workspace.
+
+### Acceptance checklist
+
+1. With ambient `GIT_LFS_SKIP_SMUDGE` absent, every Git subprocess operating
+   on or creating the Provider's internal target repository receives the exact
+   value `GIT_LFS_SKIP_SMUDGE=1`.
+2. Adding suppression preserves every existing closed/offline Git and PNPM
+   environment control, including blank credential helper, disabled prompts,
+   local file transport, and denied HTTP/HTTPS/SSH transports.
+3. The successful scenario remains bound to the exact requested detached
+   target and exact NBGV commit.
+4. Complete non-shallow history/object validation remains required.
+5. Complete authoritative tags and the exact tag refspec remain required.
+6. The internal repository retains the authoritative local `origin` URL.
+7. Checkout evidence continues to report non-persisted credentials.
+8. A distinct internal checkout failure remains a propagated `ValueError`
+   caused by the original `CalledProcessError`; it is not swallowed, skipped,
+   or allowed to reach PNPM/NBGV.
+9. The regression uses only local repositories and subprocess observation. It
+   does not call a network service, alter global Git/LFS configuration, weaken
+   checkout validation, or depend on timing.
+10. Production and workflow files remain unchanged for this test-only request.
+    If the new scenario is red, report the precise remaining production
+    failure rather than masking it with skip/xfail.
+11. `.testagent/research.md`, `.testagent/plan.md`, and
+    `.testagent/status.md` retain their captured byte prefixes.
+
+### Planned test mechanism
+
+- Reuse `_real_local_nbgv_repository` so the scenario exercises the public
+  `provide_node_repository_facts` entry point with real local Git, PNPM, and
+  installed NBGV behavior.
+- Remove ambient `GIT_LFS_SKIP_SMUDGE`, then wrap `subprocess.run` only after
+  fixture construction. Record a safe projection of the internal Git
+  subprocess environment.
+- Model the exhausted-LFS boundary at the exact internal detached-checkout
+  subprocess: it fails unless that subprocess receives
+  `GIT_LFS_SKIP_SMUDGE=1`.
+- Parameterize the same scenario with an unrelated injected checkout failure
+  to prove ordinary Git failures still propagate and block metadata
+  evaluation.
+
+### Commands
+
+- Baseline canonical scenario:
+  `GIT_LFS_SKIP_SMUDGE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/repository/test_node_provider.py::test_isolated_exact_target_materialization_preserves_source_and_cleans_up`
+  — `5 passed`.
+- Narrow generated regression:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/repository/test_node_provider.py::test_internal_exact_target_git_materialization_skips_lfs_smudge_in_closed_environment`
+- Bounded lint/format:
+  `uv run --python 3.13 ruff check --force-exclude -- src/public/lib/three-workflow-delivery-v3/tests/repository/test_node_provider.py`
+  and
+  `uv run --python 3.13 ruff format --check --force-exclude -- src/public/lib/three-workflow-delivery-v3/tests/repository/test_node_provider.py`
+- Append-only prefix validation uses the three
+  `/tmp/wdv3-node-lfs-*-prefix.md` snapshots captured before this append.
+
+### Known pre-implementation blocker
+
+The requested positive regression is expected to fail against the delivered
+production tree: `_run_command` does not pass any explicit subprocess
+environment, so the internal checkout cannot receive Provider-owned LFS
+suppression when the ambient variable is absent. The user explicitly bounded
+this run to regression tests and requested the remaining production failure;
+no production repair is planned.
+
+<!-- END APPEND: 2026-08-20T014646Z-wdv3-node-provider-lfs-regression-research -->
+
+<!-- BEGIN APPEND: 2026-08-20T024000Z-wdv3-node-provider-lfs-regression-research-clarification -->
+
+### Materialization-command clarification
+
+The final regression applies the explicit environment assertion to
+`git checkout --detach <target>`, the command that materializes the worktree
+and triggered the observed LFS smudge. It separately pins the preceding clone
+to `--no-checkout`; therefore that clone cannot become an unguarded
+materializing command without failing the regression. Other internal Git
+commands remain recorded and asserted for exact-target, history, tags, remote,
+network, and global-configuration invariants, but are not over-constrained to
+an explicit environment when they cannot smudge worktree content.
+
+<!-- END APPEND: 2026-08-20T024000Z-wdv3-node-provider-lfs-regression-research-clarification -->

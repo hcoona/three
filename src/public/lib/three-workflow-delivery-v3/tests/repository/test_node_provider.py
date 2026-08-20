@@ -2087,6 +2087,13 @@ class _IsolatedRecordedCommand:
     environment: tuple[tuple[str, str], ...]
 
 
+@dataclass(frozen=True, slots=True)
+class _TargetGitSubprocessRecord:
+    command: tuple[str, ...]
+    cwd: Path
+    environment: tuple[tuple[str, str | None], ...] | None
+
+
 def _offline_provider_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> dict[str, str]:
@@ -3180,6 +3187,256 @@ def test_isolated_exact_target_materialization_preserves_source_and_cleans_up(
         assert result is None
         assert isinstance(error, ValueError)
         assert expected_error in str(error)
+
+
+@pytest.mark.parametrize(
+    "failure_mode",
+    [None, "ordinary-checkout-failure"],
+    ids=["lfs-budget-exhausted", "ordinary-checkout-failure"],
+)
+def test_internal_exact_target_git_materialization_skips_lfs_smudge_in_closed_environment(  # noqa: E501, PLR0915
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_mode: str | None,
+) -> None:
+    """Suppress LFS smudging without weakening exact-target Git guarantees."""
+    environment = _offline_provider_environment(monkeypatch)
+    monkeypatch.delenv("GIT_LFS_SKIP_SMUDGE", raising=False)
+    environment.pop("GIT_LFS_SKIP_SMUDGE", None)
+    fixture_environment_has_lfs_skip_smudge = (
+        "GIT_LFS_SKIP_SMUDGE" in environment
+    )
+    repository = _real_local_nbgv_repository(tmp_path, environment)
+    ambient_environment_digests = {
+        name: canonical_sha256(value) for name, value in os.environ.items()
+    }
+    before = _source_checkout_snapshot(
+        repository.caller_checkout,
+        environment,
+    )
+    real_run = subprocess.run
+    observed_commands: list[tuple[str, ...]] = []
+    ambient_lfs_values: list[str | None] = []
+    target_git_records: list[_TargetGitSubprocessRecord] = []
+    target_root: Path | None = None
+    injected_checkout_error: subprocess.CalledProcessError | None = None
+    recorded_environment_names = (
+        *_RECORDED_ENVIRONMENT_NAMES,
+        "GIT_LFS_SKIP_SMUDGE",
+    )
+
+    def run_with_lfs_budget_boundary(  # noqa: PLR0913
+        command: Sequence[str],
+        *,
+        cwd: Path,
+        check: bool,
+        capture_output: bool,
+        text: bool,
+        env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        nonlocal injected_checkout_error, target_root
+        normalized_command = tuple(command)
+        resolved_cwd = cwd.resolve()
+        observed_commands.append(normalized_command)
+        ambient_lfs_values.append(os.environ.get("GIT_LFS_SKIP_SMUDGE"))
+        creates_target = (
+            normalized_command[:2] == ("git", "clone")
+            and "--no-checkout" in normalized_command
+        )
+        if creates_target:
+            target_root = Path(normalized_command[-1]).resolve()
+        operates_on_target = (
+            normalized_command[:1] == ("git",)
+            and target_root is not None
+            and resolved_cwd == target_root
+        )
+        if creates_target or operates_on_target:
+            projection = (
+                None
+                if env is None
+                else tuple(
+                    (name, env.get(name)) for name in recorded_environment_names
+                )
+            )
+            target_git_records.append(
+                _TargetGitSubprocessRecord(
+                    command=normalized_command,
+                    cwd=resolved_cwd,
+                    environment=projection,
+                )
+            )
+        if normalized_command[:3] == ("git", "checkout", "--detach"):
+            if env is None or env.get("GIT_LFS_SKIP_SMUDGE") != "1":
+                raise subprocess.CalledProcessError(
+                    128,
+                    normalized_command,
+                    stderr=(
+                        "Git LFS bandwidth quota exceeded while smudging "
+                        "src/private/app/OxfordDictExtractor/"
+                        "wordlist.tsv.zip"
+                    ),
+                )
+            if failure_mode == "ordinary-checkout-failure":
+                injected_checkout_error = subprocess.CalledProcessError(
+                    128,
+                    normalized_command,
+                    stderr="injected ordinary exact-target checkout failure",
+                )
+                raise injected_checkout_error
+        return cast(
+            "subprocess.CompletedProcess[str]",
+            real_run(
+                normalized_command,
+                cwd=resolved_cwd,
+                env=env,
+                check=check,
+                capture_output=capture_output,
+                text=text,
+            ),
+        )
+
+    monkeypatch.setattr(subprocess, "run", run_with_lfs_budget_boundary)
+    result: NodeProviderResult | None = None
+    error: ValueError | None = None
+    try:
+        result = provide_node_repository_facts(
+            repository.caller_checkout,
+            PROJECT_PATH,
+            _binding(repository.target),
+            _materialization(),
+        )
+    except ValueError as caught:
+        error = caught
+    after = _source_checkout_snapshot(
+        repository.caller_checkout,
+        environment,
+    )
+
+    assert not fixture_environment_has_lfs_skip_smudge
+    current_environment_digests = {
+        name: canonical_sha256(value) for name, value in os.environ.items()
+    }
+    changed_environment_names = tuple(
+        sorted(
+            name
+            for name in (
+                ambient_environment_digests.keys()
+                | current_environment_digests.keys()
+            )
+            if ambient_environment_digests.get(name)
+            != current_environment_digests.get(name)
+        )
+    )
+    assert not changed_environment_names
+    assert ambient_lfs_values
+    assert all(value is None for value in ambient_lfs_values)
+    assert before == after
+    assert target_root is not None
+    assert not target_root.exists()
+    clone_records = tuple(
+        record
+        for record in target_git_records
+        if record.command[:2] == ("git", "clone")
+    )
+    checkout_records = tuple(
+        record
+        for record in target_git_records
+        if record.command[:3] == ("git", "checkout", "--detach")
+    )
+    assert len(clone_records) == 1
+    assert clone_records[0].command == (
+        "git",
+        "clone",
+        "--no-local",
+        "--no-checkout",
+        "--no-tags",
+        str(repository.caller_checkout.resolve()),
+        str(target_root),
+    )
+    assert len(checkout_records) == 1
+    assert checkout_records[0].command == (
+        "git",
+        "checkout",
+        "--detach",
+        repository.target,
+    )
+    expected_environment = {
+        **_OFFLINE_ENVIRONMENT,
+        "GIT_LFS_SKIP_SMUDGE": "1",
+    }
+    expected_projection = tuple(
+        (name, expected_environment[name])
+        for name in recorded_environment_names
+    )
+    assert target_git_records
+    for record in checkout_records:
+        assert record.environment is not None, (
+            f"internal target checkout inherited ambient environment: "
+            f"{record.command}"
+        )
+        assert record.environment == expected_projection
+    assert all(
+        command[:2] != ("git", "config") for command in observed_commands
+    )
+    assert all(
+        protocol not in " ".join(record.command).lower()
+        for record in target_git_records
+        for protocol in ("http://", "https://", "ssh://", "git@")
+    )
+
+    if failure_mode is None:
+        assert error is None, f"LFS-safe exact-target checkout failed: {error}"
+        assert result is not None
+        assert result.checkout.target == repository.target
+        assert result.checkout.head == repository.target
+        assert result.checkout.shallow is False
+        assert result.checkout.ancestry_complete is True
+        assert result.checkout.tags_complete is True
+        assert result.checkout.credentials_persisted is False
+        assert result.checkout.authoritative_remote == AUTHORITATIVE_REMOTE
+        assert result.checkout.authoritative_remote_url == (
+            repository.bare_origin.resolve().as_uri()
+        )
+        assert result.checkout.tag_refspec == TAG_REFSPEC
+        assert result.nbgv.git_commit_id == repository.target
+        target_commands = tuple(record.command for record in target_git_records)
+        assert (
+            "git",
+            "rev-parse",
+            "--is-shallow-repository",
+        ) in target_commands
+        assert (
+            "git",
+            "rev-list",
+            "--parents",
+            repository.target,
+        ) in target_commands
+        assert (
+            "git",
+            "rev-list",
+            "--objects",
+            "--missing=print",
+            repository.target,
+        ) in target_commands
+        assert any(
+            record.command == _PHASE1_PREPARATION_FETCH_COMMAND
+            and record.cwd == target_root
+            for record in target_git_records
+        )
+    else:
+        assert result is None
+        assert error is not None
+        assert str(error) == (
+            "Provider command failed: git: "
+            "injected ordinary exact-target checkout failure"
+        )
+        assert injected_checkout_error is not None
+        assert error.__cause__ is injected_checkout_error
+        assert isinstance(error.__cause__, subprocess.CalledProcessError)
+        assert all(
+            command[:1] not in {("node",), ("pnpm",)}
+            for command in observed_commands
+        )
 
 
 SHA256_HEX_LENGTH = 64

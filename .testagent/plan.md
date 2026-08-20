@@ -5075,3 +5075,74 @@ not, `cancel-in-progress` is false, and the reusable Attempt is invoked only
 after caller concurrency admission.
 
 <!-- END APPEND: 2026-08-19T200717Z-wdv3-buddy-caller-held-release-execution-concurrency-repair-plan -->
+
+<!-- BEGIN APPEND: 2026-08-20T014646Z-wdv3-node-provider-lfs-regression-plan -->
+
+## Plan: focused Node Provider LFS-smudge regression
+
+### Phase 1 — Add one scenario-first parameterized regression
+
+Edit only
+`src/public/lib/three-workflow-delivery-v3/tests/repository/test_node_provider.py`.
+
+Add
+`test_internal_exact_target_git_materialization_skips_lfs_smudge_in_closed_environment`
+with these named cases:
+
+1. `lfs-budget-exhausted`
+   - ambient `GIT_LFS_SKIP_SMUDGE` is absent;
+   - the internal `git checkout --detach <target>` subprocess behaves like an
+     exhausted LFS filter and fails unless its explicit environment contains
+     `GIT_LFS_SKIP_SMUDGE=1`;
+   - on success, assert exact target/NBGV binding, complete history and tags,
+     exact authoritative local remote/refspec, non-persisted credentials,
+     preserved closed environment controls, no global Git configuration, and
+     temporary-repository cleanup.
+2. `ordinary-checkout-failure`
+   - after verifying suppression is present, inject an unrelated
+     `CalledProcessError` at the same internal checkout boundary;
+   - assert the Provider propagates its `ValueError` with the original error as
+     cause, runs no PNPM/NBGV metadata command, and cleans the temporary
+     repository.
+
+Use only a safe environment projection in recorded assertions so unrelated
+ambient values or credentials cannot appear in diagnostics.
+
+### Phase 2 — Narrow validation and red-test diagnosis
+
+1. Run the generated parameterized test without ambient LFS suppression.
+2. If it fails because the internal Git subprocess receives no explicit
+   environment, retain the non-skipped regression and record that exact
+   production blocker. Do not weaken the assertion or modify production.
+3. Run Ruff check, Ruff format check, and `git diff --check` on the bounded
+   test/state files.
+4. Re-open the generated test and map every checklist item to concrete
+   assertions.
+5. Run `test-gap-analysis` and `assertion-quality` against the final source/test
+   pair. Record any accepted finding as the same test-only production blocker;
+   do not broaden scope.
+6. Append final results to `.testagent/status.md`.
+
+### Requirement-to-evidence map
+
+| Requirement | Planned evidence |
+|---|---|
+| Internal target Git gets exact LFS suppression | Generated test, safe subprocess-environment projection, and checkout gate |
+| Closed/minimal environment preserved | Generated test compares all `_OFFLINE_ENVIRONMENT` controls |
+| Exact target and NBGV binding | Generated success case checks checkout target/head and `gitCommitId` |
+| Complete history and tags | Generated success case checks non-shallow ancestry/tags and exact tag fetch |
+| Authoritative remote | Generated success case checks `origin`, local URI, and exact refspec |
+| Credentials not persisted | Generated success case checks exact `False` evidence |
+| Failures propagate | Generated ordinary-failure case checks wrapper message, cause type, and metadata non-execution |
+| Local/no global weakening | Generated test checks local URI, no network command, and no `git config` invocation |
+| Test-only bounded change | Final bounded diff |
+| Append-only state | Captured prefix comparisons for all three files |
+
+### Stop condition
+
+Stop after the focused test and bounded validation. Do not edit
+`node_provider.py`, workflows, manifests, locks, or global Git/LFS settings.
+The delivered production omission is a reportable blocker, not permission to
+implement the production fix.
+
+<!-- END APPEND: 2026-08-20T014646Z-wdv3-node-provider-lfs-regression-plan -->
