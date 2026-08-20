@@ -18580,59 +18580,74 @@ def test_dotnet_github_release_route_is_active() -> None:
     assert "`ubuntu-latest`, `macos-latest`, or `windows-latest`" in design
 
 
-def test_release_build_variant_runs_control_from_trusted_checkout() -> None:
-    """Generic variant builds must keep helper execution out of target data."""
-    workflow = _workflow_yaml("release-build-variant.yml")
-    job = workflow["jobs"]["build"]
-    steps = cast("list[dict[str, object]]", job["steps"])
+def test_release_build_variant_workflow_is_absent() -> None:
+    """The superseded generic release workflow must no longer be callable."""
+    workflow_path = REPO_ROOT / ".github/workflows/release-build-variant.yml"
 
-    control_checkout = next(
-        step
-        for step in steps
-        if step.get("name") == "Checkout trusted control-plane"
+    assert not workflow_path.exists(), (
+        "superseded generic release workflow still exists: "
+        f"{workflow_path.relative_to(REPO_ROOT)}"
     )
-    target_checkout = next(
-        step
-        for step in steps
-        if step.get("name") == "Checkout release target data"
+
+
+@pytest.mark.parametrize(
+    "active_workflow_name",
+    [
+        pytest.param("official.yml", id="official.yml"),
+        pytest.param("release-orchestrate.yml", id="release-orchestrate.yml"),
+    ],
+)
+def test_release_build_variant_has_no_active_workflow_reference(
+    active_workflow_name: str,
+) -> None:
+    """Active release workflows must not call the superseded generic build."""
+    active_workflow_path = (
+        REPO_ROOT / ".github/workflows" / active_workflow_name
     )
-    assert cast("dict[str, object]", control_checkout["with"]) == {
-        "ref": "${{ github.workflow_sha }}",
-        "path": ".three-workflow-release/control-plane",
-        "fetch-depth": 1,
-        "persist-credentials": False,
+    assert active_workflow_path.is_file(), (
+        "active release workflow is missing: "
+        f"{active_workflow_path.relative_to(REPO_ROOT)}"
+    )
+
+    workflow = _workflow_yaml(active_workflow_name)
+    jobs = workflow.get("jobs")
+    assert isinstance(jobs, dict), (
+        f"{active_workflow_name} must contain a jobs mapping"
+    )
+    job_references = {
+        str(job_name): uses
+        for job_name, job in jobs.items()
+        if isinstance(job, dict) and isinstance((uses := job.get("uses")), str)
     }
-    assert cast("dict[str, object]", target_checkout["with"]) == {
-        "ref": "${{ inputs.commit-sha }}",
-        "path": ".three-workflow-release/target",
-        "fetch-depth": 0,
-        "fetch-tags": True,
-        "persist-credentials": False,
+    local_references = {
+        job_name: uses
+        for job_name, uses in job_references.items()
+        if uses.startswith("./.github/workflows/")
     }
-    pin_step = next(
-        step for step in steps if step.get("name") == "Pin release target data"
+    assert local_references, (
+        f"{active_workflow_name} has no local workflow references to inspect"
     )
-    assert pin_step["working-directory"] == ".three-workflow-release/target"
-    pin_run = cast("str", pin_step["run"])
-    assert 'git cat-file -t "${RELEASE_TARGET}"' in pin_run
-    assert '"${release_target_type}" != "commit"' in pin_run
-    assert "release target must resolve to a commit object" in pin_run
-    assert 'git cat-file -e "${RELEASE_TARGET}^{commit}"' not in pin_run
-    assert "git checkout --detach" in pin_run
-    assert 'git checkout --detach "${RELEASE_TARGET}"' in pin_run
-    assert "^[0-9a-fA-F]{40}$" in pin_run
-    for step in steps:
-        run = cast("str", step.get("run", ""))
-        if (
-            "workflow_release_control.py" in run
-            or "three-workflow-release-build" in run
-        ):
-            assert (
-                step.get("working-directory")
-                == ".three-workflow-release/control-plane"
-            )
-        if "three-workflow-release-build" in run:
-            assert "${GITHUB_WORKSPACE}/.three-workflow-release/target" in run
+
+    forbidden_references = {
+        "release-build-variant.yml",
+        "./.github/workflows/release-build-variant.yml",
+    }
+    offending_references = {
+        job_name: uses
+        for job_name, uses in job_references.items()
+        if uses in forbidden_references
+    }
+    assert not offending_references, (
+        f"{active_workflow_name} references superseded "
+        f"release-build-variant.yml: {offending_references}"
+    )
+
+    if active_workflow_name == "official.yml":
+        active_orchestrator = "./.github/workflows/release-orchestrate.yml"
+        assert active_orchestrator in local_references.values(), (
+            "official.yml must delegate to release-orchestrate.yml; "
+            f"local references: {local_references}"
+        )
 
 
 def test_final_ci_json_rejects_confidential_field_names(tmp_path: Path) -> None:

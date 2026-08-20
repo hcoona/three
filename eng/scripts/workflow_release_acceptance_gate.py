@@ -68,7 +68,7 @@ MANDATORY_TEST_NODEIDS = (
     "tests/test_workflow_release_control.py::"
     "test_publish_permission_class_requires_exact_github_packages_host",
     "tests/test_workflow_release_control.py::"
-    "test_release_build_variant_runs_control_from_trusted_checkout",
+    "test_release_build_variant_workflow_is_absent",
     "tests/test_workflow_release_control.py::"
     "test_final_ci_json_rejects_confidential_field_names",
     "tests/test_workflow_release_control.py::"
