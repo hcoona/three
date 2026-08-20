@@ -1900,3 +1900,21 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   immediate intentional Buddy outage and legacy drain.
 - Performed no acceptance probe, sentinel finalization, live activation,
   publication, or package mutation.
+
+## [2026-08-20] query | Close Workflow Delivery v3 PR validation
+
+- Repaired the Provider Git LFS boundary and all 20 PR #552 CodeQL findings in
+  focused commits through `116b84d4`, without dismissing or suppressing an
+  alert; independent reviewers reported no remaining findings.
+- Integrated `origin/main` at `191abc82` through non-rewriting merge commit
+  `4fac140d`, then passed the complete workspace gate and authoritative
+  573-file committed-range gate, including 1,257 workflow-release tests and
+  3,218 v3 tests.
+- Pushed `4fac140d`; general CI and CodeQL passed in remote run
+  [`32346356010`](https://github.com/hcoona/three/actions/runs/32346356010).
+  The non-authoritative shadow finalizer produced the expected fail-closed
+  `incomplete-model-plan` decision with `fix-model-plan-and-rerun`.
+- Left PR #552 unmerged and performed no acceptance probe, sentinel
+  finalization, live activation, publication, or package mutation. Human review
+  and separate merge authorization remain required before the intentional
+  Buddy outage and legacy drain.

@@ -149,24 +149,30 @@ target; request and workflow-run identity remain Attempt transport but do not
 partition the concurrency group. The caller holds the group across the complete
 reusable live Attempt with `cancel-in-progress: false`.
 
-Final PR preparation is complete locally. Merge commit `e4dfea3d` integrates
-`origin/main` at `3cc079ee` without rewriting history, preserves the deliberate
-legacy CI-job retirement, and regenerates the merged PNPM and UV locks. Follow-up
-`f3eb3b81` explicitly pins Ruff 0.14.4 until a separately scoped Ruff 0.16
-migration. The complete workspace gate and authoritative 574-file
-`origin/main..HEAD` gate pass, including 1,257 workflow-release tests and 3,189
-Workflow Delivery v3 tests. Independent merge and tooling re-reviews report no
-findings.
+The current published implementation head is `4fac140d`. After the initial PR
+head, bounded repairs skip Git LFS smudge only for Provider Git subprocesses,
+harden the acceptance proxy, make consumer-policy tokenization linear, bind
+live checkouts and admission to the caller revision, and remove the superseded
+release-build-variant workflow. Non-rewriting merge commit `4fac140d`
+integrates `origin/main` at `191abc82` and preserves upstream
+open-code-review 1.9.5 lock data exactly. The complete workspace gate and
+authoritative 573-file `origin/main..HEAD` gate pass, including 1,257
+workflow-release tests and 3,218 Workflow Delivery v3 tests. Independent repair
+reviews and re-reviews report no findings.
 
 The validated implementation branch is pushed, and
 [PR #552](https://github.com/hcoona/three/pull/552) is open against `main`.
-The PR is ready for review but not authorized to merge. Merge starts the direct
-v1 Buddy-to-v3 Buddy cutover and intentional Buddy outage while v3 remains
+General CI and CodeQL pass at `4fac140d`. All 20 targeted PR findings are fixed
+without dismissal or suppression. The non-authoritative v3 shadow finalizer
+returns the expected fail-closed `incomplete-model-plan` decision with
+`fix-model-plan-and-rerun` for this broad implementation diff. The PR is ready
+for human review but is not authorized to merge. Merge starts the direct v1
+Buddy-to-v3 Buddy cutover and intentional Buddy outage while v3 remains
 disabled.
 
 Next:
 
-1. complete PR checks and review;
+1. complete human PR review;
 2. obtain separate explicit authorization before merging, with the operator
    ready to execute the immediate post-merge legacy drain and old-ref rejection
    proof.

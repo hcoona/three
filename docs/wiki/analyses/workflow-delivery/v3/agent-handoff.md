@@ -18,15 +18,21 @@ If it conflicts with the
   legacy Buddy entry workflows at `f0f81d52`. The branch then integrated
   current `main` at `e6482727`, repaired live qualification authority and
   runtime boundaries at `2ddeeed1`, and committed durable unsuccessful
-  qualification Attempt Outcomes at `1e742b29`. The current implementation and
-  validation closure ends at `f3eb3b81`. It follows the
+  qualification Attempt Outcomes at `1e742b29`. The current published
+  implementation and validation closure ends at `4fac140d`. It follows the
   cancellation-finalization runtime hardening at `646060e5`, closes the
   independently adjudicated final-review and re-review test gaps, keys Buddy
   caller-held concurrency by canonical Release Execution identity at
   `3a2df043`, integrates `origin/main` at `3cc079ee` through non-rewriting merge
   commit `e4dfea3d`, and explicitly preserves Ruff 0.14.4 until a separately
-  scoped Ruff 0.16 migration. The validated implementation branch is published
-  at `dev/shuaizhang/design-workflows`, and
+  scoped Ruff 0.16 migration. PR validation then skips Git LFS smudge only for
+  Provider Git subprocesses at `2c0c1c24`, hardens the acceptance proxy at
+  `08bde53f`, replaces the consumer-policy tokenizer with a linear scan at
+  `db2e60a3`, binds live checkouts and admission to the caller revision at
+  `627c5b6e`, removes the superseded release-build-variant workflow at
+  `2c4ec0eb`, and records the CodeQL closure at `116b84d4`. Non-rewriting merge
+  commit `4fac140d` integrates `origin/main` at `191abc82`. The validated
+  implementation branch is published at `dev/shuaizhang/design-workflows`, and
   [PR #552](https://github.com/hcoona/three/pull/552) is open against `main`.
   Nothing from that PR has merged.
   Commit 3 includes target-tree-bound
@@ -104,11 +110,17 @@ If it conflicts with the
   rejects zero target and workflow SHAs while incomplete sentinel semantics
   remain available.
 - With `GIT_LFS_SKIP_SMUDGE=1`, the current Workflow Delivery v3 package
-  validation passes 3,189 tests, and the workflow-release control suite passes
-  1,257 tests. The complete workspace gate and authoritative 574-file
-  `origin/main..HEAD` gate pass after the merge and explicit Ruff compatibility
-  pin. The protected acceptance Environment and reviewer configuration are
-  still pending; no live acceptance dispatch or package mutation has run.
+  validation passes 3,218 tests, and the workflow-release control suite passes
+  1,257 tests. The complete workspace gate and authoritative 573-file
+  `origin/main..HEAD` gate pass at `4fac140d`. Remote run
+  [`32346356010`](https://github.com/hcoona/three/actions/runs/32346356010)
+  passes general CI and CodeQL. All 20 targeted PR #552 CodeQL findings
+  (alerts 45-46 and 54-71) are fixed in the PR analysis without dismissal or
+  suppression. The required non-authoritative shadow finalizer returns the
+  expected `incomplete-model-plan` failure class and
+  `fix-model-plan-and-rerun` next action for the broad implementation diff.
+  The protected acceptance Environment and reviewer configuration are still
+  pending; no live acceptance dispatch or package mutation has run.
 - Durable qualification terminalization now permits exact failed or incomplete
   Qualification Decisions to produce publication-free Attempt Outcomes. The
   `finalize-live` CLI replays the exact retained Qualification Snapshot,
@@ -159,6 +171,10 @@ If it conflicts with the
   `hexo@<7.2.0` override. `f3eb3b81` makes the resulting lint compatibility
   boundary explicit by pinning Ruff 0.14.4 until a separately approved Ruff
   0.16 migration. Independent merge and tooling re-reviews report no findings.
+- `4fac140d` completes the later non-rewriting integration of `origin/main` at
+  `191abc82` after the bounded LFS and CodeQL repairs. It preserves upstream
+  open-code-review 1.9.5 lock data exactly and closes the remote implementation
+  validation described above.
 - The first vertical slice is `hcoona-release-smoke-npm`.
 - The slice has one Node project, one package variant, and one npm artifact.
 - It covers CI Qualification, live Buddy publication to GitHub Packages, and
@@ -368,13 +384,16 @@ If it conflicts with the
   state blocks; no repository variable, PAT, App, service, ledger, OIDC, or
   additional token permission is added. Permanent root HK policy remains the
   repository-wide dependency gate.
-- Final v3 validation, branch publication, and implementation PR creation are
-  complete. The immediate boundary is PR #552 checks and review, followed by
-  separate explicit authorization to merge. Merge starts the direct cutover and
-  intentional Buddy outage, so the operator must be ready to execute the
-  immediate post-merge legacy drain and old-ref rejection proof. Do not merge,
-  run real acceptance probes, finalize the sentinel target, activate normal
-  live, or begin later scopes without a separate explicit user task.
+- Final v3 validation, branch publication, and implementation PR checks are
+  complete at `4fac140d`. General CI and CodeQL pass; the sole failing v3 shadow
+  result is the expected non-authoritative fail-closed decision for the broad
+  implementation diff. The immediate boundary is PR #552 human review,
+  followed by separate explicit authorization to merge. Merge starts the direct
+  cutover and intentional Buddy outage, so the operator must be ready to
+  execute the immediate post-merge legacy drain and old-ref rejection proof.
+  Do not merge, run real acceptance probes, finalize the sentinel target,
+  activate normal live, or begin later scopes without a separate explicit user
+  task.
 - Implementation must preserve the approved commit boundaries and keep live
   activation disabled until acceptance and the separate activation approval.
 

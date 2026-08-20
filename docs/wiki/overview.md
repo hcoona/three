@@ -22,10 +22,19 @@ v1 is the historical `origin/main` baseline. v2 is an archived prototype at
 commit `8824df2a12c78a1f3a851a3c2763bcb9e64f2412`. Neither version is normative
 for new v3 implementation work.
 
-Workflow Delivery v3 commit 11 locally retires the legacy Buddy entry routes:
+Workflow Delivery v3 commit 11 retires the legacy Buddy entry routes on
+[PR #552](https://github.com/hcoona/three/pull/552):
 `.github/workflows/buddy.yml` and `.github/workflows/release-buddy.yml` are
 removed with no `legacy-buddy.yml`, dispatch, or caller-compatibility route.
-v1 Official and CI remain active; activation remains unauthorized. The active host-specific GitHub Packages instances only inside the npm and RubyGems target families remain unchanged by this retirement; NuGet GitHub Packages is deferred/future vocabulary until a reviewed dotnet/NuGet path restores it.
+The validated implementation head is `4fac140d`; general CI and CodeQL pass,
+while the non-authoritative v3 shadow finalizer returns the expected
+fail-closed `incomplete-model-plan` decision for the broad implementation diff.
+Nothing has merged, and merge remains unauthorized because it starts the
+intentional Buddy outage and immediate legacy drain. v1 Official and CI remain
+active; v3 activation remains unauthorized. The active host-specific GitHub
+Packages instances only inside the npm and RubyGems target families remain
+unchanged by this retirement; NuGet GitHub Packages is deferred/future
+vocabulary until a reviewed dotnet/NuGet path restores it.
 
 ## Confirmed v3 Shape
 
