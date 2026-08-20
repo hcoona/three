@@ -905,11 +905,37 @@ def test_npm_e404_never_proves_authoritative_absence(
     assert observation["state"] == "unknown"
 
 
+def _is_exact_github_api_url(url: str) -> bool:
+    parts = urllib.parse.urlsplit(url)
+    return parts.scheme == "https" and parts.netloc == "api.github.com"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://api.github.com.example.invalid/package",
+        "https://evil.invalid/api.github.com/package",
+        "https://api.github.com:443/package",
+        "https://attacker@api.github.com/package",
+        "httpsx://api.github.com/package",
+    ],
+)
+def test_exact_github_api_origin_requires_exact_scheme_and_netloc(
+    url: str,
+) -> None:
+    """Reject parsed origins that only resemble the GitHub API origin."""
+    parts = urllib.parse.urlsplit(url)
+
+    assert (parts.scheme, parts.netloc) != ("https", "api.github.com")
+    assert not _is_exact_github_api_url(url)
+
+
 def test_acceptance_observation_requires_authenticated_github_package_version_metadata(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     version = "0.0.0-wdv3-acceptance.2"
+    lookalike_tarball_url = "https://api.github.com.example.invalid/tar.tgz"
     tarball = _acceptance_tarball(
         version=version,
         repository_url="git+https://github.com/hcoona/three.git",
@@ -924,7 +950,7 @@ def test_acceptance_observation_requires_authenticated_github_package_version_me
             json.dumps(
                 {
                     "version": version,
-                    "dist": {"tarball": "https://npm.pkg.github.com/tar.tgz"},
+                    "dist": {"tarball": lookalike_tarball_url},
                     "dist-tags": {"wdv3-acceptance-2": version},
                 }
             ),
@@ -944,7 +970,8 @@ def test_acceptance_observation_requires_authenticated_github_package_version_me
         ) -> GitHubPackagesHttpResponse:
             del timeout, max_bytes
             calls.append((url, headers))
-            if "api.github.com" in url and "/versions" not in url:
+            is_api_url = _is_exact_github_api_url(url)
+            if is_api_url and "/versions" not in url:
                 body = json.dumps(
                     {
                         "package_type": "npm",
@@ -953,7 +980,7 @@ def test_acceptance_observation_requires_authenticated_github_package_version_me
                         "repository": {"full_name": "hcoona/three"},
                     }
                 ).encode()
-            elif "api.github.com" in url:
+            elif is_api_url:
                 body = json.dumps(
                     [
                         {
@@ -988,8 +1015,10 @@ def test_acceptance_observation_requires_authenticated_github_package_version_me
         max_response_bytes=MAX_RESPONSE_BYTES,
     )
 
-    api_calls = [call for call in calls if "api.github.com" in call[0]]
+    api_calls = [call for call in calls if _is_exact_github_api_url(call[0])]
     assert len(api_calls) == 2
+    assert calls[-1][0] == lookalike_tarball_url
+    assert lookalike_tarball_url not in {url for url, _headers in api_calls}
     assert [
         value
         for _, headers in api_calls
@@ -1837,7 +1866,10 @@ def test_lost_response_proxy_injects_auth_and_only_processes_qualifying_upstream
             return b"{}"
 
         def getheaders(self) -> list[tuple[str, str]]:
-            return [("Content-Type", "application/json")]
+            return [
+                ("Content-Type", "application/json"),
+                ("X-GitHub-Request-Id", "request-123"),
+            ]
 
     class UpstreamConnection:
         def __init__(self, host: str, *, timeout: float) -> None:
@@ -1878,27 +1910,19 @@ def test_lost_response_proxy_injects_auth_and_only_processes_qualifying_upstream
         expected_method="PUT",
         expected_path="/@hcoona%2fhcoona-release-smoke-npm",
     ) as proxy:
-        host, port = proxy.registry.removeprefix("http://").split(":", 1)
-        connection = http.client.HTTPConnection(
-            host,
-            int(port),
-            timeout=TIMEOUT_SECONDS,
+        response = _request_proxy_publish(
+            proxy,
+            _adversarial_publish_body(tarball),
         )
-        try:
-            connection.request(
-                "PUT",
-                "/@hcoona%2fhcoona-release-smoke-npm",
-                body=_adversarial_publish_body(tarball),
-                headers={"Content-Type": "application/json"},
-            )
-            connection.getresponse().read()
-        except (ConnectionError, http.client.HTTPException):
-            pass
-        finally:
-            connection.close()
-
         assert proxy.processed.is_set() is processed
 
+    if upstream_status == 201:
+        assert response is None
+    else:
+        assert response is not None
+        assert response[0] == upstream_status
+        if upstream_status == 200:
+            assert ("X-GitHub-Request-Id", "request-123") in response[1]
     assert upstream_calls[0]["host"] == "npm.pkg.github.com"
     assert upstream_calls[0]["method"] == "PUT"
     assert upstream_calls[0]["path"] == "/@hcoona%2fhcoona-release-smoke-npm"
@@ -1912,6 +1936,10 @@ def test_lost_response_proxy_injects_auth_and_only_processes_qualifying_upstream
     [
         ("POST", "/@hcoona%2fhcoona-release-smoke-npm"),
         ("PUT", "/-/ping"),
+        (
+            "PUT",
+            "https://npm.pkg.github.com/@hcoona%2fhcoona-release-smoke-npm",
+        ),
     ],
 )
 def test_lost_response_proxy_rejects_unexpected_mutation_method_or_path(
@@ -1954,22 +1982,16 @@ def test_lost_response_proxy_rejects_unexpected_mutation_method_or_path(
         expected_method="PUT",
         expected_path="/@hcoona%2fhcoona-release-smoke-npm",
     ) as proxy:
-        host, port = proxy.registry.removeprefix("http://").split(":", 1)
-        connection = http.client.HTTPConnection(
-            host,
-            int(port),
-            timeout=TIMEOUT_SECONDS,
+        response = _request_proxy_publish(
+            proxy,
+            b"{}",
+            method=method,
+            path=path,
         )
-        try:
-            connection.request(method, path, body=b"{}")
-            connection.getresponse().read()
-        except (ConnectionError, http.client.HTTPException):
-            pass
-        finally:
-            connection.close()
-
         assert not proxy.processed.is_set()
 
+    assert response is not None
+    assert response[0] == 400
     assert upstream_calls == []
 
 
@@ -2318,10 +2340,13 @@ def _adversarial_publish_body(
     return canonicalize(cast("JsonValue", document))
 
 
-def _send_proxy_publish(
+def _request_proxy_publish(
     proxy: Any,
     body: bytes,
-) -> int | None:
+    *,
+    method: str = "PUT",
+    path: str = "/@hcoona%2fhcoona-release-smoke-npm",
+) -> tuple[int, list[tuple[str, str]], bytes] | None:
     host, port = proxy.registry.removeprefix("http://").split(":", 1)
     connection = http.client.HTTPConnection(
         host,
@@ -2330,16 +2355,25 @@ def _send_proxy_publish(
     )
     try:
         connection.request(
-            "PUT",
-            "/@hcoona%2fhcoona-release-smoke-npm",
+            method,
+            path,
             body=body,
             headers={"Content-Type": "application/json"},
         )
-        return connection.getresponse().status
+        response = connection.getresponse()
+        return response.status, response.getheaders(), response.read()
     except (ConnectionError, http.client.HTTPException):
         return None
     finally:
         connection.close()
+
+
+def _send_proxy_publish(
+    proxy: Any,
+    body: bytes,
+) -> int | None:
+    response = _request_proxy_publish(proxy, body)
+    return None if response is None else response[0]
 
 
 def test_adversarial_lost_proxy_validates_exact_publish_and_binds_full_proof(
@@ -5419,4 +5453,174 @@ def test_real_runner_proxy_wait_cleanup_and_readback_share_decreasing_budget(
     budgets = [budget for _, budget, _ in events]
     assert all(
         budgets[index + 1] < budgets[index] for index in range(len(budgets) - 1)
+    )
+
+
+def test_acceptance_proxy_uses_closure_bound_method_and_path_after_handler_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expected_method = "PUT"
+    expected_path = "/@hcoona%2fhcoona-release-smoke-npm"
+    mutated_method = "DELETE"
+    mutated_path = "https://api.github.com.example.invalid/attacker"
+    tarball = _acceptance_tarball(
+        version="0.0.0-wdv3-acceptance.4",
+        repository_url="git+https://github.com/hcoona/three.git",
+        target_sha=TARGET,
+    )
+    handlers: list[Any] = []
+    forwarded: list[tuple[str, str]] = []
+
+    class Response:
+        status = 201
+
+        def read(self, _size: int) -> bytes:
+            return b"{}"
+
+        def getheaders(self) -> list[tuple[str, str]]:
+            return [("Content-Type", "application/json")]
+
+    class Connection:
+        def __init__(self, _host: str, *, timeout: float) -> None:
+            del timeout
+            handler = handlers[-1]
+            handler.command = mutated_method
+            handler.path = mutated_path
+
+        def request(
+            self,
+            method: str,
+            path: str,
+            *,
+            body: bytes,
+            headers: dict[str, str],
+        ) -> None:
+            del body, headers
+            assert handlers[-1].command == mutated_method
+            assert handlers[-1].path == mutated_path
+            forwarded.append((method, path))
+
+        def getresponse(self) -> Response:
+            return Response()
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(cli_module.http.client, "HTTPSConnection", Connection)
+    proxy = cli_module.AcceptanceMutationProxy(
+        timeout_seconds=TIMEOUT_SECONDS,
+        token="upstream-secret",
+        expected_method=expected_method,
+        expected_path=expected_path,
+        expected_tarballs=(tarball,),
+        expected_target_sha=TARGET,
+        drop_accepted_response=False,
+    )
+    handler_type = cast("Any", proxy._server.RequestHandlerClass)
+    original_forward = handler_type._forward
+
+    def capture_handler(handler: Any) -> None:
+        handlers.append(handler)
+        original_forward(handler)
+
+    monkeypatch.setattr(handler_type, "_forward", capture_handler)
+
+    with proxy:
+        response = _request_proxy_publish(
+            proxy,
+            _adversarial_publish_body(tarball),
+        )
+        assert proxy.processed.is_set()
+
+    assert response is not None
+    assert response[0] == 201
+    assert forwarded == [(expected_method, expected_path)]
+
+
+@pytest.mark.parametrize(
+    "upstream_header",
+    [
+        pytest.param(
+            ("X-Bad\rX-Injected", "value"),
+            id="name-cr",
+        ),
+        pytest.param(
+            ("X-Bad\nX-Injected", "value"),
+            id="name-lf",
+        ),
+        pytest.param(
+            ("X-Bad", "before\rX-Injected: leaked"),
+            id="value-cr",
+        ),
+        pytest.param(
+            ("X-Bad", "before\nX-Injected: leaked"),
+            id="value-lf",
+        ),
+    ],
+)
+def test_acceptance_proxy_rejects_crlf_upstream_response_header(
+    monkeypatch: pytest.MonkeyPatch,
+    upstream_header: tuple[str, str],
+) -> None:
+    tarball = _acceptance_tarball(
+        version="0.0.0-wdv3-acceptance.4",
+        repository_url="git+https://github.com/hcoona/three.git",
+        target_sha=TARGET,
+    )
+
+    class Response:
+        status = 201
+
+        def read(self, _size: int) -> bytes:
+            return b"{}"
+
+        def getheaders(self) -> list[tuple[str, str]]:
+            return [
+                ("Content-Type", "application/json"),
+                upstream_header,
+            ]
+
+    class Connection:
+        def __init__(self, _host: str, *, timeout: float) -> None:
+            del timeout
+
+        def request(
+            self,
+            _method: str,
+            _path: str,
+            *,
+            body: bytes,
+            headers: dict[str, str],
+        ) -> None:
+            del body, headers
+
+        def getresponse(self) -> Response:
+            return Response()
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(cli_module.http.client, "HTTPSConnection", Connection)
+    with cli_module.AcceptanceMutationProxy(
+        timeout_seconds=TIMEOUT_SECONDS,
+        token="upstream-secret",
+        expected_method="PUT",
+        expected_path="/@hcoona%2fhcoona-release-smoke-npm",
+        expected_tarballs=(tarball,),
+        expected_target_sha=TARGET,
+        drop_accepted_response=False,
+    ) as proxy:
+        response = _request_proxy_publish(
+            proxy,
+            _adversarial_publish_body(tarball),
+        )
+
+    assert response is not None
+    status, headers, body = response
+    assert status == 502
+    assert body == b""
+    assert proxy.proof is None
+    assert not proxy.processed.is_set()
+    assert {"x-bad", "x-injected"}.isdisjoint(
+        name.lower() for name, _value in headers
     )

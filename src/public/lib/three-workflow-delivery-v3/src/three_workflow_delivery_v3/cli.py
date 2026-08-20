@@ -1007,8 +1007,8 @@ class AcceptanceMutationProxy:
                 )
                 try:
                     connection.request(
-                        self.command,
-                        self.path,
+                        expected_method,
+                        expected_path,
                         body=body,
                         headers=headers,
                     )
@@ -1017,9 +1017,24 @@ class AcceptanceMutationProxy:
                     if len(response_body) > max_response_bytes:
                         self._reject(502)
                         return
+                    response_headers: list[tuple[str, str]] = []
+                    for original_name, original_value in response.getheaders():
+                        sanitized_name = original_name.replace("\n", "")
+                        sanitized_value = original_value.replace("\n", "")
+                        if (
+                            sanitized_name != original_name
+                            or sanitized_value != original_value
+                            or "\r" in sanitized_name
+                            or "\r" in sanitized_value
+                        ):
+                            self._reject(502)
+                            return
+                        response_headers.append(
+                            (sanitized_name, sanitized_value)
+                        )
                     selected_headers = {
                         name.lower(): value
-                        for name, value in response.getheaders()
+                        for name, value in response_headers
                         if name.lower()
                         in {
                             "content-type",
@@ -1057,7 +1072,7 @@ class AcceptanceMutationProxy:
                             else "failed"
                         )
                     self.send_response(response.status)
-                    for name, value in response.getheaders():
+                    for name, value in response_headers:
                         if name.lower() not in {
                             "connection",
                             "content-length",
