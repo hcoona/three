@@ -46,6 +46,9 @@ _WORKFLOW_CANCELLATION_FACT = (
 _LEGACY_WORKFLOW_CANCELLATION_FACT = (
     "steps.workflow-cancellation.outputs.workflow-cancelled || 'false'"
 )
+EXPECTED_VALID_IDENTITY_CONDITION = (
+    "always() && needs.admit.outputs.identity-admitted == 'true'"
+)
 EXPECTED_JOBS = {
     "admit",
     "plan-qualification",
@@ -78,6 +81,21 @@ def _needs(job: dict[str, Any]) -> tuple[str, ...]:
         return value
     assert isinstance(value, list)
     return tuple(value)
+
+
+def _transitive_needs(
+    jobs: dict[str, Any],
+    job_name: str,
+) -> set[str]:
+    dependencies: set[str] = set()
+    pending = list(_needs(jobs[job_name]))
+    while pending:
+        dependency = pending.pop()
+        if dependency in dependencies:
+            continue
+        dependencies.add(dependency)
+        pending.extend(_needs(jobs[dependency]))
+    return dependencies
 
 
 def _steps(job: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1434,7 +1452,7 @@ def test_commit8_preobserved_noop_skips_publish_but_still_finalizes() -> None:
         *_WORKFLOW_CANCELLATION_AUTHORITIES,
         "workflow-cancellation",
     )
-    assert jobs["release-finalizer"]["if"] == "always()"
+    assert jobs["release-finalizer"]["if"] == EXPECTED_VALID_IDENTITY_CONDITION
 
 
 def test_commit8_platform_termination_facts_are_derived_for_finalization() -> (
@@ -1619,7 +1637,7 @@ def test_commit8_final_outcome_and_summary_are_retained_even_on_failure() -> (
         if str(step.get("uses", "")).startswith("actions/upload-artifact@")
     ]
 
-    assert finalizer["if"] == "always()"
+    assert finalizer["if"] == EXPECTED_VALID_IDENTITY_CONDITION
     assert finalize["continue-on-error"] is True
     assert {step["name"] for step in uploads} == {
         "Upload final Attempt Outcome and summary",
@@ -1705,7 +1723,7 @@ def test_commit8_dag_order_retention_and_error_propagation_are_exact() -> None:
     assert jobs["approval-finalizer"]["if"] == (
         "always() && needs.materialize-publication.result != 'skipped'"
     )
-    assert jobs["release-finalizer"]["if"] == "always()"
+    assert jobs["release-finalizer"]["if"] == EXPECTED_VALID_IDENTITY_CONDITION
 
     for job in jobs.values():
         for step in _steps(job):
@@ -1965,7 +1983,7 @@ def test_user_item13_finalizer_always_retains_outcome_summary_with_exact_contrac
     upload = _step(finalizer, "Upload final Attempt Outcome and summary")
     command = _run(_step(finalizer, "Finalize Attempt Outcome"))
 
-    assert finalizer["if"] == "always()"
+    assert finalizer["if"] == EXPECTED_VALID_IDENTITY_CONDITION
     assert finalizer["permissions"] == {"contents": "read"}
     assert (
         "--outcome-output .wdv3/final-attempt/attempt-outcome.json" in command
@@ -3824,3 +3842,223 @@ def test_unsuccessful_qualification_cancellation_is_not_clean_with_contradiction
     )
     if expected_record_flag is not None:
         assert argv.count(expected_record_flag) == 1
+
+
+_EXACT_TARGET_CHECKOUT_JOBS = (
+    "admit",
+    "plan-qualification",
+    "build-tarball",
+    "project-test",
+    "npm-artifact-qualification",
+    "qualification-finalizer",
+    "observe-github-packages",
+    "materialize-publication",
+    "approval-finalizer",
+    "publish-github-packages",
+    "release-finalizer",
+)
+_EXACT_TARGET_CHECKOUT_NAME = "Check out exact selected target"
+_LIVE_ATTEMPT_LOCAL_USES = (
+    "./.github/workflows/workflow-delivery-v3-live-attempt.yml"
+)
+_CALLEE_TARGET_SHA = "${{ inputs.target-sha }}"
+_SAME_REVISION_GUARD_NAME = "Require same-revision Buddy caller"
+
+
+def test_live_attempt_exact_target_checkout_inventory_is_exact() -> None:
+    jobs = _document(CALLEE)["jobs"]
+    checkouts: dict[str, list[dict[str, Any]]] = {}
+    for job_name, job in jobs.items():
+        matches = [
+            {
+                "name": step.get("name"),
+                "uses": step.get("uses"),
+                "with": step.get("with"),
+            }
+            for step in _steps(job)
+            if (
+                step.get("name") == _EXACT_TARGET_CHECKOUT_NAME
+                or str(step.get("uses", "")).startswith("actions/checkout@")
+            )
+        ]
+        if matches:
+            checkouts[job_name] = matches
+
+    expected = {
+        "name": _EXACT_TARGET_CHECKOUT_NAME,
+        "uses": CHECKOUT,
+        "with": {
+            "fetch-depth": 0,
+            "persist-credentials": False,
+            "ref": "${{ github.sha }}",
+        },
+    }
+    assert checkouts == {
+        job_name: [expected] for job_name in _EXACT_TARGET_CHECKOUT_JOBS
+    }
+
+
+def test_live_attempt_has_only_local_same_commit_buddy_caller() -> None:
+    callee_suffix = f"/{CALLEE.relative_to(REPO_ROOT).as_posix()}"
+    references: list[tuple[str, str, str]] = []
+
+    for path in sorted(
+        {
+            *CALLER.parent.rglob("*.yml"),
+            *CALLER.parent.rglob("*.yaml"),
+        }
+    ):
+        jobs = _document(path).get("jobs", {})
+        assert isinstance(jobs, dict), path
+        for job_name, job in jobs.items():
+            if not isinstance(job, dict):
+                continue
+            uses = job.get("uses")
+            if isinstance(uses, str) and uses.partition("@")[0].endswith(
+                callee_suffix
+            ):
+                references.append(
+                    (
+                        path.relative_to(REPO_ROOT).as_posix(),
+                        str(job_name),
+                        uses,
+                    )
+                )
+
+    assert references == [
+        (
+            ".github/workflows/workflow-delivery-v3-buddy-smoke.yml",
+            "run-live-attempt",
+            _LIVE_ATTEMPT_LOCAL_USES,
+        )
+    ]
+
+
+def test_buddy_target_sha_binding_chain_is_exact(tmp_path: Path) -> None:
+    caller_jobs = _document(CALLER)["jobs"]
+    request = _run(
+        _step(caller_jobs["request"], "Normalize fixed live request")
+    )
+
+    assert re.findall(r'--target "([^"]+)"', request) == ["${GITHUB_SHA}"]
+    assert re.findall(r'echo "target-sha=([^"]+)"', request) == [
+        "${GITHUB_SHA}"
+    ]
+    assert {
+        "request": caller_jobs["request"]["outputs"]["target-sha"],
+        "discover-node": caller_jobs["discover-node"]["outputs"]["target-sha"],
+        "compile-model": caller_jobs["compile-model"]["outputs"]["target-sha"],
+        "evaluate-live-eligibility": caller_jobs["evaluate-live-eligibility"][
+            "outputs"
+        ]["target-sha"],
+        "run-live-attempt": caller_jobs["run-live-attempt"]["with"][
+            "target-sha"
+        ],
+    } == {
+        "request": "${{ steps.request.outputs.target-sha }}",
+        "discover-node": "${{ needs.request.outputs.target-sha }}",
+        "compile-model": "${{ needs.discover-node.outputs.target-sha }}",
+        "evaluate-live-eligibility": (
+            "${{ needs.compile-model.outputs.target-sha }}"
+        ),
+        "run-live-attempt": (
+            "${{ needs.evaluate-live-eligibility.outputs.target-sha }}"
+        ),
+    }
+
+    callee_jobs = _document(CALLEE)["jobs"]
+    admit = callee_jobs["admit"]
+    admit_steps = _steps(admit)
+    guard = _step(admit, _SAME_REVISION_GUARD_NAME)
+    checkout = _step(admit, _EXACT_TARGET_CHECKOUT_NAME)
+    bind = _step(admit, "Bind current live Attempt")
+    upload = _step(admit, "Upload Release Attempt binding")
+    positions = [
+        admit_steps.index(step) for step in (guard, checkout, bind, upload)
+    ]
+
+    assert admit_steps[0] == guard
+    assert positions == sorted(positions)
+    assert guard["id"] == "identity"
+    assert admit["outputs"]["identity-admitted"] == (
+        "${{ steps.identity.outputs.identity-admitted }}"
+    )
+    assert guard["shell"] == "bash"
+    assert guard["env"] == {
+        "CALLER_REPOSITORY": "${{ github.repository }}",
+        "CALLER_SHA": "${{ github.sha }}",
+        "CALLER_WORKFLOW_SHA": "${{ github.workflow_sha }}",
+        "TARGET_SHA": _CALLEE_TARGET_SHA,
+    }
+    guard_command = _run(guard)
+    assert guard_command.splitlines() == [
+        "set -euo pipefail",
+        '[[ "${CALLER_REPOSITORY}" == "hcoona/three" ]]',
+        '[[ "${TARGET_SHA}" =~ ^[0-9a-f]{40}$ ]]',
+        '[[ "${TARGET_SHA}" == "${CALLER_SHA}" ]]',
+        '[[ "${TARGET_SHA}" == "${CALLER_WORKFLOW_SHA}" ]]',
+        'echo "identity-admitted=true" >> "${GITHUB_OUTPUT}"',
+    ]
+    assert "${{" not in guard_command
+
+    identity_sha = "a" * 40
+    valid_output = tmp_path / "valid-identity-output.txt"
+    valid_environment = {
+        "CALLER_REPOSITORY": "hcoona/three",
+        "CALLER_SHA": identity_sha,
+        "CALLER_WORKFLOW_SHA": identity_sha,
+        "TARGET_SHA": identity_sha,
+        "GITHUB_OUTPUT": str(valid_output),
+    }
+    valid_execution = _phase3_execute_workflow_run(
+        tmp_path,
+        guard_command,
+        {},
+        environment=valid_environment,
+    )
+    assert valid_execution["status"] == 0, valid_execution["output"]
+    assert valid_execution["output"] == ""
+    assert valid_output.read_bytes() == b"identity-admitted=true\n"
+
+    invalid_identities = (
+        {"CALLER_REPOSITORY": "example/other"},
+        {"TARGET_SHA": "A" * 40},
+        {"CALLER_SHA": "b" * 40},
+        {"CALLER_WORKFLOW_SHA": "c" * 40},
+    )
+    for index, invalid_identity in enumerate(invalid_identities):
+        invalid_output = tmp_path / f"invalid-identity-{index}.txt"
+        invalid_execution = _phase3_execute_workflow_run(
+            tmp_path,
+            guard_command,
+            {},
+            environment=valid_environment
+            | invalid_identity
+            | {"GITHUB_OUTPUT": str(invalid_output)},
+        )
+        assert invalid_execution["status"] != 0
+        assert invalid_execution["output"] == ""
+        assert not invalid_output.exists()
+
+    target_arguments = [
+        target
+        for job in callee_jobs.values()
+        for step in _steps(job)
+        if "three-workflow-delivery-v3 release " in str(step.get("run", ""))
+        for target in re.findall(
+            r'--target "([^"]+)"',
+            str(step.get("run", "")),
+        )
+    ]
+    assert target_arguments == [_CALLEE_TARGET_SHA] * 20
+
+    assert (
+        callee_jobs["release-finalizer"]["if"]
+        == EXPECTED_VALID_IDENTITY_CONDITION
+    )
+    publisher = callee_jobs["publish-github-packages"]
+    assert publisher["if"].startswith("success() && ")
+    assert "admit" in _transitive_needs(
+        callee_jobs,
+        "publish-github-packages",
+    )

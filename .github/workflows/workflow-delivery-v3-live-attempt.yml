@@ -66,6 +66,7 @@ jobs:
       contents: read
       actions: read
     outputs:
+      identity-admitted: ${{ steps.identity.outputs.identity-admitted }}
       attempt-artifact-id: ${{ steps.upload-attempt.outputs.artifact-id }}
       attempt-artifact-digest: ${{ steps.upload-attempt.outputs.artifact-digest }}
       attempt-artifact-name: ${{ steps.attempt-name.outputs.attempt-name }}
@@ -77,12 +78,27 @@ jobs:
       request-id: ${{ inputs.request-id }}
       target-sha: ${{ inputs.target-sha }}
     steps:
+      - name: Require same-revision Buddy caller
+        id: identity
+        shell: bash
+        env:
+          CALLER_REPOSITORY: ${{ github.repository }}
+          CALLER_SHA: ${{ github.sha }}
+          CALLER_WORKFLOW_SHA: ${{ github.workflow_sha }}
+          TARGET_SHA: ${{ inputs.target-sha }}
+        run: |
+          set -euo pipefail
+          [[ "${CALLER_REPOSITORY}" == "hcoona/three" ]]
+          [[ "${TARGET_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${TARGET_SHA}" == "${CALLER_SHA}" ]]
+          [[ "${TARGET_SHA}" == "${CALLER_WORKFLOW_SHA}" ]]
+          echo "identity-admitted=true" >> "${GITHUB_OUTPUT}"
       - name: Check out exact selected target
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ inputs.target-sha }}
+          ref: ${{ github.sha }}
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
@@ -231,7 +247,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ inputs.target-sha }}
+          ref: ${{ github.sha }}
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
@@ -357,7 +373,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ inputs.target-sha }}
+          ref: ${{ github.sha }}
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
@@ -504,7 +520,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ inputs.target-sha }}
+          ref: ${{ github.sha }}
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
@@ -605,7 +621,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ inputs.target-sha }}
+          ref: ${{ github.sha }}
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
@@ -821,7 +837,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ inputs.target-sha }}
+          ref: ${{ github.sha }}
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
@@ -987,7 +1003,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ inputs.target-sha }}
+          ref: ${{ github.sha }}
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
@@ -1108,7 +1124,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ inputs.target-sha }}
+          ref: ${{ github.sha }}
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
@@ -1404,7 +1420,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ inputs.target-sha }}
+          ref: ${{ github.sha }}
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
@@ -1551,7 +1567,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ inputs.target-sha }}
+          ref: ${{ github.sha }}
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
@@ -1801,7 +1817,7 @@ jobs:
 
   release-finalizer:
     name: Finalize live Attempt outcome
-    if: always()
+    if: always() && needs.admit.outputs.identity-admitted == 'true'
     needs:
       [
         admit,
@@ -1823,7 +1839,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ inputs.target-sha }}
+          ref: ${{ github.sha }}
       - name: Install uv
         if: always()
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
