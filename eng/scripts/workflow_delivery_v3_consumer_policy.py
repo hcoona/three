@@ -49,7 +49,7 @@ _LOCK_SPEC = re.compile(rf"(?:[A-Za-z0-9_.-]+@)?npm:{_PACKAGE}(?:@[^\s]+)?\Z|wor
 _IMPORT = re.compile(rf"""(?mx)(?:^\s*(?:import|export)\s+(?:[^"'()]*?\s+from\s+)?["']{_PACKAGE}(?:/[^"'\s]+)?["']|(?:^|[=(:,]\s*)(?:await\s+)?(?:import|require)\s*\(\s*["']{_PACKAGE}(?:/[^"'\s]+)?["']\s*\)|(?:^|[=(:,]\s*)require\.resolve\s*\(\s*["']{_PACKAGE}(?:/[^"'\s]+)?["']\s*\))""")
 _ACTION_USE = re.compile(rf"{_PACKAGE}(?:/[^@\s]+)?(?:@[^\s]+)?\Z")
 _REUSABLE_WORKFLOW_USE = re.compile(r"(?:^\.\/|^[^/\s]+\/[^/\s]+\/)\.github/workflows/[^@\s]+\.ya?ml(?:@[^\s]+)?\Z")
-_TOKEN = re.compile(r""""(?:\\.|[^"])*"|'(?:\\.|[^'])*'|[^\s]+""")
+_TOKEN = re.compile(r""""(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|[^\s]+""")
 _BLOCK_COMMENT = re.compile(r"/\*.*?\*/|<#.*?#>", re.DOTALL)
 _TEMPLATE_LITERAL = re.compile(r"`(?:\\.|[^`\\])*`", re.DOTALL)
 _PNPMFILE_DEPENDENCY = re.compile(rf"""(?ix)\b(?:dependencies|devDependencies|optionalDependencies|peerDependencies)\s*\[\s*["']{_PACKAGE}["']\s*\]""")

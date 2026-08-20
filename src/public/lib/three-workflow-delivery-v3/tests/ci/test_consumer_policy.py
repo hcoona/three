@@ -2097,3 +2097,112 @@ def test_hk_trigger_inventory_has_exhaustive_policy_catalog_parity() -> None:
     assert classify_dependency_surface("nested/.gitattributes") is None
     assert "hk.pkl" in hk_globs
     assert POLICY_IMPLEMENTATION_PATH in hk_globs
+
+
+def _assert_token_branches_are_disjoint() -> None:
+    """Keep quoted escapes disjoint and able to consume newlines."""
+    assert POLICY._TOKEN.pattern == (  # noqa: SLF001
+        r""""(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|[^\s]+"""
+    )
+
+
+def test_quoted_token_branches_are_disjoint() -> None:
+    """Keep quoted escape and ordinary-character alternatives disjoint."""
+    _assert_token_branches_are_disjoint()
+
+
+@pytest.mark.parametrize(
+    ("route", "quote"),
+    [
+        pytest.param(
+            "command-argument",
+            '"',
+            id="command-argument-double",
+        ),
+        pytest.param(
+            "command-argument",
+            "'",
+            id="command-argument-single",
+        ),
+        pytest.param("bun-lock", '"', id="bun-lock-double"),
+        pytest.param("bun-lock", "'", id="bun-lock-single"),
+    ],
+)
+def test_backslash_newline_continuation_keeps_quoted_package_hidden(
+    route: str,
+    quote: str,
+) -> None:
+    """Hide a continued quoted decoy while preserving a following consumer."""
+    backslash_newline = "\\\n"
+    quoted_decoy = (
+        f"{quote}ordinary {backslash_newline}{PACKAGE_NAME} hidden{quote}"
+    )
+    payload = f"{quoted_decoy} {PACKAGE_NAME}"
+
+    if route == "command-argument":
+        assert not POLICY._manager_references(  # noqa: SLF001
+            f"npm install {quoted_decoy}",
+        )
+        assert POLICY._manager_references(  # noqa: SLF001
+            f"npm install {payload}",
+        )
+    else:
+        assert (
+            POLICY._lockfile(  # noqa: SLF001
+                "bun.lock",
+                quoted_decoy.encode(),
+            )
+            == set()
+        )
+        assert POLICY._lockfile(  # noqa: SLF001
+            "bun.lock",
+            payload.encode(),
+        ) == {"lockfile-reference"}
+
+
+def _token_route_references_package(route: str, payload: str) -> bool:
+    """Evaluate a token payload through one consumer-policy route."""
+    if route == "command-argument":
+        return bool(
+            POLICY._manager_references(  # noqa: SLF001
+                f"npm install {payload}",
+            ),
+        )
+    assert route == "bun-lock"
+    return POLICY._lockfile(  # noqa: SLF001
+        "bun.lock",
+        payload.encode(),
+    ) == {"lockfile-reference"}
+
+
+@pytest.mark.parametrize("route", ["command-argument", "bun-lock"])
+@pytest.mark.parametrize("quote", ['"', "'"], ids=["double", "single"])
+def test_large_unterminated_escaped_quote_is_not_a_consumer(
+    route: str,
+    quote: str,
+) -> None:
+    """Ignore a large unterminated quoted package decoy."""
+    _assert_token_branches_are_disjoint()
+    escaped_ordinary = r"\a" * 10_000
+    payload = f"{quote}{escaped_ordinary}{PACKAGE_NAME}{escaped_ordinary}"
+
+    assert not _token_route_references_package(route, payload)
+
+
+@pytest.mark.parametrize("route", ["command-argument", "bun-lock"])
+@pytest.mark.parametrize("quote", ['"', "'"], ids=["double", "single"])
+def test_escaped_quoted_decoy_preserves_following_package_token(
+    route: str,
+    quote: str,
+) -> None:
+    """Ignore an escaped quoted decoy and detect the following package."""
+    escaped_quote = f"\\{quote}"
+    quoted_decoy = (
+        f"{quote}ordinary {escaped_quote} {PACKAGE_NAME} hidden{quote}"
+    )
+
+    assert not _token_route_references_package(route, quoted_decoy)
+    assert _token_route_references_package(
+        route,
+        f"{quoted_decoy} {PACKAGE_NAME}",
+    )
