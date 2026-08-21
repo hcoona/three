@@ -76,17 +76,17 @@ uv run --package supermemo-mcp python scripts/menu_info_monitor.py
 5: 属性 - ID=40005
 ```
 
-## 与 AutoHotkey 版本的对比
+## Comparison with the AutoHotkey Version
 
-| 功能     | AutoHotkey 版本   | Python 版本       |
-| -------- | ----------------- | ----------------- |
-| 菜单检测 | ✅                | ✅                |
-| 状态获取 | ✅                | ✅                |
-| 文本获取 | ✅                | ✅                |
-| ID 获取  | ✅                | ✅                |
-| 实时监控 | ✅                | ✅                |
-| 跨平台   | ❌ (Windows Only) | ❌ (Windows Only) |
-| 依赖     | AHK 运行时        | Python 3.12+      |
+| Feature              | AutoHotkey Version | Python Version    |
+| -------------------- | ------------------ | ----------------- |
+| Menu detection       | Yes                | Yes               |
+| State retrieval      | Yes                | Yes               |
+| Text retrieval       | Yes                | Yes               |
+| ID retrieval         | Yes                | Yes               |
+| Real-time monitoring | Yes                | Yes               |
+| Cross-platform       | No (Windows only)  | No (Windows only) |
+| Dependencies         | AHK runtime        | Python 3.12+      |
 
 ## 技术说明
 
