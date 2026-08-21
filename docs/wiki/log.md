@@ -1931,3 +1931,22 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Kept project-test and other lane failures, mixed diagnostics, manual
   validation, superseded candidates, malformed records, and post-coexistence
   pull requests fail-closed.
+
+## [2026-08-21] query | Implement v3 pre-coexistence CI bootstrap
+
+- Committed the bounded bootstrap design at `7c457b7c` and implementation at
+  `f0535989`; the canonical `incomplete-model-plan` Decision and Summary remain
+  unchanged while only the enclosing non-authoritative pull-request check may
+  project success.
+- Bound the projection to exact canonical record re-admission, exact
+  pull-request event identity, exclusively unclassified changed-path
+  diagnostics, no selected work or Evidence, and an exact base-tree proof that
+  the canonical v3 CI workflow is absent. The marker self-disables the
+  exception after merge.
+- Passed the 14-file committed-range managed gate with 3,234 v3 tests and
+  1,257 workflow-release control tests. Three independent review scopes
+  completed TP/FP adjudication and returned no findings on the terminal
+  re-review.
+- Left PR #552 unmerged and performed no acceptance probe, sentinel
+  finalization, live activation, publication, or package mutation. Current-head
+  PR check observation and human review remain next.

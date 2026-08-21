@@ -149,30 +149,40 @@ target; request and workflow-run identity remain Attempt transport but do not
 partition the concurrency group. The caller holds the group across the complete
 reusable live Attempt with `cancel-in-progress: false`.
 
-The current published implementation head is `4fac140d`. After the initial PR
+The published implementation baseline is `4fac140d`. After the initial PR
 head, bounded repairs skip Git LFS smudge only for Provider Git subprocesses,
 harden the acceptance proxy, make consumer-policy tokenization linear, bind
 live checkouts and admission to the caller revision, and remove the superseded
 release-build-variant workflow. Non-rewriting merge commit `4fac140d`
 integrates `origin/main` at `191abc82` and preserves upstream
-open-code-review 1.9.5 lock data exactly. The complete workspace gate and
-authoritative 573-file `origin/main..HEAD` gate pass, including 1,257
-workflow-release tests and 3,218 Workflow Delivery v3 tests. Independent repair
-reviews and re-reviews report no findings.
+open-code-review 1.9.5 lock data exactly.
+
+The bounded pre-coexistence CI bootstrap design is committed at `7c457b7c`,
+and its implementation, tests, and review closure are committed at
+`f0535989`. The canonical shadow Decision remains
+`incomplete-model-plan`/`fix-model-plan-and-rerun`; no record is rewritten.
+Only while the exact pull-request base tree lacks the canonical v3 CI workflow
+may the enclosing non-authoritative check conclusion project success after
+exact Plan, Decision, Summary, event-identity, and base-tree admission. Manual
+validation, lane failures, mixed diagnostics, malformed records, explicit
+supersession, and post-coexistence pull requests remain red. The exception
+self-disables after merge because the workflow is then present in the base
+tree. The 14-file committed range through `f0535989` passes the managed gates,
+including 1,257 workflow-release tests and 3,234 Workflow Delivery v3 tests.
+All three original policy, CLI, and workflow reviewers report no findings
+after independent adjudication and repair.
 
 The validated implementation branch is pushed, and
 [PR #552](https://github.com/hcoona/three/pull/552) is open against `main`.
 General CI and CodeQL pass at `4fac140d`. All 20 targeted PR findings are fixed
-without dismissal or suppression. The non-authoritative v3 shadow finalizer
-returns the expected fail-closed `incomplete-model-plan` decision with
-`fix-model-plan-and-rerun` for this broad implementation diff. The PR is ready
-for human review but is not authorized to merge. Merge starts the direct v1
-Buddy-to-v3 Buddy cutover and intentional Buddy outage while v3 remains
-disabled.
+without dismissal or suppression. The bootstrap commits require current-head
+PR check observation before human review completes. The PR is not authorized
+to merge. Merge starts the direct v1 Buddy-to-v3 Buddy cutover and intentional
+Buddy outage while v3 remains disabled.
 
 Next:
 
-1. complete human PR review;
+1. observe current-head PR checks and complete human review;
 2. obtain separate explicit authorization before merging, with the operator
    ready to execute the immediate post-merge legacy drain and old-ref rejection
    proof.

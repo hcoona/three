@@ -32,9 +32,20 @@ If it conflicts with the
   `627c5b6e`, removes the superseded release-build-variant workflow at
   `2c4ec0eb`, and records the CodeQL closure at `116b84d4`. Non-rewriting merge
   commit `4fac140d` integrates `origin/main` at `191abc82`. The validated
-  implementation branch is published at `dev/shuaizhang/design-workflows`, and
-  [PR #552](https://github.com/hcoona/three/pull/552) is open against `main`.
-  Nothing from that PR has merged.
+  implementation baseline is published at
+  `dev/shuaizhang/design-workflows`. The bounded pre-coexistence CI bootstrap
+  design is committed at `7c457b7c`, and its implementation, tests, and review
+  closure are committed at `f0535989`. That implementation preserves the
+  canonical failed CI Decision and projects only the enclosing
+  non-authoritative pull-request check conclusion when the exact base tree
+  lacks the canonical v3 CI workflow. The exception self-disables after merge
+  because later bases contain that workflow. The 14-file committed range from
+  the published baseline through `f0535989` passes the managed gates with
+  3,234 v3 tests and 1,257 workflow-release control tests. All three original
+  policy, CLI, and workflow reviewers report no findings after independent
+  adjudication and repair. The branch backs
+  [PR #552](https://github.com/hcoona/three/pull/552), which is open against
+  `main`. Nothing from that PR has merged.
   Commit 3 includes target-tree-bound
   Release Unit/Quality authoring validation, duplicate Release Unit rejection,
   exact-target Repository Model compilation, static catalogs, Node/NBGV
@@ -110,15 +121,22 @@ If it conflicts with the
   rejects zero target and workflow SHAs while incomplete sentinel semantics
   remain available.
 - With `GIT_LFS_SKIP_SMUDGE=1`, the current Workflow Delivery v3 package
-  validation passes 3,218 tests, and the workflow-release control suite passes
+  validation passes 3,234 tests, and the workflow-release control suite passes
   1,257 tests. The complete workspace gate and authoritative 573-file
-  `origin/main..HEAD` gate pass at `4fac140d`. Remote run
+  `origin/main..HEAD` gate pass at `4fac140d`; the later 14-file bootstrap
+  committed range also passes through `f0535989`. Remote run
   [`32346356010`](https://github.com/hcoona/three/actions/runs/32346356010)
   passes general CI and CodeQL. All 20 targeted PR #552 CodeQL findings
   (alerts 45-46 and 54-71) are fixed in the PR analysis without dismissal or
-  suppression. The required non-authoritative shadow finalizer returns the
-  expected `incomplete-model-plan` failure class and
-  `fix-model-plan-and-rerun` next action for the broad implementation diff.
+  suppression. For the broad implementation diff, the required
+  non-authoritative shadow finalizer still returns the canonical
+  `incomplete-model-plan` failure class and `fix-model-plan-and-rerun` next
+  action. The new pre-coexistence projection does not rewrite that Decision;
+  it can conclude only the enclosing pull-request check successfully after
+  exact record re-admission, exact event-identity comparison, and an exact
+  base-tree proof that the v3 CI workflow is absent. Manual validation, lane
+  failures, mixed diagnostics, malformed records, explicit supersession, and
+  post-coexistence pull requests remain nonzero.
   The protected acceptance Environment and reviewer configuration are still
   pending; no live acceptance dispatch or package mutation has run.
 - Durable qualification terminalization now permits exact failed or incomplete
@@ -384,16 +402,18 @@ If it conflicts with the
   state blocks; no repository variable, PAT, App, service, ledger, OIDC, or
   additional token permission is added. Permanent root HK policy remains the
   repository-wide dependency gate.
-- Final v3 validation, branch publication, and implementation PR checks are
-  complete at `4fac140d`. General CI and CodeQL pass; the sole failing v3 shadow
-  result is the expected non-authoritative fail-closed decision for the broad
-  implementation diff. The immediate boundary is PR #552 human review,
-  followed by separate explicit authorization to merge. Merge starts the direct
-  cutover and intentional Buddy outage, so the operator must be ready to
-  execute the immediate post-merge legacy drain and old-ref rejection proof.
-  Do not merge, run real acceptance probes, finalize the sentinel target,
-  activate normal live, or begin later scopes without a separate explicit user
-  task.
+- Final local v3 validation and independent review are complete through
+  bootstrap implementation commit `f0535989`. The canonical shadow Decision
+  remains the expected non-authoritative fail-closed record for the broad
+  implementation diff; only the one-time pre-coexistence check conclusion may
+  project success, and the exact base-tree marker disables that route after
+  merge. The immediate boundary is current-head PR #552 check observation and
+  human review, followed by separate explicit authorization to merge. Merge
+  starts the direct cutover and intentional Buddy outage, so the operator must
+  be ready to execute the immediate post-merge legacy drain and old-ref
+  rejection proof. Do not merge, run real acceptance probes, finalize the
+  sentinel target, activate normal live, or begin later scopes without a
+  separate explicit user task.
 - Implementation must preserve the approved commit boundaries and keep live
   activation disabled until acceptance and the separate activation approval.
 
