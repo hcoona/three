@@ -1950,3 +1950,14 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Left PR #552 unmerged and performed no acceptance probe, sentinel
   finalization, live activation, publication, or package mutation. Current-head
   PR check observation and human review remain next.
+
+## [2026-08-21] query | Integrate latest main before bootstrap publication
+
+- Refreshed `origin/main` after the bootstrap closure and found two
+  dependency-only commits updating Biome to 2.5.9 and Asciidoctor to 4.0.10;
+  the canonical v3 CI workflow remains absent from the exact new base tree.
+- Integrated `origin/main` at `7f8f41c2` through non-rewriting merge commit
+  `30b793be` without conflicts or changes to the bootstrap implementation.
+- Verified the merged PNPM lock with frozen installation and supply-chain
+  policy checks and verified the UV lock. PR #552 remains unmerged, and no live
+  or package mutation operation ran.

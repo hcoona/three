@@ -35,8 +35,10 @@ self-disables after merge, and the 14-file committed range passes 3,234 v3
 tests plus 1,257 workflow-release control tests. Nothing has merged, and merge
 remains unauthorized because it starts the intentional Buddy outage and
 immediate legacy drain. v1 Official and CI remain active; v3 activation remains
-unauthorized. The active host-specific GitHub Packages instances only inside
-the npm and RubyGems target families remain
+unauthorized. Non-rewriting merge `30b793be` integrates the latest
+dependency-only `origin/main` at `7f8f41c2`; frozen PNPM and UV lock checks
+pass. The active host-specific GitHub Packages instances only inside the npm
+and RubyGems target families remain
 unchanged by this retirement; NuGet GitHub Packages is deferred/future
 vocabulary until a reviewed dotnet/NuGet path restores it.
 

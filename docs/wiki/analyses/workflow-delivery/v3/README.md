@@ -172,6 +172,11 @@ including 1,257 workflow-release tests and 3,234 Workflow Delivery v3 tests.
 All three original policy, CLI, and workflow reviewers report no findings
 after independent adjudication and repair.
 
+Documentation closure is committed at `a9e8cbfa`. Non-rewriting merge commit
+`30b793be` then integrates the latest `origin/main` at `7f8f41c2`, containing
+only the upstream Biome 2.5.9 and Asciidoctor 4.0.10 dependency updates. The
+frozen PNPM and UV lock checks pass after the merge.
+
 The validated implementation branch is pushed, and
 [PR #552](https://github.com/hcoona/three/pull/552) is open against `main`.
 General CI and CodeQL pass at `4fac140d`. All 20 targeted PR findings are fixed

@@ -45,7 +45,11 @@ If it conflicts with the
   policy, CLI, and workflow reviewers report no findings after independent
   adjudication and repair. The branch backs
   [PR #552](https://github.com/hcoona/three/pull/552), which is open against
-  `main`. Nothing from that PR has merged.
+  `main`. Documentation closure is committed at `a9e8cbfa`. Non-rewriting
+  merge commit `30b793be` then integrates the latest `origin/main` at
+  `7f8f41c2`, containing only the upstream Biome 2.5.9 and Asciidoctor 4.0.10
+  dependency updates; the frozen PNPM and UV lock checks pass. Nothing from
+  PR #552 has merged.
   Commit 3 includes target-tree-bound
   Release Unit/Quality authoring validation, duplicate Release Unit rejection,
   exact-target Repository Model compilation, static catalogs, Node/NBGV
