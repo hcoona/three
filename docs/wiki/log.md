@@ -1961,3 +1961,21 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Verified the merged PNPM lock with frozen installation and supply-chain
   policy checks and verified the UV lock. PR #552 remains unmerged, and no live
   or package mutation operation ran.
+
+## [2026-08-21] query | Validate v3 bootstrap projection remotely
+
+- Published head `9b7b7d2c` non-force and observed every PR check pass,
+  including Workflow Delivery v3 run
+  [`32440545037`](https://github.com/hcoona/three/actions/runs/32440545037),
+  general CI run
+  [`32440545005`](https://github.com/hcoona/three/actions/runs/32440545005),
+  and CodeQL run
+  [`32440545090`](https://github.com/hcoona/three/actions/runs/32440545090).
+- Downloaded the exact Plan and four lane-result artifacts. Their replay
+  retained Finalizer exit `1`, `incomplete-model-plan`,
+  `fix-model-plan-and-rerun`, 283 exclusively unclassified-path diagnostics,
+  and zero admitted Evidence or artifacts.
+- Replayed the projection against the exact base, head, and tested merge and
+  observed its explicit note that the canonical Decision remains failure.
+  Left PR #552 unmerged and performed no acceptance probe, sentinel
+  finalization, live activation, publication, or package mutation.

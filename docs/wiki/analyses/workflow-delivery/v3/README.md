@@ -180,14 +180,23 @@ frozen PNPM and UV lock checks pass after the merge.
 The validated implementation branch is pushed, and
 [PR #552](https://github.com/hcoona/three/pull/552) is open against `main`.
 General CI and CodeQL pass at `4fac140d`. All 20 targeted PR findings are fixed
-without dismissal or suppression. The bootstrap commits require current-head
-PR check observation before human review completes. The PR is not authorized
-to merge. Merge starts the direct v1 Buddy-to-v3 Buddy cutover and intentional
-Buddy outage while v3 remains disabled.
+without dismissal or suppression. Published bootstrap head `9b7b7d2c` also
+passes every PR check: v3 run
+[`32440545037`](https://github.com/hcoona/three/actions/runs/32440545037),
+general CI run
+[`32440545005`](https://github.com/hcoona/three/actions/runs/32440545005), and
+CodeQL run
+[`32440545090`](https://github.com/hcoona/three/actions/runs/32440545090).
+Exact artifact replay retains Finalizer exit `1`,
+`incomplete-model-plan`/`fix-model-plan-and-rerun`, 283 unclassified-path
+diagnostics, and no Evidence or artifacts while the exact projection succeeds
+with its explicit canonical-failure note. The PR is not authorized to merge.
+Merge starts the direct v1 Buddy-to-v3 Buddy cutover and intentional Buddy
+outage while v3 remains disabled.
 
 Next:
 
-1. observe current-head PR checks and complete human review;
+1. complete human review;
 2. obtain separate explicit authorization before merging, with the operator
    ready to execute the immediate post-merge legacy drain and old-ref rejection
    proof.

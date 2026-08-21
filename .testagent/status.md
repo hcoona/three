@@ -8902,3 +8902,34 @@ round. The implementation is ready for its bounded commit; PR publication and
 live check observation remain separate steps.
 
 <!-- END APPEND: 2026-08-21T021300Z-pr552-ci-bootstrap-final-gate -->
+
+<!-- BEGIN APPEND: 2026-08-21T030000Z-pr552-ci-bootstrap-remote-proof -->
+
+## PR #552 bootstrap projection remote proof
+
+STATUS: COMPLETE
+
+Published head `9b7b7d2c` passed every PR check. Workflow Delivery v3 run
+`32440545037` and its shadow Finalizer job completed successfully; associated
+general CI run `32440545005` and CodeQL run `32440545090` also passed.
+
+The retained run artifacts contain a blocked Plan with 576 changed paths, 283
+exclusively unclassified-path diagnostics, four empty lane results, no
+Evidence, and no artifact digests. Replaying those exact Plan and lane-result
+records produced:
+
+- Finalizer exit `1`;
+- terminal result `failure`;
+- failure class `incomplete-model-plan`;
+- next action `fix-model-plan-and-rerun`;
+- authority `non-authoritative`;
+- supersession state `unsupported`; and
+- zero admitted Evidence and artifact digests.
+
+Replaying the projection against exact base `7f8f41c2`, head `9b7b7d2c`, and
+tested merge `0b31d95e` succeeded and emitted the explicit
+`Pre-coexistence bootstrap projection` note stating that the canonical
+Decision remains failure. This proves the green check is the approved
+conclusion projection rather than a Decision rewrite.
+
+<!-- END APPEND: 2026-08-21T030000Z-pr552-ci-bootstrap-remote-proof -->

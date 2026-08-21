@@ -141,6 +141,18 @@ If it conflicts with the
   base-tree proof that the v3 CI workflow is absent. Manual validation, lane
   failures, mixed diagnostics, malformed records, explicit supersession, and
   post-coexistence pull requests remain nonzero.
+  Published head `9b7b7d2c` passes every PR check. Workflow Delivery v3 run
+  [`32440545037`](https://github.com/hcoona/three/actions/runs/32440545037)
+  completes successfully, as do general CI run
+  [`32440545005`](https://github.com/hcoona/three/actions/runs/32440545005)
+  and CodeQL run
+  [`32440545090`](https://github.com/hcoona/three/actions/runs/32440545090).
+  The exact retained Plan and lane-result artifacts replay to Finalizer exit
+  `1`, terminal failure `incomplete-model-plan`, next action
+  `fix-model-plan-and-rerun`, 283 exclusively unclassified-path diagnostics,
+  and no admitted Evidence or artifacts. The exact base/head/tested-merge
+  projection replay succeeds and emits the explicit note that the canonical
+  Decision remains failure.
   The protected acceptance Environment and reviewer configuration are still
   pending; no live acceptance dispatch or package mutation has run.
 - Durable qualification terminalization now permits exact failed or incomplete
@@ -411,13 +423,13 @@ If it conflicts with the
   remains the expected non-authoritative fail-closed record for the broad
   implementation diff; only the one-time pre-coexistence check conclusion may
   project success, and the exact base-tree marker disables that route after
-  merge. The immediate boundary is current-head PR #552 check observation and
-  human review, followed by separate explicit authorization to merge. Merge
-  starts the direct cutover and intentional Buddy outage, so the operator must
-  be ready to execute the immediate post-merge legacy drain and old-ref
-  rejection proof. Do not merge, run real acceptance probes, finalize the
-  sentinel target, activate normal live, or begin later scopes without a
-  separate explicit user task.
+  merge. Current-head PR #552 checks and exact artifact replay now pass. The
+  immediate boundary is human review, followed by separate explicit
+  authorization to merge. Merge starts the direct cutover and intentional
+  Buddy outage, so the operator must be ready to execute the immediate
+  post-merge legacy drain and old-ref rejection proof. Do not merge, run real
+  acceptance probes, finalize the sentinel target, activate normal live, or
+  begin later scopes without a separate explicit user task.
 - Implementation must preserve the approved commit boundaries and keep live
   activation disabled until acceptance and the separate activation approval.
 

@@ -32,15 +32,17 @@ non-authoritative `incomplete-model-plan` Decision while allowing only the
 enclosing pre-coexistence pull-request check conclusion to project success
 when the exact base tree lacks the canonical v3 CI workflow. The exception
 self-disables after merge, and the 14-file committed range passes 3,234 v3
-tests plus 1,257 workflow-release control tests. Nothing has merged, and merge
-remains unauthorized because it starts the intentional Buddy outage and
-immediate legacy drain. v1 Official and CI remain active; v3 activation remains
-unauthorized. Non-rewriting merge `30b793be` integrates the latest
-dependency-only `origin/main` at `7f8f41c2`; frozen PNPM and UV lock checks
-pass. The active host-specific GitHub Packages instances only inside the npm
-and RubyGems target families remain
-unchanged by this retirement; NuGet GitHub Packages is deferred/future
-vocabulary until a reviewed dotnet/NuGet path restores it.
+tests plus 1,257 workflow-release control tests. Published head `9b7b7d2c`
+passes every PR check; exact run-artifact replay proves the Finalizer still
+exits `1` with `incomplete-model-plan` while only the bootstrap projection
+concludes successfully. Nothing has merged, and merge remains unauthorized
+because it starts the intentional Buddy outage and immediate legacy drain. v1
+Official and CI remain active; v3 activation remains unauthorized.
+Non-rewriting merge `30b793be` integrates the latest dependency-only
+`origin/main` at `7f8f41c2`; frozen PNPM and UV lock checks pass. The active
+host-specific GitHub Packages instances only inside the npm and RubyGems
+target families remain unchanged by this retirement; NuGet GitHub Packages is
+deferred/future vocabulary until a reviewed dotnet/NuGet path restores it.
 
 ## Confirmed v3 Shape
 
