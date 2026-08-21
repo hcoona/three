@@ -8,7 +8,7 @@ import json
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -22,7 +22,9 @@ from three_workflow_delivery_v3.ci.evidence import (
     form_evidence_lane_result,
 )
 from three_workflow_delivery_v3.ci.finalizer import (
+    CiBootstrapProjectionRequest,
     finalize_ci_slice,
+    qualifies_precoexistence_bootstrap_projection,
     render_ci_slice_summary,
 )
 from three_workflow_delivery_v3.ci.planner import (
@@ -217,6 +219,21 @@ def _pr_candidate() -> CiCandidate:
         head_sha=SHA_B,
         tested_merge_sha=SHA_C,
         comparison_identity=(SHA_A, SHA_B),
+    )
+
+
+def _bootstrap_request(
+    *,
+    pull_request_number: int = 42,
+    base_sha: str = SHA_A,
+    head_sha: str = SHA_B,
+    tested_merge_sha: str = SHA_C,
+) -> CiBootstrapProjectionRequest:
+    return CiBootstrapProjectionRequest(
+        pull_request_number=pull_request_number,
+        base_sha=base_sha,
+        head_sha=head_sha,
+        tested_merge_sha=tested_merge_sha,
     )
 
 
@@ -1436,8 +1453,167 @@ def test_runtime_infrastructure_paths_are_missing_result_incomplete() -> None:
     }["project-test"] == "failed"
 
 
+def test_ci_scenario_precoexistence_bootstrap_preserves_blocked_decision() -> (
+    None
+):
+    """Project only the first broad implementation PR without changing truth."""
+    changed_paths = tuple(
+        f"unmodeled/bootstrap/path-{index:03}.txt" for index in range(283)
+    )
+    plan = _incremental_plan(changed_paths=changed_paths)
+    decision = _finalize(
+        plan,
+        _lane_results(plan),
+        elapsed_seconds=60,
+    )
+
+    assert plan.ready is False
+    assert len(plan.diagnostics) == len(changed_paths)
+    assert all(
+        diagnostic == f"changed path is unclassified: {path}"
+        for diagnostic, path in zip(
+            plan.diagnostics,
+            changed_paths,
+            strict=True,
+        )
+    )
+    assert decision.terminal_result == "failure"
+    assert decision.failure_class == "incomplete-model-plan"
+    assert decision.next_action == "fix-model-plan-and-rerun"
+    assert all(
+        not item.obligation.selected
+        and item.outcome == "empty"
+        and not item.evidence_digests
+        for item in decision.obligation_dispositions
+    )
+    assert qualifies_precoexistence_bootstrap_projection(
+        decision,
+        request=_bootstrap_request(),
+        base_contains_ci_workflow=False,
+    )
+    assert not qualifies_precoexistence_bootstrap_projection(
+        decision,
+        request=_bootstrap_request(),
+        base_contains_ci_workflow=True,
+    )
+
+
+@pytest.mark.parametrize(
+    (
+        "pull_request_number",
+        "event_base_sha",
+        "event_head_sha",
+        "event_tested_merge_sha",
+    ),
+    [
+        (43, SHA_A, SHA_B, SHA_C),
+        (42, SHA_D, SHA_B, SHA_C),
+        (42, SHA_A, SHA_D, SHA_C),
+        (42, SHA_A, SHA_B, SHA_D),
+    ],
+)
+def test_precoexistence_bootstrap_projection_rejects_identity_drift(
+    pull_request_number: int,
+    event_base_sha: str,
+    event_head_sha: str,
+    event_tested_merge_sha: str,
+) -> None:
+    """Bind bootstrap status to the exact pull-request candidate identity."""
+    plan = _incremental_plan(changed_paths=("unmodeled/bootstrap.txt",))
+    decision = _finalize(plan, _lane_results(plan), elapsed_seconds=60)
+
+    assert not qualifies_precoexistence_bootstrap_projection(
+        decision,
+        request=_bootstrap_request(
+            pull_request_number=pull_request_number,
+            base_sha=event_base_sha,
+            head_sha=event_head_sha,
+            tested_merge_sha=event_tested_merge_sha,
+        ),
+        base_contains_ci_workflow=False,
+    )
+
+
+def test_bootstrap_projection_allows_unavailable_platform_proof() -> None:
+    """Use exact event identity when the platform proof is unavailable."""
+    plan = _incremental_plan(changed_paths=("unmodeled/bootstrap.txt",))
+    decision = finalize_ci_slice(
+        plan,
+        _lane_results(plan),
+        elapsed_seconds=60,
+        supersession_state="unsupported",
+    )
+
+    assert decision.supersession_reason == "platform-proof-unavailable"
+    assert qualifies_precoexistence_bootstrap_projection(
+        decision,
+        request=_bootstrap_request(),
+        base_contains_ci_workflow=False,
+    )
+
+
+def test_precoexistence_bootstrap_projection_rejects_other_failures() -> None:
+    """Keep manual, lane, supersession, and mixed-diagnostic failures red."""
+    blocked = _incremental_plan(
+        changed_paths=("unmodeled/bootstrap.txt",),
+    )
+    mixed = plan_ci_qualification(
+        blocked.candidate,
+        _repository_model(blocked.candidate),
+        repository_model_digest=_repository_model(
+            blocked.candidate
+        ).snapshot_digest,
+        changed_paths=("unmodeled/bootstrap.txt",),
+        comparison_identity=(SHA_A, SHA_B),
+        diagnostics=("repository model comparison is incomplete",),
+    )
+    mismatched_path = replace(
+        blocked,
+        diagnostics=(
+            "changed path is unclassified: unmodeled/not-the-change.txt",
+        ),
+    )
+    project_plan = _incremental_plan()
+    decisions = (
+        _finalize(
+            _manual_plan(),
+            _lane_results(_manual_plan()),
+            elapsed_seconds=60,
+        ),
+        _finalize(
+            project_plan,
+            _lane_results(
+                project_plan,
+                outcomes={"project-test": "failure"},
+            ),
+            elapsed_seconds=60,
+        ),
+        finalize_ci_slice(
+            blocked,
+            _lane_results(blocked),
+            elapsed_seconds=60,
+            supersession_state="superseded",
+        ),
+        _finalize(mixed, _lane_results(mixed), elapsed_seconds=60),
+        _finalize(
+            mismatched_path,
+            _lane_results(mismatched_path),
+            elapsed_seconds=60,
+        ),
+    )
+
+    assert all(
+        not qualifies_precoexistence_bootstrap_projection(
+            decision,
+            request=_bootstrap_request(),
+            base_contains_ci_workflow=False,
+        )
+        for decision in decisions
+    )
+
+
 def test_reserved_ci_scenario_inventory_is_exact() -> None:
-    """Keep the reserved scenario prefix inventory at the approved nine."""
+    """Keep the reserved scenario prefix inventory at the approved ten."""
     reserved = tuple(
         name
         for name, value in globals().items()
@@ -1454,4 +1630,5 @@ def test_reserved_ci_scenario_inventory_is_exact() -> None:
         "test_ci_scenario_policy_only_selects_control_pytest_not_unrelated_source",
         "test_ci_scenario_consumer_policy_trigger_coverage",
         "test_ci_scenario_consumer_reference_blocks_except_acceptance_fixtures",
+        "test_ci_scenario_precoexistence_bootstrap_preserves_blocked_decision",
     )

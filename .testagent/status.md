@@ -8752,3 +8752,153 @@ CodeQL configuration change, alert dismissal, workflow compatibility route, or
 global Git/environment change was performed.
 
 <!-- END APPEND: 2026-08-20T071044Z-pr552-codeql-closure-implementation-status -->
+
+<!-- BEGIN APPEND: 2026-08-21T014800Z-pr552-ci-bootstrap-projection-status -->
+
+## PR #552 pre-coexistence CI bootstrap projection
+
+PHASE: Production implementation, test closure, and independent review
+STATUS: IMPLEMENTATION_AND_VALIDATION_COMPLETE; INDEPENDENT_REVIEW_IN_PROGRESS
+
+The implementation preserves the canonical failed CI Slice Decision and adds
+only a self-disabling check-conclusion projection for an exact pull-request
+candidate whose exact base tree lacks
+`.github/workflows/workflow-delivery-v3-ci.yml`.
+
+### Requirement-to-test evidence
+
+| Requirement | Exact evidence |
+|---|---|
+| Preserve the blocked Decision while admitting the one exact pre-coexistence candidate | `test_ci_scenario_precoexistence_bootstrap_preserves_blocked_decision` |
+| Bind request number, base, head, tested merge, and base-tree marker exactly | `test_precoexistence_bootstrap_projection_rejects_identity_drift`; `test_git_commit_path_probe_uses_exact_base_tree` |
+| Reject manual, lane-failure, superseded, mixed-diagnostic, and diagnostic-path-substitution cases | `test_precoexistence_bootstrap_projection_rejects_other_failures` |
+| Canonically re-admit Plan, Decision, and Summary without rewriting either output record | `test_ci_bootstrap_projection_admits_records_without_rewriting_them`; `test_ci_bootstrap_projection_rejects_inexact_inputs` |
+| Project only a failed pull-request Finalizer result while preserving success, manual failure, and the terminal missing-Decision fallback | `test_finalizer_projects_only_precoexistence_pull_request_failure` |
+| Keep the reserved LLD scenario inventory exact at ten | `test_reserved_ci_scenario_inventory_is_exact` |
+
+### Required test-quality reviews
+
+`test-gap-analysis` and `assertion-quality` were invoked after the focused
+implementation. Their optional shared `test-analysis-extensions` skill was
+unavailable; the repository's Python/pytest extension was read directly.
+
+The pseudo-mutation review found and closed two meaningful gaps:
+
+- a canonical Decision from one Plan is now tested against a different
+  canonical same-candidate Plan, proving exact Plan/Decision cross-binding;
+- an otherwise eligible blocked Plan whose unclassified diagnostic names a
+  path outside the changed-path set is now rejected.
+
+The review also removed an unapproved uniqueness restriction on diagnostic
+paths. Duplicate diagnostics were not prohibited by the normative predicate,
+so the implementation now enforces only the approved requirements.
+
+No non-equivalent in-scope mutation remains survived or uncovered. Defensive
+checks for authority, empty selected scope, Evidence, artifacts, and derived
+failure fields are partly redundant with canonical `CiSliceDecision`
+invariants, but remain explicit because the approved projection predicate is
+closed.
+
+The seven generated test functions collect 15 focused cases. None is
+assertion-free, trivial-only, self-referential, or tautological. Assertions
+cover exact/deep equality, Boolean and negative outcomes, collection closure,
+exception types, error diagnostics, immutable bytes, observed Git-probe
+arguments, summary side effects, and workflow command structure. The CLI
+negative matrix was strengthened so every mutation must emit its intended
+rejection diagnostic; an unrelated failure can no longer satisfy the test.
+
+### Validation
+
+| Validation | Result |
+|---|---|
+| Expected-red gate before production changes | Workflow contract failed on missing environment binding; scenario collection failed on the missing policy symbol; seven CLI cases failed on the missing command/probe |
+| Focused bootstrap selection | `15 passed` |
+| Complete affected modules | `130 passed` |
+| Complete Workflow Delivery v3 suite | `3233 passed` |
+| Targeted managed HK | Passed; `v3-control-pytest` reported `3233 passed` and workflow-release control reported `1257 passed` |
+| Ruff check and format check | Passed |
+| Focused Pyrefly | `0 errors` |
+| Actionlint | Passed |
+| Package build | Built the v3 sdist and wheel |
+| Lock validation | `uv lock --check` passed |
+| Patch integrity | `git diff --check` passed |
+
+Workspace-wide Pyrefly remains blocked by 166 unrelated pre-existing errors in
+other packages and applications. Its output contains no error for the five
+changed Python files; the exact focused Pyrefly command passes.
+
+The first managed HK run exposed a nondeterministic alternate-repository test
+fixture whose commit identity selected one of two valid rejection messages.
+The fixture now uses a canonical same-candidate Plan with a changed diagnostic
+only. The exact Plan-mismatch case passed three consecutive isolated runs, all
+130 affected tests passed, and the repeated managed HK gate passed.
+
+<!-- END APPEND: 2026-08-21T014800Z-pr552-ci-bootstrap-projection-status -->
+
+<!-- BEGIN APPEND: 2026-08-21T020500Z-pr552-ci-bootstrap-review-closure -->
+
+## PR #552 bootstrap projection review closure
+
+PHASE: Independent multi-angle review and adjudication
+STATUS: COMPLETE
+
+Three independent reviewers owned non-overlapping policy/scenario,
+CLI/admission, and workflow/contract scopes. Every atomic finding received a
+separate TP/FP adjudication before any production decision.
+
+### Adjudication
+
+| Scope | Finding | Verdict | Resolution |
+|---|---|---|---|
+| Workflow contract | Finalizer exit capture adjacency was not pinned | TP | The contract now proves the last Finalizer argument is immediately followed by `finalizer_exit=$?`. |
+| Workflow contract | Success, non-PR, and projection gate order was not pinned | TP | The contract now proves strict ordered indices through all three gates. |
+| Workflow contract | PR number could be removed from only the projection invocation | TP | Assertions now isolate the projection block and require its complete identity argument. |
+| Workflow contract | `continue-on-error: true` was not excluded | TP | The finalization/projection step must have no `continue-on-error` key. |
+| Policy | `unsupported` supersession should be rejected | FP for production | Normative text rejects explicit `superseded`; exact event identity remains the approved binding when platform proof is unavailable. |
+| Policy | Approved `unsupported` behavior lacked a regression | TP test gap | `test_bootstrap_projection_allows_unavailable_platform_proof` now pins the intended positive path. |
+| CLI | Local Git replacement refs require extra hardening | FP | Replacement refs require control of trusted local Git metadata, outside the clean hosted-runner and trusted-operator boundary. |
+| CLI | Summary-path inode aliases require extra hardening | FP | The workflow supplies a runner-managed path; a local operator able to create aliases already has direct record-mutation capability. |
+
+The first CLI adjudicator returned no findings without the required explicit
+per-item classification. A separate independent boundary adjudicator therefore
+re-ran both decisions and returned explicit FP verdicts; the incomplete result
+was not used as evidence.
+
+After the fixes and clarifications, all three original reviewers re-read their
+owned scopes and returned no findings.
+
+### Post-review validation
+
+- Complete affected modules: **131 passed**.
+- Focused policy bootstrap scenarios, including unavailable platform proof:
+  **7 passed**.
+- Workflow contract module: **18 passed**.
+- Ruff check and format check: passed.
+- Focused Pyrefly: **0 errors**.
+- Actionlint and `git diff --check`: passed.
+
+The earlier generated-test count is superseded: the final generated surface is
+eight test functions collecting 16 focused cases.
+
+<!-- END APPEND: 2026-08-21T020500Z-pr552-ci-bootstrap-review-closure -->
+
+<!-- BEGIN APPEND: 2026-08-21T021300Z-pr552-ci-bootstrap-final-gate -->
+
+## PR #552 bootstrap projection final gate
+
+STATUS: COMPLETE
+
+The final managed HK run covered the seven delivered implementation, workflow,
+test, and status files after all review repairs:
+
+- Workflow Delivery v3 control suite: **3234 passed**.
+- Workflow-release control suite: **1257 passed**.
+- Actionlint, Ruff check/format, Markdown formatting, spelling,
+  EditorConfig, and the other selected repository hooks passed.
+- `git diff --check` passed.
+
+All three original reviewers returned no findings in the terminal follow-up
+round. The implementation is ready for its bounded commit; PR publication and
+live check observation remain separate steps.
+
+<!-- END APPEND: 2026-08-21T021300Z-pr552-ci-bootstrap-final-gate -->

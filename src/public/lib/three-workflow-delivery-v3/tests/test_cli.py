@@ -34,6 +34,7 @@ from three_workflow_delivery_v3.ci.planner import (
     form_slice_validation_candidate,
 )
 from three_workflow_delivery_v3.records.ci import (
+    CI_WORKFLOW_PATH,
     ci_qualification_snapshot_digest,
 )
 from three_workflow_delivery_v3.records.release import (
@@ -468,6 +469,111 @@ def _mechanical_result(
             "diagnostics": [f"{lane} {outcome}"],
         },
     )
+
+
+def _blocked_pr_decision_fixture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[Path, str, Path, Path, Path]:
+    plan_path, _, plan = _plan_fixture(
+        tmp_path,
+        monkeypatch,
+        event_kind="pull_request",
+        changed_paths=("unmodeled/bootstrap.txt",),
+    )
+    plan_digest = canonical_sha256(plan)
+    lane_arguments: list[str] = []
+    for lane in cli_module.CI_LANE_IDS:
+        result = tmp_path / f"{lane}-bootstrap-result.json"
+        assert (
+            cli_module.main(
+                [
+                    "ci",
+                    "lane-result",
+                    "--plan",
+                    str(plan_path),
+                    "--plan-digest",
+                    plan_digest,
+                    "--lane-id",
+                    lane,
+                    "--output",
+                    str(result),
+                ]
+            )
+            == 0
+        )
+        lane_arguments.extend(["--lane-result", str(result)])
+    candidate = cast("dict[str, JsonValue]", plan["candidate"])
+    monkeypatch.setattr(
+        cli_module,
+        "_fetch_current_pull_request",
+        lambda **_: {
+            "base": {"sha": candidate["base-sha"]},
+            "head": {"sha": candidate["head-sha"]},
+            "merge_commit_sha": candidate["tested-merge-sha"],
+        },
+    )
+    decision = tmp_path / "bootstrap-decision.json"
+    summary = tmp_path / "bootstrap-summary.json"
+    assert (
+        cli_module.main(
+            [
+                "ci",
+                "finalize",
+                "--plan",
+                str(plan_path),
+                "--plan-digest",
+                plan_digest,
+                *lane_arguments,
+                "--started-at",
+                "940",
+                "--pull-request-number",
+                "17",
+                "--decision-output",
+                str(decision),
+                "--summary-output",
+                str(summary),
+            ]
+        )
+        == 1
+    )
+    assert json.loads(decision.read_bytes())["failure-class"] == (
+        "incomplete-model-plan"
+    )
+    return plan_path, plan_digest, decision, summary, tmp_path / "repo"
+
+
+def _bootstrap_projection_arguments(
+    *,
+    records: tuple[Path, str, Path, Path, Path],
+    github_summary: Path,
+    base_sha: str = "1" * 40,
+) -> list[str]:
+    plan, plan_digest, decision, summary, repository = records
+    return [
+        "ci",
+        "project-bootstrap-shadow",
+        "--repo-root",
+        str(repository),
+        "--plan",
+        str(plan),
+        "--plan-digest",
+        plan_digest,
+        "--decision",
+        str(decision),
+        "--summary",
+        str(summary),
+        "--pull-request-number",
+        "17",
+        "--base-sha",
+        base_sha,
+        "--head-sha",
+        "2" * 40,
+        "--tested-merge-sha",
+        _head(),
+        "--github-step-summary",
+        str(github_summary),
+    ]
 
 
 def test_catalog_command_emits_exact_static_catalog(
@@ -1354,6 +1460,183 @@ def test_missing_target_authoring_closes_blocked_plan_and_decision(
     )
     assert decision["summary"] == summary
     assert "Plan was not ready" in summary["text"]
+
+
+def test_ci_bootstrap_projection_admits_records_without_rewriting_them(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Append only an explicit note after exact canonical re-admission."""
+    records = _blocked_pr_decision_fixture(tmp_path, monkeypatch)
+    _, _, decision, summary, repository = records
+    decision_document = cast(
+        "dict[str, JsonValue]",
+        json.loads(decision.read_bytes()),
+    )
+    candidate = cast(
+        "dict[str, JsonValue]",
+        decision_document["candidate"],
+    )
+    before = (decision.read_bytes(), summary.read_bytes())
+    observed: list[tuple[Path, str, str]] = []
+
+    def contains_path(root: Path, commit: str, path: str) -> bool:
+        observed.append((root, commit, path))
+        return False
+
+    monkeypatch.setattr(
+        cli_module,
+        "_git_commit_contains_path",
+        contains_path,
+    )
+    github_summary = tmp_path / "github-summary.md"
+    arguments = _bootstrap_projection_arguments(
+        records=records,
+        github_summary=github_summary,
+        base_sha=cast("str", candidate["base-sha"]),
+    )
+    tested_merge_index = arguments.index("--tested-merge-sha") + 1
+    arguments[tested_merge_index] = cast("str", candidate["tested-merge-sha"])
+
+    assert cli_module.main(arguments) == 0
+    assert observed == [
+        (
+            repository,
+            cast("str", candidate["base-sha"]),
+            CI_WORKFLOW_PATH,
+        )
+    ]
+    assert (decision.read_bytes(), summary.read_bytes()) == before
+    note = github_summary.read_text(encoding="utf-8")
+    assert "Pre-coexistence bootstrap projection" in note
+    assert "canonical Decision remains failure" in note
+    assert CI_WORKFLOW_PATH in note
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "marker-present",
+        "identity-drift",
+        "decision-missing",
+        "decision-noncanonical",
+        "plan-mismatch",
+        "summary-mismatch",
+    ],
+)
+def test_ci_bootstrap_projection_rejects_inexact_inputs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    mutation: str,
+) -> None:
+    """Keep marker, identity, and canonical record failures red."""
+    records = _blocked_pr_decision_fixture(tmp_path, monkeypatch)
+    _, _, decision, summary, repository = records
+    document = cast("dict[str, JsonValue]", json.loads(decision.read_bytes()))
+    candidate = cast("dict[str, JsonValue]", document["candidate"])
+    monkeypatch.setattr(
+        cli_module,
+        "_git_commit_contains_path",
+        lambda *_: mutation == "marker-present",
+    )
+    if mutation == "decision-missing":
+        decision.unlink()
+    elif mutation == "decision-noncanonical":
+        decision.write_text(
+            json.dumps(document, indent=2),
+            encoding="utf-8",
+        )
+    elif mutation == "plan-mismatch":
+        plan_document = cast(
+            "dict[str, JsonValue]",
+            json.loads(records[0].read_bytes()),
+        )
+        plan_document["diagnostics"] = [
+            "changed path is unclassified: unmodeled/other.txt"
+        ]
+        alternate_plan = _write_canonical(
+            tmp_path / "mismatched-plan.json",
+            plan_document,
+        )
+        records = (
+            alternate_plan,
+            canonical_sha256(plan_document),
+            decision,
+            summary,
+            repository,
+        )
+    elif mutation == "summary-mismatch":
+        summary_document = cast(
+            "dict[str, JsonValue]",
+            json.loads(summary.read_bytes()),
+        )
+        summary_document["text"] = "non-authoritative but mismatched"
+        summary.write_bytes(canonicalize(summary_document))
+    github_summary = tmp_path / f"{mutation}-summary.md"
+    arguments = _bootstrap_projection_arguments(
+        records=records,
+        github_summary=github_summary,
+        base_sha=(
+            "f" * 40
+            if mutation == "identity-drift"
+            else cast("str", candidate["base-sha"])
+        ),
+    )
+    tested_merge_index = arguments.index("--tested-merge-sha") + 1
+    arguments[tested_merge_index] = cast("str", candidate["tested-merge-sha"])
+
+    assert cli_module.main(arguments) == 1
+    assert not github_summary.exists()
+    expected_error = {
+        "marker-present": "not eligible",
+        "identity-drift": "not eligible",
+        "decision-missing": str(decision),
+        "decision-noncanonical": "not canonical",
+        "plan-mismatch": "trusted Plan digest",
+        "summary-mismatch": "Summary does not match",
+    }[mutation]
+    assert expected_error in capsys.readouterr().err
+
+
+def test_git_commit_path_probe_uses_exact_base_tree(tmp_path: Path) -> None:
+    """Distinguish marker absence, presence, and a nonexistent base commit."""
+    repository = tmp_path / "marker-repository"
+    repository.mkdir()
+    _initialize_repository(repository)
+    _write(repository / "README.md", "base\n")
+    base = _commit_all(repository)
+    _write(repository / CI_WORKFLOW_PATH, "name: v3\n")
+    head = _commit_all(repository)
+
+    assert not cli_module._git_commit_contains_path(  # noqa: SLF001
+        repository,
+        base,
+        CI_WORKFLOW_PATH,
+    )
+    assert cli_module._git_commit_contains_path(  # noqa: SLF001
+        repository,
+        head,
+        CI_WORKFLOW_PATH,
+    )
+    with pytest.raises(subprocess.CalledProcessError):
+        cli_module._git_commit_contains_path(  # noqa: SLF001
+            repository,
+            "f" * 40,
+            CI_WORKFLOW_PATH,
+        )
+    with pytest.raises(ValueError, match="lowercase 40-hex"):
+        cli_module._git_commit_contains_path(  # noqa: SLF001
+            repository,
+            "HEAD",
+            CI_WORKFLOW_PATH,
+        )
+    with pytest.raises(ValueError, match="marker path is not canonical"):
+        cli_module._git_commit_contains_path(  # noqa: SLF001
+            repository,
+            base,
+            "README.md",
+        )
 
 
 def test_malformed_target_authoring_remains_hard_failure(

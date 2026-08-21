@@ -566,6 +566,9 @@ jobs:
           TEST_DIGEST: ${{ needs.project-test.outputs.artifact-digest }}
           NPM_DIGEST: ${{ needs.npm-artifact-build.outputs.artifact-digest }}
           STARTED_AT: ${{ needs.plan.outputs.started-at }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          TESTED_MERGE_SHA: ${{ github.sha }}
         run: |
           plan=".wdv3/final/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-plan.json"
           cli=(uv run --python 3.13 --package "${WDV3_PACKAGE}" three-workflow-delivery-v3)
@@ -586,6 +589,7 @@ jobs:
               --github-api-url "${GITHUB_API_URL}"
             )
           fi
+          set +e
           "${cli[@]}" ci finalize \
             --plan "${plan}" \
             --plan-digest "${PLAN_DIGEST}" \
@@ -594,6 +598,25 @@ jobs:
             "${pr_args[@]}" \
             --decision-output .wdv3/ci-slice-decision.json \
             --summary-output .wdv3/ci-slice-summary.json \
+            --github-step-summary "${GITHUB_STEP_SUMMARY}"
+          finalizer_exit=$?
+          set -e
+          if [[ "${finalizer_exit}" -eq 0 ]]; then
+            exit 0
+          fi
+          if [[ "${GITHUB_EVENT_NAME}" != "pull_request" ]]; then
+            exit "${finalizer_exit}"
+          fi
+          "${cli[@]}" ci project-bootstrap-shadow \
+            --repo-root "${GITHUB_WORKSPACE}" \
+            --plan "${plan}" \
+            --plan-digest "${PLAN_DIGEST}" \
+            --decision .wdv3/ci-slice-decision.json \
+            --summary .wdv3/ci-slice-summary.json \
+            --pull-request-number "${{ github.event.pull_request.number }}" \
+            --base-sha "${BASE_SHA}" \
+            --head-sha "${HEAD_SHA}" \
+            --tested-merge-sha "${TESTED_MERGE_SHA}" \
             --github-step-summary "${GITHUB_STEP_SUMMARY}"
       - name: Report noncanonical contract failure without a Decision
         if: always() && hashFiles('.wdv3/ci-slice-decision.json') == ''

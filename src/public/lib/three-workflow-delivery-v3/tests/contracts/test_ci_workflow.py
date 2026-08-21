@@ -400,6 +400,75 @@ def test_finalizer_detects_missing_lane_artifacts() -> None:
     assert "ci-slice-summary.json" in command
 
 
+def test_finalizer_projects_only_precoexistence_pull_request_failure() -> None:
+    """Keep canonical finalization while projecting one bounded bootstrap."""
+    job = _document()["jobs"]["required-finalizer"]
+    step = next(
+        item
+        for item in _steps(job)
+        if item["name"] == "Admit available results and finalize"
+    )
+    command = cast("str", step["run"])
+
+    assert "continue-on-error" not in step
+    assert step["env"]["BASE_SHA"] == (
+        "${{ github.event.pull_request.base.sha }}"
+    )
+    assert step["env"]["HEAD_SHA"] == (
+        "${{ github.event.pull_request.head.sha }}"
+    )
+    assert step["env"]["TESTED_MERGE_SHA"] == "${{ github.sha }}"
+    success_gate = 'if [[ "${finalizer_exit}" -eq 0 ]]; then\n  exit 0\nfi'
+    event_gate = (
+        'if [[ "${GITHUB_EVENT_NAME}" != "pull_request" ]]; then\n'
+        '  exit "${finalizer_exit}"\n'
+        "fi"
+    )
+    set_plus_index = command.index("set +e")
+    finalize_index = command.index('"${cli[@]}" ci finalize')
+    capture_index = command.index("finalizer_exit=$?")
+    set_minus_index = command.index("set -e", capture_index)
+    success_index = command.index(success_gate)
+    event_index = command.index(event_gate)
+    projection_index = command.index('"${cli[@]}" ci project-bootstrap-shadow')
+    assert (
+        set_plus_index
+        < finalize_index
+        < capture_index
+        < set_minus_index
+        < success_index
+        < event_index
+        < projection_index
+    )
+    finalizer_summary = '--github-step-summary "${GITHUB_STEP_SUMMARY}"'
+    finalizer_summary_end = command.index(
+        finalizer_summary, finalize_index
+    ) + len(finalizer_summary)
+    assert command[finalizer_summary_end:capture_index].strip() == ""
+
+    projection = command[projection_index:]
+    assert '--repo-root "${GITHUB_WORKSPACE}"' in projection
+    assert '--plan "${plan}"' in projection
+    assert '--plan-digest "${PLAN_DIGEST}"' in projection
+    assert "--decision .wdv3/ci-slice-decision.json" in projection
+    assert "--summary .wdv3/ci-slice-summary.json" in projection
+    assert (
+        '--pull-request-number "${{ github.event.pull_request.number }}"'
+        in projection
+    )
+    assert '--base-sha "${BASE_SHA}"' in projection
+    assert '--head-sha "${HEAD_SHA}"' in projection
+    assert '--tested-merge-sha "${TESTED_MERGE_SHA}"' in projection
+    assert finalizer_summary in projection
+    for forbidden in (
+        "pr-552",
+        "793c7255",
+        "191abc82",
+        "dev/shuaizhang/design-workflows",
+    ):
+        assert forbidden not in command
+
+
 def test_decision_absence_always_writes_noncanonical_contract_summary() -> None:
     """Explain every pre-Decision failure without fabricating a Decision."""
     job = _document()["jobs"]["required-finalizer"]

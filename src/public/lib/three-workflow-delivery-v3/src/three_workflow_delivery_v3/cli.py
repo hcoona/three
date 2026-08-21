@@ -72,8 +72,10 @@ from three_workflow_delivery_v3.ci.evidence import (
     form_evidence_lane_result,
 )
 from three_workflow_delivery_v3.ci.finalizer import (
+    CiBootstrapProjectionRequest,
     derive_ci_supersession_state,
     finalize_ci_slice,
+    qualifies_precoexistence_bootstrap_projection,
     render_ci_slice_summary,
 )
 from three_workflow_delivery_v3.governance.inspection import (
@@ -91,13 +93,16 @@ from three_workflow_delivery_v3.records.artifacts import (
 )
 from three_workflow_delivery_v3.records.ci import (
     CI_LANE_IDS,
+    CI_WORKFLOW_PATH,
     CiArtifact,
     CiCandidate,
     CiLaneResult,
     CiQualificationSnapshot,
     _ci_candidate_from_document,
+    _ci_slice_decision_from_document,
     admit_ci_lane_result_json,
     admit_ci_qualification_snapshot_json,
+    admit_ci_slice_decision_json,
     ci_qualification_snapshot_digest,
 )
 from three_workflow_delivery_v3.records.release import (
@@ -5180,6 +5185,108 @@ def _ci_finalize_command(arguments: argparse.Namespace) -> int:
     return 0 if decision.terminal_result == "success" else 1
 
 
+def _git_commit_contains_path(
+    repository_root: Path,
+    commit: str,
+    path: str,
+) -> bool:
+    if not isinstance(repository_root, Path) or not repository_root.is_dir():
+        raise ValueError("bootstrap repository root is not a directory")
+    if (
+        type(commit) is not str
+        or len(commit) != _TARGET_SHA_LENGTH
+        or any(character not in _LOWER_HEX for character in commit)
+    ):
+        raise ValueError("bootstrap base commit must be lowercase 40-hex")
+    if type(path) is not str or path != CI_WORKFLOW_PATH:
+        raise ValueError("bootstrap marker path is not canonical")
+    git = ("git", "-C", os.fspath(repository_root))
+    subprocess.run(  # noqa: S603
+        (*git, "cat-file", "-e", f"{commit}^{{commit}}"),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    result = subprocess.run(  # noqa: S603
+        (
+            *git,
+            "ls-tree",
+            "--full-tree",
+            "--name-only",
+            commit,
+            "--",
+            path,
+        ),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    entries = tuple(line for line in result.stdout.splitlines() if line)
+    if entries not in ((), (path,)):
+        raise ValueError("bootstrap marker probe returned an inexact path")
+    return entries == (path,)
+
+
+def _ci_project_bootstrap_shadow_command(
+    arguments: argparse.Namespace,
+) -> int:
+    plan = _load_ci_plan(arguments.plan, arguments.plan_digest)
+    content, document = _read_object(
+        arguments.decision,
+        context="CI Slice Decision",
+    )
+    parsed = _ci_slice_decision_from_document(
+        document,
+        context="CI Slice Decision",
+    )
+    decision = admit_ci_slice_decision_json(
+        content,
+        expected_plan=plan,
+        expected_evidence=(),
+        expected_elapsed_seconds=parsed.elapsed_seconds,
+        expected_supersession_state=parsed.supersession_state,
+    )
+    _, summary = _read_object(
+        arguments.summary,
+        context="CI Slice Summary",
+    )
+    if summary != decision.summary.to_document():
+        raise ValueError("CI Slice Summary does not match the Decision")
+    repository_root = Path(arguments.repo_root)
+    base_contains_ci_workflow = _git_commit_contains_path(
+        repository_root,
+        arguments.base_sha,
+        CI_WORKFLOW_PATH,
+    )
+    if not qualifies_precoexistence_bootstrap_projection(
+        decision,
+        request=CiBootstrapProjectionRequest(
+            pull_request_number=arguments.pull_request_number,
+            base_sha=arguments.base_sha,
+            head_sha=arguments.head_sha,
+            tested_merge_sha=arguments.tested_merge_sha,
+        ),
+        base_contains_ci_workflow=base_contains_ci_workflow,
+    ):
+        raise ValueError(
+            "CI Decision is not eligible for the pre-coexistence bootstrap"
+        )
+    with Path(arguments.github_step_summary).open(
+        "a",
+        encoding="utf-8",
+    ) as output:
+        print("## Pre-coexistence bootstrap projection", file=output)
+        print("", file=output)
+        print(
+            "The canonical Decision remains failure "
+            "(`incomplete-model-plan`). Only this non-authoritative check "
+            "conclusion is projected as success because the exact base commit "
+            f"does not contain `{CI_WORKFLOW_PATH}`.",
+            file=output,
+        )
+    return 0
+
+
 def _current_epoch_seconds() -> int:
     return int(time())
 
@@ -6146,6 +6253,23 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     finalize.add_argument("--summary-output", required=True)
     finalize.add_argument("--github-step-summary")
     finalize.set_defaults(handler=_ci_finalize_command)
+
+    project_bootstrap = ci_commands.add_parser("project-bootstrap-shadow")
+    project_bootstrap.add_argument("--repo-root", default=".")
+    project_bootstrap.add_argument("--plan", required=True)
+    project_bootstrap.add_argument("--plan-digest", required=True)
+    project_bootstrap.add_argument("--decision", required=True)
+    project_bootstrap.add_argument("--summary", required=True)
+    project_bootstrap.add_argument(
+        "--pull-request-number",
+        required=True,
+        type=int,
+    )
+    project_bootstrap.add_argument("--base-sha", required=True)
+    project_bootstrap.add_argument("--head-sha", required=True)
+    project_bootstrap.add_argument("--tested-merge-sha", required=True)
+    project_bootstrap.add_argument("--github-step-summary", required=True)
+    project_bootstrap.set_defaults(handler=_ci_project_bootstrap_shadow_command)
     return parser
 
 

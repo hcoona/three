@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 
 from three_workflow_delivery_v3.ci.evidence import (
     admit_lane_result_for_plan,
@@ -25,6 +26,17 @@ from three_workflow_delivery_v3.records.ci import (
 )
 
 _SHA_PATTERN = re.compile(r"[0-9a-f]{40}\Z")
+_UNCLASSIFIED_PATH_PREFIX = "changed path is unclassified: "
+
+
+@dataclass(frozen=True, slots=True)
+class CiBootstrapProjectionRequest:
+    """Exact pull-request event identity presented to the projection."""
+
+    pull_request_number: int
+    base_sha: str
+    head_sha: str
+    tested_merge_sha: str
 
 
 def _plan_digest(plan: CiQualificationSnapshot) -> str:
@@ -120,6 +132,83 @@ def derive_ci_supersession_state(
         "not-superseded"
         if current_identity == planned_identity
         else "superseded"
+    )
+
+
+def qualifies_precoexistence_bootstrap_projection(
+    decision: CiSliceDecision,
+    *,
+    request: CiBootstrapProjectionRequest,
+    base_contains_ci_workflow: bool,
+) -> bool:
+    """Recognize the one self-disabling first-implementation projection."""
+    if type(decision) is not CiSliceDecision:
+        message = "decision must be an exact CiSliceDecision"
+        raise TypeError(message)
+    ci_slice_decision_digest(decision)
+    if type(request) is not CiBootstrapProjectionRequest:
+        message = "request must be an exact CiBootstrapProjectionRequest"
+        raise TypeError(message)
+    if (
+        type(request.pull_request_number) is not int
+        or request.pull_request_number <= 0
+    ):
+        message = "pull_request_number must be an exact positive integer"
+        raise TypeError(message)
+    event_identity = (
+        request.base_sha,
+        request.head_sha,
+        request.tested_merge_sha,
+    )
+    if any(
+        type(value) is not str or _SHA_PATTERN.fullmatch(value) is None
+        for value in event_identity
+    ):
+        message = "bootstrap pull-request identity is unavailable"
+        raise ValueError(message)
+    if type(base_contains_ci_workflow) is not bool:
+        message = "base_contains_ci_workflow must be an exact bool"
+        raise TypeError(message)
+
+    candidate = decision.candidate
+    diagnostic_paths = tuple(
+        diagnostic.removeprefix(_UNCLASSIFIED_PATH_PREFIX)
+        for diagnostic in decision.plan_diagnostics
+        if diagnostic.startswith(_UNCLASSIFIED_PATH_PREFIX)
+    )
+    return (
+        not base_contains_ci_workflow
+        and candidate.event_kind == "pull_request"
+        and candidate.purpose == "ci-pr-slice-shadow"
+        and candidate.request_id == f"pr-{request.pull_request_number}"
+        and candidate.base_sha == request.base_sha
+        and candidate.head_sha == request.head_sha
+        and candidate.tested_merge_sha == request.tested_merge_sha
+        and candidate.target == request.tested_merge_sha
+        and candidate.workflow_sha == request.tested_merge_sha
+        and decision.scope_mode == "incremental"
+        and decision.authority == "non-authoritative"
+        and decision.terminal_result == "failure"
+        and decision.failure_class == "incomplete-model-plan"
+        and decision.next_action == "fix-model-plan-and-rerun"
+        and decision.supersession_state != "superseded"
+        and bool(decision.plan_diagnostics)
+        and len(diagnostic_paths) == len(decision.plan_diagnostics)
+        and all(
+            path and path in decision.changed_paths for path in diagnostic_paths
+        )
+        and not decision.selected_project_nodes
+        and not decision.selected_release_units
+        and not decision.selected_variants
+        and not decision.selected_outputs
+        and not decision.admitted_evidence_digests
+        and not decision.admitted_artifact_digests
+        and all(
+            not disposition.obligation.selected
+            and disposition.outcome == "empty"
+            and not disposition.evidence_digests
+            for disposition in decision.obligation_dispositions
+        )
     )
 
 
