@@ -63,13 +63,13 @@
     "hexo": ">=8.0.0"
   },
   "dependencies": {
-    "@asciidoctor/core": "4.0.9",
+    "@asciidoctor/core": "4.0.10",
     "cheerio": "^1.2.0",
     "entities": "^8.0.0",
     "hexo-util": "^4.0.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.8",
+    "@biomejs/biome": "2.5.9",
     "@types/node": "^24.0.0",
     "@typescript/native-preview": "^7.0.0-dev.20260523.1",
     "@vitest/coverage-v8": "^4.1.7",
