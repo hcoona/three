@@ -27,7 +27,6 @@ authoritative release version.
 
 ## Related Pages
 
-- [Repository Release Landscape](../analyses/repository-release-landscape.md)
 - [Root Python Workspace](./2026-04-21-root-pyproject-python-workspace.md)
 
 ## Settled Note

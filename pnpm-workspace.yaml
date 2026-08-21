@@ -1,8 +1,6 @@
 packages:
   - src/public/lib/hexo-renderer-asciidoc
   - src/public/lib/hcoona-release-smoke-npm
-  - src/public/lib/hcoona-release-smoke-npm-dual
-  - src/public/lib/hcoona-release-smoke-wxt
   - src/public/lib/steam-account-history-to-csv
   # These private POC packages intentionally share the root workspace and lockfile.
   - src/private/app/im-acp-gateway/poc/*

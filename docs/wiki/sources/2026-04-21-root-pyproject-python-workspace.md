@@ -29,7 +29,6 @@ Python NBGV/Hatch package alongside the `nbgv-python` special-support path.
 
 ## Related Pages
 
-- [Repository Release Landscape](../analyses/repository-release-landscape.md)
 - [nbgv-python Metadata](./2026-04-21-nbgv-python-pyproject.md)
 - [markdown-hybrid-search-mcp Metadata](./2026-04-21-markdown-hybrid-search-mcp-pyproject.md)
 

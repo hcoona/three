@@ -1979,3 +1979,16 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   observed its explicit note that the canonical Decision remains failure.
   Left PR #552 unmerged and performed no acceptance probe, sentinel
   finalization, live activation, publication, or package mutation.
+
+## [2026-08-21] lint | Clean Workflow Delivery v3 merge scope
+
+- Restored production v1 CI exactly from base `7f8f41c2` and restored the v1
+  Official/reusable release stack with only the approved fail-closed legacy
+  Buddy retirement delta.
+- Removed the inherited pre-v3 control plane, obsolete smoke projects, legacy
+  descriptors, related scripts/tests/fixtures, and superseded design history
+  while retaining the direct v3 package, first-slice npm project, Governance,
+  CODEOWNERS/HK integration, and dedicated v3 workflows.
+- Regenerated UV, PNPM, and Mise locks for the retained scope. This entry does
+  not claim RC-001 final validation closure, and no live or package mutation
+  operation ran.

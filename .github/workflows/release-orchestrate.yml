@@ -12,15 +12,14 @@ name: Release Orchestrator (Reusable)
 #            /                                 \
 #  [build-<lang>]          ...per-language pipeline...
 #     /         \
-#  [ensure-tag]  [tag gate]
-#        |
 #  [attest-*]  [publish-*]
 #     \           /
 #   [release-<lang>-*]
 #          |
 #  [release-completed]
 #
-# Entry caller: official.yml (push:tag + workflow_dispatch)
+# Entry callers: official.yml (push:tag + workflow_dispatch)
+#                buddy.yml   (workflow_dispatch, prerelease-only)
 
 on:
   workflow_call:
@@ -31,130 +30,115 @@ on:
         type: string
       # source=tag
       ref_name:
-        description: 'Tag name (caller passes github.ref_name). Required when source=tag.'
+        description: "Tag name (caller passes github.ref_name). Required when source=tag."
         required: false
         type: string
       ref:
-        description: 'Full ref (caller passes github.ref). Required when source=tag.'
+        description: "Full ref (caller passes github.ref). Required when source=tag."
         required: false
         type: string
 
       # source=manual
       project:
-        description: 'Workspace release project id (Python: pyproject.toml project.name; Node/.NET: three.release.yml project.id; exact display-name aliases are canonicalized to that project id; fuzzy matching remains forbidden). Required when source=manual.'
+        description: "Workspace package name (unscoped). Required when source=manual."
         required: false
         type: string
       version:
-        description: 'Release version string. Required when source=manual.'
+        description: "Release version string. Required when source=manual."
         required: false
         type: string
       target:
-        description: >-
-          Release target selector or pinned commit. Active caller workflows
-          resolve raw dispatch selectors once and pass a pinned 40-hex commit
-          SHA here; direct reusable callers with source=manual may leave this
-          empty to use HEAD or pass a branch, tag, ref, or 40-hex SHA for the
-          resolve layer to pin once. source=tag requires the pinned 40-hex SHA
-          the tag is expected to peel to.
+        description: "Target commit for release/tag when manually triggered (defaults to current commit)."
         required: false
-        default: ''
+        default: ""
         type: string
       force_update_tag:
-        description: 'The active Official caller may use this to force-update an existing release tag. Legacy Buddy entry callers are retired and rejected.'
+        description: "Allow force-updating the release tag if it already exists and points to a different commit."
         required: false
         default: false
         type: boolean
-      run_url:
-        description: 'Top-level caller-visible run URL to surface in release notes.'
-        required: false
-        default: ''
-        type: string
 
       channel:
         description: |-
           Do NOT use 'x-official', 'x-buddy', or any value that normalizes to these
           (e.g. 'x-official-') — reserved sanitization escape slugs.
-          Release channel label for logs and policy validation (example: official, staging).
-          'official' is the active governed entry channel. 'buddy' is reserved and rejected
-          because the legacy Buddy entry route is retired; v3 Buddy uses separate workflows.
+          Release channel label for logs and policy validation (example: official, buddy).
+          Reserved values: 'official' and 'buddy' are governed by strict policy assertions.
           Custom allowlisted channels must not use 'x-official' or 'x-buddy' as these names
-          are reserved as sanitization escape slugs and will collide with mistyped official/buddy
+          are reserved as sanitization escape slugs and will collide with mis-typed official/buddy
           inputs in the generated target_environment output.
         required: true
         type: string
       channel_allowlist:
         description: >-
           Comma-separated list of custom channel names that are explicitly
-          exempt from the active Official policy matrix. Use only for
-          non-production channels (e.g., staging, canary).
+          exempt from strict channel profile assertions (official/buddy policy
+          matrix). Use only for non-production channels (e.g., staging, canary).
           Callers are fully responsible for setting all publish flags correctly.
           SECURITY NOTE: allowlisted channels bypass all policy enforcement —
           only grant default-branch merge access to trusted contributors.
           Any new caller workflow file that supplies a non-empty channel_allowlist
           is itself a policy bypass vector and must be subject to the same
           branch-protection review as official.yml.
-          RESERVED NAMES: do not include 'official', 'buddy', 'x-official', or
-          'x-buddy' in the allowlist. 'official' is governed by the active
-          caller policy; legacy 'buddy' is retired as an entry route; x-* values
-          are reserved sanitization escape slugs. All are rejected at runtime.
+          RESERVED NAMES: do not include 'x-official' or 'x-buddy' in the
+          allowlist — these values are reserved sanitization escape slugs and
+          will be rejected at runtime by the policy job.
         required: false
-        default: ''
+        default: ""
         type: string
       artifact_prefix:
-        description: 'Prefix for generated workflow artifacts (for example: official, buddy).'
+        description: "Prefix for generated workflow artifacts (for example: official, buddy)."
         required: true
         type: string
       github_release_prerelease:
-        description: 'Whether GitHub Release is marked as prerelease.'
+        description: "Whether GitHub Release is marked as prerelease."
         required: true
         type: boolean
 
-      # Channel profile flags are active for Official and custom callers. The
-      # preserved Buddy policy matrix is historical/domain regression logic;
-      # channel=buddy is reserved and rejected before this policy job.
-      # Callers MUST pass all flags explicitly; the policy job re-asserts them
-      # to catch misconfiguration at workflow start. For custom allowlisted
-      # channels, callers are responsible for setting desired values.
+      # Channel profile flags — these are fully determined by 'channel' for official/buddy channels.
+      # Callers MUST pass all flags explicitly; the policy job re-asserts them to catch
+      # misconfiguration at workflow start. For custom allowlisted channels, callers are
+      # responsible for setting these flags to their desired values.
       enforce_prerelease_only:
-        description: 'If true, enforce resolved version to be prerelease-only.'
+        description: "If true, enforce resolved version to be prerelease-only."
         required: false
         default: false
         type: boolean
       enforce_non_clobber:
-        description: 'If true, buddy-like non-clobber protection is enabled.'
+        description: "If true, buddy-like non-clobber protection is enabled."
         required: false
         default: false
         type: boolean
 
       # SYNC[add-new-language] — add publish_<lang>_<registry> input below
       publish_python_pypi:
-        description: 'If true, publish Python artifacts to PyPI.'
+        description: "If true, publish Python artifacts to PyPI."
         required: false
         default: false
         type: boolean
       publish_node_gpr:
-        description: 'If true, publish Node artifacts to GitHub Packages. official/buddy callers always pass this explicitly; default false prevents silent publishing for custom allowlisted channels.'
+        description: "If true, publish Node artifacts to GitHub Packages. official/buddy callers always pass this explicitly; default false prevents silent publishing for custom allowlisted channels."
         required: false
         default: false
         type: boolean
       publish_node_npmjs:
-        description: 'If true, publish Node artifacts to npmjs.org.'
+        description: "If true, publish Node artifacts to npmjs.org."
         required: false
         default: false
         type: boolean
       publish_ruby_gpr:
-        description: 'If true, publish Ruby gem to GitHub Packages.'
+        description: "If true, publish Ruby gem to GitHub Packages."
         required: false
         default: false
         type: boolean
       publish_ruby_rubygems:
-        description: 'If true, publish Ruby gem to RubyGems.org.'
+        description: "If true, publish Ruby gem to RubyGems.org."
         required: false
         default: false
         type: boolean
 
       enable_attestation:
-        description: 'If true, generate GitHub build provenance attestation for release assets.'
+        description: "If true, generate GitHub build provenance attestation for release assets."
         required: false
         default: false
         type: boolean
@@ -165,181 +149,13 @@ permissions:
 env:
   PYTHON_VERSION: '3.14'
   NODE_VERSION: '24'
-  PNPM_VERSION: '11.21.0'
+  PNPM_VERSION: '10.34.1'
   RUBY_VERSION: '3.3'
-  NBGV_VERSION: '3.10.91'
   # SYNC[tool-versions]: keep in step with EXPECTED_*_VERSION in lint-version-consistency job env below.
   # Updating only one side will either cause the lint gate to fail (if env is updated but
   # EXPECTED is not) or silently pass with stale runtime env (if EXPECTED is updated but env is not).
 
 jobs:
-  reject-buddy-reruns:
-    name: Reject buddy rerun attempts
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    permissions: {}
-    steps:
-      - name: Fail buddy rerun attempts
-        shell: bash
-        env:
-          CHANNEL: ${{ inputs.channel }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: |
-          set -Eeuo pipefail
-          if [[ "${CHANNEL}" == "buddy" && "${RUN_ATTEMPT}" != "1" ]]; then
-            echo "buddy release orchestration is single-attempt only; rerun attempts must fail closed." >&2
-            exit 1
-          fi
-
-  guard-caller-identity:
-    name: Guard reusable caller identity
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    needs: reject-buddy-reruns
-    permissions:
-      id-token: write
-    steps:
-      - name: Validate reusable caller identity
-        shell: bash
-        env:
-          CHANNEL: ${{ inputs.channel }}
-          CHANNEL_ALLOWLIST: ${{ inputs.channel_allowlist }}
-          EXPECTED_REF: ${{ github.ref }}
-          EXPECTED_REPOSITORY: ${{ github.repository }}
-        run: |
-          set -Eeuo pipefail
-          python - <<'PY'
-          from __future__ import annotations
-
-          import base64
-          import json
-          import os
-          import sys
-          import urllib.request
-
-          def fail(message: str) -> None:
-              print(message, file=sys.stderr)
-              raise SystemExit(1)
-
-          def decode_payload(token: str) -> dict[str, object]:
-              parts = token.split(".")
-              if len(parts) < 2:
-                  fail("OIDC token is not a JWT")
-              payload_segment = parts[1]
-              padding = "=" * (-len(payload_segment) % 4)
-              try:
-                  payload = base64.urlsafe_b64decode(
-                      payload_segment + padding
-                  )
-                  document = json.loads(payload)
-              except Exception as exc:  # noqa: BLE001
-                  fail(f"OIDC token payload could not be decoded: {exc}")
-              if not isinstance(document, dict):
-                  fail("OIDC token payload is not an object")
-              return document
-
-          def request_token() -> str:
-              request_url = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL", "")
-              request_token = os.environ.get(
-                  "ACTIONS_ID_TOKEN_REQUEST_TOKEN", ""
-              )
-              if not request_url or not request_token:
-                  fail("id-token: write is required for caller identity guard")
-              separator = "&" if "?" in request_url else "?"
-              url = (
-                  f"{request_url}{separator}"
-                  "audience=three-release-orchestrate-caller"
-              )
-              request = urllib.request.Request(
-                  url,
-                  headers={"Authorization": f"bearer {request_token}"},
-              )
-              with urllib.request.urlopen(request, timeout=15) as response:
-                  token_response = json.loads(response.read())
-              token = token_response.get("value")
-              if not isinstance(token, str) or not token:
-                  fail("OIDC token response did not contain a token value")
-              return token
-
-          repository = os.environ["EXPECTED_REPOSITORY"]
-          expected_ref = os.environ["EXPECTED_REF"]
-          channel = os.environ["CHANNEL"]
-          channel_allowlist = {
-              item.strip()
-              for item in os.environ.get("CHANNEL_ALLOWLIST", "").split(",")
-              if item.strip()
-          }
-          reserved_allowlist_entries = channel_allowlist & {"official", "buddy"}
-          if reserved_allowlist_entries:
-              fail(
-                  "Reserved channel names cannot appear in channel_allowlist: "
-                  f"{sorted(reserved_allowlist_entries)!r}. "
-                  "'official' is the only active entry route, and legacy "
-                  "'buddy' is retired."
-              )
-
-          claims = decode_payload(request_token())
-
-          if claims.get("repository") != repository:
-              fail(
-                  "Reusable release orchestrator called from unexpected "
-                  f"repository: {claims.get('repository')!r}"
-              )
-
-          expected_job_workflow_ref = (
-              f"{repository}/.github/workflows/release-orchestrate.yml@"
-              f"{expected_ref}"
-          )
-          if claims.get("job_workflow_ref") != expected_job_workflow_ref:
-              fail(
-                  "Reusable release orchestrator workflow identity mismatch: "
-                  f"{claims.get('job_workflow_ref')!r}"
-              )
-
-          entry_workflows = {
-              "official": ".github/workflows/official.yml",
-          }
-          if channel == "buddy":
-              fail(
-                  "Legacy Buddy entry route is retired; channel 'buddy' is a "
-                  "reserved channel with no active caller route. Use the "
-                  "current v3 Buddy workflows or the active Official entry "
-                  "instead."
-              )
-          entry_workflow = entry_workflows.get(channel)
-          workflow_ref = claims.get("workflow_ref")
-          if entry_workflow is not None:
-              expected_workflow_ref = (
-                  f"{repository}/{entry_workflow}@{expected_ref}"
-              )
-              if workflow_ref != expected_workflow_ref:
-                  fail(
-                      f"Channel {channel!r} must be called only by "
-                      f"{expected_workflow_ref}, observed {workflow_ref!r}"
-                  )
-          elif channel not in channel_allowlist:
-              fail(
-                  f"Custom channel {channel!r} is not present in "
-                  "channel_allowlist"
-              )
-          elif not (
-              isinstance(workflow_ref, str)
-              and workflow_ref.startswith(
-                  f"{repository}/.github/workflows/"
-              )
-              and workflow_ref.endswith(f"@{expected_ref}")
-          ):
-              fail(
-                  "Custom release channel caller must be a checked-in workflow "
-                  f"from the selected ref, observed {workflow_ref!r}"
-              )
-
-          print(
-              "Reusable caller identity accepted: "
-              f"channel={channel}, workflow_ref={workflow_ref}"
-          )
-          PY
-
   # ---------------------------------------------------------------------------
   # JOB NAMING CONVENTION: Conditional-but-always-verify pairs
   # ---------------------------------------------------------------------------
@@ -362,7 +178,7 @@ jobs:
   #                (failing loudly if not). If disabled, it logs a note and
   #                exits 0. Downstream jobs depend on this gate unconditionally.
   #
-  # This pattern appears for:  attest-{python,node,ruby}  and
+  # This pattern appears for:  attest-{python,node,ruby,wxt}  and
   #   publish-{node,ruby}-gpr  (and any future conditional publish jobs).
   # ---------------------------------------------------------------------------
 
@@ -383,15 +199,13 @@ jobs:
     env:
       EXPECTED_PYTHON_VERSION: '3.14'
       EXPECTED_NODE_VERSION: '24'
-      EXPECTED_PNPM_VERSION: '11.21.0'
+      EXPECTED_PNPM_VERSION: '10.34.1'
       EXPECTED_RUBY_VERSION: '3.3'
       # SYNC[add-new-language] — add EXPECTED_<LANG>_VERSION: '<version>' here for each new language tool
       # SYNC[tool-versions]: keep in step with the workflow-level env: block above.
       # These EXPECTED_* values are what the lint check validates hardcoded with: values against.
     steps:
       - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
 
       - name: Verify hardcoded versions match env declarations
         shell: bash
@@ -448,9 +262,6 @@ jobs:
     name: Validate orchestration policy
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs:
-      - reject-buddy-reruns
-      - guard-caller-identity
     permissions:
       contents: read
     steps:
@@ -458,7 +269,6 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 1
-          persist-credentials: false
 
       - name: Validate inputs
         shell: bash
@@ -482,6 +292,12 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: |
           set -Eeuo pipefail
+          normalized_channel="${CHANNEL//[[:space:]]/}"
+          if [[ "${normalized_channel,,}" == "buddy" ]]; then
+            echo "::error::Legacy Buddy entry route is retired; channel 'buddy' has no compatibility route. Use the Workflow Delivery v3 Buddy workflow."
+            exit 1
+          fi
+
           bash "${GITHUB_WORKSPACE}/eng/scripts/release_orchestrate_policy_validate_inputs.sh"
 
       - name: Self-test policy flag coverage
@@ -491,7 +307,7 @@ jobs:
           bash "${GITHUB_WORKSPACE}/eng/scripts/release_orchestrate_policy_self_test.sh"
 
   # NOTE: This job runs AFTER resolve (not at workflow start) because project_kind
-  # (python/node/ruby/dotnet/wxt) is only known after the resolve step. It validates that
+  # (python/node/ruby/wxt) is only known after the resolve step. It validates that
   # the caller's publish flags are consistent with the resolved project kind.
   # Contrast with the `policy` job (no needs:) which validates the channel-profile
   # flags unconditionally at workflow start — before any resolution occurs.
@@ -507,7 +323,6 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 1
-          persist-credentials: false
 
       - name: Validate publish targets by project kind
         shell: bash
@@ -533,7 +348,6 @@ jobs:
     needs:
       - policy
       - lint-version-consistency
-    secrets: {}
     permissions:
       contents: read
     with:
@@ -550,16 +364,16 @@ jobs:
       version: ${{ inputs.version }}
       target: ${{ inputs.target }}
       force_update_tag: ${{ inputs.force_update_tag }}
-      run_url: ${{ inputs.run_url }}
 
-  # HUB PREP: Centralize normalized orchestration context for spoke workflows.
-  # Jobs that need profile-derived routing data list resolve-hub-context explicitly
-  # in needs: and must still enforce their own plan-derived gates.
+  # HUB PREP: Centralize normalized orchestration context for future spoke workflows.
+  # This *job* is intentionally additive in Step 2: no existing job lists resolve-hub-context
+  # in its needs:, so no existing execution path is altered by the presence of this job.
   # NOTE: The validate_inputs.sh changes shipped in the same Step 2 PR ARE breaking for
   # edge-case callers (stricter channel_allowlist regex, new reserved names x-official/x-buddy,
-  # new pre-case guards). See .github/workflows/docs/DESIGN.v2.md for the active topology.
-  # NOTE: Any exit 1 in this job (e.g., unrecognized project_variant) will fail dependent
-  # jobs. This is intentional: the hub context must be derivable on every run.
+  # new pre-case guards). See REFACTOR_PLAN.md §2 (Breaking changes in Step 2) for details.
+  # NOTE: Any exit 1 in this job (e.g., unrecognized project_variant) will fail the overall
+  # workflow run even though no existing job depends on this one. This is intentional: the
+  # hub context must be derivable on every run so that Step-3 spokes can be wired safely.
   # NOTE: All guard jobs and policy-publish-targets are included in needs: so any spoke
   # routing job added inside THIS workflow file that depends on this job transitively
   # inherits full guard and policy enforcement, within this workflow's DAG only.
@@ -586,12 +400,11 @@ jobs:
     # jobs should hold id-token: write.
     # SYNC[add-new-language] — if a new language adds a hub-level output, add it here.
     # Published outputs (forwarding contract — stable for spoke consumers):
-    #   channel_profile:    'official' | 'custom' ('buddy' is retained only as unreachable historical/domain logic)
-    #   planner_profile:    'official' (custom channels intentionally use the official descriptor/planner profile)
-    #   target_environment: 'release-official' | 'release-<sanitized>' ('release-buddy' is unreachable after retirement)
+    #   channel_profile:    'official' | 'buddy' | 'custom'
+    #   target_environment: 'release-official' | 'release-buddy' | 'release-<sanitized>'
     #   publish_mode:       'publish' | 'build-only'
     # Hub-internal derived value (NOT in outputs:, do NOT forward to spokes):
-    #   project_variant:    known values: 'python' | 'ruby' | 'dotnet' | 'node-npm' | 'node-wxt';
+    #   project_variant:    known values: 'python' | 'ruby' | 'node-npm' | 'node-wxt';
     #                       unrecognized PROJECT_KIND values cause a hard failure (exit 1).
     #                       SYNC[add-new-language] — add a branch in the variant mapping below.
     # SECURITY: target_environment is routing/approval-gate metadata only.
@@ -610,25 +423,20 @@ jobs:
     # SECURITY: publish_mode is informational routing intent, not an authorization
     # decision. It MUST NOT be the sole if: condition guarding OIDC token requests.
     # The environment: field with required reviewers is the real security boundary.
-    # PREREQUISITE: The active GitHub Environment 'release-official' MUST be
-    # pre-created in repository Settings → Environments with required reviewers
-    # before any spoke is deployed. Legacy 'release-buddy' is not an active
-    # prerequisite after commit 11. GitHub auto-creates missing environments
-    # with NO protection rules, silently bypassing the approval gate.
+    # PREREQUISITE: The GitHub Environments 'release-official' and 'release-buddy' MUST
+    # be pre-created in repository Settings → Environments with required reviewers before
+    # any spoke is deployed. GitHub auto-creates missing environments with NO protection
+    # rules, silently bypassing the approval gate. See REFACTOR_PLAN.md §3 Step 3 notes.
     outputs:
       channel_profile: ${{ steps.context.outputs.channel_profile }}
       # ROUTING-ONLY: channel_profile is metadata for spoke routing and diagnostics.
       # Spokes MUST NOT use channel_profile to gate attestation or other policy-critical
       # behavior; use explicit policy inputs (for example: enable_attestation) instead.
-      planner_profile: ${{ steps.context.outputs.planner_profile }}
-      # Planner profile is the descriptor/profile selector accepted by planner contracts.
-      # Allowlisted custom routing channels do not create a third descriptor profile; they
-      # use the official descriptor profile while retaining channel_profile=custom for
-      # routing, reports, and protected-environment naming.
       target_environment: ${{ steps.context.outputs.target_environment }}
       publish_mode: ${{ steps.context.outputs.publish_mode }}
       # COMPLIANCE: publish_mode='publish'|'build-only' is the current routing contract.
-      # See .github/workflows/docs/DESIGN.v2.md for the active release topology.
+      # See REFACTOR_PLAN.md §2.2 for the routing contract and the Step 4 design decision
+      # note for the known node-npm multi-target gap.
       # NOTE: project_variant is intentionally NOT a job output — it is hub-internal only.
       # (HUB-ROUTING: used only for publish_mode derivation and step-summary diagnostics.)
       # Do NOT promote it to outputs: — any needs: resolve-hub-context consumer could
@@ -640,7 +448,7 @@ jobs:
         shell: bash
         env:
           CHANNEL: ${{ inputs.channel }}
-          CHANNEL_ALLOWLIST: ${{ inputs.channel_allowlist }} # display only in step summary — allowlist enforcement is solely in the policy job
+          CHANNEL_ALLOWLIST: ${{ inputs.channel_allowlist }}  # display only in step summary — allowlist enforcement is solely in the policy job
           PROJECT_KIND: ${{ needs.resolve.outputs.project_kind }}
           IS_WXT: ${{ needs.resolve.outputs.is_wxt }}
           # SYNC[add-new-language] — add PUBLISH_<LANG>_<REGISTRY>: ${{ inputs.publish_<lang>_<registry> }} here
@@ -652,6 +460,7 @@ jobs:
         # TODO(Step 6): Extract this run: block to eng/scripts/release_orchestrate_hub_context.sh
         # for improved local testability and Phase 3 self-test coverage (structural +
         # behavioral guards equivalent to Phase 0/2 in release_orchestrate_policy_self_test.sh).
+        # See REFACTOR_PLAN.md Step 6 for context on the extraction plan.
         run: |
           set -Eeuo pipefail
 
@@ -814,11 +623,6 @@ jobs:
             ruby)
               [[ "${PUBLISH_RUBY_GPR}"      == "true" || "${PUBLISH_RUBY_RUBYGEMS}" == "true" ]] && publish_mode="publish"
               ;;
-            dotnet)
-              # .NET first-delivery release descriptors route to GitHub Release assets only.
-              # NuGet registry publication remains deferred, so no external registry flag changes publish_mode.
-              publish_mode="build-only"
-              ;;
             *)
               # Unknown project_variant: fail rather than silently producing incorrect routing.
               # This can occur when PROJECT_KIND from release-resolve.yml is a new language
@@ -826,7 +630,7 @@ jobs:
               # SYNC[add-new-language] — add a case arm ABOVE for the new variant.
               # Do NOT delete this *) arm — it MUST remain as a permanent catch-all guard.
               # Only replace the 'exit 1' with correct handler logic when the variant is supported.
-              echo "::error::Unrecognized project_variant '${project_variant}' (PROJECT_KIND='${PROJECT_KIND}', IS_WXT='${IS_WXT:-}'). Known variants: python, node-npm, node-wxt, ruby, dotnet. If this is a new language, add a branch above." >&2
+              echo "::error::Unrecognized project_variant '${project_variant}' (PROJECT_KIND='${PROJECT_KIND}', IS_WXT='${IS_WXT:-}'). Known variants: python, node-npm, node-wxt, ruby. If this is a new language, add a branch above." >&2
               exit 1
               ;;
           esac
@@ -841,14 +645,8 @@ jobs:
           # both the sed normalization step (which strips all characters outside [a-z0-9_-])
           # and the explicit newline guard above have already run. No embedded newlines or
           # special characters can reach this point to corrupt the KEY=VALUE line format.
-          planner_profile="${channel_profile}"
-          if [[ "${planner_profile}" == "custom" ]]; then
-            planner_profile="official"
-          fi
-
           {
             echo "channel_profile=${channel_profile}"
-            echo "planner_profile=${planner_profile}"
             echo "target_environment=${target_environment}"
             echo "publish_mode=${publish_mode}"
           } >> "${GITHUB_OUTPUT}"
@@ -873,7 +671,6 @@ jobs:
             echo "- is_wxt: \`${IS_WXT:-}\`"
             echo "#### Derived outputs"
             echo "- channel_profile: \`${channel_profile}\`"
-            echo "- planner_profile: \`${planner_profile}\`"
             echo "- target_environment: \`${target_environment}\`"
             if [[ -n "${sanitized}" ]]; then
               # Show sanitized channel for custom channels so operators can trace
@@ -912,10 +709,6 @@ jobs:
                 ruby)
                   [[ "${PUBLISH_RUBY_GPR}"      == "true" ]] && active_flags+=("publish_ruby_gpr")
                   [[ "${PUBLISH_RUBY_RUBYGEMS}" == "true" ]] && active_flags+=("publish_ruby_rubygems")
-                  ;;
-                dotnet)
-                  # NuGet registry publication remains deferred; dotnet publishes no external registry flags.
-                  : # no publish flags for .NET GitHub Release-only artifacts
                   ;;
                 node-wxt)
                   # INTENTIONALLY retained even though unreachable today (the outer
@@ -956,7 +749,7 @@ jobs:
     timeout-minutes: 30
     needs:
       - resolve
-      - policy # explicit: ensure channel policy is validated before guards run
+      - policy  # explicit: ensure channel policy is validated before guards run
     permissions:
       contents: read
     steps:
@@ -995,7 +788,7 @@ jobs:
     timeout-minutes: 30
     needs:
       - resolve
-      - policy # explicit: ensure channel policy is validated before guards run
+      - policy  # explicit: ensure channel policy is validated before guards run
     permissions:
       contents: read
     steps:
@@ -1010,7 +803,6 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 1
-          persist-credentials: false
 
       - name: Check existing GitHub Release by tag
         if: inputs.enforce_non_clobber
@@ -1038,864 +830,19 @@ jobs:
   # from resolve-hub-context/needs: (see the resolve-hub-context comment above).
   prepare-release-notes:
     name: Prepare release notes
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
     needs: resolve
     permissions:
       contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 1
-          persist-credentials: false
-          ref: ${{ needs.resolve.outputs.target }}
-
-      - name: Write release notes
-        shell: bash
-        env:
-          HAS_CHANGELOG: ${{ needs.resolve.outputs.has_changelog }}
-          CHANGELOG_PATH: ${{ needs.resolve.outputs.changelog }}
-          TAG_NAME: ${{ needs.resolve.outputs.tag_name }}
-          PROJECT: ${{ needs.resolve.outputs.project }}
-          VERSION: ${{ needs.resolve.outputs.version }}
-          RUN_URL: ${{ needs.resolve.outputs.run_url }}
-        run: |
-          set -Eeuo pipefail
-          notes_dir="${RUNNER_TEMP}/release-notes"
-          mkdir -p "${notes_dir}"
-
-          {
-            echo "# ${PROJECT} ${VERSION}"
-            echo
-            echo "Tag: \`${TAG_NAME}\`"
-            echo
-            if [[ "${HAS_CHANGELOG}" == "true" && -n "${CHANGELOG_PATH}" && -f "${CHANGELOG_PATH}" ]]; then
-              echo "## Changelog"
-              echo
-              cat "${CHANGELOG_PATH}"
-            else
-              echo "No changelog file was resolved for this release."
-            fi
-            echo
-            echo "[Workflow run](${RUN_URL})"
-          } > "${notes_dir}/release-notes.md"
-
-      - name: Upload release notes
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
-          path: ${{ runner.temp }}/release-notes/release-notes.md
-          if-no-files-found: error
-          retention-days: 30
-
-  prepare-release-plan:
-    name: Prepare release plan artifacts
-    needs:
-      - resolve
-      - resolve-hub-context
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-      packages: read
-      attestations: read
-    outputs:
-      plan_artifact_name: ${{ steps.outputs.outputs.plan_artifact_name }}
-      execution_sets_artifact_name: ${{ steps.outputs.outputs.execution_sets_artifact_name }}
-      entry_publish_handoff_artifact_name: ${{ steps.outputs.outputs.entry_publish_handoff_artifact_name }}
-      tag_result_artifact_name: ${{ steps.outputs.outputs.tag_result_artifact_name }}
-      skip_publish_node_ids: ${{ steps.outputs.outputs.skip_publish_node_ids }}
-      has_active_variants: ${{ steps.outputs.outputs.has_variants }}
-      has_skip_results: ${{ steps.outputs.outputs.has_skip_results }}
-      has_live_side_effects: ${{ steps.outputs.outputs.has_live_side_effects }}
-      has_selected_github_release: ${{ steps.outputs.outputs.has_selected_github_release }}
-      has_active_github_release: ${{ steps.outputs.outputs.has_active_github_release }}
-      active_github_release_node_ids: ${{ steps.outputs.outputs.active_github_release_node_ids }}
-      active_github_release_publish_mode: ${{ steps.outputs.outputs.active_github_release_publish_mode }}
-      active_github_release_asset_labels_json: ${{ steps.outputs.outputs.active_github_release_asset_labels_json }}
-      active_github_release_asset_names_json: ${{ steps.outputs.outputs.active_github_release_asset_names_json }}
-      active_github_release_overwrite_mutable_authorized: ${{ steps.outputs.outputs.active_github_release_overwrite_mutable_authorized }}
-      has_selected_python_pypi: ${{ steps.outputs.outputs.has_selected_python_pypi }}
-      has_active_python_pypi: ${{ steps.outputs.outputs.has_active_python_pypi }}
-      expected_python_distribution_filenames_json: ${{ steps.outputs.outputs.expected_python_distribution_filenames_json }}
-      expected_python_distribution_sha256_by_filename_json: ${{ steps.outputs.outputs.expected_python_distribution_sha256_by_filename_json }}
-      has_selected_node_gpr: ${{ steps.outputs.outputs.has_selected_node_gpr }}
-      has_active_node_gpr: ${{ steps.outputs.outputs.has_active_node_gpr }}
-      has_selected_node_npmjs: ${{ steps.outputs.outputs.has_selected_node_npmjs }}
-      has_active_node_npmjs: ${{ steps.outputs.outputs.has_active_node_npmjs }}
-      expected_node_gpr_package_name: ${{ steps.outputs.outputs.expected_node_gpr_package_name }}
-      expected_node_gpr_package_version: ${{ steps.outputs.outputs.expected_node_gpr_package_version }}
-      expected_node_gpr_tarball_sha256: ${{ steps.outputs.outputs.expected_node_gpr_tarball_sha256 }}
-      expected_node_gpr_tarball_sha512: ${{ steps.outputs.outputs.expected_node_gpr_tarball_sha512 }}
-      expected_node_npmjs_package_name: ${{ steps.outputs.outputs.expected_node_npmjs_package_name }}
-      expected_node_npmjs_package_version: ${{ steps.outputs.outputs.expected_node_npmjs_package_version }}
-      expected_node_npmjs_tarball_sha256: ${{ steps.outputs.outputs.expected_node_npmjs_tarball_sha256 }}
-      expected_node_npmjs_tarball_sha512: ${{ steps.outputs.outputs.expected_node_npmjs_tarball_sha512 }}
-      expected_node_github_release_asset_name: ${{ steps.outputs.outputs.expected_node_github_release_asset_name }}
-      expected_node_github_release_package_name: ${{ steps.outputs.outputs.expected_node_github_release_package_name }}
-      expected_node_github_release_asset_sha256: ${{ steps.outputs.outputs.expected_node_github_release_asset_sha256 }}
-      has_selected_ruby_gpr: ${{ steps.outputs.outputs.has_selected_ruby_gpr }}
-      has_active_ruby_gpr: ${{ steps.outputs.outputs.has_active_ruby_gpr }}
-      has_selected_ruby_rubygems: ${{ steps.outputs.outputs.has_selected_ruby_rubygems }}
-      has_active_ruby_rubygems: ${{ steps.outputs.outputs.has_active_ruby_rubygems }}
-      expected_ruby_package_name: ${{ steps.outputs.outputs.expected_ruby_package_name }}
-      expected_ruby_package_version: ${{ steps.outputs.outputs.expected_ruby_package_version }}
-      expected_ruby_gem_filename: ${{ steps.outputs.outputs.expected_ruby_gem_filename }}
-      expected_ruby_gem_sha256: ${{ steps.outputs.outputs.expected_ruby_gem_sha256 }}
-    steps:
-      - name: Checkout (trusted planner scripts)
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 1
-          persist-credentials: false
-
-      - name: Checkout release target data
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-          fetch-tags: true
-          persist-credentials: false
-          ref: ${{ needs.resolve.outputs.target }}
-          path: .three-workflow-release/target
-
-      - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v6
-        with:
-          global-json-file: .three-workflow-release/target/global.json
-
-      - name: Setup Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-        with:
-          version: '0.10.9'
-
-      - name: Setup pnpm
-        if: needs.resolve.outputs.project_kind == 'node'
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
-          run_install: false
-
-      - name: Setup Node.js
-        if: needs.resolve.outputs.project_kind == 'node'
-        uses: actions/setup-node@v7
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
-          cache-dependency-path: .three-workflow-release/target/pnpm-lock.yaml
-
-      - name: Setup Ruby (Bundler)
-        if: needs.resolve.outputs.project_kind == 'ruby' && hashFiles(format('.three-workflow-release/target/{0}/Gemfile', needs.resolve.outputs.package_dir)) != ''
-        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
-        with:
-          ruby-version: ${{ needs.resolve.outputs.ruby_version }}
-          bundler-cache: true
-          working-directory: .three-workflow-release/target/${{ needs.resolve.outputs.package_dir }}
-
-      - name: Setup Ruby
-        if: needs.resolve.outputs.project_kind == 'ruby' && hashFiles(format('.three-workflow-release/target/{0}/Gemfile', needs.resolve.outputs.package_dir)) == ''
-        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
-        with:
-          ruby-version: ${{ needs.resolve.outputs.ruby_version }}
-
-      - name: Install trusted NBGV CLI for metadata
-        shell: bash
-        env:
-          NBGV_VERSION: ${{ env.NBGV_VERSION }}
-        run: |
-          set -Eeuo pipefail
-          trusted_tools="${RUNNER_TEMP}/trusted-dotnet-tools"
-          trusted_config="${RUNNER_TEMP}/trusted-nuget.config"
-          dotnet_home="${RUNNER_TEMP}/dotnet-cli-home"
-          mkdir -p "${trusted_tools}" "${dotnet_home}"
-          cat > "${trusted_config}" <<'XML'
-          <?xml version="1.0" encoding="utf-8"?>
-          <configuration>
-            <packageSources>
-              <clear />
-              <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
-            </packageSources>
-          </configuration>
-          XML
-          DOTNET_CLI_HOME="${dotnet_home}" \
-          NUGET_PACKAGES="${RUNNER_TEMP}/trusted-nuget-packages" \
-            dotnet tool install nbgv \
-              --tool-path "${trusted_tools}" \
-              --version "${NBGV_VERSION}" \
-              --configfile "${trusted_config}"
-          echo "THREE_WORKFLOW_RELEASE_NBGV_PATH=${trusted_tools}/nbgv" >> "${GITHUB_ENV}"
-          echo "NBGV_PYTHON_COMMAND=${trusted_tools}/nbgv" >> "${GITHUB_ENV}"
-
-      - name: Write planner request
-        shell: bash
-        env:
-          COMMIT_SHA: ${{ needs.resolve.outputs.target }}
-          FORCE_UPDATE_TAG: ${{ needs.resolve.outputs.force_update_tag }}
-          PROFILE: ${{ needs.resolve-hub-context.outputs.planner_profile }}
-          REQUESTED_PROJECT_IDS_JSON: ${{ format('["{0}"]', needs.resolve.outputs.project) }}
-        run: |
-          set -Eeuo pipefail
-          mkdir -p .three-workflow-release/plan
-          uv run python eng/scripts/workflow_release_control.py write-planner-request \
-            --profile "$PROFILE" \
-            --commit-sha "$COMMIT_SHA" \
-            --requested-project-ids-json "$REQUESTED_PROJECT_IDS_JSON" \
-            --force "$FORCE_UPDATE_TAG" \
-            --out .three-workflow-release/plan/planner-request.json
-
-      - name: Materialize official frozen versions
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PROJECT: ${{ needs.resolve.outputs.project }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          set -Eeuo pipefail
-          uv run python eng/scripts/workflow_release_control.py official-frozen-versions \
-            --repository "$REPOSITORY" \
-            --project "$PROJECT" \
-            --out .three-workflow-release/plan/official-frozen-versions.json \
-            --diagnostics-out .three-workflow-release/plan/planner-diagnostics.json
-
-      - name: Materialize .NET planner metadata input
-        if: needs.resolve.outputs.project_kind == 'dotnet'
-        shell: bash
-        env:
-          COMMIT_SHA: ${{ needs.resolve.outputs.target }}
-        run: |
-          set -Eeuo pipefail
-          uv run python eng/scripts/workflow_release_control.py dotnet-metadata-input \
-            --repo-root .three-workflow-release/target \
-            --commit-sha "$COMMIT_SHA" \
-            --out .three-workflow-release/plan/dotnet-planner-metadata-input.json
-
-      - name: Collect .NET planner metadata
-        if: needs.resolve.outputs.project_kind == 'dotnet'
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          uv run three-workflow-release-metadata dotnet \
-            --repo-root .three-workflow-release/target \
-            --input .three-workflow-release/plan/dotnet-planner-metadata-input.json \
-            --output .three-workflow-release/plan/dotnet-planner-metadata.json \
-            --diagnostics-out .three-workflow-release/plan/planner-diagnostics.json
-
-      - name: Bootstrap release plan
-        shell: bash
-        env:
-          CHANNEL: ${{ inputs.channel }}
-          ENABLE_ATTESTATION: ${{ inputs.enable_attestation }}
-        run: |
-          set -Eeuo pipefail
-          dotnet_metadata_args=()
-          if [[ -f .three-workflow-release/plan/dotnet-planner-metadata.json ]]; then
-            dotnet_metadata_args=(--dotnet-metadata .three-workflow-release/plan/dotnet-planner-metadata.json)
-          fi
-          buddy_github_release_args=()
-          if [[ "${CHANNEL}" == "buddy" && "${ENABLE_ATTESTATION}" != "true" ]]; then
-            buddy_github_release_args=(--deactivate-buddy-github-release)
-          fi
-          uv run three-workflow-release-planner plan \
-            --repo-root .three-workflow-release/target \
-            --request .three-workflow-release/plan/planner-request.json \
-            --official-frozen-versions .three-workflow-release/plan/official-frozen-versions.json \
-            "${dotnet_metadata_args[@]}" \
-            "${buddy_github_release_args[@]}" \
-            --plan-out .three-workflow-release/plan/bootstrap-plan.json \
-            --execution-sets-out .three-workflow-release/plan/bootstrap-execution-sets.json \
-            --dry-run
-
-      - name: Observe remote publications
-        shell: bash
-        env:
-          CANARY_OVERRIDE_NON_PUBLIC_REF: 'false'
-          ENABLED_EXTERNAL_OIDC_TARGETS: ${{ vars.THREE_RELEASE_ENABLED_EXTERNAL_OIDC_TARGETS }}
-          GH_TOKEN: ${{ github.token }}
-          PUBLISH_PYTHON_PYPI: ${{ inputs.publish_python_pypi }}
-          PUBLISH_NODE_GPR: ${{ inputs.publish_node_gpr }}
-          PUBLISH_NODE_NPMJS: ${{ inputs.publish_node_npmjs }}
-          PUBLISH_RUBY_GPR: ${{ inputs.publish_ruby_gpr }}
-          PUBLISH_RUBY_RUBYGEMS: ${{ inputs.publish_ruby_rubygems }}
-          REPOSITORY: ${{ github.repository }}
-          TARGET_ENVIRONMENT: ${{ needs.resolve-hub-context.outputs.target_environment }}
-        run: |
-          set -Eeuo pipefail
-          disabled_package_target_keys=()
-          [[ "${PUBLISH_PYTHON_PYPI}" == "true" ]] || disabled_package_target_keys+=("python-pypi")
-          [[ "${PUBLISH_NODE_GPR}" == "true" ]] || disabled_package_target_keys+=("node-gpr")
-          [[ "${PUBLISH_NODE_NPMJS}" == "true" ]] || disabled_package_target_keys+=("node-npmjs")
-          [[ "${PUBLISH_RUBY_GPR}" == "true" ]] || disabled_package_target_keys+=("ruby-gpr")
-          [[ "${PUBLISH_RUBY_RUBYGEMS}" == "true" ]] || disabled_package_target_keys+=("ruby-rubygems")
-          disabled_package_target_keys_csv="$(IFS=,; printf '%s' "${disabled_package_target_keys[*]}")"
-          uv run python eng/scripts/workflow_release_control.py observe-remote-publications \
-            --plan .three-workflow-release/plan/bootstrap-plan.json \
-            --execution-sets .three-workflow-release/plan/bootstrap-execution-sets.json \
-            --enabled-external-oidc-targets "$ENABLED_EXTERNAL_OIDC_TARGETS" \
-            --disabled-package-target-keys "$disabled_package_target_keys_csv" \
-            --canary-override-non-public-ref "$CANARY_OVERRIDE_NON_PUBLIC_REF" \
-            --release-environment "$TARGET_ENVIRONMENT" \
-            --repository "$REPOSITORY" \
-            --out .three-workflow-release/plan/remote-observations.json \
-            --diagnostics-out .three-workflow-release/plan/planner-diagnostics.json
-
-      - name: Finalize release plan
-        shell: bash
-        env:
-          CHANNEL: ${{ inputs.channel }}
-          ENABLE_ATTESTATION: ${{ inputs.enable_attestation }}
-        run: |
-          set -Eeuo pipefail
-          dotnet_metadata_args=()
-          if [[ -f .three-workflow-release/plan/dotnet-planner-metadata.json ]]; then
-            dotnet_metadata_args=(--dotnet-metadata .three-workflow-release/plan/dotnet-planner-metadata.json)
-          fi
-          buddy_github_release_args=()
-          if [[ "${CHANNEL}" == "buddy" && "${ENABLE_ATTESTATION}" != "true" ]]; then
-            buddy_github_release_args=(--deactivate-buddy-github-release)
-          fi
-          uv run three-workflow-release-planner plan \
-            --repo-root .three-workflow-release/target \
-            --request .three-workflow-release/plan/planner-request.json \
-            --remote-observations .three-workflow-release/plan/remote-observations.json \
-            --official-frozen-versions .three-workflow-release/plan/official-frozen-versions.json \
-            "${dotnet_metadata_args[@]}" \
-            "${buddy_github_release_args[@]}" \
-            --plan-out .three-workflow-release/plan/release-plan.json \
-            --execution-sets-out .three-workflow-release/plan/execution-sets.json
-
-      - name: Validate external OIDC plan gate
-        shell: bash
-        env:
-          ENABLED_EXTERNAL_OIDC_TARGETS: ${{ vars.THREE_RELEASE_ENABLED_EXTERNAL_OIDC_TARGETS }}
-          PUBLISH_PYTHON_PYPI: ${{ inputs.publish_python_pypi }}
-          PUBLISH_NODE_GPR: ${{ inputs.publish_node_gpr }}
-          PUBLISH_NODE_NPMJS: ${{ inputs.publish_node_npmjs }}
-          PUBLISH_RUBY_GPR: ${{ inputs.publish_ruby_gpr }}
-          PUBLISH_RUBY_RUBYGEMS: ${{ inputs.publish_ruby_rubygems }}
-        run: |
-          set -Eeuo pipefail
-          disabled_package_target_keys=()
-          [[ "${PUBLISH_PYTHON_PYPI}" == "true" ]] || disabled_package_target_keys+=("python-pypi")
-          [[ "${PUBLISH_NODE_GPR}" == "true" ]] || disabled_package_target_keys+=("node-gpr")
-          [[ "${PUBLISH_NODE_NPMJS}" == "true" ]] || disabled_package_target_keys+=("node-npmjs")
-          [[ "${PUBLISH_RUBY_GPR}" == "true" ]] || disabled_package_target_keys+=("ruby-gpr")
-          [[ "${PUBLISH_RUBY_RUBYGEMS}" == "true" ]] || disabled_package_target_keys+=("ruby-rubygems")
-          disabled_package_target_keys_csv="$(IFS=,; printf '%s' "${disabled_package_target_keys[*]}")"
-          uv run python eng/scripts/workflow_release_control.py plan-gate \
-            --plan .three-workflow-release/plan/release-plan.json \
-            --execution-sets .three-workflow-release/plan/execution-sets.json \
-            --remote-observations .three-workflow-release/plan/remote-observations.json \
-            --enabled-external-oidc-targets "$ENABLED_EXTERNAL_OIDC_TARGETS" \
-            --disabled-package-target-keys "$disabled_package_target_keys_csv" \
-            --diagnostics-out .three-workflow-release/plan/planner-diagnostics.json
-
-      - name: Upload planner diagnostics
-        if: failure() && hashFiles('.three-workflow-release/plan/planner-diagnostics.json') != ''
-        uses: actions/upload-artifact@v7
-        with:
-          name: release-planner-diagnostics-v1-${{ github.run_id }}-${{ github.run_attempt }}
-          path: .three-workflow-release/plan/planner-diagnostics.json
-          include-hidden-files: true
-          if-no-files-found: warn
-          retention-days: 30
-
-      - name: Compute release plan outputs
-        id: outputs
-        shell: bash
-        env:
-          PUBLISH_PYTHON_PYPI: ${{ inputs.publish_python_pypi }}
-          PUBLISH_NODE_GPR: ${{ inputs.publish_node_gpr }}
-          PUBLISH_NODE_NPMJS: ${{ inputs.publish_node_npmjs }}
-          PUBLISH_RUBY_GPR: ${{ inputs.publish_ruby_gpr }}
-          PUBLISH_RUBY_RUBYGEMS: ${{ inputs.publish_ruby_rubygems }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-          RUN_ID: ${{ github.run_id }}
-        run: |
-          set -Eeuo pipefail
-          disabled_package_target_keys=()
-          [[ "${PUBLISH_PYTHON_PYPI}" == "true" ]] || disabled_package_target_keys+=("python-pypi")
-          [[ "${PUBLISH_NODE_GPR}" == "true" ]] || disabled_package_target_keys+=("node-gpr")
-          [[ "${PUBLISH_NODE_NPMJS}" == "true" ]] || disabled_package_target_keys+=("node-npmjs")
-          [[ "${PUBLISH_RUBY_GPR}" == "true" ]] || disabled_package_target_keys+=("ruby-gpr")
-          [[ "${PUBLISH_RUBY_RUBYGEMS}" == "true" ]] || disabled_package_target_keys+=("ruby-rubygems")
-          disabled_package_target_keys_csv="$(IFS=,; printf '%s' "${disabled_package_target_keys[*]}")"
-          uv run python eng/scripts/workflow_release_control.py matrix-outputs \
-            --plan .three-workflow-release/plan/release-plan.json \
-            --execution-sets .three-workflow-release/plan/execution-sets.json \
-            --disabled-package-target-keys "$disabled_package_target_keys_csv" \
-            --run-id "$RUN_ID" \
-            --attempt "$RUN_ATTEMPT" \
-            --github-output "$GITHUB_OUTPUT"
-
-      - name: Validate plan-derived workflow gates
-        shell: bash
-        env:
-          PROJECT_KIND: ${{ needs.resolve.outputs.project_kind }}
-          IS_WXT: ${{ needs.resolve.outputs.is_wxt }}
-          PUBLISH_PYTHON_PYPI: ${{ inputs.publish_python_pypi }}
-          PUBLISH_NODE_GPR: ${{ inputs.publish_node_gpr }}
-          PUBLISH_NODE_NPMJS: ${{ inputs.publish_node_npmjs }}
-          PUBLISH_RUBY_GPR: ${{ inputs.publish_ruby_gpr }}
-          PUBLISH_RUBY_RUBYGEMS: ${{ inputs.publish_ruby_rubygems }}
-          HAS_SELECTED_PYTHON_PYPI: ${{ steps.outputs.outputs.has_selected_python_pypi }}
-          HAS_SELECTED_NODE_GPR: ${{ steps.outputs.outputs.has_selected_node_gpr }}
-          HAS_SELECTED_NODE_NPMJS: ${{ steps.outputs.outputs.has_selected_node_npmjs }}
-          HAS_SELECTED_RUBY_GPR: ${{ steps.outputs.outputs.has_selected_ruby_gpr }}
-          HAS_SELECTED_RUBY_RUBYGEMS: ${{ steps.outputs.outputs.has_selected_ruby_rubygems }}
-        run: |
-          set -Eeuo pipefail
-
-          case "${PROJECT_KIND}:${IS_WXT:-false}" in
-            python:*)
-              if [[ "${PUBLISH_PYTHON_PYPI}" == "true" ]]; then
-                echo "Python PyPI target selection is descriptor-controlled; finalized plan outputs gate the PyPI job independently."
-              fi
-              ;;
-            node:true)
-              echo "WXT release plan is authoritative for browser-extension artifacts; npm package flags do not route WXT publish jobs."
-              ;;
-            node:*)
-              if [[ "${PUBLISH_NODE_GPR}" == "true" || "${PUBLISH_NODE_NPMJS}" == "true" ]]; then
-                echo "Node registry target selection is descriptor-controlled; finalized plan outputs gate each npm/GPR job independently."
-              fi
-              ;;
-            ruby:*)
-              if [[ "${PUBLISH_RUBY_GPR}" == "true" || "${PUBLISH_RUBY_RUBYGEMS}" == "true" ]]; then
-                echo "Ruby registry target selection is descriptor-controlled; finalized plan outputs gate each GPR/RubyGems job independently."
-              fi
-              ;;
-            dotnet:*)
-              echo ".NET release plan is authoritative for GitHub Release artifacts; NuGet registry publication remains deferred."
-              ;;
-            *)
-              echo "::error::Unsupported release project kind for plan-derived workflow gates: PROJECT_KIND=${PROJECT_KIND}, IS_WXT=${IS_WXT:-}" >&2
-              exit 1
-              ;;
-          esac
-
-      - name: Fail unsupported buddy GitHub Release proof mode
-        if: ${{ inputs.channel == 'buddy' && !inputs.enable_attestation && steps.outputs.outputs.has_active_github_release == 'true' }}
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          echo "buddy GitHub Release publishing is unsupported while enable_attestation=false; GitHub Release asset proof generation requires verified GitHub attestations. Refusing before release mutation." >&2
-          exit 1
-
-      - name: Prepare entry publish handoff
-        shell: bash
-        env:
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-          RUN_ID: ${{ github.run_id }}
-        run: |
-          set -Eeuo pipefail
-          uv run python eng/scripts/workflow_release_control.py entry-publish-handoff \
-            --plan .three-workflow-release/plan/release-plan.json \
-            --execution-sets .three-workflow-release/plan/execution-sets.json \
-            --run-id "$RUN_ID" \
-            --attempt "$RUN_ATTEMPT" \
-            --out .three-workflow-release/plan/entry-publish-handoff.json
-
-      - name: Upload release plan
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ steps.outputs.outputs.plan_artifact_name }}
-          path: .three-workflow-release/plan/release-plan.json
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Upload execution sets
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ steps.outputs.outputs.execution_sets_artifact_name }}
-          path: .three-workflow-release/plan/execution-sets.json
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Upload entry publish handoff
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ steps.outputs.outputs.entry_publish_handoff_artifact_name }}
-          path: .three-workflow-release/plan/entry-publish-handoff.json
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 30
-
-  ensure-tag:
-    name: Ensure GitHub Release tag
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    needs:
-      - reject-buddy-reruns
-      - resolve
-      - resolve-hub-context
-      - prepare-release-plan
-      - guard-prerelease-only
-      - guard-non-clobber
-      - build-python
-      - build-wxt
-      - pack-node
-      - build-dotnet
-      - build-ruby
-    # Wait for the selected build lane to finish before any tag creation or retargeting.
-    if: >-
-      ${{ always()
-          && !(inputs.channel == 'buddy' && github.run_attempt != 1)
-          && needs.reject-buddy-reruns.result == 'success'
-          && needs.resolve.result == 'success'
-          && needs.prepare-release-plan.result == 'success'
-          && needs.prepare-release-plan.outputs.has_active_github_release == 'true'
-          && needs.guard-prerelease-only.result == 'success'
-          && needs.guard-non-clobber.result == 'success'
-          && (
-            needs.prepare-release-plan.outputs.has_active_variants != 'true'
-            || (needs.resolve.outputs.project_kind == 'python' && needs.build-python.result == 'success')
-            || (needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt == 'true' && needs.build-wxt.result == 'success')
-            || (needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && needs.pack-node.result == 'success')
-            || (needs.resolve.outputs.project_kind == 'dotnet' && needs.build-dotnet.result == 'success')
-            || (needs.resolve.outputs.project_kind == 'ruby' && needs.build-ruby.result == 'success')
-          ) }}
-    environment: github-release
-    concurrency:
-      group: github-release/${{ github.repository }}/${{ needs.resolve.outputs.tag_name }}
-      cancel-in-progress: false
-    permissions:
-      contents: write
-      actions: read
-    steps:
-      - name: Fail buddy rerun attempts
-        shell: bash
-        env:
-          CHANNEL: ${{ inputs.channel }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: |
-          set -Eeuo pipefail
-          if [[ "${CHANNEL}" == "buddy" && "${RUN_ATTEMPT}" != "1" ]]; then
-            echo "buddy release side-effect jobs are single-attempt only; rerun attempts must fail closed before mutation." >&2
-            exit 1
-          fi
-
-      - name: Checkout (tag scripts)
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 1
-          persist-credentials: false
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-        with:
-          version: '0.10.9'
-
-      - name: Download release artifacts
-        uses: actions/download-artifact@v8
-        with:
-          pattern: release-*
-          path: .three-workflow-release/artifacts
-
-      - name: Ensure release tags
-        shell: bash
-        env:
-          TAG_RETARGET_FORCE: ${{ inputs.channel == 'official' && needs.resolve.outputs.force_update_tag == 'true' }}
-          EXPECTED_COMMIT_SHA: ${{ needs.resolve.outputs.target }}
-          EXPECTED_PROJECT_ID: ${{ needs.resolve.outputs.project }}
-          EXPECTED_RELEASE_TAG: ${{ needs.resolve.outputs.tag_name }}
-          REPOSITORY: ${{ github.repository }}
-          RUN_ID: ${{ github.run_id }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-          RUNNER_TEMP_DIR: ${{ runner.temp }}
-          TAG_RESULT_JSON: ${{ runner.temp }}/tag-result.json
-        run: |
-          set -Eeuo pipefail
-
-          resolve_artifact_dir() {
-            local pattern="$1"
-            local -a matches=()
-            mapfile -t matches < <(
-              find "${GITHUB_WORKSPACE}/.three-workflow-release/artifacts" \
-                -mindepth 1 -maxdepth 1 -type d \
-                -name "${pattern}" -print
-            )
-            case "${#matches[@]}" in
-              0)
-                echo ""
-                ;;
-              1)
-                printf '%s\n' "${matches[0]}"
-                ;;
-              *)
-                echo "Expected exactly one artifact directory for pattern '${pattern}', found ${#matches[@]}." >&2
-                exit 1
-                ;;
-            esac
-          }
-
-          plan_artifact_dir="$(resolve_artifact_dir "release-plan-v1-${RUN_ID}-${RUN_ATTEMPT}-*")"
-          execution_sets_artifact_dir="$(resolve_artifact_dir "release-execution-sets-v1-${RUN_ID}-${RUN_ATTEMPT}-*")"
-          if [[ -z "${plan_artifact_dir}" || -z "${execution_sets_artifact_dir}" ]]; then
-            echo "Required release plan artifacts were not found." >&2
-            exit 1
-          fi
-
-          plan_path="${plan_artifact_dir}/release-plan.json"
-          execution_sets_path="${execution_sets_artifact_dir}/execution-sets.json"
-
-          uv run python eng/scripts/workflow_release_control.py ensure-tags \
-            --plan "${plan_path}" \
-            --execution-sets "${execution_sets_path}" \
-            --repository "${REPOSITORY}" \
-            --force-update-tag "${TAG_RETARGET_FORCE}" \
-            --expected-project-id "${EXPECTED_PROJECT_ID}" \
-            --expected-commit-sha "${EXPECTED_COMMIT_SHA}" \
-            --expected-release-tag "${EXPECTED_RELEASE_TAG}" \
-            --out "${TAG_RESULT_JSON}"
-
-          plan_id="$(
-            uv run python -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["plan-id"])' \
-              "${TAG_RESULT_JSON}"
-          )"
-          tag_artifact_name="$(
-            uv run python -c 'from three_workflow_release_contracts import ArtifactNameInputs, artifact_name; import sys; print(artifact_name("tag-result", ArtifactNameInputs(int(sys.argv[1]), int(sys.argv[2]), plan_id=sys.argv[3])))' \
-              "${RUN_ID}" \
-              "${RUN_ATTEMPT}" \
-              "${plan_id}"
-          )"
-          {
-            echo "TAG_RESULT_JSON=${TAG_RESULT_JSON}"
-            echo "TAG_ARTIFACT_NAME=${tag_artifact_name}"
-          } >> "${GITHUB_ENV}"
-
-      - name: Upload tag result
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ env.TAG_ARTIFACT_NAME }}
-          path: ${{ env.TAG_RESULT_JSON }}
-          if-no-files-found: error
-          retention-days: 30
-
-  verify-ensure-tag-buddy-rerun-rejection:
-    name: Verify GitHub Release tag buddy rerun rejection
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    needs:
-      - reject-buddy-reruns
-      - ensure-tag
-    if: ${{ always() && inputs.channel == 'buddy' && github.run_attempt != 1 }}
-    permissions: {}
-    steps:
-      - name: Fail buddy rerun attempts
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          echo "buddy release tag side-effect jobs are single-attempt only; rerun attempts must fail closed before protected environments." >&2
-          exit 1
-
-  skip-results:
-    name: Materialize skip-satisfied publish receipts
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs:
-      - prepare-release-plan
-    if: needs.prepare-release-plan.outputs.has_skip_results == 'true'
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        publish-node-id: ${{ fromJson(needs.prepare-release-plan.outputs.skip_publish_node_ids) }}
-    steps:
-      - name: Checkout (skip receipt scripts)
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 1
-          persist-credentials: false
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-        with:
-          version: '0.10.9'
-
-      - uses: actions/download-artifact@v8
-        with:
-          name: ${{ needs.prepare-release-plan.outputs.plan_artifact_name }}
-          path: .three-workflow-release/plan
-
-      - uses: actions/download-artifact@v8
-        with:
-          name: ${{ needs.prepare-release-plan.outputs.execution_sets_artifact_name }}
-          path: .three-workflow-release/execution-sets
-
-      - name: Materialize skip receipt
-        id: skip
-        shell: bash
-        env:
-          PUBLISH_NODE_ID: ${{ matrix.publish-node-id }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-          RUN_ID: ${{ github.run_id }}
-        run: |
-          set -Eeuo pipefail
-          uv run python eng/scripts/workflow_release_control.py skip-results \
-            --plan .three-workflow-release/plan/release-plan.json \
-            --execution-sets .three-workflow-release/execution-sets/execution-sets.json \
-            --publish-node-id "$PUBLISH_NODE_ID" \
-            --run-id "$RUN_ID" \
-            --attempt "$RUN_ATTEMPT" \
-            --out-dir .three-workflow-release/skip-results \
-            --manifest-out .three-workflow-release/skip-results/manifest.json \
-            --github-output "$GITHUB_OUTPUT"
-
-      - name: Upload skip receipt
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ steps.skip.outputs.skip_result_artifact_name }}
-          path: .three-workflow-release/skip-results/${{ steps.skip.outputs.skip_result_artifact_name }}/skip-result.json
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 30
-
-  # ===========================================================================
-  # SECTION: .NET Release Pipeline
-  # ===========================================================================
-  build-dotnet:
-    name: Build .NET release artifacts
-    needs:
-      - resolve
-      - resolve-hub-context
-      - prepare-release-plan
-      - policy-publish-targets
-      - guard-prerelease-only
-      - guard-non-clobber
-    if: needs.resolve.outputs.project_kind == 'dotnet' && needs.prepare-release-plan.outputs.has_active_variants == 'true'
-    uses: ./.github/workflows/release-build-dotnet.yml
-    secrets: {}
-    permissions:
-      contents: read
-      actions: read
+    uses: ./.github/workflows/release-prepare-release-notes.yml
     with:
       target: ${{ needs.resolve.outputs.target }}
-      plan_artifact_name: ${{ needs.prepare-release-plan.outputs.plan_artifact_name }}
-      execution_sets_artifact_name: ${{ needs.prepare-release-plan.outputs.execution_sets_artifact_name }}
-      artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
-
-  attest-dotnet-enabled:
-    name: Attest release assets (.NET)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    needs:
-      - resolve
-      - prepare-release-plan
-      - build-dotnet
-    if: needs.resolve.outputs.project_kind == 'dotnet' && needs.prepare-release-plan.outputs.has_active_variants == 'true' && inputs.enable_attestation
-    permissions:
-      contents: read
-      actions: read
-      id-token: write
-      attestations: write
-    steps:
-      - name: Fail buddy rerun attempts
-        shell: bash
-        env:
-          CHANNEL: ${{ inputs.channel }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: |
-          set -Eeuo pipefail
-          if [[ "${CHANNEL}" == "buddy" && "${RUN_ATTEMPT}" != "1" ]]; then
-            echo "buddy release side-effect jobs are single-attempt only; rerun attempts must fail closed before mutation." >&2
-            exit 1
-          fi
-
-      - name: Download dist artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
-          path: ${{ github.workspace }}/out
-
-      - name: Attest build provenance (GitHub)
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-path: ${{ github.workspace }}/out/*
-
-  attest-dotnet:
-    name: Attestation gate (.NET)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    needs:
-      - resolve
-      - prepare-release-plan
-      - build-dotnet
-      - attest-dotnet-enabled
-    if: ${{ always() && needs.resolve.outputs.project_kind == 'dotnet' && needs.prepare-release-plan.outputs.has_active_variants == 'true' }}
-    permissions:
-      contents: read
-      actions: read
-    steps:
-      - name: Verify attestation outcome
-        if: inputs.enable_attestation
-        shell: bash
-        env:
-          BUILD_RESULT: ${{ needs.build-dotnet.result }}
-          RESULT: ${{ needs.attest-dotnet-enabled.result }}
-        run: |
-          set -Eeuo pipefail
-          if [[ "${BUILD_RESULT}" != "success" ]]; then
-            echo "Skipping attestation gate: build-dotnet did not succeed (result=${BUILD_RESULT})."
-            echo "### Attestation: :white_circle: skipped (build did not succeed)" >> "${GITHUB_STEP_SUMMARY}"
-            exit 0
-          fi
-          if [[ "${RESULT}" != "success" ]]; then
-            echo "Attestation job did not succeed (result=${RESULT})." >&2
-            exit 1
-          fi
-          echo "### Attestation: :white_check_mark: passed" >> "${GITHUB_STEP_SUMMARY}"
-
-      - name: Attestation disabled
-        if: ${{ !inputs.enable_attestation }}
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          echo "Attestation is disabled for this channel."
-          echo "### Attestation: :no_entry_sign: disabled" >> "${GITHUB_STEP_SUMMARY}"
-
-  release-dotnet:
-    name: Create GitHub release (.NET)
-    needs:
-      - resolve
-      - resolve-hub-context
-      - prepare-release-plan
-      - prepare-release-notes
-      - build-dotnet
-      - attest-dotnet
-      - ensure-tag
-    if: needs.resolve.outputs.project_kind == 'dotnet' && needs.prepare-release-plan.outputs.has_active_github_release == 'true'
-    permissions:
-      contents: write
-      actions: read
-      attestations: read
-    uses: ./.github/workflows/release-create-github-release.yml
-    secrets: {}
-    with:
+      has_changelog: ${{ needs.resolve.outputs.has_changelog == 'true' }}
+      changelog_path: ${{ needs.resolve.outputs.changelog }}
       tag_name: ${{ needs.resolve.outputs.tag_name }}
-      target: ${{ needs.resolve.outputs.target }}
-      release_title: ${{ needs.resolve.outputs.release_title }}
-      prerelease: ${{ inputs.github_release_prerelease }}
-      publish_mode: ${{ needs.prepare-release-plan.outputs.active_github_release_publish_mode }}
-      asset_labels_json: ${{ needs.prepare-release-plan.outputs.active_github_release_asset_labels_json }}
-      asset_names_json: ${{ needs.prepare-release-plan.outputs.active_github_release_asset_names_json }}
-      plan_artifact_name: ${{ needs.prepare-release-plan.outputs.plan_artifact_name }}
-      execution_sets_artifact_name: ${{ needs.prepare-release-plan.outputs.execution_sets_artifact_name }}
-      active_github_release_node_ids_json: ${{ needs.prepare-release-plan.outputs.active_github_release_node_ids }}
-      force_update_tag: ${{ inputs.channel == 'official' && needs.resolve.outputs.force_update_tag == 'true' }}
-      channel: ${{ inputs.channel }}
-      planner_profile: ${{ needs.resolve-hub-context.outputs.planner_profile }}
-      attestation_source_sha: ${{ github.sha }}
-      enable_attestation: ${{ inputs.enable_attestation }}
-      notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
-      dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+      project: ${{ needs.resolve.outputs.project }}
+      version: ${{ needs.resolve.outputs.version }}
+      run_url: ${{ needs.resolve.outputs.run_url }}
+      artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
 
   # ===========================================================================
   # SECTION: Python Release Pipeline
@@ -1904,14 +851,11 @@ jobs:
     name: Build Python package
     needs:
       - resolve
-      - resolve-hub-context
-      - prepare-release-plan
       - policy-publish-targets
       - guard-prerelease-only
       - guard-non-clobber
-    if: needs.resolve.outputs.project_kind == 'python' && needs.prepare-release-plan.outputs.has_active_variants == 'true'
+    if: needs.resolve.outputs.project_kind == 'python'
     uses: ./.github/workflows/release-build-python.yml
-    secrets: {}
     permissions:
       contents: read
     with:
@@ -1921,28 +865,22 @@ jobs:
       # Hardcoded: uses: with: does not support env context; keep in sync with env.PYTHON_VERSION
       python_version: '3.14'
       artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
-      expected_distribution_filenames_json: ${{ needs.prepare-release-plan.outputs.expected_python_distribution_filenames_json }}
 
   # NOTE: publish-python does not use the *-enabled / * gate pair pattern (unlike Node/Ruby GPR
   # publishing). Python has only one target registry (PyPI) and no conditionally-dependent
-  # downstream job must branch on the same effective enablement so GitHub Release creation does
-  # not wait on a skipped PyPI publish when publish_python_pypi=false. The environment approval
-  # gate (environment: pypi) serves as the explicit human checkpoint. This job uses always()
-  # because ensure-tag is skipped for registry-only plans with no GitHub Release node. Keep the
-  # explicit build, attestation, and conditional tag checks below so skipped or failed
-  # prerequisites cannot prompt package publication. See the ATTESTATION GATE PATTERN comment
-  # below for the gate pattern used by attest-* jobs.
+  # downstream job that must run when the flag is false — the job simply does not execute when
+  # publish_python_pypi=false. The environment approval gate (environment: pypi) serves as the
+  # explicit human checkpoint. See the ATTESTATION GATE PATTERN comment below for the gate pattern
+  # used by attest-* jobs.
   publish-python:
     name: Publish Python package (PyPI)
     runs-on: ubuntu-latest
-    timeout-minutes: 1440 # environment approval gate: allow up to 24h for reviewer action
+    timeout-minutes: 1440  # environment approval gate: allow up to 24h for reviewer action
     needs:
       - resolve
-      - prepare-release-plan
       - build-python
       - attest-python
-      - ensure-tag
-    if: ${{ always() && needs.resolve.outputs.project_kind == 'python' && inputs.publish_python_pypi && needs.prepare-release-plan.outputs.has_active_python_pypi == 'true' && needs.build-python.result == 'success' && needs.attest-python.result == 'success' && (needs.prepare-release-plan.outputs.has_active_github_release != 'true' || needs.ensure-tag.result == 'success') }}
+    if: needs.resolve.outputs.project_kind == 'python' && inputs.publish_python_pypi
     # SECURITY: This environment MUST have required reviewers configured in repository settings.
     # Without reviewers, any workflow in this repository calling with channel: official can publish to PyPI via OIDC.
     # SECURITY: The Trusted Publisher registration on PyPI MUST set the optional Environment field to 'pypi'.
@@ -1954,18 +892,6 @@ jobs:
       actions: read
       id-token: write
     steps:
-      - name: Fail buddy rerun attempts
-        shell: bash
-        env:
-          CHANNEL: ${{ inputs.channel }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: |
-          set -Eeuo pipefail
-          if [[ "${CHANNEL}" == "buddy" && "${RUN_ATTEMPT}" != "1" ]]; then
-            echo "buddy release side-effect jobs are single-attempt only; rerun attempts must fail closed before mutation." >&2
-            exit 1
-          fi
-
       - name: Note about PyPI Trusted Publishers (OIDC)
         shell: bash
         env:
@@ -1989,28 +915,11 @@ jobs:
         with:
           version: '1.7.1'
 
-      - name: Checkout (trusted workflow scripts)
+      - name: Checkout (workflow scripts)
         uses: actions/checkout@v7
         with:
           fetch-depth: 1
-          persist-credentials: false
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-        with:
-          version: '0.10.9'
-
-      - name: Download release plan artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: ${{ needs.prepare-release-plan.outputs.plan_artifact_name }}
-          path: .three-workflow-release/plan
-
-      - name: Download execution sets artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: ${{ needs.prepare-release-plan.outputs.execution_sets_artifact_name }}
-          path: .three-workflow-release/execution-sets
+          ref: ${{ needs.resolve.outputs.target }}
 
       - name: Download dist artifact
         uses: actions/download-artifact@v8
@@ -2034,90 +943,27 @@ jobs:
           packages-dir: ${{ github.workspace }}/out/
           skip-existing: true
 
-      - name: Materialize PyPI publish receipt
-        id: publish_result
-        shell: bash
-        env:
-          RUN_ID: ${{ github.run_id }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-          HEAD_SHA: ${{ needs.resolve.outputs.target }}
-        run: |
-          set -Eeuo pipefail
-          uv run python eng/scripts/workflow_release_control.py package-publish-result \
-            --plan .three-workflow-release/plan/release-plan.json \
-            --execution-sets .three-workflow-release/execution-sets/execution-sets.json \
-            --target-key python-pypi \
-            --run-id "${RUN_ID}" \
-            --attempt "${RUN_ATTEMPT}" \
-            --repository "${GITHUB_REPOSITORY}" \
-            --workflow release-orchestrate.yml \
-            --head-sha "${HEAD_SHA}" \
-            --environment pypi \
-            --publish-script pypa/gh-action-pypi-publish \
-            --out-dir .three-workflow-release/publish-result/python-pypi \
-            --github-output "${GITHUB_OUTPUT}"
-
-      - name: Compute PyPI publish receipt artifact name
-        id: publish_result_artifact
-        shell: bash
-        env:
-          PLAN_ID: ${{ steps.publish_result.outputs.plan_id }}
-          PUBLISH_NODE_ID: ${{ steps.publish_result.outputs.publish_node_id }}
-          RUN_ID: ${{ github.run_id }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: |
-          set -Eeuo pipefail
-          uv run python eng/scripts/workflow_release_control.py artifact-name \
-            --kind publish-result \
-            --run-id "${RUN_ID}" \
-            --attempt "${RUN_ATTEMPT}" \
-            --plan-id "${PLAN_ID}" \
-            --publish-node-id "${PUBLISH_NODE_ID}" \
-            --github-output "${GITHUB_OUTPUT}" \
-            --output-name artifact_name
-
-      - name: Upload PyPI publish receipt
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ steps.publish_result_artifact.outputs.artifact_name }}
-          path: ${{ steps.publish_result.outputs.publish_result_path }}
-          if-no-files-found: error
-          retention-days: 30
-
   # ATTESTATION GATE PATTERN: Each language uses a pair of jobs:
   #   1. attest-*-enabled: Runs only when enable_attestation=true. Generates build provenance.
   #   2. attest-*: Always runs (via always()). If attestation is enabled, it verifies the
   #      enabled job succeeded. If disabled, it logs a note and exits 0.
   # This pattern ensures all downstream jobs can unconditionally depend on attest-* without
   # needing to replicate the enable_attestation condition check in every dependent job.
-  # The same pattern is repeated for Node and Ruby below.
+  # The same pattern is repeated for Node, Ruby, and WXT below.
   attest-python-enabled:
     name: Attest release assets (Python)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs:
       - resolve
-      - prepare-release-plan
       - build-python
-    if: needs.resolve.outputs.project_kind == 'python' && needs.prepare-release-plan.outputs.has_active_variants == 'true' && inputs.enable_attestation
+    if: needs.resolve.outputs.project_kind == 'python' && inputs.enable_attestation
     permissions:
       contents: read
       actions: read
       id-token: write
       attestations: write
     steps:
-      - name: Fail buddy rerun attempts
-        shell: bash
-        env:
-          CHANNEL: ${{ inputs.channel }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: |
-          set -Eeuo pipefail
-          if [[ "${CHANNEL}" == "buddy" && "${RUN_ATTEMPT}" != "1" ]]; then
-            echo "buddy release side-effect jobs are single-attempt only; rerun attempts must fail closed before mutation." >&2
-            exit 1
-          fi
-
       - name: Download dist artifact
         uses: actions/download-artifact@v8
         with:
@@ -2135,10 +981,9 @@ jobs:
     timeout-minutes: 30
     needs:
       - resolve
-      - prepare-release-plan
       - build-python
       - attest-python-enabled
-    if: ${{ always() && needs.resolve.outputs.project_kind == 'python' && needs.prepare-release-plan.outputs.has_active_variants == 'true' }}
+    if: ${{ always() && needs.resolve.outputs.project_kind == 'python' }}
     permissions:
       contents: read
       actions: read
@@ -2179,36 +1024,21 @@ jobs:
     name: Create GitHub release (Python, with PyPI)
     needs:
       - resolve
-      - resolve-hub-context
-      - prepare-release-plan
       - prepare-release-notes
       - build-python
       - publish-python
       - attest-python
-      - ensure-tag
-    if: needs.resolve.outputs.project_kind == 'python' && needs.prepare-release-plan.outputs.has_active_github_release == 'true' && inputs.publish_python_pypi && needs.prepare-release-plan.outputs.has_active_python_pypi == 'true'
+    if: needs.resolve.outputs.project_kind == 'python' && inputs.publish_python_pypi
     permissions:
       contents: write
       actions: read
-      attestations: read
     uses: ./.github/workflows/release-create-github-release.yml
-    secrets: {}
     with:
       tag_name: ${{ needs.resolve.outputs.tag_name }}
       target: ${{ needs.resolve.outputs.target }}
       release_title: ${{ needs.resolve.outputs.release_title }}
       prerelease: ${{ inputs.github_release_prerelease }}
-      publish_mode: ${{ needs.prepare-release-plan.outputs.active_github_release_publish_mode }}
-      asset_labels_json: ${{ needs.prepare-release-plan.outputs.active_github_release_asset_labels_json }}
-      asset_names_json: ${{ needs.prepare-release-plan.outputs.active_github_release_asset_names_json }}
-      plan_artifact_name: ${{ needs.prepare-release-plan.outputs.plan_artifact_name }}
-      execution_sets_artifact_name: ${{ needs.prepare-release-plan.outputs.execution_sets_artifact_name }}
-      active_github_release_node_ids_json: ${{ needs.prepare-release-plan.outputs.active_github_release_node_ids }}
-      force_update_tag: ${{ inputs.channel == 'official' && needs.resolve.outputs.force_update_tag == 'true' }}
-      channel: ${{ inputs.channel }}
-      planner_profile: ${{ needs.resolve-hub-context.outputs.planner_profile }}
-      attestation_source_sha: ${{ github.sha }}
-      enable_attestation: ${{ inputs.enable_attestation }}
+      force_update_tag: ${{ needs.resolve.outputs.force_update_tag == 'true' }}
       notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
       dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
 
@@ -2216,179 +1046,20 @@ jobs:
     name: Create GitHub release (Python, no PyPI)
     needs:
       - resolve
-      - resolve-hub-context
-      - prepare-release-plan
       - prepare-release-notes
       - build-python
       - attest-python
-      - ensure-tag
-    if: needs.resolve.outputs.project_kind == 'python' && needs.prepare-release-plan.outputs.has_active_github_release == 'true' && (!inputs.publish_python_pypi || needs.prepare-release-plan.outputs.has_active_python_pypi != 'true')
+    if: needs.resolve.outputs.project_kind == 'python' && !inputs.publish_python_pypi
     permissions:
       contents: write
       actions: read
-      attestations: read
     uses: ./.github/workflows/release-create-github-release.yml
-    secrets: {}
     with:
       tag_name: ${{ needs.resolve.outputs.tag_name }}
       target: ${{ needs.resolve.outputs.target }}
       release_title: ${{ needs.resolve.outputs.release_title }}
       prerelease: ${{ inputs.github_release_prerelease }}
-      publish_mode: ${{ needs.prepare-release-plan.outputs.active_github_release_publish_mode }}
-      asset_labels_json: ${{ needs.prepare-release-plan.outputs.active_github_release_asset_labels_json }}
-      asset_names_json: ${{ needs.prepare-release-plan.outputs.active_github_release_asset_names_json }}
-      plan_artifact_name: ${{ needs.prepare-release-plan.outputs.plan_artifact_name }}
-      execution_sets_artifact_name: ${{ needs.prepare-release-plan.outputs.execution_sets_artifact_name }}
-      active_github_release_node_ids_json: ${{ needs.prepare-release-plan.outputs.active_github_release_node_ids }}
-      force_update_tag: ${{ inputs.channel == 'official' && needs.resolve.outputs.force_update_tag == 'true' }}
-      channel: ${{ inputs.channel }}
-      planner_profile: ${{ needs.resolve-hub-context.outputs.planner_profile }}
-      attestation_source_sha: ${{ github.sha }}
-      enable_attestation: ${{ inputs.enable_attestation }}
-      notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
-      dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
-
-  # ===========================================================================
-  # SECTION: WXT Release Pipeline
-  # ===========================================================================
-  build-wxt:
-    name: Build WXT package
-    needs:
-      - resolve
-      - resolve-hub-context
-      - prepare-release-plan
-      - policy-publish-targets
-      - guard-prerelease-only
-      - guard-non-clobber
-    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt == 'true' && needs.prepare-release-plan.outputs.has_active_variants == 'true'
-    uses: ./.github/workflows/release-build-wxt.yml
-    secrets: {}
-    permissions:
-      contents: read
-    with:
-      target: ${{ needs.resolve.outputs.target }}
-      project: ${{ needs.resolve.outputs.project }}
-      package_dir: ${{ needs.resolve.outputs.package_dir }}
-      version: ${{ needs.resolve.outputs.version }}
-      profile: ${{ needs.resolve-hub-context.outputs.planner_profile }}
-      # Hardcoded: uses: with: does not support env context; keep in sync with env.NODE_VERSION
-      node_version: '24'
-      pnpm_version: '11.21.0'
-      artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
-
-  attest-wxt-enabled:
-    name: Attest release assets (WXT)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    needs:
-      - resolve
-      - resolve-hub-context
-      - prepare-release-plan
-      - build-wxt
-    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt == 'true' && needs.prepare-release-plan.outputs.has_active_variants == 'true' && inputs.enable_attestation
-    permissions:
-      contents: read
-      actions: read
-      id-token: write
-      attestations: write
-    steps:
-      - name: Fail buddy rerun attempts
-        shell: bash
-        env:
-          CHANNEL: ${{ inputs.channel }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: |
-          set -Eeuo pipefail
-          if [[ "${CHANNEL}" == "buddy" && "${RUN_ATTEMPT}" != "1" ]]; then
-            echo "buddy release side-effect jobs are single-attempt only; rerun attempts must fail closed before mutation." >&2
-            exit 1
-          fi
-
-      - name: Download dist artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
-          path: ${{ github.workspace }}/out
-
-      - name: Attest build provenance (GitHub)
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-path: ${{ github.workspace }}/out/*
-
-  attest-wxt:
-    name: Attestation gate (WXT)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    needs:
-      - resolve
-      - prepare-release-plan
-      - build-wxt
-      - attest-wxt-enabled
-    if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt == 'true' && needs.prepare-release-plan.outputs.has_active_variants == 'true' }}
-    permissions:
-      contents: read
-      actions: read
-    steps:
-      - name: Verify attestation outcome
-        if: inputs.enable_attestation
-        shell: bash
-        env:
-          BUILD_RESULT: ${{ needs.build-wxt.result }}
-          RESULT: ${{ needs.attest-wxt-enabled.result }}
-        run: |
-          set -Eeuo pipefail
-          if [[ "${BUILD_RESULT}" != "success" ]]; then
-            echo "Skipping attestation gate: build-wxt did not succeed (result=${BUILD_RESULT})."
-            echo "### Attestation: :white_circle: skipped (build did not succeed)" >> "${GITHUB_STEP_SUMMARY}"
-            exit 0
-          fi
-          if [[ "${RESULT}" != "success" ]]; then
-            echo "Attestation job did not succeed (result=${RESULT})." >&2
-            exit 1
-          fi
-          echo "### Attestation: :white_check_mark: passed" >> "${GITHUB_STEP_SUMMARY}"
-
-      - name: Attestation disabled
-        if: ${{ !inputs.enable_attestation }}
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          echo "Attestation is disabled for this channel."
-          echo "### Attestation: :no_entry_sign: disabled" >> "${GITHUB_STEP_SUMMARY}"
-
-  release-wxt:
-    name: Create GitHub release (WXT)
-    needs:
-      - resolve
-      - resolve-hub-context
-      - prepare-release-plan
-      - prepare-release-notes
-      - build-wxt
-      - attest-wxt
-      - ensure-tag
-    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt == 'true' && needs.prepare-release-plan.outputs.has_active_github_release == 'true'
-    permissions:
-      contents: write
-      actions: read
-      attestations: read
-    uses: ./.github/workflows/release-create-github-release.yml
-    secrets: {}
-    with:
-      tag_name: ${{ needs.resolve.outputs.tag_name }}
-      target: ${{ needs.resolve.outputs.target }}
-      release_title: ${{ needs.resolve.outputs.release_title }}
-      prerelease: ${{ inputs.github_release_prerelease }}
-      publish_mode: ${{ needs.prepare-release-plan.outputs.active_github_release_publish_mode }}
-      asset_labels_json: ${{ needs.prepare-release-plan.outputs.active_github_release_asset_labels_json }}
-      asset_names_json: ${{ needs.prepare-release-plan.outputs.active_github_release_asset_names_json }}
-      plan_artifact_name: ${{ needs.prepare-release-plan.outputs.plan_artifact_name }}
-      execution_sets_artifact_name: ${{ needs.prepare-release-plan.outputs.execution_sets_artifact_name }}
-      active_github_release_node_ids_json: ${{ needs.prepare-release-plan.outputs.active_github_release_node_ids }}
-      force_update_tag: ${{ inputs.channel == 'official' && needs.resolve.outputs.force_update_tag == 'true' }}
-      channel: ${{ inputs.channel }}
-      planner_profile: ${{ needs.resolve-hub-context.outputs.planner_profile }}
-      attestation_source_sha: ${{ github.sha }}
-      enable_attestation: ${{ inputs.enable_attestation }}
+      force_update_tag: ${{ needs.resolve.outputs.force_update_tag == 'true' }}
       notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
       dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
 
@@ -2399,14 +1070,11 @@ jobs:
     name: Pack Node tarball(s)
     needs:
       - resolve
-      - resolve-hub-context
-      - prepare-release-plan
       - policy-publish-targets
       - guard-prerelease-only
       - guard-non-clobber
-    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && needs.prepare-release-plan.outputs.has_active_variants == 'true'
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true'
     uses: ./.github/workflows/release-build-node-pack.yml
-    secrets: {}
     permissions:
       contents: read
     with:
@@ -2417,25 +1085,21 @@ jobs:
       # Hardcoded: uses: with: does not support env context; keep in sync with env.PYTHON_VERSION, env.NODE_VERSION, env.PNPM_VERSION
       python_version: '3.14'
       node_version: '24'
-      pnpm_version: '11.21.0'
+      pnpm_version: '10.34.1'
       artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
-      pack_mode: ${{ needs.prepare-release-plan.outputs.has_selected_node_npmjs == 'true' && needs.prepare-release-plan.outputs.has_selected_node_gpr == 'true' && 'both' || needs.prepare-release-plan.outputs.has_selected_node_npmjs == 'true' && 'npmjs-only' || needs.prepare-release-plan.outputs.has_selected_node_gpr == 'true' && 'gpr-only' || 'github-release-only' }}
-      expected_gpr_package_name: ${{ needs.prepare-release-plan.outputs.expected_node_gpr_package_name }}
-      expected_gpr_package_version: ${{ needs.prepare-release-plan.outputs.expected_node_gpr_package_version }}
-      expected_npmjs_package_name: ${{ needs.prepare-release-plan.outputs.expected_node_npmjs_package_name }}
-      expected_npmjs_package_version: ${{ needs.prepare-release-plan.outputs.expected_node_npmjs_package_version }}
-      expected_github_release_asset_name: ${{ needs.prepare-release-plan.outputs.expected_node_github_release_asset_name }}
-      expected_github_release_package_name: ${{ needs.prepare-release-plan.outputs.expected_node_github_release_package_name }}
+      # Defensive: pack_mode uses == true rather than a bare boolean test to prevent
+      # string-coercion bugs (e.g., string 'false' being truthy) if this input's type
+      # were ever changed. For workflow_call with type: boolean this is a benign no-op.
+      pack_mode: ${{ inputs.publish_node_npmjs == true && 'both' || 'gpr-only' }}
 
   gate-node-publish-npmjs:
     name: Approval gate for Node publish (npmjs)
     runs-on: ubuntu-latest
-    timeout-minutes: 1440 # environment approval gate: allow up to 24h for reviewer action
+    timeout-minutes: 1440  # environment approval gate: allow up to 24h for reviewer action
     needs:
       - resolve
-      - prepare-release-plan
       - pack-node
-    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_npmjs && needs.prepare-release-plan.outputs.has_active_node_npmjs == 'true'
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_npmjs
     # npmjs-gate: human approval gate only. The publish job uses environment: npmjs for
     # OIDC token scoping. Using separate environments prevents a double-approval prompt
     # when the npmjs environment has required reviewers configured.
@@ -2444,32 +1108,17 @@ jobs:
       contents: read
       actions: read
     steps:
-      - name: Fail buddy rerun attempts
-        shell: bash
-        env:
-          CHANNEL: ${{ inputs.channel }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: |
-          set -Eeuo pipefail
-          if [[ "${CHANNEL}" == "buddy" && "${RUN_ATTEMPT}" != "1" ]]; then
-            echo "buddy release side-effect jobs are single-attempt only; rerun attempts must fail closed before mutation." >&2
-            exit 1
-          fi
-
       - name: Await npmjs environment approval
         shell: bash
         run: |
           set -Eeuo pipefail
           echo "npmjs environment approval granted."
 
-  # NOTE: publish-node-gpr-enabled is intentionally coupled to the npmjs approval gate only
-  # when npmjs publishing is input-enabled and plan-active. A plan may contain a selected npmjs
-  # node while publish_node_npmjs=false; that disables the effective npmjs publication and must
-  # not block an otherwise active GPR upload. When npmjs is effectively enabled, GPR publishing
-  # is held until the npmjs environment approval succeeds. This provides approval-synchronized
-  # sequencing: either both registries are approved-and-published together, or neither proceeds.
-  # If you need independent registry publishes, decouple this condition by removing the
-  # gate-node-publish-npmjs dependency check.
+  # NOTE: publish-node-gpr-enabled is intentionally coupled to the npmjs approval gate.
+  # When publish_node_npmjs=true, GPR publishing is held until the npmjs environment approval
+  # succeeds. This provides approval-synchronized sequencing: either both registries are
+  # approved-and-published together, or neither proceeds. If you need independent registry
+  # publishes, decouple this condition by removing the gate-node-publish-npmjs dependency check.
   # Attestation (attest-node) must also complete successfully before GPR publishing proceeds,
   # ensuring the artifact is attested before it is published to GitHub Packages.
   # NOTE: This job uses always() (exception to the *-enabled pattern) because gate-node-publish-npmjs
@@ -2480,48 +1129,27 @@ jobs:
     timeout-minutes: 30
     needs:
       - resolve
-      - prepare-release-plan
       - pack-node
       - attest-node
       - gate-node-publish-npmjs
-      - ensure-tag
     # Condition: Always evaluate (via always()), but only run if: this is a non-WXT Node
     # project, GPR publishing is enabled, pack-node succeeded, attest-node succeeded, AND
-    # (either npmjs is not effectively being published OR the npmjs approval gate
-    # (gate-node-publish-npmjs) has passed), and tag orchestration succeeded when
-    # the plan includes a GitHub Release node. Effective npmjs publishing requires
-    # both the input flag and a plan-active npmjs node.
+    # (either npmjs is not being published OR the npmjs approval gate
+    # (gate-node-publish-npmjs) has passed).
     # The pack-node result check prevents a spurious "artifact not found" failure when
     # pack-node fails and publish_node_npmjs=false (gate is skipped, not failed).
     # See the comment above this job for the rationale behind the npmjs gate coupling.
-    if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_gpr && needs.prepare-release-plan.outputs.has_active_node_gpr == 'true' && needs.pack-node.result == 'success' && needs.attest-node.result == 'success' && (needs.prepare-release-plan.outputs.has_active_github_release != 'true' || needs.ensure-tag.result == 'success') && (!inputs.publish_node_npmjs || needs.prepare-release-plan.outputs.has_active_node_npmjs != 'true' || needs.gate-node-publish-npmjs.result == 'success') }}
+    if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_gpr && needs.pack-node.result == 'success' && needs.attest-node.result == 'success' && (!inputs.publish_node_npmjs || needs.gate-node-publish-npmjs.result == 'success') }}
     permissions:
       contents: read
       actions: read
       packages: write
     steps:
-      - name: Fail buddy rerun attempts
-        shell: bash
-        env:
-          CHANNEL: ${{ inputs.channel }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: |
-          set -Eeuo pipefail
-          if [[ "${CHANNEL}" == "buddy" && "${RUN_ATTEMPT}" != "1" ]]; then
-            echo "buddy release side-effect jobs are single-attempt only; rerun attempts must fail closed before mutation." >&2
-            exit 1
-          fi
-
-      - name: Checkout (trusted workflow scripts)
+      - name: Checkout (workflow scripts)
         uses: actions/checkout@v7
         with:
           fetch-depth: 1
-          persist-credentials: false
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-        with:
-          version: '0.10.9'
+          ref: ${{ needs.resolve.outputs.target }}
 
       - name: Resolve npm scope
         id: npm_scope
@@ -2564,18 +1192,6 @@ jobs:
 
           echo "path=${npmrc}" >> "${GITHUB_OUTPUT}"
 
-      - name: Download release plan artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: ${{ needs.prepare-release-plan.outputs.plan_artifact_name }}
-          path: .three-workflow-release/plan
-
-      - name: Download execution sets artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: ${{ needs.prepare-release-plan.outputs.execution_sets_artifact_name }}
-          path: .three-workflow-release/execution-sets
-
       - name: Download dist artifact
         uses: actions/download-artifact@v8
         with:
@@ -2586,66 +1202,15 @@ jobs:
         shell: bash
         env:
           DIST_TAG: ${{ needs.pack-node.outputs.dist_tag }}
-          EXPECTED_PACKAGE_NAME: ${{ needs.prepare-release-plan.outputs.expected_node_gpr_package_name }}
           NODE_AUTH_TOKEN: ${{ github.token }}
           NPM_CONFIG_USERCONFIG: ${{ steps.gpr_npmrc.outputs.path }}
           PROJECT: ${{ needs.resolve.outputs.project }}
-          VERSION: ${{ needs.prepare-release-plan.outputs.expected_node_gpr_package_version }}
+          VERSION: ${{ needs.resolve.outputs.version }}
           OWNER: ${{ github.repository_owner }}
         run: |
           set -Eeuo pipefail
 
           bash "${GITHUB_WORKSPACE}/eng/scripts/publish_node_gpr_idempotent.sh"
-
-      - name: Materialize Node GPR publish receipt
-        id: publish_result
-        shell: bash
-        env:
-          RUN_ID: ${{ github.run_id }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-          HEAD_SHA: ${{ needs.resolve.outputs.target }}
-        run: |
-          set -Eeuo pipefail
-          uv run python eng/scripts/workflow_release_control.py package-publish-result \
-            --plan .three-workflow-release/plan/release-plan.json \
-            --execution-sets .three-workflow-release/execution-sets/execution-sets.json \
-            --target-key node-gpr \
-            --run-id "${RUN_ID}" \
-            --attempt "${RUN_ATTEMPT}" \
-            --repository "${GITHUB_REPOSITORY}" \
-            --workflow release-orchestrate.yml \
-            --head-sha "${HEAD_SHA}" \
-            --environment github-packages \
-            --publish-script eng/scripts/publish_node_gpr_idempotent.sh \
-            --out-dir .three-workflow-release/publish-result/node-gpr \
-            --github-output "${GITHUB_OUTPUT}"
-
-      - name: Compute Node GPR publish receipt artifact name
-        id: publish_result_artifact
-        shell: bash
-        env:
-          PLAN_ID: ${{ steps.publish_result.outputs.plan_id }}
-          PUBLISH_NODE_ID: ${{ steps.publish_result.outputs.publish_node_id }}
-          RUN_ID: ${{ github.run_id }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: |
-          set -Eeuo pipefail
-          uv run python eng/scripts/workflow_release_control.py artifact-name \
-            --kind publish-result \
-            --run-id "${RUN_ID}" \
-            --attempt "${RUN_ATTEMPT}" \
-            --plan-id "${PLAN_ID}" \
-            --publish-node-id "${PUBLISH_NODE_ID}" \
-            --github-output "${GITHUB_OUTPUT}" \
-            --output-name artifact_name
-
-      - name: Upload Node GPR publish receipt
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ steps.publish_result_artifact.outputs.artifact_name }}
-          path: ${{ steps.publish_result.outputs.publish_result_path }}
-          if-no-files-found: error
-          retention-days: 30
 
   publish-node-gpr:
     name: Publish Node package (GitHub Packages) [gate]
@@ -2653,20 +1218,14 @@ jobs:
     timeout-minutes: 30
     needs:
       - resolve
-      - prepare-release-plan
       - publish-node-gpr-enabled
-    # Run this gate for every downstream Node path that lists publish-node-gpr in
-    # needs:. When Node GPR is unselected, the gate succeeds as a no-op so
-    # npmjs-only or GitHub-Release-only descriptors are not blocked by the
-    # optional GitHub Packages route. When Node GPR is active, the steps below
-    # still require the upload job to complete successfully.
-    if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && (needs.prepare-release-plan.outputs.has_selected_node_gpr == 'true' || needs.prepare-release-plan.outputs.has_active_node_npmjs == 'true' || needs.prepare-release-plan.outputs.has_active_github_release == 'true') }}
+    if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' }}
     permissions:
       contents: read
       actions: read
     steps:
       - name: Node GPR publishing disabled
-        if: ${{ needs.prepare-release-plan.outputs.has_active_node_gpr != 'true' }}
+        if: ${{ !inputs.publish_node_gpr }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -2674,7 +1233,7 @@ jobs:
           echo "### GPR publish: :no_entry_sign: disabled" >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Ensure enabled publish job succeeded
-        if: ${{ needs.prepare-release-plan.outputs.has_active_node_gpr == 'true' && needs.publish-node-gpr-enabled.result != 'success' && needs.publish-node-gpr-enabled.result != 'skipped' }}
+        if: ${{ inputs.publish_node_gpr && needs.publish-node-gpr-enabled.result != 'success' && needs.publish-node-gpr-enabled.result != 'skipped' }}
         shell: bash
         env:
           ENABLED_JOB_RESULT: ${{ needs.publish-node-gpr-enabled.result }}
@@ -2684,7 +1243,7 @@ jobs:
           exit 1
 
       - name: Node GPR publish skipped (upstream did not run)
-        if: ${{ needs.prepare-release-plan.outputs.has_active_node_gpr == 'true' && needs.publish-node-gpr-enabled.result == 'skipped' }}
+        if: ${{ inputs.publish_node_gpr && needs.publish-node-gpr-enabled.result == 'skipped' }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -2693,7 +1252,7 @@ jobs:
           exit 1
 
       - name: Node GPR publish completed
-        if: ${{ needs.prepare-release-plan.outputs.has_active_node_gpr == 'true' && needs.publish-node-gpr-enabled.result == 'success' }}
+        if: ${{ inputs.publish_node_gpr && needs.publish-node-gpr-enabled.result == 'success' }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -2708,72 +1267,39 @@ jobs:
   publish-node-npmjs:
     name: Publish Node package (npmjs.org)
     runs-on: ubuntu-latest
-    timeout-minutes: 1440 # environment approval gate: allow up to 24h for reviewer action
+    timeout-minutes: 1440  # environment approval gate: allow up to 24h for reviewer action
     needs:
       - resolve
-      - prepare-release-plan
-      - pack-node # scheduling only: ensures artifact is available before download; safety is enforced via gate-node-publish-npmjs result check
+      - pack-node  # scheduling only: ensures artifact is available before download; safety is enforced via gate-node-publish-npmjs result check
       - gate-node-publish-npmjs
       - publish-node-gpr
       - attest-node
-      - ensure-tag
-    # Explicitly check attest-node here: on partial reruns GPR may be selected but
-    # skip-satisfied, making publish-node-gpr a successful no-op rather than an
-    # attestation-enforcing upload gate.
-    if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_npmjs && needs.prepare-release-plan.outputs.has_active_node_npmjs == 'true' && (needs.prepare-release-plan.outputs.has_active_github_release != 'true' || needs.ensure-tag.result == 'success') && needs.gate-node-publish-npmjs.result == 'success' && needs.publish-node-gpr.result == 'success' && (!inputs.enable_attestation || needs.attest-node.result == 'success') }}
+    # NOTE: No explicit attestation check needed here — it is transitively enforced:
+    # attest-node failure → publish-node-gpr-enabled skipped → publish-node-gpr gate fails
+    # → this job blocked by needs.publish-node-gpr.result == 'success' above.
+    if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_npmjs && needs.gate-node-publish-npmjs.result == 'success' && needs.publish-node-gpr.result == 'success' }}
     # SECURITY: This environment MUST have required reviewers configured in repository settings.
     # Without reviewers, any workflow in this repository calling with channel: official can publish to npmjs.org via OIDC.
-    # SECURITY: The Trusted Publisher registration on npmjs.com MUST use the direct caller workflow
-    # name (official.yml for active official npmjs publishing) and set the optional Environment field
-    # to 'npmjs'. npm validates workflow_call publishes against the caller workflow name even though
-    # this reusable workflow contains the npm publish command. Both the caller and this job must grant
-    # id-token: write.
+    # SECURITY: The Trusted Publisher registration on npmjs.com MUST set the optional Environment field to 'npmjs'.
+    # This adds a second OIDC claim check (job_workflow_environment) so the token is only accepted when the job
+    # runs inside this specific environment, providing defense-in-depth independent of reviewer configuration.
     environment: npmjs
     permissions:
       contents: read
       actions: read
       id-token: write
     steps:
-      - name: Fail buddy rerun attempts
-        shell: bash
-        env:
-          CHANNEL: ${{ inputs.channel }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: |
-          set -Eeuo pipefail
-          if [[ "${CHANNEL}" == "buddy" && "${RUN_ATTEMPT}" != "1" ]]; then
-            echo "buddy release side-effect jobs are single-attempt only; rerun attempts must fail closed before mutation." >&2
-            exit 1
-          fi
-
-      - name: Checkout (trusted workflow scripts)
+      - name: Checkout (workflow scripts)
         uses: actions/checkout@v7
         with:
           fetch-depth: 1
-          persist-credentials: false
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-        with:
-          version: '0.10.9'
+          ref: ${{ needs.resolve.outputs.target }}
 
       - name: Setup Node.js (npmjs)
         uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           registry-url: https://registry.npmjs.org
-
-      - name: Download release plan artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: ${{ needs.prepare-release-plan.outputs.plan_artifact_name }}
-          path: .three-workflow-release/plan
-
-      - name: Download execution sets artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: ${{ needs.prepare-release-plan.outputs.execution_sets_artifact_name }}
-          path: .three-workflow-release/execution-sets
 
       - name: Download dist artifact
         uses: actions/download-artifact@v8
@@ -2790,75 +1316,25 @@ jobs:
           echo "This workflow is intended to publish '${PROJECT}' to npmjs.org using npm Trusted Publishing (OIDC)."
           echo "No npm token is provided by this workflow; publishing will fail unless a Trusted Publisher is configured on npmjs.com for:"
           echo "  - Repository: ${GITHUB_REPOSITORY}"
-          echo "  - Workflow: .github/workflows/official.yml"
-          echo "    (npm Trusted Publishing validates the direct caller workflow name for workflow_call."
-          echo "     The npm publish command still runs in .github/workflows/release-orchestrate.yml.)"
+          echo "  - Workflow: .github/workflows/release-orchestrate.yml"
+          echo "    (This is the reusable workflow file containing this job."
+          echo "     npm Trusted Publishing validates the OIDC job_workflow_ref claim, which always"
+          echo "     points to the reusable workflow file — not the caller workflow (e.g. official.yml).)"
           echo "  - Environment (if configured on npm): npmjs"
-          echo "The official caller grants id-token: write, and this reusable publish job also grants id-token: write."
-          echo "Legacy Buddy entries are retired; do not add .github/workflows/buddy.yml as a Trusted Publisher or caller-compatibility route."
+          echo "A single Trusted Publisher entry for this reusable workflow covers all callers."
+          echo "Each caller workflow does NOT need a separate Trusted Publisher registration."
           echo "See: https://docs.npmjs.com/trusted-publishers"
 
       - name: Publish to npm registry (idempotent)
         shell: bash
         env:
           DIST_TAG: ${{ needs.pack-node.outputs.dist_tag }}
-          EXPECTED_PACKAGE_NAME: ${{ needs.prepare-release-plan.outputs.expected_node_npmjs_package_name }}
           PROJECT: ${{ needs.resolve.outputs.project }}
-          VERSION: ${{ needs.prepare-release-plan.outputs.expected_node_npmjs_package_version }}
+          VERSION: ${{ needs.resolve.outputs.version }}
         run: |
           set -Eeuo pipefail
 
           bash "${GITHUB_WORKSPACE}/eng/scripts/publish_node_npmjs_idempotent.sh"
-
-      - name: Materialize npmjs publish receipt
-        id: publish_result
-        shell: bash
-        env:
-          RUN_ID: ${{ github.run_id }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-          HEAD_SHA: ${{ needs.resolve.outputs.target }}
-        run: |
-          set -Eeuo pipefail
-          uv run python eng/scripts/workflow_release_control.py package-publish-result \
-            --plan .three-workflow-release/plan/release-plan.json \
-            --execution-sets .three-workflow-release/execution-sets/execution-sets.json \
-            --target-key node-npmjs \
-            --run-id "${RUN_ID}" \
-            --attempt "${RUN_ATTEMPT}" \
-            --repository "${GITHUB_REPOSITORY}" \
-            --workflow release-orchestrate.yml \
-            --head-sha "${HEAD_SHA}" \
-            --environment npmjs \
-            --publish-script eng/scripts/publish_node_npmjs_idempotent.sh \
-            --out-dir .three-workflow-release/publish-result/node-npmjs \
-            --github-output "${GITHUB_OUTPUT}"
-
-      - name: Compute npmjs publish receipt artifact name
-        id: publish_result_artifact
-        shell: bash
-        env:
-          PLAN_ID: ${{ steps.publish_result.outputs.plan_id }}
-          PUBLISH_NODE_ID: ${{ steps.publish_result.outputs.publish_node_id }}
-          RUN_ID: ${{ github.run_id }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: |
-          set -Eeuo pipefail
-          uv run python eng/scripts/workflow_release_control.py artifact-name \
-            --kind publish-result \
-            --run-id "${RUN_ID}" \
-            --attempt "${RUN_ATTEMPT}" \
-            --plan-id "${PLAN_ID}" \
-            --publish-node-id "${PUBLISH_NODE_ID}" \
-            --github-output "${GITHUB_OUTPUT}" \
-            --output-name artifact_name
-
-      - name: Upload npmjs publish receipt
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ steps.publish_result_artifact.outputs.artifact_name }}
-          path: ${{ steps.publish_result.outputs.publish_result_path }}
-          if-no-files-found: error
-          retention-days: 30
 
   attest-node-enabled:
     name: Attest release assets (Node)
@@ -2866,27 +1342,14 @@ jobs:
     timeout-minutes: 30
     needs:
       - resolve
-      - prepare-release-plan
       - pack-node
-    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && needs.prepare-release-plan.outputs.has_active_variants == 'true' && inputs.enable_attestation
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.enable_attestation
     permissions:
       contents: read
       actions: read
       id-token: write
       attestations: write
     steps:
-      - name: Fail buddy rerun attempts
-        shell: bash
-        env:
-          CHANNEL: ${{ inputs.channel }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: |
-          set -Eeuo pipefail
-          if [[ "${CHANNEL}" == "buddy" && "${RUN_ATTEMPT}" != "1" ]]; then
-            echo "buddy release side-effect jobs are single-attempt only; rerun attempts must fail closed before mutation." >&2
-            exit 1
-          fi
-
       - name: Download dist artifact
         uses: actions/download-artifact@v8
         with:
@@ -2904,10 +1367,9 @@ jobs:
     timeout-minutes: 30
     needs:
       - resolve
-      - prepare-release-plan
       - pack-node
       - attest-node-enabled
-    if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && needs.prepare-release-plan.outputs.has_active_variants == 'true' }}
+    if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' }}
     permissions:
       contents: read
       actions: read
@@ -2948,37 +1410,22 @@ jobs:
     name: Create GitHub release (Node, with npmjs)
     needs:
       - resolve
-      - resolve-hub-context
-      - prepare-release-plan
       - prepare-release-notes
       - pack-node
       - publish-node-gpr
       - publish-node-npmjs
       - attest-node
-      - ensure-tag
-    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && needs.prepare-release-plan.outputs.has_active_github_release == 'true' && inputs.publish_node_npmjs && needs.prepare-release-plan.outputs.has_active_node_npmjs == 'true'
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && inputs.publish_node_npmjs
     permissions:
       contents: write
       actions: read
-      attestations: read
     uses: ./.github/workflows/release-create-github-release.yml
-    secrets: {}
     with:
       tag_name: ${{ needs.resolve.outputs.tag_name }}
       target: ${{ needs.resolve.outputs.target }}
       release_title: ${{ needs.resolve.outputs.release_title }}
       prerelease: ${{ inputs.github_release_prerelease }}
-      publish_mode: ${{ needs.prepare-release-plan.outputs.active_github_release_publish_mode }}
-      asset_labels_json: ${{ needs.prepare-release-plan.outputs.active_github_release_asset_labels_json }}
-      asset_names_json: ${{ needs.prepare-release-plan.outputs.active_github_release_asset_names_json }}
-      plan_artifact_name: ${{ needs.prepare-release-plan.outputs.plan_artifact_name }}
-      execution_sets_artifact_name: ${{ needs.prepare-release-plan.outputs.execution_sets_artifact_name }}
-      active_github_release_node_ids_json: ${{ needs.prepare-release-plan.outputs.active_github_release_node_ids }}
-      force_update_tag: ${{ inputs.channel == 'official' && needs.resolve.outputs.force_update_tag == 'true' }}
-      channel: ${{ inputs.channel }}
-      planner_profile: ${{ needs.resolve-hub-context.outputs.planner_profile }}
-      attestation_source_sha: ${{ github.sha }}
-      enable_attestation: ${{ inputs.enable_attestation }}
+      force_update_tag: ${{ needs.resolve.outputs.force_update_tag == 'true' }}
       notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
       dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
 
@@ -2986,36 +1433,21 @@ jobs:
     name: Create GitHub release (Node, no npmjs)
     needs:
       - resolve
-      - resolve-hub-context
-      - prepare-release-plan
       - prepare-release-notes
       - pack-node
       - publish-node-gpr
       - attest-node
-      - ensure-tag
-    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && needs.prepare-release-plan.outputs.has_active_github_release == 'true' && (!inputs.publish_node_npmjs || needs.prepare-release-plan.outputs.has_active_node_npmjs != 'true')
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true' && !inputs.publish_node_npmjs
     permissions:
       contents: write
       actions: read
-      attestations: read
     uses: ./.github/workflows/release-create-github-release.yml
-    secrets: {}
     with:
       tag_name: ${{ needs.resolve.outputs.tag_name }}
       target: ${{ needs.resolve.outputs.target }}
       release_title: ${{ needs.resolve.outputs.release_title }}
       prerelease: ${{ inputs.github_release_prerelease }}
-      publish_mode: ${{ needs.prepare-release-plan.outputs.active_github_release_publish_mode }}
-      asset_labels_json: ${{ needs.prepare-release-plan.outputs.active_github_release_asset_labels_json }}
-      asset_names_json: ${{ needs.prepare-release-plan.outputs.active_github_release_asset_names_json }}
-      plan_artifact_name: ${{ needs.prepare-release-plan.outputs.plan_artifact_name }}
-      execution_sets_artifact_name: ${{ needs.prepare-release-plan.outputs.execution_sets_artifact_name }}
-      active_github_release_node_ids_json: ${{ needs.prepare-release-plan.outputs.active_github_release_node_ids }}
-      force_update_tag: ${{ inputs.channel == 'official' && needs.resolve.outputs.force_update_tag == 'true' }}
-      channel: ${{ inputs.channel }}
-      planner_profile: ${{ needs.resolve-hub-context.outputs.planner_profile }}
-      attestation_source_sha: ${{ github.sha }}
-      enable_attestation: ${{ inputs.enable_attestation }}
+      force_update_tag: ${{ needs.resolve.outputs.force_update_tag == 'true' }}
       notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
       dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
 
@@ -3026,14 +1458,11 @@ jobs:
     name: Build Ruby gem
     needs:
       - resolve
-      - resolve-hub-context
-      - prepare-release-plan
       - policy-publish-targets
       - guard-prerelease-only
       - guard-non-clobber
-    if: needs.resolve.outputs.project_kind == 'ruby' && needs.prepare-release-plan.outputs.has_active_variants == 'true'
+    if: needs.resolve.outputs.project_kind == 'ruby'
     uses: ./.github/workflows/release-build-ruby-gem.yml
-    secrets: {}
     permissions:
       contents: read
     with:
@@ -3041,12 +1470,9 @@ jobs:
       project: ${{ needs.resolve.outputs.project }}
       package_dir: ${{ needs.resolve.outputs.package_dir }}
       version: ${{ needs.resolve.outputs.version }}
-      package_name: ${{ needs.prepare-release-plan.outputs.expected_ruby_package_name }}
-      package_version: ${{ needs.prepare-release-plan.outputs.expected_ruby_package_version }}
-      # Derived from package metadata by release-resolve.yml; packages without a Ruby pin fall back to the repo default.
-      ruby_version: ${{ needs.resolve.outputs.ruby_version }}
+      # Hardcoded: uses: with: does not support env context; keep in sync with env.RUBY_VERSION
+      ruby_version: '3.3'
       artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
-      expected_gem_filename: ${{ needs.prepare-release-plan.outputs.expected_ruby_gem_filename }}
 
   # NOTE: publish-ruby-gpr-enabled and publish-ruby-rubygems are intentionally independent.
   # Unlike the Node path (where GPR is held until npmjs environment approval to enforce atomic
@@ -3063,54 +1489,26 @@ jobs:
     timeout-minutes: 30
     needs:
       - resolve
-      - prepare-release-plan
       - build-ruby
       - attest-ruby
-      - ensure-tag
-    # NOTE: This job uses always() because ensure-tag is skipped for registry-only
-    # plans with no GitHub Release node. Keep the explicit build, attestation, and
-    # conditional tag checks below so skipped or failed prerequisites cannot prompt
-    # package publication.
-    if: ${{ always() && needs.resolve.outputs.project_kind == 'ruby' && inputs.publish_ruby_gpr && needs.prepare-release-plan.outputs.has_active_ruby_gpr == 'true' && needs.build-ruby.result == 'success' && needs.attest-ruby.result == 'success' && (needs.prepare-release-plan.outputs.has_active_github_release != 'true' || needs.ensure-tag.result == 'success') }}
+    # NOTE: This job intentionally does not use always(). If attest-ruby fails, GitHub Actions
+    # skips this job automatically via the needs: mechanism before the if: is evaluated.
+    # The explicit needs.attest-ruby.result == 'success' check is defensive redundancy.
+    # WARNING: If you ever add always() to this job, you MUST keep
+    # needs.attest-ruby.result == 'success' in the if: condition (and ensure attest-ruby itself
+    # does NOT use always()). Removing that check while adding always() here would allow a spurious
+    # publish attempt when build or attestation fails.
+    if: needs.resolve.outputs.project_kind == 'ruby' && inputs.publish_ruby_gpr && needs.attest-ruby.result == 'success'
     permissions:
       contents: read
       actions: read
       packages: write
     steps:
-      - name: Fail buddy rerun attempts
-        shell: bash
-        env:
-          CHANNEL: ${{ inputs.channel }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: |
-          set -Eeuo pipefail
-          if [[ "${CHANNEL}" == "buddy" && "${RUN_ATTEMPT}" != "1" ]]; then
-            echo "buddy release side-effect jobs are single-attempt only; rerun attempts must fail closed before mutation." >&2
-            exit 1
-          fi
-
-      - name: Checkout (trusted workflow scripts)
+      - name: Checkout (workflow scripts)
         uses: actions/checkout@v7
         with:
           fetch-depth: 1
-          persist-credentials: false
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-        with:
-          version: '0.10.9'
-
-      - name: Download release plan artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: ${{ needs.prepare-release-plan.outputs.plan_artifact_name }}
-          path: .three-workflow-release/plan
-
-      - name: Download execution sets artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: ${{ needs.prepare-release-plan.outputs.execution_sets_artifact_name }}
-          path: .three-workflow-release/execution-sets
+          ref: ${{ needs.resolve.outputs.target }}
 
       - name: Download dist artifact
         uses: actions/download-artifact@v8
@@ -3121,73 +1519,19 @@ jobs:
       - name: Setup Ruby
         uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
         with:
-          ruby-version: ${{ needs.resolve.outputs.ruby_version }}
+          ruby-version: ${{ env.RUBY_VERSION }}
 
       - name: Publish to GitHub Packages (idempotent)
         shell: bash
         env:
           PROJECT: ${{ needs.resolve.outputs.project }}
           VERSION: ${{ needs.resolve.outputs.version }}
-          PACKAGE_NAME: ${{ needs.prepare-release-plan.outputs.expected_ruby_package_name }}
-          PACKAGE_VERSION: ${{ needs.prepare-release-plan.outputs.expected_ruby_package_version }}
           OWNER: ${{ github.repository_owner }}
-          RUBY_GPR_USER: ${{ github.actor }}
           RUBY_GPR_TOKEN: ${{ github.token }}
-          EXPECTED_GEM_FILENAME: ${{ needs.prepare-release-plan.outputs.expected_ruby_gem_filename }}
         run: |
           set -Eeuo pipefail
 
           bash "${GITHUB_WORKSPACE}/eng/scripts/publish_ruby_gpr_idempotent.sh"
-
-      - name: Materialize Ruby GPR publish receipt
-        id: publish_result
-        shell: bash
-        env:
-          RUN_ID: ${{ github.run_id }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-          HEAD_SHA: ${{ needs.resolve.outputs.target }}
-        run: |
-          set -Eeuo pipefail
-          uv run python eng/scripts/workflow_release_control.py package-publish-result \
-            --plan .three-workflow-release/plan/release-plan.json \
-            --execution-sets .three-workflow-release/execution-sets/execution-sets.json \
-            --target-key ruby-gpr \
-            --run-id "${RUN_ID}" \
-            --attempt "${RUN_ATTEMPT}" \
-            --repository "${GITHUB_REPOSITORY}" \
-            --workflow release-orchestrate.yml \
-            --head-sha "${HEAD_SHA}" \
-            --environment github-packages \
-            --publish-script eng/scripts/publish_ruby_gpr_idempotent.sh \
-            --out-dir .three-workflow-release/publish-result/ruby-gpr \
-            --github-output "${GITHUB_OUTPUT}"
-
-      - name: Compute Ruby GPR publish receipt artifact name
-        id: publish_result_artifact
-        shell: bash
-        env:
-          PLAN_ID: ${{ steps.publish_result.outputs.plan_id }}
-          PUBLISH_NODE_ID: ${{ steps.publish_result.outputs.publish_node_id }}
-          RUN_ID: ${{ github.run_id }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: |
-          set -Eeuo pipefail
-          uv run python eng/scripts/workflow_release_control.py artifact-name \
-            --kind publish-result \
-            --run-id "${RUN_ID}" \
-            --attempt "${RUN_ATTEMPT}" \
-            --plan-id "${PLAN_ID}" \
-            --publish-node-id "${PUBLISH_NODE_ID}" \
-            --github-output "${GITHUB_OUTPUT}" \
-            --output-name artifact_name
-
-      - name: Upload Ruby GPR publish receipt
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ steps.publish_result_artifact.outputs.artifact_name }}
-          path: ${{ steps.publish_result.outputs.publish_result_path }}
-          if-no-files-found: error
-          retention-days: 30
 
   publish-ruby-gpr:
     name: Publish Ruby gem (GitHub Packages) [gate]
@@ -3195,18 +1539,14 @@ jobs:
     timeout-minutes: 30
     needs:
       - resolve
-      - prepare-release-plan
       - publish-ruby-gpr-enabled
-    # Run this gate for every downstream Ruby GitHub Release path that lists
-    # publish-ruby-gpr in needs:. Unselected Ruby GPR is a successful no-op;
-    # active Ruby GPR still requires publish-ruby-gpr-enabled to succeed.
-    if: ${{ always() && needs.resolve.outputs.project_kind == 'ruby' && (needs.prepare-release-plan.outputs.has_selected_ruby_gpr == 'true' || needs.prepare-release-plan.outputs.has_active_github_release == 'true') }}
+    if: ${{ always() && needs.resolve.outputs.project_kind == 'ruby' }}
     permissions:
       contents: read
       actions: read
     steps:
       - name: Ruby GPR publishing disabled
-        if: ${{ needs.prepare-release-plan.outputs.has_active_ruby_gpr != 'true' }}
+        if: ${{ !inputs.publish_ruby_gpr }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -3214,7 +1554,7 @@ jobs:
           echo "### GPR publish: :no_entry_sign: disabled" >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Ensure enabled publish job succeeded
-        if: ${{ needs.prepare-release-plan.outputs.has_active_ruby_gpr == 'true' && needs.publish-ruby-gpr-enabled.result != 'success' && needs.publish-ruby-gpr-enabled.result != 'skipped' }}
+        if: ${{ inputs.publish_ruby_gpr && needs.publish-ruby-gpr-enabled.result != 'success' && needs.publish-ruby-gpr-enabled.result != 'skipped' }}
         shell: bash
         env:
           ENABLED_JOB_RESULT: ${{ needs.publish-ruby-gpr-enabled.result }}
@@ -3224,7 +1564,7 @@ jobs:
           exit 1
 
       - name: Ruby GPR publish skipped (upstream did not run)
-        if: ${{ needs.prepare-release-plan.outputs.has_active_ruby_gpr == 'true' && needs.publish-ruby-gpr-enabled.result == 'skipped' }}
+        if: ${{ inputs.publish_ruby_gpr && needs.publish-ruby-gpr-enabled.result == 'skipped' }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -3233,7 +1573,7 @@ jobs:
           exit 1
 
       - name: Ruby GPR publish completed
-        if: ${{ needs.prepare-release-plan.outputs.has_active_ruby_gpr == 'true' && needs.publish-ruby-gpr-enabled.result == 'success' }}
+        if: ${{ inputs.publish_ruby_gpr && needs.publish-ruby-gpr-enabled.result == 'success' }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -3241,10 +1581,12 @@ jobs:
           echo "### GPR publish: :white_check_mark: completed" >> "${GITHUB_STEP_SUMMARY}"
 
   # NOTE: publish-ruby-rubygems uses an inline attestation guard in its if: condition
-  # (rather than routing through a separate publish gate). It still uses always()
-  # because ensure-tag is skipped for registry-only plans with no GitHub Release node.
-  # Keep the explicit build, attestation, and conditional tag checks below so skipped
-  # or failed prerequisites cannot prompt package publication.
+  # (rather than routing through the attest-ruby gate job result). This is intentional:
+  # publish-ruby-rubygems is the terminal stage of the Ruby release path and no downstream
+  # job unconditionally depends on it — so the gate-pattern's always() wrapper is not needed.
+  # The attest-ruby gate job result IS already checked via needs: (it is in the needs: list),
+  # providing the same safety guarantee as the explicit result check in the if: condition.
+  # Do not refactor this to the gate pattern; it would add unnecessary job complexity.
   #
   # NOTE: publish-ruby-rubygems intentionally does NOT depend on publish-ruby-gpr.
   # GPR (GitHub Packages) and RubyGems.org serve distinct audiences (internal/external);
@@ -3256,14 +1598,13 @@ jobs:
   publish-ruby-rubygems:
     name: Publish Ruby gem (RubyGems.org)
     runs-on: ubuntu-latest
-    timeout-minutes: 1440 # environment approval gate: allow up to 24h for reviewer action
+    timeout-minutes: 1440  # environment approval gate: allow up to 24h for reviewer action
     needs:
       - resolve
-      - prepare-release-plan
-      - build-ruby
+      - build-ruby    # cascade-skip safety: if build-ruby fails, this job is skipped before if: is evaluated.
+                      # Do NOT add always() here without also adding an explicit build-ruby result check to the if: condition.
       - attest-ruby
-      - ensure-tag
-    if: ${{ always() && needs.resolve.outputs.project_kind == 'ruby' && inputs.publish_ruby_rubygems && needs.prepare-release-plan.outputs.has_active_ruby_rubygems == 'true' && needs.build-ruby.result == 'success' && (needs.prepare-release-plan.outputs.has_active_github_release != 'true' || needs.ensure-tag.result == 'success') && (!inputs.enable_attestation || needs.attest-ruby.result == 'success') }}
+    if: needs.resolve.outputs.project_kind == 'ruby' && inputs.publish_ruby_rubygems && (!inputs.enable_attestation || needs.attest-ruby.result == 'success')
     # SECURITY: This environment MUST have required reviewers configured in repository settings.
     # Without reviewers, any workflow in this repository calling with channel: official can publish to RubyGems.org via OIDC.
     # SECURITY: The Trusted Publisher registration on RubyGems.org MUST set the optional Environment field to 'rubygems'.
@@ -3275,45 +1616,16 @@ jobs:
       actions: read
       id-token: write
     steps:
-      - name: Fail buddy rerun attempts
-        shell: bash
-        env:
-          CHANNEL: ${{ inputs.channel }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: |
-          set -Eeuo pipefail
-          if [[ "${CHANNEL}" == "buddy" && "${RUN_ATTEMPT}" != "1" ]]; then
-            echo "buddy release side-effect jobs are single-attempt only; rerun attempts must fail closed before mutation." >&2
-            exit 1
-          fi
-
       - name: Install jq
         uses: dcarbone/install-jq-action@4fcb5062d7ce9bc4382d1a352d19ba3ba2c317c1 # v4.0.1
         with:
           version: '1.7.1'
 
-      - name: Checkout (trusted workflow scripts)
+      - name: Checkout (workflow scripts)
         uses: actions/checkout@v7
         with:
           fetch-depth: 1
-          persist-credentials: false
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-        with:
-          version: '0.10.9'
-
-      - name: Download release plan artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: ${{ needs.prepare-release-plan.outputs.plan_artifact_name }}
-          path: .three-workflow-release/plan
-
-      - name: Download execution sets artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: ${{ needs.prepare-release-plan.outputs.execution_sets_artifact_name }}
-          path: .three-workflow-release/execution-sets
+          ref: ${{ needs.resolve.outputs.target }}
 
       - name: Download dist artifact
         uses: actions/download-artifact@v8
@@ -3324,7 +1636,7 @@ jobs:
       - name: Setup Ruby
         uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
         with:
-          ruby-version: ${{ needs.resolve.outputs.ruby_version }}
+          ruby-version: ${{ env.RUBY_VERSION }}
 
       - name: Configure RubyGems Trusted Publishing credentials
         uses: rubygems/configure-rubygems-credentials@dc5a8d8553e6ee01fc26761a49e99e733d17954a # v2.1.0
@@ -3336,63 +1648,10 @@ jobs:
         env:
           PROJECT: ${{ needs.resolve.outputs.project }}
           VERSION: ${{ needs.resolve.outputs.version }}
-          PACKAGE_NAME: ${{ needs.prepare-release-plan.outputs.expected_ruby_package_name }}
-          PACKAGE_VERSION: ${{ needs.prepare-release-plan.outputs.expected_ruby_package_version }}
-          EXPECTED_GEM_FILENAME: ${{ needs.prepare-release-plan.outputs.expected_ruby_gem_filename }}
         run: |
           set -Eeuo pipefail
 
           bash "${GITHUB_WORKSPACE}/eng/scripts/publish_rubygems_org_idempotent.sh"
-
-      - name: Materialize RubyGems.org publish receipt
-        id: publish_result
-        shell: bash
-        env:
-          RUN_ID: ${{ github.run_id }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-          HEAD_SHA: ${{ needs.resolve.outputs.target }}
-        run: |
-          set -Eeuo pipefail
-          uv run python eng/scripts/workflow_release_control.py package-publish-result \
-            --plan .three-workflow-release/plan/release-plan.json \
-            --execution-sets .three-workflow-release/execution-sets/execution-sets.json \
-            --target-key ruby-rubygems \
-            --run-id "${RUN_ID}" \
-            --attempt "${RUN_ATTEMPT}" \
-            --repository "${GITHUB_REPOSITORY}" \
-            --workflow release-orchestrate.yml \
-            --head-sha "${HEAD_SHA}" \
-            --environment rubygems \
-            --publish-script eng/scripts/publish_rubygems_org_idempotent.sh \
-            --out-dir .three-workflow-release/publish-result/ruby-rubygems \
-            --github-output "${GITHUB_OUTPUT}"
-
-      - name: Compute RubyGems.org publish receipt artifact name
-        id: publish_result_artifact
-        shell: bash
-        env:
-          PLAN_ID: ${{ steps.publish_result.outputs.plan_id }}
-          PUBLISH_NODE_ID: ${{ steps.publish_result.outputs.publish_node_id }}
-          RUN_ID: ${{ github.run_id }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: |
-          set -Eeuo pipefail
-          uv run python eng/scripts/workflow_release_control.py artifact-name \
-            --kind publish-result \
-            --run-id "${RUN_ID}" \
-            --attempt "${RUN_ATTEMPT}" \
-            --plan-id "${PLAN_ID}" \
-            --publish-node-id "${PUBLISH_NODE_ID}" \
-            --github-output "${GITHUB_OUTPUT}" \
-            --output-name artifact_name
-
-      - name: Upload RubyGems.org publish receipt
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ steps.publish_result_artifact.outputs.artifact_name }}
-          path: ${{ steps.publish_result.outputs.publish_result_path }}
-          if-no-files-found: error
-          retention-days: 30
 
   attest-ruby-enabled:
     name: Attest release assets (Ruby)
@@ -3400,27 +1659,14 @@ jobs:
     timeout-minutes: 30
     needs:
       - resolve
-      - prepare-release-plan
       - build-ruby
-    if: needs.resolve.outputs.project_kind == 'ruby' && needs.prepare-release-plan.outputs.has_active_variants == 'true' && inputs.enable_attestation
+    if: needs.resolve.outputs.project_kind == 'ruby' && inputs.enable_attestation
     permissions:
       contents: read
       actions: read
       id-token: write
       attestations: write
     steps:
-      - name: Fail buddy rerun attempts
-        shell: bash
-        env:
-          CHANNEL: ${{ inputs.channel }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: |
-          set -Eeuo pipefail
-          if [[ "${CHANNEL}" == "buddy" && "${RUN_ATTEMPT}" != "1" ]]; then
-            echo "buddy release side-effect jobs are single-attempt only; rerun attempts must fail closed before mutation." >&2
-            exit 1
-          fi
-
       - name: Download dist artifact
         uses: actions/download-artifact@v8
         with:
@@ -3438,10 +1684,9 @@ jobs:
     timeout-minutes: 30
     needs:
       - resolve
-      - prepare-release-plan
       - build-ruby
       - attest-ruby-enabled
-    if: ${{ always() && needs.resolve.outputs.project_kind == 'ruby' && needs.prepare-release-plan.outputs.has_active_variants == 'true' }}
+    if: ${{ always() && needs.resolve.outputs.project_kind == 'ruby' }}
     permissions:
       contents: read
       actions: read
@@ -3482,37 +1727,22 @@ jobs:
     name: Create GitHub release (Ruby, with RubyGems)
     needs:
       - resolve
-      - resolve-hub-context
-      - prepare-release-plan
       - prepare-release-notes
       - build-ruby
       - publish-ruby-gpr
       - publish-ruby-rubygems
       - attest-ruby
-      - ensure-tag
-    if: needs.resolve.outputs.project_kind == 'ruby' && needs.prepare-release-plan.outputs.has_active_github_release == 'true' && inputs.publish_ruby_rubygems && needs.prepare-release-plan.outputs.has_active_ruby_rubygems == 'true'
+    if: needs.resolve.outputs.project_kind == 'ruby' && inputs.publish_ruby_rubygems
     permissions:
       contents: write
       actions: read
-      attestations: read
     uses: ./.github/workflows/release-create-github-release.yml
-    secrets: {}
     with:
       tag_name: ${{ needs.resolve.outputs.tag_name }}
       target: ${{ needs.resolve.outputs.target }}
       release_title: ${{ needs.resolve.outputs.release_title }}
       prerelease: ${{ inputs.github_release_prerelease }}
-      publish_mode: ${{ needs.prepare-release-plan.outputs.active_github_release_publish_mode }}
-      asset_labels_json: ${{ needs.prepare-release-plan.outputs.active_github_release_asset_labels_json }}
-      asset_names_json: ${{ needs.prepare-release-plan.outputs.active_github_release_asset_names_json }}
-      plan_artifact_name: ${{ needs.prepare-release-plan.outputs.plan_artifact_name }}
-      execution_sets_artifact_name: ${{ needs.prepare-release-plan.outputs.execution_sets_artifact_name }}
-      active_github_release_node_ids_json: ${{ needs.prepare-release-plan.outputs.active_github_release_node_ids }}
-      force_update_tag: ${{ inputs.channel == 'official' && needs.resolve.outputs.force_update_tag == 'true' }}
-      channel: ${{ inputs.channel }}
-      planner_profile: ${{ needs.resolve-hub-context.outputs.planner_profile }}
-      attestation_source_sha: ${{ github.sha }}
-      enable_attestation: ${{ inputs.enable_attestation }}
+      force_update_tag: ${{ needs.resolve.outputs.force_update_tag == 'true' }}
       notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
       dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
 
@@ -3520,36 +1750,144 @@ jobs:
     name: Create GitHub release (Ruby, no RubyGems)
     needs:
       - resolve
-      - resolve-hub-context
-      - prepare-release-plan
       - prepare-release-notes
       - build-ruby
       - publish-ruby-gpr
       - attest-ruby
-      - ensure-tag
-    if: needs.resolve.outputs.project_kind == 'ruby' && needs.prepare-release-plan.outputs.has_active_github_release == 'true' && (!inputs.publish_ruby_rubygems || needs.prepare-release-plan.outputs.has_active_ruby_rubygems != 'true')
+    if: needs.resolve.outputs.project_kind == 'ruby' && !inputs.publish_ruby_rubygems
     permissions:
       contents: write
       actions: read
-      attestations: read
     uses: ./.github/workflows/release-create-github-release.yml
-    secrets: {}
     with:
       tag_name: ${{ needs.resolve.outputs.tag_name }}
       target: ${{ needs.resolve.outputs.target }}
       release_title: ${{ needs.resolve.outputs.release_title }}
       prerelease: ${{ inputs.github_release_prerelease }}
-      publish_mode: ${{ needs.prepare-release-plan.outputs.active_github_release_publish_mode }}
-      asset_labels_json: ${{ needs.prepare-release-plan.outputs.active_github_release_asset_labels_json }}
-      asset_names_json: ${{ needs.prepare-release-plan.outputs.active_github_release_asset_names_json }}
-      plan_artifact_name: ${{ needs.prepare-release-plan.outputs.plan_artifact_name }}
-      execution_sets_artifact_name: ${{ needs.prepare-release-plan.outputs.execution_sets_artifact_name }}
-      active_github_release_node_ids_json: ${{ needs.prepare-release-plan.outputs.active_github_release_node_ids }}
-      force_update_tag: ${{ inputs.channel == 'official' && needs.resolve.outputs.force_update_tag == 'true' }}
-      channel: ${{ inputs.channel }}
-      planner_profile: ${{ needs.resolve-hub-context.outputs.planner_profile }}
-      attestation_source_sha: ${{ github.sha }}
-      enable_attestation: ${{ inputs.enable_attestation }}
+      force_update_tag: ${{ needs.resolve.outputs.force_update_tag == 'true' }}
+      notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
+      dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+
+  # ===========================================================================
+  # SECTION: WXT (Node Extension) Release Pipeline
+  # WXT projects are distributed as browser extension archives, not npm packages;
+  # all publish_node_* flags are intentionally ignored for WXT projects.
+  #
+  # TECH DEBT: WXT is currently identified by the combination of
+  #   project_kind == 'node' && is_wxt == 'true'
+  # If more Node-based framework variants emerge (e.g., Electron apps, VS Code
+  # extensions), this boolean-flag pattern should be refactored into a single
+  # project_variant enum output from release-resolve.yml (e.g., 'node-npm',
+  # 'node-wxt', 'node-electron') to avoid multiplying conditional branches.
+  # TODO: Open a GitHub issue for the project_variant enum refactor and reference it here
+  #       before adding a second Node-based framework variant (Electron, VS Code Extension, etc.).
+  #       Each new variant currently adds ~6 conditional branches across this file.
+  #       (hcoona/three: open issue under label 'tech-debt' / 'ci' and replace this comment with TODO(#<issue>).)
+  # ===========================================================================
+  build-wxt:
+    name: Build package (Node/WXT)
+    needs:
+      - resolve
+      - policy-publish-targets
+      - guard-prerelease-only
+      - guard-non-clobber
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt == 'true'
+    uses: ./.github/workflows/release-build-wxt.yml
+    permissions:
+      contents: read
+    with:
+      target: ${{ needs.resolve.outputs.target }}
+      project: ${{ needs.resolve.outputs.project }}
+      package_dir: ${{ needs.resolve.outputs.package_dir }}
+      version: ${{ needs.resolve.outputs.version }}
+      # Hardcoded: uses: with: does not support env context; keep in sync with env.NODE_VERSION, env.PNPM_VERSION
+      node_version: '24'
+      pnpm_version: '10.34.1'
+      artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+
+  attest-wxt-enabled:
+    name: Attest release assets (WXT)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs:
+      - resolve
+      - build-wxt
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt == 'true' && inputs.enable_attestation
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download dist artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
+          path: ${{ github.workspace }}/out
+
+      - name: Attest build provenance (GitHub)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ github.workspace }}/out/*
+
+  attest-wxt:
+    name: Attestation gate (WXT)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs:
+      - resolve
+      - build-wxt
+      - attest-wxt-enabled
+    if: ${{ always() && needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt == 'true' }}
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Verify attestation outcome
+        if: inputs.enable_attestation
+        shell: bash
+        env:
+          BUILD_RESULT: ${{ needs.build-wxt.result }}
+          RESULT: ${{ needs.attest-wxt-enabled.result }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "${BUILD_RESULT}" != "success" ]]; then
+            echo "Skipping attestation gate: build-wxt did not succeed (result=${BUILD_RESULT})."
+            echo "### Attestation: :white_circle: skipped (build did not succeed)" >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+          if [[ "${RESULT}" != "success" ]]; then
+            echo "Attestation job did not succeed (result=${RESULT})." >&2
+            exit 1
+          fi
+          echo "### Attestation: :white_check_mark: passed" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Attestation disabled
+        if: ${{ !inputs.enable_attestation }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "Attestation is disabled for this channel."
+          echo "### Attestation: :no_entry_sign: disabled" >> "${GITHUB_STEP_SUMMARY}"
+
+  release-wxt:
+    name: Create GitHub release (Node/WXT)
+    needs:
+      - resolve
+      - prepare-release-notes
+      - build-wxt
+      - attest-wxt
+    if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt == 'true'
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/release-create-github-release.yml
+    with:
+      tag_name: ${{ needs.resolve.outputs.tag_name }}
+      target: ${{ needs.resolve.outputs.target }}
+      release_title: ${{ needs.resolve.outputs.release_title }}
+      prerelease: ${{ inputs.github_release_prerelease }}
+      force_update_tag: ${{ needs.resolve.outputs.force_update_tag == 'true' }}
       notes_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-release-notes
       dist_artifact_name: ${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist
 
@@ -3567,11 +1905,11 @@ jobs:
   # following sync points. Missing any one causes misconfiguration, policy bypass, or
   # incorrect release status reporting.
   #
-  # WARNING: ALL active Official/custom steps below are mandatory. B2 preserves
-  # the historical Buddy policy-domain assertion matrix as regression evidence;
-  # channel=buddy has no active caller route after commit 11. There is no CI
-  # enforcement that all steps are completed; the checklist is the sole
-  # safeguard for any future separately approved topology that reuses this logic.
+  # WARNING: ALL steps below are MANDATORY. Skipping any step — in particular B2 (buddy
+  # channel policy assertions) — causes a SILENT policy bypass: the new language's flags
+  # will not be enforced for the buddy channel, so a misconfigured caller workflow will
+  # pass policy validation undetected. There is no CI enforcement that all steps are
+  # completed; the checklist is the sole safeguard.
   #
   # Across files:
   #   A. release-orchestrate.yml inputs block — add publish_<lang>_<registry> and any
@@ -3591,14 +1929,16 @@ jobs:
   #      "<lang>_version" call to the verification script step
   #   E. (SYNC above) Define new pipeline jobs here in release-orchestrate.yml
   #   F. official.yml — pass new inputs with their official-channel values
+  #   G. buddy.yml — pass new inputs with their buddy-channel values
   #
-  # Steps A, C, E, F are MANUAL-ONLY (no CI enforcement). Steps B2 and D have
+  # Steps A, C, E, F, G are MANUAL-ONLY (no CI enforcement). Steps B2 and D have
   # automated guards; omitting those steps causes CI to fail at the next run.
   # Step E's sub-task of adding release-* names to release-completed's needs: is
   # CI-enforced by the "Verify release-completed covers all release-* jobs" lint step;
   # writing the actual job definitions is still manual.
-  # Legacy Buddy entry workflows are retired; do not add a replacement
-  # caller-compatibility route when adding new publish flags.
+  # WARNING: Step G (buddy.yml) is the highest-risk manual step. The buddy channel
+  # defaults all publish flags to false, so omitting step G causes a silent failure:
+  # the workflow succeeds but skips publishing the new target without any error.
   #
   # Within this job (one internal sync point):
   #   1. needs: — add the new release job name(s) here
@@ -3610,276 +1950,38 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     if: always()
-    # SYNC[add-new-language] — add new release job name(s), terminal publish job/gate(s),
-    # and attest-<lang> gate to needs below.
+    # SYNC[add-new-language] — add new release job name(s) and attest-<lang> gate to needs below.
     # release-* jobs: [CI-ENFORCED] by "Verify release-completed covers all release-* jobs" lint step.
-    # terminal publish jobs/gates and attest-<lang> gates: MANUAL — add them here;
-    # they are not auto-detected by the lint step.
-    # resolve/prepare-release-plan: required for selected target SHA and plan-phase reporting.
-    # resolve-hub-context: required for report profile resolution and sentinel failure propagation.
+    # attest-<lang> gates: MANUAL — add them here; they are not auto-detected by the lint step.
     needs:
-      - build-python
-      - build-wxt
-      - pack-node
-      - build-dotnet
-      - build-ruby
-      - resolve
-      - prepare-release-plan
-      - ensure-tag
-      - skip-results
-      - publish-python
-      - publish-node-gpr
-      - publish-node-npmjs
-      - publish-ruby-gpr
-      - publish-ruby-rubygems
       - release-python-with-pypi
       - release-python-no-pypi
-      - release-wxt
       - release-node-with-npmjs
       - release-node-no-npmjs
-      - release-dotnet
       - release-ruby-with-rubygems
       - release-ruby-no-rubygems
+      - release-wxt
       - attest-python
-      - attest-wxt
       - attest-node
-      - attest-dotnet
       - attest-ruby
-      - resolve-hub-context
+      - attest-wxt
     permissions:
       contents: read
-      actions: read
     steps:
       - name: Checkout (release sentinel scripts)
         uses: actions/checkout@v7
         with:
           fetch-depth: 1
-          persist-credentials: false
 
       - name: Install jq
         uses: dcarbone/install-jq-action@4fcb5062d7ce9bc4382d1a352d19ba3ba2c317c1 # v4.0.1
         with:
           version: '1.7.1'
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-        with:
-          version: '0.10.9'
-
-      - name: Download release artifacts
-        uses: actions/download-artifact@v8
-        continue-on-error: true
-        with:
-          pattern: release-*
-          path: .three-workflow-release/artifacts
-
       - name: Check release outcomes
-        id: release_completed_check
-        continue-on-error: true
         shell: bash
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
-          ARTIFACTS_ROOT: .three-workflow-release/artifacts
-          RUN_ID: ${{ github.run_id }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-          PUBLISH_PYTHON_PYPI: ${{ inputs.publish_python_pypi }}
-          PUBLISH_NODE_GPR: ${{ inputs.publish_node_gpr }}
-          PUBLISH_NODE_NPMJS: ${{ inputs.publish_node_npmjs }}
-          PUBLISH_RUBY_GPR: ${{ inputs.publish_ruby_gpr }}
-          PUBLISH_RUBY_RUBYGEMS: ${{ inputs.publish_ruby_rubygems }}
         run: |
           set -Eeuo pipefail
           bash "${GITHUB_WORKSPACE}/eng/scripts/release_orchestrate_release_completed_check.sh"
-
-      - name: Generate release report
-        if: ${{ always() }}
-        shell: bash
-        env:
-          ARTIFACTS_ROOT: .three-workflow-release/artifacts
-          AUTHORIZE_CONCLUSION: skipped
-          VALIDATE_CONCLUSION: skipped
-          METADATA_CONCLUSION: skipped
-          PLAN_CONCLUSION: ${{ needs.prepare-release-plan.result }}
-          BUILD_PYTHON_RESULT: ${{ needs.build-python.result }}
-          BUILD_WXT_RESULT: ${{ needs.build-wxt.result }}
-          PACK_NODE_RESULT: ${{ needs.pack-node.result }}
-          BUILD_DOTNET_RESULT: ${{ needs.build-dotnet.result }}
-          BUILD_RUBY_RESULT: ${{ needs.build-ruby.result }}
-          TAG_CONCLUSION: ${{ needs.ensure-tag.result }}
-          PUBLISH_PYTHON_RESULT: ${{ needs.publish-python.result }}
-          PUBLISH_NODE_GPR_RESULT: ${{ needs.publish-node-gpr.result }}
-          PUBLISH_NODE_NPMJS_RESULT: ${{ needs.publish-node-npmjs.result }}
-          PUBLISH_RUBY_GPR_RESULT: ${{ needs.publish-ruby-gpr.result }}
-          PUBLISH_RUBY_RUBYGEMS_RESULT: ${{ needs.publish-ruby-rubygems.result }}
-          RELEASE_PYTHON_WITH_PYPI_RESULT: ${{ needs.release-python-with-pypi.result }}
-          RELEASE_PYTHON_NO_PYPI_RESULT: ${{ needs.release-python-no-pypi.result }}
-          RELEASE_WXT_RESULT: ${{ needs.release-wxt.result }}
-          RELEASE_NODE_WITH_NPMJS_RESULT: ${{ needs.release-node-with-npmjs.result }}
-          RELEASE_NODE_NO_NPMJS_RESULT: ${{ needs.release-node-no-npmjs.result }}
-          RELEASE_DOTNET_RESULT: ${{ needs.release-dotnet.result }}
-          RELEASE_RUBY_WITH_RUBYGEMS_RESULT: ${{ needs.release-ruby-with-rubygems.result }}
-          RELEASE_RUBY_NO_RUBYGEMS_RESULT: ${{ needs.release-ruby-no-rubygems.result }}
-          REPORT_PATH: .three-workflow-release/release-report.json
-          REPOSITORY: ${{ github.repository }}
-          WORKFLOW: release-orchestrate.yml
-          RUN_ID: ${{ github.run_id }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-          HEAD_SHA: ${{ needs.resolve.outputs.target || github.sha }}
-          PUBLISH_PYTHON_PYPI: ${{ inputs.publish_python_pypi }}
-          PUBLISH_NODE_GPR: ${{ inputs.publish_node_gpr }}
-          PUBLISH_NODE_NPMJS: ${{ inputs.publish_node_npmjs }}
-          PUBLISH_RUBY_GPR: ${{ inputs.publish_ruby_gpr }}
-          PUBLISH_RUBY_RUBYGEMS: ${{ inputs.publish_ruby_rubygems }}
-          PLAN_ARTIFACT_NAME: ${{ needs.prepare-release-plan.outputs.plan_artifact_name }}
-          EXECUTION_SETS_ARTIFACT_NAME: ${{ needs.prepare-release-plan.outputs.execution_sets_artifact_name }}
-          ENTRY_PUBLISH_HANDOFF_ARTIFACT_NAME: ${{ needs.prepare-release-plan.outputs.entry_publish_handoff_artifact_name }}
-          PROFILE: ${{ needs.resolve-hub-context.outputs.channel_profile || (inputs.channel == 'official' && 'official' || inputs.channel == 'buddy' && 'buddy' || 'custom') }}
-          DRY_RUN: 'false'
-          VALIDATION_BUILD: 'false'
-          CANARY_OVERRIDE_NON_PUBLIC_REF: 'false'
-          RELEASE_COMPLETED_CHECK_CONCLUSION: ${{ steps.release_completed_check.outcome }}
-        run: |
-          set -Eeuo pipefail
-
-          combine_phase_conclusion() {
-            local conclusion=skipped
-            local result
-            for result in "$@"; do
-              case "${result}" in
-                failure)
-                  echo failure
-                  return 0
-                  ;;
-                cancelled)
-                  if [[ "${conclusion}" == "skipped" ]]; then
-                    conclusion=cancelled
-                  fi
-                  ;;
-                success)
-                  if [[ "${conclusion}" == "skipped" ]]; then
-                    conclusion=success
-                  fi
-                  ;;
-              esac
-            done
-            echo "${conclusion}"
-          }
-
-          resolve_named_artifact_dir() {
-            local artifact_name="$1"
-            local label="$2"
-            if [[ -z "${artifact_name}" ]]; then
-              echo ""
-              return 0
-            fi
-            if [[ "${artifact_name}" == "." || "${artifact_name}" == ".." || "${artifact_name}" == */* ]]; then
-              echo "Expected exact ${label} artifact name, got '${artifact_name}'." >&2
-              exit 1
-            fi
-            local artifact_dir="${ARTIFACTS_ROOT}/${artifact_name}"
-            if [[ -d "${artifact_dir}" ]]; then
-              printf '%s\n' "${artifact_dir}"
-            else
-              echo ""
-            fi
-          }
-
-          plan_artifact_dir="$(resolve_named_artifact_dir "$PLAN_ARTIFACT_NAME" "release-plan")"
-          execution_sets_artifact_dir="$(resolve_named_artifact_dir "$EXECUTION_SETS_ARTIFACT_NAME" "execution-sets")"
-          entry_publish_handoff_artifact_dir="$(resolve_named_artifact_dir "$ENTRY_PUBLISH_HANDOFF_ARTIFACT_NAME" "entry-publish-handoff")"
-          plan_path=""
-          execution_sets_path=""
-          entry_publish_handoff_path=""
-          [[ -n "${plan_artifact_dir}" ]] && plan_path="${plan_artifact_dir}/release-plan.json"
-          [[ -n "${execution_sets_artifact_dir}" ]] && execution_sets_path="${execution_sets_artifact_dir}/execution-sets.json"
-          [[ -n "${entry_publish_handoff_artifact_dir}" ]] && entry_publish_handoff_path="${entry_publish_handoff_artifact_dir}/entry-publish-handoff.json"
-          diagnostics_path="${ARTIFACTS_ROOT}/release-planner-diagnostics-v1-${RUN_ID}-${RUN_ATTEMPT}/planner-diagnostics.json"
-          [[ -f "${plan_path}" ]] || plan_path=""
-          [[ -f "${execution_sets_path}" ]] || execution_sets_path=""
-          [[ -f "${entry_publish_handoff_path}" ]] || entry_publish_handoff_path=""
-          if [[ "${PLAN_CONCLUSION}" == "success" ]]; then
-            if [[ -z "${plan_path}" ]]; then
-              echo "prepare-release-plan succeeded but the exact release-plan artifact payload is missing." >&2
-              exit 1
-            fi
-            if [[ -z "${execution_sets_path}" ]]; then
-              echo "prepare-release-plan succeeded but the exact execution-sets artifact payload is missing." >&2
-              exit 1
-            fi
-            if [[ -z "${entry_publish_handoff_path}" ]]; then
-              echo "prepare-release-plan succeeded but the exact entry-publish-handoff artifact payload is missing." >&2
-              exit 1
-            fi
-          fi
-          [[ -f "${diagnostics_path}" ]] || diagnostics_path=""
-          build_conclusion="$(combine_phase_conclusion \
-            "${BUILD_PYTHON_RESULT}" \
-            "${BUILD_WXT_RESULT}" \
-            "${PACK_NODE_RESULT}" \
-            "${BUILD_DOTNET_RESULT}" \
-            "${BUILD_RUBY_RESULT}")"
-          publish_conclusion="$(combine_phase_conclusion \
-            "${PUBLISH_PYTHON_RESULT}" \
-            "${PUBLISH_NODE_GPR_RESULT}" \
-            "${PUBLISH_NODE_NPMJS_RESULT}" \
-            "${PUBLISH_RUBY_GPR_RESULT}" \
-            "${PUBLISH_RUBY_RUBYGEMS_RESULT}" \
-            "${RELEASE_PYTHON_WITH_PYPI_RESULT}" \
-            "${RELEASE_PYTHON_NO_PYPI_RESULT}" \
-            "${RELEASE_WXT_RESULT}" \
-            "${RELEASE_NODE_WITH_NPMJS_RESULT}" \
-            "${RELEASE_NODE_NO_NPMJS_RESULT}" \
-            "${RELEASE_DOTNET_RESULT}" \
-            "${RELEASE_RUBY_WITH_RUBYGEMS_RESULT}" \
-            "${RELEASE_RUBY_NO_RUBYGEMS_RESULT}")"
-          disabled_package_target_keys=()
-          [[ "${PUBLISH_PYTHON_PYPI}" == "true" ]] || disabled_package_target_keys+=("python-pypi")
-          [[ "${PUBLISH_NODE_GPR}" == "true" ]] || disabled_package_target_keys+=("node-gpr")
-          [[ "${PUBLISH_NODE_NPMJS}" == "true" ]] || disabled_package_target_keys+=("node-npmjs")
-          [[ "${PUBLISH_RUBY_GPR}" == "true" ]] || disabled_package_target_keys+=("ruby-gpr")
-          [[ "${PUBLISH_RUBY_RUBYGEMS}" == "true" ]] || disabled_package_target_keys+=("ruby-rubygems")
-          disabled_package_target_keys_csv="$(IFS=,; printf '%s' "${disabled_package_target_keys[*]}")"
-
-          uv run python eng/scripts/workflow_release_control.py report \
-            --repository "$REPOSITORY" \
-            --workflow "$WORKFLOW" \
-            --run-id "$RUN_ID" \
-            --attempt "$RUN_ATTEMPT" \
-            --head-sha "$HEAD_SHA" \
-            --profile "$PROFILE" \
-            --dry-run "$DRY_RUN" \
-            --validation-build "$VALIDATION_BUILD" \
-            --canary-override-non-public-ref "$CANARY_OVERRIDE_NON_PUBLIC_REF" \
-            --out "$REPORT_PATH" \
-            --plan "$plan_path" \
-            --execution-sets "$execution_sets_path" \
-            --plan-artifact-name "$PLAN_ARTIFACT_NAME" \
-            --execution-sets-artifact-name "$EXECUTION_SETS_ARTIFACT_NAME" \
-            --entry-publish-handoff-artifact-name "$ENTRY_PUBLISH_HANDOFF_ARTIFACT_NAME" \
-            --diagnostics "$diagnostics_path" \
-            --artifacts-root "$ARTIFACTS_ROOT" \
-            --authorize-conclusion "$AUTHORIZE_CONCLUSION" \
-            --validate-conclusion "$VALIDATE_CONCLUSION" \
-            --metadata-conclusion "$METADATA_CONCLUSION" \
-            --plan-conclusion "$PLAN_CONCLUSION" \
-            --build-conclusion "$build_conclusion" \
-            --tag-conclusion "$TAG_CONCLUSION" \
-            --release-completed-check-conclusion "$RELEASE_COMPLETED_CHECK_CONCLUSION" \
-            --disabled-package-target-keys "$disabled_package_target_keys_csv" \
-            --publish-conclusion "$publish_conclusion"
-
-      - name: Upload release report
-        uses: actions/upload-artifact@v7
-        with:
-          name: release-report-v1-${{ github.run_id }}-${{ github.run_attempt }}
-          path: .three-workflow-release/release-report.json
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Surface release-completed failures
-        if: ${{ always() && steps.release_completed_check.outcome != 'success' }}
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          exit 1

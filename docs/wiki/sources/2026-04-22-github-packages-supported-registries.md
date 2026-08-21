@@ -34,8 +34,8 @@ release requirements discussion.
 
 ## Related Pages
 
-- [Workflow Release Requirements Baseline](../analyses/workflow-release-requirements-baseline.md)
-- [Workflow Release Requirements Interview](./2026-04-21-workflow-release-requirements-interview.md)
+- [Workflow Delivery v3 Requirements](../analyses/workflow-delivery/v3/requirements.md)
+- [Workflow Delivery v3 Release Delivery MLD](../analyses/workflow-delivery/v3/release-delivery-mld.md)
 
 ## Source Location
 

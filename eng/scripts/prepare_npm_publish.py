@@ -3,18 +3,15 @@
 # dependencies = []
 # ///
 
-"""Prepare or restore a Node package name for publishing.
+"""Prepare or restore a Node package name for GitHub Packages publishing.
 
-This script can stamp the exact planner-authorized package name or optionally
-add a scope for GitHub Packages publishing, then restore the original name
-after packing.
+GitHub Packages npm registry requires a scoped package name. This script can
+optionally add a scope for publishing, and restore the original name after.
 """
 
 from __future__ import annotations
 
 import argparse
-import base64
-import binascii
 import json
 import sys
 from pathlib import Path
@@ -59,21 +56,12 @@ def write_outputs(output_path: Path, values: dict[str, str]) -> None:
 
 
 def prepare(
-    package_dir: Path,
-    scope: str,
-    package_name: str,
-    output: Path | None,
-    state: Path,
+    package_dir: Path, scope: str, output: Path | None, state: Path
 ) -> None:
-    """Prepare a package by stamping the publish name when needed."""
+    """Prepare a package for publishing by applying an npm scope when needed."""
     package_json = package_dir / "package.json"
     if not package_json.exists():
         sys.exit(f"Missing package.json at {package_json}")
-
-    try:
-        original_package_json = package_json.read_bytes()
-    except OSError as exc:
-        sys.exit(f"Failed to read {package_json}: {exc}")
 
     data = read_package_json(package_json)
     name = data.get("name")
@@ -81,26 +69,18 @@ def prepare(
         sys.exit("package.json name must be a non-empty string")
 
     original_name = name
-    publish_name = package_name.strip() if package_name else original_name
+    publish_name = original_name
     changed = False
 
-    if package_name and not publish_name:
-        sys.exit("Package name is empty after trimming")
-
-    if not package_name and not original_name.startswith("@"):
+    if not original_name.startswith("@"):
         normalized_scope = normalize_scope(scope)
         publish_name = f"@{normalized_scope}/{original_name}"
-
-    if original_name != publish_name:
         data["name"] = publish_name
         changed = True
         write_package_json(package_json, data)
 
     state_payload = {
         "original_name": original_name,
-        "original_package_json_b64": base64.b64encode(
-            original_package_json
-        ).decode("ascii"),
         "publish_name": publish_name,
         "changed": changed,
     }
@@ -125,7 +105,7 @@ def prepare(
             f"{publish_name}"
         )
     else:
-        print(f"Package name already matches publish name: {publish_name}")
+        print(f"Package name already scoped: {publish_name}")
 
 
 def restore(package_dir: Path, state: Path) -> None:
@@ -135,7 +115,6 @@ def restore(package_dir: Path, state: Path) -> None:
 
     payload = read_package_json(state)
     original_name = payload.get("original_name")
-    original_package_json_b64 = payload.get("original_package_json_b64")
     publish_name = payload.get("publish_name")
     changed = payload.get("changed")
 
@@ -149,21 +128,13 @@ def restore(package_dir: Path, state: Path) -> None:
         print("No package name change to restore")
         return
 
-    if not isinstance(original_package_json_b64, str):
-        sys.exit("Invalid original_package_json_b64 in state file")
-
-    try:
-        original_package_json = base64.b64decode(
-            original_package_json_b64, validate=True
-        )
-    except (ValueError, binascii.Error) as exc:
-        sys.exit(f"Invalid original_package_json_b64 in state file: {exc}")
-
     package_json = package_dir / "package.json"
     if not package_json.exists():
         sys.exit(f"Missing package.json at {package_json}")
 
-    package_json.write_bytes(original_package_json)
+    data = read_package_json(package_json)
+    data["name"] = original_name
+    write_package_json(package_json, data)
     print(f"Restored package name: {publish_name} -> {original_name}")
 
 
@@ -171,7 +142,7 @@ def main() -> None:
     """CLI entry point."""
     parser = argparse.ArgumentParser(
         description=(
-            "Prepare or restore a Node package name for release packing and "
+            "Prepare or restore a Node package name for GitHub Packages "
             "publishing."
         )
     )
@@ -184,12 +155,7 @@ def main() -> None:
     parser.add_argument(
         "--scope",
         default="",
-        help="Scope to apply when preparing for GitHub Packages (without @)",
-    )
-    parser.add_argument(
-        "--package-name",
-        default="",
-        help="Exact planner-authorized package name to stamp before packing",
+        help="Scope to apply when preparing (without @)",
     )
     parser.add_argument(
         "--output",
@@ -217,13 +183,10 @@ def main() -> None:
         restore(package_dir, state_file)
         return
 
-    if args.package_name and args.scope:
-        sys.exit("--package-name and --scope are mutually exclusive")
+    if not args.scope:
+        sys.exit("--scope is required when preparing")
 
-    if not args.package_name and not args.scope:
-        sys.exit("--package-name or --scope is required when preparing")
-
-    prepare(package_dir, args.scope, args.package_name, args.output, state_file)
+    prepare(package_dir, args.scope, args.output, state_file)
 
 
 if __name__ == "__main__":

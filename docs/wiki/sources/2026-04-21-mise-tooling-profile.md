@@ -20,7 +20,6 @@ monorepo.
 
 ## Related Pages
 
-- [Repository Release Landscape](../analyses/repository-release-landscape.md)
 - [HK Hook Profiles](./2026-04-21-hk-hook-profiles.md)
 
 ## Open Questions

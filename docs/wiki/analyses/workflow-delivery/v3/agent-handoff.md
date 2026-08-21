@@ -12,6 +12,14 @@ If it conflicts with the
 
 ## Current Checkpoint
 
+- Phase 1 clean-scope repair restores production `ci.yml` byte-for-byte from
+  base `7f8f41c2` and restores the v1 Official and reusable non-Buddy release
+  stack from that base, with only the explicit
+  fail-closed Buddy-channel rejection in the orchestrator. The inherited
+  pre-v3 control plane, obsolete smoke projects, legacy descriptors, related
+  tests and fixtures, and old design-history pages are removed. UV, PNPM, and
+  Mise locks are regenerated for the retained v3/first-slice scope. This is not
+  RC-001 final validation evidence.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the
@@ -39,11 +47,13 @@ If it conflicts with the
   canonical failed CI Decision and projects only the enclosing
   non-authoritative pull-request check conclusion when the exact base tree
   lacks the canonical v3 CI workflow. The exception self-disables after merge
-  because later bases contain that workflow. The 14-file committed range from
-  the published baseline through `f0535989` passes the managed gates with
-  3,234 v3 tests and 1,257 workflow-release control tests. All three original
-  policy, CLI, and workflow reviewers report no findings after independent
-  adjudication and repair. The branch backs
+  because later bases contain that workflow. Before Phase 1 scope cleanup, the
+  14-file committed range from the published baseline through `f0535989`
+  passed the managed gates with 3,234 v3 tests and 1,257 workflow-release
+  control tests. The inherited workflow-release suite is not retained, so
+  those counts are historical rather than current repair evidence. All three
+  original policy, CLI, and workflow reviewers report no findings after
+  independent adjudication and repair. The branch backs
   [PR #552](https://github.com/hcoona/three/pull/552), which is open against
   `main`. Documentation closure is committed at `a9e8cbfa`. Non-rewriting
   merge commit `30b793be` then integrates the latest `origin/main` at
@@ -124,9 +134,10 @@ If it conflicts with the
   runner facts remain incomplete, and complete Governance Acceptance Evidence
   rejects zero target and workflow SHAs while incomplete sentinel semantics
   remain available.
-- With `GIT_LFS_SKIP_SMUDGE=1`, the current Workflow Delivery v3 package
-  validation passes 3,234 tests, and the workflow-release control suite passes
-  1,257 tests. The complete workspace gate and authoritative 573-file
+- At the pre-cleanup reviewed head, `GIT_LFS_SKIP_SMUDGE=1` Workflow Delivery
+  v3 package validation passed 3,234 tests and the now-removed workflow-release
+  control suite passed 1,257 tests. The complete workspace gate and
+  authoritative 573-file
   `origin/main..HEAD` gate pass at `4fac140d`; the later 14-file bootstrap
   committed range also passes through `f0535989`. Remote run
   [`32346356010`](https://github.com/hcoona/three/actions/runs/32346356010)
@@ -343,9 +354,10 @@ If it conflicts with the
   Environment branch restrictions, CODEOWNERS, and workflow-execution
   protections are insufficient remediation by themselves. Official and future
   Buddy destinations or production packages do not inherit the exception.
-- The existing v2 `three.release.yml`, workflows, and control types are
-  reference material only. The v3 slice must define its own contracts and must
-  not inherit the v2 profile model.
+- The v2 `three.release.yml` descriptors, workflows, and control projects are
+  not retained in this tree. Their immutable archive commit is mechanism
+  reference material only. The v3 slice defines its own contracts and does not
+  inherit the v2 profile model.
 - The first brief
   [`hcoona-release-smoke-npm` LLD](./hcoona-release-smoke-npm-lld.md)
   was approved for implementation on 2026-08-06. It defines one clean Python v3
@@ -418,7 +430,7 @@ If it conflicts with the
   state blocks; no repository variable, PAT, App, service, ledger, OIDC, or
   additional token permission is added. Permanent root HK policy remains the
   repository-wide dependency gate.
-- Final local v3 validation and independent review are complete through
+- Pre-cleanup local v3 validation and independent review were complete through
   bootstrap implementation commit `f0535989`. The canonical shadow Decision
   remains the expected non-authoritative fail-closed record for the broad
   implementation diff; only the one-time pre-coexistence check conclusion may

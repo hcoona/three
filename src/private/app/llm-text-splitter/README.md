@@ -24,35 +24,34 @@ uv run --package llm-text-splitter streamlit run packages/llm-text-splitter/app2
 
 ## Notes
 
-Are there NLP techniques for splitting input text into natural paragraphs, or
-is NLP unnecessary when splitting on line breaks is sufficient?
+有什么 NLP 的方法可以将输入的文本切分自然段吗，还是说这不需要 NLP，按照换行切分就行？
 
-The input may be either Chinese or English.
+我的输入可能是中文也可能是英文。
 
-The input can have three forms:
-
----
-
-Case 1
-
-Paragraph 1
-
-Paragraph 2
+输入可能有 3 种情况：
 
 ---
 
-Case 2
+情况1
 
-Paragraph 1, line 1
-Paragraph 1, line 2
+段落1
 
-Paragraph 2, line 1
-Paragraph 2, line 2
-Paragraph 2, line 3
+段落2
 
 ---
 
-Case 3
+情况2
 
-Paragraph 1
-Paragraph 2
+段落1内容1
+段落1内容2
+
+段落2内容1
+段落2内容2
+段落2内容3
+
+---
+
+情况 3
+
+段落1
+段落2

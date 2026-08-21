@@ -1,14 +1,13 @@
 # Refactoring Plan for Release Orchestrator
 
-> Status: future refactor guidance. The staged release topology already
-> includes reusable release-build workflows for Python, Node/npm, Node/WXT,
-> Ruby, and .NET, plus a reusable GitHub Release creation workflow. This plan
-> describes the remaining hub-and-spoke extraction work and must not be read as
-> excluding any active or staged release path.
+> **Archived and superseded:** This pre-v3 design is retained only for
+> historical context. The legacy `buddy.yml` and `release-buddy.yml` routes are
+> retired. Do not use this document to recreate either route; current Buddy
+> delivery is owned by Workflow Delivery v3.
 
 ## 1. Background
 
-The current `.github/workflows/release-orchestrate.yml` is a monolithic file handling polyglot release pipelines (Python, Node/npm, Node/WXT, Ruby, .NET, and GitHub Release assets). It has become difficult to maintain due to:
+The current `.github/workflows/release-orchestrate.yml` is a monolithic file handling polyglot release pipelines (Python, Node/WXT, Ruby). It has become difficult to maintain due to:
 
 - **Excessive Line Count:** Combining multiple languages into one workflow.
 - **Job Duplication:** To bypass GitHub Actions' static `needs:` graph limitations, many jobs are duplicated (e.g., `*-with-registry` vs `*-no-registry`, `*-enabled` vs `*`).
@@ -22,7 +21,7 @@ We will adopt a **Hub-and-Spoke model** with **Dynamic Environments**.
 
 - **Responsibilities:** Acts strictly as the dispatcher and policy engine.
 - **Logic:** Handles `resolve`, validates channel policies (`guard`), prepares release notes, and dynamically computes deployment environments.
-- **Routing:** Contains static routing jobs (`if: project_kind == 'python'`, `if: project_kind == 'dotnet'`, etc.) to call language-specific Spoke workflows.
+- **Routing:** Contains static routing jobs (`if: language == 'python'`) to call language-specific Spoke workflows.
 - **Finalizer:** Centralizes the final GitHub Release creation by aggregating artifacts from Spokes.
 
 ### 2.2 The Spokes (`release-orchestrate-<lang>.yml`)
@@ -136,7 +135,7 @@ We will execute this refactoring iteratively across 8 steps to minimize risk:
 > - [ ] Verify both environments have required-reviewer rules configured.
 > - [ ] Confirm `release-resolve.yml`'s `project_kind` output values are a strict subset of
 >       the variants handled in `resolve-hub-context`'s `project_variant` mapping
->       (`python` | `node` | `ruby` | `dotnet`). Any new language added to `release-resolve.yml` MUST
+>       (`python` | `node` | `ruby`). Any new language added to `release-resolve.yml` MUST
 >       be added to the variant mapping in `resolve-hub-context` in the same PR, or the
 >       release workflow will fail the `resolve-hub-context` job on every run.
 >       Note: `project_kind='node'` maps to **two** variants (`node-npm` when `is_wxt!=true`,
@@ -176,11 +175,10 @@ We will execute this refactoring iteratively across 8 steps to minimize risk:
   The routing `if:` expressions should read:
   - Python: `if: needs.resolve.outputs.project_kind == 'python'`
   - Ruby: `if: needs.resolve.outputs.project_kind == 'ruby'`
-  - .NET: `if: needs.resolve.outputs.project_kind == 'dotnet'`
   - Node/npm: `if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt != 'true'`
   - Node/WXT: `if: needs.resolve.outputs.project_kind == 'node' && needs.resolve.outputs.is_wxt == 'true'`
 
-  Note: Node projects split into two distinct spokes based on `is_wxt`. Do NOT route all `project_kind == 'node'` projects to a single spoke — WXT and npm have separate build and publish pipelines. .NET is an active first-delivery release path in `release-resolve.yml` and `resolve-hub-context`; it currently routes to GitHub Release assets with NuGet publication deferred. The `is_wxt` output from `release-resolve.yml` MUST always be an explicit `'true'` or `'false'` string for every `project_kind == 'node'` run; if `is_wxt` is ever absent or empty, `!= 'true'` will match it and silently route a WXT project to the node-npm spoke.
+  Note: Node projects split into two distinct spokes based on `is_wxt`. Do NOT route all `project_kind == 'node'` projects to a single spoke — WXT and npm have separate build and publish pipelines. The `is_wxt` output from `release-resolve.yml` MUST always be an explicit `'true'` or `'false'` string for every `project_kind == 'node'` run; if `is_wxt` is ever absent or empty, `!= 'true'` will match it and silently route a WXT project to the node-npm spoke.
 - **`prepare-release-notes` dependency:** Routing jobs that pass release-notes artifacts to a
   spoke MUST add `prepare-release-notes` to their own `needs:` directly (it is absent from
   `resolve-hub-context/needs:`; see `SYNC[routing-jobs]` comment at the job definition).

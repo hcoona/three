@@ -25,7 +25,7 @@ fi
 # NOTE: If publish_node_gpr or publish_ruby_gpr is true, the caller workflow
 # MUST grant packages: write to the orchestrate job (workflow_call does not inherit
 # permissions automatically). A missing permission causes a silent API failure at
-# runtime, not a policy error. The active official.yml caller is expected to
+# runtime, not a policy error. Both official.yml and buddy.yml are expected to
 # include packages: write. Verify any new caller workflow does the same.
 if [[ "${PUBLISH_NODE_GPR}" == "true" || "${PUBLISH_RUBY_GPR}" == "true" ]]; then
   echo "ℹ️ GPR publishing is enabled (publish_node_gpr=${PUBLISH_NODE_GPR}, publish_ruby_gpr=${PUBLISH_RUBY_GPR}). Ensure the caller workflow grants \`packages: write\`." >>"${GITHUB_STEP_SUMMARY:-/dev/null}" || true
@@ -49,35 +49,11 @@ assert_disabled() {
   fi
 }
 
-require_registry_target_or_release_only_path() {
-  local language_name="$1"
-  local registry_label="$2"
-  local gpr_flag_name="$3"
-  local gpr_flag_value="$4"
-  local public_registry_flag_name="$5"
-  local public_registry_flag_value="$6"
-
-  if [[ "${gpr_flag_value}" == "true" || "${public_registry_flag_value}" == "true" ]]; then
-    return 0
-  fi
-
-  if [[ "${CHANNEL}" == "official" || "${CHANNEL}" == "buddy" ]]; then
-    echo "${language_name} project '${PROJECT}' requires at least one ${registry_label} publish target for built-in channel '${CHANNEL}' (${gpr_flag_name}/${public_registry_flag_name}). Got: ${gpr_flag_name}=${gpr_flag_value}, ${public_registry_flag_name}=${public_registry_flag_value}." >&2
+if [[ "${PROJECT_KIND}" == "node" && "${IS_WXT:-}" != "true" ]]; then
+  if [[ "${PUBLISH_NODE_GPR}" != "true" && "${PUBLISH_NODE_NPMJS}" != "true" ]]; then
+    echo "Node project '${PROJECT}' requires at least one Node publish target (GPR/npmjs). Got: publish_node_gpr=${PUBLISH_NODE_GPR}, publish_node_npmjs=${PUBLISH_NODE_NPMJS}." >&2
     exit 1
   fi
-
-  local release_only_message
-  release_only_message="${language_name} project '${PROJECT}' has no ${registry_label} registry publish targets enabled for custom channel '${CHANNEL}'. This is allowed only for descriptor-valid GitHub Release delivery; descriptor authoring and prepare-release-plan remain the fail-closed gates for zero-target or package-only/no-GitHub-Release profiles."
-  echo "${release_only_message}"
-  {
-    echo ""
-    echo "> [!NOTE]"
-    echo "> ${release_only_message}"
-  } >>"${GITHUB_STEP_SUMMARY:-/dev/null}" || true
-}
-
-if [[ "${PROJECT_KIND}" == "node" && "${IS_WXT:-}" != "true" ]]; then
-  require_registry_target_or_release_only_path "Node" "Node" "publish_node_gpr" "${PUBLISH_NODE_GPR}" "publish_node_npmjs" "${PUBLISH_NODE_NPMJS}"
   assert_disabled "publish_python_pypi" "${PUBLISH_PYTHON_PYPI}"
   assert_disabled "publish_ruby_gpr" "${PUBLISH_RUBY_GPR}"
   assert_disabled "publish_ruby_rubygems" "${PUBLISH_RUBY_RUBYGEMS}"
@@ -86,7 +62,10 @@ if [[ "${PROJECT_KIND}" == "node" && "${IS_WXT:-}" != "true" ]]; then
 fi
 
 if [[ "${PROJECT_KIND}" == "ruby" ]]; then
-  require_registry_target_or_release_only_path "Ruby" "Ruby" "publish_ruby_gpr" "${PUBLISH_RUBY_GPR}" "publish_ruby_rubygems" "${PUBLISH_RUBY_RUBYGEMS}"
+  if [[ "${PUBLISH_RUBY_GPR}" != "true" && "${PUBLISH_RUBY_RUBYGEMS}" != "true" ]]; then
+    echo "Ruby project '${PROJECT}' requires at least one Ruby publish target (GPR/RubyGems). Got: publish_ruby_gpr=${PUBLISH_RUBY_GPR}, publish_ruby_rubygems=${PUBLISH_RUBY_RUBYGEMS}." >&2
+    exit 1
+  fi
   assert_disabled "publish_python_pypi" "${PUBLISH_PYTHON_PYPI}"
   assert_disabled "publish_node_gpr" "${PUBLISH_NODE_GPR}"
   assert_disabled "publish_node_npmjs" "${PUBLISH_NODE_NPMJS}"
@@ -103,16 +82,6 @@ if [[ "${PROJECT_KIND}" == "python" ]]; then
   assert_disabled "publish_ruby_gpr" "${PUBLISH_RUBY_GPR}"
   assert_disabled "publish_ruby_rubygems" "${PUBLISH_RUBY_RUBYGEMS}"
   echo "Python publish-target policy passed for '${PROJECT}'."
-  exit 0
-fi
-
-if [[ "${PROJECT_KIND}" == "dotnet" ]]; then
-  assert_disabled "publish_python_pypi" "${PUBLISH_PYTHON_PYPI}"
-  assert_disabled "publish_node_gpr" "${PUBLISH_NODE_GPR}"
-  assert_disabled "publish_node_npmjs" "${PUBLISH_NODE_NPMJS}"
-  assert_disabled "publish_ruby_gpr" "${PUBLISH_RUBY_GPR}"
-  assert_disabled "publish_ruby_rubygems" "${PUBLISH_RUBY_RUBYGEMS}"
-  echo ".NET project '${PROJECT}' uses GitHub Release artifacts only; NuGet registry publishing is deferred."
   exit 0
 fi
 

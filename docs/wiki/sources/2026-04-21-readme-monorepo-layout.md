@@ -21,7 +21,6 @@ the canonical `src/` and `tests/` layout used for active projects.
 
 ## Related Pages
 
-- [Repository Release Landscape](../analyses/repository-release-landscape.md)
 - [Root Python Workspace](./2026-04-21-root-pyproject-python-workspace.md)
 - [Root pnpm Workspace](./2026-04-21-root-package-json-pnpm-workspace.md)
 

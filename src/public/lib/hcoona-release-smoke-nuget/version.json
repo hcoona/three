@@ -1,9 +1,0 @@
-{
-  "$schema": "https://raw.githubusercontent.com/dotnet/Nerdbank.GitVersioning/main/src/NerdBank.GitVersioning/version.schema.json",
-  "version": "1.0.0-beta.{height}",
-  "pathFilters": ["."],
-  "gitCommitIdShortFixedLength": 7,
-  "gitCommitIdShortAutoMinimum": 7,
-  "publicReleaseRefSpec": ["^refs/heads/main$", "^refs/tags/release/hcoona-release-smoke-nuget/v.+$"],
-  "inherit": false
-}

@@ -4,43 +4,28 @@ on:
   workflow_call:
     inputs:
       target:
-        description: 'Target commit SHA to build from'
+        description: "Target commit SHA to build from"
         required: true
         type: string
       project:
-        description: 'Gem name (must match <project>.gemspec filename)'
+        description: "Gem name (must match <project>.gemspec filename)"
         required: true
         type: string
       package_dir:
-        description: 'Directory containing the Ruby gem project'
+        description: "Directory containing the Ruby gem project"
         required: true
         type: string
       version:
-        description: 'Expected gem version'
+        description: "Expected gem version"
         required: true
         type: string
-      package_name:
-        description: 'Planner-frozen Ruby package name; defaults to project for compatibility'
-        required: false
-        default: ''
-        type: string
-      package_version:
-        description: 'Planner-frozen Ruby package version; defaults to version for compatibility'
-        required: false
-        default: ''
-        type: string
       ruby_version:
-        description: 'Ruby version'
+        description: "Ruby version"
         required: true
         type: string
       artifact_name:
-        description: 'Artifact name to upload out/* as'
+        description: "Artifact name to upload out/* as"
         required: true
-        type: string
-      expected_gem_filename:
-        description: 'Planner-frozen Ruby gem basename; empty when no RubyGems registry target is active'
-        required: false
-        default: ''
         type: string
 
 jobs:
@@ -56,7 +41,6 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ inputs.target }}
-          persist-credentials: false
 
       - name: Install system dependencies
         shell: bash
@@ -72,17 +56,6 @@ jobs:
             poppler-utils \
             imagemagick \
             ghostscript
-
-      - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v6
-        with:
-          global-json-file: global.json
-
-      - name: Restore .NET tools
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          dotnet tool restore
 
       - name: Setup Ruby (Bundler)
         if: ${{ hashFiles(format('{0}/Gemfile', inputs.package_dir)) != '' }}
@@ -110,11 +83,9 @@ jobs:
       - name: Skip Bundler checks (no Gemfile)
         if: ${{ hashFiles(format('{0}/Gemfile', inputs.package_dir)) == '' }}
         shell: bash
-        env:
-          PACKAGE_DIR: ${{ inputs.package_dir }}
         run: |
           set -Eeuo pipefail
-          echo "No Gemfile found in '${PACKAGE_DIR}'; skipping Bundler-based quality checks (standardrb/rspec)."
+          echo "No Gemfile found in '${{ inputs.package_dir }}'; skipping Bundler-based quality checks (standardrb/rspec)."
 
       - name: Build gem
         shell: bash
@@ -122,9 +93,6 @@ jobs:
         env:
           PROJECT: ${{ inputs.project }}
           VERSION: ${{ inputs.version }}
-          PACKAGE_NAME: ${{ inputs.package_name }}
-          PACKAGE_VERSION: ${{ inputs.package_version }}
-          EXPECTED_GEM_FILENAME: ${{ inputs.expected_gem_filename }}
         run: |
           set -Eeuo pipefail
 
@@ -136,14 +104,7 @@ jobs:
           SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
           export SOURCE_DATE_EPOCH
 
-          expected_package_name="${PACKAGE_NAME:-${PROJECT}}"
-          expected_package_version="${PACKAGE_VERSION:-${VERSION}}"
-          expected_gem_filename="${EXPECTED_GEM_FILENAME:-${expected_package_name}-${expected_package_version}.gem}"
-          if [[ "${expected_gem_filename}" != *.gem || "${expected_gem_filename}" == */* || "${expected_gem_filename}" == *\\* ]]; then
-            echo "Invalid expected gem filename: ${expected_gem_filename}" >&2
-            exit 1
-          fi
-          out_gem="${GITHUB_WORKSPACE}/out/${expected_gem_filename}"
+          out_gem="${GITHUB_WORKSPACE}/out/${PROJECT}-${VERSION}.gem"
 
           if [[ ! -f "${PROJECT}.gemspec" ]]; then
             echo "Missing gemspec: ${PROJECT}.gemspec" >&2
@@ -176,101 +137,33 @@ jobs:
         env:
           PROJECT: ${{ inputs.project }}
           VERSION: ${{ inputs.version }}
-          PACKAGE_NAME: ${{ inputs.package_name }}
-          PACKAGE_VERSION: ${{ inputs.package_version }}
-          EXPECTED_GEM_FILENAME: ${{ inputs.expected_gem_filename }}
         run: |
           set -Eeuo pipefail
 
-          expected_package_name="${PACKAGE_NAME:-${PROJECT}}"
-          expected_package_version="${PACKAGE_VERSION:-${VERSION}}"
-          expected_gem_filename="${EXPECTED_GEM_FILENAME:-${expected_package_name}-${expected_package_version}.gem}"
-          if [[ "${expected_gem_filename}" != *.gem || "${expected_gem_filename}" == */* || "${expected_gem_filename}" == *\\* ]]; then
-            echo "Invalid expected gem filename: ${expected_gem_filename}" >&2
-            exit 1
-          fi
-
-          gem_path="${GITHUB_WORKSPACE}/out/${expected_gem_filename}"
+          gem_path="${GITHUB_WORKSPACE}/out/${PROJECT}-${VERSION}.gem"
           if [[ ! -f "${gem_path}" ]]; then
             echo "Missing gem artifact: ${gem_path}" >&2
             exit 1
           fi
 
-          actual_basename="$(basename "${gem_path}")"
-          if [[ "${actual_basename}" != "${expected_gem_filename}" ]]; then
-            echo "Gem filename mismatch: expected ${expected_gem_filename}, got ${actual_basename}" >&2
+          spec_name=$(gem specification "${gem_path}" name | head -n1 | tr -d '\r')
+          spec_version=$(gem specification "${gem_path}" version | head -n1 | tr -d '\r')
+
+          if [[ "${spec_name}" != "${PROJECT}" ]]; then
+            echo "Gem name mismatch: expected ${PROJECT}, got ${spec_name}" >&2
             exit 1
           fi
 
-          mapfile -t spec_fields < <(
-            ruby -e '
-              require "rubygems/package"
-              spec = Gem::Package.new(ARGV.fetch(0)).spec
-              puts spec.name
-              puts spec.version.to_s
-            ' "${gem_path}"
-          )
-
-          if [[ "${#spec_fields[@]}" -ne 2 ]]; then
-            echo "Failed to read gem identity from ${gem_path}" >&2
-            exit 1
-          fi
-
-          spec_name="${spec_fields[0]}"
-          spec_version="${spec_fields[1]}"
-
-          if [[ "${spec_name}" != "${expected_package_name}" ]]; then
-            echo "Gem name mismatch: expected ${expected_package_name}, got ${spec_name}" >&2
-            exit 1
-          fi
-
-          if [[ "${spec_version}" != "${expected_package_version}" ]]; then
-            echo "Gem version mismatch: expected ${expected_package_version}, got ${spec_version}" >&2
+          if [[ "${spec_version}" != "${VERSION}" ]]; then
+            echo "Gem version mismatch: expected ${VERSION}, got ${spec_version}" >&2
             exit 1
           fi
 
           echo "Verified gem identity: ${spec_name} ${spec_version}"
-
-      - name: Write release asset receipts
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          mkdir -p "${GITHUB_WORKSPACE}/asset-receipts"
-          python - "${GITHUB_WORKSPACE}/out" "${GITHUB_WORKSPACE}/asset-receipts/release-asset-receipts.json" <<'PY'
-          from __future__ import annotations
-
-          import hashlib
-          import json
-          import sys
-          from pathlib import Path
-
-          out_dir = Path(sys.argv[1])
-          receipt_path = Path(sys.argv[2])
-          receipts = []
-          for path in sorted(out_dir.iterdir(), key=lambda item: item.name):
-              if not path.is_file() or path.name == receipt_path.name:
-                  continue
-              receipts.append(
-                  {
-                      "name": path.name,
-                      "size": path.stat().st_size,
-                      "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-                  }
-              )
-          if not receipts:
-              raise SystemExit("no release assets found for receipt generation")
-          receipt_path.write_text(json.dumps(receipts, sort_keys=True) + "\n", encoding="utf-8")
-          PY
 
       - name: Upload dist artifact
         uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.artifact_name }}
           path: ${{ github.workspace }}/out/*
-          if-no-files-found: error
-      - name: Upload release asset receipts artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ inputs.artifact_name }}-asset-receipts
-          path: ${{ github.workspace }}/asset-receipts/release-asset-receipts.json
           if-no-files-found: error

@@ -32,10 +32,6 @@ mono_crash.*
 !src/public/lib/three-workflow-delivery-v3/tests/release/test_eligibility.py
 !src/public/lib/three-workflow-delivery-v3/tests/fixtures/release/
 !src/public/lib/three-workflow-delivery-v3/tests/fixtures/release/governance-disabled.json
-!eng/release/
-eng/release/*
-!eng/release/buddy-target-refs.yml
-!eng/release/target-instances.yml
 [Rr]eleases/
 x64/
 x86/
@@ -655,7 +651,6 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
-.pytest-workflow-release-control/
 cover/
 
 # Translations
@@ -916,9 +911,6 @@ _version.py
 
 # Exclude Copilot notification state
 /.copilot/notifications/
-
-# Exclude workflow release planner runtime state
-/.copilot/three-workflow-release-planner/
 
 # Qidian novel downloader PoC artifacts
 .browser-profile/

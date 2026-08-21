@@ -22,7 +22,6 @@ by running Inno Setup against the conventional publish directory.
 
 ## Related Pages
 
-- [Repository Release Landscape](../analyses/repository-release-landscape.md)
 - [ImageOcclusionEditor dotnet publish Script](./2026-04-21-image-occlusion-editor-dotnet-publish-script.md)
 
 ## Open Questions

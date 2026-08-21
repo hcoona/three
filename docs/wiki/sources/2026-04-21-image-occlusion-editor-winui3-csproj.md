@@ -20,7 +20,6 @@ RID-specific, self-contained WinUI publishing with AOT enabled.
 
 ## Related Pages
 
-- [Repository Release Landscape](../analyses/repository-release-landscape.md)
 - [ImageOcclusionEditor dotnet publish Script](./2026-04-21-image-occlusion-editor-dotnet-publish-script.md)
 - [ImageOcclusionEditor Inno Installer Script](./2026-04-21-image-occlusion-editor-inno-installer-script.md)
 

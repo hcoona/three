@@ -20,7 +20,6 @@
 
 ## Related Pages
 
-- [Repository Release Landscape](../analyses/repository-release-landscape.md)
 - [mise Tooling Profile](./2026-04-21-mise-tooling-profile.md)
 
 ## Open Questions

@@ -23,7 +23,6 @@ credential setup from its caller.
 
 ## Related Pages
 
-- [Repository Release Landscape](../analyses/repository-release-landscape.md)
 - [Release Publish-Target Policy Script](./2026-04-21-release-policy-publish-targets-script.md)
 
 ## Open Questions

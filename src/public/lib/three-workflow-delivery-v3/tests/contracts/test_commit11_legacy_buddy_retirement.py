@@ -1,9 +1,9 @@
-"""Red-first contracts for logical commit 11 legacy Buddy retirement."""
+"""Contracts for logical commit 11 legacy Buddy retirement."""
 
 from __future__ import annotations
 
-import ast
 import fnmatch
+import hashlib
 import re
 import subprocess
 from pathlib import Path
@@ -21,30 +21,56 @@ LEGACY_ENTRY_PATHS = (
 FORBIDDEN_COMPATIBILITY_BASENAMES = frozenset(
     {"buddy.yml", "release-buddy.yml", "legacy-buddy.yml"}
 )
-ACTIVE_V1_DOCS = (
-    "docs/wiki/analyses/workflow-release-low-level-design.md",
-    "docs/wiki/analyses/workflow-release-operator-rollout.md",
-    "docs/wiki/analyses/workflow-release-oidc-publish-topology.md",
+ARCHIVED_LEGACY_BUDDY_DOCS = (
+    ".github/workflows/REFACTOR_PLAN.md",
+    ".github/workflows/docs/DESIGN.prompt.md",
+    ".github/workflows/docs/DESIGN.v2.md",
     ".github/workflows/docs/MEMORY.md",
-    "src/public/lib/hexo-renderer-asciidoc/README.md",
-    "docs/wiki/analyses/workflow-release-workflow-executor-boundaries.md",
 )
-PRESERVED_OFFICIAL_CI_WORKFLOWS = frozenset(
-    {
-        ".github/workflows/ci.yml",
-        ".github/workflows/official.yml",
-        ".github/workflows/release-official.yml",
-        ".github/workflows/release-orchestrate.yml",
-        ".github/workflows/release-resolve.yml",
-        ".github/workflows/release-create-github-release.yml",
-        ".github/workflows/release-prepare-release-notes.yml",
-    }
+EXACT_BASE_WORKFLOW_SHA256 = {
+    ".github/workflows/ci.yml": (
+        "a0ca041623f8f90771a35c25bc14ceeb25810111c50dfcb17b6e34d988f62fca"
+    ),
+    ".github/workflows/official.yml": (
+        "7d6839921f29e81021c71b0f3866c1099cdae25bcfada06c72281bba295116d4"
+    ),
+    ".github/workflows/release-official.yml": (
+        "3c7b1dbef68e697ede5c4e13d328db26a3d00ab9ceacd819c590f3a334d7113a"
+    ),
+    ".github/workflows/release-resolve.yml": (
+        "2528ca16c71dd92660b2c73634ebc0619dd787f2b345e7d495eab6f9ad318a9b"
+    ),
+    ".github/workflows/release-build-python.yml": (
+        "22f289a96424b1311b7a6eeec1c498059960ac9416ca4d7b8683d36efde50950"
+    ),
+    ".github/workflows/release-build-node-pack.yml": (
+        "49418a5050a418108f5e17d71614ecaa08a6bd104ad6f52c5ca097e0e9e1fad4"
+    ),
+    ".github/workflows/release-build-ruby-gem.yml": (
+        "ff0cb3d2e3cb703662d3bfe70e37aed3936958191711575f0d179f669f2b926b"
+    ),
+    ".github/workflows/release-build-wxt.yml": (
+        "af291036a906e3111af68fb86419dce9c1cbe9e96678c43781896db5544b3dd0"
+    ),
+    ".github/workflows/release-create-github-release.yml": (
+        "023a0d83d2e61a6f73a833c3adc08e884d2451a5d03a58ce26d604e484fe4766"
+    ),
+    ".github/workflows/release-prepare-release-notes.yml": (
+        "0d26587abbb816d0f51b6790919da7d98b5cf34b65b0837c03117e30fe3fab64"
+    ),
+}
+BASE_ORCHESTRATOR_SHA256 = (
+    "05c5cfe0ffeb19fa828c2293ff7aa3461ff42d3644fbaaf24bb6df444c713a38"
 )
-PRESERVED_V2_FILES = frozenset(
-    {
-        ".github/workflows/docs/DESIGN.v2.md",
-        "docs/wiki/analyses/workflow-delivery/v2/README.md",
-    }
+BUDDY_REJECTION_SNIPPET = (
+    '          normalized_channel="${CHANNEL//[[:space:]]/}"\n'
+    '          if [[ "${normalized_channel,,}" == "buddy" ]]; then\n'
+    '            echo "::error::Legacy Buddy entry route is retired; '
+    "channel 'buddy' has no compatibility route. Use the Workflow Delivery "
+    'v3 Buddy workflow."\n'
+    "            exit 1\n"
+    "          fi\n"
+    "\n"
 )
 PRESERVED_V3_BUDDY_WORKFLOW_JOBS = {
     ".github/workflows/workflow-delivery-v3-buddy-smoke.yml": frozenset(
@@ -68,151 +94,38 @@ PRESERVED_V3_BUDDY_WORKFLOW_JOBS = {
         )
     ),
 }
-PRESERVED_DESCRIPTORS = frozenset(
-    {
-        "src/private/app/qidian-novel-downloader/three.release.yml",
-        "src/private/app/vscode-copilot-telegram-hook/three.release.yml",
-        "src/public/app/ImageOcclusionEditor/three.release.yml",
-        "src/public/app/PhiFailureDetector.Console/three.release.yml",
-        "src/public/app/markdown-hybrid-search-mcp/three.release.yml",
-        "src/public/lib/CircularList/three.release.yml",
-        "src/public/lib/Hjg.Pngcs/three.release.yml",
-        "src/public/lib/Memoization.Generators/three.release.yml",
-        "src/public/lib/Memoization/three.release.yml",
-        "src/public/lib/MicrosoftExtensions.Logging.MSTest/three.release.yml",
-        "src/public/lib/MicrosoftExtensions.Logging.Xunit/three.release.yml",
-        "src/public/lib/MicrosoftExtensions.Options.DedupChangeExtensions/three.release.yml",
-        "src/public/lib/PhiFailureDetector/three.release.yml",
-        "src/public/lib/WebHdfs.Extensions.FileProviders/three.release.yml",
-        "src/public/lib/asciidoctor-latexmath/three.release.yml",
-        "src/public/lib/hcoona-release-smoke-dotnet-executable/three.release.yml",
-        "src/public/lib/hcoona-release-smoke-github-packages/three.release.yml",
-        "src/public/lib/hcoona-release-smoke-github-release/three.release.yml",
-        "src/public/lib/hcoona-release-smoke-inno/three.release.yml",
-        "src/public/lib/hcoona-release-smoke-npm-dual/three.release.yml",
-        "src/public/lib/hcoona-release-smoke-npm/three.release.yml",
-        "src/public/lib/hcoona-release-smoke-nuget/three.release.yml",
-        "src/public/lib/hcoona-release-smoke-pypi/three.release.yml",
-        "src/public/lib/hcoona-release-smoke-rubygems/three.release.yml",
-        "src/public/lib/hcoona-release-smoke-wxt/three.release.yml",
-        "src/public/lib/hcoona-release-smoke/three.release.yml",
-        "src/public/lib/hexo-renderer-asciidoc/three.release.yml",
-        "src/public/lib/nbgv-python/three.release.yml",
-        "src/public/lib/steam-account-history-to-csv/three.release.yml",
-    }
+OBSOLETE_PRE_V3_PATHS = (
+    ".github/actionlint.yaml",
+    ".github/workflows/release-build-dotnet.yml",
+    "eng/release",
+    "eng/scripts/verify_python_distribution_exactness.py",
+    "eng/scripts/workflow_release_acceptance_gate.py",
+    "eng/scripts/workflow_release_control.py",
+    "src/public/lib/hcoona-release-smoke",
+    "src/public/lib/hcoona-release-smoke-dotnet-executable",
+    "src/public/lib/hcoona-release-smoke-github-packages",
+    "src/public/lib/hcoona-release-smoke-github-release",
+    "src/public/lib/hcoona-release-smoke-inno",
+    "src/public/lib/hcoona-release-smoke-npm-dual",
+    "src/public/lib/hcoona-release-smoke-nuget",
+    "src/public/lib/hcoona-release-smoke-pypi",
+    "src/public/lib/hcoona-release-smoke-rubygems",
+    "src/public/lib/hcoona-release-smoke-wxt",
+    "src/public/lib/three-workflow-release-authoring",
+    "src/public/lib/three-workflow-release-build",
+    "src/public/lib/three-workflow-release-contracts",
+    "src/public/lib/three-workflow-release-metadata",
+    "src/public/lib/three-workflow-release-planner",
+    "src/public/lib/three-workflow-release-proof",
+    "src/public/lib/three-workflow-release-publish",
+    "tests/fixtures/workflow-release-acceptance-matrix.json",
+    "tests/fixtures/workflow-release-ci-validation-acceptance-matrix.json",
+    "tests/test_workflow_release_control.py",
 )
-REQUIRED_OFFICIAL_TESTS = frozenset(
-    {
-        "test_official_default_rejects_non_public_release_ref",
-        "test_official_tag_push_allows_branch_only_project_spec",
-        "test_official_manual_dispatch_allows_display_name_alias",
-        "test_official_tag_push_rejects_mismatched_project_identity",
-        "test_official_canary_override_allows_allowlisted_project",
-        "test_official_canary_override_rejects_non_allowlisted_project",
-        "test_release_shell_steps_use_env_for_workflow_inputs_and_vars",
-        "test_release_workflows_generate_final_release_reports",
-        "test_ci_release_pipeline_architecture_detects_active_split_topology",
-        "test_ci_acceptance_matrix_fixture_tracks_lld_scenarios",
-        "test_ci_acceptance_matrix_rows_are_actionable",
-    }
-)
-RETIRED_BUDDY_TEST_NAMES = frozenset(
-    {
-        "test_buddy_entry_is_not_restricted_by_public_release_ref",
-        "test_buddy_force_github_release_tag_mismatch_stays_conflicting",
-        "test_ensure_tags_buddy_force_does_not_retarget_existing_active_tag",
-        "test_buddy_github_release_deactivation_blocks_publish_handoff",
-        "test_buddy_target_ref_policy_authorizes_default_branch",
-        "test_buddy_target_ref_policy_rejects_unsafe_refs",
-        "test_buddy_reusable_orchestrate_call_grants_publish_upper_bound",
-        "test_buddy_entry_authorizes_resolved_targets_by_reachability",
-        "test_buddy_workflow_rejects_rerun_attempts_before_authorization",
-        "test_buddy_github_release_without_attestations_fails_before_mutation",
-    }
-)
-RETIRED_MIXED_BUDDY_TEST_NAMES = frozenset(
-    {"test_acceptance_gate_pins_r41_release_completion_and_buddy_regressions"}
-)
-RETIRED_ACCEPTANCE_ROW_IDS = frozenset(
-    {
-        "buddy-to-official-promotion",
-        "buddy-force-rejected-after-official-freeze",
-    }
-)
-REMOVED_LIVE_GATE_IDS = frozenset({"buddy-github-packages-live-publication"})
-RETIRED_MATRIX_ENTRY_ROUTE_TEST_NODEIDS = frozenset(
-    {
-        "tests/test_workflow_release_control.py::"
-        "test_buddy_entry_authorizes_resolved_targets_by_reachability",
-        "tests/test_workflow_release_control.py::"
-        "test_buddy_github_release_without_attestations_fails_before_mutation",
-        "tests/test_workflow_release_control.py::"
-        "test_buddy_target_ref_policy_authorizes_default_branch",
-        "tests/test_workflow_release_control.py::"
-        "test_buddy_target_ref_policy_rejects_unsafe_refs",
-    }
-)
-RETIRED_GATE_ENTRY_ROUTE_TEST_NODEIDS = frozenset(
-    {
-        "tests/test_workflow_release_control.py::"
-        "test_acceptance_gate_pins_r41_release_completion_and_buddy_regressions",
-        "tests/test_workflow_release_control.py::"
-        "test_buddy_entry_is_not_restricted_by_public_release_ref",
-        "tests/test_workflow_release_control.py::"
-        "test_buddy_github_release_deactivation_blocks_publish_handoff",
-    }
-)
-PRESERVED_GENERIC_BUDDY_DOMAIN_TEST_NODEIDS = frozenset(
-    {
-        "src/public/lib/three-workflow-release-planner/tests/test_planner.py::"
-        "test_buddy_smoke_projects_plan_github_packages_publish",
-        "src/public/lib/three-workflow-release-planner/tests/test_planner.py::"
-        "test_buddy_mixed_github_release_fails_closed_when_deactivated",
-        "src/public/lib/three-workflow-release-planner/tests/test_planner.py::"
-        "test_buddy_github_release_only_target_fails_closed_when_deactivated",
-        "src/public/lib/three-workflow-release-planner/tests/test_planner.py::"
-        "test_buddy_force_official_frozen_version_fails_closed",
-        "src/public/lib/three-workflow-release-planner/tests/test_planner.py::"
-        "test_cli_passes_official_frozen_versions",
-    }
-)
-PRESERVED_GATE_TEST_NODEIDS = frozenset(
-    {
-        "tests/test_workflow_release_control.py::"
-        "test_ci_acceptance_matrix_fixture_tracks_lld_scenarios",
-        "tests/test_workflow_release_control.py::"
-        "test_ci_acceptance_matrix_rows_are_actionable",
-        "tests/test_workflow_release_control.py::"
-        "test_ci_release_pipeline_architecture_detects_active_split_topology",
-        "tests/test_workflow_release_control.py::"
-        "test_official_default_rejects_non_public_release_ref",
-        "tests/test_workflow_release_control.py::"
-        "test_official_tag_push_allows_branch_only_project_spec",
-        "tests/test_workflow_release_control.py::"
-        "test_official_manual_dispatch_allows_display_name_alias",
-    }
-)
-PRESERVED_BOOTSTRAP_GOVERNANCE_EXACT_PATHS = frozenset(
-    {
-        ".github/CODEOWNERS",
-        ".github/actionlint.yaml",
-        ".github/workflows/ci.yml",
-        ".github/workflows/release-orchestrate.yml",
-        ".github/workflows/release-resolve.yml",
-        ".github/workflows/release-build-python.yml",
-        ".github/workflows/release-build-node-pack.yml",
-        ".github/workflows/release-build-dotnet.yml",
-        ".github/workflows/release-build-ruby-gem.yml",
-        ".github/workflows/release-build-wxt.yml",
-        ".github/workflows/release-create-github-release.yml",
-        ".github/workflows/release-prepare-release-notes.yml",
-        ".github/workflows/official.yml",
-        ".github/workflows/docs/DESIGN.v2.md",
-        "eng/release/target-instances.yml",
-        "eng/release/buddy-target-refs.yml",
-    }
-)
-FORBIDDEN_ACTIVE_MATRIX_EVIDENCE_PATHS = frozenset(LEGACY_ENTRY_PATHS)
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _workflow_documents(root: Path) -> dict[str, dict[str, Any]]:
@@ -249,13 +162,13 @@ def _is_legacy_buddy_worker(document: dict[str, Any]) -> bool:
         if not isinstance(job, dict):
             continue
         uses = job.get("uses")
-        with_inputs = job.get("with", {})
+        inputs = job.get("with", {})
         if (
             isinstance(uses, str)
             and Path(uses).name
             in {"release-buddy.yml", "release-orchestrate.yml"}
-            and isinstance(with_inputs, dict)
-            and with_inputs.get("channel", "buddy") == "buddy"
+            and isinstance(inputs, dict)
+            and inputs.get("channel", "buddy") == "buddy"
         ):
             return True
     return False
@@ -265,7 +178,7 @@ def _legacy_buddy_routes(root: Path) -> tuple[tuple[str, ...], ...]:
     documents = _workflow_documents(root)
     routes: set[tuple[str, ...]] = set()
     for name, document in documents.items():
-        if Path(name).name in FORBIDDEN_COMPATIBILITY_BASENAMES:
+        if name in FORBIDDEN_COMPATIBILITY_BASENAMES:
             routes.add((name,))
         if "workflow_dispatch" not in _triggers(document):
             continue
@@ -286,62 +199,33 @@ def _legacy_buddy_routes(root: Path) -> tuple[tuple[str, ...], ...]:
     return tuple(sorted(routes))
 
 
-def _write_workflow(root: Path, name: str, document: str) -> None:
+def _write_workflow(root: Path, name: str, content: str) -> None:
     path = root / name
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(document, encoding="utf-8")
+    path.write_text(content, encoding="utf-8")
 
 
-def _test_function_names(path: Path) -> frozenset[str]:
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    return frozenset(
-        node.name
-        for node in ast.walk(tree)
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and node.name.startswith("test_")
-    )
+def _v3_hk_globs() -> tuple[str, ...]:
+    content = (REPO_ROOT / "hk.pkl").read_text(encoding="utf-8")
+    block = content.split(
+        "local workflow_delivery_v3_files =",
+        1,
+    )[1].split("local hcoona_release_smoke_npm_consumer_policy_files =", 1)[0]
+    return tuple(re.findall(r'"([^"]+)"', block))
 
 
-def _test_nodeids(value: object) -> frozenset[str]:
-    nodeids: set[str] = set()
-    if isinstance(value, dict):
-        if value.get("type") == "test" and isinstance(value.get("value"), str):
-            nodeids.add(value["value"])
-        for child in value.values():
-            nodeids.update(_test_nodeids(child))
-    elif isinstance(value, list):
-        for child in value:
-            nodeids.update(_test_nodeids(child))
-    return frozenset(nodeids)
-
-
-def _evidence_path_values(value: object) -> frozenset[str]:
-    paths: set[str] = set()
-    if isinstance(value, dict):
-        if value.get("type") == "path" and isinstance(value.get("value"), str):
-            paths.add(value["value"])
-        for child in value.values():
-            paths.update(_evidence_path_values(child))
-    elif isinstance(value, list):
-        for child in value:
-            paths.update(_evidence_path_values(child))
-    return frozenset(paths)
-
-
-def _ast_tuple_assignment(path: Path, name: str) -> tuple[str, ...]:
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    for node in tree.body:
-        if not isinstance(node, ast.Assign):
-            continue
-        if any(
-            isinstance(target, ast.Name) and target.id == name
-            for target in node.targets
-        ):
-            value = ast.literal_eval(node.value)
-            assert isinstance(value, tuple), name
-            assert all(isinstance(item, str) for item in value), name
-            return value
-    pytest.fail(f"{name} assignment not found in {path}")
+def _hk_selected_paths(
+    changes: tuple[tuple[str, str, str | None], ...],
+) -> tuple[str, ...]:
+    globs = _v3_hk_globs()
+    paths = {
+        path
+        for _kind, new_path, old_path in changes
+        for path in (old_path, new_path)
+        if path is not None
+        and any(fnmatch.fnmatchcase(path, pattern) for pattern in globs)
+    }
+    return tuple(sorted(paths))
 
 
 def _codeowners_rules(content: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
@@ -364,7 +248,8 @@ def _codeowners_pattern_matches(pattern: str, path: str) -> bool:
 
 
 def _final_owners(
-    rules: tuple[tuple[str, tuple[str, ...]], ...], path: str
+    rules: tuple[tuple[str, tuple[str, ...]], ...],
+    path: str,
 ) -> tuple[str, ...]:
     owners: tuple[str, ...] = ()
     for pattern, candidate in rules:
@@ -373,51 +258,23 @@ def _final_owners(
     return owners
 
 
-def _hk_workflow_release_globs() -> tuple[str, ...]:
-    content = (REPO_ROOT / "hk.pkl").read_text(encoding="utf-8")
-    block = content.split("local workflow_release_files =", 1)[1].split(
-        '["workflow-release-control-tests"]', 1
-    )[0]
-    return tuple(re.findall(r'"([^"]+)"', block))
-
-
-def _hk_selected_paths(
-    changes: tuple[tuple[str, str, str | None], ...],
-) -> tuple[str, ...]:
-    globs = _hk_workflow_release_globs()
-    paths = {
-        path
-        for _kind, new_path, old_path in changes
-        for path in (old_path, new_path)
-        if path is not None
-        and any(fnmatch.fnmatchcase(path, pattern) for pattern in globs)
-    }
-    return tuple(sorted(paths))
-
-
 def test_legacy_buddy_entry_files_are_exactly_retired() -> None:
-    """Require only the two named legacy entries to disappear."""
-    assert {
-        path for path in LEGACY_ENTRY_PATHS if (REPO_ROOT / path).exists()
-    } == set()
+    """Require legacy entries and the compatibility alias to be absent."""
+    assert all(not (REPO_ROOT / path).exists() for path in LEGACY_ENTRY_PATHS)
     assert not (WORKFLOWS / "legacy-buddy.yml").exists()
     assert (WORKFLOWS / "official.yml").is_file()
     assert (WORKFLOWS / "ci.yml").is_file()
 
 
 def test_real_workflow_topology_has_no_legacy_buddy_route() -> None:
-    """Traverse the real workflow call topology from dispatch entries."""
-    documents = _workflow_documents(WORKFLOWS)
-
-    assert {"official.yml", "ci.yml"} <= set(documents)
+    """Reject every dispatch-reachable route into the retired Buddy channel."""
     assert _legacy_buddy_routes(WORKFLOWS) == ()
 
 
 @pytest.mark.parametrize(
-    ("name", "documents", "expected"),
+    ("documents", "expected"),
     [
         (
-            "renamed direct route",
             {
                 "compatibility.yml": """
 on: {workflow_dispatch: {}}
@@ -433,25 +290,6 @@ jobs:
             (("compatibility.yml",),),
         ),
         (
-            "renamed direct allowlist route",
-            {
-                "compatibility.yml": """
-on: {workflow_dispatch: {}}
-jobs:
-  publish:
-    uses: ./.github/workflows/release-orchestrate.yml
-    with:
-      channel: buddy
-      channel_allowlist: buddy
-""",
-                "release-orchestrate.yml": (
-                    "on: {workflow_call: {}}\njobs: {}\n"
-                ),
-            },
-            (("compatibility.yml",),),
-        ),
-        (
-            "new indirect route",
             {
                 "relay.yml": """
 on: {workflow_dispatch: {}}
@@ -473,129 +311,63 @@ jobs:
             (("relay.yml", "compat-worker.yml"),),
         ),
         (
-            "forbidden compatibility name",
             {"legacy-buddy.yml": "on: {workflow_dispatch: {}}\njobs: {}\n"},
             (("legacy-buddy.yml",),),
         ),
     ],
 )
-def test_synthetic_renamed_and_new_compatibility_routes_are_rejected(
+def test_renamed_and_indirect_compatibility_routes_are_detected(
     tmp_path: Path,
-    name: str,
     documents: dict[str, str],
     expected: tuple[tuple[str, ...], ...],
 ) -> None:
-    """Prove semantic detection catches renamed and indirect routes."""
+    """Detect direct, indirect, and renamed compatibility routes."""
     for filename, content in documents.items():
         _write_workflow(tmp_path, filename, content)
 
-    assert _legacy_buddy_routes(tmp_path) == expected, name
+    assert _legacy_buddy_routes(tmp_path) == expected
 
 
-def test_buddy_only_acceptance_rows_nodeids_and_live_gates_are_removed() -> (
-    None
-):
-    """Remove legacy Buddy rows without restoring their generic evidence."""
-    matrix_path = (
-        REPO_ROOT / "tests/fixtures/workflow-release-acceptance-matrix.json"
-    )
-    matrix = yaml.safe_load(matrix_path.read_text(encoding="utf-8"))
-    rows = matrix["rows"]
-    live_gates = matrix["live-gates"]
-    active_rows = [
-        row for row in rows if row["id"] not in RETIRED_ACCEPTANCE_ROW_IDS
-    ]
-    active_live_gates = {
-        key: value
-        for key, value in live_gates.items()
-        if key not in REMOVED_LIVE_GATE_IDS
-    }
-
-    assert {row["id"] for row in rows}.isdisjoint(RETIRED_ACCEPTANCE_ROW_IDS)
-    assert set(live_gates).isdisjoint(REMOVED_LIVE_GATE_IDS)
-    matrix_nodeids = _test_nodeids(rows)
-    assert matrix_nodeids.isdisjoint(RETIRED_MATRIX_ENTRY_ROUTE_TEST_NODEIDS)
-    assert matrix_nodeids.isdisjoint(
-        PRESERVED_GENERIC_BUDDY_DOMAIN_TEST_NODEIDS
-    )
-    assert _evidence_path_values(active_rows).isdisjoint(
-        FORBIDDEN_ACTIVE_MATRIX_EVIDENCE_PATHS
-    )
-    assert _evidence_path_values(active_live_gates).isdisjoint(
-        FORBIDDEN_ACTIVE_MATRIX_EVIDENCE_PATHS
-    )
-    assert "official-github-packages-live-publication" not in live_gates
-    dispatch_row = next(
-        row for row in rows if row["id"] == "dispatch-sha-pinning"
-    )
-    assert dispatch_row["scenario"] == "Dispatch SHA pinning"
-    assert "eng/release/buddy-target-refs.yml" not in _evidence_path_values(
-        [dispatch_row]
-    )
-    for row_id in (
-        "node-package-build-and-github-release",
-        "ruby-gem-build-and-github-release",
-    ):
-        row = next(row for row in rows if row["id"] == row_id)
-        assert "official-github-packages-live-publication" not in {
-            reference.get("value")
-            for references in row["evidence"].values()
-            for reference in references
-        }
+def test_production_v1_workflows_match_base_contract() -> None:
+    """Pin base bytes for CI, Official, and reusable non-Buddy workflows."""
+    for relative_path, expected_digest in EXACT_BASE_WORKFLOW_SHA256.items():
+        assert _sha256(REPO_ROOT / relative_path) == expected_digest
 
 
-def test_acceptance_gate_drops_entry_routes_and_retains_domain_nodes() -> None:
-    """Retire legacy routes while preserving generic Buddy domain coverage."""
-    nodeids = frozenset(
-        _ast_tuple_assignment(
-            REPO_ROOT / "eng/scripts/workflow_release_acceptance_gate.py",
-            "MANDATORY_TEST_NODEIDS",
-        )
+def test_orchestrator_diff_is_only_the_buddy_retirement_guard() -> None:
+    """Reconstruct the base orchestrator without the approved guard."""
+    path = WORKFLOWS / "release-orchestrate.yml"
+    current = path.read_bytes()
+    snippet = BUDDY_REJECTION_SNIPPET.encode()
+
+    assert current.count(snippet) == 1
+    reconstructed_base = current.replace(snippet, b"", 1)
+    assert hashlib.sha256(reconstructed_base).hexdigest() == (
+        BASE_ORCHESTRATOR_SHA256
     )
 
-    assert nodeids.isdisjoint(RETIRED_GATE_ENTRY_ROUTE_TEST_NODEIDS)
-    assert nodeids >= PRESERVED_GENERIC_BUDDY_DOMAIN_TEST_NODEIDS
-    assert nodeids >= PRESERVED_GATE_TEST_NODEIDS
 
+def test_release_orchestrator_rejects_buddy_before_v1_policy() -> None:
+    """Fail before unchanged v1 policy logic can admit a Buddy channel."""
+    orchestrator = _workflow_documents(WORKFLOWS)["release-orchestrate.yml"]
+    steps = orchestrator["jobs"]["policy"]["steps"]
+    validation = next(
+        step for step in steps if step["name"] == "Validate inputs"
+    )
+    run = validation["run"]
 
-def test_legacy_v1_buddy_only_and_mixed_test_nodes_are_retired_or_split() -> (
-    None
-):
-    """Retire Buddy tests while retaining named Official and CI evidence."""
-    path = REPO_ROOT / "tests/test_workflow_release_control.py"
-    names = _test_function_names(path)
-
-    assert names.isdisjoint(RETIRED_BUDDY_TEST_NAMES)
-    assert names.isdisjoint(RETIRED_MIXED_BUDDY_TEST_NAMES)
-    assert names >= REQUIRED_OFFICIAL_TESTS
-
-
-@pytest.mark.parametrize("relative_path", ACTIVE_V1_DOCS)
-def test_active_v1_docs_describe_retirement_not_an_active_buddy_route(
-    relative_path: str,
-) -> None:
-    """Allow legacy workflow references only in explicit retirement context."""
-    content = (REPO_ROOT / relative_path).read_text(encoding="utf-8")
-    lowered = content.casefold()
-    retirement_words = ("retired", "removed", "no longer", "legacy")
-    references = []
-    for filename in ("buddy.yml", "release-buddy.yml"):
-        references.extend(
-            match.start() for match in re.finditer(re.escape(filename), lowered)
-        )
-
-    for position in references:
-        context = lowered[max(0, position - 240) : position + 240]
-        assert any(word in context for word in retirement_words), (
-            relative_path,
-            context,
-        )
+    assert "normalized_channel" in run
+    assert '"${normalized_channel,,}" == "buddy"' in run
+    assert "has no compatibility route" in run
+    assert run.index("has no compatibility route") < run.index(
+        "release_orchestrate_policy_validate_inputs.sh"
+    )
 
 
 def test_release_orchestrate_caller_completeness_is_official_only(
     tmp_path: Path,
 ) -> None:
-    """Execute the caller completeness helper without any legacy Buddy file."""
+    """Validate the helper without requiring either retired Buddy caller."""
     workflows = tmp_path / ".github/workflows"
     workflows.mkdir(parents=True)
     _write_workflow(
@@ -639,102 +411,48 @@ jobs:
     )
 
     assert result.returncode == 0, result.stderr
+    assert "official.yml" in result.stdout
+    assert "buddy.yml" not in result.stdout
 
 
-def test_bootstrap_governance_exact_paths_drop_only_legacy_buddy_entries() -> (
-    None
-):
-    """Parse bootstrap paths and preserve non-entry Buddy policy."""
-    paths = frozenset(
-        _ast_tuple_assignment(
-            REPO_ROOT / "eng/scripts/workflow_release_control.py",
-            "_BOOTSTRAP_GOVERNANCE_EXACT_PATHS",
-        )
-    )
+def test_v3_shadow_and_buddy_workflows_remain_dedicated() -> None:
+    """Keep v3 shadow and Buddy workflows outside the restored v1 entries."""
+    shadow = WORKFLOWS / "workflow-delivery-v3-ci.yml"
+    assert shadow.is_file()
+    assert shadow.read_bytes() != (WORKFLOWS / "ci.yml").read_bytes()
 
-    assert paths == PRESERVED_BOOTSTRAP_GOVERNANCE_EXACT_PATHS
-    assert paths.isdisjoint(LEGACY_ENTRY_PATHS)
-
-
-def test_actionlint_drops_deleted_buddy_override_and_keeps_active() -> None:
-    """Parse actionlint path overrides instead of scanning for Buddy text."""
-    document = yaml.safe_load(
-        (REPO_ROOT / ".github/actionlint.yaml").read_text(encoding="utf-8")
-    )
-    paths = document["paths"]
-
-    assert set(paths).isdisjoint(LEGACY_ENTRY_PATHS)
-    assert ".github/workflows/official.yml" in paths
-    assert ".github/workflows/release-orchestrate.yml" in paths
-
-
-def test_official_ci_v2_and_all_release_descriptors_are_preserved() -> None:
-    """Pin every protected preservation inventory against deletion."""
-    for path in PRESERVED_OFFICIAL_CI_WORKFLOWS | PRESERVED_V2_FILES:
-        assert (REPO_ROOT / path).is_file(), path
-    actual_descriptors = frozenset(
-        path.relative_to(REPO_ROOT).as_posix()
-        for path in (REPO_ROOT / "src").glob("**/three.release.yml")
-    )
-
-    assert actual_descriptors == PRESERVED_DESCRIPTORS
-    assert len(actual_descriptors) == len(PRESERVED_DESCRIPTORS)
-
-
-def test_preserved_v2_and_reusable_api_are_explicitly_superseded() -> None:
-    """Keep v2 history without advertising a live legacy Buddy route."""
-    design = (REPO_ROOT / ".github/workflows/docs/DESIGN.v2.md").read_text(
-        encoding="utf-8"
-    )
-    normalized_design = " ".join(design.split()).replace("> ", "")
-    assert "Archived and superseded" in normalized_design
-    assert "Workflow Delivery v3 is active and normative" in normalized_design
-    assert "retired with no compatibility" in normalized_design
-
-    orchestrate = _workflow_documents(WORKFLOWS)["release-orchestrate.yml"]
-    workflow_call = _triggers(orchestrate)["workflow_call"]
-    inputs = workflow_call["inputs"]
-    channel_description = inputs["channel"]["description"]
-    force_description = inputs["force_update_tag"]["description"]
-    assert "'buddy' is reserved and rejected" in channel_description
-    assert "v3 Buddy uses separate workflows" in channel_description
-    assert "Legacy Buddy entry callers are retired and rejected" in (
-        force_description
-    )
-    workflow_text = (
-        REPO_ROOT / ".github/workflows/release-orchestrate.yml"
-    ).read_text(encoding="utf-8")
-    assert "Legacy 'release-buddy' is not an active" in workflow_text
-    assert "prerequisite after commit 11" in workflow_text
-    normalized_workflow = " ".join(workflow_text.split())
-    assert "channel=buddy has no active caller route after commit 11" in (
-        normalized_workflow
-    )
-
-
-def test_v3_buddy_workflows_keep_their_exact_topology() -> None:
-    """Keep v3 Buddy workflows outside the retired v1 entry inventory."""
-    inventory = PRESERVED_V3_BUDDY_WORKFLOW_JOBS.items()
-    for relative_path, expected_jobs in inventory:
+    for (
+        relative_path,
+        expected_jobs,
+    ) in PRESERVED_V3_BUDDY_WORKFLOW_JOBS.items():
         document = yaml.safe_load(
             (REPO_ROOT / relative_path).read_text(encoding="utf-8")
         )
-
         assert "workflow_dispatch" in _triggers(document), relative_path
         assert frozenset(document["jobs"]) == expected_jobs, relative_path
 
 
-def test_official_and_ci_workflows_keep_real_parseable_topology() -> None:
-    """Parse preserved entries and pin their required triggers and jobs."""
-    documents = _workflow_documents(WORKFLOWS)
-    official = documents["official.yml"]
-    ci = documents["ci.yml"]
+def test_pre_v3_control_plane_and_legacy_descriptors_are_absent() -> None:
+    """Keep inherited projects, tests, and descriptors out of the tree."""
+    assert all(
+        not (REPO_ROOT / relative_path).exists()
+        for relative_path in OBSOLETE_PRE_V3_PATHS
+    )
+    assert not tuple((REPO_ROOT / "src").glob("**/three.release.yml"))
 
-    assert "workflow_dispatch" in _triggers(official)
-    assert "push" in _triggers(official)
-    assert {"authorize-entry", "orchestrate", "report"} <= set(official["jobs"])
-    assert "pull_request" in _triggers(ci)
-    assert ci["jobs"]
+
+def test_pre_v3_design_docs_cannot_reactivate_legacy_buddy_routes() -> None:
+    """Mark restored pre-v3 guidance as historical and non-authoritative."""
+    for relative_path in ARCHIVED_LEGACY_BUDDY_DOCS:
+        notice = (REPO_ROOT / relative_path).read_text(encoding="utf-8")[:700]
+        assert "**Archived and superseded:**" in notice, relative_path
+        assert (
+            "legacy `buddy.yml` and `release-buddy.yml` routes are\n> retired"
+            in notice
+        ), relative_path
+        assert "Do not use this document to recreate either route" in notice, (
+            relative_path
+        )
 
 
 @pytest.mark.parametrize(
@@ -747,20 +465,15 @@ def test_official_and_ci_workflows_keep_real_parseable_topology() -> None:
             ".github/workflows/compatibility.yml",
             ".github/workflows/buddy.yml",
         ),
-        (
-            "rename",
-            ".github/workflows/legacy-buddy.yml",
-            ".github/workflows/release-buddy.yml",
-        ),
         ("add", ".github/workflows/new-buddy-compatibility.yml", None),
     ],
 )
-def test_root_hk_selects_deletions_and_renamed_or_new_compatibility_attempts(
+def test_root_hk_selects_buddy_retirement_and_compatibility_changes(
     kind: str,
     new_path: str,
     old_path: str | None,
 ) -> None:
-    """Evaluate actual HK globs against delete, rename, and add histories."""
+    """Trigger v3 validation for deletions and compatibility-route attempts."""
     selected = _hk_selected_paths(((kind, new_path, old_path),))
 
     assert new_path in selected
@@ -769,7 +482,7 @@ def test_root_hk_selects_deletions_and_renamed_or_new_compatibility_attempts(
 
 
 def test_codeowners_covers_deleted_and_future_buddy_routes() -> None:
-    """Apply ordered final-match ownership to absent and synthetic paths."""
+    """Protect compatibility paths with final-match ownership."""
     rules = _codeowners_rules(
         (REPO_ROOT / ".github/CODEOWNERS").read_text(encoding="utf-8")
     )
@@ -780,6 +493,6 @@ def test_codeowners_covers_deleted_and_future_buddy_routes() -> None:
         ".github/workflows/new-buddy-compatibility.yml",
     }
 
-    actual = {path: _final_owners(rules, path) for path in paths}
-
-    assert actual == dict.fromkeys(paths, ("@hcoona",))
+    assert {
+        path: _final_owners(rules, path) for path in paths
+    } == dict.fromkeys(paths, ("@hcoona",))

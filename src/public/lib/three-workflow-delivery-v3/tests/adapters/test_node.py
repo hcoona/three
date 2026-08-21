@@ -448,7 +448,6 @@ def test_source_snapshot_covers_complete_fixture_project() -> None:
         "scripts/nbgv-version.mjs",
         "src/index.js",
         "test/index.test.js",
-        "three.release.yml",
         "version.json",
         "workflow-delivery.quality.yml",
         "workflow-delivery.release-unit.yml",

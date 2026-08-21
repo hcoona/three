@@ -167,10 +167,12 @@ exact Plan, Decision, Summary, event-identity, and base-tree admission. Manual
 validation, lane failures, mixed diagnostics, malformed records, explicit
 supersession, and post-coexistence pull requests remain red. The exception
 self-disables after merge because the workflow is then present in the base
-tree. The 14-file committed range through `f0535989` passes the managed gates,
-including 1,257 workflow-release tests and 3,234 Workflow Delivery v3 tests.
-All three original policy, CLI, and workflow reviewers report no findings
-after independent adjudication and repair.
+tree. Before Phase 1 scope cleanup, the 14-file committed range through
+`f0535989` passed the managed gates with 1,257 workflow-release tests and 3,234
+Workflow Delivery v3 tests. The inherited workflow-release suite is no longer
+retained, so those counts are historical rather than current repair evidence.
+All three original policy, CLI, and workflow reviewers report no findings after
+independent adjudication and repair.
 
 Documentation closure is committed at `a9e8cbfa`. Non-rewriting merge commit
 `30b793be` then integrates the latest `origin/main` at `7f8f41c2`, containing

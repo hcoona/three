@@ -22,7 +22,6 @@
 
 ## Related Pages
 
-- [Repository Release Landscape](../analyses/repository-release-landscape.md)
 - [ImageOcclusionEditor WinUI3 Project](./2026-04-21-image-occlusion-editor-winui3-csproj.md)
 - [ImageOcclusionEditor Inno Installer Script](./2026-04-21-image-occlusion-editor-inno-installer-script.md)
 

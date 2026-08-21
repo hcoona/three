@@ -3,116 +3,70 @@
 # Publish a Node package tarball to npmjs.org with rerun-safe digest validation.
 #
 # Required env vars:
-#   EXPECTED_PACKAGE_NAME  Frozen npm package name from resolved publish identity
-#   VERSION                Package version
-#   DIST_TAG               npm dist-tag to publish under
+#   PROJECT    Unscoped npm package name
+#   VERSION    Package version
+#   DIST_TAG   npm dist-tag to publish under
 #
 # Optional env vars:
-#   TARBALL    Path to the tarball (default: "$GITHUB_WORKSPACE/out/npmjs.tgz"
-#              when present, otherwise the planner-frozen npm pack filename)
+#   TARBALL    Path to the tarball (default: "$GITHUB_WORKSPACE/out/npmjs.tgz")
 #   REGISTRY   Registry URL (default: "https://registry.npmjs.org")
 
 set -Eeuo pipefail
 
-: "${EXPECTED_PACKAGE_NAME:?EXPECTED_PACKAGE_NAME is required}"
+: "${PROJECT:?PROJECT is required}"
 : "${VERSION:?VERSION is required}"
 : "${DIST_TAG:?DIST_TAG is required}"
 
+TARBALL="${TARBALL:-${GITHUB_WORKSPACE}/out/npmjs.tgz}"
 REGISTRY="${REGISTRY:-https://registry.npmjs.org}"
 
-if [[ -z "${TARBALL:-}" ]]; then
-  generic_tarball="${GITHUB_WORKSPACE}/out/npmjs.tgz"
-  filename_name="${EXPECTED_PACKAGE_NAME}"
-  if [[ "${filename_name}" == @* ]]; then
-    filename_name="${filename_name#@}"
-    filename_name="${filename_name//\//-}"
-  fi
-  frozen_tarball="${GITHUB_WORKSPACE}/out/${filename_name}-${VERSION}.tgz"
-  if [[ -f "${generic_tarball}" ]]; then
-    TARBALL="${generic_tarball}"
-  else
-    TARBALL="${frozen_tarball}"
-  fi
-fi
+npm_name="${PROJECT}"
+
+tmp_dir="${RUNNER_TEMP:-/tmp}"
 
 if [[ ! -f "${TARBALL}" ]]; then
   echo "Missing tarball: ${TARBALL}" >&2
   exit 1
 fi
 
-package_json=$(tar -xOf "${TARBALL}" package/package.json 2>/dev/null || tar -xOf "${TARBALL}" package.json 2>/dev/null || true)
-if [[ -z "${package_json}" ]]; then
-  echo "Missing package.json in tarball: ${TARBALL}" >&2
-  exit 1
-fi
-
-# shellcheck disable=SC2016 # JavaScript template literals are passed literally to node.
-npm_metadata=$(printf '%s' "${package_json}" | node -e '
-const fs = require("fs");
-const pkg = JSON.parse(fs.readFileSync(0, "utf8"));
-if (typeof pkg.name !== "string" || pkg.name.length === 0) {
-  console.error("tarball package.json must contain a non-empty string name");
-  process.exit(1);
-}
-if (typeof pkg.version !== "string" || pkg.version.length === 0) {
-  console.error("tarball package.json must contain a non-empty string version");
-  process.exit(1);
-}
-process.stdout.write(`${pkg.name}\t${pkg.version}`);
-')
-IFS=$'\t' read -r npm_name npm_version <<<"${npm_metadata}"
-
-if [[ "${npm_name}" != "${EXPECTED_PACKAGE_NAME}" ]]; then
-  echo "tarball package.json name mismatch: expected ${EXPECTED_PACKAGE_NAME}, got ${npm_name}" >&2
-  exit 1
-fi
-
-if [[ "${npm_version}" != "${VERSION}" ]]; then
-  echo "tarball package.json version mismatch: expected ${VERSION}, got ${npm_version}" >&2
-  exit 1
-fi
-
-pkg_name="${EXPECTED_PACKAGE_NAME}"
-
-tmp_dir="${RUNNER_TEMP:-/tmp}"
-
 local_sri=$(
-  node - "${TARBALL}" <<'NODE'
+  node - <<'NODE'
 const fs = require('fs');
 const crypto = require('crypto');
-const p = process.argv[2];
+const p = process.argv[1];
 const buf = fs.readFileSync(p);
 const hash = crypto.createHash('sha512').update(buf).digest('base64');
 console.log(`sha512-${hash}`);
 NODE
+  "${TARBALL}"
 )
 
 err_file="${tmp_dir}/npm-view-npmjs.err"
 : >"${err_file}"
 
 set +e
-remote_integrity=$(npm view "${pkg_name}@${VERSION}" dist.integrity --registry "${REGISTRY}" 2>"${err_file}")
+remote_integrity=$(npm view "${npm_name}@${VERSION}" dist.integrity --registry "${REGISTRY}" 2>"${err_file}")
 view_rc=$?
 set -e
 
 if [[ "${view_rc}" -eq 0 ]]; then
   remote_integrity=$(printf '%s' "${remote_integrity}" | tr -d '\r\n')
   if [[ -z "${remote_integrity}" ]]; then
-    echo "npm view returned empty dist.integrity for ${pkg_name}@${VERSION} on ${REGISTRY}." >&2
+    echo "npm view returned empty dist.integrity for ${npm_name}@${VERSION} on ${REGISTRY}." >&2
     exit 1
   fi
   if [[ "${remote_integrity}" == "${local_sri}" ]]; then
-    echo "${pkg_name}@${VERSION} already exists on npmjs.org (integrity match)."
+    echo "${npm_name}@${VERSION} already exists on npmjs.org (integrity match)."
     exit 0
   fi
-  echo "${pkg_name}@${VERSION} already exists on npmjs.org but integrity differs." >&2
+  echo "${npm_name}@${VERSION} already exists on npmjs.org but integrity differs." >&2
   echo "  remote: ${remote_integrity}" >&2
   echo "  local:  ${local_sri}" >&2
   exit 1
 fi
 
 if grep -Eqi '(E404|404)' "${err_file}"; then
-  echo "${pkg_name}@${VERSION} not found on npmjs.org; will publish."
+  echo "${npm_name}@${VERSION} not found on npmjs.org; will publish."
 elif grep -Eqi '(E401|E403|401|403)' "${err_file}"; then
   echo "Auth/permission error while querying npmjs.org registry." >&2
   cat "${err_file}" >&2 || true
@@ -132,19 +86,19 @@ publish_rc=$?
 set -e
 
 if [[ "${publish_rc}" -eq 0 ]]; then
-  echo "Published ${pkg_name}@${VERSION} to npmjs.org."
+  echo "Published ${npm_name}@${VERSION} to npmjs.org."
   exit 0
 fi
 
 if grep -Eqi '(previously published|cannot publish over|already exists|you cannot publish over)' "${publish_err}"; then
   echo "Publish reported existing version; re-checking integrity."
-  remote_integrity=$(npm view "${pkg_name}@${VERSION}" dist.integrity --registry "${REGISTRY}")
+  remote_integrity=$(npm view "${npm_name}@${VERSION}" dist.integrity --registry "${REGISTRY}")
   remote_integrity=$(printf '%s' "${remote_integrity}" | tr -d '\r\n')
   if [[ "${remote_integrity}" == "${local_sri}" ]]; then
-    echo "${pkg_name}@${VERSION} already exists on npmjs.org (integrity match)."
+    echo "${npm_name}@${VERSION} already exists on npmjs.org (integrity match)."
     exit 0
   fi
-  echo "${pkg_name}@${VERSION} exists on npmjs.org but integrity differs." >&2
+  echo "${npm_name}@${VERSION} exists on npmjs.org but integrity differs." >&2
   exit 1
 fi
 

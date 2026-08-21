@@ -1,26 +1,33 @@
 # Workflow Design Memory
 
+> **Archived and superseded:** This pre-v3 design is retained only for
+> historical context. The legacy `buddy.yml` and `release-buddy.yml` routes are
+> retired. Do not use this document to recreate either route; current Buddy
+> delivery is owned by Workflow Delivery v3.
+
 ## Current repository reality
 
 - Active projects now follow the canonical monorepo roots under `src/`, `src/lab/`, and `tests/`.
 - The former `OneDotNet/` subtree has been migrated into those canonical roots.
-- Release workflows are already active; NuGet registry publication remains deferred until the dotnet/NuGet workflow path exists.
-- Workflow Delivery v3 commit 11 retires legacy `.github/workflows/buddy.yml` and `.github/workflows/release-buddy.yml` with no `legacy-buddy.yml`, dispatch, or caller-compatibility route. v1 `official.yml` and `ci.yml` remain active.
+- Release pipelines for each project are not yet set up.
 
-## Current design decisions to preserve
+## Archived pre-v3 design decisions
 
-- Keep release and release-authority validation entry workflows exactly `ci.yml` and `official.yml`; legacy `buddy.yml` is retired and must not be restored as a compatibility route.
+- The superseded design exposed `ci.yml`, `buddy.yml`, and `official.yml` as
+  release and release-authority validation entry workflows.
 - Allow `.github/workflows/codeql.yml` as a triggered top-level non-release security analysis workflow only without release authority, publish credentials, protected-ref bypass credentials, or release mutation worker access.
 - Do not add extra triggered top-level workflow files for readiness, drift, governance, health monitoring, or release authority. Scheduled, manually dispatched, or carefully dashboard-edit-triggered Renovate dependency-maintenance workflows are allowed only without release authority and with workflow-level `permissions: {}` plus job-level least privilege. A dedicated GitHub App token may create dependency branches and pull requests, but must not bypass branch protection or mutate release refs. Renovate may use GitHub platform automerge with squash merge for configured dependency pull requests after required CI and branch protection/rulesets pass.
-- Preserve the active entry/auth-gate plus reusable-orchestrator topology: `official.yml` authorizes release entry, while `release-orchestrate.yml` hosts current publish/token-minting paths. The retired legacy `buddy.yml`/`release-buddy.yml` entries have no compatibility route.
-- Treat the older direct `official.yml` OIDC publishing design as superseded by the active split topology: `.github/workflows/release-orchestrate.yml` orchestrates token-minting / publish paths for PyPI, npmjs, and RubyGems.
-- Use `github-release/public` as the active GitHub Release target; older `github:release` wording is superseded.
+- The superseded design kept Buddy publish authorization in direct jobs, not
+  in same-repository reusable publish workflows.
+- The superseded design kept Official publish authorization in direct
+  `official.yml` jobs so OIDC-backed trusted publishing saw
+  `.github/workflows/official.yml` as the workflow identity.
+- Use `github:release` as the GitHub Release target.
 - Do not reintroduce `pypi:testpypi`.
-- Python buddy preview distribution through `github-release/public` is currently unsupported and fail-closed while buddy attestations remain disabled.
-- Keep NuGet registry targets deferred until a reviewed dotnet/NuGet workflow path exists; the active target catalog has `families.nuget.instances: []`.
-- Use the active release/registry environments (`github-release`, `pypi`, `npmjs-gate`, `npmjs`, and `rubygems`) as the current official human approval / OIDC environment gates.
-- Treat the older `production-<project-key>` baseline gate and subordinate `production-*` target environments as superseded unless a later reviewed design reintroduces them.
-- Treat bounded checked-in admission/recovery state plus per-project live locks as superseded/future-only; active workflows use dynamic entry concurrency and `release-orchestrate.yml` delegation.
+- Python buddy preview, if needed, uses `github:release`.
+- Use `production-<project-key>` as the authoritative official human approval gate.
+- Keep target-specific official environments subordinate to that baseline gate.
+- Use bounded checked-in admission/recovery state plus one bounded live lock per project instead of unbounded historical run scans or scheduled snapshot freshness.
 - Route JS/TS releases by checked-in `buildKind`, not by `jsts` alone.
 - Keep buddy GitHub Release identity separate from the official tag namespace.
 
@@ -47,14 +54,14 @@
 - The design can require exact checked-in provider-trust summaries plus bounded read-only drift checks where a provider exposes an inspection mechanism, but provider inspection APIs are not guaranteed to be uniform across all registries.
 - Current registry trusted-publishing integrations do not appear to provide one uniform provider-side mechanism for exact GitHub `ref` claim pinning across npmjs, PyPI, RubyGems.org, and NuGet.org, so the design must record per-target capability mode instead of assuming universal provider enforcement.
 - Treating GitHub-maintained actions under `actions/` as part of the same SHA-pinning requirement as other non-local actions is a deliberate supply-chain policy choice, not a property automatically enforced by GitHub.
-- Because NuGet trusted publishing appears to be available now, the older long-lived NuGet secret exception remains obsolete; however, NuGet registry publication is still deferred in this repository until the dotnet/NuGet workflow path and target catalog entries exist.
-- Superseded note: earlier drafts used checked-in admission state plus a live lock for release ordering and recovery authority. Active workflows use dynamic entry concurrency and `release-orchestrate.yml` delegation instead.
+- Because NuGet trusted publishing appears to be available now, the design removes the older long-lived NuGet secret exception instead of preserving compatibility with the previous assumption.
+- Because GitHub concurrency is not a durable queue, release ordering and recovery authority must remain in checked-in admission state plus the live lock even if runtime queue behavior changes later.
 
 ## External-system confirmation for the latest design-only fixes
 
 ### FACT
 
-- GitHub Packages buddy publication commonly uses the job-scoped `GITHUB_TOKEN` with `packages: write`; this remains the design baseline for active npm and RubyGems GitHub Packages targets. The old `nuget:gpr` target is deferred with the rest of NuGet registry publication.
+- GitHub Packages buddy publication commonly uses the job-scoped `GITHUB_TOKEN` with `packages: write`; this is the design baseline for `nuget:gpr`, `npm:gpr`, and `rubygems:gpr`.
 - GitHub environment approval UI does not natively display arbitrary workflow output fields, so any requirement to show frozen release identity at approval time needs an equivalent reviewed approval surface implemented by the repository.
 - GitHub Actions concurrency is not a durable FIFO queue; a design that holds a shared per-project concurrency slot during long approval waits risks avoidable head-of-line blocking and pending-run replacement.
 - npm, NuGet.org, and RubyGems differ in version immutability and republish behavior; a recovery design must assume that some registries will reject same-version republish after uncertain or differing content is observed.
@@ -73,7 +80,7 @@
 - GitHub environment approval UI still does not show arbitrary job outputs inline, so a repository-owned equivalent reviewed surface is required whenever approvers must inspect frozen release identity before granting environment approval.
 - GitHub Deployments can carry description/payload metadata, but that metadata is descriptive only; it is not itself the environment-approval UI and therefore must be paired with repository-side validation of the deployment payload and reviewer confirmation text.
 - CODEOWNERS and branch protection are separate repository controls from GitHub Actions workflow logic; they can protect bootstrap files such as `ci.yml` even though `ci.yml` cannot be its own root of trust.
-- GitHub concurrency remains non-FIFO and non-durable. Superseded drafts enforced approval-to-mutation handoff with checked-in policy plus live-lock revalidation; active workflows rely on dynamic entry concurrency, registry-environment gates, and orchestrator publish receipts instead.
+- GitHub concurrency remains non-FIFO and non-durable, so approval-to-mutation handoff rules must be enforced by checked-in policy plus live-lock revalidation rather than by queue behavior.
 - GitHub Actions does not provide a documented SLA that approval and the first post-approval job step happen back-to-back; repository state can change between reviewer approval and later job execution, so stale-approval revalidation must be explicit and fail-closed.
 - Some registries reject same-version publication after differing bytes or uncertain partial publication, so a safe design cannot assume that a changed rebuild may be republished under the same version.
 - Current trusted-publishing integrations across npm, PyPI, RubyGems, and NuGet do not provide one uniform provider-side exact GitHub `ref` enforcement model; workflow-side `allowedRefClaims` checks remain mandatory whenever provider-side exact-ref support is absent or unclear.
@@ -103,7 +110,7 @@
 ### ASSUMPTION / UNCERTAINTY
 
 - Provider-side trust capabilities and inspection APIs may continue to evolve, so any recorded support matrix must be treated as time-bound reviewed evidence rather than a timeless universal truth.
-- WXT is fundamentally a web-extension build/distribution tool, but restricting `node-wxt` projects to `github-release/public` assets instead of any registry publication path is still a repository design choice rather than an external-system requirement.
+- WXT is fundamentally a web-extension build/distribution tool, but restricting `node-wxt` projects to `github:release` assets instead of any registry publication path is still a repository design choice rather than an external-system requirement.
 - Excluding `pypi:testpypi` from the buddy design is a repository design choice made for scope and operational simplicity, not a GitHub Actions limitation.
 
 ## External-system confirmation for the v2.31 design review fixes
@@ -145,6 +152,7 @@
 - GitHub may expose some approval/deployment audit timestamps through APIs, but there does not appear to be one clearly documented universally authoritative “approved_at” surface suitable for strict approval-freshness enforcement without repository-owned fail-closed logic.
 - Even versioned hosted-runner labels such as `windows-2022` and `ubuntu-24.04` may still drift over time because the underlying image contents can change. Stronger reproducibility may still require self-hosted immutable images or an equivalent image-pin strategy.
 - Registry-side delete, yank, unlist, and cache behavior can evolve by provider and policy, so the design should keep per-target cleanup/burn behavior explicit instead of assuming a timeless universal rule.
+
 
 ## External-system confirmation for the review-summary design fixes
 
@@ -233,15 +241,15 @@
 
 ### FACT
 
-- In GitHub reusable-workflow scenarios, the effective workflow identity exposed to OIDC-backed trusted-publishing systems is the called workflow, not the original caller workflow. Superseded note: older revisions used this to keep official publish jobs direct in `.github/workflows/official.yml`; the active topology instead uses `release-orchestrate.yml` as the reviewed token-minting / publish identity boundary for PyPI, npmjs, and RubyGems.
+- In GitHub reusable-workflow scenarios, the effective workflow identity exposed to OIDC-backed trusted-publishing systems is the called workflow, not the original caller workflow. Keeping official publish jobs as direct jobs in `.github/workflows/official.yml` therefore preserves the intended workflow identity boundary.
 - GitHub Environments on GitHub.com provide a single approval from the configured reviewer list; they are not a native “two-of-two” approval primitive. Any true break-glass dual control must therefore come from an additional split-control mechanism outside the environment approval rule itself.
 - GitHub Actions concurrency still keeps at most one running run and one pending run per concurrency group, and a newer queued run can replace an older pending run. Pending-slot delay and supersession are therefore platform facts that monitoring and runbooks must treat explicitly.
 - The reviewed checked-in audience constants already evidenced for registry trusted publishing in this repository are: npm uses `npm:registry.npmjs.org` and RubyGems uses `rubygems.org`. NuGet no longer has one repository-approved closed default audience value; see the v2.46 section below.
-- The conservative cleanup-capability baseline supported by prior reviewed external research remains: `github-release/public` and active buddy GitHub Packages targets are delete-capable; active PyPI and RubyGems public-registry targets are yank-capable; active npmjs targets are deprecate-only. NuGet.org unlisting behavior is relevant only for a future NuGet enablement because no NuGet registry target is active now.
+- The conservative cleanup-capability baseline supported by prior reviewed external research remains: `github:release` and buddy GitHub Packages targets are delete-capable; `nuget:official` is unlist-capable; `pypi:official` and `rubygems:official` are yank-capable; `npm:official` is deprecate-only.
 
 ### ASSUMPTION / UNCERTAINTY
 
-- The design now records `providerAudience = pypi` as the reviewed checked-in PyPI baseline. Later first-party PyPI documentation explicitly confirmed that value for PyPI (with `testpypi` for TestPyPI), but Day 0 implementation should still re-confirm the then-current docs before `pypi/pypi` is enabled.
+- The design now records `providerAudience = pypi` as the reviewed checked-in PyPI baseline. Later first-party PyPI documentation explicitly confirmed that value for PyPI (with `testpypi` for TestPyPI), but Day 0 implementation should still re-confirm the then-current docs before `pypi:official` is enabled.
 - GitHub’s platform semantics for environment approvals and concurrency are stable enough for the current design revision, but exact operational APIs and UI fields for supersession evidence, approval timestamps, and queue diagnostics may still evolve and must be rechecked at implementation time.
 - The cleanup-capability matrix above is a conservative repository baseline, not a timeless provider guarantee. Provider-side deletion, yank, unlist, and deprecation behavior can still change over time, so the checked-in runbooks must remain reviewed operational evidence rather than frozen assumptions.
 
@@ -252,7 +260,7 @@
 - GitHub documents `GET /repos/{owner}/{repo}/actions/runs/{run_id}/approvals` as the workflow-run review-history API. The documented response includes review `state`, `comment`, `environments`, and `user`, but not one authoritative approval-grant timestamp field.
 - GitHub documents `GET /repos/{owner}/{repo}/actions/runs/{run_id}/pending_deployments` for still-pending deployment reviews. That surface exposes pending-review data such as `wait_timer_started_at`, but it is not the historical approval record after approval completes.
 - The documented approvals and pending-deployments APIs are scoped by `run_id`, not by `run_attempt`.
-- GitHub’s OIDC/reusable-workflow documentation exposes the called workflow identity through `job_workflow_ref`. Superseded note: this previously justified direct official publish-capable jobs in `.github/workflows/official.yml`; current registry trusted-publishing configuration must instead bind the active `release-orchestrate.yml` token-minting workflow identity.
+- GitHub’s OIDC/reusable-workflow documentation exposes the called workflow identity through `job_workflow_ref`. Keeping official publish-capable jobs direct in `.github/workflows/official.yml` therefore preserves the intended workflow-identity boundary for trust configurations that key on that called-workflow identity.
 - `github.head_ref` reflects only the pull request source branch name. Different forks can therefore collide if they use the same branch name, whereas the repository-local pull request number avoids that collision.
 
 ### ASSUMPTION / UNCERTAINTY
@@ -266,7 +274,7 @@
 ### FACT
 
 - GitHub Artifact Attestations are durable GitHub-hosted Sigstore-backed records, and the canonical `github-attestation://<owner>/<repo>/runs/<run-id>/attestations/<attestation-id>` form binds the record to repository and run identity. Treating attestation creation as a persistent external write is therefore the conservative design baseline.
-- In GitHub OIDC trusted-publishing scenarios that use reusable workflows, `job_workflow_ref` exposes the called workflow identity used by many trust configurations. Superseded note: keeping official publish-capable jobs direct in `.github/workflows/official.yml` was the older conservative boundary; the active reusable-orchestrator model treats `release-orchestrate.yml` as the trusted-publishing workflow identity for enabled PyPI, npmjs, and RubyGems targets.
+- In GitHub OIDC trusted-publishing scenarios that use reusable workflows, `job_workflow_ref` exposes the called workflow identity used by many trust configurations. Keeping official publish-capable jobs direct in `.github/workflows/official.yml` remains the correct conservative workflow-identity boundary.
 - Provider-side exact GitHub ref enforcement is not uniform across npm, PyPI, RubyGems, and NuGet. The design must keep per-target capability facts such as `providerRefClaimSupport`, `providerRefClaimMode`, and `providerSupportsReadOnlyInspection` instead of assuming one universal provider model.
 - GitHub Actions concurrency still keeps at most one running run and one pending run per concurrency group, and a newer queued run can replace an older pending run.
 - Azure Blob supports atomic create-if-absent semantics for a single blob via conditional create; OCI/GHCR-style registries do not natively provide atomic `create-if-absent(planDigest, ...)` keyed by an arbitrary business key such as `planDigest`.
@@ -342,7 +350,7 @@
 ### ASSUMPTION / UNCERTAINTY
 
 - Providers currently modeled with `providerSupportsReadOnlyInspection = false` may later expose new or undocumented read-only inspection surfaces. The design should therefore continue to record `inspection-unsupported` separately from transient probe failure and re-check provider capabilities at Day 0 enablement time for each enabled target.
-- The exact machine-readable provider-review evidence artifact profile, retention policy, and retrieval path remain repository-owned conventions layered on top of external provider and GitHub primitives. Day 0 implementation must verify that the chosen locator and digest scheme remain practical for every enabled provider.
+- The exact machine-readable `providerConfigReviewRef` evidence artifact profile, retention policy, and retrieval path remain repository-owned conventions layered on top of external provider and GitHub primitives. Day 0 implementation must verify that the chosen locator and digest scheme remain practical for every enabled provider.
 - The reviewed design now requires active-standby monitoring for `high-assurance` projects, a heartbeat sink with no more than 5 minutes of routine deployment gap, and monitor credential rotation no longer than 90 days. Whether the concrete organization-managed platform can actually satisfy those bounds is still a repository deployment question, not a GitHub platform guarantee.
 - The design's dedicated `artifactStoreMarkerWriterActorClass` assumes the repository-owned broker and GitHub-side credential model can mint or broker a distinct commit-marker writer identity without collapsing it back into the normal protected-ref writer. That separation is a reviewed design requirement, but the exact Day 0 actor/token topology remains a repository implementation decision.
 
@@ -424,7 +432,7 @@
 
 ### ASSUMPTION / UNCERTAINTY
 
-- I did not independently confirm one first-party GitHub statement that two release paths can safely share one GitHub App identity while relying on different broker, environment, and key-custody controls. Treating buddy and official `github-release/public` as separate GitHub App identities is therefore a deliberate blast-radius and governance choice in this design.
+- I did not independently confirm one first-party GitHub statement that two release paths can safely share one GitHub App identity while relying on different broker, environment, and key-custody controls. Treating buddy and official `github:release` as separate GitHub App identities is therefore a deliberate blast-radius and governance choice in this design.
 - Azure documentation does not literally phrase the rule as "`If-None-Match: *` is atomic only on the primary endpoint"; that is the design conclusion drawn from documented primary strong consistency plus asynchronous secondary replication.
 - I did not independently confirm one first-party GitHub statement that environments can enforce workflow-path exclusivity by themselves. The design therefore continues to treat environment-only isolation as insufficient unless a provider-specific claim model proves otherwise.
 
@@ -447,8 +455,8 @@
 
 ### FACT
 
-- The repository's current design state already reflects the review-summary fixes for external-system-sensitive items: NuGet no longer has a closed default audience, PyPI records `pypi` as the checked-in baseline with Day 0 re-confirmation, approval-related `GITHUB_STEP_SUMMARY` output is constrained to validated frozen data with Markdown escaping/code-fencing, and degraded monitor handling explicitly requires cancellation of already-waiting approval runs so they do not hold active dynamic entry concurrency slots indefinitely.
-- GitHub Actions concurrency and environment approval remain separate platform behaviors in the current repository notes: active `official.yml` defines dynamic entry workflow/ref/project concurrency groups, while `release-orchestrate.yml` has no concurrency of its own. Retired legacy `buddy.yml` no longer defines an active entry group. Registry environment approval is the human/credential gate that may leave a run waiting until cancellation or approval intervenes.
+- The repository's current design state already reflects the review-summary fixes for external-system-sensitive items: NuGet no longer has a closed default audience, PyPI records `pypi` as the checked-in baseline with Day 0 re-confirmation, approval-related `GITHUB_STEP_SUMMARY` output is constrained to validated frozen data with Markdown escaping/code-fencing, and degraded monitor handling explicitly requires cancellation of already-waiting baseline-approval runs so they do not hold `release/<project-key>` indefinitely.
+- GitHub Actions concurrency and environment approval remain separate platform behaviors in the current repository notes: workflow-level concurrency can hold the shared `release/<project-key>` slot across the run, while environment approval is the human/credential gate that may leave a run waiting in that slot until some cancellation mechanism intervenes.
 - The current repository notes still support treating NuGet audience choice as evidence-bound per reviewed target configuration, not as one repository-wide constant, because no reviewed first-party source in this repository state confirms `api://NuGet`.
 
 ### ASSUMPTION / UNCERTAINTY
@@ -461,7 +469,7 @@
 ### FACT
 
 - The design now treats the control-plane suspension record as a repository protocol instead of an implied monitor side effect: it is stored at a repository-owned durable locator, has a closed schema, has explicit reader/writer roles, and binds break-glass exceptions to both `runId` and `planDigest`.
-- The design still does **not** assume one closed NuGet audience default. NuGet registry targets are now deferred entirely in the active catalog, so any future `nuget:official` enablement must both add the dotnet/NuGet workflow path and carry reviewed evidence naming the exact first-party source, review timestamp, and audience conclusion.
+- The design still does **not** assume one closed NuGet audience default. `nuget:official` remains evidence-bound per target, and the reviewed evidence must name the exact first-party source, the review timestamp, and the resulting audience conclusion.
 - `providerConfigReviewRef` remains intentionally excluded from the bootstrap hash, so the design's integrity story for that field now depends on compensating controls: evidence-locator reachability checks, `evidenceSha256` verification, and external monitor alerting.
 - GitHub deployment-branch restrictions for official and buddy environments remain repository-external control-plane state, so the design now treats them as drift-audited policy surfaces rather than pretending they are bootstrap-authenticated files.
 - The monitor degraded-mode timing remains bounded and explicit: heartbeat page at 10 minutes, suspension decision at 15 minutes, acknowledged degraded-mode re-check before 45 minutes, and management-visible escalation if suspension remains active for 24 hours.
@@ -470,7 +478,7 @@
 
 - The durable backend behind `artifact://control-plane/suspension/...` is still a repository design choice rather than a confirmed platform primitive; the design now fixes the protocol and locator shape, but the eventual implementation backend still needs Day 0 selection.
 - Current repository notes still do not independently prove one timeless first-party NuGet audience value. The design therefore keeps NuGet audience selection tied to review evidence instead of treating any one value as permanently safe by default.
-- Because provider-review evidence is not bootstrap-authenticated, the design assumes the reviewed evidence surfaces used by `ci.yml`, active release validation, and the external monitor will remain readable enough to perform locator/hash verification. If those surfaces are unavailable, the design must fail closed rather than infer trust.
+- Because `providerConfigReviewRef` is not bootstrap-authenticated, the design assumes the reviewed evidence surfaces used by `ci.yml`, `preflight-validate`, and the external monitor will remain readable enough to perform locator/hash verification. If those surfaces are unavailable, the design must fail closed rather than infer trust.
 - GitHub environment-policy inspection remains an external-platform dependency. The design now requires drift auditing and fail-closed behavior when the policy cannot be confirmed for the current run, but the exact Day 0 implementation path still depends on the then-current GitHub inspection surface.
 - The monitor heartbeat / suspension SLA is now explicit in the design, but the exact paging and incident-routing tooling remains organization-specific control-plane implementation work outside this repository.
 
@@ -485,8 +493,8 @@
 
 ### ASSUMPTION / UNCERTAINTY
 
-- Even after tightening the design, `workflow-only` trusted-publishing targets with `providerSupportsReadOnlyInspection = false` still rely on compensating controls: reviewed evidence freshness, active registry environments, and external drift probes. Those controls reduce the blind window; they do **not** convert the provider into a native exact-ref enforcement system.
-- NuGet audience choice remains evidence-bound per future target. Day 0 NuGet enablement still needs a fresh first-party review plus a reviewed dotnet/NuGet workflow path; until then, NuGet registry targets must remain absent rather than guessed.
+- Even after tightening the design, `workflow-only` trusted-publishing targets with `providerSupportsReadOnlyInspection = false` still rely on compensating controls: reviewed evidence freshness, branch-scoped environments, and external drift probes. Those controls reduce the blind window; they do **not** convert the provider into a native exact-ref enforcement system.
+- NuGet audience choice remains evidence-bound per target. Day 0 enablement still needs a fresh first-party review, and when first-party sources conflict without one reviewed conclusion plus rehearsal proof, `nuget:official` must remain disabled rather than guessing.
 - GitHub secondary-throttle thresholds, abuse-protection behavior, and the practical distribution of `Retry-After` values may evolve. The design should continue to budget only around documented observable signals, not around one assumed platform threshold.
 - The design now chooses Azure Blob as the suspension-record backend, but the exact account topology, replication mode, backup/export tooling, and incident-routing implementation remain repository / organization control-plane work that still needs Day 0 execution details.
 
@@ -494,18 +502,18 @@
 
 ### FACT
 
-- Current repository evidence still supports the NuGet split recorded above: NuGet.org trusted publishing exists, but this repository does not yet carry one approved closed audience value that resolves the `nuget` versus `https://www.nuget.org` conflict, and the active target catalog has no NuGet instances. Treating NuGet registry publication as deferred/absent is therefore safer than pretending the target is release-ready.
+- Current repository evidence still supports the NuGet split recorded above: NuGet.org trusted publishing exists, but this repository does not yet carry one approved closed audience value that resolves the `nuget` versus `https://www.nuget.org` conflict. Treating `nuget:official` as blocked pending provider review is therefore safer than pretending the audience question is already closed.
 - Azure Blob Storage remains the currently reviewed backend fit in repository memory for the control-plane suspension record because the design needs primary-endpoint strong consistency plus optimistic-concurrency writes on the current record.
 - GitHub Actions `pull_request_target` remains a metadata-only exception path
   if used for repository-maintenance work. Dependency maintenance is handled by
   Renovate configuration plus the allowed self-hosted Renovate workflow, using
   the GitHub App token without release authority, publish credentials, or
   protected-ref bypass.
-- The design’s external monitor already polls on a bounded cadence (`at least every 5 minutes` for active release-state monitoring), so active registry-environment approval timeouts must leave an operator window beyond that poll granularity. The older baseline-wait-timer formula is superseded.
+- The design’s external monitor already polls on a bounded cadence (`at least every 5 minutes` for active release-state monitoring), so any approval-timeout value equal to the baseline wait timer would leave no guaranteed operator window beyond that poll granularity.
 
 ### ASSUMPTION / UNCERTAINTY
 
-- Superseded note: `approvalWaitMaxSeconds >= baselineWaitTimerMinutes * 60 + 300` belonged to the older baseline approval model. Active approval-timeout sizing should still include monitor-cadence safety margin, but not through that field formula.
+- Requiring `approvalWaitMaxSeconds >= baselineWaitTimerMinutes * 60 + 300` and recommending a larger `+1800` buffer is a repository safety margin derived from the monitor cadence, not a native GitHub guarantee about approval UX timing.
 - Requiring a `99.5%` monthly availability objective for singleton broker or monitor deployments is a repository design baseline for `standard` projects, not a platform SLA promised by GitHub or any cloud provider.
 - Treating Azure Blob as v1-only rather than permanent is a repository design choice. A later revision could approve another backend, but only after reviewed evidence shows equivalent durability, immutable-history, and compare-and-swap semantics.
 

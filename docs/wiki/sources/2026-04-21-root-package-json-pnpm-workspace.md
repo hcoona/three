@@ -20,7 +20,6 @@ is itself marked private.
 
 ## Related Pages
 
-- [Repository Release Landscape](../analyses/repository-release-landscape.md)
 - [hexo-renderer-asciidoc Package Metadata](./2026-04-21-hexo-renderer-asciidoc-package-json.md)
 - [steam-account-history-to-csv Package Metadata](./2026-04-21-steam-account-history-to-csv-package-json.md)
 

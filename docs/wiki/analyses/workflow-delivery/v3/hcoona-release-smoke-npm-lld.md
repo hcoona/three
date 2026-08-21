@@ -183,11 +183,12 @@ commands, module paths, or executable packages.
 
 No module imports `three_workflow_release_*` or reads `three.release.yml`.
 Revalidated algorithms may be ported into the new namespace with v3 tests and
-contracts. v2 remains unchanged as the archived mechanism source. In v1,
-Official and CI assets remain unchanged, while legacy Buddy workflows,
-Buddy-specific tests and matrices, and Buddy documentation are explicitly
-excluded from that preservation and are retired or rewritten by the direct
-cutover.
+contracts. The retained tree contains neither the v2 control projects nor
+legacy descriptors; v2 remains available only at its immutable archive commit.
+In v1, Official and CI behavior remains unchanged, while legacy Buddy
+workflows, Buddy-specific tests and matrices, and Buddy documentation are
+explicitly excluded from that preservation and are retired or rewritten by the
+direct cutover.
 
 The product receives only the first-slice test and script changes later required
 by the approved implementation:

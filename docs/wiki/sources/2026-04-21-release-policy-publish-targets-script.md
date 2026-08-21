@@ -22,7 +22,6 @@ language-aware publish-target policy for release orchestration.
 
 ## Related Pages
 
-- [Repository Release Landscape](../analyses/repository-release-landscape.md)
 - [RubyGems Trusted Publishing Script](./2026-04-21-publish-rubygems-script.md)
 
 ## Open Questions

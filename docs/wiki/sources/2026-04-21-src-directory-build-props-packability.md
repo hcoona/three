@@ -20,7 +20,6 @@ based on which subtree it lives in.
 
 ## Related Pages
 
-- [Repository Release Landscape](../analyses/repository-release-landscape.md)
 - [Hjg.Pngcs C# Package Metadata](./2026-04-21-hjg-pngcs-csproj.md)
 - [PhiFailureDetector Console App](./2026-04-21-phi-failure-detector-console-csproj.md)
 

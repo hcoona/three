@@ -4,74 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import sys
-import types
-from pathlib import Path
 from typing import Any
 
-
-class _OpenAIStub:
-    """Placeholder OpenAI client type for import-time annotations."""
-
-
-class _AgentStub:
-    """Placeholder agents.Agent implementation."""
-
-    def __init__(self, *_args: object, **_kwargs: object) -> None:
-        pass
-
-
-class _OpenAIChatCompletionsModelStub:
-    """Placeholder agents model implementation."""
-
-    def __init__(self, *_args: object, **_kwargs: object) -> None:
-        pass
-
-
-class _RunnerStub:
-    """Placeholder agents.Runner implementation patched by the test."""
-
-
-class _BaseModelStub:
-    """Minimal pydantic.BaseModel replacement for this isolated test."""
-
-    def __init__(self, **kwargs: object) -> None:
-        for key, value in kwargs.items():
-            setattr(self, key, value)
-
-    def __repr__(self) -> str:
-        return f"{type(self).__name__}({self.__dict__!r})"
-
-    __str__ = __repr__
-
-
-def _field_stub(*_args: object, **_kwargs: object) -> None:
-    return None
-
-
-openai_stub = types.ModuleType("openai")
-openai_stub.OpenAI = _OpenAIStub
-openai_stub.AsyncOpenAI = _OpenAIStub
-sys.modules.setdefault("openai", openai_stub)
-
-agents_stub = types.ModuleType("agents")
-agents_stub.Agent = _AgentStub
-agents_stub.OpenAIChatCompletionsModel = _OpenAIChatCompletionsModelStub
-agents_stub.Runner = _RunnerStub
-agents_stub.TResponseInputItem = dict[str, str]
-sys.modules.setdefault("agents", agents_stub)
-
-pydantic_stub = types.ModuleType("pydantic")
-pydantic_stub.BaseModel = _BaseModelStub
-pydantic_stub.Field = _field_stub
-sys.modules.setdefault("pydantic", pydantic_stub)
-
-REPO_ROOT = Path(__file__).parents[1]
-LLM_TEXT_SPLITTER_SRC = REPO_ROOT / "src/private/app/llm-text-splitter/src"
-sys.path.insert(0, str(LLM_TEXT_SPLITTER_SRC))
-
-from llm_text_splitter import text_splitter_manager as manager  # noqa: E402
-from llm_text_splitter.text_splitter_agent import SegmentedTopic  # noqa: E402
+from llm_text_splitter import text_splitter_manager as manager
+from llm_text_splitter.text_splitter_agent import SegmentedTopic
 
 
 class _FakeRunResult:
@@ -99,7 +35,7 @@ def test_split_text_does_not_log_sensitive_input(
     caplog: Any,
     monkeypatch: Any,
 ) -> None:
-    """split_text must not write user-provided payload text to logs."""
+    """Ensure split_text does not log user-provided payload text."""
     sensitive_payload = "clientSecret=super-secret-value"
     sensitive_topic = f"Topic echoes {sensitive_payload}"
     sensitive_feedback_retry = f"Retry feedback echoes {sensitive_payload}"
@@ -159,7 +95,6 @@ def test_split_text_does_not_log_sensitive_input(
         manager.Runner,
         "run",
         staticmethod(fake_run),
-        raising=False,
     )
     caplog.set_level(logging.INFO, logger=manager.__name__)
 

@@ -16,8 +16,6 @@ members = [
     "azureauth-credprovider-keyring",
     "factorio-cycle-calculator",
     "git-commit-heatmap",
-    "hcoona-release-smoke",
-    "hcoona-release-smoke-pypi",
     "hcoona-three-monorepo",
     "html-sm-processor",
     "llm-text-splitter",
@@ -28,13 +26,6 @@ members = [
     "rag-postgresql-openai",
     "supermemo-mcp",
     "three-workflow-delivery-v3",
-    "three-workflow-release-authoring",
-    "three-workflow-release-build",
-    "three-workflow-release-contracts",
-    "three-workflow-release-metadata",
-    "three-workflow-release-planner",
-    "three-workflow-release-proof",
-    "three-workflow-release-publish",
     "transcribe",
 ]
 
@@ -1442,26 +1433,9 @@ wheels = [
 ]
 
 [[package]]
-name = "hcoona-release-smoke"
-source = { editable = "src/public/lib/hcoona-release-smoke" }
-
-[[package]]
-name = "hcoona-release-smoke-pypi"
-source = { editable = "src/public/lib/hcoona-release-smoke-pypi" }
-
-[[package]]
 name = "hcoona-three-monorepo"
 version = "0.0.0.dev0"
 source = { virtual = "." }
-dependencies = [
-    { name = "three-workflow-release-authoring" },
-    { name = "three-workflow-release-build" },
-    { name = "three-workflow-release-contracts" },
-    { name = "three-workflow-release-metadata" },
-    { name = "three-workflow-release-planner" },
-    { name = "three-workflow-release-proof" },
-    { name = "three-workflow-release-publish" },
-]
 
 [package.dev-dependencies]
 dev = [
@@ -1472,15 +1446,6 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "three-workflow-release-authoring", editable = "src/public/lib/three-workflow-release-authoring" },
-    { name = "three-workflow-release-build", editable = "src/public/lib/three-workflow-release-build" },
-    { name = "three-workflow-release-contracts", editable = "src/public/lib/three-workflow-release-contracts" },
-    { name = "three-workflow-release-metadata", editable = "src/public/lib/three-workflow-release-metadata" },
-    { name = "three-workflow-release-planner", editable = "src/public/lib/three-workflow-release-planner" },
-    { name = "three-workflow-release-proof", editable = "src/public/lib/three-workflow-release-proof" },
-    { name = "three-workflow-release-publish", editable = "src/public/lib/three-workflow-release-publish" },
-]
 
 [package.metadata.requires-dev]
 dev = [
@@ -4228,153 +4193,6 @@ dev = [
 requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "rfc8785", specifier = ">=0.1.4" },
-]
-
-[package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8.3.4" }]
-
-[[package]]
-name = "three-workflow-release-authoring"
-version = "0.1.0"
-source = { editable = "src/public/lib/three-workflow-release-authoring" }
-dependencies = [
-    { name = "pyyaml" },
-    { name = "three-workflow-release-contracts" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "pyyaml", specifier = ">=6.0.2" },
-    { name = "three-workflow-release-contracts", editable = "src/public/lib/three-workflow-release-contracts" },
-]
-
-[package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8.3.4" }]
-
-[[package]]
-name = "three-workflow-release-build"
-version = "0.1.0"
-source = { editable = "src/public/lib/three-workflow-release-build" }
-dependencies = [
-    { name = "nbgv-python" },
-    { name = "packaging" },
-    { name = "three-workflow-release-contracts" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "nbgv-python", editable = "src/public/lib/nbgv-python" },
-    { name = "packaging", specifier = ">=24.0" },
-    { name = "three-workflow-release-contracts", editable = "src/public/lib/three-workflow-release-contracts" },
-]
-
-[package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8.3.4" }]
-
-[[package]]
-name = "three-workflow-release-contracts"
-version = "0.1.0"
-source = { editable = "src/public/lib/three-workflow-release-contracts" }
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-]
-
-[package.metadata]
-
-[package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8.3.4" }]
-
-[[package]]
-name = "three-workflow-release-metadata"
-version = "0.1.0"
-source = { editable = "src/public/lib/three-workflow-release-metadata" }
-dependencies = [
-    { name = "three-workflow-release-contracts" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "three-workflow-release-contracts", editable = "src/public/lib/three-workflow-release-contracts" }]
-
-[package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8.3.4" }]
-
-[[package]]
-name = "three-workflow-release-planner"
-version = "0.1.0"
-source = { editable = "src/public/lib/three-workflow-release-planner" }
-dependencies = [
-    { name = "three-workflow-release-authoring" },
-    { name = "three-workflow-release-contracts" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "three-workflow-release-authoring", editable = "src/public/lib/three-workflow-release-authoring" },
-    { name = "three-workflow-release-contracts", editable = "src/public/lib/three-workflow-release-contracts" },
-]
-
-[package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8.3.4" }]
-
-[[package]]
-name = "three-workflow-release-proof"
-version = "0.1.0"
-source = { editable = "src/public/lib/three-workflow-release-proof" }
-dependencies = [
-    { name = "three-workflow-release-contracts" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "three-workflow-release-contracts", editable = "src/public/lib/three-workflow-release-contracts" }]
-
-[package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8.3.4" }]
-
-[[package]]
-name = "three-workflow-release-publish"
-version = "0.1.0"
-source = { editable = "src/public/lib/three-workflow-release-publish" }
-dependencies = [
-    { name = "packaging" },
-    { name = "three-workflow-release-contracts" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "packaging", specifier = ">=24.0" },
-    { name = "three-workflow-release-contracts", editable = "src/public/lib/three-workflow-release-contracts" },
 ]
 
 [package.metadata.requires-dev]

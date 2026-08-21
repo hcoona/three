@@ -20,7 +20,6 @@ Node.js package with explicit packaging metadata and publish-time scripts.
 
 ## Related Pages
 
-- [Repository Release Landscape](../analyses/repository-release-landscape.md)
 - [Root pnpm Workspace](./2026-04-21-root-package-json-pnpm-workspace.md)
 
 ## Open Questions

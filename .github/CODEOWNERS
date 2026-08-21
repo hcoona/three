@@ -1,15 +1,9 @@
-# Release workflow bootstrap governance.
+# Workflow Delivery v3 governance.
 /.github/CODEOWNERS @hcoona
-/.github/actionlint.yaml @hcoona
 /.github/workflows/** @hcoona
-/.github/workflows/docs/DESIGN.v2.md @hcoona
-/src/**/three.release.yml @hcoona
-/eng/release/target-instances.yml @hcoona
-/eng/release/buddy-target-refs.yml @hcoona
 /.github/actions/** @hcoona
 /eng/scripts/** @hcoona
 
-# Workflow Delivery v3 governance.
 /src/public/lib/three-workflow-delivery-v3/** @hcoona
 /eng/workflow-delivery/v3/** @hcoona
 /src/**/workflow-delivery.release-unit.yml @hcoona

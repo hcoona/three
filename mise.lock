@@ -134,6 +134,7 @@ checksum = "sha256:864cf7e7304e37974c298eded2685ec0fb63a4ac6c518ad4524da718e3e72
 url = "https://github.com/alibaba/open-code-review/releases/download/v1.9.5/opencodereview-linux-amd64"
 url_api = "https://api.github.com/repos/alibaba/open-code-review/releases/assets/517583244"
 provenance = "github-attestations"
+provenance_verified = true
 
 [tools."github:alibaba/open-code-review"."platforms.linux-x64-musl"]
 checksum = "sha256:864cf7e7304e37974c298eded2685ec0fb63a4ac6c518ad4524da718e3e72012"

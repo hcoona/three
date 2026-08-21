@@ -1,13 +1,7 @@
-# Historical Release Workflow Design Prompt
-
-> Historical/superseded: this file captures an older design prompt and is
-> not the active workflow topology. Current release workflow docs use
-> `src/**/three.release.yml`, `eng/release/target-instances.yml`, slash-style
-> target references such as `github-release/public`, and the
-> `release-orchestrate.yml` split topology. NuGet registry targets, direct
-> official publishing, `release.json`, `production-<project-name>` approval, and
-> colon-style target keys in this prompt are historical unless reintroduced by a
-> later reviewed design.
+> **Archived and superseded:** This pre-v3 design is retained only for
+> historical context. The legacy `buddy.yml` and `release-buddy.yml` routes are
+> retired. Do not use this document to recreate either route; current Buddy
+> delivery is owned by Workflow Delivery v3.
 
 This repository is a polyglot monorepo. I need you to design the best GitHub Actions workflow combination for the release and validation model described below.
 

@@ -4,74 +4,45 @@ on:
   workflow_call:
     inputs:
       target:
-        description: 'Target commit SHA to build from'
+        description: "Target commit SHA to build from"
         required: true
         type: string
       project:
-        description: 'Workspace package name'
+        description: "Workspace package name"
         required: true
         type: string
       package_dir:
-        description: 'Directory containing the Node package'
+        description: "Directory containing the Node package"
         required: true
         type: string
       version:
-        description: 'Expected package version (NpmPackageVersion from NBGV)'
+        description: "Expected package version (NpmPackageVersion from NBGV)"
         required: true
         type: string
       python_version:
-        description: 'Python version for uv helper scripts'
+        description: "Python version for uv helper scripts"
         required: true
         type: string
       node_version:
-        description: 'Node.js version'
+        description: "Node.js version"
         required: true
         type: string
       pnpm_version:
-        description: 'pnpm version'
+        description: "pnpm version"
         required: true
         type: string
       artifact_name:
-        description: 'Artifact name to upload out/* as'
+        description: "Artifact name to upload out/* as"
         required: true
         type: string
       pack_mode:
-        description: 'Registry packing mode: gpr-only produces the GitHub Packages tarball under its planner-frozen package-version name; npmjs-only produces the npmjs tarball under its planner-frozen package-version name; github-release-only produces only the planner-frozen GitHub Release package asset; both produces both registry tarballs. Any mode also produces the GitHub Release asset when expected_github_release_asset_name is non-empty.'
+        description: "Packing mode: gpr-only produces out/gpr.tgz; both produces out/gpr.tgz and out/npmjs.tgz"
         required: true
         type: string
-      expected_gpr_package_name:
-        description: 'Plan-authorized GitHub Packages npm package name; required when pack_mode includes gpr'
-        required: false
-        default: ''
-        type: string
-      expected_gpr_package_version:
-        description: 'Plan-authorized GitHub Packages npm package version; required when pack_mode includes gpr'
-        required: false
-        default: ''
-        type: string
-      expected_npmjs_package_name:
-        description: 'Plan-authorized npmjs package name; required when pack_mode includes npmjs'
-        required: false
-        default: ''
-        type: string
-      expected_npmjs_package_version:
-        description: 'Plan-authorized npmjs package version; required when pack_mode includes npmjs'
-        required: false
-        default: ''
-        type: string
-      expected_github_release_asset_name:
-        description: 'Plan-authorized GitHub Release npm package asset basename; required when a GitHub Release node is active'
-        required: false
-        default: ''
-        type: string
-      expected_github_release_package_name:
-        description: 'Plan-authorized GitHub Release npm package name; required when a GitHub Release node is active and the planned asset name depends on a projected npm package name'
-        required: false
-        default: ''
-        type: string
+
     outputs:
       dist_tag:
-        description: 'Computed npm dist-tag derived from the planner-frozen package version'
+        description: "Computed npm dist-tag derived from NBGV prerelease metadata"
         value: ${{ jobs.pack.outputs.dist_tag }}
 
 jobs:
@@ -84,61 +55,27 @@ jobs:
       dist_tag: ${{ steps.dist_tag.outputs.tag }}
 
     steps:
-      - name: Checkout release target
+      - name: Checkout
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: ${{ inputs.target }}
-          path: .three-workflow-release/target
-          persist-credentials: false
-
-      - name: Checkout trusted control-plane
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 1
-          ref: ${{ github.workflow_sha }}
-          path: .three-workflow-release/control-plane
-          persist-credentials: false
 
       - name: Validate pack mode
         shell: bash
         env:
           PACK_MODE: ${{ inputs.pack_mode }}
-          EXPECTED_GPR_PACKAGE_NAME: ${{ inputs.expected_gpr_package_name }}
-          EXPECTED_GPR_PACKAGE_VERSION: ${{ inputs.expected_gpr_package_version }}
-          EXPECTED_NPMJS_PACKAGE_NAME: ${{ inputs.expected_npmjs_package_name }}
-          EXPECTED_NPMJS_PACKAGE_VERSION: ${{ inputs.expected_npmjs_package_version }}
-          EXPECTED_GITHUB_RELEASE_ASSET_NAME: ${{ inputs.expected_github_release_asset_name }}
-          EXPECTED_GITHUB_RELEASE_PACKAGE_NAME: ${{ inputs.expected_github_release_package_name }}
         run: |
           set -Eeuo pipefail
-          if [[ "${PACK_MODE}" != "gpr-only" && "${PACK_MODE}" != "npmjs-only" && "${PACK_MODE}" != "github-release-only" && "${PACK_MODE}" != "both" ]]; then
-            echo "Invalid pack_mode: ${PACK_MODE}. Expected 'gpr-only', 'npmjs-only', 'github-release-only', or 'both'." >&2
+          if [[ "${PACK_MODE}" != "gpr-only" && "${PACK_MODE}" != "both" ]]; then
+            echo "Invalid pack_mode: ${PACK_MODE}. Expected 'gpr-only' or 'both'." >&2
             exit 1
-          fi
-          if [[ "${PACK_MODE}" == "gpr-only" || "${PACK_MODE}" == "both" ]]; then
-            if [[ -z "${EXPECTED_GPR_PACKAGE_NAME}" || -z "${EXPECTED_GPR_PACKAGE_VERSION}" ]]; then
-              echo "pack_mode=${PACK_MODE} requires expected GitHub Packages package name and version from the finalized plan." >&2
-              exit 1
-            fi
-          fi
-          if [[ "${PACK_MODE}" == "github-release-only" || -n "${EXPECTED_GITHUB_RELEASE_ASSET_NAME}" ]]; then
-            if [[ -z "${EXPECTED_GITHUB_RELEASE_ASSET_NAME}" ]]; then
-              echo "GitHub Release packing requires the expected GitHub Release asset name from the finalized plan." >&2
-              exit 1
-            fi
-          fi
-          if [[ "${PACK_MODE}" == "npmjs-only" || "${PACK_MODE}" == "both" ]]; then
-            if [[ -z "${EXPECTED_NPMJS_PACKAGE_NAME}" || -z "${EXPECTED_NPMJS_PACKAGE_VERSION}" ]]; then
-              echo "pack_mode=${PACK_MODE} requires expected npmjs package name and version from the finalized plan." >&2
-              exit 1
-            fi
           fi
 
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v6
         with:
-          global-json-file: .three-workflow-release/target/global.json
+          global-json-file: global.json
 
       - name: Setup Python
         uses: actions/setup-python@v7
@@ -148,8 +85,13 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: '0.10.9'
-          cache-dependency-glob: '.three-workflow-release/target/uv.lock'
+          python-version: ${{ inputs.python_version }}
+          cache-dependency-glob: 'uv.lock'
+
+      - name: Install dependencies
+        run: |
+          set -Eeuo pipefail
+          dotnet tool restore
 
       - name: Setup pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
@@ -162,32 +104,58 @@ jobs:
         with:
           node-version: ${{ inputs.node_version }}
           cache: 'pnpm'
-          cache-dependency-path: .three-workflow-release/target/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install Node dependencies
         shell: bash
-        working-directory: .three-workflow-release/target
         run: |
           set -Eeuo pipefail
           pnpm install --frozen-lockfile
 
-      - name: Determine npm dist-tag from planner version
+      - name: Verify Node version matches tag
+        shell: bash
+        env:
+          EXPECTED: ${{ inputs.version }}
+          PACKAGE_DIR: ${{ inputs.package_dir }}
+        run: |
+          set -Eeuo pipefail
+
+          computed=$(dotnet tool run nbgv get-version -v NpmPackageVersion -p "${PACKAGE_DIR}")
+          if [[ -z "${computed}" ]]; then
+            echo "nbgv returned an empty NpmPackageVersion for package directory '${PACKAGE_DIR}'." >&2
+            exit 1
+          fi
+
+          if [[ "${computed}" != "${EXPECTED}" ]]; then
+            echo "Built Node package version mismatch: expected ${EXPECTED}, got ${computed}" >&2
+            exit 1
+          fi
+
+          echo "Verified Node package version matches ${EXPECTED}"
+
+      - name: Determine npm dist-tag (via NBGV metadata)
         id: dist_tag
         shell: bash
         env:
           VERSION: ${{ inputs.version }}
+          PACKAGE_DIR: ${{ inputs.package_dir }}
         run: |
           set -Eeuo pipefail
 
-          version_core="${VERSION%%+*}"
-          if [[ "${version_core}" != *-* ]]; then
+          prerelease=$(dotnet tool run nbgv get-version -v PrereleaseVersionNoLeadingHyphen -p "${PACKAGE_DIR}")
+
+          if [[ -z "${prerelease}" ]]; then
+            if [[ "${VERSION}" == *-* ]]; then
+              echo "Resolved version '${VERSION}' looks like a prerelease (contains '-'), but NBGV prerelease metadata is empty." >&2
+              echo "Fix: update version configuration (usually version.json) so prereleases use a stable channel prefix (e.g. -beta.{height}, -rc.{height})." >&2
+              exit 1
+            fi
             tag="latest"
           else
-            prerelease="${version_core#*-}"
             channel="${prerelease%%.*}"
             channel="${channel,,}"
             if [[ -z "${channel}" || ! "${channel}" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
-              echo "Invalid npm dist-tag derived from planner version '${VERSION}': '${channel}' (raw prerelease: '${prerelease}')." >&2
+              echo "Invalid npm dist-tag derived from NBGV prerelease metadata: '${channel}' (raw: '${prerelease}')." >&2
               echo "Expected pattern: ^[a-z0-9][a-z0-9-]*$" >&2
               echo "Fix: update version configuration (usually version.json) so prereleases use a stable channel prefix (e.g. -beta.{height}, -rc.{height})." >&2
               exit 1
@@ -200,7 +168,6 @@ jobs:
 
       - name: Run quality checks
         shell: bash
-        working-directory: .three-workflow-release/target
         env:
           PROJECT: ${{ inputs.project }}
         run: |
@@ -212,7 +179,6 @@ jobs:
 
       - name: Prepare package metadata
         shell: bash
-        working-directory: .three-workflow-release/target
         env:
           PROJECT: ${{ inputs.project }}
         run: |
@@ -220,104 +186,62 @@ jobs:
           pnpm --filter "${PROJECT}" run --if-present prepack
 
       - name: Prepare package name for GitHub Packages pack
-        if: ${{ inputs.pack_mode == 'gpr-only' || inputs.pack_mode == 'both' }}
         id: prepare_gpr
         shell: bash
         env:
-          PACKAGE_DIR: ${{ github.workspace }}/.three-workflow-release/target/${{ inputs.package_dir }}
-          TRUSTED_PREPARE_NPM_PUBLISH: ${{ github.workspace }}/.three-workflow-release/control-plane/eng/scripts/prepare_npm_publish.py
-          EXPECTED_PACKAGE_NAME: ${{ inputs.expected_gpr_package_name }}
-          STATE_FILE: ${{ runner.temp }}/npm-publish-gpr.json
+          PACKAGE_DIR: ${{ inputs.package_dir }}
+          OWNER: ${{ github.repository_owner }}
+          STATE_FILE: ${{ runner.temp }}/npm-publish.json
         run: |
           set -Eeuo pipefail
-          uv run --script "${TRUSTED_PREPARE_NPM_PUBLISH}" \
+          package_scope="${OWNER,,}"
+          uv run --script eng/scripts/prepare_npm_publish.py \
             --package-dir "${PACKAGE_DIR}" \
-            --package-name "${EXPECTED_PACKAGE_NAME}" \
-            --output "${GITHUB_OUTPUT}" \
+            --scope "${package_scope}" \
             --state-file "${STATE_FILE}"
-          prepared_name=$(node -e "const fs = require('fs'); const pkg = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); process.stdout.write(pkg.name || '');" "${PACKAGE_DIR}/package.json")
-          if [[ "${EXPECTED_PACKAGE_NAME}" != "${prepared_name}" ]]; then
-            echo "GitHub Packages package name mismatch after authorized preparation: expected ${EXPECTED_PACKAGE_NAME}, got ${prepared_name}" >&2
-            exit 1
-          fi
 
       - name: Pack tarball for GitHub Packages
-        if: ${{ inputs.pack_mode == 'gpr-only' || inputs.pack_mode == 'both' }}
         id: pack_gpr
         shell: bash
         env:
-          EXPECTED_PACKAGE_NAME: ${{ inputs.expected_gpr_package_name }}
-          EXPECTED_PACKAGE_VERSION: ${{ inputs.expected_gpr_package_version }}
-          PACKAGE_DIR: ${{ github.workspace }}/.three-workflow-release/target/${{ inputs.package_dir }}
+          PACKAGE_DIR: ${{ inputs.package_dir }}
         run: |
           set -Eeuo pipefail
+
           rm -rf "${GITHUB_WORKSPACE}/out"
           mkdir -p "${GITHUB_WORKSPACE}/out"
-          staging="${RUNNER_TEMP}/node-pack-gpr"
-          rm -rf "${staging}"
-          mkdir -p "${staging}"
 
           pushd "${PACKAGE_DIR}" >/dev/null
           export TZ=UTC
           export LC_ALL=C.UTF-8
           SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
           export SOURCE_DATE_EPOCH
-          tgz_name=$(npm pack --ignore-scripts --pack-destination "${staging}")
+          tgz_name=$(npm pack --ignore-scripts --pack-destination "${GITHUB_WORKSPACE}/out")
           popd >/dev/null
 
-          src="${staging}/${tgz_name##*/}"
+          src="${GITHUB_WORKSPACE}/out/${tgz_name##*/}"
           if [[ ! -f "${src}" ]]; then
             echo "npm pack did not produce expected tarball: ${src}" >&2
             exit 1
           fi
-          expected_tgz_name=$(node - <<'NODE'
-          const name = process.env.EXPECTED_PACKAGE_NAME;
-          const version = process.env.EXPECTED_PACKAGE_VERSION;
-          const filenameName = name.startsWith('@') ? name.slice(1).replace('/', '-') : name;
-          process.stdout.write(`${filenameName}-${version}.tgz`);
-          NODE
-          )
-          if [[ "${tgz_name##*/}" != "${expected_tgz_name}" ]]; then
-            echo "GitHub Packages tarball basename mismatch: expected ${expected_tgz_name}, got ${tgz_name##*/}" >&2
-            exit 1
-          fi
-          package_json=$(tar -xOf "${src}" package/package.json 2>/dev/null || true)
-          if [[ -z "${package_json}" ]]; then
-            echo "GitHub Packages tarball is missing package/package.json: ${src}" >&2
-            exit 1
-          fi
-          PACKAGE_JSON="${package_json}" node - <<'NODE'
-          const pkg = JSON.parse(process.env.PACKAGE_JSON);
-          const expectedName = process.env.EXPECTED_PACKAGE_NAME;
-          const expectedVersion = process.env.EXPECTED_PACKAGE_VERSION;
-          if (pkg.name !== expectedName) {
-            console.error(`GitHub Packages tarball package.json name mismatch: expected ${expectedName}, got ${pkg.name}`);
-            process.exit(1);
-          }
-          if (pkg.version !== expectedVersion) {
-            console.error(`GitHub Packages tarball package.json version mismatch: expected ${expectedVersion}, got ${pkg.version}`);
-            process.exit(1);
-          }
-          NODE
-          destination="${GITHUB_WORKSPACE}/out/${expected_tgz_name}"
-          if [[ -e "${destination}" ]]; then
-            echo "Refusing to overwrite final artifact ${destination}" >&2
+
+          if [[ -e "${GITHUB_WORKSPACE}/out/gpr.tgz" ]]; then
+            echo "Refusing to overwrite out/gpr.tgz" >&2
             exit 1
           fi
 
-          mv "${src}" "${destination}"
+          mv "${src}" "${GITHUB_WORKSPACE}/out/gpr.tgz"
 
-      - name: Restore GitHub Packages package name
+      - name: Restore package name
         if: always()
         shell: bash
         env:
-          PACKAGE_DIR: ${{ github.workspace }}/.three-workflow-release/target/${{ inputs.package_dir }}
-          TRUSTED_PREPARE_NPM_PUBLISH: ${{ github.workspace }}/.three-workflow-release/control-plane/eng/scripts/prepare_npm_publish.py
-          STATE_FILE: ${{ runner.temp }}/npm-publish-gpr.json
+          PACKAGE_DIR: ${{ inputs.package_dir }}
+          STATE_FILE: ${{ runner.temp }}/npm-publish.json
         run: |
           set -Eeuo pipefail
           if [[ -f "${STATE_FILE}" ]]; then
-            uv run --script "${TRUSTED_PREPARE_NPM_PUBLISH}" \
+            uv run --script eng/scripts/prepare_npm_publish.py \
               --package-dir "${PACKAGE_DIR}" \
               --state-file "${STATE_FILE}" \
               --restore
@@ -326,10 +250,10 @@ jobs:
           fi
 
       - name: Verify package is not private (npmjs)
-        if: ${{ inputs.pack_mode == 'npmjs-only' || inputs.pack_mode == 'both' }}
+        if: ${{ inputs.pack_mode == 'both' }}
         shell: bash
         env:
-          PACKAGE_DIR: ${{ github.workspace }}/.three-workflow-release/target/${{ inputs.package_dir }}
+          PACKAGE_DIR: ${{ inputs.package_dir }}
         run: |
           set -Eeuo pipefail
           pushd "${PACKAGE_DIR}" >/dev/null
@@ -343,262 +267,39 @@ jobs:
           NODE
           popd >/dev/null
 
-      - name: Prepare package name for npmjs pack
-        if: ${{ inputs.pack_mode == 'npmjs-only' || inputs.pack_mode == 'both' }}
-        shell: bash
-        env:
-          PACKAGE_DIR: ${{ github.workspace }}/.three-workflow-release/target/${{ inputs.package_dir }}
-          TRUSTED_PREPARE_NPM_PUBLISH: ${{ github.workspace }}/.three-workflow-release/control-plane/eng/scripts/prepare_npm_publish.py
-          EXPECTED_PACKAGE_NAME: ${{ inputs.expected_npmjs_package_name }}
-          STATE_FILE: ${{ runner.temp }}/npm-publish-npmjs.json
-        run: |
-          set -Eeuo pipefail
-          uv run --script "${TRUSTED_PREPARE_NPM_PUBLISH}" \
-            --package-dir "${PACKAGE_DIR}" \
-            --package-name "${EXPECTED_PACKAGE_NAME}" \
-            --state-file "${STATE_FILE}"
-
       - name: Pack tarball for npmjs
-        if: ${{ inputs.pack_mode == 'npmjs-only' || inputs.pack_mode == 'both' }}
+        if: ${{ inputs.pack_mode == 'both' }}
         id: pack_npmjs
         shell: bash
         env:
-          EXPECTED_PACKAGE_NAME: ${{ inputs.expected_npmjs_package_name }}
-          EXPECTED_PACKAGE_VERSION: ${{ inputs.expected_npmjs_package_version }}
-          PACK_MODE: ${{ inputs.pack_mode }}
-          PACKAGE_DIR: ${{ github.workspace }}/.three-workflow-release/target/${{ inputs.package_dir }}
+          PACKAGE_DIR: ${{ inputs.package_dir }}
         run: |
           set -Eeuo pipefail
-          if [[ "${PACK_MODE}" == "npmjs-only" ]]; then
-            rm -rf "${GITHUB_WORKSPACE}/out"
-            mkdir -p "${GITHUB_WORKSPACE}/out"
-          fi
-          staging="${RUNNER_TEMP}/node-pack-npmjs"
-          rm -rf "${staging}"
-          mkdir -p "${staging}"
 
           pushd "${PACKAGE_DIR}" >/dev/null
           export TZ=UTC
           export LC_ALL=C.UTF-8
           SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
           export SOURCE_DATE_EPOCH
-          tgz_name=$(npm pack --ignore-scripts --pack-destination "${staging}")
+          tgz_name=$(npm pack --ignore-scripts --pack-destination "${GITHUB_WORKSPACE}/out")
           popd >/dev/null
 
-          src="${staging}/${tgz_name##*/}"
+          src="${GITHUB_WORKSPACE}/out/${tgz_name##*/}"
           if [[ ! -f "${src}" ]]; then
             echo "npm pack did not produce expected tarball: ${src}" >&2
             exit 1
           fi
-          expected_tgz_name=$(node - <<'NODE'
-          const name = process.env.EXPECTED_PACKAGE_NAME;
-          const version = process.env.EXPECTED_PACKAGE_VERSION;
-          const filenameName = name.startsWith('@') ? name.slice(1).replace('/', '-') : name;
-          process.stdout.write(`${filenameName}-${version}.tgz`);
-          NODE
-          )
-          if [[ "${tgz_name##*/}" != "${expected_tgz_name}" ]]; then
-            echo "npmjs tarball basename mismatch: expected ${expected_tgz_name}, got ${tgz_name##*/}" >&2
+
+          if [[ -e "${GITHUB_WORKSPACE}/out/npmjs.tgz" ]]; then
+            echo "Refusing to overwrite out/npmjs.tgz" >&2
             exit 1
           fi
-          package_json=$(tar -xOf "${src}" package/package.json 2>/dev/null || true)
-          if [[ -z "${package_json}" ]]; then
-            echo "npmjs tarball is missing package/package.json: ${src}" >&2
-            exit 1
-          fi
-          PACKAGE_JSON="${package_json}" node - <<'NODE'
-          const pkg = JSON.parse(process.env.PACKAGE_JSON);
-          const expectedName = process.env.EXPECTED_PACKAGE_NAME;
-          const expectedVersion = process.env.EXPECTED_PACKAGE_VERSION;
-          if (pkg.name !== expectedName) {
-            console.error(`npmjs tarball package.json name mismatch: expected ${expectedName}, got ${pkg.name}`);
-            process.exit(1);
-          }
-          if (pkg.version !== expectedVersion) {
-            console.error(`npmjs tarball package.json version mismatch: expected ${expectedVersion}, got ${pkg.version}`);
-            process.exit(1);
-          }
-          NODE
-          destination="${GITHUB_WORKSPACE}/out/${expected_tgz_name}"
-          if [[ -e "${destination}" ]]; then
-            if [[ "${PACK_MODE}" == "both" ]]; then
-              cmp -s "${src}" "${destination}" || {
-                echo "Refusing to overwrite final artifact ${destination}; existing planner-frozen tarball bytes differ from the npmjs tarball." >&2
-                exit 1
-              }
-              echo "Reusing existing identical planner-frozen tarball ${destination} for npmjs."
-              rm -f "${src}"
-            else
-              echo "Refusing to overwrite final artifact ${destination}" >&2
-              exit 1
-            fi
-          else
-            mv "${src}" "${destination}"
-          fi
 
-      - name: Restore npmjs package name
-        if: ${{ always() && (inputs.pack_mode == 'npmjs-only' || inputs.pack_mode == 'both') }}
-        shell: bash
-        env:
-          PACKAGE_DIR: ${{ github.workspace }}/.three-workflow-release/target/${{ inputs.package_dir }}
-          TRUSTED_PREPARE_NPM_PUBLISH: ${{ github.workspace }}/.three-workflow-release/control-plane/eng/scripts/prepare_npm_publish.py
-          STATE_FILE: ${{ runner.temp }}/npm-publish-npmjs.json
-        run: |
-          set -Eeuo pipefail
-          if [[ -f "${STATE_FILE}" ]]; then
-            uv run --script "${TRUSTED_PREPARE_NPM_PUBLISH}" \
-              --package-dir "${PACKAGE_DIR}" \
-              --state-file "${STATE_FILE}" \
-              --restore
-          else
-            echo "No npmjs publish state file to restore."
-          fi
-
-      - name: Prepare package name for GitHub Release pack
-        if: ${{ inputs.expected_github_release_asset_name != '' && inputs.expected_github_release_package_name != '' }}
-        shell: bash
-        env:
-          PACKAGE_DIR: ${{ github.workspace }}/.three-workflow-release/target/${{ inputs.package_dir }}
-          TRUSTED_PREPARE_NPM_PUBLISH: ${{ github.workspace }}/.three-workflow-release/control-plane/eng/scripts/prepare_npm_publish.py
-          EXPECTED_PACKAGE_NAME: ${{ inputs.expected_github_release_package_name }}
-          STATE_FILE: ${{ runner.temp }}/npm-publish-github-release.json
-        run: |
-          set -Eeuo pipefail
-          uv run --script "${TRUSTED_PREPARE_NPM_PUBLISH}" \
-            --package-dir "${PACKAGE_DIR}" \
-            --package-name "${EXPECTED_PACKAGE_NAME}" \
-            --state-file "${STATE_FILE}"
-
-      - name: Pack tarball for GitHub Release
-        if: ${{ inputs.expected_github_release_asset_name != '' }}
-        id: pack_github_release
-        shell: bash
-        env:
-          EXPECTED_ASSET_NAME: ${{ inputs.expected_github_release_asset_name }}
-          EXPECTED_PACKAGE_NAME: ${{ inputs.expected_github_release_package_name }}
-          EXPECTED_PACKAGE_VERSION: ${{ inputs.version }}
-          PACKAGE_DIR: ${{ github.workspace }}/.three-workflow-release/target/${{ inputs.package_dir }}
-        run: |
-          set -Eeuo pipefail
-          log_asset_digest() {
-            local file="$1"
-            local actual_sha256 actual_sha512
-            actual_sha256=$(sha256sum "${file}" | awk '{print $1}')
-            actual_sha512=$(sha512sum "${file}" | awk '{print $1}')
-            echo "GitHub Release package asset SHA-256: ${actual_sha256}"
-            echo "GitHub Release package asset SHA-512: ${actual_sha512}"
-          }
-
-          mkdir -p "${GITHUB_WORKSPACE}/out"
-          staging="${RUNNER_TEMP}/node-pack-github-release"
-          rm -rf "${staging}"
-          mkdir -p "${staging}"
-
-          pushd "${PACKAGE_DIR}" >/dev/null
-          export TZ=UTC
-          export LC_ALL=C.UTF-8
-          SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
-          export SOURCE_DATE_EPOCH
-          tgz_name=$(npm pack --ignore-scripts --pack-destination "${staging}")
-          popd >/dev/null
-
-          src="${staging}/${tgz_name##*/}"
-          if [[ ! -f "${src}" ]]; then
-            echo "npm pack did not produce expected tarball: ${src}" >&2
-            exit 1
-          fi
-          if [[ "${tgz_name##*/}" != "${EXPECTED_ASSET_NAME}" ]]; then
-            echo "GitHub Release package asset basename mismatch: expected ${EXPECTED_ASSET_NAME}, got ${tgz_name##*/}" >&2
-            exit 1
-          fi
-          package_json=$(tar -xOf "${src}" package/package.json 2>/dev/null || true)
-          if [[ -z "${package_json}" ]]; then
-            echo "GitHub Release package asset is missing package/package.json: ${src}" >&2
-            exit 1
-          fi
-          PACKAGE_JSON="${package_json}" node - <<'NODE'
-          const pkg = JSON.parse(process.env.PACKAGE_JSON);
-          const expectedName = process.env.EXPECTED_PACKAGE_NAME;
-          const expectedVersion = process.env.EXPECTED_PACKAGE_VERSION;
-          if (expectedName && pkg.name !== expectedName) {
-            console.error(`GitHub Release package asset package.json name mismatch: expected ${expectedName}, got ${pkg.name}`);
-            process.exit(1);
-          }
-          if (pkg.version !== expectedVersion) {
-            console.error(`GitHub Release package asset package.json version mismatch: expected ${expectedVersion}, got ${pkg.version}`);
-            process.exit(1);
-          }
-          NODE
-          log_asset_digest "${src}"
-          destination="${GITHUB_WORKSPACE}/out/${EXPECTED_ASSET_NAME}"
-          if [[ -e "${destination}" ]]; then
-            cmp -s "${src}" "${destination}" || {
-              echo "Refusing to overwrite final GitHub Release asset ${destination}; existing file bytes differ from the newly packed asset." >&2
-              exit 1
-            }
-            rm -f "${src}"
-          else
-            mv "${src}" "${destination}"
-          fi
-
-      - name: Restore GitHub Release package name
-        if: ${{ always() && inputs.expected_github_release_asset_name != '' && inputs.expected_github_release_package_name != '' }}
-        shell: bash
-        env:
-          PACKAGE_DIR: ${{ github.workspace }}/.three-workflow-release/target/${{ inputs.package_dir }}
-          TRUSTED_PREPARE_NPM_PUBLISH: ${{ github.workspace }}/.three-workflow-release/control-plane/eng/scripts/prepare_npm_publish.py
-          STATE_FILE: ${{ runner.temp }}/npm-publish-github-release.json
-        run: |
-          set -Eeuo pipefail
-          if [[ -f "${STATE_FILE}" ]]; then
-            uv run --script "${TRUSTED_PREPARE_NPM_PUBLISH}" \
-              --package-dir "${PACKAGE_DIR}" \
-              --state-file "${STATE_FILE}" \
-              --restore
-          else
-            echo "No GitHub Release package state file to restore."
-          fi
-
-      - name: Write release asset receipts
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          mkdir -p "${GITHUB_WORKSPACE}/asset-receipts"
-          python - "${GITHUB_WORKSPACE}/out" "${GITHUB_WORKSPACE}/asset-receipts/release-asset-receipts.json" <<'PY'
-          from __future__ import annotations
-
-          import hashlib
-          import json
-          import sys
-          from pathlib import Path
-
-          out_dir = Path(sys.argv[1])
-          receipt_path = Path(sys.argv[2])
-          receipts = []
-          for path in sorted(out_dir.iterdir(), key=lambda item: item.name):
-              if not path.is_file() or path.name == receipt_path.name:
-                  continue
-              receipts.append(
-                  {
-                      "name": path.name,
-                      "size": path.stat().st_size,
-                      "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-                  }
-              )
-          if not receipts:
-              raise SystemExit("no release assets found for receipt generation")
-          receipt_path.write_text(json.dumps(receipts, sort_keys=True) + "\n", encoding="utf-8")
-          PY
+          mv "${src}" "${GITHUB_WORKSPACE}/out/npmjs.tgz"
 
       - name: Upload dist artifact
         uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.artifact_name }}
           path: ${{ github.workspace }}/out/*
-          if-no-files-found: error
-      - name: Upload release asset receipts artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ inputs.artifact_name }}-asset-receipts
-          path: ${{ github.workspace }}/asset-receipts/release-asset-receipts.json
           if-no-files-found: error

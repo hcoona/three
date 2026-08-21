@@ -3,15 +3,7 @@ name = "hcoona-three-monorepo"
 version = "0.0.0-dev"
 description = "Root uv workspace manifest for the Three monorepo."
 authors = [{ name = "Shuai Zhang", email = "zhangshuai.ustc@gmail.com" }]
-dependencies = [
-  "three-workflow-release-authoring",
-  "three-workflow-release-build",
-  "three-workflow-release-contracts",
-  "three-workflow-release-metadata",
-  "three-workflow-release-planner",
-  "three-workflow-release-proof",
-  "three-workflow-release-publish",
-]
+dependencies = []
 readme = "README.md"
 requires-python = ">= 3.13"
 license = "LGPL-3.0-or-later WITH LGPL-3.0-linking-exception"
@@ -35,30 +27,14 @@ members = [
   "src/private/app/transcribe",
   "src/private/app/azureauth-credprovider/python",
   "src/public/app/markdown-hybrid-search-mcp",
-  "src/public/lib/hcoona-release-smoke",
-  "src/public/lib/hcoona-release-smoke-pypi",
   "src/public/lib/nbgv-python",
   "src/public/lib/three-workflow-delivery-v3",
-  "src/public/lib/three-workflow-release-contracts",
-  "src/public/lib/three-workflow-release-authoring",
-  "src/public/lib/three-workflow-release-build",
-  "src/public/lib/three-workflow-release-metadata",
-  "src/public/lib/three-workflow-release-planner",
-  "src/public/lib/three-workflow-release-publish",
-  "src/public/lib/three-workflow-release-proof",
   "src/sample/nbgv-hatch-demo",
 ]
 
 [tool.uv.sources]
 nbgv-python = { workspace = true }
 three-workflow-delivery-v3 = { workspace = true }
-three-workflow-release-authoring = { workspace = true }
-three-workflow-release-build = { workspace = true }
-three-workflow-release-contracts = { workspace = true }
-three-workflow-release-metadata = { workspace = true }
-three-workflow-release-planner = { workspace = true }
-three-workflow-release-proof = { workspace = true }
-three-workflow-release-publish = { workspace = true }
 
 [tool.pyrefly]
 # Keep type-check coverage aligned with the root uv workspace membership.
@@ -73,17 +49,8 @@ project-includes = [
   "src/private/app/transcribe/**/*.py",
   "src/private/app/azureauth-credprovider/python",
   "src/public/app/markdown-hybrid-search-mcp/src/**/*.py",
-  "src/public/lib/hcoona-release-smoke/src/**/*.py",
-  "src/public/lib/hcoona-release-smoke-pypi/src/**/*.py",
   "src/public/lib/nbgv-python/**/*.py",
   "src/public/lib/three-workflow-delivery-v3/**/*.py",
-  "src/public/lib/three-workflow-release-contracts/**/*.py",
-  "src/public/lib/three-workflow-release-authoring/**/*.py",
-  "src/public/lib/three-workflow-release-build/**/*.py",
-  "src/public/lib/three-workflow-release-metadata/**/*.py",
-  "src/public/lib/three-workflow-release-planner/**/*.py",
-  "src/public/lib/three-workflow-release-publish/**/*.py",
-  "src/public/lib/three-workflow-release-proof/**/*.py",
   "src/sample/nbgv-hatch-demo/**/*.py",
 ]
 project-excludes = ['.venv/**', 'dist/**']
@@ -173,7 +140,7 @@ convention = "google" # Match the Google Python Style Guide docstring structure.
 addopts = "--import-mode=importlib"
 testpaths = [
   "src/private/app/azureauth-credprovider/python/tests",
+  "src/private/app/llm-text-splitter/tests",
   "src/public/lib/nbgv-python/tests",
   "src/public/lib/three-workflow-delivery-v3/tests",
-  "src/public/lib/three-workflow-release-contracts/tests",
 ]

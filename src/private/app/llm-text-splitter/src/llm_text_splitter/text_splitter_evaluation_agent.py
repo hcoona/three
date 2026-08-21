@@ -1,4 +1,4 @@
-"""This module provides an evaluator that uses LLMs to evaluate the segmentation of a document."""  # noqa: E501
+"""This module provides a evaluator that uses LLMs to evaluate the segmentation of a document."""  # noqa: E501
 
 from agents import Agent, OpenAIChatCompletionsModel
 from openai import AsyncOpenAI

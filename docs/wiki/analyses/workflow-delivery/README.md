@@ -6,8 +6,10 @@ This directory is the version boundary for workflow-delivery architecture.
 
 1. [v3](./v3/README.md) contains the active requirements and architecture and
    is the only normative source for new implementation work.
-2. [v2](./v2/README.md) is an archived prototype and mechanism source.
-3. [v1](./v1/README.md) is the historical `origin/main` baseline.
+2. v2 is an archived prototype and mechanism source at immutable commit
+   `8824df2a12c78a1f3a851a3c2763bcb9e64f2412`.
+3. v1 is the production compatibility baseline represented by base
+   `7f8f41c2ecb53e43848d7db4b7d17a8f46f10283`.
 
 When documents disagree, v3 wins. v1 and v2 must not be used to fill a missing
 v3 decision implicitly.

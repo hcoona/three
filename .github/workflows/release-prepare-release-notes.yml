@@ -48,7 +48,6 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ inputs.target }}
-          persist-credentials: false
 
       - name: Generate release notes
         id: notes

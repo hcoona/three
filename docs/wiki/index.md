@@ -33,9 +33,7 @@ Read it first when deciding which pages to inspect.
 - [markdown-hybrid-search-mcp Metadata](./sources/2026-04-21-markdown-hybrid-search-mcp-pyproject.md) | Public-path Python app that is still metadata-private. |
 - [hexo-renderer-asciidoc Package Metadata](./sources/2026-04-21-hexo-renderer-asciidoc-package-json.md) | Representative publishable Node.js package metadata. |
 - [steam-account-history-to-csv Package Metadata](./sources/2026-04-21-steam-account-history-to-csv-package-json.md) | Public-path browser-extension project that is still private. |
-- [Workflow Release Requirements Interview](./sources/2026-04-21-workflow-release-requirements-interview.md) | Requirement-phase clarifications from the workflow release discussion. |
 - [GitHub Packages Supported Registries](./sources/2026-04-22-github-packages-supported-registries.md) | Official GitHub capability boundary for npm, RubyGems, and NuGet, and the lack of a PyPI registry. |
-- [Workflow Release CI HK Source Page](./sources/2026-05-11-workflow-release-ci-hk-source-page.md) | Documented HK validation surfaces and repository verification of current plan-output limitations. |
 
 ## Concepts
 
@@ -47,7 +45,6 @@ No entity pages yet.
 
 ## Analyses
 
-- [Repository Release Landscape](./analyses/repository-release-landscape.md) | Repo-wide release inventory, current implementation signals, and gaps to the desired buddy/official model. |
 - [Workflow Delivery Architecture Versions](./analyses/workflow-delivery/README.md) | Entry point and normative priority for v1, v2, and v3 delivery architecture.
 - [Workflow Delivery v3 Requirements](./analyses/workflow-delivery/v3/requirements.md) | Confirmed normative product and system requirements baseline.
 - [Workflow Delivery v3 High-Level Design](./analyses/workflow-delivery/v3/high-level-design.md) | Active top-level architecture for the clean v3 implementation line.
@@ -60,4 +57,3 @@ No entity pages yet.
 - [Workflow Delivery v3 AI Agent Handoff](./analyses/workflow-delivery/v3/agent-handoff.md) | Concise current checkpoint, next action, architecture guardrails, and engineering discipline for clean-context agents.
 - [Workflow Delivery v3 Architecture Glossary](./analyses/workflow-delivery/v3/architecture-glossary.md) | Normative v3 terminology and confirmed architecture principles.
 - [Workflow Delivery v3 Migration and Document Policy](./analyses/workflow-delivery/v3/migration-strategy.md) | Clean-line implementation strategy and explicit rules for porting, rewriting, or archiving v2 assets.
-- [Workflow Delivery v2 Archive](./analyses/workflow-delivery/v2/README.md) | Permanent v2 commit and catalog of mechanism and research sources; not normative for v3.

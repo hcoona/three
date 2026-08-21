@@ -21,7 +21,6 @@
 
 ## Related Pages
 
-- [Repository Release Landscape](../analyses/repository-release-landscape.md)
 - [C# Packability Rules](./2026-04-21-src-directory-build-props-packability.md)
 
 ## Open Questions

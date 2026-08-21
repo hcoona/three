@@ -4,35 +4,31 @@ on:
   workflow_call:
     inputs:
       target:
-        description: 'Target commit SHA to build from'
+        description: "Target commit SHA to build from"
         required: true
         type: string
       project:
-        description: 'Workspace package name'
+        description: "Workspace package name"
         required: true
         type: string
       package_dir:
-        description: 'Directory containing the Node/WXT package'
+        description: "Directory containing the Node/WXT package"
         required: true
         type: string
       version:
-        description: 'Expected package version (NpmPackageVersion from NBGV)'
+        description: "Expected package version (NpmPackageVersion from NBGV)"
         required: true
         type: string
       node_version:
-        description: 'Node.js version'
+        description: "Node.js version"
         required: true
         type: string
       pnpm_version:
-        description: 'pnpm version'
+        description: "pnpm version"
         required: true
         type: string
       artifact_name:
-        description: 'Artifact name to upload out/* as'
-        required: true
-        type: string
-      profile:
-        description: 'Release profile whose descriptor artifact list selects browser outputs'
+        description: "Artifact name to upload out/* as"
         required: true
         type: string
 
@@ -48,7 +44,6 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ inputs.target }}
-          persist-credentials: false
 
       - name: Install jq
         uses: dcarbone/install-jq-action@4fcb5062d7ce9bc4382d1a352d19ba3ba2c317c1 # v4.0.1
@@ -98,123 +93,20 @@ jobs:
       - name: Build package (Node/WXT)
         shell: bash
         env:
-          EXPECTED: ${{ inputs.version }}
           PROJECT: ${{ inputs.project }}
           PACKAGE_DIR: ${{ inputs.package_dir }}
-          RELEASE_PROFILE: ${{ inputs.profile }}
         run: |
           set -Eeuo pipefail
 
           rm -rf "${GITHUB_WORKSPACE}/out"
           mkdir -p "${GITHUB_WORKSPACE}/out"
 
-          descriptor_path="${PACKAGE_DIR}/three.release.yml"
-          if [[ ! -r "${descriptor_path}" ]]; then
-            echo "WXT descriptor is required and must be readable: ${descriptor_path}" >&2
-            exit 1
-          fi
-
-          if ! wxt_selection_json="$(
-            PROJECT="${PROJECT}" RELEASE_PROFILE="${RELEASE_PROFILE}" ruby -rjson -e '
-              require "yaml"
-              path = ARGV.fetch(0)
-              descriptor = YAML.safe_load(
-                File.read(path),
-                permitted_classes: [],
-                permitted_symbols: [],
-                aliases: false,
-              )
-              unless descriptor.is_a?(Hash)
-                abort "WXT descriptor must be a YAML mapping: #{path}"
-              end
-              project = descriptor["project"]
-              unless project.is_a?(Hash)
-                abort "WXT descriptor must define a project mapping: #{path}"
-              end
-              project_id = project["id"]
-              expected_project_id = ENV.fetch("PROJECT")
-              unless project_id == expected_project_id
-                abort "WXT descriptor project id mismatch: expected #{expected_project_id.inspect}, got #{project_id.inspect}"
-              end
-              profiles = descriptor["profiles"]
-              unless profiles.is_a?(Hash)
-                abort "WXT descriptor must define a profiles mapping: #{path}"
-              end
-              profile_name = ENV.fetch("RELEASE_PROFILE")
-              profile = profiles[profile_name]
-              unless profile.is_a?(Hash)
-                abort "WXT descriptor profile is missing or invalid: #{profile_name}"
-              end
-              variants = descriptor["variants"]
-              unless variants.is_a?(Array)
-                abort "WXT descriptor must define a variants array: #{path}"
-              end
-              artifact_id = lambda do |artifact|
-                case artifact
-                when Hash
-                  artifact["id"] || artifact[:id]
-                when String, Symbol
-                  artifact.to_s
-                end
-              end
-              artifact_kinds = {}
-              variants.each do |variant|
-                next unless variant.is_a?(Hash)
-                artifacts = variant["artifacts"]
-                next unless artifacts.is_a?(Array)
-                artifacts.each do |artifact|
-                  next unless artifact.is_a?(Hash)
-                  id = artifact["id"]
-                  artifact_kinds[id] = artifact["concrete-kind"] if id.is_a?(String)
-                end
-              end
-              targets = profile["targets"]
-              unless targets.is_a?(Array)
-                abort "WXT descriptor profile must define a targets array: #{profile_name}"
-              end
-              declared_artifact_ids = []
-              targets.each do |target|
-                next unless target.is_a?(Hash)
-                artifacts = target["artifacts"]
-                next unless artifacts.is_a?(Array)
-                artifacts.each do |artifact|
-                  id = artifact_id.call(artifact)
-                  declared_artifact_ids << id if id.is_a?(String)
-                end
-              end
-              browser_ids = declared_artifact_ids.select do |id|
-                artifact_kinds[id] == "browser-zip"
-              end
-              browser_order = %w[chrome firefox edge]
-              undeclared_browser_ids = browser_ids.uniq - browser_order
-              unless undeclared_browser_ids.empty?
-                abort "WXT descriptor declares unsupported browser artifact id(s): #{undeclared_browser_ids.join(", ")}"
-              end
-              browsers = browser_order.select { |browser| browser_ids.include?(browser) }
-              if browsers.empty?
-                abort "WXT descriptor/profile must declare at least one browser-zip artifact"
-              end
-              puts JSON.generate(
-                {
-                  "browsers" => browsers,
-                  "requires_sources" => declared_artifact_ids.include?("firefox-sources"),
-                }
-              )
-            ' "${descriptor_path}"
-          )"; then
-            echo "Failed to parse WXT descriptor: ${descriptor_path}" >&2
-            exit 1
-          fi
-          mapfile -t browsers < <(
-            ruby -rjson -e 'puts JSON.parse(ARGV.fetch(0)).fetch("browsers")' "${wxt_selection_json}"
-          )
-          requires_sources="$(
-            ruby -rjson -e 'puts JSON.parse(ARGV.fetch(0)).fetch("requires_sources") ? "true" : "false"' "${wxt_selection_json}"
-          )"
-
-          # Build only the browser zip artifacts declared by the active descriptor profile.
+          # Build zip artifacts via the package's own scripts.
           # Prefer explicit scripts when they exist; fall back to direct WXT invocation.
           pushd "${PACKAGE_DIR}" >/dev/null
+
+          # Explicit browser list (policy): do not rely on WXT defaults.
+          browsers=(chrome firefox edge)
 
           for browser in "${browsers[@]}"; do
             if jq -e ".scripts | has(\"zip:${browser}\")" package.json >/dev/null 2>&1; then
@@ -244,8 +136,7 @@ jobs:
           popd >/dev/null
 
           # Collect produced zips into a stable upload directory.
-          # Contract: only collect .output/*.zip (shallow); active WXT sources
-          # archives must be present exactly once and match the frozen version.
+          # Contract: only collect .output/*.zip (shallow), and do not assume any filename convention.
           shopt -s nullglob
           zips=("${PACKAGE_DIR}/.output"/*.zip)
 
@@ -282,42 +173,14 @@ jobs:
             exit 1
           fi
 
-          expected_names=()
-          for browser in "${browsers[@]}"; do
-            expected_names+=("${PROJECT}-${EXPECTED}-${browser}.zip")
-          done
-          if [[ "${requires_sources}" == "true" ]]; then
-            expected_names+=("${PROJECT}-${EXPECTED}-sources.zip")
-          fi
-
-          declare -A expected_by_base=()
-          for expected_name in "${expected_names[@]}"; do
-            expected_by_base["${expected_name}"]=1
-          done
-
           for z in "${zips[@]}"; do
             base="$(basename "${z}")"
-            if [[ -z "${expected_by_base["${base}"]+x}" ]]; then
-              if [[ "${base}" == *"-sources.zip" && "${requires_sources}" != "true" ]]; then
-                echo "WXT descriptor/profile does not declare firefox-sources: ${base}" >&2
-              else
-                echo "Unexpected WXT artifact output basename: ${base}" >&2
-              fi
+            if [[ -e "${GITHUB_WORKSPACE}/out/${base}" ]]; then
+              echo "Refusing to overwrite existing file in out/: ${base}" >&2
+              echo "Source: ${z}" >&2
               exit 1
             fi
-          done
-
-          for expected_name in "${expected_names[@]}"; do
-            if [[ ! -e "${PACKAGE_DIR}/.output/${expected_name}" ]]; then
-              echo "Missing expected WXT artifact output basename: ${expected_name}" >&2
-              exit 1
-            fi
-            if [[ -e "${GITHUB_WORKSPACE}/out/${expected_name}" ]]; then
-              echo "Refusing to overwrite existing file in out/: ${expected_name}" >&2
-              echo "Source: ${PACKAGE_DIR}/.output/${expected_name}" >&2
-              exit 1
-            fi
-            cp -v "${PACKAGE_DIR}/.output/${expected_name}" "${GITHUB_WORKSPACE}/out/${expected_name}"
+            cp -v "${z}" "${GITHUB_WORKSPACE}/out/${base}"
           done
 
       - name: Verify Node version matches tag
@@ -345,311 +208,9 @@ jobs:
 
           echo "Verified WXT package version matches ${EXPECTED}"
 
-      - name: Validate WXT zip payloads
-        shell: bash
-        env:
-          EXPECTED: ${{ inputs.version }}
-          PROJECT: ${{ inputs.project }}
-          PACKAGE_DIR: ${{ inputs.package_dir }}
-          RELEASE_PROFILE: ${{ inputs.profile }}
-        run: |
-          set -Eeuo pipefail
-
-          descriptor_path="${PACKAGE_DIR}/three.release.yml"
-          if [[ ! -r "${descriptor_path}" ]]; then
-            echo "WXT descriptor is required and must be readable: ${descriptor_path}" >&2
-            exit 1
-          fi
-
-          if ! wxt_selection_json="$(
-            PROJECT="${PROJECT}" RELEASE_PROFILE="${RELEASE_PROFILE}" ruby -rjson -e '
-              require "yaml"
-              path = ARGV.fetch(0)
-              descriptor = YAML.safe_load(
-                File.read(path),
-                permitted_classes: [],
-                permitted_symbols: [],
-                aliases: false,
-              )
-              unless descriptor.is_a?(Hash)
-                abort "WXT descriptor must be a YAML mapping: #{path}"
-              end
-              project = descriptor["project"]
-              unless project.is_a?(Hash)
-                abort "WXT descriptor must define a project mapping: #{path}"
-              end
-              project_id = project["id"]
-              expected_project_id = ENV.fetch("PROJECT")
-              unless project_id == expected_project_id
-                abort "WXT descriptor project id mismatch: expected #{expected_project_id.inspect}, got #{project_id.inspect}"
-              end
-              profiles = descriptor["profiles"]
-              unless profiles.is_a?(Hash)
-                abort "WXT descriptor must define a profiles mapping: #{path}"
-              end
-              profile_name = ENV.fetch("RELEASE_PROFILE")
-              profile = profiles[profile_name]
-              unless profile.is_a?(Hash)
-                abort "WXT descriptor profile is missing or invalid: #{profile_name}"
-              end
-              variants = descriptor["variants"]
-              unless variants.is_a?(Array)
-                abort "WXT descriptor must define a variants array: #{path}"
-              end
-              artifact_id = lambda do |artifact|
-                case artifact
-                when Hash
-                  artifact["id"] || artifact[:id]
-                when String, Symbol
-                  artifact.to_s
-                end
-              end
-              artifact_kinds = {}
-              variants.each do |variant|
-                next unless variant.is_a?(Hash)
-                artifacts = variant["artifacts"]
-                next unless artifacts.is_a?(Array)
-                artifacts.each do |artifact|
-                  next unless artifact.is_a?(Hash)
-                  id = artifact["id"]
-                  artifact_kinds[id] = artifact["concrete-kind"] if id.is_a?(String)
-                end
-              end
-              targets = profile["targets"]
-              unless targets.is_a?(Array)
-                abort "WXT descriptor profile must define a targets array: #{profile_name}"
-              end
-              declared_artifact_ids = []
-              targets.each do |target|
-                next unless target.is_a?(Hash)
-                artifacts = target["artifacts"]
-                next unless artifacts.is_a?(Array)
-                artifacts.each do |artifact|
-                  id = artifact_id.call(artifact)
-                  declared_artifact_ids << id if id.is_a?(String)
-                end
-              end
-              browser_ids = declared_artifact_ids.select do |id|
-                artifact_kinds[id] == "browser-zip"
-              end
-              browser_order = %w[chrome firefox edge]
-              undeclared_browser_ids = browser_ids.uniq - browser_order
-              unless undeclared_browser_ids.empty?
-                abort "WXT descriptor declares unsupported browser artifact id(s): #{undeclared_browser_ids.join(", ")}"
-              end
-              browsers = browser_order.select { |browser| browser_ids.include?(browser) }
-              if browsers.empty?
-                abort "WXT descriptor/profile must declare at least one browser-zip artifact"
-              end
-              puts JSON.generate(
-                {
-                  "browsers" => browsers,
-                  "requires_sources" => declared_artifact_ids.include?("firefox-sources"),
-                }
-              )
-            ' "${descriptor_path}"
-          )"; then
-            echo "Failed to parse WXT descriptor: ${descriptor_path}" >&2
-            exit 1
-          fi
-
-          python - "${PACKAGE_DIR}" "${EXPECTED}" "${wxt_selection_json}" <<'PY'
-          from __future__ import annotations
-
-          import json
-          import os
-          import re
-          import sys
-          import zipfile
-          from pathlib import Path
-
-          package_dir = Path(sys.argv[1])
-          expected_version = sys.argv[2]
-          selection = json.loads(sys.argv[3])
-          browsers = tuple(selection["browsers"])
-          requires_sources = selection["requires_sources"] is True
-          project_id = os.environ["PROJECT"]
-          output_root = package_dir / ".output"
-          zips = sorted(output_root.glob("*.zip"))
-          if not zips:
-              raise SystemExit(
-                  f"No .zip artifacts found under {output_root} for validation."
-              )
-
-          def browser_manifest_version(version: str) -> str:
-              release_core = re.split(r"[+-]", version, maxsplit=1)[0]
-              parts = release_core.split(".")
-              if not all(re.fullmatch(r"0|[1-9]\d*", part) for part in parts):
-                  raise SystemExit(
-                      "browser-zip resolved version is not version-like: "
-                      f"{version!r}"
-                  )
-              numeric = [int(part) for part in parts]
-              if not 2 <= len(numeric) <= 4:
-                  raise SystemExit(
-                      "browser-zip resolved version must contain 2 to 4 numeric "
-                      f"components, got {version!r}"
-                  )
-              while len(numeric) < 3:
-                  numeric.append(0)
-              if any(part > 65535 for part in numeric):
-                  raise SystemExit(
-                      "browser-zip resolved version components must be between "
-                      f"0 and 65535, got {version!r}"
-                  )
-              return ".".join(str(part) for part in numeric)
-
-          expected_browser_version = browser_manifest_version(expected_version)
-          browser_candidates: dict[str, list[Path]] = {
-              browser: [] for browser in browsers
-          }
-          sources: list[Path] = []
-
-          for zip_path in zips:
-              stem = zip_path.stem.casefold()
-              if stem.endswith("-sources"):
-                  sources.append(zip_path)
-                  continue
-              browser = next(
-                  (item for item in browsers if stem.endswith(f"-{item}")),
-                  None,
-              )
-              if browser is None:
-                  raise SystemExit(
-                      f"Unrecognized WXT zip artifact name: {zip_path.name}"
-                  )
-              browser_candidates[browser].append(zip_path)
-              try:
-                  with (
-                      zipfile.ZipFile(zip_path) as archive,
-                      archive.open("manifest.json") as manifest_file,
-                  ):
-                      manifest = json.load(manifest_file)
-              except (
-                  KeyError,
-                  OSError,
-                  json.JSONDecodeError,
-                  zipfile.BadZipFile,
-              ) as exc:
-                  raise SystemExit(
-                      "browser zip output must contain a valid root manifest.json"
-                  ) from exc
-              if not isinstance(manifest, dict):
-                  raise SystemExit(
-                      "browser zip manifest.json must contain a JSON object"
-                  )
-              actual_version = manifest.get("version")
-              if actual_version != expected_browser_version:
-                  raise SystemExit(
-                      "browser zip manifest version does not match resolved "
-                      f"version: expected {expected_browser_version!r}, got "
-                      f"{actual_version!r}"
-                  )
-
-          expected_browser_names = {
-              f"{project_id}-{expected_version}-{browser}.zip"
-              for browser in browsers
-          }
-          expected_names = set(expected_browser_names)
-          if requires_sources:
-              expected_names.add(f"{project_id}-{expected_version}-sources.zip")
-
-          actual_names = {zip_path.name for zip_path in zips}
-          unexpected_names = sorted(actual_names - expected_names)
-          missing_names = sorted(expected_names - actual_names)
-          if unexpected_names:
-              if (
-                  any(name.endswith("-sources.zip") for name in unexpected_names)
-                  and not requires_sources
-              ):
-                  raise SystemExit(
-                      "WXT descriptor/profile does not declare firefox-sources"
-                  )
-              raise SystemExit(
-                  "Unexpected WXT artifact output basename(s): "
-                  + ", ".join(unexpected_names)
-              )
-          if missing_names:
-              raise SystemExit(
-                  "Missing expected WXT artifact output basename(s): "
-                  + ", ".join(missing_names)
-              )
-
-          for browser, candidates in browser_candidates.items():
-              if len(candidates) != 1:
-                  raise SystemExit(
-                      f"expected one browser zip output for {browser!r}, "
-                      f"found {len(candidates)}"
-                  )
-
-          for zip_path in sources:
-              try:
-                  with zipfile.ZipFile(zip_path):
-                      pass
-              except (OSError, zipfile.BadZipFile) as exc:
-                  raise SystemExit(
-                      "sources zip output must be a valid zip archive: "
-                      f"{zip_path.name}"
-                  ) from exc
-
-          if requires_sources and len(sources) != 1:
-              raise SystemExit(
-                  "expected exactly one sources zip output for active "
-                  f"WXT releases, found {len(sources)}"
-              )
-
-          if len(sources) > 1:
-              raise SystemExit(
-                  f"expected at most one sources zip output, found {len(sources)}"
-              )
-
-          if sources and not browser_candidates.get("firefox"):
-              raise SystemExit(
-                  "sources zip browser extension artifacts are only valid for "
-                  "firefox variants"
-              )
-          PY
-
-      - name: Write release asset receipts
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          mkdir -p "${GITHUB_WORKSPACE}/asset-receipts"
-          python - "${GITHUB_WORKSPACE}/out" "${GITHUB_WORKSPACE}/asset-receipts/release-asset-receipts.json" <<'PY'
-          from __future__ import annotations
-
-          import hashlib
-          import json
-          import sys
-          from pathlib import Path
-
-          out_dir = Path(sys.argv[1])
-          receipt_path = Path(sys.argv[2])
-          receipts = []
-          for path in sorted(out_dir.iterdir(), key=lambda item: item.name):
-                if not path.is_file() or path.name == receipt_path.name:
-                    continue
-                receipts.append(
-                    {
-                        "name": path.name,
-                        "size": path.stat().st_size,
-                        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-                    }
-                )
-          if not receipts:
-                raise SystemExit("no release assets found for receipt generation")
-          receipt_path.write_text(json.dumps(receipts, sort_keys=True) + "\n", encoding="utf-8")
-          PY
-
       - name: Upload dist artifact
         uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.artifact_name }}
           path: ${{ github.workspace }}/out/*
-          if-no-files-found: error
-      - name: Upload release asset receipts artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ inputs.artifact_name }}-asset-receipts
-          path: ${{ github.workspace }}/asset-receipts/release-asset-receipts.json
           if-no-files-found: error
