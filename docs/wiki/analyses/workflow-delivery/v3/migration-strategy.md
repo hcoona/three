@@ -229,5 +229,13 @@ and manual `slice-validation` remains non-authoritative and slice-scoped. v1
 retains the required CI decision. Canonical v3 full validation and Ruleset
 cutover wait for complete repository modeling.
 
+The first implementation pull request precedes coexistence because its base
+does not yet contain the canonical v3 CI workflow. Its one-time bootstrap
+projection preserves the canonical blocked-Plan failure record while avoiding
+a permanently red diagnostic check caused only by paths outside the incomplete
+first-slice model. Exact base-tree detection self-disables the projection when
+the implementation merges; it is not keyed to a pull-request number, branch,
+or commit literal and cannot carry into later pull requests.
+
 Parallel implementation is allowed. Parallel authoritative CI decisions or
 parallel live publishers are not.

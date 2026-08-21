@@ -4951,3 +4951,63 @@ Then stop. Do not make the intentionally red tests pass by changing production
 Python, workflow YAML, deleting the stale workflow, or restoring any source.
 
 <!-- END APPEND: 2026-08-20T042004Z-pr552-codeql-closure-regression-research -->
+<!-- BEGIN APPEND: 2026-08-21-wdv3-precoexistence-bootstrap-research -->
+
+# Workflow Delivery v3 Pre-Coexistence Bootstrap Projection Research
+
+## Bounded target inventory
+
+- `.github/workflows/workflow-delivery-v3-ci.yml`: the shadow Finalizer command
+  currently propagates every canonical negative Decision as job failure.
+- `three_workflow_delivery_v3.ci.finalizer`: owns typed non-authoritative CI
+  Decision policy and is the narrow location for a pure bootstrap predicate.
+- `three_workflow_delivery_v3.cli`: already admits canonical Plans and lane
+  results and provides Git-bound workflow commands.
+- `tests/contracts/test_ci_workflow.py`: locks workflow topology, Finalizer
+  transport, and the missing-Decision terminal fallback.
+- `tests/ci/test_scenarios.py`: implements literal first-slice LLD scenarios.
+- `tests/test_cli.py`: has real temporary-Git fixtures and canonical CI command
+  tests.
+
+## Existing conventions
+
+- Scenario tests exercise complete typed Plans, lane results, and Decisions.
+- Workflow tests compare exact YAML conditions and command fragments.
+- CLI tests use canonical JSON, real local Git repositories where Git behavior
+  matters, and `main(argv)` return codes without broad exception handling.
+- A blocked Plan emits no selected obligations or admitted Evidence and closes
+  as `failure` / `incomplete-model-plan` /
+  `fix-model-plan-and-rerun`.
+- Project-test failure is a distinct canonical lane failure and must remain
+  red.
+
+## Acceptance checklist
+
+- [ ] Preserve Finalizer Decision and summary bytes and its nonzero exit.
+- [ ] Allow projection only for pull requests whose exact base commit lacks
+      `.github/workflows/workflow-delivery-v3-ci.yml`.
+- [ ] Bind exact event base, head, tested merge, and request number.
+- [ ] Require a canonical failure Decision with
+      `incomplete-model-plan` / `fix-model-plan-and-rerun`.
+- [ ] Require zero selected obligations, Evidence, artifacts, and selected
+      first-slice scope.
+- [ ] Require one or more diagnostics, all exactly
+      `changed path is unclassified: <changed-path>`.
+- [ ] Reject a base that already contains the marker, supersession, manual
+      validation, lane failure, incomplete/success Decisions, mixed
+      diagnostics, malformed or missing records, and Git/transport failures.
+- [ ] Never hardcode PR #552, a branch, or a commit SHA.
+- [ ] Append an explicit bootstrap note without changing canonical records.
+- [ ] Keep the existing missing-Decision fallback terminal and last.
+- [ ] Perform no acceptance, activation, publication, package mutation, or
+      merge action.
+
+## Implementation boundary
+
+Use a pure typed predicate plus a separate `ci project-bootstrap-shadow`
+command. The workflow captures `ci finalize` status and invokes the projection
+only after a pull-request failure. Manual failure returns the original status.
+The projection command re-admits the Plan, Decision, and summary and performs
+the exact base-tree marker probe. It does not change Finalizer behavior.
+
+<!-- END APPEND: 2026-08-21-wdv3-precoexistence-bootstrap-research -->

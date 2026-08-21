@@ -48,6 +48,19 @@ pull-request check remains shadow-only and does not replace v1 required CI.
 Canonical explicit or scheduled full validation is deferred until every active
 Project Node, Release Unit, and repository obligation is modeled.
 
+Before coexistence begins, the first implementation pull request uses the
+bounded bootstrap projection defined by the CI MLD. The workflow captures the
+unchanged `ci finalize` exit code. On success it returns success directly. On a
+pull-request failure only, a separate `ci project-bootstrap-shadow` command
+re-admits the canonical Plan, Decision, and summary; binds the exact event base,
+head, tested merge, and request number; probes the exact base commit for the
+canonical workflow path; and applies the closed bootstrap predicate. An
+eligible Decision remains `failure` / `incomplete-model-plan` and receives an
+explicit GitHub summary note while the enclosing non-authoritative check
+concludes successfully. Any ineligible Decision or projection error preserves
+the nonzero conclusion. Manual validation returns the Finalizer exit unchanged,
+and the existing no-Decision contract-failure step remains terminal.
+
 Live Buddy publishes exactly:
 
 ```text
@@ -1302,6 +1315,13 @@ SHA-512, tarball manifest, lifecycle scripts, and exact action summary.
 9. A normal manifest, lockfile, workflow, install script, or dependency
    configuration reference to `@hcoona/hcoona-release-smoke-npm` fails root HK
    and reopens the exception; approved acceptance fixtures do not.
+10. The first implementation pull request, whose exact base commit lacks the
+    canonical v3 CI workflow, preserves its canonical
+    `incomplete-model-plan` Decision for exclusively unclassified paths but
+    projects a successful bootstrap check conclusion. The same Decision fails
+    after the workflow exists in the base. Manual runs, mixed diagnostics,
+    superseded candidates, lane failures, and missing or malformed Decisions
+    never receive the projection.
 
 ### Build and Artifact Scenarios
 

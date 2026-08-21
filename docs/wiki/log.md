@@ -1918,3 +1918,16 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   finalization, live activation, publication, or package mutation. Human review
   and separate merge authorization remain required before the intentional
   Buddy outage and legacy drain.
+
+## [2026-08-21] query | Confirm v3 pre-coexistence CI bootstrap
+
+- Confirmed that PR #552 is red only because its canonical non-authoritative
+  shadow Decision blocks on 283 paths outside the incomplete first-slice
+  Repository Model; general CI and CodeQL remain green.
+- Approved a one-time, self-disabling bootstrap check-conclusion projection
+  when the exact pull-request base commit lacks the canonical v3 CI workflow.
+  The canonical `incomplete-model-plan` Decision remains failure and the
+  projection accepts only exclusively unclassified changed-path diagnostics.
+- Kept project-test and other lane failures, mixed diagnostics, manual
+  validation, superseded candidates, malformed records, and post-coexistence
+  pull requests fail-closed.

@@ -110,7 +110,18 @@ against implementation and maintenance cost.
   v1 required CI, and v1 and v3 must not produce parallel authoritative
   Decisions. Canonical explicit or scheduled full validation remains defined by
   the CI MLD and is deferred until the Repository Model and policies cover every
-  active Project Node, Release Unit, and repository obligation.
+  active Project Node, Release Unit, and repository obligation. Before
+  coexistence begins, the first implementation pull request may project one
+  canonical non-authoritative `incomplete-model-plan` Decision as a successful
+  bootstrap check conclusion only when its exact base commit does not contain
+  the canonical v3 CI workflow and every Plan diagnostic identifies an
+  unclassified changed path. The canonical Decision remains failure. The
+  projection must bind the exact pull-request base, head, tested merge, and
+  request identity; reject superseded candidates, selected or failed lanes,
+  mixed diagnostics, manual validation, and missing or malformed records; and
+  self-disable once the workflow exists in the base commit. It is not CI
+  success, a required check, Release authority, or a general exception to
+  changed-path closure.
 - **WD-CI-010:** Root HK SourceTreeConformance must run the new v3 control
   package pytest suite when the v3 control package/catalogs/tests, first-slice
   descriptors, exact first-slice Release policy, any v3 workflow consumer,

@@ -142,6 +142,32 @@ reported as repository-wide full validation. The shadow pull-request check also
 does not replace v1 required CI. v1 and v3 must not issue parallel authoritative
 Decisions during coexistence.
 
+The first implementation pull request has a bounded pre-coexistence bootstrap
+projection because its base commit does not yet contain the v3 CI workflow or
+its first-slice path policy. The Finalizer still emits and persists its
+canonical non-authoritative failure Decision. A separate check-conclusion
+projection may make that one run green only when:
+
+- the event is a pull request whose exact base, head, tested merge, and request
+  identity match the Decision;
+- the exact base commit exists and does not contain the canonical v3 CI
+  workflow path;
+- the Decision is `failure` / `incomplete-model-plan` /
+  `fix-model-plan-and-rerun`;
+- no obligation is selected, no lane Evidence or artifact is admitted, and no
+  affected first-slice scope is selected;
+- every nonempty Plan diagnostic is exactly an unclassified changed-path
+  diagnostic for a path in the Decision's changed range; and
+- the candidate is not superseded.
+
+The projection appends an explicit bootstrap diagnostic but does not alter the
+Decision or summary record. It rejects manual validation, successful or
+incomplete Decisions, lane failures, mixed model or comparison diagnostics,
+missing or malformed records, and workflow contract or transport failures.
+The exact base-path probe makes the projection self-disabling: after the v3 CI
+workflow exists in the base commit, every canonical negative shadow Decision
+again makes the check conclusion fail.
+
 Canonical explicit or scheduled full validation remains the complete-repository
 mode defined in the preceding section. Its implementation is deferred until the
 Repository Model and policies cover every active Project Node, Release Unit,

@@ -5739,3 +5739,63 @@ production Python, workflow YAML, the orphan file, CodeQL state, or Node
 Provider LFS work to obtain a green suite.
 
 <!-- END APPEND: 2026-08-20T042859Z-pr552-codeql-closure-regression-plan -->
+<!-- BEGIN APPEND: 2026-08-21-wdv3-precoexistence-bootstrap-plan -->
+
+# Workflow Delivery v3 Pre-Coexistence Bootstrap Test Plan
+
+## Phase 1: Pure policy scenarios
+
+Add scenario-first tests in `tests/ci/test_scenarios.py`:
+
+1. A representative 283-unclassified-path blocked Plan remains a canonical
+   failure Decision but qualifies for projection when the exact base marker is
+   absent.
+2. The predicate self-disables when the base marker is present.
+3. A matrix rejects manual validation, project-test failure, supersession,
+   event identity drift, and mixed/nonexact diagnostics.
+
+## Phase 2: CLI and exact Git boundary
+
+Add tests in `tests/test_cli.py`:
+
+1. A real Git base without the marker reports absence, and a later commit with
+   the marker reports presence.
+2. `ci project-bootstrap-shadow` re-admits canonical Plan, Decision, and
+   summary; appends a bootstrap note; and leaves record bytes unchanged.
+3. Missing/malformed/noncanonical Decision or summary, invalid/nonexistent
+   base identity, marker presence, and ineligible Decision return nonzero.
+
+## Phase 3: Workflow projection contract
+
+Add tests in `tests/contracts/test_ci_workflow.py` proving:
+
+1. `ci finalize` still runs and its status is captured.
+2. Canonical success returns directly.
+3. Manual failure returns the Finalizer status unchanged.
+4. Pull-request failure invokes only `ci project-bootstrap-shadow` with exact
+   base/head/tested-merge/request bindings.
+5. The command has no PR, branch, or SHA literal and no release capability.
+6. The no-Decision fallback remains last and terminal.
+
+## Phase 4: Production response
+
+- Add the pure projection predicate beside CI Finalizer policy.
+- Add exact base commit/path detection and the projection CLI command.
+- Update only the shadow Finalizer workflow shell around the existing
+  Finalizer invocation.
+- Preserve all canonical Decision and summary formation.
+
+## Validation and quality gates
+
+1. Run the focused red/green tests for the three changed modules.
+2. Run complete CI workflow contracts, scenarios, CLI tests, and the complete
+   Workflow Delivery v3 package suite.
+3. Run Ruff, Ruff format, Pyrefly, actionlint, package build, targeted HK, and
+   the complete committed-range HK gate.
+4. Invoke `test-gap-analysis` and `assertion-quality`; repair every confirmed
+   finding.
+5. Run independent multi-angle implementation reviews, adjudicate each atomic
+   finding independently, and repeat until reviewers report no findings.
+6. Update `.testagent/status.md` with exact test names and results.
+
+<!-- END APPEND: 2026-08-21-wdv3-precoexistence-bootstrap-plan -->
