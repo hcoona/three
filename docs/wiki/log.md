@@ -2022,3 +2022,29 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Kept this closure documentation-only. PR #552 remains open and unmerged, and
   no acceptance, package mutation, Live activation, Ruleset change, force
   push, or history rewrite was authorized or performed.
+
+## [2026-08-23] lint | Close Workflow Delivery v3 PR review follow-up
+
+- Adjudicated the remaining PR comments into ten true positives and four false
+  positives, repaired only the true positives, then closed two additional
+  holistic test-integration gaps. Fresh same-scope and holistic rereviews
+  report no findings. A later comment claiming that
+  `PurePosixPath.full_match()` is unavailable was independently adjudicated as
+  a fifth false positive against the package's Python 3.13 minimum and the
+  dedicated workflow's Python 3.13 runtime. Every review thread is resolved
+  with evidence. The prior RC-001 evidence reviewer could not be resumed, so a
+  fresh independent evidence and documentation reviewer assessed the exact
+  closure and reported no findings.
+- Recorded current behavior commit `9f97ef09`, tree `69bec461`, exact base
+  `62ffb59b`, and tested merge `59ad1ef2`. General CI run `32669623270`,
+  CodeQL run `32669623284`, and dedicated v3 run `32669623261` all pass at
+  attempt 1.
+- Verified every retained artifact against its GitHub byte count and SHA-256
+  digest, admitted all nine v3 payloads, and reproduced the canonical Decision
+  and Summary byte-for-byte at the recorded 171-second clock. The Decision
+  remains the expected non-authoritative `incomplete-model-plan` failure while
+  the exact bootstrap projection succeeds.
+- Retained the prior `e9d812b2` evidence as superseded rather than rewriting
+  it. PR #552 remains open and unmerged, and no acceptance, package mutation,
+  Live activation, Ruleset change, force push, or history rewrite was
+  authorized or performed.

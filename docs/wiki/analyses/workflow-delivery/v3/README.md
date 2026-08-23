@@ -179,31 +179,31 @@ Documentation closure is committed at `a9e8cbfa`. Non-rewriting merge commit
 only the upstream Biome 2.5.9 and Asciidoctor 4.0.10 dependency updates. The
 frozen PNPM and UV lock checks pass after the merge.
 
-The implementation review is complete at behavior commit
-`e9d812b28f940ba64e83478d950f266077876859`, tree
-`b36b79262260b0e76e494198e5c63dbe74e16c4a`, after non-rewriting integration
+The implementation review and PR-comment follow-up are complete at behavior
+commit `9f97ef091e8a831f73d81fe91b441aa6ee0520c3`, tree
+`69bec461fcb1047e7beb2ce13a9e9192e5cdf056`, after non-rewriting integration
 of `main` commit `62ffb59bcfbe7845e580d7aea5337afafc88bdf8`. The exact tested merge is
-`34dc8fe660c82a28de44dee19e519287aa321581`. Phase 8 closes RC-039, RC-002,
-RC-005, RC-006, and the final exact-evidence RC-001 finding. The complete
-repair and supersession ledger is in the
-[AI Agent Handoff](./agent-handoff.md).
+`59ad1ef2bd9277dc6cc35f897d8230dcf807ecdb`. The prior `e9d812b2` RC-001
+boundary is retained as superseded evidence. The complete repair and
+supersession ledger is in the [AI Agent Handoff](./agent-handoff.md).
 
-The final behavior head passes General CI run
-[`32655841248`](https://github.com/hcoona/three/actions/runs/32655841248),
+The current behavior head passes General CI run
+[`32669623270`](https://github.com/hcoona/three/actions/runs/32669623270),
 CodeQL run
-[`32655841242`](https://github.com/hcoona/three/actions/runs/32655841242), and
+[`32669623284`](https://github.com/hcoona/three/actions/runs/32669623284), and
 dedicated v3 run
-[`32655841197`](https://github.com/hcoona/three/actions/runs/32655841197), all
-on attempt 1. All nine retained v3 artifacts match their GitHub byte counts and
+[`32669623261`](https://github.com/hcoona/three/actions/runs/32669623261), all
+on attempt 1. All nine retained v3 payloads match their GitHub byte counts and
 SHA-256 digests and pass canonical admission. Authenticated exact-identity
 replay reproduces the Decision and Summary byte-for-byte and retains Finalizer
 exit `1`, the expected non-authoritative
-`incomplete-model-plan` / `fix-model-plan-and-rerun` result, 292 changed paths,
-79 exclusively unclassified-path diagnostics, four empty lane results, and no
+`incomplete-model-plan` / `fix-model-plan-and-rerun` result, 295 changed paths,
+78 exclusively unclassified-path diagnostics, four empty lane results, and no
 admitted Evidence or artifact digests. The exact bootstrap projection exits
-`0` while explicitly retaining the canonical failure.
+`0` while explicitly retaining the canonical failure. Every review thread is
+resolved with either a published repair or recorded false-positive evidence.
 
-This evidence update is a strict documentation-only child of the named
+This current evidence update is a strict documentation-only child of the named
 behavior commit and does not name itself. Its checks are external closure
 evidence and are not recursively documented.
 

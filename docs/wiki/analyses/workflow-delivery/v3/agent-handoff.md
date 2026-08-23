@@ -106,8 +106,9 @@ If it conflicts with the
   staged pre-commit gates pass. Both original finding reviewers and the
   independent holistic reviewer report no findings after atomic adjudication
   and repair.
-- Phase 8 is complete at final behavior commit `e9d812b2`; RC-039, RC-002,
-  RC-005, RC-006, and RC-001 are closed. Review closure does not authorize
+- Phase 8 and the PR-comment follow-up are complete at final behavior commit
+  `9f97ef09`; the prior `e9d812b2` RC-001 boundary is retained as superseded
+  evidence. Every review thread is resolved. Review closure does not authorize
   merge. Do not merge, activate Live, run acceptance, mutate a destination,
   alter Rulesets, or begin a later phase without separate explicit
   authorization.
@@ -548,7 +549,7 @@ If it conflicts with the
 - Non-rewriting integration commit
   `f594db2ee85dd398255f1bc16b5f3d1d40544bc6` incorporates the then-current
   `origin/main` commit `62ffb59bcfbe7845e580d7aea5337afafc88bdf8`.
-  The final behavior boundary is commit
+  The prior RC-001 behavior boundary was commit
   `e9d812b28f940ba64e83478d950f266077876859`, tree
   `b36b79262260b0e76e494198e5c63dbe74e16c4a`, with tested merge
   `34dc8fe660c82a28de44dee19e519287aa321581`. General CI run
@@ -557,19 +558,48 @@ If it conflicts with the
   [`32655841242`](https://github.com/hcoona/three/actions/runs/32655841242),
   and dedicated v3 run
   [`32655841197`](https://github.com/hcoona/three/actions/runs/32655841197)
+  all passed on that exact head and attempt 1. That immutable evidence remains
+  below as a superseded ledger.
+- PR-comment repair commits `83287129`, `bcd84a55`, and `9f97ef09` close the
+  ten adjudicated true positives plus two later holistic test-integration
+  gaps. Four original comments were adjudicated false positives with executable
+  or type-contract evidence. A later comment claiming that
+  `PurePosixPath.full_match()` is unavailable was independently adjudicated as
+  a fifth false positive: the package requires Python 3.13 or later, the
+  dedicated workflow runs Python 3.13, and Python 3.13.12 executes the required
+  whole-path recursive match. Fresh same-scope rereviews and the complete
+  holistic rereview report no findings. The prior RC-001 evidence reviewer
+  could not be resumed; a fresh independent evidence and documentation reviewer
+  reports no findings. Every PR review thread is resolved.
+- The current final behavior boundary is commit
+  `9f97ef091e8a831f73d81fe91b441aa6ee0520c3`, tree
+  `69bec461fcb1047e7beb2ce13a9e9192e5cdf056`, with exact base
+  `62ffb59bcfbe7845e580d7aea5337afafc88bdf8` and tested merge
+  `59ad1ef2bd9277dc6cc35f897d8230dcf807ecdb`. General CI run
+  [`32669623270`](https://github.com/hcoona/three/actions/runs/32669623270),
+  CodeQL run
+  [`32669623284`](https://github.com/hcoona/three/actions/runs/32669623284),
+  and dedicated v3 run
+  [`32669623261`](https://github.com/hcoona/three/actions/runs/32669623261)
   all passed on that exact head and attempt 1.
-- Final local evidence includes 63 isolated real-HK integration/scenario
+- Current local evidence includes the complete Python 3.14 workspace with
+  3,790 passing tests, the complete v3 suite with 3,638 passing tests, root
+  PNPM tests and builds, scoped Ruff and Ruff format, scoped Pyrefly over every
+  changed Python file, Biome, Actionlint, Shellcheck, shfmt, Markdown checks,
+  diff checks, full all-profile HK, and the staged pre-commit gate. The broader
+  configured-project Pyrefly probe still reports 16 unrelated pre-existing
+  diagnostics and is not represented as a green full gate.
+- Prior local evidence included 63 isolated real-HK integration/scenario
   cases under a Mise root containing only locked HK 1.53.0, the complete Python
   3.14 workspace with 3,782 passing tests, the complete v3 suite with 3,632
   passing tests, Ruff, Ruff format, Pyrefly, Actionlint, diff checks, full HK,
-  and the staged pre-commit gate. The final independent implementation
-  rereview reports no findings.
-- RC-001 closes by recording the exact final behavior identity and immutable
-  evidence in a strict documentation-only child of `e9d812b2`. The child names
-  the behavior commit and tree but not itself. Any behavior change or new base
-  integration invalidates this evidence and restarts the cycle. Checks on the
-  documentation child are external evidence and must not be recursively added
-  to that child.
+  and the staged pre-commit gate.
+- RC-001 current closure records the exact final behavior identity and
+  immutable evidence in a strict documentation-only child of `9f97ef09`. The
+  child names the behavior commit and tree but not itself. Any behavior change
+  or new base integration invalidates this evidence and restarts the cycle.
+  Checks on the documentation child are external evidence and must not be
+  recursively added to that child.
 - PR [#552](https://github.com/hcoona/three/pull/552) remains open, blocked,
   and unmerged. Review closure returns control to separate explicit human merge
   authorization; it does not authorize merge. Merge starts the direct cutover
@@ -580,7 +610,8 @@ If it conflicts with the
 - Implementation must preserve the approved commit boundaries and keep live
   activation disabled until acceptance and the separate activation approval.
 
-The retained final v3 artifact inventory for run `32655841197`, attempt 1, is:
+The retained superseded v3 artifact inventory for run `32655841197`, attempt
+1, is:
 
 | Artifact             |           ID |  Bytes | SHA-256                                                            |
 | -------------------- | -----------: | -----: | ------------------------------------------------------------------ |
@@ -606,8 +637,8 @@ Evidence or artifact digests. The exact bootstrap projection exits `0` while
 explicitly retaining that canonical failure. Supersession is
 `not-superseded`, and the broad-change PR is excluded from the SLO.
 
-General CI run `32655841248` retained three unrelated AzureAuth build
-artifacts:
+The superseded General CI run `32655841248` retained three unrelated
+AzureAuth build artifacts:
 
 | Artifact                                                     |           ID |   Bytes | SHA-256                                                            |
 | ------------------------------------------------------------ | -----------: | ------: | ------------------------------------------------------------------ |
@@ -616,6 +647,42 @@ artifacts:
 | `azureauth-credprovider-foundation-internal-macOS-osx-x64`   | `9497590302` | 829,575 | `5e3409158861c22e803882cb35d8b7bb57c23499b21929391c505a2d2ab887bf` |
 
 CodeQL run `32655841242` retained zero GitHub Actions artifacts.
+
+The retained current v3 artifact inventory for run `32669623261`, attempt 1,
+is:
+
+| Artifact             |           ID |  Bytes | SHA-256                                                            |
+| -------------------- | -----------: | -----: | ------------------------------------------------------------------ |
+| Request              | `9500994349` | 20,759 | `5c477df8015c37b3c3264148a18f27059350f22e13b22a9ddd93fc06a2e513c9` |
+| Provider             | `9501006339` |  3,156 | `5d844562c21896c54c72b57014739b92a3a95e3170f95543d6d9b0e543c5c03d` |
+| Plan                 | `9501016405` | 30,616 | `9c5f3123eab1b679608934eece126c286dfc429ab0cab3f32b062ac71d643ad4` |
+| `project-test` lane  | `9501026242` |    887 | `0b06b9626ae2d5c78e1a085f9314bac5975a5cacf2a0fdb31a9c28ee67168bd8` |
+| `project-build` lane | `9501026706` |    889 | `7032b253c8624fcb7d8fe623b3f7efaf461bcc9be6ad7a141ee8138c71a01ada` |
+| `npm` lane           | `9501024069` |    899 | `d21ae1ccebe61bc48bf1ff4323feebb94ebd02a865252a55c086469f4cdf8396` |
+| `root-HK` lane       | `9501025800` |    877 | `d0759826723e1e9624730535ae3e8e4813355a82244f13a94eed9a2f224b167e` |
+| Decision             | `9501031958` | 59,373 | `372be7fff99f7a72f2d5fa722d90aac8e725ac0cbd807dd501e9df5ae54070ba` |
+| Summary              | `9501032181` | 27,775 | `74fbe29ebba16363e2d4ae3e4978ae2a0e556d63094faeaef5e77e8b8ce81888` |
+
+All nine downloaded raw payloads match GitHub's byte counts and SHA-256
+digests and pass canonical admission. Authenticated exact-identity replay at
+the recorded 171-second clock reproduces the remote Decision and Summary
+byte-for-byte, exits `1`, and preserves the expected non-authoritative
+`failure` / `incomplete-model-plan` / `fix-model-plan-and-rerun` result with
+295 changed paths, 78 exclusively unclassified-path diagnostics, four empty
+lane results, and no admitted Evidence or artifact digests. The exact
+bootstrap projection exits `0` while explicitly retaining that canonical
+failure. Supersession is `not-superseded`, and the broad-change PR is excluded
+from the SLO.
+
+General CI run `32669623270` retained three unrelated AzureAuth build artifacts:
+
+| Artifact                                                     |           ID |   Bytes | SHA-256                                                            |
+| ------------------------------------------------------------ | -----------: | ------: | ------------------------------------------------------------------ |
+| `azureauth-credprovider-foundation-internal-Windows-win-x64` | `9501199320` | 830,990 | `a9f65c3acc8f3bbdf229710567ccb1793e0ce1c9dc13e43acf5bf165e604e5d6` |
+| `azureauth-credprovider-foundation-internal-Linux-linux-x64` | `9501202559` | 829,578 | `d18127ddab8f0de4d791732d6627faa394d5f29b842c56dbca4aa4fd4509ae42` |
+| `azureauth-credprovider-foundation-internal-macOS-osx-x64`   | `9501197154` | 829,585 | `b061b9f7a535aea215bbc45b11cdf017a0a3167fe74778a40d6a40369f4545e0` |
+
+CodeQL run `32669623284` retained zero GitHub Actions artifacts.
 
 ## Required Reading Order
 
