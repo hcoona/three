@@ -5,6 +5,7 @@ targets:
   - copilot
 dependencies:
   apm:
+    - path: ./src/private/lib/scan-restoration
     - git: https://github.com/dotnet/skills.git
       path: plugins/dotnet-advanced
       ref: main

@@ -1,21 +1,21 @@
 ---
 name: open-code-review-delegate
 description: >
-    Delegation mode for open-code-review (OCR). Instead of OCR calling an LLM
-    endpoint, this skill instructs the host agent to perform the code review
-    itself, using OCR only for deterministic engineering: file selection and
-    rule resolution. Use when the host agent should drive the review with its
-    own LLM capabilities.
+  Delegation mode for open-code-review (OCR). Instead of OCR calling an LLM
+  endpoint, this skill instructs the host agent to perform the code review
+  itself, using OCR only for deterministic engineering: file selection and
+  rule resolution. Use when the host agent should drive the review with its
+  own LLM capabilities.
 license: Apache-2.0
 compatibility: >
-    Requires the `ocr` CLI installed (via `npm install -g
-    @alibaba-group/open-code-review` or GitHub release binary). Does NOT
-    require a configured LLM endpoint — delegation mode is LLM-free on the
-    OCR side.
+  Requires the `ocr` CLI installed (via `npm install -g
+  @alibaba-group/open-code-review` or GitHub release binary). Does NOT
+  require a configured LLM endpoint — delegation mode is LLM-free on the
+  OCR side.
 metadata:
-    author: alibaba
-    homepage: https://github.com/alibaba/open-code-review
-    version: '1.0.0'
+  author: alibaba
+  homepage: https://github.com/alibaba/open-code-review
+  version: "1.0.0"
 ---
 
 # Open Code Review — Delegation Mode
@@ -50,7 +50,6 @@ ocr delegate preview [--from <ref> --to <ref>] [--commit <hash>] [--exclude <pat
 ```
 
 This outputs:
-
 - **mode** (workspace / range / commit)
 - **from / to / commit / merge_base** — ref metadata for constructing git commands
 - **Reviewable file list** — paths, status, insertions/deletions
@@ -58,11 +57,11 @@ This outputs:
 
 **Common invocations:**
 
-| Scenario          | Command                                         |
-| ----------------- | ----------------------------------------------- |
-| Workspace changes | `ocr delegate preview`                          |
+| Scenario | Command |
+|----------|---------|
+| Workspace changes | `ocr delegate preview` |
 | Branch comparison | `ocr delegate preview --from main --to feature` |
-| Single commit     | `ocr delegate preview -c abc123`                |
+| Single commit | `ocr delegate preview -c abc123` |
 
 ### Step 2: Get Rules for Files
 
@@ -77,19 +76,16 @@ Pass the reviewable file paths from Step 1. Output is grouped by rule content �
 Use git directly based on the mode/ref info from Step 1:
 
 **Range mode** (merge_base provided in preview output):
-
 ```bash
 git diff <merge_base>..<to> -- <path>
 ```
 
 **Commit mode**:
-
 ```bash
 git show <commit> -- <path>
 ```
 
 **Workspace mode**:
-
 ```bash
 # Tracked files
 git diff HEAD -- <path>
@@ -109,14 +105,14 @@ For each reviewable file:
 
 Each comment must follow this structure:
 
-| Field      | Type    | Required | Description                                                                    |
-| ---------- | ------- | -------- | ------------------------------------------------------------------------------ |
-| path       | string  | yes      | Relative file path                                                             |
-| content    | string  | yes      | Review comment describing the issue                                            |
-| start_line | integer | no       | Start line in the new file                                                     |
-| end_line   | integer | no       | End line in the new file                                                       |
-| category   | enum    | no       | bug, security, performance, maintainability, test, style, documentation, other |
-| severity   | enum    | no       | critical, high, medium, low                                                    |
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| path | string | yes | Relative file path |
+| content | string | yes | Review comment describing the issue |
+| start_line | integer | no | Start line in the new file |
+| end_line | integer | no | End line in the new file |
+| category | enum | no | bug, security, performance, maintainability, test, style, documentation, other |
+| severity | enum | no | critical, high, medium, low |
 
 ### Step 6: Classify and Report
 
@@ -131,29 +127,28 @@ Discard likely false positives silently.
 ### Step 7: Fix (Optional)
 
 If the user requested "review and fix":
-
 - Apply High/Critical fixes directly
 - Describe Medium fixes that require manual intervention
 - Skip Low-priority items unless trivial
 
 ## Sub-commands Reference
 
-| Command                       | Purpose                                   |
-| ----------------------------- | ----------------------------------------- |
-| `ocr delegate preview`        | Which files to review + mode/ref metadata |
-| `ocr delegate rule <path...>` | Review rules grouped by content           |
+| Command | Purpose |
+|---------|---------|
+| `ocr delegate preview` | Which files to review + mode/ref metadata |
+| `ocr delegate rule <path...>` | Review rules grouped by content |
 
 ## Shared Flags
 
-| Flag                           | Description                         |
-| ------------------------------ | ----------------------------------- |
-| `--from <ref>`                 | Source ref for range mode           |
-| `--to <ref>`                   | Target ref for range mode           |
-| `-c, --commit <hash>`          | Single commit mode                  |
-| `--repo <path>`                | Repository root (default: cwd)      |
-| `--rule <path>`                | Custom rule.json path               |
-| `--exclude <patterns>`         | Comma-separated exclude patterns    |
-| `-b, --background <text>`      | Business context                    |
+| Flag | Description |
+|------|-------------|
+| `--from <ref>` | Source ref for range mode |
+| `--to <ref>` | Target ref for range mode |
+| `-c, --commit <hash>` | Single commit mode |
+| `--repo <path>` | Repository root (default: cwd) |
+| `--rule <path>` | Custom rule.json path |
+| `--exclude <patterns>` | Comma-separated exclude patterns |
+| `-b, --background <text>` | Business context |
 | `-B, --background-file <path>` | Business context from Markdown file |
 
 ## Gotchas
