@@ -580,6 +580,22 @@ def check_termbase_json(path: Path) -> dict:
         standard.get("primary"), "standard_basis.primary"
     ):
         raise AssertionError("standard_basis.primary must reference TBX")
+    for index, export_target in enumerate(
+        require_list(
+            standard.get("export_targets"),
+            "standard_basis.export_targets",
+        ),
+        start=1,
+    ):
+        require_nonempty_string(
+            export_target,
+            f"standard_basis.export_targets[{index}]",
+        )
+    if type(standard.get("lossless_for_key_fields")) is not bool:
+        raise AssertionError(
+            "standard_basis.lossless_for_key_fields must be a boolean"
+        )
+    require_nonempty_string(payload.get("termbase_id"), "termbase_id")
     entries = require_list(payload.get("entries"), "entries")
     if not entries:
         raise AssertionError(
@@ -699,6 +715,12 @@ def check_termbase_json(path: Path) -> dict:
             )
             require_nonempty_string(
                 forbidden_entry.get("reason"), "forbidden.reason"
+            )
+            require_nonempty_string(
+                forbidden_entry.get("match_mode"), "forbidden.match_mode"
+            )
+            require_nonempty_string(
+                forbidden_entry.get("severity"), "forbidden.severity"
             )
         provenance = require_dict(
             entry.get("provenance"), f"entries[{index}].provenance"
@@ -1692,12 +1714,26 @@ def check_terminology_content(
                 f"terminology brief {source_term}.forbidden_targets",
             )
         }
-        actual_forbidden = {
-            require_nonempty_string(item.get("term"), "forbidden.term")
-            for item in require_list(
-                target.get("forbidden", []), f"{concept_id}.target.forbidden"
+        actual_forbidden: set[str] = set()
+        for item in require_list(
+            target.get("forbidden", []), f"{concept_id}.target.forbidden"
+        ):
+            forbidden_entry = require_dict(
+                item, f"{concept_id}.target.forbidden[]"
             )
-        }
+            if forbidden_entry.get("match_mode") != "case_insensitive":
+                raise AssertionError(
+                    f"Entry {concept_id} forbidden match_mode must be case_insensitive"
+                )
+            if forbidden_entry.get("severity") != "blocking":
+                raise AssertionError(
+                    f"Entry {concept_id} forbidden severity must be blocking"
+                )
+            actual_forbidden.add(
+                require_nonempty_string(
+                    forbidden_entry.get("term"), "forbidden.term"
+                )
+            )
         raw_conflicting_target = brief_term.get("conflicting_target")
         conflicting_target = (
             require_nonempty_string(
