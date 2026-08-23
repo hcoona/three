@@ -28,9 +28,6 @@ ARCHIVED_LEGACY_BUDDY_DOCS = (
     ".github/workflows/docs/MEMORY.md",
 )
 EXACT_BASE_WORKFLOW_SHA256 = {
-    ".github/workflows/ci.yml": (
-        "a0ca041623f8f90771a35c25bc14ceeb25810111c50dfcb17b6e34d988f62fca"
-    ),
     ".github/workflows/official.yml": (
         "7d6839921f29e81021c71b0f3866c1099cdae25bcfada06c72281bba295116d4"
     ),
@@ -329,9 +326,21 @@ def test_renamed_and_indirect_compatibility_routes_are_detected(
 
 
 def test_production_v1_workflows_match_base_contract() -> None:
-    """Pin base bytes for CI, Official, and reusable non-Buddy workflows."""
+    """Pin base bytes plus the exact CI validation toolchain correction."""
     for relative_path, expected_digest in EXACT_BASE_WORKFLOW_SHA256.items():
         assert _sha256(REPO_ROOT / relative_path) == expected_digest
+
+    ci_bytes = (WORKFLOWS / "ci.yml").read_bytes()
+    pinned_node = b"          node-version: '24.14.0'\n"
+    assert ci_bytes.count(pinned_node) == 1
+    reconstructed_base = ci_bytes.replace(
+        pinned_node,
+        b"          node-version: 24\n",
+        1,
+    )
+    assert hashlib.sha256(reconstructed_base).hexdigest() == (
+        "a0ca041623f8f90771a35c25bc14ceeb25810111c50dfcb17b6e34d988f62fca"
+    )
 
 
 def test_orchestrator_diff_is_only_the_buddy_retirement_guard() -> None:

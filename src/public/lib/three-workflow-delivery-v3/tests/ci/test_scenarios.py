@@ -1060,7 +1060,15 @@ def test_ci_scenario_coexistence_emits_no_authoritative_decision() -> None:
         "non-authoritative",
         "",
     )
-    assert hashlib.sha256(V1_CI_PATH.read_bytes()).hexdigest() == (
+    ci_bytes = V1_CI_PATH.read_bytes()
+    pinned_node = b"          node-version: '24.14.0'\n"
+    assert ci_bytes.count(pinned_node) == 1
+    reconstructed_base = ci_bytes.replace(
+        pinned_node,
+        b"          node-version: 24\n",
+        1,
+    )
+    assert hashlib.sha256(reconstructed_base).hexdigest() == (
         "a0ca041623f8f90771a35c25bc14ceeb25810111c50dfcb17b6e34d988f62fca"
     )
     assert governance["live_enabled"] is False
