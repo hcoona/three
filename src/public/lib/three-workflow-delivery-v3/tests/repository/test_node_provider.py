@@ -69,6 +69,8 @@ _NBGV_CI_VARIABLES = frozenset(
 NBGV_INSTALLATION = (
     REPO_ROOT / PROJECT_PATH / "node_modules/nerdbank-gitversioning"
 ).resolve()
+_NBGV_FIXTURE_DEPENDENCY = Path(".fixture-dependencies/nerdbank-gitversioning")
+_NBGV_FIXTURE_SPECIFIER = f"file:./{_NBGV_FIXTURE_DEPENDENCY.as_posix()}"
 _CONTRACT_FIXTURE_DIRECTORY = (
     Path(__file__).resolve().parents[1] / "fixtures/repository"
 )
@@ -2181,6 +2183,12 @@ def _real_local_nbgv_repository(
     seed = tmp_path / "seed"
     project = seed / PROJECT_PATH
     project.mkdir(parents=True)
+    fixture_dependency = project / _NBGV_FIXTURE_DEPENDENCY
+    fixture_dependency.parent.mkdir(parents=True)
+    fixture_dependency.symlink_to(
+        NBGV_INSTALLATION,
+        target_is_directory=True,
+    )
     (seed / "package.json").write_text(
         json.dumps(
             {
@@ -2220,9 +2228,7 @@ def _real_local_nbgv_repository(
                 "type": "module",
                 "private": False,
                 "devDependencies": {
-                    "nerdbank-gitversioning": (
-                        f"file:{NBGV_INSTALLATION.as_posix()}"
-                    )
+                    "nerdbank-gitversioning": _NBGV_FIXTURE_SPECIFIER
                 },
             },
             indent=2,
@@ -2241,6 +2247,9 @@ def _real_local_nbgv_repository(
         seed,
         environment,
     )
+    lockfile = (seed / "pnpm-lock.yaml").read_text(encoding="utf-8")
+    assert _NBGV_FIXTURE_SPECIFIER in lockfile
+    assert NBGV_INSTALLATION.as_posix() not in lockfile
     _run_real_local_command(
         ("git", "init", "--initial-branch=main"),
         seed,
@@ -2542,6 +2551,14 @@ def _direct_ambient_control(
             destination = control_root / relative_path
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes((caller / relative_path).read_bytes())
+        control_dependency = (
+            control_root / PROJECT_PATH / _NBGV_FIXTURE_DEPENDENCY
+        )
+        control_dependency.parent.mkdir(parents=True)
+        control_dependency.symlink_to(
+            NBGV_INSTALLATION,
+            target_is_directory=True,
+        )
         _run_real_local_command(
             (
                 "pnpm",
@@ -4507,7 +4524,6 @@ def test_isolated_tag_preparation_preserves_caller_git_state(
         tmp_path / "provider-temporary" / "nested" / "root"
     )
     provider_temporary_root.mkdir(parents=True)
-    (tmp_path / "workspace").symlink_to(REPO_ROOT.parents[1])
     monkeypatch.setenv("TMPDIR", str(provider_temporary_root))
     monkeypatch.setattr(
         __import__("tempfile"),
