@@ -77,10 +77,27 @@ If it conflicts with the
   Pyrefly, Actionlint, full HK, and staged pre-commit gates pass. Both original
   finding reviewers and the independent holistic reviewer report no findings
   after atomic adjudication and repair.
-- Review repair is complete through Phase 5 only. Continue in dependency order
-  with Phase 6 approval, capability, and finalization findings RC-031, RC-032,
-  and RC-018. Do not merge, activate Live, run acceptance, mutate a
-  destination, alter Rulesets, or begin a later repair phase out of order.
+- Phase 6 approval, capability, and finalization repair is published at
+  `bd9b2318`. It closes RC-031 by binding the selected ref to the admitted
+  Release Intent and rendering reviewer-visible target, coordinate, artifact
+  hashes and manifest, lifecycle scripts, canonical action details, or an
+  explicit exact-satisfied no-action disposition. Live Eligibility and
+  Governance duplication were freshly narrowed out of the required reviewer
+  payload correction. It closes RC-032 by preventing Capability Decision
+  persistence until Authorization has a successful immutable upload identity,
+  while retaining blocking Decisions before failure propagation. It closes
+  RC-018 by treating group bundles, Receipts, and Receipt transports as
+  capability-start evidence and strictly admitting safe replay without
+  rejecting the admission-only pre-publisher cancellation window. The complete
+  v3 suite passes 3,629 tests; Consumer Policy is clean with zero consumers,
+  three admitted exceptions, and 142 scanned surfaces; Ruff and Pyrefly,
+  Actionlint, full HK, and staged pre-commit gates pass. All three original
+  finding reviewers and the independent holistic reviewer report no findings
+  after atomic adjudication and repair.
+- Review repair is complete through Phase 6 only. Continue in dependency order
+  with Phase 7 canonical-result findings RC-014 and RC-035. Do not merge,
+  activate Live, run acceptance, mutate a destination, alter Rulesets, or
+  begin a later repair phase out of order.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the
