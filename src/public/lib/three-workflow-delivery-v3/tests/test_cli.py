@@ -978,7 +978,16 @@ def test_cli_exposes_only_the_commit7_release_transport_commands(
         ),
         (
             "materialize-publication",
-            ("--output", "--summary-output", "--github-output"),
+            (
+                "--selected-ref",
+                "--intent",
+                "--intent-digest",
+                "--intent-artifact-id",
+                "--intent-artifact-digest",
+                "--output",
+                "--summary-output",
+                "--github-output",
+            ),
         ),
         (
             "form-authorization",

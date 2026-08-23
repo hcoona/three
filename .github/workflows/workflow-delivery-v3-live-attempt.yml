@@ -1158,6 +1158,13 @@ jobs:
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: '0.10.9'
+      - name: Download Intent by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ inputs.intent-artifact-id }}
+          path: .wdv3/input
+          skip-decompress: true
+          digest-mismatch: error
       - name: Download Observation Record set by artifact ID
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -1194,6 +1201,11 @@ jobs:
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
             --target "${{ inputs.target-sha }}" \
+            --selected-ref "${{ inputs.selected-ref }}" \
+            --intent ".wdv3/input/${{ inputs.intent-artifact-name }}" \
+            --intent-digest "${{ inputs.intent-digest }}" \
+            --intent-artifact-id "${{ inputs.intent-artifact-id }}" \
+            --intent-artifact-digest "${{ inputs.intent-artifact-digest }}" \
             --qualification-snapshot ".wdv3/input/${{ needs.observe-github-packages.outputs.qualification-snapshot-artifact-name }}" \
             --qualification-snapshot-digest "${{ needs.observe-github-packages.outputs.qualification-snapshot-digest }}" \
             --qualification-snapshot-artifact-id "${{ needs.observe-github-packages.outputs.qualification-snapshot-artifact-id }}" \
@@ -1571,7 +1583,12 @@ jobs:
           include-hidden-files: true
       - name: Upload Capability Admission Decision
         id: upload
-        if: always() && steps.finalize.outputs.capability-decision-artifact-name != ''
+        if: >-
+          always() &&
+          steps.upload-authorization.outcome == 'success' &&
+          steps.upload-authorization.outputs.artifact-id != '' &&
+          steps.upload-authorization.outputs.artifact-digest != '' &&
+          steps.finalize.outputs.capability-decision-artifact-name != ''
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ${{ steps.finalize.outputs.capability-decision-artifact-name }}
@@ -1584,6 +1601,12 @@ jobs:
       - name: Propagate capability admission status
         if: always()
         run: |
+          if [[ ( "${{ steps.finalize.outputs.capability-result }}" == "success" || -n "${{ steps.finalize.outputs.capability-decision-artifact-name }}" ) && ( "${{ steps.upload-authorization.outcome }}" != "success" || -z "${{ steps.upload-authorization.outputs.artifact-id }}" || -z "${{ steps.upload-authorization.outputs.artifact-digest }}" ) ]]; then
+            exit 1
+          fi
+          if [[ -n "${{ steps.finalize.outputs.capability-decision-artifact-name }}" && ( "${{ steps.upload.outcome }}" != "success" || -z "${{ steps.upload.outputs.artifact-id }}" || -z "${{ steps.upload.outputs.artifact-digest }}" ) ]]; then
+            exit 1
+          fi
           if [[ "${{ steps.finalize.outcome }}" == "failure" || "${{ steps.finalize.outputs.admission-status }}" != "0" ]]; then
             exit 1
           fi

@@ -3871,8 +3871,15 @@ class AttemptOutcome:
         ):
             message = "Possibly-mutated outcome must preserve uncertainty"
             raise ValueError(message)
-        if self.result == "replayable-no-side-effect" and self.possibly_mutated:
-            message = "No-side-effect replay cannot be possibly mutated"
+        if self.result == "replayable-no-side-effect" and (
+            self.terminal_phase != "pre-capability-termination"
+            or self.uncertainty
+            or self.possibly_mutated
+            or self.next_action != "replay"
+            or self.capability_group_bundle_digests
+            or self.receipt_digests
+        ):
+            message = "Replayable no-side-effect outcome is not exact"
             raise ValueError(message)
         if self.publication_snapshot_digest is None:
             has_later_records = bool(

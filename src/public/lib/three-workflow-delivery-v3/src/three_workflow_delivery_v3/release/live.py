@@ -1613,7 +1613,12 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0911, PLR0912, PLR0915
             raise ValueError(message)
 
     if platform_terminated:
-        possibly_mutated = capability_may_have_started
+        possibly_mutated = bool(
+            capability_may_have_started
+            or group_bundles
+            or receipts
+            or receipt_transport_references
+        )
         return AttemptOutcome(
             attempt=attempt,
             qualification_decision_digest=qualification_decision.decision_digest,

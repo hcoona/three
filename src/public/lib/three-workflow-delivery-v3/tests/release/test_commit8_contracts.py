@@ -919,6 +919,44 @@ def test_platform_termination_maps_by_capability_phase(
     assert outcome.possibly_mutated is capability_started
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("terminal_phase", "post-capability-termination"),
+        ("uncertainty", True),
+        ("possibly_mutated", True),
+        ("next_action", "reobserve-and-replay"),
+        ("capability_group_bundle_digests", ("sha256:" + ("7" * 64),)),
+        ("receipt_digests", ("sha256:" + ("8" * 64),)),
+    ],
+)
+def test_replayable_no_side_effect_outcome_requires_exact_safe_state(
+    qualified_simulation,
+    field: str,
+    value: object,
+) -> None:
+    attempt, decision, publication, authorization = _live_noop_closure(
+        qualified_simulation
+    )
+    outcome = finalize_attempt_outcome(
+        attempt=attempt,
+        qualification_decision=decision,
+        publication_snapshot=publication,
+        authorization=authorization,
+        capability_decisions=(),
+        group_bundles=(),
+        receipts=(),
+        platform_terminated=True,
+        capability_may_have_started=False,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Replayable no-side-effect outcome is not exact",
+    ):
+        replace(outcome, **{field: value})
+
+
 def test_buddy_execution_identity_document_and_concurrency_key_are_exact() -> (
     None
 ):

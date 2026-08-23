@@ -3156,9 +3156,104 @@ def _release_admit_live_attempt_command(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _indented_json(document: object) -> list[str]:
+    return [
+        f"    {line}"
+        for line in json.dumps(
+            document,
+            ensure_ascii=True,
+            indent=2,
+            sort_keys=True,
+        ).splitlines()
+    ]
+
+
+def _render_publication_reviewer_summary(
+    *,
+    intent: ReleaseIntent,
+    qualification_snapshot: QualificationSnapshot,
+    artifact: ReleaseArtifact,
+    observation: ProjectionObservation,
+    publication_snapshot: PublicationSnapshot,
+) -> bytes:
+    coordinate = observation.projection.coordinate
+    lines = [
+        "# Workflow Delivery v3 Buddy publication review",
+        "",
+        "## Selected source and destination",
+        "",
+        f"- Selected ref: `{intent.selected_ref}`",
+        f"- Target SHA: `{qualification_snapshot.target}`",
+        (f"- Workflow run: `{publication_snapshot.attempt.workflow_run_id}`"),
+        f"- Run attempt: `{publication_snapshot.attempt.run_attempt}`",
+        (
+            "- Package coordinate: "
+            f"`{coordinate.package_name}@{coordinate.native_version}`"
+        ),
+        f"- Destination: `{coordinate.destination_id}`",
+        f"- Channel: `{coordinate.channel}`",
+        "",
+        "## Publication artifact",
+        "",
+        f"- Release Artifact digest: `{artifact.artifact_digest}`",
+        f"- Tarball SHA-256: `{artifact.content.content_sha256}`",
+        f"- Tarball SHA-512: `{artifact.content.content_sha512}`",
+        "",
+        "### Tarball manifest",
+        "",
+        *_indented_json(
+            {
+                "basename": artifact.content.basename,
+                "byte-size": artifact.content.byte_size,
+                "entries": list(artifact.entries),
+            }
+        ),
+        "",
+        "### Lifecycle scripts",
+        "",
+        *_indented_json(
+            [[name, command] for name, command in artifact.lifecycle_scripts]
+        ),
+        "",
+        "## Exact action summary",
+        "",
+        (f"- Destination observation: `{observation.value.classification}`"),
+        (
+            "- Publication Snapshot digest: "
+            f"`{publication_snapshot.snapshot_digest}`"
+        ),
+        (
+            "- Materialized actions: "
+            f"`{len(publication_snapshot.materialized_actions)}`"
+        ),
+    ]
+    if publication_snapshot.materialized_actions:
+        for action in publication_snapshot.materialized_actions:
+            lines.extend(
+                (
+                    "",
+                    f"### Action `{action.action_id}`",
+                    "",
+                    f"- Action digest: `{action.action_digest}`",
+                    "",
+                    *_indented_json(action.to_document()),
+                )
+            )
+    else:
+        lines.append(
+            "- Disposition: no publication action is required because the "
+            "destination already exactly satisfies the projection."
+        )
+    return ("\n".join(lines) + "\n").encode()
+
+
 def _release_materialize_publication_command(
     arguments: argparse.Namespace,
 ) -> int:
+    intent = _load_live_intent(arguments)
+    if arguments.selected_ref != intent.selected_ref:
+        message = "selected ref does not match the admitted Release Intent"
+        raise ValueError(message)
     snapshot = _load_live_qualification_snapshot(arguments)
     decision = _load_live_qualification_decision(arguments)
     artifact = _load_live_release_artifact_record(arguments)
@@ -3185,14 +3280,13 @@ def _release_materialize_publication_command(
     )
     snapshot_bytes = canonicalize(publication.to_document())
     snapshot_digest = publication.snapshot_digest
-    markdown = (
-        "# Workflow Delivery v3 Buddy publication review\n\n"
-        f"- Publication Snapshot digest: `{snapshot_digest}`\n"
-        f"- Target: `{publication.attempt.execution.target}`\n"
-        f"- Workflow run: `{publication.attempt.workflow_run_id}`\n"
-        f"- Run attempt: `{publication.attempt.run_attempt}`\n"
-        f"- Materialized actions: `{len(publication.materialized_actions)}`\n"
-    ).encode()
+    markdown = _render_publication_reviewer_summary(
+        intent=intent,
+        qualification_snapshot=snapshot,
+        artifact=artifact,
+        observation=observation,
+        publication_snapshot=publication,
+    )
     reviewer = materialize_reviewer_payload(
         snapshot_bytes=snapshot_bytes,
         summary_bytes=markdown,
@@ -5999,6 +6093,8 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "materialize-publication"
     )
     _add_current_release_arguments(materialize_publication)
+    materialize_publication.add_argument("--selected-ref", required=True)
+    _add_uploaded_record_arguments(materialize_publication, name="intent")
     _add_snapshot_arguments(materialize_publication)
     _add_decision_arguments(materialize_publication)
     _add_release_artifact_arguments(materialize_publication)

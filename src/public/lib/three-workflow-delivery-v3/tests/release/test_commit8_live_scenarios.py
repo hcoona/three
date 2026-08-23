@@ -1349,6 +1349,89 @@ def test_platform_termination_mapping_is_capability_phase_exact(
     assert outcome.possibly_mutated is started
 
 
+@pytest.mark.parametrize(
+    "retained_evidence",
+    ["capability-group-bundle", "receipt", "receipt-transport"],
+)
+def test_platform_termination_treats_publisher_records_as_start_evidence(
+    qualified_simulation,
+    retained_evidence: str,
+) -> None:
+    attempt, decision, publication, authorization = _closure(
+        qualified_simulation,
+        with_action=True,
+    )
+    _action, _result, bundle, receipt = _successful_action_records(publication)
+    group_bundles = (
+        (bundle,) if retained_evidence == "capability-group-bundle" else ()
+    )
+    receipts = (receipt,) if retained_evidence == "receipt" else ()
+    receipt_transports = (
+        (_receipt_transport(receipt),)
+        if retained_evidence == "receipt-transport"
+        else ()
+    )
+
+    outcome = finalize_attempt_outcome(
+        attempt=attempt,
+        qualification_decision=decision,
+        publication_snapshot=publication,
+        authorization=authorization,
+        capability_decisions=(),
+        group_bundles=group_bundles,
+        receipts=receipts,
+        receipt_transport_references=receipt_transports,
+        platform_terminated=True,
+        capability_may_have_started=False,
+    )
+
+    assert outcome.result == "incomplete-possibly-mutated"
+    assert outcome.terminal_phase == "post-capability-termination"
+    assert outcome.uncertainty is True
+    assert outcome.possibly_mutated is True
+    assert outcome.next_action == "reobserve-and-replay"
+
+
+def test_capability_admission_only_termination_remains_safely_replayable(
+    qualified_simulation,
+) -> None:
+    attempt, decision, publication, authorization = _closure(
+        qualified_simulation,
+        with_action=True,
+    )
+    reviewer = _require_api("materialize_reviewer_artifact")(
+        snapshot_bytes=canonicalize(publication.to_document()),
+        summary_bytes=SUMMARY,
+        artifact_id=710,
+        upload_digest="sha256:" + ("2" * 64),
+    )
+    capability = _require_api("admit_live_capability")(
+        attempt=attempt,
+        authorization=authorization,
+        publication_snapshot=publication,
+        reviewer_artifact=reviewer,
+    )
+
+    outcome = finalize_attempt_outcome(
+        attempt=attempt,
+        qualification_decision=decision,
+        publication_snapshot=publication,
+        authorization=authorization,
+        capability_decisions=(capability,),
+        group_bundles=(),
+        receipts=(),
+        platform_terminated=True,
+        capability_may_have_started=False,
+    )
+
+    assert outcome.result == "replayable-no-side-effect"
+    assert outcome.terminal_phase == "pre-capability-termination"
+    assert outcome.uncertainty is False
+    assert outcome.possibly_mutated is False
+    assert outcome.next_action == "replay"
+    assert outcome.capability_admission_digests == (capability.decision_digest,)
+
+
 def test_failed_publisher_with_marker_and_no_bundle_finalizes_both_facts(
     qualified_simulation,
 ) -> None:

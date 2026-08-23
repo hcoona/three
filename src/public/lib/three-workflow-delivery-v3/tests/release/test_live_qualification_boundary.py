@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import replace
 from pathlib import Path
 from unittest.mock import Mock
@@ -31,11 +32,13 @@ from three_workflow_delivery_v3.records.release import (
     admit_release_record,
     publication_capability_requirements,
     publication_mutable_resource_key_basis,
+    release_artifact_transport_name,
 )
 from three_workflow_delivery_v3.records.release_transport import (
     ReleaseAdmissionBindings,
     release_record_from_document,
 )
+from three_workflow_delivery_v3.release import finalizer as finalizer_module
 from three_workflow_delivery_v3.release.finalizer import (
     desired_projection_state_digest,
 )
@@ -93,12 +96,13 @@ def _live_observation(
         projection.projection_id,
         artifact,
     )
+    exact = classification == "exact-satisfied"
     value = ObservationValue(
         classification=classification,
-        owner=None,
-        coordinate=None,
-        content_sha512=None,
-        witness_digest=None,
+        owner="hcoona" if exact else None,
+        coordinate=projection.coordinate if exact else None,
+        content_sha512=artifact.content.content_sha512 if exact else None,
+        witness_digest=artifact.witness_digest if exact else None,
         routing=(),
     )
     request_facts = ObservationRequestFacts(
@@ -1018,6 +1022,313 @@ def test_live_plan_build_transport_and_finalization_are_attempt_bound(  # noqa: 
         == 1
     )
     assert not malformed_outcome_path.exists()
+
+
+@pytest.mark.parametrize("classification", ["absent", "exact-satisfied"])
+def test_materialize_publication_cli_renders_complete_reviewer_context(  # noqa: PLR0913
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    qualified_simulation,
+    live_intent,
+    live_qualification_snapshot,
+    classification: str,
+) -> None:
+    """Render all facts needed to review either publication disposition."""
+    intent_path = _write(
+        tmp_path / "live-intent.json",
+        canonicalize(live_intent.to_document()),
+    )
+    source_artifact = qualified_simulation.artifact
+    transport = replace(
+        source_artifact.transport,
+        artifact_name=release_artifact_transport_name(
+            repository=source_artifact.repository,
+            purpose="live-release",
+            output=source_artifact.output,
+            qualification_snapshot_digest=(
+                live_qualification_snapshot.snapshot_digest
+            ),
+            workflow_run_id=live_intent.workflow_run_id,
+            run_attempt=live_intent.run_attempt,
+            producer=source_artifact.transport.producer,
+        ),
+    )
+    provenance = source_artifact.provenance_document()
+    provenance.update(
+        {
+            "subject": live_qualification_snapshot.subject.to_document(),
+            "qualification-snapshot-digest": (
+                live_qualification_snapshot.snapshot_digest
+            ),
+            "repository-model-digest": (
+                live_qualification_snapshot.repository_model_digest
+            ),
+            "purpose": "live-release",
+            "transport": transport.to_document(),
+        }
+    )
+    artifact = replace(
+        source_artifact,
+        subject=live_qualification_snapshot.subject,
+        qualification_snapshot_digest=(
+            live_qualification_snapshot.snapshot_digest
+        ),
+        repository_model_digest=(
+            live_qualification_snapshot.repository_model_digest
+        ),
+        purpose="live-release",
+        transport=transport,
+        provenance_digest=canonical_sha256(provenance),
+    )
+    observation = _live_observation(
+        live_qualification_snapshot,
+        artifact,
+        classification=classification,
+    )
+    observation_path = _write(
+        tmp_path / "observation.json",
+        canonicalize(observation.to_document()),
+    )
+    projection = live_qualification_snapshot.destination_projections[0]
+    actions = (
+        (
+            finalizer_module._materialize_publication_action(  # noqa: SLF001
+                projection_id=projection.projection_id,
+                snapshot=live_qualification_snapshot,
+                artifact=artifact,
+            ),
+        )
+        if classification == "absent"
+        else ()
+    )
+    publication = PublicationSnapshot(
+        attempt=live_qualification_snapshot.subject,
+        qualification_snapshot_digest=(
+            live_qualification_snapshot.snapshot_digest
+        ),
+        qualification_decision_digest=(
+            qualified_simulation.decision.decision_digest
+        ),
+        qualification_result="success",
+        projection_ids=(projection.projection_id,),
+        artifact_digests=(artifact.artifact_digest,),
+        artifact_output_ids=(artifact.output.output_id,),
+        observation_references=(
+            PublicationObservationReference(
+                projection_id=projection.projection_id,
+                observation_digest=observation.observation_digest,
+                classification=classification,
+            ),
+        ),
+        materialized_actions=actions,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_load_live_qualification_snapshot",
+        lambda _arguments: live_qualification_snapshot,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_load_live_qualification_decision",
+        lambda _arguments: qualified_simulation.decision,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_load_live_release_artifact_record",
+        lambda _arguments: artifact,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "materialize_publication_snapshot",
+        lambda *_arguments: publication,
+    )
+    output_path = tmp_path / "publication-snapshot.json"
+    summary_path = tmp_path / "reviewer-summary.md"
+    formatter_input_path = tmp_path / "reviewer-formatter-input.json"
+    current = [
+        "--workflow-run-id",
+        str(live_intent.workflow_run_id),
+        "--run-attempt",
+        str(live_intent.run_attempt),
+        "--target",
+        live_intent.target,
+    ]
+
+    status = cli_module.main(
+        [
+            "release",
+            "materialize-publication",
+            *current,
+            "--selected-ref",
+            live_intent.selected_ref,
+            *_uploaded_arguments(
+                "intent",
+                intent_path,
+                live_intent.intent_digest,
+                201,
+            ),
+            *_uploaded_arguments(
+                "qualification_snapshot",
+                intent_path,
+                live_qualification_snapshot.snapshot_digest,
+                202,
+            ),
+            *_uploaded_arguments(
+                "qualification_decision",
+                intent_path,
+                qualified_simulation.decision.decision_digest,
+                203,
+            ),
+            *_uploaded_arguments(
+                "release_artifact",
+                intent_path,
+                artifact.artifact_digest,
+                204,
+            ),
+            *_uploaded_arguments(
+                "observation",
+                observation_path,
+                observation.observation_digest,
+                205,
+            ),
+            "--output",
+            str(output_path),
+            "--summary-output",
+            str(summary_path),
+            "--formatter-input-output",
+            str(formatter_input_path),
+        ]
+    )
+
+    assert status == 0
+    summary = summary_path.read_text(encoding="utf-8")
+    coordinate = projection.coordinate
+    required_values = (
+        live_intent.selected_ref,
+        live_intent.target,
+        f"{coordinate.package_name}@{coordinate.native_version}",
+        coordinate.destination_id,
+        coordinate.channel,
+        artifact.artifact_digest,
+        artifact.content.content_sha256,
+        artifact.content.content_sha512,
+        artifact.content.basename,
+        *artifact.entries,
+        *(
+            value
+            for lifecycle_script in artifact.lifecycle_scripts
+            for value in lifecycle_script
+        ),
+        classification,
+        publication.snapshot_digest,
+    )
+    assert all(
+        value is not None and value in summary for value in required_values
+    )
+    if classification == "absent":
+        action = publication.materialized_actions[0]
+        assert "Materialized actions: `1`" in summary
+        expected_action = "\n".join(
+            f"    {line}"
+            for line in json.dumps(
+                action.to_document(),
+                ensure_ascii=True,
+                indent=2,
+                sort_keys=True,
+            ).splitlines()
+        )
+        assert action.action_digest in summary
+        assert expected_action in summary
+        assert "no publication action is required" not in summary
+    else:
+        assert "Materialized actions: `0`" in summary
+        assert "no publication action is required" in summary
+        assert "already exactly satisfies the projection" in summary
+        assert "### Action" not in summary
+
+
+def test_materialize_publication_rejects_selected_ref_substitution(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    live_intent,
+) -> None:
+    """Reject a workflow-selected ref that differs from immutable Intent."""
+    intent_path = _write(
+        tmp_path / "live-intent.json",
+        canonicalize(live_intent.to_document()),
+    )
+    load_snapshot = Mock(
+        spec=cli_module._load_live_qualification_snapshot,  # noqa: SLF001
+        side_effect=AssertionError(
+            "selected-ref binding must precede Snapshot loading"
+        ),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_load_live_qualification_snapshot",
+        load_snapshot,
+    )
+    output_path = tmp_path / "publication-snapshot.json"
+    summary_path = tmp_path / "reviewer-summary.md"
+
+    status = cli_module.main(
+        [
+            "release",
+            "materialize-publication",
+            "--workflow-run-id",
+            str(live_intent.workflow_run_id),
+            "--run-attempt",
+            str(live_intent.run_attempt),
+            "--target",
+            live_intent.target,
+            "--selected-ref",
+            "refs/heads/substituted",
+            *_uploaded_arguments(
+                "intent",
+                intent_path,
+                live_intent.intent_digest,
+                301,
+            ),
+            *_uploaded_arguments(
+                "qualification_snapshot",
+                intent_path,
+                live_intent.intent_digest,
+                302,
+            ),
+            *_uploaded_arguments(
+                "qualification_decision",
+                intent_path,
+                live_intent.intent_digest,
+                303,
+            ),
+            *_uploaded_arguments(
+                "release_artifact",
+                intent_path,
+                live_intent.intent_digest,
+                304,
+            ),
+            *_uploaded_arguments(
+                "observation",
+                intent_path,
+                live_intent.intent_digest,
+                305,
+            ),
+            "--output",
+            str(output_path),
+            "--summary-output",
+            str(summary_path),
+            "--formatter-input-output",
+            str(tmp_path / "reviewer-formatter-input.json"),
+        ]
+    )
+    error = capsys.readouterr().err
+
+    assert status == 1
+    assert "selected ref does not match the admitted Release Intent" in error
+    load_snapshot.assert_not_called()
+    assert not output_path.exists()
+    assert not summary_path.exists()
 
 
 def test_live_qualification_snapshot_closes_attempt_execution_identity(

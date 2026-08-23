@@ -1893,6 +1893,7 @@ def test_capability_cli_exit_one_is_uploaded_before_failure_propagates() -> (
     finalizer = _document(CALLEE)["jobs"]["approval-finalizer"]
     steps = _steps(finalizer)
     admit = _step(finalizer, "Admit exact capability closure")
+    authorization_upload = _step(finalizer, "Upload Authorization Record")
     upload = _step(finalizer, "Upload Capability Admission Decision")
     propagate = _step(finalizer, "Propagate capability admission status")
     command = _run(admit)
@@ -1909,12 +1910,34 @@ def test_capability_cli_exit_one_is_uploaded_before_failure_propagates() -> (
     assert 'echo "admission-status=${status}"' in command
     assert upload["if"] == (
         "always() && "
+        "steps.upload-authorization.outcome == 'success' && "
+        "steps.upload-authorization.outputs.artifact-id != '' && "
+        "steps.upload-authorization.outputs.artifact-digest != '' && "
         "steps.finalize.outputs.capability-decision-artifact-name != ''"
     )
     assert upload["with"]["if-no-files-found"] == "error"
     assert upload["with"]["retention-days"] == RETENTION_DAYS
-    assert steps.index(admit) < steps.index(upload) < steps.index(propagate)
+    assert (
+        steps.index(admit)
+        < steps.index(authorization_upload)
+        < steps.index(upload)
+        < steps.index(propagate)
+    )
     assert propagate["if"] == "always()"
+    for required_transport in (
+        "steps.upload-authorization.outcome",
+        "steps.upload-authorization.outputs.artifact-id",
+        "steps.upload-authorization.outputs.artifact-digest",
+        "steps.upload.outcome",
+        "steps.upload.outputs.artifact-id",
+        "steps.upload.outputs.artifact-digest",
+    ):
+        assert required_transport in propagation
+    assert (
+        "steps.finalize.outputs.capability-decision-artifact-name"
+        in propagation
+    )
+    assert "steps.finalize.outputs.capability-result" in propagation
     assert "steps.finalize.outcome" in propagation
     assert 'steps.finalize.outputs.admission-status }}" != "0"' in propagation
     assert "exit 1" in propagation
@@ -3215,6 +3238,35 @@ def test_publication_snapshot_lifecycle_and_transport_identity_are_exact() -> (
     assert materializer["outputs"]["publication-snapshot-digest"] == (
         "${{ steps.materialize.outputs.publication-snapshot-digest }}"
     )
+
+
+def test_publication_materializer_binds_selected_ref_to_immutable_intent() -> (
+    None
+):
+    materializer = _document(CALLEE)["jobs"]["materialize-publication"]
+    download = _step(materializer, "Download Intent by artifact ID")
+    run = _run(
+        _step(
+            materializer,
+            "Materialize immutable publication and reviewer payload",
+        )
+    )
+
+    assert download["with"] == {
+        "artifact-ids": "${{ inputs.intent-artifact-id }}",
+        "path": ".wdv3/input",
+        "skip-decompress": True,
+        "digest-mismatch": "error",
+    }
+    expected_arguments = {
+        "--selected-ref": '"${{ inputs.selected-ref }}"',
+        "--intent": '".wdv3/input/${{ inputs.intent-artifact-name }}"',
+        "--intent-digest": '"${{ inputs.intent-digest }}"',
+        "--intent-artifact-id": '"${{ inputs.intent-artifact-id }}"',
+        "--intent-artifact-digest": ('"${{ inputs.intent-artifact-digest }}"'),
+    }
+    for option, expression in expected_arguments.items():
+        assert f"{option} {expression}" in run
 
 
 def test_release_finalizer_downloads_snapshot_directly_from_materialization() -> (
