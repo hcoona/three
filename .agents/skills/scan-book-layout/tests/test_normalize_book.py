@@ -4,6 +4,7 @@ import importlib.util
 import json
 import io
 import os
+import re
 import shutil
 import struct
 import subprocess
@@ -86,8 +87,16 @@ def write_white_is_zero_tiff(
         if photometric == 0
         else image.astype(np.uint16)
     )
-    if bits == 1:
-        data = np.packbits(samples.astype(np.uint8), axis=1, bitorder="big").tobytes()
+    if bits in (1, 2, 4):
+        shifts = np.arange(bits - 1, -1, -1, dtype=np.uint8)
+        sample_bits = (
+            samples.astype(np.uint8)[..., None] >> shifts
+        ) & 1
+        data = np.packbits(
+            sample_bits.reshape(height, width * bits),
+            axis=1,
+            bitorder="big",
+        ).tobytes()
     elif bits == 8:
         data = samples.astype(np.uint8).tobytes()
     elif bits == 16:
@@ -785,6 +794,49 @@ class NormalizeBookTests(unittest.TestCase):
         self.assertIn("unsupported high-depth color/alpha TIFF", result.stderr)
         self.assertFalse(output.exists())
 
+    def test_8_bit_rgb_and_rgba_tiffs_convert_to_grayscale(self) -> None:
+        rgb = np.full((12, 16, 3), 255, np.uint8)
+        rgb[2:6, 3:8] = (255, 0, 0)
+        rgba = np.zeros((12, 16, 4), np.uint8)
+        rgba[:, :, 3] = 255
+        rgba[2:6, 3:8, 3] = 0
+
+        expected = {}
+        for page, (mode, image) in enumerate(
+            (("RGB", rgb), ("RGBA", rgba)), 1
+        ):
+            source = self.input / f"page_{page:03}.tiff"
+            pillow_image = Image.fromarray(image)
+            pillow_image.save(source)
+            if mode == "RGBA":
+                white = Image.new("RGBA", pillow_image.size, "white")
+                expected[page] = np.asarray(
+                    Image.alpha_composite(white, pillow_image).convert("L")
+                )
+            else:
+                expected[page] = np.asarray(pillow_image.convert("L"))
+
+            with Image.open(source) as opened:
+                self.assertEqual(opened.mode, mode)
+                self.assertTrue(
+                    all(bits <= 8 for bits in opened.tag_v2[258])
+                )
+            np.testing.assert_array_equal(
+                normalize_book.read_gray(source), expected[page]
+            )
+
+        output = self.root / "output"
+        result = self.run_cli(
+            self.input, output, "--auto-canvas", "--no-edge-cleanup"
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for page in expected:
+            np.testing.assert_array_equal(
+                normalize_book.read_gray(output / f"page_{page:03}.png"),
+                expected[page],
+            )
+
     def test_signed_8_bit_tiff_is_rejected_before_conversion(self) -> None:
         image = np.full((120, 100), 255, np.uint16)
         source = self.input / "page_001.tiff"
@@ -1464,30 +1516,136 @@ class NormalizeBookTests(unittest.TestCase):
                 self.assertEqual(decoded.shape, image.shape)
                 np.testing.assert_array_equal(decoded, image)
 
-    def test_bigtiff_header_requires_offset_size_and_reserved_fields(self) -> None:
-        source = self.input / "page_001.payload"
+    def test_malformed_bigtiff_headers_fail_all_pillow_paths_without_output(
+        self,
+    ) -> None:
+        cases = [
+            ("offset-size", slice(4, 6), 4, ".tiff"),
+            ("reserved", slice(6, 8), 1, ".payload"),
+        ]
         image = np.arange(35, dtype=np.uint8).reshape(5, 7)
-        write_tifffile_grayscale(
-            source, image, 8, bigtiff=True, byte_order="<"
-        )
-        valid = bytearray(source.read_bytes())
 
-        bad_offset_size = valid.copy()
-        bad_offset_size[4:6] = struct.pack("<H", 4)
-        bad_reserved = valid.copy()
-        bad_reserved[6:8] = struct.pack("<H", 1)
-        self.assertIsNone(
-            normalize_book.tiff_header_byte_order(bytes(bad_offset_size))
-        )
-        self.assertIsNone(
-            normalize_book.tiff_header_byte_order(bytes(bad_reserved))
-        )
-        self.assertFalse(
-            normalize_book.has_image_container_signature(bytes(bad_offset_size))
-        )
-        self.assertFalse(
-            normalize_book.has_image_container_signature(bytes(bad_reserved))
-        )
+        for name, field, value, suffix in cases:
+            with self.subTest(field=name, suffix=suffix):
+                input_dir = self.root / f"input-{name}"
+                input_dir.mkdir()
+                source = input_dir / f"page_001{suffix}"
+                write_tifffile_grayscale(
+                    source, image, 8, bigtiff=True, byte_order="<"
+                )
+                malformed = bytearray(source.read_bytes())
+                malformed[field] = struct.pack("<H", value)
+                source.write_bytes(malformed)
+                header = normalize_book.read_bounded_header(source)
+
+                with Image.open(source) as opened:
+                    self.assertEqual(opened.format, "TIFF")
+                    opened.load()
+                self.assertIsNone(
+                    normalize_book.tiff_header_byte_order(header)
+                )
+                self.assertFalse(
+                    normalize_book.has_image_container_signature(header)
+                )
+
+                with self.assertRaises(ValueError) as raised:
+                    normalize_book.validate_pillow_tiff_header("TIFF", header)
+                self.assertEqual(str(raised.exception), "invalid TIFF header")
+                with self.assertRaises(ValueError) as raised:
+                    normalize_book.header_image_format(header)
+                self.assertEqual(str(raised.exception), "invalid TIFF header")
+                with mock.patch.object(
+                    normalize_book, "header_image_format", return_value=None
+                ), self.assertRaises(ValueError) as raised:
+                    normalize_book.probe_image_format(source, header)
+                self.assertEqual(
+                    str(raised.exception), f"invalid TIFF header: {source}"
+                )
+                with self.assertRaises(ValueError) as raised:
+                    normalize_book.inspect_encoded_image(source)
+                self.assertEqual(
+                    str(raised.exception), f"invalid TIFF header: {source}"
+                )
+                with self.assertRaises(ValueError) as raised:
+                    normalize_book.read_gray(source)
+                self.assertEqual(
+                    str(raised.exception), f"invalid TIFF header: {source}"
+                )
+
+                output = self.root / f"output-{name}"
+                result = self.run_cli(input_dir, output, "--auto-canvas")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("invalid TIFF header", result.stderr)
+                self.assertIn(source.name, result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+                self.assertEqual(result.stdout, "")
+                self.assertFalse(output.exists())
+
+    def test_2_and_4_bit_grayscale_tiffs_are_rejected_without_output(
+        self,
+    ) -> None:
+        input_dirs = {
+            photometric: self.root / f"input-photometric-{photometric}"
+            for photometric in (0, 1)
+        }
+        for input_dir in input_dirs.values():
+            input_dir.mkdir()
+
+        for bits in (2, 4):
+            maximum = (1 << bits) - 1
+            image = (
+                np.arange(5 * 8, dtype=np.uint8).reshape(5, 8)
+                % (maximum + 1)
+            )
+            for photometric in (0, 1):
+                source = input_dirs[photometric] / f"page_{bits:03}.tiff"
+                write_white_is_zero_tiff(
+                    source,
+                    image,
+                    bits,
+                    photometric=photometric,
+                )
+                message = (
+                    "unsupported TIFF single-channel grayscale depth "
+                    f"({bits},) (PhotometricInterpretation {photometric}; "
+                    "expected 1, 8, or 16 bits)"
+                )
+
+                with self.subTest(
+                    bits=bits, photometric=photometric
+                ), Image.open(source) as opened:
+                    self.assertEqual(opened.mode, "L")
+                    self.assertEqual(tuple(opened.tag_v2[258]), (bits,))
+                    self.assertEqual(opened.tag_v2[262], photometric)
+                with self.subTest(
+                    bits=bits, photometric=photometric, operation="inspect"
+                ), self.assertRaisesRegex(ValueError, re.escape(message)):
+                    normalize_book.inspect_encoded_image(source)
+                with self.subTest(
+                    bits=bits, photometric=photometric, operation="decode"
+                ), mock.patch.object(
+                    normalize_book,
+                    "image_to_gray_array",
+                    wraps=normalize_book.image_to_gray_array,
+                ) as convert, self.assertRaisesRegex(
+                    ValueError, re.escape(message)
+                ):
+                    normalize_book.read_gray(source)
+                convert.assert_not_called()
+
+        for photometric, input_dir in input_dirs.items():
+            with self.subTest(
+                photometric=photometric, operation="cli"
+            ):
+                output = self.root / f"output-photometric-{photometric}"
+                result = self.run_cli(input_dir, output, "--auto-canvas")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(
+                    "unsupported TIFF single-channel grayscale depth",
+                    result.stderr,
+                )
+                self.assertNotIn("Traceback", result.stderr)
+                self.assertFalse(output.exists())
 
     def test_signed_bigtiff_fallback_is_rejected(self) -> None:
         source = self.input / "page_001.tiff"

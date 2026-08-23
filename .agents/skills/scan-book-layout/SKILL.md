@@ -140,9 +140,12 @@ rather than overwrite any prior directory, report, or file.
 - Output is always grayscale PNG named from the input stem, regardless of source
   format. Accepted 16-bit integer grayscale sources remain 16-bit through decode,
   edge analysis, resizing, white padding, and PNG encoding; 8-bit sources remain
-  8-bit. TIFF PhotometricInterpretation and FillOrder are honored for unsigned-integer
-  1-, 8-, and 16-bit grayscale; SampleFormat is validated at every bit depth, and
-  signed or floating-point TIFF samples are rejected before conversion.
+  8-bit. Supported Pillow-readable color TIFFs with samples no deeper than 8 bits
+  may be converted to grayscale, with supported alpha composited onto white;
+  single-channel TIFF grayscale depths are exactly 1, 8, or 16 bits. TIFF
+  PhotometricInterpretation and FillOrder are honored for unsigned-integer 1-, 8-,
+  and 16-bit grayscale; SampleFormat is validated at every bit depth, and signed
+  or floating-point TIFF samples are rejected before conversion.
   WhiteIsZero samples are converted to the normal black-zero working
   representation exactly once before edge analysis. Valid unsigned 1-, 8-, and
   16-bit grayscale TIFFs use the pinned tifffile/imagecodecs fallback when Pillow
