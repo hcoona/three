@@ -63,10 +63,24 @@ If it conflicts with the
   pre-commit gates pass. The four original finding reviewers and the
   independent holistic reviewer report no findings after atomic adjudication
   and repair.
-- Review repair is complete through Phase 4 only. Continue in dependency order
-  with Phase 5 acceptance-evidence findings RC-023 and RC-025. Do not merge,
-  activate Live, run acceptance, mutate a destination, alter Rulesets, or begin
-  a later repair phase out of order.
+- Phase 5 acceptance-evidence repair is published at `37ce8d64`. It closes
+  RC-023 by terminalizing the fixed `exact` scenario after one pre-observation
+  unless the expected exact state already exists, with no mutation runner
+  invocation for absent, conflicting, or unknown state. It closes RC-025 by
+  retaining every canonically reconstructed probe suite across later failure,
+  cancellation, or monotone post-upload downgrade while keeping the separate
+  job conclusion fail-closed in terminal Governance Evidence. Missing artifact
+  bindings remain incomplete; failed or cancelled probe jobs make aggregate
+  state unknown; empty facts are used only when no valid record formed. The
+  complete v3 suite passes 3,615 tests; Consumer Policy is clean with zero
+  consumers, three admitted exceptions, and 142 scanned surfaces; Ruff and
+  Pyrefly, Actionlint, full HK, and staged pre-commit gates pass. Both original
+  finding reviewers and the independent holistic reviewer report no findings
+  after atomic adjudication and repair.
+- Review repair is complete through Phase 5 only. Continue in dependency order
+  with Phase 6 approval, capability, and finalization findings RC-031, RC-032,
+  and RC-018. Do not merge, activate Live, run acceptance, mutate a
+  destination, alter Rulesets, or begin a later repair phase out of order.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the
