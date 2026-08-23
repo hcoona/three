@@ -136,14 +136,29 @@ def tiff_header_byte_order(header: bytes) -> str | None:
     return byte_order
 
 
-def header_image_format(header: bytes) -> str | None:
+def validate_pillow_tiff_header(
+    detected_format: str | None,
+    header: bytes,
+    path: Path | None = None,
+) -> None:
+    if detected_format != "TIFF" or tiff_header_byte_order(header) is not None:
+        return
+    location = f": {path}" if path is not None else ""
+    raise ValueError(f"invalid TIFF header{location}")
+
+
+def header_image_format(
+    header: bytes, path: Path | None = None
+) -> str | None:
     if not header:
         return None
     try:
         with Image.open(
             io.BytesIO(header), formats=PILLOW_INVENTORY_ALLOWLIST
         ) as image:
-            return (image.format or "").upper() or None
+            detected_format = (image.format or "").upper() or None
+            validate_pillow_tiff_header(detected_format, header, path)
+            return detected_format
     except (Image.DecompressionBombWarning, Image.DecompressionBombError) as error:
         raise ValueError("source raster exceeds Pillow's safe pixel limit") from error
     except (UnidentifiedImageError, OSError):
@@ -221,14 +236,16 @@ def read_bounded_image_candidate(
 
 
 def probe_image_format(path: Path, header: bytes) -> str | None:
-    detected = header_image_format(header)
+    detected = header_image_format(header, path)
     if detected is not None:
         return detected
     try:
         with read_bounded_image_candidate(path) as stream, Image.open(
             stream, formats=PILLOW_INVENTORY_ALLOWLIST
         ) as image:
-            return (image.format or "").upper() or None
+            detected_format = (image.format or "").upper() or None
+            validate_pillow_tiff_header(detected_format, header, path)
+            return detected_format
     except (Image.DecompressionBombWarning, Image.DecompressionBombError) as error:
         raise ValueError(
             f"source raster exceeds Pillow's safe pixel limit: {path}"
@@ -398,6 +415,8 @@ def inspect_encoded_image(
         with read_bounded_image_candidate(path) as stream, Image.open(
             stream, formats=PILLOW_INVENTORY_ALLOWLIST
         ) as image:
+            pillow_format = (image.format or "").upper()
+            validate_pillow_tiff_header(pillow_format, header, path)
             try:
                 frame_count = int(getattr(image, "n_frames", 1))
             except (OSError, TypeError, ValueError):
@@ -405,7 +424,7 @@ def inspect_encoded_image(
             detected_format = decoder_format(image, frame_count)
             width, height = displayed_header_size(image)
             validate_header_dimensions(path, width, height)
-            validate_source_depth(image, path, (image.format or "").upper())
+            validate_source_depth(image, path, pillow_format)
             return EncodedImageHeader(
                 detected_format,
                 frame_count,
@@ -585,11 +604,32 @@ def validate_source_depth(
         raise ValueError(
             f"unsupported TIFF SampleFormat {sample_formats}: {path}"
         )
+    samples_per_pixel = tiff_tag_values(image, 277, len(image.getbands()))[0]
+    supported_grayscale_depths = {(1,), (8,), (16,)}
+    if samples_per_pixel == 1 and bits_per_sample not in supported_grayscale_depths:
+        photometric_value = image.tag_v2.get(262, 1)
+        if isinstance(photometric_value, (tuple, list)):
+            if len(photometric_value) != 1:
+                raise ValueError(
+                    f"invalid TIFF PhotometricInterpretation: {path}"
+                )
+            photometric_value = photometric_value[0]
+        try:
+            photometric = int(photometric_value)
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                f"invalid TIFF PhotometricInterpretation: {path}"
+            ) from error
+        if photometric in (0, 1):
+            raise ValueError(
+                "unsupported TIFF single-channel grayscale depth "
+                f"{bits_per_sample} (PhotometricInterpretation {photometric}; "
+                f"expected 1, 8, or 16 bits): {path}"
+            )
     sample_depth = max((*bits_per_sample, raw_depth))
     if sample_depth <= 8:
         return
 
-    samples_per_pixel = tiff_tag_values(image, 277, len(image.getbands()))[0]
     grayscale_modes = {"I;16", "I;16L", "I;16B", "I;16N"}
     if samples_per_pixel != 1 or image.mode not in grayscale_modes:
         raise ValueError(
@@ -835,6 +875,7 @@ def read_gray(path: Path) -> np.ndarray:
             stream, formats=PILLOW_DECODE_ALLOWLIST
         ) as image:
             container_format = (image.format or "").upper()
+            validate_pillow_tiff_header(container_format, header, path)
             if container_format not in SUPPORTED_IMAGE_FORMATS:
                 raise ValueError(
                     f"unsupported encoded image format {container_format or 'unknown'}: {path}"
