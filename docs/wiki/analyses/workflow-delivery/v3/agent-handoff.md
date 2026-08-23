@@ -18,8 +18,26 @@ If it conflicts with the
   fail-closed Buddy-channel rejection in the orchestrator. The inherited
   pre-v3 control plane, obsolete smoke projects, legacy descriptors, related
   tests and fixtures, and old design-history pages are removed. UV, PNPM, and
-  Mise locks are regenerated for the retained v3/first-slice scope. This is not
-  RC-001 final validation evidence.
+  Mise locks are regenerated for the retained v3/first-slice scope. The repair
+  is published at `50e4463a`. This is not RC-001 final validation evidence.
+- Phase 2 consumer and Live Eligibility admission repair is published at
+  `bfb41525`. It closes RC-013 by rejecting matrix base-product or include
+  overflow before materializing state 257, RC-033 with a pinned Tree-sitter
+  scanner limited to direct and shallow statically resolvable package-manager
+  use, and RC-016 with strict canonical Consumer Policy and Live Eligibility
+  binding. Relevant unsupported JavaScript flow fails closed; the scanner does
+  not model arbitrary JavaScript execution. Parseable approved-exception drift
+  remains consumer-positive, while a missing approved path remains a scan
+  error. Buddy workflows retain immutable blocked Decisions before propagating
+  domain status. The complete v3 suite passes 3,535 tests, the repository
+  Consumer Policy is clean with zero consumers, three admitted exceptions,
+  and 142 scanned surfaces, and the full HK and staged pre-commit gates pass.
+  The three original finding reviewers and the independent holistic reviewer
+  report no findings after atomic adjudication and repair.
+- Review repair is complete through Phase 2 only. Continue in dependency order
+  with Phase 3 execution-history findings RC-011, RC-017, RC-026, RC-027, and
+  RC-028. Do not merge, activate Live, run acceptance, mutate a destination,
+  alter Rulesets, or begin a later repair phase out of order.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the
@@ -435,13 +453,14 @@ If it conflicts with the
   remains the expected non-authoritative fail-closed record for the broad
   implementation diff; only the one-time pre-coexistence check conclusion may
   project success, and the exact base-tree marker disables that route after
-  merge. Current-head PR #552 checks and exact artifact replay now pass. The
-  immediate boundary is human review, followed by separate explicit
-  authorization to merge. Merge starts the direct cutover and intentional
-  Buddy outage, so the operator must be ready to execute the immediate
-  post-merge legacy drain and old-ref rejection proof. Do not merge, run real
-  acceptance probes, finalize the sentinel target, activate normal live, or
-  begin later scopes without a separate explicit user task.
+  merge. PR #552 checks and exact artifact replay passed at that historical
+  boundary. The current repair boundary is Phase 2 commit `bfb41525`; remaining
+  review findings must be repaired and re-reviewed in dependency order before
+  returning to human merge authorization. Merge starts the direct cutover and
+  intentional Buddy outage, so the operator must be ready to execute the
+  immediate post-merge legacy drain and old-ref rejection proof. Do not merge,
+  run real acceptance probes, finalize the sentinel target, activate normal
+  live, or begin later scopes without a separate explicit user task.
 - Implementation must preserve the approved commit boundaries and keep live
   activation disabled until acceptance and the separate activation approval.
 
