@@ -249,8 +249,8 @@ have changed.
 
 ## Current Delivery Boundaries
 
-1. Complete the remaining implementation review repair, re-review, and final
-   validation; review closure does not authorize merge.
+1. Implementation review and exact final-evidence replay are complete at
+   behavior commit `e9d812b2`; review closure does not authorize merge.
 2. Return to separate explicit human merge authorization. If authorized, merge
    begins the direct Buddy cutover with normal Live disabled, followed by the
    legacy Buddy drain and proof of removal and old-ref dispatch rejection.

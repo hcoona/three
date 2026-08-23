@@ -106,10 +106,11 @@ If it conflicts with the
   staged pre-commit gates pass. Both original finding reviewers and the
   independent holistic reviewer report no findings after atomic adjudication
   and repair.
-- Review repair is complete through Phase 7 only. Continue in dependency order
-  with Phase 8 test and documentation findings RC-039, RC-002, RC-005, RC-006,
-  and RC-001. Do not merge, activate Live, run acceptance, mutate a
-  destination, alter Rulesets, or begin a later repair phase out of order.
+- Phase 8 is complete at final behavior commit `e9d812b2`; RC-039, RC-002,
+  RC-005, RC-006, and RC-001 are closed. Review closure does not authorize
+  merge. Do not merge, activate Live, run acceptance, mutate a destination,
+  alter Rulesets, or begin a later phase without separate explicit
+  authorization.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the
@@ -520,22 +521,101 @@ If it conflicts with the
   state blocks; no repository variable, PAT, App, service, ledger, OIDC, or
   additional token permission is added. Permanent root HK policy remains the
   repository-wide dependency gate.
-- Pre-cleanup local v3 validation and independent review were complete through
-  bootstrap implementation commit `f0535989`. The canonical shadow Decision
-  remains the expected non-authoritative fail-closed record for the broad
-  implementation diff; only the one-time pre-coexistence check conclusion may
-  project success, and the exact base-tree marker disables that route after
-  merge. PR #552 checks and exact artifact replay passed at that historical
-  boundary. The current repair boundary is Phase 7 commit `a89d2986`;
-  remaining review findings must be repaired and re-reviewed in dependency
-  order before returning to human merge authorization. Merge starts the direct
-  cutover and intentional Buddy outage, so the operator must be ready to
-  execute the immediate post-merge legacy drain and old-ref rejection proof.
-  Do not merge, run real acceptance probes, finalize the sentinel target,
-  activate normal live, or begin later scopes without a separate explicit user
-  task.
+- Phase 8 review repair commit
+  `adb70177d2edf74a6ca1b2079121cd1cfa0913d3` closes RC-039 by making the
+  ignored generated Node distribution optional only in the isolated source
+  fixture, RC-002 by removing generated `.testagent/plan.md` and timestamp
+  coupling, RC-005 by returning implementation mechanisms to the design layers
+  while preserving observable fail-closed requirements, and RC-006 by
+  replacing obsolete pre-LLD steps with the actual review, merge, cutover,
+  acceptance, and activation boundaries.
+- Final evidence gathering did not treat a green dedicated v3 workflow as
+  closure. General CI exposed five independently adjudicated prerequisite
+  defects in successive published candidates: floating Node/npm at
+  `adb70177` in run
+  [`32641986429`](https://github.com/hcoona/three/actions/runs/32641986429),
+  non-idempotent cached Mise links at `635ce5cb` in run
+  [`32644327603`](https://github.com/hcoona/three/actions/runs/32644327603),
+  PNPM fixture path-depth coupling at `5feaacad` in run
+  [`32646068126`](https://github.com/hcoona/three/actions/runs/32646068126),
+  missing Node/PNPM prerequisites in the Python 3.14 workspace job at
+  `e06dcfcc` in run
+  [`32648886474`](https://github.com/hcoona/three/actions/runs/32648886474),
+  and missing locked Mise/HK provisioning at `3eb4ee35` in run
+  [`32651937348`](https://github.com/hcoona/three/actions/runs/32651937348).
+  Each repair was narrow, independently re-reviewed, normally published, and
+  retained as superseded evidence rather than rewritten.
+- Non-rewriting integration commit
+  `f594db2ee85dd398255f1bc16b5f3d1d40544bc6` incorporates the then-current
+  `origin/main` commit `62ffb59bcfbe7845e580d7aea5337afafc88bdf8`.
+  The final behavior boundary is commit
+  `e9d812b28f940ba64e83478d950f266077876859`, tree
+  `b36b79262260b0e76e494198e5c63dbe74e16c4a`, with tested merge
+  `34dc8fe660c82a28de44dee19e519287aa321581`. General CI run
+  [`32655841248`](https://github.com/hcoona/three/actions/runs/32655841248),
+  CodeQL run
+  [`32655841242`](https://github.com/hcoona/three/actions/runs/32655841242),
+  and dedicated v3 run
+  [`32655841197`](https://github.com/hcoona/three/actions/runs/32655841197)
+  all passed on that exact head and attempt 1.
+- Final local evidence includes 63 isolated real-HK integration/scenario
+  cases under a Mise root containing only locked HK 1.53.0, the complete Python
+  3.14 workspace with 3,782 passing tests, the complete v3 suite with 3,632
+  passing tests, Ruff, Ruff format, Pyrefly, Actionlint, diff checks, full HK,
+  and the staged pre-commit gate. The final independent implementation
+  rereview reports no findings.
+- RC-001 closes by recording the exact final behavior identity and immutable
+  evidence in a strict documentation-only child of `e9d812b2`. The child names
+  the behavior commit and tree but not itself. Any behavior change or new base
+  integration invalidates this evidence and restarts the cycle. Checks on the
+  documentation child are external evidence and must not be recursively added
+  to that child.
+- PR [#552](https://github.com/hcoona/three/pull/552) remains open, blocked,
+  and unmerged. Review closure returns control to separate explicit human merge
+  authorization; it does not authorize merge. Merge starts the direct cutover
+  and intentional Buddy outage, so the operator must be ready to execute the
+  immediate post-merge legacy drain and old-ref rejection proof. Do not merge,
+  run real acceptance probes, finalize the sentinel target, activate normal
+  live, or begin later scopes without a separate explicit user task.
 - Implementation must preserve the approved commit boundaries and keep live
   activation disabled until acceptance and the separate activation approval.
+
+The retained final v3 artifact inventory for run `32655841197`, attempt 1, is:
+
+| Artifact             |           ID |  Bytes | SHA-256                                                            |
+| -------------------- | -----------: | -----: | ------------------------------------------------------------------ |
+| Request              | `9497411391` | 20,553 | `7b53e760ddd1e212f95eb4840fe771847d9aeccbc829b5fb384650260962a06d` |
+| Provider             | `9497430708` |  3,156 | `e5a5b95659630d807df113f40ae97d0490369d131e2208f1d0c63f65ca636489` |
+| Plan                 | `9497437095` | 30,386 | `6b207ea6d6edd046bd77efe41a00a4fd1fb7db84167055efdd7a295bca07abfa` |
+| `project-test` lane  | `9497442930` |    887 | `271698c8beef2f05c6dcaad248a821b6a788ab2f132a3e9b14eb5e04deba328f` |
+| `project-build` lane | `9497443148` |    889 | `de77e953abf5cf9b3774338e96cdf708aeccba7c6aee97bdfc768e1aefc2ecb5` |
+| `npm` lane           | `9497443195` |    899 | `6164326cb3028e8e157a0ddb614490b43282b18f3ff617381002414ddfee0705` |
+| `root-HK` lane       | `9497445406` |    877 | `f7bb765fcf4d6afbcb7b4aef815a675126ec8665d37ec32b222789843c2b6536` |
+| Decision             | `9497449966` | 58,917 | `04a44f17c903b55542463ae830484f31c1e110f97c20a3048ba6dd151425020f` |
+| Summary              | `9497450107` | 27,549 | `338b81882105d603ff61deba4aaedd34294d0d6122ec67cdb26817dd0e3f6b58` |
+
+All nine downloaded archives match GitHub's byte counts and SHA-256 digests,
+and every payload passes canonical admission. Authenticated exact-identity
+replay at the recorded 193-second clock reproduces the remote Decision and
+Summary byte-for-byte, exits `1`, and preserves the expected
+non-authoritative `failure` /
+`incomplete-model-plan` /
+`fix-model-plan-and-rerun` result with 292 changed paths, 79 exclusively
+unclassified-path diagnostics, four empty lane results, and no admitted
+Evidence or artifact digests. The exact bootstrap projection exits `0` while
+explicitly retaining that canonical failure. Supersession is
+`not-superseded`, and the broad-change PR is excluded from the SLO.
+
+General CI run `32655841248` retained three unrelated AzureAuth build
+artifacts:
+
+| Artifact                                                     |           ID |   Bytes | SHA-256                                                            |
+| ------------------------------------------------------------ | -----------: | ------: | ------------------------------------------------------------------ |
+| `azureauth-credprovider-foundation-internal-Windows-win-x64` | `9497595744` | 830,976 | `48631938c88290c8bf6c07412a4b029f8bba812e32af6ae1b6b7c443194b9348` |
+| `azureauth-credprovider-foundation-internal-Linux-linux-x64` | `9497592310` | 829,562 | `6ba23573dbc9daaa63ba73badd1918b7885e0e4cb90e5b1fad0741224b9059eb` |
+| `azureauth-credprovider-foundation-internal-macOS-osx-x64`   | `9497590302` | 829,575 | `5e3409158861c22e803882cb35d8b7bb57c23499b21929391c505a2d2ab887bf` |
+
+CodeQL run `32655841242` retained zero GitHub Actions artifacts.
 
 ## Required Reading Order
 

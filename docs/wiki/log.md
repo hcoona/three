@@ -2010,3 +2010,15 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   cutover, acceptance, and separately approved activation boundaries.
 - No merge, sentinel finalization, acceptance run, package mutation, or Live
   activation was authorized or performed.
+
+## [2026-08-23] lint | Close Workflow Delivery v3 implementation review
+
+- Recorded Phase 8 closure of RC-039, RC-002, RC-005, RC-006, and RC-001 at
+  exact behavior commit `e9d812b2`, tree `b36b7926`, base `62ffb59b`, and
+  tested merge `34dc8fe6`.
+- Retained the superseded candidate ledger and the final green General CI,
+  CodeQL, and dedicated v3 runs; admitted all nine immutable v3 artifacts and
+  reproduced the canonical Decision and Summary byte-for-byte.
+- Kept this closure documentation-only. PR #552 remains open and unmerged, and
+  no acceptance, package mutation, Live activation, Ruleset change, force
+  push, or history rewrite was authorized or performed.

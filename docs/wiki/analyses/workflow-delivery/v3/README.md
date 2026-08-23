@@ -179,26 +179,41 @@ Documentation closure is committed at `a9e8cbfa`. Non-rewriting merge commit
 only the upstream Biome 2.5.9 and Asciidoctor 4.0.10 dependency updates. The
 frozen PNPM and UV lock checks pass after the merge.
 
-The validated implementation branch is pushed, and
-[PR #552](https://github.com/hcoona/three/pull/552) is open against `main`.
-General CI and CodeQL pass at `4fac140d`. All 20 targeted PR findings are fixed
-without dismissal or suppression. Published bootstrap head `9b7b7d2c` also
-passes every PR check: v3 run
-[`32440545037`](https://github.com/hcoona/three/actions/runs/32440545037),
-general CI run
-[`32440545005`](https://github.com/hcoona/three/actions/runs/32440545005), and
+The implementation review is complete at behavior commit
+`e9d812b28f940ba64e83478d950f266077876859`, tree
+`b36b79262260b0e76e494198e5c63dbe74e16c4a`, after non-rewriting integration
+of `main` commit `62ffb59bcfbe7845e580d7aea5337afafc88bdf8`. The exact tested merge is
+`34dc8fe660c82a28de44dee19e519287aa321581`. Phase 8 closes RC-039, RC-002,
+RC-005, RC-006, and the final exact-evidence RC-001 finding. The complete
+repair and supersession ledger is in the
+[AI Agent Handoff](./agent-handoff.md).
+
+The final behavior head passes General CI run
+[`32655841248`](https://github.com/hcoona/three/actions/runs/32655841248),
 CodeQL run
-[`32440545090`](https://github.com/hcoona/three/actions/runs/32440545090).
-Exact artifact replay retains Finalizer exit `1`,
-`incomplete-model-plan`/`fix-model-plan-and-rerun`, 283 unclassified-path
-diagnostics, and no Evidence or artifacts while the exact projection succeeds
-with its explicit canonical-failure note. The PR is not authorized to merge.
-Merge starts the direct v1 Buddy-to-v3 Buddy cutover and intentional Buddy
-outage while v3 remains disabled.
+[`32655841242`](https://github.com/hcoona/three/actions/runs/32655841242), and
+dedicated v3 run
+[`32655841197`](https://github.com/hcoona/three/actions/runs/32655841197), all
+on attempt 1. All nine retained v3 artifacts match their GitHub byte counts and
+SHA-256 digests and pass canonical admission. Authenticated exact-identity
+replay reproduces the Decision and Summary byte-for-byte and retains Finalizer
+exit `1`, the expected non-authoritative
+`incomplete-model-plan` / `fix-model-plan-and-rerun` result, 292 changed paths,
+79 exclusively unclassified-path diagnostics, four empty lane results, and no
+admitted Evidence or artifact digests. The exact bootstrap projection exits
+`0` while explicitly retaining the canonical failure.
+
+This evidence update is a strict documentation-only child of the named
+behavior commit and does not name itself. Its checks are external closure
+evidence and are not recursively documented.
+
+[PR #552](https://github.com/hcoona/three/pull/552) remains open, blocked, and
+unmerged. Review closure does not authorize merge. Merge starts the direct v1
+Buddy-to-v3 Buddy cutover and intentional Buddy outage while v3 remains
+disabled.
 
 Next:
 
-1. complete human review;
-2. obtain separate explicit authorization before merging, with the operator
-   ready to execute the immediate post-merge legacy drain and old-ref rejection
-   proof.
+1. obtain separate explicit human authorization before merging, with the
+   operator ready to execute the immediate post-merge legacy drain and old-ref
+   rejection proof.
