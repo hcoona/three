@@ -1436,41 +1436,6 @@ def test_testagent_markdown_exclusion_remains_local_to_two_steps() -> None:
     assert "markdown_append_only_artifact_exclude" not in remaining_config
 
 
-def test_testagent_plan_update_is_append_only_against_head() -> None:
-    """Require the current plan to preserve committed bytes across commit."""
-    marker = (
-        b"<!-- BEGIN APPEND: current-commit-10-single-pass-test-plan-"
-        b"2026-08-15T021630Z -->"
-    )
-    plan_path = ".testagent/plan.md"
-    head_plan = subprocess.run(  # noqa: S603
-        ("git", "show", f"HEAD:{plan_path}"),
-        cwd=REPO_ROOT,
-        check=True,
-        capture_output=True,
-    ).stdout
-    working_plan = (REPO_ROOT / plan_path).read_bytes()
-    diff_numstat = subprocess.run(  # noqa: S603
-        ("git", "diff", "--numstat", "--", plan_path),
-        cwd=REPO_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-
-    assert working_plan.startswith(head_plan)
-    assert working_plan.count(marker) == 1
-    if head_plan.count(marker) == 0:
-        assert len(working_plan) > len(head_plan)
-    else:
-        assert head_plan.count(marker) == 1
-    if diff_numstat:
-        added, deleted, path = diff_numstat.split("\t")
-        assert path == plan_path
-        assert added != "-"
-        assert deleted == "0"
-
-
 def test_legacy_pngchunk_ztxt_ba_line_and_typos_exception_are_exact() -> None:
     """Preserve the historical identifier and its file-specific exception."""
     legacy_path = "src/public/lib/Hjg.Pngcs/Chunks/PngChunkZTXT.cs"

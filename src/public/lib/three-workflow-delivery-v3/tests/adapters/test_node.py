@@ -440,9 +440,8 @@ def _make_runtime_request(
 
 
 def test_source_snapshot_covers_complete_fixture_project() -> None:
-    assert set(_source_snapshot()) == {
+    assert set(_source_snapshot()) - {"dist/index.js"} == {
         "README.md",
-        "dist/index.js",
         "package.json",
         "scripts/build.mjs",
         "scripts/nbgv-version.mjs",

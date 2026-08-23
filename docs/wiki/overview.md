@@ -247,10 +247,19 @@ into the v3 line. Platform experiments may be extracted only after separating
 observed facts from v2 design conclusions and revalidating assumptions that may
 have changed.
 
-## Next Architecture Work
+## Current Delivery Boundaries
 
-1. Confirm the first-slice scenarios and brief LLD.
-2. Obtain explicit LLD approval before implementation.
+1. Complete the remaining implementation review repair, re-review, and final
+   validation; review closure does not authorize merge.
+2. Return to separate explicit human merge authorization. If authorized, merge
+   begins the direct Buddy cutover with normal Live disabled, followed by the
+   legacy Buddy drain and proof of removal and old-ref dispatch rejection.
+3. Under separate explicit authorization, finalize the protected acceptance
+   sentinel and run, capture, reconcile, and remove the one-time acceptance
+   bootstrap; acceptance does not authorize normal Live.
+4. Only successful acceptance and separate human activation approval may
+   authorize a protected commit setting `live_enabled: true` for the named
+   smoke package.
 
 ## Related Pages
 

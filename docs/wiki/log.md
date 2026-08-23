@@ -1992,3 +1992,21 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Regenerated UV, PNPM, and Mise locks for the retained scope. This entry does
   not claim RC-001 final validation closure, and no live or package mutation
   operation ran.
+
+## [2026-08-23] lint | Refine Workflow Delivery v3 requirement layering
+
+- Reframed WD-REL-003 around observable purpose isolation, current-attempt and
+  exact-target binding, complete repository facts, anti-replay behavior, and
+  fail-closed NBGV history proof.
+- Removed Repository Model Snapshot, Fact Bundle, GitHub field, Provider,
+  checkout, and `fetch-depth` mechanisms from the requirement while retaining
+  their existing HLD and MLD ownership.
+- Preserved the requirement ID, security outcomes, lifecycle boundary, and
+  implementation behavior.
+
+## [2026-08-23] lint | Correct Workflow Delivery v3 current boundaries
+
+- Replaced obsolete pre-LLD overview steps with the current review, merge,
+  cutover, acceptance, and separately approved activation boundaries.
+- No merge, sentinel finalization, acceptance run, package mutation, or Live
+  activation was authorized or performed.

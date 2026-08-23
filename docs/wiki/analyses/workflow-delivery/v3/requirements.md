@@ -143,31 +143,29 @@ against implementation and maintenance cost.
   Identity field.
 - **WD-REL-002:** Release must verify target and channel eligibility through
   Delivery Governance before live publication can be authorized.
-- **WD-REL-003:** Each candidate Release request or run must first perform
-  an explicit live-release or release-simulation branch before live eligibility,
+- **WD-REL-003:** Each candidate Release request or run must first select an
+  explicit live-release or release-simulation purpose before live eligibility,
   Product or Execution Identity lookup, coalescing, admission, or Attempt
-  creation. Each branch must compile exactly one authoritative same-revision,
-  request-local Repository Model Snapshot for its own purpose and current
-  request identity, `github.run_id`, and `github.run_attempt`. That Snapshot must
-  close descriptors, the Project Node and dependency graph, Build Definitions,
-  modeled variants and outputs, canonical and native NBGV facts, including
-  `npmPackageVersion` where required, and complete build and artifact scope.
-  Failure must stop before live Execution lookup, coalescing, or admission and
-  create no Attempt. Every admitted Fact Bundle and the Snapshot must bind the
-  current purpose, request identity, `github.run_id`, `github.run_attempt`,
-  target, producer, and same-revision control identity. Prior-run-attempt and
-  cross-purpose artifacts must be rejected. The Snapshot must not come from CI,
-  another request, another purpose, or a prior Attempt or simulation pass.
-  Any Provider that compiles NBGV version-height facts must materialize the
-  exact target commit with complete ancestry and tags, equivalent to
-  `fetch-depth: 0`, verify that the checkout remains pinned to that target, and
-  reject shallow or otherwise incomplete history before emitting canonical or
-  native NBGV facts.
-  After live admission creates an Attempt, Release must use that same Snapshot
-  to validate channel policy,
+  creation. For that purpose, Release must establish one authoritative,
+  immutable, same-revision repository fact basis bound to the current request
+  and execution attempt, exact target, producer, and same-revision control
+  identity. It must close descriptors, the Project Node and dependency graph,
+  Build Definitions, modeled variants and outputs, target-bound canonical and
+  required native NBGV facts, including `npmPackageVersion` where required,
+  and complete build and artifact scope. Inputs from CI, another request or
+  purpose, a prior Attempt, or a prior execution attempt must be rejected.
+  Missing, stale, differently bound, incomplete, unknown, or conflicting
+  required facts must stop before live Execution lookup, coalescing, or
+  admission and create no Attempt.
+  When an NBGV value depends on Git history, Release must accept version facts
+  only when they are proven for the exact target with all required ancestry and
+  tags. If exact-target binding or required history completeness cannot be
+  proved, Release must reject those facts and fail closed.
+  After live admission creates an Attempt, Release must use that same
+  authoritative fact basis to validate channel policy,
   policy-selected obligations and variants, compatibility obligations, and
   required native projection selection. Attempt planning selects and freezes
-  those projections from the Snapshot and must not derive, recompute, or fall
+  those projections from that basis and must not derive, recompute, or fall
   back for them. It then derives and validates external coordinates,
   complete destination projections, Adapter and version bindings, logical
   operations, potential action and dependency schemas, capability policy, and
@@ -176,10 +174,9 @@ against implementation and maintenance cost.
   actions or actual action key sets before build, qualification, and
   observation. The Publication Snapshot later freezes the exact materialized
   action DAG and inputs, complete Adapter-declared key set for each actual
-  mutation, groups, capabilities, and Receipt contracts. Release must not
-  recompute the same Repository Model a second time within that admitted
-  run attempt. A simulation pass must likewise reuse its one
-  simulation-purpose Snapshot throughout that pass.
+  mutation, groups, capabilities, and Receipt contracts. Release must not replace or recompute the authoritative fact basis within
+  that admitted execution attempt. A simulation pass must likewise use its one
+  authoritative simulation-purpose fact basis throughout that pass.
 - **WD-REL-004:** Release must not consume CI Plans, Evidence, artifacts,
   checks, or verdicts as Release qualification inputs.
 - **WD-REL-005:** CI and Release must use the same Build Definition for the same
