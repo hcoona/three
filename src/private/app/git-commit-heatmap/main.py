@@ -31,20 +31,16 @@ def build_month_matrix(
         next_month_first_day = date(year + 1, 1, 1)
     else:
         next_month_first_day = date(year, month + 1, 1)
-    last_day = next_month_first_day - timedelta(days=1)
-
-    all_days = pd.date_range(first_day, last_day).date
+    all_days = [
+        first_day + timedelta(days=offset)
+        for offset in range((next_month_first_day - first_day).days)
+    ]
 
     daily_counts = [counts.get(day, 0) for day in all_days]
 
     weekdays = [day.weekday() for day in all_days]
-    week_nums = [
-        day.isocalendar()[1] - first_day.isocalendar()[1] for day in all_days
-    ]
-
-    if week_nums[0] < 0:
-        base_week = first_day.isocalendar()[1]
-        week_nums = [day.isocalendar()[1] + 52 - base_week for day in all_days]
+    first_week_start = first_day - timedelta(days=first_day.weekday())
+    week_nums = [(day - first_week_start).days // 7 for day in all_days]
 
     df = pd.DataFrame(0, index=range(max(week_nums) + 1), columns=range(7))
 

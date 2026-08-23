@@ -15,7 +15,7 @@ User question:
 
 Rewritten search query in English:
 """  # noqa: E501
-QUERY = "3岁儿童发烧怎么办？"  # noqa: RUF001
+QUERY = "What should I do if a three-year-old child has a fever?"
 
 
 async def main() -> None:  # noqa: D103

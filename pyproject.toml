@@ -140,6 +140,7 @@ convention = "google" # Match the Google Python Style Guide docstring structure.
 addopts = "--import-mode=importlib"
 testpaths = [
   "src/private/app/azureauth-credprovider/python/tests",
+  "src/private/app/git-commit-heatmap/tests",
   "src/private/app/llm-text-splitter/tests",
   "src/public/lib/nbgv-python/tests",
   "src/public/lib/three-workflow-delivery-v3/tests",
