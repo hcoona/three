@@ -48,10 +48,25 @@ If it conflicts with the
   pre-commit gates pass. All five original finding reviewers and the
   independent holistic reviewer report no findings after atomic adjudication
   and repair.
-- Review repair is complete through Phase 3 only. Continue in dependency order
-  with Phase 4 destination-observation findings RC-019, RC-020, RC-021,
-  RC-022, and RC-030. Do not merge, activate Live, run acceptance, mutate a
-  destination, alter Rulesets, or begin a later repair phase out of order.
+- Phase 4 destination-observation repair is published at `722f7783`. It closes
+  RC-019 with the step-local effective observer token, RC-020 with unscoped
+  GitHub Package REST resource naming while preserving scoped npm coordinates,
+  RC-021 with exact Package Version API owner authority, and RC-030 with
+  retain-before-propagate blocking Observations and pre-Snapshot Outcome
+  binding. RC-030 direct admission reuses the existing frozen
+  projection/qualified-artifact validator. RC-022 is closed as a freshly
+  adjudicated false positive: mutable package repository association remains
+  acceptance-bootstrap evidence and is not added to normal exact-state
+  authority. The complete v3 suite passes 3,613 tests; Consumer Policy is
+  clean with zero consumers, three admitted exceptions, and 142 scanned
+  surfaces; scoped Ruff and Pyrefly, Actionlint, full HK, and staged
+  pre-commit gates pass. The four original finding reviewers and the
+  independent holistic reviewer report no findings after atomic adjudication
+  and repair.
+- Review repair is complete through Phase 4 only. Continue in dependency order
+  with Phase 5 acceptance-evidence findings RC-023 and RC-025. Do not merge,
+  activate Live, run acceptance, mutate a destination, alter Rulesets, or begin
+  a later repair phase out of order.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the
@@ -468,7 +483,7 @@ If it conflicts with the
   implementation diff; only the one-time pre-coexistence check conclusion may
   project success, and the exact base-tree marker disables that route after
   merge. PR #552 checks and exact artifact replay passed at that historical
-  boundary. The current repair boundary is Phase 3 commit `e92f4fe5`; remaining
+  boundary. The current repair boundary is Phase 4 commit `722f7783`; remaining
   review findings must be repaired and re-reviewed in dependency order before
   returning to human merge authorization. Merge starts the direct cutover and
   intentional Buddy outage, so the operator must be ready to execute the
