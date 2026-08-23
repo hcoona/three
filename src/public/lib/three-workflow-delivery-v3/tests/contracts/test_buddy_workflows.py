@@ -155,7 +155,6 @@ def _assert_existing_raw_uploads_keep_physical_names(
         "Upload reviewer artifact",
         "Upload Authorization Record",
         "Upload mutation may-have-started marker",
-        "Upload final Attempt Outcome and summary",
     }
     expected = {
         "Upload Execution History Admission Snapshot",
@@ -174,6 +173,8 @@ def _assert_existing_raw_uploads_keep_physical_names(
         "Upload Capability Admission Decision",
         "Upload exact Receipt",
         "Upload Capability Group Result Bundle",
+        "Upload final Attempt Outcome",
+        "Upload final Attempt summary",
     }
     uploads = [
         step
@@ -1609,16 +1610,21 @@ def test_release_finalizer_propagates_failure_after_retention() -> None:
     finalizer = _document(CALLEE)["jobs"]["release-finalizer"]
     steps = _steps(finalizer)
     finalize = _step(finalizer, "Finalize Attempt Outcome")
-    upload = _step(finalizer, "Upload final Attempt Outcome and summary")
+    outcome_upload = _step(finalizer, "Upload final Attempt Outcome")
+    summary_upload = _step(finalizer, "Upload final Attempt summary")
     propagate = _step(finalizer, "Propagate finalization status")
     names = [step["name"] for step in steps]
 
-    assert names.index(finalize["name"]) < names.index(upload["name"])
-    assert names.index(upload["name"]) < names.index(propagate["name"])
+    assert names.index(finalize["name"]) < names.index(outcome_upload["name"])
+    assert names.index(outcome_upload["name"]) < names.index(
+        summary_upload["name"]
+    )
+    assert names.index(summary_upload["name"]) < names.index(propagate["name"])
     assert propagate["if"] == "always()"
     command = _run(propagate)
     assert "steps.finalize.outcome" in command
-    assert "steps.upload-final.outcome" in command
+    assert "steps.upload-final-outcome.outcome" in command
+    assert "steps.upload-final-summary.outcome" in command
     assert "steps.finalize.outputs.finalizer-status" in command
     assert '!= "0"' in command
     assert "exit 1" in command
@@ -1680,7 +1686,8 @@ def test_commit8_final_outcome_and_summary_are_retained_even_on_failure() -> (
     assert finalizer["if"] == EXPECTED_VALID_IDENTITY_CONDITION
     assert finalize["continue-on-error"] is True
     assert {step["name"] for step in uploads} == {
-        "Upload final Attempt Outcome and summary",
+        "Upload final Attempt Outcome",
+        "Upload final Attempt summary",
     }
     for step in uploads:
         assert step["if"] == "always()"
@@ -1808,12 +1815,15 @@ def test_commit8_status_evidence_is_named_and_transport_bound() -> None:
     )
     assert "--summary-output .wdv3/final-attempt/attempt-summary.md" in command
     assert '--github-step-summary "${GITHUB_STEP_SUMMARY}"' in command
-    final_upload = uploads["Upload final Attempt Outcome and summary"]
-    assert final_upload["with"]["path"] == ".wdv3/final-attempt"
-    assert final_upload["with"]["overwrite"] is False
-    assert "archive" not in final_upload["with"]
-    assert final_upload["with"]["name"].startswith(
-        "${{ steps.finalize.outputs.final-artifact-name }}"
+    outcome_upload = uploads["Upload final Attempt Outcome"]
+    summary_upload = uploads["Upload final Attempt summary"]
+    assert outcome_upload["with"]["overwrite"] is False
+    assert summary_upload["with"]["overwrite"] is False
+    assert _raw_artifact_name(outcome_upload["with"]) == (
+        "${{ steps.finalize.outputs.outcome-artifact-name }}"
+    )
+    assert _raw_artifact_name(summary_upload["with"]) == (
+        "${{ steps.finalize.outputs.summary-artifact-name }}"
     )
 
 
@@ -2034,7 +2044,8 @@ def test_user_item13_finalizer_always_retains_outcome_summary_with_exact_contrac
     None
 ):
     finalizer = _document(CALLEE)["jobs"]["release-finalizer"]
-    upload = _step(finalizer, "Upload final Attempt Outcome and summary")
+    outcome_upload = _step(finalizer, "Upload final Attempt Outcome")
+    summary_upload = _step(finalizer, "Upload final Attempt summary")
     command = _run(_step(finalizer, "Finalize Attempt Outcome"))
 
     assert finalizer["if"] == EXPECTED_VALID_IDENTITY_CONDITION
@@ -2043,13 +2054,30 @@ def test_user_item13_finalizer_always_retains_outcome_summary_with_exact_contrac
         "--outcome-output .wdv3/final-attempt/attempt-outcome.json" in command
     )
     assert "--summary-output .wdv3/final-attempt/attempt-summary.md" in command
-    assert upload["if"] == "always()"
-    assert upload["with"] == {
-        "name": "${{ steps.finalize.outputs.final-artifact-name }}",
-        "path": ".wdv3/final-attempt",
+    assert outcome_upload["if"] == "always()"
+    assert outcome_upload["with"] == {
+        "name": "${{ steps.finalize.outputs.outcome-artifact-name }}",
+        "path": (
+            ".wdv3/final-attempt/"
+            "${{ steps.finalize.outputs.outcome-artifact-name }}"
+        ),
         "if-no-files-found": "error",
         "retention-days": RETENTION_DAYS,
         "overwrite": False,
+        "archive": False,
+        "include-hidden-files": True,
+    }
+    assert summary_upload["if"] == "always()"
+    assert summary_upload["with"] == {
+        "name": "${{ steps.finalize.outputs.summary-artifact-name }}",
+        "path": (
+            ".wdv3/final-attempt/"
+            "${{ steps.finalize.outputs.summary-artifact-name }}"
+        ),
+        "if-no-files-found": "error",
+        "retention-days": RETENTION_DAYS,
+        "overwrite": False,
+        "archive": False,
         "include-hidden-files": True,
     }
 
@@ -2287,17 +2315,27 @@ raise SystemExit(int(os.environ.get("PHASE2_CLI_STATUS", "0")))
         if invocations.exists()
         else ()
     )
+    github_output_text = (
+        github_output.read_text(encoding="utf-8")
+        if github_output.exists()
+        else ""
+    )
+    output_values = {
+        key: value
+        for line in github_output_text.splitlines()
+        for key, value in (line.split("=", 1),)
+    }
+    final_attempt = tmp_path / ".wdv3/final-attempt"
     return {
-        "github_output": (
-            github_output.read_text(encoding="utf-8")
-            if github_output.exists()
-            else ""
-        ),
+        "github_output": github_output_text,
         "github_summary": github_summary,
         "invocations": invocation_rows,
+        "outcome": final_attempt
+        / output_values.get("outcome-artifact-name", "missing-outcome"),
         "output": completed.stdout + completed.stderr,
         "status": completed.returncode,
-        "summary": tmp_path / ".wdv3/final-attempt/attempt-summary.md",
+        "summary": final_attempt
+        / output_values.get("summary-artifact-name", "missing-summary"),
     }
 
 
@@ -2320,8 +2358,13 @@ def _phase2_assert_successful_finalizer(
     assert "cli-boundary-invoked=true" in execution["github_output"]
     assert "finalizer-status=0" in execution["github_output"]
     assert re.search(
-        r"final-artifact-name=wdv3-live-buddy-attempt-outcome-"
-        r"r424242-ra3-[0-9a-f]{64}",
+        r"outcome-artifact-name=wdv3-live-buddy-attempt-outcome-"
+        r"r424242-ra3-[0-9a-f]{64}\.json",
+        execution["github_output"],
+    )
+    assert re.search(
+        r"summary-artifact-name=wdv3-live-buddy-attempt-summary-"
+        r"r424242-ra3-[0-9a-f]{64}\.md",
         execution["github_output"],
     )
     return argv
@@ -2906,6 +2949,7 @@ raise SystemExit(int(status))
         for line in github_output.read_text(encoding="utf-8").splitlines()
         for key, value in (line.split("=", 1),)
     }
+    final_attempt = tmp_path / ".wdv3/final-attempt"
     return {
         "github_output": output_values,
         "github_summary": github_summary,
@@ -2913,10 +2957,12 @@ raise SystemExit(int(status))
             tuple(json.loads(line))
             for line in invocations.read_text(encoding="utf-8").splitlines()
         ),
-        "outcome": tmp_path / ".wdv3/final-attempt/attempt-outcome.json",
+        "outcome": final_attempt
+        / output_values.get("outcome-artifact-name", "missing-outcome"),
         "output": completed.stdout + completed.stderr,
         "status": completed.returncode,
-        "summary": tmp_path / ".wdv3/final-attempt/attempt-summary.md",
+        "summary": final_attempt
+        / output_values.get("summary-artifact-name", "missing-summary"),
     }
 
 
@@ -3116,7 +3162,8 @@ def test_incomplete_preparation_retains_diagnostics_before_job_failure(
 
     finalizer = _document(CALLEE)["jobs"]["release-finalizer"]
     finalize = _step(finalizer, "Finalize Attempt Outcome")
-    upload = _step(finalizer, "Upload final Attempt Outcome and summary")
+    outcome_upload = _step(finalizer, "Upload final Attempt Outcome")
+    summary_upload = _step(finalizer, "Upload final Attempt summary")
     retained_records = (
         ("build-evidence", "build-evidence.json", "102", "0", "5"),
         (
@@ -3171,7 +3218,12 @@ def test_incomplete_preparation_retains_diagnostics_before_job_failure(
     )
 
     assert finalize["continue-on-error"] is True
-    assert upload["with"]["path"] == ".wdv3/final-attempt"
+    assert _raw_artifact_name(outcome_upload["with"]) == (
+        "${{ steps.finalize.outputs.outcome-artifact-name }}"
+    )
+    assert _raw_artifact_name(summary_upload["with"]) == (
+        "${{ steps.finalize.outputs.summary-artifact-name }}"
+    )
     assert execution["status"] == 1
     assert len(execution["invocations"]) == 1
     argv = execution["invocations"][0]
@@ -3226,8 +3278,14 @@ def test_incomplete_preparation_retains_diagnostics_before_job_failure(
     outcome_digest = hashlib.sha256(
         execution["outcome"].read_bytes()
     ).hexdigest()
-    assert outputs["final-artifact-name"] == (
-        "wdv3-live-buddy-attempt-outcome-r424242-ra3-" + outcome_digest
+    summary_digest = hashlib.sha256(
+        execution["summary"].read_bytes()
+    ).hexdigest()
+    assert outputs["outcome-artifact-name"] == (
+        f"wdv3-live-buddy-attempt-outcome-r424242-ra3-{outcome_digest}.json"
+    )
+    assert outputs["summary-artifact-name"] == (
+        f"wdv3-live-buddy-attempt-summary-r424242-ra3-{summary_digest}.md"
     )
 
 
@@ -3235,31 +3293,58 @@ def test_incomplete_preparation_retains_diagnostics_before_job_failure(
     (
         "finalizer_status",
         "finalize_outcome",
-        "upload_outcome",
+        "upload_outcomes",
         "expected_status",
     ),
     [
-        pytest.param("0", "success", "success", 0, id="all-success"),
+        pytest.param(
+            "0",
+            "success",
+            ("success", "success"),
+            0,
+            id="all-success",
+        ),
         pytest.param(
             "17",
             "success",
-            "success",
+            ("success", "success"),
             1,
             id="finalizer-status-nonzero",
         ),
         pytest.param(
             "0",
             "failure",
-            "success",
+            ("success", "success"),
             1,
             id="finalize-step-failure",
         ),
         pytest.param(
             "0",
             "success",
-            "failure",
+            ("failure", "success"),
             1,
-            id="upload-step-failure",
+            id="outcome-upload-failure",
+        ),
+        pytest.param(
+            "0",
+            "success",
+            ("success", "failure"),
+            1,
+            id="summary-upload-failure",
+        ),
+        pytest.param(
+            "0",
+            "success",
+            ("cancelled", "success"),
+            1,
+            id="outcome-upload-cancelled",
+        ),
+        pytest.param(
+            "0",
+            "success",
+            ("success", "skipped"),
+            1,
+            id="summary-upload-skipped",
         ),
     ],
 )
@@ -3267,21 +3352,28 @@ def test_propagation_fails_after_successful_retention(
     tmp_path: Path,
     finalizer_status: str,
     finalize_outcome: str,
-    upload_outcome: str,
+    upload_outcomes: tuple[str, str],
     expected_status: int,
 ) -> None:
     finalizer = _document(CALLEE)["jobs"]["release-finalizer"]
     steps = _steps(finalizer)
     finalize = _step(finalizer, "Finalize Attempt Outcome")
-    upload = _step(finalizer, "Upload final Attempt Outcome and summary")
+    outcome_upload = _step(finalizer, "Upload final Attempt Outcome")
+    summary_upload = _step(finalizer, "Upload final Attempt summary")
     propagate = _step(finalizer, "Propagate finalization status")
 
-    assert steps.index(finalize) < steps.index(upload) < steps.index(propagate)
+    assert (
+        steps.index(finalize)
+        < steps.index(outcome_upload)
+        < steps.index(summary_upload)
+        < steps.index(propagate)
+    )
     assert finalize["continue-on-error"] is True
-    assert upload["if"] == "always()"
-    assert upload["with"]["path"] == ".wdv3/final-attempt"
-    assert upload["with"]["retention-days"] == RETENTION_DAYS
-    assert upload["with"]["if-no-files-found"] == "error"
+    for upload in (outcome_upload, summary_upload):
+        assert upload["if"] == "always()"
+        assert upload["with"]["archive"] is False
+        assert upload["with"]["retention-days"] == RETENTION_DAYS
+        assert upload["with"]["if-no-files-found"] == "error"
     assert propagate["if"] == "always()"
 
     execution = _phase3_execute_workflow_run(
@@ -3290,7 +3382,8 @@ def test_propagation_fails_after_successful_retention(
         {
             "steps.finalize.outcome": finalize_outcome,
             "steps.finalize.outputs.finalizer-status": finalizer_status,
-            "steps.upload-final.outcome": upload_outcome,
+            "steps.upload-final-outcome.outcome": upload_outcomes[0],
+            "steps.upload-final-summary.outcome": upload_outcomes[1],
         },
     )
 

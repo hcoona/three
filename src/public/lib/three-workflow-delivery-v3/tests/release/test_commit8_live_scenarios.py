@@ -90,11 +90,11 @@ class RecordingHistoryClient:
         self.calls.append(("artifacts", (run_id, cursor)))
         if cursor is None:
             return {
-                "items": ({"id": run_id * 100 + 1},),
+                "items": ({"id": run_id * 100 + 1, "expired": False},),
                 "next": f"artifacts-{run_id}-2",
             }
         return {
-            "items": ({"id": run_id * 100 + 2},),
+            "items": ({"id": run_id * 100 + 2, "expired": False},),
             "next": None,
         }
 

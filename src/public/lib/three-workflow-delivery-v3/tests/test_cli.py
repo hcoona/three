@@ -974,7 +974,7 @@ def test_cli_exposes_only_the_commit7_release_transport_commands(
         ),
         (
             "admit-history",
-            ("--output", "--github-output"),
+            ("--intent", "--output", "--github-output"),
         ),
         (
             "materialize-publication",

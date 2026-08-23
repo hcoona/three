@@ -130,6 +130,8 @@ class ReleaseAdmissionBindings:
     run_attempt: int
     target: str
     producer: str | None = None
+    request_id: str | None = None
+    execution: BuddyExecutionIdentity | None = None
 
 
 def _object(value: JsonValue, *, field: str) -> dict[str, JsonValue]:
@@ -2583,6 +2585,14 @@ def _record_bindings(  # noqa: C901, PLR0911, PLR0912
             record.target,
             None,
         )
+    if isinstance(record, ExecutionHistoryAdmissionSnapshot):
+        return (
+            "live-release",
+            record.current_workflow_run_id,
+            record.current_run_attempt,
+            record.execution.target,
+            None,
+        )
     if isinstance(record, ReleaseAttemptBinding):
         attempt = record.attempt
         return (
@@ -2762,6 +2772,23 @@ def validate_release_admission_bindings(
     if expected.producer is not None and producer != expected.producer:
         message = "Release record current binding mismatch: producer"
         raise ValueError(message)
+    if isinstance(record, ExecutionHistoryAdmissionSnapshot):
+        if expected.request_id is None:
+            message = (
+                "History Snapshot admission requires caller-selected request_id"
+            )
+            raise ValueError(message)
+        if record.request_id != expected.request_id:
+            message = "Release record current binding mismatch: request_id"
+            raise ValueError(message)
+        if expected.execution is None:
+            message = (
+                "History Snapshot admission requires caller-selected execution"
+            )
+            raise ValueError(message)
+        if record.execution != expected.execution:
+            message = "Release record current binding mismatch: execution"
+            raise ValueError(message)
 
 
 __all__ = [

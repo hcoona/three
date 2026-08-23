@@ -112,6 +112,7 @@ from three_workflow_delivery_v3.records.release import (
     ActionResult,
     AttemptOutcome,
     AuthorizationRecord,
+    BuddyExecutionIdentity,
     CapabilityAdmissionDecision,
     CapabilityGroupResultBundle,
     ExecutionHistoryAdmissionSnapshot,
@@ -1837,6 +1838,8 @@ def _release_bindings(
     *,
     producer: str | None = None,
     purpose: str = "release-simulation",
+    request_id: str | None = None,
+    execution: BuddyExecutionIdentity | None = None,
 ) -> ReleaseAdmissionBindings:
     return ReleaseAdmissionBindings(
         purpose=purpose,
@@ -1844,6 +1847,8 @@ def _release_bindings(
         run_attempt=arguments.run_attempt,
         target=arguments.target,
         producer=producer,
+        request_id=request_id,
+        execution=execution,
     )
 
 
@@ -3022,6 +3027,7 @@ def _release_discover_history_command(arguments: argparse.Namespace) -> int:
 
 def _history_snapshot_from_file(
     arguments: argparse.Namespace,
+    intent: ReleaseIntent,
 ) -> ExecutionHistoryAdmissionSnapshot:
     content = _verify_uploaded_payload(
         arguments.history_snapshot,
@@ -3035,6 +3041,8 @@ def _history_snapshot_from_file(
         expected_bindings=_release_bindings(
             arguments,
             purpose="live-release",
+            request_id=intent.request_id,
+            execution=derive_buddy_execution_identity(intent),
         ),
     )
     if type(admitted) is not ExecutionHistoryAdmissionSnapshot:
@@ -3081,7 +3089,7 @@ def _release_bind_live_attempt_command(arguments: argparse.Namespace) -> int:
         model,
         admission_mode=LiveEligibilityAdmissionMode.CURRENT_FRESHNESS,
     )
-    history_snapshot = _history_snapshot_from_file(arguments)
+    history_snapshot = _history_snapshot_from_file(arguments, intent)
     binding = derive_release_attempt_binding(
         intent=intent,
         execution=derive_buddy_execution_identity(intent),
@@ -3111,7 +3119,8 @@ def _release_bind_live_attempt_command(arguments: argparse.Namespace) -> int:
 
 
 def _release_admit_history_command(arguments: argparse.Namespace) -> int:
-    snapshot = _history_snapshot_from_file(arguments)
+    intent = _load_live_intent(arguments)
+    snapshot = _history_snapshot_from_file(arguments, intent)
     _write_output(arguments.output, snapshot.to_document())
     _record_outputs(
         arguments.github_output,
@@ -5865,6 +5874,7 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
 
     admit_history = release_commands.add_parser("admit-history")
     _add_current_release_arguments(admit_history)
+    _add_uploaded_record_arguments(admit_history, name="intent")
     admit_history.add_argument("--history-snapshot", required=True)
     admit_history.add_argument("--history-snapshot-digest", required=True)
     admit_history.add_argument(

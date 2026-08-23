@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import http.client
 import json
 import urllib.error
@@ -14,9 +15,13 @@ from io import BytesIO
 
 import pytest
 from three_workflow_delivery_v3.platform.github import (
+    GitHubArtifact,
+    GitHubJob,
+    GitHubJobStep,
     GitHubRestClient,
     GitHubRestError,
     _NoRedirect,
+    admit_artifact_download,
     iter_all_runs,
 )
 
@@ -216,6 +221,218 @@ def test_rest_client_rejects_malformed_exact_run_attempt(
 
     with pytest.raises(GitHubRestError, match="exact run attempt"):
         client.get_run_attempt(41, 3)
+
+
+def test_list_attempt_jobs_retains_binding_step_and_completion_times(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    document = {
+        "total_count": 1,
+        "jobs": [
+            {
+                "id": 411,
+                "name": (
+                    "Run same-revision Buddy live Attempt / "
+                    "Admit live Attempt and retained history"
+                ),
+                "status": "completed",
+                "conclusion": "failure",
+                "started_at": "2026-08-19T12:00:00Z",
+                "completed_at": "2026-08-19T12:10:00Z",
+                "steps": [
+                    {
+                        "name": "Bind current live Attempt",
+                        "status": "completed",
+                        "conclusion": "success",
+                        "started_at": "2026-08-19T12:05:00Z",
+                        "completed_at": "2026-08-19T12:06:00Z",
+                    }
+                ],
+            }
+        ],
+    }
+    client = GitHubRestClient(repository="hcoona/three", token=TOKEN)
+    monkeypatch.setattr(client, "_json", lambda _path: document)
+
+    page = client.list_attempt_jobs(41, 3, None)
+
+    job = page.items[0]
+    assert isinstance(job, GitHubJob)
+    assert job.completed_at == "2026-08-19T12:10:00Z"
+    assert job.conclusion == "failure"
+    assert len(job.steps) == 1
+    step = job.steps[0]
+    assert isinstance(step, GitHubJobStep)
+    assert step.name == "Bind current live Attempt"
+    assert step.conclusion == "success"
+    assert step.completed_at == "2026-08-19T12:06:00Z"
+
+
+@pytest.mark.parametrize(
+    ("changed", "message"),
+    [
+        ({"steps": None}, "job is malformed"),
+        ({"completed_at": 1}, "job is malformed"),
+        (
+            {
+                "steps": [
+                    {
+                        "name": "Bind current live Attempt",
+                        "status": "completed",
+                        "conclusion": "success",
+                        "started_at": "2026-08-19T12:05:00Z",
+                        "completed_at": 1,
+                    }
+                ]
+            },
+            "job step is malformed",
+        ),
+    ],
+)
+def test_list_attempt_jobs_rejects_missing_or_malformed_step_facts(
+    monkeypatch: pytest.MonkeyPatch,
+    changed: dict[str, object],
+    message: str,
+) -> None:
+    job: dict[str, object] = {
+        "id": 411,
+        "name": "Admit live Attempt and retained history",
+        "status": "completed",
+        "conclusion": "failure",
+        "started_at": "2026-08-19T12:00:00Z",
+        "completed_at": "2026-08-19T12:10:00Z",
+        "steps": [],
+        **changed,
+    }
+    client = GitHubRestClient(repository="hcoona/three", token=TOKEN)
+    monkeypatch.setattr(
+        client,
+        "_json",
+        lambda _path: {"total_count": 1, "jobs": [job]},
+    )
+
+    with pytest.raises(GitHubRestError, match=message):
+        client.list_attempt_jobs(41, 3, None)
+
+
+@pytest.mark.parametrize(
+    "digest",
+    [
+        False,
+        0,
+        "",
+        "sha256:" + ("A" * 64),
+        "not-a-digest",
+    ],
+)
+def test_list_artifacts_rejects_present_malformed_digest(
+    monkeypatch: pytest.MonkeyPatch,
+    digest: object,
+) -> None:
+    client = GitHubRestClient(repository="hcoona/three", token=TOKEN)
+    monkeypatch.setattr(
+        client,
+        "_json",
+        lambda _path: {
+            "total_count": 1,
+            "artifacts": [
+                {
+                    "id": 17,
+                    "expired": False,
+                    "digest": digest,
+                }
+            ],
+        },
+    )
+
+    with pytest.raises(GitHubRestError, match="digest is malformed"):
+        client.list_artifacts(41, None)
+
+
+@pytest.mark.parametrize(
+    "artifact",
+    [
+        {"id": 17, "expired": False},
+        {"id": 17, "expired": False, "digest": None},
+    ],
+)
+def test_list_artifacts_preserves_absent_or_null_digest_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+    artifact: dict[str, object],
+) -> None:
+    client = GitHubRestClient(repository="hcoona/three", token=TOKEN)
+    monkeypatch.setattr(
+        client,
+        "_json",
+        lambda _path: {
+            "total_count": 1,
+            "artifacts": [artifact],
+        },
+    )
+
+    page = client.list_artifacts(41, None)
+
+    listed = page.items[0]
+    assert isinstance(listed, GitHubArtifact)
+    assert listed.expired is False
+    assert listed.upload_digest is None
+
+
+@pytest.mark.parametrize(
+    "artifact",
+    [
+        {"id": 17, "expired": False},
+        {"id": 17, "expired": True},
+    ],
+)
+def test_list_artifacts_preserves_exact_boolean_expiry(
+    monkeypatch: pytest.MonkeyPatch,
+    artifact: dict[str, object],
+) -> None:
+    client = GitHubRestClient(repository="hcoona/three", token=TOKEN)
+    monkeypatch.setattr(
+        client,
+        "_json",
+        lambda _path: {
+            "total_count": 1,
+            "artifacts": [artifact],
+        },
+    )
+
+    page = client.list_artifacts(41, None)
+
+    listed = page.items[0]
+    expected = artifact["expired"]
+    assert isinstance(listed, GitHubArtifact)
+    assert listed.expired is expected
+    assert ("expired", str(expected).lower()) in listed.metadata
+
+
+@pytest.mark.parametrize(
+    "artifact",
+    [
+        {"id": 17},
+        {"id": 17, "expired": None},
+        {"id": 17, "expired": "false"},
+        {"id": 17, "expired": 0},
+    ],
+)
+def test_list_artifacts_rejects_missing_or_malformed_expiry(
+    monkeypatch: pytest.MonkeyPatch,
+    artifact: dict[str, object],
+) -> None:
+    client = GitHubRestClient(repository="hcoona/three", token=TOKEN)
+    monkeypatch.setattr(
+        client,
+        "_json",
+        lambda _path: {
+            "total_count": 1,
+            "artifacts": [artifact],
+        },
+    )
+
+    with pytest.raises(GitHubRestError, match="expiry is malformed"):
+        client.list_artifacts(41, None)
 
 
 def test_ref_protection_false_is_authoritative(
@@ -616,6 +833,7 @@ def test_download_artifact_follows_one_off_origin_https_302_without_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     expected = b'{"runs":[]}'
+    archive = _zip_payload((("history.json", expected),))
     transport = _ArtifactArchiveOpener(
         [
             _artifact_http_error(
@@ -623,18 +841,54 @@ def test_download_artifact_follows_one_off_origin_https_302_without_credentials(
                 request_url=_ARTIFACT_API_URL,
                 location=_BLOB_URL,
             ),
-            _zip_payload((("history.json", expected),)),
+            archive,
         ]
     )
     client = _client_with_artifact_transport(monkeypatch, transport)
 
-    actual = client.download_artifact(17)
+    archive_bytes = client.download_artifact(17)
+    actual = admit_artifact_download(
+        archive_bytes,
+        expected_digest=f"sha256:{hashlib.sha256(archive).hexdigest()}",
+    )
 
-    assert actual == expected
+    assert archive_bytes == archive
+    assert actual.payload == expected
+    assert actual.archive_digest == (
+        f"sha256:{hashlib.sha256(archive).hexdigest()}"
+    )
     assert len(transport.calls) == _FOLLOWED_REQUEST_COUNT
     _assert_initial_artifact_request(transport.calls[0])
     _assert_credential_free_blob_request(transport.calls[1])
     assert TOKEN not in transport.calls[1][1]
+
+
+def test_download_artifact_preserves_raw_json_nonarchive_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = b'{"schema":"workflow-delivery/v3/attempt-outcome"}'
+    digest = f"sha256:{hashlib.sha256(payload).hexdigest()}"
+    transport = _ArtifactArchiveOpener(
+        [
+            _artifact_http_error(
+                302,
+                request_url=_ARTIFACT_API_URL,
+                location=_BLOB_URL,
+            ),
+            payload,
+        ]
+    )
+    client = _client_with_artifact_transport(monkeypatch, transport)
+
+    response = client.download_artifact(17)
+    admitted = admit_artifact_download(
+        response,
+        expected_digest=digest,
+    )
+
+    assert response == payload
+    assert admitted.archive_digest == digest
+    assert admitted.payload == payload
 
 
 def test_download_artifact_rejects_initial_success_without_redirect(
@@ -1062,7 +1316,7 @@ def test_download_artifact_normalizes_invalid_followup_request_error(
         ),
     ],
 )
-def test_download_artifact_redirect_preserves_archive_validation(
+def test_artifact_download_admission_preserves_archive_validation(
     monkeypatch: pytest.MonkeyPatch,
     payload: bytes,
     message: str,
@@ -1079,11 +1333,23 @@ def test_download_artifact_redirect_preserves_archive_validation(
     )
     client = _client_with_artifact_transport(monkeypatch, transport)
 
+    archive_bytes = client.download_artifact(17)
     with pytest.raises(GitHubRestError) as raised:
-        client.download_artifact(17)
+        admit_artifact_download(archive_bytes, expected_digest=None)
 
     assert str(raised.value) == message
     assert raised.value.status_code is None
     assert len(transport.calls) == _FOLLOWED_REQUEST_COUNT
     _assert_initial_artifact_request(transport.calls[0])
     _assert_credential_free_blob_request(transport.calls[1])
+
+
+def test_artifact_download_rejects_digest_before_zip_parsing() -> None:
+    with pytest.raises(
+        GitHubRestError,
+        match="archive digest mismatch",
+    ):
+        admit_artifact_download(
+            b"PK-not-a-zip",
+            expected_digest="sha256:" + ("0" * 64),
+        )

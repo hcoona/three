@@ -2164,23 +2164,44 @@ jobs:
             } | tee -a .wdv3/final-attempt/attempt-summary.md >> "${GITHUB_STEP_SUMMARY}"
           fi
           outcome_digest="$(sha256sum .wdv3/final-attempt/attempt-outcome.json | cut -d' ' -f1)"
-          echo "final-artifact-name=wdv3-live-buddy-attempt-outcome-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${outcome_digest}" >> "${GITHUB_OUTPUT}"
-          echo "finalizer-status=${status}" >> "${GITHUB_OUTPUT}"
+          summary_digest="$(sha256sum .wdv3/final-attempt/attempt-summary.md | cut -d' ' -f1)"
+          outcome_name="wdv3-live-buddy-attempt-outcome-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${outcome_digest}.json"
+          summary_name="wdv3-live-buddy-attempt-summary-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${summary_digest}.md"
+          mv .wdv3/final-attempt/attempt-outcome.json ".wdv3/final-attempt/${outcome_name}"
+          mv .wdv3/final-attempt/attempt-summary.md ".wdv3/final-attempt/${summary_name}"
+          {
+            echo "outcome-artifact-name=${outcome_name}"
+            echo "summary-artifact-name=${summary_name}"
+            echo "finalizer-status=${status}"
+          } >> "${GITHUB_OUTPUT}"
           exit "${status}"
-      - name: Upload final Attempt Outcome and summary
-        id: upload-final
+      - name: Upload final Attempt Outcome
+        id: upload-final-outcome
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: ${{ steps.finalize.outputs.final-artifact-name }}
-          path: .wdv3/final-attempt
+          name: ${{ steps.finalize.outputs.outcome-artifact-name }}
+          path: .wdv3/final-attempt/${{ steps.finalize.outputs.outcome-artifact-name }}
           if-no-files-found: error
           retention-days: 45
           overwrite: false
+          archive: false
+          include-hidden-files: true
+      - name: Upload final Attempt summary
+        id: upload-final-summary
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ steps.finalize.outputs.summary-artifact-name }}
+          path: .wdv3/final-attempt/${{ steps.finalize.outputs.summary-artifact-name }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
           include-hidden-files: true
       - name: Propagate finalization status
         if: always()
         run: |
-          if [[ "${{ steps.finalize.outcome }}" == "failure" || "${{ steps.upload-final.outcome }}" == "failure" || "${{ steps.finalize.outputs.finalizer-status }}" != "0" ]]; then
+          if [[ "${{ steps.finalize.outcome }}" != "success" || "${{ steps.upload-final-outcome.outcome }}" != "success" || "${{ steps.upload-final-summary.outcome }}" != "success" || "${{ steps.finalize.outputs.finalizer-status }}" != "0" ]]; then
             exit 1
           fi

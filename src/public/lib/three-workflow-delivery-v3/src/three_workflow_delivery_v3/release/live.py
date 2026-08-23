@@ -8,15 +8,18 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, cast
 
 from three_workflow_delivery_v3.platform.github import (
     GitHubActionsHistoryClient,
     GitHubArtifact,
+    GitHubArtifactArchiveShapeError,
     GitHubJob,
+    GitHubJobStep,
     GitHubRun,
     GitHubRunAttemptFact,
+    admit_artifact_download,
     iter_all_artifacts,
     iter_all_attempt_jobs,
     iter_all_runs,
@@ -95,6 +98,9 @@ _HISTORY_PUBLISHER_PHASES = frozenset(
         "publish",
     }
 )
+_HISTORY_BINDING_JOB_PHASE = "Admit live Attempt and retained history"
+_HISTORY_BINDING_STEP = "Bind current live Attempt"
+_HISTORY_RETENTION_WINDOW = timedelta(days=45)
 _HISTORICAL_SCHEMA_TYPES = {
     HISTORICAL_EXECUTION_RECORD_SCHEMA: HistoricalExecutionRecord,
     RELEASE_ATTEMPT_BINDING_SCHEMA: ReleaseAttemptBinding,
@@ -349,19 +355,44 @@ def _run_attempt_fact(
     return fact
 
 
-def _artifact_digest(item: object, payload: bytes) -> str:
-    value = getattr(item, "upload_digest", None)
-    if value is None and type(item) is dict:
-        value = item.get("digest") or item.get("archive_download_digest")
-    if type(value) is str:
-        return _require_digest(value, field="artifact digest")
-    return _sha256_bytes(payload)
+def _listed_artifact_digest(item: object) -> str | None:
+    if isinstance(item, GitHubArtifact):
+        value: object | None = item.upload_digest
+    elif type(item) is dict:
+        primary = item.get("digest")
+        value = (
+            primary
+            if primary is not None
+            else item.get("archive_download_digest")
+        )
+    else:
+        value = getattr(item, "upload_digest", None)
+    if value is None:
+        return None
+    if type(value) is not str:
+        raise ValueError("artifact digest is malformed")
+    return _require_digest(value, field="artifact digest")
+
+
+def _artifact_expired(item: object) -> bool:
+    if isinstance(item, GitHubArtifact):
+        value: object = item.expired
+    elif type(item) is dict:
+        if "expired" not in item:
+            raise ValueError("artifact expiry is missing")
+        value = item["expired"]
+    else:
+        value = getattr(item, "expired", None)
+    if type(value) is not bool:
+        raise ValueError("artifact expiry is malformed")
+    return value
 
 
 @dataclass(frozen=True, slots=True)
 class _HistoricalPayloadFacts:
     diagnostic_claims: tuple[tuple[str, str], ...]
     declared_run_attempt: int | None
+    attempt_binding: bool
 
 
 def _record_attempt(record: object) -> ReleaseAttemptIdentity | None:
@@ -375,6 +406,7 @@ def _historical_payload_facts(  # noqa: C901
     payload: bytes,
     *,
     execution: BuddyExecutionIdentity,
+    source_workflow_run_id: int,
 ) -> _HistoricalPayloadFacts | None:
     try:
         parsed = json.loads(payload.decode("utf-8"))
@@ -408,17 +440,20 @@ def _historical_payload_facts(  # noqa: C901
         return _HistoricalPayloadFacts(
             diagnostic_claims=record.diagnostic_claims,
             declared_run_attempt=record.queried_run_attempt,
+            attempt_binding=False,
         )
     if isinstance(record, ReleaseAttemptBinding):
         if (
             record.execution != execution
             or record.attempt.execution != execution
+            or record.attempt.workflow_run_id != source_workflow_run_id
         ):
             message = "recognized history artifact payload conflicts"
             raise ValueError(message)
         return _HistoricalPayloadFacts(
             diagnostic_claims=(),
             declared_run_attempt=record.attempt.run_attempt,
+            attempt_binding=True,
         )
     attempt = _record_attempt(record)
     if attempt is None or attempt.execution != execution:
@@ -427,17 +462,115 @@ def _historical_payload_facts(  # noqa: C901
     return _HistoricalPayloadFacts(
         diagnostic_claims=(),
         declared_run_attempt=attempt.run_attempt,
+        attempt_binding=False,
     )
 
 
 def _normalized_history_phase(phase: str) -> str:
     for expected in (
+        _HISTORY_BINDING_JOB_PHASE,
         "Finalize live Attempt outcome",
         "Publish to GitHub Packages",
     ):
         if phase == expected or phase.endswith(f" / {expected}"):
             return expected
     return phase
+
+
+def _job_steps(job: object) -> tuple[GitHubJobStep, ...]:
+    if isinstance(job, GitHubJob):
+        return job.steps
+    if type(job) is not dict or type(job.get("steps")) not in {tuple, list}:
+        raise ValueError("job steps are malformed")
+    normalized: list[GitHubJobStep] = []
+    for item in job["steps"]:
+        if type(item) is not dict:
+            raise ValueError("job step is malformed")
+        name = item.get("name")
+        status = item.get("status")
+        conclusion = item.get("conclusion")
+        started_at = item.get("started_at")
+        completed_at = item.get("completed_at")
+        if (
+            type(name) is not str
+            or not name
+            or type(status) is not str
+            or not status
+            or (conclusion is not None and type(conclusion) is not str)
+            or (started_at is not None and type(started_at) is not str)
+            or (completed_at is not None and type(completed_at) is not str)
+        ):
+            raise ValueError("job step is malformed")
+        normalized.append(
+            GitHubJobStep(
+                name=name,
+                status=status,
+                conclusion=cast("str | None", conclusion),
+                started_at=cast("str | None", started_at),
+                completed_at=cast("str | None", completed_at),
+            )
+        )
+    return tuple(normalized)
+
+
+def _job_completed_at(job: object) -> str | None:
+    if isinstance(job, GitHubJob):
+        value: object = job.completed_at
+    elif type(job) is dict and "completed_at" in job:
+        value = job["completed_at"]
+    else:
+        raise ValueError("job completion timestamp is missing")
+    if value is not None and type(value) is not str:
+        raise ValueError("job completion timestamp is malformed")
+    return cast("str | None", value)
+
+
+def _recent_binding_expected(
+    jobs: tuple[object, ...],
+    *,
+    observed_at: datetime,
+) -> bool:
+    admit_jobs = [
+        job
+        for job in jobs
+        if _normalized_history_phase(
+            _string_field(job, "phase", "name", context="job")
+        )
+        == _HISTORY_BINDING_JOB_PHASE
+    ]
+    if len(admit_jobs) > 1:
+        raise ValueError("duplicate binding-admission job")
+    if not admit_jobs:
+        return False
+    job = admit_jobs[0]
+    binding_steps = [
+        step for step in _job_steps(job) if step.name == _HISTORY_BINDING_STEP
+    ]
+    if len(binding_steps) > 1:
+        raise ValueError("duplicate binding-formation step")
+    formed_at: str | None = None
+    if binding_steps and binding_steps[0].conclusion == "success":
+        formed_at = binding_steps[0].completed_at
+        if formed_at is None:
+            raise ValueError("binding formation completion time is missing")
+    elif (
+        _string_field(
+            job,
+            "conclusion",
+            default="unknown",
+            context="job",
+        )
+        == "success"
+    ):
+        formed_at = _job_completed_at(job)
+        if formed_at is None:
+            raise ValueError("binding job completion time is missing")
+    if formed_at is None:
+        return False
+    formed = _parse_utc(formed_at, field="binding_formed_at")
+    if formed > observed_at:
+        raise ValueError("binding formation time is later than observation")
+    return observed_at - formed < _HISTORY_RETENTION_WINDOW
 
 
 def _select_job(
@@ -618,6 +751,7 @@ def discover_execution_history(  # noqa: C901, PLR0912, PLR0915
     request_id: str = _DEFAULT_REQUEST,
     current_workflow_run_id: int,
     current_run_attempt: int,
+    observed_at: datetime | None = None,
 ) -> ExecutionHistoryAdmissionSnapshot:
     """Exhaustively admit retained GitHub run/artifact/job history."""
     if type(execution) is not BuddyExecutionIdentity:
@@ -628,6 +762,13 @@ def discover_execution_history(  # noqa: C901, PLR0912, PLR0915
         field="current_workflow_run_id",
     )
     _require_positive_integer(current_run_attempt, field="current_run_attempt")
+    if observed_at is None:
+        observed_at = datetime.now(tz=UTC)
+    if type(observed_at) is not datetime:
+        raise TypeError("history observation time must be a datetime")
+    if observed_at.tzinfo is None or observed_at.utcoffset() is None:
+        raise ValueError("history observation time must be timezone-aware")
+    observed_at = observed_at.astimezone(UTC)
     try:
         runs = iter_all_runs(client)
     except ValueError as error:
@@ -665,10 +806,48 @@ def discover_execution_history(  # noqa: C901, PLR0912, PLR0915
             default=f"WFR_{run_id}",
             context="run",
         )
+        latest_prior_attempt = run_attempt
+        if current_run:
+            latest_prior_attempt = min(
+                run_attempt,
+                current_run_attempt - 1,
+            )
+        jobs_by_attempt: dict[
+            int, tuple[object | None, tuple[tuple[str, str], ...]]
+        ] = {}
+        facts_by_attempt: dict[int, GitHubRunAttemptFact] = {}
+        expected_binding_attempts: set[int] = set()
+        for prior_attempt in range(1, latest_prior_attempt + 1):
+            try:
+                exact_fact = _run_attempt_fact(
+                    client.get_run_attempt(run_id, prior_attempt),
+                    run_id=run_id,
+                    run_attempt=prior_attempt,
+                    listed_node_id=listed_node_id,
+                    head_sha=head_sha,
+                )
+                exact_jobs = iter_all_attempt_jobs(
+                    client,
+                    run_id,
+                    prior_attempt,
+                )
+            except (RuntimeError, ValueError, TypeError) as error:
+                raise ValueError(
+                    "exact run-attempt proof is missing or invalid"
+                ) from error
+            facts_by_attempt[prior_attempt] = exact_fact
+            jobs_by_attempt[prior_attempt] = _select_job(exact_jobs)
+            if _recent_binding_expected(
+                exact_jobs,
+                observed_at=observed_at,
+            ):
+                expected_binding_attempts.add(prior_attempt)
+            if current_run:
+                verified_prior_attempts.add(prior_attempt)
         artifacts = iter_all_artifacts(client, run_id)
         artifact_ids: set[int] = set()
         candidates: list[
-            tuple[object, int, bytes, _HistoricalPayloadFacts]
+            tuple[object, int, str, bytes, _HistoricalPayloadFacts]
         ] = []
         for artifact in artifacts:
             artifact_id = _integer_field(
@@ -681,17 +860,32 @@ def discover_execution_history(  # noqa: C901, PLR0912, PLR0915
                 message = "duplicate artifact"
                 raise ValueError(message)
             artifact_ids.add(artifact_id)
+            if _artifact_expired(artifact):
+                continue
             try:
-                payload = client.download_artifact(artifact_id)
+                archive_bytes = client.download_artifact(artifact_id)
             except RuntimeError as error:
-                if "exactly one file" in str(error):
-                    continue
                 message = str(error)
                 raise ValueError(message) from error
-            if type(payload) is not bytes:
+            if type(archive_bytes) is not bytes:
                 message = "malformed artifact download"
                 raise TypeError(message)
-            facts = _historical_payload_facts(payload, execution=execution)
+            try:
+                download = admit_artifact_download(
+                    archive_bytes,
+                    expected_digest=_listed_artifact_digest(artifact),
+                )
+            except GitHubArtifactArchiveShapeError:
+                continue
+            except RuntimeError as error:
+                message = str(error)
+                raise ValueError(message) from error
+            payload = download.payload
+            facts = _historical_payload_facts(
+                payload,
+                execution=execution,
+                source_workflow_run_id=run_id,
+            )
             if facts is None:
                 continue
             if facts.declared_run_attempt is None:
@@ -706,40 +900,48 @@ def discover_execution_history(  # noqa: C901, PLR0912, PLR0915
                 )
             if current_run and queried_run_attempt >= current_run_attempt:
                 continue
-            candidates.append((artifact, artifact_id, payload, facts))
+            candidates.append(
+                (
+                    artifact,
+                    artifact_id,
+                    download.archive_digest,
+                    payload,
+                    facts,
+                )
+            )
+        binding_candidates: dict[
+            int,
+            list[tuple[object, int, str, bytes, _HistoricalPayloadFacts]],
+        ] = {}
+        for candidate in candidates:
+            facts = candidate[-1]
+            if facts.attempt_binding:
+                attempt = cast("int", facts.declared_run_attempt)
+                binding_candidates.setdefault(attempt, []).append(candidate)
+        if any(
+            len(attempt_candidates) != 1
+            for attempt_candidates in binding_candidates.values()
+        ):
+            raise ValueError("ambiguous retained Release Attempt binding")
+        missing_bindings = sorted(
+            attempt
+            for attempt in expected_binding_attempts
+            if attempt not in binding_candidates
+        )
+        if missing_bindings:
+            raise ValueError(
+                "recent run is missing an expected non-expired "
+                "Release Attempt binding"
+            )
         if not candidates:
             continue
-        jobs_by_attempt: dict[
-            int, tuple[object | None, tuple[tuple[str, str], ...]]
-        ] = {}
-        facts_by_attempt: dict[int, GitHubRunAttemptFact] = {}
-        referenced_attempts = {
-            cast("int", facts.declared_run_attempt)
-            for _, _, _, facts in candidates
-        }
-        for referenced_attempt in sorted(referenced_attempts):
-            try:
-                exact_fact = _run_attempt_fact(
-                    client.get_run_attempt(run_id, referenced_attempt),
-                    run_id=run_id,
-                    run_attempt=referenced_attempt,
-                    listed_node_id=listed_node_id,
-                    head_sha=head_sha,
-                )
-                exact_jobs = iter_all_attempt_jobs(
-                    client,
-                    run_id,
-                    referenced_attempt,
-                )
-            except (RuntimeError, ValueError, TypeError) as error:
-                raise ValueError(
-                    "exact run-attempt proof is missing or invalid"
-                ) from error
-            facts_by_attempt[referenced_attempt] = exact_fact
-            jobs_by_attempt[referenced_attempt] = _select_job(exact_jobs)
-            if current_run:
-                verified_prior_attempts.add(referenced_attempt)
-        for artifact, artifact_id, payload, facts in candidates:
+        for (
+            artifact,
+            artifact_id,
+            artifact_digest,
+            payload,
+            facts,
+        ) in candidates:
             queried_run_attempt = cast("int", facts.declared_run_attempt)
             exact_fact = facts_by_attempt[queried_run_attempt]
             selected_job, job_facts = jobs_by_attempt[queried_run_attempt]
@@ -778,7 +980,7 @@ def discover_execution_history(  # noqa: C901, PLR0912, PLR0915
             record = HistoricalExecutionRecord(
                 execution=execution,
                 artifact_id=artifact_id,
-                artifact_digest=_artifact_digest(artifact, payload),
+                artifact_digest=artifact_digest,
                 payload_digest=_sha256_bytes(payload),
                 source_workflow_run_id=run_id,
                 source_workflow_run_node_id=exact_fact.node_id,

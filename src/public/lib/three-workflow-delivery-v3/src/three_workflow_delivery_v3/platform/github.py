@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import http.client
 import json
 import re
@@ -62,8 +63,28 @@ class GitHubArtifact:
     """Immutable artifact metadata addressed only by numeric ID."""
 
     artifact_id: int
+    expired: bool
     metadata: tuple[tuple[str, str], ...]
     upload_digest: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class GitHubArtifactDownload:
+    """Digest-bound archive transport and its extracted single-file payload."""
+
+    archive_digest: str
+    payload: bytes
+
+
+@dataclass(frozen=True, slots=True)
+class GitHubJobStep:
+    """Platform-owned workflow job-step completion facts."""
+
+    name: str
+    status: str
+    conclusion: str | None
+    started_at: str | None
+    completed_at: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,8 +92,11 @@ class GitHubJob:
     """Separately queried job/phase facts for a workflow run."""
 
     job_id: int
-    conclusion: str
+    conclusion: str | None
     phase: str
+    started_at: str | None
+    completed_at: str | None
+    steps: tuple[GitHubJobStep, ...]
     metadata: tuple[tuple[str, str], ...] = ()
 
 
@@ -117,7 +141,7 @@ class GitHubActionsHistoryClient(Protocol):
         ...
 
     def download_artifact(self, artifact_id: int) -> bytes:
-        """Download one immutable artifact by numeric ID only."""
+        """Download one immutable raw artifact archive by numeric ID only."""
         ...
 
 
@@ -132,6 +156,10 @@ class GitHubRestError(RuntimeError):
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
+
+
+class GitHubArtifactArchiveShapeError(GitHubRestError):
+    """A verified artifact archive does not contain exactly one payload."""
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -519,12 +547,25 @@ class GitHubRestClient:
         for item in result.items:
             if type(item) is not dict or type(item.get("id")) is not int:
                 raise GitHubRestError("GitHub REST artifact is malformed")
+            expired = item.get("expired")
+            if type(expired) is not bool:
+                raise GitHubRestError(
+                    "GitHub REST artifact expiry is malformed"
+                )
             digest = item.get("digest")
+            if digest is not None and (
+                type(digest) is not str
+                or re.fullmatch(r"sha256:[0-9a-f]{64}", digest) is None
+            ):
+                raise GitHubRestError(
+                    "GitHub REST artifact digest is malformed"
+                )
             normalized.append(
                 GitHubArtifact(
                     artifact_id=cast("int", item["id"]),
+                    expired=expired,
                     metadata=(
-                        ("expired", str(item.get("expired")).lower()),
+                        ("expired", str(expired).lower()),
                         ("name", str(item.get("name"))),
                     ),
                     upload_digest=digest if type(digest) is str else None,
@@ -563,14 +604,73 @@ class GitHubRestClient:
         )
         normalized: list[GitHubJob] = []
         for item in result.items:
-            if type(item) is not dict or type(item.get("id")) is not int:
+            if type(item) is not dict:
                 raise GitHubRestError("GitHub REST job is malformed")
+            job_id = item.get("id")
+            name = item.get("name")
+            status = item.get("status")
+            conclusion = item.get("conclusion")
+            started_at = item.get("started_at")
+            completed_at = item.get("completed_at")
+            raw_steps = item.get("steps")
+            if (
+                type(job_id) is not int
+                or type(name) is not str
+                or not name
+                or type(status) is not str
+                or not status
+                or (conclusion is not None and type(conclusion) is not str)
+                or (started_at is not None and type(started_at) is not str)
+                or (completed_at is not None and type(completed_at) is not str)
+                or type(raw_steps) is not list
+            ):
+                raise GitHubRestError("GitHub REST job is malformed")
+            steps: list[GitHubJobStep] = []
+            for raw_step in raw_steps:
+                if type(raw_step) is not dict:
+                    raise GitHubRestError("GitHub REST job step is malformed")
+                step_name = raw_step.get("name")
+                step_status = raw_step.get("status")
+                step_conclusion = raw_step.get("conclusion")
+                step_started_at = raw_step.get("started_at")
+                step_completed_at = raw_step.get("completed_at")
+                if (
+                    type(step_name) is not str
+                    or not step_name
+                    or type(step_status) is not str
+                    or not step_status
+                    or (
+                        step_conclusion is not None
+                        and type(step_conclusion) is not str
+                    )
+                    or (
+                        step_started_at is not None
+                        and type(step_started_at) is not str
+                    )
+                    or (
+                        step_completed_at is not None
+                        and type(step_completed_at) is not str
+                    )
+                ):
+                    raise GitHubRestError("GitHub REST job step is malformed")
+                steps.append(
+                    GitHubJobStep(
+                        name=step_name,
+                        status=step_status,
+                        conclusion=cast("str | None", step_conclusion),
+                        started_at=cast("str | None", step_started_at),
+                        completed_at=cast("str | None", step_completed_at),
+                    )
+                )
             normalized.append(
                 GitHubJob(
-                    job_id=cast("int", item["id"]),
-                    conclusion=str(item.get("conclusion")),
-                    phase=str(item.get("name")),
-                    metadata=(("status", str(item.get("status"))),),
+                    job_id=job_id,
+                    conclusion=cast("str | None", conclusion),
+                    phase=name,
+                    started_at=cast("str | None", started_at),
+                    completed_at=cast("str | None", completed_at),
+                    steps=tuple(steps),
+                    metadata=(("status", status),),
                 )
             )
         return GitHubPage(
@@ -626,29 +726,11 @@ class GitHubRestClient:
         )
 
     def download_artifact(self, artifact_id: int) -> bytes:
-        """Download one raw single-file artifact by numeric ID."""
-        payload = self._request(
+        """Download the original artifact archive response by numeric ID."""
+        return self._request(
             f"/repos/{self._repository}/actions/artifacts/{artifact_id}/zip",
             artifact_archive_redirect=True,
         )
-        if payload.startswith(b"PK"):
-            try:
-                with zipfile.ZipFile(BytesIO(payload)) as archive:
-                    files = [
-                        name
-                        for name in archive.namelist()
-                        if not name.endswith("/")
-                    ]
-                    if len(files) != 1:
-                        raise GitHubRestError(
-                            "history artifact must contain exactly one file"
-                        )
-                    return archive.read(files[0])
-            except zipfile.BadZipFile as error:
-                raise GitHubRestError(
-                    "history artifact ZIP is malformed"
-                ) from error
-        return payload
 
     def is_ref_protected(self, repository: str, ref: str) -> bool:
         """Return the exact branch protection state."""
@@ -737,6 +819,47 @@ def _page(value: GitHubPage | dict[str, object], *, context: str) -> GitHubPage:
         items=tuple(items),
         next_cursor=next_cursor,
         complete=complete,
+    )
+
+
+def admit_artifact_download(
+    archive_bytes: bytes,
+    *,
+    expected_digest: str | None,
+) -> GitHubArtifactDownload:
+    """Verify original response bytes before extracting one payload."""
+    if type(archive_bytes) is not bytes:
+        raise TypeError("history artifact download must be exact bytes")
+    archive_digest = f"sha256:{hashlib.sha256(archive_bytes).hexdigest()}"
+    if expected_digest is not None:
+        if (
+            type(expected_digest) is not str
+            or re.fullmatch(r"sha256:[0-9a-f]{64}", expected_digest) is None
+        ):
+            raise GitHubRestError("history artifact digest is malformed")
+        if archive_digest != expected_digest:
+            raise GitHubRestError("history artifact archive digest mismatch")
+    payload = archive_bytes
+    if archive_bytes.startswith(b"PK"):
+        try:
+            with zipfile.ZipFile(BytesIO(archive_bytes)) as archive:
+                files = [
+                    name
+                    for name in archive.namelist()
+                    if not name.endswith("/")
+                ]
+                if len(files) != 1:
+                    raise GitHubArtifactArchiveShapeError(
+                        "history artifact must contain exactly one file"
+                    )
+                payload = archive.read(files[0])
+        except zipfile.BadZipFile as error:
+            raise GitHubRestError(
+                "history artifact ZIP is malformed"
+            ) from error
+    return GitHubArtifactDownload(
+        archive_digest=archive_digest,
+        payload=payload,
     )
 
 

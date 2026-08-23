@@ -3,11 +3,19 @@
 from __future__ import annotations
 
 # ruff: noqa: D103, E501
+import hashlib
 import json
+import zipfile
 from dataclasses import replace
+from datetime import UTC, datetime
+from io import BytesIO
 
 import pytest
-from three_workflow_delivery_v3.canonical import JsonValue, canonical_sha256
+from three_workflow_delivery_v3.canonical import (
+    JsonValue,
+    canonical_sha256,
+    canonicalize,
+)
 from three_workflow_delivery_v3.records.bindings import (
     AdmissionMode,
     ExecutionHistoryContext,
@@ -17,11 +25,16 @@ from three_workflow_delivery_v3.records.bindings import (
     admit,
 )
 from three_workflow_delivery_v3.records.release import (
+    AttemptOutcome,
     BuddyExecutionIdentity,
     ExecutionHistoryAdmissionSnapshot,
     HistoricalExecutionRecord,
+    ReleaseAttemptBinding,
+    ReleaseAttemptIdentity,
+    admit_release_record,
 )
 from three_workflow_delivery_v3.records.release_transport import (
+    ReleaseAdmissionBindings,
     release_record_from_document,
 )
 from three_workflow_delivery_v3.release.identity import (
@@ -365,6 +378,131 @@ def _payload_bytes(record: HistoricalExecutionRecord) -> bytes:
     ).encode()
 
 
+def _binding_payload(
+    *,
+    source_run_id: int,
+    run_attempt: int,
+) -> bytes:
+    execution = BuddyExecutionIdentity(
+        channel="buddy",
+        release_unit="hcoona-release-smoke-npm",
+        target=TARGET,
+    )
+    binding = ReleaseAttemptBinding(
+        intent_digest="sha256:" + ("0" * 64),
+        request_id="release-request:" + ("f" * 64),
+        execution=execution,
+        attempt=ReleaseAttemptIdentity(
+            execution=execution,
+            workflow_run_id=source_run_id,
+            run_attempt=run_attempt,
+        ),
+        repository_model_digest="sha256:" + ("1" * 64),
+        live_eligibility_artifact_id=709,
+        live_eligibility_artifact_digest="sha256:" + ("2" * 64),
+        live_eligibility_payload_digest="sha256:" + ("3" * 64),
+        attestation_provenance=(
+            ("blob-oid", "blob"),
+            ("content-sha256", "sha256:" + ("4" * 64)),
+            ("path", ".github/governance.json"),
+            ("ref", "refs/heads/main"),
+            ("repository", "hcoona/three"),
+            ("resolved-commit", TARGET),
+        ),
+        history_snapshot_artifact_id=710,
+        history_snapshot_artifact_digest="sha256:" + ("5" * 64),
+    )
+    return json.dumps(
+        binding.to_document(),
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode()
+
+
+def _outcome_payload(
+    *,
+    source_run_id: int,
+    run_attempt: int,
+) -> bytes:
+    execution = BuddyExecutionIdentity(
+        channel="buddy",
+        release_unit="hcoona-release-smoke-npm",
+        target=TARGET,
+    )
+    outcome = AttemptOutcome(
+        attempt=ReleaseAttemptIdentity(
+            execution=execution,
+            workflow_run_id=source_run_id,
+            run_attempt=run_attempt,
+        ),
+        qualification_decision_digest="sha256:" + ("d" * 64),
+        publication_snapshot_digest=None,
+        authorization_digest=None,
+        capability_admission_digests=(),
+        capability_group_bundle_digests=(),
+        receipt_digests=(),
+        terminal_phase="qualification",
+        result="failure",
+        uncertainty=False,
+        possibly_mutated=False,
+        next_action="fix-quality-failure-and-rerun",
+    )
+    return json.dumps(
+        outcome.to_document(),
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode()
+
+
+def _archive_bytes(
+    payload: bytes,
+    *,
+    extra_payload: bytes | None = None,
+) -> bytes:
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("attempt-outcome.json", payload)
+        if extra_payload is not None:
+            archive.writestr("extra.json", extra_payload)
+    return buffer.getvalue()
+
+
+def _listed_artifact(
+    artifact_id: int,
+    **facts: object,
+) -> dict[str, object]:
+    return {"id": artifact_id, "expired": False, **facts}
+
+
+def _binding_job(
+    *,
+    job_id: int,
+    binding_conclusion: str,
+    completed_at: str,
+    job_conclusion: str = "failure",
+) -> dict[str, object]:
+    return {
+        "id": job_id,
+        "phase": (
+            "Run same-revision Buddy live Attempt / "
+            "Admit live Attempt and retained history"
+        ),
+        "status": "completed",
+        "conclusion": job_conclusion,
+        "started_at": completed_at,
+        "completed_at": completed_at,
+        "steps": (
+            {
+                "name": "Bind current live Attempt",
+                "status": "completed",
+                "conclusion": binding_conclusion,
+                "started_at": completed_at,
+                "completed_at": completed_at,
+            },
+        ),
+    }
+
+
 class _DiscoveryClient:
     def __init__(
         self,
@@ -413,11 +551,8 @@ class _DiscoveryClient:
         self.calls.append(("attempt-jobs", (run_id, run_attempt, cursor)))
         jobs = self.attempt_jobs.get(
             (run_id, run_attempt),
-            self.jobs.get(run_id),
+            self.jobs.get(run_id, ()),
         )
-        if jobs is None:
-            message = "referenced run attempt does not exist"
-            raise RuntimeError(message)
         return {
             "items": jobs,
             "next": None,
@@ -460,6 +595,7 @@ def _discover(
     *,
     current_workflow_run_id: int = 900,
     current_run_attempt: int = 2,
+    observed_at: datetime | None = None,
 ) -> ExecutionHistoryAdmissionSnapshot:
     return discover_execution_history(
         client=client,
@@ -471,6 +607,7 @@ def _discover(
         request_id="release-request:" + ("8" * 64),
         current_workflow_run_id=current_workflow_run_id,
         current_run_attempt=current_run_attempt,
+        observed_at=observed_at,
     )
 
 
@@ -487,24 +624,237 @@ def test_discovery_filters_different_target_runs_without_artifact_or_job_queries
     assert client.calls == [("runs", None)]
 
 
+@pytest.mark.parametrize(
+    "history_state",
+    ["missing", "unrelated", "expired"],
+)
+def test_recent_successful_binding_formation_requires_retained_binding(
+    history_state: str,
+) -> None:
+    artifact_id = 92101
+    artifacts: tuple[dict[str, object], ...] = ()
+    payloads: dict[int, bytes | RuntimeError] = {}
+    if history_state == "unrelated":
+        artifacts = (_listed_artifact(artifact_id),)
+        payloads[artifact_id] = b'{"schema":"unrelated"}'
+    elif history_state == "expired":
+        artifacts = (_listed_artifact(artifact_id, expired=True),)
+        payloads[artifact_id] = _binding_payload(
+            source_run_id=921,
+            run_attempt=1,
+        )
+    client = _DiscoveryClient(
+        runs=({"id": 921, "head_sha": TARGET, "run_attempt": 1},),
+        artifacts={921: artifacts},
+        attempt_jobs={
+            (921, 1): (
+                _binding_job(
+                    job_id=921001,
+                    binding_conclusion="success",
+                    completed_at="2026-08-19T12:00:00Z",
+                ),
+            )
+        },
+        payloads=payloads,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="missing an expected non-expired Release Attempt binding",
+    ):
+        _discover(
+            client,
+            observed_at=datetime(2026, 8, 20, tzinfo=UTC),
+        )
+
+    assert ("run-attempt", (921, 1)) in client.calls
+    assert ("attempt-jobs", (921, 1, None)) in client.calls
+    if history_state == "expired":
+        assert ("download", artifact_id) not in client.calls
+
+
+def test_recent_successful_admit_job_requires_binding_without_step_fallback() -> (
+    None
+):
+    client = _DiscoveryClient(
+        runs=({"id": 922, "head_sha": TARGET, "run_attempt": 1},),
+        artifacts={922: ()},
+        attempt_jobs={
+            (922, 1): (
+                {
+                    "id": 922001,
+                    "phase": "Admit live Attempt and retained history",
+                    "status": "completed",
+                    "conclusion": "success",
+                    "started_at": "2026-08-19T12:00:00Z",
+                    "completed_at": "2026-08-19T12:05:00Z",
+                    "steps": (),
+                },
+            )
+        },
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="missing an expected non-expired Release Attempt binding",
+    ):
+        _discover(
+            client,
+            observed_at=datetime(2026, 8, 20, tzinfo=UTC),
+        )
+
+
+def test_run_stopped_before_binding_formation_remains_skippable() -> None:
+    client = _DiscoveryClient(
+        runs=({"id": 923, "head_sha": TARGET, "run_attempt": 1},),
+        artifacts={923: ()},
+        attempt_jobs={
+            (923, 1): (
+                _binding_job(
+                    job_id=923001,
+                    binding_conclusion="cancelled",
+                    completed_at="2026-08-19T12:00:00Z",
+                    job_conclusion="cancelled",
+                ),
+            )
+        },
+    )
+
+    snapshot = _discover(
+        client,
+        observed_at=datetime(2026, 8, 20, tzinfo=UTC),
+    )
+
+    assert snapshot.records == ()
+
+
+def test_missing_binding_after_retention_remains_unavailable_history() -> None:
+    client = _DiscoveryClient(
+        runs=({"id": 924, "head_sha": TARGET, "run_attempt": 1},),
+        artifacts={924: ()},
+        attempt_jobs={
+            (924, 1): (
+                _binding_job(
+                    job_id=924001,
+                    binding_conclusion="success",
+                    completed_at="2026-06-01T12:00:00Z",
+                ),
+            )
+        },
+    )
+
+    snapshot = _discover(
+        client,
+        observed_at=datetime(2026, 8, 20, tzinfo=UTC),
+    )
+
+    assert snapshot.records == ()
+
+
+def test_recent_retained_binding_satisfies_platform_formation_expectation() -> (
+    None
+):
+    client = _DiscoveryClient(
+        runs=({"id": 925, "head_sha": TARGET, "run_attempt": 1},),
+        artifacts={925: (_listed_artifact(92501),)},
+        attempt_jobs={
+            (925, 1): (
+                _binding_job(
+                    job_id=925001,
+                    binding_conclusion="success",
+                    completed_at="2026-08-19T12:00:00Z",
+                    job_conclusion="success",
+                ),
+            )
+        },
+        payloads={
+            92501: _binding_payload(
+                source_run_id=925,
+                run_attempt=1,
+            )
+        },
+    )
+
+    snapshot = _discover(
+        client,
+        observed_at=datetime(2026, 8, 20, tzinfo=UTC),
+    )
+
+    assert tuple(record.artifact_id for record in snapshot.records) == (92501,)
+    assert snapshot.records[0].queried_run_attempt == 1
+
+
+def test_raw_canonical_attempt_outcome_is_admitted_as_execution_history() -> (
+    None
+):
+    artifact_id = 92701
+    payload = _outcome_payload(source_run_id=927, run_attempt=1)
+    digest = f"sha256:{hashlib.sha256(payload).hexdigest()}"
+    client = _DiscoveryClient(
+        runs=({"id": 927, "head_sha": TARGET, "run_attempt": 1},),
+        artifacts={927: (_listed_artifact(artifact_id, digest=digest),)},
+        attempt_jobs={(927, 1): ()},
+        payloads={artifact_id: payload},
+    )
+
+    snapshot = _discover(client)
+
+    record = snapshot.records[0]
+    assert record.artifact_id == artifact_id
+    assert record.artifact_digest == digest
+    assert record.payload_digest == digest
+    assert record.queried_run_attempt == 1
+
+
+def test_exact_attempt_job_truncation_fails_before_artifact_gating(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _DiscoveryClient(
+        runs=({"id": 926, "head_sha": TARGET, "run_attempt": 1},),
+        artifacts={926: ()},
+    )
+
+    monkeypatch.setattr(
+        client,
+        "list_attempt_jobs",
+        lambda _run_id, _run_attempt, _cursor: {
+            "items": (),
+            "next": None,
+            "complete": False,
+        },
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="exact run-attempt proof is missing or invalid",
+    ):
+        _discover(client)
+    assert not any(call[0] == "artifacts" for call in client.calls)
+
+
 def test_discovery_skips_unrelated_json_non_json_and_multifile_artifacts() -> (
     None
 ):
+    multi_file_archive = _archive_bytes(b"{}", extra_payload=b"{}")
     client = _DiscoveryClient(
         runs=({"id": 911, "head_sha": TARGET, "run_attempt": 1},),
         artifacts={
             911: (
-                {"id": 91101},
-                {"id": 91102},
-                {"id": 91103},
+                _listed_artifact(91101),
+                _listed_artifact(91102),
+                _listed_artifact(
+                    91103,
+                    digest=(
+                        f"sha256:"
+                        f"{hashlib.sha256(multi_file_archive).hexdigest()}"
+                    ),
+                ),
             ),
         },
         payloads={
             91101: b"not json",
             91102: b'{"schema":"workflow-delivery/v3/unrelated"}',
-            91103: RuntimeError(
-                "history artifact must contain exactly one file"
-            ),
+            91103: multi_file_archive,
         },
     )
 
@@ -513,11 +863,145 @@ def test_discovery_skips_unrelated_json_non_json_and_multifile_artifacts() -> (
     assert snapshot.records == ()
     assert [call[0] for call in client.calls] == [
         "runs",
+        "run-attempt",
+        "attempt-jobs",
         "artifacts",
         "download",
         "download",
         "download",
     ]
+
+
+def test_discovery_verifies_archive_digest_before_extracting_payload() -> None:
+    record = _history_record(
+        artifact_id=91111,
+        source_run_id=911,
+        run_attempt=1,
+    )
+    payload = _payload_bytes(record)
+    archive = _archive_bytes(payload)
+    archive_digest = f"sha256:{hashlib.sha256(archive).hexdigest()}"
+    client = _DiscoveryClient(
+        runs=({"id": 911, "head_sha": TARGET, "run_attempt": 1},),
+        artifacts={911: (_listed_artifact(91111, digest=archive_digest),)},
+        attempt_jobs={(911, 1): ()},
+        payloads={91111: archive},
+    )
+
+    snapshot = _discover(client)
+
+    admitted = snapshot.records[0]
+    assert admitted.artifact_digest == archive_digest
+    assert admitted.payload_digest == (
+        f"sha256:{hashlib.sha256(payload).hexdigest()}"
+    )
+    assert admitted.artifact_digest != admitted.payload_digest
+
+    client.artifacts[911] = (_listed_artifact(91111, digest=None),)
+    fallback = _discover(client)
+    assert fallback.records[0].artifact_digest == archive_digest
+
+    client.artifacts[911] = (
+        _listed_artifact(91111, digest="sha256:" + ("0" * 64)),
+    )
+    with pytest.raises(ValueError, match="archive digest mismatch"):
+        _discover(client)
+
+
+@pytest.mark.parametrize(
+    "artifact",
+    [
+        _listed_artifact(91121, digest=False),
+        _listed_artifact(91121, digest=0),
+        _listed_artifact(91121, digest=""),
+        _listed_artifact(91121, digest=[]),
+        _listed_artifact(91121, digest="sha256:" + ("A" * 64)),
+        _listed_artifact(91121, archive_download_digest=False),
+        _listed_artifact(
+            91121,
+            digest=None,
+            archive_download_digest=[],
+        ),
+    ],
+)
+def test_discovery_rejects_present_malformed_artifact_digest(
+    artifact: dict[str, object],
+) -> None:
+    client = _DiscoveryClient(
+        runs=({"id": 911, "head_sha": TARGET, "run_attempt": 1},),
+        artifacts={911: (artifact,)},
+        payloads={91121: b"not json"},
+    )
+
+    with pytest.raises(ValueError, match="artifact digest"):
+        _discover(client)
+
+
+def test_discovery_retains_expired_artifacts_as_unavailable_history() -> None:
+    retained = _history_record(
+        artifact_id=91132,
+        source_run_id=911,
+        run_attempt=1,
+    )
+    client = _DiscoveryClient(
+        runs=({"id": 911, "head_sha": TARGET, "run_attempt": 1},),
+        artifacts={
+            911: (
+                _listed_artifact(91131, expired=True),
+                _listed_artifact(91132),
+            )
+        },
+        attempt_jobs={(911, 1): ()},
+        payloads={
+            91131: RuntimeError("expired artifact must not be downloaded"),
+            91132: _payload_bytes(retained),
+        },
+    )
+
+    snapshot = _discover(client)
+
+    assert tuple(record.artifact_id for record in snapshot.records) == (91132,)
+    assert [call for call in client.calls if call[0] == "download"] == [
+        ("download", 91132)
+    ]
+
+
+@pytest.mark.parametrize(
+    "artifact",
+    [
+        {"id": 91141},
+        {"id": 91141, "expired": None},
+        {"id": 91141, "expired": "true"},
+        {"id": 91141, "expired": 1},
+    ],
+)
+def test_discovery_rejects_missing_or_malformed_artifact_expiry(
+    artifact: dict[str, object],
+) -> None:
+    client = _DiscoveryClient(
+        runs=({"id": 911, "head_sha": TARGET, "run_attempt": 1},),
+        artifacts={911: (artifact,)},
+        payloads={91141: b"not json"},
+    )
+
+    with pytest.raises(ValueError, match="artifact expiry"):
+        _discover(client)
+    assert ("download", 91141) not in client.calls
+
+
+def test_discovery_does_not_treat_false_expiry_download_410_as_unavailable() -> (
+    None
+):
+    client = _DiscoveryClient(
+        runs=({"id": 911, "head_sha": TARGET, "run_attempt": 1},),
+        artifacts={911: (_listed_artifact(91151),)},
+        payloads={
+            91151: RuntimeError("GitHub REST returned HTTP 410"),
+        },
+    )
+
+    with pytest.raises(ValueError, match="HTTP 410"):
+        _discover(client)
 
 
 @pytest.mark.parametrize(
@@ -561,7 +1045,7 @@ def test_discovery_fails_recognized_malformed_or_conflicting_history_schemas(
 ) -> None:
     client = _DiscoveryClient(
         runs=({"id": 912, "head_sha": TARGET, "run_attempt": 1},),
-        artifacts={912: ({"id": 91201},)},
+        artifacts={912: (_listed_artifact(91201),)},
         payloads={91201: payload},
     )
 
@@ -618,7 +1102,7 @@ def test_discovery_retains_optional_terminal_phase_facts(
     )
     client = _DiscoveryClient(
         runs=({"id": 913, "head_sha": TARGET, "run_attempt": 1},),
-        artifacts={913: ({"id": 91301},)},
+        artifacts={913: (_listed_artifact(91301),)},
         jobs={913: jobs},
         payloads={91301: _payload_bytes(record)},
     )
@@ -657,7 +1141,7 @@ def test_discovery_normalizes_exact_yaml_job_display_names(
     )
     client = _DiscoveryClient(
         runs=({"id": 916, "head_sha": TARGET, "run_attempt": 1},),
-        artifacts={916: ({"id": 91601},)},
+        artifacts={916: (_listed_artifact(91601),)},
         jobs={
             916: ({"id": 916001, "phase": phase, "conclusion": "cancelled"},)
         },
@@ -670,7 +1154,7 @@ def test_discovery_normalizes_exact_yaml_job_display_names(
     assert snapshot.records[0].queried_job_conclusion == "cancelled"
 
 
-def test_same_run_queries_only_referenced_prior_attempt_once() -> None:
+def test_same_run_queries_every_prior_attempt_once() -> None:
     prior = _history_record(
         artifact_id=91701,
         source_run_id=917,
@@ -678,7 +1162,7 @@ def test_same_run_queries_only_referenced_prior_attempt_once() -> None:
     )
     client = _DiscoveryClient(
         runs=({"id": 917, "head_sha": TARGET, "run_attempt": 3},),
-        artifacts={917: ({"id": 91701},)},
+        artifacts={917: (_listed_artifact(91701),)},
         attempt_jobs={(917, PRIOR_ATTEMPT): ()},
         payloads={91701: _payload_bytes(prior)},
     )
@@ -692,10 +1176,12 @@ def test_same_run_queries_only_referenced_prior_attempt_once() -> None:
     assert snapshot.records[0].queried_run_attempt == PRIOR_ATTEMPT
     assert snapshot.records[0].queried_job_id is None
     assert [call for call in client.calls if call[0] == "attempt-jobs"] == [
-        ("attempt-jobs", (917, PRIOR_ATTEMPT, None))
+        ("attempt-jobs", (917, 1, None)),
+        ("attempt-jobs", (917, PRIOR_ATTEMPT, None)),
     ]
     assert [call for call in client.calls if call[0] == "run-attempt"] == [
-        ("run-attempt", (917, PRIOR_ATTEMPT))
+        ("run-attempt", (917, 1)),
+        ("run-attempt", (917, PRIOR_ATTEMPT)),
     ]
 
 
@@ -714,7 +1200,12 @@ def test_same_run_prior_attempt_enumerates_current_artifacts_without_attempt_pro
     )
     client = _DiscoveryClient(
         runs=({"id": 914, "head_sha": TARGET, "run_attempt": 2},),
-        artifacts={914: ({"id": 91401}, {"id": 91402})},
+        artifacts={
+            914: (
+                _listed_artifact(91401),
+                _listed_artifact(91402),
+            )
+        },
         jobs={
             914: (
                 {
@@ -776,7 +1267,7 @@ def test_same_run_prior_attempt_fails_closed_when_run_level_proof_is_missing() -
     )
     client = _DiscoveryClient(
         runs=({"id": 915, "head_sha": TARGET, "run_attempt": 1},),
-        artifacts={915: ({"id": 91501},)},
+        artifacts={915: (_listed_artifact(91501),)},
         payloads={91501: _payload_bytes(prior)},
     )
 
@@ -811,7 +1302,11 @@ def test_noncurrent_run_uses_each_declared_attempt_and_caches_each_key() -> (
             },
         ),
         artifacts={
-            918: ({"id": 91801}, {"id": 91802}, {"id": 91803}),
+            918: (
+                _listed_artifact(91801),
+                _listed_artifact(91802),
+                _listed_artifact(91803),
+            ),
         },
         attempt_jobs={
             (918, 1): (
@@ -845,10 +1340,12 @@ def test_noncurrent_run_uses_each_declared_attempt_and_caches_each_key() -> (
     )
     assert [call for call in client.calls if call[0] == "run-attempt"] == [
         ("run-attempt", (918, 1)),
+        ("run-attempt", (918, 2)),
         ("run-attempt", (918, 3)),
     ]
     assert [call for call in client.calls if call[0] == "attempt-jobs"] == [
         ("attempt-jobs", (918, 1, None)),
+        ("attempt-jobs", (918, 2, None)),
         ("attempt-jobs", (918, 3, None)),
     ]
 
@@ -882,7 +1379,7 @@ def test_exact_run_attempt_fact_mismatch_fails_closed(
                 "run_attempt": 1,
             },
         ),
-        artifacts={919: ({"id": 91901},)},
+        artifacts={919: (_listed_artifact(91901),)},
         attempt_jobs={(919, 1): ()},
         payloads={91901: _payload_bytes(record)},
     )
@@ -938,6 +1435,93 @@ def test_history_snapshot_sorts_records_and_round_trips_closed_schema() -> None:
             substituted_authority,
             expected_type=ExecutionHistoryAdmissionSnapshot,
         )
+
+
+def test_history_snapshot_admission_binds_complete_current_identity() -> None:
+    record = _history_record()
+    snapshot = form_execution_history_admission_snapshot(
+        authority="execution-history",
+        request_id="release-request:" + ("8" * 64),
+        current_workflow_run_id=700,
+        current_run_attempt=2,
+        execution=record.execution,
+        query_basis=("workflow:runs", "run:jobs", "run:artifacts"),
+        pagination_basis=("runs:exhausted", "jobs:exhausted"),
+        records=(record,),
+        queries_complete=True,
+        pagination_complete=True,
+        malformed_results=False,
+        expected_result_count=1,
+        attempt_created=False,
+    )
+    bindings = ReleaseAdmissionBindings(
+        purpose="live-release",
+        workflow_run_id=snapshot.current_workflow_run_id,
+        run_attempt=snapshot.current_run_attempt,
+        target=snapshot.execution.target,
+        request_id=snapshot.request_id,
+        execution=snapshot.execution,
+    )
+    canonical_bytes = canonicalize(snapshot.to_document())
+
+    admitted = admit_release_record(
+        canonical_bytes,
+        expected_type=ExecutionHistoryAdmissionSnapshot,
+        expected_digest=snapshot.snapshot_digest,
+        expected_bindings=bindings,
+    )
+
+    assert admitted == snapshot
+    for changed, field in (
+        (
+            replace(
+                bindings,
+                request_id="release-request:" + ("9" * 64),
+            ),
+            "request_id",
+        ),
+        (
+            replace(
+                bindings,
+                execution=replace(
+                    snapshot.execution,
+                    release_unit="other-release-unit",
+                ),
+            ),
+            "execution",
+        ),
+        (
+            replace(
+                bindings,
+                workflow_run_id=bindings.workflow_run_id + 1,
+            ),
+            "workflow_run_id",
+        ),
+        (
+            replace(bindings, run_attempt=bindings.run_attempt + 1),
+            "run_attempt",
+        ),
+        (replace(bindings, target="f" * 40), "target"),
+    ):
+        with pytest.raises(ValueError, match=field):
+            admit_release_record(
+                canonical_bytes,
+                expected_type=ExecutionHistoryAdmissionSnapshot,
+                expected_digest=snapshot.snapshot_digest,
+                expected_bindings=changed,
+            )
+
+    for incomplete, field in (
+        (replace(bindings, request_id=None), "request_id"),
+        (replace(bindings, execution=None), "execution"),
+    ):
+        with pytest.raises(ValueError, match=field):
+            admit_release_record(
+                canonical_bytes,
+                expected_type=ExecutionHistoryAdmissionSnapshot,
+                expected_digest=snapshot.snapshot_digest,
+                expected_bindings=incomplete,
+            )
 
 
 def test_historical_record_rejects_independent_transport_substitution() -> None:
