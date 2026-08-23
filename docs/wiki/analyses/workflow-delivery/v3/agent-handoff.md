@@ -34,10 +34,24 @@ If it conflicts with the
   and 142 scanned surfaces, and the full HK and staged pre-commit gates pass.
   The three original finding reviewers and the independent holistic reviewer
   report no findings after atomic adjudication and repair.
-- Review repair is complete through Phase 2 only. Continue in dependency order
-  with Phase 3 execution-history findings RC-011, RC-017, RC-026, RC-027, and
-  RC-028. Do not merge, activate Live, run acceptance, mutate a destination,
-  alter Rulesets, or begin a later repair phase out of order.
+- Phase 3 execution-history integrity repair is published at `e92f4fe5`. It
+  closes RC-011 by deriving complete history Snapshot authority from an
+  admitted Intent, RC-017 by admitting the raw artifact archive digest before
+  payload extraction, RC-028 by excluding exactly expired artifacts before
+  download, RC-026 by exhausting exact prior-attempt and job facts and
+  requiring recent expected bindings, and RC-027 by independently retaining
+  canonical raw Outcome and summary artifacts. The implementation does not
+  fabricate artifact-to-attempt or artifact-to-job provenance. The complete
+  v3 suite passes 3,581 tests, the repository Consumer Policy is clean with
+  zero consumers, three admitted exceptions, and 145 scanned surfaces, and
+  root UV lock, scoped Ruff and Pyrefly, Actionlint, full HK, and staged
+  pre-commit gates pass. All five original finding reviewers and the
+  independent holistic reviewer report no findings after atomic adjudication
+  and repair.
+- Review repair is complete through Phase 3 only. Continue in dependency order
+  with Phase 4 destination-observation findings RC-019, RC-020, RC-021,
+  RC-022, and RC-030. Do not merge, activate Live, run acceptance, mutate a
+  destination, alter Rulesets, or begin a later repair phase out of order.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the
@@ -454,7 +468,7 @@ If it conflicts with the
   implementation diff; only the one-time pre-coexistence check conclusion may
   project success, and the exact base-tree marker disables that route after
   merge. PR #552 checks and exact artifact replay passed at that historical
-  boundary. The current repair boundary is Phase 2 commit `bfb41525`; remaining
+  boundary. The current repair boundary is Phase 3 commit `e92f4fe5`; remaining
   review findings must be repaired and re-reviewed in dependency order before
   returning to human merge authorization. Merge starts the direct cutover and
   intentional Buddy outage, so the operator must be ready to execute the
