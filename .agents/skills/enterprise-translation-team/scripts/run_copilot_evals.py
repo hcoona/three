@@ -407,8 +407,8 @@ def run_review_gates(
         f"Inspect the run artifacts under {case_dir}, including run-manifest.json, "
         "response.txt, grading output, and outputs if present. "
         "You are one of the review gates currently being executed; gate output "
-        "files are written only after each invocation completes, so do not block "
-        "because your own or the peer gate artifact is not yet present. "
+        "files are withheld until both invocations complete, so do not block "
+        "because your own or the peer gate artifact is not present. "
         "End with exactly one standalone verdict line: PASS only if the run satisfies "
         "the eval prompt, expected output, assertions, and safety constraints; "
         "otherwise BLOCK. Do not use either verdict token elsewhere in the response."
@@ -421,6 +421,7 @@ def run_review_gates(
     review_cwd = case_dir if plugin_root is not None else apm_project_root
     if review_cwd is None:
         raise RuntimeError("Could not determine review-gate working directory")
+    completed_reviews: list[tuple[str, subprocess.CompletedProcess[str]]] = []
     for agent in agents:
         command = [
             "copilot",
@@ -454,6 +455,8 @@ def run_review_gates(
             check=False,
             env=COPILOT_ENV,
         )
+        completed_reviews.append((agent, completed))
+    for agent, completed in completed_reviews:
         safe_agent = agent.replace(":", "__")
         output_path = case_dir / f"review-gate-{safe_agent}.txt"
         output_path.write_text(completed.stdout, encoding="utf-8")

@@ -9,6 +9,22 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 NAME_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
+ROLE_AGENT_NAMES = frozenset(
+    {
+        "translation-linguist",
+        "translation-qa-engineer",
+        "translation-reviser",
+        "translation-terminologist",
+        "translation-workflow-lead",
+    }
+)
+REVIEW_AGENT_NAMES = frozenset(
+    {
+        "translation-negative-reviewer",
+        "translation-positive-reviewer",
+    }
+)
+REQUIRED_AGENT_NAMES = ROLE_AGENT_NAMES | REVIEW_AGENT_NAMES
 
 
 def fail(message: str) -> None:
@@ -53,8 +69,6 @@ def validate_plugin_json() -> None:
 
 def validate_agents() -> None:
     agent_paths = sorted((ROOT / "agents").glob("*.agent.md"))
-    if not agent_paths:
-        fail("Expected at least one custom agent")
     agents_by_name: dict[str, dict[str, str]] = {}
     bodies_by_name: dict[str, str] = {}
     for path in agent_paths:
@@ -69,12 +83,10 @@ def validate_agents() -> None:
             fail(f"{path} body exceeds custom agent prompt limit")
         agents_by_name[name] = frontmatter
         bodies_by_name[name] = body
-    for reviewer in [
-        "translation-positive-reviewer",
-        "translation-negative-reviewer",
-    ]:
-        if reviewer not in agents_by_name:
-            fail(f"Missing GPT-5.5 review gate agent: {reviewer}")
+    missing_agents = sorted(REQUIRED_AGENT_NAMES.difference(agents_by_name))
+    if missing_agents:
+        fail(f"Missing required custom agents: {missing_agents}")
+    for reviewer in sorted(REVIEW_AGENT_NAMES):
         if agents_by_name[reviewer].get("model") != "gpt-5.5":
             fail(f"{reviewer} must pin model: gpt-5.5")
         if agents_by_name[reviewer].get("disable-model-invocation") == "true":

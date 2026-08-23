@@ -717,6 +717,16 @@ def check_termbase_json(path: Path) -> dict:
         maintenance = require_dict(
             entry.get("maintenance"), f"entries[{index}].maintenance"
         )
+        revision = maintenance.get("revision")
+        if type(revision) is not int:
+            raise AssertionError(
+                f"Entry {concept_id} maintenance.revision must be an integer"
+            )
+        for field in ["owner", "reviewer", "last_reviewed_at"]:
+            require_nonempty_string(
+                maintenance.get(field),
+                f"entries[{index}].maintenance.{field}",
+            )
         require_nonempty_string(
             maintenance.get("approval_status"),
             f"entries[{index}].maintenance.approval_status",
@@ -730,6 +740,10 @@ def check_termbase_json(path: Path) -> dict:
             raise AssertionError(
                 f"Entry {concept_id} reliability.code must be an integer from 1 to 5"
             )
+        require_nonempty_string(
+            reliability.get("confidence"),
+            f"entries[{index}].maintenance.reliability.confidence",
+        )
     conflicts = require_list(payload.get("conflicts", []), "conflicts")
     seen_conflict_ids: set[str] = set()
     for index, raw_conflict in enumerate(conflicts, start=1):
