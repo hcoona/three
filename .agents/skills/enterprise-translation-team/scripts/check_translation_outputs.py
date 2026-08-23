@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """Validate enterprise translation skill eval outputs."""
 
 from __future__ import annotations

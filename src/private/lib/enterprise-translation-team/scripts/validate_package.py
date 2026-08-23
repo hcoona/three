@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """Static validator for the enterprise translation team Copilot plugin."""
 
 from __future__ import annotations

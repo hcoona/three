@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """Prepare or run Copilot CLI evals for the enterprise translation plugin."""
 
 from __future__ import annotations

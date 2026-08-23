@@ -1,5 +1,5 @@
 lockfile_version: '1'
-generated_at: '2026-08-23T16:55:27.943150+00:00'
+generated_at: '2026-08-23T17:09:39.953262+00:00'
 apm_version: 0.28.0
 dependencies:
 - repo_url: _local/enterprise-translation-team
@@ -52,8 +52,8 @@ dependencies:
     .agents/skills/enterprise-translation-team/references/output-contracts.md: sha256:0651dc868db9166baf8d220992cd5729deee960c5c4501765e303c1917beaa13
     .agents/skills/enterprise-translation-team/references/roles.md: sha256:10b1895bdcc6dbc02ebed174d0510b3eb78a3e6c97cbf8036777dd80fe3b2647
     .agents/skills/enterprise-translation-team/references/terminology-schema.md: sha256:6e55ef599fe03963c0abb9797cdaff6927e3f9f250e56f86b153c31bda48720f
-    .agents/skills/enterprise-translation-team/scripts/check_translation_outputs.py: sha256:68037791795a790d5b8b84c7562697980c9de0713ea0aebc2e350fd511029043
-    .agents/skills/enterprise-translation-team/scripts/run_copilot_evals.py: sha256:9b534318c182b8561099a7843a9c26b23bc1eb352191ed754d93f4798aab1c2f
+    .agents/skills/enterprise-translation-team/scripts/check_translation_outputs.py: sha256:e80d552fd92a0b4521c310b7d1153e38b3a8334d456545c4003e52e689e0f7bb
+    .agents/skills/enterprise-translation-team/scripts/run_copilot_evals.py: sha256:7ed555b2c1451f01308ff04f82c1516bb43c16eeaa958450902b5924e512dc38
     .github/agents/translation-linguist.agent.md: sha256:9154957771bc16ff15d7f2e4fa9848422eb6838219d90dc2f9d1e7702f875ee9
     .github/agents/translation-negative-reviewer.agent.md: sha256:fba1f4a5b364f46399f245c88ba2689eac9ff21ab3499d7d09cac058ab73c869
     .github/agents/translation-positive-reviewer.agent.md: sha256:15c729dff2445fad704e7a569742ed13e79c5f23a3d9242aa0b89be9c181f22a
@@ -1994,7 +1994,7 @@ deployments:
   owners:
   - ./src/private/lib/enterprise-translation-team
   active_owner: ./src/private/lib/enterprise-translation-team
-  content_hash: sha256:68037791795a790d5b8b84c7562697980c9de0713ea0aebc2e350fd511029043
+  content_hash: sha256:e80d552fd92a0b4521c310b7d1153e38b3a8334d456545c4003e52e689e0f7bb
 - kind: project-relative
   target: copilot
   value: .agents/skills/enterprise-translation-team/scripts/run_copilot_evals.py
@@ -2003,7 +2003,7 @@ deployments:
   owners:
   - ./src/private/lib/enterprise-translation-team
   active_owner: ./src/private/lib/enterprise-translation-team
-  content_hash: sha256:9b534318c182b8561099a7843a9c26b23bc1eb352191ed754d93f4798aab1c2f
+  content_hash: sha256:7ed555b2c1451f01308ff04f82c1516bb43c16eeaa958450902b5924e512dc38
 - kind: project-relative
   target: copilot
   value: .agents/skills/eval-performance
