@@ -1,0 +1,236 @@
+{
+  "schema_version": "enterprise-termbase-v2",
+  "standard_basis": {
+    "primary": "TBX ISO 30042",
+    "export_targets": ["TBX-Basic"],
+    "lossless_for_key_fields": true
+  },
+  "termbase_id": "example-saas-client-admin-docs",
+  "source_locale": "zh-Hans",
+  "target_locale": "en-US",
+  "entries": [
+    {
+      "concept_id": "c-release-0001",
+      "entry_id": "t-gray-release-zh-en",
+      "status": "approved",
+      "scope": {
+        "level": "client",
+        "client_id": "example-saas-client",
+        "domain": "enterprise-saas-release-management",
+        "project_id": "admin-docs"
+      },
+      "source": {
+        "term": "灰度发布",
+        "language": "zh-Hans",
+        "part_of_speech": "noun",
+        "term_type": "fullForm"
+      },
+      "target": {
+        "preferred": "phased rollout",
+        "language": "en-US",
+        "allowed_variants": ["phased release"],
+        "forbidden": [
+          {
+            "term": "gray release",
+            "match_mode": "case_insensitive",
+            "reason": "Literal false friend in release-management context.",
+            "severity": "blocking"
+          },
+          {
+            "term": "grayscale release",
+            "match_mode": "case_insensitive",
+            "reason": "Wrong technical meaning.",
+            "severity": "blocking"
+          }
+        ]
+      },
+      "context": {
+        "definition": "A controlled release to a limited population before broad availability.",
+        "usage_note": "Use for software rollout strategy, not image processing.",
+        "positive_examples": [
+          {
+            "source": "本次灰度发布仅面向试点租户。",
+            "target": "This phased rollout is limited to pilot tenants.",
+            "reason": "Software release context."
+          }
+        ],
+        "negative_examples": [
+          {
+            "source": "图片灰度处理完成后再发布。",
+            "bad_target": "phased rollout",
+            "correct_guidance": "This is image grayscale processing, not release management.",
+            "reason": "Same surface form, wrong domain."
+          }
+        ]
+      },
+      "provenance": {
+        "created_by": "translation-terminologist",
+        "created_at": "2026-06-18",
+        "evidence_refs": ["terminology-brief.json#terms[0]"]
+      },
+      "maintenance": {
+        "revision": 1,
+        "owner": "terminology",
+        "reviewer": "customer-subject-matter-expert",
+        "approval_status": "approved",
+        "reliability": {
+          "code": 5,
+          "confidence": "high"
+        },
+        "last_reviewed_at": "2026-06-18"
+      }
+    },
+    {
+      "concept_id": "c-tenant-0002",
+      "entry_id": "t-tenant-cloud-zh-en",
+      "status": "conflict",
+      "scope": {
+        "level": "client",
+        "client_id": "example-saas-client",
+        "domain": "multi-tenant-cloud-service",
+        "project_id": "admin-docs"
+      },
+      "source": {
+        "term": "租户",
+        "language": "zh-Hans",
+        "part_of_speech": "noun",
+        "term_type": "fullForm"
+      },
+      "target": {
+        "preferred": "tenant",
+        "language": "en-US",
+        "allowed_variants": [],
+        "forbidden": [
+          {
+            "term": "renter",
+            "match_mode": "case_insensitive",
+            "reason": "Conflicting target for housing context, not cloud-account boundaries.",
+            "severity": "blocking"
+          }
+        ]
+      },
+      "context": {
+        "definition": "An account or organizational boundary in a multi-tenant cloud service.",
+        "usage_note": "Use only for cloud service tenancy, not real-estate rental.",
+        "positive_examples": [
+          {
+            "source": "只有试点租户可以启用该功能。",
+            "target": "Only pilot tenants can enable this feature.",
+            "reason": "Cloud service account boundary."
+          }
+        ],
+        "negative_examples": [
+          {
+            "source": "房屋租户需要签约。",
+            "bad_target": "tenant",
+            "correct_guidance": "This is a housing renter context, not a cloud account boundary.",
+            "reason": "Same source term, different domain."
+          }
+        ]
+      },
+      "provenance": {
+        "created_by": "translation-terminologist",
+        "created_at": "2026-06-18",
+        "evidence_refs": ["terminology-brief.json#terms[1]"]
+      },
+      "maintenance": {
+        "revision": 1,
+        "owner": "terminology",
+        "reviewer": "customer-subject-matter-expert",
+        "approval_status": "needs_confirmation",
+        "reliability": {
+          "code": 3,
+          "confidence": "medium"
+        },
+        "last_reviewed_at": "2026-06-18"
+      }
+    },
+    {
+      "concept_id": "c-ticket-0003",
+      "entry_id": "t-ticket-support-zh-en",
+      "status": "needs_confirmation",
+      "scope": {
+        "level": "client",
+        "client_id": "example-saas-client",
+        "domain": "customer-support-workflow",
+        "project_id": "admin-docs"
+      },
+      "source": {
+        "term": "工单",
+        "language": "zh-Hans",
+        "part_of_speech": "noun",
+        "term_type": "fullForm"
+      },
+      "target": {
+        "preferred": "support ticket",
+        "language": "en-US",
+        "allowed_variants": [],
+        "forbidden": [
+          {
+            "term": "work order",
+            "match_mode": "case_insensitive",
+            "reason": "Potential field-service meaning, not customer support.",
+            "severity": "blocking"
+          }
+        ]
+      },
+      "context": {
+        "definition": "A customer support case tracked by a service desk workflow.",
+        "usage_note": "Confirm whether the surrounding workflow is support or field service.",
+        "positive_examples": [
+          {
+            "source": "客户提交工单后会收到确认邮件。",
+            "target": "After the customer submits a support ticket, they receive a confirmation email.",
+            "reason": "Customer support workflow."
+          }
+        ],
+        "negative_examples": [
+          {
+            "source": "现场维修工单已派发。",
+            "bad_target": "support ticket",
+            "correct_guidance": "This may be a field-service work order rather than customer support.",
+            "reason": "Different operational domain."
+          }
+        ]
+      },
+      "provenance": {
+        "created_by": "translation-terminologist",
+        "created_at": "2026-06-18",
+        "evidence_refs": ["terminology-brief.json#terms[2]"]
+      },
+      "maintenance": {
+        "revision": 1,
+        "owner": "terminology",
+        "reviewer": "customer-subject-matter-expert",
+        "approval_status": "needs_confirmation",
+        "reliability": {
+          "code": 3,
+          "confidence": "medium"
+        },
+        "last_reviewed_at": "2026-06-18"
+      }
+    }
+  ],
+  "conflicts": [
+    {
+      "conflict_id": "conf-tenant-renter-0002",
+      "concept_id": "c-tenant-0002",
+      "source_term": "租户",
+      "scope": "client:example-saas-client/multi-tenant-cloud-service",
+      "competing_targets": ["tenant", "renter"],
+      "status": "open",
+      "blocking": true,
+      "evidence_refs": ["terminology-brief.json#terms[1]"]
+    },
+    {
+      "conflict_id": "conf-ticket-work-order-0003",
+      "concept_id": "c-ticket-0003",
+      "source_term": "工单",
+      "scope": "client:example-saas-client/customer-support-workflow",
+      "competing_targets": ["support ticket", "work order"],
+      "status": "open",
+      "blocking": true,
+      "evidence_refs": ["terminology-brief.json#terms[2]"]
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "language_direction": "zh-Hans -> en-US",
+  "client_id": "example-saas-client",
+  "domain": "enterprise SaaS",
+  "project_id": "admin-docs",
+  "terms": [
+    {
+      "source": "灰度发布",
+      "preferred_target": "phased rollout",
+      "forbidden_targets": ["gray release", "grayscale release"],
+      "context": "Enterprise SaaS release management",
+      "definition": "A controlled rollout to a limited population before broad availability.",
+      "positive_example": {
+        "source": "本次灰度发布仅面向试点租户。",
+        "target": "This phased rollout is limited to pilot tenants."
+      },
+      "negative_example": {
+        "source": "图片灰度处理完成后再发布。",
+        "bad_target": "phased rollout",
+        "reason": "This is image grayscale processing, not release management."
+      }
+    },
+    {
+      "source": "租户",
+      "preferred_target": "tenant",
+      "conflicting_target": "renter",
+      "context": "Multi-tenant cloud service",
+      "definition": "An account or organizational boundary in a multi-tenant cloud service.",
+      "positive_example": {
+        "source": "只有试点租户可以启用该功能。",
+        "target": "Only pilot tenants can enable this feature."
+      },
+      "negative_example": {
+        "source": "房屋租户需要签约。",
+        "bad_target": "tenant",
+        "reason": "This is a housing renter context, not a cloud account boundary."
+      }
+    },
+    {
+      "source": "工单",
+      "preferred_target": "support ticket",
+      "conflicting_target": "work order",
+      "context": "Customer support workflow",
+      "definition": "A customer support case tracked by a service desk workflow.",
+      "positive_example": {
+        "source": "客户提交工单后会收到确认邮件。",
+        "target": "After the customer submits a support ticket, they receive a confirmation email."
+      },
+      "negative_example": {
+        "source": "现场维修工单已派发。",
+        "bad_target": "support ticket",
+        "reason": "This may be a field-service work order rather than customer support."
+      }
+    }
+  ]
+}
