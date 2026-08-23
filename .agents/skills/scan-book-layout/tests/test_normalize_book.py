@@ -1579,6 +1579,35 @@ class NormalizeBookTests(unittest.TestCase):
         self.assertIn("page_999.jpg", result.stderr)
         self.assertFalse(output.exists())
 
+    def test_zero_bits_per_sample_tiff_on_skipped_page_fails_cleanly(
+        self,
+    ) -> None:
+        write_image(self.input / "page_001.png", np.full((120, 100), 255, np.uint8))
+        malformed = self.input / "page_999.tiff"
+        write_white_is_zero_tiff(
+            malformed,
+            np.full((120, 100), 255, np.uint16),
+            8,
+            photometric=1,
+        )
+        encoded = bytearray(malformed.read_bytes())
+        bits_per_sample_entry = encoded.index(
+            struct.pack("<HHI", 258, 3, 1)
+        )
+        struct.pack_into("<H", encoded, bits_per_sample_entry + 8, 0)
+        malformed.write_bytes(encoded)
+        output = self.root / "output"
+
+        result = self.run_cli(
+            self.input, output, "--auto-canvas", "--pages", 1
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("invalid TIFF dtype metadata", result.stderr)
+        self.assertIn(malformed.name, result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertFalse(output.exists())
+
     def test_zero_page_tiff_fails_without_traceback_before_filtering(self) -> None:
         write_image(self.input / "page_001.png", np.full((120, 100), 255, np.uint8))
         (self.input / "page_999.tiff").write_bytes(

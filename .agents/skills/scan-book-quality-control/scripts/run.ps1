@@ -81,22 +81,129 @@ function Invoke-ProcessWithTimeout {
         $stdout = $process.StandardOutput.ReadToEndAsync()
         $stderr = $process.StandardError.ReadToEndAsync()
         if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+            $timeoutCleanupGraceMilliseconds = 5000
+            $cleanupTimer = [Diagnostics.Stopwatch]::StartNew()
+            $cleanupFailureReasons = @()
+            $stopProcess = {
+                param(
+                    [Diagnostics.Process]$TargetProcess,
+                    [string]$FailureDescription
+                )
+                try {
+                    $TargetProcess.Kill()
+                    return $null
+                }
+                catch [System.Management.Automation.MethodInvocationException] {
+                    return (
+                        $FailureDescription + ": " +
+                        $_.Exception.GetBaseException().Message
+                    )
+                }
+            }
             $taskkill = Join-Path $env:SystemRoot "System32\taskkill.exe"
+            $taskkillProcess = [Diagnostics.Process]::new()
+            $taskkillProcess.StartInfo.FileName = $taskkill
+            $taskkillProcess.StartInfo.Arguments = "/PID $($process.Id) /T /F"
+            $taskkillProcess.StartInfo.UseShellExecute = $false
+            $taskkillProcess.StartInfo.CreateNoWindow = $true
+            $taskkillProcess.StartInfo.RedirectStandardOutput = $true
+            $taskkillProcess.StartInfo.RedirectStandardError = $true
             $taskkillSucceeded = $false
             try {
-                & $taskkill /PID $process.Id /T /F 2>$null | Out-Null
-                $taskkillSucceeded = $LASTEXITCODE -eq 0
+                try {
+                    if ($taskkillProcess.Start()) {
+                        [void]$taskkillProcess.StandardOutput.ReadToEndAsync()
+                        [void]$taskkillProcess.StandardError.ReadToEndAsync()
+                        $remainingCleanupMilliseconds = [Math]::Max(
+                            0,
+                            $timeoutCleanupGraceMilliseconds -
+                            [int]$cleanupTimer.ElapsedMilliseconds
+                        )
+                        $taskkillWaitMilliseconds = [Math]::Min(
+                            [int]($timeoutCleanupGraceMilliseconds / 2),
+                            $remainingCleanupMilliseconds
+                        )
+                        if ($taskkillProcess.WaitForExit(
+                                $taskkillWaitMilliseconds
+                            )) {
+                            $taskkillSucceeded = $taskkillProcess.ExitCode -eq 0
+                            if (-not $taskkillSucceeded) {
+                                $cleanupFailureReasons += (
+                                    "taskkill exited with code " +
+                                    $taskkillProcess.ExitCode
+                                )
+                            }
+                        }
+                        else {
+                            $cleanupFailureReasons += (
+                                "taskkill exceeded its bounded cleanup wait"
+                            )
+                            $stopFailure = & $stopProcess $taskkillProcess `
+                                "taskkill could not be stopped"
+                            if ($null -ne $stopFailure) {
+                                $cleanupFailureReasons += $stopFailure
+                            }
+                            [void]$taskkillProcess.WaitForExit(0)
+                        }
+                    }
+                    else {
+                        $cleanupFailureReasons += "taskkill could not be started"
+                    }
+                }
+                catch [System.Management.Automation.MethodInvocationException] {
+                    $cleanupFailureReasons += (
+                        "taskkill could not be started: " +
+                        $_.Exception.GetBaseException().Message
+                    )
+                }
             }
-            catch {
-                $taskkillSucceeded = $false
+            finally {
+                $taskkillProcess.Dispose()
             }
-            if (
-                -not $taskkillSucceeded -or
-                -not $process.WaitForExit(5000)
-            ) {
-                Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+
+            if (-not $taskkillSucceeded -and -not $process.HasExited) {
+                $stopFailure = & $stopProcess $process `
+                    "the root process could not be stopped"
+                if ($null -ne $stopFailure) {
+                    $cleanupFailureReasons += $stopFailure
+                }
             }
-            $process.WaitForExit()
+
+            $remainingCleanupMilliseconds = [Math]::Max(
+                0,
+                $timeoutCleanupGraceMilliseconds -
+                [int]$cleanupTimer.ElapsedMilliseconds
+            )
+            $processExited = $process.HasExited
+            if (-not $processExited -and $remainingCleanupMilliseconds -gt 0) {
+                $processExited = $process.WaitForExit(
+                    $remainingCleanupMilliseconds
+                )
+            }
+            if (-not $taskkillSucceeded -or -not $processExited) {
+                if (-not $processExited) {
+                    $cleanupFailureReasons += (
+                        "the root process did not exit within the cleanup deadline"
+                    )
+                    $stopFailure = & $stopProcess $process `
+                        "the final root-process stop failed"
+                    if ($null -ne $stopFailure) {
+                        $cleanupFailureReasons += $stopFailure
+                    }
+                    [void]$process.WaitForExit(0)
+                }
+                if ($cleanupFailureReasons.Count -eq 0) {
+                    $cleanupFailureReasons += (
+                        "taskkill did not confirm process-tree termination"
+                    )
+                }
+                throw (
+                    "$Description timed out after $TimeoutSeconds seconds, and " +
+                    "process-tree termination could not be confirmed within " +
+                    "$timeoutCleanupGraceMilliseconds milliseconds: " +
+                    ($cleanupFailureReasons -join "; ")
+                )
+            }
             throw "$Description timed out after $TimeoutSeconds seconds."
         }
         $process.WaitForExit()

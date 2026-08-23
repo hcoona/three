@@ -96,6 +96,25 @@ class ValidateBookTests(unittest.TestCase):
         )
         return result, json.loads(self.report.read_text(encoding="utf-8"))
 
+    def terminate_windows_processes(
+        self, *pid_files: Path, timeout_seconds: float = 5.0
+    ) -> None:
+        deadline = time.monotonic() + timeout_seconds
+        for pid_file in pid_files:
+            if not pid_file.is_file():
+                continue
+            process_id = int(pid_file.read_text(encoding="utf-8").strip())
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                self.fail("Windows process cleanup exceeded its deadline.")
+            subprocess.run(
+                ["taskkill.exe", "/PID", str(process_id), "/T", "/F"],
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=remaining,
+            )
+
     def racing_open(
         self, target: Path, action: Callable[[], None]
     ) -> tuple[Callable[..., object], threading.Event]:
@@ -1095,6 +1114,46 @@ class ValidateBookTests(unittest.TestCase):
             self.assertTrue(
                 pair["cross_page_identity"]["exact_decoded_alternate_inputs"]
             )
+
+    def test_exact_uniform_rgb_blank_substitution_is_not_suppressed(self) -> None:
+        first = np.full((300, 220, 3), (255, 255, 255), np.uint8)
+        second = np.full((300, 220, 3), (255, 220, 220), np.uint8)
+        self.write_page(self.source / "page1.png", image=first)
+        self.write_page(self.source / "page2.png", image=second)
+        self.write_page(self.output / "page1.png", image=second)
+        self.write_page(self.output / "page2.png", image=first)
+
+        _, report = self.run_validator()
+
+        pairs = report["evidence"]["pairs"]
+        self.assertTrue(all(pair["likely_blank"] for pair in pairs))
+        self.assertEqual(
+            [["page2.png"], ["page1.png"]],
+            [
+                pair["cross_page_identity"]["exact_decoded_alternate_inputs"]
+                for pair in pairs
+            ],
+        )
+        self.assertEqual(
+            2,
+            sum(
+                "probable substituted page" in failure
+                for failure in report["evidence"]["failures"]
+            ),
+        )
+        self.assertFalse(
+            any(
+                "duplicated output content" in failure
+                for failure in report["evidence"]["failures"]
+            )
+        )
+        self.assertEqual(
+            0,
+            report["evidence"]["duplicate_summary"][
+                "mechanical_failure_pair_count"
+            ],
+        )
+        self.assertFalse(report["mechanical_pass"])
 
     def test_exact_duplicate_outputs_fail_for_different_sources_despite_coarse_layout(self) -> None:
         first = self.image()
@@ -3621,10 +3680,7 @@ class ValidateBookTests(unittest.TestCase):
             'Join-Path $env:SystemRoot "System32\\taskkill.exe"', runner
         )
         self.assertIn(
-            "& $taskkill /PID $process.Id /T /F", runner
-        )
-        self.assertIn(
-            "Stop-Process -Id $process.Id -Force", runner
+            "$taskkillProcess.StartInfo.FileName = $taskkill", runner
         )
         self.assertIn(
             '$Script -cnotin @("validate_book.py", "tests/test_validate_book.py")',
@@ -3670,6 +3726,48 @@ class ValidateBookTests(unittest.TestCase):
             "Get-ChildItem -LiteralPath $skillBase -Directory",
             runner,
         )
+
+    def test_runner_timeout_path_has_only_bounded_cleanup_waits(self) -> None:
+        runner = (
+            Path(__file__).resolve().parents[1] / "scripts" / "run.ps1"
+        ).read_text(encoding="utf-8")
+        helper_start = runner.index("function Invoke-ProcessWithTimeout")
+        helper_end = runner.index("\nfunction Reset-PipEnvironment", helper_start)
+        helper = runner[helper_start:helper_end]
+        timeout_start = helper.index(
+            "if (-not $process.WaitForExit($TimeoutSeconds * 1000))"
+        )
+        success_wait = helper.index(
+            "\n        $process.WaitForExit()\n", timeout_start
+        )
+        timeout_path = helper[timeout_start:success_wait]
+
+        self.assertIn("$timeoutCleanupGraceMilliseconds = 5000", timeout_path)
+        self.assertIn("[Diagnostics.Stopwatch]::StartNew()", timeout_path)
+        self.assertIn(
+            "$taskkillProcess = [Diagnostics.Process]::new()", timeout_path
+        )
+        self.assertIn(
+            "$taskkillProcess.WaitForExit(\n"
+            "                                $taskkillWaitMilliseconds",
+            timeout_path,
+        )
+        self.assertIn(
+            "$process.WaitForExit(\n"
+            "                    $remainingCleanupMilliseconds",
+            timeout_path,
+        )
+        self.assertIn("$TargetProcess.Kill()", timeout_path)
+        self.assertIn("& $stopProcess $taskkillProcess", timeout_path)
+        self.assertIn("$process.WaitForExit(0)", timeout_path)
+        self.assertIn(
+            "process-tree termination could not be confirmed", timeout_path
+        )
+        self.assertNotIn("& $taskkill", timeout_path)
+        self.assertNotIn("-ErrorAction SilentlyContinue", timeout_path)
+        self.assertNotIn("$process.WaitForExit()", timeout_path)
+        self.assertNotIn("$taskkillProcess.WaitForExit()", timeout_path)
+        self.assertEqual(1, helper.count("$process.WaitForExit()"))
 
     def test_runner_timeout_helper_terminates_process(self) -> None:
         runner = Path(__file__).resolve().parents[1] / "scripts" / "run.ps1"
@@ -3753,30 +3851,147 @@ finally {
     foreach ($processId in @($parentId, $childId)) {
         if ($null -ne $processId) {
             Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
-            Wait-Process -Id $processId -ErrorAction SilentlyContinue
         }
     }
+    $cleanupTimer = [Diagnostics.Stopwatch]::StartNew()
+    do {
+        $remaining = @(
+            $parentId, $childId |
+                Where-Object { $null -ne $_ } |
+                ForEach-Object {
+                    Get-Process -Id $_ -ErrorAction SilentlyContinue
+                }
+        )
+        if ($remaining.Count -eq 0) {
+            break
+        }
+        Start-Sleep -Milliseconds 50
+    } while ($cleanupTimer.ElapsedMilliseconds -lt 3000)
 }
 exit 0
 """.strip(),
             encoding="utf-8",
         )
-        completed = subprocess.run(
-            [
-                "powershell",
-                "-NoProfile",
-                "-ExecutionPolicy", "Bypass",
-                "-File", str(helper_test),
-                "-Runner", str(runner),
-                "-ParentTest", str(parent_test),
-                "-ParentPidFile", str(parent_pid_file),
-                "-ChildPidFile", str(child_pid_file),
-            ],
-            text=True,
-            capture_output=True,
-            check=False,
-            timeout=20,
+        try:
+            completed = subprocess.run(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-ExecutionPolicy", "Bypass",
+                    "-File", str(helper_test),
+                    "-Runner", str(runner),
+                    "-ParentTest", str(parent_test),
+                    "-ParentPidFile", str(parent_pid_file),
+                    "-ChildPidFile", str(child_pid_file),
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=20,
+            )
+        finally:
+            if os.name == "nt":
+                self.terminate_windows_processes(
+                    parent_pid_file, child_pid_file
+                )
+        self.assertEqual(0, completed.returncode, completed.stderr)
+
+    @unittest.skipUnless(
+        os.name == "nt" and shutil.which("powershell"),
+        "requires Windows PowerShell process fault injection",
+    )
+    def test_runner_timeout_helper_fails_when_tree_kill_is_unavailable(self) -> None:
+        runner = Path(__file__).resolve().parents[1] / "scripts" / "run.ps1"
+        helper_test = self.root / "timeout-fault-helper-test.ps1"
+        parent_test = self.root / "timeout-fault-parent-test.ps1"
+        parent_pid_file = self.root / "timeout-fault-parent.pid"
+        missing_taskkill = self.root / "missing-taskkill.exe"
+        parent_test.write_text(
+            """
+param([string]$ParentPidFile)
+Set-Content -LiteralPath $ParentPidFile -Value $PID
+Start-Sleep -Seconds 30
+""".strip(),
+            encoding="utf-8",
         )
+        helper_test.write_text(
+            """
+param(
+    [string]$Runner,
+    [string]$ParentTest,
+    [string]$ParentPidFile,
+    [string]$MissingTaskkill
+)
+$tokens = $null
+$errors = $null
+$ast = [Management.Automation.Language.Parser]::ParseFile(
+    $Runner, [ref]$tokens, [ref]$errors
+)
+foreach ($name in @("ConvertTo-WindowsCommandLineArgument", "Invoke-ProcessWithTimeout")) {
+    $function = $ast.FindAll({
+        param($node)
+        $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+        $node.Name -eq $name
+    }, $true) | Select-Object -First 1
+    $functionText = $function.Extent.Text
+    if ($name -eq "Invoke-ProcessWithTimeout") {
+        $taskkillExpression = 'Join-Path $env:SystemRoot "System32\\taskkill.exe"'
+        if (-not $functionText.Contains($taskkillExpression)) {
+            throw "The taskkill fault-injection seam was not found."
+        }
+        $functionText = $functionText.Replace(
+            $taskkillExpression,
+            '$MissingTaskkill'
+        )
+    }
+    Invoke-Expression $functionText
+}
+try {
+    Invoke-ProcessWithTimeout -FilePath "powershell.exe" `
+        -ArgumentList @(
+            "-NoProfile", "-File", $ParentTest,
+            "-ParentPidFile", $ParentPidFile
+        ) `
+        -TimeoutSeconds 1 -Description "fault-injected helper"
+    throw "Timeout helper unexpectedly completed."
+}
+catch [System.Management.Automation.RuntimeException] {
+    if (
+        $_.Exception.Message -notlike
+        "*process-tree termination could not be confirmed*"
+    ) {
+        throw
+    }
+}
+if (-not (Test-Path -LiteralPath $ParentPidFile)) {
+    throw "The timeout fixture did not record its process ID."
+}
+exit 0
+""".strip(),
+            encoding="utf-8",
+        )
+
+        started = time.monotonic()
+        try:
+            completed = subprocess.run(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-ExecutionPolicy", "Bypass",
+                    "-File", str(helper_test),
+                    "-Runner", str(runner),
+                    "-ParentTest", str(parent_test),
+                    "-ParentPidFile", str(parent_pid_file),
+                    "-MissingTaskkill", str(missing_taskkill),
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=12,
+            )
+        finally:
+            self.terminate_windows_processes(parent_pid_file)
+        self.assertLess(time.monotonic() - started, 12)
         self.assertEqual(0, completed.returncode, completed.stderr)
 
     def test_runner_preserves_spaced_and_apostrophe_arguments(self) -> None:

@@ -2016,6 +2016,71 @@ class RectificationRegressionTests(unittest.TestCase):
         self.assertEqual(result[1], 7)
         self.assertIsNone(result[2])
 
+    def test_rectify_metrics_report_only_retained_vertical_fit_samples(
+        self,
+    ) -> None:
+        image = np.full((80, 60), 255, np.uint8)
+        selection = self._vertical_identity_selection()
+        fitted = rectify_pages.VerticalFitStructures(np.empty((0, 5)), selection)
+        raw_samples = len(selection.structures)
+        tracked_measurement = (
+            np.array([0.0, 0.05]),
+            6,
+            None,
+            0.02,
+            8,
+            None,
+            selection,
+        )
+        with (
+            mock.patch.object(
+                rectify_pages,
+                "horizontal_measurement",
+                return_value=(0.0, 20, None, 0.0, 10, None, None),
+            ),
+            mock.patch.object(
+                rectify_pages,
+                "vertical_measurement",
+                return_value=(
+                    np.array([0.0, 0.4]),
+                    raw_samples,
+                    None,
+                    fitted,
+                    set(),
+                ),
+            ),
+            mock.patch.object(
+                rectify_pages,
+                "vertical_consensus",
+                side_effect=self._vertical_consensus_rejecting_band_on_call(
+                    1,
+                    0,
+                    maximum_rejections=1,
+                ),
+            ),
+            mock.patch.object(
+                rectify_pages,
+                "tracked_vertical_measurement",
+                return_value=tracked_measurement,
+            ),
+            mock.patch.object(
+                rectify_pages.cv2,
+                "remap",
+                return_value=image.copy(),
+            ),
+            mock.patch.object(
+                rectify_pages,
+                "clipping_metrics",
+                return_value=(False, 0.0, 0.0),
+            ),
+        ):
+            _, metrics = rectify_pages.rectify(image)
+
+        self.assertTrue(metrics["vertical_applied"])
+        self.assertLess(metrics["vertical_samples"], raw_samples)
+        self.assertEqual(metrics["vertical_samples"], 7)
+        self.assertEqual(metrics["vertical_samples_after"], 6)
+
     def test_holdout_consensus_cannot_remove_required_vertical_x_band(self) -> None:
         with mock.patch.object(
             rectify_pages,
