@@ -94,18 +94,30 @@ If it conflicts with the
   Actionlint, full HK, and staged pre-commit gates pass. All three original
   finding reviewers and the independent holistic reviewer report no findings
   after atomic adjudication and repair.
-- Review repair is complete through Phase 6 only. Continue in dependency order
-  with Phase 7 canonical-result findings RC-014 and RC-035. Do not merge,
-  activate Live, run acceptance, mutate a destination, alter Rulesets, or
-  begin a later repair phase out of order.
+- Phase 7 canonical-result repair is published at `a89d2986`. It closes RC-014
+  by retaining the canonical non-authoritative CI Slice Decision and Summary
+  as run/attempt-qualified raw artifacts for 45 days, including failed and
+  incomplete finalization, before the terminal no-Decision guard. It closes
+  RC-035 by rejecting every nested Hypothetical Action whose Simulation
+  Identity or Qualification Snapshot/Decision digests differ from its
+  enclosing Simulation Outcome. The complete v3 suite passes 3,633 tests;
+  Consumer Policy is clean with zero consumers, three admitted exceptions, and
+  142 scanned surfaces; scoped Ruff and Pyrefly, Actionlint, full HK, and
+  staged pre-commit gates pass. Both original finding reviewers and the
+  independent holistic reviewer report no findings after atomic adjudication
+  and repair.
+- Review repair is complete through Phase 7 only. Continue in dependency order
+  with Phase 8 test and documentation findings RC-039, RC-002, RC-005, RC-006,
+  and RC-001. Do not merge, activate Live, run acceptance, mutate a
+  destination, alter Rulesets, or begin a later repair phase out of order.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the
   legacy Buddy entry workflows at `f0f81d52`. The branch then integrated
   current `main` at `e6482727`, repaired live qualification authority and
   runtime boundaries at `2ddeeed1`, and committed durable unsuccessful
-  qualification Attempt Outcomes at `1e742b29`. The current published
-  implementation and validation closure ends at `4fac140d`. It follows the
+  Qualification Attempt Outcomes at `1e742b29`. The historical pre-cleanup
+  implementation and validation closure ended at `4fac140d`. It follows the
   cancellation-finalization runtime hardening at `646060e5`, closes the
   independently adjudicated final-review and re-review test gaps, keys Buddy
   caller-held concurrency by canonical Release Execution identity at
@@ -514,13 +526,14 @@ If it conflicts with the
   implementation diff; only the one-time pre-coexistence check conclusion may
   project success, and the exact base-tree marker disables that route after
   merge. PR #552 checks and exact artifact replay passed at that historical
-  boundary. The current repair boundary is Phase 4 commit `722f7783`; remaining
-  review findings must be repaired and re-reviewed in dependency order before
-  returning to human merge authorization. Merge starts the direct cutover and
-  intentional Buddy outage, so the operator must be ready to execute the
-  immediate post-merge legacy drain and old-ref rejection proof. Do not merge,
-  run real acceptance probes, finalize the sentinel target, activate normal
-  live, or begin later scopes without a separate explicit user task.
+  boundary. The current repair boundary is Phase 7 commit `a89d2986`;
+  remaining review findings must be repaired and re-reviewed in dependency
+  order before returning to human merge authorization. Merge starts the direct
+  cutover and intentional Buddy outage, so the operator must be ready to
+  execute the immediate post-merge legacy drain and old-ref rejection proof.
+  Do not merge, run real acceptance probes, finalize the sentinel target,
+  activate normal live, or begin later scopes without a separate explicit user
+  task.
 - Implementation must preserve the approved commit boundaries and keep live
   activation disabled until acceptance and the separate activation approval.
 
