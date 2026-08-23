@@ -2460,6 +2460,7 @@ def _attempt_outcome(value: JsonValue) -> AttemptOutcome:
             {
                 "attempt",
                 "qualification-decision-digest",
+                "observation-digests",
                 "publication-snapshot-digest",
                 "authorization-digest",
                 "capability-admission-digests",
@@ -2478,6 +2479,10 @@ def _attempt_outcome(value: JsonValue) -> AttemptOutcome:
         qualification_decision_digest=_string(
             document["qualification-decision-digest"],
             field="attempt outcome.qualification-decision-digest",
+        ),
+        observation_digests=_strings(
+            document["observation-digests"],
+            field="attempt outcome.observation-digests",
         ),
         publication_snapshot_digest=_nullable_string(
             document["publication-snapshot-digest"],

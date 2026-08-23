@@ -40,6 +40,7 @@ from three_workflow_delivery_v3.records.release import (
     CapabilityGroupResultBundle,
     ExecutionHistoryAdmissionSnapshot,
     HistoricalExecutionRecord,
+    ProjectionObservation,
     PublicationSnapshot,
     QualificationDecision,
     Receipt,
@@ -1420,6 +1421,7 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0911, PLR0912, PLR0915
     capability_decisions: tuple[CapabilityAdmissionDecision, ...],
     group_bundles: tuple[CapabilityGroupResultBundle, ...],
     receipts: tuple[Receipt, ...],
+    observations: tuple[ProjectionObservation, ...] = (),
     receipt_transport_references: tuple[ReceiptTransportReference, ...] = (),
     publication_preparation_interrupted: bool = False,
     platform_terminated: bool = False,
@@ -1446,6 +1448,7 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0911, PLR0912, PLR0915
         message = "Platform termination facts must be exact Booleans"
         raise TypeError(message)
     collections = (
+        ("observations", observations),
         ("capability decisions", capability_decisions),
         ("group bundles", group_bundles),
         ("receipts", receipts),
@@ -1455,9 +1458,29 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0911, PLR0912, PLR0915
         if type(values) is not tuple:
             message = f"Live finalization {name} must be an exact tuple"
             raise TypeError(message)
+    observation_projections: set[str] = set()
+    for observation in observations:
+        if type(observation) is not ProjectionObservation:
+            message = "Live finalization Observation has the wrong type"
+            raise TypeError(message)
+        if (
+            observation.subject != attempt
+            or observation.target != attempt.execution.target
+            or observation.purpose != "live-release"
+            or observation.qualification_snapshot_digest
+            != qualification_decision.qualification_snapshot_digest
+        ):
+            message = "Live finalization Observation binding mismatch"
+            raise ValueError(message)
+        projection_id = observation.projection.projection_id
+        if projection_id in observation_projections:
+            message = "Live finalization Observations repeat a projection"
+            raise ValueError(message)
+        observation_projections.add(projection_id)
     if qualification_decision.terminal_result != "success":
         if (
-            publication_snapshot is not None
+            observations
+            or publication_snapshot is not None
             or authorization is not None
             or capability_decisions
             or group_bundles
@@ -1500,6 +1523,35 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0911, PLR0912, PLR0915
                 "Publication preparation interruption has contradictory records"
             )
             raise ValueError(message)
+        observation_digests = tuple(
+            sorted(
+                observation.observation_digest for observation in observations
+            )
+        )
+        blocking_classifications = {
+            observation.value.classification for observation in observations
+        } & {"partial", "conflicting", "unknown", "unprovable"}
+        if blocking_classifications:
+            uncertainty = bool(
+                blocking_classifications & {"unknown", "unprovable"}
+            )
+            return AttemptOutcome(
+                attempt=attempt,
+                qualification_decision_digest=(
+                    qualification_decision.decision_digest
+                ),
+                publication_snapshot_digest=None,
+                authorization_digest=None,
+                capability_admission_digests=(),
+                capability_group_bundle_digests=(),
+                receipt_digests=(),
+                terminal_phase="observation",
+                result="incomplete" if uncertainty else "failure",
+                uncertainty=uncertainty,
+                possibly_mutated=False,
+                next_action="reconcile",
+                observation_digests=observation_digests,
+            )
         return AttemptOutcome(
             attempt=attempt,
             qualification_decision_digest=qualification_decision.decision_digest,
@@ -1513,7 +1565,13 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0911, PLR0912, PLR0915
             uncertainty=True,
             possibly_mutated=False,
             next_action="new-attempt",
+            observation_digests=observation_digests,
         )
+    if observations:
+        message = (
+            "Direct Observations require publication preparation interruption"
+        )
+        raise ValueError(message)
     if type(publication_snapshot) is not PublicationSnapshot:
         message = "Successful qualification requires Publication Snapshot"
         raise TypeError(message)

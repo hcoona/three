@@ -170,6 +170,7 @@ from three_workflow_delivery_v3.release import (
     qualify_release_artifact_contents,
     qualify_release_install_import,
     require_fresh_governance_identity,
+    validate_projection_observations,
 )
 from three_workflow_delivery_v3.platform.github import GitHubRestClient
 from three_workflow_delivery_v3.release.consumer_policy import (
@@ -3999,6 +4000,13 @@ def _release_form_github_packages_result_command(
 
 def _release_finalize_live_command(arguments: argparse.Namespace) -> int:
     _validate_optional_uploaded_record_transport(
+        "observation",
+        path=arguments.observation,
+        record_digest=arguments.observation_digest,
+        artifact_id=arguments.observation_artifact_id,
+        artifact_digest=arguments.observation_artifact_digest,
+    )
+    _validate_optional_uploaded_record_transport(
         "publication_snapshot",
         path=arguments.publication_snapshot,
         record_digest=arguments.publication_snapshot_digest,
@@ -4093,6 +4101,36 @@ def _release_finalize_live_command(arguments: argparse.Namespace) -> int:
     ):
         message = "Live finalization Qualification Decision is not exact"
         raise ValueError(message)
+    observation = None
+    if arguments.observation is not None:
+        loaded_observation = cast(
+            "ProjectionObservation",
+            _load_release_record(
+                arguments.observation,
+                record_type=ProjectionObservation,
+                expected_digest=arguments.observation_digest,
+                artifact_id=arguments.observation_artifact_id,
+                artifact_digest=arguments.observation_artifact_digest,
+                bindings=_release_bindings(
+                    arguments,
+                    producer="observe-github-packages",
+                    purpose="live-release",
+                ),
+            ),
+        )
+        if (
+            loaded_observation.qualification_snapshot_digest
+            != snapshot.snapshot_digest
+        ):
+            message = (
+                "Live finalization Observation Qualification binding mismatch"
+            )
+            raise ValueError(message)
+        (observation,) = validate_projection_observations(
+            snapshot,
+            (loaded_observation,),
+            qualification_artifacts,
+        )
     publication = (
         None
         if arguments.publication_snapshot is None
@@ -4150,6 +4188,7 @@ def _release_finalize_live_command(arguments: argparse.Namespace) -> int:
         else (capability_decision,),
         group_bundles=() if group_bundle is None else (group_bundle,),
         receipts=() if receipt is None else (receipt,),
+        observations=() if observation is None else (observation,),
         receipt_transport_references=()
         if receipt is None
         else (
@@ -6158,6 +6197,11 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         name="install_import_evidence",
     )
     _add_release_artifact_arguments(finalize_live, required=False)
+    _add_uploaded_record_arguments(
+        finalize_live,
+        name="observation",
+        required=False,
+    )
     _add_uploaded_record_arguments(
         finalize_live,
         name="publication_snapshot",

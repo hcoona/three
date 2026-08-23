@@ -3790,6 +3790,7 @@ class AttemptOutcome:
     uncertainty: bool
     possibly_mutated: bool
     next_action: str
+    observation_digests: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:  # noqa: C901, PLR0912
         """Reject false completion and ambiguous replay classifications."""
@@ -3846,6 +3847,17 @@ class AttemptOutcome:
             field="attempt outcome.possibly_mutated",
         )
         _string(self.next_action, field="attempt outcome.next_action")
+        for index, digest in enumerate(
+            _string_tuple(
+                self.observation_digests,
+                field="attempt outcome.observation_digests",
+                sorted_values=True,
+            )
+        ):
+            _digest(
+                digest,
+                field=f"attempt outcome.observation_digests[{index}]",
+            )
         if self.result == "success" and (
             self.publication_snapshot_digest is None
             or self.authorization_digest is None
@@ -3875,7 +3887,8 @@ class AttemptOutcome:
                     "incomplete": "new-attempt",
                 }.get(self.result)
                 if (
-                    has_later_records
+                    self.observation_digests
+                    or has_later_records
                     or self.result not in {"failure", "incomplete"}
                     or self.possibly_mutated
                     or (self.result == "failure" and self.uncertainty)
@@ -3897,12 +3910,30 @@ class AttemptOutcome:
                 ):
                     message = "Publication preparation Outcome is not exact"
                     raise ValueError(message)
+            elif self.terminal_phase == "observation":
+                if (
+                    not self.observation_digests
+                    or has_later_records
+                    or self.result not in {"failure", "incomplete"}
+                    or (self.result == "incomplete" and not self.uncertainty)
+                    or (self.result == "failure" and self.uncertainty)
+                    or self.possibly_mutated
+                    or self.next_action != "reconcile"
+                ):
+                    message = "Observation Outcome is not exact"
+                    raise ValueError(message)
             else:
                 message = (
                     "Publication-free Attempt Outcome has an invalid "
                     "terminal phase"
                 )
                 raise ValueError(message)
+        elif self.observation_digests:
+            message = (
+                "Publication-bound Attempt Outcome cannot bind direct "
+                "observations"
+            )
+            raise ValueError(message)
         elif self.terminal_phase == "qualification":
             message = "Qualification-only outcome cannot bind publication"
             raise ValueError(message)
@@ -3925,6 +3956,7 @@ class AttemptOutcome:
             "qualification-decision-digest": (
                 self.qualification_decision_digest
             ),
+            "observation-digests": _json_strings(self.observation_digests),
             "publication-snapshot-digest": self.publication_snapshot_digest,
             "authorization-digest": self.authorization_digest,
             "capability-admission-digests": capability_admission_digests,

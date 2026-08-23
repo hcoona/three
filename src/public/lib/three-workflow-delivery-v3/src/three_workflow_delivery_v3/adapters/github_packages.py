@@ -1799,7 +1799,8 @@ def github_package_versions_url(
     if size != GITHUB_PAGE_SIZE:
         message = f"per_page must be exactly {GITHUB_PAGE_SIZE}"
         raise ValueError(message)
-    encoded = urllib.parse.quote(package_name, safe="")
+    resource_name = package_name.removeprefix(f"@{owner}/")
+    encoded = urllib.parse.quote(resource_name, safe="")
     return (
         f"{GITHUB_API_ORIGIN}/users/{owner}/packages/npm/{encoded}/versions"
         f"?per_page={size}&page={page}"
@@ -2276,18 +2277,45 @@ def _repository_from_metadata(document: dict[str, JsonValue]) -> str | None:
     return "ambiguous"
 
 
-def _rest_owner(version_document: dict[str, JsonValue]) -> str | None:
-    for field in ("package_html_url", "html_url"):
-        value = version_document.get(field)
-        if type(value) is str:
-            parsed = urllib.parse.urlparse(value)
-            segments = [
-                segment for segment in parsed.path.split("/") if segment
-            ]
-            if parsed.hostname == "github.com" and segments:
-                return segments[0].lower()
-            return "ambiguous"
-    return None
+def _rest_owner(version_document: dict[str, JsonValue]) -> str:
+    value = version_document.get("url")
+    if type(value) is not str:
+        return "ambiguous"
+    try:
+        parsed = urllib.parse.urlparse(value)
+        origin = _origin(value)
+        (
+            root,
+            owner_kind,
+            owner,
+            packages_segment,
+            package_type,
+            package_resource,
+            versions_segment,
+            version_id,
+        ) = parsed.path.split("/")
+        version_number = int(version_id)
+    except (GitHubPackagesPolicyError, ValueError):
+        return "ambiguous"
+    resource_name = GITHUB_PACKAGES_PACKAGE.removeprefix(
+        f"@{GITHUB_PACKAGES_OWNER}/"
+    )
+    if (
+        origin != ("https", "api.github.com", 443)
+        or parsed.query
+        or parsed.params
+        or root
+        or owner_kind not in {"users", "orgs"}
+        or not owner
+        or packages_segment != "packages"
+        or package_type != "npm"
+        or package_resource != resource_name
+        or versions_segment != "versions"
+        or not version_id.isdigit()
+        or version_number <= 0
+    ):
+        return "ambiguous"
+    return owner.lower()
 
 
 def _aggregate_response_facts(

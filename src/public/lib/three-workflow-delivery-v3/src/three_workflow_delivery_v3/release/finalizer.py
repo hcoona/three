@@ -420,11 +420,12 @@ def _validate_observation_producer(
         raise ValueError(message)
 
 
-def _validate_observations(
+def validate_projection_observations(
     snapshot: QualificationSnapshot,
     observations: tuple[ProjectionObservation, ...],
     artifacts: tuple[ReleaseArtifact, ...],
 ) -> tuple[ProjectionObservation, ...]:
+    """Admit observations against the frozen projection and artifact basis."""
     if type(observations) is not tuple:
         message = "Projection observations must be an exact tuple"
         raise TypeError(message)
@@ -517,7 +518,7 @@ def materialize_hypothetical_actions(
         message = "Hypothetical actions require complete artifacts"
         raise ValueError(message)
     _validate_decision_artifacts(decision, admitted_artifacts)
-    admitted_observations = _validate_observations(
+    admitted_observations = validate_projection_observations(
         snapshot,
         observations,
         admitted_artifacts,
@@ -618,7 +619,7 @@ def materialize_publication_snapshot(
         message = "Publication Snapshot requires complete artifacts"
         raise ValueError(message)
     _validate_decision_artifacts(decision, admitted_artifacts)
-    admitted_observations = _validate_observations(
+    admitted_observations = validate_projection_observations(
         snapshot,
         observations,
         admitted_artifacts,
@@ -703,7 +704,7 @@ def finalize_simulation(
         message = "successful simulation qualification lacks artifacts"
         raise ValueError(message)
     _validate_decision_artifacts(decision, admitted_artifacts)
-    admitted_observations = _validate_observations(
+    admitted_observations = validate_projection_observations(
         snapshot,
         observations,
         admitted_artifacts,

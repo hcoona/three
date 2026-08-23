@@ -10,13 +10,18 @@ from unittest.mock import Mock
 import pytest
 from three_workflow_delivery_v3 import cli as cli_module
 from three_workflow_delivery_v3.adapters import node as node_adapter
-from three_workflow_delivery_v3.canonical import canonicalize
+from three_workflow_delivery_v3.canonical import canonical_sha256, canonicalize
 from three_workflow_delivery_v3.records.release import (
     AttemptOutcome,
     AuthorizationRecord,
     BuddyExecutionIdentity,
+    DestinationProjection,
+    ObservationRequestFacts,
+    ObservationResponseFacts,
+    ObservationValue,
     OfficialExecutionIdentity,
     OfficialProductIdentity,
+    ProjectionObservation,
     PublicationObservationReference,
     PublicationSnapshot,
     QualificationDecision,
@@ -30,6 +35,9 @@ from three_workflow_delivery_v3.records.release import (
 from three_workflow_delivery_v3.records.release_transport import (
     ReleaseAdmissionBindings,
     release_record_from_document,
+)
+from three_workflow_delivery_v3.release.finalizer import (
+    desired_projection_state_digest,
 )
 from three_workflow_delivery_v3.release.simulation import (
     release_adapter_context_from_bytes,
@@ -68,6 +76,112 @@ def _uploaded_arguments(
         f"--{option}-artifact-digest",
         _transport_digest(path),
     ]
+
+
+def _live_observation(
+    snapshot: QualificationSnapshot,
+    artifact: ReleaseArtifact,
+    *,
+    classification: str,
+) -> ProjectionObservation:
+    if not isinstance(snapshot.subject, ReleaseAttemptIdentity):
+        message = "live observation requires a Release Attempt"
+        raise TypeError(message)
+    projection = snapshot.destination_projections[0]
+    desired_state_digest = desired_projection_state_digest(
+        snapshot,
+        projection.projection_id,
+        artifact,
+    )
+    value = ObservationValue(
+        classification=classification,
+        owner=None,
+        coordinate=None,
+        content_sha512=None,
+        witness_digest=None,
+        routing=(),
+    )
+    request_facts = ObservationRequestFacts(
+        qualification_snapshot_digest=snapshot.snapshot_digest,
+        projection_digest=projection.projection_digest,
+        desired_state_digest=desired_state_digest,
+        method="GET",
+        url="https://api.github.com/users/hcoona/packages/npm/"
+        "hcoona-release-smoke-npm/versions",
+        headers=(),
+    )
+    response_facts = ObservationResponseFacts(
+        stage="synthetic",
+        requested_url=request_facts.url,
+        final_url=request_facts.url,
+        redirects=(),
+        status=200,
+        selected_headers=(),
+        truncated=False,
+        body_sha256=None,
+        status_detail=classification,
+    )
+    response_digest = canonical_sha256(
+        {
+            "schema": "workflow-delivery/v3/observation-response",
+            "request-digest": request_facts.request_digest,
+            "facts": response_facts.to_document(),
+            "value": value.to_document(),
+        }
+    )
+    return ProjectionObservation(
+        subject=snapshot.subject,
+        purpose="live-release",
+        target=snapshot.target,
+        producer="observe-github-packages",
+        qualification_snapshot_digest=snapshot.snapshot_digest,
+        projection=projection,
+        desired_state_digest=desired_state_digest,
+        observation_contract_id=projection.observation_contract_id,
+        request_facts=request_facts,
+        request_digest=request_facts.request_digest,
+        response_facts=response_facts,
+        response_digest=response_digest,
+        value=value,
+    )
+
+
+def _rebind_observation_basis(
+    observation: ProjectionObservation,
+    *,
+    projection: DestinationProjection | None = None,
+    desired_state_digest: str | None = None,
+) -> ProjectionObservation:
+    rebound_projection = (
+        observation.projection if projection is None else projection
+    )
+    rebound_desired_state = (
+        observation.desired_state_digest
+        if desired_state_digest is None
+        else desired_state_digest
+    )
+    request_facts = replace(
+        observation.request_facts,
+        projection_digest=rebound_projection.projection_digest,
+        desired_state_digest=rebound_desired_state,
+    )
+    response_digest = canonical_sha256(
+        {
+            "schema": "workflow-delivery/v3/observation-response",
+            "request-digest": request_facts.request_digest,
+            "facts": observation.response_facts.to_document(),
+            "value": observation.value.to_document(),
+        }
+    )
+    return replace(
+        observation,
+        projection=rebound_projection,
+        desired_state_digest=rebound_desired_state,
+        observation_contract_id=(rebound_projection.observation_contract_id),
+        request_facts=request_facts,
+        request_digest=request_facts.request_digest,
+        response_digest=response_digest,
+    )
 
 
 def test_live_plan_build_transport_and_finalization_are_attempt_bound(  # noqa: PLR0913, PLR0915
@@ -599,6 +713,125 @@ def test_live_plan_build_transport_and_finalization_are_attempt_bound(  # noqa: 
         ),
     )
     assert isinstance(artifact, ReleaseArtifact)
+    observation = _live_observation(
+        live_qualification_snapshot,
+        artifact,
+        classification="conflicting",
+    )
+    observation_path = _write(
+        tmp_path / "blocking-observation.json",
+        canonicalize(observation.to_document()),
+    )
+    observation_arguments = _uploaded_arguments(
+        "observation",
+        observation_path,
+        observation.observation_digest,
+        114,
+    )
+    observation_outcome_path = tmp_path / "observation-attempt-outcome.json"
+    assert (
+        cli_module.main(
+            [
+                "release",
+                "finalize-live",
+                *current,
+                *attempt_arguments,
+                *snapshot_arguments,
+                *build_evidence_arguments,
+                *project_evidence_arguments,
+                *contents_evidence_arguments,
+                *install_evidence_arguments,
+                *artifact_arguments,
+                *success_decision_arguments,
+                *observation_arguments,
+                "--publication-preparation-interrupted",
+                "--outcome-output",
+                str(observation_outcome_path),
+                "--summary-output",
+                str(tmp_path / "observation-attempt-summary.md"),
+            ]
+        )
+        == 1
+    )
+    observation_outcome = admit_release_record(
+        observation_outcome_path.read_bytes(),
+        expected_type=AttemptOutcome,
+        expected_digest=_transport_digest(observation_outcome_path),
+        expected_bindings=ReleaseAdmissionBindings(
+            purpose="live-release",
+            workflow_run_id=live_intent.workflow_run_id,
+            run_attempt=live_intent.run_attempt,
+            target=live_intent.target,
+        ),
+    )
+    assert isinstance(observation_outcome, AttemptOutcome)
+    assert observation_outcome.terminal_phase == "observation"
+    assert observation_outcome.result == "failure"
+    assert observation_outcome.observation_digests == (
+        observation.observation_digest,
+    )
+    assert observation_outcome.next_action == "reconcile"
+
+    unplanned_projection = replace(
+        observation.projection,
+        projection_id="projection:npm:unplanned",
+    )
+    substituted_observations = (
+        (
+            "unplanned-projection",
+            _rebind_observation_basis(
+                observation,
+                projection=unplanned_projection,
+            ),
+        ),
+        (
+            "mismatched-desired-state",
+            _rebind_observation_basis(
+                observation,
+                desired_state_digest="sha256:" + ("0" * 64),
+            ),
+        ),
+    )
+    for index, (name, substituted_observation) in enumerate(
+        substituted_observations,
+        start=115,
+    ):
+        substituted_observation_path = _write(
+            tmp_path / f"{name}-observation.json",
+            canonicalize(substituted_observation.to_document()),
+        )
+        substituted_outcome_path = tmp_path / f"{name}-outcome.json"
+        assert (
+            cli_module.main(
+                [
+                    "release",
+                    "finalize-live",
+                    *current,
+                    *attempt_arguments,
+                    *snapshot_arguments,
+                    *build_evidence_arguments,
+                    *project_evidence_arguments,
+                    *contents_evidence_arguments,
+                    *install_evidence_arguments,
+                    *artifact_arguments,
+                    *success_decision_arguments,
+                    *_uploaded_arguments(
+                        "observation",
+                        substituted_observation_path,
+                        substituted_observation.observation_digest,
+                        index,
+                    ),
+                    "--publication-preparation-interrupted",
+                    "--outcome-output",
+                    str(substituted_outcome_path),
+                    "--summary-output",
+                    str(tmp_path / f"{name}-summary.md"),
+                ]
+            )
+            == 1
+        )
+        assert not substituted_outcome_path.exists()
+
     projection = live_qualification_snapshot.destination_projections[0]
     publication = PublicationSnapshot(
         attempt=live_attempt_binding.attempt,
@@ -1072,6 +1305,7 @@ def test_official_live_snapshot_closes_each_product_identity_field(
 
 
 _OPTIONAL_TRANSPORT_GROUPS = (
+    "observation",
     "publication_snapshot",
     "authorization",
     "capability_decision",
@@ -1503,6 +1737,7 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
         capability_decisions: tuple[CapabilityAdmissionDecision, ...],
         group_bundles: tuple[CapabilityGroupResultBundle, ...],
         receipts: tuple[Receipt, ...],
+        observations: tuple[ProjectionObservation, ...] = (),
         receipt_transport_references: tuple[
             ReceiptTransportReference, ...
         ] = (),
@@ -1519,6 +1754,7 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
                 "capability_decisions": capability_decisions,
                 "group_bundles": group_bundles,
                 "receipts": receipts,
+                "observations": observations,
                 "receipt_transport_references": (receipt_transport_references),
                 "publication_preparation_interrupted": (
                     publication_preparation_interrupted
@@ -1632,6 +1868,7 @@ def test_finalize_live_forwards_loaded_downstream_records_transport_and_platform
     assert loaded_receipts == (receipt,)
     assert type(loaded_receipts[0]) is Receipt
     assert loaded_receipts[0] is not receipt
+    assert captured["observations"] == ()
 
     loaded_receipt_transports = captured["receipt_transport_references"]
     assert isinstance(loaded_receipt_transports, tuple)

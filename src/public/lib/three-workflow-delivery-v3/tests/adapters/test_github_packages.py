@@ -252,7 +252,7 @@ def test_github_packages_requests_exact_escaped_endpoints_headers_and_pages() ->
         per_page=100,
     ) == (
         "https://api.github.com/users/hcoona/packages/npm/"
-        "%40hcoona%2Fhcoona-release-smoke-npm/versions?per_page=100&page=1"
+        "hcoona-release-smoke-npm/versions?per_page=100&page=1"
     )
     assert adapter.github_package_versions_url(
         owner="hcoona",
@@ -261,7 +261,7 @@ def test_github_packages_requests_exact_escaped_endpoints_headers_and_pages() ->
         per_page=100,
     ) == (
         "https://api.github.com/users/hcoona/packages/npm/"
-        "%40hcoona%2Fhcoona-release-smoke-npm/versions?per_page=100&page=2"
+        "hcoona-release-smoke-npm/versions?per_page=100&page=2"
     )
     assert adapter.npm_exact_metadata_url(
         "@hcoona/hcoona-release-smoke-npm", VERSION
@@ -573,7 +573,7 @@ def test_github_packages_versions_link_next_is_authoritative() -> None:
     adapter = _adapter()
     requested = (
         "https://api.github.com/users/hcoona/packages/npm/"
-        "%40hcoona%2Fhcoona-release-smoke-npm/versions?per_page=100&page=1"
+        "hcoona-release-smoke-npm/versions?per_page=100&page=1"
     )
     next_url = requested.replace("page=1", "page=2")
     short_page_with_next = adapter.GitHubPackagesHttpResponse(
@@ -603,6 +603,109 @@ def test_github_packages_versions_link_next_is_authoritative() -> None:
     )
     with pytest.raises(adapter.GitHubPackagesPolicyError, match="origin"):
         adapter._github_link_next_url(off_origin, requested_url=requested)  # noqa: SLF001
+
+
+@pytest.mark.parametrize(
+    ("version_url", "expected_owner"),
+    [
+        (
+            "https://api.github.com/users/hcoona/packages/npm/"
+            "hcoona-release-smoke-npm/versions/42",
+            "hcoona",
+        ),
+        (
+            "https://api.github.com/orgs/example/packages/npm/"
+            "hcoona-release-smoke-npm/versions/42",
+            "example",
+        ),
+    ],
+)
+def test_package_version_owner_comes_from_the_api_resource_url(
+    version_url: str,
+    expected_owner: str,
+) -> None:
+    adapter = _adapter()
+    document = {
+        "url": version_url,
+        "package_html_url": (
+            "https://github.com/users/not-authoritative/packages/npm/"
+            "package/hcoona-release-smoke-npm"
+        ),
+    }
+
+    assert adapter._rest_owner(document) == expected_owner  # noqa: SLF001
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        {},
+        {
+            "package_html_url": (
+                "https://github.com/users/hcoona/packages/npm/"
+                "package/hcoona-release-smoke-npm"
+            )
+        },
+        {
+            "url": (
+                "http://api.github.com/users/hcoona/packages/npm/"
+                "hcoona-release-smoke-npm/versions/42"
+            )
+        },
+        {
+            "url": (
+                "https://api.github.com.example/users/hcoona/packages/npm/"
+                "hcoona-release-smoke-npm/versions/42"
+            )
+        },
+        {
+            "url": (
+                "https://api.github.com/users/hcoona/packages/npm/"
+                "another-package/versions/42"
+            )
+        },
+        {
+            "url": (
+                "https://api.github.com/users/hcoona/packages/npm/"
+                "hcoona-release-smoke-npm/versions/not-an-id"
+            )
+        },
+        {
+            "url": (
+                "https://api.github.com/users/hcoona/packages/npm/"
+                "hcoona-release-smoke-npm/versions/42?unexpected=true"
+            )
+        },
+        {
+            "url": (
+                "https://[api.github.com/users/hcoona/packages/npm/"
+                "hcoona-release-smoke-npm/versions/42"
+            )
+        },
+        {
+            "url": (
+                "https://api.github.com/users/hcoona/packages/npm/"
+                "hcoona-release-smoke-npm/versions/42;ignored"
+            )
+        },
+        {
+            "url": (
+                "https://api.github.com/users/hcoona/packages//npm/"
+                "hcoona-release-smoke-npm/versions/42"
+            )
+        },
+        {
+            "url": (
+                "https://api.github.com/users/hcoona/packages/npm/"
+                "hcoona-release-smoke-npm/versions/42/"
+            )
+        },
+    ],
+)
+def test_package_version_owner_rejects_noncanonical_api_routes(
+    document: dict[str, str],
+) -> None:
+    assert _adapter()._rest_owner(document) == "ambiguous"  # noqa: SLF001
 
 
 def test_publish_rejects_removed_standalone_mutation_before_config_or_runner(

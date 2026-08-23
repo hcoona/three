@@ -385,6 +385,164 @@ def test_buddy_permission_ceiling_and_effective_permissions_are_exact() -> None:
             assert permissions.get("packages") != "write"
 
 
+def test_destination_observer_maps_the_effective_github_token() -> None:
+    observer = _step(
+        _document(CALLEE)["jobs"]["observe-github-packages"],
+        "Observe exact GitHub Packages state",
+    )
+
+    assert observer["env"] == {"GITHUB_TOKEN": "${{ github.token }}"}
+    assert '--github-token "${GITHUB_TOKEN}"' in _run(observer)
+
+
+def test_blocking_observation_is_retained_before_status_propagation() -> None:
+    jobs = _document(CALLEE)["jobs"]
+    observer = jobs["observe-github-packages"]
+    observe = _step(observer, "Observe exact GitHub Packages state")
+    upload = _step(observer, "Upload Observation Record set")
+    propagate = _step(observer, "Propagate observation status")
+    step_names = tuple(step["name"] for step in _steps(observer))
+
+    assert observe["continue-on-error"] is True
+    observe_run = _run(observe)
+    assert observe_run.index("set +e") < observe_run.index(
+        "three-workflow-delivery-v3 release observe-github-packages"
+    )
+    assert observe_run.index("observation_status=$?") < observe_run.index(
+        "sha256sum .wdv3/observation-set.json"
+    )
+    assert observe_run.index("mv .wdv3/observation-set.json") < (
+        observe_run.index("observation-set-artifact-name=${artifact_name}")
+    )
+    assert observe_run.rstrip().endswith('exit "${observation_status}"')
+    assert upload["if"] == (
+        "always() && steps.observe.outputs.observation-set-artifact-name != ''"
+    )
+    assert propagate["if"] == "always()"
+    propagate_run = _run(propagate)
+    for fact in (
+        "steps.observe.outcome",
+        "steps.upload.outcome",
+        "steps.observe.outputs.observation-status",
+    ):
+        assert fact in propagate_run
+    assert (
+        step_names.index("Observe exact GitHub Packages state")
+        < (step_names.index("Upload Observation Record set"))
+        < step_names.index("Propagate observation status")
+    )
+
+    finalizer = jobs["release-finalizer"]
+    download = _step(
+        finalizer,
+        "Download Observation Record by artifact ID",
+    )
+    assert download["if"] == (
+        "always() && needs.observe-github-packages.outputs."
+        "observation-set-artifact-id != ''"
+    )
+    command = _run(_step(finalizer, "Finalize Attempt Outcome"))
+    assert (
+        'add_record observation ".wdv3/input/${{ '
+        "needs.observe-github-packages.outputs."
+        "observation-set-artifact-name }}"
+    ) in command
+    assert command.index('if [[ -z "${snapshot_id}" ]]') < command.index(
+        "add_record observation"
+    )
+
+
+def test_blocking_observation_shell_names_record_before_failure(
+    tmp_path: Path,
+) -> None:
+    import hashlib  # noqa: PLC0415
+    import os  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+
+    run = _run(
+        _step(
+            _document(CALLEE)["jobs"]["observe-github-packages"],
+            "Observe exact GitHub Packages state",
+        )
+    )
+    expression = re.compile(r"\$\{\{\s*(?P<fact>.*?)\s*\}\}")
+    rendered = expression.sub(
+        lambda match: (
+            "a" * 40
+            if match.group("fact").strip() == "inputs.target-sha"
+            else (
+                "input.json"
+                if match.group("fact").strip().endswith("artifact-name")
+                else (
+                    "1"
+                    if match.group("fact").strip().endswith("artifact-id")
+                    else "sha256:" + ("b" * 64)
+                )
+            )
+        ),
+        run,
+    )
+    bin_directory = tmp_path / "bin"
+    bin_directory.mkdir()
+    uv = bin_directory / "uv"
+    uv.write_text(
+        r"""#!/usr/bin/env python3
+import os
+import pathlib
+import sys
+
+args = sys.argv[1:]
+output = pathlib.Path(args[args.index("--output") + 1])
+output.parent.mkdir(parents=True, exist_ok=True)
+output.write_text('{"schema":"workflow-delivery/v3/projection-observation"}\n', encoding="utf-8")
+github_output = pathlib.Path(args[args.index("--github-output") + 1])
+with github_output.open("a", encoding="utf-8") as handle:
+    handle.write("observation-set-digest=sha256:" + ("c" * 64) + "\n")
+raise SystemExit(1)
+""",
+        encoding="utf-8",
+    )
+    uv.chmod(0o755)
+    github_output = tmp_path / "github-output.txt"
+    environment = os.environ | {
+        "GITHUB_OUTPUT": str(github_output),
+        "GITHUB_RUN_ATTEMPT": "3",
+        "GITHUB_RUN_ID": "424242",
+        "GITHUB_TOKEN": "test-token",
+        "PATH": f"{bin_directory}{os.pathsep}{os.environ['PATH']}",
+        "WDV3_PACKAGE": "three-workflow-delivery-v3",
+    }
+
+    completed = subprocess.run(  # noqa: S603
+        (
+            "bash",
+            "--noprofile",
+            "--norc",
+            "-euo",
+            "pipefail",
+            "-c",
+            rendered,
+        ),
+        check=False,
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    outputs = {
+        key: value
+        for line in github_output.read_text(encoding="utf-8").splitlines()
+        for key, value in (line.split("=", 1),)
+    }
+    artifact = tmp_path / ".wdv3" / outputs["observation-set-artifact-name"]
+    payload_digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
+    assert completed.returncode == 1
+    assert outputs["observation-status"] == "1"
+    assert artifact.name.endswith(f"-{payload_digest}.json")
+
+
 def test_live_attempt_dag_environments_and_capability_gate_are_exact() -> None:
     jobs = _document(CALLEE)["jobs"]
 
@@ -2164,6 +2322,10 @@ def _phase2_finalizer_facts(**overrides: str) -> dict[str, str]:
         "needs.materialize-publication.outputs.publication-snapshot-artifact-name": "",
         "needs.materialize-publication.outputs.publication-snapshot-digest": "",
         "needs.materialize-publication.result": "skipped",
+        "needs.observe-github-packages.outputs.observation-set-artifact-digest": "",
+        "needs.observe-github-packages.outputs.observation-set-artifact-id": "",
+        "needs.observe-github-packages.outputs.observation-set-artifact-name": "",
+        "needs.observe-github-packages.outputs.observation-set-digest": "",
         "needs.observe-github-packages.result": "failure",
         "needs.publish-github-packages.outputs.capability-group-bundle-artifact-digest": "",
         "needs.publish-github-packages.outputs.capability-group-bundle-artifact-id": "",
@@ -2424,6 +2586,61 @@ def test_publication_preparation_classifier_executes_workflow_shell(
         "--publication-snapshot",
         "--receipt",
     }.isdisjoint(argv)
+
+
+def test_finalizer_admits_retained_blocking_observation(
+    tmp_path: Path,
+) -> None:
+    observation_digest = "sha256:" + ("e" * 64)
+    observation_upload_digest = "sha256:" + ("f" * 64)
+    observation_name = "blocking-observation.json"
+    execution = _phase2_execute_finalizer_shell(
+        tmp_path,
+        _phase2_finalizer_facts(
+            **{
+                "needs.observe-github-packages.outputs.observation-set-artifact-digest": observation_upload_digest,
+                "needs.observe-github-packages.outputs.observation-set-artifact-id": "733",
+                "needs.observe-github-packages.outputs.observation-set-artifact-name": observation_name,
+                "needs.observe-github-packages.outputs.observation-set-digest": observation_digest,
+            }
+        ),
+    )
+
+    argv = _phase2_assert_successful_finalizer(execution)
+    observation_index = argv.index("--observation")
+    assert argv[observation_index : observation_index + 8] == (
+        "--observation",
+        f".wdv3/input/{observation_name}",
+        "--observation-digest",
+        observation_digest,
+        "--observation-artifact-id",
+        "733",
+        "--observation-artifact-digest",
+        observation_upload_digest,
+    )
+    assert argv.count("--publication-preparation-interrupted") == 1
+
+
+def test_finalizer_uses_snapshot_observation_binding_after_materialization(
+    tmp_path: Path,
+) -> None:
+    facts = {
+        **_PHASE2_POST_SNAPSHOT_OVERRIDES,
+        "needs.observe-github-packages.outputs.observation-set-artifact-digest": "sha256:"
+        + ("6" * 64),
+        "needs.observe-github-packages.outputs.observation-set-artifact-id": "736",
+        "needs.observe-github-packages.outputs.observation-set-artifact-name": "satisfied-observation.json",
+        "needs.observe-github-packages.outputs.observation-set-digest": "sha256:"
+        + ("7" * 64),
+    }
+    execution = _phase2_execute_finalizer_shell(
+        tmp_path,
+        _phase2_finalizer_facts(**facts),
+    )
+
+    argv = _phase2_assert_successful_finalizer(execution)
+    assert "--publication-snapshot" in argv
+    assert "--observation" not in argv
 
 
 def test_successful_observation_cancellation_retains_exact_job_diagnostics(

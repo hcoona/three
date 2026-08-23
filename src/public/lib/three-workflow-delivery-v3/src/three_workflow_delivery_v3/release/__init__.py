@@ -44,6 +44,7 @@ from three_workflow_delivery_v3.release.finalizer import (
     finalize_simulation,
     materialize_hypothetical_actions,
     materialize_publication_snapshot,
+    validate_projection_observations,
 )
 from three_workflow_delivery_v3.release.identity import (
     BUDDY_LIVE_WORKFLOW_PATH,
@@ -183,5 +184,6 @@ __all__ = [  # noqa: RUF022
     "SimulationObservationSet",
     "SurfaceDigest",
     "validate_consumer_policy_result",
+    "validate_projection_observations",
     "WriterInventoryEntry",
 ]

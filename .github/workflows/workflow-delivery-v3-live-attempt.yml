@@ -1046,7 +1046,11 @@ jobs:
           digest-mismatch: error
       - name: Observe exact GitHub Packages state
         id: observe
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
+          set +e
           uv run --python 3.13 --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release observe-github-packages \
             --workflow-run-id "${GITHUB_RUN_ID}" \
@@ -1071,12 +1075,23 @@ jobs:
             --github-token "${GITHUB_TOKEN}" \
             --output .wdv3/observation-set.json \
             --github-output "${GITHUB_OUTPUT}"
+          observation_status=$?
+          set -e
+          echo "observation-status=${observation_status}" >> "${GITHUB_OUTPUT}"
+          if [[ ! -f .wdv3/observation-set.json ]]; then
+            if [[ "${observation_status}" -eq 0 ]]; then
+              exit 1
+            fi
+            exit "${observation_status}"
+          fi
           digest="$(sha256sum .wdv3/observation-set.json | cut -d' ' -f1)"
           artifact_name="wdv3-live-buddy-observation-set-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${digest}.json"
           mv .wdv3/observation-set.json ".wdv3/${artifact_name}"
           echo "observation-set-artifact-name=${artifact_name}" >> "${GITHUB_OUTPUT}"
+          exit "${observation_status}"
       - name: Upload Observation Record set
         id: upload
+        if: always() && steps.observe.outputs.observation-set-artifact-name != ''
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ${{ steps.observe.outputs.observation-set-artifact-name }}
@@ -1086,6 +1101,12 @@ jobs:
           overwrite: false
           archive: false
           include-hidden-files: true
+      - name: Propagate observation status
+        if: always()
+        run: |
+          if [[ "${{ steps.observe.outcome }}" != "success" || "${{ steps.upload.outcome }}" != "success" || "${{ steps.observe.outputs.observation-status }}" != "0" ]]; then
+            exit 1
+          fi
 
   materialize-publication:
     name: Materialize publication Snapshot and reviewer summary
@@ -1939,6 +1960,14 @@ jobs:
           path: .wdv3/input
           skip-decompress: true
           digest-mismatch: error
+      - name: Download Observation Record by artifact ID
+        if: always() && needs.observe-github-packages.outputs.observation-set-artifact-id != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.observe-github-packages.outputs.observation-set-artifact-id }}
+          path: .wdv3/input
+          skip-decompress: true
+          digest-mismatch: error
       - name: Download Publication Snapshot by artifact ID
         if: always() && needs.materialize-publication.outputs.publication-snapshot-artifact-id != ''
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -2006,6 +2035,10 @@ jobs:
           add_record artifact-contents-evidence ".wdv3/input/${{ needs.qualification-finalizer.outputs.artifact-contents-evidence-artifact-name }}" "${{ needs.qualification-finalizer.outputs.artifact-contents-evidence-digest }}" "${{ needs.qualification-finalizer.outputs.artifact-contents-evidence-artifact-id }}" "${{ needs.qualification-finalizer.outputs.artifact-contents-evidence-artifact-digest }}"
           add_record install-import-evidence ".wdv3/input/${{ needs.qualification-finalizer.outputs.install-import-evidence-artifact-name }}" "${{ needs.qualification-finalizer.outputs.install-import-evidence-digest }}" "${{ needs.qualification-finalizer.outputs.install-import-evidence-artifact-id }}" "${{ needs.qualification-finalizer.outputs.install-import-evidence-artifact-digest }}"
           add_record release-artifact ".wdv3/input/${{ needs.qualification-finalizer.outputs.release-artifact-artifact-name }}" "${{ needs.qualification-finalizer.outputs.release-artifact-digest }}" "${{ needs.qualification-finalizer.outputs.release-artifact-artifact-id }}" "${{ needs.qualification-finalizer.outputs.release-artifact-artifact-digest }}"
+          snapshot_id="${{ needs.materialize-publication.outputs.publication-snapshot-artifact-id }}"
+          if [[ -z "${snapshot_id}" ]]; then
+            add_record observation ".wdv3/input/${{ needs.observe-github-packages.outputs.observation-set-artifact-name }}" "${{ needs.observe-github-packages.outputs.observation-set-digest }}" "${{ needs.observe-github-packages.outputs.observation-set-artifact-id }}" "${{ needs.observe-github-packages.outputs.observation-set-artifact-digest }}"
+          fi
           if [[ -n "${{ needs.materialize-publication.outputs.publication-snapshot-artifact-id }}" ]]; then
             args+=(
               --publication-snapshot ".wdv3/input/${{ needs.materialize-publication.outputs.publication-snapshot-artifact-name }}"

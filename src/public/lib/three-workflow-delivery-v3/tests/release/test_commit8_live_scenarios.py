@@ -22,6 +22,10 @@ from three_workflow_delivery_v3.records.release import (
     CapabilityGroupResultBundle,
     ExternalPackageCoordinate,
     HistoricalExecutionRecord,
+    ObservationRequestFacts,
+    ObservationResponseFacts,
+    ObservationValue,
+    ProjectionObservation,
     PublicationAction,
     PublicationObservationReference,
     PublicationSnapshot,
@@ -326,6 +330,71 @@ def _closure(scenario, *, with_action: bool):
         control=CONTROL,
     )
     return attempt, decision, publication, authorization
+
+
+def _blocking_observation(
+    *,
+    attempt: ReleaseAttemptIdentity,
+    qualification_decision,
+    projection,
+    classification: str,
+) -> ProjectionObservation:
+    desired_state_digest = "sha256:" + ("9" * 64)
+    value = ObservationValue(
+        classification=classification,
+        owner=None,
+        coordinate=None,
+        content_sha512=None,
+        witness_digest=None,
+        routing=(),
+    )
+    request_facts = ObservationRequestFacts(
+        qualification_snapshot_digest=(
+            qualification_decision.qualification_snapshot_digest
+        ),
+        projection_digest=projection.projection_digest,
+        desired_state_digest=desired_state_digest,
+        method="GET",
+        url="https://api.github.com/users/hcoona/packages/npm/"
+        "hcoona-release-smoke-npm/versions",
+        headers=(),
+    )
+    response_facts = ObservationResponseFacts(
+        stage="synthetic",
+        requested_url=request_facts.url,
+        final_url=request_facts.url,
+        redirects=(),
+        status=200,
+        selected_headers=(),
+        truncated=False,
+        body_sha256=None,
+        status_detail=classification,
+    )
+    response_digest = canonical_sha256(
+        {
+            "schema": "workflow-delivery/v3/observation-response",
+            "request-digest": request_facts.request_digest,
+            "facts": response_facts.to_document(),
+            "value": value.to_document(),
+        }
+    )
+    return ProjectionObservation(
+        subject=attempt,
+        purpose="live-release",
+        target=attempt.execution.target,
+        producer="observe-github-packages",
+        qualification_snapshot_digest=(
+            qualification_decision.qualification_snapshot_digest
+        ),
+        projection=projection,
+        desired_state_digest=desired_state_digest,
+        observation_contract_id=projection.observation_contract_id,
+        request_facts=request_facts,
+        request_digest=request_facts.request_digest,
+        response_facts=response_facts,
+        response_digest=response_digest,
+        value=value,
+    )
 
 
 def test_commit8_phase3_live_api_is_explicit_and_injectable() -> None:
@@ -694,6 +763,96 @@ def test_publication_preparation_interruption_terminalizes_without_snapshot(
     reject_contradiction(receipt_transport_references=(receipt_transport,))
     reject_contradiction(platform_terminated=True)
     reject_contradiction(capability_may_have_started=True)
+
+
+@pytest.mark.parametrize(
+    ("classification", "result", "uncertainty"),
+    [
+        ("partial", "failure", False),
+        ("conflicting", "failure", False),
+        ("unknown", "incomplete", True),
+        ("unprovable", "incomplete", True),
+    ],
+)
+def test_blocking_observation_terminalizes_with_reconciliation(
+    qualified_simulation,
+    classification: str,
+    result: str,
+    uncertainty: bool,
+) -> None:
+    attempt, decision, publication, _authorization = _closure(
+        qualified_simulation,
+        with_action=True,
+    )
+    observation = _blocking_observation(
+        attempt=attempt,
+        qualification_decision=decision,
+        projection=publication.materialized_actions[0].projection,
+        classification=classification,
+    )
+
+    outcome = finalize_attempt_outcome(
+        attempt=attempt,
+        qualification_decision=decision,
+        publication_snapshot=None,
+        authorization=None,
+        capability_decisions=(),
+        group_bundles=(),
+        receipts=(),
+        observations=(observation,),
+        publication_preparation_interrupted=True,
+    )
+
+    assert outcome.observation_digests == (observation.observation_digest,)
+    assert outcome.publication_snapshot_digest is None
+    assert outcome.terminal_phase == "observation"
+    assert outcome.result == result
+    assert outcome.uncertainty is uncertainty
+    assert outcome.possibly_mutated is False
+    assert outcome.next_action == "reconcile"
+
+
+def test_direct_observation_requires_exact_interrupted_attempt_binding(
+    qualified_simulation,
+) -> None:
+    attempt, decision, publication, _authorization = _closure(
+        qualified_simulation,
+        with_action=True,
+    )
+    observation = _blocking_observation(
+        attempt=attempt,
+        qualification_decision=decision,
+        projection=publication.materialized_actions[0].projection,
+        classification="conflicting",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="require publication preparation interruption",
+    ):
+        finalize_attempt_outcome(
+            attempt=attempt,
+            qualification_decision=decision,
+            publication_snapshot=None,
+            authorization=None,
+            capability_decisions=(),
+            group_bundles=(),
+            receipts=(),
+            observations=(observation,),
+        )
+
+    with pytest.raises(ValueError, match="Observation binding mismatch"):
+        finalize_attempt_outcome(
+            attempt=attempt,
+            qualification_decision=decision,
+            publication_snapshot=None,
+            authorization=None,
+            capability_decisions=(),
+            group_bundles=(),
+            receipts=(),
+            observations=(replace(observation, target="b" * 40),),
+            publication_preparation_interrupted=True,
+        )
 
 
 def test_publication_preparation_interruption_rejects_non_boolean_fact(
