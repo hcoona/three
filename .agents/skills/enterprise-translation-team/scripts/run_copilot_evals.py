@@ -43,6 +43,27 @@ def project_agent_name(agent: str) -> str:
     return agent.rsplit(":", 1)[-1]
 
 
+def resolve_project_agent(agent: str, project_root: Path) -> str:
+    if ":" in agent:
+        namespace, name = agent.split(":", 1)
+        if namespace != PLUGIN_NAME or not name or ":" in name:
+            raise ValueError(
+                f"Invalid enterprise translation agent identifier: {agent!r}"
+            )
+    else:
+        name = agent
+    agents_root = project_root / ".github" / "agents"
+    available_agents = {
+        path.name.removesuffix(".agent.md")
+        for path in agents_root.glob("*.agent.md")
+    }
+    if name not in available_agents:
+        raise ValueError(
+            f"Agent {agent!r} is not available in the staged APM project"
+        )
+    return name
+
+
 def validate_plugin_root(candidate: Path) -> Path:
     plugin_root = candidate.resolve()
     required_paths = [
@@ -796,6 +817,14 @@ def main(argv: list[str]) -> int:
         if args.mode == "copilot" and apm_root is not None
         else None
     )
+    explicit_agent = args.agent
+    if explicit_agent is not None and apm_project_root is not None:
+        try:
+            explicit_agent = resolve_project_agent(
+                explicit_agent, apm_project_root
+            )
+        except ValueError as exc:
+            parser.error(str(exc))
     case_workspace = (
         apm_project_root / "runs"
         if apm_project_root is not None and args.baseline == "with-plugin"
@@ -809,7 +838,7 @@ def main(argv: list[str]) -> int:
             case_workspace,
             args.mode,
             args.model,
-            args.agent,
+            explicit_agent,
             args.baseline,
             review_gates,
             plugin_root,

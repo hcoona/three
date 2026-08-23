@@ -1934,13 +1934,6 @@ QA_FAILURE_FIELD_COUNTS = {
 PENDING_SIGNOFF_SENTENCE = (
     "Human or subject-matter expert sign-off still required."
 )
-HUMAN_APPROVER_RE = re.compile(
-    r"\b(?:human|sme|subject[- ]matter expert)\b", re.IGNORECASE
-)
-APPROVAL_CLAIM_RE = re.compile(
-    r"\b(?:sign(?:s|ed|ing)?[- ]?off|approv(?:al|e|ed|es|ing))\b",
-    re.IGNORECASE,
-)
 
 
 def parse_qa_failure_records(content: str) -> set[tuple[str, ...]]:
@@ -2018,20 +2011,6 @@ def check_qa_content(path: Path, run_dir: Path | None) -> None:
     if content.count(PENDING_SIGNOFF_SENTENCE) != 1:
         raise AssertionError(
             "qa.md must include exactly one exact pending human-review sentence"
-        )
-    remaining_signoff_text = content.replace(PENDING_SIGNOFF_SENTENCE, "", 1)
-    contradictory_claims = [
-        sentence.strip()
-        for sentence in re.split(
-            r"(?:\r?\n)+|(?<=[.!?])\s+", remaining_signoff_text
-        )
-        if HUMAN_APPROVER_RE.search(sentence)
-        and APPROVAL_CLAIM_RE.search(sentence)
-    ]
-    if contradictory_claims:
-        raise AssertionError(
-            "qa.md must not contain another human or subject-matter approval "
-            f"claim: {contradictory_claims}"
         )
     if run_dir is None:
         raise AssertionError(

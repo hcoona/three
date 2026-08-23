@@ -141,6 +141,10 @@ so their independent assessment remains available with the grading evidence.
 Use `--skip-review-gates` only when debugging harness mechanics,
 not when accepting a skill iteration.
 
+Deterministic grading verifies the exact pending-sign-off sentence and other
+machine-readable output contracts. It does not infer approval semantics from
+free-form prose; the negative review gate owns false-sign-off detection.
+
 The final-QA fixture intentionally contains one TBX mismatch and one TSV
 mismatch against canonical JSON, in addition to forbidden terminology,
 open conflicts, and one open Major MQM issue.
