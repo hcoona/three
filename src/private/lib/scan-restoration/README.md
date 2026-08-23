@@ -37,9 +37,11 @@ mise run scan-restoration-plugin-check
 Deploy the package through the root APM project:
 
 ```powershell
-mise exec -- apm install
-mise exec -- apm install --frozen
+mise run scan-restoration-plugin-install
+mise run scan-restoration-plugin-install-frozen
 ```
+
+These tasks validate the source allowlist before APM copies local skill trees.
 
 ## Tests
 

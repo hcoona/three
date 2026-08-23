@@ -1395,6 +1395,46 @@ class RestoreToneTests(unittest.TestCase):
             module.sniff_encoded_format(b"<!--" + b"--><!--" * 400)
         )
 
+    def test_svg_doctype_and_empty_root_candidates_fail_closed(self) -> None:
+        module = load_script()
+        signatures = (
+            b"<!DOCTYPE svg><!--metadata--><svg "
+            b'xmlns="http://www.w3.org/2000/svg"></svg>',
+            b"<svg/>",
+            b"<SVG/",
+            b"<!DOCTYPE svg [<!ELEMENT svg EMPTY>]><svg/>",
+            b'<!DOCTYPE svg SYSTEM "urn:a>b"><svg/>',
+            b"<!DOCTYPE svg [",
+        )
+        for index, content in enumerate(signatures, start=1):
+            with self.subTest(index=index):
+                self.assertEqual(module.sniff_encoded_format(content), "SVG")
+                case_input = self.root / f"input-svg-candidate-{index}"
+                case_input.mkdir()
+                write_image(
+                    case_input / "page_001.png",
+                    np.full((32, 32), 220, np.uint8),
+                )
+                (case_input / "page_002.dat").write_bytes(content)
+                output = self.root / f"output-svg-candidate-{index}"
+
+                result = self.run_cli(case_input, output)
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(
+                    "unsupported encoded image format SVG",
+                    result.stderr,
+                )
+                self.assertFalse(output.exists())
+
+        for content in (
+            b"<svgo/>",
+            b"<!DOCTYPE svgo>",
+            b"<!DOCTYPE html><svg/>",
+        ):
+            with self.subTest(negative=content):
+                self.assertIsNone(module.sniff_encoded_format(content))
+
     def test_modern_image_candidate_suffixes_fail_in_mixed_batches(self) -> None:
         for suffix in (".jxl", ".exr", ".qoi", ".jpm", ".fits", ".raw"):
             with self.subTest(suffix=suffix):

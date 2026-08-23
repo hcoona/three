@@ -7,14 +7,23 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-if ($Script -cne "normalize_book.py") {
-    throw "The runner accepts only normalize_book.py."
+$skillRoot = Split-Path -Parent $PSScriptRoot
+if ($Script -ceq "normalize_book.py") {
+    $program = Join-Path $PSScriptRoot "normalize_book.py"
+}
+elseif ($Script -ceq "tests/test_normalize_book.py") {
+    $program = Join-Path $skillRoot "tests\test_normalize_book.py"
+}
+else {
+    throw (
+        "The runner accepts only normalize_book.py or " +
+        "tests/test_normalize_book.py."
+    )
 }
 
 $pythonVersion = "3.12.10"
 $azureAuthVersion = "0.9.5.0"
 $requirements = Join-Path $PSScriptRoot "requirements.lock"
-$program = Join-Path $PSScriptRoot "normalize_book.py"
 $azureAuth = Join-Path $env:LOCALAPPDATA "Programs\AzureAuth\0.9.5\azureauth.exe"
 $sessionRoot = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) (".scan-book-layout-" + [Guid]::NewGuid().ToString("N"))
 $runtime = Join-Path $sessionRoot "runtime"
@@ -35,7 +44,7 @@ $result = 1
 try {
     if (-not (Test-Path -LiteralPath $requirements -PathType Leaf) -or
         -not (Test-Path -LiteralPath $program -PathType Leaf)) {
-        throw "The pinned dependency lock or normalize_book.py is missing."
+        throw "The pinned dependency lock or requested script is missing."
     }
 
     $miseCommand = Get-Command mise -CommandType Application -ErrorAction Stop

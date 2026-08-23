@@ -115,8 +115,13 @@ try {
     $startInfo.EnvironmentVariables["SCAN_RECTIFY_PYTHON"] = $Python
     $startInfo.EnvironmentVariables["SCAN_RECTIFY_REQUIREMENTS"] = $Requirements
     $startInfo.EnvironmentVariables["SCAN_RECTIFY_AZUREAUTH"] = $AzureAuth
-    $startInfo.EnvironmentVariables.Remove("PIP_INDEX_URL")
-    $startInfo.EnvironmentVariables.Remove("PIP_EXTRA_INDEX_URL")
+    $inheritedPipNames = @(
+        $startInfo.EnvironmentVariables.Keys |
+            Where-Object { $_ -like "PIP_*" }
+    )
+    foreach ($name in $inheritedPipNames) {
+        $startInfo.EnvironmentVariables.Remove($name)
+    }
     $startInfo.EnvironmentVariables["PIP_CONFIG_FILE"] = "NUL"
     $startInfo.EnvironmentVariables["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
     $startInfo.EnvironmentVariables["PIP_NO_INPUT"] = "1"

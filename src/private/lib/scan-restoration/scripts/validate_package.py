@@ -26,15 +26,6 @@ EXPECTED_SKILLS = (
     "scan-page-rectification",
     "scan-tone-restoration",
 )
-EXPECTED_INCLUDES = tuple(
-    relative_path
-    for skill_name in EXPECTED_SKILLS
-    for relative_path in (
-        f"skills/{skill_name}/SKILL.md",
-        f"skills/{skill_name}/scripts/",
-        f"skills/{skill_name}/tests/",
-    )
-)
 REQUIRED_FILES = {
     "scan-batch-diagnostics": (
         "scripts/analyze_scans.py",
@@ -74,6 +65,16 @@ REQUIRED_FILES = {
         "tests/test_runner.ps1",
     ),
 }
+EXPECTED_SKILL_FILES = frozenset(
+    f"{skill_name}/{relative_path}"
+    for skill_name in EXPECTED_SKILLS
+    for relative_path in ("SKILL.md", *REQUIRED_FILES[skill_name])
+)
+EXPECTED_INCLUDES = tuple(
+    f"skills/{skill_name}/{relative_path}"
+    for skill_name in EXPECTED_SKILLS
+    for relative_path in ("SKILL.md", *REQUIRED_FILES[skill_name])
+)
 REQUIRED_REFERENCES = {
     "scan-book-layout": {"scan-book-quality-control"},
     "scan-page-rectification": {
@@ -334,6 +335,21 @@ def find_repository_root() -> Path | None:
     return None
 
 
+def validate_skill_file_allowlist(errors: list[str]) -> None:
+    """Reject symlinks and files outside the package's explicit allowlist."""
+    actual_skill_files: set[str] = set()
+    for path in sorted(SKILLS_ROOT.rglob("*")):
+        relative_path = path.relative_to(SKILLS_ROOT).as_posix()
+        if path.is_symlink():
+            errors.append(
+                f"skill content must not use symlinks: {relative_path}"
+            )
+        elif path.is_file():
+            actual_skill_files.add(relative_path)
+    for relative_path in sorted(actual_skill_files - EXPECTED_SKILL_FILES):
+        errors.append(f"unexpected skill file is not allowed: {relative_path}")
+
+
 def validate_layout(errors: list[str]) -> None:
     """Validate package structure, skill inventory, and cache hygiene."""
     if not NAME_PATTERN.fullmatch(PACKAGE_NAME):
@@ -347,10 +363,7 @@ def validate_layout(errors: list[str]) -> None:
         )
     for skill_name in EXPECTED_SKILLS:
         validate_skill(skill_name, errors)
-
-    for path in PACKAGE_ROOT.rglob("*"):
-        if path.name == "__pycache__" or path.suffix in {".pyc", ".pyo"}:
-            errors.append(f"generated Python cache is not allowed: {path}")
+    validate_skill_file_allowlist(errors)
     if (PACKAGE_ROOT / "apm.lock.yaml").exists():
         errors.append("the package must not contain a local apm.lock.yaml")
 

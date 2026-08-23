@@ -145,15 +145,15 @@ def looks_like_svg(header: bytes) -> bool:
             and header[name_end] not in ASCII_WHITESPACE + b"[>"
         ):
             return False
-        declaration_end = lowered.find(b">", name_end)
-        if declaration_end < 0:
-            return False
-        index = skip_ascii_whitespace(header, declaration_end + 1)
+        return True
 
     if not lowered.startswith(b"<svg", index):
         return False
     name_end = index + len(b"<svg")
-    return name_end == len(header) or header[name_end] in ASCII_WHITESPACE + b">"
+    return (
+        name_end == len(header)
+        or header[name_end] in ASCII_WHITESPACE + b"/>"
+    )
 
 
 def sniff_encoded_format(header: bytes) -> str | None:

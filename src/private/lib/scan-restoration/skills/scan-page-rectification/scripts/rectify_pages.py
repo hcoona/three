@@ -2618,6 +2618,7 @@ def selected_vertical_measurement(
     fit_angles = np.asarray([structure.angle for structure in fit])
     fit_positions = np.asarray([structure.position for structure in fit])
     fit_weights = np.asarray([structure.weight for structure in fit])
+    fit_system_ids = np.asarray([structure.system for structure in fit])
     fit_clusters = [
         [
             (
@@ -2636,7 +2637,7 @@ def selected_vertical_measurement(
         fit_positions,
         fit_clusters,
         minimum_per_side=MINIMUM_VERTICAL_FIT_STRUCTURES_PER_SIDE,
-        system_ids=np.asarray([structure.system for structure in fit]),
+        system_ids=fit_system_ids,
     )
     fit_reason = vertical_fit_distribution_reason(fit_positions)
     if fit_reason is None:
@@ -2660,10 +2661,33 @@ def selected_vertical_measurement(
             len(holdout),
             "tracked_fit_vertical_evidence_is_insufficient",
         )
+    retained_fit_count = int(np.count_nonzero(fit_keep))
+    retained_fit_positions = fit_positions[fit_keep]
+    retained_fit_clusters = [
+        cluster for cluster, retained in zip(fit_clusters, fit_keep) if retained
+    ]
+    retained_fit_system_ids = fit_system_ids[fit_keep]
+    fit_reason = vertical_fit_distribution_reason(retained_fit_positions)
+    if fit_reason is None:
+        fit_reason = vertical_side_system_reason(
+            retained_fit_positions,
+            retained_fit_clusters,
+            minimum_per_side=MINIMUM_VERTICAL_FIT_STRUCTURES_PER_SIDE,
+            system_ids=retained_fit_system_ids,
+        )
+    if fit_reason is not None:
+        return (
+            None,
+            retained_fit_count,
+            f"{fit_reason}_after_consensus_filtering",
+            None,
+            len(holdout),
+            "tracked_fit_vertical_evidence_is_insufficient",
+        )
     if not holdout:
         return (
             model,
-            len(fit),
+            retained_fit_count,
             None,
             None,
             0,
@@ -2702,7 +2726,7 @@ def selected_vertical_measurement(
     if distribution_reason is not None:
         return (
             model,
-            len(fit),
+            retained_fit_count,
             None,
             None,
             len(holdout),
@@ -2717,7 +2741,7 @@ def selected_vertical_measurement(
     if holdout_reason is not None:
         return (
             model,
-            len(fit),
+            retained_fit_count,
             None,
             None,
             int(np.count_nonzero(holdout_keep)),
@@ -2734,18 +2758,24 @@ def selected_vertical_measurement(
         for cluster, retained in zip(holdout_clusters, holdout_keep)
         if retained
     ]
-    holdout_reason = vertical_side_system_reason(
-        retained_positions,
-        retained_clusters,
-        minimum_per_side=MINIMUM_VERTICAL_FIT_STRUCTURES_PER_SIDE,
-        system_ids=np.asarray(
-            [structure.system for structure in retained_holdout]
-        ),
+    retained_system_ids = np.asarray(
+        [structure.system for structure in retained_holdout]
     )
+    holdout_reason = vertical_fit_distribution_reason(
+        retained_positions,
+        minimum_balance=0.40,
+    )
+    if holdout_reason is None:
+        holdout_reason = vertical_side_system_reason(
+            retained_positions,
+            retained_clusters,
+            minimum_per_side=MINIMUM_VERTICAL_FIT_STRUCTURES_PER_SIDE,
+            system_ids=retained_system_ids,
+        )
     if holdout_reason is not None:
         return (
             model,
-            len(fit),
+            retained_fit_count,
             None,
             None,
             int(np.count_nonzero(holdout_keep)),
@@ -2753,11 +2783,14 @@ def selected_vertical_measurement(
         )
     side_angles: list[float] = []
     retained_holdout_keep = np.zeros(len(holdout_keep), dtype=bool)
-    for side in (holdout_positions < 0.5, holdout_positions > 0.5):
+    for side in (
+        (holdout_positions < 0.5) & holdout_keep,
+        (holdout_positions > 0.5) & holdout_keep,
+    ):
         if np.count_nonzero(side) < MINIMUM_VERTICAL_FIT_STRUCTURES_PER_SIDE:
             return (
                 model,
-                len(fit),
+                retained_fit_count,
                 None,
                 None,
                 int(np.count_nonzero(holdout_keep)),
@@ -2776,7 +2809,7 @@ def selected_vertical_measurement(
         if side_reason is not None:
             return (
                 model,
-                len(fit),
+                retained_fit_count,
                 None,
                 None,
                 int(np.count_nonzero(retained_holdout_keep)),
@@ -2785,7 +2818,7 @@ def selected_vertical_measurement(
         if np.count_nonzero(retained) < MINIMUM_VERTICAL_FIT_STRUCTURES_PER_SIDE:
             return (
                 model,
-                len(fit),
+                retained_fit_count,
                 None,
                 None,
                 int(np.count_nonzero(retained_holdout_keep)),
@@ -2799,9 +2832,42 @@ def selected_vertical_measurement(
                 )
             )
         )
+    final_retained_positions = holdout_positions[retained_holdout_keep]
+    final_retained_clusters = [
+        cluster
+        for cluster, retained in zip(holdout_clusters, retained_holdout_keep)
+        if retained
+    ]
+    final_retained_system_ids = np.asarray(
+        [
+            structure.system
+            for structure, retained in zip(holdout, retained_holdout_keep)
+            if retained
+        ]
+    )
+    holdout_reason = vertical_fit_distribution_reason(
+        final_retained_positions,
+        minimum_balance=0.40,
+    )
+    if holdout_reason is None:
+        holdout_reason = vertical_side_system_reason(
+            final_retained_positions,
+            final_retained_clusters,
+            minimum_per_side=MINIMUM_VERTICAL_FIT_STRUCTURES_PER_SIDE,
+            system_ids=final_retained_system_ids,
+        )
+    if holdout_reason is not None:
+        return (
+            model,
+            retained_fit_count,
+            None,
+            None,
+            int(np.count_nonzero(retained_holdout_keep)),
+            f"{holdout_reason}_after_consensus_filtering",
+        )
     return (
         model,
-        len(fit),
+        retained_fit_count,
         None,
         abs(side_angles[1] - side_angles[0]),
         int(np.count_nonzero(retained_holdout_keep)),

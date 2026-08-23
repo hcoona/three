@@ -3319,6 +3319,75 @@ class ValidateBookTests(unittest.TestCase):
             budgets["comparison_indexing"]["exact_decoded_sha256_index"]
         )
 
+    def test_early_component_budget_error_preserves_pair_path_alignment(
+        self,
+    ) -> None:
+        first = self.image()
+        cv2.putText(
+            first, "ONE", (35, 170), cv2.FONT_HERSHEY_SIMPLEX, 1.4, 0, 4
+        )
+        second = self.image()
+        cv2.putText(
+            second, "TWO", (35, 170), cv2.FONT_HERSHEY_SIMPLEX, 1.4, 0, 4
+        )
+        self.write_page(self.source / "page1.png", image=first)
+        self.write_page(self.source / "page2.png", image=second)
+        self.write_page(self.output / "page1.png", image=first)
+        self.write_page(self.output / "page2.png", image=first)
+
+        original_compare = validate_book.compare_edge_component_analysis
+        comparison_count = 0
+
+        def fail_first_comparison(*args: object, **kwargs: object) -> object:
+            nonlocal comparison_count
+            comparison_count += 1
+            if comparison_count == 1:
+                raise validate_book.ComponentBudgetError(
+                    "forced first-pair edge comparison budget failure"
+                )
+            return original_compare(*args, **kwargs)
+
+        with patch.object(
+            validate_book,
+            "compare_edge_component_analysis",
+            side_effect=fail_first_comparison,
+        ):
+            result, report = self.run_validator()
+
+        self.assertEqual(2, result)
+        self.assertEqual(2, comparison_count)
+        evidence = report["evidence"]
+        self.assertEqual(
+            [False, True],
+            [pair["comparable"] for pair in evidence["pairs"]],
+        )
+        self.assertEqual(
+            ("page2.png", "page2.png"),
+            (
+                evidence["pairs"][1]["input_file"],
+                evidence["pairs"][1]["output_file"],
+            ),
+        )
+        second_identity = next(
+            item
+            for item in evidence["decoded_identity_summary"]
+            if item["output"] == "page2.png"
+        )
+        self.assertEqual("page2.png", second_identity["mapped_source"])
+        self.assertEqual(
+            evidence["output_pages"][0]["decoded_content_sha256"],
+            evidence["output_pages"][1]["decoded_content_sha256"],
+        )
+        self.assertEqual(
+            0,
+            evidence["safety_budgets"]["observed"][
+                "performed_duplicate_comparisons"
+            ],
+        )
+        self.assertEqual(
+            0, evidence["duplicate_summary"]["candidate_pair_count"]
+        )
+
     def test_cross_identity_evidence_is_linear_and_keeps_decisive_candidates(self) -> None:
         page_count = 5
         for index in range(page_count):
@@ -3516,7 +3585,10 @@ class ValidateBookTests(unittest.TestCase):
             check=False,
         )
         self.assertNotEqual(0, completed.returncode)
-        self.assertIn("Script must be exactly validate_book.py", completed.stderr)
+        self.assertIn(
+            "Script must be exactly validate_book.py or tests/test_validate_book.py",
+            completed.stderr,
+        )
 
     def test_runner_uses_practical_isolated_pinned_runtime(self) -> None:
         runner = (
@@ -3545,6 +3617,23 @@ class ValidateBookTests(unittest.TestCase):
         self.assertIn("-EnvironmentVariables @{ PIP_INDEX_URL = $luciaIndex }", runner)
         self.assertNotIn("$env:PIP_INDEX_URL =", runner)
         self.assertIn("$startInfo.EnvironmentVariables.Remove", runner)
+        self.assertIn(
+            'Join-Path $env:SystemRoot "System32\\taskkill.exe"', runner
+        )
+        self.assertIn(
+            "& $taskkill /PID $process.Id /T /F", runner
+        )
+        self.assertIn(
+            "Stop-Process -Id $process.Id -Force", runner
+        )
+        self.assertIn(
+            '$Script -cnotin @("validate_book.py", "tests/test_validate_book.py")',
+            runner,
+        )
+        self.assertIn(
+            'Join-Path $skillBase "tests\\test_validate_book.py"',
+            runner,
+        )
         self.assertEqual(requirements.count("--hash=sha256:"), 3)
         self.assertIn(
             "c1f9540be57940698ed329904db803cf7a402f3fc200bfe599334c9bd84a40b2",
@@ -3562,9 +3651,13 @@ class ValidateBookTests(unittest.TestCase):
             Path(__file__).resolve().parents[1] / "scripts" / "validate_book.py"
         ).read_text(encoding="utf-8"))
         self.assertIn(
-            "& mise --no-config exec python@3.12.11 -- python -I -B",
+            '& (Join-Path $skillBase "scripts\\run.ps1")',
             test_runner,
         )
+        self.assertIn('"tests/test_validate_book.py" "-v"', test_runner)
+        self.assertIn("Push-Location $skillBase", test_runner)
+        self.assertIn("Pop-Location", test_runner)
+        self.assertNotIn("mise", test_runner)
 
     def test_runner_cleanup_is_limited_to_invocation_owned_paths(self) -> None:
         runner = (
@@ -3581,9 +3674,29 @@ class ValidateBookTests(unittest.TestCase):
     def test_runner_timeout_helper_terminates_process(self) -> None:
         runner = Path(__file__).resolve().parents[1] / "scripts" / "run.ps1"
         helper_test = self.root / "timeout-helper-test.ps1"
+        parent_test = self.root / "timeout-parent-test.ps1"
+        parent_pid_file = self.root / "timeout-parent.pid"
+        child_pid_file = self.root / "timeout-child.pid"
+        parent_test.write_text(
+            """
+param([string]$ParentPidFile, [string]$ChildPidFile)
+Set-Content -LiteralPath $ParentPidFile -Value $PID
+$child = Start-Process -FilePath "powershell.exe" `
+    -ArgumentList @("-NoProfile", "-Command", "Start-Sleep -Seconds 30") `
+    -PassThru
+Set-Content -LiteralPath $ChildPidFile -Value $child.Id
+Start-Sleep -Seconds 30
+""".strip(),
+            encoding="utf-8",
+        )
         helper_test.write_text(
             """
-param([string]$Runner)
+param(
+    [string]$Runner,
+    [string]$ParentTest,
+    [string]$ParentPidFile,
+    [string]$ChildPidFile
+)
 $tokens = $null
 $errors = $null
 $ast = [Management.Automation.Language.Parser]::ParseFile(
@@ -3597,13 +3710,52 @@ foreach ($name in @("ConvertTo-WindowsCommandLineArgument", "Invoke-ProcessWithT
     }, $true) | Select-Object -First 1
     Invoke-Expression $function.Extent.Text
 }
+$parentId = $null
+$childId = $null
 try {
-    Invoke-ProcessWithTimeout -FilePath "powershell.exe" `
-        -ArgumentList @("-NoProfile", "-Command", "Start-Sleep -Seconds 30") `
-        -TimeoutSeconds 1 -Description "test helper"
-    exit 9
-} catch {
-    if ($_.Exception.Message -notlike "*timed out after 1 seconds*") { exit 8 }
+    try {
+        Invoke-ProcessWithTimeout -FilePath "powershell.exe" `
+            -ArgumentList @(
+                "-NoProfile", "-File", $ParentTest,
+                "-ParentPidFile", $ParentPidFile,
+                "-ChildPidFile", $ChildPidFile
+            ) `
+            -TimeoutSeconds 3 -Description "test helper"
+        throw "Timeout helper unexpectedly completed."
+    }
+    catch {
+        if ($_.Exception.Message -notlike "*timed out after 3 seconds*") {
+            throw
+        }
+    }
+    if (-not (Test-Path -LiteralPath $ParentPidFile) -or
+        -not (Test-Path -LiteralPath $ChildPidFile)) {
+        throw "The timeout fixture did not record both process IDs."
+    }
+    $parentId = [int](Get-Content -LiteralPath $ParentPidFile)
+    $childId = [int](Get-Content -LiteralPath $ChildPidFile)
+    if (Get-Process -Id $parentId -ErrorAction SilentlyContinue) {
+        throw "The timed-out parent process is still running."
+    }
+    if (Get-Process -Id $childId -ErrorAction SilentlyContinue) {
+        throw "The timed-out child process is still running."
+    }
+}
+finally {
+    if ($null -eq $parentId -and
+        (Test-Path -LiteralPath $ParentPidFile)) {
+        $parentId = [int](Get-Content -LiteralPath $ParentPidFile)
+    }
+    if ($null -eq $childId -and
+        (Test-Path -LiteralPath $ChildPidFile)) {
+        $childId = [int](Get-Content -LiteralPath $ChildPidFile)
+    }
+    foreach ($processId in @($parentId, $childId)) {
+        if ($null -ne $processId) {
+            Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+            Wait-Process -Id $processId -ErrorAction SilentlyContinue
+        }
+    }
 }
 exit 0
 """.strip(),
@@ -3616,11 +3768,14 @@ exit 0
                 "-ExecutionPolicy", "Bypass",
                 "-File", str(helper_test),
                 "-Runner", str(runner),
+                "-ParentTest", str(parent_test),
+                "-ParentPidFile", str(parent_pid_file),
+                "-ChildPidFile", str(child_pid_file),
             ],
             text=True,
             capture_output=True,
             check=False,
-            timeout=10,
+            timeout=20,
         )
         self.assertEqual(0, completed.returncode, completed.stderr)
 

@@ -125,3 +125,13 @@ run = 'uv lock'
 [tasks.scan-restoration-plugin-check]
 description = "Validate the scan restoration Copilot CLI plugin"
 run = "python -B src/private/lib/scan-restoration/scripts/validate_package.py"
+
+[tasks.scan-restoration-plugin-install]
+description = "Validate and deploy the scan restoration Copilot CLI plugin"
+depends = ["scan-restoration-plugin-check"]
+run = "apm install"
+
+[tasks.scan-restoration-plugin-install-frozen]
+description = "Validate and reproduce the locked scan restoration plugin deployment"
+depends = ["scan-restoration-plugin-check"]
+run = "apm install --frozen"
