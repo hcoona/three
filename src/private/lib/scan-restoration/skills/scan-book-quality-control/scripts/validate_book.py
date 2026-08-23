@@ -6440,7 +6440,7 @@ def main(argv: list[str] | None = None) -> int:
                 "alternate_local_similarity": alternate_local,
                 "alternate_favoring_modalities": alternate_corroboration,
             }
-            if exact_alternates and not pair["likely_blank"] and (
+            if exact_alternates and (
                 input_row is None
                 or output_row["decoded_content_sha256"]
                 != input_row["decoded_content_sha256"]

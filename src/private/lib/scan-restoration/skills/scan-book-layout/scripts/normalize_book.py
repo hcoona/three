@@ -15,6 +15,7 @@ import argparse
 from collections import Counter
 import io
 import json
+import operator
 import os
 import re
 import shutil
@@ -295,6 +296,74 @@ def validate_header_dimensions(path: Path, width: int, height: int) -> None:
         )
 
 
+def tiff_inventory_integer(
+    value: object,
+    field: str,
+    path: Path,
+    *,
+    maximum: int | None = None,
+) -> int:
+    if isinstance(value, (tuple, list)):
+        if len(value) != 1:
+            raise ValueError(f"invalid TIFF {field} metadata: {path}")
+        value = value[0]
+    if isinstance(value, bool):
+        raise ValueError(f"invalid TIFF {field} metadata: {path}")
+    try:
+        parsed = operator.index(value)
+    except (TypeError, ValueError, OverflowError) as error:
+        raise ValueError(f"invalid TIFF {field} metadata: {path}") from error
+    if parsed <= 0 or (maximum is not None and parsed > maximum):
+        raise ValueError(f"invalid TIFF {field} metadata: {path}")
+    return parsed
+
+
+def tiff_inventory_metadata(
+    page: object, path: Path
+) -> tuple[int, int, int, int, int]:
+    shape = getattr(page, "shape", None)
+    try:
+        height_value, width_value = shape[0], shape[1]
+    except (TypeError, IndexError, KeyError) as error:
+        raise ValueError(f"invalid TIFF shape metadata: {path}") from error
+    height = tiff_inventory_integer(height_value, "height", path)
+    width = tiff_inventory_integer(width_value, "width", path)
+
+    dtype_value = getattr(page, "dtype", None)
+    if dtype_value is None:
+        raise ValueError(f"invalid TIFF dtype metadata: {path}")
+    try:
+        dtype = np.dtype(dtype_value)
+    except (TypeError, ValueError, OverflowError) as error:
+        raise ValueError(f"invalid TIFF dtype metadata: {path}") from error
+    if dtype.fields is not None or dtype.subdtype is not None:
+        raise ValueError(f"invalid TIFF dtype metadata: {path}")
+    itemsize = tiff_inventory_integer(
+        dtype.itemsize, "dtype", path, maximum=(0xFFFF + 7) // 8
+    )
+
+    samples_per_pixel = tiff_inventory_integer(
+        getattr(page, "samplesperpixel", None),
+        "SamplesPerPixel",
+        path,
+        maximum=0xFFFF,
+    )
+    tags = getattr(page, "tags", None)
+    if tags is None:
+        raise ValueError(f"invalid TIFF Orientation metadata: {path}")
+    try:
+        orientation_tag = tags.get(274)
+    except (AttributeError, TypeError) as error:
+        raise ValueError(f"invalid TIFF Orientation metadata: {path}") from error
+    orientation = tiff_inventory_integer(
+        getattr(orientation_tag, "value", None) if orientation_tag else 1,
+        "Orientation",
+        path,
+        maximum=8,
+    )
+    return height, width, itemsize, samples_per_pixel, orientation
+
+
 def inspect_encoded_image(
     path: Path, header: bytes | None = None
 ) -> EncodedImageHeader | None:
@@ -339,19 +408,24 @@ def inspect_encoded_image(
                     if page_count == 0:
                         raise ValueError(f"TIFF contains no image frames: {path}")
                     page = tiff.pages[0]
-                    height, width = (int(value) for value in page.shape[:2])
-                    orientation_tag = page.tags.get(274)
-                    orientation = (
-                        int(orientation_tag.value) if orientation_tag else 1
-                    )
+                    (
+                        height,
+                        width,
+                        itemsize,
+                        samples_per_pixel,
+                        orientation,
+                    ) = tiff_inventory_metadata(page, path)
                     if orientation in {5, 6, 7, 8}:
                         width, height = height, width
                     validate_header_dimensions(path, width, height)
                     return EncodedImageHeader(
-                        "TIFF", page_count, width, height,
-                        int(page.dtype.itemsize) * int(page.samplesperpixel),
-                        2 if int(page.dtype.itemsize) > 1 else 1,
-                        10 if int(page.dtype.itemsize) > 1 else 5,
+                        "TIFF",
+                        page_count,
+                        width,
+                        height,
+                        itemsize * samples_per_pixel,
+                        2 if itemsize > 1 else 1,
+                        10 if itemsize > 1 else 5,
                         encoded_bytes,
                     )
             except (tifffile.TiffFileError, OSError):

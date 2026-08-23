@@ -3291,7 +3291,7 @@ def rectify(image: np.ndarray) -> tuple[np.ndarray, dict[str, object]]:
     else:
         (
             selected_model_before,
-            _,
+            vertical_samples_before,
             selected_model_reason_before,
             vertical_validation_before,
             vertical_validation_samples_before,

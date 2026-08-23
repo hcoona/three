@@ -354,16 +354,19 @@ def validate_layout(errors: list[str]) -> None:
     """Validate package structure, skill inventory, and cache hygiene."""
     if not NAME_PATTERN.fullmatch(PACKAGE_NAME):
         errors.append("package name is not valid kebab-case")
-    actual_skills = tuple(
-        sorted(path.name for path in SKILLS_ROOT.iterdir() if path.is_dir())
-    )
-    if actual_skills != EXPECTED_SKILLS:
-        errors.append(
-            "skills/ must contain exactly the five declared scan skills"
+    if SKILLS_ROOT.is_symlink():
+        errors.append("skill content must not use symlinks: skills/")
+    else:
+        actual_skills = tuple(
+            sorted(path.name for path in SKILLS_ROOT.iterdir() if path.is_dir())
         )
-    for skill_name in EXPECTED_SKILLS:
-        validate_skill(skill_name, errors)
-    validate_skill_file_allowlist(errors)
+        if actual_skills != EXPECTED_SKILLS:
+            errors.append(
+                "skills/ must contain exactly the five declared scan skills"
+            )
+        for skill_name in EXPECTED_SKILLS:
+            validate_skill(skill_name, errors)
+        validate_skill_file_allowlist(errors)
     if (PACKAGE_ROOT / "apm.lock.yaml").exists():
         errors.append("the package must not contain a local apm.lock.yaml")
 
