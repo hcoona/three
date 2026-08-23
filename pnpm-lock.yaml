@@ -77,8 +77,8 @@ importers:
   src/public/lib/hexo-renderer-asciidoc:
     dependencies:
       '@asciidoctor/core':
-        specifier: 4.0.10
-        version: 4.0.10
+        specifier: 4.0.11
+        version: 4.0.11
       cheerio:
         specifier: ^1.2.0
         version: 1.2.0
@@ -167,9 +167,9 @@ packages:
     resolution:
       { integrity: sha512-07a596Bd1QO0bi3tIyt2xruq6vKk7hCUt9enHBwggvipB0iiycoJ9/CqzN6UFawaKbOi6NBfMlUxUXzIOZ7Dsg== }
 
-  '@asciidoctor/core@4.0.10':
+  '@asciidoctor/core@4.0.11':
     resolution:
-      { integrity: sha512-nOnzCQzM220lf7TwgEdlCek+1XxLLR1dbDDY3s2LJfXQy/6fL2Q07oKyLoTZ/6afC59tUNARHQpmJgMSCj+8PA== }
+      { integrity: sha512-5uWPTLTiPJVQp9q4MllSROM2avdECzoT7oeVw/onT9H2PIdCCtQwKrSTvztwxMbSu/8cqHqZox/2qTBrQN454g== }
     engines: { node: '>=20' }
 
   '@babel/code-frame@7.29.7':
@@ -3354,7 +3354,7 @@ snapshots:
 
   '@aklinker1/zero-zip@1.0.1': {}
 
-  '@asciidoctor/core@4.0.10': {}
+  '@asciidoctor/core@4.0.11': {}
 
   '@babel/code-frame@7.29.7':
     dependencies:
