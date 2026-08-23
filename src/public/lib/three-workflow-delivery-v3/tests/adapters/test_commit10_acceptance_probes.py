@@ -509,6 +509,7 @@ def test_probe_action_facts_follow_explicit_runner_startedness(
 def test_exact_no_action_records_executed_and_started_false(
     tmp_path: Path,
 ) -> None:
+    runner = ExplicitFactRunner(executed=True, started=True)
     result, _, _ = _run(
         tmp_path,
         scenario="exact",
@@ -519,7 +520,7 @@ def test_exact_no_action_records_executed_and_started_false(
                 content="sha512:" + hashlib.sha512(b"exact").hexdigest(),
             )
         ],
-        runner=ExplicitFactRunner(executed=True, started=True),
+        runner=runner,
     )
 
     assert _action_document(result) == {
@@ -527,6 +528,32 @@ def test_exact_no_action_records_executed_and_started_false(
         "executed": False,
         "mutation-started": False,
     }
+    assert runner.calls == []
+
+
+def test_exact_absent_prestate_fails_before_mutation(
+    tmp_path: Path,
+) -> None:
+    runner = ControlledRunner()
+    result, transport, _ = _run(
+        tmp_path,
+        scenario="exact",
+        observations=[_absent()],
+        runner=runner,
+    )
+
+    assert result.pre_state == "absent"
+    assert result.post_state == "absent"
+    assert result.result == "exact-state-absent"
+    assert result.mutation_classification == "incomplete"
+    assert result.action_executed is False
+    assert result.mutation_started is False
+    assert result.diagnostics == (
+        "exact-state-not-observed",
+        "human-reconciliation-required",
+    )
+    assert runner.calls == []
+    assert len(transport.calls) == 1
 
 
 @pytest.mark.parametrize(
@@ -2127,7 +2154,7 @@ def test_absent_create_readback_records_exact_complete_facts(
 def test_exact_preexisting_state_never_invokes_the_mutation_runner(
     tmp_path: Path,
 ) -> None:
-    test_absent_preexisting_exact_requires_new_fixed_coordinate(tmp_path)
+    test_exact_no_action_records_executed_and_started_false(tmp_path)
 
 
 def test_identical_conflict_race_is_exact_without_blind_repair(

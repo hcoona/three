@@ -758,7 +758,7 @@ def test_mutation_classification_rejects_non_monotone_values(
     document["mutation-classification"] = wrong
 
     with pytest.raises(
-        ValueError, match=r"not consistent|successful probe fact"
+        ValueError, match=r"not consistent|retain suite records"
     ):
         _admit(document)
 
@@ -1250,7 +1250,8 @@ def test_mutation_classification_is_closed_and_consistent(
             dependency_result,
             probe_result,
             "unknown"
-            if probe_result == "unknown"
+            if dependency_result in {"failure", "cancelled"}
+            or probe_result == "unknown"
             else "incomplete"
             if dependency_result != "success" or probe_result != "success"
             else "complete",
@@ -1315,12 +1316,12 @@ def test_mutation_classification_rejects_inconsistent_or_open_values(
     ("dependency_index", "probe_index", "terminal_result", "classification"),
     [
         (dependency_index, probe_index, terminal_result, classification)
-        for dependency_index in (0, 1, 2, 3)
+        for dependency_index in (0, 1, 2)
         for probe_index in (0, 1)
         for terminal_result, classification in (("failure", "unknown"),)
     ],
 )
-def test_mutation_classification_rejects_dependency_probe_cross_products(
+def test_mutation_classification_rejects_impossible_upstream_cross_products(
     dependency_index: int,
     probe_index: int,
     terminal_result: str,
@@ -1380,9 +1381,11 @@ def _refresh_probe_record_digest(
             ("cancelled", "unknown"),
             ("skipped", "incomplete"),
         )
+        if dependency_job != "probe-exact-and-conflict"
+        or terminal_result == "skipped"
     ],
 )
-def test_evidence_admission_rejects_successful_probe_facts_after_non_success_dependency(
+def test_evidence_admission_rejects_impossible_suites_after_non_success_dependency(
     dependency_job: str,
     terminal_result: str,
     classification: str,
@@ -1398,14 +1401,44 @@ def test_evidence_admission_rejects_successful_probe_facts_after_non_success_dep
     message = str(exc_info.value)
     assert dependency_job in message
     assert terminal_result in message
-    assert "success" in message
+    assert "retain suite records" in message
+
+
+@pytest.mark.parametrize("terminal_result", ["failure", "cancelled"])
+def test_evidence_admission_retains_complete_suite_after_late_probe_end(
+    terminal_result: str,
+) -> None:
+    document = _document()
+    dependency_index = GOVERNANCE_ACCEPTANCE_DEPENDENCIES.index(
+        "probe-exact-and-conflict"
+    )
+    document["dependency-results"][dependency_index]["result"] = terminal_result
+    document["mutation-classification"] = "unknown"
+
+    evidence = _admit(document)
+
+    assert evidence.mutation_classification == "unknown"
+    assert evidence.probe_facts[1].result == "success"
+    assert (
+        evidence.probe_facts[1].record_digest
+        == (document["probe-facts"][1]["record-digest"])
+    )
+    assert (
+        evidence.probe_facts[1].artifact_id
+        == (document["probe-facts"][1]["artifact-id"])
+    )
+    assert (
+        evidence.probe_facts[1].artifact_digest
+        == (document["probe-facts"][1]["artifact-digest"])
+    )
+    assert evidence.probe_facts[1].scenarios
 
 
 @pytest.mark.parametrize(
     ("dependency_job", "terminal_result"),
     [
         (dependency_job, terminal_result)
-        for dependency_job in GOVERNANCE_ACCEPTANCE_DEPENDENCIES
+        for dependency_job in GOVERNANCE_ACCEPTANCE_PROBES
         for terminal_result in ("failure", "cancelled")
     ],
 )

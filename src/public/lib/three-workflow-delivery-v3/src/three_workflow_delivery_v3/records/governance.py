@@ -1056,6 +1056,12 @@ def _derived_mutation_classification(
     *,
     review_artifact_id: int | None,
 ) -> str:
+    if any(
+        result.job in GOVERNANCE_ACCEPTANCE_PROBES
+        and result.result in {"failure", "cancelled"}
+        for result in dependency_results
+    ):
+        return "unknown"
     if any(fact.result == "unknown" for fact in probe_facts):
         return "unknown"
     if (
@@ -1093,22 +1099,32 @@ def admit_governance_acceptance_evidence(  # noqa: C901, PLR0912, PLR0915
         document["dependency-results"]
     )
     probe_facts = _admit_probe_facts(document["probe-facts"])
-    facts_by_probe = {fact.probe: fact for fact in probe_facts}
+    retained_probes = {
+        fact.probe for fact in probe_facts if fact.record_digest is not None
+    }
     for dependency in dependency_results:
         if dependency.result == "success":
             continue
-        if dependency.job in facts_by_probe:
-            contradictory_success = (
-                facts_by_probe[dependency.job].result == "success"
+        if dependency.job not in GOVERNANCE_ACCEPTANCE_PROBES:
+            contradictory_probes = retained_probes
+        elif dependency.job == GOVERNANCE_ACCEPTANCE_PROBES[0]:
+            contradictory_probes = retained_probes - (
+                {dependency.job}
+                if dependency.result in {"failure", "cancelled"}
+                else set()
             )
         else:
-            contradictory_success = any(
-                fact.result == "success" for fact in probe_facts
+            contradictory_probes = (
+                {dependency.job}
+                if dependency.job in retained_probes
+                and dependency.result == "skipped"
+                else set()
             )
-        if contradictory_success:
+        if contradictory_probes:
             message = (
                 f"{dependency.job} dependency result {dependency.result!r} "
-                "cannot retain a successful probe fact"
+                "cannot retain suite records for "
+                f"{sorted(contradictory_probes)!r}"
             )
             raise ValueError(message)
     recovery = _admit_recovery(

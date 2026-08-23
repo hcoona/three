@@ -292,32 +292,29 @@ def test_terminal_capture_emits_evidence_when_record_exists_but_artifact_outputs
     assert "artifact-digest" in command
     assert "record present" in command or "record_json" in command
     assert "artifact outputs missing" in command
-    assert 'mutation_classification = "incomplete"' in command
+    assert "probe_result = max(" in command
+    assert '"incomplete"' in command
     assert "emit_evidence" in command or "write_evidence" in command
 
 
-@pytest.mark.parametrize("probe", PROBE_JOBS)
 @pytest.mark.parametrize(
-    ("terminal_result", "classification"),
-    [
-        ("failure", "unknown"),
-        ("cancelled", "unknown"),
-        ("skipped", "incomplete"),
-    ],
+    "terminal_result",
+    ["failure", "cancelled", "skipped"],
 )
+@pytest.mark.parametrize("probe", PROBE_JOBS)
 def test_terminal_capture_classifies_probe_dependency_startedness_exactly(
     probe: str,
     terminal_result: str,
-    classification: str,
 ) -> None:
     command = "\n".join(_runs(_jobs()["capture-governance-evidence"]))
 
     assert f"needs.{probe}.result == '{terminal_result}'" in command
-    assert f'mutation_classification = "{classification}"' in command
     if terminal_result in {"failure", "cancelled"}:
         assert "possibly-started" in command
+        assert 'classification = "unknown"' in command
     else:
         assert "not-started" in command
+        assert '"incomplete"' in command
 
 
 def test_terminal_capture_recomputes_record_digest_from_canonical_suite() -> (
@@ -335,16 +332,16 @@ def test_terminal_capture_recomputes_record_digest_from_canonical_suite() -> (
     assert "needs.probe-exact-and-conflict.outputs.record-digest" in command
 
 
-def test_failed_later_probe_normalizes_only_its_retained_suite_facts() -> None:
+def test_failed_later_probe_preserves_validated_suite_facts() -> None:
     command = "\n".join(_runs(_jobs()["capture-governance-evidence"]))
 
-    failure_branch = command.split(
-        'if job_result in {"failure", "cancelled"}:', 1
-    )[1].split('elif job_result == "skipped":', 1)[0]
-    assert 'mutation_classification = "unknown"' in failure_branch
-    assert "probe_result = mutation_classification" in failure_branch
-    assert "record_digest = None" in failure_branch
-    assert "scenarios = []" in failure_branch
+    failure_branch = command.split('job_result in {"failure", "cancelled"}', 1)[
+        1
+    ].split('elif job_result == "skipped":', 1)[0]
+    assert "record_json is None" in failure_branch
+    assert 'probe_result = "unknown"' in failure_branch
+    assert "record_digest = None" not in failure_branch
+    assert "scenarios = []" not in failure_branch
 
 
 def test_untrusted_inputs_never_interpolate_directly_into_run_scripts() -> None:
@@ -681,6 +678,283 @@ def _terminal_suite(
     )
 
 
+def _execute_terminal_capture(  # noqa: PLR0913
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    absent: FixedAcceptanceSuiteResult,
+    conflict: FixedAcceptanceSuiteResult | None,
+    conflict_job_result: str = "success",
+    conflict_upload_bound: bool = True,
+    review_artifact_id: str = "700",
+) -> dict[str, Any]:
+    absent_document = absent.to_document()
+    conflict_document = conflict.to_document() if conflict is not None else None
+    environment = {
+        "WDV3_FILE": str(tmp_path / ".wdv3/evidence.json"),
+        "VALIDATE_RESULT": "success",
+        "REVIEW_RESULT": "success",
+        "ABSENT_JOB_RESULT": "success",
+        "CONFLICT_JOB_RESULT": conflict_job_result,
+        "REVIEW_ARTIFACT_ID": review_artifact_id,
+        "ABSENT_RESULT": absent.result,
+        "ABSENT_MUTATION_CLASSIFICATION": absent.mutation_classification,
+        "ABSENT_SCENARIO_INVENTORY": json.dumps(
+            list(absent.scenario_inventory)
+        ),
+        "ABSENT_RECORD_JSON": json.dumps(absent_document),
+        "ABSENT_RECORD_DIGEST": absent_document["record-digest"],
+        "ABSENT_ARTIFACT_ID": "701",
+        "ABSENT_ARTIFACT_DIGEST": "sha256:" + ("a" * 64),
+        "CONFLICT_RESULT": (
+            conflict.result
+            if conflict is not None and conflict_upload_bound
+            else "unknown"
+            if conflict is not None
+            else ""
+        ),
+        "CONFLICT_MUTATION_CLASSIFICATION": (
+            conflict.mutation_classification
+            if conflict is not None and conflict_upload_bound
+            else "unknown"
+            if conflict is not None
+            else ""
+        ),
+        "CONFLICT_SCENARIO_INVENTORY": (
+            json.dumps(list(conflict.scenario_inventory))
+            if conflict is not None
+            else ""
+        ),
+        "CONFLICT_RECORD_JSON": (
+            json.dumps(conflict_document)
+            if conflict_document is not None
+            else ""
+        ),
+        "CONFLICT_RECORD_DIGEST": (
+            conflict_document["record-digest"]
+            if conflict_document is not None
+            else ""
+        ),
+        "CONFLICT_ARTIFACT_ID": (
+            "702" if conflict is not None and conflict_upload_bound else ""
+        ),
+        "CONFLICT_ARTIFACT_DIGEST": (
+            "sha256:" + ("b" * 64)
+            if conflict is not None and conflict_upload_bound
+            else ""
+        ),
+        "GITHUB_REPOSITORY": "hcoona/three",
+        "GITHUB_REF": "refs/heads/main",
+        "GITHUB_WORKFLOW_SHA": "b" * 40,
+        "GITHUB_RUN_ID": "101",
+        "GITHUB_RUN_ATTEMPT": "1",
+        "INPUT_TARGET_SHA": "a" * 40,
+        "INPUT_PACKAGE_COORDINATE": (
+            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.1"
+        ),
+        "INPUT_CONFIRM": "I_ACCEPT_DISPOSABLE_GITHUB_PACKAGES_PROBES",
+    }
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".wdv3").mkdir()
+    for name, value in environment.items():
+        monkeypatch.setenv(name, str(value))
+    command = _runs(_jobs()["capture-governance-evidence"])[0]
+    script = command.split("<<'PY'\n", 1)[1].rsplit("\nPY", 1)[0]
+
+    exec(compile(script, str(WORKFLOW), "exec"), {"__name__": "__main__"})
+
+    return cast(
+        "dict[str, Any]",
+        parse_canonical_json((tmp_path / ".wdv3/evidence.json").read_bytes()),
+    )
+
+
+def _terminal_suites(
+    *,
+    lost_response: tuple[str, str, str, tuple[str, ...]] = (
+        "exact",
+        "lost-response-exact-after-start",
+        "complete",
+        ("mutation-started-and-readback-exact",),
+    ),
+) -> tuple[
+    FixedAcceptanceSuiteResult,
+    FixedAcceptanceSuiteResult,
+]:
+    (
+        lost_response_post_state,
+        lost_response_result,
+        lost_response_classification,
+        lost_response_diagnostics,
+    ) = lost_response
+    return (
+        _terminal_suite(
+            "absent-create-readback",
+            (
+                (
+                    "absent-create-readback",
+                    "absent",
+                    "exact",
+                    "created",
+                    "complete",
+                    (),
+                ),
+            ),
+        ),
+        _terminal_suite(
+            "exact-and-conflict",
+            (
+                (
+                    "exact",
+                    "exact",
+                    "exact",
+                    "exact-no-mutation",
+                    "complete",
+                    (),
+                ),
+                (
+                    "identical-race",
+                    "absent",
+                    "exact",
+                    "identical-race-exact",
+                    "complete",
+                    ("identical-race-exact",),
+                ),
+                (
+                    "differing-race",
+                    "absent",
+                    "conflicting",
+                    "differing-race-conflict",
+                    "complete",
+                    ("conflicting-remote-bytes-or-tag",),
+                ),
+                (
+                    "lost-response",
+                    "absent",
+                    lost_response_post_state,
+                    lost_response_result,
+                    lost_response_classification,
+                    lost_response_diagnostics,
+                ),
+            ),
+        ),
+    )
+
+
+@pytest.mark.parametrize("job_result", ["failure", "cancelled"])
+def test_terminal_capture_retains_unknown_suite_after_late_job_end(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    job_result: str,
+) -> None:
+    absent, conflict = _terminal_suites(
+        lost_response=(
+            "unknown",
+            "timeout",
+            "unknown",
+            (
+                "mutation-may-have-started",
+                "human-reconciliation-required",
+            ),
+        )
+    )
+
+    evidence = _execute_terminal_capture(
+        tmp_path,
+        monkeypatch,
+        absent=absent,
+        conflict=conflict,
+        conflict_job_result=job_result,
+    )
+
+    fact = evidence["probe-facts"][1]
+    assert evidence["mutation-classification"] == "unknown"
+    assert fact["result"] == "unknown"
+    assert fact["record-digest"] == conflict.to_document()["record-digest"]
+    assert fact["artifact-id"] == 702
+    assert fact["artifact-digest"] == "sha256:" + ("b" * 64)
+    assert fact["scenarios"] == conflict.to_document()["scenarios"]
+    assert fact["scenarios"][-1]["action"]["mutation-started"] is True
+    assert fact["scenarios"][-1]["response"]["diagnostics"] == [
+        "mutation-may-have-started",
+        "human-reconciliation-required",
+    ]
+
+
+@pytest.mark.parametrize("job_result", ["failure", "cancelled"])
+def test_terminal_capture_retains_complete_suite_after_late_job_end(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    job_result: str,
+) -> None:
+    absent, conflict = _terminal_suites()
+
+    evidence = _execute_terminal_capture(
+        tmp_path,
+        monkeypatch,
+        absent=absent,
+        conflict=conflict,
+        conflict_job_result=job_result,
+    )
+
+    fact = evidence["probe-facts"][1]
+    assert evidence["mutation-classification"] == "unknown"
+    assert fact["result"] == "success"
+    assert fact["record-digest"] == conflict.to_document()["record-digest"]
+    assert fact["artifact-id"] == 702
+    assert fact["artifact-digest"] == "sha256:" + ("b" * 64)
+    assert fact["scenarios"] == conflict.to_document()["scenarios"]
+
+
+def test_terminal_capture_retains_complete_suite_when_upload_outputs_are_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    absent, conflict = _terminal_suites()
+
+    evidence = _execute_terminal_capture(
+        tmp_path,
+        monkeypatch,
+        absent=absent,
+        conflict=conflict,
+        conflict_job_result="failure",
+        conflict_upload_bound=False,
+    )
+
+    fact = evidence["probe-facts"][1]
+    assert evidence["mutation-classification"] == "unknown"
+    assert fact["result"] == "incomplete"
+    assert fact["record-digest"] == conflict.to_document()["record-digest"]
+    assert fact["artifact-id"] is None
+    assert fact["artifact-digest"] is None
+    assert fact["scenarios"] == conflict.to_document()["scenarios"]
+
+
+@pytest.mark.parametrize("job_result", ["failure", "cancelled"])
+def test_terminal_capture_uses_empty_unknown_fact_without_valid_record(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    job_result: str,
+) -> None:
+    absent, _ = _terminal_suites()
+
+    evidence = _execute_terminal_capture(
+        tmp_path,
+        monkeypatch,
+        absent=absent,
+        conflict=None,
+        conflict_job_result=job_result,
+    )
+
+    fact = evidence["probe-facts"][1]
+    assert evidence["mutation-classification"] == "unknown"
+    assert fact["result"] == "unknown"
+    assert fact["record-digest"] is None
+    assert fact["artifact-id"] is None
+    assert fact["artifact-digest"] is None
+    assert fact["scenarios"] == []
+
+
 def test_confirmation_literal_is_exact_and_never_describes_workflow_as_inert() -> (
     None
 ):
@@ -728,89 +1002,13 @@ def test_terminal_capture_executes_with_missing_review_artifact_as_incomplete_ev
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    absent = _terminal_suite(
-        "absent-create-readback",
-        (
-            (
-                "absent-create-readback",
-                "absent",
-                "exact",
-                "created",
-                "complete",
-                (),
-            ),
-        ),
-    )
-    conflict = _terminal_suite(
-        "exact-and-conflict",
-        (
-            ("exact", "exact", "exact", "exact-no-mutation", "complete", ()),
-            (
-                "identical-race",
-                "absent",
-                "exact",
-                "identical-race-exact",
-                "complete",
-                ("identical-race-exact",),
-            ),
-            (
-                "differing-race",
-                "absent",
-                "exact",
-                "differing-race-conflict",
-                "complete",
-                ("conflicting-remote-bytes-or-tag",),
-            ),
-            (
-                "lost-response",
-                "absent",
-                "exact",
-                "lost-response-exact-after-start",
-                "complete",
-                ("mutation-started-and-readback-exact",),
-            ),
-        ),
-    )
-    environment = {
-        "WDV3_FILE": str(tmp_path / ".wdv3/evidence.json"),
-        "VALIDATE_RESULT": "success",
-        "REVIEW_RESULT": "success",
-        "ABSENT_JOB_RESULT": "success",
-        "CONFLICT_JOB_RESULT": "success",
-        "REVIEW_ARTIFACT_ID": "",
-        "ABSENT_RESULT": "success",
-        "ABSENT_RECORD_JSON": json.dumps(absent.to_document()),
-        "ABSENT_RECORD_DIGEST": absent.to_document()["record-digest"],
-        "ABSENT_ARTIFACT_ID": "701",
-        "ABSENT_ARTIFACT_DIGEST": "sha256:" + ("a" * 64),
-        "CONFLICT_RESULT": "success",
-        "CONFLICT_RECORD_JSON": json.dumps(conflict.to_document()),
-        "CONFLICT_RECORD_DIGEST": conflict.to_document()["record-digest"],
-        "CONFLICT_ARTIFACT_ID": "702",
-        "CONFLICT_ARTIFACT_DIGEST": "sha256:" + ("b" * 64),
-        "GITHUB_REPOSITORY": "hcoona/three",
-        "GITHUB_REF": "refs/heads/main",
-        "GITHUB_WORKFLOW_SHA": "b" * 40,
-        "GITHUB_RUN_ID": "101",
-        "GITHUB_RUN_ATTEMPT": "1",
-        "INPUT_TARGET_SHA": "a" * 40,
-        "INPUT_PACKAGE_COORDINATE": (
-            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.1"
-        ),
-        "INPUT_CONFIRM": "I_ACCEPT_DISPOSABLE_GITHUB_PACKAGES_PROBES",
-    }
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / ".wdv3").mkdir()
-    for name, value in environment.items():
-        monkeypatch.setenv(name, str(value))
-    command = _runs(_jobs()["capture-governance-evidence"])[0]
-    script = command.split("<<'PY'\n", 1)[1].rsplit("\nPY", 1)[0]
-
-    exec(compile(script, str(WORKFLOW), "exec"), {"__name__": "__main__"})
-
-    evidence = cast(
-        "dict[str, Any]",
-        parse_canonical_json((tmp_path / ".wdv3/evidence.json").read_bytes()),
+    absent, conflict = _terminal_suites()
+    evidence = _execute_terminal_capture(
+        tmp_path,
+        monkeypatch,
+        absent=absent,
+        conflict=conflict,
+        review_artifact_id="",
     )
     assert evidence["mutation-classification"] == "incomplete"
     assert evidence["recovery"]["artifact-id"] is None

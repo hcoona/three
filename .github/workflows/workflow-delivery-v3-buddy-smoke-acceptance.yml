@@ -527,22 +527,45 @@ jobs:
                       ):
                           raise ValueError("suite record digest mismatch")
                       scenarios = record_json["scenarios"]
-                      probe_result = (
-                          "success"
-                          if record_json.get("result") == "success"
-                          and record_json.get("mutation-classification") == "complete"
-                          else record_json.get("mutation-classification", "unknown")
+                      probe_result = suite.result
+                      asserted_result_classification = (
+                          "complete"
+                          if asserted_result == "success"
+                          else asserted_result
                       )
-                      if asserted_result and asserted_result != probe_result:
-                          raise ValueError("suite result output mismatch")
-                      if asserted_classification and asserted_classification != record_json.get(
-                          "mutation-classification"
+                      if (
+                          asserted_result_classification
+                          and asserted_result_classification not in ranks
+                      ):
+                          raise ValueError("suite result output is not closed")
+                      if (
+                          asserted_classification
+                          and asserted_classification not in ranks
                       ):
                           raise ValueError(
-                              "suite mutation classification output mismatch"
+                              "suite mutation classification output is not closed"
                           )
-                      if probe_result not in {"success", "incomplete", "unknown"}:
-                          raise ValueError("suite result is not closed")
+                      if (
+                          asserted_result_classification
+                          and asserted_classification
+                          and asserted_result_classification
+                          != asserted_classification
+                      ):
+                          raise ValueError(
+                              "suite result and mutation classification outputs mismatch"
+                          )
+                      for output_classification in (
+                          asserted_result_classification,
+                          asserted_classification,
+                      ):
+                          if (
+                              output_classification
+                              and ranks[output_classification]
+                              < ranks[suite.mutation_classification]
+                          ):
+                              raise ValueError(
+                                  "suite outputs cannot upgrade canonical classification"
+                              )
                   except (KeyError, TypeError, ValueError, json.JSONDecodeError):
                       record_json = None
                       record_digest = None
@@ -555,22 +578,20 @@ jobs:
                   artifact_id is None or artifact_digest is None
               ):
                   # record present but artifact outputs missing
-                  mutation_classification = "incomplete"
                   probe_result = max(
                       probe_result if probe_result != "success" else "complete",
-                      mutation_classification,
+                      "incomplete",
                       key=ranks.__getitem__,
                   )
-              if job_result in {"failure", "cancelled"}:
-                  mutation_classification = "unknown"
-                  probe_result = mutation_classification
-                  record_digest = None
-                  scenarios = []
+              if (
+                  job_result in {"failure", "cancelled"}
+                  and record_json is None
+              ):
+                  probe_result = "unknown"
               elif job_result == "skipped":
-                  mutation_classification = "incomplete"
                   probe_result = max(
                       probe_result if probe_result != "success" else "complete",
-                      mutation_classification,
+                      "incomplete",
                       key=ranks.__getitem__,
                   )
               elif not raw:
@@ -600,11 +621,17 @@ jobs:
           ]
           classification = "complete"
           for dependency in dependencies:
-              if dependency["job"] not in {
+              if dependency["job"] in {
                   "probe-absent-create-readback",
                   "probe-exact-and-conflict",
-              } and dependency["result"] != "success":
-                  classification = max(classification, "incomplete", key=ranks.__getitem__)
+              } and dependency["result"] in {"failure", "cancelled"}:
+                  classification = "unknown"
+              elif dependency["result"] != "success":
+                  classification = max(
+                      classification,
+                      "incomplete",
+                      key=ranks.__getitem__,
+                  )
           for fact in probe_facts:
               probe_classification = (
                   "complete" if fact["result"] == "success" else fact["result"]

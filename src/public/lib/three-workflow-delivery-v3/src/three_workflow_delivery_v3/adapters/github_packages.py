@@ -1239,24 +1239,7 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
         tag=tag,
         desired_sha512=actual_sha512,
     )
-    if pre_state != "absent":
-        if scenario != "exact":
-            return _acceptance_result(
-                scenario=scenario,
-                tag=tag,
-                pre_state=pre_state,
-                post_state=pre_state,
-                result="fixed-coordinate-already-exists",
-                mutation_classification="incomplete",
-                action_executed=False,
-                mutation_started=False,
-                response_identity_digest=pre_response,
-                content_sha512=pre_content,
-                diagnostics=(
-                    "absent-state-not-observed",
-                    "new-fixed-coordinate-required",
-                ),
-            )
+    if scenario == "exact":
         if pre_state == "exact" and pre_content == actual_sha512:
             return _acceptance_result(
                 scenario=scenario,
@@ -1270,20 +1253,50 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
                 response_identity_digest=pre_response,
                 content_sha512=pre_content,
             )
+        result = (
+            "exact-state-absent"
+            if pre_state == "absent"
+            else "preexisting-tag-conflict"
+        )
+        diagnostics = (
+            (
+                "exact-state-not-observed",
+                "human-reconciliation-required",
+            )
+            if pre_state == "absent"
+            else (
+                "conflicting-remote-bytes-or-tag",
+                "human-reconciliation-required",
+            )
+        )
         return _acceptance_result(
             scenario=scenario,
             tag=tag,
             pre_state=pre_state,
             post_state=pre_state,
-            result="preexisting-tag-conflict",
+            result=result,
+            mutation_classification="incomplete",
+            action_executed=False,
+            mutation_started=False,
+            response_identity_digest=pre_response,
+            content_sha512=pre_content,
+            diagnostics=diagnostics,
+        )
+    if pre_state != "absent":
+        return _acceptance_result(
+            scenario=scenario,
+            tag=tag,
+            pre_state=pre_state,
+            post_state=pre_state,
+            result="fixed-coordinate-already-exists",
             mutation_classification="incomplete",
             action_executed=False,
             mutation_started=False,
             response_identity_digest=pre_response,
             content_sha512=pre_content,
             diagnostics=(
-                "conflicting-remote-bytes-or-tag",
-                "human-reconciliation-required",
+                "absent-state-not-observed",
+                "new-fixed-coordinate-required",
             ),
         )
 
