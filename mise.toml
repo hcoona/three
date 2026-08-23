@@ -121,3 +121,7 @@ pnpm exec -- prettier --write -- pnpm-lock.yaml src/public/lib/hexo-renderer-asc
 [tasks.update-uv-lock]
 description = "Refresh root uv lockfile"
 run = 'uv lock'
+
+[tasks.scan-restoration-plugin-check]
+description = "Validate the scan restoration Copilot CLI plugin"
+run = "python -B src/private/lib/scan-restoration/scripts/validate_package.py"

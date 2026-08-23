@@ -1,0 +1,29 @@
+name: scan-restoration
+version: 0.1.0
+description: Copilot CLI skills for scanned-book diagnostics, restoration, layout, and quality control.
+author: hcoona
+license: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
+targets:
+  - copilot
+dependencies:
+  apm: []
+  mcp: []
+includes:
+  - skills/scan-batch-diagnostics/SKILL.md
+  - skills/scan-batch-diagnostics/scripts/
+  - skills/scan-batch-diagnostics/tests/
+  - skills/scan-book-layout/SKILL.md
+  - skills/scan-book-layout/scripts/
+  - skills/scan-book-layout/tests/
+  - skills/scan-book-quality-control/SKILL.md
+  - skills/scan-book-quality-control/scripts/
+  - skills/scan-book-quality-control/tests/
+  - skills/scan-page-rectification/SKILL.md
+  - skills/scan-page-rectification/scripts/
+  - skills/scan-page-rectification/tests/
+  - skills/scan-tone-restoration/SKILL.md
+  - skills/scan-tone-restoration/scripts/
+  - skills/scan-tone-restoration/tests/
+devDependencies:
+  apm: []
+scripts: {}
