@@ -103,10 +103,11 @@ rather than overwrite any prior directory, report, or file.
     buffers, the source,
     cleaned copy, resized raster, canvas, edge/interpolation workspaces, and PNG
     encoding buffers for the page's actual 8- or 16-bit depth. Buffers from prior
-    phases are released before resizing and encoding. Encoded-byte size, frame
-    count, displayed dimensions, decoded pixel count, source decode footprint,
-    and working-memory estimates are validated from container headers before any
-    full raster decode or copy. Pillow decompression-bomb warnings are fatal.
+    phases are released before resizing and encoding. Encoded-byte size, frame count, displayed dimensions, decoded pixel count,
+    source decode footprint, and working-memory estimates are first validated
+    from container headers. Each supported image is then fully decoded during
+    inventory to verify decodeability and exact oriented dimensions, and decoded
+    again during processing. Pillow decompression-bomb warnings are fatal.
     Auto-canvas validates the
     cross-product of the maximum
     source width and maximum source height, even when those maxima come from

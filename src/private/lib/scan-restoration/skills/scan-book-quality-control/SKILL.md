@@ -21,7 +21,9 @@ review representative plus outlier pages visually.
 
     ```powershell
     Set-Location C:\path\to\scan-book-quality-control
-    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run.ps1 validate_book.py INPUT_DIR OUTPUT_DIR --evidence-report mechanical-evidence.json
+    powershell -NoProfile -ExecutionPolicy Bypass `
+      -File scripts/run.ps1 validate_book.py INPUT_DIR OUTPUT_DIR `
+      --evidence-report mechanical-evidence.json
     ```
 
     Conservative safety budgets are enforced before expensive decoding or
@@ -132,7 +134,12 @@ review representative plus outlier pages visually.
    reason, run the approval stage and choose a separate new final report path:
 
     ```powershell
-    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run.ps1 validate_book.py INPUT_DIR OUTPUT_DIR --pairing-manifest C:\path\to\pairing.json --evidence-report mechanical-evidence.json --approval approval.json --final-report final-quality-report.json
+    powershell -NoProfile -ExecutionPolicy Bypass `
+      -File scripts/run.ps1 validate_book.py INPUT_DIR OUTPUT_DIR `
+      --pairing-manifest C:\path\to\pairing.json `
+      --evidence-report mechanical-evidence.json `
+      --approval approval.json `
+      --final-report final-quality-report.json
     ```
 
     Append the same custom budget arguments used in step 1, in the same values, to

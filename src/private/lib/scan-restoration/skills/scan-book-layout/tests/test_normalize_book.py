@@ -1911,6 +1911,13 @@ class NormalizeBookTests(unittest.TestCase):
         self.assertIn("Every invocation requires", documentation)
         self.assertIn("Network access is required on every invocation", documentation)
 
+    def test_skill_documents_inventory_and_processing_decodes(self) -> None:
+        documentation = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
+
+        self.assertIn("fully decoded during\n    inventory", documentation)
+        self.assertIn("decoded\n    again during processing", documentation)
+        self.assertNotIn("before any\n    full raster decode", documentation)
+
 
 if __name__ == "__main__":
     unittest.main()

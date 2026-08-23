@@ -152,7 +152,8 @@ for package, (module, distribution, version) in expected.items():
         raise SystemExit(f'{package} loaded outside the ephemeral runtime')
     if metadata.version(distribution) != version:
         raise SystemExit(f'unexpected {distribution} version')
-    if metadata.packages_distributions().get(package) != [distribution.lower()]:
+    providers = metadata.packages_distributions().get(package, ())
+    if distribution.casefold() not in {provider.casefold() for provider in providers}:
         raise SystemExit(f'unexpected {package} provider')
 '@
     & $python -I -B -c $verifyDependencies `

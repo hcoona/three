@@ -22,7 +22,19 @@ SKILL_DIR = Path(__file__).resolve().parents[1]
 SCRIPT = SKILL_DIR / "scripts" / "restore_tone.py"
 RUNNER = SKILL_DIR / "scripts" / "run.ps1"
 LOCK = SKILL_DIR / "scripts" / "requirements.lock"
-REPOSITORY_INPUT = SKILL_DIR.parents[2] / "input"
+
+
+def repository_fixture_root() -> Path:
+    configured = os.environ.get("SCAN_RESTORATION_FIXTURE_ROOT")
+    if configured:
+        return Path(configured).expanduser().resolve()
+    for candidate in Path(__file__).resolve().parents:
+        if (candidate / "mise.toml").is_file() and (candidate / "apm.yml").is_file():
+            return candidate
+    return Path(__file__).resolve().parent
+
+
+REPOSITORY_INPUT = repository_fixture_root() / "input"
 
 
 def load_script():
@@ -1365,6 +1377,24 @@ class RestoreToneTests(unittest.TestCase):
                 )
                 self.assertFalse(output.exists())
 
+    def test_svg_preamble_with_many_comments_is_detected_without_backtracking(
+        self,
+    ) -> None:
+        module = load_script()
+        header = (
+            b"\xef\xbb\xbf \n<?xml version='1.0'?>"
+            + b"<!-- scan metadata -->" * 150
+            + b"<!DOCTYPE svg PUBLIC '-//W3C//DTD SVG 1.1//EN'>"
+            + b"<svg xmlns='http://www.w3.org/2000/svg'>"
+        )
+
+        started = time.perf_counter()
+        self.assertEqual(module.sniff_encoded_format(header), "SVG")
+        self.assertLess(time.perf_counter() - started, 1.0)
+        self.assertIsNone(
+            module.sniff_encoded_format(b"<!--" + b"--><!--" * 400)
+        )
+
     def test_modern_image_candidate_suffixes_fail_in_mixed_batches(self) -> None:
         for suffix in (".jxl", ".exr", ".qoi", ".jpm", ".fits", ".raw"):
             with self.subTest(suffix=suffix):
@@ -2113,6 +2143,16 @@ class RestoreToneTests(unittest.TestCase):
         self.assertIn('Programs\\AzureAuth\\0.9.5\\azureauth.exe', runner)
         self.assertIn("$token = $null", runner)
         self.assertIn('"PIP_INDEX_URL", $null, "Process"', runner)
+        self.assertIn(
+            "providers = metadata.packages_distributions().get(package, ())",
+            runner,
+        )
+        self.assertIn(
+            "distribution.casefold() not in "
+            "{provider.casefold() for provider in providers}",
+            runner,
+        )
+        self.assertNotIn("!= [distribution.lower()]", runner)
         self.assertNotIn("Get-AuthenticodeSignature", runner)
         self.assertNotIn("startup_launcher", runner)
         self.assertNotIn("DirectoryLock", runner)

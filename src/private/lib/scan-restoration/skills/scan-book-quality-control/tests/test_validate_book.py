@@ -24,6 +24,16 @@ sys.path.insert(0, str(SCRIPTS))
 import validate_book  # noqa: E402
 
 
+def repository_fixture_root() -> Path:
+    configured = os.environ.get("SCAN_RESTORATION_FIXTURE_ROOT")
+    if configured:
+        return Path(configured).expanduser().resolve()
+    for candidate in Path(__file__).resolve().parents:
+        if (candidate / "mise.toml").is_file() and (candidate / "apm.yml").is_file():
+            return candidate
+    return Path(__file__).resolve().parent
+
+
 class ValidateBookTests(unittest.TestCase):
     def setUp(self) -> None:
         validate_book.ACTIVE_COMPONENT_BUDGETS.update(
@@ -916,7 +926,7 @@ class ValidateBookTests(unittest.TestCase):
         self.assertTrue(any("edge" in reason for reason in reasons))
 
     def test_actual_page_050_bottom_strip_regression_when_available(self) -> None:
-        repository = Path(__file__).resolve().parents[4]
+        repository = repository_fixture_root()
         source_path = (
             repository
             / "traditional_harmony"
@@ -3512,6 +3522,9 @@ class ValidateBookTests(unittest.TestCase):
         runner = (
             Path(__file__).resolve().parents[1] / "scripts" / "run.ps1"
         ).read_text(encoding="utf-8")
+        test_runner = (
+            Path(__file__).resolve().parents[1] / "tests" / "run.ps1"
+        ).read_text(encoding="utf-8")
         self.assertIn('Programs\\AzureAuth\\0.9.5\\azureauth.exe', runner)
         self.assertIn('".runtime-" + [Guid]::NewGuid()', runner)
         self.assertIn('"exec", "python@$requiredPython"', runner)
@@ -3548,6 +3561,10 @@ class ValidateBookTests(unittest.TestCase):
         self.assertIn("allow_nan=False", (
             Path(__file__).resolve().parents[1] / "scripts" / "validate_book.py"
         ).read_text(encoding="utf-8"))
+        self.assertIn(
+            "& mise --no-config exec python@3.12.11 -- python -I -B",
+            test_runner,
+        )
 
     def test_runner_cleanup_is_limited_to_invocation_owned_paths(self) -> None:
         runner = (

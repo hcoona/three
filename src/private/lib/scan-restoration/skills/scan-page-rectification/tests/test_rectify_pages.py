@@ -22,6 +22,16 @@ rectify_pages = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(rectify_pages)
 
 
+def repository_fixture_root() -> Path:
+    configured = os.environ.get("SCAN_RESTORATION_FIXTURE_ROOT")
+    if configured:
+        return Path(configured).expanduser().resolve()
+    for candidate in Path(__file__).resolve().parents:
+        if (candidate / "mise.toml").is_file() and (candidate / "apm.yml").is_file():
+            return candidate
+    return Path(__file__).resolve().parent
+
+
 def encoded_uint16_tiff(
     values: np.ndarray,
     *,
@@ -348,7 +358,7 @@ class RectificationRegressionTests(unittest.TestCase):
         self,
     ) -> None:
         page = (
-            Path(__file__).parents[4]
+            repository_fixture_root()
             / "input"
             / "Fundamentals of Piano Theory Level 2_Page_48.jpg"
         )

@@ -26,6 +26,16 @@ analyze_scans = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(analyze_scans)
 
 
+def repository_fixture_root() -> Path:
+    configured = os.environ.get("SCAN_RESTORATION_FIXTURE_ROOT")
+    if configured:
+        return Path(configured).expanduser().resolve()
+    for candidate in Path(__file__).resolve().parents:
+        if (candidate / "mise.toml").is_file() and (candidate / "apm.yml").is_file():
+            return candidate
+    return Path(__file__).resolve().parent
+
+
 def write_image(path: Path) -> None:
     image = np.full((120, 160), 245, np.uint8)
     cv2.line(image, (20, 45), (140, 45), 20, 2)
@@ -1750,7 +1760,7 @@ class AnalyzeScansTests(unittest.TestCase):
             self.assertIn("allowlist", report["format_detection"])
 
     def test_repository_72_page_batch_has_plausible_real_measurements(self) -> None:
-        batch = SKILL_ROOT.parents[2] / "input" / "out"
+        batch = repository_fixture_root() / "input" / "out"
         pages = sorted(
             (
                 path

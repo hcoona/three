@@ -25,6 +25,8 @@ foreach ($required in @(
         "--only-binary=:all:",
         "--no-cache-dir",
         'PIP_INDEX_URL", $null',
+        "providers = metadata.packages_distributions().get(package, ())",
+        "distribution.casefold() not in",
         '".runtime-" + [Guid]::NewGuid()',
         "Remove-Item -LiteralPath `$runtime -Recurse -Force",
         "& `$python -I -B `$scriptPath @ScriptArgs"

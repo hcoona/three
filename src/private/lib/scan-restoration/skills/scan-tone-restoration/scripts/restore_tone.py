@@ -106,6 +106,56 @@ class UnsupportedBackgroundSigma(ValueError):
     pass
 
 
+ASCII_WHITESPACE = b" \t\r\n\f"
+
+
+def skip_ascii_whitespace(data: bytes, index: int) -> int:
+    while index < len(data) and data[index] in ASCII_WHITESPACE:
+        index += 1
+    return index
+
+
+def looks_like_svg(header: bytes) -> bool:
+    lowered = header.lower()
+    index = 3 if header.startswith(b"\xef\xbb\xbf") else 0
+    index = skip_ascii_whitespace(header, index)
+
+    if lowered.startswith(b"<?xml", index):
+        declaration_end = lowered.find(b"?>", index + 5)
+        if declaration_end < 0:
+            return False
+        index = skip_ascii_whitespace(header, declaration_end + 2)
+
+    while lowered.startswith(b"<!--", index):
+        comment_end = lowered.find(b"-->", index + 4)
+        if comment_end < 0:
+            return False
+        index = skip_ascii_whitespace(header, comment_end + 3)
+
+    if lowered.startswith(b"<!doctype", index):
+        name_start = index + len(b"<!doctype")
+        if name_start >= len(header) or header[name_start] not in ASCII_WHITESPACE:
+            return False
+        name_start = skip_ascii_whitespace(header, name_start)
+        if not lowered.startswith(b"svg", name_start):
+            return False
+        name_end = name_start + len(b"svg")
+        if (
+            name_end < len(header)
+            and header[name_end] not in ASCII_WHITESPACE + b"[>"
+        ):
+            return False
+        declaration_end = lowered.find(b">", name_end)
+        if declaration_end < 0:
+            return False
+        index = skip_ascii_whitespace(header, declaration_end + 1)
+
+    if not lowered.startswith(b"<svg", index):
+        return False
+    name_end = index + len(b"<svg")
+    return name_end == len(header) or header[name_end] in ASCII_WHITESPACE + b">"
+
+
 def sniff_encoded_format(header: bytes) -> str | None:
     if header.startswith(b"\xff\xd8\xff"):
         return "JPEG"
@@ -127,12 +177,7 @@ def sniff_encoded_format(header: bytes) -> str | None:
         return "PSD"
     if header.startswith(b"%PDF-"):
         return "PDF"
-    textual_header = header.removeprefix(b"\xef\xbb\xbf").lstrip()
-    if re.match(
-        br"(?is)(?:<\?xml\b.*?\?>\s*)?(?:<!--.*?-->\s*)*"
-        br"(?:<!doctype\s+svg\b.*?>\s*)?<svg(?:\s|>)",
-        textual_header,
-    ):
+    if looks_like_svg(header):
         return "SVG"
     if header.startswith(b"\x00\x00\x01\x00"):
         return "ICO"

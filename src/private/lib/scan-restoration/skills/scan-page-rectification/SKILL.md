@@ -26,7 +26,7 @@ dedicated orientation or mesh-dewarp workflow for those cases.
 Run commands from this skill directory and invoke the PowerShell runner with
 `-NoProfile`. Input and output must be different directories.
 The runner provisions exactly Python 3.12.10, NumPy 2.2.6,
-opencv-python-headless 4.12.0.88, and Pillow 12.3.0 in a unique ephemeral
+`opencv-python-headless` 4.12.0.88, and Pillow 12.3.0 in a unique ephemeral
 runtime for every invocation. It never executes packages from a preexisting
 skill runtime.
 
@@ -38,7 +38,10 @@ skill runtime.
 2. Preview geometry correction:
 
     ```powershell
-    powershell.exe -NoProfile -File ".\scripts\run.ps1" "rectify_pages.py" "C:\absolute\INPUT_DIR" "C:\absolute\PREVIEW_DIR" "--pages" "5" "20" "40" "--report" "C:\absolute\PREVIEW_DIR\report.json"
+    powershell.exe -NoProfile -File ".\scripts\run.ps1" "rectify_pages.py" `
+      "C:\absolute\INPUT_DIR" `
+      "C:\absolute\PREVIEW_DIR" "--pages" "5" "20" "40" `
+      "--report" "C:\absolute\PREVIEW_DIR\report.json"
     ```
 
     `--pages` selects page numbers derived from the input filename stem's final
@@ -92,7 +95,10 @@ skill runtime.
 4. Process the batch only after preview review:
 
     ```powershell
-    powershell.exe -NoProfile -File ".\scripts\run.ps1" "rectify_pages.py" "C:\absolute\INPUT_DIR" "C:\absolute\OUTPUT_DIR" "--report" "C:\absolute\OUTPUT_DIR\report.json"
+    powershell.exe -NoProfile -File ".\scripts\run.ps1" "rectify_pages.py" `
+      "C:\absolute\INPUT_DIR" `
+      "C:\absolute\OUTPUT_DIR" `
+      "--report" "C:\absolute\OUTPUT_DIR\report.json"
     ```
 
 5. If available, run `/scan-book-quality-control`. Otherwise, review every

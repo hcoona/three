@@ -23,7 +23,10 @@ Run commands from this skill directory. Use the single PowerShell entrypoint,
 keep `-NoProfile` in the invocation, and pass absolute input and output paths:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\run.ps1" analyze_scans.py "C:\absolute\path\to\INPUT_DIR" --output "C:\absolute\path\to\reports\REPORT.json"
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File ".\scripts\run.ps1" analyze_scans.py `
+  "C:\absolute\path\to\INPUT_DIR" `
+  --output "C:\absolute\path\to\reports\REPORT.json"
 ```
 
 Run the complete pinned test suite through the same entrypoint:

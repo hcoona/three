@@ -37,7 +37,10 @@ entrypoint with `-NoProfile`.
    options:
 
     ```powershell
-    powershell.exe -NoProfile -File ".\scripts\run.ps1" "restore_tone.py" "INPUT_DIR" "PREVIEW_DIR_2" "--pages" "1" "10" "50" "--paper-level" "244" "--whiten-start" "188" "--whiten-width" "62" "--white-clip" "253"
+    powershell.exe -NoProfile -File ".\scripts\run.ps1" `
+      "restore_tone.py" "INPUT_DIR" "PREVIEW_DIR_2" `
+      "--pages" "1" "10" "50" `
+      "--paper-level" "244" "--whiten-start" "188" "--whiten-width" "62" "--white-clip" "253"
     ```
 
     Lower `--paper-level` or raise `--whiten-start`/`--white-clip` to retain more
@@ -68,7 +71,9 @@ entrypoint with `-NoProfile`.
 4. After approving the preview, process the whole batch:
 
     ```powershell
-    powershell.exe -NoProfile -File ".\scripts\run.ps1" "restore_tone.py" "INPUT_DIR" "OUTPUT_DIR" "--paper-level" "244" "--whiten-start" "188" "--whiten-width" "62" "--white-clip" "253"
+    powershell.exe -NoProfile -File ".\scripts\run.ps1" `
+      "restore_tone.py" "INPUT_DIR" "OUTPUT_DIR" `
+      "--paper-level" "244" "--whiten-start" "188" "--whiten-width" "62" "--white-clip" "253"
     ```
 
     Explicitly repeat every exact option approved in preview (including
