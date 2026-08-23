@@ -332,11 +332,68 @@ def test_production_v1_workflows_match_base_contract() -> None:
 
     ci_bytes = (WORKFLOWS / "ci.yml").read_bytes()
     pinned_node = b"          node-version: '24.14.0'\n"
+    capture_step = b"""\
+      - name: Capture setup tool paths
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          dotnet_path="$(command -v dotnet)"
+          go_path="$(command -v go)"
+          java_path="$(command -v java)"
+          node_path="$(command -v node)"
+          powershell_path="$(command -v pwsh)"
+          python_path="$(command -v python3)"
+          ruby_path="$(command -v ruby)"
+
+          {
+            printf 'MISE_LINK_DOTNET=%s\\n' "$dotnet_path"
+            printf 'MISE_LINK_GO=%s\\n' "$go_path"
+            printf 'MISE_LINK_JAVA=%s\\n' "$java_path"
+            printf 'MISE_LINK_NODE=%s\\n' "$node_path"
+            printf 'MISE_LINK_POWERSHELL=%s\\n' "$powershell_path"
+            printf 'MISE_LINK_PYTHON=%s\\n' "$python_path"
+            printf 'MISE_LINK_RUBY=%s\\n' "$ruby_path"
+          } >> "$GITHUB_ENV"
+
+"""
+    base_links = b"""\
+          mise link core:dotnet@10 "$(which dotnet)"
+          mise link go@1 "$(which go)"
+          mise link java@25 "$(which java)"
+          mise link node@24 "$(which node)"
+          mise link powershell@7 "$(which pwsh)"
+          mise link python@3.14 "$(which python3)"
+          mise link ruby@3.3 "$(which ruby)"
+"""
+    forced_links = b"""\
+          mise link --force core:dotnet@10 "$MISE_LINK_DOTNET"
+          mise link --force go@1 "$MISE_LINK_GO"
+          mise link --force java@25 "$MISE_LINK_JAVA"
+          mise link --force node@24 "$MISE_LINK_NODE"
+          mise link --force powershell@7 "$MISE_LINK_POWERSHELL"
+          mise link --force python@3.14 "$MISE_LINK_PYTHON"
+          mise link --force ruby@3.3 "$MISE_LINK_RUBY"
+"""
     assert ci_bytes.count(pinned_node) == 1
-    reconstructed_base = ci_bytes.replace(
-        pinned_node,
-        b"          node-version: 24\n",
-        1,
+    assert ci_bytes.count(capture_step) == 1
+    assert ci_bytes.count(forced_links) == 1
+    reconstructed_base = (
+        ci_bytes.replace(
+            pinned_node,
+            b"          node-version: 24\n",
+            1,
+        )
+        .replace(
+            forced_links,
+            base_links,
+            1,
+        )
+        .replace(
+            capture_step,
+            b"",
+            1,
+        )
     )
     assert hashlib.sha256(reconstructed_base).hexdigest() == (
         "a0ca041623f8f90771a35c25bc14ceeb25810111c50dfcb17b6e34d988f62fca"
