@@ -1,5 +1,5 @@
 lockfile_version: '1'
-generated_at: '2026-08-23T18:56:01.555188+00:00'
+generated_at: '2026-08-23T18:59:15.855691+00:00'
 apm_version: 0.28.0
 dependencies:
 - repo_url: _local/scan-restoration
@@ -70,7 +70,7 @@ dependencies:
     .agents/skills/scan-page-rectification/scripts/requirements.lock: sha256:77f5a58d841c4dd7781a007200a4dba63c72403655849f507061d2258f9adf4d
     .agents/skills/scan-page-rectification/scripts/run.ps1: sha256:e3852aff56a57fedb2a092302220b09b85cc83949544ce1c9561f89266535332
     .agents/skills/scan-page-rectification/tests/test_rectify_pages.py: sha256:084cfd72058a0a92ef324e947bb2971513f438fdbf262d9b27f04d8b893b474c
-    .agents/skills/scan-page-rectification/tests/test_runner.ps1: sha256:38281cb1882edb264578a7e2d75938f5886eab2042d84fb2cea9836efb2bd959
+    .agents/skills/scan-page-rectification/tests/test_runner.ps1: sha256:3a7884db7d439c48e964942a046cfd79415b867a35ca203f8c3cac0f4d1d8775
     .agents/skills/scan-tone-restoration/SKILL.md: sha256:5cd2ea697a83fcb158885e0bee3ef971b2f29b3e286603273017a37ec08dd2ae
     .agents/skills/scan-tone-restoration/scripts/requirements.lock: sha256:b798f36f1cca0ed352a1acefd43fdf4cb5377ac3ab620a97df9728c91992c4a3
     .agents/skills/scan-tone-restoration/scripts/restore_tone.py: sha256:f74867fb8a5a4c426549c6696549bb1713f6cc1b810a012cda2131ece636a0c8
@@ -3216,7 +3216,7 @@ deployments:
   owners:
   - ./src/private/lib/scan-restoration
   active_owner: ./src/private/lib/scan-restoration
-  content_hash: sha256:38281cb1882edb264578a7e2d75938f5886eab2042d84fb2cea9836efb2bd959
+  content_hash: sha256:3a7884db7d439c48e964942a046cfd79415b867a35ca203f8c3cac0f4d1d8775
 - kind: project-relative
   target: copilot
   value: .agents/skills/scan-tone-restoration

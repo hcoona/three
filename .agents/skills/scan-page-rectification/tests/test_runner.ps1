@@ -73,7 +73,10 @@ if ($env:OS -eq "Windows_NT") {
     if ($null -eq $installFunction) {
         throw "Could not locate Install-PinnedDependencySet."
     }
-    Invoke-Expression $installFunction.Extent.Text
+    $installFunctionScript = [ScriptBlock]::Create(
+        $installFunction.Extent.Text
+    )
+    . $installFunctionScript
 
     $testRoot = Join-Path $PSScriptRoot (
         ".runner-test-" + [Guid]::NewGuid().ToString("N")
@@ -81,16 +84,16 @@ if ($env:OS -eq "Windows_NT") {
     $capturePath = Join-Path $testRoot "pip-environment.txt"
     $fakeToken = "fake token+/@:?&=#%"
     $seededEnvironment = @{
-        PIP_TARGET                = "target-canary"
-        PIP_PREFIX                = "prefix-canary"
-        PIP_ROOT                  = "root-canary"
-        PIP_INDEX_URL             = "https://index.invalid/simple/"
-        PIP_EXTRA_INDEX_URL       = "https://extra.invalid/simple/"
-        PIP_CONFIG_FILE           = "config-canary"
+        PIP_TARGET                    = "target-canary"
+        PIP_PREFIX                    = "prefix-canary"
+        PIP_ROOT                      = "root-canary"
+        PIP_INDEX_URL                 = "https://index.invalid/simple/"
+        PIP_EXTRA_INDEX_URL           = "https://extra.invalid/simple/"
+        PIP_CONFIG_FILE               = "config-canary"
         PIP_DISABLE_PIP_VERSION_CHECK = "0"
-        PIP_NO_INPUT              = "0"
-        SCAN_RECTIFY_CAPTURE_PATH = $capturePath
-        SCAN_RECTIFY_FAKE_TOKEN   = $fakeToken
+        PIP_NO_INPUT                  = "0"
+        SCAN_RECTIFY_CAPTURE_PATH     = $capturePath
+        SCAN_RECTIFY_FAKE_TOKEN       = $fakeToken
     }
     $savedTestEnvironment = @{}
     try {
