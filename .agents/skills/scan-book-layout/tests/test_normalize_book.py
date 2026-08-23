@@ -1608,6 +1608,54 @@ class NormalizeBookTests(unittest.TestCase):
         self.assertNotIn("Traceback", result.stderr)
         self.assertFalse(output.exists())
 
+    def test_complex_integer_tiff_on_skipped_page_fails_cleanly(self) -> None:
+        write_image(self.input / "page_001.png", np.full((120, 100), 255, np.uint8))
+        complex_integer = self.input / "page_999.tiff"
+        write_white_is_zero_tiff(
+            complex_integer,
+            np.full((120, 100), 65535, np.uint16),
+            16,
+            sample_format=5,
+            photometric=1,
+        )
+        output = self.root / "output"
+
+        result = self.run_cli(
+            self.input, output, "--auto-canvas", "--pages", 1
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot inspect TIFF metadata", result.stderr)
+        self.assertIn(complex_integer.name, result.stderr)
+        self.assertNotIn("data type 'E'", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertEqual(result.stdout, "")
+        self.assertFalse(output.exists())
+
+    def test_complex_integer_tiff_decode_fallback_normalizes_type_error(
+        self,
+    ) -> None:
+        complex_integer = self.input / "page_999.tiff"
+        write_white_is_zero_tiff(
+            complex_integer,
+            np.full((120, 100), 65535, np.uint16),
+            16,
+            sample_format=5,
+            photometric=1,
+        )
+
+        with self.assertRaises(ValueError) as raised:
+            normalize_book.decode_tiff_uint16_fallback(
+                complex_integer,
+                normalize_book.read_bounded_header(complex_integer),
+            )
+
+        self.assertEqual(
+            str(raised.exception),
+            f"cannot decode image: {complex_integer}",
+        )
+        self.assertIsInstance(raised.exception.__cause__, TypeError)
+
     def test_zero_page_tiff_fails_without_traceback_before_filtering(self) -> None:
         write_image(self.input / "page_001.png", np.full((120, 100), 255, np.uint8))
         (self.input / "page_999.tiff").write_bytes(

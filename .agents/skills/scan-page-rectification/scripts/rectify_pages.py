@@ -2875,6 +2875,18 @@ def selected_vertical_measurement(
     )
 
 
+def vertical_report_measurement(
+    gray: np.ndarray,
+    *,
+    selected_population: bool,
+) -> tuple[np.ndarray | None, int, str | None]:
+    model, samples, reason, fitted_structures, _ = vertical_measurement(gray)
+    final_selection = vertical_selection_from_fit(fitted_structures)
+    if selected_population and final_selection is not None:
+        samples = selected_vertical_measurement(final_selection)[1]
+    return model, samples, reason
+
+
 def tracked_vertical_measurement(
     gray: np.ndarray,
     selection: VerticalSelection,
@@ -3561,13 +3573,6 @@ def rectify(image: np.ndarray) -> tuple[np.ndarray, dict[str, object]]:
             corrected,
             horizontal_final_selection if horizontal_applied else None,
         )
-    (
-        model_after,
-        vertical_samples_after,
-        vertical_model_reason_after,
-        _,
-        _,
-    ) = vertical_measurement(corrected)
     final_vertical_validation = vertical_validation_after
     final_vertical_validation_reason = vertical_validation_reason_after
     if (
@@ -3587,6 +3592,15 @@ def rectify(image: np.ndarray) -> tuple[np.ndarray, dict[str, object]]:
             corrected,
             vertical_selection_before,
             float(model_before[1]),
+        )
+    else:
+        (
+            model_after,
+            vertical_samples_after,
+            vertical_model_reason_after,
+        ) = vertical_report_measurement(
+            corrected,
+            selected_population=vertical_selection_before is not None,
         )
     edges_after = vertical_edges(model_after)
     final_convergence_residual = abs(edges_after[1] - edges_after[0])
@@ -3655,9 +3669,10 @@ def rectify(image: np.ndarray) -> tuple[np.ndarray, dict[str, object]]:
             model_after,
             vertical_samples_after,
             vertical_model_reason_after,
-            _,
-            _,
-        ) = vertical_measurement(corrected)
+        ) = vertical_report_measurement(
+            corrected,
+            selected_population=vertical_selection_before is not None,
+        )
         edges_after = vertical_edges(model_after)
     elif horizontal_applied:
         horizontal_status = "applied"
@@ -3735,9 +3750,10 @@ def rectify(image: np.ndarray) -> tuple[np.ndarray, dict[str, object]]:
             model_after,
             vertical_samples_after,
             vertical_model_reason_after,
-            _,
-            _,
-        ) = vertical_measurement(corrected)
+        ) = vertical_report_measurement(
+            corrected,
+            selected_population=vertical_selection_before is not None,
+        )
         edges_after = vertical_edges(model_after)
     elif vertical_applied:
         vertical_status = "applied"
@@ -3772,9 +3788,10 @@ def rectify(image: np.ndarray) -> tuple[np.ndarray, dict[str, object]]:
             model_after,
             vertical_samples_after,
             vertical_model_reason_after,
-            _,
-            _,
-        ) = vertical_measurement(corrected)
+        ) = vertical_report_measurement(
+            corrected,
+            selected_population=vertical_selection_before is not None,
+        )
         edges_after = vertical_edges(model_after)
 
     final_convergence_residual = abs(edges_after[1] - edges_after[0])
