@@ -571,6 +571,8 @@ jobs:
           TESTED_MERGE_SHA: ${{ github.sha }}
         run: |
           plan=".wdv3/final/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-plan.json"
+          decision=".wdv3/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-ci-slice-decision.json"
+          summary=".wdv3/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-ci-slice-summary.json"
           cli=(uv run --python 3.13 --package "${WDV3_PACKAGE}" three-workflow-delivery-v3)
           "${cli[@]}" ci admit-payload --input "${plan}" --expected-digest "${PLAN_ARTIFACT_DIGEST}"
           args=()
@@ -596,8 +598,8 @@ jobs:
             "${args[@]}" \
             --started-at "${STARTED_AT}" \
             "${pr_args[@]}" \
-            --decision-output .wdv3/ci-slice-decision.json \
-            --summary-output .wdv3/ci-slice-summary.json \
+            --decision-output "${decision}" \
+            --summary-output "${summary}" \
             --github-step-summary "${GITHUB_STEP_SUMMARY}"
           finalizer_exit=$?
           set -e
@@ -611,15 +613,37 @@ jobs:
             --repo-root "${GITHUB_WORKSPACE}" \
             --plan "${plan}" \
             --plan-digest "${PLAN_DIGEST}" \
-            --decision .wdv3/ci-slice-decision.json \
-            --summary .wdv3/ci-slice-summary.json \
+            --decision "${decision}" \
+            --summary "${summary}" \
             --pull-request-number "${{ github.event.pull_request.number }}" \
             --base-sha "${BASE_SHA}" \
             --head-sha "${HEAD_SHA}" \
             --tested-merge-sha "${TESTED_MERGE_SHA}" \
             --github-step-summary "${GITHUB_STEP_SUMMARY}"
+      - name: Upload canonical CI Slice Decision
+        if: always() && hashFiles(format('.wdv3/wdv3-{0}-{1}-ci-slice-decision.json', github.run_id, github.run_attempt)) != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: wdv3-${{ github.run_id }}-${{ github.run_attempt }}-ci-slice-decision
+          path: .wdv3/wdv3-${{ github.run_id }}-${{ github.run_attempt }}-ci-slice-decision.json
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+      - name: Upload canonical CI Slice Summary
+        if: always() && hashFiles(format('.wdv3/wdv3-{0}-{1}-ci-slice-summary.json', github.run_id, github.run_attempt)) != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: wdv3-${{ github.run_id }}-${{ github.run_attempt }}-ci-slice-summary
+          path: .wdv3/wdv3-${{ github.run_id }}-${{ github.run_attempt }}-ci-slice-summary.json
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
       - name: Report noncanonical contract failure without a Decision
-        if: always() && hashFiles('.wdv3/ci-slice-decision.json') == ''
+        if: always() && hashFiles(format('.wdv3/wdv3-{0}-{1}-ci-slice-decision.json', github.run_id, github.run_attempt)) == ''
         run: |
           {
             echo "## Workflow Delivery v3 CI contract failure"

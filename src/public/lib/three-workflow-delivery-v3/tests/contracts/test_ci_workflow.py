@@ -192,7 +192,19 @@ def test_stock_raw_artifacts_propagate_exact_ids_and_digests() -> None:
     ]
     raw = WORKFLOW.read_text(encoding="utf-8")
 
-    assert upload_steps
+    assert {step["name"] for step in upload_steps} == {
+        "Upload request",
+        "Upload Provider Result",
+        "Upload Plan",
+        "Upload Adapter context",
+        "Upload root-hk lane result",
+        "Upload project-build lane result",
+        "Upload project-test lane result",
+        "Upload retained npm tarball",
+        "Upload npm artifact lane result",
+        "Upload canonical CI Slice Decision",
+        "Upload canonical CI Slice Summary",
+    }
     for step in upload_steps:
         settings = step["with"]
         assert settings["retention-days"] == RETENTION_DAYS
@@ -396,8 +408,16 @@ def test_finalizer_detects_missing_lane_artifacts() -> None:
     assert "--elapsed-seconds" not in command
     assert "date +%s" not in command
     assert '--github-step-summary "${GITHUB_STEP_SUMMARY}"' in command
-    assert "ci-slice-decision.json" in command
-    assert "ci-slice-summary.json" in command
+    assert (
+        'decision=".wdv3/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-'
+        'ci-slice-decision.json"' in command
+    )
+    assert (
+        'summary=".wdv3/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-'
+        'ci-slice-summary.json"' in command
+    )
+    assert '--decision-output "${decision}"' in command
+    assert '--summary-output "${summary}"' in command
 
 
 def test_finalizer_projects_only_precoexistence_pull_request_failure() -> None:
@@ -450,8 +470,8 @@ def test_finalizer_projects_only_precoexistence_pull_request_failure() -> None:
     assert '--repo-root "${GITHUB_WORKSPACE}"' in projection
     assert '--plan "${plan}"' in projection
     assert '--plan-digest "${PLAN_DIGEST}"' in projection
-    assert "--decision .wdv3/ci-slice-decision.json" in projection
-    assert "--summary .wdv3/ci-slice-summary.json" in projection
+    assert '--decision "${decision}"' in projection
+    assert '--summary "${summary}"' in projection
     assert (
         '--pull-request-number "${{ github.event.pull_request.number }}"'
         in projection
@@ -469,6 +489,73 @@ def test_finalizer_projects_only_precoexistence_pull_request_failure() -> None:
         assert forbidden not in command
 
 
+def test_finalizer_persists_canonical_decision_and_summary_before_guard() -> (
+    None
+):
+    """Retain both canonical finalizer records before preserving failure."""
+    job = _document()["jobs"]["required-finalizer"]
+    steps = _steps(job)
+    finalize = next(
+        step
+        for step in steps
+        if step["name"] == "Admit available results and finalize"
+    )
+    decision = next(
+        step
+        for step in steps
+        if step["name"] == "Upload canonical CI Slice Decision"
+    )
+    summary = next(
+        step
+        for step in steps
+        if step["name"] == "Upload canonical CI Slice Summary"
+    )
+    guard = next(
+        step
+        for step in steps
+        if step["name"]
+        == "Report noncanonical contract failure without a Decision"
+    )
+
+    assert steps.index(finalize) < steps.index(decision) < steps.index(summary)
+    assert steps.index(summary) < steps.index(guard)
+    expected = (
+        (
+            decision,
+            "ci-slice-decision",
+            "always() && hashFiles(format('.wdv3/wdv3-{0}-{1}-"
+            "ci-slice-decision.json', github.run_id, github.run_attempt)) "
+            "!= ''",
+        ),
+        (
+            summary,
+            "ci-slice-summary",
+            "always() && hashFiles(format('.wdv3/wdv3-{0}-{1}-"
+            "ci-slice-summary.json', github.run_id, github.run_attempt)) "
+            "!= ''",
+        ),
+    )
+    for step, role, condition in expected:
+        assert step["if"] == condition
+        assert step["uses"] == UPLOAD
+        assert step["with"] == {
+            "name": (
+                "wdv3-${{ github.run_id }}-${{ github.run_attempt }}-"
+                f"{role}"
+            ),
+            "path": (
+                ".wdv3/wdv3-${{ github.run_id }}-"
+                "${{ github.run_attempt }}-"
+                f"{role}.json"
+            ),
+            "if-no-files-found": "error",
+            "retention-days": RETENTION_DAYS,
+            "overwrite": False,
+            "archive": False,
+            "include-hidden-files": True,
+        }
+
+
 def test_decision_absence_always_writes_noncanonical_contract_summary() -> None:
     """Explain every pre-Decision failure without fabricating a Decision."""
     job = _document()["jobs"]["required-finalizer"]
@@ -482,7 +569,8 @@ def test_decision_absence_always_writes_noncanonical_contract_summary() -> None:
 
     assert _steps(job).index(step) == len(_steps(job)) - 1
     assert step["if"] == (
-        "always() && hashFiles('.wdv3/ci-slice-decision.json') == ''"
+        "always() && hashFiles(format('.wdv3/wdv3-{0}-{1}-"
+        "ci-slice-decision.json', github.run_id, github.run_attempt)) == ''"
     )
     assert "GITHUB_STEP_SUMMARY" in command
     assert "Noncanonical contract failure" in command

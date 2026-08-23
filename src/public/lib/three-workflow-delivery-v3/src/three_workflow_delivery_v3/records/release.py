@@ -4028,12 +4028,19 @@ class SimulationOutcome:
             tuple,
             field="simulation outcome.hypothetical_actions",
         )
-        if any(
-            type(action) is not HypotheticalAction
-            for action in self.hypothetical_actions
-        ):
-            message = "Simulation Outcome action has the wrong runtime type"
-            raise TypeError(message)
+        for action in self.hypothetical_actions:
+            if type(action) is not HypotheticalAction:
+                message = "Simulation Outcome action has the wrong runtime type"
+                raise TypeError(message)
+            if (
+                action.simulation != self.binding.simulation
+                or action.qualification_snapshot_digest
+                != self.qualification_snapshot_digest
+                or action.qualification_decision_digest
+                != self.qualification_decision_digest
+            ):
+                message = "Simulation Outcome action binding mismatch"
+                raise ValueError(message)
         _choice(
             self.terminal_result,
             _QUALIFICATION_RESULTS,

@@ -117,21 +117,34 @@ def _bindings(
     )
 
 
-def _exact_observation(scenario) -> ProjectionObservation:
+def _observation(
+    scenario,
+    classification: str,
+) -> ProjectionObservation:
     projection = scenario.snapshot.destination_projections[0]
     desired = desired_projection_state_digest(
         scenario.snapshot,
         projection.projection_id,
         scenario.artifact,
     )
-    value = ObservationValue(
-        classification="exact-satisfied",
-        owner="scope:@hcoona",
-        coordinate=projection.coordinate,
-        content_sha512=scenario.artifact.content.content_sha512,
-        witness_digest=scenario.artifact.witness_digest,
-        routing=(),
-    )
+    if classification == "exact-satisfied":
+        value = ObservationValue(
+            classification=classification,
+            owner="scope:@hcoona",
+            coordinate=projection.coordinate,
+            content_sha512=scenario.artifact.content.content_sha512,
+            witness_digest=scenario.artifact.witness_digest,
+            routing=(),
+        )
+    else:
+        value = ObservationValue(
+            classification=classification,
+            owner=None,
+            coordinate=None,
+            content_sha512=None,
+            witness_digest=None,
+            routing=(),
+        )
     request_facts = ObservationRequestFacts(
         qualification_snapshot_digest=scenario.snapshot.snapshot_digest,
         projection_digest=projection.projection_digest,
@@ -181,7 +194,7 @@ def test_every_transported_commit6_release_record_round_trips_closed_schema(
 ) -> None:
     """Deserialize every cross-job Release record under current authority."""
     scenario = qualified_simulation
-    observation = _exact_observation(scenario)
+    observation = _observation(scenario, "exact-satisfied")
     outcome = finalize_simulation(
         scenario.snapshot,
         scenario.decision,
@@ -234,6 +247,74 @@ def test_every_transported_commit6_release_record_round_trips_closed_schema(
         expected_digest=scenario.admitted_repository_model.canonical_digest,
     )
     assert admitted_model == scenario.admitted_repository_model
+
+
+@pytest.mark.parametrize(
+    "substitution",
+    [
+        "simulation",
+        "qualification-snapshot-digest",
+        "qualification-decision-digest",
+    ],
+)
+def test_simulation_outcome_rejects_hypothetical_action_binding_substitution(
+    qualified_simulation,
+    substitution: str,
+) -> None:
+    """Reject canonical nested actions from another simulation lineage."""
+    scenario = qualified_simulation
+    absent = _observation(scenario, "absent")
+    outcome = finalize_simulation(
+        scenario.snapshot,
+        scenario.decision,
+        observations=(absent,),
+        artifacts=(scenario.artifact,),
+    )
+    assert len(outcome.hypothetical_actions) == 1
+    action = outcome.hypothetical_actions[0]
+    if substitution == "simulation":
+        substituted_action = replace(
+            action,
+            simulation=replace(
+                action.simulation,
+                workflow_run_id=action.simulation.workflow_run_id + 1,
+            ),
+        )
+    elif substitution == "qualification-snapshot-digest":
+        substituted_action = replace(
+            action,
+            qualification_snapshot_digest="sha256:" + ("8" * 64),
+        )
+    else:
+        substituted_action = replace(
+            action,
+            qualification_decision_digest="sha256:" + ("9" * 64),
+        )
+
+    with pytest.raises(
+        ValueError,
+        match="Simulation Outcome action binding mismatch",
+    ):
+        replace(
+            outcome,
+            hypothetical_actions=(substituted_action,),
+        )
+
+    document = outcome.to_document()
+    document["hypothetical-actions"] = [substituted_action.to_document()]
+    canonical_bytes = canonicalize(document)
+    with pytest.raises(
+        ValueError,
+        match="Simulation Outcome action binding mismatch",
+    ):
+        admit_release_record(
+            canonical_bytes,
+            expected_type=SimulationOutcome,
+            expected_digest=(
+                f"sha256:{hashlib.sha256(canonical_bytes).hexdigest()}"
+            ),
+            expected_bindings=_bindings(scenario.intent),
+        )
 
 
 def test_release_transport_rejects_canonical_binding_and_substitution_attacks(
@@ -498,7 +579,7 @@ def test_release_cli_transports_current_attempt_through_commit6_stop_line(  # no
     monkeypatch.setattr(
         cli_module,
         "observe_npmjs_projection",
-        lambda *_args, **_kwargs: _exact_observation(scenario),
+        lambda *_args, **_kwargs: _observation(scenario, "exact-satisfied"),
     )
     observation_path = tmp_path / "observation-set.json"
     assert (
