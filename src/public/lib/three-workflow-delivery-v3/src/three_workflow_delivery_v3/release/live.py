@@ -198,6 +198,8 @@ def _governance_diagnostics(
     observed_at: datetime,
     expected_provenance: tuple[tuple[str, str], ...] | None,
     expected_content_sha256: str | None,
+    expected_expires_at: str | None,
+    expected_live_enabled: bool | None,
 ) -> tuple[str, ...]:
     if observed_at.tzinfo is None or observed_at.utcoffset() is None:
         message = "fresh Governance observation time must be timezone-aware"
@@ -216,6 +218,13 @@ def _governance_diagnostics(
         and content_sha256 != expected_content_sha256
     ):
         diagnostics.append("governance-content-changed")
+    if expected_expires_at is not None and expires_at != expected_expires_at:
+        diagnostics.append("governance-binding-changed")
+    if (
+        expected_live_enabled is not None
+        and live_enabled is not expected_live_enabled
+    ):
+        diagnostics.append("governance-binding-changed")
     if not live_enabled:
         diagnostics.append("governance-live-disabled")
     if _parse_utc(expires_at, field="governance_expires_at") <= observed_at:
@@ -1055,6 +1064,8 @@ def admit_live_capability(
     governance_observed_at: datetime = _DEFAULT_OBSERVED_AT,
     expected_governance_provenance: tuple[tuple[str, str], ...] | None = None,
     expected_governance_content_sha256: str | None = None,
+    expected_governance_expires_at: str | None = None,
+    expected_governance_live_enabled: bool | None = None,
     control: str = _DEFAULT_CONTROL,
     substitution: str | None = None,
     restored: bool = False,
@@ -1173,6 +1184,8 @@ def admit_live_capability(
         observed_at=governance_observed_at,
         expected_provenance=expected_governance_provenance,
         expected_content_sha256=expected_governance_content_sha256,
+        expected_expires_at=expected_governance_expires_at,
+        expected_live_enabled=expected_governance_live_enabled,
     )
     return _capability_decision(
         attempt=attempt,

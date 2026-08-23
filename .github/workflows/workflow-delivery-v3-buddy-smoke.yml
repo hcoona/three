@@ -296,9 +296,30 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
+          set +e
           uv run --python 3.13 --package "${WDV3_PACKAGE}" \
             python eng/scripts/workflow_delivery_v3_consumer_policy.py \
             --repository-root . > .wdv3/consumer-policy.json
+          consumer_status=$?
+          set -e
+          if [[ "${consumer_status}" != "0" && "${consumer_status}" != "1" ]]; then
+            echo "consumer policy failed with status ${consumer_status}" >&2
+            exit "${consumer_status}"
+          fi
+          consumer_result="$(
+            uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+              python -c \
+              'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["result"])' \
+              .wdv3/consumer-policy.json
+          )"
+          if [[
+            ("${consumer_status}" == "0" && "${consumer_result}" != "clean") ||
+            ("${consumer_status}" == "1" && "${consumer_result}" != "consumer")
+          ]]; then
+            echo "consumer policy status and result disagree" >&2
+            exit 2
+          fi
+          set +e
           uv run --python 3.13 --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 release evaluate-live-eligibility \
             --github-token "${GITHUB_TOKEN}" \
@@ -316,10 +337,33 @@ jobs:
             --repository-model-artifact-digest "${{ needs.compile-model.outputs.repository-model-artifact-digest }}" \
             --output .wdv3/live-eligibility-decision.json \
             --github-output "${GITHUB_OUTPUT}"
+          eligibility_status=$?
+          set -e
+          if [[ "${eligibility_status}" != "0" && "${eligibility_status}" != "1" ]]; then
+            echo "live eligibility failed with status ${eligibility_status}" >&2
+            exit "${eligibility_status}"
+          fi
+          decision_result="$(
+            uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+              python -c \
+              'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["result"])' \
+              .wdv3/live-eligibility-decision.json
+          )"
+          if [[
+            ("${eligibility_status}" == "0" && "${decision_result}" != "pass") ||
+            ("${eligibility_status}" == "1" && "${decision_result}" != "blocked")
+          ]]; then
+            echo "live eligibility status and Decision disagree" >&2
+            exit 2
+          fi
           digest="$(sha256sum .wdv3/live-eligibility-decision.json | cut -d' ' -f1)"
           artifact_name="wdv3-live-buddy-eligibility-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${digest}.json"
           mv .wdv3/live-eligibility-decision.json ".wdv3/${artifact_name}"
-          echo "live-eligibility-artifact-name=${artifact_name}" >> "${GITHUB_OUTPUT}"
+          {
+            echo "consumer-policy-status=${consumer_status}"
+            echo "eligibility-status=${eligibility_status}"
+            echo "live-eligibility-artifact-name=${artifact_name}"
+          } >> "${GITHUB_OUTPUT}"
       - name: Upload Live Eligibility Decision
         id: upload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -331,6 +375,26 @@ jobs:
           overwrite: false
           archive: false
           include-hidden-files: true
+      - name: Propagate Live Eligibility status
+        if: always()
+        run: |
+          if [[ "${{ steps.eligibility.outcome }}" != "success" ]]; then
+            echo "live eligibility production did not complete" >&2
+            exit 1
+          fi
+          if [[ "${{ steps.upload.outcome }}" != "success" ]]; then
+            echo "Live Eligibility Decision upload did not complete" >&2
+            exit 1
+          fi
+          status="${{ steps.eligibility.outputs.eligibility-status }}"
+          case "${status}" in
+            0) ;;
+            1) exit 1 ;;
+            *)
+              echo "unexpected live eligibility status: ${status}" >&2
+              exit 2
+              ;;
+          esac
 
   run-live-attempt:
     name: Run same-revision Buddy live Attempt

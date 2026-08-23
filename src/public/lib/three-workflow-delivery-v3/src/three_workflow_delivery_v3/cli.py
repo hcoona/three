@@ -136,6 +136,9 @@ from three_workflow_delivery_v3.records.release_transport import (
     ReleaseAdmissionBindings,
 )
 from three_workflow_delivery_v3.release import (
+    AdmittedLiveEligibilityDecision,
+    LiveEligibilityAdmissionMode,
+    admit_live_eligibility_decision,
     admit_live_capability,
     bind_reviewer_artifact,
     derive_buddy_execution_identity,
@@ -168,11 +171,14 @@ from three_workflow_delivery_v3.release import (
     require_fresh_governance_identity,
 )
 from three_workflow_delivery_v3.platform.github import GitHubRestClient
-from three_workflow_delivery_v3.release.eligibility import (
+from three_workflow_delivery_v3.release.consumer_policy import (
     CONSUMER_POLICY_ID,
     ConsumerPolicyResult,
-    LiveEligibilityContext,
     SurfaceDigest,
+    validate_consumer_policy_result,
+)
+from three_workflow_delivery_v3.release.eligibility import (
+    LiveEligibilityContext,
     evaluate_live_eligibility,
     release_policy_digest,
 )
@@ -223,6 +229,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from three_workflow_delivery_v3.canonical import JsonValue
+    from three_workflow_delivery_v3.repository.descriptors import ReleasePolicy
 
 _PROJECT_PATH = "src/public/lib/hcoona-release-smoke-npm"
 _CI_REQUEST_SCHEMA = "workflow-delivery/v3/ci-request"
@@ -2935,6 +2942,7 @@ def _consumer_policy_from_file(  # noqa: C901
     )
     if result.policy_id != CONSUMER_POLICY_ID:
         raise ValueError("Consumer policy result is not the permanent policy")
+    validate_consumer_policy_result(result)
     return result
 
 
@@ -3034,49 +3042,45 @@ def _history_snapshot_from_file(
     return admitted
 
 
-def _attestation_provenance_from_decision(
+def _admitted_live_eligibility_decision(
     arguments: argparse.Namespace,
-) -> tuple[tuple[str, str], ...]:
+    intent: ReleaseIntent,
+    model: AdmittedRepositoryModelSnapshot,
+    *,
+    admission_mode: LiveEligibilityAdmissionMode,
+) -> tuple[AdmittedLiveEligibilityDecision, ReleasePolicy]:
     content = _verify_uploaded_payload(
         arguments.live_eligibility_decision,
         artifact_id=arguments.live_eligibility_artifact_id,
         artifact_digest=arguments.live_eligibility_artifact_digest,
     )
-    expected = _normalized_digest(arguments.live_eligibility_payload_digest)
-    actual = f"sha256:{hashlib.sha256(content).hexdigest()}"
-    if actual != expected:
-        raise ValueError("Live Eligibility Decision payload digest mismatch")
-    decision = _object(
-        parse_canonical_json(content),
-        context="Live Eligibility Decision",
+    _descriptor, _quality, policy = load_first_slice_authoring(
+        Path(arguments.repo_root).resolve(),
+        arguments.target,
     )
-    if decision.get("result") != "pass":
-        raise ValueError("Live Eligibility Decision is not passing")
-    governance = _object(
-        decision["governance"],
-        context="Live Eligibility Decision.governance",
+    admitted = admit_live_eligibility_decision(
+        content,
+        intent=intent,
+        repository_model=model,
+        policy=policy,
+        expected_digest=_normalized_digest(
+            arguments.live_eligibility_payload_digest
+        ),
+        admission_mode=admission_mode,
+        now=datetime.now(UTC),
     )
-    return tuple(
-        sorted(
-            (
-                name,
-                _string(governance[name], context=f"governance.{name}"),
-            )
-            for name in (
-                "repository",
-                "ref",
-                "path",
-                "resolved-commit",
-                "blob-oid",
-                "content-sha256",
-            )
-        )
-    )
+    return admitted, policy
 
 
 def _release_bind_live_attempt_command(arguments: argparse.Namespace) -> int:
     intent = _load_live_intent(arguments)
-    _load_live_model(arguments, intent)
+    model = _load_live_model(arguments, intent)
+    eligibility, _policy = _admitted_live_eligibility_decision(
+        arguments,
+        intent,
+        model,
+        admission_mode=LiveEligibilityAdmissionMode.CURRENT_FRESHNESS,
+    )
     history_snapshot = _history_snapshot_from_file(arguments)
     binding = derive_release_attempt_binding(
         intent=intent,
@@ -3089,7 +3093,7 @@ def _release_bind_live_attempt_command(arguments: argparse.Namespace) -> int:
         live_eligibility_payload_digest=_normalized_digest(
             arguments.live_eligibility_payload_digest
         ),
-        attestation_provenance=_attestation_provenance_from_decision(arguments),
+        attestation_provenance=eligibility.governance.provenance,
         history_snapshot=history_snapshot,
         history_snapshot_artifact_id=arguments.history_snapshot_artifact_id,
         history_snapshot_artifact_digest=_normalized_digest(
@@ -3120,26 +3124,19 @@ def _release_admit_history_command(arguments: argparse.Namespace) -> int:
 def _release_admit_live_eligibility_command(
     arguments: argparse.Namespace,
 ) -> int:
-    content = _verify_uploaded_payload(
-        arguments.live_eligibility_decision,
-        artifact_id=arguments.live_eligibility_artifact_id,
-        artifact_digest=arguments.live_eligibility_artifact_digest,
+    intent = _load_live_intent(arguments)
+    model = _load_live_model(arguments, intent)
+    decision, _policy = _admitted_live_eligibility_decision(
+        arguments,
+        intent,
+        model,
+        admission_mode=LiveEligibilityAdmissionMode.CURRENT_FRESHNESS,
     )
-    expected = _normalized_digest(arguments.live_eligibility_payload_digest)
-    actual = f"sha256:{hashlib.sha256(content).hexdigest()}"
-    if actual != expected:
-        raise ValueError("Live Eligibility Decision payload digest mismatch")
-    decision = _object(
-        parse_canonical_json(content),
-        context="Live Eligibility Decision",
-    )
-    if decision.get("result") != "pass":
-        raise ValueError("Live Eligibility Decision is not passing")
-    _write_output(arguments.output, decision)
+    _write_output(arguments.output, decision.to_document())
     _record_outputs(
         arguments.github_output,
         role="live-eligibility-decision",
-        digest=canonical_sha256(decision),
+        digest=decision.decision_digest,
     )
     return 0
 
@@ -3401,6 +3398,14 @@ def _release_form_authorization_command(arguments: argparse.Namespace) -> int:
 
 
 def _release_admit_capability_command(arguments: argparse.Namespace) -> int:
+    intent = _load_live_intent(arguments)
+    model = _load_live_model(arguments, intent)
+    initial_eligibility, policy = _admitted_live_eligibility_decision(
+        arguments,
+        intent,
+        model,
+        admission_mode=LiveEligibilityAdmissionMode.CAPABILITY_REPLAY,
+    )
     publication = _load_publication_snapshot(arguments)
     authorization = _load_authorization(arguments)
     reviewer = materialize_reviewer_artifact(
@@ -3410,10 +3415,6 @@ def _release_admit_capability_command(arguments: argparse.Namespace) -> int:
         upload_digest=_normalized_digest(
             arguments.reviewer_summary_artifact_digest
         ),
-    )
-    _descriptor, _quality, policy = load_first_slice_authoring(
-        Path(arguments.repo_root).resolve(),
-        arguments.target,
     )
     observed_at = datetime.now(UTC)
     fresh = observe_governance_source(
@@ -3425,8 +3426,8 @@ def _release_admit_capability_command(arguments: argparse.Namespace) -> int:
         now=observed_at,
     )
     fresh_provenance = governance_observation_provenance(fresh)
-    initial_provenance = _attestation_provenance_from_decision(arguments)
-    initial_content_sha256 = dict(initial_provenance)["content-sha256"]
+    initial_provenance = initial_eligibility.governance.provenance
+    initial_content_sha256 = initial_eligibility.governance.content_sha256
     decision = admit_live_capability(
         attempt=publication.attempt,
         authorization=authorization,
@@ -3445,6 +3446,14 @@ def _release_admit_capability_command(arguments: argparse.Namespace) -> int:
         governance_observed_at=observed_at,
         expected_governance_provenance=initial_provenance,
         expected_governance_content_sha256=initial_content_sha256,
+        expected_governance_expires_at=(
+            initial_eligibility.governance.expires_at.strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            )
+        ),
+        expected_governance_live_enabled=(
+            initial_eligibility.governance.live_enabled
+        ),
         control=arguments.control,
     )
     if not isinstance(decision, CapabilityAdmissionDecision):
@@ -5814,7 +5823,13 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
 
     live_eligibility = release_commands.add_parser("admit-live-eligibility")
+    live_eligibility.add_argument("--repo-root", default=".")
     _add_current_release_arguments(live_eligibility)
+    _add_uploaded_record_arguments(live_eligibility, name="intent")
+    _add_uploaded_record_arguments(
+        live_eligibility,
+        name="repository_model",
+    )
     live_eligibility.add_argument(
         "--live-eligibility-decision",
         required=True,
@@ -5866,6 +5881,7 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     admit_history.set_defaults(handler=_release_admit_history_command)
 
     bind_attempt = release_commands.add_parser("bind-live-attempt")
+    bind_attempt.add_argument("--repo-root", default=".")
     _add_current_release_arguments(bind_attempt)
     _add_uploaded_record_arguments(bind_attempt, name="intent")
     _add_uploaded_record_arguments(bind_attempt, name="repository_model")
@@ -5984,6 +6000,8 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     capability.add_argument("--repo-root", default=".")
     capability.add_argument("--github-token", required=True)
     _add_current_release_arguments(capability)
+    _add_uploaded_record_arguments(capability, name="intent")
+    _add_uploaded_record_arguments(capability, name="repository_model")
     _add_uploaded_record_arguments(capability, name="authorization")
     _add_uploaded_record_arguments(capability, name="publication_snapshot")
     capability.add_argument("--reviewer-summary", required=True)

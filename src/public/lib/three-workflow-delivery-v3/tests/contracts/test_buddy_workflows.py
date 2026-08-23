@@ -297,6 +297,46 @@ def test_buddy_caller_dag_concurrency_and_reusable_boundary_are_exact() -> None:
     ] == []
 
 
+def test_live_eligibility_block_is_uploaded_before_status_propagates() -> None:
+    """Retain a valid blocked Decision before surfacing domain exit one."""
+    caller = _document(CALLER)
+    job = caller["jobs"]["evaluate-live-eligibility"]
+    steps = job["steps"]
+    evaluate = _step(job, "Evaluate fixed-source live eligibility")
+    upload = _step(job, "Upload Live Eligibility Decision")
+    propagate = _step(job, "Propagate Live Eligibility status")
+    command = _run(evaluate)
+    propagation = _run(propagate)
+    domain_command_count = 2
+
+    assert command.count("set +e") == domain_command_count
+    assert command.count("set -e") == domain_command_count
+    assert "consumer_status=$?" in command
+    assert "eligibility_status=$?" in command
+    assert '"${consumer_status}" != "0"' in command
+    assert '"${consumer_status}" != "1"' in command
+    assert '"${eligibility_status}" != "0"' in command
+    assert '"${eligibility_status}" != "1"' in command
+    assert '"${consumer_result}" != "clean"' in command
+    assert '"${consumer_result}" != "consumer"' in command
+    assert '"${decision_result}" != "pass"' in command
+    assert '"${decision_result}" != "blocked"' in command
+    assert 'echo "consumer-policy-status=${consumer_status}"' in command
+    assert 'echo "eligibility-status=${eligibility_status}"' in command
+    assert command.index("eligibility_status=$?") < command.index(
+        'echo "live-eligibility-artifact-name=${artifact_name}"'
+    )
+    assert steps.index(evaluate) < steps.index(upload) < steps.index(propagate)
+    assert propagate["if"] == "always()"
+    assert "steps.eligibility.outcome" in propagation
+    assert "steps.upload.outcome" in propagation
+    assert "steps.eligibility.outputs.eligibility-status" in propagation
+    assert "1) exit 1" in propagation
+    assert job["outputs"]["live-result"] == (
+        "${{ steps.eligibility.outputs.live-result }}"
+    )
+
+
 def test_buddy_permission_ceiling_and_effective_permissions_are_exact() -> None:
     caller = _document(CALLER)
     callee = _document(CALLEE)
@@ -1682,7 +1722,7 @@ def test_commit8_authorization_uses_real_correlated_job_and_check_run_ids() -> (
     assert '"1"' not in command
 
 
-def test_commit8_freshness_block_is_retained_before_nonzero_propagates() -> (
+def test_capability_cli_exit_one_is_uploaded_before_failure_propagates() -> (
     None
 ):
     finalizer = _document(CALLEE)["jobs"]["approval-finalizer"]
@@ -1690,15 +1730,29 @@ def test_commit8_freshness_block_is_retained_before_nonzero_propagates() -> (
     admit = _step(finalizer, "Admit exact capability closure")
     upload = _step(finalizer, "Upload Capability Admission Decision")
     propagate = _step(finalizer, "Propagate capability admission status")
+    command = _run(admit)
+    propagation = _run(propagate)
 
     assert admit["continue-on-error"] is True
+    assert "set +e" in command
+    assert "three-workflow-delivery-v3 release admit-capability" in command
+    assert "status=$?" in command
+    assert "set -e" in command
+    assert command.index("status=$?") < command.index(
+        'digest="$(sha256sum .wdv3/capability-decision.json'
+    )
+    assert 'echo "admission-status=${status}"' in command
     assert upload["if"] == (
         "always() && "
         "steps.finalize.outputs.capability-decision-artifact-name != ''"
     )
+    assert upload["with"]["if-no-files-found"] == "error"
+    assert upload["with"]["retention-days"] == RETENTION_DAYS
     assert steps.index(admit) < steps.index(upload) < steps.index(propagate)
     assert propagate["if"] == "always()"
-    assert "steps.finalize.outcome" in _run(propagate)
+    assert "steps.finalize.outcome" in propagation
+    assert 'steps.finalize.outputs.admission-status }}" != "0"' in propagation
+    assert "exit 1" in propagation
 
 
 def test_commit8_missing_authorization_reaches_approval_finalizer() -> None:
@@ -4062,3 +4116,81 @@ def test_buddy_target_sha_binding_chain_is_exact(tmp_path: Path) -> None:
         callee_jobs,
         "publish-github-packages",
     )
+
+
+def test_live_eligibility_admission_receives_current_intent_and_model_before_history() -> (
+    None
+):
+    """Transport current lineage into every eligibility admission call."""
+    jobs = _document(CALLEE)["jobs"]
+    admit_job = jobs["admit"]
+    admit_steps = _steps(admit_job)
+    intent_download = _step(
+        admit_job,
+        "Download Release Intent by artifact ID",
+    )
+    model_download = _step(
+        admit_job,
+        "Download Repository Model by artifact ID",
+    )
+    decision_download = _step(
+        admit_job,
+        "Download Live Eligibility Decision by artifact ID",
+    )
+    admission = _step(
+        admit_job,
+        "Admit downloaded Live Eligibility Decision",
+    )
+    history = _step(
+        admit_job,
+        "Discover exhaustive retained execution history",
+    )
+    command = _run(admission)
+
+    assert (
+        admit_steps.index(intent_download)
+        < admit_steps.index(model_download)
+        < admit_steps.index(decision_download)
+        < admit_steps.index(admission)
+        < admit_steps.index(history)
+    )
+    for option, value in (
+        ("intent", ".wdv3/input/${{ inputs.intent-artifact-name }}"),
+        ("intent-digest", "${{ inputs.intent-digest }}"),
+        ("intent-artifact-id", "${{ inputs.intent-artifact-id }}"),
+        (
+            "intent-artifact-digest",
+            "${{ inputs.intent-artifact-digest }}",
+        ),
+        (
+            "repository-model",
+            ".wdv3/input/${{ inputs.repository-model-artifact-name }}",
+        ),
+        (
+            "repository-model-digest",
+            "${{ inputs.repository-model-digest }}",
+        ),
+        (
+            "repository-model-artifact-id",
+            "${{ inputs.repository-model-artifact-id }}",
+        ),
+        (
+            "repository-model-artifact-digest",
+            "${{ inputs.repository-model-artifact-digest }}",
+        ),
+    ):
+        assert f'--{option} "{value}"' in command
+
+    finalizer = jobs["approval-finalizer"]
+    capability = _run(_step(finalizer, "Admit exact capability closure"))
+    for option in (
+        "--intent ",
+        "--intent-digest ",
+        "--intent-artifact-id ",
+        "--intent-artifact-digest ",
+        "--repository-model ",
+        "--repository-model-digest ",
+        "--repository-model-artifact-id ",
+        "--repository-model-artifact-digest ",
+    ):
+        assert option in capability

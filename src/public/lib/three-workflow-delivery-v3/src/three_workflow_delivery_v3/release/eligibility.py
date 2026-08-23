@@ -7,7 +7,6 @@ import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Protocol
 
 from three_workflow_delivery_v3.canonical import (
@@ -16,7 +15,21 @@ from three_workflow_delivery_v3.canonical import (
     parse_canonical_json,
 )
 from three_workflow_delivery_v3.catalogs import catalog_digest
+from three_workflow_delivery_v3.records.release import ReleaseIntent
+from three_workflow_delivery_v3.release.consumer_policy import (
+    CONSUMER_POLICY_ID as _CONSUMER_POLICY_ID,
+)
+from three_workflow_delivery_v3.release.consumer_policy import (
+    ConsumerPolicyResult,
+    SurfaceDigest,
+    validate_consumer_policy_result,
+)
+from three_workflow_delivery_v3.release.identity import (
+    BUDDY_LIVE_WORKFLOW_PATH,
+)
 from three_workflow_delivery_v3.repository.compiler import (
+    AdmittedRepositoryModelSnapshot,
+    compile_release_policy,
     validate_compilation_context,
     validate_first_slice_repository_model_snapshot,
 )
@@ -38,24 +51,16 @@ if TYPE_CHECKING:
         RepositoryModelSnapshot,
     )
 
+CONSUMER_POLICY_ID = _CONSUMER_POLICY_ID
+
 ATTESTATION_SCHEMA = "workflow-delivery/v3/governance-attestation"
-CONSUMER_POLICY_ID = "release/no-smoke-package-consumers-v1"
+LIVE_ELIGIBILITY_DECISION_SCHEMA = (
+    "workflow-delivery/v3/live-eligibility-decision"
+)
+LIVE_ELIGIBILITY_PRODUCER = "evaluate-live-eligibility"
 _RELEASE_POLICY_BINDING = FIRST_SLICE_RELEASE_UNIT
 _WRITER_ROLES = frozenset({"Write", "Maintain", "Admin"})
 _ACCESS_CATEGORIES = ("repository", "package", "manage_actions")
-_ALLOWED_EXCEPTION_PATHS = frozenset(
-    {
-        "src/public/lib/hcoona-release-smoke-npm/package.json",
-        (
-            "src/public/lib/three-workflow-delivery-v3/tests/fixtures/"
-            "release/consumer-policy-acceptance.json"
-        ),
-        (
-            "src/public/lib/three-workflow-delivery-v3/tests/fixtures/"
-            "acceptance/npm-publish-request/package/package.json"
-        ),
-    }
-)
 _SHA_PATTERN = re.compile(r"[0-9a-f]{40}\Z")
 _OBJECT_ID_PATTERN = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 _DIGEST_PATTERN = re.compile(r"sha256:[0-9a-f]{64}\Z")
@@ -70,6 +75,13 @@ class EligibilityResult(StrEnum):
 
     PASS = "pass"  # noqa: S105
     BLOCKED = "blocked"
+
+
+class LiveEligibilityAdmissionMode(StrEnum):
+    """Freshness branch fixed by the trusted lifecycle caller."""
+
+    CURRENT_FRESHNESS = "current-freshness"
+    CAPABILITY_REPLAY = "capability-replay"
 
 
 @dataclass(frozen=True, slots=True)
@@ -217,57 +229,6 @@ class GovernanceObservation:
 
 
 @dataclass(frozen=True, slots=True)
-class SurfaceDigest:
-    """One exact target dependency surface and its content digest."""
-
-    path: str
-    content_digest: str
-
-    def to_document(self) -> dict[str, JsonValue]:
-        """Return the canonical surface binding."""
-        return {
-            "path": self.path,
-            "content-digest": self.content_digest,
-        }
-
-
-@dataclass(frozen=True, slots=True)
-class ConsumerPolicyResult:
-    """Permanent target-bound input abstraction for consumer policy."""
-
-    policy_id: str
-    policy_digest: str
-    target: str
-    scanned_surfaces: tuple[SurfaceDigest, ...]
-    admitted_exceptions: tuple[SurfaceDigest, ...]
-    consumers: tuple[str, ...]
-
-    def to_document(self) -> dict[str, JsonValue]:
-        """Return the canonical consumer-policy result."""
-        scanned_surfaces: list[JsonValue] = [
-            surface.to_document() for surface in self.scanned_surfaces
-        ]
-        admitted_exceptions: list[JsonValue] = [
-            surface.to_document() for surface in self.admitted_exceptions
-        ]
-        consumers: list[JsonValue] = list(self.consumers)
-        return {
-            "schema": "workflow-delivery/v3/consumer-policy-result",
-            "policy-id": self.policy_id,
-            "policy-digest": self.policy_digest,
-            "target": self.target,
-            "scanned-surfaces": scanned_surfaces,
-            "admitted-exceptions": admitted_exceptions,
-            "consumers": consumers,
-        }
-
-    @property
-    def result_digest(self) -> str:
-        """Return the complete target-bound consumer-policy digest."""
-        return canonical_sha256(self.to_document())
-
-
-@dataclass(frozen=True, slots=True)
 class LiveEligibilityContext:
     """Current pre-Attempt authority for one live eligibility evaluation."""
 
@@ -285,6 +246,75 @@ class LiveEligibilityContext:
 
 
 @dataclass(frozen=True, slots=True)
+class LiveEligibilityGovernanceBinding:
+    """Complete Governance projection in the eligibility Decision."""
+
+    source: GovernanceSource
+    resolved_commit: str
+    blob_oid: str
+    content_sha256: str
+    observed_at: datetime
+    live_enabled: bool
+    issuer: str
+    inspected_at: datetime
+    expires_at: datetime
+    attestation_content_digest: str
+
+    @classmethod
+    def from_observation(
+        cls,
+        observation: GovernanceObservation,
+    ) -> LiveEligibilityGovernanceBinding:
+        """Project the exact evaluator observation into transport fields."""
+        return cls(
+            source=observation.source,
+            resolved_commit=observation.resolved_commit,
+            blob_oid=observation.blob_oid,
+            content_sha256=observation.content_sha256,
+            observed_at=observation.observed_at,
+            live_enabled=observation.attestation.live_enabled,
+            issuer=observation.attestation.issuer,
+            inspected_at=observation.attestation.inspected_at,
+            expires_at=observation.attestation.expires_at,
+            attestation_content_digest=(observation.attestation.content_digest),
+        )
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the closed Governance Decision binding."""
+        return {
+            "repository": self.source.repository,
+            "ref": self.source.ref,
+            "resolved-commit": self.resolved_commit,
+            "path": self.source.path,
+            "blob-oid": self.blob_oid,
+            "content-sha256": self.content_sha256,
+            "observed-at": _format_instant(self.observed_at),
+            "max-age-days": self.source.max_age_days,
+            "live-enabled": self.live_enabled,
+            "issuer": self.issuer,
+            "inspected-at": _format_instant(self.inspected_at),
+            "expires-at": _format_instant(self.expires_at),
+            "attestation-content-digest": (self.attestation_content_digest),
+        }
+
+    @property
+    def provenance(self) -> tuple[tuple[str, str], ...]:
+        """Return the complete fixed-source provenance comparison."""
+        return tuple(
+            sorted(
+                (
+                    ("repository", self.source.repository),
+                    ("ref", self.source.ref),
+                    ("path", self.source.path),
+                    ("resolved-commit", self.resolved_commit),
+                    ("blob-oid", self.blob_oid),
+                    ("content-sha256", self.content_sha256),
+                )
+            )
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class LiveEligibilityDecision:
     """Immutable exact-target pre-Attempt live eligibility Decision."""
 
@@ -296,72 +326,70 @@ class LiveEligibilityDecision:
 
     def to_document(self) -> dict[str, JsonValue]:
         """Return the complete canonical Decision payload."""
-        context: dict[str, JsonValue] = {
-            "purpose": self.context.purpose,
-            "request-id": self.context.request_id,
-            "workflow-run-id": self.context.workflow_run_id,
-            "run-attempt": self.context.run_attempt,
-            "selected-ref": self.context.selected_ref,
-            "target": self.context.target,
-            "repository-model-digest": self.context.repository_model_digest,
-            "producer": self.context.producer,
-            "control": self.context.control,
-            "release-policy-digest": self.context.release_policy_digest,
-            "catalog-digest": self.context.catalog_digest,
-        }
-        scanned_surfaces: list[JsonValue] = [
-            surface.to_document()
-            for surface in self.consumer_policy.scanned_surfaces
-        ]
-        admitted_exceptions: list[JsonValue] = [
-            surface.to_document()
-            for surface in self.consumer_policy.admitted_exceptions
-        ]
-        consumers: list[JsonValue] = list(self.consumer_policy.consumers)
-        consumer_policy: dict[str, JsonValue] = {
-            "policy-id": self.consumer_policy.policy_id,
-            "policy-digest": self.consumer_policy.policy_digest,
-            "result-digest": self.consumer_policy.result_digest,
-            "target": self.consumer_policy.target,
-            "scanned-surfaces": scanned_surfaces,
-            "admitted-exceptions": admitted_exceptions,
-            "consumers": consumers,
-        }
-        governance: dict[str, JsonValue] = {
-            "repository": self.governance.source.repository,
-            "ref": self.governance.source.ref,
-            "resolved-commit": self.governance.resolved_commit,
-            "path": self.governance.source.path,
-            "blob-oid": self.governance.blob_oid,
-            "content-sha256": self.governance.content_sha256,
-            "observed-at": _format_instant(self.governance.observed_at),
-            "max-age-days": self.governance.source.max_age_days,
-            "live-enabled": self.governance.attestation.live_enabled,
-            "issuer": self.governance.attestation.issuer,
-            "inspected-at": _format_instant(
-                self.governance.attestation.inspected_at
+        return _live_eligibility_document(
+            context=self.context,
+            consumer_policy=self.consumer_policy,
+            governance=LiveEligibilityGovernanceBinding.from_observation(
+                self.governance
             ),
-            "expires-at": _format_instant(
-                self.governance.attestation.expires_at
-            ),
-            "attestation-content-digest": (
-                self.governance.attestation.content_digest
-            ),
-        }
-        diagnostics: list[JsonValue] = list(self.diagnostics)
-        return {
-            "schema": "workflow-delivery/v3/live-eligibility-decision",
-            "context": context,
-            "consumer-policy": consumer_policy,
-            "governance": governance,
-            "result": self.result.value,
-            "diagnostics": diagnostics,
-        }
+            result=self.result,
+            diagnostics=self.diagnostics,
+        )
 
     @property
     def decision_digest(self) -> str:
         """Return the complete canonical Decision digest."""
         return canonical_sha256(self.to_document())
+
+
+@dataclass(frozen=True, slots=True)
+class AdmittedLiveEligibilityDecision:
+    """Strict canonical current-attempt Live Eligibility transport."""
+
+    context: LiveEligibilityContext
+    consumer_policy: ConsumerPolicyResult
+    governance: LiveEligibilityGovernanceBinding
+    result: EligibilityResult
+    diagnostics: tuple[str, ...]
+    canonical_digest: str
+    canonical_bytes: bytes
+
+    def __post_init__(self) -> None:
+        """Reject an internally inconsistent admitted transport wrapper."""
+        if (
+            type(self.context) is not LiveEligibilityContext
+            or type(self.consumer_policy) is not ConsumerPolicyResult
+            or type(self.governance) is not LiveEligibilityGovernanceBinding
+            or type(self.result) is not EligibilityResult
+            or type(self.diagnostics) is not tuple
+            or type(self.canonical_digest) is not str
+            or _DIGEST_PATTERN.fullmatch(self.canonical_digest) is None
+            or type(self.canonical_bytes) is not bytes
+        ):
+            message = "Live Eligibility Decision admission integrity failed"
+            raise TypeError(message)
+        document = parse_canonical_json(self.canonical_bytes)
+        if (
+            self.to_document() != document
+            or canonical_sha256(document) != self.canonical_digest
+        ):
+            message = "Live Eligibility Decision admission integrity failed"
+            raise ValueError(message)
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the exact admitted Decision document."""
+        return _live_eligibility_document(
+            context=self.context,
+            consumer_policy=self.consumer_policy,
+            governance=self.governance,
+            result=self.result,
+            diagnostics=self.diagnostics,
+        )
+
+    @property
+    def decision_digest(self) -> str:
+        """Return the admitted canonical Decision digest."""
+        return self.canonical_digest
 
 
 def _closed(
@@ -416,6 +444,54 @@ def _parse_instant(value: JsonValue, *, context: str) -> datetime:
 
 def _format_instant(value: datetime) -> str:
     return value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _live_eligibility_document(
+    *,
+    context: LiveEligibilityContext,
+    consumer_policy: ConsumerPolicyResult,
+    governance: LiveEligibilityGovernanceBinding,
+    result: EligibilityResult,
+    diagnostics: tuple[str, ...],
+) -> dict[str, JsonValue]:
+    context_document: dict[str, JsonValue] = {
+        "purpose": context.purpose,
+        "request-id": context.request_id,
+        "workflow-run-id": context.workflow_run_id,
+        "run-attempt": context.run_attempt,
+        "selected-ref": context.selected_ref,
+        "target": context.target,
+        "repository-model-digest": context.repository_model_digest,
+        "producer": context.producer,
+        "control": context.control,
+        "release-policy-digest": context.release_policy_digest,
+        "catalog-digest": context.catalog_digest,
+    }
+    scanned_surfaces: list[JsonValue] = [
+        surface.to_document() for surface in consumer_policy.scanned_surfaces
+    ]
+    admitted_exceptions: list[JsonValue] = [
+        surface.to_document() for surface in consumer_policy.admitted_exceptions
+    ]
+    consumers: list[JsonValue] = list(consumer_policy.consumers)
+    consumer_policy_document: dict[str, JsonValue] = {
+        "policy-id": consumer_policy.policy_id,
+        "policy-digest": consumer_policy.policy_digest,
+        "result-digest": consumer_policy.result_digest,
+        "target": consumer_policy.target,
+        "scanned-surfaces": scanned_surfaces,
+        "admitted-exceptions": admitted_exceptions,
+        "consumers": consumers,
+    }
+    diagnostic_documents: list[JsonValue] = list(diagnostics)
+    return {
+        "schema": LIVE_ELIGIBILITY_DECISION_SCHEMA,
+        "context": context_document,
+        "consumer-policy": consumer_policy_document,
+        "governance": governance.to_document(),
+        "result": result.value,
+        "diagnostics": diagnostic_documents,
+    }
 
 
 def _writer_inventory(value: JsonValue) -> tuple[WriterInventoryEntry, ...]:
@@ -734,89 +810,6 @@ def require_fresh_governance_identity(  # noqa: PLR0913
     return observation
 
 
-def _normalized_path(value: str, *, field: str) -> str:
-    path = PurePosixPath(value)
-    if (
-        not value
-        or path.is_absolute()
-        or ".." in path.parts
-        or "\\" in value
-        or path.as_posix() != value
-    ):
-        message = f"{field} must be a normalized repository-relative path"
-        raise ValueError(message)
-    return value
-
-
-def _validate_surfaces(
-    surfaces: tuple[SurfaceDigest, ...],
-    *,
-    field: str,
-) -> None:
-    if not surfaces:
-        message = f"{field} must be nonempty"
-        raise ValueError(message)
-    expected_order = tuple(sorted(surfaces, key=lambda surface: surface.path))
-    if surfaces != expected_order:
-        message = f"{field} must be sorted by path"
-        raise ValueError(message)
-    paths: set[str] = set()
-    for surface in surfaces:
-        _normalized_path(surface.path, field=f"{field}.path")
-        if surface.path in paths:
-            message = f"{field} contains a duplicate path"
-            raise ValueError(message)
-        paths.add(surface.path)
-        if _DIGEST_PATTERN.fullmatch(surface.content_digest) is None:
-            message = f"{field}.content_digest must be SHA-256"
-            raise ValueError(message)
-
-
-def validate_consumer_policy_result(  # noqa: C901
-    result: ConsumerPolicyResult,
-) -> None:
-    """Validate the permanent target-bound consumer-policy input."""
-    if result.policy_id != CONSUMER_POLICY_ID:
-        message = "consumer-policy ID is not the static first-slice policy"
-        raise ValueError(message)
-    if _DIGEST_PATTERN.fullmatch(result.policy_digest) is None:
-        message = "consumer-policy digest must be SHA-256"
-        raise ValueError(message)
-    if _SHA_PATTERN.fullmatch(result.target) is None:
-        message = "consumer-policy target must be a full commit SHA"
-        raise ValueError(message)
-    _validate_surfaces(result.scanned_surfaces, field="scanned_surfaces")
-    scanned = {
-        surface.path: surface.content_digest
-        for surface in result.scanned_surfaces
-    }
-    if result.admitted_exceptions:
-        _validate_surfaces(
-            result.admitted_exceptions,
-            field="admitted_exceptions",
-        )
-    for exception in result.admitted_exceptions:
-        if (
-            exception.path not in _ALLOWED_EXCEPTION_PATHS
-            or scanned.get(exception.path) != exception.content_digest
-        ):
-            message = (
-                "consumer-policy exception is not digest-bound/allowlisted"
-            )
-            raise ValueError(message)
-    if result.consumers != tuple(sorted(result.consumers)):
-        message = "consumer-policy consumers must be sorted"
-        raise ValueError(message)
-    if len(set(result.consumers)) != len(result.consumers):
-        message = "consumer-policy consumers contain duplicates"
-        raise ValueError(message)
-    for consumer in result.consumers:
-        _normalized_path(consumer, field="consumer-policy consumer")
-        if consumer not in scanned:
-            message = "consumer-policy consumer was not in scanned surfaces"
-            raise ValueError(message)
-
-
 def release_policy_digest(policy: ReleasePolicy) -> str:
     """Return a canonical digest for the normalized Release policy."""
     document: dict[str, JsonValue] = {
@@ -962,6 +955,527 @@ def _validate_live_context(  # noqa: C901
         message = "live eligibility Repository Model binding mismatch"
         raise ValueError(message)
     validate_compilation_context(snapshot.context)
+
+
+def _decision_integer(value: JsonValue, *, field: str) -> int:
+    if type(value) is not int or value <= 0:
+        message = (
+            f"Live Eligibility Decision {field} must be a positive integer"
+        )
+        raise TypeError(message)
+    return value
+
+
+def _decision_boolean(value: JsonValue, *, field: str) -> bool:
+    if type(value) is not bool:
+        message = f"Live Eligibility Decision {field} must be Boolean"
+        raise TypeError(message)
+    return value
+
+
+def _decision_digest(value: JsonValue, *, field: str) -> str:
+    digest = _nonempty_exact_string(value, field=field)
+    if _DIGEST_PATTERN.fullmatch(digest) is None:
+        message = f"Live Eligibility Decision {field} must be SHA-256"
+        raise ValueError(message)
+    return digest
+
+
+def _decision_sha(value: JsonValue, *, field: str) -> str:
+    sha = _nonempty_exact_string(value, field=field)
+    if _SHA_PATTERN.fullmatch(sha) is None:
+        message = f"Live Eligibility Decision {field} must be a full commit SHA"
+        raise ValueError(message)
+    return sha
+
+
+def _decision_strings(
+    value: JsonValue,
+    *,
+    field: str,
+) -> tuple[str, ...]:
+    return tuple(
+        _nonempty_exact_string(item, field=f"{field}[{index}]")
+        for index, item in enumerate(_array(value, context=field))
+    )
+
+
+def _decision_surfaces(
+    value: JsonValue,
+    *,
+    field: str,
+) -> tuple[SurfaceDigest, ...]:
+    surfaces: list[SurfaceDigest] = []
+    for index, item in enumerate(_array(value, context=field)):
+        document = _object(item, context=f"{field}[{index}]")
+        _closed(
+            document,
+            required=frozenset({"path", "content-digest"}),
+            context=f"{field}[{index}]",
+        )
+        surfaces.append(
+            SurfaceDigest(
+                path=_nonempty_exact_string(
+                    document["path"],
+                    field=f"{field}[{index}].path",
+                ),
+                content_digest=_decision_digest(
+                    document["content-digest"],
+                    field=f"{field}[{index}].content-digest",
+                ),
+            )
+        )
+    return tuple(surfaces)
+
+
+def _decision_context(value: JsonValue) -> LiveEligibilityContext:
+    document = _object(value, context="Live Eligibility Decision.context")
+    _closed(
+        document,
+        required=frozenset(
+            {
+                "purpose",
+                "request-id",
+                "workflow-run-id",
+                "run-attempt",
+                "selected-ref",
+                "target",
+                "repository-model-digest",
+                "producer",
+                "control",
+                "release-policy-digest",
+                "catalog-digest",
+            }
+        ),
+        context="Live Eligibility Decision.context",
+    )
+    return LiveEligibilityContext(
+        purpose=_nonempty_exact_string(
+            document["purpose"],
+            field="context.purpose",
+        ),
+        request_id=_nonempty_exact_string(
+            document["request-id"],
+            field="context.request-id",
+        ),
+        workflow_run_id=_decision_integer(
+            document["workflow-run-id"],
+            field="context.workflow-run-id",
+        ),
+        run_attempt=_decision_integer(
+            document["run-attempt"],
+            field="context.run-attempt",
+        ),
+        selected_ref=_nonempty_exact_string(
+            document["selected-ref"],
+            field="context.selected-ref",
+        ),
+        target=_decision_sha(
+            document["target"],
+            field="context.target",
+        ),
+        repository_model_digest=_decision_digest(
+            document["repository-model-digest"],
+            field="context.repository-model-digest",
+        ),
+        producer=_nonempty_exact_string(
+            document["producer"],
+            field="context.producer",
+        ),
+        control=_nonempty_exact_string(
+            document["control"],
+            field="context.control",
+        ),
+        release_policy_digest=_decision_digest(
+            document["release-policy-digest"],
+            field="context.release-policy-digest",
+        ),
+        catalog_digest=_decision_digest(
+            document["catalog-digest"],
+            field="context.catalog-digest",
+        ),
+    )
+
+
+def _decision_consumer_policy(value: JsonValue) -> ConsumerPolicyResult:
+    document = _object(
+        value,
+        context="Live Eligibility Decision.consumer-policy",
+    )
+    _closed(
+        document,
+        required=frozenset(
+            {
+                "policy-id",
+                "policy-digest",
+                "result-digest",
+                "target",
+                "scanned-surfaces",
+                "admitted-exceptions",
+                "consumers",
+            }
+        ),
+        context="Live Eligibility Decision.consumer-policy",
+    )
+    claimed_result_digest = _decision_digest(
+        document["result-digest"],
+        field="consumer-policy.result-digest",
+    )
+    result = ConsumerPolicyResult(
+        policy_id=_nonempty_exact_string(
+            document["policy-id"],
+            field="consumer-policy.policy-id",
+        ),
+        policy_digest=_decision_digest(
+            document["policy-digest"],
+            field="consumer-policy.policy-digest",
+        ),
+        target=_decision_sha(
+            document["target"],
+            field="consumer-policy.target",
+        ),
+        scanned_surfaces=_decision_surfaces(
+            document["scanned-surfaces"],
+            field="consumer-policy.scanned-surfaces",
+        ),
+        admitted_exceptions=_decision_surfaces(
+            document["admitted-exceptions"],
+            field="consumer-policy.admitted-exceptions",
+        ),
+        consumers=_decision_strings(
+            document["consumers"],
+            field="consumer-policy.consumers",
+        ),
+    )
+    validate_consumer_policy_result(result)
+    if claimed_result_digest != result.result_digest:
+        message = (
+            "Live Eligibility Decision consumer-policy result digest mismatch"
+        )
+        raise ValueError(message)
+    return result
+
+
+def _validate_governance_binding(
+    binding: LiveEligibilityGovernanceBinding,
+) -> None:
+    if type(binding) is not LiveEligibilityGovernanceBinding:
+        message = "Live Eligibility Decision Governance binding type mismatch"
+        raise TypeError(message)
+    _validate_source(binding.source)
+    if _SHA_PATTERN.fullmatch(binding.resolved_commit) is None:
+        message = "Live Eligibility Decision Governance commit is malformed"
+        raise ValueError(message)
+    if _OBJECT_ID_PATTERN.fullmatch(binding.blob_oid) is None:
+        message = "Live Eligibility Decision Governance blob OID is malformed"
+        raise ValueError(message)
+    for field, value in (
+        ("content-sha256", binding.content_sha256),
+        ("attestation-content-digest", binding.attestation_content_digest),
+    ):
+        if type(value) is not str or _DIGEST_PATTERN.fullmatch(value) is None:
+            message = (
+                f"Live Eligibility Decision Governance {field} is malformed"
+            )
+            raise ValueError(message)
+    if binding.content_sha256 != binding.attestation_content_digest:
+        message = (
+            "Live Eligibility Decision Governance attestation identity mismatch"
+        )
+        raise ValueError(message)
+    if type(binding.live_enabled) is not bool:
+        message = (
+            "Live Eligibility Decision Governance live-enabled must be Boolean"
+        )
+        raise TypeError(message)
+    _string(binding.issuer, context="governance.issuer")
+    observed_at = _utc_now(binding.observed_at)
+    inspected_at = _utc_now(binding.inspected_at)
+    expires_at = _utc_now(binding.expires_at)
+    lifetime = expires_at - inspected_at
+    if lifetime <= timedelta(0) or lifetime > timedelta(
+        days=binding.source.max_age_days
+    ):
+        message = (
+            "Live Eligibility Decision Governance attestation lifetime mismatch"
+        )
+        raise ValueError(message)
+    if (
+        observed_at.microsecond
+        or inspected_at.microsecond
+        or expires_at.microsecond
+    ):
+        message = (
+            "Live Eligibility Decision Governance instants must use "
+            "second precision"
+        )
+        raise ValueError(message)
+
+
+def _decision_governance(
+    value: JsonValue,
+) -> LiveEligibilityGovernanceBinding:
+    document = _object(
+        value,
+        context="Live Eligibility Decision.governance",
+    )
+    _closed(
+        document,
+        required=frozenset(
+            {
+                "repository",
+                "ref",
+                "resolved-commit",
+                "path",
+                "blob-oid",
+                "content-sha256",
+                "observed-at",
+                "max-age-days",
+                "live-enabled",
+                "issuer",
+                "inspected-at",
+                "expires-at",
+                "attestation-content-digest",
+            }
+        ),
+        context="Live Eligibility Decision.governance",
+    )
+    binding = LiveEligibilityGovernanceBinding(
+        source=GovernanceSource(
+            repository=_nonempty_exact_string(
+                document["repository"],
+                field="governance.repository",
+            ),
+            ref=_nonempty_exact_string(
+                document["ref"],
+                field="governance.ref",
+            ),
+            path=_nonempty_exact_string(
+                document["path"],
+                field="governance.path",
+            ),
+            max_age_days=_decision_integer(
+                document["max-age-days"],
+                field="governance.max-age-days",
+            ),
+        ),
+        resolved_commit=_decision_sha(
+            document["resolved-commit"],
+            field="governance.resolved-commit",
+        ),
+        blob_oid=_nonempty_exact_string(
+            document["blob-oid"],
+            field="governance.blob-oid",
+        ),
+        content_sha256=_decision_digest(
+            document["content-sha256"],
+            field="governance.content-sha256",
+        ),
+        observed_at=_parse_instant(
+            document["observed-at"],
+            context="governance.observed-at",
+        ),
+        live_enabled=_decision_boolean(
+            document["live-enabled"],
+            field="governance.live-enabled",
+        ),
+        issuer=_string(
+            document["issuer"],
+            context="governance.issuer",
+        ),
+        inspected_at=_parse_instant(
+            document["inspected-at"],
+            context="governance.inspected-at",
+        ),
+        expires_at=_parse_instant(
+            document["expires-at"],
+            context="governance.expires-at",
+        ),
+        attestation_content_digest=_decision_digest(
+            document["attestation-content-digest"],
+            field="governance.attestation-content-digest",
+        ),
+    )
+    _validate_governance_binding(binding)
+    return binding
+
+
+def admit_live_eligibility_decision(  # noqa: C901, PLR0912, PLR0913, PLR0915
+    canonical_bytes: bytes,
+    *,
+    intent: ReleaseIntent,
+    repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+    expected_digest: str,
+    admission_mode: LiveEligibilityAdmissionMode,
+    now: datetime,
+) -> AdmittedLiveEligibilityDecision:
+    """Admit one canonical passing Decision for a caller-fixed phase."""
+    if type(canonical_bytes) is not bytes:
+        message = "Live Eligibility Decision transport must be exact bytes"
+        raise TypeError(message)
+    if type(intent) is not ReleaseIntent:
+        message = (
+            "Live Eligibility Decision requires an admitted Release Intent"
+        )
+        raise TypeError(message)
+    if type(repository_model) is not AdmittedRepositoryModelSnapshot:
+        message = (
+            "Live Eligibility Decision requires an admitted Repository Model"
+        )
+        raise TypeError(message)
+    if type(policy) is not ReleasePolicy:
+        message = "Live Eligibility Decision requires an exact Release policy"
+        raise TypeError(message)
+    if type(admission_mode) is not LiveEligibilityAdmissionMode:
+        message = (
+            "Live Eligibility Decision admission mode must be caller-selected"
+        )
+        raise TypeError(message)
+    admitted_at = _utc_now(now)
+    normalized_expected_digest = _decision_digest(
+        expected_digest,
+        field="expected-digest",
+    )
+    document = parse_canonical_json(canonical_bytes)
+    _closed(
+        document,
+        required=frozenset(
+            {
+                "schema",
+                "context",
+                "consumer-policy",
+                "governance",
+                "result",
+                "diagnostics",
+            }
+        ),
+        context="Live Eligibility Decision",
+    )
+    if document["schema"] != LIVE_ELIGIBILITY_DECISION_SCHEMA:
+        message = "Live Eligibility Decision has the wrong schema"
+        raise ValueError(message)
+    actual_digest = canonical_sha256(document)
+    if actual_digest != normalized_expected_digest:
+        message = "Live Eligibility Decision canonical digest mismatch"
+        raise ValueError(message)
+    context = _decision_context(document["context"])
+    consumer_policy = _decision_consumer_policy(document["consumer-policy"])
+    governance = _decision_governance(document["governance"])
+    result_value = _nonempty_exact_string(
+        document["result"],
+        field="result",
+    )
+    try:
+        result = EligibilityResult(result_value)
+    except ValueError as error:
+        message = "Live Eligibility Decision result is invalid"
+        raise ValueError(message) from error
+    diagnostics = _decision_strings(
+        document["diagnostics"],
+        field="diagnostics",
+    )
+    if len(set(diagnostics)) != len(diagnostics):
+        message = "Live Eligibility Decision diagnostics contain duplicates"
+        raise ValueError(message)
+
+    expected_intent_shape = (
+        GOVERNANCE_REPOSITORY,
+        BUDDY_LIVE_WORKFLOW_PATH,
+        "buddy",
+        "live",
+        "live-release",
+        FIRST_SLICE_RELEASE_UNIT,
+    )
+    actual_intent_shape = (
+        intent.repository,
+        intent.workflow_path,
+        intent.channel,
+        intent.mode,
+        intent.purpose,
+        intent.release_unit,
+    )
+    if actual_intent_shape != expected_intent_shape:
+        message = "Live Eligibility Decision Release Intent is not exact live"
+        raise ValueError(message)
+    expected_context = (
+        intent.purpose,
+        intent.request_id,
+        intent.workflow_run_id,
+        intent.run_attempt,
+        intent.selected_ref,
+        intent.target,
+        repository_model.canonical_digest,
+        LIVE_ELIGIBILITY_PRODUCER,
+        repository_model.snapshot.context.control,
+        release_policy_digest(policy),
+        catalog_digest(),
+    )
+    actual_context = (
+        context.purpose,
+        context.request_id,
+        context.workflow_run_id,
+        context.run_attempt,
+        context.selected_ref,
+        context.target,
+        context.repository_model_digest,
+        context.producer,
+        context.control,
+        context.release_policy_digest,
+        context.catalog_digest,
+    )
+    if actual_context != expected_context:
+        message = "Live Eligibility Decision current lineage mismatch"
+        raise ValueError(message)
+    _validate_live_context(context, repository_model.snapshot, policy)
+    if repository_model.snapshot.release_policy != compile_release_policy(
+        policy
+    ):
+        message = (
+            "Live Eligibility Decision exact-target Release policy mismatch"
+        )
+        raise ValueError(message)
+    if consumer_policy.target != context.target:
+        message = "Live Eligibility Decision consumer-policy target mismatch"
+        raise ValueError(message)
+    if (
+        result is not EligibilityResult.PASS
+        or consumer_policy.consumers
+        or diagnostics
+    ):
+        message = "Live Eligibility Decision is not a closed passing decision"
+        raise ValueError(message)
+    original_observation_valid = (
+        governance.inspected_at
+        <= governance.observed_at
+        < governance.expires_at
+    )
+    requires_current_freshness = (
+        admission_mode is LiveEligibilityAdmissionMode.CURRENT_FRESHNESS
+    )
+    if (
+        not governance.live_enabled
+        or not original_observation_valid
+        or governance.observed_at > admitted_at
+        or (requires_current_freshness and governance.expires_at <= admitted_at)
+    ):
+        message = (
+            "Live Eligibility Decision Governance is not fresh and enabled"
+        )
+        raise ValueError(message)
+    admitted = AdmittedLiveEligibilityDecision(
+        context=context,
+        consumer_policy=consumer_policy,
+        governance=governance,
+        result=result,
+        diagnostics=diagnostics,
+        canonical_digest=actual_digest,
+        canonical_bytes=canonical_bytes,
+    )
+    if admitted.to_document() != document:
+        message = "Live Eligibility Decision is not normalized"
+        raise ValueError(message)
+    return admitted
 
 
 def evaluate_live_eligibility(  # noqa: PLR0913

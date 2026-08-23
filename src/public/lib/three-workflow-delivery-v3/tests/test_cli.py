@@ -10,6 +10,8 @@ import os
 import subprocess
 import sys
 import tomllib
+from argparse import Namespace
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Self, cast
@@ -28,6 +30,7 @@ from three_workflow_delivery_v3.canonical import (
     JsonValue,
     canonical_sha256,
     canonicalize,
+    parse_canonical_json,
 )
 from three_workflow_delivery_v3.ci.planner import (
     form_pull_request_candidate,
@@ -39,9 +42,18 @@ from three_workflow_delivery_v3.records.ci import (
 )
 from three_workflow_delivery_v3.records.release import (
     PUBLISHER_GOVERNANCE_RECHECK_FAILED_BEFORE_RUNNER,
+    AuthorizationRecord,
     BuddyExecutionIdentity,
+    CapabilityAdmissionDecision,
+    PublicationObservationReference,
     PublicationSnapshot,
     ReleaseAttemptIdentity,
+)
+from three_workflow_delivery_v3.release import (
+    GovernanceAttestation,
+    GovernanceObservation,
+    LiveEligibilityAdmissionMode,
+    LiveEligibilityGovernanceBinding,
 )
 from three_workflow_delivery_v3.release.identity import (
     OFFICIAL_SIMULATION_PRODUCER,
@@ -55,6 +67,11 @@ from three_workflow_delivery_v3.repository import (
 )
 from three_workflow_delivery_v3.repository.descriptors import (
     FIRST_SLICE_POLICY_PATH,
+    GOVERNANCE_MAX_AGE_DAYS,
+    GOVERNANCE_PATH,
+    GOVERNANCE_REF,
+    GOVERNANCE_REPOSITORY,
+    GovernanceSource,
 )
 from three_workflow_delivery_v3.repository.node_provider import (
     AUTHORITATIVE_REMOTE,
@@ -947,6 +964,15 @@ def test_cli_exposes_only_the_commit7_release_transport_commands(
     ("command", "required_options"),
     [
         (
+            "admit-live-eligibility",
+            (
+                "--intent",
+                "--repository-model",
+                "--live-eligibility-decision",
+                "--output",
+            ),
+        ),
+        (
             "admit-history",
             ("--output", "--github-output"),
         ),
@@ -964,7 +990,13 @@ def test_cli_exposes_only_the_commit7_release_transport_commands(
         ),
         (
             "admit-capability",
-            ("--authorization", "--publication-snapshot", "--output"),
+            (
+                "--intent",
+                "--repository-model",
+                "--authorization",
+                "--publication-snapshot",
+                "--output",
+            ),
         ),
         (
             "preflight-github-packages",
@@ -1156,6 +1188,9 @@ def test_project_registers_only_the_bounded_cli() -> None:
     assert set(pyproject["project"]["dependencies"]) == {
         "PyYAML>=6.0.2",
         "rfc8785>=0.1.4",
+        "tree-sitter==0.25.2",
+        "tree-sitter-javascript==0.25.0",
+        "tree-sitter-typescript==0.23.2",
     }
 
 
@@ -2155,6 +2190,221 @@ def test_ci_finalizer_rejects_pr_number_not_bound_to_plan(
         == 1
     )
     assert not decision.exists()
+
+
+def test_capability_cli_persists_expiry_decision_before_returning_one(  # noqa: PLR0915
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Diagnose expiry after replay and persist the blocking Decision."""
+    target = "b" * 40
+    control = f"workflow-delivery-v3:{target}"
+    attempt = ReleaseAttemptIdentity(
+        execution=BuddyExecutionIdentity(
+            channel="buddy",
+            release_unit="hcoona-release-smoke-npm",
+            target=target,
+        ),
+        workflow_run_id=WORKFLOW_RUN_ID,
+        run_attempt=RUN_ATTEMPT,
+    )
+    projection_id = "projection:npm:github-packages"
+    publication = PublicationSnapshot(
+        attempt=attempt,
+        qualification_snapshot_digest="sha256:" + ("1" * 64),
+        qualification_decision_digest="sha256:" + ("2" * 64),
+        qualification_result="success",
+        projection_ids=(projection_id,),
+        artifact_digests=("sha256:" + ("3" * 64),),
+        artifact_output_ids=("npm-tarball",),
+        observation_references=(
+            PublicationObservationReference(
+                projection_id=projection_id,
+                observation_digest="sha256:" + ("4" * 64),
+                classification="exact-satisfied",
+            ),
+        ),
+        materialized_actions=(),
+    )
+    publication_bytes = canonicalize(publication.to_document())
+    summary_bytes = b"# Capability review\n"
+    publication_path = tmp_path / "publication-snapshot.json"
+    reviewer_summary_path = tmp_path / "reviewer-summary.md"
+    publication_path.write_bytes(publication_bytes)
+    reviewer_summary_path.write_bytes(summary_bytes)
+    reviewer_upload_digest = "sha256:" + ("5" * 64)
+    authorization = AuthorizationRecord(
+        attempt=attempt,
+        publication_snapshot_digest=publication.snapshot_digest,
+        reviewer_summary_artifact_id=710,
+        reviewer_summary_upload_digest=reviewer_upload_digest,
+        reviewer_summary_payload_digest=(
+            f"sha256:{hashlib.sha256(summary_bytes).hexdigest()}"
+        ),
+        workflow_run_id=attempt.workflow_run_id,
+        run_attempt=attempt.run_attempt,
+        approval_job_id=711,
+        approval_job="approval",
+        environment="workflow-delivery-v3-buddy-smoke-approval",
+        channel="buddy",
+        completed_at="2026-08-13T16:00:00Z",
+        producer="approval",
+        control=control,
+    )
+    source = GovernanceSource(
+        repository=GOVERNANCE_REPOSITORY,
+        ref=GOVERNANCE_REF,
+        path=GOVERNANCE_PATH,
+        max_age_days=GOVERNANCE_MAX_AGE_DAYS,
+    )
+    attestation = GovernanceAttestation(
+        release_policy="hcoona-release-smoke-npm",
+        package="@hcoona/hcoona-release-smoke-npm",
+        issuer="hcoona",
+        inspected_at=datetime(1999, 12, 1, tzinfo=UTC),
+        expires_at=datetime(2000, 1, 1, tzinfo=UTC),
+        accepted_writers=(),
+        access_inventory=None,
+        access_evidence_digest=None,
+        limitations=("Bounded test attestation.",),
+        live_enabled=True,
+    )
+    fresh = GovernanceObservation(
+        source=source,
+        resolved_commit="c" * 40,
+        blob_oid="d" * 40,
+        content_sha256=attestation.content_digest,
+        observed_at=datetime(1999, 12, 15, tzinfo=UTC),
+        attestation=attestation,
+    )
+    initial_eligibility = SimpleNamespace(
+        governance=LiveEligibilityGovernanceBinding.from_observation(fresh)
+    )
+    policy = SimpleNamespace(governance=source)
+    intent = SimpleNamespace()
+    model = SimpleNamespace()
+    selected_modes: list[LiveEligibilityAdmissionMode] = []
+
+    def admit_initial(
+        _arguments: object,
+        actual_intent: object,
+        actual_model: object,
+        *,
+        admission_mode: LiveEligibilityAdmissionMode,
+    ) -> tuple[object, object]:
+        assert actual_intent is intent
+        assert actual_model is model
+        selected_modes.append(admission_mode)
+        return initial_eligibility, policy
+
+    observed_at: list[datetime] = []
+
+    def observe(
+        actual_source: GovernanceSource,
+        _client: object,
+        *,
+        now: datetime,
+    ) -> GovernanceObservation:
+        assert actual_source is source
+        assert _client is rest_client
+        observed_at.append(now)
+        return fresh
+
+    monkeypatch.setattr(cli_module, "_load_live_intent", lambda _args: intent)
+    monkeypatch.setattr(
+        cli_module,
+        "_load_live_model",
+        lambda _args, _intent: model,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_admitted_live_eligibility_decision",
+        admit_initial,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_load_publication_snapshot",
+        lambda _args: publication,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_load_authorization",
+        lambda _args: authorization,
+    )
+    rest_client = object()
+
+    def github_client(*, repository: str, token: object) -> object:
+        assert repository == GOVERNANCE_REPOSITORY
+        assert token is None
+        return rest_client
+
+    monkeypatch.setattr(cli_module, "GitHubRestClient", github_client)
+    monkeypatch.setattr(cli_module, "observe_governance_source", observe)
+    output_path = tmp_path / "capability-decision.json"
+    github_output_path = tmp_path / "github-output"
+    arguments = Namespace(
+        github_token=None,
+        publication_snapshot=str(publication_path),
+        reviewer_summary=str(reviewer_summary_path),
+        reviewer_summary_artifact_id=710,
+        reviewer_summary_artifact_digest=reviewer_upload_digest,
+        live_eligibility_artifact_id=701,
+        live_eligibility_artifact_digest="sha256:" + ("6" * 64),
+        control=control,
+        output=str(output_path),
+        github_output=str(github_output_path),
+    )
+
+    status = cli_module._release_admit_capability_command(arguments)  # noqa: SLF001
+
+    assert status == 1
+    assert selected_modes == [LiveEligibilityAdmissionMode.CAPABILITY_REPLAY]
+    assert len(observed_at) == 1
+    assert observed_at[0] >= attestation.expires_at
+    canonical_bytes = output_path.read_bytes()
+    document = parse_canonical_json(canonical_bytes)
+    assert canonical_bytes == canonicalize(document)
+    assert document["schema"] == (
+        "workflow-delivery/v3/capability-admission-decision"
+    )
+    assert document["result"] == "blocked"
+    assert document["diagnostics"] == ["governance-attestation-expired"]
+    decision = CapabilityAdmissionDecision(
+        attempt=attempt,
+        authorization_digest=authorization.authorization_digest,
+        publication_snapshot_digest=publication.snapshot_digest,
+        reviewer_summary_artifact_id=710,
+        reviewer_summary_upload_digest=reviewer_upload_digest,
+        reviewer_summary_payload_digest=(
+            authorization.reviewer_summary_payload_digest
+        ),
+        action_digests=(),
+        artifact_digests=(),
+        resource_key_sets=(),
+        lock_groups=(),
+        capability_group_manifest=(),
+        live_eligibility_artifact_id=701,
+        live_eligibility_artifact_digest="sha256:" + ("6" * 64),
+        governance_provenance=(initial_eligibility.governance.provenance),
+        governance_content_sha256=attestation.content_digest,
+        governance_expires_at="2000-01-01T00:00:00Z",
+        governance_live_enabled=True,
+        producer="approval-finalizer",
+        control=control,
+        workflow_run_id=attempt.workflow_run_id,
+        run_attempt=attempt.run_attempt,
+        result="blocked",
+        diagnostics=("governance-attestation-expired",),
+    )
+    assert document == decision.to_document()
+    github_outputs = dict(
+        line.split("=", 1)
+        for line in github_output_path.read_text(encoding="utf-8").splitlines()
+    )
+    assert github_outputs["capability-decision-digest"] == (
+        decision.decision_digest
+    )
+    assert github_outputs["capability-result"] == "blocked"
 
 
 def test_publish_cli_persists_governance_terminal_state_before_nonzero(

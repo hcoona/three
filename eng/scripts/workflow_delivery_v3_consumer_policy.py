@@ -14,31 +14,54 @@ import subprocess
 import sys
 import tomllib
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
 import yaml
-from three_workflow_delivery_v3.canonical import JsonValue, canonical_sha256
-from three_workflow_delivery_v3.release.eligibility import (
+from three_workflow_delivery_v3.release.consumer_policy import (
+    ACCEPTANCE_FIXTURE_PATH,
+    ACCEPTANCE_NPM_MANIFEST_PATH,
+    APPROVED_CONSUMER_EXCEPTIONS,
+    CONSUMER_PACKAGE,
+    CONSUMER_POLICY_DIGEST,
+    CONSUMER_POLICY_HK_GLOBS,
     CONSUMER_POLICY_ID,
+    DEPENDENCY_SURFACE_CATALOG,
+    GIT_ATTRIBUTES_PATH,
+    JAVASCRIPT_ANALYZER_PATHS,
+    JAVASCRIPT_COMMONJS_GLOBAL_SUFFIXES,
+    NODE_DEPENDENCY_FIELDS,
+    OWN_DECLARATION_PATH,
+    POLICY_IMPLEMENTATION_PATH,
     ConsumerPolicyResult,
+    DependencySurfaceRule,
     SurfaceDigest,
     validate_consumer_policy_result,
+)
+from three_workflow_delivery_v3.release.javascript_consumer import (
+    scan_javascript_consumer,
 )
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
+__all__ = [
+    "ACCEPTANCE_FIXTURE_PATH",
+    "ACCEPTANCE_NPM_MANIFEST_PATH",
+    "APPROVED_CONSUMER_EXCEPTIONS",
+    "CONSUMER_POLICY_HK_GLOBS",
+    "DEPENDENCY_SURFACE_CATALOG",
+    "GIT_ATTRIBUTES_PATH",
+    "JAVASCRIPT_ANALYZER_PATHS",
+    "OWN_DECLARATION_PATH",
+    "PACKAGE_NAME",
+    "POLICY_IMPLEMENTATION_PATH",
+]
+
 # This is intentionally a closed syntactic policy, not a shell interpreter.
 # fmt: off
 
-PACKAGE_NAME = "@hcoona/hcoona-release-smoke-npm"
-POLICY_IMPLEMENTATION_PATH = "eng/scripts/workflow_delivery_v3_consumer_policy.py"
-GIT_ATTRIBUTES_PATH = ".gitattributes"
-OWN_DECLARATION_PATH = "src/public/lib/hcoona-release-smoke-npm/package.json"
-ACCEPTANCE_FIXTURE_PATH = "src/public/lib/three-workflow-delivery-v3/tests/fixtures/release/consumer-policy-acceptance.json"
-ACCEPTANCE_NPM_MANIFEST_PATH = "src/public/lib/three-workflow-delivery-v3/tests/fixtures/acceptance/npm-publish-request/package/package.json"
+PACKAGE_NAME = CONSUMER_PACKAGE
 
 _PACKAGE = re.escape(PACKAGE_NAME)
 _DIRECT_SPEC = re.compile(rf"{_PACKAGE}(?:@[^\s]+)?\Z")
@@ -52,66 +75,14 @@ _REUSABLE_WORKFLOW_USE = re.compile(r"(?:^\.\/|^[^/\s]+\/[^/\s]+\/)\.github/work
 _TOKEN = re.compile(r""""(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|[^\s]+""")
 _BLOCK_COMMENT = re.compile(r"/\*.*?\*/|<#.*?#>", re.DOTALL)
 _TEMPLATE_LITERAL = re.compile(r"`(?:\\.|[^`\\])*`", re.DOTALL)
-_PNPMFILE_DEPENDENCY = re.compile(rf"""(?ix)\b(?:dependencies|devDependencies|optionalDependencies|peerDependencies)\s*\[\s*["']{_PACKAGE}["']\s*\]""")
 _JS_LITERAL = re.compile(r"""(["'])([^"'\\]*(?:\\.[^"'\\]*)*)\1""")
 _START_PROCESS = re.compile(r"(?im)^\s*(?:&\s*)?Start-Process\b(?P<body>[^\r\n#]*)")
-_JS_IDENTIFIER = r"[A-Za-z_$][A-Za-z0-9_$]*"
-_CHILD_PROCESS_MODULE = r"(?:node:)?child_process"
-_NODE_APIS = frozenset(("exec", "execFile", "execFileSync", "execSync", "spawn", "spawnSync"))
-_NODE_NAMED_IMPORT = re.compile(rf"""(?sx)\bimport\s*\{{(?P<bindings>[^}}]*)\}}\s*from\s*["']{_CHILD_PROCESS_MODULE}["']""")
-_NODE_NAMESPACE_IMPORT = re.compile(rf"""(?sx)\bimport\s+(?:\*\s+as\s+)?(?P<name>{_JS_IDENTIFIER})\s+from\s*["']{_CHILD_PROCESS_MODULE}["']""")
-_NODE_NAMED_REQUIRE = re.compile(rf"""(?sx)\b(?:const|let|var)\s*\{{(?P<bindings>[^}}]*)\}}\s*=\s*require\(\s*["']{_CHILD_PROCESS_MODULE}["']\s*\)""")
-_NODE_NAMESPACE_REQUIRE = re.compile(rf"""(?mx)\b(?:const|let|var)\s+(?P<name>{_JS_IDENTIFIER})\s*=\s*require\(\s*["']{_CHILD_PROCESS_MODULE}["']\s*\)\s*;?\s*$""")
-_NODE_MEMBER_REQUIRE = re.compile(rf"""(?sx)\b(?:const|let|var)\s+(?P<name>{_JS_IDENTIFIER})\s*=\s*require\(\s*["']{_CHILD_PROCESS_MODULE}["']\s*\)\s*\.\s*(?P<api>{'|'.join(sorted(_NODE_APIS))})\b""")
-_JS_COMMAND_LITERAL = r"""(?:"(?P<double>(?:\\.|[^"\\])*)"|'(?P<single>(?:\\.|[^'\\])*)'|`(?P<template>(?:\\.|[^`\\])*)`)"""
 _MATRIX_REFERENCE = re.compile(r"""\${{\s*matrix(?:\.([A-Za-z_][A-Za-z0-9_-]*)|\[\s*["']([A-Za-z_][A-Za-z0-9_-]*)["']\s*\])\s*}}""")
 _INPUT_REFERENCE = re.compile(r"""\${{\s*inputs(?:\.([A-Za-z_][A-Za-z0-9_-]*)|\[\s*["']([A-Za-z_][A-Za-z0-9_-]*)["']\s*\])\s*}}""")
 _ENV_REFERENCE = re.compile(r"""\${{\s*env(?:\.([A-Za-z_][A-Za-z0-9_-]*)|\[\s*["']([A-Za-z_][A-Za-z0-9_-]*)["']\s*\])\s*}}""")
-_DEPENDENCY_FIELDS = ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies")
 _MAX_WORKFLOW_STATES = 256
 _MAX_WORKFLOW_PASSES = 16
 _MAX_LOCAL_ACTION_DEPTH = 16
-
-
-def _root_and_recursive(*patterns: str) -> tuple[str, ...]:
-    return (*patterns, *(f"**/{pattern}" for pattern in patterns))
-
-
-def _script_patterns() -> tuple[str, ...]:
-    suffixes = ("bat", "bash", "cjs", "cmd", "js", "mjs", "ps1", "py", "sh", "ts", "zsh")
-    names = [f"{prefix}*.{suffix}" for prefix in ("bootstrap", "install", "setup") for suffix in suffixes]
-    names.extend(f"postinstall*.{suffix}" for suffix in ("cjs", "js", "mjs", "ts"))
-    return _root_and_recursive(*names)
-
-
-@dataclass(frozen=True, slots=True)
-class DependencySurfaceRule:
-    """One closed dependency-consumer path and syntax family."""
-
-    category: str
-    path_patterns: tuple[str, ...]
-    syntax_contexts: tuple[str, ...]
-
-    def to_document(self) -> dict[str, JsonValue]:
-        """Return the canonical policy representation."""
-        path_patterns: list[JsonValue] = list(self.path_patterns)
-        syntax_contexts: list[JsonValue] = list(self.syntax_contexts)
-        return {"category": self.category, "path-patterns": path_patterns, "syntax-contexts": syntax_contexts}
-
-
-@dataclass(frozen=True, slots=True)
-class ApprovedConsumerException:
-    """One reviewed path, syntax context, and byte-digest exception."""
-
-    path: str
-    category: str
-    context: str
-    content_digest: str
-
-    def to_document(self) -> dict[str, JsonValue]:
-        """Return the canonical policy representation."""
-        return {"path": self.path, "category": self.category, "context": self.context, "content-digest": self.content_digest}
-
 
 class ConsumerPolicyScanError(ValueError):
     """A deterministic set of catalog scan failures."""
@@ -120,30 +91,6 @@ class ConsumerPolicyScanError(ValueError):
         """Initialize the sorted complete scan-error findings."""
         self.findings = tuple(sorted(set(findings)))
         super().__init__("; ".join(self.findings))
-
-
-DEPENDENCY_SURFACE_CATALOG = (
-    DependencySurfaceRule("dependency-manifest", (*_root_and_recursive("Directory.Packages.props", "package.json", "packages.config", "pyproject.toml", "requirements*.txt", "setup.py", "*.csproj", "*.fsproj", "*.vbproj"), ACCEPTANCE_FIXTURE_PATH), ("node-dependency", "python-dependency", "dotnet-package-reference")),
-    DependencySurfaceRule("lockfile", _root_and_recursive("bun.lock", "npm-shrinkwrap.json", "package-lock.json", "packages.lock.json", "pnpm-lock.yaml", "poetry.lock", "uv.lock", "yarn.lock"), ("dependency-key", "package-key", "node_modules-path")),
-    DependencySurfaceRule("workflow", _root_and_recursive(".github/workflows/*.yaml", ".github/workflows/*.yml"), ("uses", "run", "with", "env")),
-    DependencySurfaceRule("composite-action", (".github/actions/**/action.yaml", ".github/actions/**/action.yml"), ("uses", "run", "with", "env")),
-    DependencySurfaceRule("install-bootstrap-script", (*_script_patterns(), POLICY_IMPLEMENTATION_PATH), ("package-manager-command", "module-import")),
-    DependencySurfaceRule("dependency-configuration", (*_root_and_recursive(".github/dependabot.yaml", ".github/dependabot.yml", ".npmrc", ".pnpmfile.cjs", ".yarnrc", ".yarnrc.yml", "NuGet.config", "bunfig.toml", "nuget.config", "pnpm-workspace.yaml", "renovate.json"), GIT_ATTRIBUTES_PATH), ("dependency-selection", "package-manager-command")),
-)
-APPROVED_CONSUMER_EXCEPTIONS = (
-    ApprovedConsumerException(OWN_DECLARATION_PATH, "dependency-manifest", "name", "sha256:a7d84bac91fe5f9fa7ccfbf46cd065cd85ded95188046d96f6f2c9ce97775566"),
-    ApprovedConsumerException(ACCEPTANCE_FIXTURE_PATH, "dependency-manifest", f"dependencies.{PACKAGE_NAME}", "sha256:a28d7f1e161df6948cdc2f122e78b9a38f425b481877178e29c8cd8ef30b0aa2"),
-    ApprovedConsumerException(ACCEPTANCE_NPM_MANIFEST_PATH, "dependency-manifest", "name", "sha256:d032b543a77820f9660a629e7deee6140664150a2c0a7de8048d37947afc957e"),
-)
-CONSUMER_POLICY_HK_GLOBS = tuple(sorted(
-    {pattern for rule in DEPENDENCY_SURFACE_CATALOG for pattern in rule.path_patterns}
-    | {
-        "hk.pkl",
-        "src/public/lib/three-workflow-delivery-v3/tests/ci/test_consumer_policy.py",
-        "src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py",
-    },
-))
-
 
 def _matches(path: str, pattern: str) -> bool:
     candidate = PurePosixPath(path)
@@ -168,6 +115,10 @@ def _is_package(value: object) -> bool:
     return isinstance(value, str) and any(pattern.fullmatch(value.strip()) is not None for pattern in (_DIRECT_SPEC, _ALIAS_SPEC, _WORKSPACE_SPEC))
 
 
+def _is_exact_package(value: str) -> bool:
+    return any(pattern.fullmatch(value) is not None for pattern in (_DIRECT_SPEC, _ALIAS_SPEC, _WORKSPACE_SPEC))
+
+
 def _is_dependency(value: object) -> bool:
     return isinstance(value, str) and any(pattern.fullmatch(value.strip()) is not None for pattern in (_DEPENDENCY_SPEC, _ALIAS_SPEC, _WORKSPACE_SPEC))
 
@@ -184,7 +135,7 @@ def _node_manifest(document: object) -> set[str]:
     if not isinstance(document, dict):
         raise ValueError("Node manifest must be a JSON object")
     contexts = {"name"} if document.get("name") == PACKAGE_NAME else set()
-    for field in _DEPENDENCY_FIELDS:
+    for field in NODE_DEPENDENCY_FIELDS:
         dependencies = document.get(field)
         if not isinstance(dependencies, dict):
             continue
@@ -200,7 +151,12 @@ def _node_manifest(document: object) -> set[str]:
         contexts.add("pnpm.overrides")
     scripts = document.get("scripts")
     if isinstance(scripts, dict):
-        contexts.update(f"scripts.{name}" for name, command in scripts.items() if isinstance(command, str) and _script_references(command))
+        contexts.update(
+            f"scripts.{name}"
+            for name, command in scripts.items()
+            if isinstance(command, str)
+            and _script_references(command, language="command")
+        )
     return contexts
 
 
@@ -233,7 +189,15 @@ def _dotnet_manifest(text: str) -> set[str]:
         and any(element.attrib.get(attribute) == PACKAGE_NAME for attribute in ("Include", "Update", "id"))
         for element in root.iter()
     )
-    found = found or any(element.tag.rsplit("}", 1)[-1] == "Exec" and isinstance(element.attrib.get("Command"), str) and _script_references(element.attrib["Command"]) for element in root.iter())
+    found = found or any(
+        element.tag.rsplit("}", 1)[-1] == "Exec"
+        and isinstance(element.attrib.get("Command"), str)
+        and _script_references(
+            element.attrib["Command"],
+            language="command",
+        )
+        for element in root.iter()
+    )
     return {"dotnet-package-reference"} if found else set()
 
 
@@ -290,14 +254,15 @@ def _lockfile(path: str, content: bytes) -> set[str]:
 _PREFIX = r"""(?:^[\t ]*|[;&|]\s*["']?|(?:call\s+["']?|cmd(?:\.exe)?(?:\s+/[A-Za-z:]+)*\s+/[ck]\s+["']?|(?:powershell|pwsh)(?:\.exe)?(?:\s+-[A-Za-z]+\s+\S+)*\s+-(?:c|command)\s+["']?|start(?:\s+"[^"]*")?(?:\s+/[A-Za-z]+)*\s+))"""
 _EXECUTABLE = r"""(?:[^\s"']*[\\/])?{manager}(?:\.(?:bat|cmd|exe))?"""
 _GLOBAL_OPTIONS = r"""(?:(?:--(?:cwd|dir|filter|prefix|workspace)(?:=\S+|\s+\S+)|-[wCF]\s+\S+|--[A-Za-z][A-Za-z0-9_.-]*(?:=\S+)?)\s+)*"""
+_MANAGER_COMMANDS = {
+    "npm": ("add", "exec", "i", "install", "x"),
+    "pnpm": ("add", "dlx", "exec", "i", "install"),
+    "yarn": ("add", "dlx", "exec", "install"),
+    "bun": ("add", "i", "install", "x"),
+}
 _MANAGER_PATTERNS = tuple(
     re.compile(rf"""(?imx){_PREFIX}@?{_EXECUTABLE.format(manager=manager)}["']?\s+{_GLOBAL_OPTIONS}(?P<command>{'|'.join(commands)})\b(?P<args>[^;&|]*)""")
-    for manager, commands in {
-        "npm": ("add", "exec", "i", "install", "x"),
-        "pnpm": ("add", "dlx", "exec", "i", "install"),
-        "yarn": ("add", "dlx", "exec", "install"),
-        "bun": ("add", "i", "install", "x"),
-    }.items()
+    for manager, commands in _MANAGER_COMMANDS.items()
 )
 _EXEC_PATTERNS = tuple(
     (manager, re.compile(rf"""(?imx){_PREFIX}@?{_EXECUTABLE.format(manager=manager)}["']?\b(?P<args>[^;&|]*)"""))
@@ -305,18 +270,24 @@ _EXEC_PATTERNS = tuple(
 )
 
 
-def _arguments_reference(arguments: str, command: str) -> bool:
+def _tokens_reference(
+    tokens: Iterable[str],
+    command: str,
+    *,
+    normalize: bool,
+) -> bool:
     executable_seen = False
     delimiter_seen = False
     executable_commands = {"bunx", "dlx", "exec", "npx", "x"}
-    for raw in _TOKEN.findall(arguments):
-        token = raw.strip("\"'").rstrip(",)")
+    package_match = _is_package if normalize else _is_exact_package
+    for raw in tokens:
+        token = raw.strip("\"'").rstrip(",)") if normalize else raw
         if token == "--":
             if not delimiter_seen and command in {"add", "exec", "i", "install", "npx"} and not executable_seen:
                 delimiter_seen = True
                 continue
             return False
-        if _is_package(token) or (token.startswith(("--package=", "-p=")) and _is_package(token.partition("=")[2])):
+        if package_match(token) or (token.startswith(("--package=", "-p=")) and package_match(token.partition("=")[2])):
             return command not in executable_commands or not executable_seen
         if token.startswith("-"):
             continue
@@ -325,6 +296,42 @@ def _arguments_reference(arguments: str, command: str) -> bool:
                 return False
             executable_seen = True
     return False
+
+
+def _arguments_reference(arguments: str, command: str) -> bool:
+    return _tokens_reference(
+        _TOKEN.findall(arguments),
+        command,
+        normalize=True,
+    )
+
+
+def _structured_manager_reference(
+    executable: str,
+    arguments: Sequence[str],
+    *,
+    normalize: bool = False,
+) -> bool:
+    name = re.split(r"[\\/]", executable)[-1].casefold()
+    manager = re.sub(r"\.(?:bat|cmd|exe)\Z", "", name)
+    if manager in {"bunx", "npx"}:
+        return _tokens_reference(arguments, manager, normalize=normalize)
+    commands = _MANAGER_COMMANDS.get(manager)
+    if commands is None:
+        return False
+    index = 0
+    while index < len(arguments) and arguments[index].startswith("-"):
+        option = arguments[index]
+        index += 1
+        if option in {"--cwd", "--dir", "--filter", "--prefix", "--workspace", "-w", "-C", "-F"}:
+            index += 1
+    if index >= len(arguments) or arguments[index] not in commands:
+        return False
+    return _tokens_reference(
+        arguments[index + 1 :],
+        arguments[index],
+        normalize=normalize,
+    )
 
 
 def _code_text(text: str, *, preserve_templates: bool = False) -> str:
@@ -374,7 +381,10 @@ def _python_script_references(text: str) -> bool:
         else:
             values = ()
             exact = False
-        if exact and _script_references(" ".join(values)):
+        if exact and _script_references(
+            " ".join(values),
+            language="command",
+        ):
             return True
     return False
 
@@ -383,43 +393,6 @@ def _literal_list(text: str) -> tuple[str, ...] | None:
     values = tuple(match.group(2) for match in _JS_LITERAL.finditer(text))
     residue = _JS_LITERAL.sub("", text)
     return values if values and not residue.strip(" \t\r\n,") else None
-
-
-def _node_bindings(code: str) -> tuple[dict[str, str], set[str]]:
-    direct: dict[str, str] = {}
-    namespaces = {match.group("name") for match in (*_NODE_NAMESPACE_IMPORT.finditer(code), *_NODE_NAMESPACE_REQUIRE.finditer(code))}
-    for match in _NODE_NAMED_IMPORT.finditer(code):
-        for item in match.group("bindings").split(","):
-            binding = re.fullmatch(rf"\s*(?P<api>{'|'.join(sorted(_NODE_APIS))})(?:\s+as\s+(?P<name>{_JS_IDENTIFIER}))?\s*", item)
-            if binding is not None:
-                direct[binding.group("name") or binding.group("api")] = binding.group("api")
-    for match in _NODE_NAMED_REQUIRE.finditer(code):
-        for item in match.group("bindings").split(","):
-            binding = re.fullmatch(rf"\s*(?P<api>{'|'.join(sorted(_NODE_APIS))})(?:\s*:\s*(?P<name>{_JS_IDENTIFIER}))?\s*", item)
-            if binding is not None:
-                direct[binding.group("name") or binding.group("api")] = binding.group("api")
-    direct.update((match.group("name"), match.group("api")) for match in _NODE_MEMBER_REQUIRE.finditer(code))
-    return direct, namespaces
-
-
-def _node_call_references(code: str, callee: str, api: str) -> bool:
-    prefix = rf"(?<![A-Za-z0-9_$.]){callee}\s*\(\s*"
-    if api in {"exec", "execSync"}:
-        for match in re.finditer(prefix + _JS_COMMAND_LITERAL + r"\s*(?:,|\))", code, re.DOTALL):
-            command = match.group("double") or match.group("single") or match.group("template")
-            if (match.group("template") is None or re.search(r"(?<!\\)\$\{", command) is None) and _manager_references(command):
-                return True
-        return False
-    pattern = re.compile(prefix + r"""(?P<quote>["'])(?P<executable>(?:[^"'\s]*[\\/])?(?:npm|pnpm|yarn|bun|npx|bunx)(?:\.(?:cmd|exe))?)\1\s*,\s*\[(?P<arguments>.*?)\]""", re.DOTALL)
-    return any((arguments := _literal_list(match.group("arguments"))) is not None and _manager_references(" ".join((match.group("executable"), *arguments))) for match in pattern.finditer(code))
-
-
-def _node_api_references(code: str, binding_code: str) -> bool:
-    direct, namespaces = _node_bindings(binding_code)
-    calls = [(re.escape(name), api) for name, api in direct.items()]
-    calls.extend((rf"{re.escape(namespace)}\s*\.\s*{api}", api) for namespace in namespaces for api in _NODE_APIS)
-    calls.extend((rf"""require\(\s*["']{_CHILD_PROCESS_MODULE}["']\s*\)\s*\.\s*{api}""", api) for api in _NODE_APIS)
-    return any(_node_call_references(code, callee, api) for callee, api in calls)
 
 
 def _powershell_arguments(text: str) -> str:
@@ -502,24 +475,45 @@ def _powershell_reference(body: str) -> bool:
     return _manager_references(" ".join((executable.group(1), *literal_arguments)))
 
 
-def _literal_api_references(code: str, binding_code: str) -> bool:
-    if _node_api_references(code, binding_code):
-        return True
+def _literal_api_references(code: str) -> bool:
     for match in _START_PROCESS.finditer(code):
         if _powershell_reference(match.group("body")):
             return True
     return False
 
 
-def _manager_references(code: str) -> bool:
+def _manager_references(code: str, arguments: Sequence[str] | None = None) -> bool:
+    if arguments is not None:
+        return _structured_manager_reference(code, arguments)
+    tokens = tuple(_TOKEN.findall(code))
+    quoted = tokens and tokens[0][:1] in "\"'" and tokens[0][-1:] == tokens[0][:1]
+    if quoted and _structured_manager_reference(
+        tokens[0][1:-1],
+        tuple(token.strip("\"'") for token in tokens[1:]),
+        normalize=True,
+    ):
+        return True
     return any(_arguments_reference(match.group("args"), match.group("command")) for pattern in _MANAGER_PATTERNS for match in pattern.finditer(code)) or any(_arguments_reference(match.group("args"), manager) for manager, pattern in _EXEC_PATTERNS for match in pattern.finditer(code))
 
 
-def _script_references(text: str, *, python: bool = False) -> bool:
-    if python:
+def _script_references(text: str, *, language: str, commonjs_globals: bool = True) -> bool:
+    if language == "python":
         return _python_script_references(text)
+    if language in {"javascript", "typescript"}:
+        return scan_javascript_consumer(
+            text.encode("utf-8"),
+            language=language,
+            manager_reference=_manager_references,
+            commonjs_globals=commonjs_globals,
+        )
+    if language != "command":
+        raise ValueError(f"unsupported script language: {language}")
     code = _code_text(text)
-    return _IMPORT.search(code) is not None or _literal_api_references(_code_text(text, preserve_templates=True), code) or _manager_references(code)
+    return (
+        _IMPORT.search(code) is not None
+        or _literal_api_references(_code_text(text, preserve_templates=True))
+        or _manager_references(code)
+    )
 
 
 def _environment(value: object) -> dict[str, str]:
@@ -575,24 +569,44 @@ def _matrix_rows(value: object) -> tuple[dict[str, str], ...]:
     axes = {name: items for name, items in raw_axes.items() if isinstance(items, list) and items and all(isinstance(item, str) and "${{" not in item for item in items)}
     rows: list[dict[str, str]] = [{}]
     for name, items in axes.items():
-        rows = [(row | {name: item}) for row in rows for item in items][:_MAX_WORKFLOW_STATES]
+        if len(rows) > _MAX_WORKFLOW_STATES // len(items):
+            raise ValueError(
+                "workflow matrix base static expansion exceeds "
+                f"{_MAX_WORKFLOW_STATES} states"
+            )
+        rows = [(row | {name: item}) for row in rows for item in items]
     if len(axes) == len(raw_axes):
         exclusions = value.get("exclude")
         if isinstance(exclusions, list):
             rows = [row for row in rows if not any(isinstance(item, dict) and item and all(isinstance(selected, str) and row.get(name) == selected for name, selected in item.items()) for item in exclusions)]
     includes = value.get("include")
-    static_includes = [item for item in includes if isinstance(item, dict) and item and all(isinstance(name, str) and isinstance(selected, str) and "${{" not in selected for name, selected in item.items())] if isinstance(includes, list) else []
     if not raw_axes:
         rows = []
     originals = tuple(dict(row) for row in rows) if len(axes) == len(raw_axes) else ()
-    for included in static_includes:
+    for included in includes if isinstance(includes, list) else ():
+        if (
+            not isinstance(included, dict)
+            or not included
+            or not all(
+                isinstance(name, str)
+                and isinstance(selected, str)
+                and "${{" not in selected
+                for name, selected in included.items()
+            )
+        ):
+            continue
         indexes = [index for index, original in enumerate(originals) if all(name not in original or original[name] == selected for name, selected in included.items())]
         if indexes:
             for index in indexes:
                 rows[index].update(included)
         else:
+            if len(rows) >= _MAX_WORKFLOW_STATES:
+                raise ValueError(
+                    "workflow matrix static expansion after include exceeds "
+                    f"{_MAX_WORKFLOW_STATES} states"
+                )
             rows.append(dict(included))
-    return tuple(rows[:_MAX_WORKFLOW_STATES]) or ({},)
+    return tuple(rows) or ({},)
 
 
 def _local_action_manifest(repository_root: Path, uses: str) -> tuple[str, Mapping[object, object]] | None:
@@ -662,10 +676,16 @@ def _step_contexts(steps: object, *, repository_root: Path, inputs: Mapping[str,
             local_uses = resolved_uses.startswith("./")
             if _ACTION_USE.fullmatch(resolved_uses.strip()) or (local_uses and _local_action(repository_root, resolved_uses, resolved_inputs, environment, action_visited, action_active)):
                 contexts.add("uses")
-        if not local_uses and any(_script_references(value) for value in resolved_inputs.values()):
+        if not local_uses and any(
+            _script_references(value, language="command")
+            for value in resolved_inputs.values()
+        ):
             contexts.add("with")
         run = step.get("run")
-        if isinstance(run, str) and _script_references(_resolve_text(run, inputs, matrix, environment)):
+        if isinstance(run, str) and _script_references(
+            _resolve_text(run, inputs, matrix, environment),
+            language="command",
+        ):
             contexts.add("run")
     return contexts
 
@@ -722,7 +742,23 @@ def _workflow_contexts(document: Mapping[object, object], *, repository_root: Pa
                 job_inputs = job.get("with")
                 resolved_inputs = {name: _resolve_text(value, inputs, row, job_environment) for name, value in job_inputs.items() if isinstance(name, str) and isinstance(value, str)} if isinstance(job_inputs, dict) else {}
                 reusable = job.get("uses")
-                if resolved_inputs and (any(_script_references(value) for value in resolved_inputs.values()) or (isinstance(reusable, str) and _REUSABLE_WORKFLOW_USE.fullmatch(reusable.strip()) and _local_workflow(repository_root, reusable, resolved_inputs, visited, action_visited))):
+                if resolved_inputs and (
+                    any(
+                        _script_references(value, language="command")
+                        for value in resolved_inputs.values()
+                    )
+                    or (
+                        isinstance(reusable, str)
+                        and _REUSABLE_WORKFLOW_USE.fullmatch(reusable.strip())
+                        and _local_workflow(
+                            repository_root,
+                            reusable,
+                            resolved_inputs,
+                            visited,
+                            action_visited,
+                        )
+                    )
+                ):
                     contexts.add("with")
                 contexts.update(_step_contexts(job.get("steps"), repository_root=repository_root, inputs=inputs, matrix=row, scopes=(root_environment, job.get("env")), action_visited=action_visited, action_active=()))
     return contexts
@@ -761,11 +797,21 @@ def _configuration(path: str, content: bytes) -> set[str]:
     elif name.lower() == "nuget.config":
         found = any(element.attrib.get("pattern") == PACKAGE_NAME for element in ET.fromstring(text).iter())
     elif name == ".pnpmfile.cjs":
-        code = _code_text(text)
-        found = _PNPMFILE_DEPENDENCY.search(code) is not None or _script_references(code)
+        found = scan_javascript_consumer(
+            content,
+            language="javascript",
+            manager_reference=_manager_references,
+            pnpmfile=True,
+            commonjs_globals=True,
+        )
     else:
         found = any(
-            _is_dependency(line.partition("=")[2].strip() if "=" in line else line.strip()) or _script_references(line)
+            _is_dependency(
+                line.partition("=")[2].strip()
+                if "=" in line
+                else line.strip()
+            )
+            or _script_references(line, language="command")
             for line in _code_text(text).splitlines()
             if line.strip()
         )
@@ -783,7 +829,25 @@ def _surface(rule: DependencySurfaceRule, path: str, content: bytes, *, reposito
         return _action(path, content, repository_root=repository_root)
     if rule.category == "install-bootstrap-script":
         text = content.decode("utf-8", "strict")
-        return {"script-reference"} if _script_references(text, python=path.endswith(".py")) else set()
+        suffix = PurePosixPath(path).suffix
+        language = (
+            "python"
+            if suffix == ".py"
+            else "typescript"
+            if suffix == ".ts"
+            else "javascript"
+            if suffix in {".cjs", ".js", ".mjs"}
+            else "command"
+        )
+        return (
+            {"script-reference"}
+            if _script_references(
+                text,
+                language=language,
+                commonjs_globals=suffix in JAVASCRIPT_COMMONJS_GLOBAL_SUFFIXES,
+            )
+            else set()
+        )
     if rule.category == "dependency-configuration":
         return _configuration(path, content)
     raise ValueError(f"unsupported dependency-surface category: {rule.category}")
@@ -800,13 +864,7 @@ def _target(root: Path) -> str:
 
 
 def _policy_digest() -> str:
-    return canonical_sha256({
-        "schema": "workflow-delivery/v3/consumer-policy",
-        "policy-id": CONSUMER_POLICY_ID,
-        "package": PACKAGE_NAME,
-        "catalog": [rule.to_document() for rule in DEPENDENCY_SURFACE_CATALOG],
-        "approved-exceptions": [item.to_document() for item in APPROVED_CONSUMER_EXCEPTIONS],
-    })
+    return CONSUMER_POLICY_DIGEST
 
 
 def scan_consumer_policy(repository_root: Path) -> ConsumerPolicyResult:

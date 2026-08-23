@@ -432,6 +432,8 @@ local workflow_delivery_v3_validation = new Mapping<String, Step> {
       "setup*.ts",
       "setup*.zsh",
       "setup.py",
+      "src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/release/consumer_policy.py",
+      "src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/release/javascript_consumer.py",
       "src/public/lib/three-workflow-delivery-v3/tests/ci/test_consumer_policy.py",
       "src/public/lib/three-workflow-delivery-v3/tests/fixtures/release/consumer-policy-acceptance.json",
       "src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py",

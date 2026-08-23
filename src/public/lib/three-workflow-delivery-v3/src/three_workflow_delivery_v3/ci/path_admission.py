@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from pathlib import PurePosixPath
 
+from three_workflow_delivery_v3.release.consumer_policy import (
+    DEPENDENCY_SURFACE_CATALOG,
+)
+
 _REPOSITORY_ONLY_PREFIXES = (
     ".testagent/",
     "docs/",
@@ -31,85 +35,10 @@ _REPOSITORY_ONLY_PATHS = frozenset(
         "uv.lock",
     }
 )
-_SCRIPT_SUFFIXES = (
-    "bat",
-    "bash",
-    "cjs",
-    "cmd",
-    "js",
-    "mjs",
-    "ps1",
-    "py",
-    "sh",
-    "ts",
-    "zsh",
-)
-
-
-def _root_and_recursive(*patterns: str) -> tuple[str, ...]:
-    return (*patterns, *(f"**/{pattern}" for pattern in patterns))
-
-
-def _script_patterns() -> tuple[str, ...]:
-    names = tuple(
-        f"{prefix}*.{suffix}"
-        for prefix in ("bootstrap", "install", "setup")
-        for suffix in _SCRIPT_SUFFIXES
-    )
-    postinstall = tuple(
-        f"postinstall*.{suffix}" for suffix in ("cjs", "js", "mjs", "ts")
-    )
-    return _root_and_recursive(*names, *postinstall)
-
-
-CI_CONSUMER_POLICY_SURFACE_PATTERNS = (
-    *_root_and_recursive(
-        "Directory.Packages.props",
-        "package.json",
-        "packages.config",
-        "pyproject.toml",
-        "requirements*.txt",
-        "setup.py",
-        "*.csproj",
-        "*.fsproj",
-        "*.vbproj",
-    ),
-    (
-        "src/public/lib/three-workflow-delivery-v3/tests/fixtures/release/"
-        "consumer-policy-acceptance.json"
-    ),
-    *_root_and_recursive(
-        "bun.lock",
-        "npm-shrinkwrap.json",
-        "package-lock.json",
-        "packages.lock.json",
-        "pnpm-lock.yaml",
-        "poetry.lock",
-        "uv.lock",
-        "yarn.lock",
-    ),
-    *_root_and_recursive(
-        ".github/workflows/*.yaml",
-        ".github/workflows/*.yml",
-    ),
-    ".github/actions/**/action.yaml",
-    ".github/actions/**/action.yml",
-    *_script_patterns(),
-    "eng/scripts/workflow_delivery_v3_consumer_policy.py",
-    *_root_and_recursive(
-        ".github/dependabot.yaml",
-        ".github/dependabot.yml",
-        ".npmrc",
-        ".pnpmfile.cjs",
-        ".yarnrc",
-        ".yarnrc.yml",
-        "NuGet.config",
-        "bunfig.toml",
-        "nuget.config",
-        "pnpm-workspace.yaml",
-        "renovate.json",
-    ),
-    ".gitattributes",
+CI_CONSUMER_POLICY_SURFACE_PATTERNS = tuple(
+    pattern
+    for rule in DEPENDENCY_SURFACE_CATALOG
+    for pattern in rule.path_patterns
 )
 
 

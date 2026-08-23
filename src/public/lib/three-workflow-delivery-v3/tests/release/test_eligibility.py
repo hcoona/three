@@ -19,13 +19,21 @@ from three_workflow_delivery_v3.canonical import (
     parse_canonical_json,
 )
 from three_workflow_delivery_v3.catalogs import catalog_digest
+from three_workflow_delivery_v3.release.consumer_policy import (
+    APPROVED_EXCEPTION_SURFACES,
+    CONSUMER_POLICY_DIGEST,
+)
 from three_workflow_delivery_v3.release.eligibility import (
     CONSUMER_POLICY_ID,
+    LIVE_ELIGIBILITY_PRODUCER,
     ConsumerPolicyResult,
     EligibilityResult,
     GovernanceBlob,
+    LiveEligibilityAdmissionMode,
     LiveEligibilityContext,
+    LiveEligibilityDecision,
     SurfaceDigest,
+    admit_live_eligibility_decision,
     evaluate_live_eligibility,
     observe_governance_source,
     parse_governance_attestation,
@@ -70,6 +78,10 @@ from three_workflow_delivery_v3.repository.node_provider import (
 )
 
 if TYPE_CHECKING:
+    from three_workflow_delivery_v3.records.release import ReleaseIntent
+    from three_workflow_delivery_v3.repository.compiler import (
+        AdmittedRepositoryModelSnapshot,
+    )
     from three_workflow_delivery_v3.repository.descriptors import ReleasePolicy
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
@@ -99,6 +111,7 @@ type CompilationContextMutation = Callable[
     [CompilationContext], CompilationContext
 ]
 type GovernanceSourceMutation = Callable[[GovernanceSource], GovernanceSource]
+type DecisionMutation = Callable[[dict[str, JsonValue]], None]
 
 
 def _policy() -> ReleasePolicy:
@@ -415,17 +428,21 @@ def _consumer_policy(
     consumers: tuple[str, ...] = (),
     admitted_exceptions: tuple[SurfaceDigest, ...] | None = None,
 ) -> ConsumerPolicyResult:
-    surfaces = (
-        SurfaceDigest(SURFACE_LOCK, "sha256:" + ("c" * 64)),
-        SurfaceDigest(SURFACE_PACKAGE, "sha256:" + ("a" * 64)),
+    surfaces = tuple(
+        sorted(
+            (
+                *APPROVED_EXCEPTION_SURFACES,
+                SurfaceDigest(SURFACE_LOCK, "sha256:" + ("c" * 64)),
+            ),
+            key=lambda item: item.path,
+        )
     )
-    surfaces = tuple(sorted(surfaces, key=lambda item: item.path))
     exceptions = admitted_exceptions
     if exceptions is None:
-        exceptions = (SurfaceDigest(SURFACE_PACKAGE, "sha256:" + ("a" * 64)),)
+        exceptions = APPROVED_EXCEPTION_SURFACES
     return ConsumerPolicyResult(
         policy_id=CONSUMER_POLICY_ID,
-        policy_digest="sha256:" + ("d" * 64),
+        policy_digest=CONSUMER_POLICY_DIGEST,
         target=target,
         scanned_surfaces=surfaces,
         admitted_exceptions=exceptions,
@@ -662,6 +679,846 @@ def _evaluate(  # noqa: PLR0913
         client,
         now=now,
     )
+
+
+def _transport_decision(
+    live_intent: ReleaseIntent,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+    *,
+    issuer: str | None = None,
+) -> LiveEligibilityDecision:
+    model = live_admitted_repository_model.snapshot
+    context = LiveEligibilityContext(
+        purpose=live_intent.purpose,
+        request_id=live_intent.request_id,
+        workflow_run_id=live_intent.workflow_run_id,
+        run_attempt=live_intent.run_attempt,
+        selected_ref=live_intent.selected_ref,
+        target=live_intent.target,
+        repository_model_digest=(
+            live_admitted_repository_model.canonical_digest
+        ),
+        producer=LIVE_ELIGIBILITY_PRODUCER,
+        control=model.context.control,
+        release_policy_digest=release_policy_digest(policy),
+        catalog_digest=catalog_digest(),
+    )
+    updates: dict[str, JsonValue] = {"live_enabled": True}
+    if issuer is not None:
+        updates["issuer"] = issuer
+    client = RecordingGovernanceClient(_attestation_content(**updates))
+    return evaluate_live_eligibility(
+        context,
+        model,
+        _consumer_policy(target=live_intent.target),
+        policy,
+        client,
+        now=NOW,
+    )
+
+
+def _set_decision_path(
+    document: dict[str, JsonValue],
+    path: tuple[str, ...],
+    value: JsonValue,
+) -> None:
+    selected = document
+    for name in path[:-1]:
+        child = selected[name]
+        if not isinstance(child, dict):
+            message = f"{'.'.join(path[:-1])} is not an object"
+            raise TypeError(message)
+        selected = child
+    selected[path[-1]] = value
+
+
+def _consumer_decision_document(
+    result: ConsumerPolicyResult,
+) -> dict[str, JsonValue]:
+    document = result.to_document()
+    del document["schema"]
+    document["result-digest"] = result.result_digest
+    return document
+
+
+def _make_consumer_positive(
+    document: dict[str, JsonValue],
+) -> None:
+    document["consumer-policy"] = _consumer_decision_document(
+        _consumer_policy(consumers=(SURFACE_LOCK,))
+    )
+
+
+def _make_blocked_with_diagnostic(
+    document: dict[str, JsonValue],
+) -> None:
+    document["result"] = "blocked"
+    document["diagnostics"] = ["governance-live-disabled"]
+
+
+def _admit_mutated_decision(  # noqa: PLR0913
+    document: dict[str, JsonValue],
+    *,
+    live_intent: ReleaseIntent,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+    admission_mode: LiveEligibilityAdmissionMode = (
+        LiveEligibilityAdmissionMode.CURRENT_FRESHNESS
+    ),
+    now: datetime = NOW,
+):
+    content = canonicalize(document)
+    return admit_live_eligibility_decision(
+        content,
+        intent=live_intent,
+        repository_model=live_admitted_repository_model,
+        policy=policy,
+        expected_digest=canonical_sha256(document),
+        admission_mode=admission_mode,
+        now=now,
+    )
+
+
+def test_evaluator_output_round_trips_through_strict_live_admission(
+    live_intent: ReleaseIntent,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+) -> None:
+    """Admit the evaluator's complete canonical current-attempt output."""
+    decision = _transport_decision(
+        live_intent,
+        live_admitted_repository_model,
+        policy,
+    )
+    content = canonicalize(decision.to_document())
+
+    admitted = admit_live_eligibility_decision(
+        content,
+        intent=live_intent,
+        repository_model=live_admitted_repository_model,
+        policy=policy,
+        expected_digest=decision.decision_digest,
+        admission_mode=LiveEligibilityAdmissionMode.CURRENT_FRESHNESS,
+        now=NOW,
+    )
+
+    assert admitted.to_document() == decision.to_document()
+    assert admitted.canonical_bytes == content
+    assert admitted.decision_digest == decision.decision_digest
+    assert admitted.consumer_policy.result_digest == (
+        decision.consumer_policy.result_digest
+    )
+    assert admitted.governance.provenance == (
+        (
+            "blob-oid",
+            GOVERNANCE_BLOB,
+        ),
+        (
+            "content-sha256",
+            decision.governance.content_sha256,
+        ),
+        ("path", GOVERNANCE_PATH),
+        ("ref", GOVERNANCE_REF),
+        ("repository", GOVERNANCE_REPOSITORY),
+        ("resolved-commit", GOVERNANCE_COMMIT),
+    )
+
+
+@pytest.mark.parametrize(
+    "admission_mode",
+    [
+        LiveEligibilityAdmissionMode.CURRENT_FRESHNESS,
+        LiveEligibilityAdmissionMode.CAPABILITY_REPLAY,
+    ],
+)
+def test_whitespace_bearing_issuer_round_trips_through_admission(
+    admission_mode: LiveEligibilityAdmissionMode,
+    live_intent: ReleaseIntent,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+) -> None:
+    """Preserve valid nonblank human issuer evidence in every mode."""
+    issuer = "  reviewed issuer  "
+    decision = _transport_decision(
+        live_intent,
+        live_admitted_repository_model,
+        policy,
+        issuer=issuer,
+    )
+
+    admitted = admit_live_eligibility_decision(
+        canonicalize(decision.to_document()),
+        intent=live_intent,
+        repository_model=live_admitted_repository_model,
+        policy=policy,
+        expected_digest=decision.decision_digest,
+        admission_mode=admission_mode,
+        now=NOW,
+    )
+
+    assert admitted.to_document() == decision.to_document()
+    assert admitted.governance.issuer == issuer
+
+
+@pytest.mark.parametrize(
+    "admitted_at",
+    [
+        pytest.param(
+            datetime(2026, 10, 1, tzinfo=UTC),
+            id="exact-expiry",
+        ),
+        pytest.param(
+            datetime(2026, 10, 1, 0, 0, 1, tzinfo=UTC),
+            id="after-expiry",
+        ),
+    ],
+)
+def test_pre_attempt_admission_rejects_at_and_after_current_expiry(
+    admitted_at: datetime,
+    live_intent: ReleaseIntent,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+) -> None:
+    """Keep initial and bind-time admission strict at the expiry boundary."""
+    decision = _transport_decision(
+        live_intent,
+        live_admitted_repository_model,
+        policy,
+    )
+
+    with pytest.raises(ValueError, match="not fresh and enabled"):
+        admit_live_eligibility_decision(
+            canonicalize(decision.to_document()),
+            intent=live_intent,
+            repository_model=live_admitted_repository_model,
+            policy=policy,
+            expected_digest=decision.decision_digest,
+            admission_mode=(LiveEligibilityAdmissionMode.CURRENT_FRESHNESS),
+            now=admitted_at,
+        )
+
+
+def test_capability_replay_accepts_originally_valid_decision_after_expiry(
+    live_intent: ReleaseIntent,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+) -> None:
+    """Replay expired immutable authority so capability can reobserve it."""
+    decision = _transport_decision(
+        live_intent,
+        live_admitted_repository_model,
+        policy,
+    )
+    admitted_at = datetime(2026, 10, 1, 0, 0, 1, tzinfo=UTC)
+
+    admitted = admit_live_eligibility_decision(
+        canonicalize(decision.to_document()),
+        intent=live_intent,
+        repository_model=live_admitted_repository_model,
+        policy=policy,
+        expected_digest=decision.decision_digest,
+        admission_mode=LiveEligibilityAdmissionMode.CAPABILITY_REPLAY,
+        now=admitted_at,
+    )
+
+    assert admitted.to_document() == decision.to_document()
+    assert (
+        admitted.governance.inspected_at
+        <= admitted.governance.observed_at
+        < admitted.governance.expires_at
+        < admitted_at
+    )
+
+
+@pytest.mark.parametrize(
+    "admission_mode",
+    [
+        LiveEligibilityAdmissionMode.CURRENT_FRESHNESS,
+        LiveEligibilityAdmissionMode.CAPABILITY_REPLAY,
+    ],
+)
+def test_admission_rejects_observation_at_original_expiry_in_every_mode(
+    admission_mode: LiveEligibilityAdmissionMode,
+    live_intent: ReleaseIntent,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+) -> None:
+    """Reject a Decision that was already expired when originally observed."""
+    document = _transport_decision(
+        live_intent,
+        live_admitted_repository_model,
+        policy,
+    ).to_document()
+    _set_decision_path(
+        document,
+        ("governance", "observed-at"),
+        "2026-10-01T00:00:00Z",
+    )
+
+    with pytest.raises(ValueError, match="not fresh and enabled"):
+        _admit_mutated_decision(
+            document,
+            live_intent=live_intent,
+            live_admitted_repository_model=live_admitted_repository_model,
+            policy=policy,
+            admission_mode=admission_mode,
+            now=datetime(2026, 10, 1, 0, 0, 1, tzinfo=UTC),
+        )
+
+
+@pytest.mark.parametrize(
+    ("path", "value", "message"),
+    [
+        pytest.param(
+            ("context", "target"),
+            "d" * 40,
+            "current lineage mismatch",
+            id="lineage",
+        ),
+        pytest.param(
+            ("consumer-policy", "policy-id"),
+            "other-policy",
+            "static first-slice policy",
+            id="consumer-policy",
+        ),
+        pytest.param(
+            ("governance", "repository"),
+            "other/repository",
+            "exact fixed contract",
+            id="governance-source",
+        ),
+    ],
+)
+def test_capability_replay_rejects_representative_semantic_substitutions(  # noqa: PLR0913
+    path: tuple[str, ...],
+    value: JsonValue,
+    message: str,
+    live_intent: ReleaseIntent,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+) -> None:
+    """Keep all immutable semantic validation active during replay."""
+    document = _transport_decision(
+        live_intent,
+        live_admitted_repository_model,
+        policy,
+    ).to_document()
+    _set_decision_path(document, path, value)
+
+    with pytest.raises((TypeError, ValueError), match=message):
+        _admit_mutated_decision(
+            document,
+            live_intent=live_intent,
+            live_admitted_repository_model=live_admitted_repository_model,
+            policy=policy,
+            admission_mode=LiveEligibilityAdmissionMode.CAPABILITY_REPLAY,
+            now=datetime(2026, 10, 1, 0, 0, 1, tzinfo=UTC),
+        )
+
+
+@pytest.mark.parametrize(
+    "admission_mode",
+    [
+        LiveEligibilityAdmissionMode.CURRENT_FRESHNESS,
+        LiveEligibilityAdmissionMode.CAPABILITY_REPLAY,
+    ],
+)
+def test_artifact_cannot_select_live_eligibility_admission_mode(
+    admission_mode: LiveEligibilityAdmissionMode,
+    live_intent: ReleaseIntent,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+) -> None:
+    """Keep lifecycle admission mode outside the closed immutable artifact."""
+    document = _transport_decision(
+        live_intent,
+        live_admitted_repository_model,
+        policy,
+    ).to_document()
+    document["admission-mode"] = "capability-replay"
+
+    with pytest.raises(ValueError, match="unknown field: admission-mode"):
+        _admit_mutated_decision(
+            document,
+            live_intent=live_intent,
+            live_admitted_repository_model=live_admitted_repository_model,
+            policy=policy,
+            admission_mode=admission_mode,
+        )
+
+
+@pytest.mark.parametrize(
+    ("path", "value"),
+    [
+        pytest.param(
+            ("context", "purpose"),
+            "release-simulation",
+            id="cross-purpose",
+        ),
+        pytest.param(
+            ("context", "request-id"),
+            "release-request:" + ("1" * 64),
+            id="cross-request",
+        ),
+        pytest.param(
+            ("context", "workflow-run-id"),
+            7300,
+            id="prior-run",
+        ),
+        pytest.param(
+            ("context", "run-attempt"),
+            2,
+            id="prior-attempt",
+        ),
+        pytest.param(
+            ("context", "selected-ref"),
+            "refs/heads/other",
+            id="cross-ref",
+        ),
+        pytest.param(
+            ("context", "target"),
+            "d" * 40,
+            id="cross-target",
+        ),
+        pytest.param(
+            ("context", "repository-model-digest"),
+            "sha256:" + ("9" * 64),
+            id="cross-model",
+        ),
+        pytest.param(
+            ("context", "producer"),
+            "other-producer",
+            id="producer",
+        ),
+        pytest.param(
+            ("context", "control"),
+            "workflow-delivery-v3:" + ("d" * 40),
+            id="control",
+        ),
+        pytest.param(
+            ("context", "release-policy-digest"),
+            "sha256:" + ("8" * 64),
+            id="release-policy",
+        ),
+        pytest.param(
+            ("context", "catalog-digest"),
+            "sha256:" + ("7" * 64),
+            id="catalog",
+        ),
+    ],
+)
+def test_live_admission_rejects_each_current_lineage_mutation(
+    path: tuple[str, ...],
+    value: JsonValue,
+    live_intent: ReleaseIntent,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+) -> None:
+    """Reject prior, cross-request, cross-target, and substituted lineage."""
+    document = _transport_decision(
+        live_intent,
+        live_admitted_repository_model,
+        policy,
+    ).to_document()
+    _set_decision_path(document, path, value)
+
+    with pytest.raises(ValueError, match="current lineage mismatch"):
+        _admit_mutated_decision(
+            document,
+            live_intent=live_intent,
+            live_admitted_repository_model=live_admitted_repository_model,
+            policy=policy,
+        )
+
+
+@pytest.mark.parametrize(
+    ("path", "value", "message"),
+    [
+        pytest.param(
+            ("consumer-policy", "result-digest"),
+            "sha256:" + ("0" * 64),
+            "consumer-policy result digest mismatch",
+            id="consumer-result-digest",
+        ),
+        pytest.param(
+            ("consumer-policy", "policy-id"),
+            "other-policy",
+            "static first-slice policy",
+            id="consumer-policy-id",
+        ),
+        pytest.param(
+            ("consumer-policy", "policy-digest"),
+            "sha256:" + ("0" * 64),
+            "current canonical policy",
+            id="consumer-policy-digest",
+        ),
+        pytest.param(
+            ("governance", "repository"),
+            "other/repository",
+            "exact fixed contract",
+            id="governance-repository",
+        ),
+        pytest.param(
+            ("governance", "ref"),
+            "refs/heads/other",
+            "exact fixed contract",
+            id="governance-ref",
+        ),
+        pytest.param(
+            ("governance", "path"),
+            ".github/other.json",
+            "exact fixed contract",
+            id="governance-path",
+        ),
+        pytest.param(
+            ("governance", "max-age-days"),
+            89,
+            "exact fixed contract",
+            id="governance-max-age",
+        ),
+        pytest.param(
+            ("governance", "resolved-commit"),
+            "f" * 39,
+            "full commit SHA",
+            id="governance-commit",
+        ),
+        pytest.param(
+            ("governance", "blob-oid"),
+            "b" * 39,
+            "blob OID is malformed",
+            id="governance-blob",
+        ),
+        pytest.param(
+            ("governance", "content-sha256"),
+            "sha256:" + ("9" * 64),
+            "attestation identity mismatch",
+            id="governance-content-identity",
+        ),
+        pytest.param(
+            ("governance", "attestation-content-digest"),
+            "sha256:" + ("8" * 64),
+            "attestation identity mismatch",
+            id="governance-attestation-identity",
+        ),
+        pytest.param(
+            ("governance", "live-enabled"),
+            False,
+            "not fresh and enabled",
+            id="governance-disabled",
+        ),
+        pytest.param(
+            ("governance", "inspected-at"),
+            "2026-08-07T00:00:00Z",
+            "not fresh and enabled",
+            id="governance-not-yet-valid",
+        ),
+        pytest.param(
+            ("governance", "observed-at"),
+            "2026-08-07T00:00:00Z",
+            "not fresh and enabled",
+            id="governance-future-observation",
+        ),
+        pytest.param(
+            ("governance", "expires-at"),
+            "2026-08-06T12:00:00Z",
+            "not fresh and enabled",
+            id="governance-expired",
+        ),
+    ],
+)
+def test_live_admission_rejects_consumer_and_governance_mutations(  # noqa: PLR0913
+    path: tuple[str, ...],
+    value: JsonValue,
+    message: str,
+    live_intent: ReleaseIntent,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+) -> None:
+    """Reject reconstructed consumer and complete Governance substitutions."""
+    document = _transport_decision(
+        live_intent,
+        live_admitted_repository_model,
+        policy,
+    ).to_document()
+    _set_decision_path(document, path, value)
+
+    with pytest.raises((TypeError, ValueError), match=message):
+        _admit_mutated_decision(
+            document,
+            live_intent=live_intent,
+            live_admitted_repository_model=live_admitted_repository_model,
+            policy=policy,
+        )
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        pytest.param(
+            _make_consumer_positive,
+            "not a closed passing decision",
+            id="passing-consumer",
+        ),
+        pytest.param(
+            _make_blocked_with_diagnostic,
+            "not a closed passing decision",
+            id="blocked-with-diagnostic",
+        ),
+    ],
+)
+def test_live_admission_requires_a_diagnostic_free_consumer_free_pass(
+    mutation: DecisionMutation,
+    message: str,
+    live_intent: ReleaseIntent,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+) -> None:
+    """Require pass, no diagnostics, and no reconstructed consumers together."""
+    document = _transport_decision(
+        live_intent,
+        live_admitted_repository_model,
+        policy,
+    ).to_document()
+    mutation(document)
+
+    with pytest.raises(ValueError, match=message):
+        _admit_mutated_decision(
+            document,
+            live_intent=live_intent,
+            live_admitted_repository_model=live_admitted_repository_model,
+            policy=policy,
+        )
+
+
+def test_live_admission_rejects_hash_consistent_wrong_policy_digest(
+    live_intent: ReleaseIntent,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+) -> None:
+    """Reject a valid but obsolete policy digest through every hash layer."""
+    document = _transport_decision(
+        live_intent,
+        live_admitted_repository_model,
+        policy,
+    ).to_document()
+    document["consumer-policy"] = _consumer_decision_document(
+        replace(
+            _consumer_policy(target=live_intent.target),
+            policy_digest="sha256:" + ("0" * 64),
+        )
+    )
+
+    with pytest.raises(ValueError, match="current canonical policy"):
+        _admit_mutated_decision(
+            document,
+            live_intent=live_intent,
+            live_admitted_repository_model=live_admitted_repository_model,
+            policy=policy,
+        )
+
+
+def test_live_admission_rejects_hash_consistent_exception_substitution(
+    live_intent: ReleaseIntent,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+) -> None:
+    """Reject paired exception/surface substitution through every hash layer."""
+    result = _consumer_policy(target=live_intent.target)
+    selected = result.admitted_exceptions[0]
+    substituted = SurfaceDigest(
+        selected.path,
+        "sha256:" + ("0" * 64),
+    )
+    exceptions = tuple(
+        substituted if item.path == selected.path else item
+        for item in result.admitted_exceptions
+    )
+    surfaces = tuple(
+        substituted if item.path == selected.path else item
+        for item in result.scanned_surfaces
+    )
+    document = _transport_decision(
+        live_intent,
+        live_admitted_repository_model,
+        policy,
+    ).to_document()
+    document["consumer-policy"] = _consumer_decision_document(
+        replace(
+            result,
+            admitted_exceptions=exceptions,
+            scanned_surfaces=surfaces,
+        )
+    )
+
+    with pytest.raises(ValueError, match="exact approved exception"):
+        _admit_mutated_decision(
+            document,
+            live_intent=live_intent,
+            live_admitted_repository_model=live_admitted_repository_model,
+            policy=policy,
+        )
+
+
+@pytest.mark.parametrize(
+    ("path", "value", "message"),
+    [
+        pytest.param(
+            ("context", "workflow-run-id"),
+            True,
+            "positive integer",
+            id="boolean-run",
+        ),
+        pytest.param(
+            ("context", "target"),
+            1,
+            "nonempty exact string",
+            id="numeric-target",
+        ),
+        pytest.param(
+            ("consumer-policy", "consumers"),
+            "@hcoona/hcoona-release-smoke-npm",
+            "must be an array",
+            id="scalar-consumers",
+        ),
+        pytest.param(
+            ("governance", "max-age-days"),
+            "90",
+            "positive integer",
+            id="string-max-age",
+        ),
+        pytest.param(
+            ("governance", "live-enabled"),
+            "true",
+            "must be Boolean",
+            id="string-live-enabled",
+        ),
+        pytest.param(
+            ("diagnostics",),
+            [1],
+            "nonempty exact string",
+            id="numeric-diagnostic",
+        ),
+    ],
+)
+def test_live_admission_rejects_malformed_primitives(  # noqa: PLR0913
+    path: tuple[str, ...],
+    value: JsonValue,
+    message: str,
+    live_intent: ReleaseIntent,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+) -> None:
+    """Reject Boolean, numeric, scalar, and string coercion substitutes."""
+    document = _transport_decision(
+        live_intent,
+        live_admitted_repository_model,
+        policy,
+    ).to_document()
+    _set_decision_path(document, path, value)
+
+    with pytest.raises((TypeError, ValueError), match=message):
+        _admit_mutated_decision(
+            document,
+            live_intent=live_intent,
+            live_admitted_repository_model=live_admitted_repository_model,
+            policy=policy,
+        )
+
+
+@pytest.mark.parametrize(
+    ("container", "member", "operation"),
+    [
+        pytest.param((), "context", "missing", id="missing-top-level"),
+        pytest.param((), "unexpected", "unknown", id="unknown-top-level"),
+        pytest.param(
+            ("context",),
+            "request-id",
+            "missing",
+            id="missing-context",
+        ),
+        pytest.param(
+            ("context",),
+            "unexpected",
+            "unknown",
+            id="unknown-context",
+        ),
+        pytest.param(
+            ("consumer-policy",),
+            "result-digest",
+            "missing",
+            id="missing-consumer",
+        ),
+        pytest.param(
+            ("consumer-policy",),
+            "unexpected",
+            "unknown",
+            id="unknown-consumer",
+        ),
+        pytest.param(
+            ("governance",),
+            "attestation-content-digest",
+            "missing",
+            id="missing-governance",
+        ),
+        pytest.param(
+            ("governance",),
+            "unexpected",
+            "unknown",
+            id="unknown-governance",
+        ),
+    ],
+)
+def test_live_admission_closes_every_nested_schema(  # noqa: PLR0913
+    container: tuple[str, ...],
+    member: str,
+    operation: str,
+    live_intent: ReleaseIntent,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+) -> None:
+    """Reject missing and unknown members at every Decision object layer."""
+    document = _transport_decision(
+        live_intent,
+        live_admitted_repository_model,
+        policy,
+    ).to_document()
+    selected = document
+    for name in container:
+        child = selected[name]
+        if not isinstance(child, dict):
+            message = f"{name} is not an object"
+            raise TypeError(message)
+        selected = child
+    if operation == "missing":
+        del selected[member]
+    else:
+        selected[member] = "unexpected"
+
+    with pytest.raises(ValueError, match=f"{operation} .*field"):
+        _admit_mutated_decision(
+            document,
+            live_intent=live_intent,
+            live_admitted_repository_model=live_admitted_repository_model,
+            policy=policy,
+        )
+
+
+def test_live_admission_rejects_minimal_pass_payload(
+    live_intent: ReleaseIntent,
+    live_admitted_repository_model: AdmittedRepositoryModelSnapshot,
+    policy: ReleasePolicy,
+) -> None:
+    """Reject the former minimal result-only payload."""
+    document: dict[str, JsonValue] = {"result": "pass"}
+
+    with pytest.raises(ValueError, match="missing required field"):
+        _admit_mutated_decision(
+            document,
+            live_intent=live_intent,
+            live_admitted_repository_model=live_admitted_repository_model,
+            policy=policy,
+        )
 
 
 def test_live_eligibility_passes_with_fresh_exact_target_inputs() -> None:
@@ -1011,6 +1868,48 @@ def test_consumer_positive_result_blocks_before_attempt_creation() -> None:
     assert decision.governance.attestation.live_enabled is True
 
 
+def test_drifted_approved_exception_blocks_as_a_consumer() -> None:
+    """Admit only exact exceptions and report a changed surface as consumer."""
+    original = _consumer_policy()
+    selected = original.admitted_exceptions[0]
+    drifted = SurfaceDigest(
+        selected.path,
+        "sha256:" + ("f" * 64),
+    )
+    policy_result = replace(
+        original,
+        scanned_surfaces=tuple(
+            drifted if item.path == selected.path else item
+            for item in original.scanned_surfaces
+        ),
+        admitted_exceptions=original.admitted_exceptions[1:],
+        consumers=(selected.path,),
+    )
+    client = RecordingGovernanceClient(_attestation_content(live_enabled=True))
+
+    decision = _evaluate(client, consumer_policy=policy_result)
+
+    assert decision.result is EligibilityResult.BLOCKED
+    assert decision.diagnostics == ("consumer-policy-found-consumers",)
+    assert decision.consumer_policy == policy_result
+
+
+def test_nonadmitted_approved_exception_must_be_a_consumer() -> None:
+    """Reject a result that silently drops one reviewed exception surface."""
+    original = _consumer_policy()
+    policy_result = replace(
+        original,
+        admitted_exceptions=original.admitted_exceptions[1:],
+    )
+    client = RecordingGovernanceClient(_attestation_content(live_enabled=True))
+
+    with pytest.raises(
+        ValueError,
+        match="non-admitted approved exceptions must be consumers",
+    ):
+        _evaluate(client, consumer_policy=policy_result)
+
+
 @pytest.mark.parametrize(
     ("mutate", "message"),
     [
@@ -1028,7 +1927,7 @@ def test_consumer_positive_result_blocks_before_attempt_creation() -> None:
                     ),
                 ),
             ),
-            "not digest-bound/allowlisted",
+            "exact approved exception",
         ),
         (
             lambda result: replace(
@@ -1040,7 +1939,7 @@ def test_consumer_positive_result_blocks_before_attempt_creation() -> None:
                     ),
                 ),
             ),
-            "not digest-bound/allowlisted",
+            "exact approved exception",
         ),
         (
             lambda result: replace(
@@ -1074,6 +1973,13 @@ def test_consumer_policy_requires_exact_target_and_digest_bound_surfaces(
         (
             lambda result: replace(result, policy_digest="d" * 64),
             "digest must be SHA-256",
+        ),
+        (
+            lambda result: replace(
+                result,
+                policy_digest="sha256:" + ("0" * 64),
+            ),
+            "current canonical policy",
         ),
         (
             lambda result: replace(result, target="e" * 39),
@@ -1118,6 +2024,7 @@ def test_consumer_policy_requires_exact_target_and_digest_bound_surfaces(
     ids=[
         "policy-id",
         "policy-digest",
+        "valid-wrong-policy-digest",
         "target-shape",
         "empty-surfaces",
         "duplicate-surface",

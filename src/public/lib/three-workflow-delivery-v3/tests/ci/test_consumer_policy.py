@@ -8,10 +8,29 @@ import re
 import shutil
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
+from three_workflow_delivery_v3.release import javascript_consumer
+from three_workflow_delivery_v3.release.consumer_policy import (
+    CONSUMER_POLICY_DIGEST,
+    JAVASCRIPT_ANALYSIS_SEMANTICS_ID,
+    JAVASCRIPT_AST_DEPTH_LIMIT,
+    JAVASCRIPT_AST_NODE_LIMIT,
+    JAVASCRIPT_COMMONJS_GLOBAL_SUFFIXES,
+    JAVASCRIPT_RELEVANT_UNKNOWN_ADMISSION_RULE,
+    JAVASCRIPT_SOURCE_BYTE_LIMIT,
+    JAVASCRIPT_SUPPORTED_CONSTRUCTS,
+    JAVASCRIPT_UNKNOWN_ADMISSION_POLICY,
+    NODE_DEPENDENCY_FIELDS,
+    TREE_SITTER_JAVASCRIPT_VERSION,
+    TREE_SITTER_TYPESCRIPT_VERSION,
+    TREE_SITTER_VERSION,
+    consumer_policy_document,
+    consumer_policy_parser_profile,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -19,6 +38,7 @@ if TYPE_CHECKING:
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
 SCAN_ERROR_EXIT_CODE = 2
+RELEVANT_JAVASCRIPT_ERROR = "relevant unsupported JavaScript consumer flow"
 
 
 def _load_policy() -> Any:
@@ -114,6 +134,63 @@ def _assert_consumer(
         ),
     )
     assert path in {surface.path for surface in result.scanned_surfaces}
+
+
+def _assert_javascript_scan_error(repository: Path, path: str) -> None:
+    with pytest.raises(ConsumerPolicyScanError) as captured:
+        scan_consumer_policy(repository)
+
+    assert captured.value.findings == (f"{path}: {RELEVANT_JAVASCRIPT_ERROR}",)
+
+
+def _scan_javascript(
+    source: str | bytes,
+    *,
+    language: javascript_consumer.JavaScriptLanguage = "javascript",
+    pnpmfile: bool = False,
+    commonjs_globals: bool = True,
+) -> bool:
+    content = source.encode() if isinstance(source, str) else source
+    return javascript_consumer.scan_javascript_consumer(
+        content,
+        language=language,
+        manager_reference=POLICY._manager_references,  # noqa: SLF001
+        pnpmfile=pnpmfile,
+        commonjs_globals=commonjs_globals,
+    )
+
+
+def _assert_javascript_outcome(
+    source: str,
+    outcome: str,
+    *,
+    language: javascript_consumer.JavaScriptLanguage = "javascript",
+    pnpmfile: bool = False,
+    commonjs_globals: bool = True,
+) -> None:
+    if outcome == "error":
+        with pytest.raises(ValueError, match=RELEVANT_JAVASCRIPT_ERROR):
+            _scan_javascript(
+                source,
+                language=language,
+                pnpmfile=pnpmfile,
+                commonjs_globals=commonjs_globals,
+            )
+        return
+    assert _scan_javascript(
+        source,
+        language=language,
+        pnpmfile=pnpmfile,
+        commonjs_globals=commonjs_globals,
+    ) is (outcome == "consumer")
+
+
+def _j(case: str, source: str, outcome: str) -> tuple[str, str, str, str]:
+    return case, "javascript", source, outcome
+
+
+_P = PACKAGE_NAME
+_SPAWN_IMPORT = 'import { spawn } from "node:child_process";\n'
 
 
 @pytest.mark.parametrize(
@@ -632,6 +709,2056 @@ def test_detects_exact_literal_process_and_resolution_apis(
     ("path", "content"),
     [
         (
+            "tools/postinstall-const-manager.js",
+            (
+                'import { execFile } from "node:child_process";\n'
+                'const manager = "npm";\n'
+                f'execFile(manager, ["install", "{PACKAGE_NAME}"]);\n'
+            ),
+        ),
+        (
+            "tools/postinstall-const-argv.mjs",
+            (
+                'import { execFile as run } from "child_process";\n'
+                'const command = "install";\n'
+                f'const argv = [command, "{PACKAGE_NAME}"];\n'
+                'run("npm", argv);\n'
+            ),
+        ),
+        (
+            "tools/postinstall-immutable-aliases.cjs",
+            (
+                'const child = require("node:child_process");\n'
+                "const launch = child.spawnSync;\n"
+                "const manager = `/opt/tools/pnpm`;\n"
+                f'const original = ["add", "{PACKAGE_NAME}"];\n'
+                "const argv = original;\n"
+                "launch(manager, argv);\n"
+            ),
+        ),
+        (
+            "tools/postinstall-computed-static.js",
+            (
+                'const child = require("child_process");\n'
+                f'child["spawn"]("npm", ["install", "{PACKAGE_NAME}"]);\n'
+            ),
+        ),
+        (
+            "tools/postinstall-typescript.ts",
+            (
+                'import { execFile } from "node:child_process";\n'
+                'const manager = ("npm" as string)!;\n'
+                f'const argv: string[] = ["install", "{PACKAGE_NAME}"];\n'
+                "execFile(manager satisfies string, argv);\n"
+            ),
+        ),
+        (
+            "tools/postinstall-import-equals.ts",
+            (
+                'import child = require("node:child_process");\n'
+                f'child.spawn("npm", ["install", "{PACKAGE_NAME}"]);\n'
+            ),
+        ),
+        (
+            "tools/postinstall-import-equals-package.ts",
+            f'import smoke = require("{PACKAGE_NAME}");\n',
+        ),
+        (
+            "tools/postinstall-require-resolve.js",
+            (
+                f'const specifier = "{PACKAGE_NAME}/client";\n'
+                "require.resolve(specifier);\n"
+            ),
+        ),
+        (
+            "tools/postinstall-require-package.cjs",
+            f'const loaded = require("{PACKAGE_NAME}");\n',
+        ),
+        (
+            "tools/postinstall-import-package.mjs",
+            f'void import("{PACKAGE_NAME}/client");\n',
+        ),
+    ],
+    ids=[
+        "const-manager",
+        "const-argv",
+        "immutable-aliases",
+        "computed-static-member",
+        "typescript-wrappers",
+        "typescript-import-equals-child-process",
+        "typescript-import-equals-package",
+        "require-resolve-const",
+        "require-package",
+        "exact-dynamic-import-package",
+    ],
+)
+def test_rc033_supported_static_subset_detects_consumers(
+    tmp_path: Path,
+    path: str,
+    content: str,
+) -> None:
+    """Detect the explicitly supported immutable JavaScript forms."""
+    repository, _ = _repository(tmp_path)
+    _write(repository, path, content)
+
+    _assert_consumer(repository, path)
+
+
+@pytest.mark.parametrize(
+    ("case", "content"),
+    [
+        (
+            "commonjs-loader",
+            rf'requ\u0069re("{PACKAGE_NAME}");',
+        ),
+        (
+            "child-process-member",
+            (
+                'const child = require("node:child_process");\n'
+                rf'child.sp\u0061wn("npm", ["install", "{PACKAGE_NAME}"]);'
+            ),
+        ),
+    ],
+)
+def test_rc033_decodes_identifier_escapes_in_sensitive_positions(
+    tmp_path: Path,
+    case: str,
+    content: str,
+) -> None:
+    """Normalize escaped identifiers before matching sensitive bindings."""
+    repository, _ = _repository(tmp_path)
+    path = f"tools/postinstall-escaped-identifier-{case}.cjs"
+    _write(repository, path, content)
+
+    _assert_consumer(repository, path)
+
+
+def test_rc033_decoded_identifier_shadowing_remains_fail_closed(
+    tmp_path: Path,
+) -> None:
+    """Preserve file-global ambiguity for an escaped loader declaration."""
+    repository, _ = _repository(tmp_path)
+    path = "tools/postinstall-shadowed-escaped-identifier.cjs"
+    _write(
+        repository,
+        path,
+        (
+            r"const requ\u0069re = (value) => value;"
+            rf'requ\u0069re("{PACKAGE_NAME}");'
+        ),
+    )
+
+    _assert_javascript_scan_error(repository, path)
+
+
+@pytest.mark.parametrize(
+    ("case", "body"),
+    [
+        (
+            "mutable-manager",
+            (
+                'let manager = "npm";\n'
+                f'execFile(manager, ["install", "{PACKAGE_NAME}"]);\n'
+            ),
+        ),
+        (
+            "mutated-argv",
+            (
+                'const argv = ["install"];\n'
+                f'argv.push("{PACKAGE_NAME}");\n'
+                'execFile("npm", argv);\n'
+            ),
+        ),
+        (
+            "unknown-reference-pass",
+            (
+                f'const argv = ["install", "{PACKAGE_NAME}"];\n'
+                "observe(argv);\n"
+                'execFile("npm", argv);\n'
+            ),
+        ),
+        (
+            "escaped-array-element",
+            (
+                'const command = "install";\n'
+                f'const argv = [command, "{PACKAGE_NAME}"];\n'
+                "observe(command);\n"
+                'execFile("npm", argv);\n'
+            ),
+        ),
+        (
+            "aggregate-escaped-array-element",
+            (
+                'const command = "install";\n'
+                f'const argv = [command, "{PACKAGE_NAME}"];\n'
+                "observe({ command });\n"
+                'execFile("npm", argv);\n'
+            ),
+        ),
+        (
+            "dynamic-member",
+            (
+                'const child = require("child_process");\n'
+                'const method = "spawn";\n'
+                "child[getMethod(method)]("
+                f'"npm", ["install", "{PACKAGE_NAME}"]);\n'
+            ),
+        ),
+        (
+            "concatenated-command",
+            (
+                f'const packageName = "{PACKAGE_NAME}";\n'
+                'exec("npm install " + packageName);\n'
+            ),
+        ),
+        (
+            "split-binary-package",
+            (
+                'const packageName = "@hcoona/" + '
+                '"hcoona-release-smoke-npm";\n'
+                'execFile("npm", ["install", packageName]);\n'
+            ),
+        ),
+        (
+            "array-hole",
+            f'execFile("npm", [, "install", "{PACKAGE_NAME}"]);\n',
+        ),
+    ],
+    ids=[
+        "mutable-manager",
+        "mutated-argv",
+        "unknown-reference-pass",
+        "escaped-array-element",
+        "aggregate-escaped-array-element",
+        "dynamic-member",
+        "concatenated-command",
+        "split-binary-package",
+        "array-hole",
+    ],
+)
+def test_rc033_unresolved_required_data_fails_closed(
+    tmp_path: Path,
+    case: str,
+    body: str,
+) -> None:
+    """Reject package-relevant calls outside the immutable subset."""
+    repository, _ = _repository(tmp_path)
+    path = f"tools/postinstall-{case}.js"
+    _write(
+        repository,
+        path,
+        'import { execFile, exec } from "node:child_process";\n' + body,
+    )
+
+    _assert_javascript_scan_error(repository, path)
+
+
+@pytest.mark.parametrize(
+    ("case", "content"),
+    [
+        (
+            "local-wrapper",
+            (
+                'import { spawn } from "node:child_process";\n'
+                "function launch(manager, argv) { spawn(manager, argv); }\n"
+                f'launch("npm", ["install", "{PACKAGE_NAME}"]);\n'
+            ),
+        ),
+        (
+            "closure",
+            (
+                'import { spawn } from "node:child_process";\n'
+                "const launch = () => "
+                f'spawn("npm", ["install", "{PACKAGE_NAME}"]);\n'
+            ),
+        ),
+        (
+            "async",
+            (
+                'import { spawn } from "node:child_process";\n'
+                "async function install() {\n"
+                f'  spawn("npm", ["install", "{PACKAGE_NAME}"]);\n'
+                "}\n"
+            ),
+        ),
+        (
+            "class",
+            (
+                'import { spawn } from "node:child_process";\n'
+                "class Launcher { run() { "
+                f'spawn("npm", ["install", "{PACKAGE_NAME}"]);'
+                " } }\n"
+            ),
+        ),
+        (
+            "for-redeclaration",
+            (
+                'import { spawn } from "node:child_process";\n'
+                "for (const spawn of launchers) { "
+                f'spawn("npm", ["install", "{PACKAGE_NAME}"]);'
+                " }\n"
+            ),
+        ),
+        (
+            "switch-redeclaration",
+            (
+                'import { spawn } from "node:child_process";\n'
+                "switch (mode) { case 1: const spawn = runner; "
+                f'spawn("npm", ["install", "{PACKAGE_NAME}"]);'
+                " }\n"
+            ),
+        ),
+        (
+            "unknown-child-process-import",
+            (
+                'import { fork } from "node:child_process";\n'
+                f'fork("{PACKAGE_NAME}");\n'
+            ),
+        ),
+        (
+            "relevant-shadow",
+            (
+                'import { spawn } from "node:child_process";\n'
+                "function inspect(spawn) { "
+                f'spawn("npm", ["install", "{PACKAGE_NAME}"]);'
+                " }\n"
+            ),
+        ),
+    ],
+    ids=[
+        "local-wrapper",
+        "closure",
+        "async",
+        "class",
+        "for-redeclaration",
+        "switch-redeclaration",
+        "unknown-child-process-import",
+        "relevant-shadow",
+    ],
+)
+def test_rc033_relevant_unsupported_flows_fail_closed(
+    tmp_path: Path,
+    case: str,
+    content: str,
+) -> None:
+    """Fail closed instead of modeling unsupported JavaScript runtime flow."""
+    repository, _ = _repository(tmp_path)
+    path = f"tools/postinstall-unsupported-{case}.js"
+    _write(repository, path, content)
+
+    _assert_javascript_scan_error(repository, path)
+
+
+@pytest.mark.parametrize(
+    ("case", "content"),
+    [
+        (
+            "exact-non-manager",
+            (
+                'import { spawn } from "node:child_process";\n'
+                f'spawn("echo", ["{PACKAGE_NAME}"]);\n'
+            ),
+        ),
+        (
+            "scalar-metadata",
+            (
+                'import { spawn } from "node:child_process";\n'
+                f'const metadata = "{PACKAGE_NAME}";\n'
+                'spawn("echo", []);\n'
+            ),
+        ),
+        (
+            "type-only-modules",
+            (
+                'import { spawn } from "node:child_process";\n'
+                f'import {{ type Package }} from "{PACKAGE_NAME}";\n'
+                f'export type {{ Package }} from "{PACKAGE_NAME}";\n'
+                'spawn("echo", []);\n'
+            ),
+        ),
+        (
+            "regex",
+            (
+                'import { spawn } from "node:child_process";\n'
+                "const pattern = "
+                f"/{re.escape(PACKAGE_NAME).replace('/', r'\/')}/;\n"
+                'spawn("echo", []);\n'
+            ),
+        ),
+        (
+            "case-and-slash-near-misses",
+            (
+                'import { spawn } from "node:child_process";\n'
+                f'spawn("npm", ["install", "{PACKAGE_NAME.upper()}"]);\n'
+                'spawn("npm", ["install", '
+                f'"{PACKAGE_NAME.replace("/", "\\\\")}"]);\n'
+            ),
+        ),
+    ],
+    ids=[
+        "exact-non-manager",
+        "scalar-metadata",
+        "type-only-modules",
+        "regex",
+        "case-and-slash-near-misses",
+    ],
+)
+def test_rc033_harmless_identity_and_near_misses_remain_clean(
+    tmp_path: Path,
+    case: str,
+    content: str,
+) -> None:
+    """Keep identity-only and unrelated unsupported syntax non-consuming."""
+    repository, _ = _repository(tmp_path)
+    suffix = "ts" if case in {"type-only-modules", "types-only"} else "js"
+    path = f"tools/postinstall-clean-{case}.{suffix}"
+    _write(repository, path, content)
+
+    assert scan_consumer_policy(repository).consumers == ()
+
+
+@pytest.mark.parametrize(
+    ("case", "literal"),
+    [
+        ("unicode-escape", r'"\u0040hcoona/hcoona-release-smoke-npm"'),
+        ("hex-escape", r'"\x40hcoona/hcoona-release-smoke-npm"'),
+        ("braced-unicode", r'"\u{40}hcoona/hcoona-release-smoke-npm"'),
+        ("escaped-slash", r'"@hcoona\/hcoona-release-smoke-npm"'),
+        ("identity-escape", r'"\@hcoona/hcoona-release-smoke-npm"'),
+        ("legacy-octal", r'"\100hcoona/hcoona-release-smoke-npm"'),
+        (
+            "line-continuation",
+            '"@hcoona/\\\nhcoona-release-smoke-npm"',
+        ),
+        ("template", f"`{PACKAGE_NAME}`"),
+    ],
+)
+def test_rc033_decodes_exact_string_and_template_values(
+    tmp_path: Path,
+    case: str,
+    literal: str,
+) -> None:
+    """Classify decoded literals rather than matching source spelling."""
+    repository, _ = _repository(tmp_path)
+    suffix = "cjs" if case == "legacy-octal" else "js"
+    path = f"tools/postinstall-decoded-{case}.{suffix}"
+    _write(
+        repository,
+        path,
+        (
+            'import { spawn } from "node:child_process";\n'
+            f'spawn("npm", ["install", {literal}]);\n'
+        ),
+    )
+
+    _assert_consumer(repository, path)
+
+
+@pytest.mark.parametrize(
+    ("pattern", "initializer"),
+    [
+        ("{ launch = spawn }", "{}"),
+        ("[launch = spawn]", "[]"),
+    ],
+    ids=["object", "array"],
+)
+def test_rc033_destructuring_defaults_with_sensitive_aliases_fail_closed(
+    pattern: str,
+    initializer: str,
+) -> None:
+    """Keep sensitive destructuring defaults inside the unsupported barrier."""
+    _assert_javascript_outcome(
+        (
+            'import { spawn } from "node:child_process";\n'
+            f"const {pattern} = {initializer};\n"
+            f'launch("npm", ["install", "{PACKAGE_NAME}"]);\n'
+        ),
+        "error",
+    )
+
+
+@pytest.mark.parametrize(
+    ("_case", "source", "outcome"),
+    [
+        (
+            "assignment-target",
+            (
+                'import { spawn } from "node:child_process";\n'
+                "let launch;\n"
+                "({ launch = spawn } = {});\n"
+                f'launch("npm", ["install", "{PACKAGE_NAME}"]);\n'
+            ),
+            "error",
+        ),
+        (
+            "function-parameter",
+            (
+                'import { spawn } from "node:child_process";\n'
+                "function run(launch = spawn) {\n"
+                f'  launch("npm", ["install", "{PACKAGE_NAME}"]);\n'
+                "}\n"
+            ),
+            "error",
+        ),
+        (
+            "harmless-function-parameter",
+            (
+                "function run(value = harmless) {\n"
+                f'  value("{PACKAGE_NAME}");\n'
+                "}\n"
+            ),
+            "clean",
+        ),
+    ],
+)
+def test_rc033_defaults_in_unsupported_contexts_preserve_relevance(
+    _case: str,
+    source: str,
+    outcome: str,
+) -> None:
+    """Track only direct default sensitivity outside variable declarations."""
+    _assert_javascript_outcome(source, outcome)
+
+
+@pytest.mark.parametrize(
+    ("source", "outcome"),
+    [
+        (
+            (
+                'import { spawn } from "node:child_process";\n'
+                "const { nested: { launch = spawn } } = { nested: {} };\n"
+                f'launch("npm", ["install", "{PACKAGE_NAME}"]);\n'
+            ),
+            "error",
+        ),
+        (
+            (
+                'import { spawn } from "node:child_process";\n'
+                "const { nested: { launch } = spawn } = {};\n"
+                f'launch("npm", ["install", "{PACKAGE_NAME}"]);\n'
+            ),
+            "clean",
+        ),
+    ],
+    ids=["nested-direct-default", "aggregate-default"],
+)
+def test_rc033_nested_patterns_track_only_direct_defaults(
+    source: str,
+    outcome: str,
+) -> None:
+    """Recurse through patterns without spreading aggregate defaults."""
+    _assert_javascript_outcome(source, outcome)
+
+
+@pytest.mark.parametrize(
+    ("target", "values", "outcome"),
+    [
+        (
+            "{ launch = spawn }",
+            "[{}]",
+            "error",
+        ),
+        (
+            "[launch = spawn]",
+            "[[]]",
+            "error",
+        ),
+        (
+            "const { launch = spawn }",
+            "[{}]",
+            "error",
+        ),
+        (
+            "{ launch = harmless }",
+            "[{}]",
+            "clean",
+        ),
+    ],
+    ids=["object-assignment", "array-assignment", "declaration", "harmless"],
+)
+def test_rc033_loop_targets_preserve_direct_default_relevance(
+    target: str,
+    values: str,
+    outcome: str,
+) -> None:
+    """Index direct loop-target defaults without modeling iterations."""
+    declaration = "" if target.startswith("const ") else "let launch;\n"
+    source = (
+        'import { spawn } from "node:child_process";\n'
+        f"const harmless = () => undefined;\n{declaration}"
+        f"for ({target} of {values}) {{\n"
+        f'  launch("npm", ["install", "{PACKAGE_NAME}"]);\n'
+        "}\n"
+    )
+    _assert_javascript_outcome(source, outcome)
+
+
+@pytest.mark.parametrize(
+    ("options", "outcome"),
+    [
+        ("{ shell: true }", "consumer"),
+        ('{ "shell": "/bin/sh" }', "consumer"),
+        ("{ shell: false }", "clean"),
+        ("{ shell: enabled }", "error"),
+        ("{ get shell() { return true; } }", "error"),
+        ('{ get cwd() { return "/tmp"; } }', "clean"),
+    ],
+)
+def test_rc033_static_shell_options_control_command_matching(
+    options: str,
+    outcome: str,
+) -> None:
+    """Match full commands only when the direct shell option can enable them."""
+    _assert_javascript_outcome(
+        (
+            'const child = require("node:child_process");\n'
+            "child.spawnSync("
+            f'"npm install {PACKAGE_NAME}", {options}'
+            ");\n"
+        ),
+        outcome,
+    )
+
+
+def test_rc033_third_argument_shell_option_controls_command_matching() -> None:
+    """Honor the explicit options position when argv is present."""
+    _assert_javascript_outcome(
+        (
+            'const child = require("node:child_process");\n'
+            "child.spawnSync("
+            f'"npm install {PACKAGE_NAME}", [], {{ shell: true }}'
+            ");\n"
+        ),
+        "consumer",
+    )
+
+
+@pytest.mark.parametrize(
+    ("executable", "argv", "outcome"),
+    [
+        (
+            "npm install",
+            f'["{PACKAGE_NAME}"]',
+            "consumer",
+        ),
+        (
+            "echo",
+            f'["{PACKAGE_NAME}"]',
+            "clean",
+        ),
+    ],
+)
+def test_rc033_enabled_shell_matches_exact_command_and_argv(
+    executable: str,
+    argv: str,
+    outcome: str,
+) -> None:
+    """Use Node's exact shell concatenation without interpreting the shell."""
+    _assert_javascript_outcome(
+        (
+            'const child = require("node:child_process");\n'
+            f'child.spawnSync("{executable}", {argv}, {{ shell: true }});\n'
+        ),
+        outcome,
+    )
+
+
+@pytest.mark.parametrize(
+    ("executable", "argv", "options", "outcome"),
+    [
+        (
+            f"npm install {PACKAGE_NAME}",
+            "[]",
+            "options",
+            "error",
+        ),
+        (
+            f"npm install {PACKAGE_NAME}",
+            "[]",
+            "",
+            "clean",
+        ),
+        (
+            f"echo {PACKAGE_NAME}",
+            "[]",
+            "options",
+            "clean",
+        ),
+        (
+            "npm install",
+            f'["{PACKAGE_NAME}"]',
+            "options",
+            "error",
+        ),
+        (
+            "npm install",
+            f'["{PACKAGE_NAME}"]',
+            "",
+            "clean",
+        ),
+    ],
+)
+def test_rc033_nonliteral_third_options_remain_distinct_from_absent(
+    executable: str,
+    argv: str,
+    options: str,
+    outcome: str,
+) -> None:
+    """Fail closed when an unresolved third argument can enable a consumer."""
+    declaration = "const options = { shell: true };\n" if options else ""
+    third = f", {options}" if options else ""
+    _assert_javascript_outcome(
+        (
+            'const child = require("node:child_process");\n'
+            f"{declaration}"
+            f'child.spawnSync("{executable}", {argv}{third});\n'
+        ),
+        outcome,
+    )
+
+
+@pytest.mark.parametrize(
+    ("executable", "package", "outcome"),
+    [
+        ("npm install", PACKAGE_NAME, "error"),
+        ("echo", PACKAGE_NAME, "clean"),
+        ("npm install", "unrelated-package", "clean"),
+    ],
+)
+def test_rc033_enabled_shell_with_unresolved_argv_uses_exact_prefix(
+    executable: str,
+    package: str,
+    outcome: str,
+) -> None:
+    """Fail closed only for a relevant exact package-manager prefix."""
+    _assert_javascript_outcome(
+        (
+            'const child = require("node:child_process");\n'
+            f'let argv = ["{package}"];\n'
+            f'child.spawnSync("{executable}", argv, {{ shell: true }});\n'
+        ),
+        outcome,
+    )
+
+
+@pytest.mark.parametrize("outcome", ["clean", "consumer"])
+def test_rc033_exact_manager_results_are_memoized(
+    outcome: str,
+) -> None:
+    """Evaluate each distinct exact manager input only once per scan."""
+    calls: Counter[tuple[str, tuple[str, ...] | None]] = Counter()
+    consumer = outcome == "consumer"
+
+    def manager(executable: str, arguments: tuple[str, ...] | None) -> bool:
+        calls[(executable, arguments)] += 1
+        return POLICY._manager_references(  # noqa: SLF001
+            executable, arguments
+        )
+
+    package = f', "{PACKAGE_NAME}"' if consumer else ""
+    source = (
+        'import { spawn } from "node:child_process";\n'
+        f'const argv = ["install"{package}];\n'
+        + 'spawn("npm", argv);\n' * 128
+        + ("" if consumer else f'const metadata = "{PACKAGE_NAME}";\n')
+    )
+
+    assert (
+        javascript_consumer.scan_javascript_consumer(
+            source.encode(),
+            language="javascript",
+            manager_reference=manager,
+        )
+        is consumer
+    )
+    assert calls
+    assert set(calls.values()) == {1}
+
+
+@pytest.mark.parametrize(
+    ("case", "language", "source", "outcome"),
+    [
+        (
+            "comments-in-arguments",
+            "javascript",
+            (
+                'import { spawn } from "node:child_process";\n'
+                'spawn(/* executable */ "npm", /* argv */ '
+                f'["install", "{PACKAGE_NAME}"] /* trailing */);\n'
+            ),
+            "consumer",
+        ),
+        (
+            "create-require-child-process",
+            "javascript",
+            (
+                'import { createRequire } from "node:module";\n'
+                "const load = createRequire(import.meta.url);\n"
+                'const child = load("node:child_process");\n'
+                f'child.spawn("npm", ["install", "{PACKAGE_NAME}"]);\n'
+            ),
+            "consumer",
+        ),
+        (
+            "get-builtin-child-process",
+            "javascript",
+            (
+                'const child = process.getBuiltinModule("child_process");\n'
+                f'child.spawnSync("npm", ["install", "{PACKAGE_NAME}"]);\n'
+            ),
+            "consumer",
+        ),
+        (
+            "unrelated-loader-modules",
+            "javascript",
+            (
+                'import { createRequire } from "node:module";\n'
+                "const load = createRequire(import.meta.url);\n"
+                'load("node:path");\n'
+                'process.getBuiltinModule("node:url");\n'
+                f'const metadata = "{PACKAGE_NAME}";\n'
+            ),
+            "clean",
+        ),
+        (
+            "structured-punctuation",
+            "javascript",
+            (
+                'import { spawn } from "node:child_process";\n'
+                f'spawn("npm", ["install", "{PACKAGE_NAME},"]);\n'
+                f'spawn("npm", ["install", "\\"{PACKAGE_NAME}\\""]);\n'
+            ),
+            "clean",
+        ),
+        (
+            "second-argument-options",
+            "javascript",
+            (
+                'import { spawn } from "node:child_process";\n'
+                f'spawn("npm", {{ env: {{ PACKAGE: "{PACKAGE_NAME}" }} }});\n'
+            ),
+            "clean",
+        ),
+        (
+            "sequence-final-harmless",
+            "javascript",
+            f'(eval, harmless)("{PACKAGE_NAME}");\n',
+            "clean",
+        ),
+        (
+            "sequence-final-eval",
+            "javascript",
+            f'(harmless, eval)("{PACKAGE_NAME}");\n',
+            "error",
+        ),
+        (
+            "cross-function-package",
+            "javascript",
+            (
+                'import { spawn } from "node:child_process";\n'
+                f'function packageName() {{ return "{PACKAGE_NAME}"; }}\n'
+                'spawn("npm", ["install", packageName()]);\n'
+            ),
+            "error",
+        ),
+        (
+            "global-receiver-mutation",
+            "javascript",
+            (
+                'import { spawn } from "node:child_process";\n'
+                f'globalThis.args.push("{PACKAGE_NAME}");\n'
+                'spawn("npm", globalThis.args);\n'
+            ),
+            "error",
+        ),
+        (
+            "runtime-namespace",
+            "typescript",
+            (
+                'import { spawn } from "node:child_process";\n'
+                "namespace Tools { "
+                f'spawn("npm", ["install", "{PACKAGE_NAME}"]);'
+                " }\n"
+            ),
+            "error",
+        ),
+        (
+            "runtime-module",
+            "typescript",
+            (
+                'import { spawn } from "node:child_process";\n'
+                "module Tools { "
+                f'spawn("npm", ["install", "{PACKAGE_NAME}"]);'
+                " }\n"
+            ),
+            "error",
+        ),
+        (
+            "ambient-namespace",
+            "typescript",
+            (
+                "declare namespace Docs { "
+                f'type Package = import("{PACKAGE_NAME}").Thing;'
+                " }\n"
+            ),
+            "clean",
+        ),
+        (
+            "ambient-module",
+            "typescript",
+            (
+                'declare module "docs" { '
+                f'type Package = import("{PACKAGE_NAME}").Thing;'
+                " }\n"
+            ),
+            "clean",
+        ),
+        (
+            "computed-member-const",
+            "javascript",
+            (
+                'const child = require("node:child_process");\n'
+                'const method = "spawn";\n'
+                f'child[method]("npm", ["install", "{PACKAGE_NAME}"]);\n'
+            ),
+            "consumer",
+        ),
+        (
+            "projected-manager",
+            "javascript",
+            (
+                'import { spawn } from "node:child_process";\n'
+                'const record = "npm";\n'
+                "const { manager } = record;\n"
+                f'spawn(manager, ["install", "{PACKAGE_NAME}"]);\n'
+            ),
+            "error",
+        ),
+        (
+            "projected-argv",
+            "javascript",
+            (
+                'import { spawn } from "node:child_process";\n'
+                f'const record = ["install", "{PACKAGE_NAME}"];\n'
+                "const { argv } = record;\n"
+                'spawn("npm", argv);\n'
+            ),
+            "error",
+        ),
+        (
+            "eval-const-package",
+            "javascript",
+            f'const packageName = "{PACKAGE_NAME}"; eval(packageName);\n',
+            "error",
+        ),
+        (
+            "unknown-child-const-package",
+            "javascript",
+            (
+                'import { fork } from "node:child_process";\n'
+                f'const packageName = "{PACKAGE_NAME}";\n'
+                "fork(packageName);\n"
+            ),
+            "error",
+        ),
+        (
+            "new-function-const-package",
+            "javascript",
+            (
+                f'const packageName = "{PACKAGE_NAME}";\n'
+                "new Function(packageName);\n"
+            ),
+            "error",
+        ),
+        (
+            "arrow-const-package",
+            "javascript",
+            (
+                'import { spawn } from "node:child_process";\n'
+                f'const packageName = "{PACKAGE_NAME}";\n'
+                'const launch = () => spawn("npm", ["install", packageName]);\n'
+            ),
+            "error",
+        ),
+        (
+            "mutable-sensitive-alias",
+            "javascript",
+            (
+                'import { spawn } from "node:child_process";\n'
+                "let launch = spawn;\n"
+                f'launch("npm", ["install", "{PACKAGE_NAME}"]);\n'
+            ),
+            "error",
+        ),
+        (
+            "escaped-sensitive-alias",
+            "javascript",
+            (
+                'import { spawn } from "node:child_process";\n'
+                "const launch = spawn;\n"
+                "observe(launch);\n"
+                f'launch("npm", ["install", "{PACKAGE_NAME}"]);\n'
+            ),
+            "error",
+        ),
+        (
+            "compound-unknown-escape",
+            "javascript",
+            (
+                'import { spawn } from "node:child_process";\n'
+                f'const argv = ["install", "{PACKAGE_NAME}"];\n'
+                "observe({ argv });\n"
+                'spawn("npm", argv);\n'
+            ),
+            "error",
+        ),
+        (
+            "sensitive-array-escape",
+            "javascript",
+            (
+                'import { spawn } from "node:child_process";\n'
+                "const stored = [spawn];\n"
+                f'const packageName = "{PACKAGE_NAME}";\n'
+            ),
+            "error",
+        ),
+        (
+            "sensitive-object-escape",
+            "javascript",
+            (
+                'import { spawn } from "node:child_process";\n'
+                "const stored = { spawn };\n"
+                f'const packageName = "{PACKAGE_NAME}";\n'
+            ),
+            "error",
+        ),
+        (
+            "sensitive-return-escape",
+            "javascript",
+            (
+                'import { spawn } from "node:child_process";\n'
+                "function expose() { return spawn; }\n"
+                f'const packageName = "{PACKAGE_NAME}";\n'
+            ),
+            "error",
+        ),
+        (
+            "sensitive-assignment-escape",
+            "javascript",
+            (
+                'import { spawn } from "node:child_process";\n'
+                "let stored;\n"
+                "stored = spawn;\n"
+                f'const packageName = "{PACKAGE_NAME}";\n'
+            ),
+            "error",
+        ),
+        (
+            "unrelated-container",
+            "javascript",
+            (
+                "const stored = [harmless];\n"
+                f'const packageName = "{PACKAGE_NAME}";\n'
+            ),
+            "clean",
+        ),
+        (
+            "sensitive-container-without-package",
+            "javascript",
+            (
+                'import { spawn } from "node:child_process";\n'
+                "const stored = [spawn];\n"
+            ),
+            "clean",
+        ),
+        (
+            "lone-surrogate-package",
+            "javascript",
+            (
+                'import { spawn } from "node:child_process";\n'
+                r'spawn("npm", ["install", "\uD800 '
+                f'{PACKAGE_NAME}"]);\n'
+            ),
+            "error",
+        ),
+        (
+            "out-of-range-unicode-package",
+            "javascript",
+            (
+                'import { spawn } from "node:child_process";\n'
+                r'spawn("npm", ["install", "\u{110000} '
+                f'{PACKAGE_NAME}"]);\n'
+            ),
+            "error",
+        ),
+        (
+            "standard-escape-command",
+            "javascript",
+            (
+                'import { exec } from "node:child_process";\n'
+                f'exec("npm\\tinstall {PACKAGE_NAME}");\n'
+            ),
+            "consumer",
+        ),
+        _j("require-options", f'require("{_P}", {{}});\n', "consumer"),
+        _j("import-options", f'import("{_P}", {{}});\n', "consumer"),
+        _j(
+            "resolve-options",
+            f'require.resolve("{_P}", {{ paths: [] }});\n',
+            "consumer",
+        ),
+        _j(
+            "unresolved-loader",
+            f'let target = "{_P}"; require(target, {{}});\n',
+            "error",
+        ),
+        _j(
+            "unrelated-loader",
+            f'require("node:path", {{}}); const metadata = "{_P}";\n',
+            "clean",
+        ),
+        _j(
+            "structured-spread",
+            _SPAWN_IMPORT + f'spawn(...["npm", "install", "{_P}"]);\n',
+            "error",
+        ),
+        _j(
+            "structured-zero",
+            _SPAWN_IMPORT + f'const metadata = "{_P}"; spawn();\n',
+            "clean",
+        ),
+        _j("conditional-eval", f'(flag ? eval : harmless)("{_P}");\n', "error"),
+        _j(
+            "conditional-spawn",
+            _SPAWN_IMPORT
+            + '(flag ? spawn : harmless)("npm", '
+            + f'["install", "{_P}"]);\n',
+            "error",
+        ),
+        _j(
+            "conditional-loader",
+            f'(flag ? require : harmless)("{_P}");\n',
+            "error",
+        ),
+        _j(
+            "deep-alias",
+            _SPAWN_IMPORT
+            + 'const root = "npm"; const one = root; const two = one;\n'
+            + f'spawn(two, ["install", "{_P}"]);\n',
+            "error",
+        ),
+        _j(
+            "cyclic-alias",
+            _SPAWN_IMPORT
+            + "const one = two; const two = one;\n"
+            + f'spawn(one, ["install", "{_P}"]);\n',
+            "error",
+        ),
+        _j(
+            "harmless-deep-alias",
+            "const root = harmless; const one = root; const two = one;\n"
+            f'two("docs"); const metadata = "{_P}";\n',
+            "clean",
+        ),
+        _j("module-require", f'module.require("{_P}", {{}});\n', "consumer"),
+        _j(
+            "module-namespace-require",
+            'import * as Module from "node:module";\n'
+            f'Module.require("{_P}");\n',
+            "clean",
+        ),
+        _j(
+            "module-namespace-aggregate",
+            'import * as Module from "node:module";\n'
+            f'const stored = [Module]; const metadata = "{_P}";\n',
+            "error",
+        ),
+        _j(
+            "commonjs-module-create-require",
+            f'const load = module.createRequire(__filename); load("{_P}");\n',
+            "clean",
+        ),
+        _j(
+            "module-aggregate",
+            f'const stored = [module]; const metadata = "{_P}";\n',
+            "error",
+        ),
+        _j(
+            "module-mutable",
+            f'let stored = module; const metadata = "{_P}";\n',
+            "error",
+        ),
+        _j("module-package-free", "const stored = [module];\n", "clean"),
+        _j(
+            "object-non-pnpm",
+            f'const stored = [Object]; const metadata = "{_P}";\n',
+            "clean",
+        ),
+        _j(
+            "esm-module-unrelated",
+            'import "node:path"; module.require("node:url");\n'
+            f'const metadata = "{_P}";\n',
+            "clean",
+        ),
+        _j(
+            "import-meta-loader",
+            f'require(import.meta.url); const metadata = "{_P}";\n',
+            "error",
+        ),
+        _j(
+            "import-meta-parenthesized-loader",
+            f'require((import.meta).url); const metadata = "{_P}";\n',
+            "error",
+        ),
+        _j(
+            "import-meta-process",
+            "process.getBuiltinModule(import.meta.url);\n"
+            f'const metadata = "{_P}";\n',
+            "error",
+        ),
+        _j(
+            "import-meta-parenthesized-process",
+            "process.getBuiltinModule((import.meta).url);\n"
+            f'const metadata = "{_P}";\n',
+            "error",
+        ),
+        _j(
+            "import-meta-dynamic",
+            f'eval(import.meta.url); const metadata = "{_P}";\n',
+            "error",
+        ),
+        _j(
+            "import-meta-computed-dynamic",
+            f'eval(import.meta["url"]); const metadata = "{_P}";\n',
+            "error",
+        ),
+        (
+            "import-meta-typescript-process",
+            "typescript",
+            "process.getBuiltinModule(import.meta.url as string);\n"
+            f'const metadata = "{_P}";\n',
+            "error",
+        ),
+        _j(
+            "import-meta-computed-factory",
+            'import { createRequire } from "node:module";\n'
+            'createRequire(import.meta["url"]);\n'
+            f'const metadata = "{_P}";\n',
+            "error",
+        ),
+        _j(
+            "import-meta-commented-factory",
+            'import { createRequire } from "node:module";\n'
+            "const load = createRequire(import.meta /* comment */ .url);\n"
+            f'const metadata = "{_P}";\n',
+            "clean",
+        ),
+        _j(
+            "valid-surrogate-pair",
+            _SPAWN_IMPORT
+            + r'spawn("npm", ["install", "\uD83D\uDE00", '
+            + f'"{_P}"]);\n',
+            "consumer",
+        ),
+        _j(
+            "reversed-surrogate-pair",
+            _SPAWN_IMPORT
+            + r'spawn("npm", ["install", "\uDE00\uD83D", '
+            + f'"{_P}"]);\n',
+            "error",
+        ),
+        _j(
+            "arrow-non-manager",
+            _SPAWN_IMPORT + f'const run = () => spawn("echo", ["{_P}"]);\n',
+            "clean",
+        ),
+        _j(
+            "async-options",
+            _SPAWN_IMPORT
+            + "async function run() { "
+            + f'spawn("echo", {{ env: {{ P: "{_P}" }} }}); }}\n',
+            "clean",
+        ),
+        _j(
+            "nested-syntactic-package",
+            f'const p = "{_P}"; '
+            'eval({ args: [...(flag ? [p] : ["safe"])], text: `${p}` });\n',
+            "error",
+        ),
+        _j(
+            "logical-assignment-package",
+            f'const p = "{_P}"; eval(slot = (flag && p));\n',
+            "error",
+        ),
+        _j(
+            "exact-unrelated-tree",
+            'eval({ args: [...(flag ? ["left"] : ["right"])] }); '
+            f'const metadata = "{_P}";\n',
+            "clean",
+        ),
+        _j(
+            "compound-sensitive-binding",
+            _SPAWN_IMPORT
+            + "const sink = flag ? spawn : harmless; "
+            + f'sink("npm", ["install", "{_P}"]);\n',
+            "error",
+        ),
+        _j(
+            "compound-harmless-binding",
+            f'const sink = flag ? first : second; sink("{_P}");\n',
+            "clean",
+        ),
+        _j(
+            "compound-call",
+            f'(flag ? eval : harmless).call(null, "{_P}");\n',
+            "error",
+        ),
+        _j(
+            "compound-apply",
+            f'(flag ? eval : harmless).apply(null, ["{_P}"]);\n',
+            "error",
+        ),
+        _j(
+            "compound-bind",
+            f'(flag ? eval : harmless).bind(null, "{_P}");\n',
+            "error",
+        ),
+        _j(
+            "compound-member-harmless",
+            f'(flag ? first : second).call(null, "{_P}");\n',
+            "clean",
+        ),
+        _j(
+            "import-meta-resolve", f'import.meta.resolve("{_P}");\n', "consumer"
+        ),
+        _j(
+            "import-meta-resolve-comment",
+            f'import.meta /* comment */ .resolve("{_P}");\n',
+            "consumer",
+        ),
+        _j(
+            "import-meta-resolve-parenthesized",
+            f'(import.meta).resolve("{_P}");\n',
+            "consumer",
+        ),
+        _j(
+            "import-meta-resolve-computed",
+            f'import.meta["resolve"]("{_P}");\n',
+            "consumer",
+        ),
+        _j(
+            "import-meta-resolve-mutable-projection",
+            f'let method = "resolve"; import.meta[method]("{_P}");\n',
+            "error",
+        ),
+        _j(
+            "import-meta-alias-resolve",
+            f'const meta = import.meta; meta.resolve("{_P}");\n',
+            "consumer",
+        ),
+        _j(
+            "import-meta-alias-dynamic-projection",
+            'const meta = import.meta; let method = "resolve"; '
+            f'meta[method]("{_P}");\n',
+            "error",
+        ),
+        _j(
+            "import-meta-alias-aggregate",
+            "const meta = import.meta; const stored = [meta]; "
+            f'const metadata = "{_P}";\n',
+            "error",
+        ),
+        _j(
+            "import-meta-alias-url",
+            "const meta = import.meta; const location = meta.url; "
+            f'const metadata = "{_P}";\n',
+            "clean",
+        ),
+        _j(
+            "import-meta-resolve-const",
+            f'const p = "{_P}"; import.meta.resolve(p);\n',
+            "consumer",
+        ),
+        _j(
+            "import-meta-resolve-mutable",
+            f'let p = "{_P}"; import.meta.resolve(p);\n',
+            "error",
+        ),
+        _j(
+            "import-meta-resolve-unrelated",
+            'import.meta.resolve("node:path");\n',
+            "clean",
+        ),
+        _j(
+            "harmless-long-alias",
+            f'const a = console.log; const b = a; const c = b; c("{_P}");\n',
+            "clean",
+        ),
+        _j(
+            "sensitive-alias-chain",
+            f'const a = eval; const b = a; b("{_P}");\n',
+            "error",
+        ),
+        _j(
+            "builtin-package-spelling",
+            f'process.getBuiltinModule("{_P}");\n',
+            "clean",
+        ),
+        _j(
+            "builtin-direct-child-process-chain",
+            'process.getBuiltinModule("node:child_process")'
+            f'.spawn("npm", ["install", "{_P}"]);\n',
+            "consumer",
+        ),
+        _j(
+            "builtin-unresolved-package",
+            f'let name = "{_P}"; process.getBuiltinModule(name);\n',
+            "error",
+        ),
+        _j(
+            "known-object-reflect-properties",
+            f'Object.keys("{_P}"); Reflect.get({{}}, "{_P}");\n',
+            "clean",
+        ),
+        _j(
+            "known-writer-outside-pnpm",
+            f'Object.assign({{}}, {{ value: "{_P}" }});\n',
+            "clean",
+        ),
+        _j(
+            "unknown-object-projection",
+            f'let method = "keys"; Object[method]("{_P}");\n',
+            "error",
+        ),
+    ],
+)
+def test_rc033_compact_static_regressions(
+    case: str,
+    language: javascript_consumer.JavaScriptLanguage,
+    source: str,
+    outcome: str,
+) -> None:
+    """Cover compact syntax admission and explicit fail-closed barriers."""
+    assert case
+    _assert_javascript_outcome(source, outcome, language=language)
+
+
+@pytest.mark.parametrize("field", NODE_DEPENDENCY_FIELDS)
+def test_rc033_direct_pnpm_writes_are_consumers(field: str) -> None:
+    """Recognize direct writes to every canonical dependency field."""
+    assignment = f'pkg.{field}["{PACKAGE_NAME}"] = "1";\n'
+    computed = f'const key = "{PACKAGE_NAME}"; pkg.{field}[key] = "1";\n'
+    deletion = f'delete pkg.{field}["{PACKAGE_NAME}"];\n'
+    update = f'pkg.{field}["{PACKAGE_NAME}"]++;\n'
+    mutation = f'Object.assign(pkg.{field}, {{"{PACKAGE_NAME}": "1"}});\n'
+    assert all(
+        _scan_javascript(source, pnpmfile=True)
+        for source in (assignment, computed, deletion, update, mutation)
+    )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        (
+            f'Object.defineProperty(pkg.devDependencies, "{PACKAGE_NAME}", '
+            '{ value: "1" });\n'
+        ),
+        (
+            "Object.defineProperties(pkg.optionalDependencies, "
+            f'{{"{PACKAGE_NAME}": {{ value: "1" }} }});\n'
+        ),
+        f'Reflect.set(pkg.peerDependencies, "{PACKAGE_NAME}", "1");\n',
+        (
+            f'Reflect.defineProperty(pkg.dependencies, "{PACKAGE_NAME}", '
+            '{ value: "1" });\n'
+        ),
+        (f'Reflect.deleteProperty(pkg.dependencies, "{PACKAGE_NAME}");\n'),
+        (
+            f'const key = "{PACKAGE_NAME}"; '
+            'Object.assign(pkg.dependencies, { [key]: "1" });\n'
+        ),
+    ],
+)
+def test_rc033_direct_pnpm_known_writers_are_consumers(source: str) -> None:
+    """Recognize each direct known dependency-map writer."""
+    assert _scan_javascript(source, pnpmfile=True)
+
+
+@pytest.mark.parametrize(
+    ("source", "outcome"),
+    [
+        (
+            f'Object.assign(pkg.metadata, {{"{PACKAGE_NAME}": "docs"}});\n',
+            "clean",
+        ),
+        (
+            f'pkg.metadata["{PACKAGE_NAME}"] = "docs";\n',
+            "clean",
+        ),
+        (
+            "const write = Object.assign;\n"
+            f'write(pkg.dependencies, {{"{PACKAGE_NAME}": "1"}});\n',
+            "error",
+        ),
+        (
+            f'Object.assign(pkg[getField()], {{"{PACKAGE_NAME}": "1"}});\n',
+            "error",
+        ),
+        (
+            f'let key = "{PACKAGE_NAME}"; pkg.dependencies[key] = "1";\n',
+            "error",
+        ),
+        (
+            "const source = "
+            f'{{"{PACKAGE_NAME}": "1"}}; '
+            "Object.assign(pkg.dependencies, { ...source });\n",
+            "error",
+        ),
+        (
+            f'let key = "{PACKAGE_NAME}"; delete pkg.dependencies[key];\n',
+            "error",
+        ),
+        (
+            f'delete pkg.metadata["{PACKAGE_NAME}"];\n',
+            "clean",
+        ),
+        (
+            f'const stored = [Object]; const metadata = "{PACKAGE_NAME}";\n',
+            "error",
+        ),
+        (
+            f'let stored = Reflect; const metadata = "{PACKAGE_NAME}";\n',
+            "error",
+        ),
+        (
+            "let key = "
+            f'"{PACKAGE_NAME}"; '
+            'Object.assign(pkg.metadata, { [key]: "docs" });\n',
+            "clean",
+        ),
+        (
+            "Object.assign(...[pkg.dependencies, "
+            f'{{"{PACKAGE_NAME}": "1"}}]);\n',
+            "error",
+        ),
+        (
+            "const args = [pkg.dependencies, "
+            f'{{"{PACKAGE_NAME}": "1"}}]; Object.assign(...args);\n',
+            "error",
+        ),
+        (
+            "const target = pkg.dependencies; "
+            "Object.assign(...[target, "
+            f'{{"{PACKAGE_NAME}": "1"}}]);\n',
+            "error",
+        ),
+        (
+            "const target = pkg.metadata; "
+            "Object.assign(...[target, "
+            f'{{"{PACKAGE_NAME}": "docs"}}]);\n',
+            "clean",
+        ),
+        (
+            "const root = pkg; Object.assign(...[root.metadata, "
+            f'{{"{PACKAGE_NAME}": "docs"}}]);\n',
+            "clean",
+        ),
+        (
+            "pkg = getTarget(); Object.assign(...[pkg.metadata, "
+            f'{{"{PACKAGE_NAME}": "docs"}}]);\n',
+            "error",
+        ),
+        (
+            "pkg++; Object.assign(...[pkg.metadata, "
+            f'{{"{PACKAGE_NAME}": "docs"}}]);\n',
+            "error",
+        ),
+        (
+            "delete pkg.metadata; Object.assign(...[pkg.metadata, "
+            f'{{"{PACKAGE_NAME}": "docs"}}]);\n',
+            "error",
+        ),
+        (
+            "pkg.observe(); Object.assign(...[pkg.metadata, "
+            f'{{"{PACKAGE_NAME}": "docs"}}]);\n',
+            "error",
+        ),
+        (
+            "const root = pkg; pkg = getTarget(); "
+            "Object.assign(...[root.metadata, "
+            f'{{"{PACKAGE_NAME}": "docs"}}]);\n',
+            "error",
+        ),
+        (
+            "observe(pkg); Object.assign(...[pkg.metadata, "
+            f'{{"{PACKAGE_NAME}": "docs"}}]);\n',
+            "error",
+        ),
+        (
+            "observe({ pkg }); Object.assign(...[pkg.metadata, "
+            f'{{"{PACKAGE_NAME}": "docs"}}]);\n',
+            "error",
+        ),
+        (
+            "const root = pkg; observe(pkg); "
+            "Object.assign(...[root.metadata, "
+            f'{{"{PACKAGE_NAME}": "docs"}}]);\n',
+            "error",
+        ),
+        (
+            "const holder = { target: pkg.dependencies }; "
+            "Object.assign(...[holder.target, "
+            f'{{"{PACKAGE_NAME}": "1"}}]);\n',
+            "error",
+        ),
+        (
+            "const holder = [pkg.dependencies]; "
+            "Object.assign(...[holder[0], "
+            f'{{"{PACKAGE_NAME}": "1"}}]);\n',
+            "error",
+        ),
+        (
+            "let root = pkg; Object.assign(...[root.metadata, "
+            f'{{"{PACKAGE_NAME}": "docs"}}]);\n',
+            "error",
+        ),
+        (
+            "let root; Object.assign(...[root.metadata, "
+            f'{{"{PACKAGE_NAME}": "docs"}}]);\n',
+            "error",
+        ),
+        (
+            'import root from "docs"; Object.assign(...[root.metadata, '
+            f'{{"{PACKAGE_NAME}": "docs"}}]);\n',
+            "error",
+        ),
+        (
+            "function root() {} Object.assign(...[root.metadata, "
+            f'{{"{PACKAGE_NAME}": "docs"}}]);\n',
+            "error",
+        ),
+        (
+            "class root {} Object.assign(...[root.metadata, "
+            f'{{"{PACKAGE_NAME}": "docs"}}]);\n',
+            "error",
+        ),
+        (
+            "try { throw 0; } catch (root) { "
+            "Object.assign(...[root.metadata, "
+            f'{{"{PACKAGE_NAME}": "docs"}}]); }}\n',
+            "error",
+        ),
+        (
+            "for (const root of []) { Object.assign(...[root.metadata, "
+            f'{{"{PACKAGE_NAME}": "docs"}}]); }}\n',
+            "error",
+        ),
+        (
+            "function hook(root = pkg) { "
+            "Object.assign(...[root.metadata, "
+            f'{{"{PACKAGE_NAME}": "docs"}}]); }}\n',
+            "error",
+        ),
+        (
+            "function hook(...root) { Object.assign(...[root.metadata, "
+            f'{{"{PACKAGE_NAME}": "docs"}}]); }}\n',
+            "error",
+        ),
+        (
+            "function hook({ root }) { Object.assign(...[root.metadata, "
+            f'{{"{PACKAGE_NAME}": "docs"}}]); }}\n',
+            "error",
+        ),
+        (
+            "function hook(root) { root = pkg; "
+            "Object.assign(...[root.metadata, "
+            f'{{"{PACKAGE_NAME}": "docs"}}]); }}\n',
+            "error",
+        ),
+        (
+            "function hook(root) { observe(root); "
+            "Object.assign(...[root.metadata, "
+            f'{{"{PACKAGE_NAME}": "docs"}}]); }}\n',
+            "error",
+        ),
+        (
+            "function hook(root) { observe({ root }); "
+            "Object.assign(...[root.metadata, "
+            f'{{"{PACKAGE_NAME}": "docs"}}]); }}\n',
+            "error",
+        ),
+        (
+            "function hook(root) { const target = root; observe(root); "
+            "Object.assign(...[target.metadata, "
+            f'{{"{PACKAGE_NAME}": "docs"}}]); }}\n',
+            "error",
+        ),
+        (
+            "function hook(root) { "
+            "for (root.metadata of values) {} "
+            "Object.assign(...[root.metadata, "
+            f'{{"{PACKAGE_NAME}": "docs"}}]); }}\n',
+            "error",
+        ),
+        (
+            "function hook(root) { "
+            'for (root["metadata"] in values) {} '
+            "Object.assign(...[root.metadata, "
+            f'{{"{PACKAGE_NAME}": "docs"}}]); }}\n',
+            "error",
+        ),
+        (
+            "function hook(root) { "
+            "for ({ value: root.metadata } of values) {} "
+            "Object.assign(...[root.metadata, "
+            f'{{"{PACKAGE_NAME}": "docs"}}]); }}\n',
+            "error",
+        ),
+        (
+            "function hook(root) { Object.assign(...[root.metadata, "
+            f'{{"{PACKAGE_NAME}": "docs"}}]); }}\n',
+            "clean",
+        ),
+        (
+            "function hook(root) { const target = root; "
+            "Object.assign(...[target.metadata, "
+            f'{{"{PACKAGE_NAME}": "docs"}}]); }}\n',
+            "clean",
+        ),
+        (
+            "function hook(root) { for (const item of values) {} "
+            "Object.assign(...[root.metadata, "
+            f'{{"{PACKAGE_NAME}": "docs"}}]); }}\n',
+            "clean",
+        ),
+        (
+            "Object.assign(...[getTarget().metadata, "
+            f'{{"{PACKAGE_NAME}": "docs"}}]);\n',
+            "error",
+        ),
+        (
+            "let target = pkg.dependencies; "
+            "Object.assign(...[target, "
+            f'{{"{PACKAGE_NAME}": "1"}}]);\n',
+            "error",
+        ),
+        (
+            "let target = pkg.metadata; target = pkg.dependencies; "
+            "Object.assign(...[target, "
+            f'{{"{PACKAGE_NAME}": "1"}}]);\n',
+            "error",
+        ),
+        (
+            f'Object.assign(...makeArgs("{PACKAGE_NAME}"));\n',
+            "error",
+        ),
+        (
+            "Object.assign(...[pkg.metadata, "
+            f'{{"{PACKAGE_NAME}": "docs"}}]);\n',
+            "clean",
+        ),
+        (
+            "Object.assign(pkg.metadata, "
+            f'...[pkg.dependencies, {{"{PACKAGE_NAME}": "1"}}]);\n',
+            "error",
+        ),
+        (
+            f'Object.assign(pkg["{PACKAGE_NAME}"].dependencies, {{}});\n',
+            "error",
+        ),
+        (
+            "({ value: "
+            f'pkg.dependencies["{PACKAGE_NAME}"] }} = {{ value: "1" }});\n',
+            "error",
+        ),
+        (
+            f'pkg.dependencies["{PACKAGE_NAME}"].version = "1";\n',
+            "error",
+        ),
+        (
+            f'pkg.metadata["{PACKAGE_NAME}"].version = "docs";\n',
+            "clean",
+        ),
+    ],
+)
+def test_rc033_pnpm_writer_boundaries(source: str, outcome: str) -> None:
+    """Keep metadata clean and fail closed for aliased or complex writers."""
+    _assert_javascript_outcome(source, outcome, pnpmfile=True)
+
+
+def test_rc033_parser_profile_and_policy_digest_are_exact() -> None:
+    """Bind the compact supported subset and deterministic parser limits."""
+    profile = consumer_policy_parser_profile()
+
+    assert JAVASCRIPT_ANALYSIS_SEMANTICS_ID == (
+        "rc-033-tree-sitter-static-consumer-subset-v1"
+    )
+    assert JAVASCRIPT_UNKNOWN_ADMISSION_POLICY == (
+        "relevant-unknown-fail-closed-v1"
+    )
+    assert profile == {
+        "engine": "tree-sitter",
+        "analysis": {
+            "semantics-id": JAVASCRIPT_ANALYSIS_SEMANTICS_ID,
+            "unknown-admission-policy": (JAVASCRIPT_UNKNOWN_ADMISSION_POLICY),
+            "relevant-unknown-admission-rule": (
+                JAVASCRIPT_RELEVANT_UNKNOWN_ADMISSION_RULE
+            ),
+            "supported-constructs": list(JAVASCRIPT_SUPPORTED_CONSTRUCTS),
+        },
+        "runtime": {
+            "distribution": "tree-sitter",
+            "version": TREE_SITTER_VERSION,
+        },
+        "grammars": [
+            {
+                "language": "javascript",
+                "distribution": "tree-sitter-javascript",
+                "version": TREE_SITTER_JAVASCRIPT_VERSION,
+            },
+            {
+                "language": "typescript",
+                "distribution": "tree-sitter-typescript",
+                "version": TREE_SITTER_TYPESCRIPT_VERSION,
+            },
+        ],
+        "limits": {
+            "source-bytes": JAVASCRIPT_SOURCE_BYTE_LIMIT,
+            "ast-nodes": JAVASCRIPT_AST_NODE_LIMIT,
+            "ast-depth": JAVASCRIPT_AST_DEPTH_LIMIT,
+        },
+        "commonjs-global-suffixes": list(JAVASCRIPT_COMMONJS_GLOBAL_SUFFIXES),
+    }
+    assert consumer_policy_document()["parser"] == profile
+    assert consumer_policy_document()["node-dependency-fields"] == list(
+        NODE_DEPENDENCY_FIELDS
+    )
+    assert CONSUMER_POLICY_DIGEST == (
+        "sha256:1cde1072759e720f7753923338749b6e"
+        "616820b376b9b5d705eb475f3a5afc08"
+    )
+
+
+def test_rc033_source_limit_has_an_exact_boundary() -> None:
+    """Accept the source-byte limit and reject the next byte."""
+    assert not _scan_javascript(b" " * JAVASCRIPT_SOURCE_BYTE_LIMIT)
+    with pytest.raises(
+        ValueError,
+        match=(
+            rf"JavaScript source exceeds {JAVASCRIPT_SOURCE_BYTE_LIMIT} bytes"
+        ),
+    ):
+        _scan_javascript(b" " * (JAVASCRIPT_SOURCE_BYTE_LIMIT + 1))
+
+
+def test_rc033_ast_node_and_depth_limits_have_exact_boundaries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Apply node and depth limits to the complete parse tree."""
+    source = b"const value = 'clean';"
+    _, node_count = javascript_consumer._parse(  # noqa: SLF001
+        source,
+        "javascript",
+    )
+    monkeypatch.setattr(
+        javascript_consumer,
+        "JAVASCRIPT_AST_NODE_LIMIT",
+        node_count,
+    )
+    assert not _scan_javascript(source)
+    monkeypatch.setattr(
+        javascript_consumer,
+        "JAVASCRIPT_AST_NODE_LIMIT",
+        node_count - 1,
+    )
+    with pytest.raises(
+        ValueError,
+        match=rf"JavaScript AST node count exceeds {node_count - 1}",
+    ):
+        _scan_javascript(source)
+
+    monkeypatch.setattr(
+        javascript_consumer,
+        "JAVASCRIPT_AST_NODE_LIMIT",
+        JAVASCRIPT_AST_NODE_LIMIT,
+    )
+    monkeypatch.setattr(javascript_consumer, "JAVASCRIPT_AST_DEPTH_LIMIT", 1)
+    assert not _scan_javascript("")
+    with pytest.raises(
+        ValueError,
+        match="JavaScript AST depth exceeds 1",
+    ):
+        _scan_javascript(";")
+
+
+def test_rc033_shared_static_argv_array_is_decoded_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Memoize expansion of a shared successful static array."""
+    expansions = 0
+    original = (
+        javascript_consumer._Scanner._array_literal_uncached  # noqa: SLF001
+    )
+
+    def counted(scanner: Any, node: Any) -> tuple[str, ...] | None:
+        nonlocal expansions
+        if node.type == "array":
+            expansions += 1
+        return original(scanner, node)
+
+    monkeypatch.setattr(
+        javascript_consumer._Scanner,  # noqa: SLF001
+        "_array_literal_uncached",
+        counted,
+    )
+    fill = ", ".join('"x"' for _ in range(64))
+    source = (
+        'import { spawn } from "node:child_process";\n'
+        f'const argv = ["install", "{PACKAGE_NAME}", {fill}];\n'
+        + 'spawn("echo", argv);\n'
+        * 32
+    )
+
+    assert not _scan_javascript(source)
+    assert expansions == 1
+
+
+def test_rc033_shared_pnpm_spread_analysis_is_memoized(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Memoize failed array decoding and shared syntactic relevance."""
+    arrays = 0
+    package_expansions: dict[int, int] = {}
+    dependency_expansions: dict[int, int] = {}
+    scanner_type = javascript_consumer._Scanner  # noqa: SLF001
+    original_array = scanner_type._array_literal_uncached  # noqa: SLF001
+    original_package = scanner_type._syntax_package_uncached  # noqa: SLF001
+    original_dependency = (
+        scanner_type._pnpm_dependency_syntax_uncached  # noqa: SLF001
+    )
+
+    def counted_array(scanner: Any, node: Any) -> tuple[str, ...] | None:
+        nonlocal arrays
+        if node.type == "array":
+            arrays += 1
+        return original_array(scanner, node)
+
+    def counted_package(scanner: Any, node: Any) -> int:
+        key = scanner._constant_nodes(node)[-1].id  # noqa: SLF001
+        package_expansions[key] = package_expansions.get(key, 0) + 1
+        return original_package(scanner, node)
+
+    def counted_dependency(scanner: Any, node: Any) -> bool:
+        key = scanner._constant_nodes(node)[-1].id  # noqa: SLF001
+        dependency_expansions[key] = dependency_expansions.get(key, 0) + 1
+        return original_dependency(scanner, node)
+
+    monkeypatch.setattr(scanner_type, "_array_literal_uncached", counted_array)
+    monkeypatch.setattr(
+        scanner_type, "_syntax_package_uncached", counted_package
+    )
+    monkeypatch.setattr(
+        scanner_type,
+        "_pnpm_dependency_syntax_uncached",
+        counted_dependency,
+    )
+    fill = ", ".join('"x"' for _ in range(64))
+    source = (
+        "const args = [pkg.metadata, "
+        f'{{"{PACKAGE_NAME}": "docs"}}, {fill}];\n'
+        + "Object.assign(...args);\n"
+        * 32
+    )
+
+    assert not _scan_javascript(source, pnpmfile=True)
+    assert arrays == 1
+    assert package_expansions
+    assert max(package_expansions.values()) == 1
+    assert dependency_expansions
+    assert max(dependency_expansions.values()) == 1
+
+
+def test_rc033_path_routing_selects_typescript_only_for_ts(
+    tmp_path: Path,
+) -> None:
+    """Route .ts through TypeScript and reject the same syntax in .js."""
+    source = (
+        'import { spawn } from "node:child_process";\n'
+        'const manager: string = "npm";\n'
+        f'spawn(manager, ["install", "{PACKAGE_NAME}"]);\n'
+    )
+    repository, _ = _repository(tmp_path)
+    typescript_path = "tools/postinstall-routing.ts"
+    _write(repository, typescript_path, source)
+    _assert_consumer(repository, typescript_path)
+
+    javascript_path = "tools/postinstall-routing.js"
+    _write(repository, javascript_path, source)
+    with pytest.raises(ConsumerPolicyScanError) as captured:
+        scan_consumer_policy(repository)
+    assert captured.value.findings == (
+        (
+            f"{javascript_path}: "
+            "JavaScript parse tree contains errors or missing nodes"
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("path", "content", "consumer"),
+    [
+        (
+            "tools/postinstall-esm.mjs",
+            f'require("{PACKAGE_NAME}"); module.require("{PACKAGE_NAME}");\n',
+            False,
+        ),
+        (
+            "tools/postinstall-create-require.mjs",
+            (
+                'import { createRequire } from "node:module";\n'
+                "const require = createRequire(import.meta.url);\n"
+                f'require("{PACKAGE_NAME}");\n'
+            ),
+            True,
+        ),
+        (
+            "tools/postinstall-commonjs.js",
+            f'require("{PACKAGE_NAME}");\n',
+            True,
+        ),
+        (
+            "tools/postinstall-commonjs.cjs",
+            f'module.require("{PACKAGE_NAME}");\n',
+            True,
+        ),
+        (
+            "tools/postinstall-commonjs.ts",
+            f'require("{PACKAGE_NAME}");\n',
+            True,
+        ),
+    ],
+)
+def test_rc033_path_routing_controls_commonjs_globals(
+    tmp_path: Path,
+    path: str,
+    content: str,
+    *,
+    consumer: bool,
+) -> None:
+    """Enable implicit CommonJS globals only for the canonical suffixes."""
+    repository, _ = _repository(tmp_path)
+    _write(repository, path, content)
+
+    result = scan_consumer_policy(repository)
+
+    assert (path in result.consumers) is consumer
+
+
+@pytest.mark.parametrize(
+    ("path", "content"),
+    [
+        (
             "node/package.json",
             lambda: json.dumps(
                 {
@@ -981,6 +3108,213 @@ def test_static_matrix_include_preserves_correlated_rows(
         )
 
     assert scan_consumer_policy(repository).consumers == (positive,)
+
+
+def test_oversized_base_matrix_fails_before_post_exclude_reduction(
+    tmp_path: Path,
+) -> None:
+    """Never scan a truncated prefix of a 272-row base matrix."""
+    repository, _ = _repository(tmp_path)
+    path = ".github/workflows/oversized-exclude.yml"
+    managers = [f"echo-{index}" for index in range(16)]
+    packages = [f"other-{index}" for index in range(15)] + [PACKAGE_NAME]
+    _write(
+        repository,
+        path,
+        json.dumps(
+            {
+                "jobs": {
+                    "consume": {
+                        "strategy": {
+                            "matrix": {
+                                "manager": [*managers, "npm"],
+                                "package": packages,
+                                "exclude": [
+                                    {"manager": manager} for manager in managers
+                                ],
+                            },
+                        },
+                        "steps": [
+                            {
+                                "run": (
+                                    "${{ matrix.manager }} install "
+                                    "${{ matrix.package }}"
+                                ),
+                            },
+                        ],
+                    },
+                },
+            },
+        ),
+    )
+
+    with pytest.raises(
+        ConsumerPolicyScanError,
+        match="workflow matrix base static expansion exceeds 256 states",
+    ):
+        scan_consumer_policy(repository)
+
+
+def test_exact_matrix_state_boundary_scans_the_final_row(
+    tmp_path: Path,
+) -> None:
+    """Scan all 256 static rows, including a consumer in the final row."""
+    repository, _ = _repository(tmp_path)
+    path = ".github/workflows/exact-boundary.yml"
+    _write(
+        repository,
+        path,
+        json.dumps(
+            {
+                "jobs": {
+                    "consume": {
+                        "strategy": {
+                            "matrix": {
+                                "manager": [
+                                    *(f"echo-{index}" for index in range(15)),
+                                    "npm",
+                                ],
+                                "package": [
+                                    *(f"other-{index}" for index in range(15)),
+                                    PACKAGE_NAME,
+                                ],
+                            },
+                        },
+                        "steps": [
+                            {
+                                "run": (
+                                    "${{ matrix.manager }} install "
+                                    "${{ matrix.package }}"
+                                ),
+                            },
+                        ],
+                    },
+                },
+            },
+        ),
+    )
+
+    _assert_consumer(repository, path)
+
+
+def test_standalone_include_beyond_matrix_state_boundary_fails_closed(
+    tmp_path: Path,
+) -> None:
+    """Reject a standalone include that would become the 257th row."""
+    repository, _ = _repository(tmp_path)
+    path = ".github/workflows/include-overflow.yml"
+    _write(
+        repository,
+        path,
+        json.dumps(
+            {
+                "jobs": {
+                    "consume": {
+                        "strategy": {
+                            "matrix": {
+                                "manager": [
+                                    f"echo-{index}" for index in range(16)
+                                ],
+                                "package": [
+                                    f"other-{index}" for index in range(16)
+                                ],
+                                "include": [
+                                    {
+                                        "manager": "npm",
+                                        "package": PACKAGE_NAME,
+                                    },
+                                ],
+                            },
+                        },
+                        "steps": [
+                            {
+                                "run": (
+                                    "${{ matrix.manager }} install "
+                                    "${{ matrix.package }}"
+                                ),
+                            },
+                        ],
+                    },
+                },
+            },
+        ),
+    )
+
+    with pytest.raises(
+        ConsumerPolicyScanError,
+        match=(
+            "workflow matrix static expansion after include exceeds 256 states"
+        ),
+    ):
+        scan_consumer_policy(repository)
+
+
+def test_include_overflow_does_not_process_later_entries() -> None:
+    """Stop at state 257 without inspecting any later include entry."""
+
+    class UnreachableInclude(dict[str, str]):
+        def items(self):
+            message = "entry after overflow was processed"
+            raise AssertionError(message)
+
+    matrix = {
+        "include": [
+            *({"sequence": str(index)} for index in range(257)),
+            UnreachableInclude(sequence="unreachable"),
+        ],
+    }
+
+    with pytest.raises(
+        ValueError,
+        match="workflow matrix static expansion after include exceeds 256",
+    ):
+        POLICY._matrix_rows(matrix)  # noqa: SLF001
+
+
+def test_under_limit_exclude_keeps_surviving_consumer_visible(
+    tmp_path: Path,
+) -> None:
+    """Apply a bounded exclude without hiding the surviving consumer row."""
+    repository, _ = _repository(tmp_path)
+    path = ".github/workflows/under-limit-exclude.yml"
+    _write(
+        repository,
+        path,
+        json.dumps(
+            {
+                "jobs": {
+                    "consume": {
+                        "strategy": {
+                            "matrix": {
+                                "manager": ["echo", "npm"],
+                                "package": ["other-package", PACKAGE_NAME],
+                                "exclude": [
+                                    {
+                                        "manager": "echo",
+                                        "package": PACKAGE_NAME,
+                                    },
+                                    {
+                                        "manager": "npm",
+                                        "package": "other-package",
+                                    },
+                                ],
+                            },
+                        },
+                        "steps": [
+                            {
+                                "run": (
+                                    "${{ matrix.manager }} install "
+                                    "${{ matrix.package }}"
+                                ),
+                            },
+                        ],
+                    },
+                },
+            },
+        ),
+    )
+
+    _assert_consumer(repository, path)
 
 
 @pytest.mark.parametrize(
@@ -1563,63 +3897,6 @@ def test_ignores_unresolved_matrix_and_identity_only_local_input_flow(
             f"npm --custom value install {PACKAGE_NAME}\n",
         ),
         (
-            "tools/postinstall-dynamic.js",
-            (
-                'import { execFile } from "node:child_process";\n'
-                'const manager = "npm";\n'
-                f'execFile(manager, ["install", "{PACKAGE_NAME}"]);\n'
-            ),
-        ),
-        (
-            "tools/postinstall-dynamic-args.js",
-            (
-                'const { execFile } = require("child_process");\n'
-                'const command = "install";\n'
-                f'execFile("npm", [command, "{PACKAGE_NAME}"]);\n'
-            ),
-        ),
-        (
-            "tools/postinstall-dynamic-spawn.js",
-            (
-                'import * as childProcess from "node:child_process";\n'
-                'const manager = "npm";\n'
-                f'childProcess.spawn(manager, ["install", "{PACKAGE_NAME}"]);\n'
-            ),
-        ),
-        (
-            "tools/postinstall-dynamic-spawn-args.js",
-            (
-                'const childProcess = require("child_process");\n'
-                'const command = "install";\n'
-                "childProcess.spawnSync("
-                f'"npm", [command, "{PACKAGE_NAME}"]);\n'
-            ),
-        ),
-        (
-            "tools/postinstall-dynamic-exec.js",
-            (
-                'import { exec } from "node:child_process";\n'
-                f'const command = "npm install {PACKAGE_NAME}";\n'
-                "exec(command);\n"
-            ),
-        ),
-        (
-            "tools/postinstall-concatenated-exec.js",
-            (
-                'const { exec } = require("child_process");\n'
-                f'const packageName = "{PACKAGE_NAME}";\n'
-                'exec("npm install " + packageName);\n'
-            ),
-        ),
-        (
-            "tools/postinstall-interpolated-exec.js",
-            (
-                'import { execSync } from "node:child_process";\n'
-                f'const packageName = "{PACKAGE_NAME}";\n'
-                "execSync(`npm install ${packageName}`);\n"
-            ),
-        ),
-        (
             "tools/postinstall-regexp-exec.js",
             f'/npm/.exec("npm install {PACKAGE_NAME}");\n',
         ),
@@ -1630,13 +3907,6 @@ def test_ignores_unresolved_matrix_and_identity_only_local_input_flow(
         (
             "tools/postinstall-unbound-exec.js",
             f'exec("npm install {PACKAGE_NAME}");\n',
-        ),
-        (
-            "tools/postinstall-dynamic-resolve.js",
-            (
-                f'const specifier = "{PACKAGE_NAME}/client";\n'
-                "require.resolve(specifier);\n"
-            ),
         ),
         (
             "tools/install-dynamic.py",
@@ -1761,17 +4031,9 @@ def test_ignores_unresolved_matrix_and_identity_only_local_input_flow(
         "template-literal",
         "standalone-quoted-command",
         "generic-option-with-separate-value",
-        "dynamic-node-executable",
-        "dynamic-node-arguments",
-        "dynamic-spawn-executable",
-        "dynamic-spawn-arguments",
-        "dynamic-exec-command",
-        "concatenated-exec-command",
-        "interpolated-exec-template",
         "regexp-exec",
         "unrelated-spawn-method",
         "unbound-exec",
-        "dynamic-require-resolve",
         "dynamic-python-executable",
         "dynamic-python-args-keyword",
         "dynamic-powershell-executable",
@@ -1905,11 +4167,12 @@ def test_lf_attributes_preserve_exception_digests_with_autocrlf_checkout(
     "mutation",
     ["fixture-context", "fixture-digest", "manifest-digest"],
 )
-def test_changed_exception_context_or_digest_is_a_consumer(
+def test_changed_exception_context_or_digest_reopens_as_consumer(
     tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
     mutation: str,
 ) -> None:
-    """Reject any context or byte mutation of an approved exception."""
+    """Reopen a seen but nonmatching approved exception as a consumer."""
     repository, _ = _repository(tmp_path)
     path = ACCEPTANCE_FIXTURE_PATH
     target = repository / path
@@ -1925,12 +4188,14 @@ def test_changed_exception_context_or_digest_is_a_consumer(
         target.write_bytes(target.read_bytes() + b"\n")
 
     result = scan_consumer_policy(repository)
+    return_code = main(["--repository-root", str(repository)])
+    captured = capsys.readouterr()
 
     assert result.consumers == (path,)
     assert path not in {surface.path for surface in result.admitted_exceptions}
-    assert len(result.admitted_exceptions) == (
-        len(APPROVED_CONSUMER_EXCEPTIONS) - 1
-    )
+    assert return_code == 1
+    assert captured.err == ""
+    assert json.loads(captured.out)["consumers"] == [path]
 
 
 def test_changed_exception_path_is_a_scan_error(
@@ -1961,6 +4226,9 @@ def test_changed_exception_path_is_a_scan_error(
         (".github/actions/consume/action.yml", b"runs: ["),
         ("tools/setup-consumer.py", b"\xff"),
         ("tools/setup-syntax.py", b"def broken(:\n"),
+        ("tools/setup-syntax.js", b"const = ;\n"),
+        ("tools/setup-syntax.ts", b"const value: = 1;\n"),
+        (".pnpmfile.cjs", b"module.exports = {\n"),
         ("renovate.json", b"{"),
     ],
     ids=[
@@ -1971,6 +4239,9 @@ def test_changed_exception_path_is_a_scan_error(
         "composite-action-yaml",
         "unreadable-text",
         "python-syntax",
+        "javascript-syntax",
+        "typescript-syntax",
+        "pnpmfile-javascript-syntax",
         "config",
     ],
 )
@@ -2097,6 +4368,11 @@ def test_hk_trigger_inventory_has_exhaustive_policy_catalog_parity() -> None:
     assert classify_dependency_surface("nested/.gitattributes") is None
     assert "hk.pkl" in hk_globs
     assert POLICY_IMPLEMENTATION_PATH in hk_globs
+    assert set(POLICY.JAVASCRIPT_ANALYZER_PATHS) <= set(hk_globs)
+    assert all(
+        classify_dependency_surface(path) is not None
+        for path in POLICY.JAVASCRIPT_ANALYZER_PATHS
+    )
 
 
 def _assert_token_branches_are_disjoint() -> None:
