@@ -1908,12 +1908,18 @@ class RectificationRegressionTests(unittest.TestCase):
             "independent_structural_convergence_did_not_materially_improve",
         )
 
-    def _vertical_identity_selection(self) -> object:
+    def _vertical_identity_selection(
+        self,
+        *,
+        widened_band: int | None = None,
+    ) -> object:
         structures = []
         for band in range(rectify_pages.VERTICAL_X_BAND_COUNT):
             for system, (offset, top, bottom) in enumerate(
                 ((-0.018, 0.10, 0.30), (0.018, 0.65, 0.85))
             ):
+                if band == widened_band:
+                    offset = (-0.045, 0.045)[system]
                 position = (band + 0.5) / rectify_pages.VERTICAL_X_BAND_COUNT + offset
                 structures.append(
                     rectify_pages.VerticalStructure(
@@ -1931,6 +1937,120 @@ class RectificationRegressionTests(unittest.TestCase):
                     )
                 )
         return rectify_pages.VerticalSelection(1000, 1000, tuple(structures))
+
+    def _vertical_consensus_rejecting_band_on_call(
+        self,
+        rejected_call: int,
+        rejected_band: int,
+        maximum_rejections: int | None = None,
+    ) -> object:
+        original_consensus = rectify_pages.vertical_consensus
+        consensus_call = 0
+
+        def controlled_consensus(
+            values: np.ndarray,
+            positions: np.ndarray,
+            weights: np.ndarray,
+            *,
+            public_mode: bool = True,
+        ) -> tuple[np.ndarray, np.ndarray, float, str | None]:
+            nonlocal consensus_call
+            consensus_call += 1
+            result = original_consensus(
+                values,
+                positions,
+                weights,
+                public_mode=public_mode,
+            )
+            if consensus_call != rejected_call:
+                return result
+            bands = np.clip(
+                (positions * rectify_pages.VERTICAL_X_BAND_COUNT).astype(int),
+                0,
+                rectify_pages.VERTICAL_X_BAND_COUNT - 1,
+            )
+            keep = bands != rejected_band
+            if maximum_rejections is not None:
+                keep = np.ones(len(bands), dtype=bool)
+                rejected = np.flatnonzero(bands == rejected_band)[
+                    :maximum_rejections
+                ]
+                keep[rejected] = False
+            return result[0], keep, result[2], None
+
+        return controlled_consensus
+
+    def test_fit_consensus_cannot_remove_required_vertical_x_band(self) -> None:
+        with mock.patch.object(
+            rectify_pages,
+            "vertical_consensus",
+            side_effect=self._vertical_consensus_rejecting_band_on_call(1, 0),
+        ):
+            result = rectify_pages.selected_vertical_measurement(
+                self._vertical_identity_selection(widened_band=2)
+            )
+
+        self.assertIsNone(result[0])
+        self.assertEqual(result[1], 6)
+        self.assertEqual(
+            result[2],
+            "insufficient_independent_vertical_x_bands_on_both_sides"
+            "_after_consensus_filtering",
+        )
+
+    def test_fit_count_reports_only_retained_consensus_evidence(self) -> None:
+        with mock.patch.object(
+            rectify_pages,
+            "vertical_consensus",
+            side_effect=self._vertical_consensus_rejecting_band_on_call(
+                1,
+                0,
+                maximum_rejections=1,
+            ),
+        ):
+            result = rectify_pages.selected_vertical_measurement(
+                self._vertical_identity_selection()
+            )
+
+        self.assertIsNotNone(result[0])
+        self.assertEqual(result[1], 7)
+        self.assertIsNone(result[2])
+
+    def test_holdout_consensus_cannot_remove_required_vertical_x_band(self) -> None:
+        with mock.patch.object(
+            rectify_pages,
+            "vertical_consensus",
+            side_effect=self._vertical_consensus_rejecting_band_on_call(2, 1),
+        ):
+            result = rectify_pages.selected_vertical_measurement(
+                self._vertical_identity_selection(widened_band=3)
+            )
+
+        self.assertIsNone(result[3])
+        self.assertEqual(result[4], 6)
+        self.assertEqual(
+            result[5],
+            "insufficient_independent_vertical_x_bands_on_both_sides"
+            "_after_consensus_filtering",
+        )
+
+    def test_side_consensus_cannot_remove_required_vertical_x_band(self) -> None:
+        with mock.patch.object(
+            rectify_pages,
+            "vertical_consensus",
+            side_effect=self._vertical_consensus_rejecting_band_on_call(3, 1),
+        ):
+            result = rectify_pages.selected_vertical_measurement(
+                self._vertical_identity_selection(widened_band=3)
+            )
+
+        self.assertIsNone(result[3])
+        self.assertEqual(result[4], 6)
+        self.assertEqual(
+            result[5],
+            "insufficient_independent_vertical_x_bands_on_both_sides"
+            "_after_consensus_filtering",
+        )
 
     def test_single_system_vertical_holdout_cannot_validate_page_warp(self) -> None:
         selection = self._vertical_identity_selection()

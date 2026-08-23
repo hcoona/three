@@ -6216,13 +6216,19 @@ def main(argv: list[str] | None = None) -> int:
         pair["geometry"] = geometry
         pairs.append(pair)
 
-    comparable_path_pairs = [
-        (input_path, output_path)
-        for input_path, output_path in paired_paths
-        if input_path in input_features and output_path in output_features
+    comparable_pair_records = [
+        (pair, input_path, output_path)
+        for pair, (input_path, output_path) in zip(
+            pairs, paired_paths, strict=True
+        )
+        if pair.get("comparable")
     ]
     if comparison_budget_rejected:
-        comparable_path_pairs = []
+        comparable_pair_records = []
+    comparable_path_pairs = [
+        (input_path, output_path)
+        for _, input_path, output_path in comparable_pair_records
+    ]
     source_signatures = {
         path: features["structure_signatures"]["0"]
         for path, features in input_features.items()
@@ -6252,10 +6258,7 @@ def main(argv: list[str] | None = None) -> int:
     }
     comparable_pair_by_output = {
         output_path: pair
-        for pair, (_, output_path) in zip(
-            [item for item in pairs if item.get("comparable")],
-            comparable_path_pairs,
-        )
+        for pair, _, output_path in comparable_pair_records
     }
     decoded_sha_input_index: dict[str, list[Path]] = {}
     for source_path, source_row in input_by_path.items():
@@ -6339,9 +6342,7 @@ def main(argv: list[str] | None = None) -> int:
                 f"unpaired output decoded-content best match is {scores[0][0].name} "
                 f"({scores[0][1]:.3f}); resolve page identity",
             )
-    for pair, (input_path, output_path) in zip(
-        [item for item in pairs if item.get("comparable")], comparable_path_pairs
-    ):
+    for pair, input_path, output_path in comparable_pair_records:
         retained_scores = retained_scores_by_output[output_path]
         alternate_scores = [
             (candidate, score, rotation)

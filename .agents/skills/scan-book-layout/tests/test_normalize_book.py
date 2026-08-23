@@ -1579,6 +1579,26 @@ class NormalizeBookTests(unittest.TestCase):
         self.assertIn("page_999.jpg", result.stderr)
         self.assertFalse(output.exists())
 
+    def test_zero_page_tiff_fails_without_traceback_before_filtering(self) -> None:
+        write_image(self.input / "page_001.png", np.full((120, 100), 255, np.uint8))
+        (self.input / "page_999.tiff").write_bytes(
+            b"II*\x00\x00\x00\x00\x00"
+        )
+        output = self.root / "output"
+
+        result = self.run_cli(
+            self.input,
+            output,
+            "--auto-canvas",
+            "--pages",
+            1,
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("TIFF contains no image frames", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertFalse(output.exists())
+
     def test_apng_and_mpo_suffixes_are_in_image_inventory(self) -> None:
         write_image(self.input / "page_001.png", np.full((120, 100), 255, np.uint8))
         (self.input / "page_998.apng").write_bytes(b"corrupt")
@@ -1858,6 +1878,9 @@ class NormalizeBookTests(unittest.TestCase):
 
     def test_runner_uses_practical_ephemeral_environment(self) -> None:
         runner = (SKILL_DIR / "scripts" / "run.ps1").read_text(encoding="utf-8")
+        test_runner = (SKILL_DIR / "tests" / "run.ps1").read_text(
+            encoding="utf-8"
+        )
 
         self.assertIn('$pythonVersion = "3.12.10"', runner)
         self.assertIn('Programs\\AzureAuth\\0.9.5\\azureauth.exe', runner)
@@ -1874,6 +1897,15 @@ class NormalizeBookTests(unittest.TestCase):
         self.assertIn('--require-hashes', runner)
         self.assertIn('--no-deps', runner)
         self.assertIn('& $python -I -B $program @ScriptArgs', runner)
+        self.assertIn('$Script -ceq "normalize_book.py"', runner)
+        self.assertIn(
+            '$Script -ceq "tests/test_normalize_book.py"',
+            runner,
+        )
+        self.assertIn(
+            'Join-Path $skillRoot "tests\\test_normalize_book.py"',
+            runner,
+        )
         self.assertNotIn('startup_launcher', runner)
         self.assertNotIn('manifest.json', runner)
         self.assertNotIn('RECORD', runner)
@@ -1905,6 +1937,15 @@ class NormalizeBookTests(unittest.TestCase):
         for name in removed:
             self.assertFalse((SKILL_DIR / "scripts" / name).exists(), name)
 
+        self.assertIn(
+            '& (Join-Path $skillRoot "scripts\\run.ps1")',
+            test_runner,
+        )
+        self.assertIn('"tests/test_normalize_book.py" "-v"', test_runner)
+        self.assertIn("Push-Location $skillRoot", test_runner)
+        self.assertIn("Pop-Location", test_runner)
+        self.assertNotIn("mise", test_runner)
+
     def test_skill_documents_network_required_every_invocation(self) -> None:
         documentation = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
 
@@ -1913,10 +1954,59 @@ class NormalizeBookTests(unittest.TestCase):
 
     def test_skill_documents_inventory_and_processing_decodes(self) -> None:
         documentation = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
+        normalized = " ".join(documentation.split())
 
-        self.assertIn("fully decoded during\n    inventory", documentation)
-        self.assertIn("decoded\n    again during processing", documentation)
-        self.assertNotIn("before any\n    full raster decode", documentation)
+        self.assertIn(
+            "Each supported image is then fully decoded during inventory",
+            normalized,
+        )
+        self.assertIn(
+            "Each selected image is decoded again during processing",
+            normalized,
+        )
+        self.assertNotIn("before any full raster decode", normalized)
+        self.assertNotIn("without a full raster decode", normalized)
+
+    def test_page_filter_decodes_all_inventory_and_selected_processing(
+        self,
+    ) -> None:
+        write_image(
+            self.input / "page_001.png",
+            np.full((120, 100), 255, np.uint8),
+        )
+        write_image(
+            self.input / "page_002.png",
+            np.full((100, 120), 240, np.uint8),
+        )
+        output = self.root / "output"
+        decoded: list[str] = []
+        original_read_gray = normalize_book.read_gray
+
+        def recording_read_gray(path: Path) -> np.ndarray:
+            decoded.append(path.name)
+            return original_read_gray(path)
+
+        argv = [
+            "normalize_book.py",
+            str(self.input),
+            str(output),
+            "--auto-canvas",
+            "--pages",
+            "1",
+        ]
+        with (
+            mock.patch.object(sys, "argv", argv),
+            mock.patch.object(
+                normalize_book,
+                "read_gray",
+                side_effect=recording_read_gray,
+            ),
+            mock.patch.object(sys, "stdout", io.StringIO()),
+        ):
+            self.assertEqual(normalize_book.main(), 0)
+
+        self.assertEqual(decoded.count("page_001.png"), 2)
+        self.assertEqual(decoded.count("page_002.png"), 1)
 
 
 if __name__ == "__main__":

@@ -81,7 +81,22 @@ function Invoke-ProcessWithTimeout {
         $stdout = $process.StandardOutput.ReadToEndAsync()
         $stderr = $process.StandardError.ReadToEndAsync()
         if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
-            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            $taskkill = Join-Path $env:SystemRoot "System32\taskkill.exe"
+            $taskkillSucceeded = $false
+            try {
+                & $taskkill /PID $process.Id /T /F 2>$null | Out-Null
+                $taskkillSucceeded = $LASTEXITCODE -eq 0
+            }
+            catch {
+                $taskkillSucceeded = $false
+            }
+            if (
+                -not $taskkillSucceeded -or
+                -not $process.WaitForExit(5000)
+            ) {
+                Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            }
+            $process.WaitForExit()
             throw "$Description timed out after $TimeoutSeconds seconds."
         }
         $process.WaitForExit()
@@ -119,15 +134,20 @@ function Reset-PipEnvironment {
 if ((Get-Location).Path.TrimEnd('\') -ne $skillBase.TrimEnd('\')) {
     throw "Run this command from the skill base directory: $skillBase"
 }
-if ($Script -cne "validate_book.py") {
-    throw "Script must be exactly validate_book.py."
+if ($Script -cnotin @("validate_book.py", "tests/test_validate_book.py")) {
+    throw "Script must be exactly validate_book.py or tests/test_validate_book.py."
 }
 
-$validator = Join-Path $PSScriptRoot "validate_book.py"
+$target = if ($Script -ceq "validate_book.py") {
+    Join-Path $PSScriptRoot "validate_book.py"
+}
+else {
+    Join-Path $skillBase "tests\test_validate_book.py"
+}
 $requirements = Join-Path $PSScriptRoot "requirements.lock"
-if (-not (Test-Path -LiteralPath $validator -PathType Leaf) -or
+if (-not (Test-Path -LiteralPath $target -PathType Leaf) -or
     -not (Test-Path -LiteralPath $requirements -PathType Leaf)) {
-    throw "The validator or dependency lock is missing."
+    throw "The requested script or dependency lock is missing."
 }
 
 $miseCommand = Get-Command mise -CommandType Application -ErrorAction Stop |
@@ -224,7 +244,7 @@ for module, (loaded, distribution, version) in expected.items():
     }
 
     $validatorResult = Invoke-ProcessWithTimeout -FilePath $python `
-        -ArgumentList (@("-I", "-B", $validator) + $ScriptArgs) `
+        -ArgumentList (@("-I", "-B", $target) + $ScriptArgs) `
         -TimeoutSeconds $ValidatorTimeoutSeconds -Description "book validator"
     if ($validatorResult.StdOut) {
         [Console]::Out.Write($validatorResult.StdOut)

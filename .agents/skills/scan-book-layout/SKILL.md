@@ -106,8 +106,9 @@ rather than overwrite any prior directory, report, or file.
     phases are released before resizing and encoding. Encoded-byte size, frame count, displayed dimensions, decoded pixel count,
     source decode footprint, and working-memory estimates are first validated
     from container headers. Each supported image is then fully decoded during
-    inventory to verify decodeability and exact oriented dimensions, and decoded
-    again during processing. Pillow decompression-bomb warnings are fatal.
+    inventory to verify decodeability and exact oriented dimensions. Each selected
+    image is decoded again during processing. Pillow decompression-bomb warnings
+    are fatal.
     Auto-canvas validates the
     cross-product of the maximum
     source width and maximum source height, even when those maxima come from

@@ -335,6 +335,9 @@ def inspect_encoded_image(
         if header[:4] in {b"II*\x00", b"MM\x00*"}:
             try:
                 with tifffile.TiffFile(path) as tiff:
+                    page_count = len(tiff.pages)
+                    if page_count == 0:
+                        raise ValueError(f"TIFF contains no image frames: {path}")
                     page = tiff.pages[0]
                     height, width = (int(value) for value in page.shape[:2])
                     orientation_tag = page.tags.get(274)
@@ -345,7 +348,7 @@ def inspect_encoded_image(
                         width, height = height, width
                     validate_header_dimensions(path, width, height)
                     return EncodedImageHeader(
-                        "TIFF", len(tiff.pages), width, height,
+                        "TIFF", page_count, width, height,
                         int(page.dtype.itemsize) * int(page.samplesperpixel),
                         2 if int(page.dtype.itemsize) > 1 else 1,
                         10 if int(page.dtype.itemsize) > 1 else 5,

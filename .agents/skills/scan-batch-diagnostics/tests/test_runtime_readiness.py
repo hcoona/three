@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import importlib.util
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -39,8 +40,9 @@ class RuntimeReadinessTests(unittest.TestCase):
         self,
         python: tuple[int, int, int] = (3, 12, 13),
         overrides: dict[str, str] | None = None,
+        runtime: Path | None = None,
     ) -> dict[str, object]:
-        runtime = SCRIPTS / ".runtime-test"
+        runtime = runtime or SCRIPTS / ".runtime-test"
         versions = {
             "imagecodecs": "2026.6.26",
             "numpy": "2.2.6",
@@ -97,6 +99,22 @@ class RuntimeReadinessTests(unittest.TestCase):
         self.assertTrue(result["runtime_root_ok"])
         self.assertTrue(result["dependencies_ok"])
         self.assertTrue(result["imports_ok"])
+
+    def test_linked_scripts_directory_is_canonicalized(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            scripts_alias = Path(directory) / "scripts-link"
+            try:
+                scripts_alias.symlink_to(SCRIPTS, target_is_directory=True)
+            except OSError as error:
+                self.skipTest(f"directory links are unavailable: {error}")
+            runtime = scripts_alias / ".runtime-test"
+
+            self.assertNotEqual(runtime.parent, SCRIPTS)
+            self.assertEqual(runtime.parent.resolve(), SCRIPTS)
+            result = self.readiness(runtime=runtime)
+
+        self.assertTrue(result["ready"])
+        self.assertTrue(result["runtime_root_ok"])
 
     def test_wrong_python_or_dependency_fails_closed(self) -> None:
         self.assertFalse(self.readiness((3, 12, 12))["ready"])

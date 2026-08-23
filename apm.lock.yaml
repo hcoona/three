@@ -1,5 +1,5 @@
 lockfile_version: '1'
-generated_at: '2026-08-23T17:46:31.288038+00:00'
+generated_at: '2026-08-23T18:56:01.555188+00:00'
 apm_version: 0.28.0
 dependencies:
 - repo_url: _local/scan-restoration
@@ -47,35 +47,35 @@ dependencies:
   deployed_file_hashes:
     .agents/skills/scan-batch-diagnostics/SKILL.md: sha256:455cc616877cdf9f508894af5a141e51b798f418fdc868923d0d4232bdb2ef41
     .agents/skills/scan-batch-diagnostics/scripts/analyze_scans.py: sha256:1f29f760bc5a284fdb88cfa7e98ce36c71136821a477dfa9d01e78407b960b6e
-    .agents/skills/scan-batch-diagnostics/scripts/check_runtime.py: sha256:cfde891cab45454400bb0c4d9af163f40c8237a9d4e9365530c50486dbc9479f
+    .agents/skills/scan-batch-diagnostics/scripts/check_runtime.py: sha256:27d31fdac9289afb727d8985bc9c30037cb1e876c6ab0f19dbab0f2c17b16b76
     .agents/skills/scan-batch-diagnostics/scripts/requirements.lock: sha256:b798f36f1cca0ed352a1acefd43fdf4cb5377ac3ab620a97df9728c91992c4a3
     .agents/skills/scan-batch-diagnostics/scripts/run.ps1: sha256:e8c4c38f0dc69402b442f9ae9af5f4a76b136ef7e5040c7a489a973926f25787
     .agents/skills/scan-batch-diagnostics/scripts/run_tests.py: sha256:829e7b22a00cc894f9c9f0f70e561b2c01bb9605463e1d400c317d1f0cdff972
     .agents/skills/scan-batch-diagnostics/tests/test_analyze_scans.py: sha256:4a269734ef0167775023361a78b5f3ec19ab86bac0c6d9853d5b0235806f7dc4
-    .agents/skills/scan-batch-diagnostics/tests/test_runtime_readiness.py: sha256:f049e669536e1ab6fec741370b05e9d86aeda1b8ef713ccbb21dfc48ec76370d
-    .agents/skills/scan-book-layout/SKILL.md: sha256:2f0717e05ba4b7badb24e0035d67e59f3effbd42408fd96579745413ca9021d7
-    .agents/skills/scan-book-layout/scripts/normalize_book.py: sha256:c629feb87a02134973988ac9757ea266fe778f3d3ca0f38683577c8fd6b1a075
+    .agents/skills/scan-batch-diagnostics/tests/test_runtime_readiness.py: sha256:ff35b12cc6b8ea6977c4fb12b290c851d7d882bf7a0ccac1fc7dbe92358b4f18
+    .agents/skills/scan-book-layout/SKILL.md: sha256:a34077baa4449eefb0123278e1af26ddf19a453b4e9f0a962e330ebc0578b970
+    .agents/skills/scan-book-layout/scripts/normalize_book.py: sha256:2d7340739a3bd7b7c9eb6208fa6e19a69a7d148f14938c984b35eb3df6d865ff
     .agents/skills/scan-book-layout/scripts/requirements.lock: sha256:b798f36f1cca0ed352a1acefd43fdf4cb5377ac3ab620a97df9728c91992c4a3
-    .agents/skills/scan-book-layout/scripts/run.ps1: sha256:4e152e8389a2a1dca03cfeb2480c85a75e38860df573b55485c255fa7cd95dff
-    .agents/skills/scan-book-layout/tests/run.ps1: sha256:3d7184786f4fac24e9e101bed0f8065fd3375a07a67e1ab726ff8202845ed2a2
-    .agents/skills/scan-book-layout/tests/test_normalize_book.py: sha256:678e778827d109237bf8e0f8848310f2fe887b6afcc49f48d16d5350941e9e6f
+    .agents/skills/scan-book-layout/scripts/run.ps1: sha256:cadd7667c2d196b5cb7d65d0197325df43e551682a68d45a7213386c7a829c05
+    .agents/skills/scan-book-layout/tests/run.ps1: sha256:fd7794cf9ea10d47ff5c1ec992574c83412ebd34f45dfde5091648c52f9d2172
+    .agents/skills/scan-book-layout/tests/test_normalize_book.py: sha256:788411c6013c024d78a7159a3cf0d91ef545b6ae7b687bf592a19449dc885025
     .agents/skills/scan-book-quality-control/SKILL.md: sha256:d461b3a499fbcaf3238097966d53ab92ea8f71b84baf9e3c6860e0689528fc05
     .agents/skills/scan-book-quality-control/scripts/requirements.lock: sha256:41dd22023373218211a64ab11e4fec76d7b9ffda1b66190c0916683419c69652
-    .agents/skills/scan-book-quality-control/scripts/run.ps1: sha256:b36a8b57840e6650fcc4e5c2fd0966a6d5c91bf3ad59159ce9a1a3f111e95538
-    .agents/skills/scan-book-quality-control/scripts/validate_book.py: sha256:7befe66a90aea5170e4ce35ecd2f0d124e7c681ac8a89304c7b9f94d9b41f7c9
-    .agents/skills/scan-book-quality-control/tests/run.ps1: sha256:234b0e6405ebe548aa4a4ef9d38c230f6f3ee436a8338af6dedd4cac2214ca4b
-    .agents/skills/scan-book-quality-control/tests/test_validate_book.py: sha256:0140a3836db8e908758da5964af54c1ebd697c560ac74c2dfe833b5b7ae4f1d0
+    .agents/skills/scan-book-quality-control/scripts/run.ps1: sha256:c608006ae5536533960196553101b58c4c47b7fdb9696c661a8e46c6dadc6cd2
+    .agents/skills/scan-book-quality-control/scripts/validate_book.py: sha256:7fb61654a10af2363213731f385b4bb353db8af16ac71e4373b121c6a3532708
+    .agents/skills/scan-book-quality-control/tests/run.ps1: sha256:c322d738f62c520855703ae59c6323227393f7857807940617156f8f50e62324
+    .agents/skills/scan-book-quality-control/tests/test_validate_book.py: sha256:6824998a0daece7da865e72256e84d4e1d365190576304039e3f6bc3920cac96
     .agents/skills/scan-page-rectification/SKILL.md: sha256:8d9c89fbf99d34ddef3638f8dd554796edb654b8c67b0ca99f2a5e3033bef237
-    .agents/skills/scan-page-rectification/scripts/rectify_pages.py: sha256:60bcd850bf9f33bbd6e9efbdebc5a62dc24f5831cf198bee89c3595d9c843c6d
+    .agents/skills/scan-page-rectification/scripts/rectify_pages.py: sha256:e8815f71fa8e73f6c844246bcc81924a426ab472f876d16916508de9220e674b
     .agents/skills/scan-page-rectification/scripts/requirements.lock: sha256:77f5a58d841c4dd7781a007200a4dba63c72403655849f507061d2258f9adf4d
-    .agents/skills/scan-page-rectification/scripts/run.ps1: sha256:9fea58896815420b3dd82ed5c74f2f7214e139ff11c28efe69dbea401451529d
-    .agents/skills/scan-page-rectification/tests/test_rectify_pages.py: sha256:f382e85e37cacef61985145c8e71509cc2c964dd4017e8f27d0d0f766899ce8b
-    .agents/skills/scan-page-rectification/tests/test_runner.ps1: sha256:d7a5dece0adef3335530f10a4c793266327eb26dc47ad6faf7d4b5aa28b77762
+    .agents/skills/scan-page-rectification/scripts/run.ps1: sha256:e3852aff56a57fedb2a092302220b09b85cc83949544ce1c9561f89266535332
+    .agents/skills/scan-page-rectification/tests/test_rectify_pages.py: sha256:084cfd72058a0a92ef324e947bb2971513f438fdbf262d9b27f04d8b893b474c
+    .agents/skills/scan-page-rectification/tests/test_runner.ps1: sha256:38281cb1882edb264578a7e2d75938f5886eab2042d84fb2cea9836efb2bd959
     .agents/skills/scan-tone-restoration/SKILL.md: sha256:5cd2ea697a83fcb158885e0bee3ef971b2f29b3e286603273017a37ec08dd2ae
     .agents/skills/scan-tone-restoration/scripts/requirements.lock: sha256:b798f36f1cca0ed352a1acefd43fdf4cb5377ac3ab620a97df9728c91992c4a3
-    .agents/skills/scan-tone-restoration/scripts/restore_tone.py: sha256:d380da2a4d5f1e83ed46af3120858d6eb882acf60750da0334f8afd63feca80f
+    .agents/skills/scan-tone-restoration/scripts/restore_tone.py: sha256:f74867fb8a5a4c426549c6696549bb1713f6cc1b810a012cda2131ece636a0c8
     .agents/skills/scan-tone-restoration/scripts/run.ps1: sha256:40a2f4c0576e5d42e0676981e5bdaf25146d83565a94382fcfafb56830a1f532
-    .agents/skills/scan-tone-restoration/tests/test_restore_tone.py: sha256:db8495afd3dbc58c4d0e191e19954372b307ec6155c38e00dd7105c0a8d16469
+    .agents/skills/scan-tone-restoration/tests/test_restore_tone.py: sha256:0596b10d0b73c6b565d8c3a2b00ea5abb888c8747da1f70448da1de03053d678
     .agents/skills/scan-tone-restoration/tests/test_runner.ps1: sha256:884a5e5cf32339180a476fa96305beadc2f8ad356cca9fd869e9cdd07e40de06
   source: local
   local_path: ./src/private/lib/scan-restoration
@@ -2982,7 +2982,7 @@ deployments:
   owners:
   - ./src/private/lib/scan-restoration
   active_owner: ./src/private/lib/scan-restoration
-  content_hash: sha256:cfde891cab45454400bb0c4d9af163f40c8237a9d4e9365530c50486dbc9479f
+  content_hash: sha256:27d31fdac9289afb727d8985bc9c30037cb1e876c6ab0f19dbab0f2c17b16b76
 - kind: project-relative
   target: copilot
   value: .agents/skills/scan-batch-diagnostics/scripts/requirements.lock
@@ -3027,7 +3027,7 @@ deployments:
   owners:
   - ./src/private/lib/scan-restoration
   active_owner: ./src/private/lib/scan-restoration
-  content_hash: sha256:f049e669536e1ab6fec741370b05e9d86aeda1b8ef713ccbb21dfc48ec76370d
+  content_hash: sha256:ff35b12cc6b8ea6977c4fb12b290c851d7d882bf7a0ccac1fc7dbe92358b4f18
 - kind: project-relative
   target: copilot
   value: .agents/skills/scan-book-layout
@@ -3045,7 +3045,7 @@ deployments:
   owners:
   - ./src/private/lib/scan-restoration
   active_owner: ./src/private/lib/scan-restoration
-  content_hash: sha256:2f0717e05ba4b7badb24e0035d67e59f3effbd42408fd96579745413ca9021d7
+  content_hash: sha256:a34077baa4449eefb0123278e1af26ddf19a453b4e9f0a962e330ebc0578b970
 - kind: project-relative
   target: copilot
   value: .agents/skills/scan-book-layout/scripts/normalize_book.py
@@ -3054,7 +3054,7 @@ deployments:
   owners:
   - ./src/private/lib/scan-restoration
   active_owner: ./src/private/lib/scan-restoration
-  content_hash: sha256:c629feb87a02134973988ac9757ea266fe778f3d3ca0f38683577c8fd6b1a075
+  content_hash: sha256:2d7340739a3bd7b7c9eb6208fa6e19a69a7d148f14938c984b35eb3df6d865ff
 - kind: project-relative
   target: copilot
   value: .agents/skills/scan-book-layout/scripts/requirements.lock
@@ -3072,7 +3072,7 @@ deployments:
   owners:
   - ./src/private/lib/scan-restoration
   active_owner: ./src/private/lib/scan-restoration
-  content_hash: sha256:4e152e8389a2a1dca03cfeb2480c85a75e38860df573b55485c255fa7cd95dff
+  content_hash: sha256:cadd7667c2d196b5cb7d65d0197325df43e551682a68d45a7213386c7a829c05
 - kind: project-relative
   target: copilot
   value: .agents/skills/scan-book-layout/tests/run.ps1
@@ -3081,7 +3081,7 @@ deployments:
   owners:
   - ./src/private/lib/scan-restoration
   active_owner: ./src/private/lib/scan-restoration
-  content_hash: sha256:3d7184786f4fac24e9e101bed0f8065fd3375a07a67e1ab726ff8202845ed2a2
+  content_hash: sha256:fd7794cf9ea10d47ff5c1ec992574c83412ebd34f45dfde5091648c52f9d2172
 - kind: project-relative
   target: copilot
   value: .agents/skills/scan-book-layout/tests/test_normalize_book.py
@@ -3090,7 +3090,7 @@ deployments:
   owners:
   - ./src/private/lib/scan-restoration
   active_owner: ./src/private/lib/scan-restoration
-  content_hash: sha256:678e778827d109237bf8e0f8848310f2fe887b6afcc49f48d16d5350941e9e6f
+  content_hash: sha256:788411c6013c024d78a7159a3cf0d91ef545b6ae7b687bf592a19449dc885025
 - kind: project-relative
   target: copilot
   value: .agents/skills/scan-book-quality-control
@@ -3126,7 +3126,7 @@ deployments:
   owners:
   - ./src/private/lib/scan-restoration
   active_owner: ./src/private/lib/scan-restoration
-  content_hash: sha256:b36a8b57840e6650fcc4e5c2fd0966a6d5c91bf3ad59159ce9a1a3f111e95538
+  content_hash: sha256:c608006ae5536533960196553101b58c4c47b7fdb9696c661a8e46c6dadc6cd2
 - kind: project-relative
   target: copilot
   value: .agents/skills/scan-book-quality-control/scripts/validate_book.py
@@ -3135,7 +3135,7 @@ deployments:
   owners:
   - ./src/private/lib/scan-restoration
   active_owner: ./src/private/lib/scan-restoration
-  content_hash: sha256:7befe66a90aea5170e4ce35ecd2f0d124e7c681ac8a89304c7b9f94d9b41f7c9
+  content_hash: sha256:7fb61654a10af2363213731f385b4bb353db8af16ac71e4373b121c6a3532708
 - kind: project-relative
   target: copilot
   value: .agents/skills/scan-book-quality-control/tests/run.ps1
@@ -3144,7 +3144,7 @@ deployments:
   owners:
   - ./src/private/lib/scan-restoration
   active_owner: ./src/private/lib/scan-restoration
-  content_hash: sha256:234b0e6405ebe548aa4a4ef9d38c230f6f3ee436a8338af6dedd4cac2214ca4b
+  content_hash: sha256:c322d738f62c520855703ae59c6323227393f7857807940617156f8f50e62324
 - kind: project-relative
   target: copilot
   value: .agents/skills/scan-book-quality-control/tests/test_validate_book.py
@@ -3153,7 +3153,7 @@ deployments:
   owners:
   - ./src/private/lib/scan-restoration
   active_owner: ./src/private/lib/scan-restoration
-  content_hash: sha256:0140a3836db8e908758da5964af54c1ebd697c560ac74c2dfe833b5b7ae4f1d0
+  content_hash: sha256:6824998a0daece7da865e72256e84d4e1d365190576304039e3f6bc3920cac96
 - kind: project-relative
   target: copilot
   value: .agents/skills/scan-page-rectification
@@ -3180,7 +3180,7 @@ deployments:
   owners:
   - ./src/private/lib/scan-restoration
   active_owner: ./src/private/lib/scan-restoration
-  content_hash: sha256:60bcd850bf9f33bbd6e9efbdebc5a62dc24f5831cf198bee89c3595d9c843c6d
+  content_hash: sha256:e8815f71fa8e73f6c844246bcc81924a426ab472f876d16916508de9220e674b
 - kind: project-relative
   target: copilot
   value: .agents/skills/scan-page-rectification/scripts/requirements.lock
@@ -3198,7 +3198,7 @@ deployments:
   owners:
   - ./src/private/lib/scan-restoration
   active_owner: ./src/private/lib/scan-restoration
-  content_hash: sha256:9fea58896815420b3dd82ed5c74f2f7214e139ff11c28efe69dbea401451529d
+  content_hash: sha256:e3852aff56a57fedb2a092302220b09b85cc83949544ce1c9561f89266535332
 - kind: project-relative
   target: copilot
   value: .agents/skills/scan-page-rectification/tests/test_rectify_pages.py
@@ -3207,7 +3207,7 @@ deployments:
   owners:
   - ./src/private/lib/scan-restoration
   active_owner: ./src/private/lib/scan-restoration
-  content_hash: sha256:f382e85e37cacef61985145c8e71509cc2c964dd4017e8f27d0d0f766899ce8b
+  content_hash: sha256:084cfd72058a0a92ef324e947bb2971513f438fdbf262d9b27f04d8b893b474c
 - kind: project-relative
   target: copilot
   value: .agents/skills/scan-page-rectification/tests/test_runner.ps1
@@ -3216,7 +3216,7 @@ deployments:
   owners:
   - ./src/private/lib/scan-restoration
   active_owner: ./src/private/lib/scan-restoration
-  content_hash: sha256:d7a5dece0adef3335530f10a4c793266327eb26dc47ad6faf7d4b5aa28b77762
+  content_hash: sha256:38281cb1882edb264578a7e2d75938f5886eab2042d84fb2cea9836efb2bd959
 - kind: project-relative
   target: copilot
   value: .agents/skills/scan-tone-restoration
@@ -3252,7 +3252,7 @@ deployments:
   owners:
   - ./src/private/lib/scan-restoration
   active_owner: ./src/private/lib/scan-restoration
-  content_hash: sha256:d380da2a4d5f1e83ed46af3120858d6eb882acf60750da0334f8afd63feca80f
+  content_hash: sha256:f74867fb8a5a4c426549c6696549bb1713f6cc1b810a012cda2131ece636a0c8
 - kind: project-relative
   target: copilot
   value: .agents/skills/scan-tone-restoration/scripts/run.ps1
@@ -3270,7 +3270,7 @@ deployments:
   owners:
   - ./src/private/lib/scan-restoration
   active_owner: ./src/private/lib/scan-restoration
-  content_hash: sha256:db8495afd3dbc58c4d0e191e19954372b307ec6155c38e00dd7105c0a8d16469
+  content_hash: sha256:0596b10d0b73c6b565d8c3a2b00ea5abb888c8747da1f70448da1de03053d678
 - kind: project-relative
   target: copilot
   value: .agents/skills/scan-tone-restoration/tests/test_runner.ps1

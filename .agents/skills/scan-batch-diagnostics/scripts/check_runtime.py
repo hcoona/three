@@ -92,7 +92,7 @@ def readiness(expected_runtime: Path) -> dict[str, object]:
     expected_python = expected_runtime / "Scripts" / "python.exe"
     runtime_root_ok = (
         expected_runtime.name.startswith(".runtime-")
-        and expected_runtime.parent == SCRIPTS_DIRECTORY
+        and expected_runtime.parent.resolve() == SCRIPTS_DIRECTORY
         and runtime_root.resolve() == expected_runtime.resolve()
         and Path(sys.executable).resolve() == expected_python.resolve()
     )
