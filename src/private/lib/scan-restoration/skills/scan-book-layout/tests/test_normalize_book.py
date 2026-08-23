@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import warnings
 import zlib
 from pathlib import Path
 from unittest import mock
@@ -128,6 +129,32 @@ def write_white_is_zero_tiff(
     encoded.extend(struct.pack("<I", 0))
     encoded.extend(data)
     path.write_bytes(encoded)
+
+
+def write_tifffile_grayscale(
+    path: Path,
+    image: np.ndarray,
+    bits: int,
+    *,
+    photometric: int = 1,
+    byte_order: str = "<",
+    bigtiff: bool = False,
+    compression: int | None = None,
+    orientation: int = 1,
+) -> None:
+    maximum = (1 << bits) - 1
+    samples = maximum - image if photometric == 0 else image
+    dtype = np.uint16 if bits == 16 else np.uint8
+    normalize_book.tifffile.imwrite(
+        path,
+        samples.astype(dtype),
+        bigtiff=bigtiff,
+        byteorder=byte_order,
+        compression=compression,
+        photometric="miniswhite" if photometric == 0 else "minisblack",
+        metadata=None,
+        extratags=[(274, "H", 1, orientation, False)],
+    )
 
 
 class NormalizeBookTests(unittest.TestCase):
@@ -1322,8 +1349,8 @@ class NormalizeBookTests(unittest.TestCase):
 
         with mock.patch.object(
             normalize_book,
-            "decode_tiff_uint16_fallback",
-            wraps=normalize_book.decode_tiff_uint16_fallback,
+            "decode_tiff_grayscale_fallback",
+            wraps=normalize_book.decode_tiff_grayscale_fallback,
         ) as fallback:
             for source in sources:
                 decoded = normalize_book.read_gray(source)
@@ -1343,26 +1370,259 @@ class NormalizeBookTests(unittest.TestCase):
             self.assertEqual(int(decoded[0, 0]), 65535)
             self.assertEqual(int(decoded[60, 52]), 0)
 
-    def test_16_bit_fill_order_1_tiffs_use_fallback(self) -> None:
-        for page, photometric in enumerate((0, 1), 1):
-            image = np.full((120, 104), 65535, np.uint16)
-            image[30:90, 26:78] = 0
-            source = self.input / f"page_{page:03}.tiff"
-            write_white_is_zero_tiff(
-                source,
-                image,
-                16,
+    def test_classic_grayscale_tiffs_use_direct_fallback_at_supported_depths(
+        self,
+    ) -> None:
+        page = 0
+        for bits in (1, 8, 16):
+            maximum = (1 << bits) - 1
+            for photometric in (0, 1):
+                page += 1
+                image = np.full((12, 16), maximum, np.uint16)
+                image[3:9, 4:12] = 0
+                source = self.input / f"page_{page:03}.tiff"
+                write_white_is_zero_tiff(
+                    source,
+                    image,
+                    bits,
+                    photometric=photometric,
+                    fill_order=photometric + 1,
+                )
+
+                decoded = normalize_book.decode_tiff_grayscale_fallback(
+                    source.read_bytes(), source
+                )
+
+                expected = image.astype(
+                    np.uint16 if bits == 16 else np.uint8
+                )
+                if bits == 1:
+                    expected *= 255
+                self.assertEqual(decoded.dtype, expected.dtype)
+                self.assertEqual(decoded.shape, image.shape)
+                np.testing.assert_array_equal(decoded, expected)
+
+    def test_little_and_big_endian_bigtiff_depths_probe_inspect_and_decode(
+        self,
+    ) -> None:
+        cases = [
+            ("<", 8, 0, ".tiff"),
+            ("<", 16, 1, ".tiff"),
+            (">", 8, 1, ".payload"),
+            (">", 16, 0, ".tiff"),
+        ]
+        for page, (byte_order, bits, photometric, suffix) in enumerate(cases, 1):
+            with self.subTest(
+                byte_order=byte_order,
+                bits=bits,
                 photometric=photometric,
-                fill_order=1,
-            )
+                suffix=suffix,
+            ):
+                dtype = np.uint16 if bits == 16 else np.uint8
+                maximum = (1 << bits) - 1
+                image = (
+                    np.arange(7 * 11, dtype=np.uint32).reshape(7, 11) * 997
+                    % (maximum + 1)
+                ).astype(dtype)
+                source = self.input / f"page_{page:03}{suffix}"
+                write_tifffile_grayscale(
+                    source,
+                    image,
+                    bits,
+                    photometric=photometric,
+                    byte_order=byte_order,
+                    bigtiff=True,
+                )
+                header = normalize_book.read_bounded_header(source)
 
-            decoded = normalize_book.decode_tiff_uint16_fallback(
-                source.read_bytes(), source
-            )
+                self.assertEqual(
+                    normalize_book.tiff_header_byte_order(header), byte_order
+                )
+                self.assertTrue(
+                    normalize_book.has_image_container_signature(header)
+                )
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", UserWarning)
+                    self.assertEqual(
+                        normalize_book.header_image_format(header), "TIFF"
+                    )
+                    inspected = normalize_book.inspect_encoded_image(source)
+                    decoded = normalize_book.read_gray(source)
 
-            self.assertEqual(decoded.dtype, np.dtype(np.uint16))
-            self.assertEqual(int(decoded[0, 0]), 65535)
-            self.assertEqual(int(decoded[60, 52]), 0)
+                self.assertIsNotNone(inspected)
+                assert inspected is not None
+                self.assertEqual(inspected.detected_format, "TIFF")
+                self.assertEqual(inspected.frame_count, 1)
+                self.assertEqual(
+                    (inspected.width, inspected.height), (11, 7)
+                )
+                self.assertEqual(
+                    inspected.grayscale_bytes_per_pixel,
+                    2 if bits == 16 else 1,
+                )
+                self.assertEqual(decoded.dtype, np.dtype(dtype))
+                self.assertEqual(decoded.shape, image.shape)
+                np.testing.assert_array_equal(decoded, image)
+
+    def test_bigtiff_header_requires_offset_size_and_reserved_fields(self) -> None:
+        source = self.input / "page_001.payload"
+        image = np.arange(35, dtype=np.uint8).reshape(5, 7)
+        write_tifffile_grayscale(
+            source, image, 8, bigtiff=True, byte_order="<"
+        )
+        valid = bytearray(source.read_bytes())
+
+        bad_offset_size = valid.copy()
+        bad_offset_size[4:6] = struct.pack("<H", 4)
+        bad_reserved = valid.copy()
+        bad_reserved[6:8] = struct.pack("<H", 1)
+        self.assertIsNone(
+            normalize_book.tiff_header_byte_order(bytes(bad_offset_size))
+        )
+        self.assertIsNone(
+            normalize_book.tiff_header_byte_order(bytes(bad_reserved))
+        )
+        self.assertFalse(
+            normalize_book.has_image_container_signature(bytes(bad_offset_size))
+        )
+        self.assertFalse(
+            normalize_book.has_image_container_signature(bytes(bad_reserved))
+        )
+
+    def test_signed_bigtiff_fallback_is_rejected(self) -> None:
+        source = self.input / "page_001.tiff"
+        normalize_book.tifffile.imwrite(
+            source,
+            np.arange(35, dtype=np.int8).reshape(5, 7),
+            bigtiff=True,
+            byteorder=">",
+            photometric="minisblack",
+            metadata=None,
+        )
+
+        with self.assertRaisesRegex(
+            ValueError, "TIFF fallback requires unsigned single-channel"
+        ):
+            normalize_book.read_gray(source)
+
+    def test_jpeg2000_tiff_fallback_decodes_and_applies_orientation_once(
+        self,
+    ) -> None:
+        image = (
+            np.arange(9 * 13, dtype=np.uint16).reshape(9, 13) * 2
+        ).astype(np.uint8)
+        source = self.input / "page_001.tiff"
+        write_tifffile_grayscale(
+            source,
+            image,
+            8,
+            photometric=0,
+            compression=34712,
+            orientation=6,
+        )
+
+        with self.assertRaises(OSError):
+            with Image.open(source) as opened:
+                opened.load()
+        inspected = normalize_book.inspect_encoded_image(source)
+        decoded = normalize_book.read_gray(source)
+
+        self.assertIsNotNone(inspected)
+        assert inspected is not None
+        self.assertEqual((inspected.width, inspected.height), (9, 13))
+        self.assertEqual(decoded.dtype, np.dtype(np.uint8))
+        self.assertEqual(decoded.shape, (13, 9))
+        np.testing.assert_array_equal(
+            decoded, normalize_book.orient_tiff_array(image, 6)
+        )
+
+    def test_corrupt_jpeg2000_tiff_fails_cleanly_without_output(self) -> None:
+        source = self.input / "page_001.tiff"
+        write_tifffile_grayscale(
+            source,
+            np.arange(64 * 64, dtype=np.uint8).reshape(64, 64),
+            8,
+            compression=34712,
+        )
+        with normalize_book.tifffile.TiffFile(source) as tiff:
+            offset = tiff.pages[0].dataoffsets[0]
+            byte_count = tiff.pages[0].databytecounts[0]
+        encoded = source.read_bytes()
+        source.write_bytes(encoded[: offset + byte_count // 2])
+
+        with self.assertRaises(ValueError) as raised:
+            normalize_book.read_gray(source)
+        self.assertEqual(str(raised.exception), f"cannot decode image: {source}")
+        self.assertIsInstance(raised.exception.__cause__, RuntimeError)
+
+        output = self.root / "output"
+        result = self.run_cli(self.input, output, "--auto-canvas")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot decode image", result.stderr)
+        self.assertIn(source.name, result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertEqual(result.stdout, "")
+        self.assertFalse(output.exists())
+
+    def test_tiff_fallback_checks_working_memory_before_decoder(self) -> None:
+        source = self.input / "page_001.tiff"
+        write_tifffile_grayscale(
+            source, np.arange(35, dtype=np.uint8).reshape(5, 7), 8
+        )
+
+        with mock.patch.object(
+            normalize_book, "MAX_CANVAS_WORKING_BYTES", 1
+        ), mock.patch.object(
+            normalize_book.tifffile.TiffPage,
+            "asarray",
+            side_effect=AssertionError("decoder must not run"),
+        ) as decode, self.assertRaisesRegex(
+            ValueError, "working-memory budget exceeded before decode"
+        ):
+            normalize_book.decode_tiff_grayscale_fallback(
+                source, normalize_book.read_bounded_header(source)
+            )
+        decode.assert_not_called()
+
+    def test_tiff_fallback_rejects_decoder_raster_disagreement(self) -> None:
+        source = self.input / "page_001.tiff"
+        write_white_is_zero_tiff(
+            source, np.ones((5, 8), dtype=np.uint16), 1, photometric=1
+        )
+        invalid_rasters = [
+            np.zeros((4, 8), dtype=np.bool_),
+            np.zeros((5, 8), dtype=np.uint16),
+            np.full((5, 8), 2, dtype=np.uint8),
+        ]
+
+        for raster in invalid_rasters:
+            with (
+                self.subTest(shape=raster.shape, dtype=raster.dtype),
+                mock.patch.object(
+                    normalize_book.tifffile.TiffPage,
+                    "asarray",
+                    return_value=raster,
+                ),
+                self.assertRaisesRegex(ValueError, "unexpected raster"),
+            ):
+                normalize_book.decode_tiff_grayscale_fallback(
+                    source, normalize_book.read_bounded_header(source)
+                )
+
+    def test_tiff_fallback_does_not_normalize_project_type_errors(self) -> None:
+        source = self.input / "page_001.tiff"
+        write_tifffile_grayscale(
+            source, np.arange(35, dtype=np.uint8).reshape(5, 7), 8
+        )
+
+        with mock.patch.object(
+            normalize_book,
+            "orient_tiff_array",
+            side_effect=TypeError("project type error"),
+        ), self.assertRaisesRegex(TypeError, "project type error"):
+            normalize_book.decode_tiff_grayscale_fallback(
+                source, normalize_book.read_bounded_header(source)
+            )
 
     def test_non_square_16_bit_tiff_orientations_5_to_8_use_display_size(self) -> None:
         image = np.arange(80 * 120, dtype=np.uint16).reshape(80, 120)
@@ -1394,7 +1654,7 @@ class NormalizeBookTests(unittest.TestCase):
                 (fallback_header.width, fallback_header.height), (80, 120)
             )
 
-            fallback = normalize_book.decode_tiff_uint16_fallback(
+            fallback = normalize_book.decode_tiff_grayscale_fallback(
                 source.read_bytes(), source
             )
             np.testing.assert_array_equal(
@@ -1645,7 +1905,7 @@ class NormalizeBookTests(unittest.TestCase):
         )
 
         with self.assertRaises(ValueError) as raised:
-            normalize_book.decode_tiff_uint16_fallback(
+            normalize_book.decode_tiff_grayscale_fallback(
                 complex_integer,
                 normalize_book.read_bounded_header(complex_integer),
             )

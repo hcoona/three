@@ -117,6 +117,25 @@ def read_bounded_header(path: Path) -> bytes:
         return stream.read(INVENTORY_HEADER_BYTES)
 
 
+def tiff_header_byte_order(header: bytes) -> str | None:
+    if len(header) < 4:
+        return None
+    byte_order = {b"II": "<", b"MM": ">"}.get(header[:2])
+    if byte_order is None:
+        return None
+    order_name = "little" if byte_order == "<" else "big"
+    version = int.from_bytes(header[2:4], order_name)
+    if version == 42:
+        return byte_order
+    if version != 43 or len(header) < 8:
+        return None
+    offset_size = int.from_bytes(header[4:6], order_name)
+    reserved = int.from_bytes(header[6:8], order_name)
+    if offset_size != 8 or reserved != 0:
+        return None
+    return byte_order
+
+
 def header_image_format(header: bytes) -> str | None:
     if not header:
         return None
@@ -128,7 +147,7 @@ def header_image_format(header: bytes) -> str | None:
     except (Image.DecompressionBombWarning, Image.DecompressionBombError) as error:
         raise ValueError("source raster exceeds Pillow's safe pixel limit") from error
     except (UnidentifiedImageError, OSError):
-        if header[:4] in {b"II*\x00", b"MM\x00*"}:
+        if tiff_header_byte_order(header) is not None:
             return "TIFF"
         return None
 
@@ -136,7 +155,8 @@ def header_image_format(header: bytes) -> str | None:
 def has_image_container_signature(header: bytes) -> bool:
     return (
         header.startswith((b"\xff\xd8\xff", b"\x89PNG\r\n\x1a\n", b"BM"))
-        or header[:4] in {b"II*\x00", b"MM\x00*", b"GIF8"}
+        or tiff_header_byte_order(header) is not None
+        or header[:4] == b"GIF8"
         or (
             len(header) >= 12
             and header[:4] == b"RIFF"
@@ -401,7 +421,8 @@ def inspect_encoded_image(
             f"source raster exceeds Pillow's safe pixel limit: {path}"
         ) from error
     except (UnidentifiedImageError, OSError):
-        if header[:4] in {b"II*\x00", b"MM\x00*"}:
+        byte_order = tiff_header_byte_order(header)
+        if byte_order is not None:
             try:
                 try:
                     tiff = tifffile.TiffFile(path)
@@ -410,6 +431,11 @@ def inspect_encoded_image(
                         f"cannot inspect TIFF metadata: {path}"
                     ) from error
                 with tiff:
+                    if tiff.byteorder != byte_order:
+                        raise ValueError(
+                            "TIFF metadata disagrees with the bounded header: "
+                            f"{path}"
+                        )
                     page_count = len(tiff.pages)
                     if page_count == 0:
                         raise ValueError(f"TIFF contains no image frames: {path}")
@@ -635,36 +661,60 @@ def orient_tiff_array(values: np.ndarray, orientation: int) -> np.ndarray:
     return np.ascontiguousarray(operations[orientation](values))
 
 
-def decode_tiff_uint16_fallback(
+def decode_tiff_grayscale_fallback(
     source: bytes | Path, path_or_header: Path | bytes
 ) -> np.ndarray:
     if isinstance(source, bytes):
         path = path_or_header
         if not isinstance(path, Path):
             raise TypeError("TIFF byte fallback requires its source path")
-        header = source[:4]
+        header = source[:8]
+        encoded_bytes = len(source)
         tiff_source: object = io.BytesIO(source)
     else:
         path = source
         if not isinstance(path_or_header, bytes):
             raise TypeError("TIFF path fallback requires its bounded header")
         header = path_or_header
-        tiff_source = path
-    byte_order = {b"II": "<", b"MM": ">"}.get(header[:2])
-    if byte_order is None:
-        raise ValueError(f"invalid TIFF byte-order marker: {path}")
-    try:
         try:
-            tiff = tifffile.TiffFile(tiff_source)
-        except TypeError as error:
+            encoded_bytes = path.stat().st_size
+        except OSError as error:
             raise ValueError(f"cannot decode image: {path}") from error
+        tiff_source = path
+    if encoded_bytes > MAX_IMAGE_FILE_BYTES:
+        raise ValueError(
+            f"image candidate exceeds {MAX_IMAGE_FILE_BYTES} byte file budget: {path}"
+        )
+    byte_order = tiff_header_byte_order(header)
+    if byte_order is None:
+        raise ValueError(f"invalid TIFF header: {path}")
+    try:
+        tiff = tifffile.TiffFile(tiff_source)
+    except (tifffile.TiffFileError, OSError, TypeError) as error:
+        raise ValueError(f"cannot decode image: {path}") from error
+    try:
         with tiff:
             if tiff.byteorder != byte_order or len(tiff.pages) != 1:
                 raise ValueError(
                     f"TIFF fallback metadata disagrees with the container: {path}"
                 )
             page = tiff.pages[0]
-            shape = tuple(int(value) for value in page.shape)
+            try:
+                shape = tuple(operator.index(value) for value in page.shape)
+                dtype = np.dtype(page.dtype)
+                bit_depth = operator.index(page.bitspersample)
+                samples_per_pixel = operator.index(page.samplesperpixel)
+                sample_format = operator.index(page.sampleformat)
+                photometric = operator.index(page.photometric)
+                fill_order = operator.index(page.fillorder)
+                orientation_tag = page.tags.get(274)
+                orientation = operator.index(
+                    orientation_tag.value if orientation_tag else 1
+                )
+            except (TypeError, ValueError, OverflowError) as error:
+                raise ValueError(
+                    f"invalid TIFF fallback metadata: {path}"
+                ) from error
             height, width = shape if len(shape) == 2 else (0, 0)
             pixel_count = width * height
             if (
@@ -674,36 +724,106 @@ def decode_tiff_uint16_fallback(
                 raise Image.DecompressionBombError(
                     f"TIFF raster size {pixel_count} exceeds the safe limit"
                 )
-            orientation_tag = page.tags.get(274)
-            orientation = int(orientation_tag.value) if orientation_tag else 1
+            valid_dtype = (
+                bit_depth == 1
+                and dtype.kind in {"b", "u"}
+                and dtype.itemsize == 1
+            ) or (
+                bit_depth == 8
+                and dtype.kind == "u"
+                and dtype.itemsize == 1
+            ) or (
+                bit_depth == 16
+                and dtype.kind == "u"
+                and dtype.itemsize == 2
+            )
             if (
                 width <= 0
                 or height <= 0
-                or page.dtype.kind != "u"
-                or page.dtype.itemsize != 2
-                or int(page.bitspersample) != 16
-                or int(page.samplesperpixel) != 1
-                or int(page.sampleformat) != 1
-                or int(page.photometric) not in (0, 1)
-                or int(page.fillorder) not in (1, 2)
+                or dtype.fields is not None
+                or dtype.subdtype is not None
+                or not valid_dtype
+                or bit_depth not in (1, 8, 16)
+                or samples_per_pixel != 1
+                or sample_format != 1
+                or photometric not in (0, 1)
+                or fill_order not in (1, 2)
+                or orientation not in range(1, 9)
                 or bool(page.extrasamples)
             ):
                 raise ValueError(
-                    "TIFF fallback requires unsigned 16-bit single-channel "
-                    f"FillOrder=1/2 WhiteIsZero/BlackIsZero data: {path}"
+                    "TIFF fallback requires unsigned single-channel "
+                    "FillOrder=1/2 WhiteIsZero/BlackIsZero data at 1, 8, or "
+                    f"16 bits: {path}"
                 )
-            values = page.asarray()
-            photometric = int(page.photometric)
+            display_width, display_height = width, height
+            if orientation in {5, 6, 7, 8}:
+                display_width, display_height = height, width
+            validate_header_dimensions(path, display_width, display_height)
+            header_info = EncodedImageHeader(
+                "TIFF",
+                1,
+                display_width,
+                display_height,
+                2 if bit_depth == 16 else 1,
+                2 if bit_depth == 16 else 1,
+                10 if bit_depth == 16 else 5,
+                encoded_bytes,
+            )
+            validate_header_processing_memory(
+                path, header_info, display_width, display_height
+            )
+            try:
+                values = page.asarray()
+            except (
+                tifffile.TiffFileError,
+                OSError,
+                RuntimeError,
+                TypeError,
+                ValueError,
+            ) as error:
+                raise ValueError(f"cannot decode image: {path}") from error
     except (tifffile.TiffFileError, OSError) as error:
         raise ValueError(f"cannot decode image: {path}") from error
 
-    if values.shape != (height, width) or values.dtype.kind != "u":
+    decoded = np.asarray(values)
+    valid_decoded_dtype = (
+        bit_depth == 1
+        and decoded.dtype.kind in {"b", "u"}
+        and decoded.dtype.itemsize == 1
+    ) or (
+        bit_depth == 8
+        and decoded.dtype.kind == "u"
+        and decoded.dtype.itemsize == 1
+    ) or (
+        bit_depth == 16
+        and decoded.dtype.kind == "u"
+        and decoded.dtype.itemsize == 2
+    )
+    maximum = (1 << bit_depth) - 1
+    if (
+        decoded.shape != (height, width)
+        or not valid_decoded_dtype
+        or (
+            decoded.size
+            and (
+                int(decoded.min()) < 0
+                or int(decoded.max()) > maximum
+            )
+        )
+    ):
         raise ValueError(
             f"TIFF fallback decoder returned an unexpected raster: {path}"
         )
-    gray = np.asarray(values, dtype=np.dtype("=u2")).copy()
+    if bit_depth == 16:
+        gray = np.asarray(decoded, dtype=np.dtype("=u2")).copy()
+    else:
+        gray = np.asarray(decoded, dtype=np.uint8).copy()
+        if bit_depth == 1:
+            gray *= 255
+            maximum = 255
     if photometric == 0:
-        gray = np.iinfo(np.uint16).max - gray
+        gray = maximum - gray
     return orient_tiff_array(gray, orientation)
 
 
@@ -765,24 +885,21 @@ def read_gray(path: Path) -> np.ndarray:
             except OSError:
                 if (
                     container_format == "TIFF"
-                    and tiff_tag_values(image, 258, 1) == (16,)
-                    and tiff_tag_values(image, 339, 1) == (1,)
-                    and tiff_tag_values(image, 277, len(image.getbands())) == (1,)
-                    and tiff_tag_values(image, 266, 1) == (2,)
+                    and tiff_header_byte_order(header) is not None
                 ):
-                    return decode_tiff_uint16_fallback(path, header)
+                    return decode_tiff_grayscale_fallback(path, header)
                 raise
     except (Image.DecompressionBombWarning, Image.DecompressionBombError) as error:
         raise ValueError(
             f"source raster exceeds Pillow's safe pixel limit: {path}"
         ) from error
     except UnidentifiedImageError as error:
-        if header[:4] in {b"II*\x00", b"MM\x00*"}:
-            return decode_tiff_uint16_fallback(path, header)
+        if tiff_header_byte_order(header) is not None:
+            return decode_tiff_grayscale_fallback(path, header)
         raise ValueError(f"cannot decode image: {path}") from error
     except OSError as error:
-        if header[:4] in {b"II*\x00", b"MM\x00*"}:
-            return decode_tiff_uint16_fallback(path, header)
+        if tiff_header_byte_order(header) is not None:
+            return decode_tiff_grayscale_fallback(path, header)
         raise ValueError(f"cannot decode image: {path}") from error
 
 

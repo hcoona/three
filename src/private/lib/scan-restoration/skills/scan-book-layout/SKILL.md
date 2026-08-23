@@ -144,11 +144,12 @@ rather than overwrite any prior directory, report, or file.
   1-, 8-, and 16-bit grayscale; SampleFormat is validated at every bit depth, and
   signed or floating-point TIFF samples are rejected before conversion.
   WhiteIsZero samples are converted to the normal black-zero working
-  representation exactly once before edge analysis. Valid unsigned 16-bit
-  FillOrder 2 TIFFs use the pinned tifffile/imagecodecs fallback when Pillow
+  representation exactly once before edge analysis. Valid unsigned 1-, 8-, and
+  16-bit grayscale TIFFs use the pinned tifffile/imagecodecs fallback when Pillow
   cannot decode them; fallback metadata, raster size, depth, sample format,
   channel count, photometric, fill order, and orientation are validated before
-  preserving the native 16-bit samples. EXIF orientation is
+  normalizing 1-bit samples to 8-bit and preserving native 8- or 16-bit samples.
+  EXIF orientation is
   applied exactly once before edge analysis, so
   "right edge" always means the displayed page's physical right edge. Supported
   PNG/WebP alpha and PNG transparency are composited onto white before grayscale
