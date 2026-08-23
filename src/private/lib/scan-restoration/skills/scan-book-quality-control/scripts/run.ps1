@@ -260,6 +260,9 @@ if (-not (Test-Path -LiteralPath $target -PathType Leaf) -or
 $miseCommand = Get-Command mise -CommandType Application -ErrorAction Stop |
     Select-Object -First 1
 $mise = $miseCommand.Source
+$miseExecArguments = @(
+    "--no-config", "exec", "python@$requiredPython", "--"
+)
 $env:MISE_CONFIG_FILE = "NUL"
 $env:MISE_GLOBAL_CONFIG_FILE = "NUL"
 $env:MISE_SYSTEM_CONFIG_FILE = "NUL"
@@ -268,10 +271,9 @@ Reset-PipEnvironment
 
 try {
     $miseResult = Invoke-ProcessWithTimeout -FilePath $mise `
-        -ArgumentList @(
-        "exec", "python@$requiredPython", "--",
-        "python", "-I", "-m", "venv", $runtime
-    ) -TimeoutSeconds $MiseTimeoutSeconds `
+        -ArgumentList ($miseExecArguments + @(
+            "python", "-I", "-m", "venv", $runtime
+        )) -TimeoutSeconds $MiseTimeoutSeconds `
         -Description "mise runtime creation"
     if ($miseResult.ExitCode -ne 0) {
         throw "mise could not create the fresh ephemeral Python runtime."

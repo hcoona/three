@@ -3658,9 +3658,38 @@ class ValidateBookTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn('Programs\\AzureAuth\\0.9.5\\azureauth.exe', runner)
         self.assertIn('".runtime-" + [Guid]::NewGuid()', runner)
-        self.assertIn('"exec", "python@$requiredPython"', runner)
         self.assertIn('$requiredPython = "3.12.11"', runner)
         self.assertIn("MISE_IGNORED_CONFIG_PATHS", runner)
+        self.assertRegex(
+            runner,
+            (
+                r"(?s)\$miseExecArguments\s*=\s*@\(\s*"
+                r'"--no-config"\s*,\s*"exec"\s*,\s*'
+                r'"python@\$requiredPython"\s*,\s*"--"\s*\)'
+            ),
+        )
+        runtime_creation = runner[
+            runner.index("$miseResult =") : runner.index(
+                "if ($miseResult.ExitCode"
+            )
+        ]
+        self.assertRegex(
+            runtime_creation,
+            (
+                r"(?s)-ArgumentList\s*\(\s*\$miseExecArguments\s*\+\s*@\(\s*"
+                r'"python"\s*,\s*"-I"\s*,\s*"-m"\s*,\s*"venv"\s*,\s*'
+                r"\$runtime\s*\)\s*\)"
+            ),
+        )
+        version_verification = runner[
+            runner.index("$versionResult =") : runner.index(
+                "if ($versionResult.ExitCode"
+            )
+        ]
+        self.assertRegex(
+            version_verification,
+            r'(?s)-ArgumentList\s*@\(\s*"-I"\s*,\s*"-B"\s*,\s*"-c"\s*,',
+        )
         self.assertIn("--require-hashes", runner)
         self.assertIn("--no-cache-dir", runner)
         self.assertIn("--no-deps", runner)
@@ -3676,6 +3705,31 @@ class ValidateBookTests(unittest.TestCase):
         self.assertIn("-EnvironmentVariables @{ PIP_INDEX_URL = $luciaIndex }", runner)
         self.assertNotIn("$env:PIP_INDEX_URL =", runner)
         self.assertIn("$startInfo.EnvironmentVariables.Remove", runner)
+        dependency_verification = runner[
+            runner.index("$dependencyResult =") : runner.index(
+                "if ($dependencyResult.ExitCode"
+            )
+        ]
+        self.assertRegex(
+            dependency_verification,
+            (
+                r"(?s)-ArgumentList\s*@\(\s*"
+                r'"-I"\s*,\s*"-B"\s*,\s*"-c"\s*,\s*\$verifyDependencies\s*\)'
+            ),
+        )
+        target_invocation = runner[
+            runner.index("$validatorResult =") : runner.index(
+                "if ($validatorResult.StdOut)"
+            )
+        ]
+        self.assertRegex(
+            target_invocation,
+            (
+                r"(?s)-ArgumentList\s*\(\s*@\(\s*"
+                r'"-I"\s*,\s*"-B"\s*,\s*\$target\s*\)\s*\+\s*'
+                r"\$ScriptArgs\s*\)"
+            ),
+        )
         self.assertIn(
             'Join-Path $env:SystemRoot "System32\\taskkill.exe"', runner
         )
