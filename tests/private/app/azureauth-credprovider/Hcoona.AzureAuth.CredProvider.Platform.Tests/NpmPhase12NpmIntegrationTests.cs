@@ -6,72 +6,100 @@ using Xunit;
 namespace Hcoona.AzureAuth.CredProvider.Platform.Tests;
 
 #pragma warning disable CA1707
+[Collection(NpmPhase12NpmIntegrationTestCollectionDefinition.Name)]
 public sealed class NpmPhase12NpmIntegrationTests
 {
+    private const int FixtureCleanupAttemptCount = 5;
+    private static readonly TimeSpan FixtureCleanupRetryDelay = TimeSpan.FromMilliseconds(100);
+
     [Fact]
     public void ResolveWorkspaceAsync_UsesRealNpmPrefix_ForWorkspaceMember()
     {
         Assert.SkipUnless(IsNpmInstalled(), "Real npm integration requires npm on PATH.");
-        using NpmPrefixFixture fixture = NpmPrefixFixture.Create(
+        NpmPrefixFixture fixture = NpmPrefixFixture.Create(
             "packages/*",
             "packages/member",
             "member"
         );
+        bool completedSuccessfully = false;
+        try
+        {
+            NpmPhase12RegistryDeclaration declaration = ResolveDeclaration(fixture);
 
-        NpmPhase12RegistryDeclaration declaration = ResolveDeclaration(fixture);
-
-        Assert.Equal(Path.Combine(fixture.RootPath, ".npmrc"), declaration.SourcePath);
-        Assert.Equal("@root:registry", declaration.Key);
-        Assert.Equal(
-            "https://pkgs.dev.azure.com/org/_packaging/root/npm/registry/",
-            declaration.RegistryUrl.AbsoluteUri
-        );
-        AssertNpmPrefixInvocation(fixture);
+            Assert.Equal(Path.Combine(fixture.RootPath, ".npmrc"), declaration.SourcePath);
+            Assert.Equal("@root:registry", declaration.Key);
+            Assert.Equal(
+                "https://pkgs.dev.azure.com/org/_packaging/root/npm/registry/",
+                declaration.RegistryUrl.AbsoluteUri
+            );
+            AssertNpmPrefixInvocation(fixture);
+            completedSuccessfully = true;
+        }
+        finally
+        {
+            CompleteFixtureCleanup(fixture, completedSuccessfully);
+        }
     }
 
     [Fact]
     public void ResolveWorkspaceAsync_UsesRealNpmPrefix_ForNonWorkspacePackage()
     {
         Assert.SkipUnless(IsNpmInstalled(), "Real npm integration requires npm on PATH.");
-        using NpmPrefixFixture fixture = NpmPrefixFixture.Create(
+        NpmPrefixFixture fixture = NpmPrefixFixture.Create(
             "packages/*",
             "tools/nonmember",
             "nonmember"
         );
+        bool completedSuccessfully = false;
+        try
+        {
+            NpmPhase12RegistryDeclaration declaration = ResolveDeclaration(fixture);
 
-        NpmPhase12RegistryDeclaration declaration = ResolveDeclaration(fixture);
-
-        Assert.Equal(
-            Path.Combine(fixture.InvocationPath, ".npmrc"),
-            declaration.SourcePath
-        );
-        Assert.Equal("@nonmember:registry", declaration.Key);
-        Assert.Equal(
-            "https://pkgs.dev.azure.com/org/_packaging/nonmember/npm/registry/",
-            declaration.RegistryUrl.AbsoluteUri
-        );
-        AssertNpmPrefixInvocation(fixture);
+            Assert.Equal(
+                Path.Combine(fixture.InvocationPath, ".npmrc"),
+                declaration.SourcePath
+            );
+            Assert.Equal("@nonmember:registry", declaration.Key);
+            Assert.Equal(
+                "https://pkgs.dev.azure.com/org/_packaging/nonmember/npm/registry/",
+                declaration.RegistryUrl.AbsoluteUri
+            );
+            AssertNpmPrefixInvocation(fixture);
+            completedSuccessfully = true;
+        }
+        finally
+        {
+            CompleteFixtureCleanup(fixture, completedSuccessfully);
+        }
     }
 
     [Fact]
     public void ResolveWorkspaceAsync_UsesRealNpmPrefix_ForCharacterClassWorkspaceMember()
     {
         Assert.SkipUnless(IsNpmInstalled(), "Real npm integration requires npm on PATH.");
-        using NpmPrefixFixture fixture = NpmPrefixFixture.Create(
+        NpmPrefixFixture fixture = NpmPrefixFixture.Create(
             "packages/[a-z]*",
             "packages/apple",
             "apple"
         );
+        bool completedSuccessfully = false;
+        try
+        {
+            NpmPhase12RegistryDeclaration declaration = ResolveDeclaration(fixture);
 
-        NpmPhase12RegistryDeclaration declaration = ResolveDeclaration(fixture);
-
-        Assert.Equal(Path.Combine(fixture.RootPath, ".npmrc"), declaration.SourcePath);
-        Assert.Equal("@root:registry", declaration.Key);
-        Assert.Equal(
-            "https://pkgs.dev.azure.com/org/_packaging/root/npm/registry/",
-            declaration.RegistryUrl.AbsoluteUri
-        );
-        AssertNpmPrefixInvocation(fixture);
+            Assert.Equal(Path.Combine(fixture.RootPath, ".npmrc"), declaration.SourcePath);
+            Assert.Equal("@root:registry", declaration.Key);
+            Assert.Equal(
+                "https://pkgs.dev.azure.com/org/_packaging/root/npm/registry/",
+                declaration.RegistryUrl.AbsoluteUri
+            );
+            AssertNpmPrefixInvocation(fixture);
+            completedSuccessfully = true;
+        }
+        finally
+        {
+            CompleteFixtureCleanup(fixture, completedSuccessfully);
+        }
     }
 
     [Fact]
@@ -82,21 +110,29 @@ public sealed class NpmPhase12NpmIntegrationTests
             "Native installed npm smoke requires Windows."
         );
         Assert.SkipUnless(IsNpmInstalled(), "Native installed npm smoke requires npm on PATH.");
-        using NpmPrefixFixture fixture = NpmPrefixFixture.Create(
+        NpmPrefixFixture fixture = NpmPrefixFixture.Create(
             "packages/*",
             "packages/member",
             "member"
         );
+        bool completedSuccessfully = false;
+        try
+        {
+            NpmPhase12RegistryDeclaration declaration = ResolveDeclaration(fixture);
 
-        NpmPhase12RegistryDeclaration declaration = ResolveDeclaration(fixture);
-
-        Assert.Equal(Path.Combine(fixture.RootPath, ".npmrc"), declaration.SourcePath);
-        Assert.Equal("@root:registry", declaration.Key);
-        Assert.Equal(
-            "https://pkgs.dev.azure.com/org/_packaging/root/npm/registry/",
-            declaration.RegistryUrl.AbsoluteUri
-        );
-        AssertNpmPrefixInvocation(fixture);
+            Assert.Equal(Path.Combine(fixture.RootPath, ".npmrc"), declaration.SourcePath);
+            Assert.Equal("@root:registry", declaration.Key);
+            Assert.Equal(
+                "https://pkgs.dev.azure.com/org/_packaging/root/npm/registry/",
+                declaration.RegistryUrl.AbsoluteUri
+            );
+            AssertNpmPrefixInvocation(fixture);
+            completedSuccessfully = true;
+        }
+        finally
+        {
+            CompleteFixtureCleanup(fixture, completedSuccessfully);
+        }
     }
 
     private static NpmPhase12RegistryDeclaration ResolveDeclaration(
@@ -150,6 +186,55 @@ public sealed class NpmPhase12NpmIntegrationTests
         Assert.Equal(TimeSpan.FromSeconds(10), startSpec.Timeout);
         Assert.Equal(4096, startSpec.OutputCaptureOptions.StandardOutputByteLimit);
         Assert.Equal(4096, startSpec.OutputCaptureOptions.StandardErrorByteLimit);
+    }
+
+    private static void CompleteFixtureCleanup(
+        NpmPrefixFixture fixture,
+        bool completedSuccessfully
+    )
+    {
+        Exception? cleanupFailure = TryDeleteFixtureDirectory(fixture.RootPath);
+        if (cleanupFailure is null)
+        {
+            return;
+        }
+
+        const string message = "npm prefix fixture cleanup failed.";
+        if (completedSuccessfully)
+        {
+            throw new InvalidOperationException(message, cleanupFailure);
+        }
+
+        TestContext.Current.AddWarning(message + Environment.NewLine + cleanupFailure);
+    }
+
+    private static Exception? TryDeleteFixtureDirectory(string path)
+    {
+        Exception? cleanupFailure = null;
+        for (var attempt = 1; attempt <= FixtureCleanupAttemptCount; attempt++)
+        {
+            try
+            {
+                Directory.Delete(path, recursive: true);
+                return null;
+            }
+            catch (DirectoryNotFoundException)
+            {
+                return null;
+            }
+            catch (Exception exception)
+                when (exception is IOException or UnauthorizedAccessException)
+            {
+                cleanupFailure = exception;
+            }
+
+            if (attempt < FixtureCleanupAttemptCount)
+            {
+                Thread.Sleep(FixtureCleanupRetryDelay);
+            }
+        }
+
+        return cleanupFailure;
     }
 
     private static string RedactSessionStateIdentifier(string path)
@@ -282,7 +367,7 @@ public sealed class NpmPhase12NpmIntegrationTests
         }
     }
 
-    private sealed class NpmPrefixFixture : IDisposable
+    private sealed class NpmPrefixFixture
     {
         private NpmPrefixFixture(string rootPath, string invocationPath)
         {
@@ -351,14 +436,12 @@ public sealed class NpmPhase12NpmIntegrationTests
             fixture.ProcessRunner.ExpectedPrefixPath = fixture.ExpectedPrefixPath;
             return fixture;
         }
-
-        public void Dispose()
-        {
-            if (Directory.Exists(RootPath))
-            {
-                Directory.Delete(RootPath, recursive: true);
-            }
-        }
     }
+}
+
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class NpmPhase12NpmIntegrationTestCollectionDefinition
+{
+    public const string Name = "npm integration";
 }
 #pragma warning restore CA1707
