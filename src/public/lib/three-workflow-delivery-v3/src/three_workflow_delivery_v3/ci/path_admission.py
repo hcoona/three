@@ -43,12 +43,7 @@ CI_CONSUMER_POLICY_SURFACE_PATTERNS = tuple(
 
 
 def _matches(path: str, pattern: str) -> bool:
-    candidate = PurePosixPath(path)
-    if pattern.startswith("**/"):
-        return candidate.match(pattern) or candidate.match(pattern[3:])
-    return len(candidate.parts) == len(
-        PurePosixPath(pattern).parts
-    ) and candidate.match(pattern)
+    return PurePosixPath(path).full_match(pattern)
 
 
 def is_consumer_policy_surface_path(path: str) -> bool:
@@ -62,7 +57,7 @@ def is_consumer_policy_surface_path(path: str) -> bool:
 def is_repository_only_path(path: str) -> bool:
     """Admit a classified path for root repository conformance only."""
     if path.startswith(".github/workflows/"):
-        return path.endswith((".yml", ".yaml"))
+        return path.endswith((".md", ".yml", ".yaml"))
     if path.startswith(".github/"):
         return True
     return (

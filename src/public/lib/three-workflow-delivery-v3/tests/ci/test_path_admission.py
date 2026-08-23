@@ -32,7 +32,7 @@ def _representative_path(pattern: str) -> str:
     path = pattern.removeprefix("**/")
     if pattern.startswith("**/"):
         path = f"nested/{path}"
-    return path.replace("*", "consumer")
+    return path.replace("**", "team/consumer").replace("*", "consumer")
 
 
 def test_package_admission_has_exhaustive_consumer_policy_catalog_parity() -> (
@@ -59,3 +59,33 @@ def test_nested_gitattributes_is_not_invented_as_a_policy_surface() -> None:
     """Admit only the cataloged root .gitattributes policy surface."""
     assert is_consumer_policy_surface_path(".gitattributes")
     assert not is_consumer_policy_surface_path("nested/.gitattributes")
+
+
+def test_recursive_composite_action_pattern_matches_every_depth() -> None:
+    """Honor recursive catalog segments without weakening path anchoring."""
+    policy = _load_consumer_policy()
+    for path in (
+        ".github/actions/direct/action.yml",
+        ".github/actions/team/direct/action.yml",
+        ".github/actions/org/team/direct/action.yml",
+    ):
+        rule = policy.classify_dependency_surface(path)
+        assert rule is not None
+        assert rule.category == "composite-action"
+        assert is_consumer_policy_surface_path(path)
+        assert is_repository_only_path(path)
+
+
+def test_workflow_documentation_is_repository_only() -> None:
+    """Admit workflow documentation without admitting executable helpers."""
+    documentation = ".github/workflows/docs/DESIGN.md"
+    assert is_repository_only_path(documentation)
+    assert not is_consumer_policy_surface_path(documentation)
+    assert not is_repository_only_path(".github/workflows/helper.py")
+
+    for workflow in (
+        ".github/workflows/consumer.yml",
+        ".github/workflows/consumer.yaml",
+    ):
+        assert is_repository_only_path(workflow)
+        assert is_consumer_policy_surface_path(workflow)

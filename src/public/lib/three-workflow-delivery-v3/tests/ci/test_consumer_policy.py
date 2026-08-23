@@ -3460,7 +3460,7 @@ def test_scans_composite_action_default_through_environment(
 ) -> None:
     """Detect a direct composite default through input and env aliases."""
     repository, _ = _repository(tmp_path)
-    path = ".github/actions/direct/action.yml"
+    path = ".github/actions/team/direct/action.yml"
     _write(
         repository,
         path,

@@ -93,10 +93,7 @@ class ConsumerPolicyScanError(ValueError):
         super().__init__("; ".join(self.findings))
 
 def _matches(path: str, pattern: str) -> bool:
-    candidate = PurePosixPath(path)
-    if pattern.startswith("**/"):
-        return candidate.match(pattern) or candidate.match(pattern[3:])
-    return len(candidate.parts) == len(PurePosixPath(pattern).parts) and candidate.match(pattern)
+    return PurePosixPath(path).full_match(pattern)
 
 
 def classify_dependency_surface(path: str) -> DependencySurfaceRule | None:

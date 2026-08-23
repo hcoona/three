@@ -308,6 +308,7 @@ def test_repository_only_change_selects_root_hk(path: str) -> None:
             ("root-hk",),
         ),
         ("docs/wiki/log.md", ("root-hk",)),
+        (".github/workflows/REFACTOR_PLAN.md", ("root-hk",)),
         ("hk.pkl", ("root-hk",)),
         (
             "src/public/lib/three-workflow-delivery-v3/src/"
@@ -365,6 +366,11 @@ def test_manual_slice_validation_always_selects_complete_slice() -> None:
         (
             (SHA_A, SHA_B),
             ("src/private/app/unclassified/source.py",),
+            "changed path is unclassified",
+        ),
+        (
+            (SHA_A, SHA_B),
+            (".github/workflows/helper.py",),
             "changed path is unclassified",
         ),
     ],

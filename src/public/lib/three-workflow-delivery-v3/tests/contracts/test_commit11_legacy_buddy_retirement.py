@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import base64
 import fnmatch
 import hashlib
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -496,6 +498,72 @@ def test_release_orchestrator_rejects_buddy_before_v1_policy() -> None:
     assert run.index("has no compatibility route") < run.index(
         "release_orchestrate_policy_validate_inputs.sh"
     )
+
+
+@pytest.mark.parametrize(
+    ("script_name", "extra_environment"),
+    [
+        ("publish_node_gpr_idempotent.sh", {"OWNER": "hcoona"}),
+        ("publish_node_npmjs_idempotent.sh", {}),
+    ],
+)
+def test_node_publishers_hash_the_selected_tarball(
+    tmp_path: Path,
+    script_name: str,
+    extra_environment: dict[str, str],
+) -> None:
+    """Pass the exact tarball path to Node before querying the registry."""
+    tarball = tmp_path / "package with spaces.tgz"
+    content = b"reviewed package content"
+    tarball.write_bytes(content)
+    expected_integrity = "sha512-" + base64.b64encode(
+        hashlib.sha512(content).digest()
+    ).decode("ascii")
+
+    bin_directory = tmp_path / "bin"
+    bin_directory.mkdir()
+    publish_marker = tmp_path / "publish-called"
+    npm = bin_directory / "npm"
+    npm.write_text(
+        """#!/usr/bin/env bash
+set -Eeuo pipefail
+if [[ "${1:-}" == "view" ]]; then
+  printf '%s\\n' "${REMOTE_INTEGRITY}"
+  exit 0
+fi
+: >"${PUBLISH_MARKER}"
+exit 99
+""",
+        encoding="utf-8",
+    )
+    npm.chmod(0o755)
+
+    environment = {
+        **os.environ,
+        "PATH": f"{bin_directory}{os.pathsep}{os.environ['PATH']}",
+        "PROJECT": "example",
+        "VERSION": "1.2.3",
+        "DIST_TAG": "review",
+        "TARBALL": str(tarball),
+        "RUNNER_TEMP": str(tmp_path),
+        "REMOTE_INTEGRITY": expected_integrity,
+        "PUBLISH_MARKER": str(publish_marker),
+        **extra_environment,
+    }
+    result = subprocess.run(  # noqa: S603
+        [
+            "/usr/bin/bash",
+            str(REPO_ROOT / "eng/scripts" / script_name),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "integrity match" in result.stdout
+    assert not publish_marker.exists()
 
 
 def test_release_orchestrate_caller_completeness_is_official_only(
