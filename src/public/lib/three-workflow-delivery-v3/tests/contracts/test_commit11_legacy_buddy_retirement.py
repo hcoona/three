@@ -394,7 +394,7 @@ def test_production_v1_workflows_match_base_contract() -> None:
           mise link --force python@3.14 "$MISE_LINK_PYTHON"
           mise link --force ruby@3.3 "$MISE_LINK_RUBY"
 """
-    python_node_toolchain = b"""\
+    python_test_toolchain = b"""\
       - name: Set up PNPM
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
@@ -406,6 +406,12 @@ def test_production_v1_workflows_match_base_contract() -> None:
           node-version: '24.14.0'
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
+
+      - name: Set up mise and HK
+        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        with:
+          experimental: true
+          install_args: hk@1.53.0
 
       - name: Setup Python 3.14
 """
@@ -428,7 +434,7 @@ def test_production_v1_workflows_match_base_contract() -> None:
     assert ci_bytes.count(pinned_validation_node) == 1
     assert ci_bytes.count(capture_step) == 1
     assert ci_bytes.count(forced_links) == 1
-    assert ci_bytes.count(python_node_toolchain) == 1
+    assert ci_bytes.count(python_test_toolchain) == 1
     assert ci_bytes.count(python_dependencies) == 1
     reconstructed_base = (
         ci_bytes.replace(
@@ -447,7 +453,7 @@ def test_production_v1_workflows_match_base_contract() -> None:
             1,
         )
         .replace(
-            python_node_toolchain,
+            python_test_toolchain,
             python_setup_marker,
             1,
         )
