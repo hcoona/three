@@ -326,12 +326,31 @@ def test_renamed_and_indirect_compatibility_routes_are_detected(
 
 
 def test_production_v1_workflows_match_base_contract() -> None:
-    """Pin base bytes plus the exact CI validation toolchain correction."""
+    """Pin base bytes plus the exact CI toolchain corrections."""
     for relative_path, expected_digest in EXACT_BASE_WORKFLOW_SHA256.items():
         assert _sha256(REPO_ROOT / relative_path) == expected_digest
 
     ci_bytes = (WORKFLOWS / "ci.yml").read_bytes()
-    pinned_node = b"          node-version: '24.14.0'\n"
+    base_validation_node = b"""\
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Setup Python 3
+"""
+    pinned_validation_node = b"""\
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24.14.0'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Setup Python 3
+"""
     capture_step = b"""\
       - name: Capture setup tool paths
         shell: bash
@@ -375,13 +394,46 @@ def test_production_v1_workflows_match_base_contract() -> None:
           mise link --force python@3.14 "$MISE_LINK_PYTHON"
           mise link --force ruby@3.3 "$MISE_LINK_RUBY"
 """
-    assert ci_bytes.count(pinned_node) == 1
+    python_node_toolchain = b"""\
+      - name: Set up PNPM
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          version: 11.22.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24.14.0'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Setup Python 3.14
+"""
+    python_setup_marker = b"      - name: Setup Python 3.14\n"
+    base_python_dependencies = b"""\
+      - name: Install dependencies
+        run: |
+          set -Eeuo pipefail
+          dotnet tool restore
+          uv sync --frozen --all-packages
+"""
+    python_dependencies = b"""\
+      - name: Install dependencies
+        run: |
+          set -Eeuo pipefail
+          dotnet tool restore
+          pnpm install --frozen-lockfile
+          uv sync --frozen --all-packages
+"""
+    assert ci_bytes.count(pinned_validation_node) == 1
     assert ci_bytes.count(capture_step) == 1
     assert ci_bytes.count(forced_links) == 1
+    assert ci_bytes.count(python_node_toolchain) == 1
+    assert ci_bytes.count(python_dependencies) == 1
     reconstructed_base = (
         ci_bytes.replace(
-            pinned_node,
-            b"          node-version: 24\n",
+            pinned_validation_node,
+            base_validation_node,
             1,
         )
         .replace(
@@ -392,6 +444,16 @@ def test_production_v1_workflows_match_base_contract() -> None:
         .replace(
             capture_step,
             b"",
+            1,
+        )
+        .replace(
+            python_node_toolchain,
+            python_setup_marker,
+            1,
+        )
+        .replace(
+            python_dependencies,
+            base_python_dependencies,
             1,
         )
     )
