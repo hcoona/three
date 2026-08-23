@@ -403,7 +403,13 @@ def inspect_encoded_image(
     except (UnidentifiedImageError, OSError):
         if header[:4] in {b"II*\x00", b"MM\x00*"}:
             try:
-                with tifffile.TiffFile(path) as tiff:
+                try:
+                    tiff = tifffile.TiffFile(path)
+                except TypeError as error:
+                    raise ValueError(
+                        f"cannot inspect TIFF metadata: {path}"
+                    ) from error
+                with tiff:
                     page_count = len(tiff.pages)
                     if page_count == 0:
                         raise ValueError(f"TIFF contains no image frames: {path}")
@@ -648,7 +654,11 @@ def decode_tiff_uint16_fallback(
     if byte_order is None:
         raise ValueError(f"invalid TIFF byte-order marker: {path}")
     try:
-        with tifffile.TiffFile(tiff_source) as tiff:
+        try:
+            tiff = tifffile.TiffFile(tiff_source)
+        except TypeError as error:
+            raise ValueError(f"cannot decode image: {path}") from error
+        with tiff:
             if tiff.byteorder != byte_order or len(tiff.pages) != 1:
                 raise ValueError(
                     f"TIFF fallback metadata disagrees with the container: {path}"

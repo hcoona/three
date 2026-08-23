@@ -85,6 +85,22 @@ REQUIRED_REFERENCES = {
 }
 NAME_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
 REFERENCE_PATTERN = re.compile(r"/(scan-[a-z0-9-]+)\b")
+APM_TOP_LEVEL_KEY_PATTERN = re.compile(r"^([A-Za-z][A-Za-z0-9]*):(.*)$")
+APM_NESTED_KEY_PATTERN = re.compile(r"^  ([A-Za-z][A-Za-z0-9]*):(.*)$")
+APM_TOP_LEVEL_KEYS = frozenset(
+    {
+        "name",
+        "version",
+        "description",
+        "author",
+        "license",
+        "targets",
+        "dependencies",
+        "includes",
+        "devDependencies",
+        "scripts",
+    }
+)
 MIN_QUOTED_LENGTH = 2
 MIN_DESCRIPTION_LENGTH = 1
 MAX_DESCRIPTION_LENGTH = 1024
@@ -102,32 +118,160 @@ def unquote(value: str) -> str:
     return value
 
 
-def top_level_scalar(text: str, key: str) -> str | None:
-    """Read one scalar from the package's constrained YAML manifest."""
-    prefix = f"{key}:"
-    for line in text.splitlines():
-        if line.startswith(prefix):
-            return unquote(line.removeprefix(prefix).strip())
-    return None
+def add_apm_top_level_section(
+    line: str,
+    line_number: int,
+    sections: dict[str, list[str]],
+    errors: list[str],
+) -> str | None:
+    """Add one canonical top-level APM section and return its key."""
+    match = APM_TOP_LEVEL_KEY_PATTERN.fullmatch(line)
+    if match is None:
+        errors.append(
+            f"apm.yml line {line_number} has unsupported top-level syntax"
+        )
+        return None
+
+    key, value = match.groups()
+    if key not in APM_TOP_LEVEL_KEYS:
+        errors.append(f"apm.yml has unknown top-level key {key!r}")
+        return None
+    if key in sections:
+        errors.append(f"apm.yml has duplicate top-level key {key!r}")
+        return None
+
+    sections[key] = [value]
+    return key
 
 
-def top_level_list(text: str, key: str) -> tuple[str, ...]:
-    """Read one top-level string list from the constrained YAML manifest."""
-    lines = text.splitlines()
-    marker = f"{key}:"
-    try:
-        start = lines.index(marker) + 1
-    except ValueError:
-        return ()
+def parse_apm_sections(
+    text: str,
+    errors: list[str],
+) -> dict[str, tuple[str, ...]] | None:
+    """Split the canonical APM manifest into constrained top-level sections."""
+    sections: dict[str, list[str]] = {}
+    current_key: str | None = None
+    invalid = False
+
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        if "\t" in line:
+            errors.append(f"apm.yml line {line_number} must not contain tabs")
+            invalid = True
+            current_key = None
+            continue
+        if line.startswith(" "):
+            if current_key is None:
+                errors.append(
+                    f"apm.yml line {line_number} has unsupported indentation"
+                )
+                invalid = True
+            else:
+                sections[current_key].append(line)
+            continue
+
+        current_key = add_apm_top_level_section(
+            line,
+            line_number,
+            sections,
+            errors,
+        )
+        if current_key is None:
+            invalid = True
+
+    missing_keys = APM_TOP_LEVEL_KEYS.difference(sections)
+    if missing_keys:
+        errors.append(
+            "apm.yml is missing top-level keys: "
+            f"{', '.join(sorted(missing_keys))}"
+        )
+        invalid = True
+    if invalid:
+        return None
+    return {key: tuple(value) for key, value in sections.items()}
+
+
+def parse_apm_string(value: str) -> str | None:
+    """Parse one plain or simply quoted string without YAML extensions."""
+    if not value or value != value.strip():
+        return None
+    if value[0] not in {"'", '"'}:
+        if value[-1] in {"'", '"'}:
+            return None
+        return value
+    if len(value) < MIN_QUOTED_LENGTH or value[-1] != value[0]:
+        return None
+    inner = value[1:-1]
+    if value[0] in inner or "\\" in inner:
+        return None
+    return inner
+
+
+def parse_apm_scalar(section: tuple[str, ...]) -> str | None:
+    """Parse a section containing one inline string scalar."""
+    if len(section) != 1 or not section[0].startswith(" "):
+        return None
+    return parse_apm_string(section[0][1:])
+
+
+def parse_apm_list(section: tuple[str, ...]) -> tuple[str, ...] | None:
+    """Parse a section containing a canonical block string list."""
+    if not section or section[0]:
+        return None
 
     values: list[str] = []
-    for line in lines[start:]:
-        if line.startswith("  - "):
-            values.append(unquote(line.removeprefix("  - ").strip()))
-            continue
-        if line and not line.startswith(" "):
-            break
+    for line in section[1:]:
+        if not line.startswith("  - "):
+            return None
+        value = parse_apm_string(line.removeprefix("  - "))
+        if value is None:
+            return None
+        values.append(value)
     return tuple(values)
+
+
+def validate_apm_empty_list_mapping(
+    section_name: str,
+    section: tuple[str, ...],
+    expected_keys: tuple[str, ...],
+    errors: list[str],
+) -> None:
+    """Validate a canonical mapping whose values are empty block lists."""
+    if not section or section[0]:
+        errors.append(
+            f"apm.yml {section_name} must be a canonical block mapping"
+        )
+        return
+
+    expected = set(expected_keys)
+    actual: set[str] = set()
+    for line in section[1:]:
+        match = APM_NESTED_KEY_PATTERN.fullmatch(line)
+        if match is None:
+            errors.append(
+                f"apm.yml {section_name} has unsupported nested syntax"
+            )
+            continue
+        key, value = match.groups()
+        if key in actual:
+            errors.append(
+                f"apm.yml {section_name} has duplicate nested key {key!r}"
+            )
+        actual.add(key)
+        if key not in expected:
+            errors.append(
+                f"apm.yml {section_name} has unknown nested key {key!r}"
+            )
+        if value != " []":
+            errors.append(f"apm.yml {section_name}.{key} must be exactly []")
+
+    missing_keys = expected.difference(actual)
+    if missing_keys:
+        errors.append(
+            f"apm.yml {section_name} is missing nested keys: "
+            f"{', '.join(sorted(missing_keys))}"
+        )
 
 
 def parse_frontmatter(path: Path) -> tuple[dict[str, str], int]:
@@ -194,6 +338,10 @@ def validate_plugin_manifest(errors: list[str]) -> None:
 def validate_apm_manifest(errors: list[str]) -> None:
     """Validate the package APM manifest and deployable-content list."""
     text = (PACKAGE_ROOT / "apm.yml").read_text(encoding="utf-8")
+    sections = parse_apm_sections(text, errors)
+    if sections is None:
+        return
+
     expected_scalars = {
         "name": PACKAGE_NAME,
         "version": PACKAGE_VERSION,
@@ -202,28 +350,28 @@ def validate_apm_manifest(errors: list[str]) -> None:
         "license": PACKAGE_LICENSE,
     }
     for key, value in expected_scalars.items():
-        if top_level_scalar(text, key) != value:
+        if parse_apm_scalar(sections[key]) != value:
             errors.append(f"apm.yml {key!r} must be {value!r}")
-    if top_level_list(text, "targets") != ("copilot",):
+    if parse_apm_list(sections["targets"]) != ("copilot",):
         errors.append("apm.yml must target only GitHub Copilot")
-    if top_level_list(text, "includes") != EXPECTED_INCLUDES:
+    if parse_apm_list(sections["includes"]) != EXPECTED_INCLUDES:
         errors.append(
             "apm.yml includes must enumerate the five complete skill trees"
         )
-    required_blocks = (
-        "dependencies:\n  apm: []\n  mcp: []",
-        "devDependencies:\n  apm: []",
-        "scripts: {}",
+    validate_apm_empty_list_mapping(
+        "dependencies",
+        sections["dependencies"],
+        ("apm", "mcp"),
+        errors,
     )
-    for block in required_blocks:
-        if block not in text:
-            errors.append(
-                f"apm.yml is missing required block: {block.splitlines()[0]}"
-            )
-    if "agents/" in text:
-        errors.append(
-            "apm.yml must not include agents for a skills-only package"
-        )
+    validate_apm_empty_list_mapping(
+        "devDependencies",
+        sections["devDependencies"],
+        ("apm",),
+        errors,
+    )
+    if sections["scripts"] != (" {}",):
+        errors.append("apm.yml scripts must be exactly {}")
 
 
 def validate_skill(skill_name: str, errors: list[str]) -> None:

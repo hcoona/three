@@ -2016,6 +2016,113 @@ class RectificationRegressionTests(unittest.TestCase):
         self.assertEqual(result[1], 7)
         self.assertIsNone(result[2])
 
+    def test_below_threshold_rectify_reports_final_retained_fit_samples(
+        self,
+    ) -> None:
+        image = np.full((80, 60), 255, np.uint8)
+        before_selection = self._vertical_identity_selection()
+        final_selection = before_selection._replace(
+            structures=before_selection.structures[:-1]
+        )
+        before_fitted = rectify_pages.VerticalFitStructures(
+            np.empty((0, 5)),
+            before_selection,
+        )
+        final_fitted = rectify_pages.VerticalFitStructures(
+            np.empty((0, 5)),
+            final_selection,
+        )
+        raw_before = len(before_selection.structures)
+        raw_after = len(final_selection.structures)
+        with (
+            mock.patch.object(
+                rectify_pages,
+                "horizontal_measurement",
+                return_value=(0.0, 20, None, 0.0, 10, None, None),
+            ),
+            mock.patch.object(
+                rectify_pages,
+                "vertical_measurement",
+                side_effect=[
+                    (np.array([0.0, 0.1]), raw_before, None, before_fitted, set()),
+                    (np.array([0.0, 0.1]), raw_before, None, before_fitted, set()),
+                    (np.array([0.0, 0.1]), raw_after, None, final_fitted, set()),
+                ],
+            ),
+            mock.patch.object(
+                rectify_pages,
+                "selected_vertical_measurement",
+                side_effect=[
+                    (np.array([0.0, 0.1]), 7, None, 0.1, 8, None),
+                    (np.array([0.0, 0.1]), 6, None, 0.1, 7, None),
+                ],
+            ) as selected_measurement,
+            mock.patch.object(rectify_pages.cv2, "remap") as remap,
+            mock.patch.object(
+                rectify_pages,
+                "clipping_metrics",
+                return_value=(False, 0.0, 0.0),
+            ),
+        ):
+            corrected, metrics = rectify_pages.rectify(image)
+
+        self.assertIs(corrected, image)
+        remap.assert_not_called()
+        self.assertEqual(metrics["status"], "unchanged")
+        self.assertEqual(metrics["vertical_status"], "not_needed")
+        self.assertFalse(metrics["vertical_applied"])
+        self.assertFalse(metrics["vertical_reverted"])
+        self.assertEqual(metrics["vertical_samples"], 7)
+        self.assertEqual(metrics["vertical_samples_after"], 6)
+        self.assertLess(metrics["vertical_samples_after"], raw_after)
+        self.assertIs(
+            selected_measurement.call_args_list[0].args[0],
+            before_selection,
+        )
+        self.assertIs(
+            selected_measurement.call_args_list[1].args[0],
+            final_selection,
+        )
+
+    def test_vertical_report_measurement_keeps_raw_no_selection_fallbacks(
+        self,
+    ) -> None:
+        image = np.full((80, 60), 255, np.uint8)
+        selection = self._vertical_identity_selection()
+        selected_fitted = rectify_pages.VerticalFitStructures(
+            np.empty((0, 5)),
+            selection,
+        )
+        for selected_population, fitted_structures in (
+            (False, selected_fitted),
+            (True, np.empty((0, 5))),
+        ):
+            with (
+                self.subTest(selected_population=selected_population),
+                mock.patch.object(
+                    rectify_pages,
+                    "vertical_measurement",
+                    return_value=(
+                        np.array([0.0, 0.1]),
+                        12,
+                        None,
+                        fitted_structures,
+                        set(),
+                    ),
+                ),
+                mock.patch.object(
+                    rectify_pages,
+                    "selected_vertical_measurement",
+                ) as selected_measurement,
+            ):
+                measurement = rectify_pages.vertical_report_measurement(
+                    image,
+                    selected_population=selected_population,
+                )
+
+            self.assertEqual(measurement[1], 12)
+            selected_measurement.assert_not_called()
+
     def test_rectify_metrics_report_only_retained_vertical_fit_samples(
         self,
     ) -> None:
@@ -2080,6 +2187,99 @@ class RectificationRegressionTests(unittest.TestCase):
         self.assertLess(metrics["vertical_samples"], raw_samples)
         self.assertEqual(metrics["vertical_samples"], 7)
         self.assertEqual(metrics["vertical_samples_after"], 6)
+
+    def test_cumulative_revert_reports_restored_retained_fit_samples(
+        self,
+    ) -> None:
+        image = np.full((80, 60), 255, np.uint8)
+        before_selection = self._vertical_identity_selection()
+        restored_selection = before_selection._replace(
+            structures=before_selection.structures[:-1]
+        )
+        before_fitted = rectify_pages.VerticalFitStructures(
+            np.empty((0, 5)),
+            before_selection,
+        )
+        restored_fitted = rectify_pages.VerticalFitStructures(
+            np.empty((0, 5)),
+            restored_selection,
+        )
+        raw_before = len(before_selection.structures)
+        raw_after = len(restored_selection.structures)
+        tracked_measurement = (
+            np.array([0.0, 0.05]),
+            6,
+            None,
+            0.05,
+            8,
+            None,
+            before_selection,
+        )
+        with (
+            mock.patch.object(
+                rectify_pages,
+                "horizontal_measurement",
+                return_value=(0.0, 20, None, 0.0, 10, None, None),
+            ),
+            mock.patch.object(
+                rectify_pages,
+                "vertical_measurement",
+                side_effect=[
+                    (np.array([0.0, 0.4]), raw_before, None, before_fitted, set()),
+                    (np.array([0.0, 0.4]), raw_before, None, before_fitted, set()),
+                    (
+                        np.array([0.0, 0.4]),
+                        raw_after,
+                        None,
+                        restored_fitted,
+                        set(),
+                    ),
+                ],
+            ),
+            mock.patch.object(
+                rectify_pages,
+                "selected_vertical_measurement",
+                side_effect=[
+                    (np.array([0.0, 0.4]), 7, None, 0.3, 8, None),
+                    (np.array([0.0, 0.4]), 5, None, 0.3, 7, None),
+                ],
+            ) as selected_measurement,
+            mock.patch.object(
+                rectify_pages,
+                "tracked_vertical_measurement",
+                return_value=tracked_measurement,
+            ),
+            mock.patch.object(
+                rectify_pages.cv2,
+                "remap",
+                return_value=image.copy(),
+            ) as remap,
+            mock.patch.object(
+                rectify_pages,
+                "clipping_metrics",
+                side_effect=[(False, 0.0, 0.0), (True, 0.01, 0.02)],
+            ),
+        ):
+            corrected, metrics = rectify_pages.rectify(image)
+
+        self.assertIs(corrected, image)
+        remap.assert_called_once()
+        self.assertFalse(metrics["vertical_applied"])
+        self.assertTrue(metrics["vertical_reverted"])
+        self.assertTrue(metrics["cumulative_clipping_reverted"])
+        self.assertIsNone(metrics["vertical_candidate_rejection_reason"])
+        self.assertEqual(metrics["status"], "review_required")
+        self.assertEqual(metrics["vertical_samples"], 7)
+        self.assertEqual(metrics["vertical_samples_after"], 5)
+        self.assertLess(metrics["vertical_samples_after"], raw_after)
+        self.assertIs(
+            selected_measurement.call_args_list[0].args[0],
+            before_selection,
+        )
+        self.assertIs(
+            selected_measurement.call_args_list[1].args[0],
+            restored_selection,
+        )
 
     def test_holdout_consensus_cannot_remove_required_vertical_x_band(self) -> None:
         with mock.patch.object(
