@@ -395,7 +395,10 @@ def test_lost_response_is_deliberately_injected_after_mutation_start(
     assert runner.calls[0][0] == "lost-response"
     assert result.result == "lost-response"
     assert result.mutation_classification == "unknown"
-    assert "mutation-may-have-started" in result.diagnostics
+    assert result.diagnostics == (
+        "mutation-may-have-started",
+        "human-reconciliation-required",
+    )
 
 
 class ExplicitFactRunner(ControlledRunner):
@@ -1450,6 +1453,116 @@ def test_exception_failure_preserves_startedness_label(
     assert result.result == expected_result
     assert result.mutation_classification == "incomplete"
     assert result.diagnostics == ("runner-did-not-prove-controlled-outcome",)
+
+
+@pytest.mark.parametrize(
+    ("scenario", "error_type", "expected_result"),
+    [
+        ("absent-create-readback", TimeoutError, "timeout"),
+        ("lost-response", RuntimeError, "lost-response"),
+    ],
+)
+@pytest.mark.parametrize(
+    "attributes",
+    [
+        {},
+        {"action_executed": True},
+        {"action_executed": "yes", "mutation_started": False},
+        {"action_executed": False, "mutation_started": True},
+    ],
+    ids=("missing", "partial", "wrong-types", "contradictory"),
+)
+def test_special_failure_without_admitted_startedness_remains_unknown(
+    tmp_path: Path,
+    scenario: str,
+    error_type: type[BaseException],
+    expected_result: str,
+    attributes: dict[str, object],
+) -> None:
+    error = error_type("runner failure without admitted startedness")
+    for name, value in attributes.items():
+        setattr(error, name, value)
+    result, _, _ = _run(
+        tmp_path,
+        scenario=scenario,
+        observations=[
+            _absent(),
+            {"state": "unknown", "response-identity-digest": RESPONSE_B},
+        ],
+        runner=ControlledRunner(error=error),
+    )
+
+    assert result.result == expected_result
+    assert result.mutation_classification == "unknown"
+    assert result.action_executed is False
+    assert result.mutation_started is False
+    assert result.diagnostics == (
+        "mutation-may-have-started",
+        "human-reconciliation-required",
+    )
+
+
+@pytest.mark.parametrize(
+    (
+        "scenario",
+        "error",
+        "action_executed",
+        "mutation_started",
+        "expected_result",
+    ),
+    [
+        (
+            "absent-create-readback",
+            TimeoutError("timeout before action start"),
+            False,
+            False,
+            "runner-failed-before-mutation",
+        ),
+        (
+            "lost-response",
+            RuntimeError("lost response before action start"),
+            False,
+            False,
+            "runner-failed-before-mutation",
+        ),
+        (
+            "lost-response",
+            RuntimeError("lost response after action start"),
+            True,
+            False,
+            "runner-failed-after-action-start",
+        ),
+    ],
+)
+def test_special_failure_with_admitted_pre_mutation_startedness_is_incomplete(
+    tmp_path: Path,
+    scenario: str,
+    error: BaseException,
+    action_executed: bool,
+    mutation_started: bool,
+    expected_result: str,
+) -> None:
+    runner = ExplicitFactRunner(
+        executed=action_executed,
+        started=mutation_started,
+        error=error,
+    )
+    result, _, _ = _run(
+        tmp_path,
+        scenario=scenario,
+        observations=[_absent(), _absent()],
+        runner=runner,
+    )
+
+    assert result.result == expected_result
+    assert result.mutation_classification == "incomplete"
+    assert result.action_executed is action_executed
+    assert result.mutation_started is mutation_started
+    assert result.diagnostics == (
+        ("runner-did-not-prove-controlled-outcome",)
+        if action_executed
+        else ("runner-did-not-prove-mutation-start",)
+    )
 
 
 @pytest.mark.parametrize("outcome", [[], {}])
@@ -3060,6 +3173,14 @@ def test_adversarial_timeout_startedness_depends_only_on_proxy_observation(
     )
     assert result.mutation_classification == (
         "unknown" if expected_started else "incomplete"
+    )
+    assert result.diagnostics == (
+        (
+            "mutation-may-have-started",
+            "human-reconciliation-required",
+        )
+        if expected_started
+        else ("runner-did-not-prove-controlled-outcome",)
     )
 
 

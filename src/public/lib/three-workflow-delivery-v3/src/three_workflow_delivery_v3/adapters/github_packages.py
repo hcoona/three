@@ -1340,6 +1340,7 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
     runner_timed_out = False
     action_executed = False
     mutation_started = False
+    exception_startedness_admitted = False
     try:
         run_scenario = getattr(runner, "run_scenario", None)
         if callable(run_scenario):
@@ -1373,6 +1374,7 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
         ):
             action_executed = executed_fact
             mutation_started = started_fact
+            exception_startedness_admitted = True
     except (OSError, RuntimeError, ValueError) as error:
         runner_error = error
         executed_fact = getattr(error, "action_executed", None)
@@ -1384,6 +1386,7 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
         ):
             action_executed = executed_fact
             mutation_started = started_fact
+            exception_startedness_admitted = True
 
     if type(runner_result) is dict:
         executed_fact = runner_result.get("action-executed")
@@ -1420,7 +1423,7 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
             "acceptance runner action facts are malformed"
         )
         if runner_timed_out:
-            if not mutation_started:
+            if exception_startedness_admitted and not mutation_started:
                 return _acceptance_result(
                     scenario=scenario,
                     tag=tag,
@@ -1471,7 +1474,7 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
                 diagnostics=("runner-action-facts-not-fully-admitted",),
             )
         if scenario == "lost-response":
-            if not mutation_started:
+            if exception_startedness_admitted and not mutation_started:
                 return _acceptance_result(
                     scenario=scenario,
                     tag=tag,
