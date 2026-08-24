@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Globalization;
 using Hcoona.AzureAuth.CredProvider.Platform.FileSystem;
 using Hcoona.AzureAuth.CredProvider.Platform.Processes;
 using Hcoona.AzureAuth.CredProvider.Platform.VerticalSlice;
@@ -135,6 +137,79 @@ public sealed class NpmPhase12NpmIntegrationTests
         }
     }
 
+    [Fact]
+    public void RecordingSystemProcessRunner_DiagnosticSpecChangesOnlyTimeout()
+    {
+        var outputCaptureOptions = new ProcessOutputCaptureOptions
+        {
+            StandardOutputByteLimit = 123,
+            StandardErrorByteLimit = 456,
+        };
+        using var standardErrorTee = new StringWriter(CultureInfo.InvariantCulture);
+        var startSpec = new ProcessStartSpec(
+            "diagnostic-tool",
+            ["first", "second"],
+            "diagnostic-working-directory",
+            new Dictionary<string, string?>
+            {
+                ["DIAGNOSTIC_VALUE"] = "value",
+                ["DIAGNOSTIC_REMOVED"] = null,
+            },
+            "diagnostic-input",
+            TimeSpan.FromSeconds(10),
+            outputCaptureOptions,
+            standardErrorTee
+        );
+
+        ProcessStartSpec diagnosticStartSpec =
+            RecordingSystemProcessRunner.CreateDiagnosticStartSpec(startSpec);
+
+        Assert.NotSame(startSpec, diagnosticStartSpec);
+        Assert.Equal(startSpec.FileName, diagnosticStartSpec.FileName);
+        Assert.Equal(startSpec.Arguments, diagnosticStartSpec.Arguments);
+        Assert.Equal(startSpec.WorkingDirectory, diagnosticStartSpec.WorkingDirectory);
+        Assert.Equal(startSpec.Environment.Count, diagnosticStartSpec.Environment.Count);
+        foreach ((string key, string? value) in startSpec.Environment)
+        {
+            Assert.True(diagnosticStartSpec.Environment.TryGetValue(key, out string? actual));
+            Assert.Equal(value, actual);
+        }
+        Assert.Equal(startSpec.StandardInput, diagnosticStartSpec.StandardInput);
+        Assert.Equal(TimeSpan.FromSeconds(10), startSpec.Timeout);
+        Assert.Equal(TimeSpan.FromSeconds(60), diagnosticStartSpec.Timeout);
+        Assert.Same(startSpec.OutputCaptureOptions, diagnosticStartSpec.OutputCaptureOptions);
+        Assert.Same(startSpec.StandardErrorTee, diagnosticStartSpec.StandardErrorTee);
+    }
+
+    [Fact]
+    public void RecordingSystemProcessRunner_FormatsFixedSafeMilestoneWarning()
+    {
+        var milestones =
+            new Dictionary<SystemProcessRunner.ProcessMilestoneName, TimeSpan>
+            {
+                [SystemProcessRunner.ProcessMilestoneName.LaunchRequested] =
+                    TimeSpan.FromMilliseconds(1.25),
+                [SystemProcessRunner.ProcessMilestoneName.ProcessDisposalCompleted] =
+                    TimeSpan.FromMilliseconds(2.5),
+            };
+
+        string warning = RecordingSystemProcessRunner.CreateMilestoneWarning(milestones);
+
+        Assert.Equal(
+            "azureauth_npm_process_milestones"
+                + " LaunchRequestedMs=1.250"
+                + " ProcessStartedMs=missing"
+                + " StandardInputClosedMs=missing"
+                + " ProcessExitedMs=missing"
+                + " StandardOutputEofMs=missing"
+                + " StandardErrorEofMs=missing"
+                + " TimeoutInitiatedMs=missing"
+                + " KillCompletedMs=missing"
+                + " ProcessDisposalCompletedMs=2.500",
+            warning
+        );
+    }
+
     private static NpmPhase12RegistryDeclaration ResolveDeclaration(
         NpmPrefixFixture fixture
     )
@@ -205,7 +280,7 @@ public sealed class NpmPhase12NpmIntegrationTests
             throw new InvalidOperationException(message, cleanupFailure);
         }
 
-        TestContext.Current.AddWarning(message + Environment.NewLine + cleanupFailure);
+        TestContext.Current.AddWarning(message);
     }
 
     private static Exception? TryDeleteFixtureDirectory(string path)
@@ -324,7 +399,20 @@ public sealed class NpmPhase12NpmIntegrationTests
 
     private sealed class RecordingSystemProcessRunner : IProcessRunner
     {
-        private readonly SystemProcessRunner inner = new();
+        private static readonly TimeSpan DiagnosticTimeout = TimeSpan.FromSeconds(60);
+        private static readonly SystemProcessRunner.ProcessMilestoneName[] MilestoneNames =
+        [
+            SystemProcessRunner.ProcessMilestoneName.LaunchRequested,
+            SystemProcessRunner.ProcessMilestoneName.ProcessStarted,
+            SystemProcessRunner.ProcessMilestoneName.StandardInputClosed,
+            SystemProcessRunner.ProcessMilestoneName.ProcessExited,
+            SystemProcessRunner.ProcessMilestoneName.StandardOutputEof,
+            SystemProcessRunner.ProcessMilestoneName.StandardErrorEof,
+            SystemProcessRunner.ProcessMilestoneName.TimeoutInitiated,
+            SystemProcessRunner.ProcessMilestoneName.KillCompleted,
+            SystemProcessRunner.ProcessMilestoneName.ProcessDisposalCompleted,
+        ];
+        private const string MissingMilestone = "missing";
 
         public string? ExpectedPrefixPath { get; set; }
 
@@ -337,33 +425,98 @@ public sealed class NpmPhase12NpmIntegrationTests
             CancellationToken cancellationToken = default
         )
         {
-            RecordedStartSpecs.Add(startSpec);
-            ProcessResult result = await inner
-                .RunAsync(startSpec, cancellationToken)
-                .ConfigureAwait(false);
-            RecordedResults.Add(result);
-            if (!result.Succeeded || ExpectedPrefixPath is null)
+            var milestones =
+                new ConcurrentDictionary<
+                    SystemProcessRunner.ProcessMilestoneName,
+                    TimeSpan
+                >();
+            try
             {
-                return result;
-            }
+                RecordedStartSpecs.Add(startSpec);
+                var inner = new SystemProcessRunner(milestone =>
+                    milestones.TryAdd(milestone.Name, milestone.Elapsed)
+                );
+                ProcessResult result = await inner
+                    .RunAsync(CreateDiagnosticStartSpec(startSpec), cancellationToken)
+                    .ConfigureAwait(false);
+                RecordedResults.Add(result);
+                if (!result.Succeeded || ExpectedPrefixPath is null)
+                {
+                    return result;
+                }
 
-            string actualPrefixPath = result.StandardOutput.Trim();
-            return string.Equals(
-                    actualPrefixPath,
-                    ExpectedPrefixPath,
-                    StringComparison.Ordinal
+                string actualPrefixPath = result.StandardOutput.Trim();
+                return string.Equals(
+                        actualPrefixPath,
+                        ExpectedPrefixPath,
+                        StringComparison.Ordinal
+                    )
+                    || string.Equals(
+                        actualPrefixPath,
+                        RedactSessionStateIdentifier(ExpectedPrefixPath),
+                        StringComparison.Ordinal
+                    )
+                    ? new ProcessResult(
+                        0,
+                        ExpectedPrefixPath + Environment.NewLine,
+                        result.StandardError
+                    )
+                    : result;
+            }
+            finally
+            {
+                TestContext.Current.AddWarning(CreateMilestoneWarning(milestones));
+            }
+        }
+
+        internal static ProcessStartSpec CreateDiagnosticStartSpec(
+            ProcessStartSpec startSpec
+        )
+        {
+            return new ProcessStartSpec(
+                startSpec.FileName,
+                startSpec.Arguments,
+                startSpec.WorkingDirectory,
+                startSpec.Environment,
+                startSpec.StandardInput,
+                DiagnosticTimeout,
+                startSpec.OutputCaptureOptions,
+                startSpec.StandardErrorTee
+            );
+        }
+
+        internal static string CreateMilestoneWarning(
+            IReadOnlyDictionary<
+                SystemProcessRunner.ProcessMilestoneName,
+                TimeSpan
+            > milestones
+        )
+        {
+            return "azureauth_npm_process_milestones "
+                + string.Join(
+                    ' ',
+                    MilestoneNames.Select(name => FormatMilestone(milestones, name))
+                );
+        }
+
+        private static string FormatMilestone(
+            IReadOnlyDictionary<
+                SystemProcessRunner.ProcessMilestoneName,
+                TimeSpan
+            > milestones,
+            SystemProcessRunner.ProcessMilestoneName name
+        )
+        {
+            string elapsedMilliseconds = milestones.TryGetValue(
+                name,
+                out TimeSpan elapsed
+            )
+                ? elapsed.TotalMilliseconds.ToString(
+                    "0.000",
+                    CultureInfo.InvariantCulture
                 )
-                || string.Equals(
-                    actualPrefixPath,
-                    RedactSessionStateIdentifier(ExpectedPrefixPath),
-                    StringComparison.Ordinal
-                )
-                ? new ProcessResult(
-                    0,
-                    ExpectedPrefixPath + Environment.NewLine,
-                    result.StandardError
-                )
-                : result;
+                : MissingMilestone;
+            return name + "Ms=" + elapsedMilliseconds;
         }
     }
 
