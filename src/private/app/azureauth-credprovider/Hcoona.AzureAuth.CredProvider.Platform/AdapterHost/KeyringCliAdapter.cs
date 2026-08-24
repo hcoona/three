@@ -130,9 +130,21 @@ public sealed class KeyringCliAdapter
             );
         }
 
+        if (!TryBuildHelperArguments(request, out List<string>? helperArguments))
+        {
+            return ExecuteHelper(
+                context,
+                ["set"],
+                request.Output,
+                request.Mode,
+                protocolStdout,
+                diagnosticRouter
+            );
+        }
+
         return ExecuteHelper(
             context,
-            BuildHelperArguments(request),
+            helperArguments,
             request.Output,
             request.Mode,
             protocolStdout,
@@ -297,15 +309,29 @@ public sealed class KeyringCliAdapter
         return true;
     }
 
-    private static List<string> BuildHelperArguments(KeyringCliRequest request)
+    private static bool TryBuildHelperArguments(
+        KeyringCliRequest request,
+        [NotNullWhen(true)] out List<string>? arguments
+    )
     {
-        var arguments = new List<string>
+        arguments = null;
+        if (
+            !KeyringHelperAdapter.TryNormalizeServiceForKeyringCli(
+                request.Service,
+                out string? normalizedService
+            )
+        )
+        {
+            return false;
+        }
+
+        arguments = new List<string>
         {
             KeyringHelperV2.GetVerb,
             "--protocol-version",
             ContractVersions.KeyringHelperMajor.ToString(CultureInfo.InvariantCulture),
             "--service",
-            request.Service,
+            normalizedService,
         };
         if (request.Username is not null)
         {
@@ -317,7 +343,7 @@ public sealed class KeyringCliAdapter
         arguments.Add(
             request.Mode == KeyringHelperMode.Credentials ? "creds" : "password"
         );
-        return arguments;
+        return true;
     }
 
     private static string ConvertToJson(string helperStdout, KeyringHelperMode mode)
