@@ -59,8 +59,8 @@ def read_frontmatter(path: Path) -> tuple[dict[str, str], str]:
 def validate_plugin_json() -> None:
     manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
     name = manifest.get("name", "")
-    if not NAME_RE.fullmatch(name):
-        fail(f"plugin.json name must be kebab-case <=64 chars: {name!r}")
+    if name != "enterprise-translation-team":
+        fail("plugin.json name must be enterprise-translation-team")
     if manifest.get("agents") != "agents/":
         fail("plugin.json agents path must be agents/")
     if manifest.get("skills") != "skills/":
@@ -77,6 +77,8 @@ def validate_agents() -> None:
         description = frontmatter.get("description", "")
         if not NAME_RE.fullmatch(name):
             fail(f"{path} name must be kebab-case <=64 chars: {name!r}")
+        if frontmatter.get("target") != "github-copilot":
+            fail(f"{path} target must be github-copilot")
         if not description or len(description) > 1024:
             fail(f"{path} description must be 1..1024 chars")
         if len(body) > 30000:

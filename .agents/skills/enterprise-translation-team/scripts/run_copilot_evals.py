@@ -234,15 +234,14 @@ def run_discovery_command(command: list[str], cwd: Path) -> object:
     )
     if completed.returncode != 0:
         raise RuntimeError(
-            "Could not verify no-plugin baseline isolation: "
+            "Copilot component discovery command failed: "
             f"{completed.stderr.strip()}"
         )
     try:
         return json.loads(completed.stdout)
     except json.JSONDecodeError as exc:
         raise RuntimeError(
-            "Copilot discovery returned invalid JSON while verifying "
-            "no-plugin baseline isolation"
+            "Copilot component discovery returned invalid JSON"
         ) from exc
 
 

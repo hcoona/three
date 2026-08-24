@@ -1150,6 +1150,16 @@ def check_tbx(path: Path, termbase: dict | None = None) -> None:
         raise AssertionError(
             f"termbase.tbx root namespace must be {TBX_NAMESPACE}"
         )
+    legacy_elements = {
+        local_name(element.tag)
+        for element in root.iter()
+        if local_name(element.tag) in {"langSet", "tig"}
+    }
+    if legacy_elements:
+        raise AssertionError(
+            "termbase.tbx must not use legacy elements: "
+            f"{sorted(legacy_elements)}"
+        )
     if root.get("type") != "TBX-Basic":
         raise AssertionError("termbase.tbx type must be TBX-Basic")
     if root.get("style") not in {"dca", "dct"}:
