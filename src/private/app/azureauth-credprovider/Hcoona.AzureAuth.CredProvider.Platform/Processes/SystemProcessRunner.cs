@@ -162,11 +162,14 @@ public sealed class SystemProcessRunner : IProcessRunner
             milestones,
             ProcessMilestoneName.StandardErrorEof
         );
-        Task waitForExitTask = WaitForExitAsync(
-            process,
-            milestones,
-            executionCancellation.Token
-        );
+        Task waitForExitTask =
+            milestones is null
+                ? process.WaitForExitAsync(executionCancellation.Token)
+                : WaitForExitAsync(
+                    process,
+                    milestones,
+                    executionCancellation.Token
+                );
         Task allTasks = Task.WhenAll(
             standardInputTask,
             standardOutputTask,
