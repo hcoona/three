@@ -9,6 +9,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 NAME_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
+PLUGIN_INVOCATION_RE = re.compile(
+    r"(?<![A-Za-z0-9_-])(?:"
+    r"/enterprise-translation-team(?![A-Za-z0-9_-])|"
+    r"enterprise-translation-team:"
+    r"[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?"
+    r"(?![A-Za-z0-9_-])"
+    r")"
+)
 ROLE_AGENT_NAMES = frozenset(
     {
         "translation-linguist",
@@ -203,9 +211,9 @@ def validate_evals() -> None:
                 fail(f"Eval {case_id} missing {field}")
         if not case.get("baseline_prompt"):
             fail(f"Eval {case_id} missing baseline_prompt")
-        if "/enterprise-translation-team" in case["baseline_prompt"]:
+        if PLUGIN_INVOCATION_RE.search(case["baseline_prompt"]):
             fail(
-                f"Eval {case_id} baseline_prompt must not invoke the plugin skill"
+                f"Eval {case_id} baseline_prompt must not invoke plugin components"
             )
         if not (
             case.get("expected_files")
