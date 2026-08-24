@@ -1,0 +1,20 @@
+{
+  "issues": [
+    {
+      "issue_id": "mqm-S1-accuracy-001",
+      "segment_id": "S1",
+      "category": "Accuracy",
+      "severity": "Major",
+      "source_quote": "只有试点租户",
+      "target_quote": "every tenant",
+      "explanation": "The target reverses the rollout scope.",
+      "proposed_fix": "only pilot tenants",
+      "resolution_status": "open"
+    }
+  ],
+  "summary": {
+    "major": 1,
+    "minor": 0,
+    "neutral": 0
+  }
+}

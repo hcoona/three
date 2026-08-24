@@ -1,0 +1,20 @@
+name: enterprise-translation-team
+version: 0.1.0
+description: Role-based Copilot CLI agents and skills for enterprise Chinese-English document translation workflows.
+author: hcoona
+license: CC-BY-NC-SA-4.0
+targets:
+  - copilot
+dependencies:
+  apm: []
+  mcp: []
+includes:
+  - agents/
+  - skills/enterprise-translation-team/SKILL.md
+  - skills/enterprise-translation-team/evals/
+  - skills/enterprise-translation-team/references/
+  - skills/enterprise-translation-team/scripts/check_translation_outputs.py
+  - skills/enterprise-translation-team/scripts/run_copilot_evals.py
+devDependencies:
+  apm: []
+scripts: {}

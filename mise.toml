@@ -64,7 +64,7 @@ fd = "latest"
 ripgrep = "latest"
 github-cli = "latest"
 "github:microsoft/apm" = "v0.28.0"
-"github:alibaba/open-code-review" = { version = "v1.9.8", bin = "ocr" }
+"github:alibaba/open-code-review" = { version = "v1.9.9", bin = "ocr" }
 
 #
 # Environment Variables
@@ -121,3 +121,11 @@ pnpm exec -- prettier --write -- pnpm-lock.yaml src/public/lib/hexo-renderer-asc
 [tasks.update-uv-lock]
 description = "Refresh root uv lockfile"
 run = 'uv lock'
+
+[tasks.translation-agent-plugin-check]
+description = "Validate the enterprise translation team Copilot CLI plugin"
+run = "python -B src/private/lib/enterprise-translation-team/scripts/validate_package.py"
+
+[tasks.translation-agent-plugin-eval-dry-run]
+description = "Prepare a dry-run eval workspace for the enterprise translation team plugin"
+run = "python -B src/private/lib/enterprise-translation-team/skills/enterprise-translation-team/scripts/run_copilot_evals.py --mode dry-run"

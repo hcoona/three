@@ -11,7 +11,7 @@ classifiers = ["Private :: Do Not Upload"]
 
 [dependency-groups]
 # Preserve the validated lint baseline until the Ruff 0.16 migration.
-dev = ["hatchling>=1.25.0", "pyrefly>=1.0.0", "pytest>=8.3.4", "ruff==0.14.4"]
+dev = ["hatchling>=1.25.0", "pyrefly>=1.0.0", "pytest>=8.3.4", "ruff==0.16.4"]
 
 [tool.uv.workspace]
 # The current Python workspace is rooted under src/; legacy OnePython paths are retired.
@@ -134,6 +134,22 @@ convention = "google" # Match the Google Python Style Guide docstring structure.
   "S603", # Scripts are subprocess wrappers by design.
   "S607", # They invoke tools by name that must be on PATH.
   "T201", # Allow print statements in scripts for simplicity.
+]
+"src/private/lib/enterprise-translation-team/**/scripts/*.py" = [
+  "C901",    # Schema validators intentionally keep checks together.
+  "D103",    # Small command helpers are named descriptively.
+  "E501",    # Contract strings and namespaced agent IDs are not wrapped.
+  "EM101",   # CLI validators report direct, user-facing failure messages.
+  "EM102",   # CLI validators include failed values in their messages.
+  "FBT001",  # Internal eval orchestration uses a boolean review-gate switch.
+  "PLR0912", # Schema validators branch across independent contract fields.
+  "PLR0913", # Eval orchestration passes the complete run configuration.
+  "PLR0915", # Schema validators keep related contract checks together.
+  "PLR0917", # Eval orchestration passes the complete run configuration.
+  "PLR2004", # Numeric values encode documented package contract limits.
+  "TRY003",  # Direct validation errors preserve precise failure context.
+  "TRY004",  # Contract violations are uniformly surfaced as validation errors.
+  "TRY301",  # CLI boundaries convert validation failures to exit status.
 ]
 
 [tool.pytest.ini_options]

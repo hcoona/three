@@ -46,18 +46,20 @@ extend-exclude = [
 locale = "en"
 extend-ignore-re = [
   '\b[0-9a-f]{7,10}\b',
-  '\b[0-9A-Fa-f]{32,}\b',                                               # HEX (MD5, SHA256, etc.)
+  '\b[0-9A-Fa-f]{32,}\b',                                                      # HEX (MD5, SHA256, etc.)
   '(?i)\{?[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}\}?',
-  '(?:^|[^A-Za-z0-9+/=])[A-Za-z0-9+/]{40,}={0,2}(?:$|[^A-Za-z0-9+/=])', # Base64
-  '(?:^|[^A-Za-z0-9_=-])[A-Za-z0-9_-]{40,}={0,2}(?:$|[^A-Za-z0-9_=-])', # Base64URL
+  '(?:^|[^A-Za-z0-9+/=])[A-Za-z0-9+/]{40,}={0,2}(?:$|[^A-Za-z0-9+/=])',        # Base64
+  '(?:^|[^A-Za-z0-9_=-])[A-Za-z0-9_-]{40,}={0,2}(?:$|[^A-Za-z0-9_=-])',        # Base64URL
   '\bCC-BY-NC-ND-4.0\b',
   '\bPNGs?\b',
+  '\b(?:admittedTerm|deprecatedTerm|preferredTerm|supersededTerm)-admn-sts\b',
 ]
 
 [default.extend-words]
 hexo = 'hexo'
 Asciidoc = 'Asciidoc'
 Asciidoctor = 'Asciidoctor'
+sme = 'sme'
 
 [type.gitignore]
 extend-glob = ['.gitignore']
