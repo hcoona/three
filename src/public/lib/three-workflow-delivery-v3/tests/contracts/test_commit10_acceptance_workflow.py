@@ -1,6 +1,6 @@
 """Commit-10 contracts for the temporary destination-acceptance workflow."""
 
-# ruff: noqa: D103, E501, PLR2004, S102
+# ruff: noqa: D103, E501, PLR2004, S102, S607
 
 from __future__ import annotations
 
