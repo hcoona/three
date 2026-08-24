@@ -64,7 +64,6 @@
           </termSec>
           <termSec>
             <term>renter</term>
-            <termNote type="administrativeStatus">deprecatedTerm-admn-sts</termNote>
             <note>Conflicting target for housing context, not cloud-account boundaries.</note>
           </termSec>
         </langSec>
@@ -88,7 +87,6 @@
           </termSec>
           <termSec>
             <term>work order</term>
-            <termNote type="administrativeStatus">deprecatedTerm-admn-sts</termNote>
             <note>Potential field-service meaning, not customer support.</note>
           </termSec>
         </langSec>

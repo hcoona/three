@@ -1,5 +1,5 @@
 lockfile_version: '1'
-generated_at: '2026-08-23T23:27:41.222227+00:00'
+generated_at: '2026-08-24T00:17:06.205232+00:00'
 apm_version: 0.28.0
 dependencies:
 - repo_url: _local/enterprise-translation-team
@@ -35,25 +35,25 @@ dependencies:
   - .github/agents/translation-terminologist.agent.md
   - .github/agents/translation-workflow-lead.agent.md
   deployed_file_hashes:
-    .agents/skills/enterprise-translation-team/SKILL.md: sha256:e737b88344c99a35243f6b5cfb9760b48be8e8a0a5211d775fc7cbcfd44f1e6a
-    .agents/skills/enterprise-translation-team/evals/evals.json: sha256:cb440a08a24bef7705a2228b5b0e7c9dab415bb89d822fdfcad0ad37a9288f2d
+    .agents/skills/enterprise-translation-team/SKILL.md: sha256:dcfbeaceeaf4403f71e49e65641d2f4d2fef50ff15cb675e05ce27f634a65d70
+    .agents/skills/enterprise-translation-team/evals/evals.json: sha256:d8d27fc4068417b63424f02b1ef8463a0ecb95cd87e9fbc2c100ed4a74dba364
     .agents/skills/enterprise-translation-team/evals/files/mqm-review-sample.json: sha256:866b2a4297a6a237dee6fd75279b3d5558f88e3b8bb6d84a46497486f3adb5e6
     .agents/skills/enterprise-translation-team/evals/files/qa-package/review.json: sha256:5310c987db20360b72afe7369c292e883b37f8465be0692fbec3c0696d78be07
     .agents/skills/enterprise-translation-team/evals/files/qa-package/termbase.delta.jsonl: sha256:545907ad3afa123728c88ff98751a415e83fcefd7725edf6f36e6542d511152f
-    .agents/skills/enterprise-translation-team/evals/files/qa-package/termbase.job.json: sha256:1f9ad3a54a1ac85c3257ac01cb6a7dcbdef3cfcf2afb8a3df2b82f38d14a5f3f
-    .agents/skills/enterprise-translation-team/evals/files/qa-package/termbase.tbx: sha256:3f96cd52a9783b6c16c58ef22938c6d593b99766b611084a40ac40f96fa4ccb0
-    .agents/skills/enterprise-translation-team/evals/files/qa-package/terminology-review.tsv: sha256:f03fbe9f19a4e437bc89b724e0e903ef19a59bdf4eb027704858f5532cc4ddab
+    .agents/skills/enterprise-translation-team/evals/files/qa-package/termbase.job.json: sha256:422d928f6377eb303ff0aa1310b18cdba85f099bf4ad2829a92600e0992ffa61
+    .agents/skills/enterprise-translation-team/evals/files/qa-package/termbase.tbx: sha256:9b755785571f5925fbf05f29960fc1ae73d59b95ca88d1819f9f83bc9fdea615
+    .agents/skills/enterprise-translation-team/evals/files/qa-package/terminology-review.tsv: sha256:7173cfc90c067080fd55e099cc9fe49b8b7cccfe404f9751acd54df42256f729
     .agents/skills/enterprise-translation-team/evals/files/qa-package/translation.md: sha256:28aee96bbfa2079233f49bc87c82a22dba0a4962b5e5b8a3320ef5ad925cd6c1
     .agents/skills/enterprise-translation-team/evals/files/structured-doc.md: sha256:46880505b731e3c68289e038b87d9d00f48455659ec74fbfb34f2f5d2532b8fb
     .agents/skills/enterprise-translation-team/evals/files/terminology-brief.json: sha256:936f99f0cb58e083d4fc1ed6747f46574d627091e9009957fa3285b6471cbe1f
     .agents/skills/enterprise-translation-team/references/context-packet.md: sha256:c572161a5fd8f255daee80433e8386889c72702afb7159285f03702b8f4f4ea2
-    .agents/skills/enterprise-translation-team/references/evaluation.md: sha256:ac17e14923ebcee76ec7d0cb3c315b5cfc9f9f5051b188394c2b180f94ac8e52
+    .agents/skills/enterprise-translation-team/references/evaluation.md: sha256:a6fe68ad73e6e00a0286d86276e7b53c1accd38c4d2d8fa02e59fe5164a5090f
     .agents/skills/enterprise-translation-team/references/mqm-taxonomy.md: sha256:4b3f7b51bbd3cb57665a1f922f08607bc9a3322f1e61e7ffc6bb24e7af44a9a8
     .agents/skills/enterprise-translation-team/references/output-contracts.md: sha256:0651dc868db9166baf8d220992cd5729deee960c5c4501765e303c1917beaa13
     .agents/skills/enterprise-translation-team/references/roles.md: sha256:10b1895bdcc6dbc02ebed174d0510b3eb78a3e6c97cbf8036777dd80fe3b2647
-    .agents/skills/enterprise-translation-team/references/terminology-schema.md: sha256:6e55ef599fe03963c0abb9797cdaff6927e3f9f250e56f86b153c31bda48720f
-    .agents/skills/enterprise-translation-team/scripts/check_translation_outputs.py: sha256:37e0c7953bd043b9d8b3f8733b7ba4c62d5cbbf3d6cb3baa16b921ed3ee90861
-    .agents/skills/enterprise-translation-team/scripts/run_copilot_evals.py: sha256:8c4667183c155e56245ef731e6b8552982ddf77edd81cd339f1d9d9e992c7b0f
+    .agents/skills/enterprise-translation-team/references/terminology-schema.md: sha256:31859c6e94a91f7c1c4f00677d20924d896272f05f54c4f65748b0bab5cbc523
+    .agents/skills/enterprise-translation-team/scripts/check_translation_outputs.py: sha256:8c8fb380c7bf98c61465c1f8581c65cc344a3698b3c039c21e2286982dbfbeba
+    .agents/skills/enterprise-translation-team/scripts/run_copilot_evals.py: sha256:cb1eb6e27e3c6884ea92ad1ed8e4efee27b1d630a985970a32e891935ff58681
     .github/agents/translation-linguist.agent.md: sha256:9154957771bc16ff15d7f2e4fa9848422eb6838219d90dc2f9d1e7702f875ee9
     .github/agents/translation-negative-reviewer.agent.md: sha256:fba1f4a5b364f46399f245c88ba2689eac9ff21ab3499d7d09cac058ab73c869
     .github/agents/translation-positive-reviewer.agent.md: sha256:15c729dff2445fad704e7a569742ed13e79c5f23a3d9242aa0b89be9c181f22a
@@ -1841,7 +1841,7 @@ deployments:
   owners:
   - ./src/private/lib/enterprise-translation-team
   active_owner: ./src/private/lib/enterprise-translation-team
-  content_hash: sha256:e737b88344c99a35243f6b5cfb9760b48be8e8a0a5211d775fc7cbcfd44f1e6a
+  content_hash: sha256:dcfbeaceeaf4403f71e49e65641d2f4d2fef50ff15cb675e05ce27f634a65d70
 - kind: project-relative
   target: copilot
   value: .agents/skills/enterprise-translation-team/evals/evals.json
@@ -1850,7 +1850,7 @@ deployments:
   owners:
   - ./src/private/lib/enterprise-translation-team
   active_owner: ./src/private/lib/enterprise-translation-team
-  content_hash: sha256:cb440a08a24bef7705a2228b5b0e7c9dab415bb89d822fdfcad0ad37a9288f2d
+  content_hash: sha256:d8d27fc4068417b63424f02b1ef8463a0ecb95cd87e9fbc2c100ed4a74dba364
 - kind: project-relative
   target: copilot
   value: .agents/skills/enterprise-translation-team/evals/files/mqm-review-sample.json
@@ -1886,7 +1886,7 @@ deployments:
   owners:
   - ./src/private/lib/enterprise-translation-team
   active_owner: ./src/private/lib/enterprise-translation-team
-  content_hash: sha256:1f9ad3a54a1ac85c3257ac01cb6a7dcbdef3cfcf2afb8a3df2b82f38d14a5f3f
+  content_hash: sha256:422d928f6377eb303ff0aa1310b18cdba85f099bf4ad2829a92600e0992ffa61
 - kind: project-relative
   target: copilot
   value: .agents/skills/enterprise-translation-team/evals/files/qa-package/termbase.tbx
@@ -1895,7 +1895,7 @@ deployments:
   owners:
   - ./src/private/lib/enterprise-translation-team
   active_owner: ./src/private/lib/enterprise-translation-team
-  content_hash: sha256:3f96cd52a9783b6c16c58ef22938c6d593b99766b611084a40ac40f96fa4ccb0
+  content_hash: sha256:9b755785571f5925fbf05f29960fc1ae73d59b95ca88d1819f9f83bc9fdea615
 - kind: project-relative
   target: copilot
   value: .agents/skills/enterprise-translation-team/evals/files/qa-package/terminology-review.tsv
@@ -1904,7 +1904,7 @@ deployments:
   owners:
   - ./src/private/lib/enterprise-translation-team
   active_owner: ./src/private/lib/enterprise-translation-team
-  content_hash: sha256:f03fbe9f19a4e437bc89b724e0e903ef19a59bdf4eb027704858f5532cc4ddab
+  content_hash: sha256:7173cfc90c067080fd55e099cc9fe49b8b7cccfe404f9751acd54df42256f729
 - kind: project-relative
   target: copilot
   value: .agents/skills/enterprise-translation-team/evals/files/qa-package/translation.md
@@ -1949,7 +1949,7 @@ deployments:
   owners:
   - ./src/private/lib/enterprise-translation-team
   active_owner: ./src/private/lib/enterprise-translation-team
-  content_hash: sha256:ac17e14923ebcee76ec7d0cb3c315b5cfc9f9f5051b188394c2b180f94ac8e52
+  content_hash: sha256:a6fe68ad73e6e00a0286d86276e7b53c1accd38c4d2d8fa02e59fe5164a5090f
 - kind: project-relative
   target: copilot
   value: .agents/skills/enterprise-translation-team/references/mqm-taxonomy.md
@@ -1985,7 +1985,7 @@ deployments:
   owners:
   - ./src/private/lib/enterprise-translation-team
   active_owner: ./src/private/lib/enterprise-translation-team
-  content_hash: sha256:6e55ef599fe03963c0abb9797cdaff6927e3f9f250e56f86b153c31bda48720f
+  content_hash: sha256:31859c6e94a91f7c1c4f00677d20924d896272f05f54c4f65748b0bab5cbc523
 - kind: project-relative
   target: copilot
   value: .agents/skills/enterprise-translation-team/scripts/check_translation_outputs.py
@@ -1994,7 +1994,7 @@ deployments:
   owners:
   - ./src/private/lib/enterprise-translation-team
   active_owner: ./src/private/lib/enterprise-translation-team
-  content_hash: sha256:37e0c7953bd043b9d8b3f8733b7ba4c62d5cbbf3d6cb3baa16b921ed3ee90861
+  content_hash: sha256:8c8fb380c7bf98c61465c1f8581c65cc344a3698b3c039c21e2286982dbfbeba
 - kind: project-relative
   target: copilot
   value: .agents/skills/enterprise-translation-team/scripts/run_copilot_evals.py
@@ -2003,7 +2003,7 @@ deployments:
   owners:
   - ./src/private/lib/enterprise-translation-team
   active_owner: ./src/private/lib/enterprise-translation-team
-  content_hash: sha256:8c4667183c155e56245ef731e6b8552982ddf77edd81cd339f1d9d9e992c7b0f
+  content_hash: sha256:cb1eb6e27e3c6884ea92ad1ed8e4efee27b1d630a985970a32e891935ff58681
 - kind: project-relative
   target: copilot
   value: .agents/skills/eval-performance

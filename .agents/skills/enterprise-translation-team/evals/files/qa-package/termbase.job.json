@@ -100,14 +100,7 @@
         "preferred": "tenant",
         "language": "en-US",
         "allowed_variants": [],
-        "forbidden": [
-          {
-            "term": "renter",
-            "match_mode": "case_insensitive",
-            "reason": "Conflicting target for housing context, not cloud-account boundaries.",
-            "severity": "blocking"
-          }
-        ]
+        "forbidden": []
       },
       "context": {
         "definition": "An account or organizational boundary in a multi-tenant cloud service.",
@@ -165,14 +158,7 @@
         "preferred": "support ticket",
         "language": "en-US",
         "allowed_variants": [],
-        "forbidden": [
-          {
-            "term": "work order",
-            "match_mode": "case_insensitive",
-            "reason": "Potential field-service meaning, not customer support.",
-            "severity": "blocking"
-          }
-        ]
+        "forbidden": []
       },
       "context": {
         "definition": "A customer support case tracked by a service desk workflow.",

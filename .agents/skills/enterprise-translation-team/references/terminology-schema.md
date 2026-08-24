@@ -52,13 +52,15 @@ ship `termbase.tbx` plus the exact JSON sidecar path `termbase.job.json`;
 
 `termbase.job.json` must use BCP-47 language tags and concept-level entries:
 The deterministic checker accepts the regular `langtag` grammar and
-private-use tags;
-normalize grandfathered tags before validation.
+private-use tags. Producers must supply preferred replacements for
+grandfathered tags; raw grandfathered tags are rejected.
 Every entry's `source.language` and `target.language`
 must match the job-level `source_locale` and `target_locale`, respectively.
 Every entry scope must include `level` and `domain`;
 client and project identifiers from the job brief must be preserved when
 provided.
+The job brief's domain describes the overall assignment; an entry's
+`scope.domain` may narrow it to the term's applicable subject area.
 
 ```json
 {

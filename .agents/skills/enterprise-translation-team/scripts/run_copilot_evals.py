@@ -779,11 +779,13 @@ def main(argv: list[str]) -> int:
     args = parser.parse_args(argv)
     if args.baseline == "no-plugin" and args.agent is not None:
         parser.error("--agent cannot be used with --baseline no-plugin")
+    review_gates = args.mode == "copilot" and not args.skip_review_gates
     plugin_root_candidate = (
         args.plugin_root
         if args.plugin_root is not None
         else DEFAULT_PLUGIN_ROOT
         if args.apm_root is None
+        and (args.baseline == "with-plugin" or review_gates)
         else None
     )
     try:
@@ -799,7 +801,6 @@ def main(argv: list[str]) -> int:
         )
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         parser.error(str(exc))
-    review_gates = args.mode == "copilot" and not args.skip_review_gates
     if (
         args.mode == "copilot"
         and (args.baseline == "with-plugin" or review_gates)

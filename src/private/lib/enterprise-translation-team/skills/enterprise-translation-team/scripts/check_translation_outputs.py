@@ -401,26 +401,54 @@ def check_terminology_review_tsv(
         raise AssertionError(
             "terminology-review.tsv rows must not contain extra fields"
         )
-    if termbase is None:
-        if not rows:
-            raise AssertionError(
-                "terminology-review.tsv must include at least one data row"
+    fields = TERM_REVIEW_HEADER.split("\t")
+    if any(row.get(field) is None for row in rows for field in fields):
+        raise AssertionError(
+            "terminology-review.tsv rows must include every header field"
+        )
+    if not rows:
+        raise AssertionError(
+            "terminology-review.tsv must include at least one data row"
+        )
+    required_fields = [
+        "concept_id",
+        "entry_id",
+        "scope",
+        "status",
+        "source_term",
+        "preferred_target",
+        "context_note",
+        "positive_example",
+        "negative_example",
+        "blocking",
+        "evidence_refs",
+    ]
+    for index, row in enumerate(rows, start=1):
+        for field in required_fields:
+            require_nonempty_string(
+                row.get(field),
+                f"terminology-review.tsv row {index} {field}",
             )
+        if row.get("status") not in ALLOWED_TERM_STATUSES:
+            raise AssertionError(
+                f"terminology-review.tsv row {index} has invalid status"
+            )
+        if row.get("blocking") not in {"true", "false"}:
+            raise AssertionError(
+                f"terminology-review.tsv row {index} blocking must be "
+                "true or false"
+            )
+    row_entry_ids = [row["entry_id"] for row in rows]
+    if len(row_entry_ids) != len(set(row_entry_ids)):
+        raise AssertionError(
+            "terminology-review.tsv must not contain duplicate entry_id rows"
+        )
+    if termbase is None:
         return
     entries = require_list(termbase.get("entries"), "entries")
     if len(rows) != len(entries):
         raise AssertionError(
             "terminology-review.tsv must include exactly one row per termbase entry"
-        )
-    row_entry_ids = [
-        require_nonempty_string(
-            row.get("entry_id"), "terminology-review.tsv entry_id"
-        )
-        for row in rows
-    ]
-    if len(row_entry_ids) != len(set(row_entry_ids)):
-        raise AssertionError(
-            "terminology-review.tsv must not contain duplicate entry_id rows"
         )
     expected_entry_ids = {
         require_nonempty_string(entry.get("entry_id"), "entry_id")
@@ -729,6 +757,10 @@ def check_termbase_json(path: Path) -> dict:
             provenance.get("created_by"),
             f"entries[{index}].provenance.created_by",
         )
+        require_nonempty_string(
+            provenance.get("created_at"),
+            f"entries[{index}].provenance.created_at",
+        )
         if not require_list(
             provenance.get("evidence_refs"),
             f"entries[{index}].provenance.evidence_refs",
@@ -834,6 +866,35 @@ def check_termbase_json(path: Path) -> dict:
             raise AssertionError(
                 f"Open conflict {conflict_id} must be blocking"
             )
+        if status == "open":
+            overlap: set[str] = set()
+            forbidden_targets = require_list(
+                target.get("forbidden", []),
+                f"{concept_id}.target.forbidden",
+            )
+            for candidate in competing_targets:
+                for raw_forbidden in forbidden_targets:
+                    forbidden = require_dict(
+                        raw_forbidden, f"{concept_id}.target.forbidden[]"
+                    )
+                    forbidden_term = require_nonempty_string(
+                        forbidden.get("term"),
+                        f"{concept_id}.target.forbidden[].term",
+                    )
+                    match_mode = require_nonempty_string(
+                        forbidden.get("match_mode"),
+                        f"{concept_id}.target.forbidden[].match_mode",
+                    )
+                    if candidate == forbidden_term or (
+                        match_mode == "case_insensitive"
+                        and candidate.casefold() == forbidden_term.casefold()
+                    ):
+                        overlap.add(candidate)
+            if overlap:
+                raise AssertionError(
+                    f"Open conflict {conflict_id} candidates must not be "
+                    f"forbidden targets: {sorted(overlap)}"
+                )
         if status == "resolved":
             if blocking is not False:
                 raise AssertionError(
@@ -1055,6 +1116,7 @@ def check_tbx(path: Path, termbase: dict | None = None) -> None:
     all_term_notes: list[ET.Element] = []
     concepts_by_id: dict[str, dict[str, set[str]]] = {}
     concept_elements_by_id: dict[str, ET.Element] = {}
+    administrative_status_by_term: dict[tuple[str, str, str], str | None] = {}
     xml_language = "{http://www.w3.org/XML/1998/namespace}lang"
 
     for concept in concepts:
@@ -1138,6 +1200,41 @@ def check_tbx(path: Path, termbase: dict | None = None) -> None:
                         "non-direct termNote"
                     )
                 all_term_notes.extend(term_notes)
+                status_values = [
+                    require_nonempty_string(
+                        element.text,
+                        f"conceptEntry {concept_id} term {term!r} "
+                        "administrativeStatus",
+                    )
+                    for element in [
+                        *[
+                            note
+                            for note in term_notes
+                            if note.get("type") == "administrativeStatus"
+                        ],
+                        *[
+                            admin
+                            for admin in term_sec.findall(tbx_tag("admin"))
+                            if admin.get("type") == "administrativeStatus"
+                        ],
+                    ]
+                ]
+                if len(status_values) > 1:
+                    raise AssertionError(
+                        f"termbase.tbx term {term!r} must have at most "
+                        "one administrativeStatus"
+                    )
+                if (
+                    status_values
+                    and status_values[0] not in ALLOWED_TBX_ADMIN_STATUSES
+                ):
+                    raise AssertionError(
+                        "Invalid TBX-Basic administrativeStatus value: "
+                        f"{status_values[0]!r}"
+                    )
+                administrative_status_by_term[
+                    (concept_id, language_key, term)
+                ] = status_values[0] if status_values else None
 
         if element_ids(list(concept.iter(tbx_tag("termSec")))) != element_ids(
             [
@@ -1187,13 +1284,6 @@ def check_tbx(path: Path, termbase: dict | None = None) -> None:
             raise AssertionError(
                 f"Invalid TBX-Basic partOfSpeech value: {value!r}"
             )
-        if (
-            note_type == "administrativeStatus"
-            and value not in ALLOWED_TBX_ADMIN_STATUSES
-        ):
-            raise AssertionError(
-                f"Invalid TBX-Basic administrativeStatus value: {value!r}"
-            )
         if note_type == "termType" and value not in ALLOWED_TBX_TERM_TYPES:
             raise AssertionError(f"Invalid TBX-Basic termType value: {value!r}")
     if termbase is None:
@@ -1212,6 +1302,7 @@ def check_tbx(path: Path, termbase: dict | None = None) -> None:
         concept_id = require_nonempty_string(
             entry.get("concept_id"), "entry.concept_id"
         )
+        concept = concept_elements_by_id[concept_id]
         terms_by_language = concepts_by_id.get(concept_id)
         if terms_by_language is None:
             raise AssertionError(
@@ -1246,59 +1337,13 @@ def check_tbx(path: Path, termbase: dict | None = None) -> None:
                 f"termbase.tbx conceptEntry {concept_id} language and term "
                 "sets must exactly match termbase.job.json"
             )
-        concept = concept_elements_by_id[concept_id]
-        target_lang_secs = [
-            lang_sec
-            for lang_sec in concept.findall(tbx_tag("langSec"))
-            if require_nonempty_string(
-                lang_sec.get(xml_language),
-                f"conceptEntry {concept_id} langSec xml:lang",
-            ).casefold()
-            == target_language.casefold()
-        ]
-        if len(target_lang_secs) != 1:
-            raise AssertionError(
-                f"termbase.tbx conceptEntry {concept_id} must include one "
-                f"target langSec for {target_language}"
-            )
-        target_statuses: dict[str, str | None] = {}
-        for term_sec in target_lang_secs[0].findall(tbx_tag("termSec")):
-            term = require_nonempty_string(
-                term_sec.findtext(tbx_tag("term")),
-                f"conceptEntry {concept_id} target term",
-            )
-            status_values = [
-                require_nonempty_string(
-                    element.text,
-                    f"conceptEntry {concept_id} target administrativeStatus",
-                )
-                for element in [
-                    *[
-                        note
-                        for note in term_sec.findall(tbx_tag("termNote"))
-                        if note.get("type") == "administrativeStatus"
-                    ],
-                    *[
-                        admin
-                        for admin in term_sec.findall(tbx_tag("admin"))
-                        if admin.get("type") == "administrativeStatus"
-                    ],
-                ]
+        target_language_key = target_language.casefold()
+        target_statuses = {
+            term: administrative_status_by_term[
+                (concept_id, target_language_key, term)
             ]
-            if len(status_values) > 1:
-                raise AssertionError(
-                    f"termbase.tbx target term {term!r} must have at most "
-                    "one administrativeStatus"
-                )
-            if (
-                status_values
-                and status_values[0] not in ALLOWED_TBX_ADMIN_STATUSES
-            ):
-                raise AssertionError(
-                    f"Invalid TBX-Basic administrativeStatus value: "
-                    f"{status_values[0]!r}"
-                )
-            target_statuses[term] = status_values[0] if status_values else None
+            for term in terms_by_language[target_language_key]
+        }
         forbidden_terms = {
             require_nonempty_string(item.get("term"), "forbidden.term")
             for item in require_list(
@@ -1638,9 +1683,7 @@ def check_terminology_content(
     client_id = require_nonempty_string(
         brief.get("client_id"), "terminology brief.client_id"
     )
-    domain = require_nonempty_string(
-        brief.get("domain"), "terminology brief.domain"
-    )
+    require_nonempty_string(brief.get("domain"), "terminology brief.domain")
     project_id = require_nonempty_string(
         brief.get("project_id"), "terminology brief.project_id"
     )
@@ -1692,7 +1735,6 @@ def check_terminology_content(
         scope = require_dict(entry.get("scope"), f"{concept_id}.scope")
         for key, expected in [
             ("client_id", client_id),
-            ("domain", domain),
             ("project_id", project_id),
         ]:
             if scope.get(key) != expected:
@@ -2020,21 +2062,26 @@ def check_qa_content(path: Path, run_dir: Path | None) -> None:
     translation = require_file(package / "translation.md")
     termbase = check_termbase_json(package / "termbase.job.json")
     projection_mismatches: list[str] = []
-    for file_name, checker in [
+    for file_name, structure_checker, projection_checker in [
         (
             "termbase.tbx",
+            lambda: check_tbx(package / "termbase.tbx"),
             lambda: check_tbx(package / "termbase.tbx", termbase),
         ),
         (
             "terminology-review.tsv",
             lambda: check_terminology_review_tsv(
+                package / "terminology-review.tsv"
+            ),
+            lambda: check_terminology_review_tsv(
                 package / "terminology-review.tsv", termbase
             ),
         ),
     ]:
+        structure_checker()
         try:
-            checker()
-        except (AssertionError, ET.ParseError):
+            projection_checker()
+        except AssertionError:
             projection_mismatches.append(file_name)
     if set(projection_mismatches) != {
         "termbase.tbx",

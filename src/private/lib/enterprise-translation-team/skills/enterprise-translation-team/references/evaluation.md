@@ -74,7 +74,7 @@ before expensive `copilot -p` evaluation.
 
 ## Copilot CLI run shape
 
-Use a disposable workspace outside canonical `raw\` and `wiki\` content.
+Use a disposable workspace outside canonical `raw/` and `wiki/` content.
 
 ```powershell
 copilot -C <scratch> `

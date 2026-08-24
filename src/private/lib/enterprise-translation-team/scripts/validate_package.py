@@ -210,6 +210,7 @@ def validate_evals() -> None:
             or case.get("forbidden_created_paths")
             or case.get("required_response_patterns")
             or case.get("forbidden_response_patterns")
+            or case.get("forbid_workspace_changes")
         ):
             fail(f"Eval {case_id} has no objective checks")
         if not isinstance(case.get("assertions"), list):

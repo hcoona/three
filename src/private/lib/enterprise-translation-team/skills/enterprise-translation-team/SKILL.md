@@ -49,8 +49,8 @@ and explicit human sign-off boundaries.
 7. Treat AI review as a quality gate, not a regulated human approval.
    Escalate legal, medical, financial, compliance,
    or publication-sensitive uncertainty to a human or subject-matter expert.
-8. Do not write to `raw\`, durable `wiki\`,
-   or `wiki\log.jsonl` merely because a translation task was performed.
+8. Do not write to `raw/`, durable `wiki/`,
+   or `wiki/log.jsonl` merely because a translation task was performed.
    Only update repository knowledge
    when the user explicitly requests durable wiki maintenance.
 
