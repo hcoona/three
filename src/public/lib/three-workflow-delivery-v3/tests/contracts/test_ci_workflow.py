@@ -76,7 +76,16 @@ def test_workflow_is_bounded_and_exposes_only_approved_events() -> None:
         "workflow_dispatch": None,
     }
     assert document["permissions"] == {"contents": "read"}
-    assert all("permissions" not in job for job in document["jobs"].values())
+    assert {
+        name: job["permissions"]
+        for name, job in document["jobs"].items()
+        if "permissions" in job
+    } == {
+        "request": {
+            "actions": "read",
+            "contents": "read",
+        }
+    }
 
 
 def test_concurrency_binds_pr_number_or_manual_target_sha() -> None:
@@ -128,9 +137,11 @@ def test_candidate_uses_exact_pr_range_and_tested_merge_target() -> None:
         "persist-credentials": False,
         "ref": "${{ github.sha }}",
     }
-    assert "/actions/runs/${GITHUB_RUN_ID}" in clock
-    assert 'json.load(sys.stdin)["created_at"]' in clock
-    assert 'date --date="${created_at}" +%s' in clock
+    assert "eng/scripts/workflow_delivery_v3_run_created_epoch.py" in clock
+    assert "/actions/runs/" not in clock
+    assert "json.load" not in clock
+    assert "date --date=" not in clock
+    assert "curl" not in clock
     assert "ACTIONS_RUNTIME_TOKEN" not in clock
     assert "ACTIONS_RESULTS_URL" not in clock
     assert '--base-sha "${BASE_SHA}"' in command
@@ -420,8 +431,10 @@ def test_finalizer_detects_missing_lane_artifacts() -> None:
     assert '--summary-output "${summary}"' in command
 
 
-def test_finalizer_projects_only_precoexistence_pull_request_failure() -> None:
-    """Keep canonical finalization while projecting one bounded bootstrap."""
+def test_finalizer_removes_precoexistence_projection_from_active_workflow() -> (
+    None
+):
+    """Keep only canonical finalization in the active workflow."""
     job = _document()["jobs"]["required-finalizer"]
     step = next(
         item
@@ -430,56 +443,33 @@ def test_finalizer_projects_only_precoexistence_pull_request_failure() -> None:
     )
     command = cast("str", step["run"])
 
+    assert step["id"] == "finalize"
     assert "continue-on-error" not in step
-    assert step["env"]["BASE_SHA"] == (
-        "${{ github.event.pull_request.base.sha }}"
-    )
-    assert step["env"]["HEAD_SHA"] == (
-        "${{ github.event.pull_request.head.sha }}"
-    )
-    assert step["env"]["TESTED_MERGE_SHA"] == "${{ github.sha }}"
-    success_gate = 'if [[ "${finalizer_exit}" -eq 0 ]]; then\n  exit 0\nfi'
-    event_gate = (
-        'if [[ "${GITHUB_EVENT_NAME}" != "pull_request" ]]; then\n'
-        '  exit "${finalizer_exit}"\n'
-        "fi"
-    )
+    assert {"BASE_SHA", "HEAD_SHA", "TESTED_MERGE_SHA"}.isdisjoint(step["env"])
+    assert "ci project-bootstrap-shadow" not in command
     set_plus_index = command.index("set +e")
     finalize_index = command.index('"${cli[@]}" ci finalize')
     capture_index = command.index("finalizer_exit=$?")
     set_minus_index = command.index("set -e", capture_index)
-    success_index = command.index(success_gate)
-    event_index = command.index(event_gate)
-    projection_index = command.index('"${cli[@]}" ci project-bootstrap-shadow')
+    output_index = command.index(
+        'echo "finalizer-exit=${finalizer_exit}" >> "${GITHUB_OUTPUT}"'
+    )
     assert (
         set_plus_index
         < finalize_index
         < capture_index
         < set_minus_index
-        < success_index
-        < event_index
-        < projection_index
+        < output_index
     )
     finalizer_summary = '--github-step-summary "${GITHUB_STEP_SUMMARY}"'
     finalizer_summary_end = command.index(
         finalizer_summary, finalize_index
     ) + len(finalizer_summary)
     assert command[finalizer_summary_end:capture_index].strip() == ""
-
-    projection = command[projection_index:]
-    assert '--repo-root "${GITHUB_WORKSPACE}"' in projection
-    assert '--plan "${plan}"' in projection
-    assert '--plan-digest "${PLAN_DIGEST}"' in projection
-    assert '--decision "${decision}"' in projection
-    assert '--summary "${summary}"' in projection
-    assert (
-        '--pull-request-number "${{ github.event.pull_request.number }}"'
-        in projection
+    assert command.rstrip().endswith(
+        'echo "finalizer-exit=${finalizer_exit}" >> "${GITHUB_OUTPUT}"'
     )
-    assert '--base-sha "${BASE_SHA}"' in projection
-    assert '--head-sha "${HEAD_SHA}"' in projection
-    assert '--tested-merge-sha "${TESTED_MERGE_SHA}"' in projection
-    assert finalizer_summary in projection
+    assert 'exit "${finalizer_exit}"' not in command
     for forbidden in (
         "pr-552",
         "793c7255",
@@ -510,6 +500,11 @@ def test_finalizer_persists_canonical_decision_and_summary_before_guard() -> (
         for step in steps
         if step["name"] == "Upload canonical CI Slice Summary"
     )
+    propagation = next(
+        step
+        for step in steps
+        if step["name"] == "Propagate canonical CI Slice Decision"
+    )
     guard = next(
         step
         for step in steps
@@ -517,22 +512,31 @@ def test_finalizer_persists_canonical_decision_and_summary_before_guard() -> (
         == "Report noncanonical contract failure without a Decision"
     )
 
-    assert steps.index(finalize) < steps.index(decision) < steps.index(summary)
-    assert steps.index(summary) < steps.index(guard)
+    assert (
+        steps.index(finalize)
+        < steps.index(decision)
+        < steps.index(summary)
+        < steps.index(propagation)
+        < steps.index(guard)
+    )
     expected = (
         (
             decision,
             "ci-slice-decision",
-            "always() && hashFiles(format('.wdv3/wdv3-{0}-{1}-"
-            "ci-slice-decision.json', github.run_id, github.run_attempt)) "
-            "!= ''",
+            (
+                "always() && hashFiles(format('.wdv3/wdv3-{0}-{1}-"
+                "ci-slice-decision.json', github.run_id, "
+                "github.run_attempt)) != ''"
+            ),
         ),
         (
             summary,
             "ci-slice-summary",
-            "always() && hashFiles(format('.wdv3/wdv3-{0}-{1}-"
-            "ci-slice-summary.json', github.run_id, github.run_attempt)) "
-            "!= ''",
+            (
+                "always() && hashFiles(format('.wdv3/wdv3-{0}-{1}-"
+                "ci-slice-summary.json', github.run_id, "
+                "github.run_attempt)) != ''"
+            ),
         ),
     )
     for step, role, condition in expected:
@@ -593,7 +597,6 @@ def test_workflow_has_no_transport_credentials_or_commit6_authority() -> None:
         "github-token:",
         "packages:",
         "id-token:",
-        "actions:",
         "secrets.",
         "environment:",
         "ruleset",
@@ -603,3 +606,342 @@ def test_workflow_has_no_transport_credentials_or_commit6_authority() -> None:
         assert forbidden not in lowered
     assert "python - <<'py'" not in lowered
     assert "python <<'py'" not in lowered
+
+
+ROOT_HK_ADMISSION_COUNT = 2
+FROZEN_INSTALL_COUNT = 2
+
+
+def test_request_scopes_github_token_to_metadata_step() -> None:
+    """Expose the platform token only to the governed metadata lookup."""
+    document = _document()
+    github_expression = "${{ github.token }}"
+    request = document["jobs"]["request"]
+    metadata = next(
+        step
+        for step in _steps(request)
+        if step["name"] == "Record platform workflow creation"
+    )
+
+    assert WORKFLOW.read_text(encoding="utf-8").count(github_expression) == 1
+    assert metadata["env"] == {"WDV3_GITHUB_TOKEN": github_expression}
+    assert github_expression not in document["env"].values()
+    assert all(
+        github_expression not in job.get("env", {}).values()
+        for job in document["jobs"].values()
+    )
+    assert [
+        (job_name, step["name"], key)
+        for job_name, job in document["jobs"].items()
+        for step in _steps(job)
+        for key, value in step.get("env", {}).items()
+        if value == github_expression
+    ] == [
+        (
+            "request",
+            "Record platform workflow creation",
+            "WDV3_GITHUB_TOKEN",
+        )
+    ]
+
+
+def test_request_checks_out_before_running_governed_metadata_helper() -> None:
+    """Use a credentialless checkout before the root-HK-governed helper."""
+    request = _document()["jobs"]["request"]
+    steps = _steps(request)
+    checkout = next(step for step in steps if step.get("uses") == CHECKOUT)
+    metadata = next(
+        step
+        for step in steps
+        if step["name"] == "Record platform workflow creation"
+    )
+    command = cast("str", metadata["run"])
+    hk = HK_CONFIG.read_text(encoding="utf-8")
+
+    assert steps.index(checkout) < steps.index(metadata)
+    assert checkout["with"] == {
+        "fetch-depth": 0,
+        "persist-credentials": False,
+        "ref": "${{ github.sha }}",
+    }
+    assert metadata["id"] == "clock"
+    assert command == (
+        'started_at="$(\n'
+        "  python3 eng/scripts/workflow_delivery_v3_run_created_epoch.py\n"
+        ')"\n'
+        'echo "started-at=${started_at}" >> "${GITHUB_OUTPUT}"\n'
+    )
+    for forbidden in ("curl", "gh api", "urllib", "requests", "actions/runs"):
+        assert forbidden not in command.lower()
+
+    inventory_index = hk.index("local workflow_delivery_v3_files")
+    helper_index = hk.index(
+        '"eng/scripts/workflow_delivery_v3_run_created_epoch.py",'
+    )
+    control_index = hk.index('["v3-control-pytest"]')
+    glob_index = hk.index("glob = workflow_delivery_v3_files", control_index)
+    check_index = hk.index(
+        "pytest -q src/public/lib/three-workflow-delivery-v3/tests",
+        glob_index,
+    )
+    assert (
+        inventory_index
+        < helper_index
+        < control_index
+        < glob_index
+        < check_index
+    )
+
+
+def test_plan_forwards_existing_provider_artifact_identity() -> None:
+    """Forward the existing Provider platform identity without Plan growth."""
+    jobs = _document()["jobs"]
+    discover = jobs["discover-node"]
+    plan = jobs["plan"]
+    command = _run(plan, "Compile model and close Plan")
+
+    assert discover["outputs"]["provider-artifact-id"] == (
+        "${{ steps.upload.outputs.artifact-id }}"
+    )
+    assert discover["outputs"]["provider-artifact-digest"] == (
+        "${{ steps.upload.outputs.artifact-digest }}"
+    )
+    assert plan["outputs"]["provider-artifact-id"] == (
+        "${{ needs.discover-node.outputs.provider-artifact-id }}"
+    )
+    assert plan["outputs"]["provider-artifact-digest"] == (
+        "${{ needs.discover-node.outputs.provider-artifact-digest }}"
+    )
+    assert re.findall(
+        r"^\s+(--[a-z0-9-]+)\b",
+        command,
+        flags=re.MULTILINE,
+    ) == [
+        "--request",
+        "--provider-result",
+        "--request-artifact-id",
+        "--request-artifact-digest",
+        "--provider-artifact-id",
+        "--provider-artifact-digest",
+        "--output",
+        "--adapter-context-output",
+        "--github-output",
+    ]
+    assert (
+        '--provider-artifact-id "${{ needs.discover-node.outputs.'
+        'provider-artifact-id }}"'
+    ) in command
+    assert (
+        '--provider-artifact-digest "${{ needs.discover-node.outputs.'
+        'provider-artifact-digest }}"'
+    ) in command
+    assert "--schema" not in command
+    assert "--obligation" not in command
+
+
+def test_root_hk_downloads_and_admits_exact_provider_and_plan_artifacts() -> (
+    None
+):
+    """Admit the forwarded Provider and Plan platform identities before HK."""
+    root = _document()["jobs"]["root-hk"]
+    steps = _steps(root)
+    plan_download = next(
+        step for step in steps if step["name"] == "Download Plan by artifact ID"
+    )
+    provider_download = next(
+        step
+        for step in steps
+        if step["name"] == "Download Provider Result by artifact ID"
+    )
+    admit = next(
+        step for step in steps if step["name"] == "Admit root-HK inputs"
+    )
+    execute = next(step for step in steps if step.get("id") == "execute")
+    command = cast("str", admit["run"])
+
+    assert plan_download["uses"] == DOWNLOAD
+    assert plan_download["with"] == {
+        "artifact-ids": "${{ needs.plan.outputs.plan-artifact-id }}",
+        "path": ".wdv3/input",
+        "skip-decompress": True,
+        "digest-mismatch": "error",
+    }
+    assert provider_download["uses"] == DOWNLOAD
+    assert provider_download["with"] == {
+        "artifact-ids": "${{ needs.plan.outputs.provider-artifact-id }}",
+        "path": ".wdv3/input",
+        "skip-decompress": True,
+        "digest-mismatch": "error",
+    }
+    assert (
+        command.count("three-workflow-delivery-v3 ci admit-payload")
+        == ROOT_HK_ADMISSION_COUNT
+    )
+    plan_input = (
+        '--input ".wdv3/input/wdv3-${GITHUB_RUN_ID}-'
+        '${GITHUB_RUN_ATTEMPT}-plan.json"'
+    )
+    plan_digest = (
+        '--expected-digest "${{ needs.plan.outputs.plan-artifact-digest }}"'
+    )
+    provider_input = (
+        '--input ".wdv3/input/wdv3-${GITHUB_RUN_ID}-'
+        '${GITHUB_RUN_ATTEMPT}-provider.json"'
+    )
+    provider_digest = (
+        '--expected-digest "${{ needs.plan.outputs.provider-artifact-digest }}"'
+    )
+    assert command.count("--expected-digest") == ROOT_HK_ADMISSION_COUNT
+    assert (
+        command.index(plan_input)
+        < command.index(plan_digest)
+        < command.index(provider_input)
+        < command.index(provider_digest)
+    )
+    assert (
+        steps.index(plan_download)
+        < steps.index(provider_download)
+        < steps.index(admit)
+        < steps.index(execute)
+    )
+
+
+def test_root_hk_validates_toolchain_and_materializes_dependencies_before_hk() -> (  # noqa: E501
+    None
+):
+    """Validate facts and install both frozen trees inside execution."""
+    root = _document()["jobs"]["root-hk"]
+    steps = _steps(root)
+    execute_steps = [step for step in steps if step.get("id") == "execute"]
+
+    assert len(execute_steps) == 1
+    execute = execute_steps[0]
+    command = cast("str", execute["run"])
+    assert execute["name"] == "Run permanent root HK and consumer policy"
+    assert execute["if"] == "needs.plan.outputs.root-hk-selected == 'true'"
+    assert execute["continue-on-error"] is True
+    assert 'toolchain = document["provider"]["toolchain"]' in command
+    assert '("node", r"v[0-9][0-9A-Za-z.+-]{0,63}")' in command
+    assert '("pnpm", r"[0-9][0-9A-Za-z.+-]{0,63}")' in command
+    assert (
+        "if not isinstance(value, str) or re.fullmatch(pattern, value) is None:"
+    ) in command
+    assert command.count("node --version") == 1
+    assert command.count("pnpm --version") == 1
+    assert (
+        command.count("--frozen-lockfile --ignore-scripts")
+        == FROZEN_INSTALL_COUNT
+    )
+
+    validation_index = command.index("if not isinstance(value, str)")
+    node_fact_index = command.index('actual_node="$(node --version)"')
+    pnpm_fact_index = command.index('actual_pnpm="$(pnpm --version)"')
+    node_equality_index = command.index(
+        'if [[ "${actual_node}" != "${expected_node}" ]]'
+    )
+    pnpm_equality_index = command.index(
+        'if [[ "${actual_pnpm}" != "${expected_pnpm}" ]]'
+    )
+    root_install_index = command.index(
+        "pnpm install --frozen-lockfile --ignore-scripts"
+    )
+    hexo_install_index = command.index(
+        "pnpm --dir src/public/lib/hexo-renderer-asciidoc/examples/hexo-site"
+    )
+    hexo_flags_index = command.index(
+        "install --frozen-lockfile --ignore-scripts",
+        hexo_install_index,
+    )
+    incremental_hk_index = command.index(
+        "python eng/scripts/workflow_delivery_v3_hk.py"
+    )
+    manual_hk_index = command.index("mise exec -- hk --no-progress check --all")
+    assert (
+        validation_index
+        < node_fact_index
+        < pnpm_fact_index
+        < node_equality_index
+        < pnpm_equality_index
+        < root_install_index
+        < hexo_install_index
+        < hexo_flags_index
+        < incremental_hk_index
+        < manual_hk_index
+    )
+    for step in steps:
+        if step is execute:
+            continue
+        other_command = cast("str", step.get("run", ""))
+        assert "pnpm install --frozen-lockfile --ignore-scripts" not in (
+            other_command
+        )
+        assert (
+            "pnpm --dir "
+            "src/public/lib/hexo-renderer-asciidoc/examples/hexo-site"
+            not in other_command
+        )
+
+
+def test_root_hk_lane_result_and_upload_remain_failure_tolerant() -> None:
+    """Always close and upload the existing root-HK result after execution."""
+    root = _document()["jobs"]["root-hk"]
+    steps = _steps(root)
+    execute = next(step for step in steps if step.get("id") == "execute")
+    lane_result = next(
+        step for step in steps if step["name"] == "Form root-hk lane result"
+    )
+    upload = next(
+        step for step in steps if step["name"] == "Upload root-hk lane result"
+    )
+
+    assert execute["continue-on-error"] is True
+    assert lane_result["if"] == "always()"
+    assert '--outcome "${{ steps.execute.outcome }}"' in lane_result["run"]
+    assert upload["id"] == "upload"
+    assert upload["if"] == (
+        "always() && hashFiles(format('.wdv3/wdv3-{0}-{1}-"
+        "root-hk-result.json', github.run_id, github.run_attempt)) != ''"
+    )
+    assert upload["uses"] == UPLOAD
+    assert upload["with"] == {
+        "name": (
+            "wdv3-${{ github.run_id }}-${{ github.run_attempt }}-root-hk-result"
+        ),
+        "path": (
+            ".wdv3/wdv3-${{ github.run_id }}-${{ github.run_attempt }}-"
+            "root-hk-result.json"
+        ),
+        "if-no-files-found": "error",
+        "retention-days": RETENTION_DAYS,
+        "archive": False,
+        "include-hidden-files": True,
+    }
+    assert steps.index(execute) < steps.index(lane_result) < steps.index(upload)
+
+
+def test_finalizer_propagates_only_a_valid_original_exit_status() -> None:
+    """Reject malformed output and propagate only the captured 0..255 status."""
+    finalizer = _document()["jobs"]["required-finalizer"]
+    propagation = next(
+        step
+        for step in _steps(finalizer)
+        if step["name"] == "Propagate canonical CI Slice Decision"
+    )
+    command = cast("str", propagation["run"])
+
+    assert propagation["if"] == (
+        "always() && hashFiles(format('.wdv3/wdv3-{0}-{1}-"
+        "ci-slice-decision.json', github.run_id, github.run_attempt)) != ''"
+    )
+    assert propagation["env"] == {
+        "FINALIZER_EXIT": "${{ steps.finalize.outputs.finalizer-exit }}"
+    }
+    assert "continue-on-error" not in propagation
+    assert command == (
+        'if [[ ! "${FINALIZER_EXIT}" =~ ^[0-9]+$ ]] || '
+        "(( FINALIZER_EXIT > 255 )); then\n"
+        '  echo "Finalizer exit status is missing or invalid" >&2\n'
+        "  exit 1\n"
+        "fi\n"
+        'exit "${FINALIZER_EXIT}"\n'
+    )
