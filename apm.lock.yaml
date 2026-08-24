@@ -1,5 +1,5 @@
 lockfile_version: '1'
-generated_at: '2026-08-24T18:05:56.220123+00:00'
+generated_at: '2026-08-24T19:17:11.263740+00:00'
 apm_version: 0.28.0
 dependencies:
 - repo_url: _local/enterprise-translation-team
@@ -136,13 +136,13 @@ dependencies:
     .agents/skills/scan-page-rectification/tests/run.ps1: sha256:46eb597910ab1160c3658abac5549bebd3e5c858441b12f614d78b3d7cb6f6e0
     .agents/skills/scan-page-rectification/tests/test_rectify_pages.py: sha256:69c7fc3342e2f3616c9df1725bfb601251494c7cc3ab830844bab30f5b7922ec
     .agents/skills/scan-page-rectification/tests/test_runner.ps1: sha256:eceef58272b792f16e499539e646ae8fd94ec6e6d5cdbea95579b657b4e91265
-    .agents/skills/scan-tone-restoration/SKILL.md: sha256:34f157daa93add38c756d2233dca4d3afb547a24c95227e42c3e518e59934135
+    .agents/skills/scan-tone-restoration/SKILL.md: sha256:bfa5e0cd50c7e17f901701f47b86db945667eb952e04c19c400cb5ae07130834
     .agents/skills/scan-tone-restoration/scripts/requirements.lock: sha256:931798b6624bcab60997a651f2079b8fc5774e60ea4d543fc9c1d62dd4c3efbd
     .agents/skills/scan-tone-restoration/scripts/restore_tone.py: sha256:f74867fb8a5a4c426549c6696549bb1713f6cc1b810a012cda2131ece636a0c8
-    .agents/skills/scan-tone-restoration/scripts/run.ps1: sha256:ae5f75df5289eb4781981fdce0813c2552865f980bf5627707853c549a95df75
+    .agents/skills/scan-tone-restoration/scripts/run.ps1: sha256:9aa0e0333eaf722e7b7bd15e72c573e337df7cf2312b944b8577454ae383cfbb
     .agents/skills/scan-tone-restoration/tests/run.ps1: sha256:522ff1f3353eacaeef2b0fdce5d2594b79a1792b2bcc9828f9164bf86a08ec09
-    .agents/skills/scan-tone-restoration/tests/test_restore_tone.py: sha256:5689707b8e717e94588f7d8cff83e2acd15748ae0c9bfc27f10269632fd74893
-    .agents/skills/scan-tone-restoration/tests/test_runner.ps1: sha256:dde24f819fd1744b2463963c14f9d1f2c69b5d7ef4092b37c8a915715e00107b
+    .agents/skills/scan-tone-restoration/tests/test_restore_tone.py: sha256:ae7823a94be9b336a012d1077c2a813d0893e704a67a4dd81318b70fafa13443
+    .agents/skills/scan-tone-restoration/tests/test_runner.ps1: sha256:ecaf496a3e458d61a704ad332d269985dc5d56d9d631ee439e7fe4e8c8b507e3
   source: local
   local_path: ./src/private/lib/scan-restoration
   declared_license: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
@@ -3489,7 +3489,7 @@ deployments:
   owners:
   - ./src/private/lib/scan-restoration
   active_owner: ./src/private/lib/scan-restoration
-  content_hash: sha256:34f157daa93add38c756d2233dca4d3afb547a24c95227e42c3e518e59934135
+  content_hash: sha256:bfa5e0cd50c7e17f901701f47b86db945667eb952e04c19c400cb5ae07130834
 - kind: project-relative
   target: copilot
   value: .agents/skills/scan-tone-restoration/scripts/requirements.lock
@@ -3516,7 +3516,7 @@ deployments:
   owners:
   - ./src/private/lib/scan-restoration
   active_owner: ./src/private/lib/scan-restoration
-  content_hash: sha256:ae5f75df5289eb4781981fdce0813c2552865f980bf5627707853c549a95df75
+  content_hash: sha256:9aa0e0333eaf722e7b7bd15e72c573e337df7cf2312b944b8577454ae383cfbb
 - kind: project-relative
   target: copilot
   value: .agents/skills/scan-tone-restoration/tests/run.ps1
@@ -3534,7 +3534,7 @@ deployments:
   owners:
   - ./src/private/lib/scan-restoration
   active_owner: ./src/private/lib/scan-restoration
-  content_hash: sha256:5689707b8e717e94588f7d8cff83e2acd15748ae0c9bfc27f10269632fd74893
+  content_hash: sha256:ae7823a94be9b336a012d1077c2a813d0893e704a67a4dd81318b70fafa13443
 - kind: project-relative
   target: copilot
   value: .agents/skills/scan-tone-restoration/tests/test_runner.ps1
@@ -3543,7 +3543,7 @@ deployments:
   owners:
   - ./src/private/lib/scan-restoration
   active_owner: ./src/private/lib/scan-restoration
-  content_hash: sha256:dde24f819fd1744b2463963c14f9d1f2c69b5d7ef4092b37c8a915715e00107b
+  content_hash: sha256:ecaf496a3e458d61a704ad332d269985dc5d56d9d631ee439e7fe4e8c8b507e3
 - kind: project-relative
   target: copilot
   value: .agents/skills/setup-local-sdk

@@ -67,17 +67,17 @@ try {
 python = "$pythonVersion"
 "@ | Set-Content -LiteralPath $miseConfig -Encoding UTF8
 
+    foreach ($entry in @(Get-ChildItem Env:)) {
+        if ($entry.Name -match '^(?:MISE_|PIP|PYTHON)') {
+            Set-IsolatedEnvironmentVariable $entry.Name $null
+        }
+    }
     foreach ($name in @(
             "MISE_CONFIG_FILE",
             "MISE_GLOBAL_CONFIG_FILE",
             "MISE_SYSTEM_CONFIG_FILE"
         )) {
         Set-IsolatedEnvironmentVariable $name $miseConfig
-    }
-    foreach ($entry in @(Get-ChildItem Env:)) {
-        if ($entry.Name -match '^(?:PIP|PYTHON)') {
-            Set-IsolatedEnvironmentVariable $entry.Name $null
-        }
     }
     Set-IsolatedEnvironmentVariable "PYTHONNOUSERSITE" "1"
     Set-IsolatedEnvironmentVariable "PIP_CONFIG_FILE" "nul"

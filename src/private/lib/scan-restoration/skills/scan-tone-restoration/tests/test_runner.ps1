@@ -23,6 +23,7 @@ foreach ($required in @(
         '$pythonVersion = "3.12.10"',
         '$imagecodecsVersion = "2026.6.26"',
         '$tifffileVersion = "2026.7.31"',
+        "'^(?:MISE_|PIP|PYTHON)'",
         '"PIP_CONFIG_FILE" "nul"',
         "--disable-pip-version-check",
         "--require-hashes",
@@ -51,6 +52,11 @@ foreach ($required in @(
 
 if ($source -match "PIP_INDEX_URL|ado token|EscapeDataString") {
     throw "run.ps1 contains obsolete private-feed bootstrap behavior."
+}
+if (-not $docs.Contains(
+        'clears `MISE_*`, `PIP_*`, and `PYTHON*` variables'
+    )) {
+    throw "SKILL.md must document inherited mise environment isolation."
 }
 if (([Regex]::Matches(
             $docs,

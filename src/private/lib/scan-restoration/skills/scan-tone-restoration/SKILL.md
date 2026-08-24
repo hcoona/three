@@ -246,7 +246,7 @@ The final stdout line is a JSON summary with this schema:
   is never executed.
 - The runner uses Python isolated mode, isolated pip configuration, pinned
   versions, an isolated mise configuration, and module-path checks so inherited
-  Python or pip configuration cannot supply runtime dependencies. It
-  temporarily clears `PIP_*` and `PYTHON*` variables, sets
+  mise, Python, or pip configuration cannot supply runtime dependencies. It
+  temporarily clears `MISE_*`, `PIP_*`, and `PYTHON*` variables, sets
   `PIP_CONFIG_FILE=nul`, uses the PyPI source declared in
   `requirements.lock`, and restores the environment afterward.
