@@ -215,10 +215,10 @@ that real old refs now receive disabled-workflow rejection.
 
 Next:
 
-1. review and merge the staged Adapter repair that distinguishes pre-action,
-   post-action, and post-mutation-start runner failures while retaining
-   incomplete classification; it does not promote the reconciled exact
-   post-state to acceptance success;
+1. preserve the Adapter distinction between pre-action, post-action, and
+   post-mutation-start runner failures while retaining incomplete
+   classification; do not promote the reconciled exact post-state to acceptance
+   success;
 2. retain run `32769435970`, fixed version
    `0.0.0-wdv3-acceptance.1`, tag, tarball, and artifacts as failure and
    reconciliation evidence;

@@ -133,13 +133,13 @@ If it conflicts with the
   the workflow file, transition ref, and Environment are absent, and all
   related runs are terminal. Authenticated reconciliation confirms the `.1`
   version and tag are exact and bind the expected repository, SHA-1, SHA-512,
-  manifest, and target witness. This staged, unmerged candidate repairs the
-  Adapter's contradictory pre-mutation label for returned and exception
-  failures after action or mutation start while retaining incomplete
-  classification. It does not retroactively make the failed acceptance
-  successful. The consumed run, review, and coordinate must not be reused, and
-  no retry is currently authorized. Acceptance does not authorize normal Live
-  activation; `live_enabled` remains false.
+  manifest, and target witness. The Adapter distinguishes pre-action,
+  post-action, and post-mutation-start failures across returned and exception
+  paths while retaining incomplete classification. This does not retroactively
+  make the failed acceptance successful. The consumed run, review, and
+  coordinate must not be reused, and no retry is currently authorized.
+  Acceptance does not authorize normal Live activation; `live_enabled` remains
+  false.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the
@@ -640,9 +640,10 @@ If it conflicts with the
   acceptance Environment are absent; workflow ID `340952168` remains
   `disabled_manually`; old-ref dispatch returns HTTP 422; and related runs are
   terminal. Authenticated reconciliation confirms the retained version and tag
-  are exact. This staged candidate repairs the contradictory runner result
-  while preserving incomplete classification, but is not yet merged. Do not
-  retry with the same invocation, review, or coordinate; no retry is currently
+  are exact. The Adapter distinguishes pre-action, post-action, and
+  post-mutation-start failures while preserving incomplete classification. This
+  does not retroactively make the failed acceptance successful. Do not retry
+  with the same invocation, review, or coordinate; no retry is currently
   authorized. Do not activate normal Live or begin later scopes without a
   separate explicit user task.
 - Implementation must preserve the approved commit boundaries and keep live

@@ -270,11 +270,11 @@ have changed.
    are absent; and all related runs are terminal.
 4. Authenticated reconciliation confirmed the fixed version and tag remain
    exact, including repository association, SHA-1, SHA-512, manifest, and
-   target witness. This staged candidate repairs the Adapter's contradictory
-   pre-mutation label for returned and exception failures while retaining
-   incomplete classification; it is not yet merged and does not retroactively
-   make acceptance successful. Do not reuse the invocation, review, or
-   coordinate. Keep `live_enabled: false`; no retry is currently authorized.
+   target witness. The Adapter distinguishes pre-action, post-action, and
+   post-mutation-start failures across returned and exception paths while
+   retaining incomplete classification; this does not retroactively make
+   acceptance successful. Do not reuse the invocation, review, or coordinate.
+   Keep `live_enabled: false`; no retry is currently authorized.
 
 ## Related Pages
 
