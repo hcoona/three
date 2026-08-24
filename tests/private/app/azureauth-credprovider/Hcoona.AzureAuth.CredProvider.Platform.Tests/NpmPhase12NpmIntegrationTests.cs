@@ -44,6 +44,36 @@ public sealed class NpmPhase12NpmIntegrationTests
     }
 
     [Fact]
+    public async Task ResolveWorkspaceAsync_ReportsRealNpmPrefixMilestones()
+    {
+        Assert.SkipUnless(IsNpmInstalled(), "Real npm integration requires npm on PATH.");
+        NpmPrefixFixture fixture = NpmPrefixFixture.Create(
+            "packages/*",
+            "packages/member",
+            "member"
+        );
+        bool completedSuccessfully = false;
+        try
+        {
+            _ = await CreateService(fixture)
+                .ResolveWorkspaceAsync(
+                    cancellationToken: TestContext.Current.CancellationToken
+                );
+
+            AssertNpmPrefixSpecification(fixture);
+            string warning = Assert.IsType<string>(
+                fixture.ProcessRunner.RecordedMilestoneWarning
+            );
+            completedSuccessfully = true;
+            Assert.Skip(warning);
+        }
+        finally
+        {
+            CompleteFixtureCleanup(fixture, completedSuccessfully);
+        }
+    }
+
+    [Fact]
     public void ResolveWorkspaceAsync_UsesRealNpmPrefix_ForNonWorkspacePackage()
     {
         Assert.SkipUnless(IsNpmInstalled(), "Real npm integration requires npm on PATH.");
@@ -214,7 +244,14 @@ public sealed class NpmPhase12NpmIntegrationTests
         NpmPrefixFixture fixture
     )
     {
-        var service = new NpmPhase12VerticalSliceService(
+        return Assert.Single(CreateService(fixture).DiscoverRegistryDeclarations());
+    }
+
+    private static NpmPhase12VerticalSliceService CreateService(
+        NpmPrefixFixture fixture
+    )
+    {
+        return new NpmPhase12VerticalSliceService(
             new NpmPhase12VerticalSliceOptions
             {
                 FileSystem = new SystemFileSystem(),
@@ -227,13 +264,11 @@ public sealed class NpmPhase12NpmIntegrationTests
                 UserNpmrcPath = Path.Combine(fixture.RootPath, "user", ".npmrc"),
             }
         );
-
-        return Assert.Single(service.DiscoverRegistryDeclarations());
     }
 
     private static void AssertNpmPrefixInvocation(NpmPrefixFixture fixture)
     {
-        ProcessStartSpec startSpec = Assert.Single(fixture.ProcessRunner.RecordedStartSpecs);
+        AssertNpmPrefixSpecification(fixture);
         ProcessResult result = Assert.Single(fixture.ProcessRunner.RecordedResults);
         Assert.True(result.Succeeded);
         Assert.True(
@@ -248,6 +283,11 @@ public sealed class NpmPhase12NpmIntegrationTests
                     StringComparison.Ordinal
                 )
         );
+    }
+
+    private static void AssertNpmPrefixSpecification(NpmPrefixFixture fixture)
+    {
+        ProcessStartSpec startSpec = Assert.Single(fixture.ProcessRunner.RecordedStartSpecs);
         Assert.False(
             startSpec.FileName.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase)
         );
@@ -420,6 +460,8 @@ public sealed class NpmPhase12NpmIntegrationTests
 
         public List<ProcessResult> RecordedResults { get; } = [];
 
+        public string? RecordedMilestoneWarning { get; private set; }
+
         public async Task<ProcessResult> RunAsync(
             ProcessStartSpec startSpec,
             CancellationToken cancellationToken = default
@@ -465,7 +507,9 @@ public sealed class NpmPhase12NpmIntegrationTests
             }
             finally
             {
-                TestContext.Current.AddWarning(CreateMilestoneWarning(milestones));
+                string warning = CreateMilestoneWarning(milestones);
+                RecordedMilestoneWarning = warning;
+                TestContext.Current.AddWarning(warning);
             }
         }
 
