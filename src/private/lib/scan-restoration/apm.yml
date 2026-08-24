@@ -1,0 +1,48 @@
+name: scan-restoration
+version: 0.1.0
+description: Copilot CLI skills for scanned-book diagnostics, restoration, layout, and quality control.
+author: hcoona
+license: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
+targets:
+  - copilot
+dependencies:
+  apm: []
+  mcp: []
+includes:
+  - skills/scan-batch-diagnostics/SKILL.md
+  - skills/scan-batch-diagnostics/scripts/analyze_scans.py
+  - skills/scan-batch-diagnostics/scripts/check_runtime.py
+  - skills/scan-batch-diagnostics/scripts/requirements.lock
+  - skills/scan-batch-diagnostics/scripts/run.ps1
+  - skills/scan-batch-diagnostics/scripts/run_tests.py
+  - skills/scan-batch-diagnostics/tests/test_analyze_scans.py
+  - skills/scan-batch-diagnostics/tests/test_runtime_readiness.py
+  - skills/scan-book-layout/SKILL.md
+  - skills/scan-book-layout/scripts/normalize_book.py
+  - skills/scan-book-layout/scripts/requirements.lock
+  - skills/scan-book-layout/scripts/run.ps1
+  - skills/scan-book-layout/tests/run.ps1
+  - skills/scan-book-layout/tests/test_normalize_book.py
+  - skills/scan-book-quality-control/SKILL.md
+  - skills/scan-book-quality-control/scripts/requirements.lock
+  - skills/scan-book-quality-control/scripts/run.ps1
+  - skills/scan-book-quality-control/scripts/validate_book.py
+  - skills/scan-book-quality-control/tests/run.ps1
+  - skills/scan-book-quality-control/tests/test_validate_book.py
+  - skills/scan-page-rectification/SKILL.md
+  - skills/scan-page-rectification/scripts/rectify_pages.py
+  - skills/scan-page-rectification/scripts/requirements.lock
+  - skills/scan-page-rectification/scripts/run.ps1
+  - skills/scan-page-rectification/tests/run.ps1
+  - skills/scan-page-rectification/tests/test_rectify_pages.py
+  - skills/scan-page-rectification/tests/test_runner.ps1
+  - skills/scan-tone-restoration/SKILL.md
+  - skills/scan-tone-restoration/scripts/requirements.lock
+  - skills/scan-tone-restoration/scripts/restore_tone.py
+  - skills/scan-tone-restoration/scripts/run.ps1
+  - skills/scan-tone-restoration/tests/run.ps1
+  - skills/scan-tone-restoration/tests/test_restore_tone.py
+  - skills/scan-tone-restoration/tests/test_runner.ps1
+devDependencies:
+  apm: []
+scripts: {}

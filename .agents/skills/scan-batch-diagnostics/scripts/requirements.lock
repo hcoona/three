@@ -1,0 +1,12 @@
+--index-url https://pypi.org/simple
+
+imagecodecs==2026.6.26 \
+    --hash=sha256:0758a273acd197e236e67f1597d630924f62c12f5b74837dc7eef2db72c1a888
+numpy==2.2.6 \
+    --hash=sha256:c1f9540be57940698ed329904db803cf7a402f3fc200bfe599334c9bd84a40b2
+opencv-python-headless==4.12.0.88 \
+    --hash=sha256:86b413bdd6c6bf497832e346cd5371995de148e579b9774f8eba686dee3f5528
+Pillow==12.3.0 \
+    --hash=sha256:a2b55dd6b2a4c4b7d87ffa56bdb33fdc5fdb9a462173861a7bc097f17d91cb09
+tifffile==2026.7.31 \
+    --hash=sha256:81adfa08012be1c478f99b83cda2f529eef8620cfbdf94fc41eef6f1d7b47dc5
