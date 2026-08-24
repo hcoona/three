@@ -1,5 +1,5 @@
 lockfile_version: '1'
-generated_at: '2026-08-24T00:17:06.205232+00:00'
+generated_at: '2026-08-24T00:42:33.288687+00:00'
 apm_version: 0.28.0
 dependencies:
 - repo_url: _local/enterprise-translation-team
@@ -52,7 +52,7 @@ dependencies:
     .agents/skills/enterprise-translation-team/references/output-contracts.md: sha256:0651dc868db9166baf8d220992cd5729deee960c5c4501765e303c1917beaa13
     .agents/skills/enterprise-translation-team/references/roles.md: sha256:10b1895bdcc6dbc02ebed174d0510b3eb78a3e6c97cbf8036777dd80fe3b2647
     .agents/skills/enterprise-translation-team/references/terminology-schema.md: sha256:31859c6e94a91f7c1c4f00677d20924d896272f05f54c4f65748b0bab5cbc523
-    .agents/skills/enterprise-translation-team/scripts/check_translation_outputs.py: sha256:8c8fb380c7bf98c61465c1f8581c65cc344a3698b3c039c21e2286982dbfbeba
+    .agents/skills/enterprise-translation-team/scripts/check_translation_outputs.py: sha256:c7e63b454634f4b00b693237c781ded07b110251d1f2302ef5702a2b48be0606
     .agents/skills/enterprise-translation-team/scripts/run_copilot_evals.py: sha256:cb1eb6e27e3c6884ea92ad1ed8e4efee27b1d630a985970a32e891935ff58681
     .github/agents/translation-linguist.agent.md: sha256:9154957771bc16ff15d7f2e4fa9848422eb6838219d90dc2f9d1e7702f875ee9
     .github/agents/translation-negative-reviewer.agent.md: sha256:fba1f4a5b364f46399f245c88ba2689eac9ff21ab3499d7d09cac058ab73c869
@@ -1994,7 +1994,7 @@ deployments:
   owners:
   - ./src/private/lib/enterprise-translation-team
   active_owner: ./src/private/lib/enterprise-translation-team
-  content_hash: sha256:8c8fb380c7bf98c61465c1f8581c65cc344a3698b3c039c21e2286982dbfbeba
+  content_hash: sha256:c7e63b454634f4b00b693237c781ded07b110251d1f2302ef5702a2b48be0606
 - kind: project-relative
   target: copilot
   value: .agents/skills/enterprise-translation-team/scripts/run_copilot_evals.py

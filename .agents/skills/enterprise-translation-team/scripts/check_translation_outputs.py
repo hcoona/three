@@ -980,6 +980,11 @@ def check_delta_jsonl(path: Path, termbase: dict | None = None) -> list[dict]:
             require_nonempty_string(
                 event.get("source_term"), f"line {index}.source_term"
             )
+        if op == "add_forbidden":
+            require_nonempty_string(
+                event.get("forbidden_term"),
+                f"line {index}.forbidden_term",
+            )
         if op not in {"raise_conflict", "resolve_conflict"}:
             continue
         conflict_id = require_nonempty_string(
@@ -1833,14 +1838,17 @@ def check_terminology_content(
                 f"Entry {concept_id} negative example must match terminology brief"
             )
         for forbidden_term in expected_forbidden:
-            if not any(
-                event.get("op") == "add_forbidden"
+            matching_forbidden_events = [
+                event
+                for event in events
+                if event.get("op") == "add_forbidden"
                 and event.get("concept_id") == concept_id
                 and event.get("forbidden_term") == forbidden_term
-                for event in events
-            ):
+            ]
+            if len(matching_forbidden_events) != 1:
                 raise AssertionError(
                     f"Delta events must add forbidden term {forbidden_term!r} "
+                    "exactly once "
                     f"for {concept_id}"
                 )
         concept_conflicts = conflicts_by_concept_id.get(concept_id, [])
@@ -1877,13 +1885,16 @@ def check_terminology_content(
                 f"Entry {concept_id} must have one matching open conflict"
             )
         conflict_id = matching_conflicts[0]["conflict_id"]
-        if not any(
-            event.get("op") == "raise_conflict"
-            and event.get("conflict_id") == conflict_id
+        matching_raise_events = [
+            event
             for event in events
-        ):
+            if event.get("op") == "raise_conflict"
+            and event.get("conflict_id") == conflict_id
+        ]
+        if len(matching_raise_events) != 1:
             raise AssertionError(
-                f"Delta events must raise canonical conflict {conflict_id}"
+                f"Delta events must raise canonical conflict {conflict_id} "
+                "exactly once"
             )
     return payload
 
@@ -2061,6 +2072,7 @@ def check_qa_content(path: Path, run_dir: Path | None) -> None:
     package = run_dir / "evals" / "files" / "qa-package"
     translation = require_file(package / "translation.md")
     termbase = check_termbase_json(package / "termbase.job.json")
+    check_delta_jsonl(package / "termbase.delta.jsonl", termbase)
     projection_mismatches: list[str] = []
     for file_name, structure_checker, projection_checker in [
         (
@@ -2111,13 +2123,28 @@ def check_qa_content(path: Path, run_dir: Path | None) -> None:
         preferred = require_nonempty_string(
             target.get("preferred"), f"{concept_id}.target.preferred"
         )
+        accepted_targets = {
+            preferred,
+            *{
+                require_nonempty_string(
+                    value, f"{concept_id}.target.allowed_variants[]"
+                )
+                for value in require_list(
+                    target.get("allowed_variants", []),
+                    f"{concept_id}.target.allowed_variants",
+                )
+            },
+        }
         forbidden = {
             require_nonempty_string(item.get("term"), "forbidden.term")
             for item in require_list(
                 target.get("forbidden", []), f"{concept_id}.target.forbidden"
             )
         }
-        if preferred.casefold() not in translation.casefold() and any(
+        if not any(
+            term.casefold() in translation.casefold()
+            for term in accepted_targets
+        ) and any(
             term.casefold() in translation.casefold() for term in forbidden
         ):
             missing_approved_terms.append((concept_id, preferred))
