@@ -131,6 +131,20 @@ public sealed class KeyringHelperAdapterTests
         "feed",
         "https://org.visualstudio.com/DefaultCollection/project/_packaging/feed/pypi/simple/"
     )]
+    [InlineData(
+        "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/download/"
+            + "package/1.2/bad%20file.whl",
+        null,
+        "feed",
+        "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/"
+    )]
+    [InlineData(
+        "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/download/"
+            + "package/1.2/%2541.whl",
+        null,
+        "feed",
+        "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/"
+    )]
     public void KeyringCliNormalizesUvLockedDownloadUrlToFeedEndpoint(
         string service,
         string? project,
@@ -721,6 +735,14 @@ public sealed class KeyringHelperAdapterTests
     [InlineData(
         "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/download/"
             + "%2e%2e/%2e/simple"
+    )]
+    [InlineData(
+        "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/download/"
+            + "package/1.2/bad file.whl"
+    )]
+    [InlineData(
+        "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/download/"
+            + "package/1.2/bad\u00a0file.whl"
     )]
     public void KeyringCliMalformedServiceFailsClosed(string service)
     {

@@ -653,7 +653,13 @@ public sealed class KeyringHelperAdapter
         decodedSegment = null;
         for (int index = 0; index < rawSegment.Length; index++)
         {
-            if (rawSegment[index] != '%')
+            char rawCharacter = rawSegment[index];
+            if (char.IsWhiteSpace(rawCharacter))
+            {
+                return false;
+            }
+
+            if (rawCharacter != '%')
             {
                 continue;
             }
