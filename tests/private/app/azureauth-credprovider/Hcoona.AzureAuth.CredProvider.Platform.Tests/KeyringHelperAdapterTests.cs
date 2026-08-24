@@ -109,6 +109,53 @@ public sealed class KeyringHelperAdapterTests
         Assert.Equal("feed", credentialRequest.Resource.Feed);
     }
 
+    [Theory]
+    [InlineData(
+        "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/download/"
+            + "package/1.2/package-1.2-py3-none-any.whl",
+        null,
+        "feed",
+        "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/"
+    )]
+    [InlineData(
+        "https://pkgs.dev.azure.com/org/project-id/_packaging/feed-id/pypi/download/"
+            + "package/1.2/package-1.2-py3-none-any.whl",
+        "project-id",
+        "feed-id",
+        "https://pkgs.dev.azure.com/org/project-id/_packaging/feed-id/pypi/simple/"
+    )]
+    [InlineData(
+        "https://org.visualstudio.com/DefaultCollection/project/_packaging/feed/pypi/download/"
+            + "package/1.2/package-1.2-py3-none-any.whl",
+        "project",
+        "feed",
+        "https://org.visualstudio.com/DefaultCollection/project/_packaging/feed/pypi/simple/"
+    )]
+    public void KeyringCliNormalizesUvLockedDownloadUrlToFeedEndpoint(
+        string service,
+        string? project,
+        string feed,
+        string expectedService
+    )
+    {
+        var provider = new SuccessfulAcquisitionService();
+
+        AdapterRunResult result = ExecuteKeyringCli(
+            ["get", service, "VssSessionToken"],
+            provider
+        );
+
+        Assert.Equal(AdapterHostExitCode.Success, result.Outcome.Result.ExitCode);
+        Assert.Equal("phase11-secret\n", result.ProtocolStdout);
+        Assert.Equal(string.Empty, result.Stderr);
+
+        CredentialRequestV2 request = Assert.Single(provider.Requests);
+        Assert.Equal("org", request.Resource.Organization);
+        Assert.Equal(project, request.Resource.Project);
+        Assert.Equal(feed, request.Resource.Feed);
+        Assert.Equal(new Uri(expectedService), request.Resource.ServiceEndpoint);
+    }
+
     [Fact]
     public void SharedHostEntrypointAcceptsFullHelperCommand()
     {
@@ -177,6 +224,32 @@ public sealed class KeyringHelperAdapterTests
         Assert.False(result.Outcome.Result.WriteProtocolStdout);
         Assert.Equal(string.Empty, result.ProtocolStdout);
         Assert.Contains("code=ProtocolViolation", result.Stderr, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void HelperContractRejectsUvDownloadUrlWithoutAcquisition()
+    {
+        var provider = new SuccessfulAcquisitionService();
+        AdapterRunResult result = Execute(
+            [
+                "get",
+                "--protocol-version",
+                "2",
+                "--service",
+                "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/download/"
+                    + "package/1.2/package.whl",
+                "--username",
+                "VssSessionToken",
+                "--mode",
+                "password",
+            ],
+            credentialAcquisition: provider
+        );
+
+        Assert.Equal(AdapterHostExitCode.ConfigurationError, result.Outcome.Result.ExitCode);
+        Assert.Equal(string.Empty, result.ProtocolStdout);
+        Assert.Contains("code=ProtocolViolation", result.Stderr, StringComparison.Ordinal);
+        Assert.Equal(0, provider.InvocationCount);
     }
 
     [Fact]
@@ -598,6 +671,57 @@ public sealed class KeyringHelperAdapterTests
     [Theory]
     [InlineData("unrelated-service")]
     [InlineData(" https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/ ")]
+    [InlineData(
+        "https://pkgs.dev.azure.com/org/project/_packaging/feed/pypi/download/package/1.2"
+    )]
+    [InlineData(
+        "https://pkgs.dev.azure.com/org/project/_packaging/feed/pypi/download/"
+            + "package/1.2/package.whl/extra"
+    )]
+    [InlineData(
+        "https://pkgs.dev.azure.com/org/project/_packaging/feed/pypi/download/"
+            + "package/1.2/package.whl/"
+    )]
+    [InlineData(
+        "https://pkgs.dev.azure.com/org/project/_packaging/feed/pypi/not-download/"
+            + "package/1.2/package.whl"
+    )]
+    [InlineData(
+        "https://pkgs.dev.azure.com/org/project/_packaging/feed/pypi/download/"
+            + "package//package.whl"
+    )]
+    [InlineData(
+        "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/download/"
+            + "package/%252e%252e/package.whl"
+    )]
+    [InlineData(
+        "https://pkgs.dev.azure.com/evil/%2e%2e/org/_packaging/feed/pypi/download/"
+            + "package/1.2/package.whl"
+    )]
+    [InlineData(
+        "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/download/"
+            + "package/%252f/package.whl"
+    )]
+    [InlineData(
+        "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/download/"
+            + "package/%250a/package.whl"
+    )]
+    [InlineData(
+        "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/download/"
+            + "package/1.2/bad%file.whl"
+    )]
+    [InlineData(
+        "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/download/"
+            + "package/1.2/bad%.whl"
+    )]
+    [InlineData(
+        "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/download/"
+            + "package/1.2/bad%2.whl"
+    )]
+    [InlineData(
+        "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/download/"
+            + "%2e%2e/%2e/simple"
+    )]
     public void KeyringCliMalformedServiceFailsClosed(string service)
     {
         var provider = new SuccessfulAcquisitionService();
