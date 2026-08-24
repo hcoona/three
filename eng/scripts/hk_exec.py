@@ -11,6 +11,8 @@ import time
 from datetime import datetime
 
 _MIN_QUOTED_LEN = 2
+_DEFAULT_TIMEOUT_SECONDS = 120
+_DEFAULT_HEARTBEAT_SECONDS = 30
 
 
 def normalize_path_arg(value: str) -> str:
@@ -33,26 +35,71 @@ def now_iso() -> str:
 
 def resolve_timeout_seconds() -> int:
     """Read timeout from environment or return the default."""
-    raw = os.getenv("HK_EXEC_TIMEOUT_SECONDS", "120").strip()
+    raw = os.getenv(
+        "HK_EXEC_TIMEOUT_SECONDS",
+        str(_DEFAULT_TIMEOUT_SECONDS),
+    ).strip()
 
     try:
         timeout_seconds = int(raw)
     except ValueError:
-        timeout_seconds = 120
+        timeout_seconds = _DEFAULT_TIMEOUT_SECONDS
 
     return max(1, timeout_seconds)
 
 
 def resolve_heartbeat_seconds() -> int:
     """Read heartbeat interval from environment or default."""
-    raw = os.getenv("HK_EXEC_HEARTBEAT_SECONDS", "30").strip()
+    raw = os.getenv(
+        "HK_EXEC_HEARTBEAT_SECONDS",
+        str(_DEFAULT_HEARTBEAT_SECONDS),
+    ).strip()
 
     try:
         heartbeat_seconds = int(raw)
     except ValueError:
-        heartbeat_seconds = 30
+        heartbeat_seconds = _DEFAULT_HEARTBEAT_SECONDS
 
     return max(5, heartbeat_seconds)
+
+
+def parse_positive_seconds(value: str) -> int | None:
+    """Parse a positive integer duration in seconds."""
+    try:
+        seconds = int(value)
+    except ValueError:
+        return None
+    if seconds < 1:
+        return None
+    return seconds
+
+
+def parse_wrapper_options(
+    argv: list[str],
+) -> tuple[int | None, list[str], str | None]:
+    """Parse hk_exec.py options before the wrapped command."""
+    timeout_seconds: int | None = None
+    index = 0
+    while index < len(argv):
+        arg = argv[index]
+        if arg == "--timeout-seconds":
+            if index + 1 >= len(argv):
+                return None, [], "--timeout-seconds requires a value"
+            parsed = parse_positive_seconds(argv[index + 1])
+            if parsed is None:
+                return None, [], "--timeout-seconds must be a positive integer"
+            timeout_seconds = parsed
+            index += 2
+            continue
+        if arg.startswith("--timeout-seconds="):
+            parsed = parse_positive_seconds(arg.split("=", 1)[1])
+            if parsed is None:
+                return None, [], "--timeout-seconds must be a positive integer"
+            timeout_seconds = parsed
+            index += 1
+            continue
+        break
+    return timeout_seconds, argv[index:], None
 
 
 def resolve_per_file_mode() -> bool:
@@ -151,10 +198,21 @@ def split_command_and_files(
 
 def main() -> int:
     """Run hk check commands with watchdog supervision."""
-    user_args = sys.argv[1:]
+    timeout_override, user_args, option_error = parse_wrapper_options(
+        sys.argv[1:],
+    )
+    if option_error is not None:
+        print(option_error, file=sys.stderr)
+        raise SystemExit(2)
     cmd_args, file_args = split_command_and_files(
         user_args,
     )
+    late_timeout_override, cmd_args, late_option_error = parse_wrapper_options(
+        cmd_args,
+    )
+    if late_option_error is not None:
+        print(late_option_error, file=sys.stderr)
+        raise SystemExit(2)
 
     if not cmd_args:
         print(
@@ -167,7 +225,9 @@ def main() -> int:
         normalize_path_arg(p) for p in file_args if normalize_path_arg(p)
     ]
 
-    timeout = resolve_timeout_seconds()
+    timeout = (
+        late_timeout_override or timeout_override or resolve_timeout_seconds()
+    )
     heartbeat = resolve_heartbeat_seconds()
     per_file = resolve_per_file_mode()
     cmd_str = " ".join(cmd_args)

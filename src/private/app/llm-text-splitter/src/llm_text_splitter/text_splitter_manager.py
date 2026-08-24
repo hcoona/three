@@ -1,4 +1,4 @@
-"""This module provides a text splitter that uses Agents to identify topic boundaries in a document."""
+"""This module provides a text splitter that uses Agents to identify topic boundaries in a document."""  # noqa: E501
 
 import logging
 
@@ -29,9 +29,9 @@ def _validate_indices(
 ) -> str | None:
     """Validate the indices of the segmented topics."""
     # Check the indices is starting from 0 and ending with the last utterance,
-    # all indices are consecutive. The merged indices should be range from 0 to the last utterance.
+    # all indices are consecutive. The merged indices should be range from 0 to the last utterance.  # noqa: E501
     #
-    # Generate the error message but not interrupt the program. The error message
+    # Generate the error message but not interrupt the program. The error message  # noqa: E501
     # should be helpful for debugging.
     #
     # First, merge all parsed topics into a single list of indices.
@@ -39,13 +39,13 @@ def _validate_indices(
     for topic in segmented_topics.topics:
         merged_indices.extend(topic.indices)
 
-    # Then, check if the merged indices are consecutive from 0 to len(utterances) - 1.
+    # Then, check if the merged indices are consecutive from 0 to len(utterances) - 1.  # noqa: E501
     # 1. Length of merged indices should be equal to the length of utterances.
     # 2. The merged indices should be equal to range(0, len(utterances)).
     if len(merged_indices) != len(utterances):
-        return "Ensure the length of the indices is equal to the length of utterances."
+        return "Ensure the length of the indices is equal to the length of utterances."  # noqa: E501
     if sorted(merged_indices) != list(range(len(utterances))):
-        return f"Ensure the indices are consecutively starting from 0 and ending with {len(utterances) - 1}."
+        return f"Ensure the indices are consecutively starting from 0 and ending with {len(utterances) - 1}."  # noqa: E501
 
     return None
 
@@ -54,7 +54,6 @@ async def split_text(
     text: str, openai_client: AsyncOpenAI, attempts_max: int = 3
 ) -> SegmentedTopicList | None:
     """Split the text into segments using the text splitter agent."""
-
     logger = logging.getLogger(__name__)
 
     utterances = [par.strip() for par in text.split("\n") if par.strip()]
@@ -80,20 +79,25 @@ async def split_text(
 
         for i in range(attempts_max):
             logger.info(
-                f"Round {i} - Model: {_MODELS[model_index]} - Input: {input_items}"
+                "Round %s - Model: %s - Input item count: %s",
+                i,
+                _MODELS[model_index],
+                len(input_items),
             )
 
             text_splitter_run_result = await Runner.run(
                 text_splitter_agent, input=input_items
             )
 
+            segmented_topics = text_splitter_run_result.final_output
             logger.info(
-                f"Round {i} - Model: {_MODELS[model_index]} - Segmentation: {text_splitter_run_result.final_output}"
+                "Round %s - Model: %s - Segmentation topic count: %s",
+                i,
+                _MODELS[model_index],
+                len(segmented_topics.topics),
             )
 
-            validation_result = _validate_indices(
-                utterances, text_splitter_run_result.final_output
-            )
+            validation_result = _validate_indices(utterances, segmented_topics)
             if validation_result:
                 input_items.append(
                     {
@@ -102,15 +106,20 @@ async def split_text(
                     }
                 )
                 logger.info(
-                    f"Round {i} - Model: {_MODELS[model_index]} - Validation failed: {validation_result}"
+                    "Round %s - Model: %s - Validation failed: %s",
+                    i,
+                    _MODELS[model_index],
+                    validation_result,
                 )
                 continue
 
             input_items = text_splitter_run_result.to_input_list()
-            final_output = text_splitter_run_result.final_output
+            final_output = segmented_topics
 
             logger.info(
-                f"Round {i} - Model: {_MODELS[model_index]} - Message: Evaluating segmentation..."
+                "Round %s - Model: %s - Message: Evaluating segmentation...",
+                i,
+                _MODELS[model_index],
             )
 
             evaluation_run_result = await Runner.run(
@@ -118,12 +127,16 @@ async def split_text(
                 input=input_items,
             )
 
-            logger.info(
-                f"Round {i} - Model: {_MODELS[model_index]} - Evaluation result: {evaluation_run_result.final_output}"
+            evaluation_result: EvaluationResult = (
+                evaluation_run_result.final_output
             )
-
-            evaluation_result: EvaluationResult = evaluation_run_result.final_output
-            if evaluation_result.score > 0.9:
+            logger.info(
+                "Round %s - Model: %s - Evaluation score: %s",
+                i,
+                _MODELS[model_index],
+                evaluation_result.score,
+            )
+            if evaluation_result.score > 0.9:  # noqa: PLR2004
                 good_flag = True
                 break
 
@@ -138,7 +151,6 @@ async def split_text(
             break
 
         # If the segmentation is still not good enough, try the next model.
-        pass
 
     if not good_flag:
         return None

@@ -35,6 +35,14 @@ internal sealed partial class ReconciliationApp(
 
                 discoveredAddresses[family] = address;
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (OperationCanceledException)
+            {
+                summary.TargetFailures++;
+            }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 summary.TargetFailures++;
@@ -60,10 +68,26 @@ internal sealed partial class ReconciliationApp(
                 zone = await zoneResolver.ResolveAsync(domain, cancellationToken)
                     .ConfigureAwait(false);
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (OperationCanceledException ex)
+            {
+                summary.TargetFailures += discoveredAddresses.Count;
+                LogDomainResolutionFailed(
+                    logger,
+                    domain,
+                    GetFailureMessage(ex));
+                continue;
+            }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 summary.TargetFailures += discoveredAddresses.Count;
-                LogDomainResolutionFailed(logger, domain, ex.Message);
+                LogDomainResolutionFailed(
+                    logger,
+                    domain,
+                    GetFailureMessage(ex));
                 continue;
             }
 
@@ -86,10 +110,29 @@ internal sealed partial class ReconciliationApp(
 
                     summary.Add(outcome);
                 }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (OperationCanceledException ex)
+                {
+                    summary.TargetFailures++;
+                    LogTargetFailed(
+                        logger,
+                        domain,
+                        zone.Name,
+                        family,
+                        GetFailureMessage(ex));
+                }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     summary.TargetFailures++;
-                    LogTargetFailed(logger, domain, zone.Name, family, ex.Message);
+                    LogTargetFailed(
+                        logger,
+                        domain,
+                        zone.Name,
+                        family,
+                        GetFailureMessage(ex));
                 }
             }
         }
@@ -198,18 +241,16 @@ internal sealed partial class ReconciliationApp(
                     address.ToString(),
                     cancellationToken)
                 .ConfigureAwait(false);
-
             LogUpdated(logger, domain, zone.Name, family);
             CloudflareTelemetry.MarkOutcome(activity, "updated");
             return ReconciliationOutcome.Updated;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
-            if (ex is OperationCanceledException)
-            {
-                throw;
-            }
-
             CloudflareTelemetry.MarkFailure(activity, ex);
             throw;
         }
@@ -235,6 +276,11 @@ internal sealed partial class ReconciliationApp(
             yield return AddressFamily.InterNetworkV6;
         }
     }
+
+    private static string GetFailureMessage(Exception exception)
+        => string.IsNullOrWhiteSpace(exception.Message)
+            ? exception.GetType().Name
+            : exception.Message;
 
     [LoggerMessage(
         EventId = 1,

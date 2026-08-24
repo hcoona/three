@@ -58,7 +58,6 @@ export default defineConfig({
 
   hooks: {
     'build:manifestGenerated': async (_wxt: Wxt, manifest) => {
-      // Chrome/Edge require a numeric dotted version. Use NBGV's SimpleVersion + VersionHeight.
       const versionInfo = await getVersionInfo(projectRoot);
       manifest.version = getBrowserExtensionVersion(versionInfo);
     },

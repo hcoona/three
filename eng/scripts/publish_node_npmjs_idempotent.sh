@@ -29,15 +29,16 @@ if [[ ! -f "${TARBALL}" ]]; then
   exit 1
 fi
 
-local_sri=$(node - <<'NODE'
+local_sri=$(
+  node - "${TARBALL}" <<'NODE'
 const fs = require('fs');
 const crypto = require('crypto');
-const p = process.argv[1];
+const p = process.argv[2];
 const buf = fs.readFileSync(p);
 const hash = crypto.createHash('sha512').update(buf).digest('base64');
 console.log(`sha512-${hash}`);
 NODE
-"${TARBALL}")
+)
 
 err_file="${tmp_dir}/npm-view-npmjs.err"
 : >"${err_file}"

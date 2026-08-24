@@ -8,6 +8,7 @@
 ## Get latest from https://github.com/github/gitignore/blob/main/VisualStudio.gitignore
 
 # User-specific files
+AGENTS.local.md
 *.rsuser
 *.suo
 *.user
@@ -24,6 +25,13 @@ mono_crash.*
 [Dd]ebug/
 [Dd]ebugPublic/
 [Rr]elease/
+!src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/release/
+!src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/release/__init__.py
+!src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/release/eligibility.py
+!src/public/lib/three-workflow-delivery-v3/tests/release/
+!src/public/lib/three-workflow-delivery-v3/tests/release/test_eligibility.py
+!src/public/lib/three-workflow-delivery-v3/tests/fixtures/release/
+!src/public/lib/three-workflow-delivery-v3/tests/fixtures/release/governance-disabled.json
 [Rr]eleases/
 x64/
 x86/
@@ -898,6 +906,9 @@ _version.py
 # Exclude Pnpm Store
 /.pnpm-store/
 
+# Exclude local Copilot agent/tool runtime state.
+/.copilot/
+
 # Exclude Copilot notification state
 /.copilot/notifications/
 
@@ -908,3 +919,9 @@ novel_output.md
 
 # APM dependencies
 apm_modules/
+
+# Keep the exact captured npm acceptance request closure.
+!src/public/lib/three-workflow-delivery-v3/tests/fixtures/acceptance/npm-publish-request/package.tgz
+!src/public/lib/three-workflow-delivery-v3/tests/fixtures/acceptance/npm-publish-request/package/dist/
+!src/public/lib/three-workflow-delivery-v3/tests/fixtures/acceptance/npm-publish-request/package/dist/index.js
+!src/public/lib/three-workflow-delivery-v3/tests/fixtures/acceptance/npm-publish-request/package/dist/acceptance-witness.json

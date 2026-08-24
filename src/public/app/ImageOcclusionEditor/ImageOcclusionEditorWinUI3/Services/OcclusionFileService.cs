@@ -36,7 +36,9 @@ namespace ImageOcclusionEditorWinUI3.Services
         {
             if (string.IsNullOrWhiteSpace(filePath))
             {
-                throw new ArgumentException("File path cannot be null or whitespace.", nameof(filePath));
+                throw new ArgumentException(
+                    "File path cannot be null or whitespace.",
+                    nameof(filePath));
             }
 
             using FileStream stream = File.OpenRead(filePath);
@@ -59,7 +61,10 @@ namespace ImageOcclusionEditorWinUI3.Services
                 throw new InvalidDataException("File is not a valid PNG image.");
             }
 
-            if (header[12] != (byte)'I' || header[13] != (byte)'H' || header[14] != (byte)'D' || header[15] != (byte)'R')
+            if (header[12] != (byte)'I'
+                || header[13] != (byte)'H'
+                || header[14] != (byte)'D'
+                || header[15] != (byte)'R')
             {
                 throw new InvalidDataException("File is not a valid PNG image.");
             }
@@ -70,7 +75,8 @@ namespace ImageOcclusionEditorWinUI3.Services
             const int MAX_DIMENSION = 1_000_000; // Aligned with libpng
             if (width <= 0 || height <= 0 || width > MAX_DIMENSION || height > MAX_DIMENSION)
             {
-                throw new InvalidDataException($"PNG dimensions are invalid or unreasonable: width={width}, height={height}.");
+                throw new InvalidDataException(
+                    $"PNG dimensions are invalid or unreasonable: width={width}, height={height}.");
             }
 
             return (width, height);
@@ -80,13 +86,16 @@ namespace ImageOcclusionEditorWinUI3.Services
         {
             if (string.IsNullOrWhiteSpace(occlusionFilePath))
             {
-                throw new ArgumentException("File path cannot be null or whitespace.", nameof(occlusionFilePath));
+                throw new ArgumentException(
+                    "File path cannot be null or whitespace.",
+                    nameof(occlusionFilePath));
             }
 
             try
             {
                 var pngReader = FileHelper.CreatePngReader(occlusionFilePath);
-                PngChunkSVGI? chunk = (PngChunkSVGI?)pngReader.GetChunksList().GetById1(PngChunkSVGI.ID);
+                PngChunkSVGI? chunk =
+                    (PngChunkSVGI?)pngReader.GetChunksList().GetById1(PngChunkSVGI.ID);
                 pngReader.End();
                 return chunk?.GetSVG() ?? string.Empty;
             }
@@ -94,7 +103,8 @@ namespace ImageOcclusionEditorWinUI3.Services
             {
                 NativeHelper.MessageBox(
                     IntPtr.Zero,
-                    "Failed to read SVG data from PNG chunk. Please ensure the occlusion file is valid.",
+                    "Failed to read SVG data from PNG chunk. "
+                    + "Please ensure the occlusion file is valid.",
                     "Error - Image Occlusion Editor",
                     NativeHelper.MB_OK | NativeHelper.MB_ICONERROR);
                 return string.Empty;
@@ -105,7 +115,9 @@ namespace ImageOcclusionEditorWinUI3.Services
         {
             if (string.IsNullOrWhiteSpace(destinationOcclusionFilePath))
             {
-                throw new ArgumentException("File path cannot be null or whitespace.", nameof(destinationOcclusionFilePath));
+                throw new ArgumentException(
+                    "File path cannot be null or whitespace.",
+                    nameof(destinationOcclusionFilePath));
             }
 
             ArgumentNullException.ThrowIfNull(svg);
@@ -114,7 +126,11 @@ namespace ImageOcclusionEditorWinUI3.Services
 
             try
             {
-                await Task.Run(() => SaveToTemporaryFile(tempOcclusionFilePath, destinationOcclusionFilePath, svg));
+                await Task.Run(
+                    () => SaveToTemporaryFile(
+                        tempOcclusionFilePath,
+                        destinationOcclusionFilePath,
+                        svg));
             }
             finally
             {
@@ -125,7 +141,10 @@ namespace ImageOcclusionEditorWinUI3.Services
             }
         }
 
-        private static void SaveToTemporaryFile(string temporaryPath, string destinationPath, string svg)
+        private static void SaveToTemporaryFile(
+            string temporaryPath,
+            string destinationPath,
+            string svg)
         {
             using var skSvg = SKSvg.CreateFromSvg(svg);
             skSvg.Save(

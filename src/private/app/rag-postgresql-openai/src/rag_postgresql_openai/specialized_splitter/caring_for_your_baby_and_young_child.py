@@ -1,8 +1,9 @@
-"""This module contains specialized splitters for book Caring for Your Baby and Young Child."""
+"""This module contains specialized splitters for book Caring for Your Baby and Young Child."""  # noqa: E501
 
-from typing import Callable, Iterable, TypeVar
+from collections.abc import Callable, Iterable
+from typing import TypeVar
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 from bs4._typing import _OneElement
 from pydantic import BaseModel, Field
 
@@ -20,24 +21,29 @@ class SplitResult(BaseModel):
     """Result of the split operation."""
 
     metadata: Metadata = Field(...)
-    chunks: list[str] = Field(..., description="The splitted chunks of the document.")
+    chunks: list[str] = Field(
+        ..., description="The split chunks of the document."
+    )
 
 
 class ExtractResult(BaseModel):
     """Result of the extraction operation."""
 
-    remaining_text: str = Field(..., description="The remaining text after extraction.")
+    remaining_text: str = Field(
+        ..., description="The remaining text after extraction."
+    )
     extracted_texts: list[str] = Field(
         ..., description="The extracted texts from the document."
     )
 
 
-def _split_by(elements: Iterable[T], predicate: Callable[[T], bool]) -> list[str]:
-    """
-    Split an iterable of elements into sections. A new section starts when predicate(el) is True.
+def _split_by(
+    elements: Iterable[T], predicate: Callable[[T], bool]
+) -> list[str]:
+    """Split an iterable of elements into sections. A new section starts when predicate(el) is True.
     The matching element is included at the start of its section. Leading elements before
     the first match will form the first section if any.
-    """
+    """  # noqa: D205, E501
     sections: list[str] = []
     current: list = []
     for el in elements:
@@ -54,9 +60,12 @@ def _split_by(elements: Iterable[T], predicate: Callable[[T], bool]) -> list[str
     return [section.strip() for section in sections if section.strip()]
 
 
-def _split_front_matter(fm_title: _OneElement) -> SplitResult:
-    """
-    Extract the front matter title from the document.
+def _tag_has_class(tag: Tag, class_name: str) -> bool:
+    return class_name in tag.get_attribute_list("class")
+
+
+def _split_front_matter(fm_title: Tag) -> SplitResult:
+    """Extract the front matter title from the document.
 
     This is a special case for the front matter in the book.
     The front matter title is not a chapter title, but we still want to
@@ -67,6 +76,8 @@ def _split_front_matter(fm_title: _OneElement) -> SplitResult:
     """
     title = fm_title.get_text().strip()
     parent = fm_title.parent
+    if not isinstance(parent, Tag):
+        raise ValueError("Front matter title has no parent element.")  # noqa: EM101, TRY003, TRY004
     fm_title.decompose()
 
     return SplitResult(
@@ -75,9 +86,8 @@ def _split_front_matter(fm_title: _OneElement) -> SplitResult:
     )
 
 
-def _extract_chapter_title(soup) -> tuple[str, _OneElement, _OneElement]:
-    """
-    Extract the chapter title from the document.
+def _extract_chapter_title(soup) -> tuple[str, _OneElement, _OneElement]:  # noqa: ANN001
+    """Extract the chapter title from the document.
 
     This function merges the chapter title and chapter number.
 
@@ -87,9 +97,9 @@ def _extract_chapter_title(soup) -> tuple[str, _OneElement, _OneElement]:
     """
     titles = list(soup.find_all("h1", class_="chapter-title"))
     if len(titles) == 0:
-        raise ValueError("No <h1 class='chapter-title'> found.")
+        raise ValueError("No <h1 class='chapter-title'> found.")  # noqa: EM101, TRY003
     if len(titles) > 1:
-        raise ValueError("More than one <h1 class='chapter-title'> found.")
+        raise ValueError("More than one <h1 class='chapter-title'> found.")  # noqa: EM101, TRY003
 
     title = titles[0]
     title_nor = title.find_previous("h1", class_="chapter-nor")
@@ -97,7 +107,7 @@ def _extract_chapter_title(soup) -> tuple[str, _OneElement, _OneElement]:
         # Fallback if not found.
         title_nor = title.find_previous("h1", class_="chapter-no")
         if title_nor is None:
-            raise ValueError("No <h1 class='chapter-nor'> found.")
+            raise ValueError("No <h1 class='chapter-nor'> found.")  # noqa: EM101, TRY003
 
     chapter_title = title.get_text().strip()
     chapter_title_no = title_nor.get_text().strip()
@@ -110,9 +120,14 @@ def _split_chapter_to_sections(soup: BeautifulSoup) -> SplitResult:
     title_node.decompose()
     title_nor_node.decompose()
 
+    if soup.body is None:
+        raise ValueError("No <body> found in the document.")  # noqa: EM101, TRY003
+
     sections = _split_by(
         soup.body.children,
-        lambda el: getattr(el, "name", None) == "h1" and "sec" in el.get("class", []),
+        lambda el: isinstance(el, Tag)
+        and el.name == "h1"
+        and _tag_has_class(el, "sec"),
     )
 
     return SplitResult(
@@ -122,14 +137,12 @@ def _split_chapter_to_sections(soup: BeautifulSoup) -> SplitResult:
 
 
 def split_top_level_document(text: str) -> SplitResult:
-    """
-    Split at the top-level document.
+    """Split at the top-level document.
 
     :param text: The HTML text content of the top level document.
     :return: SplitResult object containing metadata and sections.
     :raises ValueError: If the document does not contain a valid chapter title or does not contain a valid chapter number.
-    """
-
+    """  # noqa: E501
     # Categorize the text
     # 1. Part separator with part number
     # 2. Front matter with front matter title
@@ -145,12 +158,16 @@ def split_top_level_document(text: str) -> SplitResult:
         # The part number is not a chapter title, but we still want to
         # return it as the metadata.
         return SplitResult(
-            metadata=Metadata(title=part_no.get_text().strip(), type_="part_number"),
+            metadata=Metadata(
+                title=part_no.get_text().strip(), type_="part_number"
+            ),
             chunks=[],
         )
 
     fm_title = soup.find("h1", class_="fm-title1")
     if fm_title:
+        if not isinstance(fm_title, Tag):
+            raise ValueError("<h1 class='fm-title1'> is not an element.")  # noqa: EM101, TRY003
         # Early return if we find a front matter title.
         #
         # This is a special case for the front matter in the book.
@@ -162,8 +179,7 @@ def split_top_level_document(text: str) -> SplitResult:
 
 
 def split_section_to_subsections(text: str) -> SplitResult:
-    """
-    Split at the section level.
+    """Split at the section level.
 
     :param text: The HTML text content of the section.
     :return: SplitResult object containing metadata and chunks.
@@ -172,7 +188,7 @@ def split_section_to_subsections(text: str) -> SplitResult:
 
     titles = list(soup.find_all("h1", class_="sec"))
     if len(titles) > 1:
-        raise ValueError("More than one <h1 class='sec'> found.")
+        raise ValueError("More than one <h1 class='sec'> found.")  # noqa: EM101, TRY003
 
     if len(titles) == 0:
         title_text = None
@@ -182,12 +198,13 @@ def split_section_to_subsections(text: str) -> SplitResult:
         title.decompose()
 
     if not soup.body:
-        raise ValueError(f"No <body> found in the document: {text}.")
+        raise ValueError(f"No <body> found in the document: {text}.")  # noqa: EM102, TRY003
 
     subsections = _split_by(
         soup.body.children,
-        lambda el: getattr(el, "name", None) == "h1"
-        and "sec1" in el.get("class", [])
+        lambda el: isinstance(el, Tag)
+        and el.name == "h1"
+        and _tag_has_class(el, "sec1")
         and el.get("id", None) is not None,
     )
 
@@ -198,20 +215,21 @@ def split_section_to_subsections(text: str) -> SplitResult:
 
 
 def extract_boxes(text: str) -> ExtractResult:
-    """
-    Extract out `<div class="box">`, `<div class="box1">`, and `<div class="boxnobor">`.
+    """Extract out `<div class="box">`, `<div class="box1">`, and `<div class="boxnobor">`.
 
     :param text: The HTML text content of the top level document.
     :return: ExtractResult object containing metadata and chunks.
-    """
-
+    """  # noqa: E501
     soup = BeautifulSoup(text, "lxml")
 
-    # Extract out <div class="box">, <div class="box1">, and <div class="boxnobor">
+    # Extract out <div class="box">, <div class="box1">, and <div class="boxnobor">  # noqa: E501
     boxes = []
     for box in soup.find_all("div", class_=["box", "box1", "boxnobor"]):
         boxes.append(str(box).strip())
         box.decompose()
+
+    if soup.body is None:
+        raise ValueError(f"No <body> found in the document: {text}.")  # noqa: EM102, TRY003
 
     return ExtractResult(
         remaining_text=soup.body.decode_contents().strip(),
@@ -219,9 +237,8 @@ def extract_boxes(text: str) -> ExtractResult:
     )
 
 
-def split_subsection_into_paragraph_groups(text: str) -> SplitResult | None:
-    """
-    Split at the level 4 file.
+def split_subsection_into_paragraph_groups(text: str) -> SplitResult:
+    """Split at the level 4 file.
 
     Rules:
 
@@ -230,12 +247,11 @@ def split_subsection_into_paragraph_groups(text: str) -> SplitResult | None:
     :param text: The HTML text content of the top level document.
     :return: SplitResult object containing metadata and sections.
     """
-
     soup = BeautifulSoup(text, "lxml")
 
     headers = soup.find_all("h1", attrs={"class": "sec1", "id": True})
     if len(headers) > 1:
-        raise ValueError("More than one <h1 class='sec1'> found.")
+        raise ValueError("More than one <h1 class='sec1'> found.")  # noqa: EM101, TRY003
 
     if len(headers) == 0:
         title_text = None
@@ -244,9 +260,14 @@ def split_subsection_into_paragraph_groups(text: str) -> SplitResult | None:
         title_text = title.get_text().strip()
         title.decompose()
 
+    if soup.body is None:
+        raise ValueError(f"No <body> found in the document: {text}.")  # noqa: EM102, TRY003
+
     chunks = _split_by(
         soup.body.children,
-        lambda el: getattr(el, "name", None) == "p" and "parast" in el.get("class", []),
+        lambda el: isinstance(el, Tag)
+        and el.name == "p"
+        and _tag_has_class(el, "parast"),
     )
 
     return SplitResult(

@@ -1,4 +1,4 @@
-import asyncio
+import asyncio  # noqa: D100
 import logging
 import os
 
@@ -14,11 +14,11 @@ User question:
 {0}
 
 Rewritten search query in English:
-"""
-QUERY = "3岁儿童发烧怎么办？"
+"""  # noqa: E501
+QUERY = "What should I do if a three-year-old child has a fever?"
 
 
-async def main() -> None:
+async def main() -> None:  # noqa: D103
     url = f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@localhost:5432/{os.getenv('POSTGRES_DB')}"
 
     logger = logging.getLogger(__name__)
@@ -37,10 +37,13 @@ async def main() -> None:
             }
         ],
     )
-    rewritten_query = result.choices[0].message.content.strip()
-    logger.info(f"Rewritten query: {rewritten_query}")
+    rewritten_query_content = result.choices[0].message.content
+    if rewritten_query_content is None:
+        raise ValueError("OpenAI returned no rewritten query.")  # noqa: EM101, TRY003
+    rewritten_query = rewritten_query_content.strip()
+    logger.info(f"Rewritten query: {rewritten_query}")  # noqa: G004
 
-    with psycopg.connect(url) as conn:
+    with psycopg.connect(url) as conn:  # noqa: SIM117
         with conn.cursor(row_factory=dict_row) as cursor:
             cursor.execute(
                 """
@@ -51,15 +54,15 @@ async def main() -> None:
                 JOIN node_embedding_bm25 ne ON n.id = ne.node_id
                 ORDER BY rank
                 LIMIT %s
-                """,
+                """,  # noqa: E501
                 (rewritten_query, 10),
             )
             nodes = cursor.fetchall()
 
     for node in nodes:
-        logger.info(f"Node ID: {node['id']}")
-        logger.info(f"Node Content: {node['content']}")
-        logger.info(f"Node Metadata: {node['metadata']}")
+        logger.info(f"Node ID: {node['id']}")  # noqa: G004
+        logger.info(f"Node Content: {node['content']}")  # noqa: G004
+        logger.info(f"Node Metadata: {node['metadata']}")  # noqa: G004
         logger.info("-----")
 
     logger.info("Done.")

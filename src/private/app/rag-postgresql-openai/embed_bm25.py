@@ -1,16 +1,15 @@
-import logging
+import logging  # noqa: D100
 import os
 
 import psycopg
 from dotenv import load_dotenv
 
 
-def main() -> None:
+def main() -> None:  # noqa: D103
     url = f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@localhost:5432/{os.getenv('POSTGRES_DB')}"
-    with psycopg.connect(url) as conn:
-        with conn.cursor() as cursor:
-            cursor.execute(
-                """
+    with psycopg.connect(url) as conn, conn.cursor() as cursor:
+        cursor.execute(
+            """
                 INSERT INTO node_embedding_bm25 (node_id, embedding)
                 SELECT
                     id,
@@ -20,8 +19,8 @@ def main() -> None:
                 WHERE
                     id NOT IN (SELECT node_id FROM node_embedding_bm25);
                 """
-            )
-            conn.commit()
+        )
+        conn.commit()
 
 
 if __name__ == "__main__":

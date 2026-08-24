@@ -2013,6 +2013,7 @@ public sealed class ReconciliationAppTests
                 apiHandler,
                 traceHandler,
                 disableIpv6: false,
+                domains: ["example.com"],
                 logger: logger)
             .RunAsync(CancellationToken.None);
 
@@ -2965,6 +2966,90 @@ public sealed class ReconciliationAppTests
             logger.Messages,
             message => message.Contains(
                 "finished: 0 created, 0 updated, 0 no-op, 2 failed.",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task RunAsyncTreatsTimeoutsAsTargetFailuresAndContinues()
+    {
+        RecordingHttpMessageHandler traceHandler = new([
+            _ => TraceResponse(HttpStatusCode.OK, "ip=8.8.8.8"),
+            _ => TraceResponse(HttpStatusCode.OK, "ip=2001:4860:4860::8888"),
+        ]);
+
+        RecordingLogger<ReconciliationApp> logger = new();
+        RecordingHttpMessageHandler apiHandler = new([
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "zone-1",
+            "name": "example.com"
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": {
+        "id": "record-1",
+        "name": "host.example.com",
+        "type": "A",
+        "content": "8.8.8.8",
+        "proxied": false,
+        "ttl": 1
+    },
+    "errors": [],
+    "messages": []
+}
+"""),
+            _ => throw new OperationCanceledException("The request timed out."),
+        ]);
+
+        int exitCode = await CreateApp(
+            apiHandler,
+            traceHandler,
+            disableIpv6: false,
+            logger: logger)
+            .RunAsync(CancellationToken.None);
+
+        Assert.Equal(1, exitCode);
+        Assert.Equal(4, apiHandler.Requests.Count);
+        Assert.Contains(
+            logger.Messages,
+            message => message.Contains(
+                "Failed to reconcile host.example.com in zone example.com for InterNetworkV6",
+                StringComparison.Ordinal));
+        Assert.Contains(
+            logger.Messages,
+            message => message.Contains(
+                "finished: 1 created, 0 updated, 0 no-op, 1 failed.",
                 StringComparison.Ordinal));
     }
 

@@ -1,0 +1,21 @@
+# Workflow Delivery v3 governance.
+/.github/CODEOWNERS @hcoona
+/.github/workflows/** @hcoona
+/.github/actions/** @hcoona
+/eng/scripts/** @hcoona
+
+/src/public/lib/three-workflow-delivery-v3/** @hcoona
+/eng/workflow-delivery/v3/** @hcoona
+/src/**/workflow-delivery.release-unit.yml @hcoona
+/src/**/workflow-delivery.quality.yml @hcoona
+/.github/workflow-delivery/governance/hcoona-release-smoke-npm.json @hcoona
+/.github/workflows/workflow-delivery-v3-buddy-smoke-acceptance.yml @hcoona
+/src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py @hcoona
+/src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_workflow.py @hcoona
+/src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py @hcoona
+/src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_attestation.py @hcoona
+/src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py @hcoona
+/hk.pkl @hcoona
+/src/private/lib/hk/** @hcoona
+/pyproject.toml @hcoona
+/uv.lock @hcoona

@@ -67,7 +67,7 @@ def run_jq(data_raw: Path, proto_type: str, name: str) -> dict | None:
     """Run jq to extract a minimal prototype payload."""
     jq = shutil.which("jq")
     if not jq:
-        print("ERROR: jq not found in PATH.", file=sys.stderr)
+        print("ERROR: jq not found in PATH.", file=sys.stderr)  # noqa: T201
         return None
 
     jq_filter = ".[ $t ][ $n ] | {name, type, icon, icon_size, icons}"
@@ -88,7 +88,7 @@ def run_jq(data_raw: Path, proto_type: str, name: str) -> dict | None:
             cmd, check=True, capture_output=True, text=True
         )
     except subprocess.CalledProcessError as exc:
-        print(
+        print(  # noqa: T201
             f"ERROR: jq failed for {proto_type}/{name}: {exc.stderr}",
             file=sys.stderr,
         )
@@ -101,7 +101,7 @@ def run_jq(data_raw: Path, proto_type: str, name: str) -> dict | None:
     try:
         return json.loads(output)
     except json.JSONDecodeError:
-        print(
+        print(  # noqa: T201
             f"ERROR: failed to parse jq output for {proto_type}/{name}",
             file=sys.stderr,
         )
@@ -232,14 +232,14 @@ def parse_args() -> argparse.Namespace:
 def ensure_data_raw(data_raw: str | Path | None) -> Path | None:
     """Validate the data-raw-dump.json path."""
     if not data_raw:
-        print(
+        print(  # noqa: T201
             "ERROR: --data-raw is required (or set FACTORIO_DATA_RAW).",
             file=sys.stderr,
         )
         return None
     resolved = data_raw if isinstance(data_raw, Path) else Path(data_raw)
     if not resolved.exists():
-        print(
+        print(  # noqa: T201
             f"ERROR: data-raw-dump.json not found: {resolved}",
             file=sys.stderr,
         )
@@ -250,14 +250,14 @@ def ensure_data_raw(data_raw: str | Path | None) -> Path | None:
 def ensure_data_dir(data_dir: str | None) -> Path | None:
     """Validate the Factorio data directory path."""
     if not data_dir:
-        print(
+        print(  # noqa: T201
             "ERROR: --data-dir is required (or set FACTORIO_DATA_DIR).",
             file=sys.stderr,
         )
         return None
     resolved = Path(data_dir)
     if not resolved.exists():
-        print(f"ERROR: data directory not found: {resolved}", file=sys.stderr)
+        print(f"ERROR: data directory not found: {resolved}", file=sys.stderr)  # noqa: T201
         return None
     return resolved
 
@@ -266,7 +266,7 @@ def check_target(context: CheckContext, target: Target) -> tuple[int, int]:
     """Check icon and locale entries for a single prototype."""
     payload = run_jq(context.data_raw, target.proto_type, target.name)
     if not payload:
-        print(
+        print(  # noqa: T201
             f"SKIP: {target.proto_type}/{target.name} "
             "not found in data-raw-dump.json"
         )
@@ -277,20 +277,20 @@ def check_target(context: CheckContext, target: Target) -> tuple[int, int]:
 
     icon_paths = extract_icon_paths(payload)
     if not icon_paths:
-        print(f"ICON: {target.proto_type}/{target.name}: NO ICON")
+        print(f"ICON: {target.proto_type}/{target.name}: NO ICON")  # noqa: T201
     else:
         for icon in icon_paths:
             resolved = resolve_icon_path(icon, context.data_dir)
             if resolved.exists():
                 size = read_png_size(resolved)
                 size_text = f" ({size[0]}x{size[1]})" if size else ""
-                print(
+                print(  # noqa: T201
                     f"ICON: {target.proto_type}/{target.name}: OK "
                     f"{resolved}{size_text}"
                 )
             else:
                 icon_failures += 1
-                print(
+                print(  # noqa: T201
                     f"ICON: {target.proto_type}/{target.name}: "
                     f"MISSING {resolved}"
                 )
@@ -300,11 +300,11 @@ def check_target(context: CheckContext, target: Target) -> tuple[int, int]:
     )
     if locale_hit:
         section, value = locale_hit
-        print(f"LOCALE: {section}/{target.name}: OK {value}")
+        print(f"LOCALE: {section}/{target.name}: OK {value}")  # noqa: T201
     else:
         locale_failures += 1
         sections = ",".join(target.locale_sections)
-        print(f"LOCALE: {sections}/{target.name}: MISSING")
+        print(f"LOCALE: {sections}/{target.name}: MISSING")  # noqa: T201
 
     return icon_failures, locale_failures
 
@@ -312,12 +312,12 @@ def check_target(context: CheckContext, target: Target) -> tuple[int, int]:
 def summarize_failures(icon_failures: int, locale_failures: int) -> int:
     """Print the summary line and return an exit code."""
     if icon_failures or locale_failures:
-        print(
+        print(  # noqa: T201
             "DONE: icon failures="
             f"{icon_failures}, locale failures={locale_failures}"
         )
         return 1
-    print("DONE: all icons and locales resolved")
+    print("DONE: all icons and locales resolved")  # noqa: T201
     return 0
 
 
@@ -334,7 +334,7 @@ def main() -> int:
 
     locale_map = load_locale(data_dir, args.locale)
     if not locale_map:
-        print(f"WARNING: no locale data found for language: {args.locale}")
+        print(f"WARNING: no locale data found for language: {args.locale}")  # noqa: T201
 
     context = CheckContext(
         data_raw=data_raw,

@@ -6,7 +6,7 @@ resp_file="${RUNNER_TEMP}/gh-api.response"
 rm -f "${resp_file}"
 
 set +e
-gh api "${api}" --include > "${resp_file}" 2>&1
+gh api "${api}" --include >"${resp_file}" 2>&1
 rc=$?
 set -e
 
@@ -32,8 +32,8 @@ if [[ "${rc}" -eq 0 ]]; then
     exit 1
   fi
   echo "Existing release is prerelease=true for tag '${TAG_NAME}'. Proceeding."
-  echo "### Guard: Non-clobber :white_check_mark: passed" >> "${GITHUB_STEP_SUMMARY:-/dev/null}" || true
-  echo "Tag \`${TAG_NAME}\` — existing release is prerelease=true, safe to proceed." >> "${GITHUB_STEP_SUMMARY:-/dev/null}" || true
+  echo "### Guard: Non-clobber :white_check_mark: passed" >>"${GITHUB_STEP_SUMMARY:-/dev/null}" || true
+  echo "Tag \`${TAG_NAME}\` — existing release is prerelease=true, safe to proceed." >>"${GITHUB_STEP_SUMMARY:-/dev/null}" || true
   exit 0
 fi
 
@@ -44,7 +44,7 @@ if [[ "${status}" == "404" ]]; then
   # the release step failed. Log a warning so it is visible in the run log.
   tag_resp="${RUNNER_TEMP}/gh-tag-api.response"
   set +e
-  gh api "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG_NAME}" --include > "${tag_resp}" 2>&1
+  gh api "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG_NAME}" --include >"${tag_resp}" 2>&1
   set -e
   tag_http=$(grep -m1 -E '^HTTP/' "${tag_resp}" | awk '{print $2}' || true)
   if [[ "${tag_http}" == "200" ]]; then
@@ -52,8 +52,8 @@ if [[ "${status}" == "404" ]]; then
     echo "Warning: git tag '${TAG_NAME}' already exists (sha=${tag_sha}) but has no associated GitHub Release." >&2
     echo "This is expected if a previous run created the tag but failed before creating the release." >&2
   fi
-  echo "### Guard: Non-clobber :white_check_mark: passed" >> "${GITHUB_STEP_SUMMARY:-/dev/null}" || true
-  echo "Tag \`${TAG_NAME}\` — no existing release found, safe to proceed." >> "${GITHUB_STEP_SUMMARY:-/dev/null}" || true
+  echo "### Guard: Non-clobber :white_check_mark: passed" >>"${GITHUB_STEP_SUMMARY:-/dev/null}" || true
+  echo "Tag \`${TAG_NAME}\` — no existing release found, safe to proceed." >>"${GITHUB_STEP_SUMMARY:-/dev/null}" || true
   exit 0
 fi
 

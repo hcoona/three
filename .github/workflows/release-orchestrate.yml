@@ -292,6 +292,12 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: |
           set -Eeuo pipefail
+          normalized_channel="${CHANNEL//[[:space:]]/}"
+          if [[ "${normalized_channel,,}" == "buddy" ]]; then
+            echo "::error::Legacy Buddy entry route is retired; channel 'buddy' has no compatibility route. Use the Workflow Delivery v3 Buddy workflow."
+            exit 1
+          fi
+
           bash "${GITHUB_WORKSPACE}/eng/scripts/release_orchestrate_policy_validate_inputs.sh"
 
       - name: Self-test policy flag coverage

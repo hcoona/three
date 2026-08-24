@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping  # noqa: TC003
 from dataclasses import dataclass
-from types import TracebackType
+from types import TracebackType  # noqa: TC003
 from typing import Protocol
 
-from factorio_cycle_calculator.models import IconSpec, Recipe, RecipeConfig
+from factorio_cycle_calculator.models import (  # noqa: TC001
+    IconSpec,
+    Recipe,
+    RecipeConfig,
+)
 
 
 class ContainerSlot(Protocol):

@@ -1,15 +1,30 @@
 #define MyAppName "Image Occlusion Editor"
-; PublishDir can be injected from the build script or csproj via /DPublishDir="..."
-#ifndef PublishDir
-#define PublishDir "..\ImageOcclusionEditorWinUI3\bin\x64\Release\net10.0-windows10.0.22000.0\win-x64\publish"
+#define ScriptDir SourcePath
+#ifndef ProjectDir
+#define ProjectDir GetEnv("IMAGE_OCCLUSION_EDITOR_INNO_PROJECT_DIR")
 #endif
-; Use PublishDir directly; caller must pass a clean path without trailing backslash
-#define MyAppExePath PublishDir + "\ImageOcclusionEditor.exe"
-#define MyAppVersion GetVersionNumbersString(MyAppExePath)
+#if ProjectDir == ""
+#undef ProjectDir
+#define ProjectDir AddBackslash(ScriptDir) + ".."
+#endif
+#define ProjectDirWithBackslash AddBackslash(ProjectDir)
+#ifndef MyAppVersion
+#define MyAppVersion GetEnv("IMAGE_OCCLUSION_EDITOR_INNO_APP_VERSION")
+#endif
+#if MyAppVersion == ""
+#error MyAppVersion must be supplied by Build-InnoInstaller.ps1
+#endif
+#ifndef PublishDir
+#define PublishDir GetEnv("IMAGE_OCCLUSION_EDITOR_INNO_PUBLISH_DIR")
+#endif
+#if PublishDir == ""
+#error PublishDir must be supplied by Build-InnoInstaller.ps1
+#endif
 #define MyAppPublisher "Shuai Zhang"
 #define MyAppURL "https://github.com/hcoona/ImageOcclusionEditor"
 #define MyAppExeName "ImageOcclusionEditor.exe"
 #define MyAppDescription "Application for creating image occlusion cards"
+#define PublishDirWithBackslash AddBackslash(PublishDir)
 
 [Setup]
 AppId={{C8D4F4E5-1234-4567-8901-123456789ABC}
@@ -23,10 +38,9 @@ AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf64}\ImageOcclusionEditor
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
-LicenseFile=..\LICENSE.GPL3.txt
-OutputDir=Release
+LicenseFile={#ProjectDirWithBackslash}LICENSE.GPL3.txt
 OutputBaseFilename=ImageOcclusionEditorWinUI3_Setup
-SetupIconFile=..\imageocclusioneditor.ico
+SetupIconFile={#ProjectDirWithBackslash}imageocclusioneditor.ico
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
@@ -45,18 +59,18 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 ; x64 version files only
-Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#PublishDirWithBackslash}*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; Icon file
-Source: "..\imageocclusioneditor.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ProjectDirWithBackslash}imageocclusioneditor.ico"; DestDir: "{app}"; Flags: ignoreversion
 ; Documentation
-Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\LICENSE.GPL3.txt"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\LICENSE.MIT.txt"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\THIRD-PARTY-NOTICES.TXT"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ProjectDirWithBackslash}README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ProjectDirWithBackslash}LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ProjectDirWithBackslash}LICENSE.GPL3.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ProjectDirWithBackslash}LICENSE.MIT.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ProjectDirWithBackslash}THIRD-PARTY-NOTICES.TXT"; DestDir: "{app}"; Flags: ignoreversion
 ; Templates (optional)
-Source: "..\Resources\Template_IIOT.txt"; DestDir: "{app}\Templates"; Flags: ignoreversion skipifsourcedoesntexist
-Source: "..\Resources\Template_IIOTT.txt"; DestDir: "{app}\Templates"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "{#ProjectDirWithBackslash}Resources\Template_IIOT.txt"; DestDir: "{app}\Templates"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "{#ProjectDirWithBackslash}Resources\Template_IIOTT.txt"; DestDir: "{app}\Templates"; Flags: ignoreversion skipifsourcedoesntexist
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\imageocclusioneditor.ico"

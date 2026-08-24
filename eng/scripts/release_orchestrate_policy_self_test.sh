@@ -26,13 +26,19 @@ check_guard_rejects() {
   # BLK-1: Capture stdout+stderr AND exit code inline. Appending 'echo "EXIT:$?"' after
   # the command means the outer 'set -Eeuo pipefail' shell stays clean while we can
   # still inspect whether the inner command actually exited non-zero.
-  output=$(set +e; env SOURCE=manual PROJECT=dummy VERSION=1.0.0 CHANNEL_ALLOWLIST="" \
-    ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
-    PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=false PUBLISH_NODE_NPMJS=false \
-    PUBLISH_RUBY_GPR=false PUBLISH_RUBY_RUBYGEMS=false \
-    ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=false \
-    GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=test \
-    CHANNEL="${channel_value}" bash "${POLICY_SCRIPT}" 2>&1; rc=$?; set -e; echo "EXIT:${rc}")
+  output=$(
+    set +e
+    env SOURCE=manual PROJECT=dummy VERSION=1.0.0 CHANNEL_ALLOWLIST="" \
+      ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
+      PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=false PUBLISH_NODE_NPMJS=false \
+      PUBLISH_RUBY_GPR=false PUBLISH_RUBY_RUBYGEMS=false \
+      ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=false \
+      GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=test \
+      CHANNEL="${channel_value}" bash "${POLICY_SCRIPT}" 2>&1
+    rc=$?
+    set -e
+    echo "EXIT:${rc}"
+  )
   # Verify non-zero exit: a guard that prints the error but omits 'exit 1' must fail here.
   if echo "${output}" | tail -1 | grep -q '^EXIT:0$'; then
     echo "ERROR: pre-case guard did not reject — '${description}' (channel='${channel_value}'): expected non-zero exit" >&2
@@ -47,28 +53,28 @@ check_guard_rejects() {
   fi
 }
 
-check_guard_rejects "empty channel"        ""           "Channel must not be empty."
-check_guard_rejects "whitespace channel"   "my channel" "contains whitespace"
-check_guard_rejects "uppercase channel"    "Official"   "contains uppercase"
+check_guard_rejects "empty channel" "" "Channel must not be empty."
+check_guard_rejects "whitespace channel" "my channel" "contains whitespace"
+check_guard_rejects "uppercase channel" "Official" "contains uppercase"
 check_guard_rejects "x-official reserved" "x-official" "reserved as an internal remapping slug"
-check_guard_rejects "x-buddy reserved"    "x-buddy"    "reserved as an internal remapping slug"
+check_guard_rejects "x-buddy reserved" "x-buddy" "reserved as an internal remapping slug"
 # Format checks: these channels pass all pre-case guards but fail the regex in the *) arm.
 # These tests guard against a polarity inversion or regex error in the format check that
 # would cause invalid-format channels to fall through to the allowlist lookup instead.
-check_guard_rejects "consecutive-hyphen channel (invalid format)"    "a--b"       "invalid format and cannot be used"
-check_guard_rejects "leading-separator channel (invalid format)"      "-beta"      "invalid format and cannot be used"
-check_guard_rejects "trailing-hyphen channel (invalid format)"        "alpha-"     "invalid format and cannot be used"
-check_guard_rejects "trailing-underscore channel (invalid format)"    "alpha_"     "invalid format and cannot be used"
+check_guard_rejects "consecutive-hyphen channel (invalid format)" "a--b" "invalid format and cannot be used"
+check_guard_rejects "leading-separator channel (invalid format)" "-beta" "invalid format and cannot be used"
+check_guard_rejects "trailing-hyphen channel (invalid format)" "alpha-" "invalid format and cannot be used"
+check_guard_rejects "trailing-underscore channel (invalid format)" "alpha_" "invalid format and cannot be used"
 check_guard_rejects "consecutive-underscore channel (invalid format)" "my__channel" "invalid format and cannot be used"
-check_guard_rejects "mixed-separator channel (invalid format)"        "a_-b"       "invalid format and cannot be used"
+check_guard_rejects "mixed-separator channel (invalid format)" "a_-b" "invalid format and cannot be used"
 
 # NB-6: Whitespace guard — also covers leading, trailing, and tab characters.
 # 'my channel' (internal space) is already tested above; these add the variants that
 # are common transcription errors in GitHub Actions 'with:' blocks.
-check_guard_rejects "leading-space channel"  " staging"    "contains whitespace"
-check_guard_rejects "trailing-space channel" "staging "    "contains whitespace"
-check_guard_rejects "tab channel"            $'stag\ting'  "contains whitespace"
-check_guard_rejects "newline channel"        $'stag\ning'  "contains whitespace"
+check_guard_rejects "leading-space channel" " staging" "contains whitespace"
+check_guard_rejects "trailing-space channel" "staging " "contains whitespace"
+check_guard_rejects "tab channel" $'stag\ting' "contains whitespace"
+check_guard_rejects "newline channel" $'stag\ning' "contains whitespace"
 # NB-6b: Combined leading-space + uppercase (' Official') — the whitespace guard must fire
 # BEFORE the uppercase guard. ${CHANNEL,,} folds ' Official' → ' official' (space preserved),
 # which differs from CHANNEL and would trigger the uppercase guard with a misleading message.
@@ -80,8 +86,8 @@ check_guard_rejects "leading-space+uppercase channel" " Official" "contains whit
 # 'Official' (plain uppercase) is tested above; 'X-OFFICIAL' hits an inner if-branch
 # that emits a different message ('its lowercase form ... is reserved'). Without this test,
 # that inner branch is dead code from the test suite's perspective.
-check_guard_rejects "uppercase reserved slug X-OFFICIAL"      "X-OFFICIAL" "its lowercase form"
-check_guard_rejects "mixed-case reserved slug x-Official"     "x-Official" "its lowercase form"
+check_guard_rejects "uppercase reserved slug X-OFFICIAL" "X-OFFICIAL" "its lowercase form"
+check_guard_rejects "mixed-case reserved slug x-Official" "x-Official" "its lowercase form"
 
 # NB-7: Valid-format channel with empty allowlist → "Unknown channel" path.
 # This verifies the *) arm's allowlist lookup fires correctly when CHANNEL is a valid-format
@@ -104,14 +110,20 @@ check_allowlist_rejects() {
   # allowlist validation loop is always reached. The test exercises the invalid/reserved
   # CHANNEL_ALLOWLIST entry, not the channel value itself.
   # BLK-1: Capture exit code inline (same pattern as check_guard_rejects).
-  output=$(set +e; env SOURCE=manual PROJECT=dummy VERSION=1.0.0 \
-    CHANNEL_ALLOWLIST="${allowlist_value}" \
-    ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
-    PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=false PUBLISH_NODE_NPMJS=false \
-    PUBLISH_RUBY_GPR=false PUBLISH_RUBY_RUBYGEMS=false \
-    ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=false \
-    GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=test \
-    CHANNEL=staging bash "${POLICY_SCRIPT}" 2>&1; rc=$?; set -e; echo "EXIT:${rc}")
+  output=$(
+    set +e
+    env SOURCE=manual PROJECT=dummy VERSION=1.0.0 \
+      CHANNEL_ALLOWLIST="${allowlist_value}" \
+      ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
+      PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=false PUBLISH_NODE_NPMJS=false \
+      PUBLISH_RUBY_GPR=false PUBLISH_RUBY_RUBYGEMS=false \
+      ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=false \
+      GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=test \
+      CHANNEL=staging bash "${POLICY_SCRIPT}" 2>&1
+    rc=$?
+    set -e
+    echo "EXIT:${rc}"
+  )
   if echo "${output}" | tail -1 | grep -q '^EXIT:0$'; then
     echo "ERROR: allowlist entry guard did not reject — '${description}' (allowlist='${allowlist_value}'): expected non-zero exit" >&2
     echo "  Got: ${output}" >&2
@@ -161,14 +173,20 @@ check_guard_accepts() {
   local description="$1"
   local channel_value="$2"
   local output
-  output=$(set +e; env SOURCE=manual PROJECT=dummy VERSION=1.0.0 \
-    CHANNEL_ALLOWLIST="${channel_value}" \
-    ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
-    PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=false PUBLISH_NODE_NPMJS=false \
-    PUBLISH_RUBY_GPR=false PUBLISH_RUBY_RUBYGEMS=false \
-    ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=false \
-    GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=test \
-    CHANNEL="${channel_value}" bash "${POLICY_SCRIPT}" 2>&1; rc=$?; set -e; echo "EXIT:${rc}")
+  output=$(
+    set +e
+    env SOURCE=manual PROJECT=dummy VERSION=1.0.0 \
+      CHANNEL_ALLOWLIST="${channel_value}" \
+      ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
+      PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=false PUBLISH_NODE_NPMJS=false \
+      PUBLISH_RUBY_GPR=false PUBLISH_RUBY_RUBYGEMS=false \
+      ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=false \
+      GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=test \
+      CHANNEL="${channel_value}" bash "${POLICY_SCRIPT}" 2>&1
+    rc=$?
+    set -e
+    echo "EXIT:${rc}"
+  )
   if ! echo "${output}" | tail -1 | grep -q '^EXIT:0$'; then
     echo "ERROR: guard incorrectly rejected valid channel — '${description}' (channel='${channel_value}')" >&2
     echo "  Got: ${output}" >&2
@@ -176,29 +194,35 @@ check_guard_accepts() {
   fi
 }
 
-check_guard_accepts "simple lowercase channel"   "staging"
-check_guard_accepts "hyphenated channel"         "my-channel"
-check_guard_accepts "channel with digit suffix"  "canary2"
-check_guard_accepts "channel with underscore"    "my_channel"
+check_guard_accepts "simple lowercase channel" "staging"
+check_guard_accepts "hyphenated channel" "my-channel"
+check_guard_accepts "channel with digit suffix" "canary2"
+check_guard_accepts "channel with underscore" "my_channel"
 # NB-4: The underscore variants x_official and x_buddy are explicitly documented as NOT
 # blocked (see validate_inputs.sh comment). Without acceptance tests, a developer could
 # silently tighten the guard and remove this deliberate allowance with no test failure.
 check_guard_accepts "x_official is allowed (underscore form, not reserved)" "x_official"
-check_guard_accepts "x_buddy is allowed (underscore form, not reserved)"    "x_buddy"
+check_guard_accepts "x_buddy is allowed (underscore form, not reserved)" "x_buddy"
 
 # BLK-5: Multi-entry allowlist — verify is_channel_allowlisted iterates ALL entries and
 # correctly accepts a channel that appears as the non-first (second) entry.
 # Single-entry tests above confirm the basic happy path; this guards against an
 # off-by-one regression where only the first allowlist entry is ever compared.
 {
-  _me_output=$(set +e; env SOURCE=manual PROJECT=dummy VERSION=1.0.0 \
-    CHANNEL_ALLOWLIST="other,staging" \
-    ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
-    PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=false PUBLISH_NODE_NPMJS=false \
-    PUBLISH_RUBY_GPR=false PUBLISH_RUBY_RUBYGEMS=false \
-    ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=false \
-    GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=test \
-    CHANNEL=staging bash "${POLICY_SCRIPT}" 2>&1; rc=$?; set -e; echo "EXIT:${rc}")
+  _me_output=$(
+    set +e
+    env SOURCE=manual PROJECT=dummy VERSION=1.0.0 \
+      CHANNEL_ALLOWLIST="other,staging" \
+      ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
+      PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=false PUBLISH_NODE_NPMJS=false \
+      PUBLISH_RUBY_GPR=false PUBLISH_RUBY_RUBYGEMS=false \
+      ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=false \
+      GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=test \
+      CHANNEL=staging bash "${POLICY_SCRIPT}" 2>&1
+    rc=$?
+    set -e
+    echo "EXIT:${rc}"
+  )
   if ! echo "${_me_output}" | tail -1 | grep -q '^EXIT:0$'; then
     echo "ERROR: multi-entry allowlist: 'staging' should be accepted in 'other,staging' allowlist" >&2
     echo "  Got: ${_me_output}" >&2
@@ -215,9 +239,15 @@ check_builtin_channel_accepted() {
   local description="$1"
   shift
   local output
-  output=$(set +e; env SOURCE=manual PROJECT=dummy VERSION=1.0.0 CHANNEL_ALLOWLIST="" \
-    GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=test \
-    "$@" bash "${POLICY_SCRIPT}" 2>&1; rc=$?; set -e; echo "EXIT:${rc}")
+  output=$(
+    set +e
+    env SOURCE=manual PROJECT=dummy VERSION=1.0.0 CHANNEL_ALLOWLIST="" \
+      GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=test \
+      "$@" bash "${POLICY_SCRIPT}" 2>&1
+    rc=$?
+    set -e
+    echo "EXIT:${rc}"
+  )
   if ! echo "${output}" | tail -1 | grep -q '^EXIT:0$'; then
     echo "ERROR: built-in channel incorrectly rejected — '${description}'" >&2
     echo "  Got: ${output}" >&2
@@ -248,14 +278,20 @@ check_builtin_channel_rejects() {
   local description="$1"
   shift
   local output
-  output=$(set +e; env SOURCE=manual PROJECT=dummy VERSION=1.0.0 CHANNEL_ALLOWLIST="" \
-    GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=test \
-    "$@" bash "${POLICY_SCRIPT}" 2>&1; rc=$?; set -e; echo "EXIT:${rc}")
+  output=$(
+    set +e
+    env SOURCE=manual PROJECT=dummy VERSION=1.0.0 CHANNEL_ALLOWLIST="" \
+      GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=test \
+      "$@" bash "${POLICY_SCRIPT}" 2>&1
+    rc=$?
+    set -e
+    echo "EXIT:${rc}"
+  )
   if echo "${output}" | tail -1 | grep -q '^EXIT:0$'; then
     echo "ERROR: built-in channel incorrectly accepted wrong profile — '${description}'" >&2
     echo "  Got: ${output}" >&2
     FAIL=1
-    return  # skip assert_equals check; script accepted, so no rejection message to inspect
+    return # skip assert_equals check; script accepted, so no rejection message to inspect
   fi
   # Verify the rejection came from an assert_equals mismatch, not an unrelated pre-case
   # failure. Without this check, a regression that breaks env-var handling before the
@@ -401,14 +437,20 @@ check_allowlist_registry_rejects() {
   local expected_fragment="$2"
   shift 2
   local output
-  output=$(set +e; env SOURCE=manual PROJECT=dummy VERSION=1.0.0 \
-    CHANNEL_ALLOWLIST="staging" \
-    ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
-    PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=false PUBLISH_NODE_NPMJS=false \
-    PUBLISH_RUBY_GPR=false PUBLISH_RUBY_RUBYGEMS=false \
-    ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=false \
-    GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=test \
-    "$@" CHANNEL=staging bash "${POLICY_SCRIPT}" 2>&1; rc=$?; set -e; echo "EXIT:${rc}")
+  output=$(
+    set +e
+    env SOURCE=manual PROJECT=dummy VERSION=1.0.0 \
+      CHANNEL_ALLOWLIST="staging" \
+      ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
+      PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=false PUBLISH_NODE_NPMJS=false \
+      PUBLISH_RUBY_GPR=false PUBLISH_RUBY_RUBYGEMS=false \
+      ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=false \
+      GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=test \
+      "$@" CHANNEL=staging bash "${POLICY_SCRIPT}" 2>&1
+    rc=$?
+    set -e
+    echo "EXIT:${rc}"
+  )
   if echo "${output}" | tail -1 | grep -q '^EXIT:0$'; then
     echo "ERROR: registry prohibition not enforced — '${description}': expected non-zero exit" >&2
     echo "  Got: ${output}" >&2
@@ -443,14 +485,20 @@ check_source_tag_rejects() {
   # Caller overrides specific vars via "$@" to trigger the guard under test.
   # REF_NAME and REF are included in the base so a single override to "" triggers
   # exactly the missing-field guard without unbound-variable errors.
-  output=$(set +e; env SOURCE=tag REF_NAME="v1.0.0" REF="refs/tags/v1.0.0" \
-    CHANNEL=official CHANNEL_ALLOWLIST="" \
-    ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
-    PUBLISH_PYTHON_PYPI=true PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=true \
-    PUBLISH_RUBY_GPR=true PUBLISH_RUBY_RUBYGEMS=true \
-    ENABLE_ATTESTATION=true GITHUB_RELEASE_PRERELEASE=false \
-    GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=refs/tags/v1.0.0 \
-    "$@" bash "${POLICY_SCRIPT}" 2>&1; rc=$?; set -e; echo "EXIT:${rc}")
+  output=$(
+    set +e
+    env SOURCE=tag REF_NAME="v1.0.0" REF="refs/tags/v1.0.0" \
+      CHANNEL=official CHANNEL_ALLOWLIST="" \
+      ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
+      PUBLISH_PYTHON_PYPI=true PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=true \
+      PUBLISH_RUBY_GPR=true PUBLISH_RUBY_RUBYGEMS=true \
+      ENABLE_ATTESTATION=true GITHUB_RELEASE_PRERELEASE=false \
+      GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=refs/tags/v1.0.0 \
+      "$@" bash "${POLICY_SCRIPT}" 2>&1
+    rc=$?
+    set -e
+    echo "EXIT:${rc}"
+  )
   if echo "${output}" | tail -1 | grep -q '^EXIT:0$'; then
     echo "ERROR: source=tag guard did not reject — '${description}': expected non-zero exit" >&2
     echo "  Got: ${output}" >&2
@@ -468,14 +516,20 @@ check_source_tag_accepts() {
   local description="$1"
   shift
   local output
-  output=$(set +e; env SOURCE=tag REF_NAME="v1.0.0" REF="refs/tags/v1.0.0" \
-    CHANNEL=official CHANNEL_ALLOWLIST="" \
-    ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
-    PUBLISH_PYTHON_PYPI=true PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=true \
-    PUBLISH_RUBY_GPR=true PUBLISH_RUBY_RUBYGEMS=true \
-    ENABLE_ATTESTATION=true GITHUB_RELEASE_PRERELEASE=false \
-    GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=refs/tags/v1.0.0 \
-    "$@" bash "${POLICY_SCRIPT}" 2>&1; rc=$?; set -e; echo "EXIT:${rc}")
+  output=$(
+    set +e
+    env SOURCE=tag REF_NAME="v1.0.0" REF="refs/tags/v1.0.0" \
+      CHANNEL=official CHANNEL_ALLOWLIST="" \
+      ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
+      PUBLISH_PYTHON_PYPI=true PUBLISH_NODE_GPR=true PUBLISH_NODE_NPMJS=true \
+      PUBLISH_RUBY_GPR=true PUBLISH_RUBY_RUBYGEMS=true \
+      ENABLE_ATTESTATION=true GITHUB_RELEASE_PRERELEASE=false \
+      GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=refs/tags/v1.0.0 \
+      "$@" bash "${POLICY_SCRIPT}" 2>&1
+    rc=$?
+    set -e
+    echo "EXIT:${rc}"
+  )
   if ! echo "${output}" | tail -1 | grep -q '^EXIT:0$'; then
     echo "ERROR: source=tag incorrectly rejected — '${description}'" >&2
     echo "  Got: ${output}" >&2
@@ -501,14 +555,20 @@ check_source_manual_rejects() {
   shift 2
   local output
   # Base env: fully valid SOURCE=manual. Caller overrides specific vars via "$@".
-  output=$(set +e; env SOURCE=manual PROJECT=dummy VERSION=1.0.0 \
-    CHANNEL=official CHANNEL_ALLOWLIST="" \
-    ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
-    PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=false PUBLISH_NODE_NPMJS=false \
-    PUBLISH_RUBY_GPR=false PUBLISH_RUBY_RUBYGEMS=false \
-    ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=false \
-    GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=test \
-    "$@" bash "${POLICY_SCRIPT}" 2>&1; rc=$?; set -e; echo "EXIT:${rc}")
+  output=$(
+    set +e
+    env SOURCE=manual PROJECT=dummy VERSION=1.0.0 \
+      CHANNEL=official CHANNEL_ALLOWLIST="" \
+      ENFORCE_PRERELEASE_ONLY=false ENFORCE_NON_CLOBBER=false \
+      PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=false PUBLISH_NODE_NPMJS=false \
+      PUBLISH_RUBY_GPR=false PUBLISH_RUBY_RUBYGEMS=false \
+      ENABLE_ATTESTATION=false GITHUB_RELEASE_PRERELEASE=false \
+      GITHUB_STEP_SUMMARY=/dev/null GITHUB_ACTOR=test GITHUB_REF_NAME=test \
+      "$@" bash "${POLICY_SCRIPT}" 2>&1
+    rc=$?
+    set -e
+    echo "EXIT:${rc}"
+  )
   if echo "${output}" | tail -1 | grep -q '^EXIT:0$'; then
     echo "ERROR: source=manual guard did not reject — '${description}': expected non-zero exit" >&2
     echo "  Got: ${output}" >&2
@@ -567,10 +627,10 @@ for flag in "${required_flags[@]}"; do
   # Use '^[[:space:]]*;;' as the branch boundary instead of the sibling branch label.
   # This is more robust: a nested case/esac inside a branch would cause the
   # sibling-label approach to over-include lines; ;; always terminates a branch.
-  official_count=$(awk '/^[[:space:]]+official\)/{f=1} f && /^[[:space:]]*;;/{exit} f' "${POLICY_SCRIPT}" \
-    | grep -c "assert_equals \"${flag}\"" || true)
-  buddy_count=$(awk '/^[[:space:]]+buddy\)/{f=1} f && /^[[:space:]]*;;/{exit} f' "${POLICY_SCRIPT}" \
-    | grep -c "assert_equals \"${flag}\"" || true)
+  official_count=$(awk '/^[[:space:]]*official\)/{f=1} f && /^[[:space:]]*;;/{exit} f' "${POLICY_SCRIPT}" |
+    grep -c "assert_equals \"${flag}\"" || true)
+  buddy_count=$(awk '/^[[:space:]]*buddy\)/{f=1} f && /^[[:space:]]*;;/{exit} f' "${POLICY_SCRIPT}" |
+    grep -c "assert_equals \"${flag}\"" || true)
   if [[ "${official_count}" -lt 1 || "${buddy_count}" -lt 1 ]]; then
     echo "ERROR: flag '${flag}' missing assert_equals in one or more channel branches (official: ${official_count}, buddy: ${buddy_count}); each flag must be asserted in BOTH 'official' and 'buddy'." >&2
     FAIL=1
@@ -594,7 +654,7 @@ echo "Policy flag coverage self-test passed."
 # correctness is guaranteed by Phase 0 behavioral tests above — those tests exercise
 # the actual execution path and would fail if a guard were moved to the wrong position
 # (e.g., inside the *) arm instead of before the case block).
-VALIDATE_INPUTS_SH="${POLICY_SCRIPT}"  # same file; single canonical path declared above
+VALIDATE_INPUTS_SH="${POLICY_SCRIPT}" # same file; single canonical path declared above
 # Use a separate variable for Phase 2 — Phase 1 exits on failure so FAIL is
 # guaranteed 0 here, but an explicit name makes the phase boundary clear.
 FAIL_PHASE2=0
@@ -665,11 +725,17 @@ check_publish_targets_rejects() {
   local expected_fragment="$2"
   shift 2
   local output
-  output=$(set +e; env PROJECT=test-project CHANNEL=official \
-    PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=false PUBLISH_NODE_NPMJS=false \
-    PUBLISH_RUBY_GPR=false PUBLISH_RUBY_RUBYGEMS=false \
-    GITHUB_STEP_SUMMARY=/dev/null \
-    "$@" bash "${PUBLISH_TARGETS_SCRIPT}" 2>&1; rc=$?; set -e; echo "EXIT:${rc}")
+  output=$(
+    set +e
+    env PROJECT=test-project CHANNEL=official \
+      PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=false PUBLISH_NODE_NPMJS=false \
+      PUBLISH_RUBY_GPR=false PUBLISH_RUBY_RUBYGEMS=false \
+      GITHUB_STEP_SUMMARY=/dev/null \
+      "$@" bash "${PUBLISH_TARGETS_SCRIPT}" 2>&1
+    rc=$?
+    set -e
+    echo "EXIT:${rc}"
+  )
   if echo "${output}" | tail -1 | grep -q '^EXIT:0$'; then
     echo "ERROR: publish_targets.sh incorrectly accepted — '${description}'" >&2
     echo "  Got: ${output}" >&2
@@ -688,11 +754,17 @@ check_publish_targets_accepts() {
   local description="$1"
   shift
   local output
-  output=$(set +e; env PROJECT=test-project CHANNEL=official \
-    PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=false PUBLISH_NODE_NPMJS=false \
-    PUBLISH_RUBY_GPR=false PUBLISH_RUBY_RUBYGEMS=false \
-    GITHUB_STEP_SUMMARY=/dev/null \
-    "$@" bash "${PUBLISH_TARGETS_SCRIPT}" 2>&1; rc=$?; set -e; echo "EXIT:${rc}")
+  output=$(
+    set +e
+    env PROJECT=test-project CHANNEL=official \
+      PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=false PUBLISH_NODE_NPMJS=false \
+      PUBLISH_RUBY_GPR=false PUBLISH_RUBY_RUBYGEMS=false \
+      GITHUB_STEP_SUMMARY=/dev/null \
+      "$@" bash "${PUBLISH_TARGETS_SCRIPT}" 2>&1
+    rc=$?
+    set -e
+    echo "EXIT:${rc}"
+  )
   if ! echo "${output}" | tail -1 | grep -q '^EXIT:0$'; then
     echo "ERROR: publish_targets.sh incorrectly rejected — '${description}'" >&2
     echo "  Got: ${output}" >&2
@@ -754,11 +826,11 @@ check_publish_targets_accepts "python project accepts (GITHUB_STEP_SUMMARY=/dev/
 # PT-5b: validates GITHUB_STEP_SUMMARY:-/dev/null defensive fix: the :- default must be
 # exercised when GITHUB_STEP_SUMMARY is unset, so the script must not abort via set -u.
 if pt5b_out=$(env -u GITHUB_STEP_SUMMARY \
-    PROJECT=test-project CHANNEL=official \
-    PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=false PUBLISH_NODE_NPMJS=false \
-    PUBLISH_RUBY_GPR=false PUBLISH_RUBY_RUBYGEMS=false \
-    PROJECT_KIND=python \
-    bash "${PUBLISH_TARGETS_SCRIPT}" 2>&1); then
+  PROJECT=test-project CHANNEL=official \
+  PUBLISH_PYTHON_PYPI=false PUBLISH_NODE_GPR=false PUBLISH_NODE_NPMJS=false \
+  PUBLISH_RUBY_GPR=false PUBLISH_RUBY_RUBYGEMS=false \
+  PROJECT_KIND=python \
+  bash "${PUBLISH_TARGETS_SCRIPT}" 2>&1); then
   :
 else
   echo "ERROR: publish_targets.sh incorrectly rejected — 'python project accepts (GITHUB_STEP_SUMMARY unset)'" >&2

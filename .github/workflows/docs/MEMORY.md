@@ -1,18 +1,27 @@
 # Workflow Design Memory
 
+> **Archived and superseded:** This pre-v3 design is retained only for
+> historical context. The legacy `buddy.yml` and `release-buddy.yml` routes are
+> retired. Do not use this document to recreate either route; current Buddy
+> delivery is owned by Workflow Delivery v3.
+
 ## Current repository reality
 
 - Active projects now follow the canonical monorepo roots under `src/`, `src/lab/`, and `tests/`.
 - The former `OneDotNet/` subtree has been migrated into those canonical roots.
 - Release pipelines for each project are not yet set up.
 
-## Current design decisions to preserve
+## Archived pre-v3 design decisions
 
-- Keep release and release-authority validation entry workflows exactly `ci.yml`, `buddy.yml`, and `official.yml`.
+- The superseded design exposed `ci.yml`, `buddy.yml`, and `official.yml` as
+  release and release-authority validation entry workflows.
 - Allow `.github/workflows/codeql.yml` as a triggered top-level non-release security analysis workflow only without release authority, publish credentials, protected-ref bypass credentials, or release mutation worker access.
 - Do not add extra triggered top-level workflow files for readiness, drift, governance, health monitoring, or release authority. Scheduled, manually dispatched, or carefully dashboard-edit-triggered Renovate dependency-maintenance workflows are allowed only without release authority and with workflow-level `permissions: {}` plus job-level least privilege. A dedicated GitHub App token may create dependency branches and pull requests, but must not bypass branch protection or mutate release refs. Renovate may use GitHub platform automerge with squash merge for configured dependency pull requests after required CI and branch protection/rulesets pass.
-- Keep buddy publish authorization in direct jobs, not in same-repository reusable publish workflows.
-- Keep official publish authorization in direct `official.yml` jobs so OIDC-backed trusted publishing sees `.github/workflows/official.yml` as the workflow identity.
+- The superseded design kept Buddy publish authorization in direct jobs, not
+  in same-repository reusable publish workflows.
+- The superseded design kept Official publish authorization in direct
+  `official.yml` jobs so OIDC-backed trusted publishing saw
+  `.github/workflows/official.yml` as the workflow identity.
 - Use `github:release` as the GitHub Release target.
 - Do not reintroduce `pypi:testpypi`.
 - Python buddy preview, if needed, uses `github:release`.

@@ -59,7 +59,9 @@ namespace ImageOcclusionEditorWinUI3
 
             if (actualArgs.Length != 2)
             {
-                ShowErrorAndExit("Invalid number of parameters. Usage: ImageOcclusionEditor.exe <background-image-path> <occlusion-image-path>");
+                ShowErrorAndExit(
+                    "Invalid number of parameters. Usage: "
+                    + "ImageOcclusionEditor.exe <background-image-path> <occlusion-image-path>");
                 return;
             }
 
@@ -107,7 +109,9 @@ namespace ImageOcclusionEditorWinUI3
             }
             catch (Exception ex)
             {
-                ShowErrorAndExit($"An exception was thrown while opening file {filePath}.\n\nException message: {ex.Message}");
+                ShowErrorAndExit(
+                    $"An exception was thrown while opening file {filePath}."
+                    + $"\n\nException message: {ex.Message}");
                 return false;
             }
         }

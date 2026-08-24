@@ -1,3 +1,8 @@
+> **Archived and superseded:** This pre-v3 design is retained only for
+> historical context. The legacy `buddy.yml` and `release-buddy.yml` routes are
+> retired. Do not use this document to recreate either route; current Buddy
+> delivery is owned by Workflow Delivery v3.
+
 This repository is a polyglot monorepo. I need you to design the best GitHub Actions workflow combination for the release and validation model described below.
 
 Before any implementation-oriented design detail: active projects now follow the canonical monorepo roots under `src/`, `src/lab/`, and `tests/`. The former `OneDotNet/` subtree has been migrated into those canonical roots. Release pipelines are still not set up, so the design must preserve release-pipeline implementation prerequisites without treating canonical-root migration as incomplete.

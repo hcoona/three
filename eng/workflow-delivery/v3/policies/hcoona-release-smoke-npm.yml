@@ -1,0 +1,27 @@
+schema: workflow-delivery/v3/release-policy
+release-unit: hcoona-release-smoke-npm
+governance:
+  attestation:
+    repository: hcoona/three
+    ref: refs/heads/main
+    path: .github/workflow-delivery/governance/hcoona-release-smoke-npm.json
+    max-age-days: 90
+channels:
+  buddy:
+    quality:
+      - node/project-test-v1
+      - node/npm-artifact-contents-v1
+      - node/npm-install-import-v1
+    projections:
+      - destination: npm/github-packages-hcoona-three-v1
+        artifact: npm-tarball
+        package: '@hcoona/hcoona-release-smoke-npm'
+  official:
+    quality:
+      - node/project-test-v1
+      - node/npm-artifact-contents-v1
+      - node/npm-install-import-v1
+    projections:
+      - destination: npm/npmjs-public-v1
+        artifact: npm-tarball
+        package: '@hcoona/hcoona-release-smoke-npm'

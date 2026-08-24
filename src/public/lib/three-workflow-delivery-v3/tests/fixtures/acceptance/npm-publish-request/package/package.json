@@ -1,0 +1,16 @@
+{
+  "name": "@hcoona/hcoona-release-smoke-npm",
+  "version": "0.0.0-wdv3-acceptance.1",
+  "description": "Disposable local acceptance request fixture.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hcoona/three.git"
+  },
+  "license": "LGPL-3.0-or-later WITH LGPL-3.0-linking-exception"
+}

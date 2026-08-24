@@ -1,0 +1,16 @@
+{
+  "$schema": "https://raw.githubusercontent.com/dotnet/Nerdbank.GitVersioning/main/src/NerdBank.GitVersioning/version.schema.json",
+  "version": "2.0.0-beta.{height}",
+  "pathFilters": ["."],
+  "gitCommitIdShortFixedLength": 7,
+  "gitCommitIdShortAutoMinimum": 7,
+  "nugetPackageVersion": {
+    "semVer": 2
+  },
+  "publicReleaseRefSpec": [
+    "^refs/heads/main$",
+    "^refs/heads/release/image-occlusion-editor/v\\d+\\.\\d+\\.x$",
+    "^refs/tags/release/image-occlusion-editor/v.+$"
+  ],
+  "inherit": false
+}

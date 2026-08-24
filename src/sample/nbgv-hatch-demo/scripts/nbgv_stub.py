@@ -144,7 +144,7 @@ def _detect_git_commit(path: Path) -> str:
 
 
 def _run_command(command: Iterable[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603 - intentional stub helper
+    return subprocess.run(
         tuple(command),
         check=False,
         capture_output=True,
