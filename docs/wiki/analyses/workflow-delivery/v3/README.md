@@ -215,9 +215,15 @@ that real old refs now receive disabled-workflow rejection.
 
 Next:
 
-1. complete protected finalization of the acceptance target to `5a84bebd`
-   after verifying the configured reviewer-protected acceptance Environment;
-2. run and admit the one-time attempt-1 destination evidence;
-3. remove and verify removal of the workflow, bypass, and Environment, then
-   route any incomplete or unknown state to reconciliation or Break-Glass; and
-4. keep `live_enabled: false` until separate human activation authorization.
+1. merge the protected cleanup that removes the disabled temporary acceptance
+   workflow, then verify through workflow and Environment APIs that the
+   workflow identity, any temporary bypass, and the Environment are absent;
+2. reconcile run `32769435970` and fixed version
+   `0.0.0-wdv3-acceptance.1`, whose post-state was exact but whose mutation
+   classification remained incomplete and whose terminal Governance evidence
+   failed admission;
+3. do not reuse the run, Environment review, or coordinate; no retry is
+   currently authorized, and any retry requires new explicit authorization, a
+   newly reviewed invocation, and a disposable coordinate/version; and
+4. keep `live_enabled: false` until successful acceptance and separate human
+   activation authorization.

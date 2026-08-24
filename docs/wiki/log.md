@@ -2064,3 +2064,23 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Retained transition evidence: run `32693641797` terminated with zero jobs,
   and run `32693679161` executed only the read-only default-branch refusal
   stub. Neither entered a publication path.
+
+## [2026-08-24] query | Fail closed after incomplete destination acceptance
+
+- Merged protected finalization PR #573 as `d36e5a68` with the one-time
+  acceptance target fixed to implementation merge `5a84bebd`.
+- Attempt-1 run `32769435970` passed fixed-input validation and protected
+  review. Its absent/create/readback probe observed absent pre-state, started
+  the fixed publish mutation, and exactly read back
+  `0.0.0-wdv3-acceptance.1`, but classified the suite incomplete because the
+  runner did not prove a controlled response.
+- Terminal Governance evidence correctly failed closed when the runner's
+  pre-request-failure response contradicted canonical mutation startedness.
+  The exact/race/lost-response probe did not run.
+- Immediately converted the temporary workflow to `disabled_manually` and
+  removed and verified absence of the acceptance Environment. Protected cleanup
+  removes the workflow file, after which workflow and Environment APIs must
+  verify the workflow identity, any temporary bypass, and the Environment
+  absent before package/evidence reconciliation. The failed invocation, review,
+  and coordinate are not reusable; no retry is currently authorized, and the
+  protected attestation remains `live_enabled: false`.

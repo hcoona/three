@@ -119,12 +119,20 @@ If it conflicts with the
   Transition runs `32693641797` and `32693679161` completed without publication:
   the first had zero jobs, and the second executed only the read-only
   default-branch refusal stub.
-- Destination acceptance is separately authorized. Protected finalization pins
-  the one-time workflow to implementation merge `5a84bebd`. The dedicated
-  reviewer-protected acceptance Environment exists, names `hcoona` as required
-  reviewer, permits self-review because the operator and only reviewer are the
-  same person, and restricts deployment to `main`. Acceptance does not
-  authorize normal Live activation.
+- Destination acceptance was separately authorized. PR #573 merged protected
+  finalization as `d36e5a68`, pinning the one-time workflow to implementation
+  merge `5a84bebd`. Attempt-1 run `32769435970` passed fixed-input review,
+  observed absent pre-state, started the mutation, and observed exact post-state
+  for version `0.0.0-wdv3-acceptance.1`, but retained an incomplete mutation
+  classification. Terminal Governance evidence failed admission because the
+  response claimed pre-request failure while the canonical action facts
+  recorded mutation startedness. The second probe never ran. Governance
+  immediately converted the workflow to `disabled_manually` and removed the
+  acceptance Environment. Protected cleanup must remove the workflow file and
+  verify the workflow identity, any temporary bypass, and the Environment
+  absent before reconciliation. The consumed run, review, and coordinate must
+  not be reused, and no retry is currently authorized. Acceptance does not
+  authorize normal Live activation; `live_enabled` remains false.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the
@@ -595,13 +603,18 @@ If it conflicts with the
   and dedicated v3 run
   [`32669623261`](https://github.com/hcoona/three/actions/runs/32669623261)
   all passed on that exact head and attempt 1.
-- Current local evidence includes the complete Python 3.14 workspace with
+- Pre-cleanup local evidence included the complete Python 3.14 workspace with
   3,790 passing tests, the complete v3 suite with 3,638 passing tests, root
   PNPM tests and builds, scoped Ruff and Ruff format, scoped Pyrefly over every
   changed Python file, Biome, Actionlint, Shellcheck, shfmt, Markdown checks,
   diff checks, full all-profile HK, and the staged pre-commit gate. The broader
   configured-project Pyrefly probe still reports 16 unrelated pre-existing
   diagnostics and is not represented as a green full gate.
+- Cleanup-tree evidence includes the complete v3 suite with 3,533 tests
+  passing, including 408 isolated consumer-policy cases after clearing the
+  exhausted shared `/tmp` inode pool, plus the complete staged HK gate. An
+  earlier nonstandard workspace `TMPDIR` run produced 12 PNPM fixture-path
+  failures and is not represented as product evidence.
 - Prior local evidence included 63 isolated real-HK integration/scenario
   cases under a Mise root containing only locked HK 1.53.0, the complete Python
   3.14 workspace with 3,782 passing tests, the complete v3 suite with 3,632
@@ -615,9 +628,13 @@ If it conflicts with the
   recursively added to that child.
 - PR [#552](https://github.com/hcoona/three/pull/552) merged as `5a84bebd`.
   The immediate legacy drain and old-ref rejection proof are complete.
-  Destination acceptance is separately authorized and is the current phase.
-  Do not activate normal Live or begin later scopes without a separate explicit
-  user task.
+  Acceptance run `32769435970` failed with incomplete mutation evidence after
+  exact `.1` post-state observation. The workflow is `disabled_manually`, the
+  Environment is absent, and workflow-file cleanup must merge and be followed
+  by API verification that the workflow identity, bypass, and Environment are
+  absent before reconciliation. Do not retry with the same invocation, review,
+  or coordinate; no retry is currently authorized. Do not activate normal Live
+  or begin later scopes without a separate explicit user task.
 - Implementation must preserve the approved commit boundaries and keep live
   activation disabled until acceptance and the separate activation approval.
 
