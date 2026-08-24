@@ -1,6 +1,6 @@
 """Commit-10 fixed GitHub Packages acceptance probe scenarios."""
 
-# ruff: noqa: C901, D101, D102, D103, D107, E501, FBT001, PLR0913, PLR2004, PT011, S105, S106, SLF001
+# ruff: noqa: C901, D101, D102, D103, D107, E501, FBT001, PLR0913, PLR0917, PLR2004, PT011, S105, S106, S607, SLF001
 
 from __future__ import annotations
 
@@ -84,11 +84,15 @@ class ControlledRunner:
     def __init__(
         self,
         *,
-        outcome: str = "created",
+        outcome: object = "created",
         error: BaseException | None = None,
+        action_executed: bool = True,
+        mutation_started: bool = True,
     ) -> None:
         self.outcome = outcome
         self.error = error
+        self.action_executed = action_executed
+        self.mutation_started = mutation_started
         self.calls: list[tuple[str, tuple[str, ...], dict[str, str]]] = []
 
     def run(
@@ -124,8 +128,8 @@ class ControlledRunner:
         return {
             "outcome": self.outcome,
             "response-identity-digest": RESPONSE_A,
-            "action-executed": True,
-            "mutation-started": True,
+            "action-executed": self.action_executed,
+            "mutation-started": self.mutation_started,
         }
 
 
@@ -1295,8 +1299,10 @@ def test_lost_response_exact_post_readback_remains_unknown_without_proxy_proof(
 def test_lost_response_unknown_post_readback_stays_unknown(
     tmp_path: Path,
 ) -> None:
-    runner = ControlledRunner(
-        error=RuntimeError("deliberate response loss after mutation start")
+    runner = ExplicitFactRunner(
+        executed=True,
+        started=True,
+        error=RuntimeError("deliberate response loss after mutation start"),
     )
     result, _, _ = _run(
         tmp_path,
@@ -1363,6 +1369,118 @@ def test_lost_response_exact_readback_rejects_unbound_outcome_string(
         "mutation-may-have-started",
         "human-reconciliation-required",
     )
+
+
+@pytest.mark.parametrize(
+    ("mutation_started", "expected_result"),
+    [
+        (False, "runner-failed-after-action-start"),
+        (True, "runner-failed-after-mutation-start"),
+    ],
+)
+def test_failed_runner_after_action_start_preserves_startedness(
+    tmp_path: Path,
+    mutation_started: bool,
+    expected_result: str,
+) -> None:
+    runner = ControlledRunner(
+        outcome="failed",
+        mutation_started=mutation_started,
+    )
+    tarball = tmp_path / "precompute"
+    tarball.write_bytes(b"absent-create-readback")
+    content = f"sha512:{hashlib.sha512(tarball.read_bytes()).hexdigest()}"
+    tarball.unlink()
+
+    result, _, _ = _run(
+        tmp_path,
+        scenario="absent-create-readback",
+        observations=[
+            _absent(),
+            _state(
+                "exact",
+                scenario="absent-create-readback",
+                content=content,
+            ),
+        ],
+        runner=runner,
+    )
+
+    assert result.result == expected_result
+    assert result.mutation_classification == "incomplete"
+    assert result.action_executed is True
+    assert result.mutation_started is mutation_started
+    assert result.post_state == "exact"
+    assert result.diagnostics == ("runner-did-not-prove-controlled-outcome",)
+
+
+@pytest.mark.parametrize(
+    ("runner", "expected_result"),
+    [
+        (
+            ExplicitFactRunner(
+                executed=True,
+                started=False,
+                error=OSError("failure after process start"),
+            ),
+            "runner-failed-after-action-start",
+        ),
+        (
+            ExplicitFactRunner(
+                executed=True,
+                started=True,
+                error=OSError("failure after mutation start"),
+            ),
+            "runner-failed-after-mutation-start",
+        ),
+    ],
+)
+def test_exception_failure_preserves_startedness_label(
+    tmp_path: Path,
+    runner: ExplicitFactRunner,
+    expected_result: str,
+) -> None:
+    result, _, _ = _run(
+        tmp_path,
+        scenario="absent-create-readback",
+        observations=[_absent(), _absent()],
+        runner=runner,
+    )
+
+    assert result.result == expected_result
+    assert result.mutation_classification == "incomplete"
+    assert result.diagnostics == ("runner-did-not-prove-controlled-outcome",)
+
+
+@pytest.mark.parametrize("outcome", [[], {}])
+@pytest.mark.parametrize(
+    ("action_executed", "mutation_started", "expected_result"),
+    [
+        (False, False, "runner-malformed-before-mutation"),
+        (True, False, "runner-failed-after-action-start"),
+        (True, True, "runner-failed-after-mutation-start"),
+    ],
+)
+def test_unhashable_runner_outcome_fails_closed(
+    tmp_path: Path,
+    outcome: object,
+    action_executed: bool,
+    mutation_started: bool,
+    expected_result: str,
+) -> None:
+    result, _, _ = _run(
+        tmp_path,
+        scenario="absent-create-readback",
+        observations=[_absent(), _absent()],
+        runner=ControlledRunner(
+            outcome=outcome,
+            action_executed=action_executed,
+            mutation_started=mutation_started,
+        ),
+    )
+
+    assert result.result == expected_result
+    assert result.mutation_classification == "incomplete"
 
 
 @pytest.mark.parametrize("runner", [PreStartFailureRunner(), MalformedRunner()])
@@ -2869,6 +2987,8 @@ def test_adversarial_lost_local_failure_before_proxy_request_is_not_started(
 
     assert result.action_executed is True
     assert result.mutation_started is False
+    assert result.result == "runner-failed-after-action-start"
+    assert result.mutation_classification == "incomplete"
 
 
 @pytest.mark.parametrize(
@@ -2935,7 +3055,27 @@ def test_adversarial_timeout_startedness_depends_only_on_proxy_observation(
 
     assert result.mutation_started is expected_started
     assert result.action_executed is True
-    assert result.mutation_classification == "unknown"
+    assert result.result == (
+        "timeout" if expected_started else "runner-failed-after-action-start"
+    )
+    assert result.mutation_classification == (
+        "unknown" if expected_started else "incomplete"
+    )
+
+
+def test_lost_response_return_without_mutation_start_is_incomplete(
+    tmp_path: Path,
+) -> None:
+    result, _, _ = _run(
+        tmp_path,
+        scenario="lost-response",
+        observations=[_absent(), _absent()],
+        runner=ExplicitFactRunner(executed=True, started=False),
+    )
+
+    assert result.result == "runner-failed-after-action-start"
+    assert result.mutation_classification == "incomplete"
+    assert result.diagnostics == ("runner-did-not-prove-controlled-outcome",)
 
 
 def test_adversarial_acceptance_rest_pages_share_one_monotonic_deadline(
@@ -5468,7 +5608,8 @@ def test_real_runner_proxy_wait_cleanup_and_readback_share_decreasing_budget(
         max_output_bytes=MAX_OUTPUT_BYTES,
     )
 
-    assert result.result == "timeout"
+    assert result.result == "runner-failed-after-action-start"
+    assert result.mutation_classification == "incomplete"
     assert [name for name, _, _ in events] == [
         "proxy",
         "wait",

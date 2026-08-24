@@ -128,11 +128,18 @@ If it conflicts with the
   response claimed pre-request failure while the canonical action facts
   recorded mutation startedness. The second probe never ran. Governance
   immediately converted the workflow to `disabled_manually` and removed the
-  acceptance Environment. Protected cleanup must remove the workflow file and
-  verify the workflow identity, any temporary bypass, and the Environment
-  absent before reconciliation. The consumed run, review, and coordinate must
-  not be reused, and no retry is currently authorized. Acceptance does not
-  authorize normal Live activation; `live_enabled` remains false.
+  acceptance Environment. Cleanup PR #575 merged as `274d81fd`; workflow ID
+  `340952168` is `disabled_manually`, real old-ref dispatch returns HTTP 422,
+  the workflow file, transition ref, and Environment are absent, and all
+  related runs are terminal. Authenticated reconciliation confirms the `.1`
+  version and tag are exact and bind the expected repository, SHA-1, SHA-512,
+  manifest, and target witness. This staged, unmerged candidate repairs the
+  Adapter's contradictory pre-mutation label for returned and exception
+  failures after action or mutation start while retaining incomplete
+  classification. It does not retroactively make the failed acceptance
+  successful. The consumed run, review, and coordinate must not be reused, and
+  no retry is currently authorized. Acceptance does not authorize normal Live
+  activation; `live_enabled` remains false.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the
@@ -629,12 +636,15 @@ If it conflicts with the
 - PR [#552](https://github.com/hcoona/three/pull/552) merged as `5a84bebd`.
   The immediate legacy drain and old-ref rejection proof are complete.
   Acceptance run `32769435970` failed with incomplete mutation evidence after
-  exact `.1` post-state observation. The workflow is `disabled_manually`, the
-  Environment is absent, and workflow-file cleanup must merge and be followed
-  by API verification that the workflow identity, bypass, and Environment are
-  absent before reconciliation. Do not retry with the same invocation, review,
-  or coordinate; no retry is currently authorized. Do not activate normal Live
-  or begin later scopes without a separate explicit user task.
+  exact `.1` post-state observation. The workflow file, transition ref, and
+  acceptance Environment are absent; workflow ID `340952168` remains
+  `disabled_manually`; old-ref dispatch returns HTTP 422; and related runs are
+  terminal. Authenticated reconciliation confirms the retained version and tag
+  are exact. This staged candidate repairs the contradictory runner result
+  while preserving incomplete classification, but is not yet merged. Do not
+  retry with the same invocation, review, or coordinate; no retry is currently
+  authorized. Do not activate normal Live or begin later scopes without a
+  separate explicit user task.
 - Implementation must preserve the approved commit boundaries and keep live
   activation disabled until acceptance and the separate activation approval.
 

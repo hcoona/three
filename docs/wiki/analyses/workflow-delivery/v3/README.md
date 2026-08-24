@@ -215,13 +215,13 @@ that real old refs now receive disabled-workflow rejection.
 
 Next:
 
-1. merge the protected cleanup that removes the disabled temporary acceptance
-   workflow, then verify through workflow and Environment APIs that the
-   workflow identity, any temporary bypass, and the Environment are absent;
-2. reconcile run `32769435970` and fixed version
-   `0.0.0-wdv3-acceptance.1`, whose post-state was exact but whose mutation
-   classification remained incomplete and whose terminal Governance evidence
-   failed admission;
+1. review and merge the staged Adapter repair that distinguishes pre-action,
+   post-action, and post-mutation-start runner failures while retaining
+   incomplete classification; it does not promote the reconciled exact
+   post-state to acceptance success;
+2. retain run `32769435970`, fixed version
+   `0.0.0-wdv3-acceptance.1`, tag, tarball, and artifacts as failure and
+   reconciliation evidence;
 3. do not reuse the run, Environment review, or coordinate; no retry is
    currently authorized, and any retry requires new explicit authorization, a
    newly reviewed invocation, and a disposable coordinate/version; and

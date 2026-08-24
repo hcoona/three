@@ -1,6 +1,6 @@
 """Commit-10 Governance Acceptance Evidence contract scenarios."""
 
-# ruff: noqa: D103, E501, FBT001, PLR0913, PT011
+# ruff: noqa: D103, E501, FBT001, PLR0913, PLR0917, PT011
 
 from __future__ import annotations
 
@@ -1558,6 +1558,133 @@ def test_pre_request_failure_rejects_startedness_contradictions(
     document["mutation-classification"] = "incomplete"
 
     with pytest.raises(ValueError, match=r"action.*started|startedness"):
+        _admit(document)
+
+
+@pytest.mark.parametrize(
+    ("mutation_started", "response_result"),
+    [
+        (False, "runner-failed-after-action-start"),
+        (True, "runner-failed-after-mutation-start"),
+    ],
+)
+def test_post_start_runner_failure_is_admitted_as_incomplete(
+    mutation_started: bool,
+    response_result: str,
+) -> None:
+    document = _document()
+    fact = document["probe-facts"][0]
+    scenario = fact["scenarios"][0]
+    scenario["mutation-classification"] = "incomplete"
+    scenario["action"]["mutation-started"] = mutation_started
+    scenario["response"]["result"] = response_result
+    scenario["response"]["diagnostics"] = [
+        "runner-did-not-prove-controlled-outcome"
+    ]
+    fact["result"] = "incomplete"
+    _refresh_probe_record_digest(document, 0)
+    document["mutation-classification"] = "incomplete"
+
+    evidence = _admit(document)
+
+    assert evidence.mutation_classification == "incomplete"
+    admitted_scenario = evidence.to_document()["probe-facts"][0]["scenarios"][0]
+    assert admitted_scenario["response"]["result"] == response_result
+    assert admitted_scenario["action"] == {
+        "executed": True,
+        "mutation-started": mutation_started,
+        "operation": "npm-publish-create-only",
+    }
+
+
+@pytest.mark.parametrize(
+    ("response_result", "executed", "mutation_started"),
+    [
+        ("runner-failed-after-action-start", False, False),
+        ("runner-failed-after-action-start", False, True),
+        ("runner-failed-after-action-start", True, True),
+        ("runner-failed-after-mutation-start", False, False),
+        ("runner-failed-after-mutation-start", False, True),
+        ("runner-failed-after-mutation-start", True, False),
+    ],
+)
+def test_post_start_runner_failure_rejects_startedness_contradictions(
+    response_result: str,
+    executed: bool,
+    mutation_started: bool,
+) -> None:
+    document = _document()
+    fact = document["probe-facts"][0]
+    scenario = fact["scenarios"][0]
+    scenario["mutation-classification"] = "incomplete"
+    scenario["action"]["executed"] = executed
+    scenario["action"]["mutation-started"] = mutation_started
+    scenario["response"]["result"] = response_result
+    scenario["response"]["diagnostics"] = [
+        "runner-did-not-prove-controlled-outcome"
+    ]
+    fact["result"] = "incomplete"
+    _refresh_probe_record_digest(document, 0)
+    document["mutation-classification"] = "incomplete"
+
+    with pytest.raises(ValueError, match=r"startedness contradict"):
+        _admit(document)
+
+
+@pytest.mark.parametrize(
+    ("executed", "mutation_started", "admitted"),
+    [
+        (False, False, True),
+        (True, False, True),
+        (False, True, False),
+        (True, True, False),
+    ],
+)
+def test_malformed_pre_mutation_result_constrains_mutation_startedness(
+    executed: bool,
+    mutation_started: bool,
+    admitted: bool,
+) -> None:
+    document = _document()
+    fact = document["probe-facts"][0]
+    scenario = fact["scenarios"][0]
+    scenario["mutation-classification"] = "incomplete"
+    scenario["action"]["executed"] = executed
+    scenario["action"]["mutation-started"] = mutation_started
+    scenario["response"]["result"] = "runner-malformed-before-mutation"
+    scenario["response"]["diagnostics"] = [
+        "runner-action-facts-not-fully-admitted"
+    ]
+    fact["result"] = "incomplete"
+    _refresh_probe_record_digest(document, 0)
+    document["mutation-classification"] = "incomplete"
+
+    if admitted:
+        assert _admit(document).mutation_classification == "incomplete"
+    else:
+        with pytest.raises(ValueError, match=r"startedness contradict"):
+            _admit(document)
+
+
+def test_complete_scenario_rejects_runner_failure_when_artifact_is_missing() -> (
+    None
+):
+    document = _document()
+    fact = document["probe-facts"][0]
+    scenario = fact["scenarios"][0]
+    scenario["action"]["executed"] = True
+    scenario["action"]["mutation-started"] = True
+    scenario["response"]["result"] = "runner-failed-after-mutation-start"
+    scenario["response"]["diagnostics"] = [
+        "runner-did-not-prove-controlled-outcome"
+    ]
+    fact["result"] = "incomplete"
+    fact["artifact-id"] = None
+    fact["artifact-digest"] = None
+    _refresh_probe_record_digest(document, 0)
+    document["mutation-classification"] = "incomplete"
+
+    with pytest.raises(ValueError, match=r"complete scenario semantics"):
         _admit(document)
 
 

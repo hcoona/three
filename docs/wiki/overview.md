@@ -264,15 +264,17 @@ have changed.
    `0.0.0-wdv3-acceptance.1` package version, but retained an incomplete
    mutation classification. Terminal Governance evidence admission failed
    because the runner response contradicted the recorded mutation startedness,
-   and the second probe was skipped. The workflow is `disabled_manually`, the
-   acceptance Environment is removed, and the protected cleanup must remove
-   the workflow file and verify the workflow identity, bypass, and Environment
-   absent before reconciliation.
-4. Reconcile the fixed package version and failed evidence without reusing the
-   invocation, review, or coordinate. Keep `live_enabled: false`; any retry
-   requires new explicit authorization, a newly reviewed invocation, and a
-   disposable coordinate/version. Normal Live still requires successful
-   acceptance plus separate human activation approval.
+   and the second probe was skipped. Cleanup PR #575 merged as `274d81fd`.
+   Workflow ID `340952168` is `disabled_manually`; old-ref dispatch is rejected
+   with HTTP 422; the workflow file, transition ref, and acceptance Environment
+   are absent; and all related runs are terminal.
+4. Authenticated reconciliation confirmed the fixed version and tag remain
+   exact, including repository association, SHA-1, SHA-512, manifest, and
+   target witness. This staged candidate repairs the Adapter's contradictory
+   pre-mutation label for returned and exception failures while retaining
+   incomplete classification; it is not yet merged and does not retroactively
+   make acceptance successful. Do not reuse the invocation, review, or
+   coordinate. Keep `live_enabled: false`; no retry is currently authorized.
 
 ## Related Pages
 
