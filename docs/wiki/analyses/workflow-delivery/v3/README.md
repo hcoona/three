@@ -207,13 +207,23 @@ This current evidence update is a strict documentation-only child of the named
 behavior commit and does not name itself. Its checks are external closure
 evidence and are not recursively documented.
 
-[PR #552](https://github.com/hcoona/three/pull/552) remains open, blocked, and
-unmerged. Review closure does not authorize merge. Merge starts the direct v1
-Buddy-to-v3 Buddy cutover and intentional Buddy outage while v3 remains
-disabled.
+[PR #552](https://github.com/hcoona/three/pull/552) merged as
+`5a84bebd05407e1859fe76f400dcb4f4cbcd002e` on 2026-08-24. Normal v3 Live
+remains disabled. Governance converted both legacy Buddy workflow identities
+to `disabled_manually`, verified no nonterminal legacy executions, and proved
+that real old refs now receive disabled-workflow rejection.
 
 Next:
 
-1. obtain separate explicit human authorization before merging, with the
-   operator ready to execute the immediate post-merge legacy drain and old-ref
-   rejection proof.
+1. merge the protected cleanup that removes the disabled temporary acceptance
+   workflow, then verify through workflow and Environment APIs that the
+   workflow identity, any temporary bypass, and the Environment are absent;
+2. reconcile run `32769435970` and fixed version
+   `0.0.0-wdv3-acceptance.1`, whose post-state was exact but whose mutation
+   classification remained incomplete and whose terminal Governance evidence
+   failed admission;
+3. do not reuse the run, Environment review, or coordinate; no retry is
+   currently authorized, and any retry requires new explicit authorization, a
+   newly reviewed invocation, and a disposable coordinate/version; and
+4. keep `live_enabled: false` until successful acceptance and separate human
+   activation authorization.

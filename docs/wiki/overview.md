@@ -37,9 +37,14 @@ control scripts and tests, non-npm and dual/WXT smoke projects, legacy
 The v3 control package, first-slice npm project and authoring descriptors,
 Governance, CODEOWNERS/HK integration, and all `workflow-delivery-v3-*`
 workflows remain. UV, PNPM, and Mise locks are regenerated from that retained
-scope. These restoration facts are not RC-001 final validation evidence.
-Nothing has merged, and merge, acceptance, sentinel finalization, and live
-activation remain unauthorized.
+scope. These restoration facts are not RC-001 final validation evidence. PR #552
+merged as `5a84bebd` on 2026-08-24 with normal Live disabled. Governance then
+converted both deleted legacy Buddy workflow identities to
+`disabled_manually`, drained all nonterminal executions, and proved that real
+old refs now receive disabled-workflow rejection. Destination acceptance was
+separately authorized for one-time run `32769435970`; that authorization
+is consumed, no retry is currently authorized, and normal Live activation
+remains unauthorized.
 
 ## Confirmed v3 Shape
 
@@ -249,18 +254,25 @@ have changed.
 
 ## Current Delivery Boundaries
 
-1. Implementation review, PR-comment closure, and exact final-evidence replay
-   are complete at behavior commit `9f97ef09`; review closure does not
-   authorize merge.
-2. Return to separate explicit human merge authorization. If authorized, merge
-   begins the direct Buddy cutover with normal Live disabled, followed by the
-   legacy Buddy drain and proof of removal and old-ref dispatch rejection.
-3. Under separate explicit authorization, finalize the protected acceptance
-   sentinel and run, capture, reconcile, and remove the one-time acceptance
-   bootstrap; acceptance does not authorize normal Live.
-4. Only successful acceptance and separate human activation approval may
-   authorize a protected commit setting `live_enabled: true` for the named
-   smoke package.
+1. PR #552 merged as `5a84bebd`; normal Live remains disabled.
+2. The direct Buddy cutover is closed: both legacy workflow identities are
+   `disabled_manually`, no nonterminal legacy executions remain, and old-ref
+   dispatch is rejected.
+3. PR #573 merged the protected acceptance finalization as `d36e5a68`.
+   Attempt-1 run `32769435970` observed absent pre-state, started the mutation,
+   and observed exact post-state for the fixed
+   `0.0.0-wdv3-acceptance.1` package version, but retained an incomplete
+   mutation classification. Terminal Governance evidence admission failed
+   because the runner response contradicted the recorded mutation startedness,
+   and the second probe was skipped. The workflow is `disabled_manually`, the
+   acceptance Environment is removed, and the protected cleanup must remove
+   the workflow file and verify the workflow identity, bypass, and Environment
+   absent before reconciliation.
+4. Reconcile the fixed package version and failed evidence without reusing the
+   invocation, review, or coordinate. Keep `live_enabled: false`; any retry
+   requires new explicit authorization, a newly reviewed invocation, and a
+   disposable coordinate/version. Normal Live still requires successful
+   acceptance plus separate human activation approval.
 
 ## Related Pages
 

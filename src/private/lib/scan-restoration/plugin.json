@@ -1,0 +1,13 @@
+{
+  "name": "scan-restoration",
+  "description": "Copilot CLI skills for scanned-book diagnostics, restoration, layout, and quality control.",
+  "version": "0.1.0",
+  "author": {
+    "name": "hcoona"
+  },
+  "license": "LGPL-3.0-or-later WITH LGPL-3.0-linking-exception",
+  "keywords": ["scanning", "image-processing", "restoration", "quality-control"],
+  "category": "productivity",
+  "tags": ["agent-skills", "document-restoration", "scan-processing"],
+  "skills": "skills/"
+}

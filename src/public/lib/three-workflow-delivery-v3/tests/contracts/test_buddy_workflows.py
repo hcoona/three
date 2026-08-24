@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-# ruff: noqa: D103, E501
+# ruff: noqa: D103, E501, ISC004, PLR0917, S607
 # ruff: noqa: PLR0915
 import json
 import re
@@ -210,7 +210,7 @@ def test_buddy_workflow_files_are_the_disabled_commit8_pair_only() -> None:
     assert (
         REPO_ROOT
         / ".github/workflows/workflow-delivery-v3-buddy-smoke-acceptance.yml"
-    ).is_file()
+    ).exists() is False
     raw = CALLER.read_text(encoding="utf-8") + CALLEE.read_text(
         encoding="utf-8"
     )

@@ -108,10 +108,31 @@ If it conflicts with the
   and repair.
 - Phase 8 and the PR-comment follow-up are complete at final behavior commit
   `9f97ef09`; the prior `e9d812b2` RC-001 boundary is retained as superseded
-  evidence. Every review thread is resolved. Review closure does not authorize
-  merge. Do not merge, activate Live, run acceptance, mutate a destination,
-  alter Rulesets, or begin a later phase without separate explicit
-  authorization.
+  evidence. Every review thread is resolved. PR #552 merged as `5a84bebd` on
+  2026-08-24 after separate explicit authorization. Normal Live remains
+  disabled.
+- The immediate post-merge cutover is complete. Workflow IDs `216311758`
+  (`buddy.yml`) and `269749708` (`release-buddy.yml`) are
+  `disabled_manually`; all legacy nonterminal execution counts are zero; both
+  files are absent from `main`; and complete dispatch requests against a real
+  old branch are rejected with HTTP 422 because the workflows are disabled.
+  Transition runs `32693641797` and `32693679161` completed without publication:
+  the first had zero jobs, and the second executed only the read-only
+  default-branch refusal stub.
+- Destination acceptance was separately authorized. PR #573 merged protected
+  finalization as `d36e5a68`, pinning the one-time workflow to implementation
+  merge `5a84bebd`. Attempt-1 run `32769435970` passed fixed-input review,
+  observed absent pre-state, started the mutation, and observed exact post-state
+  for version `0.0.0-wdv3-acceptance.1`, but retained an incomplete mutation
+  classification. Terminal Governance evidence failed admission because the
+  response claimed pre-request failure while the canonical action facts
+  recorded mutation startedness. The second probe never ran. Governance
+  immediately converted the workflow to `disabled_manually` and removed the
+  acceptance Environment. Protected cleanup must remove the workflow file and
+  verify the workflow identity, any temporary bypass, and the Environment
+  absent before reconciliation. The consumed run, review, and coordinate must
+  not be reused, and no retry is currently authorized. Acceptance does not
+  authorize normal Live activation; `live_enabled` remains false.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the
@@ -146,12 +167,12 @@ If it conflicts with the
   those counts are historical rather than current repair evidence. All three
   original policy, CLI, and workflow reviewers report no findings after
   independent adjudication and repair. The branch backs
-  [PR #552](https://github.com/hcoona/three/pull/552), which is open against
-  `main`. Documentation closure is committed at `a9e8cbfa`. Non-rewriting
+  [PR #552](https://github.com/hcoona/three/pull/552), which merged as
+  `5a84bebd` on 2026-08-24. Documentation closure is committed at `a9e8cbfa`.
+  Non-rewriting
   merge commit `30b793be` then integrates the latest `origin/main` at
   `7f8f41c2`, containing only the upstream Biome 2.5.9 and Asciidoctor 4.0.10
-  dependency updates; the frozen PNPM and UV lock checks pass. Nothing from
-  PR #552 has merged.
+  dependency updates; the frozen PNPM and UV lock checks pass.
   Commit 3 includes target-tree-bound
   Release Unit/Quality authoring validation, duplicate Release Unit rejection,
   exact-target Repository Model compilation, static catalogs, Node/NBGV
@@ -582,13 +603,18 @@ If it conflicts with the
   and dedicated v3 run
   [`32669623261`](https://github.com/hcoona/three/actions/runs/32669623261)
   all passed on that exact head and attempt 1.
-- Current local evidence includes the complete Python 3.14 workspace with
+- Pre-cleanup local evidence included the complete Python 3.14 workspace with
   3,790 passing tests, the complete v3 suite with 3,638 passing tests, root
   PNPM tests and builds, scoped Ruff and Ruff format, scoped Pyrefly over every
   changed Python file, Biome, Actionlint, Shellcheck, shfmt, Markdown checks,
   diff checks, full all-profile HK, and the staged pre-commit gate. The broader
   configured-project Pyrefly probe still reports 16 unrelated pre-existing
   diagnostics and is not represented as a green full gate.
+- Cleanup-tree evidence includes the complete v3 suite with 3,533 tests
+  passing, including 408 isolated consumer-policy cases after clearing the
+  exhausted shared `/tmp` inode pool, plus the complete staged HK gate. An
+  earlier nonstandard workspace `TMPDIR` run produced 12 PNPM fixture-path
+  failures and is not represented as product evidence.
 - Prior local evidence included 63 isolated real-HK integration/scenario
   cases under a Mise root containing only locked HK 1.53.0, the complete Python
   3.14 workspace with 3,782 passing tests, the complete v3 suite with 3,632
@@ -600,13 +626,15 @@ If it conflicts with the
   or new base integration invalidates this evidence and restarts the cycle.
   Checks on the documentation child are external evidence and must not be
   recursively added to that child.
-- PR [#552](https://github.com/hcoona/three/pull/552) remains open, blocked,
-  and unmerged. Review closure returns control to separate explicit human merge
-  authorization; it does not authorize merge. Merge starts the direct cutover
-  and intentional Buddy outage, so the operator must be ready to execute the
-  immediate post-merge legacy drain and old-ref rejection proof. Do not merge,
-  run real acceptance probes, finalize the sentinel target, activate normal
-  live, or begin later scopes without a separate explicit user task.
+- PR [#552](https://github.com/hcoona/three/pull/552) merged as `5a84bebd`.
+  The immediate legacy drain and old-ref rejection proof are complete.
+  Acceptance run `32769435970` failed with incomplete mutation evidence after
+  exact `.1` post-state observation. The workflow is `disabled_manually`, the
+  Environment is absent, and workflow-file cleanup must merge and be followed
+  by API verification that the workflow identity, bypass, and Environment are
+  absent before reconciliation. Do not retry with the same invocation, review,
+  or coordinate; no retry is currently authorized. Do not activate normal Live
+  or begin later scopes without a separate explicit user task.
 - Implementation must preserve the approved commit boundaries and keep live
   activation disabled until acceptance and the separate activation approval.
 
