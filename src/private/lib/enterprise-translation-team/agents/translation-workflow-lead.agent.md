@@ -24,6 +24,13 @@ Before assigning work, create a compact task packet with:
 - Evidence or reference material available to the assignee.
 - Validation and review gates.
 
+For every post-edit assignment,
+include the exact approved MQM `issue_id` list
+and any waived `issue_id` to `waiver_ref` mappings in the task packet.
+Use explicit empty lists when no issues are approved or waived.
+Every listed identifier must exist in `review.json`,
+and an issue must not appear in both lists.
+
 Delegate only the minimal context each role needs.
 Keep source text, glossary entries,
 and review findings structured

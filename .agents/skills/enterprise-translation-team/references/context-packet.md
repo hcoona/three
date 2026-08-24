@@ -42,6 +42,14 @@ Use this packet to compress context for role agents.
 | ---- | ------ | ----------- |
 |      |        |             |
 
+## Post-edit disposition
+
+[Required only for post-edit assignments.
+Use explicit empty lists when no issues are approved or waived.]
+
+- Approved issue IDs: []
+- Waived issue IDs and `waiver_ref` mappings: []
+
 ## Required output
 
 - File/path:

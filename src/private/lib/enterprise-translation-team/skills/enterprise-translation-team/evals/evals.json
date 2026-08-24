@@ -98,6 +98,13 @@
           "severity": "Major",
           "source_anchor": "灰度发布",
           "target_anchor": "grayscale release"
+        },
+        {
+          "segment_id": "S2",
+          "category": "Terminology",
+          "severity": "Major",
+          "source_anchor": "工单",
+          "target_anchor": "work order"
         }
       ]
     },

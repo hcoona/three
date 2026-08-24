@@ -70,9 +70,10 @@ and explicit human sign-off boundaries.
    target, applicable termbase, locale, and acceptance criteria.
 6. **Independent bilingual revision**: compare source and target, record
    stable MQM issues, and propose targeted fixes.
-7. **Post-edit and reconciliation**: apply approved fixes, preserve MQM issue
-   identifiers, and record each issue as open, resolved, or waived with
-   evidence.
+7. **Post-edit and reconciliation**: apply only fixes whose MQM issue IDs
+   are explicitly approved in the post-edit task packet,
+   preserve issue identifiers,
+   and record each issue as open, resolved, or waived with evidence.
 8. **Rerun review gates**: rerun both reviewers after every revision.
    Repeat revision and both gates until each reviewer returns exactly one
    standalone `PASS` and no open delivery blocker remains.
