@@ -5,7 +5,7 @@ description: >-
     inventory formats and dimensions, measure paper/background quality, detect likely
     skew and edge contamination, select representative and outlier pages, and write a
     JSON diagnostic report.
-compatibility: Designed for GitHub Copilot CLI on Windows. Requires PowerShell, mise, AzureAuth 0.9.5, and Lucia_PrivatePackages access.
+compatibility: Designed for GitHub Copilot CLI on Windows. Requires PowerShell, mise, and network access to PyPI.
 ---
 
 # Scan batch diagnostics
@@ -36,18 +36,14 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\run.ps1" run_
 ```
 
 The runner trusts normal Windows process and filesystem isolation plus the
-installed mise, AzureAuth, and Python implementations. It:
+installed mise and Python implementations. It:
 
 - asks mise for exactly Python 3.12.13 while disabling project/config discovery
   and using ephemeral config/state directories;
 - creates and removes a unique ephemeral virtual environment;
-- clears inherited `MISE_*`, `PIP_*`, proxy, certificate, Python-path, and
-  ambient AzureAuth credential override variables for child processes;
-- obtains the Lucia token with the normally installed AzureAuth 0.9.5;
-- exposes the token only through the pip child process's `PIP_INDEX_URL`, never
-  in a command argument or persisted file, and clears it immediately afterward;
+- clears inherited `MISE_*`, `PIP_*`, and Python configuration;
 - installs only the exact hash-locked Windows wheels in
-  `scripts\requirements.lock` from `Lucia_PrivatePackages`; and
+  `scripts\requirements.lock` from PyPI; and
 - verifies the exact interpreter, distributions, imports, and runtime origins
   before running analysis or tests in Python isolated mode.
 

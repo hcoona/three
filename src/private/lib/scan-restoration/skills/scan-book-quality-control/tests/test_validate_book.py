@@ -3656,7 +3656,6 @@ class ValidateBookTests(unittest.TestCase):
         test_runner = (
             Path(__file__).resolve().parents[1] / "tests" / "run.ps1"
         ).read_text(encoding="utf-8")
-        self.assertIn('Programs\\AzureAuth\\0.9.5\\azureauth.exe', runner)
         self.assertIn('".runtime-" + [Guid]::NewGuid()', runner)
         self.assertIn('$requiredPython = "3.12.11"', runner)
         self.assertIn("MISE_IGNORED_CONFIG_PATHS", runner)
@@ -3701,10 +3700,9 @@ class ValidateBookTests(unittest.TestCase):
         self.assertIn('$env:PIP_CONFIG_FILE = "nul"', runner)
         self.assertIn("Reset-PipEnvironment", runner)
         self.assertIn("-imatch '^PIP_'", runner)
-        self.assertNotIn('"--index-url", $luciaIndex', runner)
-        self.assertIn("-EnvironmentVariables @{ PIP_INDEX_URL = $luciaIndex }", runner)
-        self.assertNotIn("$env:PIP_INDEX_URL =", runner)
-        self.assertIn("$startInfo.EnvironmentVariables.Remove", runner)
+        self.assertNotIn("PIP_INDEX_URL", runner)
+        self.assertNotIn("ado token", runner)
+        self.assertNotIn("EnvironmentVariables", runner)
         dependency_verification = runner[
             runner.index("$dependencyResult =") : runner.index(
                 "if ($dependencyResult.ExitCode"

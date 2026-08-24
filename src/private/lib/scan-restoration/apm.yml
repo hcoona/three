@@ -33,12 +33,14 @@ includes:
   - skills/scan-page-rectification/scripts/rectify_pages.py
   - skills/scan-page-rectification/scripts/requirements.lock
   - skills/scan-page-rectification/scripts/run.ps1
+  - skills/scan-page-rectification/tests/run.ps1
   - skills/scan-page-rectification/tests/test_rectify_pages.py
   - skills/scan-page-rectification/tests/test_runner.ps1
   - skills/scan-tone-restoration/SKILL.md
   - skills/scan-tone-restoration/scripts/requirements.lock
   - skills/scan-tone-restoration/scripts/restore_tone.py
   - skills/scan-tone-restoration/scripts/run.ps1
+  - skills/scan-tone-restoration/tests/run.ps1
   - skills/scan-tone-restoration/tests/test_restore_tone.py
   - skills/scan-tone-restoration/tests/test_runner.ps1
 devDependencies:

@@ -1,7 +1,7 @@
 ---
 name: scan-tone-restoration
 description: Use this skill to remove yellow or uneven paper tone from scanned book pages while preserving fine text, anti-aliased glyph edges, music staff lines, accidentals, and note details. Trigger for whitening paper, reducing printing ink, background normalization, contrast restoration, faded text, or preparing scans for clear grayscale printing. Do not use it as a substitute for geometric correction.
-compatibility: Designed for GitHub Copilot CLI on Windows. Requires trusted mise, AzureAuth access to Lucia_PrivatePackages, and network access on every run.
+compatibility: Designed for GitHub Copilot CLI on Windows. Requires trusted mise and network access to PyPI on every run.
 ---
 
 # Scan tone restoration
@@ -234,11 +234,11 @@ The final stdout line is a JSON summary with this schema:
 - Hard thresholding can erase thin staff lines and punctuation.
 - Whitening should reduce toner use without turning weak ink into white.
 - Preserve grayscale antialiasing in the archival/working output.
-- Keep the pinned mise Python 3.12.10 and AzureAuth-authenticated
-  `Lucia_PrivatePackages` dependency bootstrap in `scripts\run.ps1`.
+- Keep the pinned mise Python 3.12.10 and PyPI dependency bootstrap in
+  `scripts\run.ps1`.
 - Invoke the skill only through `scripts\run.ps1` with `-NoProfile`, as shown
   above. The practical trust boundary is the normal Windows user/process
-  isolation plus the installed PowerShell, mise, Python, and AzureAuth.
+  isolation plus the installed PowerShell, mise, and Python.
 - Every invocation creates a uniquely named, previously nonexistent runtime
   under `scripts`, installs hash-locked binary wheels without a pip cache,
   validates NumPy, OpenCV, and Pillow versions, providers, and origins, and
@@ -248,7 +248,5 @@ The final stdout line is a JSON summary with this schema:
   versions, an isolated mise configuration, and module-path checks so inherited
   Python or pip configuration cannot supply runtime dependencies. It
   temporarily clears `PIP_*` and `PYTHON*` variables, sets
-  `PIP_CONFIG_FILE=nul`, and
-  passes the authenticated package URL only through temporary `PIP_INDEX_URL`;
-  the token is never placed on a process command line, and the environment is
-  restored afterward.
+  `PIP_CONFIG_FILE=nul`, uses the PyPI source declared in
+  `requirements.lock`, and restores the environment afterward.

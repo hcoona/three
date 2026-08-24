@@ -22,9 +22,7 @@ else {
 }
 
 $pythonVersion = "3.12.10"
-$azureAuthVersion = "0.9.5.0"
 $requirements = Join-Path $PSScriptRoot "requirements.lock"
-$azureAuth = Join-Path $env:LOCALAPPDATA "Programs\AzureAuth\0.9.5\azureauth.exe"
 $sessionRoot = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) (".scan-book-layout-" + [Guid]::NewGuid().ToString("N"))
 $runtime = Join-Path $sessionRoot "runtime"
 $python = Join-Path $runtime "Scripts\python.exe"
@@ -38,8 +36,6 @@ Get-ChildItem Env: | Where-Object {
     Remove-Item -LiteralPath "Env:$($_.Name)"
 }
 
-$token = $null
-$encodedToken = $null
 $result = 1
 try {
     if (-not (Test-Path -LiteralPath $requirements -PathType Leaf) -or
@@ -72,42 +68,17 @@ try {
         throw "mise could not create the ephemeral Python runtime."
     }
 
-    if (-not (Test-Path -LiteralPath $azureAuth -PathType Leaf)) {
-        throw "AzureAuth 0.9.5 is required at $azureAuth."
-    }
-    $reportedVersion = [string]::Join("", @(& $azureAuth --version)).Trim()
-    if ($LASTEXITCODE -ne 0 -or $reportedVersion -cne $azureAuthVersion) {
-        throw "AzureAuth must report version $azureAuthVersion."
-    }
-
-    $token = [string]::Join("", @(& $azureAuth ado token --output token)).Trim()
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($token)) {
-        throw "AzureAuth did not return an Azure DevOps packaging token."
-    }
-
-    $encodedToken = [Uri]::EscapeDataString($token)
-    $env:PIP_INDEX_URL = ("https://azureauth:{0}@pkgs.dev.azure.com/msazure/One/" + "_packaging/Lucia_PrivatePackages/pypi/simple/") -f $encodedToken
-    try {
-        & $python -I -B -m pip install --quiet `
-            --disable-pip-version-check --no-cache-dir --no-deps `
-            --only-binary=:all: --require-hashes --requirement $requirements
-        if ($LASTEXITCODE -ne 0) {
-            throw "pip could not install the exact pinned dependencies."
-        }
-    }
-    finally {
-        Remove-Item Env:PIP_INDEX_URL -ErrorAction SilentlyContinue
-        $token = $null
-        $encodedToken = $null
+    & $python -I -B -m pip install --quiet --disable-pip-version-check `
+        --no-input --no-cache-dir --no-deps --only-binary=:all: `
+        --require-hashes --requirement $requirements
+    if ($LASTEXITCODE -ne 0) {
+        throw "pip could not install the exact pinned PyPI dependencies."
     }
 
     & $python -I -B $program @ScriptArgs
     $result = $LASTEXITCODE
 }
 finally {
-    Remove-Item Env:PIP_INDEX_URL -ErrorAction SilentlyContinue
-    $token = $null
-    $encodedToken = $null
     if (Test-Path -LiteralPath $sessionRoot) {
         Remove-Item -LiteralPath $sessionRoot -Recurse -Force
     }

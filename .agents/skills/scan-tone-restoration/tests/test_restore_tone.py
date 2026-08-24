@@ -2154,20 +2154,15 @@ class RestoreToneTests(unittest.TestCase):
             status["reason"], "requested_background_sigma_cannot_be_honored"
         )
 
-    def test_runner_is_practical_isolated_and_token_safe(self) -> None:
+    def test_runner_is_practical_isolated_and_public_source_pinned(self) -> None:
         runner = RUNNER.read_text(encoding="utf-8")
         lock = LOCK.read_text(encoding="utf-8")
         self.assertIn('"MISE_CONFIG_FILE"', runner)
         self.assertIn('"MISE_GLOBAL_CONFIG_FILE"', runner)
         self.assertIn('"MISE_SYSTEM_CONFIG_FILE"', runner)
         self.assertIn('Set-IsolatedEnvironmentVariable "PIP_CONFIG_FILE" "nul"', runner)
-        self.assertIn("https://azureauth:{0}@pkgs.dev.azure.com", runner)
-        self.assertNotIn("--index-url", runner)
-        pip_command = next(
-            line for line in runner.splitlines() if "-m pip install" in line
-        )
-        self.assertNotIn("token", pip_command.casefold())
-        self.assertNotIn("index", pip_command.casefold())
+        self.assertNotIn("PIP_INDEX_URL", runner)
+        self.assertNotIn("ado token", runner)
         self.assertIn('$pillowVersion = "12.3.0"', runner)
         self.assertIn("Pillow==12.3.0", lock)
         self.assertIn('$imagecodecsVersion = "2026.6.26"', runner)
@@ -2178,18 +2173,9 @@ class RestoreToneTests(unittest.TestCase):
             "sha256:a2b55dd6b2a4c4b7d87ffa56bdb33fdc5fdb9a462173861a7bc097f17d91cb09",
             lock,
         )
-        self.assertIn("--no-cache-dir --require-hashes", runner)
-        self.assertIn("--only-binary=:all: --no-deps", runner)
-        self.assertIn('Programs\\AzureAuth\\0.9.5\\azureauth.exe', runner)
-        self.assertNotIn("Get-Command azureauth", runner)
-        self.assertNotIn("Get-Command AzureAuth.exe", runner)
-        self.assertIn(
-            "AzureAuth 0.9.5 was not found at '$azureAuthPath'.",
-            runner,
-        )
-        self.assertIn("& $azureAuthPath ado token --output token", runner)
-        self.assertIn("$token = $null", runner)
-        self.assertIn('"PIP_INDEX_URL", $null, "Process"', runner)
+        self.assertIn("--no-cache-dir --require-hashes", runner        )
+        self.assertIn("--only-binary=:all:", runner)
+        self.assertIn("--no-deps", runner)
         self.assertIn(
             "providers = metadata.packages_distributions().get(package, ())",
             runner,

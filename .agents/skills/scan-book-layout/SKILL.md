@@ -8,7 +8,7 @@ description: >-
     Trigger for dirty borders, black scanner edges, inconsistent page dimensions,
     page-size normalization, centering, print preparation, or final image-sequence
     assembly.
-compatibility: Designed for GitHub Copilot CLI on Windows. Every invocation requires mise, AzureAuth access to Lucia_PrivatePackages, and network access.
+compatibility: Designed for GitHub Copilot CLI on Windows. Every invocation requires mise and network access to PyPI.
 ---
 
 # Scan book layout
@@ -215,14 +215,10 @@ rather than overwrite any prior directory, report, or file.
   Invoke the maintainable PowerShell entry point with `powershell.exe -NoProfile`
   as shown above. It isolates mise configuration and state, pins Python 3.12.10,
   and installs only the exact wheel versions and SHA-256 hashes in
-  `scripts\requirements.lock`.
-- AzureAuth 0.9.5 is used from its standard `%LOCALAPPDATA%` installation to get
-  a Lucia package token. The token is passed to pip only through the temporary
-  process environment, is never written or placed on a command line, and is
-  cleared immediately after dependency installation. The runtime and mise
-  session directories are deleted in `finally` cleanup.
-- Network access is required on every invocation for authentication, Python
-  provisioning when absent, and installation of the ephemeral pinned runtime
-  dependencies. Unsupported or extreme images still fail closed in
+  `scripts\requirements.lock` from PyPI. The runtime and mise session
+  directories are deleted in `finally` cleanup.
+- Network access is required on every invocation for Python provisioning when
+  absent and installation of the ephemeral pinned runtime dependencies.
+  Unsupported or extreme images still fail closed in
   `normalize_book.py`; output images and `cleanup.json` remain an atomic
   whole-directory publication.

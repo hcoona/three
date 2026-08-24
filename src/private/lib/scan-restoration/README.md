@@ -18,9 +18,9 @@ directly.
 ## Supported environment
 
 The plugin targets GitHub Copilot CLI on Windows only. Its runners require
-PowerShell, mise, AzureAuth 0.9.5, network access, and access to the
-`Lucia_PrivatePackages` feed. VS Code, Linux execution, offline installation,
-and public-package-feed substitution are outside the supported contract.
+PowerShell, mise, and network access to the public Python Package Index (PyPI).
+VS Code, Linux execution, offline installation, and third-party package-index
+substitution are outside the supported contract.
 
 Install the source plugin locally during development:
 
@@ -59,12 +59,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\run.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\run.ps1
 
 # scan-page-rectification
-mise --no-config exec python@3.12.10 -- python -I -B .\tests\test_rectify_pages.py -v
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\test_runner.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\run.ps1
 
 # scan-tone-restoration
-mise --no-config exec python@3.12.10 -- python -I -B .\tests\test_restore_tone.py -v
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\test_runner.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\run.ps1
 ```
 
 Some regression tests use private scan fixtures when available and otherwise

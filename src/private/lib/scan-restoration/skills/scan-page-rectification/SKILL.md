@@ -1,7 +1,7 @@
 ---
 name: scan-page-rectification
 description: Use this skill to correct small-angle global rotation and linear vertical convergence using independent horizontal and vertical evidence. Trigger for slightly skewed text, slanted music staves, nonvertical barlines, or mild trapezoidal convergence. It is especially relevant to music books where staves and long barlines provide strong structural references.
-compatibility: Designed for GitHub Copilot CLI on Windows. Requires mise, AzureAuth access to Lucia_PrivatePackages, and network access on every invocation.
+compatibility: Designed for GitHub Copilot CLI on Windows. Requires mise and network access to PyPI on every invocation.
 ---
 
 # Scan page rectification
@@ -239,10 +239,7 @@ design.
 - The runner requires mise 2026.8.8 and provisions exact Python 3.12.10 in a
   unique, isolated mise session. It creates a fresh virtual environment,
   installs only the exact hash-locked binary packages in `requirements.lock`,
-  validates their versions, and deletes the complete session on exit.
-- AzureAuth 0.9.5 obtains the Lucia feed token only inside a `-NoProfile`
-  dependency-install child. The token is held only in that child's memory and
-  `PIP_INDEX_URL`, is never placed on a command line, logged, or persisted, and
-  is cleared before the child exits. Missing prerequisites, version mismatches,
-  failed installs, and failed dependency checks stop the run.
-- Network access to Lucia_PrivatePackages is required on every invocation.
+  from PyPI, validates their versions, and deletes the complete session on exit.
+  Missing prerequisites, version mismatches, failed installs, and failed
+  dependency checks stop the run.
+- Network access to PyPI is required on every invocation.

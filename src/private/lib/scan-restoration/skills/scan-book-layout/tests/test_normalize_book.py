@@ -2378,12 +2378,8 @@ class NormalizeBookTests(unittest.TestCase):
         )
 
         self.assertIn('$pythonVersion = "3.12.10"', runner)
-        self.assertIn('Programs\\AzureAuth\\0.9.5\\azureauth.exe', runner)
-        self.assertIn('& $azureAuth ado token --output token', runner)
-        self.assertIn('Lucia_PrivatePackages/pypi/simple/', runner)
-        self.assertIn('$env:PIP_INDEX_URL', runner)
-        self.assertIn('Remove-Item Env:PIP_INDEX_URL', runner)
-        self.assertIn('$token = $null', runner)
+        self.assertNotIn("PIP_INDEX_URL", runner)
+        self.assertNotIn("ado token", runner)
         self.assertIn('MISE_NO_CONFIG = "1"', runner)
         self.assertIn('MISE_CONFIG_DIR', runner)
         self.assertGreaterEqual(runner.count('--no-config'), 2)
@@ -2422,7 +2418,6 @@ class NormalizeBookTests(unittest.TestCase):
         removed = (
             "startup_launcher.exe",
             "startup_launcher.c",
-            "azureauth-0.9.5.manifest.json",
             "python-runtime-manifest.json",
             "runtime_integrity.ps1",
             "verify_wheel_install.py",

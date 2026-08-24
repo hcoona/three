@@ -142,29 +142,10 @@ class RuntimeReadinessTests(unittest.TestCase):
         self.assertIn('$env:MISE_CONFIG_DIR =', runner)
         self.assertIn('Save-And-ClearEnvironment { $_.Name -like "MISE_*" }', runner)
         self.assertIn('Save-And-ClearEnvironment { $_.Name -like "PIP_*" }', runner)
-        self.assertIn('Save-And-ClearEnvironment { $_.Name -like "AZUREAUTH_*" }', runner)
-        for name in (
-            "HTTP_PROXY",
-            "HTTPS_PROXY",
-            "REQUESTS_CA_BUNDLE",
-            "SSL_CERT_FILE",
-            "PIP_CERT",
-            "PIP_CLIENT_CERT",
-            "SYSTEM_ACCESSTOKEN",
-        ):
-            self.assertIn(f'"{name}"', runner)
+        self.assertIn('Save-And-ClearEnvironment { $_.Name -like "PYTHON*" }', runner)
         self.assertIn('$env:PIP_CONFIG_FILE = "nul"', runner)
-        self.assertIn("$env:PIP_INDEX_URL =", runner)
-        self.assertIn("Remove-Item Env:PIP_INDEX_URL", runner)
-        self.assertIn(r"Programs\AzureAuth\0.9.5\azureauth.exe", runner)
-        self.assertNotIn("Get-Command azureauth", runner)
-        self.assertNotIn("Get-Command AzureAuth.exe", runner)
-        self.assertIn(
-            "AzureAuth 0.9.5 was not found at '$azureAuthExe'.",
-            runner,
-        )
-        self.assertIn("$azureAuthExe ado token --output token", runner)
-        self.assertNotIn("--index-url", runner)
+        self.assertNotIn("PIP_INDEX_URL", runner)
+        self.assertNotIn("ado token", runner)
         self.assertIn("--require-hashes", runner)
         self.assertIn("--no-deps", runner)
         self.assertIn("--only-binary=:all:", runner)
@@ -186,7 +167,6 @@ class RuntimeReadinessTests(unittest.TestCase):
             "startup_launcher.c",
             "run.cmd",
             "python-runtime-manifest.json",
-            "azureauth-0.9.5.manifest.json",
         ):
             self.assertFalse((SCRIPTS / removed).exists(), removed)
         for stale_model in (

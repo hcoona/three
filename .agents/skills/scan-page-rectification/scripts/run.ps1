@@ -1,6 +1,6 @@
 param(
     [Parameter(Position = 0, Mandatory = $true)]
-    [ValidateSet("rectify_pages.py")]
+    [ValidateSet("rectify_pages.py", "tests/test_rectify_pages.py")]
     [string]$Script,
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$ScriptArgs
@@ -12,18 +12,19 @@ $pythonVersion = "3.12.10"
 $pythonSpec = "python@$pythonVersion"
 $miseVersion = "2026.8.8"
 $scriptsRoot = [IO.Path]::GetFullPath($PSScriptRoot)
-$scriptPath = Join-Path $scriptsRoot $Script
+$skillRoot = Split-Path -Parent $scriptsRoot
+$scriptPath = if ($Script -ieq "rectify_pages.py") {
+    Join-Path $scriptsRoot "rectify_pages.py"
+}
+else {
+    Join-Path $skillRoot "tests\test_rectify_pages.py"
+}
 $requirementsPath = Join-Path $scriptsRoot "requirements.lock"
 $sessionRoot = Join-Path $scriptsRoot (
     ".session-{0}-{1}" -f $PID, [Guid]::NewGuid().ToString("N")
 )
 $runtimeRoot = Join-Path $sessionRoot "runtime"
 $python = Join-Path $runtimeRoot "Scripts\python.exe"
-$localApplicationData = [Environment]::GetFolderPath(
-    [Environment+SpecialFolder]::LocalApplicationData
-)
-$azureAuth = Join-Path $localApplicationData `
-    "Programs\AzureAuth\0.9.5\azureauth.exe"
 $savedEnvironment = @{}
 $exitCode = 1
 
@@ -60,107 +61,21 @@ function Invoke-Mise {
     }
 }
 
-function Install-PinnedDependencySet {
-    param(
-        [Parameter(Mandatory = $true)][string]$Python,
-        [Parameter(Mandatory = $true)][string]$Requirements,
-        [Parameter(Mandatory = $true)][string]$AzureAuth
-    )
-
-    $childScript = @'
-$ErrorActionPreference = "Stop"
-    $ProgressPreference = "SilentlyContinue"
-$token = $null
-$encodedToken = $null
-try {
-    $reportedVersion = (& $env:SCAN_RECTIFY_AZUREAUTH --version 2>$null |
-        Out-String).Trim()
-    if ($LASTEXITCODE -ne 0 -or $reportedVersion -cne "0.9.5.0") {
-        throw "AzureAuth must report exact version 0.9.5.0."
-    }
-    $token = & $env:SCAN_RECTIFY_AZUREAUTH ado token --output token 2>$null
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($token)) {
-        throw "AzureAuth did not return a Lucia feed token."
-    }
-    $encodedToken = [Uri]::EscapeDataString($token.Trim())
-    $env:PIP_INDEX_URL =
-        "https://azureauth:${encodedToken}@pkgs.dev.azure.com/msazure/One/" +
-        "_packaging/Lucia_PrivatePackages/pypi/simple/"
-    & $env:SCAN_RECTIFY_PYTHON -I -B -m pip install `
-        --quiet --disable-pip-version-check --no-input --no-cache-dir `
-        --require-hashes --only-binary=:all: --no-deps `
-        --requirement $env:SCAN_RECTIFY_REQUIREMENTS *> $null
-    if ($LASTEXITCODE -ne 0) {
-        throw "pip could not install the hash-locked dependencies."
-    }
-} finally {
-    Remove-Item Env:PIP_INDEX_URL -ErrorAction SilentlyContinue
-    $token = $null
-    $encodedToken = $null
-}
-'@
-    $encodedCommand = [Convert]::ToBase64String(
-        [Text.Encoding]::Unicode.GetBytes($childScript)
-    )
-    $childPowerShell = Join-Path ([Environment]::SystemDirectory) `
-        "WindowsPowerShell\v1.0\powershell.exe"
-    if (-not (Test-Path -LiteralPath $childPowerShell -PathType Leaf)) {
-        throw "Windows PowerShell is required for dependency installation."
-    }
-
-    $startInfo = [Diagnostics.ProcessStartInfo]::new()
-    $startInfo.FileName = $childPowerShell
-    $startInfo.UseShellExecute = $false
-    $startInfo.Arguments = "-NoProfile -NonInteractive -EncodedCommand $encodedCommand"
-    $startInfo.EnvironmentVariables["SCAN_RECTIFY_PYTHON"] = $Python
-    $startInfo.EnvironmentVariables["SCAN_RECTIFY_REQUIREMENTS"] = $Requirements
-    $startInfo.EnvironmentVariables["SCAN_RECTIFY_AZUREAUTH"] = $AzureAuth
-    $inheritedPipNames = @(
-        $startInfo.EnvironmentVariables.Keys |
-            Where-Object { $_ -like "PIP_*" }
-    )
-    foreach ($name in $inheritedPipNames) {
-        $startInfo.EnvironmentVariables.Remove($name)
-    }
-    $startInfo.EnvironmentVariables["PIP_CONFIG_FILE"] = "NUL"
-    $startInfo.EnvironmentVariables["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
-    $startInfo.EnvironmentVariables["PIP_NO_INPUT"] = "1"
-    $process = [Diagnostics.Process]::Start($startInfo)
-    if ($null -eq $process) {
-        throw "Could not start the dependency-install child."
-    }
-    try {
-        $process.WaitForExit()
-        if ($process.ExitCode -ne 0) {
-            throw "The dependency-install child failed."
-        }
-    }
-    finally {
-        $process.Dispose()
-    }
-}
-
 try {
     if (-not (Test-Path -LiteralPath $scriptPath -PathType Leaf)) {
-        throw "rectify_pages.py is missing."
+        throw "The requested script is missing."
     }
     if (-not (Test-Path -LiteralPath $requirementsPath -PathType Leaf)) {
         throw "requirements.lock is missing."
     }
-    if (-not (Test-Path -LiteralPath $azureAuth -PathType Leaf)) {
-        throw "AzureAuth 0.9.5 is not installed at its expected path."
-    }
-
     $miseCommand = Get-Command mise.exe -CommandType Application `
         -ErrorAction Stop | Select-Object -First 1
     $mise = $miseCommand.Source
 
     Get-ChildItem Env: | Where-Object {
         $_.Name -like "MISE_*" -or
-        $_.Name -in @(
-            "PYTHONHOME", "PYTHONPATH", "PIP_INDEX_URL",
-            "PIP_EXTRA_INDEX_URL", "PIP_CONFIG_FILE"
-        )
+        $_.Name -like "PIP_*" -or
+        $_.Name -like "PYTHON*"
     } | ForEach-Object {
         Initialize-RunnerEnvironmentVariable -Name $_.Name -Value $null
     }
@@ -181,6 +96,11 @@ try {
     foreach ($entry in $miseRoots.GetEnumerator()) {
         Initialize-RunnerEnvironmentVariable -Name $entry.Key -Value $entry.Value
     }
+    Initialize-RunnerEnvironmentVariable -Name "PIP_CONFIG_FILE" -Value "NUL"
+    Initialize-RunnerEnvironmentVariable `
+        -Name "PIP_DISABLE_PIP_VERSION_CHECK" -Value "1"
+    Initialize-RunnerEnvironmentVariable -Name "PIP_NO_INPUT" -Value "1"
+    Initialize-RunnerEnvironmentVariable -Name "PYTHONNOUSERSITE" -Value "1"
     New-Item -ItemType Directory -Path $sessionRoot | Out-Null
 
     $reportedMiseVersion = (& $mise --version | Out-String).Trim()
@@ -209,10 +129,12 @@ try {
         -not (Test-Path -LiteralPath $python -PathType Leaf)) {
         throw "Could not create the ephemeral Python runtime."
     }
-    Install-PinnedDependencySet `
-        -Python $python `
-        -Requirements $requirementsPath `
-        -AzureAuth $azureAuth
+    & $python -I -B -m pip install --quiet --disable-pip-version-check `
+        --no-input --no-cache-dir --require-hashes --only-binary=:all: `
+        --no-deps --requirement $requirementsPath
+    if ($LASTEXITCODE -ne 0) {
+        throw "pip could not install the hash-locked PyPI dependencies."
+    }
 
     & $python -I -B -m pip check
     if ($LASTEXITCODE -ne 0) {

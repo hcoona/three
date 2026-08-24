@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet("restore_tone.py")]
+    [ValidateSet("restore_tone.py", "tests/test_restore_tone.py")]
     [string]$Script,
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$ScriptArgs
@@ -16,6 +16,13 @@ $tifffileVersion = "2026.7.31"
 $runtime = $null
 $exitCode = 1
 $savedEnvironment = @{}
+$skillRoot = Split-Path -Parent $PSScriptRoot
+$scriptPath = if ($Script -ieq "restore_tone.py") {
+    Join-Path $PSScriptRoot "restore_tone.py"
+}
+else {
+    Join-Path $skillRoot "tests\test_restore_tone.py"
+}
 
 function Save-EnvironmentVariable {
     param([Parameter(Mandatory = $true)][string]$Name)
@@ -43,7 +50,6 @@ function Set-IsolatedEnvironmentVariable {
 }
 
 try {
-    $scriptPath = Join-Path $PSScriptRoot $Script
     $requirementsPath = Join-Path $PSScriptRoot "requirements.lock"
     if (-not (Test-Path -LiteralPath $scriptPath -PathType Leaf) -or
         -not (Test-Path -LiteralPath $requirementsPath -PathType Leaf)) {
@@ -91,38 +97,11 @@ python = "$pythonVersion"
         throw "mise did not create the required Python executable."
     }
 
-    $azureAuthPath = Join-Path (
-        [Environment]::GetFolderPath(
-            [Environment+SpecialFolder]::LocalApplicationData
-        )
-    ) "Programs\AzureAuth\0.9.5\azureauth.exe"
-    if (-not (Test-Path -LiteralPath $azureAuthPath -PathType Leaf)) {
-        throw "AzureAuth 0.9.5 was not found at '$azureAuthPath'."
-    }
-
-    $token = (& $azureAuthPath ado token --output token | Out-String).Trim()
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($token)) {
-        throw "AzureAuth did not return an Azure DevOps packaging token."
-    }
-    Set-IsolatedEnvironmentVariable "PIP_INDEX_URL" (
-        (
-            "https://azureauth:{0}@pkgs.dev.azure.com/msazure/One/" +
-            "_packaging/Lucia_PrivatePackages/pypi/simple/"
-        ) -f ([Uri]::EscapeDataString($token))
-    )
-    $token = $null
-    try {
-        & $python -I -B -m pip install --quiet --no-cache-dir --require-hashes `
-            --only-binary=:all: --no-deps `
-            -r $requirementsPath
-        if ($LASTEXITCODE -ne 0) {
-            throw "pip could not install the hash-locked dependencies from Lucia_PrivatePackages."
-        }
-    }
-    finally {
-        [Environment]::SetEnvironmentVariable(
-            "PIP_INDEX_URL", $null, "Process"
-        )
+    & $python -I -B -m pip install --quiet --disable-pip-version-check `
+        --no-input --no-cache-dir --require-hashes --only-binary=:all: `
+        --no-deps -r $requirementsPath
+    if ($LASTEXITCODE -ne 0) {
+        throw "pip could not install the hash-locked PyPI dependencies."
     }
 
     $verifyDependencies = @'
@@ -159,7 +138,6 @@ for package, (module, distribution, version) in expected.items():
     $exitCode = $LASTEXITCODE
 }
 finally {
-    [Environment]::SetEnvironmentVariable("PIP_INDEX_URL", $null, "Process")
     foreach ($entry in $savedEnvironment.GetEnumerator()) {
         [Environment]::SetEnvironmentVariable(
             $entry.Key, $entry.Value, "Process"

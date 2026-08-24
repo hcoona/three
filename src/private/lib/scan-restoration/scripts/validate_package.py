@@ -54,6 +54,7 @@ REQUIRED_FILES = {
         "scripts/rectify_pages.py",
         "scripts/requirements.lock",
         "scripts/run.ps1",
+        "tests/run.ps1",
         "tests/test_rectify_pages.py",
         "tests/test_runner.ps1",
     ),
@@ -61,6 +62,7 @@ REQUIRED_FILES = {
         "scripts/requirements.lock",
         "scripts/restore_tone.py",
         "scripts/run.ps1",
+        "tests/run.ps1",
         "tests/test_restore_tone.py",
         "tests/test_runner.ps1",
     ),
@@ -422,12 +424,12 @@ def validate_skill_resources(
         if not (skill_root / relative_path).is_file():
             errors.append(f"{skill_name}: missing {relative_path}")
     lock = skill_root / "scripts" / "requirements.lock"
-    if lock.is_file() and "--hash=sha256:" not in lock.read_text(
-        encoding="utf-8"
-    ):
-        errors.append(
-            f"{skill_name}: requirements.lock must contain pinned hashes"
-        )
+    if lock.is_file():
+        lock_text = lock.read_text(encoding="utf-8")
+        if "--hash=sha256:" not in lock_text:
+            errors.append(
+                f"{skill_name}: requirements.lock must contain pinned hashes"
+            )
 
 
 def validate_skill_references(
@@ -535,6 +537,7 @@ def validate_readme(errors: list[str]) -> None:
     text = (PACKAGE_ROOT / "README.md").read_text(encoding="utf-8")
     required_phrases = (
         "GitHub Copilot CLI on Windows only",
+        "public Python Package Index (PyPI)",
         ".agents/skills/scan-*",
         "SCAN_RESTORATION_FIXTURE_ROOT",
         PACKAGE_LICENSE,
@@ -542,6 +545,22 @@ def validate_readme(errors: list[str]) -> None:
     for phrase in required_phrases:
         if phrase not in text:
             errors.append(f"README.md must document {phrase!r}")
+    test_entrypoint = (
+        r"powershell\.exe -NoProfile -ExecutionPolicy Bypass -File "
+        r"\.\\tests\\run\.ps1"
+    )
+    for skill_name in ("scan-page-rectification", "scan-tone-restoration"):
+        if (
+            re.search(
+                rf"# {re.escape(skill_name)}\s+{test_entrypoint}",
+                text,
+            )
+            is None
+        ):
+            errors.append(
+                "README.md must use the locked test entrypoint "
+                f"for {skill_name}"
+            )
 
 
 def main() -> int:

@@ -1,3 +1,5 @@
+--index-url https://pypi.org/simple
+
 imagecodecs==2026.6.26 \
     --hash=sha256:0758a273acd197e236e67f1597d630924f62c12f5b74837dc7eef2db72c1a888
 numpy==2.2.6 \

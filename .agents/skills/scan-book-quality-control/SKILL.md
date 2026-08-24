@@ -7,7 +7,7 @@ description: >-
     representative visual review, and reject transformations that worsen residual
     error. Trigger for scan QA, output verification, regression checks, whole-book
     review, print-readiness checks, or requests to prove that restoration succeeded.
-compatibility: Designed for GitHub Copilot CLI on Windows. Requires mise, AzureAuth access to Lucia_PrivatePackages, and network access on every invocation.
+compatibility: Designed for GitHub Copilot CLI on Windows. Requires mise and network access to PyPI on every invocation.
 ---
 
 # Scan book quality control
@@ -340,11 +340,8 @@ and reasons are part of the full evidence hash and approval acknowledgements.
 - `scripts/run.ps1` creates a unique ephemeral Python 3.12.11 virtual
   environment through isolated mise configuration and removes it in `finally`.
   It installs exact NumPy 2.2.6, OpenCV 4.12.0.88, and Pillow 12.3.0 wheels from
-  Lucia_PrivatePackages with the checked-in SHA-256 lock, `--require-hashes`,
-  no dependency expansion, and no cache. AzureAuth is invoked from its standard
-  0.9.5 installation path. The Lucia URL containing its token exists only in
-  the pip child process environment; it is not written to disk, logs, or command
-  arguments. The runner uses normal PATH resolution for mise, normal filesystem
-  snapshots and hashes for evidence binding, explicit process timeouts, and
-  invocation-owned cleanup rather than native launchers, ACLs, handle locks, or
-  same-user adversarial race defenses.
+  PyPI with the checked-in SHA-256 lock, `--require-hashes`, no dependency
+  expansion, and no cache. The runner uses normal PATH resolution for mise,
+  normal filesystem snapshots and hashes for evidence binding, explicit
+  process timeouts, and invocation-owned cleanup rather than native launchers,
+  ACLs, handle locks, or same-user adversarial race defenses.

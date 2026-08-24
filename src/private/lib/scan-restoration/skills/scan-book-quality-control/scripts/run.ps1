@@ -4,8 +4,6 @@ param(
     [ValidateRange(1, 86400)]
     [int]$MiseTimeoutSeconds = 300,
     [ValidateRange(1, 86400)]
-    [int]$AzureAuthTimeoutSeconds = 120,
-    [ValidateRange(1, 86400)]
     [int]$PipTimeoutSeconds = 600,
     [ValidateRange(1, 86400)]
     [int]$ValidatorTimeoutSeconds = 1800,
@@ -51,8 +49,7 @@ function Invoke-ProcessWithTimeout {
         [Parameter(Mandatory = $true)][string]$FilePath,
         [AllowEmptyString()][Parameter(Mandatory = $true)][string[]]$ArgumentList,
         [Parameter(Mandatory = $true)][int]$TimeoutSeconds,
-        [Parameter(Mandatory = $true)][string]$Description,
-        [hashtable]$EnvironmentVariables = @{}
+        [Parameter(Mandatory = $true)][string]$Description
     )
     $startInfo = [Diagnostics.ProcessStartInfo]::new()
     $startInfo.FileName = $FilePath
@@ -65,18 +62,11 @@ function Invoke-ProcessWithTimeout {
     $startInfo.CreateNoWindow = $true
     $startInfo.RedirectStandardOutput = $true
     $startInfo.RedirectStandardError = $true
-    foreach ($entry in $EnvironmentVariables.GetEnumerator()) {
-        $startInfo.EnvironmentVariables[[string]$entry.Key] = [string]$entry.Value
-    }
-
     $process = [Diagnostics.Process]::new()
     $process.StartInfo = $startInfo
     try {
         if (-not $process.Start()) {
             throw "$Description could not be started."
-        }
-        foreach ($entry in $EnvironmentVariables.GetEnumerator()) {
-            $startInfo.EnvironmentVariables.Remove([string]$entry.Key)
         }
         $stdout = $process.StandardOutput.ReadToEndAsync()
         $stderr = $process.StandardError.ReadToEndAsync()
@@ -227,8 +217,7 @@ function Reset-PipEnvironment {
     param()
 
     Get-ChildItem Env: | Where-Object {
-        $_.Name -imatch '^PIP_' -or
-        $_.Name -imatch '^(HTTP_PROXY|HTTPS_PROXY|ALL_PROXY|NO_PROXY|REQUESTS_CA_BUNDLE|CURL_CA_BUNDLE|SSL_CERT_FILE|SSL_CERT_DIR)$'
+        $_.Name -imatch '^PIP_'
     } | ForEach-Object {
         Remove-Item -LiteralPath ("Env:" + $_.Name) -ErrorAction SilentlyContinue
     }
@@ -291,41 +280,17 @@ try {
         throw "mise returned an unexpected Python runtime."
     }
 
-    $azureAuth = Join-Path $env:LOCALAPPDATA `
-        "Programs\AzureAuth\0.9.5\azureauth.exe"
-    if (-not (Test-Path -LiteralPath $azureAuth -PathType Leaf)) {
-        throw "AzureAuth 0.9.5 is required at its standard installation path."
-    }
-    $tokenResult = Invoke-ProcessWithTimeout -FilePath $azureAuth `
-        -ArgumentList @("ado", "token", "--output", "token") `
-        -TimeoutSeconds $AzureAuthTimeoutSeconds `
-        -Description "AzureAuth token acquisition"
-    if ($tokenResult.ExitCode -ne 0 -or
-        [string]::IsNullOrWhiteSpace($tokenResult.StdOut)) {
-        throw "AzureAuth did not return an Azure DevOps packaging token."
-    }
-
-    $encodedToken = [Uri]::EscapeDataString($tokenResult.StdOut.Trim())
-    $luciaIndex = "https://azureauth:${encodedToken}@pkgs.dev.azure.com/msazure/One/_packaging/Lucia_PrivatePackages/pypi/simple/"
-    try {
-        Reset-PipEnvironment
-        $pipResult = Invoke-ProcessWithTimeout -FilePath $python `
-            -ArgumentList @(
-            "-I", "-B", "-m", "pip", "install", "--quiet",
-            "--disable-pip-version-check", "--no-input", "--no-cache-dir",
-            "--no-deps", "--only-binary=:all:", "--require-hashes",
-            "--requirement", $requirements
-        ) -EnvironmentVariables @{ PIP_INDEX_URL = $luciaIndex } `
-            -TimeoutSeconds $PipTimeoutSeconds `
-            -Description "pip dependency installation"
-        if ($pipResult.ExitCode -ne 0) {
-            throw "pip could not install the hash-locked dependencies from Lucia_PrivatePackages."
-        }
-    }
-    finally {
-        $tokenResult = $null
-        $encodedToken = $null
-        $luciaIndex = $null
+    Reset-PipEnvironment
+    $pipResult = Invoke-ProcessWithTimeout -FilePath $python `
+        -ArgumentList @(
+        "-I", "-B", "-m", "pip", "install", "--quiet",
+        "--disable-pip-version-check", "--no-input", "--no-cache-dir",
+        "--no-deps", "--only-binary=:all:", "--require-hashes",
+        "--requirement", $requirements
+    ) -TimeoutSeconds $PipTimeoutSeconds `
+        -Description "pip dependency installation"
+    if ($pipResult.ExitCode -ne 0) {
+        throw "pip could not install the hash-locked PyPI dependencies."
     }
 
     $verifyDependencies = @'
