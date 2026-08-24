@@ -156,6 +156,13 @@ class RuntimeReadinessTests(unittest.TestCase):
         self.assertIn('$env:PIP_CONFIG_FILE = "nul"', runner)
         self.assertIn("$env:PIP_INDEX_URL =", runner)
         self.assertIn("Remove-Item Env:PIP_INDEX_URL", runner)
+        self.assertIn(r"Programs\AzureAuth\0.9.5\azureauth.exe", runner)
+        self.assertNotIn("Get-Command azureauth", runner)
+        self.assertNotIn("Get-Command AzureAuth.exe", runner)
+        self.assertIn(
+            "AzureAuth 0.9.5 was not found at '$azureAuthExe'.",
+            runner,
+        )
         self.assertIn("$azureAuthExe ado token --output token", runner)
         self.assertNotIn("--index-url", runner)
         self.assertIn("--require-hashes", runner)

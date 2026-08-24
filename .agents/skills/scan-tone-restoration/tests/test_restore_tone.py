@@ -2181,6 +2181,13 @@ class RestoreToneTests(unittest.TestCase):
         self.assertIn("--no-cache-dir --require-hashes", runner)
         self.assertIn("--only-binary=:all: --no-deps", runner)
         self.assertIn('Programs\\AzureAuth\\0.9.5\\azureauth.exe', runner)
+        self.assertNotIn("Get-Command azureauth", runner)
+        self.assertNotIn("Get-Command AzureAuth.exe", runner)
+        self.assertIn(
+            "AzureAuth 0.9.5 was not found at '$azureAuthPath'.",
+            runner,
+        )
+        self.assertIn("& $azureAuthPath ado token --output token", runner)
         self.assertIn("$token = $null", runner)
         self.assertIn('"PIP_INDEX_URL", $null, "Process"', runner)
         self.assertIn(

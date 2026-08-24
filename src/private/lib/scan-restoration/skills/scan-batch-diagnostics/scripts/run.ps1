@@ -117,8 +117,7 @@ try {
         [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
     ) "Programs\AzureAuth\0.9.5\azureauth.exe"
     if (-not (Test-Path -LiteralPath $azureAuthExe -PathType Leaf)) {
-        $azureAuthCommand = Get-Command azureauth -CommandType Application -ErrorAction Stop
-        $azureAuthExe = $azureAuthCommand.Source
+        throw "AzureAuth 0.9.5 was not found at '$azureAuthExe'."
     }
 
     $tokenOutput = @(& $azureAuthExe ado token --output token)

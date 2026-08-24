@@ -91,21 +91,13 @@ python = "$pythonVersion"
         throw "mise did not create the required Python executable."
     }
 
-    $azureAuth = Get-Command AzureAuth.exe -CommandType Application `
-        -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($null -eq $azureAuth) {
-        $installedAzureAuth = Join-Path (
-            [Environment]::GetFolderPath(
-                [Environment+SpecialFolder]::LocalApplicationData
-            )
-        ) "Programs\AzureAuth\0.9.5\azureauth.exe"
-        if (-not (Test-Path -LiteralPath $installedAzureAuth -PathType Leaf)) {
-            throw "AzureAuth is not installed."
-        }
-        $azureAuthPath = $installedAzureAuth
-    }
-    else {
-        $azureAuthPath = $azureAuth.Source
+    $azureAuthPath = Join-Path (
+        [Environment]::GetFolderPath(
+            [Environment+SpecialFolder]::LocalApplicationData
+        )
+    ) "Programs\AzureAuth\0.9.5\azureauth.exe"
+    if (-not (Test-Path -LiteralPath $azureAuthPath -PathType Leaf)) {
+        throw "AzureAuth 0.9.5 was not found at '$azureAuthPath'."
     }
 
     $token = (& $azureAuthPath ado token --output token | Out-String).Trim()
