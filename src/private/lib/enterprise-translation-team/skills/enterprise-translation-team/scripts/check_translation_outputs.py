@@ -725,7 +725,7 @@ def check_termbase_json(path: Path) -> dict:
         )
         for variant_index, variant in enumerate(
             require_list(
-                target.get("allowed_variants", []),
+                target.get("allowed_variants"),
                 f"entries[{index}].target.allowed_variants",
             ),
             start=1,
@@ -791,7 +791,7 @@ def check_termbase_json(path: Path) -> dict:
                 ["correct_guidance", "reason", "bad_target"],
             )
         for forbidden in require_list(
-            target.get("forbidden", []), f"entries[{index}].target.forbidden"
+            target.get("forbidden"), f"entries[{index}].target.forbidden"
         ):
             forbidden_entry = require_dict(
                 forbidden, f"entries[{index}].target.forbidden[]"
@@ -821,12 +821,18 @@ def check_termbase_json(path: Path) -> dict:
             provenance.get("created_at"),
             f"entries[{index}].provenance.created_at",
         )
-        if not require_list(
+        evidence_refs = require_list(
             provenance.get("evidence_refs"),
             f"entries[{index}].provenance.evidence_refs",
-        ):
+        )
+        if not evidence_refs:
             raise AssertionError(
                 f"Entry {concept_id} must include evidence_refs"
+            )
+        for evidence_index, evidence_ref in enumerate(evidence_refs, start=1):
+            require_nonempty_string(
+                evidence_ref,
+                f"entries[{index}].provenance.evidence_refs[{evidence_index}]",
             )
         maintenance = require_dict(
             entry.get("maintenance"), f"entries[{index}].maintenance"
@@ -858,7 +864,7 @@ def check_termbase_json(path: Path) -> dict:
             reliability.get("confidence"),
             f"entries[{index}].maintenance.reliability.confidence",
         )
-    conflicts = require_list(payload.get("conflicts", []), "conflicts")
+    conflicts = require_list(payload.get("conflicts"), "conflicts")
     seen_conflict_ids: set[str] = set()
     for index, raw_conflict in enumerate(conflicts, start=1):
         conflict = require_dict(raw_conflict, f"conflicts[{index}]")
@@ -1056,7 +1062,9 @@ def check_delta_jsonl(path: Path, termbase: dict | None = None) -> list[dict]:
                 f"Delta line {index} references unknown conflict_id {conflict_id}"
             )
         if canonical is not None:
-            if event.get("concept_id") != canonical.get("concept_id"):
+            if "concept_id" in event and event.get(
+                "concept_id"
+            ) != canonical.get("concept_id"):
                 raise AssertionError(
                     f"Delta line {index} concept_id does not match "
                     f"conflict {conflict_id}"
@@ -1795,6 +1803,35 @@ def check_terminology_content(
         )
     conflicts_by_concept_id = conflicts_by_concept(payload)
     events = check_delta_jsonl(delta_path, payload)
+    source_by_concept_id = {
+        require_nonempty_string(
+            entry.get("concept_id"), f"{source_term}.concept_id"
+        ): source_term
+        for source_term, entry in entries_by_source.items()
+    }
+    for event_index, event in enumerate(events, start=1):
+        event_concept_id = event.get("concept_id")
+        event_source_term = event.get("source_term")
+        if event_concept_id is not None:
+            canonical_source = source_by_concept_id.get(event_concept_id)
+            if canonical_source is None:
+                raise AssertionError(
+                    f"Delta line {event_index} references unknown concept_id "
+                    f"{event_concept_id}"
+                )
+            if (
+                event_source_term is not None
+                and event_source_term != canonical_source
+            ):
+                raise AssertionError(
+                    f"Delta line {event_index} source_term does not match "
+                    f"concept {event_concept_id}"
+                )
+        elif event_source_term not in expected_sources:
+            raise AssertionError(
+                f"Delta line {event_index} references unknown source_term "
+                f"{event_source_term}"
+            )
     for brief_term in brief_terms:
         source_term = require_nonempty_string(
             brief_term.get("source"), "terminology brief term.source"

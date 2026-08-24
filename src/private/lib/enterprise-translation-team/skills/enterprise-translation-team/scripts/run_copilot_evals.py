@@ -222,6 +222,18 @@ def compare_snapshots(
     }
 
 
+def remove_candidate_manifest(path: Path) -> bool:
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return False
+    if path.is_symlink() or not path.is_dir():
+        path.unlink()
+    else:
+        shutil.rmtree(path)
+    return True
+
+
 def run_discovery_command(command: list[str], cwd: Path) -> object:
     completed = subprocess.run(
         command,
@@ -570,14 +582,31 @@ def run_case(
         "expected_files": case.get("expected_files", []),
         "expected_output": case["expected_output"],
         "assertions": case.get("assertions", []),
+        "forbid_workspace_changes": case.get("forbid_workspace_changes", False),
+        "forbidden_created_paths": case.get("forbidden_created_paths", []),
+        "required_response_patterns": case.get(
+            "required_response_patterns", []
+        ),
+        "forbidden_response_patterns": case.get(
+            "forbidden_response_patterns", []
+        ),
         "prompt": case_prompt,
     }
-    (case_dir / "run-manifest.json").write_text(
-        json.dumps(manifest, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    manifest_path = case_dir / "run-manifest.json"
+    try:
+        manifest_path.lstat()
+    except FileNotFoundError:
+        pass
+    else:
+        raise RuntimeError(
+            "Eval inputs must not use the reserved run-manifest.json path"
+        )
 
     if mode == "dry-run":
+        manifest_path.write_text(
+            json.dumps(manifest, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
         return {
             "case": case["id"],
             "status": "prepared",
@@ -654,8 +683,17 @@ def run_case(
         env=COPILOT_ENV,
     )
     duration_ms = int((time.perf_counter() - started) * 1000)
+    manifest_collision = remove_candidate_manifest(manifest_path)
     workspace_diff = compare_snapshots(
         workspace_before, snapshot_files(case_dir)
+    )
+    if manifest_collision:
+        workspace_diff["added"] = sorted(
+            {*workspace_diff["added"], manifest_path.name}
+        )
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False),
+        encoding="utf-8",
     )
     workspace_diff_path = case_dir / "workspace-diff.json"
     workspace_diff_path.write_text(

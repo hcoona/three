@@ -79,9 +79,11 @@ and explicit human sign-off boundaries.
 9. **Final QA**: run deterministic checks first, including termbase/schema,
    forbidden-term, and TBX export checks, then summarize subjective residual
    risks.
-10. **Delivery package**: provide final files, `termbase.job.json`,
-    `termbase.delta.jsonl`, `termbase.tbx`, `terminology-review.tsv`,
-    QA report, and unresolved questions.
+10. **Delivery package**: provide final files, QA report,
+    and unresolved questions.
+    When terminology is part of the assignment, also provide
+    `termbase.job.json`, `termbase.delta.jsonl`, `termbase.tbx`,
+    and `terminology-review.tsv`.
 
 ## Minimal role handoff
 
