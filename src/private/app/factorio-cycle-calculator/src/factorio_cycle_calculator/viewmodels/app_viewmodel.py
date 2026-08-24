@@ -1,19 +1,19 @@
-"""Application view model: orchestration between Streamlit views and services."""
+"""Application view model: orchestration between Streamlit views and services."""  # noqa: E501
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping  # noqa: TC003
 from dataclasses import dataclass
 
 from factorio_cycle_calculator.models import (
-    BeaconSpec,
-    FactorioDataRaw,
-    IconSpec,
-    Machine,
-    ModuleSpec,
-    Recipe,
-    RecipeConfig,
-    SolveResult,
+    BeaconSpec,  # noqa: TC001
+    FactorioDataRaw,  # noqa: TC001
+    IconSpec,  # noqa: TC001
+    Machine,  # noqa: TC001
+    ModuleSpec,  # noqa: TC001
+    Recipe,  # noqa: TC001
+    RecipeConfig,  # noqa: TC001
+    SolveResult,  # noqa: TC001
 )
 from factorio_cycle_calculator.services.catalog_service import (
     build_beacon_catalog,
@@ -59,7 +59,7 @@ class LoadedChain:
 class OilChainViewModel:
     """Coordinates backend services for the Streamlit app."""
 
-    def __init__(self) -> None:
+    def __init__(self) -> None:  # noqa: D107
         load_app_env()
         self.default_data_dir = get_env_default(
             "FACTORIO_DATA_DIRECTORY",

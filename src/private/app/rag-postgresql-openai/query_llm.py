@@ -1,4 +1,4 @@
-import asyncio
+import asyncio  # noqa: D100
 import logging
 import os
 
@@ -8,10 +8,10 @@ from pgvector.psycopg import register_vector
 from psycopg import sql
 from psycopg.rows import dict_row
 
-QUERY = "3岁儿童发烧怎么办？"
+QUERY = "What should I do if a three-year-old child has a fever?"
 
 
-async def main() -> None:
+async def main() -> None:  # noqa: D103
     url = f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@localhost:5432/{os.getenv('POSTGRES_DB')}"
 
     logger = logging.getLogger(__name__)
@@ -22,14 +22,14 @@ async def main() -> None:
     )
 
     result = await openai_client.embeddings.create(
-        model=os.getenv("EMBEDDING_MODEL"),
+        model=os.environ["EMBEDDING_MODEL"],
         input=QUERY,
     )
     query_embedding = result.data[0].embedding
 
     probe: int | None = 10
 
-    with psycopg.connect(url) as conn:
+    with psycopg.connect(url) as conn:  # noqa: SIM117
         with conn.cursor(row_factory=dict_row) as cursor:
             register_vector(conn)
             cursor.execute(
@@ -49,9 +49,9 @@ async def main() -> None:
             nodes = cursor.fetchall()
 
     for node in nodes:
-        logger.info(f"Node ID: {node['id']}")
-        logger.info(f"Node Content: {node['content']}")
-        logger.info(f"Node Metadata: {node['metadata']}")
+        logger.info(f"Node ID: {node['id']}")  # noqa: G004
+        logger.info(f"Node Content: {node['content']}")  # noqa: G004
+        logger.info(f"Node Metadata: {node['metadata']}")  # noqa: G004
         logger.info("-----")
 
     logger.info("Done.")

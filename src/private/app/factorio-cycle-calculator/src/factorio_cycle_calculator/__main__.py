@@ -14,8 +14,8 @@ def main(argv: list[str] | None = None) -> None:
     """Launch the Streamlit application."""
     module_file = app_module.__file__
     if module_file is None:
-        raise RuntimeError(
-            "Could not locate factorio_cycle_calculator.app module file."
+        raise RuntimeError(  # noqa: TRY003
+            "Could not locate factorio_cycle_calculator.app module file."  # noqa: EM101
         )
     app_path = Path(module_file).resolve()
     old_argv = sys.argv

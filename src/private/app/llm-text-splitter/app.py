@@ -1,4 +1,4 @@
-import os
+import os  # noqa: D100
 
 import openai
 import streamlit as st
@@ -20,7 +20,13 @@ st.header("Input Text")
 with st.form(key="text"):
     model_option = st.selectbox(
         label="Select the model",
-        options=["gpt-4o-mini", "gpt-4o", "gpt-4.1-nano", "gpt-4.1-mini", "gpt-4.1"],
+        options=[
+            "gpt-4o-mini",
+            "gpt-4o",
+            "gpt-4.1-nano",
+            "gpt-4.1-mini",
+            "gpt-4.1",
+        ],
         index=0,
         help="The model to use for text splitting. The default is gpt-4o-mini.",
     )
@@ -28,7 +34,9 @@ with st.form(key="text"):
     text = st.text_area(
         key="text_input",
         label="Input Text",
-        placeholder="Input your text here. The text must be pre-splitted into utterances.",
+        placeholder=(
+            "Input your text here. The text must be pre-split into utterances."
+        ),
         height=400,
     )
 

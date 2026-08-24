@@ -1,5 +1,4 @@
-"""
-Windows 菜单信息监控器
+"""Windows 菜单信息监控器
 
 实现与 AutoHotkey 脚本相同的功能：
 - 实时监控鼠标下方的标准 Windows 弹出菜单
@@ -9,7 +8,7 @@ Windows 菜单信息监控器
 
 作者: Python 版本实现
 支持 Python 3.12+
-"""
+"""  # noqa: D415, RUF002
 
 import sys
 import time
@@ -20,7 +19,7 @@ from supermemo_mcp.windows_api import MenuFlags, WindowsAPI
 
 @dataclass
 class MenuInfo:
-    """菜单信息数据类"""
+    """菜单信息数据类"""  # noqa: D415
 
     hwnd: int
     hmenu: int
@@ -30,13 +29,13 @@ class MenuInfo:
 
     @property
     def menu_id(self) -> str:
-        """获取菜单的唯一标识符"""
+        """获取菜单的唯一标识符"""  # noqa: D415
         return f"HWND:{self.hwnd:08X}-HMENU:{self.hmenu:08X}"
 
 
 @dataclass
 class MenuItemInfo:
-    """菜单项信息数据类"""
+    """菜单项信息数据类"""  # noqa: D415
 
     index: int
     state: int
@@ -44,12 +43,11 @@ class MenuItemInfo:
     item_id: int
 
     def get_state_description(self) -> str:
-        """
-        获取菜单项状态的可读描述。
+        """获取菜单项状态的可读描述。
 
         Returns:
             str: 状态描述字符串，包含启用、选中、默认等状态信息
-        """
+        """  # noqa: D415, RUF002
         states = []
         if self.state == MenuFlags.MFS_ENABLED:
             states.append("Enabled")
@@ -69,7 +67,7 @@ class MenuItemInfo:
 
 @dataclass
 class WindowInfo:
-    """窗口详细信息数据类"""
+    """窗口详细信息数据类"""  # noqa: D415
 
     hwnd: int
     class_name: str
@@ -85,29 +83,29 @@ class WindowInfo:
 
     @property
     def window_size(self) -> tuple[int, int] | None:
-        """获取窗口大小"""
+        """获取窗口大小"""  # noqa: D415
         if self.rect:
             return (self.rect[2] - self.rect[0], self.rect[3] - self.rect[1])
         return None
 
     @property
     def window_position(self) -> tuple[int, int] | None:
-        """获取窗口位置"""
+        """获取窗口位置"""  # noqa: D415
         if self.rect:
             return (self.rect[0], self.rect[1])
         return None
 
 
 class MenuInfoMonitor:
-    """菜单信息监控器"""
+    """菜单信息监控器"""  # noqa: D415
 
-    def __init__(self):
+    def __init__(self):  # noqa: ANN204, D107
         self.api = WindowsAPI()
         self.current_menu_id: str | None = None
         self.last_output = ""
 
     def get_menu_info(self, hwnd: int) -> MenuInfo | None:
-        """获取完整的菜单信息"""
+        """获取完整的菜单信息"""  # noqa: D415
         if not self.api.is_popup_menu(hwnd):
             return None
 
@@ -130,7 +128,9 @@ class MenuInfoMonitor:
             item_id = self.api.get_menu_item_id(hmenu, i)
 
             menu_items.append(
-                MenuItemInfo(index=i + 1, state=state, text=text, item_id=item_id)
+                MenuItemInfo(
+                    index=i + 1, state=state, text=text, item_id=item_id
+                )
             )
 
         # 获取窗口详细信息
@@ -145,7 +145,7 @@ class MenuInfoMonitor:
         )
 
     def get_window_info(self, hwnd: int) -> WindowInfo:
-        """获取窗口详细信息"""
+        """获取窗口详细信息"""  # noqa: D415
         comprehensive_info = self.api.get_comprehensive_window_info(hwnd)
 
         window_class = self.api.get_window_class_name(hwnd)
@@ -176,8 +176,8 @@ class MenuInfoMonitor:
             enhanced_info=comprehensive_info,
         )
 
-    def format_output(self, menu_info: MenuInfo) -> str:
-        """格式化输出"""
+    def format_output(self, menu_info: MenuInfo) -> str:  # noqa: C901, PLR0912, PLR0915
+        """格式化输出"""  # noqa: D415
         if not menu_info or not menu_info.items:
             return ""
 
@@ -198,16 +198,27 @@ class MenuInfoMonitor:
         lines.append(f"启用状态: {'是' if window_info.enabled else '否'}")
 
         if window_info.window_position and window_info.window_size:
-            lines.append(f"窗口位置: ({window_info.window_position[0]}, {window_info.window_position[1]})")
-            lines.append(f"窗口大小: {window_info.window_size[0]} × {window_info.window_size[1]}")
+            lines.append(
+                f"窗口位置: ({window_info.window_position[0]}, {window_info.window_position[1]})"  # noqa: E501
+            )
+            lines.append(
+                f"窗口大小: {window_info.window_size[0]} × {window_info.window_size[1]}"  # noqa: E501, RUF001
+            )
 
-        if window_info.thread_id is not None and window_info.process_id is not None:
+        if (
+            window_info.thread_id is not None
+            and window_info.process_id is not None
+        ):
             lines.append(f"线程ID: {window_info.thread_id}")
             lines.append(f"进程ID: {window_info.process_id}")
 
         # 添加进程名称
-        if window_info.enhanced_info and window_info.enhanced_info.get("process_name"):
-            lines.append(f"进程名称: {window_info.enhanced_info['process_name']}")
+        if window_info.enhanced_info and window_info.enhanced_info.get(
+            "process_name"
+        ):
+            lines.append(
+                f"进程名称: {window_info.enhanced_info['process_name']}"
+            )
 
         # 添加增强信息
         if window_info.enhanced_info:
@@ -216,59 +227,103 @@ class MenuInfoMonitor:
                 lines.append(f"窗口样式: {enhanced['style_description']}")
             lines.append("")
 
-            # 显示真正的拥有者窗口信息（应用程序主窗口）
+            # 显示真正的拥有者窗口信息（应用程序主窗口）  # noqa: RUF003
             if enhanced.get("real_owner_hwnd"):
                 lines.append("=== 应用程序主窗口信息 ===")
                 lines.append(f"主窗口句柄: 0x{enhanced['real_owner_hwnd']:08X}")
-                lines.append(f"主窗口类名: {enhanced.get('real_owner_class', '(未知)')}")
-                lines.append(f"主窗口标题: {enhanced.get('real_owner_title', '(无标题)')}")
+                lines.append(
+                    f"主窗口类名: {enhanced.get('real_owner_class', '(未知)')}"
+                )
+                lines.append(
+                    f"主窗口标题: {enhanced.get('real_owner_title', '(无标题)')}"  # noqa: E501
+                )
                 lines.append("")
 
             # 显示菜单来源控件信息
             if enhanced.get("source_control_hwnd"):
                 lines.append("=== 菜单来源控件信息 ===")
-                lines.append(f"来源控件句柄: 0x{enhanced['source_control_hwnd']:08X}")
-                lines.append(f"来源控件类名: {enhanced.get('source_control_class', '(未知)')}")
-                lines.append(f"来源控件文本: {enhanced.get('source_control_text', '(无文本)')}")
+                lines.append(
+                    f"来源控件句柄: 0x{enhanced['source_control_hwnd']:08X}"
+                )
+                lines.append(
+                    f"来源控件类名: {enhanced.get('source_control_class', '(未知)')}"  # noqa: E501
+                )
+                lines.append(
+                    f"来源控件文本: {enhanced.get('source_control_text', '(无文本)')}"  # noqa: E501
+                )
                 lines.append("")
 
             # 显示焦点窗口信息
-            if (enhanced.get("focus_window_hwnd") and
-                enhanced.get("focus_window_hwnd") != enhanced.get("source_control_hwnd")):
+            if enhanced.get("focus_window_hwnd") and enhanced.get(
+                "focus_window_hwnd"
+            ) != enhanced.get("source_control_hwnd"):
                 lines.append("=== 焦点窗口信息 ===")
-                lines.append(f"焦点窗口句柄: 0x{enhanced['focus_window_hwnd']:08X}")
-                lines.append(f"焦点窗口类名: {enhanced.get('focus_window_class', '(未知)')}")
-                lines.append(f"焦点窗口文本: {enhanced.get('focus_window_text', '(无文本)')}")
+                lines.append(
+                    f"焦点窗口句柄: 0x{enhanced['focus_window_hwnd']:08X}"
+                )
+                lines.append(
+                    f"焦点窗口类名: {enhanced.get('focus_window_class', '(未知)')}"  # noqa: E501
+                )
+                lines.append(
+                    f"焦点窗口文本: {enhanced.get('focus_window_text', '(无文本)')}"  # noqa: E501
+                )
                 lines.append("")
 
             # 显示菜单拥有者窗口信息
-            if (enhanced.get("menu_owner_hwnd") and
-                enhanced.get("menu_owner_hwnd") != enhanced.get("real_owner_hwnd") and
-                enhanced.get("menu_owner_hwnd") != enhanced.get("source_control_hwnd")):
+            if (
+                enhanced.get("menu_owner_hwnd")
+                and enhanced.get("menu_owner_hwnd")
+                != enhanced.get("real_owner_hwnd")
+                and enhanced.get("menu_owner_hwnd")
+                != enhanced.get("source_control_hwnd")
+            ):
                 lines.append("=== 菜单拥有者窗口信息 ===")
-                lines.append(f"菜单拥有者句柄: 0x{enhanced['menu_owner_hwnd']:08X}")
-                lines.append(f"菜单拥有者类名: {enhanced.get('menu_owner_class', '(未知)')}")
-                lines.append(f"菜单拥有者文本: {enhanced.get('menu_owner_text', '(无文本)')}")
+                lines.append(
+                    f"菜单拥有者句柄: 0x{enhanced['menu_owner_hwnd']:08X}"
+                )
+                lines.append(
+                    f"菜单拥有者类名: {enhanced.get('menu_owner_class', '(未知)')}"  # noqa: E501
+                )
+                lines.append(
+                    f"菜单拥有者文本: {enhanced.get('menu_owner_text', '(无文本)')}"  # noqa: E501
+                )
                 lines.append("")
 
             # 显示根拥有者窗口信息
-            if (enhanced.get("root_owner_hwnd") and
-                enhanced.get("root_owner_hwnd") != enhanced.get("real_owner_hwnd") and
-                enhanced.get("root_owner_class")):
+            if (
+                enhanced.get("root_owner_hwnd")
+                and enhanced.get("root_owner_hwnd")
+                != enhanced.get("real_owner_hwnd")
+                and enhanced.get("root_owner_class")
+            ):
                 lines.append("=== 根拥有者窗口信息 ===")
-                lines.append(f"根拥有者句柄: 0x{enhanced['root_owner_hwnd']:08X}")
-                lines.append(f"根拥有者类名: {enhanced.get('root_owner_class', '(未知)')}")
-                lines.append(f"根拥有者标题: {enhanced.get('root_owner_title', '(无标题)')}")
+                lines.append(
+                    f"根拥有者句柄: 0x{enhanced['root_owner_hwnd']:08X}"
+                )
+                lines.append(
+                    f"根拥有者类名: {enhanced.get('root_owner_class', '(未知)')}"  # noqa: E501
+                )
+                lines.append(
+                    f"根拥有者标题: {enhanced.get('root_owner_title', '(无标题)')}"  # noqa: E501
+                )
                 lines.append("")
 
             # 显示直接拥有者窗口信息
-            if (enhanced.get("owner_hwnd") and
-                enhanced.get("owner_hwnd") != enhanced.get("real_owner_hwnd") and
-                enhanced.get("owner_hwnd") != enhanced.get("root_owner_hwnd")):
+            if (
+                enhanced.get("owner_hwnd")
+                and enhanced.get("owner_hwnd")
+                != enhanced.get("real_owner_hwnd")
+                and enhanced.get("owner_hwnd")
+                != enhanced.get("root_owner_hwnd")
+            ):
                 lines.append("=== 直接拥有者窗口信息 ===")
                 lines.append(f"拥有者句柄: 0x{enhanced['owner_hwnd']:08X}")
-                lines.append(f"拥有者类名: {enhanced.get('owner_class', '(未知)')}")
-                lines.append(f"拥有者标题: {enhanced.get('owner_title', '(无标题)')}")
+                lines.append(
+                    f"拥有者类名: {enhanced.get('owner_class', '(未知)')}"
+                )
+                lines.append(
+                    f"拥有者标题: {enhanced.get('owner_title', '(无标题)')}"
+                )
                 lines.append("")
         else:
             lines.append("")
@@ -276,7 +331,9 @@ class MenuInfoMonitor:
         # 添加祖先链信息
         if window_info.ancestors:
             lines.append("=== 窗口祖先链 ===")
-            for i, (ancestor_hwnd, ancestor_title) in enumerate(window_info.ancestors):
+            for i, (ancestor_hwnd, ancestor_title) in enumerate(
+                window_info.ancestors
+            ):
                 level = "  " * i
                 title_text = ancestor_title or "(无标题)"
                 lines.append(f"{level}├─ 0x{ancestor_hwnd:08X}: {title_text}")
@@ -301,8 +358,8 @@ class MenuInfoMonitor:
 
         return "\n".join(lines)
 
-    def monitor(self):
-        """开始监控"""
+    def monitor(self):  # noqa: ANN201
+        """开始监控"""  # noqa: D415
         print("菜单信息监控器已启动")
         print("将鼠标悬停在弹出菜单上查看信息")
         print("按 Ctrl+C 退出")
@@ -317,7 +374,7 @@ class MenuInfoMonitor:
                     menu_info = self.get_menu_info(hwnd)
 
                     if menu_info:
-                        # 检查是否是同一个菜单，避免不必要的刷新
+                        # 检查是否是同一个菜单，避免不必要的刷新  # noqa: RUF003
                         if menu_info.menu_id != self.current_menu_id:
                             output = self.format_output(menu_info)
 
@@ -332,28 +389,27 @@ class MenuInfoMonitor:
 
                             self.current_menu_id = menu_info.menu_id
                             self.last_output = output
-                    else:
-                        # 没有检测到菜单，清空当前菜单ID
-                        if self.current_menu_id is not None:
-                            print("\033[2J\033[H", end="")
-                            print("菜单信息监控器 - 等待菜单...")
-                            print("将鼠标悬停在弹出菜单上查看信息")
-                            print("按 Ctrl+C 退出")
-                            self.current_menu_id = None
-                            self.last_output = ""
+                    # 没有检测到菜单，清空当前菜单ID  # noqa: RUF003
+                    elif self.current_menu_id is not None:
+                        print("\033[2J\033[H", end="")
+                        print("菜单信息监控器 - 等待菜单...")
+                        print("将鼠标悬停在弹出菜单上查看信息")
+                        print("按 Ctrl+C 退出")
+                        self.current_menu_id = None
+                        self.last_output = ""
 
-                time.sleep(0.1)  # 减少检查间隔到100毫秒，提高响应性
+                time.sleep(0.1)  # Poll every 100 ms to improve responsiveness.
 
         except KeyboardInterrupt:
             print("\n\n监控已停止")
 
 
-def main():
-    """主函数"""
+def main():  # noqa: ANN201
+    """主函数"""  # noqa: D415
     try:
         monitor = MenuInfoMonitor()
         monitor.monitor()
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"错误: {e}")
         sys.exit(1)
 

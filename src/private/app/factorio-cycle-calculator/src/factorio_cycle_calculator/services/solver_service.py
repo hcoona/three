@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping, Sequence  # noqa: TC003
 
 from ortools.linear_solver import pywraplp
 

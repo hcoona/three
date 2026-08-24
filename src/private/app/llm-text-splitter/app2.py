@@ -1,4 +1,4 @@
-import asyncio
+import asyncio  # noqa: D100
 import os
 
 import openai
@@ -29,7 +29,9 @@ with st.form(key="text"):
     text = st.text_area(
         key="text_input",
         label="Input Text",
-        placeholder="Input your text here. The text must be pre-splitted into utterances.",
+        placeholder=(
+            "Input your text here. The text must be pre-split into utterances."
+        ),
         height=400,
     )
 
@@ -53,7 +55,12 @@ if submit_button:
         )
     )
 
-    for topic in split_text_result.topics:
-        st.subheader(f"{topic.topic}: [{','.join(map(str, topic.indices))}]")
-        for i in topic.indices:
-            st.write(utterances[i])
+    if split_text_result is None:
+        st.error("Failed to split text.")
+    else:
+        for topic in split_text_result.topics:
+            st.subheader(
+                f"{topic.topic}: [{','.join(map(str, topic.indices))}]"
+            )
+            for i in topic.indices:
+                st.write(utterances[i])

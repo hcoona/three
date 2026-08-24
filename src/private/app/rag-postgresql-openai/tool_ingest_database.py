@@ -4,16 +4,21 @@ import asyncio
 import logging
 import os
 import sys
+from types import TracebackType
+from typing import Self
 
 import psycopg
 from html2text import html2text
 from psycopg.types.json import Json
-from rag_postgresql_openai.specialized_splitter.caring_for_your_baby_and_young_child import (
+from rag_postgresql_openai.specialized_splitter.caring_for_your_baby_and_young_child import (  # noqa: E501
     extract_boxes,
     split_section_to_subsections,
     split_subsection_into_paragraph_groups,
     split_top_level_document,
 )
+
+MetadataValue = str | int | None
+MetadataDict = dict[str, MetadataValue]
 
 
 class CaringForYourBabyAndYoungChildProcessor:
@@ -22,33 +27,42 @@ class CaringForYourBabyAndYoungChildProcessor:
     It assume you have unpacked the book with KindleUnpack into a directory.
     """
 
-    def __init__(self, document_id: int):
+    def __init__(self, document_id: int):  # noqa: ANN204, D107
         self._logger = logging.getLogger(__name__)
 
         self._url = f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@localhost:5432/{os.getenv('POSTGRES_DB')}"
         self._document_id = document_id
+        self._conn: psycopg.AsyncConnection | None = None
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> Self:  # noqa: D105
         self._conn = await psycopg.AsyncConnection.connect(self._url)
         return self
 
-    async def __aexit__(self, exc_type, exc_value, traceback):
-        if hasattr(self, "_conn") and self._conn:
+    async def __aexit__(  # noqa: D105
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        if self._conn:
             await self._conn.close()
             self._conn = None
 
-    async def run(self, text, metadata={}) -> None:
+    async def run(
+        self, text: str, metadata: MetadataDict | None = None
+    ) -> None:
         """Process the text."""
+        metadata = metadata or {}
         result = split_top_level_document(text)
         if not result.chunks:
             return
 
         if not result.metadata.title:
-            raise ValueError("Top level document has no title.")
+            raise ValueError("Top level document has no title.")  # noqa: EM101, TRY003
 
         if result.metadata.type_ == "front_matter":
             if len(result.chunks) != 1:
-                raise ValueError("Front matter should have exactly one chunk.")
+                raise ValueError("Front matter should have exactly one chunk.")  # noqa: EM101, TRY003
             await self._write_node_into_database(
                 text=result.chunks[0],
                 metadata={
@@ -70,26 +84,26 @@ class CaringForYourBabyAndYoungChildProcessor:
                     },
                 )
             except ValueError as e:
-                self._logger.error(
-                    f"ValueError for section {i} in {result.metadata.title}: {e}, section: {section}"
+                self._logger.error(  # noqa: TRY400
+                    f"ValueError for section {i} in {result.metadata.title}: {e}, section: {section}"  # noqa: E501, G004
                 )
                 raise
 
     async def _run_for_section(
         self,
         section: str,
-        metadata: dict[str, str],
+        metadata: MetadataDict,
     ) -> None:
         try:
             result = split_section_to_subsections(section)
         except ValueError as e:
-            self._logger.error(
-                f"ValueError for section: {e}, section: {section}, metadata: {metadata}"
+            self._logger.error(  # noqa: TRY400
+                f"ValueError for section: {e}, section: {section}, metadata: {metadata}"  # noqa: E501, G004
             )
             raise
 
         if not result.chunks:
-            raise ValueError("Section has no chunks.")
+            raise ValueError("Section has no chunks.")  # noqa: EM101, TRY003
 
         for j, subsection in enumerate(result.chunks):
             await self._run_for_subsection(
@@ -102,7 +116,7 @@ class CaringForYourBabyAndYoungChildProcessor:
             )
 
     async def _run_for_subsection(
-        self, subsection: str, metadata: dict[str, str]
+        self, subsection: str, metadata: MetadataDict
     ) -> None:
         result = extract_boxes(subsection)
 
@@ -137,8 +151,10 @@ class CaringForYourBabyAndYoungChildProcessor:
                 )
 
     async def _write_node_into_database(
-        self, text: str, metadata: dict[str, str]
+        self, text: str, metadata: MetadataDict
     ) -> None:
+        if self._conn is None:
+            raise RuntimeError("Database connection is not open.")  # noqa: EM101, TRY003
         async with self._conn.cursor() as cur:
             await cur.execute(
                 """
@@ -154,17 +170,17 @@ class CaringForYourBabyAndYoungChildProcessor:
             await self._conn.commit()
 
 
-async def main():
+async def main():  # noqa: ANN201, D103
     logger = logging.getLogger(__name__)
-    this_directory = os.path.dirname(os.path.abspath(__file__))
+    this_directory = os.path.dirname(os.path.abspath(__file__))  # noqa: PTH100, PTH120
 
     processor = CaringForYourBabyAndYoungChildProcessor(document_id=1)
 
     async with processor:
         for i in range(11, 52):
             filename = f"part00{i}.xhtml"
-            with open(
-                os.path.join(
+            with open(  # noqa: PTH123
+                os.path.join(  # noqa: PTH118
                     this_directory,
                     "ingestion_cache",
                     "Caring for Your Baby and Young Child",
@@ -173,7 +189,6 @@ async def main():
                     "Text",
                     filename,
                 ),
-                mode="r",
                 encoding="utf-8",
             ) as f:
                 text = f.read()
@@ -185,11 +200,10 @@ async def main():
                         },
                     )
                 except ValueError as e:
-                    logger.error(f"ValueError for {filename}: {e}")
+                    logger.error(f"ValueError for {filename}: {e}")  # noqa: G004, TRY400
 
 
 if __name__ == "__main__":
-    import platform
     import warnings
 
     from bs4 import XMLParsedAsHTMLWarning
@@ -201,7 +215,9 @@ if __name__ == "__main__":
 
     logging.basicConfig(level=logging.INFO)
 
-    if platform.system() == "Windows":
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    if sys.platform == "win32":
+        from asyncio import WindowsSelectorEventLoopPolicy
+
+        asyncio.set_event_loop_policy(WindowsSelectorEventLoopPolicy())
 
     asyncio.run(main())

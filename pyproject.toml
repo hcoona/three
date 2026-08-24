@@ -10,7 +10,8 @@ license = "LGPL-3.0-or-later WITH LGPL-3.0-linking-exception"
 classifiers = ["Private :: Do Not Upload"]
 
 [dependency-groups]
-dev = ["pyrefly>=0.25.0", "pytest>=8.3.4", "ruff>=0.11.8"]
+# Preserve the validated lint baseline until the Ruff 0.16 migration.
+dev = ["hatchling>=1.25.0", "pyrefly>=1.0.0", "pytest>=8.3.4", "ruff==0.14.4"]
 
 [tool.uv.workspace]
 # The current Python workspace is rooted under src/; legacy OnePython paths are retired.
@@ -27,30 +28,33 @@ members = [
   "src/private/app/azureauth-credprovider/python",
   "src/public/app/markdown-hybrid-search-mcp",
   "src/public/lib/nbgv-python",
+  "src/public/lib/three-workflow-delivery-v3",
   "src/sample/nbgv-hatch-demo",
 ]
 
 [tool.uv.sources]
 nbgv-python = { workspace = true }
+three-workflow-delivery-v3 = { workspace = true }
 
 [tool.pyrefly]
 # Keep type-check coverage aligned with the root uv workspace membership.
 project-includes = [
-  "src/lab/azure-document-intelligence-lab",
-  "src/private/app/factorio-cycle-calculator",
-  "src/private/app/git-commit-heatmap",
-  "src/private/app/html-sm-processor",
-  "src/private/app/llm-text-splitter",
-  "src/private/app/music-flash-card-generator",
-  "src/private/app/rag-postgresql-openai",
-  "src/private/app/supermemo-mcp",
-  "src/private/app/transcribe",
+  "src/private/app/factorio-cycle-calculator/**/*.py",
+  "src/private/app/git-commit-heatmap/**/*.py",
+  "src/private/app/html-sm-processor/**/*.py",
+  "src/private/app/llm-text-splitter/**/*.py",
+  "src/private/app/music-flash-card-generator/**/*.py",
+  "src/private/app/rag-postgresql-openai/**/*.py",
+  "src/private/app/supermemo-mcp/**/*.py",
+  "src/private/app/transcribe/**/*.py",
   "src/private/app/azureauth-credprovider/python",
-  "src/public/app/markdown-hybrid-search-mcp",
-  "src/public/lib/nbgv-python",
-  "src/sample/nbgv-hatch-demo",
+  "src/public/app/markdown-hybrid-search-mcp/src/**/*.py",
+  "src/public/lib/nbgv-python/**/*.py",
+  "src/public/lib/three-workflow-delivery-v3/**/*.py",
+  "src/sample/nbgv-hatch-demo/**/*.py",
 ]
 project-excludes = ['.venv/**', 'dist/**']
+disable-project-excludes-heuristics = true
 
 [tool.ruff]
 target-version = "py312" # Keep a conservative repo-wide lint target until package-level overrides are needed.
@@ -131,9 +135,29 @@ convention = "google" # Match the Google Python Style Guide docstring structure.
   "S607", # They invoke tools by name that must be on PATH.
   "T201", # Allow print statements in scripts for simplicity.
 ]
+"src/private/lib/enterprise-translation-team/**/scripts/*.py" = [
+  "C901",    # Schema validators intentionally keep checks together.
+  "D103",    # Small command helpers are named descriptively.
+  "E501",    # Contract strings and namespaced agent IDs are not wrapped.
+  "EM101",   # CLI validators report direct, user-facing failure messages.
+  "EM102",   # CLI validators include failed values in their messages.
+  "FBT001",  # Internal eval orchestration uses a boolean review-gate switch.
+  "PLR0912", # Schema validators branch across independent contract fields.
+  "PLR0913", # Eval orchestration passes the complete run configuration.
+  "PLR0915", # Schema validators keep related contract checks together.
+  "PLR0917", # Eval orchestration passes the complete run configuration.
+  "PLR2004", # Numeric values encode documented package contract limits.
+  "TRY003",  # Direct validation errors preserve precise failure context.
+  "TRY004",  # Contract violations are uniformly surfaced as validation errors.
+  "TRY301",  # CLI boundaries convert validation failures to exit status.
+]
 
 [tool.pytest.ini_options]
+addopts = "--import-mode=importlib"
 testpaths = [
   "src/private/app/azureauth-credprovider/python/tests",
+  "src/private/app/git-commit-heatmap/tests",
+  "src/private/app/llm-text-splitter/tests",
   "src/public/lib/nbgv-python/tests",
+  "src/public/lib/three-workflow-delivery-v3/tests",
 ]

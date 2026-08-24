@@ -7,12 +7,34 @@
 lib = File.expand_path("lib", __dir__)
 $LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
 require "asciidoctor/latexmath/version"
+require "json"
+require "open3"
+
+nbgv_gemspec_version = lambda do |project_root|
+  nbgv_path = ENV.fetch("THREE_WORKFLOW_RELEASE_NBGV_PATH", "").strip
+  nbgv_command = nbgv_path.empty? ? ["dotnet", "tool", "run", "nbgv"] : [nbgv_path]
+  stdout, stderr, status = Open3.capture3(
+    *nbgv_command,
+    "get-version",
+    "--format",
+    "json",
+    chdir: project_root
+  )
+
+  unless status.success?
+    message = stderr.strip
+    raise "Failed to resolve asciidoctor-latexmath version with NBGV#{": #{message}" unless message.empty?}"
+  end
+
+  version = JSON.parse(stdout).fetch("SemVer2")
+  Asciidoctor::Latexmath::Version.rubygems_version(version)
+end
 
 gem_name = "asciidoctor-latexmath"
 
 gemspec = Gem::Specification.new do |spec|
   spec.name = gem_name
-  spec.version = Asciidoctor::Latexmath::VERSION
+  spec.version = nbgv_gemspec_version.call(__dir__)
   spec.authors = ["Shuai Zhang"]
   spec.email = ["zhangshuai.ustc@gmail.com"]
 

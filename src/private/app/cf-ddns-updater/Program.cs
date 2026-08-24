@@ -18,7 +18,14 @@ internal sealed partial class Program
             CloudflareTelemetry.RunActivityName,
             ActivityKind.Internal);
         ILogger logger = NullLogger.Instance;
+        using CancellationTokenSource cancellationTokenSource = new();
+        ConsoleCancelEventHandler cancelKeyPressHandler = (_, e) =>
+        {
+            e.Cancel = true;
+            cancellationTokenSource.Cancel();
+        };
 
+        Console.CancelKeyPress += cancelKeyPressHandler;
         try
         {
             using IHost host = CreateHost(args);
@@ -31,12 +38,19 @@ internal sealed partial class Program
             {
                 IReconciliationApp app =
                     host.Services.GetRequiredService<IReconciliationApp>();
-                int exitCode = await app.RunAsync(CancellationToken.None).ConfigureAwait(false);
+                int exitCode = await app.RunAsync(cancellationTokenSource.Token)
+                    .ConfigureAwait(false);
                 CloudflareTelemetry.MarkRunExitCode(runActivity, exitCode);
                 CloudflareTelemetry.MarkOutcome(
                     runActivity,
                     exitCode == 0 ? "success" : "failure");
                 return exitCode;
+            }
+            catch (OperationCanceledException)
+                when (cancellationTokenSource.IsCancellationRequested)
+            {
+                CloudflareTelemetry.MarkOutcome(runActivity, "cancelled");
+                return 0;
             }
             finally
             {
@@ -54,6 +68,10 @@ internal sealed partial class Program
             CloudflareTelemetry.MarkFailure(runActivity, ex);
             LogUnhandledFailure(logger, ex);
             return 1;
+        }
+        finally
+        {
+            Console.CancelKeyPress -= cancelKeyPressHandler;
         }
     }
 

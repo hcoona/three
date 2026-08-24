@@ -28,9 +28,9 @@ uv run --package llm-text-splitter streamlit run packages/llm-text-splitter/app2
 
 我的输入可能是中文也可能是英文。
 
-输入可能有  3 种情况：
+The input can have three forms:
 
------
+---
 
 情况1
 
@@ -38,7 +38,7 @@ uv run --package llm-text-splitter streamlit run packages/llm-text-splitter/app2
 
 段落2
 
------
+---
 
 情况2
 
@@ -49,7 +49,7 @@ uv run --package llm-text-splitter streamlit run packages/llm-text-splitter/app2
 段落2内容2
 段落2内容3
 
------
+---
 
 情况 3
 

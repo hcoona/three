@@ -1,12 +1,12 @@
-"""This utility generates a merged LilyPond file that includes both the user file and the front/back includes."""
+"""This utility generates a merged LilyPond file that includes both the user file and the front/back includes."""  # noqa: E501
 
 import argparse
 import os
 
 
-def _build_argparser():
+def _build_argparser():  # noqa: ANN202
     parser = argparse.ArgumentParser(
-        description="Generate a merged LilyPond file that includes both the user file and the front/back includes."
+        description="Generate a merged LilyPond file that includes both the user file and the front/back includes."  # noqa: E501
     )
     parser.add_argument(
         "--user_file",
@@ -26,13 +26,15 @@ def _build_argparser():
     return parser
 
 
-def main() -> None:
+def main() -> None:  # noqa: D103
     parser = _build_argparser()
     args = parser.parse_args()
-    with open(args.output_file, "w", encoding="utf-8") as output_file:
+    with open(args.output_file, "w", encoding="utf-8") as output_file:  # noqa: PTH123
         output_file.write('\\version "2.24.3"\n')
-        output_file.write(f'\\include "{os.path.abspath(args.user_file)}"\n')
-        output_file.write(f'\\include "{os.path.abspath(args.template_file)}"\n')
+        output_file.write(f'\\include "{os.path.abspath(args.user_file)}"\n')  # noqa: PTH100
+        output_file.write(
+            f'\\include "{os.path.abspath(args.template_file)}"\n'  # noqa: PTH100
+        )
 
 
 if __name__ == "__main__":

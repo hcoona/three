@@ -134,6 +134,7 @@ checksum = "sha256:427f3f157d8ba5716d5e849bee34ee4b9983ce96b21e83186460f31b74ec1
 url = "https://github.com/alibaba/open-code-review/releases/download/v1.9.8/opencodereview-linux-amd64"
 url_api = "https://api.github.com/repos/alibaba/open-code-review/releases/assets/521644660"
 provenance = "github-attestations"
+provenance_verified = true
 
 [tools."github:alibaba/open-code-review"."platforms.linux-x64-musl"]
 checksum = "sha256:427f3f157d8ba5716d5e849bee34ee4b9983ce96b21e83186460f31b74ec131d"
@@ -204,42 +205,6 @@ version = "0.11.0"
 backend = "github:koalaman/shellcheck"
 
 [tools."github:koalaman/shellcheck".options]
-asset_pattern = "shellcheck-*.zip"
-
-[tools."github:koalaman/shellcheck"."platforms.windows-x64"]
-checksum = "sha256:8a4e35ab0b331c85d73567b12f2a444df187f483e5079ceffa6bda1faa2e740e"
-url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.zip"
-url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056944"
-
-[[tools."github:koalaman/shellcheck"]]
-version = "0.11.0"
-backend = "github:koalaman/shellcheck"
-
-[tools."github:koalaman/shellcheck".options]
-asset_pattern = "shellcheck-*.darwin.aarch64.tar.xz"
-
-[tools."github:koalaman/shellcheck"."platforms.macos-arm64"]
-checksum = "sha256:56affdd8de5527894dca6dc3d7e0a99a873b0f004d7aabc30ae407d3f48b0a79"
-url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.darwin.aarch64.tar.xz"
-url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056932"
-
-[[tools."github:koalaman/shellcheck"]]
-version = "0.11.0"
-backend = "github:koalaman/shellcheck"
-
-[tools."github:koalaman/shellcheck".options]
-asset_pattern = "shellcheck-*.darwin.x86_64.tar.xz"
-
-[tools."github:koalaman/shellcheck"."platforms.macos-x64"]
-checksum = "sha256:3c89db4edcab7cf1c27bff178882e0f6f27f7afdf54e859fa041fca10febe4c6"
-url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.darwin.x86_64.tar.xz"
-url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056930"
-
-[[tools."github:koalaman/shellcheck"]]
-version = "0.11.0"
-backend = "github:koalaman/shellcheck"
-
-[tools."github:koalaman/shellcheck".options]
 asset_pattern = "shellcheck-*.linux.x86_64.tar.xz"
 
 [tools."github:koalaman/shellcheck"."platforms.linux-x64"]
@@ -268,6 +233,42 @@ url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/2790
 checksum = "sha256:12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e261eaa7e7c14588"
 url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.aarch64.tar.xz"
 url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056934"
+
+[[tools."github:koalaman/shellcheck"]]
+version = "0.11.0"
+backend = "github:koalaman/shellcheck"
+
+[tools."github:koalaman/shellcheck".options]
+asset_pattern = "shellcheck-*.darwin.x86_64.tar.xz"
+
+[tools."github:koalaman/shellcheck"."platforms.macos-x64"]
+checksum = "sha256:3c89db4edcab7cf1c27bff178882e0f6f27f7afdf54e859fa041fca10febe4c6"
+url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.darwin.x86_64.tar.xz"
+url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056930"
+
+[[tools."github:koalaman/shellcheck"]]
+version = "0.11.0"
+backend = "github:koalaman/shellcheck"
+
+[tools."github:koalaman/shellcheck".options]
+asset_pattern = "shellcheck-*.darwin.aarch64.tar.xz"
+
+[tools."github:koalaman/shellcheck"."platforms.macos-arm64"]
+checksum = "sha256:56affdd8de5527894dca6dc3d7e0a99a873b0f004d7aabc30ae407d3f48b0a79"
+url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.darwin.aarch64.tar.xz"
+url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056932"
+
+[[tools."github:koalaman/shellcheck"]]
+version = "0.11.0"
+backend = "github:koalaman/shellcheck"
+
+[tools."github:koalaman/shellcheck".options]
+asset_pattern = "shellcheck-*.zip"
+
+[tools."github:koalaman/shellcheck"."platforms.windows-x64"]
+checksum = "sha256:8a4e35ab0b331c85d73567b12f2a444df187f483e5079ceffa6bda1faa2e740e"
+url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.zip"
+url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056944"
 
 [[tools."github:microsoft/apm"]]
 version = "0.28.0"
@@ -667,7 +668,17 @@ checksum = "sha256:6144c26cd5a1ff85358beb7e68e592ada6d0319aa8093cf353465d60f10aa
 url = "https://github.com/jdx/ruby/releases/download/4.0.6-1/ruby-4.0.6.arm64_linux.tar.gz"
 provenance = "github-attestations"
 
+[tools.ruby."platforms.linux-arm64-musl"]
+checksum = "sha256:6144c26cd5a1ff85358beb7e68e592ada6d0319aa8093cf353465d60f10aa970"
+url = "https://github.com/jdx/ruby/releases/download/4.0.6-1/ruby-4.0.6.arm64_linux.tar.gz"
+provenance = "github-attestations"
+
 [tools.ruby."platforms.linux-x64"]
+checksum = "sha256:aefa111873bac3b15c5c416bfaaca84e793d5312d4496d651ad79c44521b200a"
+url = "https://github.com/jdx/ruby/releases/download/4.0.6-1/ruby-4.0.6.x86_64_linux.tar.gz"
+provenance = "github-attestations"
+
+[tools.ruby."platforms.linux-x64-musl"]
 checksum = "sha256:aefa111873bac3b15c5c416bfaaca84e793d5312d4496d651ad79c44521b200a"
 url = "https://github.com/jdx/ruby/releases/download/4.0.6-1/ruby-4.0.6.x86_64_linux.tar.gz"
 provenance = "github-attestations"
@@ -676,6 +687,10 @@ provenance = "github-attestations"
 checksum = "sha256:518c5849d7ab337790943963ded4f0b402d2d4ededea265288a5a19d4c8fee18"
 url = "https://github.com/jdx/ruby/releases/download/4.0.6-1/ruby-4.0.6.macos.tar.gz"
 provenance = "github-attestations"
+
+[tools.ruby."platforms.macos-x64"]
+checksum = "sha256:837d299e8f7ddf2be31a229a7a7e019d354979825117989acb3b32b1a9be262a"
+url = "https://cache.ruby-lang.org/pub/ruby/4.0/ruby-4.0.6.tar.gz"
 
 [[tools.taplo]]
 version = "0.10.0"

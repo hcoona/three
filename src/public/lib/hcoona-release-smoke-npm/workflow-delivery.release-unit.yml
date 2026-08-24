@@ -1,0 +1,10 @@
+schema: workflow-delivery/v3/release-unit
+release-unit: hcoona-release-smoke-npm
+builds:
+  - id: npm-package
+    definition: node/npm-package-v1
+    entry-point: package.json
+    outputs:
+      - id: npm-tarball
+        role: primary-package
+        kind: npm-tarball

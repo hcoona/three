@@ -9,13 +9,12 @@ import niquests as requests
 from .constants import _DEFAULT_DPI
 
 
-def init_matplotlib(use_tex: bool = False) -> None:
-    """
-    Initialize Matplotlib with a non-interactive backend.
+def init_matplotlib(use_tex: bool = False) -> None:  # noqa: FBT001, FBT002
+    """Initialize Matplotlib with a non-interactive backend.
     This is necessary for rendering images without displaying them.
-    """
+    """  # noqa: D205
     if use_tex:
-        import matplotlib
+        import matplotlib  # noqa: ICN001, PLC0415
 
         matplotlib.use("pgf")
 
@@ -32,11 +31,10 @@ def init_matplotlib(use_tex: bool = False) -> None:
 def matplotlib_render_math_to_png(
     latex_string: str,
     output_path: pathlib.Path,
-    is_inline: bool | None = None,
-    use_tex: bool = False,
+    is_inline: bool | None = None,  # noqa: FBT001
+    use_tex: bool = False,  # noqa: FBT001, FBT002
 ) -> bool:
-    """
-    Renders a LaTeX string to a PNG image using Matplotlib.
+    """Renders a LaTeX string to a PNG image using Matplotlib.
     Adjusts figure size to tightly bound the rendered math.
 
     :param latex_string: The LaTeX string to render.
@@ -44,7 +42,7 @@ def matplotlib_render_math_to_png(
     :param is_inline: If True, render as inline math; if False, render as block math.
                       If None, auto-detect based on LaTeX string. Detection failure defaults to inline.
     :return: True if rendering was successful, False otherwise.
-    """
+    """  # noqa: D205, E501
     if not latex_string.strip():
         logging.warning("Empty LaTeX string provided for rendering.")
         return False
@@ -52,10 +50,9 @@ def matplotlib_render_math_to_png(
     if latex_string.startswith(r"\(") and latex_string.endswith(r"\)"):
         latex_string = "$" + latex_string[2:-2].strip() + "$"
         is_inline = True
-    elif latex_string.startswith(r"\[") and latex_string.endswith(r"\]"):
-        latex_string = "$" + latex_string[2:-2].strip() + "$"
-        is_inline = False
-    elif latex_string.startswith("$$") and latex_string.endswith("$$"):
+    elif (latex_string.startswith(r"\[") and latex_string.endswith(r"\]")) or (
+        latex_string.startswith("$$") and latex_string.endswith("$$")
+    ):
         latex_string = "$" + latex_string[2:-2].strip() + "$"
         is_inline = False
     elif latex_string.startswith("$") and latex_string.endswith("$"):
@@ -75,21 +72,24 @@ def matplotlib_render_math_to_png(
         fig, ax = plt.subplots(figsize=(0.01, 0.01))
 
         # Render text and turn off axis
-        text_obj = ax.text(0, 0, latex_string, fontsize=10, ha="left", va="bottom")
+        text_obj = ax.text(
+            0, 0, latex_string, fontsize=10, ha="left", va="bottom"
+        )
         ax.axis("off")
 
         # Calculate bounding box and set figure size to content
         fig.canvas.draw()  # Important to draw canvas before getting extent
-        renderer = fig.canvas.get_renderer()
-        bbox = text_obj.get_window_extent(renderer=renderer).transformed(
+        bbox = text_obj.get_window_extent().transformed(
             fig.dpi_scale_trans.inverted()
         )
 
         # Add a small padding
         pad_inches = 0.02 if is_inline else 0.1  # Smaller padding for inline
-        fig.set_size_inches(bbox.width + 2 * pad_inches, bbox.height + 2 * pad_inches)
+        fig.set_size_inches(
+            bbox.width + 2 * pad_inches, bbox.height + 2 * pad_inches
+        )
 
-        # After resizing, the text needs to be repositioned to the new bottom-left (plus padding)
+        # After resizing, the text needs to be repositioned to the new bottom-left (plus padding)  # noqa: E501
         text_obj.set_position((pad_inches, pad_inches))
 
         fig.savefig(
@@ -100,30 +100,31 @@ def matplotlib_render_math_to_png(
             pad_inches=0.01,
         )
         plt.close(fig)
-        logging.info(f"Rendered math to {output_path}")
-        return True
+        logging.info(f"Rendered math to {output_path}")  # noqa: G004
+        return True  # noqa: TRY300
     except Exception as e:
-        logging.error(
-            f"Failed to render math string '{latex_string[:50]}...' to PNG: {e}"
+        logging.exception(
+            f"Failed to render math string '{latex_string[:50]}...' to PNG: {e}"  # noqa: G004, TRY401
         )
-        if "fig" in locals() and plt.fignum_exists(fig.number):  # type: ignore
+        if "fig" in locals() and plt.fignum_exists(fig.number):  # type: ignore  # noqa: PGH003
             plt.close(fig)  # Ensure figure is closed on error if it was created
         return False
 
 
-def webtex_render_math_to_png(latex_string: str, output_path: pathlib.Path) -> bool:
-    """
-    Renders a LaTeX string to a PNG image using WebTeX.
+def webtex_render_math_to_png(
+    latex_string: str, output_path: pathlib.Path
+) -> bool:
+    """Renders a LaTeX string to a PNG image using WebTeX.
 
     :param latex_string: The LaTeX string to render.
     :param output_path: The path to save the rendered PNG image.
     :return: True if rendering was successful, False otherwise.
     """
-    if latex_string.startswith(r"\(") and latex_string.endswith(r"\)"):
-        latex_string = latex_string[2:-2].strip()
-    elif latex_string.startswith(r"\[") and latex_string.endswith(r"\]"):
-        latex_string = latex_string[2:-2].strip()
-    elif latex_string.startswith("$$") and latex_string.endswith("$$"):
+    if (
+        (latex_string.startswith(r"\(") and latex_string.endswith(r"\)"))
+        or (latex_string.startswith(r"\[") and latex_string.endswith(r"\]"))
+        or (latex_string.startswith("$$") and latex_string.endswith("$$"))
+    ):
         latex_string = latex_string[2:-2].strip()
     elif latex_string.startswith("$") and latex_string.endswith("$"):
         latex_string = latex_string[1:-1].strip()
@@ -133,13 +134,12 @@ def webtex_render_math_to_png(latex_string: str, output_path: pathlib.Path) -> b
     response = requests.get(
         r"https://latex.codecogs.com/png.latex?\dpi{300}" + latex_string
     )
-    if response.status_code == 200:
-        with open(output_path, "wb") as f:
+    if response.status_code == 200 and response.content is not None:  # noqa: PLR2004
+        with open(output_path, "wb") as f:  # noqa: PTH123
             f.write(response.content)
-        logging.info(f"Rendered math with webtex to {output_path}")
+        logging.info(f"Rendered math with webtex to {output_path}")  # noqa: G004
         return True
-    else:
-        logging.error(
-            f"Failed to render math string '{latex_string[:50]}...' to PNG: {response.status_code}"
-        )
-        return False
+    logging.error(
+        f"Failed to render math string '{latex_string[:50]}...' to PNG: {response.status_code}"  # noqa: E501, G004
+    )
+    return False

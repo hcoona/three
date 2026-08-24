@@ -64,7 +64,7 @@ def extract_icon_from_payload(payload: object) -> tuple[str | None, int | None]:
     return None, icon_size
 
 
-def build_icon_catalog(
+def build_icon_catalog(  # noqa: PLR0913
     data_raw: FactorioDataRaw,
     data_dir_path: str,
     recipes: Mapping[str, Recipe],
@@ -72,7 +72,7 @@ def build_icon_catalog(
     modules: Mapping[str, ModuleSpec],
     beacon: BeaconSpec | None,
 ) -> dict[tuple[str, str], IconSpec]:
-    """Build icon catalog for recipes/machines/modules/optional beacon and flow items."""
+    """Build icon catalog for recipes/machines/modules/optional beacon and flow items."""  # noqa: E501
     if not data_dir_path:
         return {}
     data_dir = Path(data_dir_path)

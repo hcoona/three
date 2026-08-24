@@ -1,11 +1,11 @@
-import logging
+import logging  # noqa: D100
 import os
 import pathlib
 import sys
 
 import tiktoken
 from html2text import html2text
-from rag_postgresql_openai.specialized_splitter.caring_for_your_baby_and_young_child import (
+from rag_postgresql_openai.specialized_splitter.caring_for_your_baby_and_young_child import (  # noqa: E501
     extract_boxes,
     split_section_to_subsections,
     split_subsection_into_paragraph_groups,
@@ -14,14 +14,14 @@ from rag_postgresql_openai.specialized_splitter.caring_for_your_baby_and_young_c
 from slugify import slugify
 
 
-class CaringForYourBabyAndYoungChildProcessor:
-    def __init__(self):
+class CaringForYourBabyAndYoungChildProcessor:  # noqa: D101
+    def __init__(self):  # noqa: ANN204, D107
         self._logger = logging.getLogger(__name__)
 
         self._encoding = tiktoken.get_encoding("cl100k_base")
         self._num_tokens_exceeding = {}
 
-        root_path = os.path.dirname(os.path.abspath(__file__))
+        root_path = os.path.dirname(os.path.abspath(__file__))  # noqa: PTH100, PTH120
         if os.name == "nt":
             root_path = "\\\\?\\" + root_path
 
@@ -34,18 +34,18 @@ class CaringForYourBabyAndYoungChildProcessor:
 
         self._output_directory_root.mkdir(parents=True, exist_ok=True)
 
-    def run(self, text) -> None:
+    def run(self, text) -> None:  # noqa: ANN001
         """Process the text."""
         result = split_top_level_document(text)
         if not result.chunks:
             return
 
         if not result.metadata.title:
-            raise ValueError("Top level document has no title.")
+            raise ValueError("Top level document has no title.")  # noqa: EM101, TRY003
 
         if result.metadata.type_ == "front_matter":
             if len(result.chunks) != 1:
-                raise ValueError("Front matter should have exactly one chunk.")
+                raise ValueError("Front matter should have exactly one chunk.")  # noqa: EM101, TRY003
             self._write_files(
                 self._output_directory_root,
                 slugify(result.metadata.title),
@@ -66,8 +66,8 @@ class CaringForYourBabyAndYoungChildProcessor:
                     output_parent=_output_directory_parent,
                 )
             except ValueError as e:
-                self._logger.error(
-                    f"ValueError for section {i} in {result.metadata.title}: {e}, section: {section}"
+                self._logger.error(  # noqa: TRY400
+                    f"ValueError for section {i} in {result.metadata.title}: {e}, section: {section}"  # noqa: E501, G004
                 )
                 raise
 
@@ -77,18 +77,20 @@ class CaringForYourBabyAndYoungChildProcessor:
         try:
             result = split_section_to_subsections(section)
         except ValueError as e:
-            self._logger.error(
-                f"ValueError for section {section_index} in {output_parent}: {e}, section: {section}"
+            self._logger.error(  # noqa: TRY400
+                f"ValueError for section {section_index} in {output_parent}: {e}, section: {section}"  # noqa: E501, G004
             )
             raise
 
         if not result.chunks:
-            raise ValueError("Section has no chunks.")
+            raise ValueError("Section has no chunks.")  # noqa: EM101, TRY003
 
         if not result.metadata.title:
             filename_base = f"section-{section_index}"
         else:
-            filename_base = f"section-{section_index}_{slugify(result.metadata.title)}"
+            filename_base = (
+                f"section-{section_index}_{slugify(result.metadata.title)}"
+            )
 
         section_output_directory = output_parent / filename_base
         section_output_directory.mkdir(exist_ok=True)
@@ -101,7 +103,10 @@ class CaringForYourBabyAndYoungChildProcessor:
             )
 
     def _run_for_subsection(
-        self, subsection: str, subsection_index: int, output_parent: pathlib.Path
+        self,
+        subsection: str,
+        subsection_index: int,
+        output_parent: pathlib.Path,
     ) -> None:
         result = extract_boxes(subsection)
 
@@ -136,14 +141,14 @@ class CaringForYourBabyAndYoungChildProcessor:
     def _write_files(
         self, output_directory: pathlib.Path, filename_base: str, text: str
     ) -> None:
-        with open(
+        with open(  # noqa: PTH123
             output_directory / f"{filename_base}.html",
             mode="w",
             encoding="utf-8",
         ) as out_file:
             out_file.write(text)
 
-        with open(
+        with open(  # noqa: PTH123
             output_directory / f"{filename_base}.md",
             mode="w",
             encoding="utf-8",
@@ -152,7 +157,7 @@ class CaringForYourBabyAndYoungChildProcessor:
             out_file.write(content)
 
             num_tokens = len(self._encoding.encode(content))
-            if num_tokens > 2048:
+            if num_tokens > 2048:  # noqa: PLR2004
                 name = str(
                     output_directory.relative_to(self._output_directory_root)
                     / f"{filename_base}.md"
@@ -160,15 +165,15 @@ class CaringForYourBabyAndYoungChildProcessor:
                 self._num_tokens_exceeding[name] = num_tokens
 
 
-def main():
+def main():  # noqa: ANN201, D103
     logger = logging.getLogger(__name__)
-    this_directory = os.path.dirname(os.path.abspath(__file__))
+    this_directory = os.path.dirname(os.path.abspath(__file__))  # noqa: PTH100, PTH120
 
     processor = CaringForYourBabyAndYoungChildProcessor()
 
     for i in range(11, 52):
-        with open(
-            os.path.join(
+        with open(  # noqa: PTH123
+            os.path.join(  # noqa: PTH118
                 this_directory,
                 "ingestion_cache",
                 "Caring for Your Baby and Young Child",
@@ -177,20 +182,19 @@ def main():
                 "Text",
                 f"part00{i}.xhtml",
             ),
-            mode="r",
             encoding="utf-8",
         ) as f:
             text = f.read()
             try:
                 processor.run(text=text)
             except ValueError as e:
-                logger.error(f"ValueError for part00{i}.xhtml: {e}")
+                logger.error(f"ValueError for part00{i}.xhtml: {e}")  # noqa: G004, TRY400
 
     logger.info(
-        f"Total sections exceeding 2048 tokens: {len(processor._num_tokens_exceeding)}"
+        f"Total sections exceeding 2048 tokens: {len(processor._num_tokens_exceeding)}"  # noqa: E501, G004, SLF001
     )
-    for name, num_tokens in processor._num_tokens_exceeding.items():
-        logger.info(f"{name}: {num_tokens} tokens")
+    for name, num_tokens in processor._num_tokens_exceeding.items():  # noqa: SLF001
+        logger.info(f"{name}: {num_tokens} tokens")  # noqa: G004
 
 
 if __name__ == "__main__":

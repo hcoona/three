@@ -1,6 +1,8 @@
 {
   "Exclude": [
     "(^|/)packages\\.lock\\.json$",
+    "(^|/)src/private/app/supermemo-mcp/references/Gdip_All\\.ahk$",
+    "(^|/)src/private/app/supermemo-mcp/references/supermemo_18\\.ahk$",
     "(^|/)src/private/app/OxfordWordlistExtractor/[^/]*\\.html$",
     "(^|/)tests/private/app/OxfordDictExtractor\\.Tests/.*\\.html$",
     "(^|/)GlobalSuppressions\\.cs$",

@@ -27,7 +27,7 @@ pnpm = "11.22.0"
 uv = "latest"
 
 # Git Commit Hook Manager
-hk = "latest"
+hk = "1.53.0"
 
 #
 # Linters and Formatters
@@ -135,3 +135,11 @@ run = "apm install"
 description = "Validate and reproduce the locked scan restoration plugin deployment"
 depends = ["scan-restoration-plugin-check"]
 run = "apm install --frozen"
+
+[tasks.translation-agent-plugin-check]
+description = "Validate the enterprise translation team Copilot CLI plugin"
+run = "python -B src/private/lib/enterprise-translation-team/scripts/validate_package.py"
+
+[tasks.translation-agent-plugin-eval-dry-run]
+description = "Prepare a dry-run eval workspace for the enterprise translation team plugin"
+run = "python -B src/private/lib/enterprise-translation-team/skills/enterprise-translation-team/scripts/run_copilot_evals.py --mode dry-run"

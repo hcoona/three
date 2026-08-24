@@ -1,4 +1,4 @@
-import asyncio
+import asyncio  # noqa: D100
 import logging
 import os
 import time
@@ -33,17 +33,18 @@ async def search_embedding(
     top_k: int = 10,
     probe: int = 10,
 ) -> list[dict]:
-    """
-    This function performs a vector search in the PostgreSQL database using the provided query embedding.
+    """This function performs a vector search in the PostgreSQL database using the provided query embedding.
 
     :param aconn: The PostgreSQL asynchronous connection object.
     :param query_embedding: The embedding of the query to search for.
     :param probe: The number of nearest neighbors to return.
     :return: A list of dictionaries containing the search results.
-    """
+    """  # noqa: E501
     async with aconn.cursor(row_factory=dict_row) as cursor:
         await cursor.execute(
-            sql.SQL("SET LOCAL vchordrq.probes = {};").format(sql.Literal(probe or ""))
+            sql.SQL("SET LOCAL vchordrq.probes = {};").format(
+                sql.Literal(probe or "")
+            )
         )
         await cursor.execute(
             """
@@ -62,14 +63,13 @@ async def search_bm25(
     query: str,
     top_k: int = 4,
 ) -> list[dict]:
-    """
-    This function performs a BM25 search in the PostgreSQL database using the provided query.
+    """This function performs a BM25 search in the PostgreSQL database using the provided query.
 
     :param aconn: The PostgreSQL asynchronous connection object.
     :param query: The query to search for.
     :param top_k: The number of nearest neighbors to return.
     :return: A list of dictionaries containing the search results.
-    """
+    """  # noqa: E501
     async with aconn.cursor(row_factory=dict_row) as cursor:
         await cursor.execute(
             """
@@ -80,7 +80,7 @@ async def search_bm25(
             JOIN node_embedding_bm25 ne ON n.id = ne.node_id
             ORDER BY rank
             LIMIT %s
-            """,
+            """,  # noqa: E501
             (query, top_k),
         )
         return await cursor.fetchall()
@@ -89,14 +89,13 @@ async def search_bm25(
 def weighted_rrf(
     node_ids_list: list[list[int]], weights: list[float], k: int = 60
 ) -> dict[int, float]:
-    """
-    This function performs a weighted reciprocal rank fusion (RRF) on the provided node IDs and weights.
+    """This function performs a weighted reciprocal rank fusion (RRF) on the provided node IDs and weights.
 
     :param node_ids_list: A list of lists containing node IDs for each search result.
     :param weights: A list of weights corresponding to each list of node IDs.
     :param k: The constant used in the RRF formula.
     :return: A list of dictionaries containing the fused results.
-    """
+    """  # noqa: E501
     scores = {}
     for channel_index, node_ids in enumerate(node_ids_list):
         weight = weights[channel_index]
@@ -107,9 +106,8 @@ def weighted_rrf(
     return scores
 
 
-async def rag_main(question: str) -> str:
-    """
-    This function is the main entry point for the RAG system.
+async def rag_main(question: str) -> str:  # noqa: PLR0915
+    """This function is the main entry point for the RAG system.
     It takes a question as input and returns an answer based on the provided documents.
 
     TODO(shuaizhang): Triage and split the question into multiple sub-questions.
@@ -119,8 +117,7 @@ async def rag_main(question: str) -> str:
     3. BM25 search the database with the rewritten and expanded question.
     4. Fuse & re-rank the results from the vector search and BM25 search.
     5. Use the re-ranked results to generate an answer using OpenAI's API.
-    """
-
+    """  # noqa: D205, E501
     openai_client = openai.AsyncOpenAI(
         api_key=os.getenv("LITELLM_API_KEY"),
         base_url=os.getenv("LITELLM_API_BASE"),
@@ -132,7 +129,7 @@ async def rag_main(question: str) -> str:
     )
 
     embedding_response = await openai_client.embeddings.create(
-        model=os.getenv("EMBEDDING_MODEL"),
+        model=os.environ["EMBEDDING_MODEL"],
         input=question,
     )
     query_embedding = embedding_response.data[0].embedding
@@ -157,7 +154,10 @@ async def rag_main(question: str) -> str:
     ):
         st.markdown(
             "\n".join(
-                ["1. " + q for q in result.final_output_as(RewrittenQueries).queries]
+                [
+                    "1. " + q
+                    for q in result.final_output_as(RewrittenQueries).queries
+                ]
             )
         )
 
@@ -176,11 +176,11 @@ async def rag_main(question: str) -> str:
             )
 
         with st.expander(
-            f"Vector search results ({(time.monotonic_ns() - start) / 1_000_000}ms):"
+            f"Vector search results ({(time.monotonic_ns() - start) / 1_000_000}ms):"  # noqa: E501
         ):
             st.table(
                 {
-                    "Index": [i for i in range(len(embedding_nodes))],
+                    "Index": [i for i in range(len(embedding_nodes))],  # noqa: C416
                     "Document": [node["content"] for node in embedding_nodes],
                     "Metadata": [node["metadata"] for node in embedding_nodes],
                 }
@@ -207,28 +207,33 @@ async def rag_main(question: str) -> str:
                 [
                     node
                     for node in bm25_nodes
-                    if node["id"] not in node_ids and not node_ids.add(node["id"])
+                    if node["id"] not in node_ids
+                    and not node_ids.add(node["id"])
                 ]
             )
 
         with st.expander(
-            f"BM25 search results ({(time.monotonic_ns() - start) / 1_000_000}ms):"
+            f"BM25 search results ({(time.monotonic_ns() - start) / 1_000_000}ms):"  # noqa: E501
         ):
             st.table(
                 {
-                    "Index": [i for i in range(len(bm25_deduplicated_flatten_nodes))],
+                    "Index": [  # noqa: C416
+                        i for i in range(len(bm25_deduplicated_flatten_nodes))
+                    ],
                     "Document": [
-                        node["content"] for node in bm25_deduplicated_flatten_nodes
+                        node["content"]
+                        for node in bm25_deduplicated_flatten_nodes
                     ],
                     "Metadata": [
-                        node["metadata"] for node in bm25_deduplicated_flatten_nodes
+                        node["metadata"]
+                        for node in bm25_deduplicated_flatten_nodes
                     ],
                 }
             )
 
-    node_ids_list: list[list[int]] = [[node["id"] for node in embedding_nodes]] + [
-        [node["id"] for node in bm25_nodes] for bm25_nodes in bm25_nodes_list
-    ]
+    node_ids_list: list[list[int]] = [
+        [node["id"] for node in embedding_nodes]
+    ] + [[node["id"] for node in bm25_nodes] for bm25_nodes in bm25_nodes_list]
 
     total_node_count = sum(len(node_ids) for node_ids in node_ids_list)
     weights = [
@@ -254,7 +259,7 @@ async def rag_main(question: str) -> str:
     with st.expander("RRF results:"):
         st.table(
             {
-                "Index": [i for i in range(len(rrf_nodes))],
+                "Index": [i for i in range(len(rrf_nodes))],  # noqa: C416
                 "Document": [node["content"] for node in rrf_nodes],
                 "Metadata": [node["metadata"] for node in rrf_nodes],
             }
@@ -262,17 +267,16 @@ async def rag_main(question: str) -> str:
 
     # jina-reranker-v2-base-multilingual context is only 1024 tokens.
     #
-    # Alibaba-NLP/gte-multilingual-reranker-base support text lengths up to 8192 tokens.
+    # Alibaba-NLP/gte-multilingual-reranker-base support text lengths up to 8192 tokens.  # noqa: E501
     #
     # Rerank the documents using Cohere's API.
     with st.spinner("Re-ranking..."):
         start = time.monotonic_ns()
         rerank_response: cohere.V2RerankResponse = await cohere_client.rerank(
-            model=os.getenv("RERANKING_MODEL"),
+            model=os.environ["RERANKING_MODEL"],
             query=question,
             documents=[node["content"] for node in rrf_nodes],
             top_n=_TOP_N_RERANK,
-            return_documents=False,
         )
 
     with st.expander(
@@ -282,10 +286,12 @@ async def rag_main(question: str) -> str:
             {
                 "Index": [r.index for r in rerank_response.results],
                 "Document": [
-                    rrf_nodes[r.index]["content"] for r in rerank_response.results
+                    rrf_nodes[r.index]["content"]
+                    for r in rerank_response.results
                 ],
                 "Metadata": [
-                    rrf_nodes[r.index]["metadata"] for r in rerank_response.results
+                    rrf_nodes[r.index]["metadata"]
+                    for r in rerank_response.results
                 ],
                 "Score": [r.relevance_score for r in rerank_response.results],
             }
@@ -297,7 +303,7 @@ async def rag_main(question: str) -> str:
         start = time.monotonic_ns()
         formatted_documents = "\n\n-----\n\n".join(
             [
-                f"{rrf_nodes[rerank_result.index]['content']}\nMetadata: {rrf_nodes[rerank_result.index]['metadata']}"
+                f"{rrf_nodes[rerank_result.index]['content']}\nMetadata: {rrf_nodes[rerank_result.index]['metadata']}"  # noqa: E501
                 for rerank_result in rerank_response.results
             ]
         )
@@ -317,15 +323,20 @@ Your answer must follow these rules:
   - Do **NOT** combine sources at the end—**each statement or claim must be followed by its specific source**;
 - If the answer is **not found in the documents**, respond with: **"I don't know."**
 
-Make sure to read all documents carefully before answering.\n\n"""
+Make sure to read all documents carefully before answering.\n\n"""  # noqa: E501, RUF001
                     + f"Question: {question}",
                 }
             ],
             temperature=0,
         )
 
-    st.write(f"Answer generated in {(time.monotonic_ns() - start) / 1_000_000} ms.")
-    return answer_response.choices[0].message.content.strip()
+    st.write(
+        f"Answer generated in {(time.monotonic_ns() - start) / 1_000_000} ms."
+    )
+    answer_content = answer_response.choices[0].message.content
+    if answer_content is None:
+        raise ValueError("OpenAI returned no answer.")  # noqa: EM101, TRY003
+    return answer_content.strip()
 
 
 load_dotenv()
@@ -345,7 +356,7 @@ st.set_page_config(
 
 st.title("Q&A with provided documents, backed by PostgreSQL")
 st.write(
-    "This is a demo of a question-answering system that uses PostgreSQL as the backend. "
+    "This is a demo of a question-answering system that uses PostgreSQL as the backend. "  # noqa: E501
     "You can ask questions and get answers based on the provided documents."
 )
 

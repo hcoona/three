@@ -7,10 +7,10 @@ FAIL=0
 # Extract all top-level release-* job keys (except release-completed itself).
 # Top-level jobs are indented with exactly 2 spaces followed by a colon.
 mapfile -t release_jobs < <(
-  grep -P '^  (release-[a-z0-9-]+):$' "${WORKFLOW_FILE}" \
-    | grep -oP 'release-[a-z0-9-]+' \
-    | grep -v '^release-completed$' \
-    | sort -u
+  grep -P '^  (release-[a-z0-9-]+):$' "${WORKFLOW_FILE}" |
+    grep -oP 'release-[a-z0-9-]+' |
+    grep -v '^release-completed$' |
+    sort -u
 )
 
 # Extract the needs: list of release-completed using awk.
@@ -40,10 +40,10 @@ done
 # These are not auto-detected by the release-* check above; this closes the CI-enforcement gap
 # for the attest-<lang> entries documented in the SYNC[add-new-language] checklist.
 mapfile -t attest_gate_jobs < <(
-  grep -P '^  (attest-[a-z0-9-]+):$' "${WORKFLOW_FILE}" \
-    | grep -oP 'attest-[a-z0-9-]+' \
-    | grep -v '\-enabled$' \
-    | sort -u
+  grep -P '^  (attest-[a-z0-9-]+):$' "${WORKFLOW_FILE}" |
+    grep -oP 'attest-[a-z0-9-]+' |
+    grep -v '\-enabled$' |
+    sort -u
 )
 
 for job in "${attest_gate_jobs[@]}"; do

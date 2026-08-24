@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<tbx type="TBX-Basic" style="dca" xml:lang="en-US" xmlns="urn:iso:std:iso:30042:ed-2">
+  <tbxHeader>
+    <fileDesc>
+      <publicationStmt>
+        <p>Enterprise translation team terminology eval fixture.</p>
+      </publicationStmt>
+      <sourceDesc>
+        <p>Generated from termbase.job.json for qa-package.</p>
+      </sourceDesc>
+    </fileDesc>
+  </tbxHeader>
+  <text>
+    <body>
+      <conceptEntry id="c-release-0001">
+        <descrip type="subjectField">enterprise-saas-release-management</descrip>
+        <descrip type="definition">A controlled release to a limited population before broad availability.</descrip>
+        <langSec xml:lang="zh-Hans">
+          <termSec>
+            <term>灰度发布</term>
+            <termNote type="partOfSpeech">noun</termNote>
+            <termNote type="termType">fullForm</termNote>
+          </termSec>
+        </langSec>
+        <langSec xml:lang="en-US">
+          <termSec>
+            <term>phased rollout</term>
+            <termNote type="administrativeStatus">preferredTerm-admn-sts</termNote>
+            <descrip type="context">This phased rollout is limited to pilot tenants.</descrip>
+          </termSec>
+          <termSec>
+            <term>staged rollout</term>
+            <termNote type="administrativeStatus">admittedTerm-admn-sts</termNote>
+            <note>Allowed variant of phased rollout in this client scope.</note>
+          </termSec>
+          <termSec>
+            <term>gray release</term>
+            <termNote type="administrativeStatus">deprecatedTerm-admn-sts</termNote>
+            <note>Literal false friend in release-management context.</note>
+          </termSec>
+          <termSec>
+            <term>grayscale release</term>
+            <termNote type="administrativeStatus">deprecatedTerm-admn-sts</termNote>
+            <note>Wrong technical meaning.</note>
+          </termSec>
+        </langSec>
+      </conceptEntry>
+      <conceptEntry id="c-tenant-0002">
+        <descrip type="subjectField">multi-tenant-cloud-service</descrip>
+        <descrip type="definition">An account or organizational boundary in a multi-tenant cloud service.</descrip>
+        <langSec xml:lang="zh-Hans">
+          <termSec>
+            <term>租户</term>
+            <termNote type="partOfSpeech">noun</termNote>
+            <termNote type="termType">fullForm</termNote>
+          </termSec>
+        </langSec>
+        <langSec xml:lang="en-US">
+          <termSec>
+            <term>tenant</term>
+            <termNote type="administrativeStatus">admittedTerm-admn-sts</termNote>
+            <note>Canonical JSON status: conflict.</note>
+            <descrip type="context">Only pilot tenants can enable this feature.</descrip>
+          </termSec>
+          <termSec>
+            <term>renter</term>
+            <note>Conflicting target for housing context, not cloud-account boundaries.</note>
+          </termSec>
+        </langSec>
+      </conceptEntry>
+      <conceptEntry id="c-ticket-0003">
+        <descrip type="subjectField">customer-support-workflow</descrip>
+        <descrip type="definition">A customer support case tracked by a service desk workflow.</descrip>
+        <langSec xml:lang="zh-Hans">
+          <termSec>
+            <term>工单</term>
+            <termNote type="partOfSpeech">noun</termNote>
+            <termNote type="termType">fullForm</termNote>
+          </termSec>
+        </langSec>
+        <langSec xml:lang="en-US">
+          <termSec>
+            <term>support ticket</term>
+            <termNote type="administrativeStatus">admittedTerm-admn-sts</termNote>
+            <note>Canonical JSON status: needs_confirmation.</note>
+            <descrip type="context">After the customer submits a support ticket, they receive a confirmation email.</descrip>
+          </termSec>
+          <termSec>
+            <term>work order</term>
+            <note>Potential field-service meaning, not customer support.</note>
+          </termSec>
+        </langSec>
+      </conceptEntry>
+    </body>
+  </text>
+</tbx>

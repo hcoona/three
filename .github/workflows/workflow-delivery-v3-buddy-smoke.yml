@@ -1,0 +1,426 @@
+name: Workflow Delivery v3 Buddy smoke
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+env:
+  WDV3_PACKAGE: three-workflow-delivery-v3
+  WDV3_PROJECT: src/public/lib/hcoona-release-smoke-npm
+  WDV3_PURPOSE: live-release
+
+jobs:
+  request:
+    name: Normalize Buddy live request
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      intent-artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      intent-artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+      intent-artifact-name: ${{ steps.request.outputs.intent-artifact-name }}
+      intent-digest: ${{ steps.request.outputs.intent-digest }}
+      request-id: ${{ steps.request.outputs.request-id }}
+      selected-ref: ${{ steps.request.outputs.selected-ref }}
+      target-sha: ${{ steps.request.outputs.target-sha }}
+    steps:
+      - name: Check out exact selected target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: '0.10.9'
+      - name: Normalize fixed live request
+        id: request
+        run: |
+          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+            three-workflow-delivery-v3 release normalize-live-request \
+            --repository "${GITHUB_REPOSITORY}" \
+            --selected-ref "${GITHUB_REF}" \
+            --target "${GITHUB_SHA}" \
+            --actor "${GITHUB_ACTOR}" \
+            --workflow-run-id "${GITHUB_RUN_ID}" \
+            --run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --output .wdv3/release-intent.json \
+            --github-output "${GITHUB_OUTPUT}"
+          digest="$(sha256sum .wdv3/release-intent.json | cut -d' ' -f1)"
+          artifact_name="wdv3-live-buddy-request-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${digest}.json"
+          mv .wdv3/release-intent.json ".wdv3/${artifact_name}"
+          # shellcheck disable=SC2129
+          echo "intent-artifact-name=${artifact_name}" >> "${GITHUB_OUTPUT}"
+          echo "selected-ref=${GITHUB_REF}" >> "${GITHUB_OUTPUT}"
+          echo "target-sha=${GITHUB_SHA}" >> "${GITHUB_OUTPUT}"
+      - name: Upload Release Intent
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ steps.request.outputs.intent-artifact-name }}
+          path: .wdv3/${{ steps.request.outputs.intent-artifact-name }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+
+  discover-node:
+    name: Discover exact Node facts
+    needs: request
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      intent-artifact-id: ${{ needs.request.outputs.intent-artifact-id }}
+      intent-artifact-digest: ${{ needs.request.outputs.intent-artifact-digest }}
+      intent-artifact-name: ${{ needs.request.outputs.intent-artifact-name }}
+      intent-digest: ${{ needs.request.outputs.intent-digest }}
+      request-id: ${{ needs.request.outputs.request-id }}
+      selected-ref: ${{ needs.request.outputs.selected-ref }}
+      target-sha: ${{ needs.request.outputs.target-sha }}
+      provider-artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      provider-artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+      provider-artifact-name: ${{ steps.provider.outputs.provider-artifact-name }}
+      provider-digest: ${{ steps.provider.outputs.provider-digest }}
+    steps:
+      - name: Check out exact selected target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: '0.10.9'
+      - name: Install exact toolchain
+        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        with:
+          experimental: true
+          install: true
+      - name: Download Release Intent by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.request.outputs.intent-artifact-id }}
+          path: .wdv3/input
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Admit current Release Intent
+        run: |
+          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+            three-workflow-delivery-v3 release admit-intent \
+            --purpose "${WDV3_PURPOSE}" \
+            --workflow-run-id "${GITHUB_RUN_ID}" \
+            --run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --target "${GITHUB_SHA}" \
+            --intent ".wdv3/input/${{ needs.request.outputs.intent-artifact-name }}" \
+            --intent-digest "${{ needs.request.outputs.intent-digest }}" \
+            --intent-artifact-id "${{ needs.request.outputs.intent-artifact-id }}" \
+            --intent-artifact-digest "${{ needs.request.outputs.intent-artifact-digest }}"
+      - name: Run Node Provider once
+        run: |
+          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+            three-workflow-delivery-v3 repository provide-node \
+            --request-id "${{ needs.request.outputs.request-id }}" \
+            --purpose "${WDV3_PURPOSE}" \
+            --workflow-run-id "${GITHUB_RUN_ID}" \
+            --run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --target "${GITHUB_SHA}" \
+            --compiler-producer compile-live-model \
+            --provider-producer discover-node \
+            --control "workflow-delivery-v3:${GITHUB_SHA}" \
+            --channel buddy \
+            --release-unit hcoona-release-smoke-npm \
+            --fetch-depth 0 \
+            --no-persist-credentials \
+            --output .wdv3/node-provider-result.json
+      - name: Bind Provider payload digest
+        id: provider
+        run: |
+          digest="$(sha256sum .wdv3/node-provider-result.json | cut -d' ' -f1)"
+          artifact_name="wdv3-live-buddy-node-provider-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${digest}.json"
+          mv .wdv3/node-provider-result.json ".wdv3/${artifact_name}"
+          echo "provider-digest=sha256:${digest}" >> "${GITHUB_OUTPUT}"
+          echo "provider-artifact-name=${artifact_name}" >> "${GITHUB_OUTPUT}"
+      - name: Upload Provider Result
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ steps.provider.outputs.provider-artifact-name }}
+          path: .wdv3/${{ steps.provider.outputs.provider-artifact-name }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+
+  compile-model:
+    name: Compile admitted live Repository Model
+    needs: discover-node
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      intent-artifact-id: ${{ needs.discover-node.outputs.intent-artifact-id }}
+      intent-artifact-digest: ${{ needs.discover-node.outputs.intent-artifact-digest }}
+      intent-artifact-name: ${{ needs.discover-node.outputs.intent-artifact-name }}
+      intent-digest: ${{ needs.discover-node.outputs.intent-digest }}
+      request-id: ${{ needs.discover-node.outputs.request-id }}
+      selected-ref: ${{ needs.discover-node.outputs.selected-ref }}
+      target-sha: ${{ needs.discover-node.outputs.target-sha }}
+      provider-artifact-id: ${{ needs.discover-node.outputs.provider-artifact-id }}
+      provider-artifact-digest: ${{ needs.discover-node.outputs.provider-artifact-digest }}
+      provider-artifact-name: ${{ needs.discover-node.outputs.provider-artifact-name }}
+      repository-model-artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      repository-model-artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+      repository-model-artifact-name: ${{ steps.compile.outputs.repository-model-artifact-name }}
+      repository-model-digest: ${{ steps.compile.outputs.repository-model-digest }}
+      execution-concurrency-key: ${{ steps.compile.outputs.execution-concurrency-key }}
+    steps:
+      - name: Check out exact selected target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: '0.10.9'
+      - name: Download Release Intent by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.discover-node.outputs.intent-artifact-id }}
+          path: .wdv3/input
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Download Provider Result by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.discover-node.outputs.provider-artifact-id }}
+          path: .wdv3/input
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Compile without rerunning Provider
+        id: compile
+        run: |
+          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+            three-workflow-delivery-v3 release compile-live-model \
+            --workflow-run-id "${GITHUB_RUN_ID}" \
+            --run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --target "${GITHUB_SHA}" \
+            --intent ".wdv3/input/${{ needs.discover-node.outputs.intent-artifact-name }}" \
+            --intent-digest "${{ needs.discover-node.outputs.intent-digest }}" \
+            --intent-artifact-id "${{ needs.discover-node.outputs.intent-artifact-id }}" \
+            --intent-artifact-digest "${{ needs.discover-node.outputs.intent-artifact-digest }}" \
+            --provider-result ".wdv3/input/${{ needs.discover-node.outputs.provider-artifact-name }}" \
+            --provider-artifact-id "${{ needs.discover-node.outputs.provider-artifact-id }}" \
+            --provider-artifact-digest "${{ needs.discover-node.outputs.provider-artifact-digest }}" \
+            --output .wdv3/repository-model.json \
+            --github-output "${GITHUB_OUTPUT}"
+          digest="$(sha256sum .wdv3/repository-model.json | cut -d' ' -f1)"
+          artifact_name="wdv3-live-buddy-repository-model-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${digest}.json"
+          mv .wdv3/repository-model.json ".wdv3/${artifact_name}"
+          echo "repository-model-artifact-name=${artifact_name}" >> "${GITHUB_OUTPUT}"
+      - name: Upload admitted Repository Model
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ steps.compile.outputs.repository-model-artifact-name }}
+          path: .wdv3/${{ steps.compile.outputs.repository-model-artifact-name }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+
+  evaluate-live-eligibility:
+    name: Evaluate live eligibility before Attempt
+    # Governance remains blocked unless the protected attestation has live_enabled=true.
+    needs: compile-model
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      intent-artifact-id: ${{ needs.compile-model.outputs.intent-artifact-id }}
+      intent-artifact-digest: ${{ needs.compile-model.outputs.intent-artifact-digest }}
+      intent-artifact-name: ${{ needs.compile-model.outputs.intent-artifact-name }}
+      intent-digest: ${{ needs.compile-model.outputs.intent-digest }}
+      request-id: ${{ needs.compile-model.outputs.request-id }}
+      selected-ref: ${{ needs.compile-model.outputs.selected-ref }}
+      target-sha: ${{ needs.compile-model.outputs.target-sha }}
+      repository-model-artifact-id: ${{ needs.compile-model.outputs.repository-model-artifact-id }}
+      repository-model-artifact-digest: ${{ needs.compile-model.outputs.repository-model-artifact-digest }}
+      repository-model-artifact-name: ${{ needs.compile-model.outputs.repository-model-artifact-name }}
+      repository-model-digest: ${{ needs.compile-model.outputs.repository-model-digest }}
+      execution-concurrency-key: ${{ needs.compile-model.outputs.execution-concurrency-key }}
+      live-eligibility-artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      live-eligibility-artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+      live-eligibility-artifact-name: ${{ steps.eligibility.outputs.live-eligibility-artifact-name }}
+      live-eligibility-digest: ${{ steps.eligibility.outputs.live-eligibility-digest }}
+      live-result: ${{ steps.eligibility.outputs.live-result }}
+    steps:
+      - name: Check out exact selected target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: '0.10.9'
+      - name: Download Repository Model by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.compile-model.outputs.repository-model-artifact-id }}
+          path: .wdv3/input
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Download Release Intent by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.compile-model.outputs.intent-artifact-id }}
+          path: .wdv3/input
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Evaluate fixed-source live eligibility
+        id: eligibility
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+            python eng/scripts/workflow_delivery_v3_consumer_policy.py \
+            --repository-root . > .wdv3/consumer-policy.json
+          consumer_status=$?
+          set -e
+          if [[ "${consumer_status}" != "0" && "${consumer_status}" != "1" ]]; then
+            echo "consumer policy failed with status ${consumer_status}" >&2
+            exit "${consumer_status}"
+          fi
+          consumer_result="$(
+            uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+              python -c \
+              'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["result"])' \
+              .wdv3/consumer-policy.json
+          )"
+          if [[
+            ("${consumer_status}" == "0" && "${consumer_result}" != "clean") ||
+            ("${consumer_status}" == "1" && "${consumer_result}" != "consumer")
+          ]]; then
+            echo "consumer policy status and result disagree" >&2
+            exit 2
+          fi
+          set +e
+          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+            three-workflow-delivery-v3 release evaluate-live-eligibility \
+            --github-token "${GITHUB_TOKEN}" \
+            --consumer-policy .wdv3/consumer-policy.json \
+            --workflow-run-id "${GITHUB_RUN_ID}" \
+            --run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --target "${GITHUB_SHA}" \
+            --intent ".wdv3/input/${{ needs.compile-model.outputs.intent-artifact-name }}" \
+            --intent-digest "${{ needs.compile-model.outputs.intent-digest }}" \
+            --intent-artifact-id "${{ needs.compile-model.outputs.intent-artifact-id }}" \
+            --intent-artifact-digest "${{ needs.compile-model.outputs.intent-artifact-digest }}" \
+            --repository-model ".wdv3/input/${{ needs.compile-model.outputs.repository-model-artifact-name }}" \
+            --repository-model-digest "${{ needs.compile-model.outputs.repository-model-digest }}" \
+            --repository-model-artifact-id "${{ needs.compile-model.outputs.repository-model-artifact-id }}" \
+            --repository-model-artifact-digest "${{ needs.compile-model.outputs.repository-model-artifact-digest }}" \
+            --output .wdv3/live-eligibility-decision.json \
+            --github-output "${GITHUB_OUTPUT}"
+          eligibility_status=$?
+          set -e
+          if [[ "${eligibility_status}" != "0" && "${eligibility_status}" != "1" ]]; then
+            echo "live eligibility failed with status ${eligibility_status}" >&2
+            exit "${eligibility_status}"
+          fi
+          decision_result="$(
+            uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+              python -c \
+              'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["result"])' \
+              .wdv3/live-eligibility-decision.json
+          )"
+          if [[
+            ("${eligibility_status}" == "0" && "${decision_result}" != "pass") ||
+            ("${eligibility_status}" == "1" && "${decision_result}" != "blocked")
+          ]]; then
+            echo "live eligibility status and Decision disagree" >&2
+            exit 2
+          fi
+          digest="$(sha256sum .wdv3/live-eligibility-decision.json | cut -d' ' -f1)"
+          artifact_name="wdv3-live-buddy-eligibility-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}-${digest}.json"
+          mv .wdv3/live-eligibility-decision.json ".wdv3/${artifact_name}"
+          {
+            echo "consumer-policy-status=${consumer_status}"
+            echo "eligibility-status=${eligibility_status}"
+            echo "live-eligibility-artifact-name=${artifact_name}"
+          } >> "${GITHUB_OUTPUT}"
+      - name: Upload Live Eligibility Decision
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ steps.eligibility.outputs.live-eligibility-artifact-name }}
+          path: .wdv3/${{ steps.eligibility.outputs.live-eligibility-artifact-name }}
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+          archive: false
+          include-hidden-files: true
+      - name: Propagate Live Eligibility status
+        if: always()
+        run: |
+          if [[ "${{ steps.eligibility.outcome }}" != "success" ]]; then
+            echo "live eligibility production did not complete" >&2
+            exit 1
+          fi
+          if [[ "${{ steps.upload.outcome }}" != "success" ]]; then
+            echo "Live Eligibility Decision upload did not complete" >&2
+            exit 1
+          fi
+          status="${{ steps.eligibility.outputs.eligibility-status }}"
+          case "${status}" in
+            0) ;;
+            1) exit 1 ;;
+            *)
+              echo "unexpected live eligibility status: ${status}" >&2
+              exit 2
+              ;;
+          esac
+
+  run-live-attempt:
+    name: Run same-revision Buddy live Attempt
+    if: needs.evaluate-live-eligibility.outputs.live-result == 'admitted'
+    needs: evaluate-live-eligibility
+    uses: ./.github/workflows/workflow-delivery-v3-live-attempt.yml
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    concurrency:
+      group: wdv3-execution-${{ needs.evaluate-live-eligibility.outputs.execution-concurrency-key }}
+      cancel-in-progress: false
+    with:
+      request-id: ${{ needs.evaluate-live-eligibility.outputs.request-id }}
+      selected-ref: ${{ needs.evaluate-live-eligibility.outputs.selected-ref }}
+      target-sha: ${{ needs.evaluate-live-eligibility.outputs.target-sha }}
+      intent-artifact-id: ${{ needs.evaluate-live-eligibility.outputs.intent-artifact-id }}
+      intent-artifact-digest: ${{ needs.evaluate-live-eligibility.outputs.intent-artifact-digest }}
+      intent-artifact-name: ${{ needs.evaluate-live-eligibility.outputs.intent-artifact-name }}
+      intent-digest: ${{ needs.evaluate-live-eligibility.outputs.intent-digest }}
+      repository-model-artifact-id: ${{ needs.evaluate-live-eligibility.outputs.repository-model-artifact-id }}
+      repository-model-artifact-digest: ${{ needs.evaluate-live-eligibility.outputs.repository-model-artifact-digest }}
+      repository-model-artifact-name: ${{ needs.evaluate-live-eligibility.outputs.repository-model-artifact-name }}
+      repository-model-digest: ${{ needs.evaluate-live-eligibility.outputs.repository-model-digest }}
+      live-eligibility-artifact-id: ${{ needs.evaluate-live-eligibility.outputs.live-eligibility-artifact-id }}
+      live-eligibility-artifact-digest: ${{ needs.evaluate-live-eligibility.outputs.live-eligibility-artifact-digest }}
+      live-eligibility-artifact-name: ${{ needs.evaluate-live-eligibility.outputs.live-eligibility-artifact-name }}
+      live-eligibility-digest: ${{ needs.evaluate-live-eligibility.outputs.live-eligibility-digest }}

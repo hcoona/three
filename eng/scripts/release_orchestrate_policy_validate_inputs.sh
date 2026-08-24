@@ -19,7 +19,7 @@ assert_equals() {
   local key="$1"
   local actual="$2"
   local expected="$3"
-  local channel="${CHANNEL:-}"  # capture at call-time; explicit rather than relying on scope
+  local channel="${CHANNEL:-}" # capture at call-time; explicit rather than relying on scope
   if [[ "${actual}" != "${expected}" ]]; then
     echo "Channel '${channel}' policy mismatch for '${key}': expected '${expected}', got '${actual}'." >&2
     exit 1
@@ -34,7 +34,7 @@ is_channel_allowlisted() {
   # case, making the empty-allowlist behaviour explicit rather than relying on the
   # '[[ -z "${entry}" ]] && continue' guard inside the loop.
   [[ -z "${CHANNEL_ALLOWLIST:-}" ]] && return 1
-  IFS=',' read -ra allowlist <<< "${CHANNEL_ALLOWLIST}"
+  IFS=',' read -ra allowlist <<<"${CHANNEL_ALLOWLIST}"
   for entry in "${allowlist[@]}"; do
     # Trim leading and trailing whitespace.
     entry="${entry#"${entry%%[![:space:]]*}"}"
@@ -171,107 +171,107 @@ if [[ "${CHANNEL}" == "x-official" || "${CHANNEL}" == "x-buddy" ]]; then
 fi
 
 case "${CHANNEL}" in
-  official)
-    assert_equals "enforce_prerelease_only" "${ENFORCE_PRERELEASE_ONLY}" "false"
-    assert_equals "enforce_non_clobber" "${ENFORCE_NON_CLOBBER}" "false"
-    # SYNC[add-new-language] — add assert_equals for publish_<lang>_<registry> in official channel below
-    assert_equals "publish_python_pypi" "${PUBLISH_PYTHON_PYPI}" "true"
-    assert_equals "publish_node_gpr" "${PUBLISH_NODE_GPR}" "true"
-    # Note: WXT projects must still pass publish_node_npmjs=true to satisfy policy,
-    # but all Node publish jobs are gated on is_wxt != 'true', so this flag has
-    # no runtime effect for WXT projects.
-    echo "::notice::Official channel policy requires publish_node_npmjs=true. For WXT (browser extension) projects this flag satisfies policy but has no runtime effect (WXT artifacts are not published as npm packages); for Node-npm projects it gates npmjs publishing."
-    assert_equals "publish_node_npmjs" "${PUBLISH_NODE_NPMJS}" "true"
-    assert_equals "publish_ruby_gpr" "${PUBLISH_RUBY_GPR}" "true"
-    assert_equals "publish_ruby_rubygems" "${PUBLISH_RUBY_RUBYGEMS}" "true"
-    assert_equals "enable_attestation" "${ENABLE_ATTESTATION}" "true"
-    assert_equals "github_release_prerelease" "${GITHUB_RELEASE_PRERELEASE}" "false"
-    ;;
-  buddy)
-    assert_equals "enforce_prerelease_only" "${ENFORCE_PRERELEASE_ONLY}" "true"
-    assert_equals "enforce_non_clobber" "${ENFORCE_NON_CLOBBER}" "true"
-    # SYNC[add-new-language] (B2) — add assert_equals / assert_disabled checks for the new
-    # language flags under the buddy channel case. This step is NOT optional: omitting it causes a
-    # silent policy bypass where the buddy channel will not enforce the new language's flags and
-    # misconfigured callers will pass policy validation without error.
-    # B2: Add assert_disabled / assert_equals checks for the new language flags under the buddy channel case.
-    assert_equals "publish_python_pypi" "${PUBLISH_PYTHON_PYPI}" "false"
-    assert_equals "publish_node_gpr" "${PUBLISH_NODE_GPR}" "true"
-    assert_equals "publish_node_npmjs" "${PUBLISH_NODE_NPMJS}" "false"
-    assert_equals "publish_ruby_gpr" "${PUBLISH_RUBY_GPR}" "true"
-    assert_equals "publish_ruby_rubygems" "${PUBLISH_RUBY_RUBYGEMS}" "false"
-    assert_equals "enable_attestation" "${ENABLE_ATTESTATION}" "false"
-    assert_equals "github_release_prerelease" "${GITHUB_RELEASE_PRERELEASE}" "true"
-    ;;
-  *)
-    # Validate CHANNEL format before allowlist lookup so operators get a targeted
-    # "invalid format" error (with rename guidance) rather than the generic
-    # "Unknown channel — add to allowlist" message, which would send them in the
-    # wrong direction (adding an invalid-format entry would itself fail immediately).
-    # The official/buddy values never reach this branch (handled by the case arms above),
-    # and x-official/x-buddy are rejected by the pre-case guards, so we check only
-    # the custom-channel format here.
-    if [[ ! "${CHANNEL}" =~ ${CHANNEL_NAME_REGEX} ]]; then
-      echo "Channel '${CHANNEL}' has an invalid format and cannot be used or allowlisted." >&2
-      echo "  Required format: start and end with a lowercase letter or digit;" >&2
-      echo "  each hyphen or underscore must be immediately preceded and followed by a letter or digit." >&2
-      echo "  No consecutive separators, mixed sequences, or leading/trailing separators." >&2
-      echo "  Valid examples: staging, my-channel, canary2" >&2
-      echo "  Common fixes: use lowercase only; remove leading/trailing separators; avoid consecutive hyphens/underscores." >&2
-      echo "  See .github/workflows/REFACTOR_PLAN.md \"Breaking changes in Step 2\" for migration examples." >&2
+official)
+  assert_equals "enforce_prerelease_only" "${ENFORCE_PRERELEASE_ONLY}" "false"
+  assert_equals "enforce_non_clobber" "${ENFORCE_NON_CLOBBER}" "false"
+  # SYNC[add-new-language] — add assert_equals for publish_<lang>_<registry> in official channel below
+  assert_equals "publish_python_pypi" "${PUBLISH_PYTHON_PYPI}" "true"
+  assert_equals "publish_node_gpr" "${PUBLISH_NODE_GPR}" "true"
+  # Note: WXT projects must still pass publish_node_npmjs=true to satisfy policy,
+  # but all Node publish jobs are gated on is_wxt != 'true', so this flag has
+  # no runtime effect for WXT projects.
+  echo "::notice::Official channel policy requires publish_node_npmjs=true. For WXT (browser extension) projects this flag satisfies policy but has no runtime effect (WXT artifacts are not published as npm packages); for Node-npm projects it gates npmjs publishing."
+  assert_equals "publish_node_npmjs" "${PUBLISH_NODE_NPMJS}" "true"
+  assert_equals "publish_ruby_gpr" "${PUBLISH_RUBY_GPR}" "true"
+  assert_equals "publish_ruby_rubygems" "${PUBLISH_RUBY_RUBYGEMS}" "true"
+  assert_equals "enable_attestation" "${ENABLE_ATTESTATION}" "true"
+  assert_equals "github_release_prerelease" "${GITHUB_RELEASE_PRERELEASE}" "false"
+  ;;
+buddy)
+  assert_equals "enforce_prerelease_only" "${ENFORCE_PRERELEASE_ONLY}" "true"
+  assert_equals "enforce_non_clobber" "${ENFORCE_NON_CLOBBER}" "true"
+  # SYNC[add-new-language] (B2) — add assert_equals / assert_disabled checks for the new
+  # language flags under the buddy channel case. This step is NOT optional: omitting it causes a
+  # silent policy bypass where the buddy channel will not enforce the new language's flags and
+  # misconfigured callers will pass policy validation without error.
+  # B2: Add assert_disabled / assert_equals checks for the new language flags under the buddy channel case.
+  assert_equals "publish_python_pypi" "${PUBLISH_PYTHON_PYPI}" "false"
+  assert_equals "publish_node_gpr" "${PUBLISH_NODE_GPR}" "true"
+  assert_equals "publish_node_npmjs" "${PUBLISH_NODE_NPMJS}" "false"
+  assert_equals "publish_ruby_gpr" "${PUBLISH_RUBY_GPR}" "true"
+  assert_equals "publish_ruby_rubygems" "${PUBLISH_RUBY_RUBYGEMS}" "false"
+  assert_equals "enable_attestation" "${ENABLE_ATTESTATION}" "false"
+  assert_equals "github_release_prerelease" "${GITHUB_RELEASE_PRERELEASE}" "true"
+  ;;
+*)
+  # Validate CHANNEL format before allowlist lookup so operators get a targeted
+  # "invalid format" error (with rename guidance) rather than the generic
+  # "Unknown channel — add to allowlist" message, which would send them in the
+  # wrong direction (adding an invalid-format entry would itself fail immediately).
+  # The official/buddy values never reach this branch (handled by the case arms above),
+  # and x-official/x-buddy are rejected by the pre-case guards, so we check only
+  # the custom-channel format here.
+  if [[ ! "${CHANNEL}" =~ ${CHANNEL_NAME_REGEX} ]]; then
+    echo "Channel '${CHANNEL}' has an invalid format and cannot be used or allowlisted." >&2
+    echo "  Required format: start and end with a lowercase letter or digit;" >&2
+    echo "  each hyphen or underscore must be immediately preceded and followed by a letter or digit." >&2
+    echo "  No consecutive separators, mixed sequences, or leading/trailing separators." >&2
+    echo "  Valid examples: staging, my-channel, canary2" >&2
+    echo "  Common fixes: use lowercase only; remove leading/trailing separators; avoid consecutive hyphens/underscores." >&2
+    echo "  See .github/workflows/REFACTOR_PLAN.md \"Breaking changes in Step 2\" for migration examples." >&2
+    exit 1
+  fi
+  # SECURITY: Allowlisted channels bypass ALL policy assertions (official/buddy
+  # profile matrix is not enforced). This is an intentional escape hatch for
+  # non-production channels (e.g., staging, canary). Access control relies on
+  # repository branch protection — restrict default-branch merge to trusted contributors.
+  if is_channel_allowlisted "${CHANNEL}"; then
+    echo "Channel '${CHANNEL}' is explicitly allowlisted; skipping strict channel profile assertions."
+    # github_release_prerelease is not enforced for custom channels.
+    # The caller is responsible for setting it correctly.
+    # SECURITY: Production registry publishing (PyPI/npmjs/RubyGems) is prohibited
+    # for allowlisted channels. These registries rely on GitHub environment required
+    # reviewers as the sole gating mechanism; the reusable workflow cannot enforce
+    # caller origin. To intentionally publish a custom channel to a production
+    # registry, remove these assertions and accept full responsibility for access control.
+    # SYNC[add-new-language] — add a prohibition clause here for each new production
+    # registry flag (PUBLISH_<LANG>_<REGISTRY>) to prevent allowlisted custom channels
+    # from publishing to production registries without explicit policy approval.
+    # Note: GPR flags (publish_node_gpr, publish_ruby_gpr) are intentionally excluded —
+    # GPR authenticates via github.token (no OIDC, no environment reviewers required).
+    if [[ "${PUBLISH_PYTHON_PYPI}" == "true" ]]; then
+      echo "Allowlisted channel '${CHANNEL}' may not set publish_python_pypi=true (production registry)." >&2
+      echo "Production registry publishing (PyPI/npmjs/RubyGems) is restricted to the official channel only." >&2
       exit 1
     fi
-    # SECURITY: Allowlisted channels bypass ALL policy assertions (official/buddy
-    # profile matrix is not enforced). This is an intentional escape hatch for
-    # non-production channels (e.g., staging, canary). Access control relies on
-    # repository branch protection — restrict default-branch merge to trusted contributors.
-    if is_channel_allowlisted "${CHANNEL}"; then
-      echo "Channel '${CHANNEL}' is explicitly allowlisted; skipping strict channel profile assertions."
-      # github_release_prerelease is not enforced for custom channels.
-      # The caller is responsible for setting it correctly.
-      # SECURITY: Production registry publishing (PyPI/npmjs/RubyGems) is prohibited
-      # for allowlisted channels. These registries rely on GitHub environment required
-      # reviewers as the sole gating mechanism; the reusable workflow cannot enforce
-      # caller origin. To intentionally publish a custom channel to a production
-      # registry, remove these assertions and accept full responsibility for access control.
-      # SYNC[add-new-language] — add a prohibition clause here for each new production
-      # registry flag (PUBLISH_<LANG>_<REGISTRY>) to prevent allowlisted custom channels
-      # from publishing to production registries without explicit policy approval.
-      # Note: GPR flags (publish_node_gpr, publish_ruby_gpr) are intentionally excluded —
-      # GPR authenticates via github.token (no OIDC, no environment reviewers required).
-      if [[ "${PUBLISH_PYTHON_PYPI}" == "true" ]]; then
-        echo "Allowlisted channel '${CHANNEL}' may not set publish_python_pypi=true (production registry)." >&2
-        echo "Production registry publishing (PyPI/npmjs/RubyGems) is restricted to the official channel only." >&2
-        exit 1
-      fi
-      if [[ "${PUBLISH_NODE_NPMJS}" == "true" ]]; then
-        echo "Allowlisted channel '${CHANNEL}' may not set publish_node_npmjs=true (production registry)." >&2
-        echo "Production registry publishing (PyPI/npmjs/RubyGems) is restricted to the official channel only." >&2
-        exit 1
-      fi
-      if [[ "${PUBLISH_RUBY_RUBYGEMS}" == "true" ]]; then
-        echo "Allowlisted channel '${CHANNEL}' may not set publish_ruby_rubygems=true (production registry)." >&2
-        echo "Production registry publishing (PyPI/npmjs/RubyGems) is restricted to the official channel only." >&2
-        exit 1
-      fi
-      # NOTE: publish_node_gpr and publish_ruby_gpr are intentionally not blocked for
-      # allowlisted channels. GitHub Packages (GPR) authenticates via github.token which
-      # is already scoped to the repository — no OIDC nor environment reviewers are
-      # involved. Custom channels (e.g., staging) commonly use GPR to distribute
-      # pre-production artifacts. If you want to prevent GPR publishing for custom
-      # channels, add an explicit prohibition here.
-      echo "::notice title=Custom channel::Allowlisted channel '${CHANNEL}' active. Actor: ${GITHUB_ACTOR}, ref: ${GITHUB_REF_NAME}. Verify branch protection restricts merge access to trusted contributors."
-      {
-        echo ""
-        echo "> [!WARNING]"
-        echo "> **Custom channel \`${CHANNEL}\` is allowlisted.** Actor: \`${GITHUB_ACTOR}\`, ref: \`${GITHUB_REF_NAME}\`."
-        echo "> Access control relies entirely on repository branch protection."
-        echo "> Ensure only trusted contributors have merge access to this caller workflow file."
-      } >> "${GITHUB_STEP_SUMMARY:-/dev/null}" || true
-    else
-      echo "Unknown channel '${CHANNEL}'. Refusing to continue without explicit allowlisting." >&2
-      echo "Set 'channel_allowlist' to include '${CHANNEL}' only when this is intentional." >&2
+    if [[ "${PUBLISH_NODE_NPMJS}" == "true" ]]; then
+      echo "Allowlisted channel '${CHANNEL}' may not set publish_node_npmjs=true (production registry)." >&2
+      echo "Production registry publishing (PyPI/npmjs/RubyGems) is restricted to the official channel only." >&2
       exit 1
     fi
-    ;;
+    if [[ "${PUBLISH_RUBY_RUBYGEMS}" == "true" ]]; then
+      echo "Allowlisted channel '${CHANNEL}' may not set publish_ruby_rubygems=true (production registry)." >&2
+      echo "Production registry publishing (PyPI/npmjs/RubyGems) is restricted to the official channel only." >&2
+      exit 1
+    fi
+    # NOTE: publish_node_gpr and publish_ruby_gpr are intentionally not blocked for
+    # allowlisted channels. GitHub Packages (GPR) authenticates via github.token which
+    # is already scoped to the repository — no OIDC nor environment reviewers are
+    # involved. Custom channels (e.g., staging) commonly use GPR to distribute
+    # pre-production artifacts. If you want to prevent GPR publishing for custom
+    # channels, add an explicit prohibition here.
+    echo "::notice title=Custom channel::Allowlisted channel '${CHANNEL}' active. Actor: ${GITHUB_ACTOR}, ref: ${GITHUB_REF_NAME}. Verify branch protection restricts merge access to trusted contributors."
+    {
+      echo ""
+      echo "> [!WARNING]"
+      echo "> **Custom channel \`${CHANNEL}\` is allowlisted.** Actor: \`${GITHUB_ACTOR}\`, ref: \`${GITHUB_REF_NAME}\`."
+      echo "> Access control relies entirely on repository branch protection."
+      echo "> Ensure only trusted contributors have merge access to this caller workflow file."
+    } >>"${GITHUB_STEP_SUMMARY:-/dev/null}" || true
+  else
+    echo "Unknown channel '${CHANNEL}'. Refusing to continue without explicit allowlisting." >&2
+    echo "Set 'channel_allowlist' to include '${CHANNEL}' only when this is intentional." >&2
+    exit 1
+  fi
+  ;;
 esac

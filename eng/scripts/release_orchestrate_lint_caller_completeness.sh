@@ -3,7 +3,6 @@ set -Eeuo pipefail
 
 ORCHESTRATE_FILE=".github/workflows/release-orchestrate.yml"
 OFFICIAL_FILE=".github/workflows/official.yml"
-BUDDY_FILE=".github/workflows/buddy.yml"
 FAIL=0
 
 # Extract all publish_* input names declared in the orchestrate workflow inputs: block.
@@ -15,18 +14,16 @@ mapfile -t publish_inputs < <(
 )
 
 for flag in "${publish_inputs[@]}"; do
-  for caller_file in "${OFFICIAL_FILE}" "${BUDDY_FILE}"; do
-    if ! grep -qP "^\s+${flag}:" "${caller_file}"; then
-      echo "ERROR: '${flag}' is declared in release-orchestrate.yml inputs but not explicitly passed in '${caller_file}'." >&2
-      FAIL=1
-    fi
-  done
+  if ! grep -qP "^\s+${flag}:" "${OFFICIAL_FILE}"; then
+    echo "ERROR: '${flag}' is declared in release-orchestrate.yml inputs but not explicitly passed in '${OFFICIAL_FILE}'." >&2
+    FAIL=1
+  fi
 done
 
 if [[ "${FAIL}" -ne 0 ]]; then
   echo "Caller completeness check failed." >&2
   echo "When adding a new publish_* input to release-orchestrate.yml (Step A)," >&2
-  echo "you MUST also pass it explicitly in official.yml (Step F) and buddy.yml (Step G)." >&2
+  echo "you MUST also pass it explicitly in official.yml (Step F)." >&2
   exit 1
 fi
-echo "Caller completeness check passed: all publish_* inputs are explicitly passed in official.yml and buddy.yml."
+echo "Caller completeness check passed: all publish_* inputs are explicitly passed in official.yml."

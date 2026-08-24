@@ -1,5 +1,10 @@
 # Refactoring Plan for Release Orchestrator
 
+> **Archived and superseded:** This pre-v3 design is retained only for
+> historical context. The legacy `buddy.yml` and `release-buddy.yml` routes are
+> retired. Do not use this document to recreate either route; current Buddy
+> delivery is owned by Workflow Delivery v3.
+
 ## 1. Background
 
 The current `.github/workflows/release-orchestrate.yml` is a monolithic file handling polyglot release pipelines (Python, Node/WXT, Ruby). It has become difficult to maintain due to:

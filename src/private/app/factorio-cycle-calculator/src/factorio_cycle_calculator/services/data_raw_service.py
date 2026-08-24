@@ -103,7 +103,7 @@ def get_dataclass_field_info(
     return field_names, required_fields
 
 
-def coerce_dataclass(
+def coerce_dataclass(  # noqa: UP047
     cls: type[T],
     payload: Mapping[str, object],
 ) -> T | None:
@@ -124,7 +124,7 @@ def coerce_dataclass(
     return instance
 
 
-def parse_prototype_map(
+def parse_prototype_map(  # noqa: UP047
     section: Mapping[str, object] | None,
     cls: type[T],
 ) -> dict[str, T]:

@@ -1,5 +1,10 @@
 # GitHub Workflows Design (v2.50)
 
+> **Archived and superseded:** This pre-v3 design is retained only for
+> historical context. The legacy `buddy.yml` and `release-buddy.yml` routes are
+> retired. Do not use this document to recreate either route; current Buddy
+> delivery is owned by Workflow Delivery v3.
+
 This document describes the target GitHub Actions release design for the `three` monorepo.
 
 > **Current repository layout:** Active projects now use the canonical monorepo roots under `src/`, `src/lab/`, and `tests/`; the former `OneDotNet/` subtree has been migrated into those canonical roots. Release pipelines are still not set up.

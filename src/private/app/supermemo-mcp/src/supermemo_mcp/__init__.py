@@ -18,6 +18,6 @@ def find_sm_processes() -> psutil.Process | None:
             continue
 
     if len(processes) > 1:
-        raise RuntimeError("Found multiple SuperMemo processes.")
+        raise RuntimeError("Found multiple SuperMemo processes.")  # noqa: EM101, TRY003
 
     return processes[0] if processes else None

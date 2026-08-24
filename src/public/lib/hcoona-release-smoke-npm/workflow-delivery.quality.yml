@@ -1,0 +1,4 @@
+schema: workflow-delivery/v3/quality-selection
+ecosystems:
+  node:
+    preset: node/hcoona-release-smoke-npm-v1

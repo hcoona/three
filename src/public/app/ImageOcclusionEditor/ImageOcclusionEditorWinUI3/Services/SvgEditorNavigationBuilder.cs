@@ -33,7 +33,9 @@ namespace ImageOcclusionEditorWinUI3.Services
         {
             if (string.IsNullOrWhiteSpace(backgroundFilePath))
             {
-                throw new ArgumentException("File path cannot be null or whitespace.", nameof(backgroundFilePath));
+                throw new ArgumentException(
+                    "File path cannot be null or whitespace.",
+                    nameof(backgroundFilePath));
             }
 
             Uri baseUri = new Uri(Path.Combine(AppContext.BaseDirectory, SvgEditorPath));
@@ -48,10 +50,19 @@ namespace ImageOcclusionEditorWinUI3.Services
 
             AppendUrlParam(builder, "bkgd_url", backgroundFilePath);
             AppendUrlParam(builder, "dimensions", $"{width},{height}");
-            AppendUrlParam(builder, "initFill[color]", ImageOcclusionEditorWinUI3.Settings.FillColor);
+            AppendUrlParam(
+                builder,
+                "initFill[color]",
+                ImageOcclusionEditorWinUI3.Settings.FillColor);
             AppendUrlParam(builder, "initFill[opacity]", "1");
-            AppendUrlParam(builder, "initStroke[color]", ImageOcclusionEditorWinUI3.Settings.StrokeColor);
-            AppendUrlParam(builder, "initStroke[width]", ImageOcclusionEditorWinUI3.Settings.StrokeWidth);
+            AppendUrlParam(
+                builder,
+                "initStroke[color]",
+                ImageOcclusionEditorWinUI3.Settings.StrokeColor);
+            AppendUrlParam(
+                builder,
+                "initStroke[width]",
+                ImageOcclusionEditorWinUI3.Settings.StrokeWidth);
             AppendUrlParam(builder, "initStroke[opacity]", "1");
             AppendUrlParam(builder, "storagePrompt", "false");
 

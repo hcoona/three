@@ -74,7 +74,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: '24.14.0'
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
@@ -94,6 +94,29 @@ jobs:
         with:
           pkl-version: 0.31.1
 
+      - name: Capture setup tool paths
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          dotnet_path="$(command -v dotnet)"
+          go_path="$(command -v go)"
+          java_path="$(command -v java)"
+          node_path="$(command -v node)"
+          powershell_path="$(command -v pwsh)"
+          python_path="$(command -v python3)"
+          ruby_path="$(command -v ruby)"
+
+          {
+            printf 'MISE_LINK_DOTNET=%s\n' "$dotnet_path"
+            printf 'MISE_LINK_GO=%s\n' "$go_path"
+            printf 'MISE_LINK_JAVA=%s\n' "$java_path"
+            printf 'MISE_LINK_NODE=%s\n' "$node_path"
+            printf 'MISE_LINK_POWERSHELL=%s\n' "$powershell_path"
+            printf 'MISE_LINK_PYTHON=%s\n' "$python_path"
+            printf 'MISE_LINK_RUBY=%s\n' "$ruby_path"
+          } >> "$GITHUB_ENV"
+
       - name: Mise Install Tools
         uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
@@ -106,13 +129,13 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          mise link core:dotnet@10 "$(which dotnet)"
-          mise link go@1 "$(which go)"
-          mise link java@25 "$(which java)"
-          mise link node@24 "$(which node)"
-          mise link powershell@7 "$(which pwsh)"
-          mise link python@3.14 "$(which python3)"
-          mise link ruby@3.3 "$(which ruby)"
+          mise link --force core:dotnet@10 "$MISE_LINK_DOTNET"
+          mise link --force go@1 "$MISE_LINK_GO"
+          mise link --force java@25 "$MISE_LINK_JAVA"
+          mise link --force node@24 "$MISE_LINK_NODE"
+          mise link --force powershell@7 "$MISE_LINK_POWERSHELL"
+          mise link --force python@3.14 "$MISE_LINK_PYTHON"
+          mise link --force ruby@3.3 "$MISE_LINK_RUBY"
 
           mise install --locked
           mise bootstrap
@@ -389,6 +412,24 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Set up PNPM
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          version: 11.22.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24.14.0'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Set up mise and HK
+        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        with:
+          experimental: true
+          install_args: hk@1.53.0
+
       - name: Setup Python 3.14
         uses: actions/setup-python@v7
         with:
@@ -404,6 +445,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           dotnet tool restore
+          pnpm install --frozen-lockfile
           uv sync --frozen --all-packages
 
       - name: Run tests
