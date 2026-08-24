@@ -85,6 +85,8 @@ def validate_agents() -> None:
         description = frontmatter.get("description", "")
         if not NAME_RE.fullmatch(name):
             fail(f"{path} name must be kebab-case <=64 chars: {name!r}")
+        if path.name != f"{name}.agent.md":
+            fail(f"{path} filename must match agent name {name!r}")
         if frontmatter.get("target") != "github-copilot":
             fail(f"{path} target must be github-copilot")
         if not description or len(description) > 1024:
