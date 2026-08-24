@@ -61,6 +61,11 @@ client and project identifiers from the job brief must be preserved when
 provided.
 The job brief's domain describes the overall assignment; an entry's
 `scope.domain` may narrow it to the term's applicable subject area.
+Every supplied positive or negative example must be a non-empty object.
+For every non-empty example list, the first positive example must include a
+non-empty `target`, and the first negative example must include at least one
+non-empty `correct_guidance`, `reason`, or `bad_target`.
+Approved entries must provide both example lists.
 
 ```json
 {
@@ -274,6 +279,8 @@ Set `positive_example` to the first positive target,
 `negative_example` to the first negative `correct_guidance`, `reason`,
 or `bad_target` in that order,
 and `evidence_refs` to the canonical provenance reference set.
+When a non-approved entry has no canonical example of a given type,
+serialize that example cell as empty.
 Serialize `blocking` as lowercase `true` or `false`.
 TSV edits must become delta events;
 do not merge TSV edits directly into canonical JSON.

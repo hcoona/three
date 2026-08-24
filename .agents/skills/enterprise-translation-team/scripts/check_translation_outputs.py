@@ -77,6 +77,17 @@ ALLOWED_TBX_TERM_TYPES = {
     "shortForm",
     "variant",
 }
+REGULAR_GRANDFATHERED_BCP47_TAGS = {
+    "art-lojban",
+    "cel-gaulish",
+    "no-bok",
+    "no-nyn",
+    "zh-guoyu",
+    "zh-hakka",
+    "zh-min",
+    "zh-min-nan",
+    "zh-xiang",
+}
 TBX_NAMESPACE = "urn:iso:std:iso:30042:ed-2"
 TERM_REVIEW_HEADER = (
     "concept_id\tentry_id\tscope\tstatus\tsource_term\tpreferred_target\t"
@@ -208,6 +219,11 @@ def require_nonempty_string(payload: object, label: str) -> str:
 
 def check_bcp47(value: object, label: str) -> None:
     text = require_nonempty_string(value, label)
+    if text.casefold() in REGULAR_GRANDFATHERED_BCP47_TAGS:
+        raise AssertionError(
+            f"{label} must use a preferred replacement for grandfathered "
+            f"tag {text!r}"
+        )
     parts = text.split("-")
     if not is_supported_bcp47(parts):
         raise AssertionError(
@@ -313,14 +329,26 @@ def entry_scope_text(entry: dict) -> str:
     scope = require_dict(
         entry.get("scope"), f"{entry.get('concept_id', '<unknown>')}.scope"
     )
-    parts = [require_nonempty_string(scope.get("level"), "scope.level")]
-    for key in ["client_id", "domain", "project_id", "document_id"]:
-        value = scope.get(key)
-        if isinstance(value, str) and value.strip():
-            parts.append(value.strip())
-    return ":".join(parts[:2]) + (
-        "/" + "/".join(parts[2:]) if len(parts) > 2 else ""
+    level = require_nonempty_string(scope.get("level"), "scope.level").strip()
+    domain = require_nonempty_string(
+        scope.get("domain"), "scope.domain"
+    ).strip()
+    client_value = scope.get("client_id")
+    client_id = (
+        client_value.strip()
+        if isinstance(client_value, str) and client_value.strip()
+        else ""
     )
+    project_value = scope.get("project_id")
+    project_id = (
+        project_value.strip()
+        if isinstance(project_value, str) and project_value.strip()
+        else ""
+    )
+    parts = [client_id, domain, project_id]
+    while parts[-1] == "":
+        parts.pop()
+    return f"{level}:{parts[0]}" + "".join(f"/{part}" for part in parts[1:])
 
 
 def entry_target_terms(entry: dict) -> set[str]:
@@ -418,8 +446,6 @@ def check_terminology_review_tsv(
         "source_term",
         "preferred_target",
         "context_note",
-        "positive_example",
-        "negative_example",
         "blocking",
         "evidence_refs",
     ]
@@ -433,6 +459,12 @@ def check_terminology_review_tsv(
             raise AssertionError(
                 f"terminology-review.tsv row {index} has invalid status"
             )
+        if row.get("status") == "approved":
+            for field in ["positive_example", "negative_example"]:
+                require_nonempty_string(
+                    row.get(field),
+                    f"terminology-review.tsv row {index} {field}",
+                )
         if row.get("blocking") not in {"true", "false"}:
             raise AssertionError(
                 f"terminology-review.tsv row {index} blocking must be "
@@ -518,8 +550,6 @@ def check_terminology_review_tsv(
             )
         for field in [
             "context_note",
-            "positive_example",
-            "negative_example",
             "evidence_refs",
         ]:
             if not row.get(field, "").strip():
@@ -531,17 +561,37 @@ def check_terminology_review_tsv(
             raise AssertionError(
                 f"terminology-review.tsv row {entry_id} context_note mismatch"
             )
-        if row.get("positive_example") != first_example_text(
-            context, "positive_examples", ["target"]
+        positive_examples = require_list(
+            context.get("positive_examples"), "context.positive_examples"
+        )
+        negative_examples = require_list(
+            context.get("negative_examples"), "context.negative_examples"
+        )
+        if entry.get("status") == "approved" and (
+            not positive_examples or not negative_examples
         ):
+            raise AssertionError(
+                f"Approved termbase entry {entry_id} must include examples"
+            )
+        expected_positive = (
+            first_example_text(context, "positive_examples", ["target"])
+            if positive_examples
+            else ""
+        )
+        if row.get("positive_example") != expected_positive:
             raise AssertionError(
                 f"terminology-review.tsv row {entry_id} positive_example mismatch"
             )
-        if row.get("negative_example") != first_example_text(
-            context,
-            "negative_examples",
-            ["correct_guidance", "reason", "bad_target"],
-        ):
+        expected_negative = (
+            first_example_text(
+                context,
+                "negative_examples",
+                ["correct_guidance", "reason", "bad_target"],
+            )
+            if negative_examples
+            else ""
+        )
+        if row.get("negative_example") != expected_negative:
             raise AssertionError(
                 f"terminology-review.tsv row {entry_id} negative_example mismatch"
             )
@@ -553,18 +603,6 @@ def check_terminology_review_tsv(
         if split_tsv_list(row.get("evidence_refs", "")) != evidence_refs:
             raise AssertionError(
                 f"terminology-review.tsv row {entry_id} evidence_refs mismatch"
-            )
-        if not require_list(
-            context.get("positive_examples"), "context.positive_examples"
-        ):
-            raise AssertionError(
-                f"termbase entry {entry_id} missing positive examples"
-            )
-        if not require_list(
-            context.get("negative_examples"), "context.negative_examples"
-        ):
-            raise AssertionError(
-                f"termbase entry {entry_id} missing negative examples"
             )
         entry_conflicts = conflicts.get(concept_id, [])
         expected_conflict_ids = {
@@ -729,6 +767,28 @@ def check_termbase_json(path: Path) -> dict:
         if status == "approved" and (not positive or not negative):
             raise AssertionError(
                 f"Approved entry {concept_id} must include positive and negative examples"
+            )
+        for label, examples in [
+            ("positive_examples", positive),
+            ("negative_examples", negative),
+        ]:
+            for example_index, raw_example in enumerate(examples, start=1):
+                example = require_dict(
+                    raw_example,
+                    f"entries[{index}].context.{label}[{example_index}]",
+                )
+                if not example:
+                    raise AssertionError(
+                        f"entries[{index}].context.{label}[{example_index}] "
+                        "must not be empty"
+                    )
+        if positive:
+            first_example_text(context, "positive_examples", ["target"])
+        if negative:
+            first_example_text(
+                context,
+                "negative_examples",
+                ["correct_guidance", "reason", "bad_target"],
             )
         for forbidden in require_list(
             target.get("forbidden", []), f"entries[{index}].target.forbidden"

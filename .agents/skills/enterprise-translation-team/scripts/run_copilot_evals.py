@@ -227,6 +227,7 @@ def run_discovery_command(command: list[str], cwd: Path) -> object:
         command,
         cwd=cwd,
         text=True,
+        encoding="utf-8",
         capture_output=True,
         check=False,
         env=COPILOT_ENV,
@@ -472,6 +473,7 @@ def run_review_gates(
             command,
             cwd=review_cwd,
             text=True,
+            encoding="utf-8",
             capture_output=True,
             check=False,
             env=COPILOT_ENV,
@@ -567,6 +569,8 @@ def run_case(
         ),
         "run_dir": str(case_dir),
         "expected_files": case.get("expected_files", []),
+        "expected_output": case["expected_output"],
+        "assertions": case.get("assertions", []),
         "prompt": case_prompt,
     }
     (case_dir / "run-manifest.json").write_text(
@@ -645,6 +649,7 @@ def run_case(
         command,
         cwd=case_dir,
         text=True,
+        encoding="utf-8",
         capture_output=True,
         check=False,
         env=COPILOT_ENV,
@@ -693,8 +698,10 @@ def run_case(
                 str(workspace_diff_path),
             ],
             text=True,
+            encoding="utf-8",
             capture_output=True,
             check=False,
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
         )
         (case_dir / "grading-stdout.txt").write_text(
             check.stdout, encoding="utf-8"
