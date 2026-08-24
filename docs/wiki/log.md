@@ -2048,3 +2048,19 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   it. PR #552 remains open and unmerged, and no acceptance, package mutation,
   Live activation, Ruleset change, force push, or history rewrite was
   authorized or performed.
+
+## [2026-08-24] query | Begin Workflow Delivery v3 destination acceptance
+
+- Recorded PR #552 merge `5a84bebd` and completed the immediate disabled Buddy
+  cutover. Both legacy workflow identities are `disabled_manually`, no
+  nonterminal executions remain, both files are absent from `main`, and real
+  old-ref dispatch requests receive disabled-workflow rejection.
+- Authorized destination acceptance without normal Live activation. Protected
+  finalization binds the one-time workflow to implementation merge `5a84bebd`
+  while the Governance attestation remains `live_enabled: false`.
+- Created the temporary reviewer-protected acceptance Environment before
+  finalization, with `hcoona` as required reviewer, self-review permitted for
+  the single-operator topology, and a custom `main` deployment branch policy.
+- Retained transition evidence: run `32693641797` terminated with zero jobs,
+  and run `32693679161` executed only the read-only default-branch refusal
+  stub. Neither entered a publication path.

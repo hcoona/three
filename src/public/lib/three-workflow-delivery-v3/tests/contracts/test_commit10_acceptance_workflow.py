@@ -30,6 +30,7 @@ WORKFLOW = (
     / ".github/workflows/workflow-delivery-v3-buddy-smoke-acceptance.yml"
 )
 ZERO_SHA = "0" * 40
+FINALIZED_TARGET_SHA = "5a84bebd05407e1859fe76f400dcb4f4cbcd002e"
 EXPECTED_JOBS = (
     "validate-fixed-inputs",
     "acceptance-review",
@@ -126,7 +127,7 @@ def test_trigger_inputs_topology_and_fixed_sentinel_are_exact() -> None:
     )
     assert tuple(_jobs()) == EXPECTED_JOBS
     assert document["permissions"] == {}
-    assert document["env"]["WDV3_ACCEPTANCE_TARGET_SHA"] == ZERO_SHA
+    assert document["env"]["WDV3_ACCEPTANCE_TARGET_SHA"] == FINALIZED_TARGET_SHA
     assert document["env"]["WDV3_ACCEPTANCE_PACKAGE_COORDINATE"].endswith(
         "wdv3-acceptance.1"
     )
@@ -398,24 +399,22 @@ def test_acceptance_workflow_never_activates_live_or_creates_release_lineage() -
     assert '"release-lineage": "none"' in source
 
 
-def test_commit10_acceptance_target_is_zero_sentinel_pending_protected_finalization() -> (
-    None
-):
+def test_acceptance_target_is_bound_to_reviewed_implementation_merge() -> None:
     document = _document()
 
-    assert document["env"]["WDV3_ACCEPTANCE_TARGET_SHA"] == ZERO_SHA
+    assert document["env"]["WDV3_ACCEPTANCE_TARGET_SHA"] == FINALIZED_TARGET_SHA
     assert (
         _trigger(document)["workflow_dispatch"]["inputs"]["target_sha"][
             "default"
         ]
-        == ZERO_SHA
+        == FINALIZED_TARGET_SHA
     )
 
 
 @pytest.mark.parametrize(
     ("field", "expected"),
     [
-        ("target_sha", ZERO_SHA),
+        ("target_sha", FINALIZED_TARGET_SHA),
         (
             "package_coordinate",
             "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.1",
@@ -1358,7 +1357,7 @@ def test_terminal_incomplete_evidence_preserves_rejected_dispatch_semantics(
     admitted = admit_governance_acceptance_evidence(evidence_bytes)
 
     assert admitted.mutation_classification == "incomplete"
-    assert admitted.target_sha == ZERO_SHA
+    assert admitted.target_sha == FINALIZED_TARGET_SHA
     assert admitted.workflow.sha == "b" * 40
     assert admitted.to_document() == evidence
 

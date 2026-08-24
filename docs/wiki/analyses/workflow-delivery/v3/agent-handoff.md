@@ -108,10 +108,23 @@ If it conflicts with the
   and repair.
 - Phase 8 and the PR-comment follow-up are complete at final behavior commit
   `9f97ef09`; the prior `e9d812b2` RC-001 boundary is retained as superseded
-  evidence. Every review thread is resolved. Review closure does not authorize
-  merge. Do not merge, activate Live, run acceptance, mutate a destination,
-  alter Rulesets, or begin a later phase without separate explicit
-  authorization.
+  evidence. Every review thread is resolved. PR #552 merged as `5a84bebd` on
+  2026-08-24 after separate explicit authorization. Normal Live remains
+  disabled.
+- The immediate post-merge cutover is complete. Workflow IDs `216311758`
+  (`buddy.yml`) and `269749708` (`release-buddy.yml`) are
+  `disabled_manually`; all legacy nonterminal execution counts are zero; both
+  files are absent from `main`; and complete dispatch requests against a real
+  old branch are rejected with HTTP 422 because the workflows are disabled.
+  Transition runs `32693641797` and `32693679161` completed without publication:
+  the first had zero jobs, and the second executed only the read-only
+  default-branch refusal stub.
+- Destination acceptance is separately authorized. Protected finalization pins
+  the one-time workflow to implementation merge `5a84bebd`. The dedicated
+  reviewer-protected acceptance Environment exists, names `hcoona` as required
+  reviewer, permits self-review because the operator and only reviewer are the
+  same person, and restricts deployment to `main`. Acceptance does not
+  authorize normal Live activation.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the
@@ -146,12 +159,12 @@ If it conflicts with the
   those counts are historical rather than current repair evidence. All three
   original policy, CLI, and workflow reviewers report no findings after
   independent adjudication and repair. The branch backs
-  [PR #552](https://github.com/hcoona/three/pull/552), which is open against
-  `main`. Documentation closure is committed at `a9e8cbfa`. Non-rewriting
+  [PR #552](https://github.com/hcoona/three/pull/552), which merged as
+  `5a84bebd` on 2026-08-24. Documentation closure is committed at `a9e8cbfa`.
+  Non-rewriting
   merge commit `30b793be` then integrates the latest `origin/main` at
   `7f8f41c2`, containing only the upstream Biome 2.5.9 and Asciidoctor 4.0.10
-  dependency updates; the frozen PNPM and UV lock checks pass. Nothing from
-  PR #552 has merged.
+  dependency updates; the frozen PNPM and UV lock checks pass.
   Commit 3 includes target-tree-bound
   Release Unit/Quality authoring validation, duplicate Release Unit rejection,
   exact-target Repository Model compilation, static catalogs, Node/NBGV
@@ -600,13 +613,11 @@ If it conflicts with the
   or new base integration invalidates this evidence and restarts the cycle.
   Checks on the documentation child are external evidence and must not be
   recursively added to that child.
-- PR [#552](https://github.com/hcoona/three/pull/552) remains open, blocked,
-  and unmerged. Review closure returns control to separate explicit human merge
-  authorization; it does not authorize merge. Merge starts the direct cutover
-  and intentional Buddy outage, so the operator must be ready to execute the
-  immediate post-merge legacy drain and old-ref rejection proof. Do not merge,
-  run real acceptance probes, finalize the sentinel target, activate normal
-  live, or begin later scopes without a separate explicit user task.
+- PR [#552](https://github.com/hcoona/three/pull/552) merged as `5a84bebd`.
+  The immediate legacy drain and old-ref rejection proof are complete.
+  Destination acceptance is separately authorized and is the current phase.
+  Do not activate normal Live or begin later scopes without a separate explicit
+  user task.
 - Implementation must preserve the approved commit boundaries and keep live
   activation disabled until acceptance and the separate activation approval.
 
