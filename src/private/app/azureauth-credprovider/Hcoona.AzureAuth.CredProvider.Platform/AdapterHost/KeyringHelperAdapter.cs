@@ -83,6 +83,80 @@ public sealed class KeyringHelperAdapter
         return true;
     }
 
+    internal static bool TryNormalizeServiceForKeyringCli(
+        string serviceText,
+        [NotNullWhen(true)] out string? normalizedServiceText
+    )
+    {
+        normalizedServiceText = serviceText;
+        if (!Uri.TryCreate(serviceText, UriKind.Absolute, out Uri? service))
+        {
+            return true;
+        }
+
+        if (!IsAzureArtifactsHost(service.IdnHost))
+        {
+            return true;
+        }
+
+        if (
+            !IsValidAzureKeyringServiceSyntax(service)
+            || !TryGetRawPathSegments(
+                serviceText,
+                out string[]? segments,
+                out bool hasTrailingSlash
+            )
+        )
+        {
+            normalizedServiceText = null;
+            return false;
+        }
+
+        const int PythonDownloadTailSegmentCount = 5;
+        int pypiIndex = segments.Length - PythonDownloadTailSegmentCount;
+        if (
+            pypiIndex < 2
+            || !IsSegment(segments[pypiIndex - 2], "_packaging")
+            || !IsSegment(segments[pypiIndex], "pypi")
+            || !IsSegment(segments[pypiIndex + 1], "download")
+        )
+        {
+            return true;
+        }
+
+        if (
+            hasTrailingSlash
+            || segments[(pypiIndex + 2)..].Any(string.IsNullOrWhiteSpace)
+        )
+        {
+            normalizedServiceText = null;
+            return false;
+        }
+
+        var normalizedServiceBuilder = new UriBuilder(service)
+        {
+            Path =
+                "/"
+                + string.Join(
+                    "/",
+                    segments[..(pypiIndex + 1)].Select(Uri.EscapeDataString)
+                )
+                + "/simple/",
+        };
+        Uri normalizedService = normalizedServiceBuilder.Uri;
+        if (
+            ClassifyPythonFeedResource(normalizedService, out _)
+            != PythonFeedResourceClassification.Supported
+        )
+        {
+            normalizedServiceText = null;
+            return false;
+        }
+
+        normalizedServiceText = normalizedService.AbsoluteUri;
+        return true;
+    }
+
     public AdapterHostExecutionOutcome Execute(
         string? executablePath,
         IEnumerable<string>? arguments,
@@ -514,6 +588,140 @@ public sealed class KeyringHelperAdapter
         segments = decodedSegments.ToArray();
         return true;
     }
+
+    private static bool TryGetRawPathSegments(
+        string serviceText,
+        [NotNullWhen(true)] out string[]? segments,
+        out bool hasTrailingSlash
+    )
+    {
+        segments = null;
+        hasTrailingSlash = false;
+        int authorityStart = serviceText.IndexOf("://", StringComparison.Ordinal);
+        if (authorityStart < 0)
+        {
+            return false;
+        }
+
+        int pathStart = serviceText.IndexOf('/', authorityStart + "://".Length);
+        if (pathStart < 0)
+        {
+            segments = [];
+            return true;
+        }
+
+        int pathEnd = serviceText.IndexOfAny(['?', '#'], pathStart);
+        string rawPath =
+            pathEnd < 0 ? serviceText[(pathStart + 1)..] : serviceText[(pathStart + 1)..pathEnd];
+        string[] rawSegments = rawPath.Split('/', StringSplitOptions.None);
+        if (rawSegments.Length > 0 && rawSegments[^1].Length == 0)
+        {
+            hasTrailingSlash = true;
+            rawSegments = rawSegments[..^1];
+        }
+
+        if (rawSegments.Any(string.IsNullOrEmpty))
+        {
+            return false;
+        }
+
+        var decodedSegments = new string[rawSegments.Length];
+        for (int index = 0; index < rawSegments.Length; index++)
+        {
+            if (
+                !TryDecodeRawPathSegment(
+                    rawSegments[index],
+                    out string? decodedSegment
+                )
+            )
+            {
+                return false;
+            }
+
+            decodedSegments[index] = decodedSegment;
+        }
+
+        segments = decodedSegments;
+        return true;
+    }
+
+    private static bool TryDecodeRawPathSegment(
+        string rawSegment,
+        [NotNullWhen(true)] out string? decodedSegment
+    )
+    {
+        decodedSegment = null;
+        for (int index = 0; index < rawSegment.Length; index++)
+        {
+            if (rawSegment[index] != '%')
+            {
+                continue;
+            }
+
+            if (
+                index + 2 >= rawSegment.Length
+                || !Uri.IsHexDigit(rawSegment[index + 1])
+                || !Uri.IsHexDigit(rawSegment[index + 2])
+            )
+            {
+                return false;
+            }
+
+            index += 2;
+        }
+
+        string decoded;
+        try
+        {
+            decoded = Uri.UnescapeDataString(rawSegment);
+        }
+        catch (UriFormatException)
+        {
+            return false;
+        }
+
+        if (!IsSafeDecodedPathSegment(decoded))
+        {
+            return false;
+        }
+
+        string safetyProbe = decoded;
+        const int MaxNestedDecodingPasses = 8;
+        for (int pass = 0; pass < MaxNestedDecodingPasses; pass++)
+        {
+            string nextSafetyProbe;
+            try
+            {
+                nextSafetyProbe = Uri.UnescapeDataString(safetyProbe);
+            }
+            catch (UriFormatException)
+            {
+                return false;
+            }
+
+            if (string.Equals(nextSafetyProbe, safetyProbe, StringComparison.Ordinal))
+            {
+                decodedSegment = decoded;
+                return true;
+            }
+
+            if (!IsSafeDecodedPathSegment(nextSafetyProbe))
+            {
+                return false;
+            }
+
+            safetyProbe = nextSafetyProbe;
+        }
+
+        return false;
+    }
+
+    private static bool IsSafeDecodedPathSegment(string segment) =>
+        !string.IsNullOrWhiteSpace(segment)
+        && segment is not "." and not ".."
+        && !ContainsControlCharacters(segment)
+        && !segment.Contains('/', StringComparison.Ordinal)
+        && !segment.Contains('\\', StringComparison.Ordinal);
 
     private static bool TryGetLegacyVisualStudioOrganization(
         string host,
