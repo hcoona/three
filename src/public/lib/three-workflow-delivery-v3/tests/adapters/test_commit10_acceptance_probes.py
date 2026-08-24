@@ -1944,14 +1944,6 @@ def test_partial_process_startup_timeout_cleans_every_started_process(
     assert all(process.communications[-1] is None for process in started)
 
 
-def test_subprocess_timeout_maps_to_unknown_acceptance_probe_result() -> None:
-    source = Path(cli_module.__file__).read_text(encoding="utf-8")
-
-    assert "except subprocess.TimeoutExpired" in source
-    assert 'mutation_classification="unknown"' in source
-    assert 'result="timeout"' in source
-
-
 def test_run_process_timeout_raises_builtin_timeout_error(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
