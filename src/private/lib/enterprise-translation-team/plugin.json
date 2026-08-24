@@ -1,0 +1,14 @@
+{
+  "name": "enterprise-translation-team",
+  "description": "Role-based Copilot CLI agents and skills for enterprise Chinese-English document translation workflows.",
+  "version": "0.1.0",
+  "author": {
+    "name": "hcoona"
+  },
+  "license": "CC-BY-NC-SA-4.0",
+  "keywords": ["translation", "localization", "terminology", "mqm", "copilot-cli"],
+  "category": "productivity",
+  "tags": ["agent-skills", "custom-agents", "enterprise-documents"],
+  "agents": "agents/",
+  "skills": "skills/"
+}

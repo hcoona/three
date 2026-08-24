@@ -1,0 +1,20 @@
+{
+  "language_direction": "zh-Hans -> en-US",
+  "segments": [
+    {
+      "segment_id": "S1",
+      "source": "灰度发布期间，只有试点租户可以启用该功能。",
+      "target": "During the grayscale release, every tenant can enable this feature."
+    },
+    {
+      "segment_id": "S2",
+      "source": "如果回滚失败，请在 30 分钟内升级工单。",
+      "target": "If rollback fails, upgrade the work order within 30 minutes."
+    }
+  ],
+  "glossary": {
+    "灰度发布": "phased rollout",
+    "租户": "tenant",
+    "工单": "support ticket"
+  }
+}
