@@ -29,3 +29,13 @@ When a concept-level termbase is provided,
 use applicable approved terms only in matching scope and context,
 avoid forbidden terms, and record candidate terms
 as deltas instead of silently changing the termbase.
+
+When acting as the post-editor, read the reviser's `review.json`,
+apply only approved fixes, and reconcile every issue in that file.
+Preserve every `issue_id` and leave uncorrected issues `open`.
+Set `resolution_status` to `resolved` only after applying
+and verifying the target change,
+with non-empty `resolution_evidence` identifying that change.
+Set an issue to `waived` only when an explicit waiver is provided,
+with non-empty `resolution_evidence` and `waiver_ref`.
+Do not mark post-editing as independent review.
