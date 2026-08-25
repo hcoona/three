@@ -1078,7 +1078,7 @@ def test_ci_scenario_coexistence_emits_no_authoritative_decision() -> None:
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: '24.14.0'
+          node-version: '24.19.0'
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
@@ -1136,7 +1136,7 @@ def test_ci_scenario_coexistence_emits_no_authoritative_decision() -> None:
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: '24.14.0'
+          node-version: '24.19.0'
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 

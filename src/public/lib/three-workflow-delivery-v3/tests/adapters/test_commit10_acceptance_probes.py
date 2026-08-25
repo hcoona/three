@@ -3770,8 +3770,8 @@ def test_acceptance_capture_records_nonsecret_toolchain_metadata(
             "<loopback-registry>",
             "--ignore-scripts",
         ],
-        "node-version": "v24.14.0",
-        "npm-version": "11.9.0",
+        "node-version": "v24.19.0",
+        "npm-version": "11.17.0",
     }
     metadata_bytes = canonicalize(cast("JsonValue", capture.metadata))
     assert b"token" not in metadata_bytes.lower()
@@ -3916,7 +3916,12 @@ def snapshot_tree(root: Path) -> dict[str, str]:
 def expected_capture() -> dict[str, JsonValue]:
     return cast(
         "dict[str, JsonValue]",
-        json.loads((ACCEPTANCE_FIXTURE_ROOT / "capture.json").read_bytes()),
+        json.loads(
+            (
+                ACCEPTANCE_FIXTURE_ROOT
+                / "capture-node-24.19.0-npm-11.17.0.json"
+            ).read_bytes()
+        ),
     )
 
 
@@ -3930,6 +3935,8 @@ def capture_real_npm_publish(tmp_path: Path) -> NpmPublishCapture:
     )
 
     tmp_path.mkdir(parents=True, exist_ok=True)
+    # Stop npm from inheriting a parent checkout's gitHead.
+    (tmp_path / ".git").mkdir()
     package_root = tmp_path / "package"
     shutil.copytree(ACCEPTANCE_PACKAGE_FIXTURE_ROOT, package_root)
     requests: list[tuple[str, str, dict[str, str], bytes]] = []
