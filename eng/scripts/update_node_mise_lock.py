@@ -53,6 +53,21 @@ def _validate_workflow(node: str) -> None:
         raise ValueError(message)
 
 
+def _validate_selector(node: str) -> None:
+    selector = (
+        tomllib.loads((ROOT / "mise.toml").read_text(encoding="utf-8"))
+        .get("tools", {})
+        .get("node")
+    )
+    major = node.partition(".")[0]
+    if selector != major:
+        message = (
+            f"mise.toml Node selector must be {major!r} to match "
+            f"mise.lock Node {node}; found {selector!r}"
+        )
+        raise ValueError(message)
+
+
 def _run(expected: str | None) -> str:
     if expected:
         if not SEMVER.fullmatch(expected):
@@ -78,6 +93,7 @@ def _run(expected: str | None) -> str:
             "Refusing split toolchain authority."
         )
         raise ValueError(message)
+    _validate_selector(locked)
     _validate_workflow(locked)
     return locked
 
