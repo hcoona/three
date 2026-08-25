@@ -559,6 +559,22 @@
       "automerge": true
     },
     {
+      "description": "Keep exact Node workflow pins and the authoritative root Mise lock in one reviewed update.",
+      "matchManagers": ["github-actions", "mise"],
+      "matchDatasources": ["github-releases", "node-version"],
+      "matchDepNames": ["node"],
+      "matchFileNames": [".github/workflows/ci.yml", "mise.toml"],
+      "groupName": "Node Runtime",
+      "postUpgradeTasks": {
+        "commands": [
+          "uv run --no-project --python 3.13 python eng/scripts/node_runtime_facts.py update-renovate-lock --expected-node {{newVersion}}"
+        ],
+        "fileFilters": ["mise.lock"],
+        "executionMode": "branch"
+      },
+      "automerge": false
+    },
+    {
       "description": "Require manual approval for .NET test platform major updates until the MTP 2 runner migration is ready.",
       "matchManagers": ["nuget"],
       "matchPackageNames": [

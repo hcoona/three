@@ -9,9 +9,12 @@ import hashlib
 import http.client
 import io
 import json
+import os
 import subprocess
 import tarfile
+import tomllib
 import urllib.parse
+from functools import cache
 from pathlib import Path
 from typing import Any, Self, cast
 
@@ -45,6 +48,46 @@ TIMEOUT_SECONDS = 7.0
 MAX_RESPONSE_BYTES = 8192
 MAX_OUTPUT_BYTES = 4096
 TAGS = {scenario: tag for scenario, _version, tag in ACCEPTANCE_SCENARIO_SPECS}
+REPO_ROOT = Path(__file__).resolve().parents[6]
+UPDATE_NODE_RUNTIME_EVIDENCE = "THREE_UPDATE_NODE_RUNTIME_EVIDENCE"
+
+
+@cache
+def active_runtime_facts() -> tuple[str, str]:
+    """Return exact locked Node facts with bundled npm observed at runtime."""
+    document = tomllib.loads(
+        (REPO_ROOT / "mise.lock").read_text(encoding="utf-8")
+    )
+    locked_node = cast("str", document["tools"]["node"][0]["version"])
+    actual_node = subprocess.run(
+        ("node", "--version"),
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    if actual_node.removeprefix("v") != locked_node:
+        pytest.fail(
+            "Installed Node does not match mise.lock. "
+            "Run `mise install --locked node` and retry."
+        )
+    npm = subprocess.run(
+        ("npm", "--version"),
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    return f"v{locked_node}", npm
+
+
+def current_capture_path() -> Path:
+    """Return the versioned evidence path for the active Node/npm pair."""
+    node, npm = active_runtime_facts()
+    return (
+        ACCEPTANCE_FIXTURE_ROOT
+        / f"capture-node-{node.removeprefix('v')}-npm-{npm}.json"
+    )
 
 
 class RecordingTransport:
@@ -3758,6 +3801,7 @@ def test_acceptance_capture_records_nonsecret_toolchain_metadata(
     tmp_path: Path,
 ) -> None:
     capture = capture_real_npm_publish(tmp_path)
+    node, npm = active_runtime_facts()
 
     assert capture.metadata == {
         "argv": [
@@ -3770,8 +3814,8 @@ def test_acceptance_capture_records_nonsecret_toolchain_metadata(
             "<loopback-registry>",
             "--ignore-scripts",
         ],
-        "node-version": "v24.19.0",
-        "npm-version": "11.17.0",
+        "node-version": node,
+        "npm-version": npm,
     }
     metadata_bytes = canonicalize(cast("JsonValue", capture.metadata))
     assert b"token" not in metadata_bytes.lower()
@@ -3783,14 +3827,31 @@ def test_acceptance_request_fixture_is_reproducible(
 ) -> None:
     first = capture_real_npm_publish(tmp_path / "first")
     second = capture_real_npm_publish(tmp_path / "second")
+    actual = first.nonsecret_fixture()
+    fixture_path = current_capture_path()
 
-    assert first.nonsecret_fixture() == second.nonsecret_fixture()
-    assert first.nonsecret_fixture() == expected_capture()
+    assert actual == second.nonsecret_fixture()
     assert first.normalized_body == second.normalized_body
     assert (
         hashlib.sha256(first.normalized_body).hexdigest()
-        == expected_capture()["normalized-request-body-sha256"]
+        == actual["normalized-request-body-sha256"]
     )
+    if os.environ.get(UPDATE_NODE_RUNTIME_EVIDENCE) == "1":
+        pending_path = fixture_path.with_suffix(f"{fixture_path.suffix}.new")
+        try:
+            pending_path.write_text(
+                json.dumps(actual, indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
+            pending_path.replace(fixture_path)
+        finally:
+            pending_path.unlink(missing_ok=True)
+    else:
+        assert actual == expected_capture(), (
+            "Active npm request evidence changed. Run "
+            "`mise run update-node-runtime-evidence`, then review request bytes, "
+            "integrity, lifecycle, and credential-free guarantees."
+        )
 
 
 def test_acceptance_request_fixture_contains_no_credentials(
@@ -3914,19 +3975,20 @@ def snapshot_tree(root: Path) -> dict[str, str]:
 
 
 def expected_capture() -> dict[str, JsonValue]:
+    capture_path = current_capture_path()
+    if not capture_path.is_file():
+        pytest.fail(
+            f"Active npm request evidence is missing: {capture_path}. "
+            "Run `mise run update-node-runtime-evidence`, review the semantic "
+            "diff, and commit the new versioned fixture."
+        )
     return cast(
         "dict[str, JsonValue]",
-        json.loads(
-            (
-                ACCEPTANCE_FIXTURE_ROOT
-                / "capture-node-24.19.0-npm-11.17.0.json"
-            ).read_bytes()
-        ),
+        json.loads(capture_path.read_bytes()),
     )
 
 
 def capture_real_npm_publish(tmp_path: Path) -> NpmPublishCapture:
-    import os  # noqa: PLC0415
     import shutil  # noqa: PLC0415
     import threading  # noqa: PLC0415
     from http.server import (  # noqa: PLC0415

@@ -8,6 +8,7 @@ import json
 import shutil
 import subprocess
 import sys
+import tomllib
 from dataclasses import dataclass, replace
 from functools import cache
 from pathlib import Path
@@ -66,6 +67,12 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
+LOCKED_NODE_VERSION = cast(
+    "str",
+    tomllib.loads((REPO_ROOT / "mise.lock").read_text(encoding="utf-8"))[
+        "tools"
+    ]["node"][0]["version"],
+)
 WORKFLOW_PATH = REPO_ROOT / ".github/workflows/workflow-delivery-v3-ci.yml"
 V1_CI_PATH = REPO_ROOT / ".github/workflows/ci.yml"
 DISABLED_GOVERNANCE_FIXTURE = (
@@ -1074,16 +1081,16 @@ def test_ci_scenario_coexistence_emits_no_authoritative_decision() -> None:
 
       - name: Setup Python 3
 """
-    pinned_validation_node = b"""\
+    pinned_validation_node = f"""\
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: '24.19.0'
+          node-version: '{LOCKED_NODE_VERSION}'
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup Python 3
-"""
+""".encode()
     capture_step = b"""\
       - name: Capture setup tool paths
         shell: bash
@@ -1127,7 +1134,7 @@ def test_ci_scenario_coexistence_emits_no_authoritative_decision() -> None:
           mise link --force python@3.14 "$MISE_LINK_PYTHON"
           mise link --force ruby@3.3 "$MISE_LINK_RUBY"
 """
-    python_test_toolchain = b"""\
+    python_test_toolchain = f"""\
       - name: Set up PNPM
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
@@ -1136,7 +1143,7 @@ def test_ci_scenario_coexistence_emits_no_authoritative_decision() -> None:
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: '24.19.0'
+          node-version: '{LOCKED_NODE_VERSION}'
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
@@ -1147,7 +1154,7 @@ def test_ci_scenario_coexistence_emits_no_authoritative_decision() -> None:
           install_args: hk
 
       - name: Setup Python 3.14
-"""
+""".encode()
     python_setup_marker = b"      - name: Setup Python 3.14\n"
     base_python_dependencies = b"""\
       - name: Install dependencies

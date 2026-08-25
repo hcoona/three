@@ -451,6 +451,26 @@ local workflow_delivery_v3_validation = new Mapping<String, Step> {
       "python eng/scripts/hk_exec.py --timeout-seconds 720 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests"
   }
 
+  ["node-toolchain-authority"] {
+    profiles = List("small")
+    glob =
+      List(
+        ".github/renovate/global.cjs",
+        ".github/workflows/ci.yml",
+        "eng/scripts/node_runtime_facts.py",
+        "mise.lock",
+        "mise.toml",
+        "renovate.json",
+        "src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py",
+        "src/public/lib/three-workflow-delivery-v3/tests/adapters/test_node.py",
+        "src/public/lib/three-workflow-delivery-v3/tests/ci/test_scenarios.py",
+        "src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit11_legacy_buddy_retirement.py",
+        "src/public/lib/three-workflow-delivery-v3/tests/fixtures/acceptance/npm-publish-request/capture-node-*.json",
+      )
+    check =
+      "python eng/scripts/hk_exec.py --timeout-seconds 120 uv run --no-project --python 3.13 python eng/scripts/node_runtime_facts.py check"
+  }
+
   ["hcoona-release-smoke-npm-consumer-policy"] {
     profiles = List("small")
     glob = hcoona_release_smoke_npm_consumer_policy_files

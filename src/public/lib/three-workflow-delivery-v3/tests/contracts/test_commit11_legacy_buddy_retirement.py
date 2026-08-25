@@ -8,6 +8,7 @@ import hashlib
 import os
 import re
 import subprocess
+import tomllib
 from pathlib import Path
 from typing import Any, cast
 
@@ -15,6 +16,12 @@ import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
+LOCKED_NODE_VERSION = cast(
+    "str",
+    tomllib.loads((REPO_ROOT / "mise.lock").read_text(encoding="utf-8"))[
+        "tools"
+    ]["node"][0]["version"],
+)
 WORKFLOWS = REPO_ROOT / ".github/workflows"
 LEGACY_ENTRY_PATHS = (
     ".github/workflows/buddy.yml",
@@ -332,16 +339,16 @@ def test_production_v1_workflows_match_base_contract() -> None:
 
       - name: Setup Python 3
 """
-    pinned_validation_node = b"""\
+    pinned_validation_node = f"""\
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: '24.19.0'
+          node-version: '{LOCKED_NODE_VERSION}'
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup Python 3
-"""
+""".encode()
     capture_step = b"""\
       - name: Capture setup tool paths
         shell: bash
@@ -385,7 +392,7 @@ def test_production_v1_workflows_match_base_contract() -> None:
           mise link --force python@3.14 "$MISE_LINK_PYTHON"
           mise link --force ruby@3.3 "$MISE_LINK_RUBY"
 """
-    python_test_toolchain = b"""\
+    python_test_toolchain = f"""\
       - name: Set up PNPM
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
@@ -394,7 +401,7 @@ def test_production_v1_workflows_match_base_contract() -> None:
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: '24.19.0'
+          node-version: '{LOCKED_NODE_VERSION}'
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
@@ -405,7 +412,7 @@ def test_production_v1_workflows_match_base_contract() -> None:
           install_args: hk
 
       - name: Setup Python 3.14
-"""
+""".encode()
     python_setup_marker = b"      - name: Setup Python 3.14\n"
     base_python_dependencies = b"""\
       - name: Install dependencies

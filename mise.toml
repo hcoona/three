@@ -118,6 +118,17 @@ pnpm --dir src/public/lib/hexo-renderer-asciidoc/examples/hexo-site install --lo
 pnpm exec -- prettier --write -- pnpm-lock.yaml src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/pnpm-lock.yaml
 '''
 
+[tasks.update-node-runtime-evidence]
+description = "Regenerate reviewed active Node/npm request evidence"
+env = { THREE_UPDATE_NODE_RUNTIME_EVIDENCE = "1" }
+run = '''
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q -x \
+  src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py::test_acceptance_capture_uses_real_npm_publish_request \
+  src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py::test_acceptance_capture_records_nonsecret_toolchain_metadata \
+  src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py::test_acceptance_request_fixture_contains_no_credentials \
+  src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py::test_acceptance_request_fixture_is_reproducible
+'''
+
 [tasks.update-uv-lock]
 description = "Refresh root uv lockfile"
 run = 'uv lock'
