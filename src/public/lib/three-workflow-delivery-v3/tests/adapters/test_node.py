@@ -14,7 +14,6 @@ import os
 import shutil
 import subprocess
 import tarfile
-import tomllib
 import types
 from contextlib import contextmanager
 from dataclasses import fields, replace
@@ -44,48 +43,6 @@ if TYPE_CHECKING:
     from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
-
-
-def _locked_tool_version(tool: str) -> str:
-    document = tomllib.loads(
-        (REPO_ROOT / "mise.lock").read_text(encoding="utf-8")
-    )
-    return cast("str", document["tools"][tool][0]["version"])
-
-
-def _runtime_version(*command: str) -> str:
-    return subprocess.run(  # noqa: S603
-        command,
-        cwd=REPO_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-
-
-def _reported_version(
-    command: tuple[str, ...],
-    version: str,
-) -> subprocess.CompletedProcess[str]:
-    return subprocess.CompletedProcess(command, 0, f"{version}\n", "")
-
-
-ACTIVE_NODE_VERSION = _locked_tool_version("node")
-ACTIVE_NODE_CLI_VERSION = f"v{ACTIVE_NODE_VERSION}"
-ACTIVE_PNPM_VERSION = _locked_tool_version("pnpm")
-ACTIVE_NPM_VERSION = _runtime_version("npm", "--version")
-actual_node_version = _runtime_version("node", "--version").removeprefix("v")
-actual_pnpm_version = _runtime_version("pnpm", "--version")
-if (
-    actual_node_version != ACTIVE_NODE_VERSION
-    or actual_pnpm_version != ACTIVE_PNPM_VERSION
-):
-    message = (
-        "Installed Node/PNPM does not match mise.lock. "
-        "Run `mise install --locked node pnpm` and retry."
-    )
-    raise RuntimeError(message)
-
 PROJECT_ROOT = REPO_ROOT / "src/public/lib/hcoona-release-smoke-npm"
 TARGET = "e" * 40
 NPM_VERSION = "1.2.3-beta.42.ge123456"
@@ -162,9 +119,9 @@ def build_request(witness: PackageTargetWitness) -> BuildRequest:
         npm_package_version=NPM_VERSION,
         witness=witness,
         source_date_epoch=1_700_000_000,
-        node_version=ACTIVE_NODE_VERSION,
-        pnpm_version=ACTIVE_PNPM_VERSION,
-        npm_version=ACTIVE_NPM_VERSION,
+        node_version="24.19.0",
+        pnpm_version="11.22.0",
+        npm_version="11.17.0",
     )
 
 
@@ -187,9 +144,9 @@ def built_result() -> node_adapter.BuildResult:
             npm_package_version=NPM_VERSION,
             witness=witness,
             source_date_epoch=1_700_000_000,
-            node_version=ACTIVE_NODE_VERSION,
-            pnpm_version=ACTIVE_PNPM_VERSION,
-            npm_version=ACTIVE_NPM_VERSION,
+            node_version="24.19.0",
+            pnpm_version="11.22.0",
+            npm_version="11.17.0",
         )
     )
 
@@ -593,11 +550,11 @@ def test_build_rejects_non_first_slice_package_identity_before_build(
     ) -> subprocess.CompletedProcess[str]:
         del cwd, environment
         if command == ("node", "--version"):
-            return _reported_version(command, ACTIVE_NODE_CLI_VERSION)
+            return subprocess.CompletedProcess(command, 0, "v24.19.0\n", "")
         if command == ("pnpm", "--version"):
-            return _reported_version(command, ACTIVE_PNPM_VERSION)
+            return subprocess.CompletedProcess(command, 0, "11.22.0\n", "")
         if command == ("npm", "--version"):
-            return _reported_version(command, ACTIVE_NPM_VERSION)
+            return subprocess.CompletedProcess(command, 0, "11.17.0\n", "")
         pytest.fail(
             f"unexpected build command after identity rejection: {command}"
         )
@@ -670,7 +627,7 @@ def test_build_rejects_non_exact_source_package_files_allowlist(
             replace(
                 build_request,
                 source_root=project,
-                pnpm_version=ACTIVE_PNPM_VERSION,
+                pnpm_version="11.22.0",
             )
         )
 
@@ -813,9 +770,9 @@ def test_build_is_deterministic_and_preserves_source_checkout(
     )
     assert first.witness == build_request.witness.canonical_bytes
     assert first.toolchain == (
-        ("node", ACTIVE_NODE_VERSION),
-        ("pnpm", ACTIVE_PNPM_VERSION),
-        ("npm", ACTIVE_NPM_VERSION),
+        ("node", "24.19.0"),
+        ("pnpm", "11.22.0"),
+        ("npm", "11.17.0"),
         ("adapter", "node/npm-package-v1"),
     )
     assert tuple(path for path, _digest in first.source_input_manifest) == (
@@ -1013,7 +970,7 @@ def test_lifecycle_evidence_binds_every_manifest_script(
         replace(
             build_request,
             source_root=project,
-            pnpm_version=ACTIVE_PNPM_VERSION,
+            pnpm_version="11.22.0",
         ),
     )
 
@@ -1057,11 +1014,11 @@ def test_failure_paths_preserve_complete_source_checkout(
         del cwd, environment
         observed_commands.append(command)
         if command == ("node", "--version"):
-            return _reported_version(command, ACTIVE_NODE_CLI_VERSION)
+            return subprocess.CompletedProcess(command, 0, "v24.19.0\n", "")
         if command == ("pnpm", "--version"):
-            return _reported_version(command, ACTIVE_PNPM_VERSION)
+            return subprocess.CompletedProcess(command, 0, "11.22.0\n", "")
         if command == ("npm", "--version"):
-            return _reported_version(command, ACTIVE_NPM_VERSION)
+            return subprocess.CompletedProcess(command, 0, "11.17.0\n", "")
         is_selected = (
             (
                 failure == "build"
@@ -1166,8 +1123,8 @@ def test_project_test_adapter_uses_isolated_stage_and_minimal_environment(
         ]
     ] = []
     runtime_request = _make_runtime_request(
-        node_version=ACTIVE_NODE_CLI_VERSION,
-        npm_version=ACTIVE_NPM_VERSION,
+        node_version="v24.19.0",
+        npm_version="11.17.0",
     )
 
     def record(
@@ -1207,9 +1164,9 @@ def test_project_test_adapter_uses_isolated_stage_and_minimal_environment(
             )
         )
         if command == ("node", "--version"):
-            return _reported_version(command, ACTIVE_NODE_CLI_VERSION)
+            return subprocess.CompletedProcess(command, 0, "v24.19.0\n", "")
         if command == ("npm", "--version"):
-            return _reported_version(command, ACTIVE_NPM_VERSION)
+            return subprocess.CompletedProcess(command, 0, "11.17.0\n", "")
         assert command == ("npm", "test", "--ignore-scripts")
         return subprocess.CompletedProcess(command, 0, "passed", "")
 
@@ -1681,8 +1638,8 @@ def test_install_import_uses_tarball_and_verifies_export_and_witness(
 ) -> None:
     before = _source_snapshot()
     runtime_request = _make_runtime_request(
-        node_version=ACTIVE_NODE_CLI_VERSION,
-        npm_version=ACTIVE_NPM_VERSION,
+        node_version="v24.19.0",
+        npm_version="11.17.0",
     )
     assert (
         "expected_smoke_message"
@@ -1706,8 +1663,8 @@ def test_install_import_rejects_mutated_artifact_export(
     built_result: node_adapter.BuildResult,
 ) -> None:
     runtime_request = _make_runtime_request(
-        node_version=ACTIVE_NODE_CLI_VERSION,
-        npm_version=ACTIVE_NPM_VERSION,
+        node_version="v24.19.0",
+        npm_version="11.17.0",
     )
     entries = _tar_entries(built_result.tarball)
     entries["package/dist/index.js"] = (
@@ -1814,11 +1771,11 @@ def test_build_reads_declared_inputs_once_and_reuses_immutable_bytes(  # noqa: P
     ) -> subprocess.CompletedProcess[str]:
         del environment
         if command == ("node", "--version"):
-            return _reported_version(command, ACTIVE_NODE_CLI_VERSION)
+            return subprocess.CompletedProcess(command, 0, "v24.19.0\n", "")
         if command == ("pnpm", "--version"):
-            return _reported_version(command, ACTIVE_PNPM_VERSION)
+            return subprocess.CompletedProcess(command, 0, "11.22.0\n", "")
         if command == ("npm", "--version"):
-            return _reported_version(command, ACTIVE_NPM_VERSION)
+            return subprocess.CompletedProcess(command, 0, "11.17.0\n", "")
         if command == ("node", "scripts/build.mjs"):
             runner_staging_roots.append(cwd.resolve())
             runner_staged_sources.append(

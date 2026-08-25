@@ -567,7 +567,7 @@
       "groupName": "Node Runtime",
       "postUpgradeTasks": {
         "commands": [
-          "uv run --no-project --python 3.13 python eng/scripts/node_runtime_facts.py update-renovate-lock --expected-node {{newVersion}}"
+          "uv run --no-project --python 3.13 python eng/scripts/update_node_mise_lock.py --expected-node {{newVersion}}"
         ],
         "fileFilters": ["mise.lock"],
         "executionMode": "branch"

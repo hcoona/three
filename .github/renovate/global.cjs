@@ -10,6 +10,6 @@ module.exports = {
     String.raw`^mise run --skip-tools --force update-pnpm-lockfiles$`,
     String.raw`^mise install --locked uv$`,
     String.raw`^mise run --skip-tools --force update-uv-lock$`,
-    String.raw`^uv run --no-project --python 3\.13 python eng/scripts/node_runtime_facts\.py update-renovate-lock --expected-node \d+\.\d+\.\d+$`,
+    String.raw`^uv run --no-project --python 3\.13 python eng/scripts/update_node_mise_lock\.py --expected-node \d+\.\d+\.\d+$`,
   ],
 };
