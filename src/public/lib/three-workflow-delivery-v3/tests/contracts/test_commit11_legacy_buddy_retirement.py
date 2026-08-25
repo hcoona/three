@@ -416,7 +416,7 @@ def test_production_v1_workflows_match_base_contract() -> None:
         uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
           experimental: true
-          install_args: hk@1.53.0
+          install_args: hk
 
       - name: Setup Python 3.14
 """
