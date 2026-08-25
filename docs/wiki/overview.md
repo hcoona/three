@@ -45,11 +45,12 @@ old refs now receive disabled-workflow rejection. Destination acceptance was
 separately authorized for one-time run `32769435970`; that authorization
 is consumed and the `.1`-`.4` suite cannot be reused. PR #579 merged the
 runner-startedness evidence repair as `06872f2b`. A separately authorized
-retry-2 bootstrap is now in implementation with a fresh workflow and staged
-Environment name; remote provisioning remains pending. It uses fixed
-`.5`-`.8` coordinates and a zero target sentinel pending protected
-finalization to the implementation merge SHA. Normal Live activation remains
-unauthorized.
+retry-2 implementation merged as `b031e5e0`. Its fresh Environment is
+provisioned with sole required reviewer `hcoona`, self-review permitted, and
+sole deployment branch `main`; workflow ID `341728447` has no runs. It uses
+fixed `.5`-`.8` coordinates and remains pending protected finalization to the
+full implementation merge SHA before the one authorized dispatch. Normal Live
+activation remains unauthorized.
 
 ## Confirmed v3 Shape
 
@@ -279,10 +280,11 @@ have changed.
    post-mutation-start failures across returned and exception paths while
    retaining incomplete classification; this does not retroactively make
    acceptance successful. Do not reuse the invocation, review, or coordinate.
-5. A fresh retry-2 bootstrap is authorized and in implementation with a new
-   workflow and staged Environment name; remote provisioning remains pending.
-   It uses `.5`-`.8` coordinates and a zero target sentinel pending protected
-   finalization to the implementation merge SHA. Keep `live_enabled: false`;
+5. Retry-2 implementation PR #582 merged as `b031e5e0`. The fresh Environment
+   is provisioned with sole required reviewer `hcoona`, self-review permitted,
+   and only `main`; workflow ID `341728447` has no runs. Protected finalization
+   must bind the full implementation merge SHA before the one authorized
+   attempt-1 dispatch using `.5`-`.8` coordinates. Keep `live_enabled: false`;
    normal Live activation remains unauthorized.
 
 ## Related Pages

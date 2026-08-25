@@ -32,7 +32,7 @@ WORKFLOW = (
     / ".github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-2.yml"
 )
 ZERO_SHA = "0" * 40
-FINALIZED_TARGET_SHA = "0000000000000000000000000000000000000000"
+FINALIZED_TARGET_SHA = "b031e5e0bd98a95943a03a1529b64e856e1a8aa1"
 EXPECTED_JOBS = (
     "validate-fixed-inputs",
     "acceptance-review",
