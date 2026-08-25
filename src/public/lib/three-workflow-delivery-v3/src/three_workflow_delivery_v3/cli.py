@@ -1194,10 +1194,15 @@ class _AcceptanceNpmRunner:
             )
         except subprocess.TimeoutExpired:
             raise TimeoutError("acceptance npm scenario timed out") from None
-        result = self._classify(
-            completed,
-            max_output_bytes=max_output_bytes,
-        )
+        try:
+            result = self._classify(
+                completed,
+                max_output_bytes=max_output_bytes,
+            )
+        except ValueError as error:
+            error.action_executed = True  # type: ignore[attr-defined]
+            error.mutation_started = True  # type: ignore[attr-defined]
+            raise
         result["action-executed"] = True
         result["mutation-started"] = True
         return result
@@ -1379,10 +1384,17 @@ class _AcceptanceNpmRunner:
                         proxy, "observed", proxy.processed
                     ).is_set(),
                 }
-        results = [
-            self._classify(result, max_output_bytes=max_output_bytes)
-            for result in completed
-        ]
+        try:
+            results = [
+                self._classify(result, max_output_bytes=max_output_bytes)
+                for result in completed
+            ]
+        except ValueError as error:
+            error.action_executed = bool(processes)  # type: ignore[attr-defined]
+            error.mutation_started = getattr(  # type: ignore[attr-defined]
+                proxy, "observed", threading.Event()
+            ).is_set()
+            raise
         outcomes = [result["outcome"] for result in results]
         if (
             len(outcomes) == _PAIR_FIELD_COUNT

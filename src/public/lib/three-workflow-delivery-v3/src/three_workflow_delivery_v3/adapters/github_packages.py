@@ -1341,6 +1341,7 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
     action_executed = False
     mutation_started = False
     exception_startedness_admitted = False
+    returned_facts_malformed = False
     try:
         run_scenario = getattr(runner, "run_scenario", None)
         if callable(run_scenario):
@@ -1396,6 +1397,7 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
             or type(started_fact) is not bool
             or (started_fact and not executed_fact)
         ):
+            returned_facts_malformed = True
             runner_error = ValueError(
                 "acceptance runner action facts are malformed"
             )
@@ -1419,9 +1421,7 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
         desired_sha512=actual_sha512,
     )
     if runner_error is not None:
-        malformed_facts = str(runner_error) == (
-            "acceptance runner action facts are malformed"
-        )
+        malformed_facts = returned_facts_malformed
         if runner_timed_out:
             if exception_startedness_admitted and not mutation_started:
                 return _acceptance_result(

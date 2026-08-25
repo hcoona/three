@@ -187,6 +187,7 @@ def _run(
     scenario: str,
     observations: list[dict[str, Any]],
     runner: object,
+    max_output_bytes: int = MAX_OUTPUT_BYTES,
 ) -> tuple[Any, RecordingTransport, Path]:
     tarball = tmp_path / f"{scenario}.tgz"
     tarball.write_bytes(scenario.encode())
@@ -203,7 +204,7 @@ def _run(
         runner=runner,
         timeout_seconds=TIMEOUT_SECONDS,
         max_response_bytes=MAX_RESPONSE_BYTES,
-        max_output_bytes=MAX_OUTPUT_BYTES,
+        max_output_bytes=max_output_bytes,
     )
     return result, transport, tarball
 
@@ -1455,6 +1456,29 @@ def test_exception_failure_preserves_startedness_label(
     assert result.diagnostics == ("runner-did-not-prove-controlled-outcome",)
 
 
+@pytest.mark.parametrize("error_type", [ValueError, OSError, RuntimeError])
+def test_attributed_exception_message_cannot_collide_with_malformed_facts(
+    tmp_path: Path,
+    error_type: type[BaseException],
+) -> None:
+    runner = ExplicitFactRunner(
+        executed=True,
+        started=True,
+        error=error_type("acceptance runner action facts are malformed"),
+    )
+    result, _, _ = _run(
+        tmp_path,
+        scenario="absent-create-readback",
+        observations=[_absent(), _absent()],
+        runner=runner,
+    )
+
+    assert result.result == "runner-failed-after-mutation-start"
+    assert result.mutation_classification == "incomplete"
+    assert result.action_executed is True
+    assert result.mutation_started is True
+
+
 @pytest.mark.parametrize(
     ("scenario", "error_type", "expected_result"),
     [
@@ -1967,6 +1991,104 @@ def test_run_process_timeout_raises_builtin_timeout_error(
             timeout_seconds=TIMEOUT_SECONDS,
             max_output_bytes=MAX_OUTPUT_BYTES,
         )
+
+
+def test_run_process_classification_error_preserves_startedness(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        cli_module.subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            ("npm", "publish"),
+            0,
+            stdout="oversized",
+            stderr="",
+        ),
+    )
+    runner = cli_module._AcceptanceNpmRunner(
+        tmp_path / ".npmrc",
+        contender_tarballs={},
+    )
+
+    with pytest.raises(ValueError) as raised:
+        runner._run_process(
+            ("npm", "publish", str(tmp_path / "package.tgz")),
+            env={},
+            timeout_seconds=TIMEOUT_SECONDS,
+            max_output_bytes=1,
+        )
+
+    assert raised.value.action_executed is True  # type: ignore[attr-defined]
+    assert raised.value.mutation_started is True  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize(
+    ("proxy_observed", "expected_result"),
+    [
+        (False, "runner-failed-after-action-start"),
+        (True, "runner-failed-after-mutation-start"),
+    ],
+)
+def test_runner_classification_error_preserves_proxy_startedness(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    proxy_observed: bool,
+    expected_result: str,
+) -> None:
+    observed = cli_module.threading.Event()
+    if proxy_observed:
+        observed.set()
+
+    class Proxy:
+        registry = "http://127.0.0.1:4873"
+        processed = cli_module.threading.Event()
+        proof = None
+
+        def __init__(self, **_kwargs: object) -> None:
+            self.observed = observed
+
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            pass
+
+    class Process:
+        returncode = 0
+
+        def communicate(self, timeout: float | None = None) -> tuple[str, str]:
+            assert timeout is not None
+            return "oversized", ""
+
+        def poll(self) -> int:
+            return self.returncode
+
+        def kill(self) -> None:
+            self.returncode = -9
+
+    monkeypatch.setattr(cli_module, "_LostResponseProxy", Proxy)
+    monkeypatch.setattr(
+        cli_module.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: Process(),
+    )
+    result, _, _ = _run(
+        tmp_path,
+        scenario="absent-create-readback",
+        observations=[_absent(), _absent()],
+        runner=cli_module._AcceptanceNpmRunner(
+            tmp_path / ".npmrc",
+            contender_tarballs={},
+        ),
+        max_output_bytes=1,
+    )
+
+    assert result.result == expected_result
+    assert result.mutation_classification == "incomplete"
+    assert result.action_executed is True
+    assert result.mutation_started is proxy_observed
 
 
 def test_adapter_records_timeout_as_started_unknown_mutation(
