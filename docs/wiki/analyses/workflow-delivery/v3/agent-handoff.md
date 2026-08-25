@@ -151,13 +151,21 @@ If it conflicts with the
   remained unknown/incomplete. Artifact IDs `9548188898`, `9548197128`, and
   `9548202666` match their recorded raw-byte SHA-256 digests. Workflow ID
   `341728447` is `disabled_manually`, Environment ID `20531285468` is deleted,
-  and all five jobs are terminal. Protected source cleanup is staged.
-  Authenticated package reconciliation must wait until cleanup merges, the
-  deleted workflow identity is re-disabled if necessary, and post-merge checks
-  prove workflow, Environment, and temporary-ref absence plus old-ref dispatch
-  rejection. The `.5`-`.8` invocation, review, and coordinate block must not be
-  reused. Both strict acceptance profiles remain evidence replay authority and
-  cannot be mixed. `live_enabled` remains false.
+  and all five acceptance jobs are terminal. Cleanup PR #584 merged as
+  `fd2f056b756067bd759b7a6004fe5c2fdbebe47e`; the workflow, Environment, and
+  temporary transition ref are absent. GitHub changed the removed identity to
+  `deleted` and rejected direct enable/disable with HTTP 403. The expected
+  old-ref HTTP 422 proof instead returned HTTP 204 and created cleanup probe
+  run `32809578776`; this reactivated the identity, which was immediately
+  returned to `disabled_manually`. The probe remains queued with zero jobs and
+  zero pending deployments. Normal cancel and force-cancel return HTTP 500;
+  user-authorized deletion returns HTTP 403 while the run is queued. Its API
+  metadata is retained outside the repository. Do not dispatch, rerun, approve,
+  recreate a transition ref, or attempt package reconciliation. Cleanup remains
+  blocked until GitHub terminalizes or otherwise removes the stuck run. The
+  `.5`-`.8` invocation, review, and coordinate block must not be reused. Both
+  strict acceptance profiles remain evidence replay authority and cannot be
+  mixed. `live_enabled` remains false.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the
@@ -666,12 +674,14 @@ If it conflicts with the
   absent, started mutation, and observed exact post-state, but retained
   incomplete evidence because the runner did not prove a controlled outcome.
   The second probe was skipped. Workflow ID `341728447` is
-  `disabled_manually`, the Environment is absent, and all five jobs are
-  terminal. Protected source cleanup is staged; authenticated package
-  reconciliation remains blocked until cleanup merges, the deleted workflow
-  identity is re-disabled if necessary, and post-merge identity, absence, and
-  old-ref rejection checks complete. Do not reuse the invocation, review, or
-  `.5`-`.8` coordinate block.
+  `disabled_manually`, and the workflow, Environment, and transition ref are
+  absent. Cleanup PR #584 merged as `fd2f056b`. The expected old-ref HTTP 422
+  check returned HTTP 204 and created stuck cleanup probe run `32809578776`,
+  which remains queued with zero jobs or deployments after cancel,
+  force-cancel, and authorized deletion were rejected by GitHub. Do not
+  dispatch or recreate a ref. Authenticated package reconciliation remains
+  blocked until GitHub terminalizes or removes this run. Do not reuse the
+  invocation, review, or `.5`-`.8` coordinate block.
   Do not activate normal Live or begin later scopes without a separate explicit
   user task.
 - Implementation must preserve the approved commit boundaries and keep live

@@ -225,10 +225,12 @@ Next:
 3. do not reuse either run, Environment review, or coordinate block; retry-2
    run `32805739095` is consumed and unsuccessful after `.5` mutation
    startedness and exact post-state but incomplete runner evidence. Workflow
-   ID `341728447` is disabled, the Environment is absent, and protected source
-   cleanup is staged. Authenticated package reconciliation remains blocked
-   until cleanup merges, the deleted workflow identity is re-disabled if
-   necessary, and post-merge identity, absence, and old-ref rejection checks
-   complete; and
+   ID `341728447` is disabled. Environment ID `20531285468` was deleted through
+   the API before cleanup PR #584 removed the retry workflow source. The
+   expected old-ref rejection instead created stuck cleanup probe run
+   `32809578776`, which remains queued with zero jobs or deployments after
+   GitHub rejected cancel, force-cancel, and authorized deletion. Authenticated
+   package reconciliation remains blocked until GitHub terminalizes or removes
+   that run; and
 4. keep `live_enabled: false` until successful acceptance and separate human
    activation authorization.
