@@ -133,7 +133,7 @@ def test_candidate_uses_exact_pr_range_and_tested_merge_target() -> None:
     setup_uv = next(step for step in steps if step.get("uses") == UV)
 
     assert "git fetch --force --tags --no-recurse-submodules origin" in checkout
-    assert '"+${TARGET_REF}:refs/remotes/origin/wdv3-target"' in checkout
+    assert '"+${TARGET_SHA}:refs/remotes/origin/wdv3-target"' in checkout
     assert "git checkout --detach refs/remotes/origin/wdv3-target" in checkout
     assert 'test "$(git rev-parse HEAD)" = "${TARGET_SHA}"' in checkout
     assert "eng/scripts/workflow_delivery_v3_run_created_epoch.py" in clock

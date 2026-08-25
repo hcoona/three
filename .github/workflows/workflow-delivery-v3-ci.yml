@@ -32,13 +32,12 @@ jobs:
       - name: Check out tested merge candidate without credentials
         env:
           GIT_LFS_SKIP_SMUDGE: '1'
-          TARGET_REF: ${{ github.ref }}
           TARGET_SHA: ${{ github.sha }}
         run: |
           git init .
           git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
           git fetch --force --tags --no-recurse-submodules origin \
-            "+${TARGET_REF}:refs/remotes/origin/wdv3-target"
+            "+${TARGET_SHA}:refs/remotes/origin/wdv3-target"
           git checkout --detach refs/remotes/origin/wdv3-target
           test "$(git rev-parse HEAD)" = "${TARGET_SHA}"
       - name: Record platform workflow creation
