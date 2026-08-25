@@ -1834,7 +1834,7 @@ these endpoints cannot prove repository association, exact tag mapping,
 tarball, manifest, and Package Target Witness, implementation remains blocked
 rather than broadening observation.
 
-The endpoint-specific safe response projections are also closed:
+The endpoint-specific parsers admit only these facts:
 
 - protected-main state retains only repository, branch, and protected boolean;
 - ref resolution retains only ref name, object type, and commit SHA;
@@ -1860,9 +1860,9 @@ The endpoint-specific safe response projections are also closed:
 - tarball retains only byte count, SHA-512, normalized manifest digest, and
   Package Target Witness digest.
 
-Every projection rejects unknown or missing members before hashing. Collection
-members sort by numeric ID. The tarball itself is not embedded in the
-candidate.
+Every parser rejects missing or malformed required members before deriving
+state. Collection members sort by numeric ID. The tarball itself is not
+embedded in the candidate.
 
 All pagination must be exhaustive. Any request failure, truncation, unexpected
 member, noncanonical input, source change, run `updated_at` or state drift,
@@ -1898,8 +1898,6 @@ leaf contracts:
 | `producer.ref`                             | string  | `refs/heads/main`                                                                                              |
 | `producer.control_commit`                  | string  | exact 40-character resolved commit                                                                             |
 | `invocation.id`                            | string  | one UUID                                                                                                       |
-| `invocation.actor_login`                   | string  | Governance-reviewed producer metadata                                                                          |
-| `invocation.actor_id`                      | integer | Governance-reviewed producer metadata                                                                          |
 | `invocation.started_at`                    | string  | producer-recorded UTC instant at or after `eligible_after`                                                     |
 | `invocation.completed_at`                  | string  | producer-recorded UTC instant not before start                                                                 |
 | `authority.repository`                     | string  | `hcoona/three`                                                                                                 |
@@ -1924,7 +1922,7 @@ leaf contracts:
 | `acceptance.governance_artifact_id`        | integer | `9548202666`                                                                                                   |
 | `acceptance.governance_artifact_sha256`    | string  | exact `sha256:` digest                                                                                         |
 | `acceptance.governance_record_sha256`      | string  | exact admitted canonical record digest                                                                         |
-| `requests`                                 | array   | one or more closed request projections ordered by sequence                                                     |
+| `requests`                                 | array   | one or more closed request-ledger entries ordered by sequence                                                  |
 | `platform_observations`                    | array   | exactly initial and final closed projections                                                                   |
 | `destination_observations`                 | array   | exactly initial and final closed projections                                                                   |
 | `result.terminalization_blocker_exclusion` | string  | `admitted:run:32809578776`                                                                                     |
@@ -1939,18 +1937,14 @@ leaf contracts:
 | `result.diagnostics`                       | array   | sorted unique subset of `platform-orphan-admitted`, `package-absent`, `package-partial`, `package-conflicting` |
 | `result_digest`                            | string  | `sha256:` digest defined below                                                                                 |
 
-Each closed request projection contains exactly integer `sequence`, `phase`
+Each closed request-ledger entry contains exactly integer `sequence`, `phase`
 (`initial` or `final`), literal `method: GET`, allowlisted `origin`,
 percent-encoded `path`, nullable string `page_cursor`, positive integer
-`page_index`, integer `http_status`, boolean `complete`, and
-`safe_response_sha256`. A nonpaginated request uses null cursor and page index
-`1`. `complete` is true only when the response and every required next page
-were admitted. `safe_response_sha256` is
-`SHA-256(RFC 8785(safe response projection))`, encoded as
-`sha256:<lowercase-hex>`; the safe response has no digest member. The request
-projection excludes authorization, cookies, headers not on the explicit safe
-allowlist, response bodies, redirect query strings, signed URLs, and unrelated
-package members.
+`page_index`, integer `http_status`, and boolean `complete`. A nonpaginated
+request uses null cursor and page index `1`. `complete` is true only when the
+response and every required next page were admitted. The request ledger
+excludes authorization, cookies, headers, response bodies, redirect query
+strings, signed URLs, and unrelated package members.
 
 Each closed platform observation envelope contains exactly `phase`,
 `observed_at`, `state`, and `state_sha256`. Its closed `state` contains exactly
@@ -1982,8 +1976,9 @@ caller-defined extension member exists.
 `result_digest` is
 `SHA-256(RFC 8785(candidate with result_digest omitted))`, encoded as
 `sha256:<lowercase-hex>`. The command completes the final observation, compares
-both safe projections, constructs and validates the candidate, computes this
-digest, writes canonical bytes once, and performs no later network request.
+the initial and final canonical state payloads, constructs and validates the
+candidate, computes this digest, writes canonical bytes once, and performs no
+later network request.
 The semantic result records:
 
 - `result.terminalization_blocker_exclusion` as admitted only for run
@@ -2046,9 +2041,8 @@ mechanisms rather than adding a lock, ledger, signing service, or workflow.
 
 The merged result is authoritative history only for its two recorded
 observation instants. It does not independently attest the local producer,
-actor, or wall clock and does not prove current platform state at merge time;
-protected review accepts those metadata and the deterministic candidate as
-Governance assertions.
+wall clock, or current platform state at merge time; protected review accepts
+the producer metadata and deterministic candidate as Governance assertions.
 
 This case does not modify the protected Live attestation, acceptance evidence,
 Release history, or normal execution model. Another run or reconciliation
