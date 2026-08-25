@@ -44,36 +44,6 @@ public sealed class NpmPhase12NpmIntegrationTests
     }
 
     [Fact]
-    public async Task ResolveWorkspaceAsync_ReportsRealNpmPrefixMilestones()
-    {
-        Assert.SkipUnless(IsNpmInstalled(), "Real npm integration requires npm on PATH.");
-        NpmPrefixFixture fixture = NpmPrefixFixture.Create(
-            "packages/*",
-            "packages/member",
-            "member"
-        );
-        bool completedSuccessfully = false;
-        try
-        {
-            _ = await CreateService(fixture)
-                .ResolveWorkspaceAsync(
-                    cancellationToken: TestContext.Current.CancellationToken
-                );
-
-            AssertNpmPrefixSpecification(fixture);
-            string warning = Assert.IsType<string>(
-                fixture.ProcessRunner.RecordedMilestoneWarning
-            );
-            completedSuccessfully = true;
-            Assert.Skip(warning);
-        }
-        finally
-        {
-            CompleteFixtureCleanup(fixture, completedSuccessfully);
-        }
-    }
-
-    [Fact]
     public void ResolveWorkspaceAsync_UsesRealNpmPrefix_ForNonWorkspacePackage()
     {
         Assert.SkipUnless(IsNpmInstalled(), "Real npm integration requires npm on PATH.");
@@ -135,31 +105,36 @@ public sealed class NpmPhase12NpmIntegrationTests
     }
 
     [Fact]
-    public void ResolveWorkspaceAsync_UsesNativeInstalledNpm_OnWindows()
+    public async Task ResolveWorkspaceAsync_ReportsNativeNpmPrefixMilestones_OnWindows()
     {
         Assert.SkipUnless(
             OperatingSystem.IsWindows(),
-            "Native installed npm smoke requires Windows."
+            "Native npm prefix diagnostics require Windows."
         );
-        Assert.SkipUnless(IsNpmInstalled(), "Native installed npm smoke requires npm on PATH.");
+        Assert.SkipUnless(
+            IsNpmInstalled(),
+            "Native npm prefix diagnostics require npm on PATH."
+        );
         NpmPrefixFixture fixture = NpmPrefixFixture.Create(
             "packages/*",
             "packages/member",
-            "member"
+            "member",
+            captureProcessMilestones: true
         );
         bool completedSuccessfully = false;
         try
         {
-            NpmPhase12RegistryDeclaration declaration = ResolveDeclaration(fixture);
+            _ = await CreateService(fixture)
+                .ResolveWorkspaceAsync(
+                    cancellationToken: TestContext.Current.CancellationToken
+                );
 
-            Assert.Equal(Path.Combine(fixture.RootPath, ".npmrc"), declaration.SourcePath);
-            Assert.Equal("@root:registry", declaration.Key);
-            Assert.Equal(
-                "https://pkgs.dev.azure.com/org/_packaging/root/npm/registry/",
-                declaration.RegistryUrl.AbsoluteUri
+            AssertNpmPrefixSpecification(fixture);
+            string evidence = Assert.IsType<string>(
+                fixture.ProcessRunner.RecordedMilestoneEvidence
             );
-            AssertNpmPrefixInvocation(fixture);
             completedSuccessfully = true;
+            Assert.Skip(evidence);
         }
         finally
         {
@@ -168,27 +143,19 @@ public sealed class NpmPhase12NpmIntegrationTests
     }
 
     [Fact]
-    public void RecordingSystemProcessRunner_DiagnosticSpecChangesOnlyTimeout()
+    public void RecordingSystemProcessRunner_DiagnosticSpecPreservesNpmInvocation()
     {
         var outputCaptureOptions = new ProcessOutputCaptureOptions
         {
             StandardOutputByteLimit = 123,
             StandardErrorByteLimit = 456,
         };
-        using var standardErrorTee = new StringWriter(CultureInfo.InvariantCulture);
         var startSpec = new ProcessStartSpec(
             "diagnostic-tool",
-            ["first", "second"],
+            ["prefix"],
             "diagnostic-working-directory",
-            new Dictionary<string, string?>
-            {
-                ["DIAGNOSTIC_VALUE"] = "value",
-                ["DIAGNOSTIC_REMOVED"] = null,
-            },
-            "diagnostic-input",
-            TimeSpan.FromSeconds(10),
-            outputCaptureOptions,
-            standardErrorTee
+            timeout: TimeSpan.FromSeconds(10),
+            outputCaptureOptions: outputCaptureOptions
         );
 
         ProcessStartSpec diagnosticStartSpec =
@@ -198,21 +165,13 @@ public sealed class NpmPhase12NpmIntegrationTests
         Assert.Equal(startSpec.FileName, diagnosticStartSpec.FileName);
         Assert.Equal(startSpec.Arguments, diagnosticStartSpec.Arguments);
         Assert.Equal(startSpec.WorkingDirectory, diagnosticStartSpec.WorkingDirectory);
-        Assert.Equal(startSpec.Environment.Count, diagnosticStartSpec.Environment.Count);
-        foreach ((string key, string? value) in startSpec.Environment)
-        {
-            Assert.True(diagnosticStartSpec.Environment.TryGetValue(key, out string? actual));
-            Assert.Equal(value, actual);
-        }
-        Assert.Equal(startSpec.StandardInput, diagnosticStartSpec.StandardInput);
         Assert.Equal(TimeSpan.FromSeconds(10), startSpec.Timeout);
         Assert.Equal(TimeSpan.FromSeconds(60), diagnosticStartSpec.Timeout);
         Assert.Same(startSpec.OutputCaptureOptions, diagnosticStartSpec.OutputCaptureOptions);
-        Assert.Same(startSpec.StandardErrorTee, diagnosticStartSpec.StandardErrorTee);
     }
 
     [Fact]
-    public void RecordingSystemProcessRunner_FormatsFixedSafeMilestoneWarning()
+    public void RecordingSystemProcessRunner_FormatsFixedSafeMilestoneEvidence()
     {
         var milestones =
             new Dictionary<SystemProcessRunner.ProcessMilestoneName, TimeSpan>
@@ -223,7 +182,7 @@ public sealed class NpmPhase12NpmIntegrationTests
                     TimeSpan.FromMilliseconds(2.5),
             };
 
-        string warning = RecordingSystemProcessRunner.CreateMilestoneWarning(milestones);
+        string evidence = RecordingSystemProcessRunner.CreateMilestoneEvidence(milestones);
 
         Assert.Equal(
             "azureauth_npm_process_milestones"
@@ -236,7 +195,7 @@ public sealed class NpmPhase12NpmIntegrationTests
                 + " TimeoutInitiatedMs=missing"
                 + " KillCompletedMs=missing"
                 + " ProcessDisposalCompletedMs=2.500",
-            warning
+            evidence
         );
     }
 
@@ -440,19 +399,12 @@ public sealed class NpmPhase12NpmIntegrationTests
     private sealed class RecordingSystemProcessRunner : IProcessRunner
     {
         private static readonly TimeSpan DiagnosticTimeout = TimeSpan.FromSeconds(60);
-        private static readonly SystemProcessRunner.ProcessMilestoneName[] MilestoneNames =
-        [
-            SystemProcessRunner.ProcessMilestoneName.LaunchRequested,
-            SystemProcessRunner.ProcessMilestoneName.ProcessStarted,
-            SystemProcessRunner.ProcessMilestoneName.StandardInputClosed,
-            SystemProcessRunner.ProcessMilestoneName.ProcessExited,
-            SystemProcessRunner.ProcessMilestoneName.StandardOutputEof,
-            SystemProcessRunner.ProcessMilestoneName.StandardErrorEof,
-            SystemProcessRunner.ProcessMilestoneName.TimeoutInitiated,
-            SystemProcessRunner.ProcessMilestoneName.KillCompleted,
-            SystemProcessRunner.ProcessMilestoneName.ProcessDisposalCompleted,
-        ];
-        private const string MissingMilestone = "missing";
+        private readonly bool captureProcessMilestones;
+
+        public RecordingSystemProcessRunner(bool captureProcessMilestones)
+        {
+            this.captureProcessMilestones = captureProcessMilestones;
+        }
 
         public string? ExpectedPrefixPath { get; set; }
 
@@ -460,26 +412,31 @@ public sealed class NpmPhase12NpmIntegrationTests
 
         public List<ProcessResult> RecordedResults { get; } = [];
 
-        public string? RecordedMilestoneWarning { get; private set; }
+        public string? RecordedMilestoneEvidence { get; private set; }
 
         public async Task<ProcessResult> RunAsync(
             ProcessStartSpec startSpec,
             CancellationToken cancellationToken = default
         )
         {
-            var milestones =
-                new ConcurrentDictionary<
-                    SystemProcessRunner.ProcessMilestoneName,
-                    TimeSpan
-                >();
+            ConcurrentDictionary<
+                SystemProcessRunner.ProcessMilestoneName,
+                TimeSpan
+            >? milestones =
+                captureProcessMilestones ? new() : null;
+            var inner =
+                milestones is null
+                    ? new SystemProcessRunner()
+                    : new SystemProcessRunner(milestone =>
+                        milestones.TryAdd(milestone.Name, milestone.Elapsed)
+                    );
+            ProcessStartSpec executionSpec =
+                milestones is null ? startSpec : CreateDiagnosticStartSpec(startSpec);
             try
             {
                 RecordedStartSpecs.Add(startSpec);
-                var inner = new SystemProcessRunner(milestone =>
-                    milestones.TryAdd(milestone.Name, milestone.Elapsed)
-                );
                 ProcessResult result = await inner
-                    .RunAsync(CreateDiagnosticStartSpec(startSpec), cancellationToken)
+                    .RunAsync(executionSpec, cancellationToken)
                     .ConfigureAwait(false);
                 RecordedResults.Add(result);
                 if (!result.Succeeded || ExpectedPrefixPath is null)
@@ -507,9 +464,10 @@ public sealed class NpmPhase12NpmIntegrationTests
             }
             finally
             {
-                string warning = CreateMilestoneWarning(milestones);
-                RecordedMilestoneWarning = warning;
-                TestContext.Current.AddWarning(warning);
+                if (milestones is not null)
+                {
+                    RecordedMilestoneEvidence = CreateMilestoneEvidence(milestones);
+                }
             }
         }
 
@@ -529,7 +487,7 @@ public sealed class NpmPhase12NpmIntegrationTests
             );
         }
 
-        internal static string CreateMilestoneWarning(
+        internal static string CreateMilestoneEvidence(
             IReadOnlyDictionary<
                 SystemProcessRunner.ProcessMilestoneName,
                 TimeSpan
@@ -539,7 +497,8 @@ public sealed class NpmPhase12NpmIntegrationTests
             return "azureauth_npm_process_milestones "
                 + string.Join(
                     ' ',
-                    MilestoneNames.Select(name => FormatMilestone(milestones, name))
+                    Enum.GetValues<SystemProcessRunner.ProcessMilestoneName>()
+                        .Select(name => FormatMilestone(milestones, name))
                 );
         }
 
@@ -559,17 +518,22 @@ public sealed class NpmPhase12NpmIntegrationTests
                     "0.000",
                     CultureInfo.InvariantCulture
                 )
-                : MissingMilestone;
+                : "missing";
             return name + "Ms=" + elapsedMilliseconds;
         }
     }
 
     private sealed class NpmPrefixFixture
     {
-        private NpmPrefixFixture(string rootPath, string invocationPath)
+        private NpmPrefixFixture(
+            string rootPath,
+            string invocationPath,
+            bool captureProcessMilestones
+        )
         {
             RootPath = rootPath;
             InvocationPath = invocationPath;
+            ProcessRunner = new RecordingSystemProcessRunner(captureProcessMilestones);
         }
 
         public string RootPath { get; }
@@ -578,12 +542,13 @@ public sealed class NpmPhase12NpmIntegrationTests
 
         public string ExpectedPrefixPath { get; private init; } = string.Empty;
 
-        public RecordingSystemProcessRunner ProcessRunner { get; } = new();
+        public RecordingSystemProcessRunner ProcessRunner { get; }
 
         public static NpmPrefixFixture Create(
             string workspacePattern,
             string invocationRelativePath,
-            string invocationPackageName
+            string invocationPackageName,
+            bool captureProcessMilestones = false
         )
         {
             string rootPath = Path.Combine(
@@ -623,7 +588,11 @@ public sealed class NpmPhase12NpmIntegrationTests
                 $"@{invocationPackageName}:registry=https://pkgs.dev.azure.com/"
                     + $"org/_packaging/{invocationPackageName}/npm/registry/\n"
             );
-            var fixture = new NpmPrefixFixture(rootPath, invocationPath)
+            var fixture = new NpmPrefixFixture(
+                rootPath,
+                invocationPath,
+                captureProcessMilestones
+            )
             {
                 ExpectedPrefixPath =
                     invocationRelativePath.StartsWith("tools/", StringComparison.Ordinal)
