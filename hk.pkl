@@ -451,6 +451,19 @@ local workflow_delivery_v3_validation = new Mapping<String, Step> {
       "python eng/scripts/hk_exec.py --timeout-seconds 720 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests"
   }
 
+  ["node-mise-authority"] {
+    profiles = List("small")
+    glob =
+      List(
+        ".github/workflows/ci.yml",
+        "eng/scripts/update_node_mise_lock.py",
+        "mise.lock",
+        "mise.toml",
+      )
+    check =
+      "python eng/scripts/hk_exec.py --timeout-seconds 120 uv run --no-project --python 3.13 python eng/scripts/update_node_mise_lock.py"
+  }
+
   ["hcoona-release-smoke-npm-consumer-policy"] {
     profiles = List("small")
     glob = hcoona_release_smoke_npm_consumer_policy_files
