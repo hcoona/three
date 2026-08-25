@@ -43,8 +43,13 @@ converted both deleted legacy Buddy workflow identities to
 `disabled_manually`, drained all nonterminal executions, and proved that real
 old refs now receive disabled-workflow rejection. Destination acceptance was
 separately authorized for one-time run `32769435970`; that authorization
-is consumed, no retry is currently authorized, and normal Live activation
-remains unauthorized.
+is consumed and the `.1`-`.4` suite cannot be reused. PR #579 merged the
+runner-startedness evidence repair as `06872f2b`. A separately authorized
+retry-2 bootstrap is now in implementation with a fresh workflow and staged
+Environment name; remote provisioning remains pending. It uses fixed
+`.5`-`.8` coordinates and a zero target sentinel pending protected
+finalization to the implementation merge SHA. Normal Live activation remains
+unauthorized.
 
 ## Confirmed v3 Shape
 
@@ -274,7 +279,11 @@ have changed.
    post-mutation-start failures across returned and exception paths while
    retaining incomplete classification; this does not retroactively make
    acceptance successful. Do not reuse the invocation, review, or coordinate.
-   Keep `live_enabled: false`; no retry is currently authorized.
+5. A fresh retry-2 bootstrap is authorized and in implementation with a new
+   workflow and staged Environment name; remote provisioning remains pending.
+   It uses `.5`-`.8` coordinates and a zero target sentinel pending protected
+   finalization to the implementation merge SHA. Keep `live_enabled: false`;
+   normal Live activation remains unauthorized.
 
 ## Related Pages
 

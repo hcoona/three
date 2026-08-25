@@ -29,6 +29,10 @@ SHA512_A = "sha512:" + ("3" * 128)
 SHA512_B = "sha512:" + ("4" * 128)
 ENVIRONMENT = "workflow-delivery-v3-buddy-smoke-acceptance"
 COORDINATE = "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.1"
+LEGACY_TARGET_SHA = "5a84bebd05407e1859fe76f400dcb4f4cbcd002e"
+LEGACY_CONFIRMATION_DIGEST = (
+    "sha256:6ab9696b51f21083802af68d80104f65ffb844bdcd449974c881e5a8cc96ad5e"
+)
 
 
 def _validated_request_proof() -> ValidatedAcceptanceRequestProof:
@@ -211,9 +215,9 @@ def _document() -> dict[str, Any]:
             "ref": "refs/heads/main",
             "sha": "b" * 40,
         },
-        "target-sha": "a" * 40,
+        "target-sha": LEGACY_TARGET_SHA,
         "package-coordinate": COORDINATE,
-        "confirmation-digest": SHA256_A,
+        "confirmation-digest": LEGACY_CONFIRMATION_DIGEST,
         "environment": ENVIRONMENT,
         "reviewer": {"login": None, "source": "unavailable-in-job-context"},
         "recovery": {
@@ -1371,6 +1375,128 @@ def _refresh_probe_record_digest(
     ).to_document()["record-digest"]
 
 
+def _retry_2_document() -> dict[str, Any]:
+    document = _document()
+    environment = "workflow-delivery-v3-buddy-smoke-acceptance-retry-2"
+    document["workflow"]["path"] = (
+        ".github/workflows/"
+        "workflow-delivery-v3-buddy-smoke-acceptance-retry-2.yml"
+    )
+    document["target-sha"] = "0" * 40
+    document["package-coordinate"] = (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5"
+    )
+    document["confirmation-digest"] = (
+        "sha256:"
+        "1215f9d01cd343462c3f826ba67ebee86b6f6142b7fcfe5630572a5a808314f8"
+    )
+    document["environment"] = environment
+    document["recovery"]["environment"] = environment
+    document["recovery"]["artifact-id"] = None
+    for index, dependency in enumerate(document["dependency-results"]):
+        dependency["result"] = "failure" if index == 0 else "skipped"
+    document["mutation-classification"] = "incomplete"
+    for fact in document["probe-facts"]:
+        fact["result"] = "incomplete"
+        fact["record-digest"] = None
+        fact["artifact-id"] = None
+        fact["artifact-digest"] = None
+        fact["scenarios"] = []
+    return document
+
+
+def test_retry_2_profile_admits_only_exact_rejected_dispatch_sentinel_evidence() -> (
+    None
+):
+    document = _retry_2_document()
+
+    admitted = _admit(document)
+
+    assert admitted.to_document() == document
+    assert admitted.target_sha == "0" * 40
+
+
+@pytest.mark.parametrize(
+    ("path", "value", "message"),
+    [
+        (
+            ("workflow", "path"),
+            ".github/workflows/workflow-delivery-v3-buddy-smoke-acceptance.yml",
+            "workflow.path",
+        ),
+        (
+            ("environment",),
+            ENVIRONMENT,
+            "environment",
+        ),
+        (
+            ("confirmation-digest",),
+            LEGACY_CONFIRMATION_DIGEST,
+            "confirmation-digest",
+        ),
+        (
+            ("target-sha",),
+            "c" * 40,
+            "target-sha",
+        ),
+    ],
+)
+def test_retry_2_profile_rejects_cross_profile_substitution(
+    path: tuple[str, ...],
+    value: object,
+    message: str,
+) -> None:
+    document = _retry_2_document()
+    _set_path(document, path, value)
+
+    with pytest.raises(ValueError, match=message):
+        _admit(document)
+
+
+def test_legacy_profile_rejects_unreviewed_target_and_confirmation() -> None:
+    document = _document()
+    document["target-sha"] = "c" * 40
+    with pytest.raises(ValueError, match="target-sha"):
+        _admit(document)
+
+    document = _document()
+    document["confirmation-digest"] = SHA256_A
+    with pytest.raises(ValueError, match="confirmation-digest"):
+        _admit(document)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "unknown-classification",
+        "successful-validation",
+        "review-artifact",
+        "reviewer-attribution",
+        "probe-record",
+    ],
+)
+def test_zero_target_rejects_non_rejected_dispatch_evidence(
+    mutation: str,
+) -> None:
+    document = _retry_2_document()
+    if mutation == "unknown-classification":
+        document["mutation-classification"] = "unknown"
+    elif mutation == "successful-validation":
+        document["dependency-results"][0]["result"] = "success"
+    elif mutation == "review-artifact":
+        document["recovery"]["artifact-id"] = 701
+    elif mutation == "reviewer-attribution":
+        document["reviewer"] = {
+            "login": "octocat",
+            "source": "on-demand-read-only-inspection",
+        }
+    else:
+        document["probe-facts"][0] = _probe_fact("probe-absent-create-readback")
+
+    with pytest.raises(ValueError):
+        _admit(document)
+
+
 @pytest.mark.parametrize(
     ("dependency_job", "terminal_result", "classification"),
     [
@@ -1727,7 +1853,7 @@ def test_complete_acceptance_evidence_rejects_zero_target_sha() -> None:
     document = _document()
     document["target-sha"] = "0" * 40
 
-    with pytest.raises(ValueError, match="non-zero target-sha"):
+    with pytest.raises(ValueError, match="zero target-sha"):
         _admit(document)
 
 
@@ -1739,21 +1865,13 @@ def test_complete_acceptance_evidence_rejects_zero_workflow_sha() -> None:
         _admit(document)
 
 
-@pytest.mark.parametrize(
-    "sha_path",
-    [
-        ("target-sha",),
-        ("workflow", "sha"),
-    ],
-    ids=["target-sha", "workflow-sha"],
-)
-def test_incomplete_acceptance_evidence_preserves_permitted_zero_sha_sentinel(
-    sha_path: tuple[str, ...],
-) -> None:
+def test_incomplete_acceptance_evidence_preserves_zero_workflow_sha_sentinel() -> (
+    None
+):
     document = _document()
     document["recovery"]["artifact-id"] = None
     document["mutation-classification"] = "incomplete"
-    _set_path(document, sha_path, "0" * 40)
+    document["workflow"]["sha"] = "0" * 40
 
     evidence = _admit(document)
 
