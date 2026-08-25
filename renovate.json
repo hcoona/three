@@ -372,6 +372,13 @@
       "groupName": "Microsoft.Extensions Packages"
     },
     {
+      "description": "Keep Microsoft.CodeAnalysis.CSharp aligned with the compiler bundled by the pinned .NET SDK until the SDK/compiler-host migration is reviewed.",
+      "matchManagers": ["nuget"],
+      "matchFileNames": ["Directory.Packages.props"],
+      "matchPackageNames": ["Microsoft.CodeAnalysis.CSharp"],
+      "enabled": false
+    },
+    {
       "description": "Group Semantic Kernel updates.",
       "matchManagers": ["nuget"],
       "matchPackageNames": ["/^Microsoft\\.SemanticKernel/"],
