@@ -478,6 +478,9 @@ def test_candidate_rejects_incoherent_package_classification(
         state["tarball_sha512"] = tarball
         observation["state_sha256"] = canonical_sha256(state)
     document["result"]["package_classification"] = classification
+    document["result"]["diagnostics"] = sorted(
+        [f"package-{classification}", "platform-orphan-admitted"]
+    )
     document["requests"] = _requests(
         manifest_present=classification != "absent"
     )
@@ -519,6 +522,9 @@ def test_candidate_admits_existing_destination_classifier_states(
                 state[name] = None
         observation["state_sha256"] = canonical_sha256(state)
     document["result"]["package_classification"] = classification
+    document["result"]["diagnostics"] = sorted(
+        [f"package-{classification}", "platform-orphan-admitted"]
+    )
     document["requests"] = _requests(
         manifest_present=evidence_state != "absent"
     )
@@ -547,6 +553,10 @@ def test_candidate_admits_absent_manifest_with_present_tag_as_conflict(
             state[name] = None
         observation["state_sha256"] = canonical_sha256(state)
     document["result"]["package_classification"] = "conflicting"
+    document["result"]["diagnostics"] = [
+        "package-conflicting",
+        "platform-orphan-admitted",
+    ]
     document["requests"] = _requests(manifest_present=False)
     preimage = deepcopy(document)
     preimage.pop("result_digest")

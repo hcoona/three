@@ -1127,6 +1127,14 @@ def _validate_candidate(document: dict[str, JsonValue]) -> None:
         raise ValueError("result.diagnostics must be sorted and unique")
     if not set(diagnostics) <= allowed_diagnostics:
         raise ValueError("result.diagnostics has an invalid closed value")
+    classification = cast("str", result["package_classification"])
+    expected_diagnostics = ["platform-orphan-admitted"]
+    if classification != "exact":
+        expected_diagnostics.append(f"package-{classification}")
+    if diagnostics != sorted(expected_diagnostics):
+        raise ValueError(
+            "result.diagnostics is inconsistent with package classification"
+        )
 
     claimed_digest = _digest(document["result_digest"], field="result_digest")
     preimage = _copy(document)

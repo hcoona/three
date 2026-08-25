@@ -6,9 +6,12 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import http.client
 import re
 import stat
+import urllib.error
 import urllib.parse
+import urllib.request
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -268,6 +271,122 @@ class InjectedPlatformOrphanGetTransport:
         raise PlatformOrphanObservationError(
             "tarball redirect limit was exceeded"
         )
+
+
+class UrllibPlatformOrphanOneHopGet:
+    """Concrete bounded GET that never follows redirects automatically."""
+
+    class _NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(
+            self,
+            *_args: object,
+            **_kwargs: object,
+        ) -> None:
+            return None
+
+    def __call__(
+        self,
+        url: str,
+        headers: tuple[tuple[str, str], ...],
+        timeout: float,
+        max_bytes: int,
+    ) -> GitHubPackagesHttpResponse:
+        """Perform one bounded GET and surface any redirect response."""
+        if (
+            type(url) is not str
+            or type(headers) is not tuple
+            or any(
+                type(pair) is not tuple
+                or len(pair) != 2
+                or any(type(item) is not str for item in pair)
+                for pair in headers
+            )
+            or type(timeout) not in {int, float}
+            or timeout <= 0
+            or type(max_bytes) is not int
+            or max_bytes <= 0
+        ):
+            raise PlatformOrphanObservationError(
+                "one-hop GET inputs are malformed"
+            )
+        request = urllib.request.Request(  # noqa: S310
+            url,
+            headers=dict(headers),
+            method="GET",
+        )
+        opener = urllib.request.build_opener(
+            urllib.request.ProxyHandler({}),
+            self._NoRedirect,
+        )
+        try:
+            with opener.open(request, timeout=float(timeout)) as response:
+                body, truncated, complete = _read_bounded_http_body(
+                    response,
+                    max_bytes=max_bytes,
+                )
+                return GitHubPackagesHttpResponse(
+                    status=response.status,
+                    url=response.geturl(),
+                    headers=tuple(response.headers.items()),
+                    body=body,
+                    truncated=truncated,
+                    complete=complete,
+                )
+        except urllib.error.HTTPError as error:
+            body, truncated, complete = _read_bounded_http_body(
+                error,
+                max_bytes=max_bytes,
+            )
+            return GitHubPackagesHttpResponse(
+                status=error.code,
+                url=error.geturl(),
+                headers=tuple(error.headers.items()),
+                body=body,
+                truncated=truncated,
+                complete=complete,
+            )
+        except (OSError, TimeoutError):
+            raise PlatformOrphanObservationError("one-hop GET failed") from None
+
+
+def _read_bounded_http_body(
+    response: object,
+    *,
+    max_bytes: int,
+) -> tuple[bytes, bool, bool]:
+    """Read one response body while retaining truncation and completeness."""
+    headers = getattr(response, "headers", None)
+    raw_length = None if headers is None else headers.get("Content-Length")
+    declared_length: int | None = None
+    if raw_length is not None:
+        if (
+            type(raw_length) is not str
+            or re.fullmatch(r"(?:0|[1-9][0-9]*)", raw_length) is None
+        ):
+            raise PlatformOrphanObservationError(
+                "one-hop GET Content-Length is malformed"
+            )
+        declared_length = int(raw_length)
+    try:
+        body = response.read(max_bytes + 1)  # type: ignore[attr-defined]
+        incomplete_read = False
+    except http.client.IncompleteRead as error:
+        body = error.partial
+        incomplete_read = True
+    if type(body) is not bytes:
+        raise PlatformOrphanObservationError("one-hop GET body is malformed")
+    truncated = len(body) > max_bytes
+    if (
+        declared_length is not None
+        and not truncated
+        and len(body) < declared_length
+    ):
+        raise PlatformOrphanObservationError(
+            "one-hop GET body is shorter than Content-Length"
+        )
+    retained = body[:max_bytes]
+    complete = not truncated and not incomplete_read
+    return retained, truncated, complete
 
 
 @dataclass(frozen=True, slots=True)
@@ -1234,6 +1353,7 @@ def observe_platform_orphan_32809578776(
     review_artifact: Path,
     probe_artifact: Path,
     governance_artifact: Path,
+    initial_source_validator: Callable[[SourceObservation], None] | None = None,
 ) -> PlatformOrphanObservationData:
     """Perform the complete query-only same-invocation observation.
 
@@ -1254,6 +1374,8 @@ def observe_platform_orphan_32809578776(
     )
     if initial_source.content_sha256 != PLATFORM_ORPHAN_ACTIVE_AUTHORITY_SHA256:
         raise PlatformOrphanObservationError("active authority digest drifted")
+    if initial_source_validator is not None:
+        initial_source_validator(initial_source)
     acceptance = _admit_artifacts(
         review_artifact=review_artifact,
         probe_artifact=probe_artifact,
@@ -1356,5 +1478,6 @@ __all__ = [
     "QueryOnlyPlatformOrphanTransport",
     "RequestLedgerEntry",
     "SourceObservation",
+    "UrllibPlatformOrphanOneHopGet",
     "observe_platform_orphan_32809578776",
 ]

@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from time import monotonic, time
 from typing import TYPE_CHECKING, Protocol, Self, cast
+from uuid import uuid4
 from urllib.error import URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
@@ -80,6 +81,14 @@ from three_workflow_delivery_v3.ci.finalizer import (
 )
 from three_workflow_delivery_v3.governance.inspection import (
     inspect_acceptance_reviewer,
+)
+from three_workflow_delivery_v3.governance.platform_orphan import (
+    InjectedPlatformOrphanGetTransport,
+    UrllibPlatformOrphanOneHopGet,
+)
+from three_workflow_delivery_v3.governance.platform_orphan_coordinator import (
+    inspect_local_control_provenance,
+    reconcile_platform_orphan_32809578776,
 )
 from three_workflow_delivery_v3.ci.planner import (
     ROOT_HK_DEFINITION,
@@ -261,6 +270,20 @@ class _AcceptanceSuiteAction(argparse.Action):
         if getattr(namespace, "timeout_seconds", None) is None:
             timeout = 120.0 if values == "absent-create-readback" else 300.0
             namespace.timeout_seconds = timeout
+
+
+class _RejectPlatformOrphanToken(argparse.Action):
+    """Reject caller-provided credentials without retaining their value."""
+
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: object,
+        option_string: str | None = None,
+    ) -> None:
+        del namespace, values, option_string
+        parser.error("explicit token input is prohibited")
 
 
 class _AcceptanceProbeArguments(Protocol):
@@ -485,6 +508,58 @@ def _governance_admit_acceptance_evidence_command(
         Path(arguments.document).read_bytes()
     )
     _write_document(evidence.to_document())
+    return 0
+
+
+def _platform_orphan_output(content: bytes) -> None:
+    sys.stdout.buffer.write(content)
+
+
+def _platform_orphan_git_output(
+    command: tuple[str, ...],
+    cwd: Path,
+) -> str:
+    try:
+        return subprocess.run(  # noqa: S603
+            command,
+            cwd=cwd,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+    except (OSError, subprocess.SubprocessError, UnicodeError):
+        raise ValueError("local control Git inspection failed") from None
+
+
+def _governance_reconcile_platform_orphan_command(
+    arguments: argparse.Namespace,
+) -> int:
+    gh_token = os.environ.pop("GH_TOKEN", None)
+    github_token = os.environ.pop("GITHUB_TOKEN", None)
+    token = gh_token or github_token
+    if not token:
+        raise ValueError("read credential is missing")
+    local_control = inspect_local_control_provenance(
+        cli_module_path=Path(__file__),
+        entry_point_route=(
+            "three-workflow-delivery-v3 governance "
+            "reconcile-platform-orphan-32809578776"
+        ),
+        git_output=_platform_orphan_git_output,
+    )
+    reconcile_platform_orphan_32809578776(
+        transport=InjectedPlatformOrphanGetTransport(
+            UrllibPlatformOrphanOneHopGet()
+        ),
+        clock=lambda: datetime.now(UTC),
+        invocation_id_factory=uuid4,
+        output=_platform_orphan_output,
+        token=token,
+        review_artifact=Path(arguments.review_artifact),
+        probe_artifact=Path(arguments.probe_artifact),
+        governance_artifact=Path(arguments.governance_artifact),
+        local_control_commit=local_control.commit,
+    )
     return 0
 
 
@@ -5652,6 +5727,29 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     admit_acceptance.add_argument("--document", required=True)
     admit_acceptance.set_defaults(
         handler=_governance_admit_acceptance_evidence_command
+    )
+    reconcile_platform_orphan = governance_commands.add_parser(
+        "reconcile-platform-orphan-32809578776",
+        allow_abbrev=False,
+        description=(
+            "Emit the one approved query-only Platform-Orphan reconciliation "
+            "candidate to stdout."
+        ),
+    )
+    reconcile_platform_orphan.add_argument("--review-artifact", required=True)
+    reconcile_platform_orphan.add_argument("--probe-artifact", required=True)
+    reconcile_platform_orphan.add_argument(
+        "--governance-artifact",
+        required=True,
+    )
+    reconcile_platform_orphan.add_argument(
+        "--token",
+        action=_RejectPlatformOrphanToken,
+        default=argparse.SUPPRESS,
+        help=argparse.SUPPRESS,
+    )
+    reconcile_platform_orphan.set_defaults(
+        handler=_governance_reconcile_platform_orphan_command
     )
     run_acceptance_probe = governance_commands.add_parser(
         "run-fixed-acceptance-probe",

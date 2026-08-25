@@ -7,14 +7,17 @@ from __future__ import annotations
 import base64
 import gzip
 import hashlib
+import http.client
 import io
 import json
 import tarfile
+import urllib.error
 import urllib.parse
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Self, cast
+from uuid import UUID
 
 import pytest
 import three_workflow_delivery_v3.governance.platform_orphan as observer
@@ -29,7 +32,11 @@ from three_workflow_delivery_v3.canonical import (
 from three_workflow_delivery_v3.governance.platform_orphan import (
     InjectedPlatformOrphanGetTransport,
     PlatformOrphanObservationError,
+    UrllibPlatformOrphanOneHopGet,
     observe_platform_orphan_32809578776,
+)
+from three_workflow_delivery_v3.governance.platform_orphan_coordinator import (
+    reconcile_platform_orphan_32809578776,
 )
 from three_workflow_delivery_v3.records import (
     PLATFORM_ORPHAN_ACTIVE_AUTHORITY_SHA256,
@@ -476,7 +483,7 @@ class FakeTransport:
                 },
             )
         if path.endswith("/dist-tags"):
-            tags = {"latest": {"unexpected": ["discard-me"]}}
+            tags: dict[str, Any] = {"latest": {"unexpected": ["discard-me"]}}
             if not self.omit_target_tag:
                 tags[observer.PACKAGE_TAG] = self.tag_value
             return self._response(
@@ -585,12 +592,404 @@ def invocation(
         "transport": transport,
         "clock": Clock(),
         "token": "secret-token",
+        "local_control_commit": CONTROL_COMMIT,
         **paths,
     }
 
 
 def _observe(invocation: dict[str, Any]) -> Any:
-    return observe_platform_orphan_32809578776(**invocation)
+    observer_invocation = {
+        key: value
+        for key, value in invocation.items()
+        if key != "local_control_commit"
+    }
+    return observe_platform_orphan_32809578776(**observer_invocation)
+
+
+class SimpleBodyResponse:
+    def __init__(
+        self,
+        body: bytes | http.client.IncompleteRead,
+        *,
+        content_length: str | None,
+    ) -> None:
+        self._body = body
+        self.headers = (
+            {} if content_length is None else {"Content-Length": content_length}
+        )
+        self.read_sizes: list[int] = []
+
+    def read(self, size: int) -> bytes:
+        self.read_sizes.append(size)
+        if isinstance(self._body, http.client.IncompleteRead):
+            raise self._body
+        return self._body
+
+    def close(self) -> None:
+        return None
+
+
+def test_concrete_one_hop_transport_is_get_only_bounded_and_no_redirect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[Any, float]] = []
+    handlers: list[object] = []
+
+    class Response:
+        def __init__(self) -> None:
+            self.status = 200
+            self.headers = {"Content-Type": "application/json"}
+
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def read(self, size: int) -> bytes:
+            assert size == 4
+            return b"four"
+
+        def geturl(self) -> str:
+            return observer.API_ORIGIN + "/fixed"
+
+    class Opener:
+        def open(self, request: Any, *, timeout: float) -> Response:
+            calls.append((request, timeout))
+            return Response()
+
+    def build_opener(*values: object) -> Opener:
+        handlers.extend(values)
+        return Opener()
+
+    monkeypatch.setattr(observer.urllib.request, "build_opener", build_opener)
+    response = UrllibPlatformOrphanOneHopGet()(
+        observer.API_ORIGIN + "/fixed",
+        (("Authorization", "Bearer secret"),),
+        2.0,
+        3,
+    )
+
+    assert len(calls) == 1
+    assert calls[0][0].get_method() == "GET"
+    assert calls[0][1] == 2.0
+    assert len(handlers) == 2
+    assert isinstance(handlers[0], observer.urllib.request.ProxyHandler)
+    assert cast("Any", handlers[0]).proxies == {}
+    assert handlers[1] is UrllibPlatformOrphanOneHopGet._NoRedirect
+    assert response.body == b"fou"
+    assert response.truncated is True
+    assert response.complete is False
+    assert response.redirects == ()
+
+
+def test_concrete_one_hop_transport_ignores_ambient_proxy_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    handlers: list[object] = []
+
+    class Response:
+        def __init__(self) -> None:
+            self.status = 200
+            self.headers = {"Content-Length": "2"}
+
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def read(self, size: int) -> bytes:
+            assert size == 9
+            return b"ok"
+
+        def geturl(self) -> str:
+            return observer.API_ORIGIN + "/fixed"
+
+    class Opener:
+        def open(self, *_args: object, **_kwargs: object) -> Response:
+            return Response()
+
+    def build_opener(*values: object) -> Opener:
+        handlers.extend(values)
+        return Opener()
+
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.invalid:8080")
+    monkeypatch.setenv("https_proxy", "http://proxy.invalid:8081")
+    monkeypatch.setattr(observer.urllib.request, "build_opener", build_opener)
+
+    response = UrllibPlatformOrphanOneHopGet()(
+        observer.API_ORIGIN + "/fixed",
+        (),
+        1,
+        8,
+    )
+
+    assert response.body == b"ok"
+    assert response.complete is True
+    assert len(handlers) == 2
+    assert isinstance(handlers[0], observer.urllib.request.ProxyHandler)
+    assert cast("Any", handlers[0]).proxies == {}
+    assert handlers[1] is UrllibPlatformOrphanOneHopGet._NoRedirect
+
+
+@pytest.mark.parametrize(
+    "content_length",
+    ["-1", "+1", " 1", "1 ", "01", "1.0", ""],
+)
+def test_bounded_body_reader_rejects_invalid_nonnegative_content_length_syntax(
+    content_length: str,
+) -> None:
+    response = SimpleBodyResponse(b"x", content_length=content_length)
+
+    with pytest.raises(
+        PlatformOrphanObservationError,
+        match="Content-Length",
+    ):
+        observer._read_bounded_http_body(response, max_bytes=8)
+
+    assert response.read_sizes == []
+
+
+@pytest.mark.parametrize(
+    ("content_length", "body", "max_bytes", "expected"),
+    [
+        ("0", b"", 3, (b"", False, True)),
+        ("3", b"abc", 3, (b"abc", False, True)),
+        (None, b"abcd", 3, (b"abc", True, False)),
+        ("4", b"abcd", 3, (b"abc", True, False)),
+    ],
+)
+def test_bounded_body_reader_preserves_declared_length_and_truncation_semantics(
+    content_length: str | None,
+    body: bytes,
+    max_bytes: int,
+    expected: tuple[bytes, bool, bool],
+) -> None:
+    response = SimpleBodyResponse(body, content_length=content_length)
+
+    assert (
+        observer._read_bounded_http_body(response, max_bytes=max_bytes)
+        == expected
+    )
+    assert response.read_sizes == [max_bytes + 1]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b"ab",
+        http.client.IncompleteRead(b"ab", 3),
+    ],
+)
+def test_bounded_body_reader_rejects_short_declared_body(
+    payload: bytes | http.client.IncompleteRead,
+) -> None:
+    response = SimpleBodyResponse(
+        payload,
+        content_length="5",
+    )
+
+    with pytest.raises(
+        PlatformOrphanObservationError,
+        match="shorter than Content-Length",
+    ):
+        observer._read_bounded_http_body(response, max_bytes=4)
+
+    assert response.read_sizes == [5]
+
+
+def test_bounded_body_reader_truncates_incomplete_read_partial_bytes() -> None:
+    response = SimpleBodyResponse(
+        http.client.IncompleteRead(b"abcde", 2),
+        content_length="7",
+    )
+
+    assert observer._read_bounded_http_body(
+        response,
+        max_bytes=3,
+    ) == (b"abc", True, False)
+    assert response.read_sizes == [4]
+
+
+@pytest.mark.parametrize("error_path", [False, True])
+@pytest.mark.parametrize("mode", ["short", "incomplete-read"])
+def test_concrete_transport_rejects_short_and_incomplete_bodies_on_both_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    error_path: bool,
+    mode: str,
+) -> None:
+    payload: bytes | http.client.IncompleteRead
+    payload = b"ab" if mode == "short" else http.client.IncompleteRead(b"ab", 3)
+    body = SimpleBodyResponse(payload, content_length="5")
+
+    class SuccessResponse(SimpleBodyResponse):
+        status = 200
+
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def geturl(self) -> str:
+            return observer.API_ORIGIN + "/fixed"
+
+    success = SuccessResponse(payload, content_length="5")
+    http_error = urllib.error.HTTPError(
+        observer.API_ORIGIN + "/fixed",
+        404,
+        "not found",
+        cast("Any", body.headers),
+        cast("Any", body),
+    )
+
+    class Opener:
+        def open(self, *_args: object, **_kwargs: object) -> SuccessResponse:
+            if error_path:
+                raise http_error
+            return success
+
+    monkeypatch.setattr(
+        observer.urllib.request,
+        "build_opener",
+        lambda *_handlers: Opener(),
+    )
+
+    with pytest.raises(
+        PlatformOrphanObservationError,
+        match="shorter than Content-Length",
+    ):
+        UrllibPlatformOrphanOneHopGet()(
+            observer.API_ORIGIN + "/fixed",
+            (),
+            1,
+            4,
+        )
+
+    assert (body if error_path else success).read_sizes == [5]
+
+
+@pytest.mark.parametrize(
+    ("classification", "manifest_status", "omit_tag", "tag_value"),
+    [
+        ("exact", 200, False, observer.PACKAGE_VERSION),
+        ("absent", 404, True, observer.PACKAGE_VERSION),
+        ("partial", 200, True, observer.PACKAGE_VERSION),
+        ("conflicting", 200, False, "unexpected-sensitive-tag-target"),
+    ],
+)
+def test_coordinator_emits_one_strict_canonical_candidate(
+    invocation: dict[str, Any],
+    classification: str,
+    manifest_status: int,
+    omit_tag: bool,
+    tag_value: str,
+) -> None:
+    transport = cast("FakeTransport", invocation["transport"])
+    transport.manifest_status = manifest_status
+    transport.omit_target_tag = omit_tag
+    transport.tag_value = tag_value
+    writes: list[bytes] = []
+
+    admitted = reconcile_platform_orphan_32809578776(
+        **invocation,
+        invocation_id_factory=lambda: UUID(INVOCATION_ID),
+        output=writes.append,
+    )
+
+    assert len(writes) == 1
+    assert canonicalize(admitted.to_document()) == writes[0]
+    assert admit_platform_orphan_reconciliation_result(writes[0]) == admitted
+    result = cast("dict[str, Any]", admitted.to_document()["result"])
+    assert result["package_classification"] == classification
+    expected = ["platform-orphan-admitted"]
+    if classification != "exact":
+        expected.append(f"package-{classification}")
+    assert result["diagnostics"] == sorted(expected)
+    producer = cast("dict[str, Any]", admitted.to_document()["producer"])
+    authority = cast("dict[str, Any]", admitted.to_document()["authority"])
+    assert producer["control_commit"] == CONTROL_COMMIT
+    assert authority["initial_commit"] == CONTROL_COMMIT
+    assert authority["final_commit"] == CONTROL_COMMIT
+    assert "unexpected-sensitive-tag-target" not in writes[0].decode()
+    assert "secret-token" not in writes[0].decode()
+
+
+def test_coordinator_checks_local_control_before_later_requests(
+    invocation: dict[str, Any],
+) -> None:
+    writes: list[bytes] = []
+    invocation["local_control_commit"] = "d" * 40
+
+    with pytest.raises(ValueError, match="does not match local control"):
+        reconcile_platform_orphan_32809578776(
+            **invocation,
+            invocation_id_factory=lambda: UUID(INVOCATION_ID),
+            output=writes.append,
+        )
+
+    requested_paths = [
+        urllib.parse.urlsplit(url).path
+        for url, _headers in invocation["transport"].calls
+    ]
+    assert requested_paths == [
+        "/repos/hcoona/three/branches/main",
+        "/repos/hcoona/three/git/ref/heads/main",
+        (
+            "/repos/hcoona/three/contents/.github/workflow-delivery/"
+            "governance/platform-orphan-run-32809578776.json"
+        ),
+    ]
+    assert writes == []
+
+
+def test_coordinator_rejects_malformed_local_head_before_requests_or_output(
+    invocation: dict[str, Any],
+) -> None:
+    writes: list[bytes] = []
+    invocation["local_control_commit"] = "c" * 39
+
+    with pytest.raises(ValueError, match="local control commit"):
+        reconcile_platform_orphan_32809578776(
+            **invocation,
+            invocation_id_factory=lambda: UUID(INVOCATION_ID),
+            output=writes.append,
+        )
+
+    assert invocation["transport"].calls == []
+    assert writes == []
+
+
+def test_coordinator_observer_failure_emits_no_candidate(
+    invocation: dict[str, Any],
+) -> None:
+    cast("FakeTransport", invocation["transport"]).jobs_total = 1
+    writes: list[bytes] = []
+
+    with pytest.raises(PlatformOrphanObservationError):
+        reconcile_platform_orphan_32809578776(
+            **invocation,
+            invocation_id_factory=lambda: UUID(INVOCATION_ID),
+            output=writes.append,
+        )
+
+    assert writes == []
+
+
+def test_coordinator_rejects_non_uuid_source_without_output(
+    invocation: dict[str, Any],
+) -> None:
+    writes: list[bytes] = []
+
+    with pytest.raises(ValueError, match="UUID source"):
+        reconcile_platform_orphan_32809578776(
+            **invocation,
+            invocation_id_factory=lambda: cast("Any", INVOCATION_ID),
+            output=writes.append,
+        )
+
+    assert writes == []
 
 
 def _candidate(data: Any) -> dict[str, Any]:
