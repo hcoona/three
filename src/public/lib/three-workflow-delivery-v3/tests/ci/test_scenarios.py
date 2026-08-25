@@ -554,12 +554,15 @@ def _initialize_hk_repository(
 @cache
 def _hk_executable() -> str:
     install_root = _run(
-        ("mise", "where", "hk@1.53.0"),
+        ("mise", "where", "hk"),
         cwd=REPO_ROOT,
     ).stdout.strip()
     executable = Path(install_root) / "hk"
     version = _run((str(executable), "--version"), cwd=REPO_ROOT)
-    assert version.stdout.strip() == "hk 1.53.0"
+    active_version = _run(
+        ("mise", "current", "hk"), cwd=REPO_ROOT
+    ).stdout.strip()
+    assert version.stdout.strip() == f"hk {active_version}"
     return str(executable)
 
 
@@ -1141,7 +1144,7 @@ def test_ci_scenario_coexistence_emits_no_authoritative_decision() -> None:
         uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
           experimental: true
-          install_args: hk@1.53.0
+          install_args: hk
 
       - name: Setup Python 3.14
 """

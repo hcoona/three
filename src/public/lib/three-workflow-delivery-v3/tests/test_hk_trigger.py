@@ -163,12 +163,15 @@ def _initialize_empty_repository(repo: Path) -> str:
 @cache
 def _hk_executable() -> str:
     install_root = _run(
-        ("mise", "where", "hk@1.53.0"),
+        ("mise", "where", "hk"),
         cwd=REPO_ROOT,
     ).stdout.strip()
     executable = Path(install_root) / "hk"
     version = _run((str(executable), "--version"), cwd=REPO_ROOT)
-    assert version.stdout.strip() == "hk 1.53.0"
+    active_version = _run(
+        ("mise", "current", "hk"), cwd=REPO_ROOT
+    ).stdout.strip()
+    assert version.stdout.strip() == f"hk {active_version}"
     return str(executable)
 
 
