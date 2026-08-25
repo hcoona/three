@@ -81,20 +81,6 @@ PRESERVED_V3_BUDDY_WORKFLOW_JOBS = {
             "run-live-attempt",
         }
     ),
-    (
-        ".github/workflows/"
-        "workflow-delivery-v3-buddy-smoke-acceptance-retry-2.yml"
-    ): (
-        frozenset(
-            {
-                "validate-fixed-inputs",
-                "acceptance-review",
-                "probe-absent-create-readback",
-                "probe-exact-and-conflict",
-                "capture-governance-evidence",
-            }
-        )
-    ),
 }
 OBSOLETE_PRE_V3_PATHS = (
     ".github/actionlint.yaml",

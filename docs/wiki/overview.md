@@ -44,13 +44,16 @@ converted both deleted legacy Buddy workflow identities to
 old refs now receive disabled-workflow rejection. Destination acceptance was
 separately authorized for one-time run `32769435970`; that authorization
 is consumed and the `.1`-`.4` suite cannot be reused. PR #579 merged the
-runner-startedness evidence repair as `06872f2b`. A separately authorized
-retry-2 implementation merged as `b031e5e0`. Its fresh Environment is
-provisioned with sole required reviewer `hcoona`, self-review permitted, and
-sole deployment branch `main`; workflow ID `341728447` has no runs. It uses
-fixed `.5`-`.8` coordinates and remains pending protected finalization to the
-full implementation merge SHA before the one authorized dispatch. Normal Live
-activation remains unauthorized.
+runner-startedness evidence repair as `06872f2b`. Retry-2 implementation and
+finalization merged as `b031e5e0` and `953c1db0`. Attempt-1 run `32805739095`
+observed `.5` absent, started mutation, and observed exact post-state, but the
+runner did not prove a controlled outcome; the first probe failed incomplete
+and the second was skipped. Workflow ID `341728447` is `disabled_manually`,
+the Environment is absent, and protected source cleanup is staged.
+Authenticated package reconciliation remains blocked until cleanup merges, the
+deleted workflow identity is re-disabled if necessary, and post-merge identity,
+absence, and old-ref rejection checks complete. The `.5`-`.8` block is
+consumed. Normal Live activation remains unauthorized.
 
 ## Confirmed v3 Shape
 
@@ -280,12 +283,14 @@ have changed.
    post-mutation-start failures across returned and exception paths while
    retaining incomplete classification; this does not retroactively make
    acceptance successful. Do not reuse the invocation, review, or coordinate.
-5. Retry-2 implementation PR #582 merged as `b031e5e0`. The fresh Environment
-   is provisioned with sole required reviewer `hcoona`, self-review permitted,
-   and only `main`; workflow ID `341728447` has no runs. Protected finalization
-   must bind the full implementation merge SHA before the one authorized
-   attempt-1 dispatch using `.5`-`.8` coordinates. Keep `live_enabled: false`;
-   normal Live activation remains unauthorized.
+5. Retry-2 run `32805739095` is consumed and unsuccessful. It observed `.5`
+   exact after mutation startedness but retained incomplete runner evidence;
+   the second probe was skipped. Workflow ID `341728447` is disabled, the
+   Environment is absent, and protected source cleanup is staged. Authenticated
+   package reconciliation remains blocked until cleanup merges, the deleted
+   workflow identity is re-disabled if necessary, and post-merge identity,
+   absence, and old-ref rejection checks complete. Do not reuse `.5`-`.8`.
+   Keep `live_enabled: false`; normal Live activation remains unauthorized.
 
 ## Related Pages
 

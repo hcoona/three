@@ -2140,3 +2140,26 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   to the implementation merge SHA. The finalization must merge before the one
   authorized attempt-1 dispatch. Normal Live remains disabled and
   unauthorized.
+
+## [2026-08-25] query | Capture unsuccessful acceptance retry
+
+- Merged protected finalization PR #583 as
+  `953c1db0712f6ff4d41b7e6a35767d71a2b19c4d` and dispatched exactly one
+  attempt-1 run, `32805739095`, from `main`.
+- Environment reviewer `hcoona` approved the fixed target, `.5` base
+  coordinate, and retry-2 confirmation. The first probe observed absent
+  pre-state, started mutation, and observed exact post-state.
+- The runner did not prove a controlled outcome and retained
+  `runner-failed-after-mutation-start`. The first probe failed its completeness
+  guard, the second probe was skipped, and terminal Governance evidence
+  remained unknown/incomplete. The invocation did not establish destination
+  acceptance.
+- Raw artifacts `9548188898`, `9548197128`, and `9548202666` match their
+  GitHub-recorded byte counts and SHA-256 digests.
+- Disabled workflow ID `341728447`, deleted Environment ID `20531285468`, and
+  verified all five jobs terminal. Protected source cleanup is staged.
+  Authenticated package reconciliation remains blocked until cleanup merges,
+  the deleted identity is re-disabled if necessary, and post-merge workflow,
+  Environment, and temporary-ref absence plus old-ref rejection are proved.
+  The `.5`-`.8` block is consumed, and normal Live remains disabled and
+  unauthorized.

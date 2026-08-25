@@ -211,6 +211,10 @@ def test_buddy_workflow_files_are_the_disabled_commit8_pair_only() -> None:
         REPO_ROOT
         / ".github/workflows/workflow-delivery-v3-buddy-smoke-acceptance.yml"
     ).exists() is False
+    assert (
+        REPO_ROOT / ".github/workflows/"
+        "workflow-delivery-v3-buddy-smoke-acceptance-retry-2.yml"
+    ).exists() is False
     raw = CALLER.read_text(encoding="utf-8") + CALLEE.read_text(
         encoding="utf-8"
     )
