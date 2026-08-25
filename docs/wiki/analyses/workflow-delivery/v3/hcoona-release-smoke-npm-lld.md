@@ -1800,11 +1800,12 @@ candidate. One invocation:
    reconciliation candidate, and performs no later network request.
 
 The destination transport must not use package-version enumeration, a full
-packument, generic `npm view`, or direct `.6`-`.8` requests. The sole exact-tag
-request may receive one bounded scalar. It projects that scalar immediately to
-`match`, `missing`, `mismatch`, or `unreadable`, does not retain an unexpected
-value, and never queries the resolved unexpected version. `unreadable` is
-unprovable and emits no candidate.
+packument, generic `npm view`, or direct `.6`-`.8` requests. The documented
+dist-tags collection request is fixed to this package. Its parser reads only
+key `wdv3-acceptance-5`, projects it immediately to `match`, `missing`,
+`mismatch`, or `unreadable`, discards all other keys and values, does not retain
+an unexpected target value, and never queries the resolved unexpected version.
+`unreadable` is unprovable and emits no candidate.
 
 The complete request allowlist is:
 
@@ -1822,17 +1823,24 @@ The complete request allowlist is:
 | transition-ref absence    | `GET https://api.github.com`     | `/repos/hcoona/three/git/ref/heads/workflow-delivery-v3-acceptance-retry-2-transition` | no query; `404` only                                                 |
 | package association       | `GET https://api.github.com`     | `/users/hcoona/packages/npm/hcoona-release-smoke-npm`                                  | no query; `200` only                                                 |
 | exact `.5` manifest       | `GET https://npm.pkg.github.com` | `/@hcoona%2Fhcoona-release-smoke-npm/0.0.0-wdv3-acceptance.5`                          | no query; `200` or authoritative `404`                               |
-| exact tag                 | `GET https://npm.pkg.github.com` | `/-/package/@hcoona%2Fhcoona-release-smoke-npm/dist-tags/wdv3-acceptance-5`            | no query; bounded scalar `200` or authoritative `404`                |
-| exact tarball             | `GET https://npm.pkg.github.com` | exact fixed `.5` tarball path admitted from the expected manifest                      | no query; `200` only; no redirect                                    |
+| target tag                | `GET https://npm.pkg.github.com` | `/-/package/@hcoona%2Fhcoona-release-smoke-npm/dist-tags`                              | no query; `200` object only; retain only target-key projection       |
+| exact tarball             | `GET https://npm.pkg.github.com` | exact fixed `.5` tarball path admitted from the expected manifest                      | no query; final `200`; bounded redirect policy below                 |
 
 GitHub REST requests send only the fixed API media type, API-version header,
 user agent, and read credential to `api.github.com`. npm requests send only the
 fixed npm media type, user agent, and read credential to
-`npm.pkg.github.com`. Credentials and headers are never retained. Redirects,
-other origins, query parameters, paths, methods, and statuses are denied. If
-these endpoints cannot prove repository association, exact tag mapping,
-tarball, manifest, and Package Target Witness, implementation remains blocked
-rather than broadening observation.
+`npm.pkg.github.com`. Credentials and headers are never retained. Metadata
+redirects are denied. Tarball retrieval alone may follow at most five manually
+validated HTTPS redirects among `npm.pkg.github.com`,
+`objects.githubusercontent.com`, and
+`github-registry-files.githubusercontent.com`; every cross-origin hop strips
+authorization, cookies, and npm token headers before the request. Redirect URLs
+and signed query strings are transient transport state and never enter the
+request ledger, observations, candidate, or diagnostics. Other origins, query
+parameters, paths, methods, and statuses are denied. If these endpoints cannot
+prove repository association, target-tag mapping, tarball, manifest, and
+Package Target Witness, implementation remains blocked rather than broadening
+observation.
 
 The endpoint-specific parsers admit only these facts:
 
@@ -1856,7 +1864,9 @@ The endpoint-specific parsers admit only these facts:
   and witness; its authoritative `404` projection retains exactly the fixed
   package name, fixed version, and literal HTTP status `404`, with no
   response-body members;
-- exact tag retains only `match`, `missing`, `mismatch`, or `unreadable`; and
+- dist-tags parsing retains only the target key's `match`, `missing`,
+  `mismatch`, or `unreadable` projection and discards every other key/value;
+  and
 - tarball retains only byte count, SHA-512, normalized manifest digest, and
   Package Target Witness digest.
 
@@ -1871,7 +1881,7 @@ Environment, or ref, retained-evidence mismatch, wrong package coordinate, or
 wrong package identity rejects admission and emits no candidate. A complete
 observation of the correct coordinate may classify its current destination
 state as exact, conflicting, partial, or absent; that classification is the
-reconciliation result rather than an orphan-admission bypass. An exact-tag
+reconciliation result rather than an orphan-admission bypass. A target-tag
 `mismatch` participates only in that known conflicting classification and its
 unexpected scalar is not retained. Unknown or
 unprovable state, including denial, timeout, malformed response, unavailable

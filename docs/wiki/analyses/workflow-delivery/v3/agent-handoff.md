@@ -179,10 +179,11 @@ If it conflicts with the
       separate explicit user approval and normative change. Only exact read-only
       observation of existing `.5` belongs to the approved reconciliation. Do not
       reuse the review, publish, retag, delete, or otherwise mutate `.5`-`.8`,
-      enumerate or directly query `.6`-`.8`, or retain an unexpected exact-tag
-      scalar. Both strict acceptance profiles remain evidence replay authority and
-      cannot be mixed. Any later use or different run requires separate human
-      approval and normative design change. `live_enabled` remains false.
+      enumerate package versions, directly query `.6`-`.8`, or retain non-target
+      dist-tag keys or an unexpected target value. Both strict acceptance profiles
+      remain evidence replay authority and cannot be mixed. Any later use or
+      different run requires separate human approval and normative design change.
+      `live_enabled` remains false.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the
@@ -710,7 +711,8 @@ If it conflicts with the
   grants no reconciliation or mutation authority. If GitHub resolves the run
   first, retiring the unused authority remains outside this scope and requires
   separate explicit user approval and normative change. Do not reuse the
-  review, mutate `.5`-`.8`, or enumerate or directly query `.6`-`.8`.
+  review, mutate `.5`-`.8`, enumerate package versions, directly query
+  `.6`-`.8`, or retain non-target dist-tag facts.
   Any later use or different run requires separate human approval and normative
   design change. Do not activate normal Live or begin later scopes without a
   separate explicit user task.
