@@ -1653,6 +1653,408 @@ After evidence capture, Governance deletes the workflow, any temporary enable
 bypass, and the acceptance Environment, then verifies through workflow/API and
 Environment inspection that all are absent.
 
+## Platform-Orphan Reconciliation Exception
+
+The cleanup-only run `32809578776` exposed a GitHub platform state not covered
+by the original terminalization contract: GitHub accepted an old-ref dispatch,
+created no job or artifact, reported zero pending deployments, retained the run
+as `queued`, and rejected normal cancel, force-cancel, and deletion. This
+exception does not change the failed destination-acceptance result or normal
+Live gate.
+
+### Singleton Protected Authority
+
+Governance owns one active authority at
+`.github/workflow-delivery/governance/platform-orphan-run-32809578776.json`.
+The implementation fixes repository `hcoona/three`, authoritative ref
+`refs/heads/main`, and that path; they are not caller inputs. It fresh-resolves
+the ref, reads the blob by the resolved commit, requires canonical JSON, and
+records the commit SHA, blob OID, and canonical-content SHA-256 in the
+reconciliation result. A missing file or a changed ref, blob, or content before
+the final decision revokes admission.
+
+The authority uses schema
+`workflow-delivery/v3/platform-orphan-exception`, version `1`, rejects every
+unknown or missing member, and contains exactly the parent objects and leaf
+members below. Every string is nonempty, every timestamp is canonical UTC, and
+integers are JSON integers.
+
+| Leaf path                                             | Type    | Exact value                                                                                                                               |
+| ----------------------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema`                                              | string  | `workflow-delivery/v3/platform-orphan-exception`                                                                                          |
+| `version`                                             | integer | `1`                                                                                                                                       |
+| `exception.id`                                        | string  | `cleanup-probe-run-32809578776`                                                                                                           |
+| `exception.state`                                     | string  | `active`                                                                                                                                  |
+| `authority.repository`                                | string  | `hcoona/three`                                                                                                                            |
+| `authority.ref`                                       | string  | `refs/heads/main`                                                                                                                         |
+| `authority.path`                                      | string  | `.github/workflow-delivery/governance/platform-orphan-run-32809578776.json`                                                               |
+| `authority.eligible_after`                            | string  | `2026-09-08T04:35:59Z`                                                                                                                    |
+| `workflow.id`                                         | integer | `341728447`                                                                                                                               |
+| `workflow.path`                                       | string  | `.github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-2.yml`                                                               |
+| `workflow.state`                                      | string  | `disabled_manually`                                                                                                                       |
+| `workflow.source_on_main`                             | string  | `absent`                                                                                                                                  |
+| `run.id`                                              | integer | `32809578776`                                                                                                                             |
+| `run.attempt`                                         | integer | `1`                                                                                                                                       |
+| `run.event`                                           | string  | `workflow_dispatch`                                                                                                                       |
+| `run.number`                                          | integer | `2`                                                                                                                                       |
+| `run.status`                                          | string  | `queued`                                                                                                                                  |
+| `run.conclusion`                                      | null    | `null`                                                                                                                                    |
+| `run.head_branch`                                     | string  | `workflow-delivery-v3-acceptance-retry-2-transition`                                                                                      |
+| `run.head_sha`                                        | string  | `953c1db0712f6ff4d41b7e6a35767d71a2b19c4d`                                                                                                |
+| `run.created_at`                                      | string  | `2026-08-25T04:35:59Z`                                                                                                                    |
+| `run.started_at`                                      | string  | `2026-08-25T04:35:59Z`                                                                                                                    |
+| `run.updated_at`                                      | string  | `2026-08-25T04:35:59Z`                                                                                                                    |
+| `execution.jobs`                                      | integer | `0`                                                                                                                                       |
+| `execution.pending_deployments`                       | integer | `0`                                                                                                                                       |
+| `execution.artifacts`                                 | integer | `0`                                                                                                                                       |
+| `environment.id`                                      | integer | `20531285468`                                                                                                                             |
+| `environment.name`                                    | string  | `workflow-delivery-v3-buddy-smoke-acceptance-retry-2`                                                                                     |
+| `environment.state`                                   | string  | `absent`                                                                                                                                  |
+| `transition_ref.name`                                 | string  | `refs/heads/workflow-delivery-v3-acceptance-retry-2-transition`                                                                           |
+| `transition_ref.state`                                | string  | `absent`                                                                                                                                  |
+| `recovery.cancel.method`                              | string  | `POST`                                                                                                                                    |
+| `recovery.cancel.endpoint`                            | string  | `/repos/hcoona/three/actions/runs/32809578776/cancel`                                                                                     |
+| `recovery.cancel.status`                              | integer | `500`                                                                                                                                     |
+| `recovery.force_cancel.method`                        | string  | `POST`                                                                                                                                    |
+| `recovery.force_cancel.endpoint`                      | string  | `/repos/hcoona/three/actions/runs/32809578776/force-cancel`                                                                               |
+| `recovery.force_cancel.status`                        | integer | `500`                                                                                                                                     |
+| `recovery.delete.method`                              | string  | `DELETE`                                                                                                                                  |
+| `recovery.delete.endpoint`                            | string  | `/repos/hcoona/three/actions/runs/32809578776`                                                                                            |
+| `recovery.delete.status`                              | integer | `403`                                                                                                                                     |
+| `recovery.response_bodies_retained`                   | boolean | `false`                                                                                                                                   |
+| `recovery.operation_timestamps_retained`              | boolean | `false`                                                                                                                                   |
+| `historical_audit_anchors.run_sha256`                 | string  | `sha256:549b9324f9cd4999dd5d79e7dbc75bb3746a1926920da0dafba4572caee06101`                                                                 |
+| `historical_audit_anchors.jobs_sha256`                | string  | `sha256:b3dab5870ff3a8209160335de7c1077b89e461d875d9041ac9d8b8ed7c1666f6`                                                                 |
+| `historical_audit_anchors.pending_deployments_sha256` | string  | `sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`                                                                 |
+| `historical_audit_anchors.artifact_snapshot_retained` | boolean | `false`                                                                                                                                   |
+| `acceptance.run_id`                                   | integer | `32805739095`                                                                                                                             |
+| `acceptance.run_attempt`                              | integer | `1`                                                                                                                                       |
+| `acceptance.target_sha`                               | string  | `b031e5e0bd98a95943a03a1529b64e856e1a8aa1`                                                                                                |
+| `acceptance.workflow_sha`                             | string  | `953c1db0712f6ff4d41b7e6a35767d71a2b19c4d`                                                                                                |
+| `acceptance.result`                                   | string  | `unsuccessful`                                                                                                                            |
+| `acceptance.mutation_classification`                  | string  | `unknown`                                                                                                                                 |
+| `acceptance.review_artifact.id`                       | integer | `9548188898`                                                                                                                              |
+| `acceptance.review_artifact.sha256`                   | string  | `sha256:b7386651bea7c441a038c61c7d143596490a985eca33efaee7d1ede8d9701bc4`                                                                 |
+| `acceptance.probe_artifact.id`                        | integer | `9548197128`                                                                                                                              |
+| `acceptance.probe_artifact.sha256`                    | string  | `sha256:c2153d565cb1380fdf9d86fbe777fb104b6a9a4de9ecc181bbc1b84ba12ca75c`                                                                 |
+| `acceptance.governance_artifact.id`                   | integer | `9548202666`                                                                                                                              |
+| `acceptance.governance_artifact.sha256`               | string  | `sha256:9e1aaf6701d166db0188ad7a9dce784bdaed4034e6a276545dd2a6351b3dab37`                                                                 |
+| `package.coordinate`                                  | string  | `@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5`                                                                                |
+| `package.tag`                                         | string  | `wdv3-acceptance-5`                                                                                                                       |
+| `package.repository`                                  | string  | `hcoona/three`                                                                                                                            |
+| `package.target_sha`                                  | string  | `b031e5e0bd98a95943a03a1529b64e856e1a8aa1`                                                                                                |
+| `package.content_sha512`                              | string  | `sha512:080c3d828a30d73d1febc3b6773015fafb529cf3a2be81fe597e83a83a589d32c1be62e933fb38ac4a77f9cb561c6399d3b2e6fe9179b3e4aed93087007140f2` |
+
+The recovery operations and historical audit anchors are protected
+Governance-reviewed assertions. Their response bodies, operation timestamps,
+and an artifact-list snapshot were not retained, and the authority must say so
+rather than inventing them. The command validates the exact protected values
+but does not locate or rehash the historical captures. These assertions cannot
+prove current absence, terminality, or successful recovery; both complete
+current observation passes provide current safety. The command never repeats a
+cancel, force-cancel, delete, dispatch, rerun, approval, ref creation, or other
+mutation.
+
+The `eligible_after` value is a reviewed fourteen-day cooling-off policy, not
+evidence that the run is terminal or permanently incapable of execution.
+
+### Same-Invocation Admission and Observation
+
+A new Governance-only command handles this one case. It is not the normal
+Release observer, acceptance workflow, or Break-Glass path and has no
+mutation-capable transport. Its repository, ref, authority path, result path,
+run, workflow, package, version, tag, and endpoints are policy constants, not
+caller inputs. Its only content-bearing caller inputs are three required named
+local paths: `--review-artifact`, `--probe-artifact`, and
+`--governance-artifact`. Each names retained raw artifact bytes already held
+outside the repository and is statically associated with the corresponding
+authority-fixed artifact ID. The exact bytes must match that artifact's
+authority-fixed SHA-256 before strict record admission. Artifact download is
+not permitted, and neither local paths nor artifact bytes are retained in the
+candidate. One invocation:
+
+1. reads the process UTC wall clock through the existing injectable clock,
+   canonicalizes it, and rejects before any observation unless it is at or
+   after `authority.eligible_after`;
+2. uses the existing Governance-source protection abstraction to verify
+   current `refs/heads/main` is protected, resolves it once as both authority
+   and control commit, requires a clean checkout of that commit, runs the fixed
+   Governance command entry point from that checkout, reads the singleton
+   authority by commit, and records source and control provenance;
+3. verifies the retained failed acceptance artifact bytes by exact ID and
+   digest and strictly admits the retry-2 Governance and probe records;
+4. performs a complete initial platform observation with authenticated
+   uncached REST `GET` requests: exact run and workflow, exhaustive jobs and
+   artifacts pagination, pending deployments, and current-main workflow-source,
+   Environment, and transition-ref absence;
+5. performs a complete initial destination observation for only version
+   `0.0.0-wdv3-acceptance.5` and tag `wdv3-acceptance-5`, including package
+   repository association, version/tag mapping, tarball bytes and SHA-512,
+   manifest, and Package Target Witness;
+6. repeats the complete platform and destination observations, including every
+   page and absence proof, and requires equal canonical state payloads;
+7. rechecks protected-ref state, re-resolves current `main`, requires the same
+   control commit, and re-reads the singleton authority by that commit; and
+8. reads the process UTC wall clock again, requires it is not earlier than the
+   start instant, emits one non-authoritative canonical Governance
+   reconciliation candidate, and performs no later network request.
+
+The destination transport must not use package-version enumeration, a full
+packument, generic `npm view`, or direct `.6`-`.8` requests. The sole exact-tag
+request may receive one bounded scalar. It projects that scalar immediately to
+`match`, `missing`, `mismatch`, or `unreadable`, does not retain an unexpected
+value, and never queries the resolved unexpected version. `unreadable` is
+unprovable and emits no candidate.
+
+The complete request allowlist is:
+
+| Purpose                   | Origin and method                | Fixed path or template                                                                 | Query/status contract                                                |
+| ------------------------- | -------------------------------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| protected-main state      | `GET https://api.github.com`     | `/repos/hcoona/three/branches/main`                                                    | no query; `200` only                                                 |
+| main resolution           | `GET https://api.github.com`     | `/repos/hcoona/three/git/ref/heads/main`                                               | no query; `200` only                                                 |
+| authority/workflow source | `GET https://api.github.com`     | `/repos/hcoona/three/contents/{fixed-path}`                                            | sole `ref={resolved-commit}`; authority `200`, workflow source `404` |
+| run                       | `GET https://api.github.com`     | `/repos/hcoona/three/actions/runs/32809578776`                                         | no query; `200` only                                                 |
+| workflow                  | `GET https://api.github.com`     | `/repos/hcoona/three/actions/workflows/341728447`                                      | no query; `200` only                                                 |
+| jobs                      | `GET https://api.github.com`     | `/repos/hcoona/three/actions/runs/32809578776/jobs`                                    | only `filter=all&per_page=100&page={positive-integer}`; `200` only   |
+| artifacts                 | `GET https://api.github.com`     | `/repos/hcoona/three/actions/runs/32809578776/artifacts`                               | only `per_page=100&page={positive-integer}`; `200` only              |
+| pending deployments       | `GET https://api.github.com`     | `/repos/hcoona/three/actions/runs/32809578776/pending_deployments`                     | no query; `200` only                                                 |
+| Environment absence       | `GET https://api.github.com`     | `/repos/hcoona/three/environments/workflow-delivery-v3-buddy-smoke-acceptance-retry-2` | no query; `404` only                                                 |
+| transition-ref absence    | `GET https://api.github.com`     | `/repos/hcoona/three/git/ref/heads/workflow-delivery-v3-acceptance-retry-2-transition` | no query; `404` only                                                 |
+| package association       | `GET https://api.github.com`     | `/users/hcoona/packages/npm/hcoona-release-smoke-npm`                                  | no query; `200` only                                                 |
+| exact `.5` manifest       | `GET https://npm.pkg.github.com` | `/@hcoona%2Fhcoona-release-smoke-npm/0.0.0-wdv3-acceptance.5`                          | no query; `200` or authoritative `404`                               |
+| exact tag                 | `GET https://npm.pkg.github.com` | `/-/package/@hcoona%2Fhcoona-release-smoke-npm/dist-tags/wdv3-acceptance-5`            | no query; bounded scalar `200` or authoritative `404`                |
+| exact tarball             | `GET https://npm.pkg.github.com` | exact fixed `.5` tarball path admitted from the expected manifest                      | no query; `200` only; no redirect                                    |
+
+GitHub REST requests send only the fixed API media type, API-version header,
+user agent, and read credential to `api.github.com`. npm requests send only the
+fixed npm media type, user agent, and read credential to
+`npm.pkg.github.com`. Credentials and headers are never retained. Redirects,
+other origins, query parameters, paths, methods, and statuses are denied. If
+these endpoints cannot prove repository association, exact tag mapping,
+tarball, manifest, and Package Target Witness, implementation remains blocked
+rather than broadening observation.
+
+The endpoint-specific safe response projections are also closed:
+
+- protected-main state retains only repository, branch, and protected boolean;
+- ref resolution retains only ref name, object type, and commit SHA;
+- content reads retain only repository, commit, path, type, blob OID, and
+  canonical content digest, while admitted absence retains only path and `404`;
+- run retains only repository, workflow/run/check-suite identities, attempt,
+  event, head branch/SHA, status, nullable conclusion, and created/started/
+  updated instants;
+- workflow retains only repository, workflow ID/path/state;
+- jobs retain total count plus ordered job ID, run ID/attempt, status, and
+  nullable conclusion; artifacts retain total count plus ordered ID, name,
+  size, expired state, and available digest; pending deployments retain only
+  the ordered deployment IDs, states, and Environment identities;
+- Environment and transition-ref absence retain only fixed identity and `404`;
+- package association retains only owner, package type/name, and associated
+  repository full name;
+- exact manifest `200` retains only package name/version, repository,
+  integrity, tarball path, and the fields needed to extract the fixed manifest
+  and witness; its authoritative `404` projection retains exactly the fixed
+  package name, fixed version, and literal HTTP status `404`, with no
+  response-body members;
+- exact tag retains only `match`, `missing`, `mismatch`, or `unreadable`; and
+- tarball retains only byte count, SHA-512, normalized manifest digest, and
+  Package Target Witness digest.
+
+Every projection rejects unknown or missing members before hashing. Collection
+members sort by numeric ID. The tarball itself is not embedded in the
+candidate.
+
+All pagination must be exhaustive. Any request failure, truncation, unexpected
+member, noncanonical input, source change, run `updated_at` or state drift,
+workflow drift, job, pending deployment, artifact, restored source,
+Environment, or ref, retained-evidence mismatch, wrong package coordinate, or
+wrong package identity rejects admission and emits no candidate. A complete
+observation of the correct coordinate may classify its current destination
+state as exact, conflicting, partial, or absent; that classification is the
+reconciliation result rather than an orphan-admission bypass. An exact-tag
+`mismatch` participates only in that known conflicting classification and its
+unexpected scalar is not retained. Unknown or
+unprovable state, including denial, timeout, malformed response, unavailable
+tarball, or unreadable tag, emits only non-authoritative diagnostics and no
+candidate. The observation exists only inside this invocation and cannot later
+be replayed as authority.
+
+### Result and Consumption
+
+The candidate has media type `application/json` and fixed eventual path
+`.github/workflow-delivery/governance/platform-orphan-run-32809578776-result.json`.
+The closed
+`workflow-delivery/v3/platform-orphan-acceptance-reconciliation-result`
+version `1` schema rejects unknown or missing members and has these exact
+leaf contracts:
+
+| Leaf path                                  | Type    | Contract                                                                                                       |
+| ------------------------------------------ | ------- | -------------------------------------------------------------------------------------------------------------- |
+| `schema`                                   | string  | exact schema identity                                                                                          |
+| `version`                                  | integer | `1`                                                                                                            |
+| `producer.id`                              | string  | `three-workflow-delivery-v3/platform-orphan-reconcile`                                                         |
+| `producer.entry_point`                     | string  | `three-workflow-delivery-v3 governance reconcile-platform-orphan-32809578776`                                  |
+| `producer.repository`                      | string  | `hcoona/three`                                                                                                 |
+| `producer.ref`                             | string  | `refs/heads/main`                                                                                              |
+| `producer.control_commit`                  | string  | exact 40-character resolved commit                                                                             |
+| `invocation.id`                            | string  | one UUID                                                                                                       |
+| `invocation.actor_login`                   | string  | Governance-reviewed producer metadata                                                                          |
+| `invocation.actor_id`                      | integer | Governance-reviewed producer metadata                                                                          |
+| `invocation.started_at`                    | string  | producer-recorded UTC instant at or after `eligible_after`                                                     |
+| `invocation.completed_at`                  | string  | producer-recorded UTC instant not before start                                                                 |
+| `authority.repository`                     | string  | `hcoona/three`                                                                                                 |
+| `authority.ref`                            | string  | `refs/heads/main`                                                                                              |
+| `authority.path`                           | string  | fixed singleton path                                                                                           |
+| `authority.initial_commit`                 | string  | exact resolved commit; equals final and producer control commit                                                |
+| `authority.initial_blob_oid`               | string  | exact Git blob OID                                                                                             |
+| `authority.initial_content_sha256`         | string  | `sha256:<lowercase-hex>`                                                                                       |
+| `authority.final_commit`                   | string  | equals initial commit                                                                                          |
+| `authority.final_blob_oid`                 | string  | equals initial blob OID                                                                                        |
+| `authority.final_content_sha256`           | string  | equals initial content digest                                                                                  |
+| `authority.parent_main_commit`             | string  | equals initial commit and protects the consumption merge                                                       |
+| `acceptance.run_id`                        | integer | `32805739095`                                                                                                  |
+| `acceptance.run_attempt`                   | integer | `1`                                                                                                            |
+| `acceptance.target_sha`                    | string  | exact retry-2 target                                                                                           |
+| `acceptance.workflow_sha`                  | string  | exact retry-2 workflow SHA                                                                                     |
+| `acceptance.review_artifact_id`            | integer | `9548188898`                                                                                                   |
+| `acceptance.review_artifact_sha256`        | string  | exact `sha256:` digest                                                                                         |
+| `acceptance.probe_artifact_id`             | integer | `9548197128`                                                                                                   |
+| `acceptance.probe_artifact_sha256`         | string  | exact `sha256:` digest                                                                                         |
+| `acceptance.probe_record_sha256`           | string  | exact admitted canonical record digest                                                                         |
+| `acceptance.governance_artifact_id`        | integer | `9548202666`                                                                                                   |
+| `acceptance.governance_artifact_sha256`    | string  | exact `sha256:` digest                                                                                         |
+| `acceptance.governance_record_sha256`      | string  | exact admitted canonical record digest                                                                         |
+| `requests`                                 | array   | one or more closed request projections ordered by sequence                                                     |
+| `platform_observations`                    | array   | exactly initial and final closed projections                                                                   |
+| `destination_observations`                 | array   | exactly initial and final closed projections                                                                   |
+| `result.terminalization_blocker_exclusion` | string  | `admitted:run:32809578776`                                                                                     |
+| `result.reconciliation_authority`          | string  | `not-granted-by-exception`                                                                                     |
+| `result.acceptance_result`                 | string  | `unsuccessful`                                                                                                 |
+| `result.platform_cleanup`                  | string  | `incomplete-with-admitted-orphan`                                                                              |
+| `result.run_terminal`                      | boolean | `false`                                                                                                        |
+| `result.release_lineage`                   | string  | `none`                                                                                                         |
+| `result.package_classification`            | string  | `exact`, `absent`, `partial`, or `conflicting`                                                                 |
+| `result.package_mutation`                  | string  | `prohibited`                                                                                                   |
+| `result.live_activation`                   | string  | `prohibited`                                                                                                   |
+| `result.diagnostics`                       | array   | sorted unique subset of `platform-orphan-admitted`, `package-absent`, `package-partial`, `package-conflicting` |
+| `result_digest`                            | string  | `sha256:` digest defined below                                                                                 |
+
+Each closed request projection contains exactly integer `sequence`, `phase`
+(`initial` or `final`), literal `method: GET`, allowlisted `origin`,
+percent-encoded `path`, nullable string `page_cursor`, positive integer
+`page_index`, integer `http_status`, boolean `complete`, and
+`safe_response_sha256`. A nonpaginated request uses null cursor and page index
+`1`. `complete` is true only when the response and every required next page
+were admitted. `safe_response_sha256` is
+`SHA-256(RFC 8785(safe response projection))`, encoded as
+`sha256:<lowercase-hex>`; the safe response has no digest member. The request
+projection excludes authorization, cookies, headers not on the explicit safe
+allowlist, response bodies, redirect query strings, signed URLs, and unrelated
+package members.
+
+Each closed platform observation envelope contains exactly `phase`,
+`observed_at`, `state`, and `state_sha256`. Its closed `state` contains exactly
+run ID/attempt/status/null conclusion/`updated_at`, workflow ID/state, integer
+job/pending-deployment/artifact counts, booleans for
+workflow-source/Environment/transition-ref absence, and positive integer jobs
+and artifact page counts. Each closed destination observation envelope contains
+exactly `phase`, `observed_at`, `state`, and `state_sha256`. Its closed `state`
+contains exactly package coordinate, repository association, expected tag,
+target SHA, classification, nullable manifest version, `tag_projection`
+(`match`, `missing`, or `mismatch`), nullable tarball SHA-512, nullable manifest
+digest, and nullable Package Target Witness digest. `tag_target` is not a
+member. An unexpected scalar is discarded immediately after deriving
+`mismatch`; `unreadable` emits no candidate. Nullable manifest and
+artifact-derived members are null only where the existing destination
+classifier permits an absent or partial state; they are never used for a failed
+or unreadable response.
+
+For both observation kinds, `state_sha256` is
+`SHA-256(RFC 8785(state))`, encoded as `sha256:<lowercase-hex>`. The initial and
+final envelopes have different phase and time metadata; admission compares
+their canonical `state` bytes and state digests, not the envelopes.
+
+Requests and pages are ordered by sequence; observation arrays use the fixed
+initial/final order; unordered API collections and diagnostics are sorted by
+their schema keys before canonicalization. Every parent object is closed; no
+caller-defined extension member exists.
+
+`result_digest` is
+`SHA-256(RFC 8785(candidate with result_digest omitted))`, encoded as
+`sha256:<lowercase-hex>`. The command completes the final observation, compares
+both safe projections, constructs and validates the candidate, computes this
+digest, writes canonical bytes once, and performs no later network request.
+The semantic result records:
+
+- `result.terminalization_blocker_exclusion` as admitted only for run
+  `32809578776`;
+- `result.reconciliation_authority` as `not-granted-by-exception`;
+- `result.acceptance_result` as `unsuccessful`;
+- `result.platform_cleanup` as `incomplete-with-admitted-orphan`;
+- `result.run_terminal` as `false`;
+- `result.release_lineage` as `none`;
+- the observed `exact`, `absent`, `partial`, or `conflicting` package
+  classification without changing it;
+- `result.package_mutation` as `prohibited`; and
+- `result.live_activation` as `prohibited`.
+
+The candidate is not authoritative and does not consume the exception.
+Authority is consumed only when one protected commit, based on the initially
+observed parent `main` commit, atomically:
+
+1. adds the unchanged canonical candidate at the fixed result path; and
+2. replaces the active authority at its fixed path with closed
+   `workflow-delivery/v3/platform-orphan-exception-audit` version `1` bytes.
+
+The inert audit retains every original authority fact except that `schema`
+becomes `workflow-delivery/v3/platform-orphan-exception-audit` and
+`exception.state` becomes `consumed`. It adds exactly
+`consumption.invocation_id`, `consumption.producer_control_commit`,
+`consumption.active_authority_sha256`, `consumption.result_path`, and
+`consumption.result_sha256`, all strings. The two SHA-256 members use
+`sha256:<lowercase-hex>`; paths and IDs are nonempty. No audit self-digest is
+added because the protected Git blob OID and result cross-binding identify its
+canonical bytes. `consumption.active_authority_sha256` is
+`SHA-256(RFC 8785(base active-authority object))` and equals the candidate's
+`authority.initial_content_sha256`. `consumption.result_sha256` is
+`SHA-256(RFC 8785(complete candidate object))`, including `result_digest`; it
+differs from `result_digest`, whose preimage omits that member. The result
+reciprocally binds the same invocation UUID and prior authority digest.
+
+The mandatory merge-time root-HK/v3 history check compares the pull request or
+merge-group base and head Git trees. It requires the base commit to equal
+`authority.parent_main_commit`, the base authority bytes to match
+`authority.initial_content_sha256`, the fixed result path to be absent in the
+base, the head result bytes to be unchanged canonical candidate bytes with a
+valid `result_digest`, and the head authority bytes to be the matching consumed
+audit. It rejects split changes, stale bases, overwrite, later modification,
+deletion, rename, or reuse of either consumed file. Only the merge containing
+both files makes the candidate authoritative and consumes the exception. A
+rejected or unmerged candidate leaves authority active. Unused-authority
+retirement, including the case where GitHub terminalizes or removes the run
+before protected consumption, is outside this change and requires a separate
+explicit user-approved normative change. The current command and history check
+neither define nor permit that transition.
+
+Implementation adds exact final-match `@hcoona` CODEOWNERS rules for the
+authority and result paths, includes both paths in the existing Workflow
+Delivery v3 HK affected-file inventory, and extends the existing real-Git
+CODEOWNERS and HK add/modify/delete/rename tests. A contract test requires
+result creation and authority retirement in the same change and verifies every
+reciprocal digest and invocation binding. This reuses existing protection
+mechanisms rather than adding a lock, ledger, signing service, or workflow.
+
+The merged result is authoritative history only for its two recorded
+observation instants. It does not independently attest the local producer,
+actor, or wall clock and does not prove current platform state at merge time;
+protected review accepts those metadata and the deterministic candidate as
+Governance assertions.
+
+This case does not modify the protected Live attestation, acceptance evidence,
+Release history, or normal execution model. Another run or reconciliation
+requires separate human approval and a normative design change; no collection,
+wildcard, workflow-wide, range, or automatic admission exists.
+
 ## Activation Gate
 
 The live Buddy workflow remains disabled through the policy-fixed protected

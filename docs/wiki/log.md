@@ -2184,3 +2184,23 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Do not dispatch, rerun, approve, or recreate a transition ref. Authenticated
   package reconciliation remains blocked until GitHub terminalizes or removes
   the stuck run. Normal Live remains disabled and unauthorized.
+
+## [2026-08-25] query | Approve case-specific platform-orphan design
+
+- Approved a protected, case-specific Platform-Orphan Exception for cleanup
+  probe run `32809578776`; this is not a reusable registry or exception class.
+- The exception may remove only that run from one protected reconciliation
+  result's terminalization blocker set after the
+  `2026-09-08T04:35:59Z` cooling-off threshold. It grants no reconciliation
+  authority and changes no other prerequisite.
+- The invocation must fresh-read the authority and command from current
+  protected `main`, perform two complete query-only platform and exact `.5`
+  package observations, and emit a non-authoritative canonical candidate.
+  Historical recovery mutations must not be repeated.
+- The result preserves the run as nonterminal, platform cleanup as incomplete,
+  destination acceptance as unsuccessful, Release lineage as absent, package
+  mutation as prohibited, and normal Live as disabled and unauthorized. Only a
+  protected merge that atomically retains the candidate and replaces active
+  authority with cross-bound inert audit facts performs the single protected
+  consumption and makes the as-observed historical result authoritative. Any
+  later use or different run requires separate approval and normative change.

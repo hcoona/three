@@ -66,6 +66,24 @@ configuration.
 CI Qualification and Release Delivery may request decisions or capabilities, but
 they must not grant final authority to themselves.
 
+### Platform-Orphan Exception
+
+A protected, case-specific Governance authority for cleanup probe run
+`32809578776`, which remains externally nonterminal after the reviewed
+terminalization attempts failed. It is a singleton current-source document, not
+a reusable exception category or registry.
+
+A Governance-only read-only reconciliation invocation may propose excluding
+only that run from its terminalization blocker set after same-invocation
+current-source, platform, and package admission. The exception grants no
+reconciliation authority and permits only one protected consumption. It does
+not rewrite platform state, hide the run, establish acceptance success,
+authorize mutation, or satisfy Live activation. Only the protected merge of a
+change that atomically retains the unchanged candidate result and converts
+active authority to cross-bound inert audit facts consumes the exception and
+makes the as-observed historical result authoritative. Any later use or
+different run requires separate human approval and normative design change.
+
 ### Decision Zone
 
 The trusted runtime zone that executes authoritative policy, planning, evidence

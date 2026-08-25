@@ -562,6 +562,56 @@ against implementation and maintenance cost.
   path, keeps legacy Buddy retired, and enters reconciliation without restoring
   a reusable bypass. Restoring legacy Buddy requires a separate user-approved
   rollback PR. The procedure therefore includes an expected brief Buddy outage.
+  Cleanup probe run `32809578776` may be excluded only from the terminalization
+  blocker set of one protected Governance reconciliation result through its
+  protected, case-specific Platform-Orphan Exception. The exception conveys no
+  reconciliation authority and changes no other prerequisite. It must bind the
+  exact repository, current protected source, workflow, run, attempt, event,
+  source ref/SHA, creation/update instants, reviewed cooling-off instant,
+  expected nonterminal state, zero jobs, zero pending deployments, zero
+  artifacts,
+  disabled workflow identity, removed workflow/Environment/ref state,
+  historical recovery evidence, failed acceptance evidence, and package
+  coordinate.
+
+    A candidate-producing invocation must freshly resolve the exception from the
+    policy-fixed current `main`, record its commit, blob, and canonical-content
+    digests, obtain every current platform and package fact through authenticated
+    query-only requests with exhaustive pagination, and re-read the run,
+    workflow, protected ref, and exception source before deciding. The invocation
+    must reject partial reads, source change, `updated_at` or state drift, any
+    job/deployment/artifact, restored resource, identity mismatch, or package
+    evidence mismatch. Historical cancel, force-cancel, and delete attempts are
+    immutable reviewed evidence; admission must not repeat them. The cooling-off
+    instant is policy only and does not prove terminality or permanent
+    nonexecution.
+
+    An admitted invocation may emit a non-authoritative canonical Governance
+    reconciliation candidate. It must execute the protected command from the
+    resolved control commit, bind the command and invocation identity, and
+    perform two complete observations of every mutable predicate. Unknown or
+    unprovable destination state emits no candidate.
+
+    Authority permits exactly one protected consumption. It is consumed only
+    when one protected commit atomically adds the candidate at the policy-fixed
+    result path and changes the singleton authority from active to an inert audit
+    record, with reciprocal digest and invocation bindings. That merge makes the
+    candidate the append-only authoritative result. The result is authoritative
+    history as of its two observation instants, not proof of platform state at
+    merge time. It preserves the run as nonterminal, platform cleanup as
+    incomplete, destination acceptance as unsuccessful, package mutation as
+    prohibited, Release lineage as absent, and Live activation as prohibited. A
+    rejected or unmerged candidate does not consume authority. Any future run or
+    later reconciliation requires separate human approval and a normative design
+    change; no collection, wildcard, workflow-wide, time-range, or automatic
+    exception authority exists.
+
+    If GitHub independently terminalizes or removes run `32809578776` before
+    protected consumption, normal reconciliation may proceed subject to every
+    existing prerequisite and no blocker-exclusion result is required. The
+    unused authority must not be automatically consumed, retired, deleted, or
+    rewritten. Its retirement requires a separate explicit user-approved
+    normative change.
 
 ### Evidence, Decisions, and Explanation
 

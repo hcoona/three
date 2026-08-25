@@ -228,9 +228,23 @@ Next:
    ID `341728447` is disabled. Environment ID `20531285468` was deleted through
    the API before cleanup PR #584 removed the retry workflow source. The
    expected old-ref rejection instead created stuck cleanup probe run
-   `32809578776`, which remains queued with zero jobs or deployments after
-   GitHub rejected cancel, force-cancel, and authorized deletion. Authenticated
-   package reconciliation remains blocked until GitHub terminalizes or removes
-   that run; and
+   `32809578776`, which remains queued with zero jobs or pending deployments after
+   GitHub rejected cancel, force-cancel, and authorized deletion. One
+   case-specific Platform-Orphan Exception is approved for design and
+   implementation for that run, with a cooling-off threshold no earlier than
+   `2026-09-08T04:35:59Z`.
+   Reconciliation remains prohibited until either GitHub independently
+   terminalizes/removes run `32809578776`, after which normal reconciliation
+   remains subject to every existing prerequisite, or the case-specific
+   implementation merges, one same-invocation current-source, query-only
+   platform and exact `.5` admission produces a non-authoritative candidate,
+   and a later protected merge atomically adds that candidate at the fixed
+   result path and converts active authority to inert audit facts. Only the
+   latter alternative makes the historical blocker-exclusion result
+   authoritative; it grants no package mutation or broader reconciliation
+   authority. If GitHub resolves the run first, retiring the unused authority
+   remains outside this scope and requires separate explicit user approval and
+   normative change. Any later exception use or different run also requires
+   separate human approval and normative design change; and
 4. keep `live_enabled: false` until successful acceptance and separate human
    activation authorization.

@@ -52,10 +52,22 @@ and the second was skipped. Workflow ID `341728447` is `disabled_manually`,
 Environment ID `20531285468` was deleted through the API, and cleanup PR #584
 removed the retry workflow source. The expected old-ref rejection instead
 created cleanup probe run `32809578776`, which remains queued with zero jobs or
-deployments after GitHub rejected cancel, force-cancel, and authorized
+pending deployments after GitHub rejected cancel, force-cancel, and authorized
 deletion. The transition ref is absent. Authenticated package reconciliation
-remains blocked until GitHub terminalizes or removes this run. The `.5`-`.8`
-block is consumed. Normal Live activation remains unauthorized.
+remains prohibited until one of two paths completes: GitHub independently
+terminalizes/removes this run, after which normal reconciliation remains
+subject to every existing prerequisite; or the approved case-specific
+Platform-Orphan implementation merges, one same-invocation current-source,
+query-only platform and exact `.5` admission produces a non-authoritative
+candidate after the `2026-09-08T04:35:59Z` cooling-off threshold, and a
+protected merge atomically retains that candidate and converts active authority
+to inert audit facts. Only the second path makes the historical
+blocker-exclusion result authoritative; it cannot change unsuccessful
+acceptance, incomplete platform cleanup, or disabled Live state. If the first
+path completes, unused-authority retirement remains separately scoped. The
+`.5`-`.8` block is consumed. Any later use or different run requires separate
+human approval and normative design change. Normal Live activation remains
+unauthorized.
 
 ## Confirmed v3 Shape
 
@@ -289,12 +301,23 @@ have changed.
    exact after mutation startedness but retained incomplete runner evidence;
    the second probe was skipped. Workflow ID `341728447` is disabled, the
    workflow and Environment are absent, and cleanup PR #584 is merged. Cleanup
-   probe run `32809578776` remains queued with zero jobs or deployments after
+   probe run `32809578776` remains queued with zero jobs or pending deployments after
    GitHub rejected cancel, force-cancel, and authorized deletion. Do not
    dispatch or recreate a ref. Authenticated package reconciliation remains
-   blocked until GitHub terminalizes or removes this run. Do not reuse
-   `.5`-`.8`. Keep `live_enabled: false`; normal Live activation remains
-   unauthorized.
+   prohibited until one of two paths completes: GitHub independently
+   terminalizes/removes this run, after which normal reconciliation remains
+   subject to every existing prerequisite; or the approved case-specific
+   Platform-Orphan implementation merges, one same-invocation current-source,
+   query-only platform and exact `.5` admission produces a non-authoritative
+   candidate after the `2026-09-08T04:35:59Z` cooling-off threshold, and a
+   protected merge atomically retains that candidate and converts active
+   authority to inert audit facts. Only the second path makes the historical
+   blocker-exclusion result authoritative and grants no broader authority. If
+   the first path completes, unused-authority retirement remains separately
+   scoped and requires separate explicit user approval and normative change.
+   Do not reuse or mutate `.5`-`.8`. Keep `live_enabled: false`; normal Live
+   activation remains unauthorized. Any later use or different run requires
+   separate human approval and normative design change.
 
 ## Related Pages
 

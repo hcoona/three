@@ -212,6 +212,19 @@ until explicitly migrated. Failed acceptance leaves all Buddy publication
 disabled, removes the temporary path, keeps legacy Buddy retired, and sends any
 probe state to reconciliation or Break-Glass. Restoring legacy Buddy requires a
 separate user-approved rollback PR. v1 Official and CI assets remain unchanged.
+Cleanup probe run `32809578776` has one separately approved, protected
+Platform-Orphan Exception. After its reviewed cooling-off instant, a
+Governance-only read-only reconciliation invocation may propose excluding that
+exact run from its terminalization blocker set only after fresh current-source,
+query-only platform, and package admission succeeds. The exception grants no
+reconciliation authority, and the invocation repeats none of the historical
+cancel, force-cancel, or delete attempts. It retains unsuccessful acceptance,
+incomplete platform cleanup, and disabled Live state. The query-only command
+emits a non-authoritative candidate; one protected commit atomically adds it at
+the fixed result path and converts active authority to a cross-bound inert audit
+record. Only that merge performs the single protected consumption and makes
+the as-observed historical result authoritative. Another run or reconciliation
+requires separate human approval and normative change.
 That preservation explicitly excludes legacy Buddy workflows, Buddy-specific
 tests and matrices, and Buddy documentation, which the direct cutover retires
 or rewrites. The sequence has an intentional brief Buddy outage.

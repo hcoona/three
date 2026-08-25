@@ -161,11 +161,28 @@ If it conflicts with the
   zero pending deployments. Normal cancel and force-cancel return HTTP 500;
   user-authorized deletion returns HTTP 403 while the run is queued. Its API
   metadata is retained outside the repository. Do not dispatch, rerun, approve,
-  recreate a transition ref, or attempt package reconciliation. Cleanup remains
-  blocked until GitHub terminalizes or otherwise removes the stuck run. The
-  `.5`-`.8` invocation, review, and coordinate block must not be reused. Both
-  strict acceptance profiles remain evidence replay authority and cannot be
-  mixed. `live_enabled` remains false.
+  recreate a transition ref, repeat recovery operations, or attempt package
+  reconciliation. Reconciliation remains prohibited until one of two paths
+  completes:
+    - GitHub independently terminalizes/removes run `32809578776`, after which
+      normal reconciliation remains subject to every existing prerequisite; or
+    - the case-specific implementation merges, one same-invocation admission
+      produces a non-authoritative candidate no earlier than the reviewed
+      `2026-09-08T04:35:59Z` cooling-off threshold, and a protected merge
+      atomically adds that candidate at the fixed result path and converts active
+      authority to inert audit facts.
+      Only the second path authoritatively excludes the still-nonterminal run from
+      the blocker set. It grants no reconciliation or mutation authority and must
+      preserve the run as nonterminal, platform cleanup as incomplete, acceptance
+      as unsuccessful, and Live as prohibited. If the first path completes,
+      retirement of the unused authority remains outside this scope and requires
+      separate explicit user approval and normative change. Only exact read-only
+      observation of existing `.5` belongs to the approved reconciliation. Do not
+      reuse the review, publish, retag, delete, or otherwise mutate `.5`-`.8`,
+      enumerate or directly query `.6`-`.8`, or retain an unexpected exact-tag
+      scalar. Both strict acceptance profiles remain evidence replay authority and
+      cannot be mixed. Any later use or different run requires separate human
+      approval and normative design change. `live_enabled` remains false.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the
@@ -677,13 +694,26 @@ If it conflicts with the
   `disabled_manually`, and the workflow, Environment, and transition ref are
   absent. Cleanup PR #584 merged as `fd2f056b`. The expected old-ref HTTP 422
   check returned HTTP 204 and created stuck cleanup probe run `32809578776`,
-  which remains queued with zero jobs or deployments after cancel,
+  which remains queued with zero jobs or pending deployments after cancel,
   force-cancel, and authorized deletion were rejected by GitHub. Do not
-  dispatch or recreate a ref. Authenticated package reconciliation remains
-  blocked until GitHub terminalizes or removes this run. Do not reuse the
-  invocation, review, or `.5`-`.8` coordinate block.
-  Do not activate normal Live or begin later scopes without a separate explicit
-  user task.
+  dispatch, recreate a ref, or repeat recovery operations. A case-specific
+  Platform-Orphan Exception is approved for design and implementation, with a
+  cooling-off threshold no earlier than `2026-09-08T04:35:59Z`.
+  Reconciliation remains prohibited until either GitHub independently
+  terminalizes/removes run `32809578776`, after which normal reconciliation
+  remains subject to every existing prerequisite, or the case-specific
+  implementation merges, one same-invocation current-source, query-only
+  platform and exact `.5` admission produces a non-authoritative candidate,
+  and a protected merge atomically adds that candidate at the fixed result
+  path and converts active authority to inert audit facts. Only the latter
+  alternative makes the historical blocker-exclusion result authoritative; it
+  grants no reconciliation or mutation authority. If GitHub resolves the run
+  first, retiring the unused authority remains outside this scope and requires
+  separate explicit user approval and normative change. Do not reuse the
+  review, mutate `.5`-`.8`, or enumerate or directly query `.6`-`.8`.
+  Any later use or different run requires separate human approval and normative
+  design change. Do not activate normal Live or begin later scopes without a
+  separate explicit user task.
 - Implementation must preserve the approved commit boundaries and keep live
   activation disabled until acceptance and the separate activation approval.
 

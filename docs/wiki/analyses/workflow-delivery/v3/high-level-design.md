@@ -367,6 +367,28 @@ retained bypass or compatibility rollback. Restoring legacy Buddy requires a
 separate user-approved rollback PR. The sequence therefore has an expected
 brief Buddy outage.
 
+A protected, case-specific Platform-Orphan Exception handles only cleanup probe
+run `32809578776`, for which GitHub accepted an administrative dispatch, never
+created a job or pending deployment, and rejected every attempted
+terminalization operation. It is a singleton authority read from a policy-fixed
+path on current `main`, not a registry or reusable exception class. A
+Governance-only command
+freshly binds the current source and protected control provenance, performs two
+complete query-only platform and exact-package observations, and emits one
+non-authoritative canonical reconciliation candidate.
+
+Exact admission removes only the named run from that invocation's
+terminalization blocker set. It grants no reconciliation authority and changes
+no other prerequisite. The result remains outside Release history and records
+unsuccessful acceptance, externally nonterminal run state, incomplete platform
+cleanup, absent Release lineage, prohibited mutation, and blocked Live.
+Authority permits one protected consumption and is consumed only by one
+protected commit that atomically adds the candidate at the fixed result path
+and replaces active authority with cross-bound inert audit facts. That merge
+makes the result authoritative history as of its recorded observations, not
+proof of current platform state at merge time. Another run or reconciliation
+requires separate human approval and normative design change.
+
 ## CI Qualification Design
 
 ### Flow
