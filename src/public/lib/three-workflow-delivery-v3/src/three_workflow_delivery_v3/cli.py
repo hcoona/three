@@ -627,7 +627,7 @@ def _build_acceptance_tarball(
     pack_root = root / f"packed-{scenario}"
     pack_root.mkdir()
     pack = subprocess.run(  # noqa: S603
-        (
+        (  # noqa: S607
             "npm",
             "pack",
             "--ignore-scripts",
@@ -994,9 +994,7 @@ class AcceptanceMutationProxy:
                 owner.observed.set()
                 if barrier is not None:
                     try:
-                        barrier.wait(
-                            timeout=owner._proxy_timeout()  # noqa: SLF001
-                        )
+                        barrier.wait(timeout=owner._proxy_timeout())
                     except threading.BrokenBarrierError:
                         self._reject(504)
                         return
@@ -1017,7 +1015,7 @@ class AcceptanceMutationProxy:
                 headers["Content-Length"] = str(len(body))
                 connection = http.client.HTTPSConnection(
                     "npm.pkg.github.com",
-                    timeout=owner._proxy_timeout(),  # noqa: SLF001
+                    timeout=owner._proxy_timeout(),
                 )
                 try:
                     connection.request(
@@ -1196,10 +1194,15 @@ class _AcceptanceNpmRunner:
             )
         except subprocess.TimeoutExpired:
             raise TimeoutError("acceptance npm scenario timed out") from None
-        result = self._classify(
-            completed,
-            max_output_bytes=max_output_bytes,
-        )
+        try:
+            result = self._classify(
+                completed,
+                max_output_bytes=max_output_bytes,
+            )
+        except ValueError as error:
+            error.action_executed = True  # type: ignore[attr-defined]
+            error.mutation_started = True  # type: ignore[attr-defined]
+            raise
         result["action-executed"] = True
         result["mutation-started"] = True
         return result
@@ -1347,8 +1350,8 @@ class _AcceptanceNpmRunner:
                     processes,
                     deadline=operation_deadline if shared_deadline else None,
                 )
-                # The Adapter maps this to result="timeout" and
-                # mutation_classification="unknown".
+                # The Adapter preserves admitted pre-mutation facts as an
+                # incomplete failure; other timeouts remain unknown.
                 error = TimeoutError("acceptance npm scenario timed out")
                 error.action_executed = bool(processes)  # type: ignore[attr-defined]
                 error.mutation_started = getattr(  # type: ignore[attr-defined]
@@ -1381,10 +1384,17 @@ class _AcceptanceNpmRunner:
                         proxy, "observed", proxy.processed
                     ).is_set(),
                 }
-        results = [
-            self._classify(result, max_output_bytes=max_output_bytes)
-            for result in completed
-        ]
+        try:
+            results = [
+                self._classify(result, max_output_bytes=max_output_bytes)
+                for result in completed
+            ]
+        except ValueError as error:
+            error.action_executed = bool(processes)  # type: ignore[attr-defined]
+            error.mutation_started = getattr(  # type: ignore[attr-defined]
+                proxy, "observed", threading.Event()
+            ).is_set()
+            raise
         outcomes = [result["outcome"] for result in results]
         if (
             len(outcomes) == _PAIR_FIELD_COUNT
@@ -1700,7 +1710,7 @@ class _AcceptanceNpmTransport:
             )
             readback_config.chmod(0o600)
             completed = subprocess.run(  # noqa: S603
-                (
+                (  # noqa: S607
                     "npm",
                     "view",
                     package_coordinate,

@@ -924,12 +924,34 @@ def _admit_probe_facts(  # noqa: C901, PLR0912, PLR0915
                     "action.mutation-started startedness contradict execution"
                 )
                 raise ValueError(message)
-            if response_result == "runner-failed-before-mutation" and (
-                action_executed or mutation_started
+            runner_failure_startedness = {
+                "runner-failed-before-mutation": (False, False),
+                "runner-failed-after-action-start": (True, False),
+                "runner-failed-after-mutation-start": (True, True),
+            }
+            expected_startedness = runner_failure_startedness.get(
+                response_result
+            )
+            if (
+                expected_startedness is not None
+                and (
+                    action_executed,
+                    mutation_started,
+                )
+                != expected_startedness
             ):
                 message = (
                     f"{scenario_field}.action startedness contradicts "
-                    "pre-request failure"
+                    f"{response_result}"
+                )
+                raise ValueError(message)
+            if (
+                response_result == "runner-malformed-before-mutation"
+                and mutation_started
+            ):
+                message = (
+                    f"{scenario_field}.action startedness contradicts "
+                    "runner-malformed-before-mutation"
                 )
                 raise ValueError(message)
             if response_result in {"timeout", "lost-response"} and (
@@ -940,13 +962,16 @@ def _admit_probe_facts(  # noqa: C901, PLR0912, PLR0915
                     "a qualified-request ambiguous outcome"
                 )
                 raise ValueError(message)
-            if probe_result == "success":
-                if scenario_classification != "complete":
-                    message = (
-                        f"{scenario_field}.mutation-classification "
-                        "contradicts successful probe semantics"
-                    )
-                    raise ValueError(message)
+            if (
+                probe_result == "success"
+                and scenario_classification != "complete"
+            ):
+                message = (
+                    f"{scenario_field}.mutation-classification "
+                    "contradicts successful probe semantics"
+                )
+                raise ValueError(message)
+            if scenario_classification == "complete":
                 _require_complete_scenario_semantics(
                     expected_scenario,
                     pre_state=pre_state,

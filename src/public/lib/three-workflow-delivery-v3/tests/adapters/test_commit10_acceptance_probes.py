@@ -1,6 +1,6 @@
 """Commit-10 fixed GitHub Packages acceptance probe scenarios."""
 
-# ruff: noqa: C901, D101, D102, D103, D107, E501, FBT001, PLR0913, PLR2004, PT011, S105, S106, SLF001
+# ruff: noqa: C901, D101, D102, D103, D107, E501, FBT001, PLR0913, PLR0917, PLR2004, PT011, S105, S106, S607, SLF001
 
 from __future__ import annotations
 
@@ -84,11 +84,15 @@ class ControlledRunner:
     def __init__(
         self,
         *,
-        outcome: str = "created",
+        outcome: object = "created",
         error: BaseException | None = None,
+        action_executed: bool = True,
+        mutation_started: bool = True,
     ) -> None:
         self.outcome = outcome
         self.error = error
+        self.action_executed = action_executed
+        self.mutation_started = mutation_started
         self.calls: list[tuple[str, tuple[str, ...], dict[str, str]]] = []
 
     def run(
@@ -124,8 +128,8 @@ class ControlledRunner:
         return {
             "outcome": self.outcome,
             "response-identity-digest": RESPONSE_A,
-            "action-executed": True,
-            "mutation-started": True,
+            "action-executed": self.action_executed,
+            "mutation-started": self.mutation_started,
         }
 
 
@@ -183,6 +187,7 @@ def _run(
     scenario: str,
     observations: list[dict[str, Any]],
     runner: object,
+    max_output_bytes: int = MAX_OUTPUT_BYTES,
 ) -> tuple[Any, RecordingTransport, Path]:
     tarball = tmp_path / f"{scenario}.tgz"
     tarball.write_bytes(scenario.encode())
@@ -199,7 +204,7 @@ def _run(
         runner=runner,
         timeout_seconds=TIMEOUT_SECONDS,
         max_response_bytes=MAX_RESPONSE_BYTES,
-        max_output_bytes=MAX_OUTPUT_BYTES,
+        max_output_bytes=max_output_bytes,
     )
     return result, transport, tarball
 
@@ -391,7 +396,10 @@ def test_lost_response_is_deliberately_injected_after_mutation_start(
     assert runner.calls[0][0] == "lost-response"
     assert result.result == "lost-response"
     assert result.mutation_classification == "unknown"
-    assert "mutation-may-have-started" in result.diagnostics
+    assert result.diagnostics == (
+        "mutation-may-have-started",
+        "human-reconciliation-required",
+    )
 
 
 class ExplicitFactRunner(ControlledRunner):
@@ -1295,8 +1303,10 @@ def test_lost_response_exact_post_readback_remains_unknown_without_proxy_proof(
 def test_lost_response_unknown_post_readback_stays_unknown(
     tmp_path: Path,
 ) -> None:
-    runner = ControlledRunner(
-        error=RuntimeError("deliberate response loss after mutation start")
+    runner = ExplicitFactRunner(
+        executed=True,
+        started=True,
+        error=RuntimeError("deliberate response loss after mutation start"),
     )
     result, _, _ = _run(
         tmp_path,
@@ -1363,6 +1373,251 @@ def test_lost_response_exact_readback_rejects_unbound_outcome_string(
         "mutation-may-have-started",
         "human-reconciliation-required",
     )
+
+
+@pytest.mark.parametrize(
+    ("mutation_started", "expected_result"),
+    [
+        (False, "runner-failed-after-action-start"),
+        (True, "runner-failed-after-mutation-start"),
+    ],
+)
+def test_failed_runner_after_action_start_preserves_startedness(
+    tmp_path: Path,
+    mutation_started: bool,
+    expected_result: str,
+) -> None:
+    runner = ControlledRunner(
+        outcome="failed",
+        mutation_started=mutation_started,
+    )
+    tarball = tmp_path / "precompute"
+    tarball.write_bytes(b"absent-create-readback")
+    content = f"sha512:{hashlib.sha512(tarball.read_bytes()).hexdigest()}"
+    tarball.unlink()
+
+    result, _, _ = _run(
+        tmp_path,
+        scenario="absent-create-readback",
+        observations=[
+            _absent(),
+            _state(
+                "exact",
+                scenario="absent-create-readback",
+                content=content,
+            ),
+        ],
+        runner=runner,
+    )
+
+    assert result.result == expected_result
+    assert result.mutation_classification == "incomplete"
+    assert result.action_executed is True
+    assert result.mutation_started is mutation_started
+    assert result.post_state == "exact"
+    assert result.diagnostics == ("runner-did-not-prove-controlled-outcome",)
+
+
+@pytest.mark.parametrize(
+    ("runner", "expected_result"),
+    [
+        (
+            ExplicitFactRunner(
+                executed=True,
+                started=False,
+                error=OSError("failure after process start"),
+            ),
+            "runner-failed-after-action-start",
+        ),
+        (
+            ExplicitFactRunner(
+                executed=True,
+                started=True,
+                error=OSError("failure after mutation start"),
+            ),
+            "runner-failed-after-mutation-start",
+        ),
+    ],
+)
+def test_exception_failure_preserves_startedness_label(
+    tmp_path: Path,
+    runner: ExplicitFactRunner,
+    expected_result: str,
+) -> None:
+    result, _, _ = _run(
+        tmp_path,
+        scenario="absent-create-readback",
+        observations=[_absent(), _absent()],
+        runner=runner,
+    )
+
+    assert result.result == expected_result
+    assert result.mutation_classification == "incomplete"
+    assert result.diagnostics == ("runner-did-not-prove-controlled-outcome",)
+
+
+@pytest.mark.parametrize("error_type", [ValueError, OSError, RuntimeError])
+def test_attributed_exception_message_cannot_collide_with_malformed_facts(
+    tmp_path: Path,
+    error_type: type[BaseException],
+) -> None:
+    runner = ExplicitFactRunner(
+        executed=True,
+        started=True,
+        error=error_type("acceptance runner action facts are malformed"),
+    )
+    result, _, _ = _run(
+        tmp_path,
+        scenario="absent-create-readback",
+        observations=[_absent(), _absent()],
+        runner=runner,
+    )
+
+    assert result.result == "runner-failed-after-mutation-start"
+    assert result.mutation_classification == "incomplete"
+    assert result.action_executed is True
+    assert result.mutation_started is True
+
+
+@pytest.mark.parametrize(
+    ("scenario", "error_type", "expected_result"),
+    [
+        ("absent-create-readback", TimeoutError, "timeout"),
+        ("lost-response", RuntimeError, "lost-response"),
+    ],
+)
+@pytest.mark.parametrize(
+    "attributes",
+    [
+        {},
+        {"action_executed": True},
+        {"action_executed": "yes", "mutation_started": False},
+        {"action_executed": False, "mutation_started": True},
+    ],
+    ids=("missing", "partial", "wrong-types", "contradictory"),
+)
+def test_special_failure_without_admitted_startedness_remains_unknown(
+    tmp_path: Path,
+    scenario: str,
+    error_type: type[BaseException],
+    expected_result: str,
+    attributes: dict[str, object],
+) -> None:
+    error = error_type("runner failure without admitted startedness")
+    for name, value in attributes.items():
+        setattr(error, name, value)
+    result, _, _ = _run(
+        tmp_path,
+        scenario=scenario,
+        observations=[
+            _absent(),
+            {"state": "unknown", "response-identity-digest": RESPONSE_B},
+        ],
+        runner=ControlledRunner(error=error),
+    )
+
+    assert result.result == expected_result
+    assert result.mutation_classification == "unknown"
+    assert result.action_executed is False
+    assert result.mutation_started is False
+    assert result.diagnostics == (
+        "mutation-may-have-started",
+        "human-reconciliation-required",
+    )
+
+
+@pytest.mark.parametrize(
+    (
+        "scenario",
+        "error",
+        "action_executed",
+        "mutation_started",
+        "expected_result",
+    ),
+    [
+        (
+            "absent-create-readback",
+            TimeoutError("timeout before action start"),
+            False,
+            False,
+            "runner-failed-before-mutation",
+        ),
+        (
+            "lost-response",
+            RuntimeError("lost response before action start"),
+            False,
+            False,
+            "runner-failed-before-mutation",
+        ),
+        (
+            "lost-response",
+            RuntimeError("lost response after action start"),
+            True,
+            False,
+            "runner-failed-after-action-start",
+        ),
+    ],
+)
+def test_special_failure_with_admitted_pre_mutation_startedness_is_incomplete(
+    tmp_path: Path,
+    scenario: str,
+    error: BaseException,
+    action_executed: bool,
+    mutation_started: bool,
+    expected_result: str,
+) -> None:
+    runner = ExplicitFactRunner(
+        executed=action_executed,
+        started=mutation_started,
+        error=error,
+    )
+    result, _, _ = _run(
+        tmp_path,
+        scenario=scenario,
+        observations=[_absent(), _absent()],
+        runner=runner,
+    )
+
+    assert result.result == expected_result
+    assert result.mutation_classification == "incomplete"
+    assert result.action_executed is action_executed
+    assert result.mutation_started is mutation_started
+    assert result.diagnostics == (
+        ("runner-did-not-prove-controlled-outcome",)
+        if action_executed
+        else ("runner-did-not-prove-mutation-start",)
+    )
+
+
+@pytest.mark.parametrize("outcome", [[], {}])
+@pytest.mark.parametrize(
+    ("action_executed", "mutation_started", "expected_result"),
+    [
+        (False, False, "runner-malformed-before-mutation"),
+        (True, False, "runner-failed-after-action-start"),
+        (True, True, "runner-failed-after-mutation-start"),
+    ],
+)
+def test_unhashable_runner_outcome_fails_closed(
+    tmp_path: Path,
+    outcome: object,
+    action_executed: bool,
+    mutation_started: bool,
+    expected_result: str,
+) -> None:
+    result, _, _ = _run(
+        tmp_path,
+        scenario="absent-create-readback",
+        observations=[_absent(), _absent()],
+        runner=ControlledRunner(
+            outcome=outcome,
+            action_executed=action_executed,
+            mutation_started=mutation_started,
+        ),
+    )
+
+    assert result.result == expected_result
+    assert result.mutation_classification == "incomplete"
 
 
 @pytest.mark.parametrize("runner", [PreStartFailureRunner(), MalformedRunner()])
@@ -1713,14 +1968,6 @@ def test_partial_process_startup_timeout_cleans_every_started_process(
     assert all(process.communications[-1] is None for process in started)
 
 
-def test_subprocess_timeout_maps_to_unknown_acceptance_probe_result() -> None:
-    source = Path(cli_module.__file__).read_text(encoding="utf-8")
-
-    assert "except subprocess.TimeoutExpired" in source
-    assert 'mutation_classification="unknown"' in source
-    assert 'result="timeout"' in source
-
-
 def test_run_process_timeout_raises_builtin_timeout_error(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1744,6 +1991,104 @@ def test_run_process_timeout_raises_builtin_timeout_error(
             timeout_seconds=TIMEOUT_SECONDS,
             max_output_bytes=MAX_OUTPUT_BYTES,
         )
+
+
+def test_run_process_classification_error_preserves_startedness(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        cli_module.subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            ("npm", "publish"),
+            0,
+            stdout="oversized",
+            stderr="",
+        ),
+    )
+    runner = cli_module._AcceptanceNpmRunner(
+        tmp_path / ".npmrc",
+        contender_tarballs={},
+    )
+
+    with pytest.raises(ValueError) as raised:
+        runner._run_process(
+            ("npm", "publish", str(tmp_path / "package.tgz")),
+            env={},
+            timeout_seconds=TIMEOUT_SECONDS,
+            max_output_bytes=1,
+        )
+
+    assert raised.value.action_executed is True  # type: ignore[attr-defined]
+    assert raised.value.mutation_started is True  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize(
+    ("proxy_observed", "expected_result"),
+    [
+        (False, "runner-failed-after-action-start"),
+        (True, "runner-failed-after-mutation-start"),
+    ],
+)
+def test_runner_classification_error_preserves_proxy_startedness(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    proxy_observed: bool,
+    expected_result: str,
+) -> None:
+    observed = cli_module.threading.Event()
+    if proxy_observed:
+        observed.set()
+
+    class Proxy:
+        registry = "http://127.0.0.1:4873"
+        processed = cli_module.threading.Event()
+        proof = None
+
+        def __init__(self, **_kwargs: object) -> None:
+            self.observed = observed
+
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            pass
+
+    class Process:
+        returncode = 0
+
+        def communicate(self, timeout: float | None = None) -> tuple[str, str]:
+            assert timeout is not None
+            return "oversized", ""
+
+        def poll(self) -> int:
+            return self.returncode
+
+        def kill(self) -> None:
+            self.returncode = -9
+
+    monkeypatch.setattr(cli_module, "_LostResponseProxy", Proxy)
+    monkeypatch.setattr(
+        cli_module.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: Process(),
+    )
+    result, _, _ = _run(
+        tmp_path,
+        scenario="absent-create-readback",
+        observations=[_absent(), _absent()],
+        runner=cli_module._AcceptanceNpmRunner(
+            tmp_path / ".npmrc",
+            contender_tarballs={},
+        ),
+        max_output_bytes=1,
+    )
+
+    assert result.result == expected_result
+    assert result.mutation_classification == "incomplete"
+    assert result.action_executed is True
+    assert result.mutation_started is proxy_observed
 
 
 def test_adapter_records_timeout_as_started_unknown_mutation(
@@ -2869,6 +3214,8 @@ def test_adversarial_lost_local_failure_before_proxy_request_is_not_started(
 
     assert result.action_executed is True
     assert result.mutation_started is False
+    assert result.result == "runner-failed-after-action-start"
+    assert result.mutation_classification == "incomplete"
 
 
 @pytest.mark.parametrize(
@@ -2935,7 +3282,35 @@ def test_adversarial_timeout_startedness_depends_only_on_proxy_observation(
 
     assert result.mutation_started is expected_started
     assert result.action_executed is True
-    assert result.mutation_classification == "unknown"
+    assert result.result == (
+        "timeout" if expected_started else "runner-failed-after-action-start"
+    )
+    assert result.mutation_classification == (
+        "unknown" if expected_started else "incomplete"
+    )
+    assert result.diagnostics == (
+        (
+            "mutation-may-have-started",
+            "human-reconciliation-required",
+        )
+        if expected_started
+        else ("runner-did-not-prove-controlled-outcome",)
+    )
+
+
+def test_lost_response_return_without_mutation_start_is_incomplete(
+    tmp_path: Path,
+) -> None:
+    result, _, _ = _run(
+        tmp_path,
+        scenario="lost-response",
+        observations=[_absent(), _absent()],
+        runner=ExplicitFactRunner(executed=True, started=False),
+    )
+
+    assert result.result == "runner-failed-after-action-start"
+    assert result.mutation_classification == "incomplete"
+    assert result.diagnostics == ("runner-did-not-prove-controlled-outcome",)
 
 
 def test_adversarial_acceptance_rest_pages_share_one_monotonic_deadline(
@@ -5468,7 +5843,8 @@ def test_real_runner_proxy_wait_cleanup_and_readback_share_decreasing_budget(
         max_output_bytes=MAX_OUTPUT_BYTES,
     )
 
-    assert result.result == "timeout"
+    assert result.result == "runner-failed-after-action-start"
+    assert result.mutation_classification == "incomplete"
     assert [name for name, _, _ in events] == [
         "proxy",
         "wait",

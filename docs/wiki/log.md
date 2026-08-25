@@ -2084,3 +2084,24 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   absent before package/evidence reconciliation. The failed invocation, review,
   and coordinate are not reusable; no retry is currently authorized, and the
   protected attestation remains `live_enabled: false`.
+
+## [2026-08-24] query | Reconcile incomplete destination acceptance
+
+- Merged cleanup PR #575 as `274d81fd`, restored workflow ID `340952168` to
+  `disabled_manually` after GitHub marked the removed file `deleted`, and
+  proved real old-ref dispatch rejection with HTTP 422. The workflow file,
+  temporary transition ref, acceptance Environment, and nonterminal runs are
+  absent.
+- Authenticated package and npm-registry inspection confirmed version
+  `0.0.0-wdv3-acceptance.1` and tag `wdv3-acceptance-1` remain exact. The
+  repository association is `hcoona/three`; SHA-1 is
+  `033bb682b846c7fc3a6c325d5455ad79087b50d5`; SHA-512 is
+  `b32fa3ccdd477af2d83f554392d8fa2499db713bc651bef39fca16263752dcb8af51513a5a459fbc13dbbd75c1607ee35cbd74af1d608998feced5c1d21c4e37`;
+  and the tarball manifest and witness bind the fixed package, version, purpose,
+  and target `5a84bebd`.
+- Root cause is a fail-closed result-label defect: a generic runner failure
+  after recorded mutation startedness was labeled
+  `runner-failed-before-mutation`, so terminal Governance admission correctly
+  rejected the contradiction. The staged, unmerged repair preserves incomplete
+  classification and does not convert reconciled exact destination state into
+  acceptance success. No retry or Live activation is authorized.
