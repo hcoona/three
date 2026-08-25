@@ -1955,6 +1955,10 @@ request uses null cursor and page index `1`. `complete` is true only when the
 response and every required next page were admitted. The request ledger
 excludes authorization, cookies, headers, response bodies, redirect query
 strings, signed URLs, and unrelated package members.
+When manifest evidence is present, admission derives the initial tarball path
+from that exact manifest, validates it against the fixed package and `.5`
+boundary, and requires the final pass to use the identical path. This
+manifest-derived path is a request-ledger fact, not a destination-state member.
 
 Each closed platform observation envelope contains exactly `phase`,
 `observed_at`, `state`, and `state_sha256`. Its closed `state` contains exactly

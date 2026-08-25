@@ -56,10 +56,6 @@ _ACCEPTANCE_TARGET_SHA = "b031e5e0bd98a95943a03a1529b64e856e1a8aa1"
 _ACCEPTANCE_WORKFLOW_SHA = "953c1db0712f6ff4d41b7e6a35767d71a2b19c4d"
 _PACKAGE_COORDINATE = "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5"
 _PACKAGE_TAG = "wdv3-acceptance-5"
-_PACKAGE_TARBALL_PATH = (
-    "/@hcoona/hcoona-release-smoke-npm/-/"
-    "hcoona-release-smoke-npm-0.0.0-wdv3-acceptance.5.tgz"
-)
 _ACTIVE_AUTHORITY: dict[str, JsonValue] = {
     "schema": PLATFORM_ORPHAN_ACTIVE_SCHEMA,
     "version": 1,
@@ -450,6 +446,7 @@ def _expected_observation_requests(
     jobs_page_count: int,
     artifact_page_count: int,
     manifest_present: bool,
+    tarball_path: str | None,
 ) -> list[tuple[str, str, int, int, str | None]]:
     api = "https://api.github.com"
     npm = "https://npm.pkg.github.com"
@@ -543,14 +540,37 @@ def _expected_observation_requests(
         ]
     )
     if manifest_present:
+        if tarball_path is None:
+            raise ValueError("manifest request ledger is missing tarball path")
         requests.append(
             _request_signature(
                 origin=npm,
-                path=_PACKAGE_TARBALL_PATH,
+                path=tarball_path,
                 status=200,
             )
         )
     return requests
+
+
+def _validate_tarball_ledger_path(path: str) -> str:
+    if _ENCODED_PATH.fullmatch(path) is None:
+        raise ValueError("manifest-derived tarball path is not safely encoded")
+    if (
+        re.fullmatch(
+            (
+                r"(?:/download/@hcoona/hcoona-release-smoke-npm/"
+                r"0\.0\.0-wdv3-acceptance\.5/"
+                r"[A-Za-z0-9][A-Za-z0-9._~-]*"
+                r"|/@hcoona/hcoona-release-smoke-npm/-/"
+                r"hcoona-release-smoke-npm-"
+                r"0\.0\.0-wdv3-acceptance\.5\.tgz)"
+            ),
+            path,
+        )
+        is None
+    ):
+        raise ValueError("manifest-derived tarball path is outside fixed .5")
+    return path
 
 
 def _validate_request_ledger(
@@ -563,10 +583,42 @@ def _validate_request_ledger(
     if jobs_page_count + artifact_page_count > len(requests) // 2:
         raise ValueError("pagination page counts exceed request ledger")
     source = _expected_source_requests()
+    tarball_path: str | None = None
+    if manifest_present:
+        manifest_path = (
+            "/@hcoona%2Fhcoona-release-smoke-npm/0.0.0-wdv3-acceptance.5"
+        )
+        tag_path = "/-/package/@hcoona%2Fhcoona-release-smoke-npm/dist-tags"
+        tarball_requests = [
+            request
+            for request in requests
+            if request["origin"] == "https://npm.pkg.github.com"
+            and request["path"] not in {manifest_path, tag_path}
+        ]
+        if len(tarball_requests) != len(("initial", "final")):
+            raise ValueError(
+                "requests do not contain both manifest-derived tarball paths"
+            )
+        initial_path = _validate_tarball_ledger_path(
+            cast("str", tarball_requests[0]["path"])
+        )
+        final_path = _validate_tarball_ledger_path(
+            cast("str", tarball_requests[1]["path"])
+        )
+        if (
+            tarball_requests[0]["phase"] != "initial"
+            or tarball_requests[1]["phase"] != "final"
+            or initial_path != final_path
+        ):
+            raise ValueError(
+                "manifest-derived tarball path differs across passes"
+            )
+        tarball_path = initial_path
     observations = _expected_observation_requests(
         jobs_page_count=jobs_page_count,
         artifact_page_count=artifact_page_count,
         manifest_present=manifest_present,
+        tarball_path=tarball_path,
     )
     ordered = (
         *(("initial", signature) for signature in source),

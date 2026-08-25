@@ -116,6 +116,10 @@ def _requests(
     jobs_page_count: int = 1,
     artifact_page_count: int = 1,
     manifest_present: bool = True,
+    tarball_path: str = (
+        "/@hcoona/hcoona-release-smoke-npm/-/"
+        "hcoona-release-smoke-npm-0.0.0-wdv3-acceptance.5.tgz"
+    ),
 ) -> list[dict[str, Any]]:
     api = "https://api.github.com"
     npm = "https://npm.pkg.github.com"
@@ -238,10 +242,7 @@ def _requests(
         observations.append(
             (
                 npm,
-                (
-                    "/@hcoona/hcoona-release-smoke-npm/-/"
-                    "hcoona-release-smoke-npm-0.0.0-wdv3-acceptance.5.tgz"
-                ),
+                tarball_path,
                 200,
                 1,
                 None,
@@ -552,6 +553,109 @@ def test_candidate_admits_absent_manifest_with_present_tag_as_conflict(
     document["result_digest"] = canonical_sha256(preimage)
 
     assert _admit_candidate(document).to_document() == document
+
+
+def test_candidate_admits_differing_manifest_integrity_as_conflict() -> None:
+    document = _candidate_document()
+    actual = "sha512:" + ("c" * 128)
+    for observation in document["destination_observations"]:
+        state = observation["state"]
+        state["classification"] = "conflicting"
+        state["tarball_sha512"] = actual
+        observation["state_sha256"] = canonical_sha256(state)
+    document["result"]["package_classification"] = "conflicting"
+    document["result"]["diagnostics"] = [
+        "package-conflicting",
+        "platform-orphan-admitted",
+    ]
+    preimage = deepcopy(document)
+    preimage.pop("result_digest")
+    document["result_digest"] = canonical_sha256(preimage)
+
+    assert _admit_candidate(document).to_document() == document
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/@hcoona/other/-/other-0.0.0-wdv3-acceptance.5.tgz",
+        (
+            "/@hcoona/hcoona-release-smoke-npm/-/"
+            "hcoona-release-smoke-npm-0.0.0-wdv3-acceptance.6.tgz"
+        ),
+        (
+            "/@hcoona/hcoona-release-smoke-npm/-/"
+            "hcoona-release-smoke-npm-0.0.0-wdv3-acceptance.5.6.tgz"
+        ),
+        (
+            "/download/@hcoona/hcoona-release-smoke-npm/"
+            "0.0.0-wdv3-acceptance.5/id/extra"
+        ),
+        (
+            "/download/@hcoona/hcoona-release-smoke-npm/"
+            "0.0.0-wdv3-acceptance.5/id%2Fextra"
+        ),
+        (
+            "/download/@hcoona/hcoona-release-smoke-npm/"
+            "0.0.0-wdv3-acceptance.5/%69d"
+        ),
+        (
+            "/@hcoona/hcoona-release-smoke-npm/-/"
+            "hcoona-release-smoke-npm-0.0.0-wdv3-acceptance.5%2Etgz"
+        ),
+        (
+            "/@hcoona/hcoona-release-smoke-npm/-/"
+            "hcoona-release-smoke-npm-0.0.0-wdv3-acceptance.5.tgz%2Fextra"
+        ),
+    ],
+)
+def test_candidate_rejects_unsafe_manifest_derived_tarball_path(
+    path: str,
+) -> None:
+    document = _candidate_document()
+    document["requests"] = _requests(tarball_path=path)
+    preimage = deepcopy(document)
+    preimage.pop("result_digest")
+    document["result_digest"] = canonical_sha256(preimage)
+
+    with pytest.raises(ValueError, match=r"tarball path|fixed \.5"):
+        _admit_candidate(document)
+
+
+def test_candidate_derives_safe_nonconventional_tarball_ledger_path() -> None:
+    document = _candidate_document()
+    path = (
+        "/download/@hcoona/hcoona-release-smoke-npm/"
+        "0.0.0-wdv3-acceptance.5/7f0a2c91-acde-4b55"
+    )
+    document["requests"] = _requests(tarball_path=path)
+    preimage = deepcopy(document)
+    preimage.pop("result_digest")
+    document["result_digest"] = canonical_sha256(preimage)
+
+    assert _admit_candidate(document).to_document() == document
+
+
+def test_candidate_requires_identical_manifest_tarball_path_across_passes() -> (
+    None
+):
+    document = _candidate_document()
+    tarballs = [
+        request
+        for request in document["requests"]
+        if request["origin"] == "https://npm.pkg.github.com"
+        and request["path"].endswith(".tgz")
+    ]
+    tarballs[1]["path"] = (
+        "/@hcoona/hcoona-release-smoke-npm/-/"
+        "hcoona-release-smoke-npm-0.0.0-wdv3-acceptance.6.tgz"
+    )
+    preimage = deepcopy(document)
+    preimage.pop("result_digest")
+    document["result_digest"] = canonical_sha256(preimage)
+
+    with pytest.raises(ValueError, match=r"tarball path|fixed \.5"):
+        _admit_candidate(document)
 
 
 @pytest.mark.parametrize(

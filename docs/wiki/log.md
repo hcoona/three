@@ -2204,3 +2204,9 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   authority with cross-bound inert audit facts performs the single protected
   consumption and makes the as-observed historical result authoritative. Any
   later use or different run requires separate approval and normative change.
+
+## [2026-08-25] query | Clarify platform-orphan tarball ledger binding
+
+- Clarified that the exact manifest supplies the safe initial `.5` tarball
+  request path, both observation passes must use that identical path, and the
+  path remains a request-ledger fact rather than destination state.
