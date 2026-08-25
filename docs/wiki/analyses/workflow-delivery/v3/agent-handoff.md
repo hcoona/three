@@ -139,22 +139,25 @@ If it conflicts with the
   as `06872f2b`. This does not retroactively make the failed acceptance
   successful. The consumed run, review, and `.1`-`.4` suite remain historical
   evidence and must not be reused.
-- A second destination-acceptance invocation is explicitly authorized, but
-  normal Live activation is not. PR #582 merged its implementation stage as
-  `b031e5e0bd98a95943a03a1529b64e856e1a8aa1`. The retry uses the fresh
-  workflow
-  `.github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-2.yml`,
-  Environment `workflow-delivery-v3-buddy-smoke-acceptance-retry-2`, fixed
-  `.5`-`.8` coordinate/tag block, and confirmation
-  `I_ACCEPT_DISPOSABLE_GITHUB_PACKAGES_PROBES_RETRY_2`. Environment ID
-  `20531285468` is provisioned with sole required reviewer `hcoona`,
-  self-review permitted, and sole deployment branch `main`. Workflow ID
-  `341728447` has no runs. Protected finalization must bind the workflow and
-  strict Governance profile to `b031e5e0bd98a95943a03a1529b64e856e1a8aa1`
-  before the one attempt-1 dispatch. The legacy `.1`-`.4` profile remains
-  strictly admissible for historical replay; profile identities cannot be
-  mixed. Every result still requires terminal platform verification and
-  mandatory cleanup. `live_enabled` remains false.
+- The second destination-acceptance invocation is consumed and unsuccessful;
+  normal Live activation remains unauthorized. PR #582 merged implementation
+  as `b031e5e0bd98a95943a03a1529b64e856e1a8aa1`, and PR #583 merged protected
+  finalization as `953c1db0712f6ff4d41b7e6a35767d71a2b19c4d`. Attempt-1
+  run `32805739095` passed fixed-input review, received Environment approval
+  from `hcoona`, observed `.5` absent, started mutation, and observed exact
+  post-state. The runner did not prove a controlled outcome, so it retained
+  `runner-failed-after-mutation-start`; the first probe failed its completeness
+  guard, the second probe was skipped, and terminal Governance evidence
+  remained unknown/incomplete. Artifact IDs `9548188898`, `9548197128`, and
+  `9548202666` match their recorded raw-byte SHA-256 digests. Workflow ID
+  `341728447` is `disabled_manually`, Environment ID `20531285468` is deleted,
+  and all five jobs are terminal. Protected source cleanup is staged.
+  Authenticated package reconciliation must wait until cleanup merges, the
+  deleted workflow identity is re-disabled if necessary, and post-merge checks
+  prove workflow, Environment, and temporary-ref absence plus old-ref dispatch
+  rejection. The `.5`-`.8` invocation, review, and coordinate block must not be
+  reused. Both strict acceptance profiles remain evidence replay authority and
+  cannot be mixed. `live_enabled` remains false.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the
@@ -659,13 +662,16 @@ If it conflicts with the
   post-mutation-start failures while preserving incomplete classification. This
   does not retroactively make the failed acceptance successful. Do not retry
   with the same invocation, review, or coordinate. A separately authorized
-  retry-2 implementation merged as `b031e5e0`. Its fresh Environment is
-  provisioned with sole required reviewer `hcoona`, self-review permitted, and
-  sole deployment branch `main`; workflow ID `341728447` has no runs.
-  Confirmation and `.5`-`.8` coordinates are fixed. Any pre-finalization
-  dispatch fails fixed-input validation before review or mutation until the
-  protected finalization binds its target to the full implementation merge SHA
-  `b031e5e0bd98a95943a03a1529b64e856e1a8aa1`.
+  retry-2 run `32805739095` is consumed and unsuccessful. It observed `.5`
+  absent, started mutation, and observed exact post-state, but retained
+  incomplete evidence because the runner did not prove a controlled outcome.
+  The second probe was skipped. Workflow ID `341728447` is
+  `disabled_manually`, the Environment is absent, and all five jobs are
+  terminal. Protected source cleanup is staged; authenticated package
+  reconciliation remains blocked until cleanup merges, the deleted workflow
+  identity is re-disabled if necessary, and post-merge identity, absence, and
+  old-ref rejection checks complete. Do not reuse the invocation, review, or
+  `.5`-`.8` coordinate block.
   Do not activate normal Live or begin later scopes without a separate explicit
   user task.
 - Implementation must preserve the approved commit boundaries and keep live
