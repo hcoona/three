@@ -222,8 +222,9 @@ Next:
 2. retain run `32769435970`, fixed version
    `0.0.0-wdv3-acceptance.1`, tag, tarball, and artifacts as failure and
    reconciliation evidence;
-3. do not reuse the run, Environment review, or coordinate; no retry is
-   currently authorized, and any retry requires new explicit authorization, a
-   newly reviewed invocation, and a disposable coordinate/version; and
+3. do not reuse the run, Environment review, or coordinate; the explicitly
+   authorized retry-2 is in implementation with a fresh workflow, staged
+   Environment name, and disposable `.5`-`.8` coordinates, while protected
+   finalization and remote Environment provisioning remain pending; and
 4. keep `live_enabled: false` until successful acceptance and separate human
    activation authorization.
