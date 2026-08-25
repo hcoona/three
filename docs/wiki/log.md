@@ -2105,3 +2105,24 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   rejected the contradiction. The staged, unmerged repair preserves incomplete
   classification and does not convert reconciled exact destination state into
   acceptance success. No retry or Live activation is authorized.
+
+## [2026-08-25] query | Prepare isolated destination-acceptance retry
+
+- Recorded the explicit authorization for one fresh destination-acceptance
+  retry while keeping normal Live activation unauthorized and
+  `live_enabled: false`.
+- Added a closed retry-2 acceptance profile with fixed `.5`-`.8` versions and
+  tags while preserving the historical `.1`-`.4` profile for strict evidence
+  replay. Profile selection binds the exact workflow path, Environment,
+  confirmation digest, target, and scenario coordinate/tag inventory.
+- Restored the reviewed five-job bootstrap under the fresh
+  `workflow-delivery-v3-buddy-smoke-acceptance-retry-2.yml` identity and fresh
+  Environment name. The implementation stage retains a 40-zero target sentinel
+  and cannot pass fixed-input validation before a separate protected
+  finalization binds the implementation merge SHA.
+- Remote provisioning of the fresh GitHub Environment remains pending.
+- The eventual attempt remains first-attempt-only and requires independent
+  platform verification. Terminalization and evidence capture precede
+  disabling the numeric workflow identity and deleting the Environment;
+  protected cleanup then removes the temporary surfaces and re-disables the
+  saved identity if GitHub transitions it to `deleted`.

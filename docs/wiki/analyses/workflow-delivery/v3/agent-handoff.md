@@ -135,11 +135,25 @@ If it conflicts with the
   version and tag are exact and bind the expected repository, SHA-1, SHA-512,
   manifest, and target witness. The Adapter distinguishes pre-action,
   post-action, and post-mutation-start failures across returned and exception
-  paths while retaining incomplete classification. This does not retroactively
-  make the failed acceptance successful. The consumed run, review, and
-  coordinate must not be reused, and no retry is currently authorized.
-  Acceptance does not authorize normal Live activation; `live_enabled` remains
-  false.
+  paths while retaining incomplete classification. PR #579 merged that repair
+  as `06872f2b`. This does not retroactively make the failed acceptance
+  successful. The consumed run, review, and `.1`-`.4` suite remain historical
+  evidence and must not be reused.
+- A second destination-acceptance invocation is explicitly authorized, but
+  normal Live activation is not. Its implementation stage uses the fresh
+  workflow
+  `.github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-2.yml`,
+  Environment `workflow-delivery-v3-buddy-smoke-acceptance-retry-2`, fixed
+  `.5`-`.8` coordinate/tag block, and confirmation
+  `I_ACCEPT_DISPOSABLE_GITHUB_PACKAGES_PROBES_RETRY_2`. The implementation
+  workflow remains dispatchable, but its 40-zero target sentinel makes every
+  dispatch fail fixed-input validation before Environment review or mutation.
+  After implementation merge, a separate protected finalization must bind the
+  workflow and strict Governance profile to that implementation merge SHA
+  before the fresh Environment and one attempt-1 dispatch may be used. The
+  legacy `.1`-`.4` profile remains strictly admissible for historical replay;
+  profile identities cannot be mixed. Every result still requires terminal
+  platform verification and mandatory cleanup. `live_enabled` remains false.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the
@@ -643,9 +657,14 @@ If it conflicts with the
   are exact. The Adapter distinguishes pre-action, post-action, and
   post-mutation-start failures while preserving incomplete classification. This
   does not retroactively make the failed acceptance successful. Do not retry
-  with the same invocation, review, or coordinate; no retry is currently
-  authorized. Do not activate normal Live or begin later scopes without a
-  separate explicit user task.
+  with the same invocation, review, or coordinate. A separately authorized
+  retry-2 bootstrap is now in implementation with a fresh workflow and staged
+  Environment name; remote Environment provisioning remains pending.
+  Confirmation and `.5`-`.8` coordinates are fixed. Any pre-finalization
+  dispatch fails fixed-input validation before review or mutation until a
+  protected finalization binds its target to the implementation merge SHA.
+  Do not activate normal Live or begin later scopes without a separate explicit
+  user task.
 - Implementation must preserve the approved commit boundaries and keep live
   activation disabled until acceptance and the separate activation approval.
 

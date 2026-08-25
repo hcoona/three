@@ -26,7 +26,6 @@ from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 from three_workflow_delivery_v3.adapters.github_packages import (
-    ACCEPTANCE_COORDINATES,
     ACCEPTANCE_PACKAGE_COORDINATE,
     ACCEPTANCE_PACKAGE_NAME,
     ACCEPTANCE_REPOSITORY_URL,
@@ -38,6 +37,7 @@ from three_workflow_delivery_v3.adapters.github_packages import (
     PublisherGovernanceRecheckRejectionError,
     PublishRunner,
     ValidatedAcceptanceRequestProof,
+    fixed_acceptance_coordinates,
     form_mutation_may_have_started_marker,
     inspect_fixed_acceptance_tarball,
     observe_github_packages_projection,
@@ -491,8 +491,7 @@ def _governance_admit_acceptance_evidence_command(
 def _governance_run_fixed_acceptance_probe_command(
     arguments: _AcceptanceProbeArguments,
 ) -> int:
-    if arguments.package_coordinate != ACCEPTANCE_PACKAGE_COORDINATE:
-        raise ValueError("acceptance package coordinate is not fixed")
+    coordinates = fixed_acceptance_coordinates(arguments.package_coordinate)
     token = os.environ.pop("WDV3_ACCEPTANCE_GITHUB_TOKEN", None)
     if not token:
         raise ValueError(
@@ -517,7 +516,7 @@ def _governance_run_fixed_acceptance_probe_command(
         tarballs: dict[str, Path] = {}
         contenders: dict[str, Path] = {}
         for scenario in suite_inventory:
-            version = ACCEPTANCE_COORDINATES[scenario].rsplit("@", 1)[1]
+            version = coordinates[scenario].rsplit("@", 1)[1]
             tarballs[scenario] = _build_acceptance_tarball(
                 root,
                 scenario=scenario,
@@ -545,10 +544,12 @@ def _governance_run_fixed_acceptance_probe_command(
                 npm_config,
                 contender_tarballs=contenders,
                 token=token,
+                base_package_coordinate=arguments.package_coordinate,
             ),
             timeout_seconds=arguments.timeout_seconds,
             max_response_bytes=arguments.max_response_bytes,
             max_output_bytes=arguments.max_output_bytes,
+            base_package_coordinate=arguments.package_coordinate,
             deadline=monotonic() + arguments.timeout_seconds,
         )
         token = ""
@@ -1161,10 +1162,14 @@ class _AcceptanceNpmRunner:
         *,
         contender_tarballs: dict[str, Path],
         token: str = "",
+        base_package_coordinate: str = ACCEPTANCE_PACKAGE_COORDINATE,
     ) -> None:
         self._npm_config = npm_config
         self._contender_tarballs = dict(contender_tarballs)
         self._token = token
+        self._coordinates = fixed_acceptance_coordinates(
+            base_package_coordinate
+        )
 
     def _run_process(
         self,
@@ -1250,7 +1255,7 @@ class _AcceptanceNpmRunner:
                     for value in argv
                 )
             )
-        version = ACCEPTANCE_COORDINATES[scenario].rsplit("@", 1)[1]
+        version = self._coordinates[scenario].rsplit("@", 1)[1]
         tag = (
             argv[argv.index("--tag") + 1]
             if "--tag" in argv
