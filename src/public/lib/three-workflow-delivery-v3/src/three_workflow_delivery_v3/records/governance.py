@@ -80,6 +80,109 @@ GOVERNANCE_ACCEPTANCE_SCENARIO_COORDINATES = {
         "wdv3-acceptance-4",
     ),
 }
+GOVERNANCE_RETRY_2_ACCEPTANCE_WORKFLOW_PATH = (
+    ".github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-2.yml"
+)
+GOVERNANCE_RETRY_2_ACCEPTANCE_PACKAGE_COORDINATE = (
+    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5"
+)
+GOVERNANCE_RETRY_2_ACCEPTANCE_ENVIRONMENT = (
+    "workflow-delivery-v3-buddy-smoke-acceptance-retry-2"
+)
+GOVERNANCE_RETRY_2_ACCEPTANCE_SCENARIO_COORDINATES = {
+    "absent-create-readback": (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5",
+        "wdv3-acceptance-5",
+    ),
+    "exact": (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5",
+        "wdv3-acceptance-5",
+    ),
+    "identical-race": (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.6",
+        "wdv3-acceptance-6",
+    ),
+    "differing-race": (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.7",
+        "wdv3-acceptance-7",
+    ),
+    "lost-response": (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.8",
+        "wdv3-acceptance-8",
+    ),
+}
+
+
+@dataclass(frozen=True, slots=True)
+class _GovernanceAcceptanceProfile:
+    package_coordinate: str
+    workflow_path: str
+    environment: str
+    target_sha: str
+    confirmation_digest: str
+    scenario_coordinates: tuple[tuple[str, str, str], ...]
+
+    def coordinates(self) -> dict[str, tuple[str, str]]:
+        return {
+            scenario: (coordinate, tag)
+            for scenario, coordinate, tag in self.scenario_coordinates
+        }
+
+
+_GOVERNANCE_ACCEPTANCE_PROFILES = (
+    _GovernanceAcceptanceProfile(
+        package_coordinate=GOVERNANCE_ACCEPTANCE_PACKAGE_COORDINATE,
+        workflow_path=GOVERNANCE_ACCEPTANCE_WORKFLOW_PATH,
+        environment=GOVERNANCE_ACCEPTANCE_ENVIRONMENT,
+        target_sha="5a84bebd05407e1859fe76f400dcb4f4cbcd002e",
+        confirmation_digest=(
+            "sha256:"
+            "6ab9696b51f21083802af68d80104f65ffb844bdcd449974c881e5a8cc96ad5e"
+        ),
+        scenario_coordinates=tuple(
+            (
+                scenario,
+                coordinate,
+                tag,
+            )
+            for scenario, (coordinate, tag) in (
+                GOVERNANCE_ACCEPTANCE_SCENARIO_COORDINATES.items()
+            )
+        ),
+    ),
+    _GovernanceAcceptanceProfile(
+        package_coordinate=GOVERNANCE_RETRY_2_ACCEPTANCE_PACKAGE_COORDINATE,
+        workflow_path=GOVERNANCE_RETRY_2_ACCEPTANCE_WORKFLOW_PATH,
+        environment=GOVERNANCE_RETRY_2_ACCEPTANCE_ENVIRONMENT,
+        target_sha="0" * 40,
+        confirmation_digest=(
+            "sha256:"
+            "1215f9d01cd343462c3f826ba67ebee86b6f6142b7fcfe5630572a5a808314f8"
+        ),
+        scenario_coordinates=tuple(
+            (
+                scenario,
+                coordinate,
+                tag,
+            )
+            for scenario, (coordinate, tag) in (
+                GOVERNANCE_RETRY_2_ACCEPTANCE_SCENARIO_COORDINATES.items()
+            )
+        ),
+    ),
+)
+
+
+def _acceptance_profile(
+    package_coordinate: object,
+) -> _GovernanceAcceptanceProfile:
+    accepted = _string(package_coordinate, field="package-coordinate")
+    for profile in _GOVERNANCE_ACCEPTANCE_PROFILES:
+        if accepted == profile.package_coordinate:
+            return profile
+    message = "package-coordinate is not one reviewed acceptance profile"
+    raise ValueError(message)
+
 
 _TOP_LEVEL_FIELDS = frozenset(
     {
@@ -631,7 +734,11 @@ class GovernanceAcceptanceEvidence:
         }
 
 
-def _admit_workflow(value: object) -> GovernanceAcceptanceWorkflow:
+def _admit_workflow(
+    value: object,
+    *,
+    profile: _GovernanceAcceptanceProfile,
+) -> GovernanceAcceptanceWorkflow:
     document = _object(value, field="workflow")
     _closed(document, _WORKFLOW_FIELDS, field="workflow")
     return GovernanceAcceptanceWorkflow(
@@ -642,7 +749,7 @@ def _admit_workflow(value: object) -> GovernanceAcceptanceWorkflow:
         ),
         path=_exact_string(
             document["path"],
-            GOVERNANCE_ACCEPTANCE_WORKFLOW_PATH,
+            profile.workflow_path,
             field="workflow.path",
         ),
         ref=_exact_string(
@@ -741,6 +848,8 @@ def _admit_dependency_results(
 
 def _admit_probe_facts(  # noqa: C901, PLR0912, PLR0915
     value: object,
+    *,
+    profile: _GovernanceAcceptanceProfile,
 ) -> tuple[GovernanceProbeFact, ...]:
     _exact(value, list, field="probe-facts")
     entries = cast("list[JsonValue]", value)
@@ -817,9 +926,9 @@ def _admit_probe_facts(  # noqa: C901, PLR0912, PLR0915
                 expected_scenario,
                 field=f"{scenario_field}.scenario",
             )
-            expected_coordinate, expected_tag = (
-                GOVERNANCE_ACCEPTANCE_SCENARIO_COORDINATES[expected_scenario]
-            )
+            expected_coordinate, expected_tag = profile.coordinates()[
+                expected_scenario
+            ]
             _exact_string(
                 scenario_document["package-coordinate"],
                 expected_coordinate,
@@ -1098,6 +1207,43 @@ def _derived_mutation_classification(
     return "complete"
 
 
+def _require_zero_target_rejected_dispatch(
+    evidence: GovernanceAcceptanceEvidence,
+) -> None:
+    if evidence.target_sha != "0" * 40:
+        return
+    expected_dependencies = (
+        ("validate-fixed-inputs", "failure"),
+        ("acceptance-review", "skipped"),
+        ("probe-absent-create-readback", "skipped"),
+        ("probe-exact-and-conflict", "skipped"),
+    )
+    actual_dependencies = tuple(
+        (result.job, result.result) for result in evidence.dependency_results
+    )
+    probes_are_empty = all(
+        fact.result == "incomplete"
+        and fact.record_digest is None
+        and fact.artifact_id is None
+        and fact.artifact_digest is None
+        and not fact.scenarios
+        for fact in evidence.probe_facts
+    )
+    if (
+        evidence.mutation_classification != "incomplete"
+        or actual_dependencies != expected_dependencies
+        or evidence.recovery.artifact_id is not None
+        or evidence.reviewer_record.login is not None
+        or evidence.reviewer_record.source != "unavailable-in-job-context"
+        or not probes_are_empty
+    ):
+        message = (
+            "zero target-sha requires exact rejected fixed-input dispatch "
+            "evidence"
+        )
+        raise ValueError(message)
+
+
 def admit_governance_acceptance_evidence(  # noqa: C901, PLR0912, PLR0915
     content: bytes | bytearray,
 ) -> GovernanceAcceptanceEvidence:
@@ -1120,10 +1266,14 @@ def admit_governance_acceptance_evidence(  # noqa: C901, PLR0912, PLR0915
         GOVERNANCE_ACCEPTANCE_EVIDENCE_RELEASE_LINEAGE,
         field="release-lineage",
     )
+    profile = _acceptance_profile(document["package-coordinate"])
     dependency_results = _admit_dependency_results(
         document["dependency-results"]
     )
-    probe_facts = _admit_probe_facts(document["probe-facts"])
+    probe_facts = _admit_probe_facts(
+        document["probe-facts"],
+        profile=profile,
+    )
     retained_probes = {
         fact.probe for fact in probe_facts if fact.record_digest is not None
     }
@@ -1191,20 +1341,21 @@ def admit_governance_acceptance_evidence(  # noqa: C901, PLR0912, PLR0915
         raise ValueError(message)
 
     admitted = GovernanceAcceptanceEvidence(
-        workflow=_admit_workflow(document["workflow"]),
+        workflow=_admit_workflow(document["workflow"], profile=profile),
         target_sha=_sha(document["target-sha"], field="target-sha"),
         package_coordinate=_exact_string(
             document["package-coordinate"],
-            GOVERNANCE_ACCEPTANCE_PACKAGE_COORDINATE,
+            profile.package_coordinate,
             field="package-coordinate",
         ),
-        confirmation_digest=_digest(
+        confirmation_digest=_exact_string(
             document["confirmation-digest"],
+            profile.confirmation_digest,
             field="confirmation-digest",
         ),
         environment=_exact_string(
             document["environment"],
-            GOVERNANCE_ACCEPTANCE_ENVIRONMENT,
+            profile.environment,
             field="environment",
         ),
         reviewer_record=_admit_reviewer(document["reviewer"]),
@@ -1223,6 +1374,10 @@ def admit_governance_acceptance_evidence(  # noqa: C901, PLR0912, PLR0915
         ),
         run_attempt=_positive(document["run-attempt"], field="run-attempt"),
     )
+    if admitted.target_sha not in {"0" * 40, profile.target_sha}:
+        message = "target-sha does not match the reviewed acceptance profile"
+        raise ValueError(message)
+    _require_zero_target_rejected_dispatch(admitted)
     _require_complete_nonzero_sha(
         admitted.target_sha,
         field="target-sha",

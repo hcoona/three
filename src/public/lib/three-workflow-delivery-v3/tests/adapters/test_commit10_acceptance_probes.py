@@ -24,11 +24,17 @@ from three_workflow_delivery_v3.adapters.github_packages import (
     ACCEPTANCE_SCENARIO_SPECS,
     ACCEPTANCE_SCENARIOS,
     ACCEPTANCE_TAGS,
+    RETRY_2_ACCEPTANCE_PACKAGE_COORDINATE,
     FixedAcceptanceSuiteResult,
     FixedCoordinateAcceptanceProbeResult,
     GitHubPackagesHttpResponse,
+    fixed_acceptance_coordinates,
     inspect_fixed_acceptance_tarball,
+    run_fixed_acceptance_suite,
     run_fixed_coordinate_acceptance_probe,
+)
+from three_workflow_delivery_v3.adapters.github_packages import (
+    ValidatedAcceptanceRequestProof as AcceptanceRequestProof,
 )
 from three_workflow_delivery_v3.canonical import JsonValue, canonicalize
 
@@ -207,6 +213,99 @@ def _run(
         max_output_bytes=max_output_bytes,
     )
     return result, transport, tarball
+
+
+def test_retry_2_suite_resolves_only_the_reviewed_coordinate_block() -> None:
+    coordinates = fixed_acceptance_coordinates(
+        RETRY_2_ACCEPTANCE_PACKAGE_COORDINATE
+    )
+
+    assert coordinates == {
+        "absent-create-readback": (
+            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5"
+        ),
+        "exact": ("@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5"),
+        "identical-race": (
+            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.6"
+        ),
+        "differing-race": (
+            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.7"
+        ),
+        "lost-response": (
+            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.8"
+        ),
+    }
+    with pytest.raises(ValueError, match="not a reviewed fixed suite"):
+        fixed_acceptance_coordinates(
+            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9"
+        )
+
+
+def test_retry_2_suite_executes_with_retry_coordinate_and_tag(
+    tmp_path: Path,
+) -> None:
+    coordinate = fixed_acceptance_coordinates(
+        RETRY_2_ACCEPTANCE_PACKAGE_COORDINATE
+    )["absent-create-readback"]
+    tarball = tmp_path / "retry-2.tgz"
+    tarball.write_bytes(b"retry-2-absent-create-readback")
+    content = f"sha512:{hashlib.sha512(tarball.read_bytes()).hexdigest()}"
+    transport = RecordingTransport(
+        [
+            _absent(),
+            {
+                "state": "exact",
+                "version": "0.0.0-wdv3-acceptance.5",
+                "tag": "wdv3-acceptance-5",
+                "content-sha512": content,
+                "response-identity-digest": RESPONSE_B,
+            },
+        ]
+    )
+
+    result = run_fixed_acceptance_suite(
+        suite="absent-create-readback",
+        tarballs={"absent-create-readback": tarball},
+        transport=transport,
+        runner=ControlledRunner(),
+        timeout_seconds=TIMEOUT_SECONDS,
+        max_response_bytes=MAX_RESPONSE_BYTES,
+        max_output_bytes=MAX_OUTPUT_BYTES,
+        base_package_coordinate=RETRY_2_ACCEPTANCE_PACKAGE_COORDINATE,
+    )
+
+    assert result.scenarios[0].package_coordinate == coordinate
+    assert result.scenarios[0].tag == "wdv3-acceptance-5"
+
+
+def test_acceptance_proof_rejects_cross_profile_coordinate_and_tag() -> None:
+    with pytest.raises(
+        ValueError,
+        match="coordinate or tag is not fixed",
+    ):
+        AcceptanceRequestProof.from_validated_exchange(
+            raw_request=b"request",
+            tarball=b"tarball",
+            package_coordinate=(
+                "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5"
+            ),
+            tag="wdv3-acceptance-1",
+            upstream_status=201,
+            selected_headers={"Content-Type": "application/json"},
+            response_body=b'{"ok":true}',
+        )
+
+
+def test_retry_2_npm_runner_uses_retry_coordinate_for_lost_response(
+    tmp_path: Path,
+) -> None:
+    runner = cli_module._AcceptanceNpmRunner(
+        tmp_path / ".npmrc",
+        contender_tarballs={},
+        base_package_coordinate=RETRY_2_ACCEPTANCE_PACKAGE_COORDINATE,
+    )
+
+    assert runner._coordinates["lost-response"].endswith("wdv3-acceptance.8")
 
 
 def test_absent_requires_observed_absent_create_and_exact_readback(
