@@ -17,6 +17,7 @@ public sealed class SystemProcessRunner : IProcessRunner
     private readonly IProcessCleanupStrategy processCleanup;
     private readonly TimeSpan processCleanupTimeout;
     private readonly IProcessStartStrategy processStart;
+    private readonly Action<ProcessMilestone>? processMilestoneObserver;
 
     internal static bool IsUnixSessionLauncherAvailable => UnixSessionLauncherPath is not null;
 
@@ -24,7 +25,8 @@ public sealed class SystemProcessRunner : IProcessRunner
         : this(
             SystemProcessCleanupStrategy.Instance,
             ProcessCleanupTimeout,
-            SystemProcessStartStrategy.Instance
+            SystemProcessStartStrategy.Instance,
+            processMilestoneObserver: null
         )
     { }
 
@@ -32,15 +34,39 @@ public sealed class SystemProcessRunner : IProcessRunner
         IProcessCleanupStrategy processCleanup,
         TimeSpan processCleanupTimeout
     )
-        : this(processCleanup, processCleanupTimeout, SystemProcessStartStrategy.Instance) { }
+        : this(
+            processCleanup,
+            processCleanupTimeout,
+            SystemProcessStartStrategy.Instance,
+            processMilestoneObserver: null
+        )
+    { }
 
     internal SystemProcessRunner(IProcessStartStrategy processStart)
-        : this(SystemProcessCleanupStrategy.Instance, ProcessCleanupTimeout, processStart) { }
+        : this(
+            SystemProcessCleanupStrategy.Instance,
+            ProcessCleanupTimeout,
+            processStart,
+            processMilestoneObserver: null
+        )
+    { }
+
+    internal SystemProcessRunner(Action<ProcessMilestone> processMilestoneObserver)
+        : this(
+            SystemProcessCleanupStrategy.Instance,
+            ProcessCleanupTimeout,
+            SystemProcessStartStrategy.Instance,
+            processMilestoneObserver
+        )
+    {
+        ArgumentNullException.ThrowIfNull(processMilestoneObserver);
+    }
 
     private SystemProcessRunner(
         IProcessCleanupStrategy processCleanup,
         TimeSpan processCleanupTimeout,
-        IProcessStartStrategy processStart
+        IProcessStartStrategy processStart,
+        Action<ProcessMilestone>? processMilestoneObserver
     )
     {
         ArgumentNullException.ThrowIfNull(processCleanup);
@@ -52,6 +78,7 @@ public sealed class SystemProcessRunner : IProcessRunner
         this.processCleanup = processCleanup;
         this.processCleanupTimeout = processCleanupTimeout;
         this.processStart = processStart;
+        this.processMilestoneObserver = processMilestoneObserver;
     }
 
     public async Task<ProcessResult> RunAsync(
@@ -62,6 +89,8 @@ public sealed class SystemProcessRunner : IProcessRunner
         ArgumentNullException.ThrowIfNull(startSpec);
         cancellationToken.ThrowIfCancellationRequested();
 
+        Action<ProcessMilestoneName>? reportMilestone =
+            CreateMilestoneReporter(processMilestoneObserver);
         using var timeoutCancellation = new CancellationTokenSource(startSpec.Timeout);
         using var executionCancellation = new CancellationTokenSource();
         var cancellationCause = (int)ProcessCancellationCause.None;
@@ -76,15 +105,23 @@ public sealed class SystemProcessRunner : IProcessRunner
 
         void CancelExecution(ProcessCancellationCause cause)
         {
-            Interlocked.CompareExchange(
-                ref cancellationCause,
-                (int)cause,
-                (int)ProcessCancellationCause.None
-            );
+            bool wonCancellation =
+                Interlocked.CompareExchange(
+                    ref cancellationCause,
+                    (int)cause,
+                    (int)ProcessCancellationCause.None
+                ) == (int)ProcessCancellationCause.None;
+            if (wonCancellation && cause == ProcessCancellationCause.Timeout)
+            {
+                reportMilestone?.Invoke(ProcessMilestoneName.TimeoutInitiated);
+            }
+
             executionCancellation.Cancel();
         }
 
-        using var process = new Process { StartInfo = CreateStartInfo(startSpec) };
+        var process = new Process { StartInfo = CreateStartInfo(startSpec) };
+        using var processLifetime = new ProcessLifetime(process, reportMilestone);
+        reportMilestone?.Invoke(ProcessMilestoneName.LaunchRequested);
         try
         {
             if (!processStart.Start(process))
@@ -96,6 +133,7 @@ public sealed class SystemProcessRunner : IProcessRunner
         {
             return ProcessResult.LaunchFailure();
         }
+        reportMilestone?.Invoke(ProcessMilestoneName.ProcessStarted);
 
         var standardOutput = new BoundedOutputCapture(
             startSpec.OutputCaptureOptions.StandardOutputByteLimit
@@ -108,17 +146,29 @@ public sealed class SystemProcessRunner : IProcessRunner
         Task standardInputTask = WriteAndCloseStandardInputAsync(
             process.StandardInput,
             startSpec.StandardInput,
+            reportMilestone,
             executionCancellation.Token
         );
         Task standardOutputTask = standardOutput.ReadAsync(
             process.StandardOutput.BaseStream,
-            executionCancellation
+            executionCancellation,
+            reportMilestone,
+            ProcessMilestoneName.StandardOutputEof
         );
         Task standardErrorTask = standardError.ReadAsync(
             process.StandardError.BaseStream,
-            executionCancellation
+            executionCancellation,
+            reportMilestone,
+            ProcessMilestoneName.StandardErrorEof
         );
-        Task waitForExitTask = process.WaitForExitAsync(executionCancellation.Token);
+        Task waitForExitTask =
+            reportMilestone is null
+                ? process.WaitForExitAsync(executionCancellation.Token)
+                : WaitForExitAsync(
+                    process,
+                    reportMilestone,
+                    executionCancellation.Token
+                );
         Task allTasks = Task.WhenAll(
             standardInputTask,
             standardOutputTask,
@@ -138,7 +188,7 @@ public sealed class SystemProcessRunner : IProcessRunner
             ProcessCancellationCause triggeringCancellationCause =
                 (ProcessCancellationCause)Volatile.Read(ref cancellationCause);
 
-            await KillAndWaitAsync(process).ConfigureAwait(false);
+            await KillAndWaitAsync(process, reportMilestone).ConfigureAwait(false);
 
             if (outputTooLarge)
             {
@@ -180,7 +230,7 @@ public sealed class SystemProcessRunner : IProcessRunner
         }
         catch
         {
-            await KillAndWaitAsync(process).ConfigureAwait(false);
+            await KillAndWaitAsync(process, reportMilestone).ConfigureAwait(false);
             throw;
         }
 
@@ -217,6 +267,7 @@ public sealed class SystemProcessRunner : IProcessRunner
     private static async Task WriteAndCloseStandardInputAsync(
         StreamWriter standardInput,
         string? content,
+        Action<ProcessMilestoneName>? reportMilestone,
         CancellationToken cancellationToken
     )
     {
@@ -233,7 +284,18 @@ public sealed class SystemProcessRunner : IProcessRunner
         finally
         {
             standardInput.Close();
+            reportMilestone?.Invoke(ProcessMilestoneName.StandardInputClosed);
         }
+    }
+
+    private static async Task WaitForExitAsync(
+        Process process,
+        Action<ProcessMilestoneName> reportMilestone,
+        CancellationToken cancellationToken
+    )
+    {
+        await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+        reportMilestone(ProcessMilestoneName.ProcessExited);
     }
 
     private static ProcessStartInfo CreateStartInfo(ProcessStartSpec startSpec)
@@ -344,11 +406,15 @@ public sealed class SystemProcessRunner : IProcessRunner
         return null;
     }
 
-    private async Task KillAndWaitAsync(Process process)
+    private async Task KillAndWaitAsync(
+        Process process,
+        Action<ProcessMilestoneName>? reportMilestone
+    )
     {
         try
         {
             processCleanup.Kill(process);
+            reportMilestone?.Invoke(ProcessMilestoneName.KillCompleted);
         }
         catch (InvalidOperationException) { }
         catch (NotSupportedException) { }
@@ -360,6 +426,7 @@ public sealed class SystemProcessRunner : IProcessRunner
             await processCleanup
                 .WaitForExitAsync(process, cleanupCancellation.Token)
                 .ConfigureAwait(false);
+            reportMilestone?.Invoke(ProcessMilestoneName.ProcessExited);
         }
         catch (InvalidOperationException) { }
         catch (NotSupportedException) { }
@@ -398,6 +465,24 @@ public sealed class SystemProcessRunner : IProcessRunner
     {
         bool Start(Process process);
     }
+
+    internal enum ProcessMilestoneName
+    {
+        LaunchRequested,
+        ProcessStarted,
+        StandardInputClosed,
+        ProcessExited,
+        StandardOutputEof,
+        StandardErrorEof,
+        TimeoutInitiated,
+        KillCompleted,
+        ProcessDisposalCompleted,
+    }
+
+    internal readonly record struct ProcessMilestone(
+        ProcessMilestoneName Name,
+        TimeSpan Elapsed
+    );
 
     private enum ProcessCancellationCause
     {
@@ -484,7 +569,12 @@ public sealed class SystemProcessRunner : IProcessRunner
 
         public bool TooLarge { get; private set; }
 
-        public async Task ReadAsync(Stream stream, CancellationTokenSource executionCancellation)
+        public async Task ReadAsync(
+            Stream stream,
+            CancellationTokenSource executionCancellation,
+            Action<ProcessMilestoneName>? reportMilestone,
+            ProcessMilestoneName eofMilestone
+        )
         {
             byte[] byteBuffer = ArrayPool<byte>.Shared.Rent(4096);
             char[] charBuffer = ArrayPool<char>.Shared.Rent(
@@ -505,6 +595,7 @@ public sealed class SystemProcessRunner : IProcessRunner
                         .ConfigureAwait(false);
                     if (bytesRead == 0)
                     {
+                        reportMilestone?.Invoke(eofMilestone);
                         break;
                     }
 
@@ -606,5 +697,69 @@ public sealed class SystemProcessRunner : IProcessRunner
                 executionCancellation.Cancel();
             }
         }
+    }
+
+    private readonly struct ProcessLifetime : IDisposable
+    {
+        private readonly Process process;
+        private readonly Action<ProcessMilestoneName>? reportMilestone;
+
+        public ProcessLifetime(
+            Process process,
+            Action<ProcessMilestoneName>? reportMilestone
+        )
+        {
+            this.process = process;
+            this.reportMilestone = reportMilestone;
+        }
+
+        public void Dispose()
+        {
+            process.Dispose();
+            reportMilestone?.Invoke(ProcessMilestoneName.ProcessDisposalCompleted);
+        }
+    }
+
+    private static Action<ProcessMilestoneName>? CreateMilestoneReporter(
+        Action<ProcessMilestone>? observer
+    )
+    {
+        if (observer is null)
+        {
+            return null;
+        }
+
+        var gate = new object();
+        var reportedMilestones = new HashSet<ProcessMilestoneName>();
+        long startTimestamp = Stopwatch.GetTimestamp();
+        var reportingCompleted = false;
+        return name =>
+        {
+            var milestone = new ProcessMilestone(
+                name,
+                Stopwatch.GetElapsedTime(startTimestamp)
+            );
+            lock (gate)
+            {
+                if (reportingCompleted || !reportedMilestones.Add(name))
+                {
+                    return;
+                }
+
+                if (name == ProcessMilestoneName.ProcessDisposalCompleted)
+                {
+                    reportingCompleted = true;
+                }
+
+                try
+                {
+                    observer(milestone);
+                }
+                catch
+                {
+                    // Diagnostic observers must never alter process behavior.
+                }
+            }
+        };
     }
 }

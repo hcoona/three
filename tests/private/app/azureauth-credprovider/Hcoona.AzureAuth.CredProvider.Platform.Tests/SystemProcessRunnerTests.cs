@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -122,9 +123,14 @@ public sealed class SystemProcessRunnerTests
     }
 
     [Fact]
-    public async Task RunAsyncClosesStandardInputWhenStandardInputIsNull()
+    public async Task RunAsyncReportsNormalMilestonesAndIsolatesObserverFailures()
     {
-        var runner = new SystemProcessRunner();
+        var milestones = new ConcurrentQueue<SystemProcessRunner.ProcessMilestone>();
+        var runner = new SystemProcessRunner(milestone =>
+        {
+            milestones.Enqueue(milestone);
+            throw new InvalidOperationException("Simulated observer failure.");
+        });
 
         var result = await runner.RunAsync(
             HelperStartSpec("inspect", standardInput: null),
@@ -133,6 +139,52 @@ public sealed class SystemProcessRunnerTests
 
         Assert.True(result.Succeeded);
         Assert.Equal(string.Empty, DecodeLines(result.StandardOutput)["stdin"]);
+        AssertMilestonesRecordedOnce(
+            milestones,
+            SystemProcessRunner.ProcessMilestoneName.LaunchRequested,
+            SystemProcessRunner.ProcessMilestoneName.ProcessStarted,
+            SystemProcessRunner.ProcessMilestoneName.StandardInputClosed,
+            SystemProcessRunner.ProcessMilestoneName.ProcessExited,
+            SystemProcessRunner.ProcessMilestoneName.StandardOutputEof,
+            SystemProcessRunner.ProcessMilestoneName.StandardErrorEof,
+            SystemProcessRunner.ProcessMilestoneName.ProcessDisposalCompleted
+        );
+        AssertLastMilestoneIsProcessDisposalCompleted(milestones);
+        Assert.DoesNotContain(
+            milestones,
+            milestone =>
+                milestone.Name
+                is SystemProcessRunner.ProcessMilestoneName.TimeoutInitiated
+                    or SystemProcessRunner.ProcessMilestoneName.KillCompleted
+        );
+    }
+
+    [Fact]
+    public async Task RunAsyncReportsTimeoutKillAndDisposalMilestones()
+    {
+        var milestones = new ConcurrentQueue<SystemProcessRunner.ProcessMilestone>();
+        var runner = new SystemProcessRunner(milestones.Enqueue);
+
+        ProcessResult result = await runner
+            .RunAsync(
+                HelperStartSpec("sleep", timeout: TimeSpan.FromMilliseconds(50)),
+                TestContext.Current.CancellationToken
+            )
+            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        Assert.Equal(ProcessExecutionStatus.TimedOut, result.Status);
+        AssertMilestonesRecordedAtMostOnce(milestones);
+        AssertContainsMilestones(
+            milestones,
+            SystemProcessRunner.ProcessMilestoneName.LaunchRequested,
+            SystemProcessRunner.ProcessMilestoneName.ProcessStarted,
+            SystemProcessRunner.ProcessMilestoneName.StandardInputClosed,
+            SystemProcessRunner.ProcessMilestoneName.TimeoutInitiated,
+            SystemProcessRunner.ProcessMilestoneName.KillCompleted,
+            SystemProcessRunner.ProcessMilestoneName.ProcessExited,
+            SystemProcessRunner.ProcessMilestoneName.ProcessDisposalCompleted
+        );
+        AssertLastMilestoneIsProcessDisposalCompleted(milestones);
     }
 
     [Fact]
@@ -194,7 +246,8 @@ public sealed class SystemProcessRunnerTests
         }
 
         var pidFile = Path.Combine(CreateTestDirectory("process tree"), "child.pid");
-        var runner = new SystemProcessRunner();
+        var milestones = new ConcurrentQueue<SystemProcessRunner.ProcessMilestone>();
+        var runner = new SystemProcessRunner(milestones.Enqueue);
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
             TestContext.Current.CancellationToken
         );
@@ -211,6 +264,20 @@ public sealed class SystemProcessRunnerTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runTask);
         await AssertProcessExitsAsync(childProcessId, TestContext.Current.CancellationToken);
+        AssertMilestonesRecordedAtMostOnce(milestones);
+        AssertContainsMilestones(
+            milestones,
+            SystemProcessRunner.ProcessMilestoneName.KillCompleted,
+            SystemProcessRunner.ProcessMilestoneName.ProcessExited,
+            SystemProcessRunner.ProcessMilestoneName.ProcessDisposalCompleted
+        );
+        AssertLastMilestoneIsProcessDisposalCompleted(milestones);
+        Assert.DoesNotContain(
+            milestones,
+            milestone =>
+                milestone.Name
+                == SystemProcessRunner.ProcessMilestoneName.TimeoutInitiated
+        );
     }
 
     [Fact]
@@ -426,7 +493,8 @@ public sealed class SystemProcessRunnerTests
     [Fact]
     public async Task RunAsyncReturnsLaunchFailureForMissingExecutable()
     {
-        var runner = new SystemProcessRunner();
+        var milestones = new ConcurrentQueue<SystemProcessRunner.ProcessMilestone>();
+        var runner = new SystemProcessRunner(milestones.Enqueue);
 
         ProcessResult result = await runner.RunAsync(
             new ProcessStartSpec(Path.Combine(CreateTestDirectory("missing tool"), "missing-tool")),
@@ -435,6 +503,12 @@ public sealed class SystemProcessRunnerTests
 
         Assert.Equal(ProcessExecutionStatus.LaunchFailure, result.Status);
         Assert.False(result.HasExitCode);
+        AssertMilestonesRecordedOnce(
+            milestones,
+            SystemProcessRunner.ProcessMilestoneName.LaunchRequested,
+            SystemProcessRunner.ProcessMilestoneName.ProcessDisposalCompleted
+        );
+        AssertLastMilestoneIsProcessDisposalCompleted(milestones);
     }
 
     [Fact]
@@ -674,7 +748,8 @@ public sealed class SystemProcessRunnerTests
         string? workingDirectory = null,
         IReadOnlyList<string>? arguments = null,
         IReadOnlyDictionary<string, string?>? environment = null,
-        string? standardInput = null
+        string? standardInput = null,
+        TimeSpan? timeout = null
     )
     {
         var helperNonce = ProcessTestApp.CreateHelperNonce();
@@ -685,7 +760,59 @@ public sealed class SystemProcessRunnerTests
             allArguments,
             workingDirectory,
             ProcessTestApp.CreateHelperEnvironment(helperNonce, environment),
-            standardInput
+            standardInput,
+            timeout
+        );
+    }
+
+    private static void AssertMilestonesRecordedOnce(
+        IEnumerable<SystemProcessRunner.ProcessMilestone> milestones,
+        params SystemProcessRunner.ProcessMilestoneName[] expectedNames
+    )
+    {
+        SystemProcessRunner.ProcessMilestone[] recordedMilestones = milestones.ToArray();
+        AssertMilestonesRecordedAtMostOnce(recordedMilestones);
+        Assert.Equal(expectedNames.Length, recordedMilestones.Length);
+        AssertContainsMilestones(recordedMilestones, expectedNames);
+    }
+
+    private static void AssertMilestonesRecordedAtMostOnce(
+        IEnumerable<SystemProcessRunner.ProcessMilestone> milestones
+    )
+    {
+        SystemProcessRunner.ProcessMilestone[] recordedMilestones = milestones.ToArray();
+        Assert.All(
+            recordedMilestones,
+            milestone => Assert.True(milestone.Elapsed >= TimeSpan.Zero)
+        );
+        Assert.Equal(
+            recordedMilestones.Length,
+            recordedMilestones.Select(milestone => milestone.Name).Distinct().Count()
+        );
+    }
+
+    private static void AssertContainsMilestones(
+        IEnumerable<SystemProcessRunner.ProcessMilestone> milestones,
+        params SystemProcessRunner.ProcessMilestoneName[] expectedNames
+    )
+    {
+        SystemProcessRunner.ProcessMilestone[] recordedMilestones = milestones.ToArray();
+        foreach (SystemProcessRunner.ProcessMilestoneName expectedName in expectedNames)
+        {
+            Assert.Contains(
+                recordedMilestones,
+                milestone => milestone.Name == expectedName
+            );
+        }
+    }
+
+    private static void AssertLastMilestoneIsProcessDisposalCompleted(
+        IEnumerable<SystemProcessRunner.ProcessMilestone> milestones
+    )
+    {
+        Assert.Equal(
+            SystemProcessRunner.ProcessMilestoneName.ProcessDisposalCompleted,
+            milestones.Last().Name
         );
     }
 
