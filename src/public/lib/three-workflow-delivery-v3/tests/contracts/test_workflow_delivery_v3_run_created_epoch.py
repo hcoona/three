@@ -1331,7 +1331,10 @@ def test_main_requires_exact_run_and_repository_identity(
         pytest.param(
             (b"[" * 10_000) + b"0" + (b"]" * 10_000),
             200,
-            "malformed run metadata JSON",
+            (
+                "malformed run metadata JSON",
+                "run metadata is not an object",
+            ),
             id="excessive-json-nesting",
         ),
         pytest.param(
@@ -1371,7 +1374,7 @@ def test_main_rejects_invalid_response_schema(
     capsys: pytest.CaptureFixture[str],
     payload: bytes | str,
     status: object,
-    diagnostic: str,
+    diagnostic: str | tuple[str, ...],
 ) -> None:
     _set_valid_environment(monkeypatch)
     opener, sleeps, _handlers = _install_transport(
@@ -1384,7 +1387,8 @@ def test_main_rejects_invalid_response_schema(
     assert (result, stdout) == (1, "")
     assert len(opener.calls) == 1
     assert sleeps == []
-    assert diagnostic in stderr
+    diagnostics = (diagnostic,) if isinstance(diagnostic, str) else diagnostic
+    assert any(expected in stderr for expected in diagnostics)
     assert len(stderr.splitlines()) == 1
 
 

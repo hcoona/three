@@ -24,18 +24,23 @@ jobs:
     timeout-minutes: 10
     permissions:
       actions: read
-      contents: read
     outputs:
       artifact-id: ${{ steps.upload.outputs.artifact-id }}
       artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
       started-at: ${{ steps.clock.outputs.started-at }}
     steps:
-      - name: Check out tested merge candidate
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-          ref: ${{ github.sha }}
+      - name: Check out tested merge candidate without credentials
+        env:
+          GIT_LFS_SKIP_SMUDGE: '1'
+          TARGET_REF: ${{ github.ref }}
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --force --tags --no-recurse-submodules origin \
+            "+${TARGET_REF}:refs/remotes/origin/wdv3-target"
+          git checkout --detach refs/remotes/origin/wdv3-target
+          test "$(git rev-parse HEAD)" = "${TARGET_SHA}"
       - name: Record platform workflow creation
         id: clock
         env:
@@ -49,6 +54,7 @@ jobs:
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: '0.12.5'
+          github-token: ''
       - name: Form exact candidate and comparison
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}

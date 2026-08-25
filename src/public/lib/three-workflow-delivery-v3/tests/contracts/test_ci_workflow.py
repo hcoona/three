@@ -80,12 +80,7 @@ def test_workflow_is_bounded_and_exposes_only_approved_events() -> None:
         name: job["permissions"]
         for name, job in document["jobs"].items()
         if "permissions" in job
-    } == {
-        "request": {
-            "actions": "read",
-            "contents": "read",
-        }
-    }
+    } == {"request": {"actions": "read"}}
 
 
 def test_concurrency_binds_pr_number_or_manual_target_sha() -> None:
@@ -126,17 +121,17 @@ def test_candidate_uses_exact_pr_range_and_tested_merge_target() -> None:
     """Bind paths to base/head while checkout and execution use github.sha."""
     jobs = _document()["jobs"]
     request = jobs["request"]
-    checkout = next(
-        step for step in _steps(request) if step.get("uses") == CHECKOUT
+    checkout = _run(
+        request,
+        "Check out tested merge candidate without credentials",
     )
     command = _run(request, "Form exact candidate and comparison")
     clock = _run(request, "Record platform workflow creation")
 
-    assert checkout["with"] == {
-        "fetch-depth": 0,
-        "persist-credentials": False,
-        "ref": "${{ github.sha }}",
-    }
+    assert "git fetch --force --tags --no-recurse-submodules origin" in checkout
+    assert '"+${TARGET_REF}:refs/remotes/origin/wdv3-target"' in checkout
+    assert "git checkout --detach refs/remotes/origin/wdv3-target" in checkout
+    assert 'test "$(git rev-parse HEAD)" = "${TARGET_SHA}"' in checkout
     assert "eng/scripts/workflow_delivery_v3_run_created_epoch.py" in clock
     assert "/actions/runs/" not in clock
     assert "json.load" not in clock
@@ -594,7 +589,6 @@ def test_workflow_has_no_transport_credentials_or_commit6_authority() -> None:
         "actions_results_url",
         "ci.transport",
         "admit_action_downloaded_artifact",
-        "github-token:",
         "packages:",
         "id-token:",
         "secrets.",
@@ -622,9 +616,14 @@ def test_request_scopes_github_token_to_metadata_step() -> None:
         for step in _steps(request)
         if step["name"] == "Record platform workflow creation"
     )
+    setup_uv = next(step for step in _steps(request) if step.get("uses") == UV)
 
     assert WORKFLOW.read_text(encoding="utf-8").count(github_expression) == 1
     assert metadata["env"] == {"WDV3_GITHUB_TOKEN": github_expression}
+    assert setup_uv["with"] == {
+        "version": "0.12.5",
+        "github-token": "",
+    }
     assert github_expression not in document["env"].values()
     assert all(
         github_expression not in job.get("env", {}).values()
@@ -649,21 +648,29 @@ def test_request_checks_out_before_running_governed_metadata_helper() -> None:
     """Use a credentialless checkout before the root-HK-governed helper."""
     request = _document()["jobs"]["request"]
     steps = _steps(request)
-    checkout = next(step for step in steps if step.get("uses") == CHECKOUT)
+    checkout = next(
+        step
+        for step in steps
+        if step["name"]
+        == "Check out tested merge candidate without credentials"
+    )
     metadata = next(
         step
         for step in steps
         if step["name"] == "Record platform workflow creation"
     )
+    checkout_command = cast("str", checkout["run"])
     command = cast("str", metadata["run"])
     hk = HK_CONFIG.read_text(encoding="utf-8")
 
     assert steps.index(checkout) < steps.index(metadata)
-    assert checkout["with"] == {
-        "fetch-depth": 0,
-        "persist-credentials": False,
-        "ref": "${{ github.sha }}",
+    assert checkout["env"] == {
+        "GIT_LFS_SKIP_SMUDGE": "1",
+        "TARGET_REF": "${{ github.ref }}",
+        "TARGET_SHA": "${{ github.sha }}",
     }
+    assert "${{ github.token }}" not in checkout_command
+    assert "actions/checkout" not in cast("str", checkout.get("uses", ""))
     assert metadata["id"] == "clock"
     assert command == (
         'started_at="$(\n'
