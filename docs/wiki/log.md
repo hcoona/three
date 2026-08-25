@@ -2126,3 +2126,17 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   disabling the numeric workflow identity and deleting the Environment;
   protected cleanup then removes the temporary surfaces and re-disables the
   saved identity if GitHub transitions it to `deleted`.
+
+## [2026-08-25] query | Finalize isolated destination-acceptance retry
+
+- Merged implementation PR #582 as
+  `b031e5e0bd98a95943a03a1529b64e856e1a8aa1`.
+- Authenticated preflight confirmed the `.5`-`.8` versions and tags are absent.
+- Provisioned Environment
+  `workflow-delivery-v3-buddy-smoke-acceptance-retry-2` with sole required
+  reviewer `hcoona`, self-review permitted, and sole deployment branch `main`.
+  Workflow ID `341728447` has no runs.
+- Bound the protected-finalization workflow, Governance profile, and contract
+  to the implementation merge SHA. The finalization must merge before the one
+  authorized attempt-1 dispatch. Normal Live remains disabled and
+  unauthorized.

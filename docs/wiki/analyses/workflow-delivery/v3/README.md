@@ -222,9 +222,10 @@ Next:
 2. retain run `32769435970`, fixed version
    `0.0.0-wdv3-acceptance.1`, tag, tarball, and artifacts as failure and
    reconciliation evidence;
-3. do not reuse the run, Environment review, or coordinate; the explicitly
-   authorized retry-2 is in implementation with a fresh workflow, staged
-   Environment name, and disposable `.5`-`.8` coordinates, while protected
-   finalization and remote Environment provisioning remain pending; and
+3. do not reuse the run, Environment review, or coordinate; retry-2
+   implementation PR #582 merged as `b031e5e0`, and the fresh Environment is
+   provisioned with required reviewer `hcoona` and only `main`; protected
+   finalization to the full implementation merge SHA remains pending before
+   the one authorized dispatch using disposable `.5`-`.8` coordinates; and
 4. keep `live_enabled: false` until successful acceptance and separate human
    activation authorization.
