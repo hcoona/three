@@ -157,7 +157,31 @@ internal static class ProcessTestAppModuleInitializer
         }
 
         child.StandardInput.Close();
-        File.WriteAllText(args[0], child.Id.ToString(provider: null));
+        var pidFilePath = args[0];
+        var stagingPidFilePath = $"{pidFilePath}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            var childPid = Encoding.UTF8.GetBytes(child.Id.ToString(provider: null));
+            using (
+                var stagingFile = new FileStream(
+                    stagingPidFilePath,
+                    FileMode.CreateNew,
+                    FileAccess.Write,
+                    FileShare.None
+                )
+            )
+            {
+                stagingFile.Write(childPid, 0, childPid.Length);
+                stagingFile.Flush(flushToDisk: true);
+            }
+
+            File.Move(stagingPidFilePath, pidFilePath);
+        }
+        finally
+        {
+            File.Delete(stagingPidFilePath);
+        }
+
         Thread.Sleep(TimeSpan.FromSeconds(30));
         Environment.Exit(0);
     }

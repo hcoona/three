@@ -128,11 +128,33 @@ If it conflicts with the
   response claimed pre-request failure while the canonical action facts
   recorded mutation startedness. The second probe never ran. Governance
   immediately converted the workflow to `disabled_manually` and removed the
-  acceptance Environment. Protected cleanup must remove the workflow file and
-  verify the workflow identity, any temporary bypass, and the Environment
-  absent before reconciliation. The consumed run, review, and coordinate must
-  not be reused, and no retry is currently authorized. Acceptance does not
-  authorize normal Live activation; `live_enabled` remains false.
+  acceptance Environment. Cleanup PR #575 merged as `274d81fd`; workflow ID
+  `340952168` is `disabled_manually`, real old-ref dispatch returns HTTP 422,
+  the workflow file, transition ref, and Environment are absent, and all
+  related runs are terminal. Authenticated reconciliation confirms the `.1`
+  version and tag are exact and bind the expected repository, SHA-1, SHA-512,
+  manifest, and target witness. The Adapter distinguishes pre-action,
+  post-action, and post-mutation-start failures across returned and exception
+  paths while retaining incomplete classification. PR #579 merged that repair
+  as `06872f2b`. This does not retroactively make the failed acceptance
+  successful. The consumed run, review, and `.1`-`.4` suite remain historical
+  evidence and must not be reused.
+- A second destination-acceptance invocation is explicitly authorized, but
+  normal Live activation is not. PR #582 merged its implementation stage as
+  `b031e5e0bd98a95943a03a1529b64e856e1a8aa1`. The retry uses the fresh
+  workflow
+  `.github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-2.yml`,
+  Environment `workflow-delivery-v3-buddy-smoke-acceptance-retry-2`, fixed
+  `.5`-`.8` coordinate/tag block, and confirmation
+  `I_ACCEPT_DISPOSABLE_GITHUB_PACKAGES_PROBES_RETRY_2`. Environment ID
+  `20531285468` is provisioned with sole required reviewer `hcoona`,
+  self-review permitted, and sole deployment branch `main`. Workflow ID
+  `341728447` has no runs. Protected finalization must bind the workflow and
+  strict Governance profile to `b031e5e0bd98a95943a03a1529b64e856e1a8aa1`
+  before the one attempt-1 dispatch. The legacy `.1`-`.4` profile remains
+  strictly admissible for historical replay; profile identities cannot be
+  mixed. Every result still requires terminal platform verification and
+  mandatory cleanup. `live_enabled` remains false.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the
@@ -629,12 +651,23 @@ If it conflicts with the
 - PR [#552](https://github.com/hcoona/three/pull/552) merged as `5a84bebd`.
   The immediate legacy drain and old-ref rejection proof are complete.
   Acceptance run `32769435970` failed with incomplete mutation evidence after
-  exact `.1` post-state observation. The workflow is `disabled_manually`, the
-  Environment is absent, and workflow-file cleanup must merge and be followed
-  by API verification that the workflow identity, bypass, and Environment are
-  absent before reconciliation. Do not retry with the same invocation, review,
-  or coordinate; no retry is currently authorized. Do not activate normal Live
-  or begin later scopes without a separate explicit user task.
+  exact `.1` post-state observation. The workflow file, transition ref, and
+  acceptance Environment are absent; workflow ID `340952168` remains
+  `disabled_manually`; old-ref dispatch returns HTTP 422; and related runs are
+  terminal. Authenticated reconciliation confirms the retained version and tag
+  are exact. The Adapter distinguishes pre-action, post-action, and
+  post-mutation-start failures while preserving incomplete classification. This
+  does not retroactively make the failed acceptance successful. Do not retry
+  with the same invocation, review, or coordinate. A separately authorized
+  retry-2 implementation merged as `b031e5e0`. Its fresh Environment is
+  provisioned with sole required reviewer `hcoona`, self-review permitted, and
+  sole deployment branch `main`; workflow ID `341728447` has no runs.
+  Confirmation and `.5`-`.8` coordinates are fixed. Any pre-finalization
+  dispatch fails fixed-input validation before review or mutation until the
+  protected finalization binds its target to the full implementation merge SHA
+  `b031e5e0bd98a95943a03a1529b64e856e1a8aa1`.
+  Do not activate normal Live or begin later scopes without a separate explicit
+  user task.
 - Implementation must preserve the approved commit boundaries and keep live
   activation disabled until acceptance and the separate activation approval.
 

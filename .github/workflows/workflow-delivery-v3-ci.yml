@@ -22,36 +22,38 @@ jobs:
     name: Form same-revision request
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      actions: read
     outputs:
       artifact-id: ${{ steps.upload.outputs.artifact-id }}
       artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
       started-at: ${{ steps.clock.outputs.started-at }}
     steps:
+      - name: Check out tested merge candidate without credentials
+        env:
+          GIT_LFS_SKIP_SMUDGE: '1'
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --force --tags --no-recurse-submodules origin \
+            "+${TARGET_SHA}:refs/remotes/origin/wdv3-target"
+          git checkout --detach refs/remotes/origin/wdv3-target
+          test "$(git rev-parse HEAD)" = "${TARGET_SHA}"
       - name: Record platform workflow creation
         id: clock
+        env:
+          WDV3_GITHUB_TOKEN: ${{ github.token }}
         run: |
-          metadata="$(
-            curl --fail --silent --show-error \
-              --header "Accept: application/vnd.github+json" \
-              --header "X-GitHub-Api-Version: 2022-11-28" \
-              "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          started_at="$(
+            python3 eng/scripts/workflow_delivery_v3_run_created_epoch.py
           )"
-          created_at="$(
-            python3 -c 'import json,sys; value=json.load(sys.stdin)["created_at"]; assert isinstance(value,str) and value; print(value)' \
-              <<< "${metadata}"
-          )"
-          started_at="$(date --date="${created_at}" +%s)"
           echo "started-at=${started_at}" >> "${GITHUB_OUTPUT}"
-      - name: Check out tested merge candidate
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-          ref: ${{ github.sha }}
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: '0.12.5'
+          github-token: ''
       - name: Form exact candidate and comparison
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -149,6 +151,8 @@ jobs:
       plan-artifact-digest: ${{ steps.upload-plan.outputs.artifact-digest }}
       context-artifact-id: ${{ steps.upload-context.outputs.artifact-id }}
       context-artifact-digest: ${{ steps.upload-context.outputs.artifact-digest }}
+      provider-artifact-id: ${{ needs.discover-node.outputs.provider-artifact-id }}
+      provider-artifact-digest: ${{ needs.discover-node.outputs.provider-artifact-digest }}
       started-at: ${{ needs.discover-node.outputs.started-at }}
     steps:
       - name: Check out exact candidate
@@ -258,12 +262,23 @@ jobs:
           path: .wdv3/input
           skip-decompress: true
           digest-mismatch: error
-      - name: Admit Plan payload
+      - name: Download Provider Result by artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.plan.outputs.provider-artifact-id }}
+          path: .wdv3/input
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Admit root-HK inputs
         run: |
           uv run --python 3.13 --package "${WDV3_PACKAGE}" \
             three-workflow-delivery-v3 ci admit-payload \
             --input ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-plan.json" \
             --expected-digest "${{ needs.plan.outputs.plan-artifact-digest }}"
+          uv run --python 3.13 --package "${WDV3_PACKAGE}" \
+            three-workflow-delivery-v3 ci admit-payload \
+            --input ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-provider.json" \
+            --expected-digest "${{ needs.plan.outputs.provider-artifact-digest }}"
       - name: Run permanent root HK and consumer policy
         id: execute
         if: needs.plan.outputs.root-hk-selected == 'true'
@@ -272,6 +287,27 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
+          actual_node="$(node --version)"
+          actual_pnpm="$(pnpm --version)"
+          provider=".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-provider.json"
+          ACTUAL_NODE="${actual_node}" ACTUAL_PNPM="${actual_pnpm}" \
+            python3 - "${provider}" <<'PY'
+          import json
+          import os
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as stream:
+              document = json.load(stream)
+          toolchain = document["provider"]["toolchain"]
+          for name in ("node", "pnpm"):
+              if toolchain[name] != os.environ[f"ACTUAL_{name.upper()}"]:
+                  raise SystemExit(
+                      f"{name} differs from the admitted Provider fact"
+                  )
+          PY
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm --dir src/public/lib/hexo-renderer-asciidoc/examples/hexo-site \
+            install --frozen-lockfile --ignore-scripts
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
             uv run --python 3.13 python eng/scripts/workflow_delivery_v3_hk.py \
               --repository . --from-ref "${BASE_SHA}" --to-ref "${HEAD_SHA}" \
@@ -557,6 +593,7 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with: {artifact-ids: '${{ needs.npm-artifact-build.outputs.artifact-id }}', path: .wdv3/final, skip-decompress: true, digest-mismatch: error}
       - name: Admit available results and finalize
+        id: finalize
         if: always() && needs.plan.outputs.plan-artifact-id != ''
         env:
           PLAN_DIGEST: ${{ needs.plan.outputs.plan-digest }}
@@ -566,9 +603,6 @@ jobs:
           TEST_DIGEST: ${{ needs.project-test.outputs.artifact-digest }}
           NPM_DIGEST: ${{ needs.npm-artifact-build.outputs.artifact-digest }}
           STARTED_AT: ${{ needs.plan.outputs.started-at }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          TESTED_MERGE_SHA: ${{ github.sha }}
         run: |
           plan=".wdv3/final/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-plan.json"
           decision=".wdv3/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-ci-slice-decision.json"
@@ -603,23 +637,7 @@ jobs:
             --github-step-summary "${GITHUB_STEP_SUMMARY}"
           finalizer_exit=$?
           set -e
-          if [[ "${finalizer_exit}" -eq 0 ]]; then
-            exit 0
-          fi
-          if [[ "${GITHUB_EVENT_NAME}" != "pull_request" ]]; then
-            exit "${finalizer_exit}"
-          fi
-          "${cli[@]}" ci project-bootstrap-shadow \
-            --repo-root "${GITHUB_WORKSPACE}" \
-            --plan "${plan}" \
-            --plan-digest "${PLAN_DIGEST}" \
-            --decision "${decision}" \
-            --summary "${summary}" \
-            --pull-request-number "${{ github.event.pull_request.number }}" \
-            --base-sha "${BASE_SHA}" \
-            --head-sha "${HEAD_SHA}" \
-            --tested-merge-sha "${TESTED_MERGE_SHA}" \
-            --github-step-summary "${GITHUB_STEP_SUMMARY}"
+          echo "finalizer-exit=${finalizer_exit}" >> "${GITHUB_OUTPUT}"
       - name: Upload canonical CI Slice Decision
         if: always() && hashFiles(format('.wdv3/wdv3-{0}-{1}-ci-slice-decision.json', github.run_id, github.run_attempt)) != ''
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -642,6 +660,12 @@ jobs:
           overwrite: false
           archive: false
           include-hidden-files: true
+      - name: Propagate canonical CI Slice Decision
+        if: always() && hashFiles(format('.wdv3/wdv3-{0}-{1}-ci-slice-decision.json', github.run_id, github.run_attempt)) != ''
+        env:
+          FINALIZER_EXIT: ${{ steps.finalize.outputs.finalizer-exit }}
+        run: |
+          exit "${FINALIZER_EXIT}"
       - name: Report noncanonical contract failure without a Decision
         if: always() && hashFiles(format('.wdv3/wdv3-{0}-{1}-ci-slice-decision.json', github.run_id, github.run_attempt)) == ''
         run: |

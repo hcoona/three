@@ -1,0 +1,720 @@
+name: Workflow Delivery v3 Buddy smoke destination acceptance retry 2
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: Reviewed protected-finalization target SHA
+        required: true
+        default: 'b031e5e0bd98a95943a03a1529b64e856e1a8aa1'
+        type: string
+      package_coordinate:
+        description: Fixed disposable GitHub Packages base coordinate
+        required: true
+        default: '@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5'
+        type: string
+      confirm:
+        description: Explicit disposable-probe confirmation
+        required: true
+        default: I_ACCEPT_DISPOSABLE_GITHUB_PACKAGES_PROBES_RETRY_2
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: hcoona-release-smoke-npm-workflow-delivery-v3-buddy-smoke-acceptance-retry-2
+  cancel-in-progress: false
+
+env:
+  WDV3_ACCEPTANCE_TARGET_SHA: 'b031e5e0bd98a95943a03a1529b64e856e1a8aa1'
+  WDV3_ACCEPTANCE_PACKAGE_COORDINATE: '@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5'
+  WDV3_ACCEPTANCE_CONFIRMATION: I_ACCEPT_DISPOSABLE_GITHUB_PACKAGES_PROBES_RETRY_2
+  WDV3_ACCEPTANCE_REF: refs/heads/main
+  WDV3_PURPOSE: destination-acceptance
+
+jobs:
+  validate-fixed-inputs:
+    name: Validate protected fixed acceptance inputs
+    if: ${{ github.run_attempt == 1 }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Fail closed before review or mutation
+        shell: bash
+        env:
+          INPUT_TARGET_SHA: ${{ inputs.target_sha }}
+          INPUT_PACKAGE_COORDINATE: ${{ inputs.package_coordinate }}
+          INPUT_CONFIRM: ${{ inputs.confirm }}
+        run: |
+          if [[ "${INPUT_TARGET_SHA}" != "${WDV3_ACCEPTANCE_TARGET_SHA}" ]]; then
+            exit 1
+          fi
+          if [[ "${WDV3_ACCEPTANCE_TARGET_SHA}" == "0000000000000000000000000000000000000000" ]]; then
+            exit 1
+          fi
+          if [[ "${INPUT_TARGET_SHA}" == "0000000000000000000000000000000000000000" ]]; then
+            exit 1
+          fi
+          if [[ "${INPUT_PACKAGE_COORDINATE}" != "${WDV3_ACCEPTANCE_PACKAGE_COORDINATE}" ]]; then
+            exit 1
+          fi
+          if [[ "${INPUT_CONFIRM}" != "${WDV3_ACCEPTANCE_CONFIRMATION}" ]]; then
+            exit 1
+          fi
+          if [[ "${GITHUB_REF}" != "${WDV3_ACCEPTANCE_REF}" ]]; then
+            exit 1
+          fi
+          if [[ "${GITHUB_RUN_ATTEMPT}" != "1" ]]; then
+            exit 1
+          fi
+
+  acceptance-review:
+    name: Review fixed destination acceptance
+    if: ${{ github.run_attempt == 1 }}
+    needs: validate-fixed-inputs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions: {}
+    environment: workflow-delivery-v3-buddy-smoke-acceptance-retry-2
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - name: Materialize immutable review coordinates
+        shell: bash
+        env:
+          INPUT_TARGET_SHA: ${{ inputs.target_sha }}
+          INPUT_PACKAGE_COORDINATE: ${{ inputs.package_coordinate }}
+        run: |
+          mkdir -p .wdv3
+          printf '%s\n' \
+            "purpose=${WDV3_PURPOSE}" \
+            "target-sha=${INPUT_TARGET_SHA}" \
+            "package-coordinate=${INPUT_PACKAGE_COORDINATE}" \
+            "workflow=${GITHUB_WORKFLOW_REF}" \
+            "run=${GITHUB_RUN_ID}" \
+            "run-attempt=${GITHUB_RUN_ATTEMPT}" \
+            > ".wdv3/acceptance-review-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}.txt"
+      - name: Upload immutable acceptance review coordinates
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: wdv3-acceptance-review-r${{ github.run_id }}-ra${{ github.run_attempt }}
+          path: .wdv3/acceptance-review-r${{ github.run_id }}-ra${{ github.run_attempt }}.txt
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 45
+          overwrite: false
+          archive: false
+
+  probe-absent-create-readback:
+    name: Probe absent create and exact readback
+    if: ${{ github.run_attempt == 1 }}
+    needs: acceptance-review
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      result: ${{ steps.classify.outputs.result }}
+      mutation-classification: ${{ steps.classify.outputs.mutation-classification }}
+      scenario-inventory: ${{ steps.classify.outputs.scenario-inventory }}
+      record-digest: ${{ steps.classify.outputs.record-digest }}
+      record-json: ${{ steps.classify.outputs.record-json }}
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+    steps:
+      - name: Check out reviewed target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.target_sha }}
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: '0.12.5'
+          github-token: ''
+      - name: Install exact Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '24.14.0'
+      - name: Install and verify exact npm toolchain
+        shell: bash
+        run: |
+          npm install --global npm@11.9.0
+          test "$(node --version)" = "v24.14.0"
+          test "$(npm --version)" = "11.9.0"
+      - name: Run fixed absent/create/readback suite
+        id: probe
+        env:
+          WDV3_ACCEPTANCE_GITHUB_TOKEN: ${{ github.token }}
+          INPUT_PACKAGE_COORDINATE: ${{ inputs.package_coordinate }}
+          INPUT_TARGET_SHA: ${{ inputs.target_sha }}
+        shell: bash
+        run: |
+          uv run --python 3.13 --package three-workflow-delivery-v3 \
+            three-workflow-delivery-v3 governance run-fixed-acceptance-probe \
+            --suite absent-create-readback \
+            --package-coordinate "${INPUT_PACKAGE_COORDINATE}" \
+            --target-sha "${INPUT_TARGET_SHA}" \
+            --timeout-seconds 120 \
+            --output ".wdv3/probe-absent-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}.json" \
+            --github-output "${GITHUB_OUTPUT}"
+      - name: Upload immutable absent/create/readback suite
+        id: upload
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: wdv3-acceptance-probe-absent-r${{ github.run_id }}-ra${{ github.run_attempt }}
+          path: .wdv3/probe-absent-r${{ github.run_id }}-ra${{ github.run_attempt }}.json
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 45
+          overwrite: false
+          archive: false
+      - name: Classify absent/create/readback completion
+        id: classify
+        if: ${{ always() }}
+        shell: bash
+        env:
+          PROBE_OUTCOME: ${{ steps.probe.outcome }}
+          PROBE_RESULT: ${{ steps.probe.outputs.result }}
+          PROBE_MUTATION_CLASSIFICATION: ${{ steps.probe.outputs.mutation-classification }}
+          PROBE_SCENARIO_INVENTORY: ${{ steps.probe.outputs.scenario-inventory }}
+          PROBE_RECORD_DIGEST: ${{ steps.probe.outputs.record-digest }}
+          PROBE_RECORD_JSON: ${{ steps.probe.outputs.record-json }}
+          UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
+          UPLOAD_ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+          UPLOAD_ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+        run: |
+          result="${PROBE_RESULT:-unknown}"
+          classification="${PROBE_MUTATION_CLASSIFICATION:-unknown}"
+          if [ "${PROBE_OUTCOME}" != "success" ] || [ "${UPLOAD_OUTCOME}" != "success" ]; then
+            result=unknown
+            classification=unknown
+          elif [ -z "${UPLOAD_ARTIFACT_ID}" ] || [ -z "${UPLOAD_ARTIFACT_DIGEST}" ]; then
+            result=incomplete
+            classification=incomplete
+          elif [ "${result}" != "success" ] || [ "${classification}" != "complete" ]; then
+            case "${classification}" in
+              incomplete|unknown) result="${classification}" ;;
+              *) result=unknown; classification=unknown ;;
+            esac
+          fi
+          {
+            printf 'result=%s\n' "${result}"
+            printf 'mutation-classification=%s\n' "${classification}"
+            printf 'scenario-inventory=%s\n' "${PROBE_SCENARIO_INVENTORY}"
+            printf 'record-digest=%s\n' "${PROBE_RECORD_DIGEST}"
+            printf 'record-json=%s\n' "${PROBE_RECORD_JSON}"
+          } >> "${GITHUB_OUTPUT}"
+      - name: Require complete absent/create/readback evidence
+        if: ${{ always() }}
+        shell: bash
+        env:
+          MUTATION_CLASSIFICATION: ${{ steps.classify.outputs.mutation-classification }}
+        run: test "${MUTATION_CLASSIFICATION}" = "complete"
+
+  probe-exact-and-conflict:
+    name: Probe exact, races, and lost response
+    if: ${{ github.run_attempt == 1 && needs.probe-absent-create-readback.result == 'success' }}
+    needs: probe-absent-create-readback
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      result: ${{ steps.classify.outputs.result }}
+      mutation-classification: ${{ steps.classify.outputs.mutation-classification }}
+      scenario-inventory: ${{ steps.classify.outputs.scenario-inventory }}
+      record-digest: ${{ steps.classify.outputs.record-digest }}
+      record-json: ${{ steps.classify.outputs.record-json }}
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+    steps:
+      - name: Check out reviewed target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.target_sha }}
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: '0.12.5'
+          github-token: ''
+      - name: Install exact Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '24.14.0'
+      - name: Install and verify exact npm toolchain
+        shell: bash
+        run: |
+          npm install --global npm@11.9.0
+          test "$(node --version)" = "v24.14.0"
+          test "$(npm --version)" = "11.9.0"
+      - name: Run fixed exact and conflict suite
+        id: probe
+        env:
+          WDV3_ACCEPTANCE_GITHUB_TOKEN: ${{ github.token }}
+          INPUT_PACKAGE_COORDINATE: ${{ inputs.package_coordinate }}
+          INPUT_TARGET_SHA: ${{ inputs.target_sha }}
+        shell: bash
+        run: |
+          uv run --python 3.13 --package three-workflow-delivery-v3 \
+            three-workflow-delivery-v3 governance run-fixed-acceptance-probe \
+            --suite exact-and-conflict \
+            --package-coordinate "${INPUT_PACKAGE_COORDINATE}" \
+            --target-sha "${INPUT_TARGET_SHA}" \
+            --timeout-seconds 300 \
+            --output ".wdv3/probe-conflict-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}.json" \
+            --github-output "${GITHUB_OUTPUT}"
+      - name: Upload immutable exact/conflict suite
+        id: upload
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: wdv3-acceptance-probe-conflict-r${{ github.run_id }}-ra${{ github.run_attempt }}
+          path: .wdv3/probe-conflict-r${{ github.run_id }}-ra${{ github.run_attempt }}.json
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 45
+          overwrite: false
+          archive: false
+      - name: Classify exact/conflict completion
+        id: classify
+        if: ${{ always() }}
+        shell: bash
+        env:
+          PROBE_OUTCOME: ${{ steps.probe.outcome }}
+          PROBE_RESULT: ${{ steps.probe.outputs.result }}
+          PROBE_MUTATION_CLASSIFICATION: ${{ steps.probe.outputs.mutation-classification }}
+          PROBE_SCENARIO_INVENTORY: ${{ steps.probe.outputs.scenario-inventory }}
+          PROBE_RECORD_DIGEST: ${{ steps.probe.outputs.record-digest }}
+          PROBE_RECORD_JSON: ${{ steps.probe.outputs.record-json }}
+          UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
+          UPLOAD_ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+          UPLOAD_ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+        run: |
+          result="${PROBE_RESULT:-unknown}"
+          classification="${PROBE_MUTATION_CLASSIFICATION:-unknown}"
+          if [ "${PROBE_OUTCOME}" != "success" ] || [ "${UPLOAD_OUTCOME}" != "success" ]; then
+            result=unknown
+            classification=unknown
+          elif [ -z "${UPLOAD_ARTIFACT_ID}" ] || [ -z "${UPLOAD_ARTIFACT_DIGEST}" ]; then
+            result=incomplete
+            classification=incomplete
+          elif [ "${result}" != "success" ] || [ "${classification}" != "complete" ]; then
+            case "${classification}" in
+              incomplete|unknown) result="${classification}" ;;
+              *) result=unknown; classification=unknown ;;
+            esac
+          fi
+          {
+            printf 'result=%s\n' "${result}"
+            printf 'mutation-classification=%s\n' "${classification}"
+            printf 'scenario-inventory=%s\n' "${PROBE_SCENARIO_INVENTORY}"
+            printf 'record-digest=%s\n' "${PROBE_RECORD_DIGEST}"
+            printf 'record-json=%s\n' "${PROBE_RECORD_JSON}"
+          } >> "${GITHUB_OUTPUT}"
+      - name: Require complete exact/conflict evidence
+        if: ${{ always() }}
+        shell: bash
+        env:
+          MUTATION_CLASSIFICATION: ${{ steps.classify.outputs.mutation-classification }}
+        run: test "${MUTATION_CLASSIFICATION}" = "complete"
+
+  capture-governance-evidence:
+    name: Capture terminal Governance acceptance evidence
+    if: ${{ always() && github.run_attempt == 1 }}
+    needs:
+      - validate-fixed-inputs
+      - acceptance-review
+      - probe-absent-create-readback
+      - probe-exact-and-conflict
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out immutable workflow source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+          token: ${{ github.token }}
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: '0.12.5'
+          github-token: ''
+      - name: Form and admit terminal Governance evidence
+        shell: bash
+        env:
+          INPUT_TARGET_SHA: ${{ inputs.target_sha }}
+          INPUT_PACKAGE_COORDINATE: ${{ inputs.package_coordinate }}
+          INPUT_CONFIRM: ${{ inputs.confirm }}
+          VALIDATE_RESULT: ${{ needs.validate-fixed-inputs.result }}
+          REVIEW_RESULT: ${{ needs.acceptance-review.result }}
+          ABSENT_JOB_RESULT: ${{ needs.probe-absent-create-readback.result }}
+          CONFLICT_JOB_RESULT: ${{ needs.probe-exact-and-conflict.result }}
+          REVIEW_ARTIFACT_ID: ${{ needs.acceptance-review.outputs.artifact-id }}
+          ABSENT_RESULT: ${{ needs.probe-absent-create-readback.outputs.result }}
+          ABSENT_MUTATION_CLASSIFICATION: ${{ needs.probe-absent-create-readback.outputs.mutation-classification }}
+          ABSENT_SCENARIO_INVENTORY: ${{ needs.probe-absent-create-readback.outputs.scenario-inventory }}
+          ABSENT_RECORD_JSON: ${{ needs.probe-absent-create-readback.outputs.record-json }}
+          ABSENT_RECORD_DIGEST: ${{ needs.probe-absent-create-readback.outputs.record-digest }}
+          ABSENT_ARTIFACT_ID: ${{ needs.probe-absent-create-readback.outputs.artifact-id }}
+          ABSENT_ARTIFACT_DIGEST: ${{ needs.probe-absent-create-readback.outputs.artifact-digest }}
+          CONFLICT_RESULT: ${{ needs.probe-exact-and-conflict.outputs.result }}
+          CONFLICT_MUTATION_CLASSIFICATION: ${{ needs.probe-exact-and-conflict.outputs.mutation-classification }}
+          CONFLICT_SCENARIO_INVENTORY: ${{ needs.probe-exact-and-conflict.outputs.scenario-inventory }}
+          CONFLICT_RECORD_JSON: ${{ needs.probe-exact-and-conflict.outputs.record-json }}
+          CONFLICT_RECORD_DIGEST: ${{ needs.probe-exact-and-conflict.outputs.record-digest }}
+          CONFLICT_ARTIFACT_ID: ${{ needs.probe-exact-and-conflict.outputs.artifact-id }}
+          CONFLICT_ARTIFACT_DIGEST: ${{ needs.probe-exact-and-conflict.outputs.artifact-digest }}
+        run: |
+          mkdir -p .wdv3
+          export WDV3_FILE=".wdv3/governance-acceptance-r${GITHUB_RUN_ID}-ra${GITHUB_RUN_ATTEMPT}.json"
+          # Terminal fan-in source bindings:
+          # needs.validate-fixed-inputs.result
+          # needs.acceptance-review.result
+          # needs.probe-absent-create-readback.result
+          # needs.probe-exact-and-conflict.result
+          # needs.probe-absent-create-readback.outputs.record-digest
+          # needs.probe-exact-and-conflict.outputs.record-digest
+          # Optional record-json and artifact-id/artifact-digest outputs are
+          # parsed independently so missing artifact outputs cannot crash.
+          # needs.probe-absent-create-readback.result == 'failure' => possibly-started
+          # needs.probe-absent-create-readback.result == 'cancelled' => possibly-started
+          # needs.probe-absent-create-readback.result == 'skipped' => not-started
+          # needs.probe-exact-and-conflict.result == 'failure' => possibly-started
+          # needs.probe-exact-and-conflict.result == 'cancelled' => possibly-started
+          # needs.probe-exact-and-conflict.result == 'skipped' => not-started
+          uv run --python 3.13 --package three-workflow-delivery-v3 python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          from three_workflow_delivery_v3.adapters.github_packages import (
+              FixedAcceptanceSuiteResult,
+              FixedCoordinateAcceptanceProbeResult,
+              ValidatedAcceptanceRequestProof,
+          )
+          from three_workflow_delivery_v3.canonical import canonical_sha256, canonicalize
+          from three_workflow_delivery_v3.records.governance import (
+              admit_governance_acceptance_evidence,
+          )
+
+          expected = (
+              ("probe-absent-create-readback", ("absent-create-readback",), "ABSENT"),
+              (
+                  "probe-exact-and-conflict",
+                  ("exact", "identical-race", "differing-race", "lost-response"),
+                  "CONFLICT",
+              ),
+          )
+          ranks = {"complete": 0, "incomplete": 1, "unknown": 2}
+          asserted_results = {
+              "ABSENT": os.environ.get("ABSENT_RESULT", ""),
+              "CONFLICT": os.environ.get("CONFLICT_RESULT", ""),
+          }
+          asserted_classifications = {
+              "ABSENT": os.environ.get("ABSENT_MUTATION_CLASSIFICATION", ""),
+              "CONFLICT": os.environ.get("CONFLICT_MUTATION_CLASSIFICATION", ""),
+          }
+          asserted_inventories = {
+              "ABSENT": os.environ.get("ABSENT_SCENARIO_INVENTORY", ""),
+              "CONFLICT": os.environ.get("CONFLICT_SCENARIO_INVENTORY", ""),
+          }
+          asserted_records = {
+              "ABSENT": os.environ.get("ABSENT_RECORD_JSON", ""),
+              "CONFLICT": os.environ.get("CONFLICT_RECORD_JSON", ""),
+          }
+          asserted_record_digests = {
+              "ABSENT": os.environ.get("ABSENT_RECORD_DIGEST", ""),
+              "CONFLICT": os.environ.get("CONFLICT_RECORD_DIGEST", ""),
+          }
+          asserted_artifact_ids = {
+              "ABSENT": os.environ.get("ABSENT_ARTIFACT_ID", ""),
+              "CONFLICT": os.environ.get("CONFLICT_ARTIFACT_ID", ""),
+          }
+          asserted_artifact_digests = {
+              "ABSENT": os.environ.get("ABSENT_ARTIFACT_DIGEST", ""),
+              "CONFLICT": os.environ.get("CONFLICT_ARTIFACT_DIGEST", ""),
+          }
+
+          def digest(value):
+              if not value:
+                  return None
+              normalized = value if value.startswith("sha256:") else f"sha256:{value}"
+              return normalized if re.fullmatch(r"sha256:[0-9a-f]{64}", normalized) else None
+
+          def positive_or_none(value):
+              try:
+                  parsed = int(value)
+              except (TypeError, ValueError):
+                  return None
+              return parsed if parsed > 0 else None
+
+          def validated_proof_or_none(scenario):
+              proof = scenario.get("validated-request-proof")
+              if proof is None:
+                  return None
+              if not isinstance(proof, dict):
+                  raise ValueError("validated request proof is not an object")
+              return ValidatedAcceptanceRequestProof.from_closed_document(
+                  proof,
+                  package_coordinate=scenario["package-coordinate"],
+                  tag=scenario["tag"],
+                  response_identity_digest=scenario["response"]["identity-digest"],
+              )
+
+          def suite_fact(probe, inventory, prefix, job_result):
+              asserted_result = asserted_results[prefix]
+              asserted_classification = asserted_classifications[prefix]
+              asserted_inventory = asserted_inventories[prefix]
+              raw = asserted_records[prefix]
+              record_json = None
+              record_digest = None
+              scenarios = []
+              probe_result = "incomplete"
+              if raw:
+                  try:
+                      record_json = json.loads(raw)
+                      if not isinstance(record_json, dict):
+                          raise ValueError("suite record is not an object")
+                      if tuple(record_json.get("scenario-inventory", ())) != inventory:
+                          raise ValueError("suite scenario inventory mismatch")
+                      if asserted_inventory and json.loads(
+                          asserted_inventory
+                      ) != list(inventory):
+                          raise ValueError("suite output inventory mismatch")
+                      scenario_results = tuple(
+                          FixedCoordinateAcceptanceProbeResult(
+                              scenario=scenario["scenario"],
+                              package_coordinate=scenario["package-coordinate"],
+                              tag=scenario["tag"],
+                              pre_state=scenario["pre"]["state"],
+                              post_state=scenario["post"]["state"],
+                              result=scenario["response"]["result"],
+                              mutation_classification=scenario["mutation-classification"],
+                              action_executed=scenario["action"]["executed"],
+                              mutation_started=scenario["action"][
+                                  "mutation-started"
+                              ],
+                              response_identity_digest=scenario["response"]["identity-digest"],
+                              content_sha512=scenario["post"]["content-sha512"],
+                              diagnostics=tuple(scenario["response"]["diagnostics"]),
+                              validated_request_proof=validated_proof_or_none(scenario),
+                          )
+                          for scenario in record_json["scenarios"]
+                      )
+                      suite = FixedAcceptanceSuiteResult(
+                          suite=probe.removeprefix("probe-"),
+                          scenarios=scenario_results,
+                      )
+                      record_digest = suite.to_document()["record-digest"]
+                      asserted_digest = asserted_record_digests[prefix]
+                      if (
+                          record_digest != asserted_digest
+                          or record_digest != record_json.get("record-digest")
+                          or tuple(suite.scenario_inventory) != inventory
+                      ):
+                          raise ValueError("suite record digest mismatch")
+                      scenarios = record_json["scenarios"]
+                      probe_result = suite.result
+                      asserted_result_classification = (
+                          "complete"
+                          if asserted_result == "success"
+                          else asserted_result
+                      )
+                      if (
+                          asserted_result_classification
+                          and asserted_result_classification not in ranks
+                      ):
+                          raise ValueError("suite result output is not closed")
+                      if (
+                          asserted_classification
+                          and asserted_classification not in ranks
+                      ):
+                          raise ValueError(
+                              "suite mutation classification output is not closed"
+                          )
+                      if (
+                          asserted_result_classification
+                          and asserted_classification
+                          and asserted_result_classification
+                          != asserted_classification
+                      ):
+                          raise ValueError(
+                              "suite result and mutation classification outputs mismatch"
+                          )
+                      for output_classification in (
+                          asserted_result_classification,
+                          asserted_classification,
+                      ):
+                          if (
+                              output_classification
+                              and ranks[output_classification]
+                              < ranks[suite.mutation_classification]
+                          ):
+                              raise ValueError(
+                                  "suite outputs cannot upgrade canonical classification"
+                              )
+                  except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                      record_json = None
+                      record_digest = None
+                      scenarios = []
+                      probe_result = "unknown"
+
+              artifact_id = positive_or_none(asserted_artifact_ids[prefix])
+              artifact_digest = digest(asserted_artifact_digests[prefix])
+              if record_json is not None and (
+                  artifact_id is None or artifact_digest is None
+              ):
+                  # record present but artifact outputs missing
+                  probe_result = max(
+                      probe_result if probe_result != "success" else "complete",
+                      "incomplete",
+                      key=ranks.__getitem__,
+                  )
+              if (
+                  job_result in {"failure", "cancelled"}
+                  and record_json is None
+              ):
+                  probe_result = "unknown"
+              elif job_result == "skipped":
+                  probe_result = max(
+                      probe_result if probe_result != "success" else "complete",
+                      "incomplete",
+                      key=ranks.__getitem__,
+                  )
+              elif not raw:
+                  probe_result = "incomplete"
+              return {
+                  "probe": probe,
+                  "result": "success" if probe_result == "complete" else probe_result,
+                  "scenario-inventory": list(inventory),
+                  "record-digest": record_digest,
+                  "artifact-id": artifact_id,
+                  "artifact-digest": artifact_digest,
+                  "scenarios": scenarios,
+              }
+
+          dependencies = [
+              {"job": "validate-fixed-inputs", "result": os.environ["VALIDATE_RESULT"]},
+              {"job": "acceptance-review", "result": os.environ["REVIEW_RESULT"]},
+              {"job": "probe-absent-create-readback", "result": os.environ["ABSENT_JOB_RESULT"]},
+              {"job": "probe-exact-and-conflict", "result": os.environ["CONFLICT_JOB_RESULT"]},
+          ]
+          job_results = {
+              "ABSENT": os.environ["ABSENT_JOB_RESULT"],
+              "CONFLICT": os.environ["CONFLICT_JOB_RESULT"],
+          }
+          probe_facts = [
+              suite_fact(*item, job_results[item[2]]) for item in expected
+          ]
+          classification = "complete"
+          for dependency in dependencies:
+              if dependency["job"] in {
+                  "probe-absent-create-readback",
+                  "probe-exact-and-conflict",
+              } and dependency["result"] in {"failure", "cancelled"}:
+                  classification = "unknown"
+              elif dependency["result"] != "success":
+                  classification = max(
+                      classification,
+                      "incomplete",
+                      key=ranks.__getitem__,
+                  )
+          for fact in probe_facts:
+              probe_classification = (
+                  "complete" if fact["result"] == "success" else fact["result"]
+              )
+              classification = max(
+                  classification,
+                  probe_classification,
+                  key=ranks.__getitem__,
+              )
+          review_artifact_id = positive_or_none(os.environ.get("REVIEW_ARTIFACT_ID"))
+          if review_artifact_id is None:
+              classification = max(
+                  classification,
+                  "incomplete",
+                  key=ranks.__getitem__,
+              )
+          document = {
+              "schema": "workflow-delivery/v3/governance-acceptance-evidence",
+              "purpose": "destination-acceptance",
+              "workflow": {
+                  "repository": os.environ["GITHUB_REPOSITORY"],
+                  "path": ".github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-2.yml",
+                  "ref": os.environ["GITHUB_REF"],
+                  "sha": os.environ["GITHUB_WORKFLOW_SHA"],
+              },
+              "target-sha": (
+                  os.environ.get(
+                      "INPUT_TARGET_SHA",
+                      os.environ.get(
+                          "WDV3_ACCEPTANCE_TARGET_SHA",
+                          "0000000000000000000000000000000000000000",
+                      ),
+                  )
+                  if os.environ["VALIDATE_RESULT"] == "success"
+                  else os.environ.get(
+                      "WDV3_ACCEPTANCE_TARGET_SHA",
+                      "0000000000000000000000000000000000000000",
+                  )
+              ),
+              "package-coordinate": os.environ.get(
+                  "WDV3_ACCEPTANCE_PACKAGE_COORDINATE",
+                  "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5",
+              ),
+              "confirmation-digest": "sha256:" + hashlib.sha256(
+                  os.environ.get(
+                      "WDV3_ACCEPTANCE_CONFIRMATION",
+                      "I_ACCEPT_DISPOSABLE_GITHUB_PACKAGES_PROBES_RETRY_2",
+                  ).encode()
+              ).hexdigest(),
+              "environment": "workflow-delivery-v3-buddy-smoke-acceptance-retry-2",
+              "reviewer": {"login": None, "source": "unavailable-in-job-context"},
+              "recovery": {
+                  "workflow-run-id": int(os.environ["GITHUB_RUN_ID"]),
+                  "environment": "workflow-delivery-v3-buddy-smoke-acceptance-retry-2",
+                  "deployment": f"run:{os.environ['GITHUB_RUN_ID']}/environment:acceptance",
+                  "job": "acceptance-review",
+                  "artifact-id": review_artifact_id,
+              },
+              "dependency-results": dependencies,
+              "probe-facts": probe_facts,
+              "mutation-classification": classification,
+              "producer": "capture-governance-evidence",
+              "workflow-run-id": int(os.environ["GITHUB_RUN_ID"]),
+              "run-attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "release-lineage": "none",
+          }
+          admitted = admit_governance_acceptance_evidence(canonicalize(document))
+
+          def write_evidence():
+              Path(os.environ["WDV3_FILE"]).write_bytes(
+                  canonicalize(admitted.to_document())
+              )
+
+          write_evidence()
+          PY
+      - name: Upload immutable Governance acceptance evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: wdv3-governance-acceptance-r${{ github.run_id }}-ra${{ github.run_attempt }}
+          path: .wdv3/governance-acceptance-r${{ github.run_id }}-ra${{ github.run_attempt }}.json
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 45
+          overwrite: false
+          archive: false

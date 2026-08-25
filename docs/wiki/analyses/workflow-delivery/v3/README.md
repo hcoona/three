@@ -215,15 +215,17 @@ that real old refs now receive disabled-workflow rejection.
 
 Next:
 
-1. merge the protected cleanup that removes the disabled temporary acceptance
-   workflow, then verify through workflow and Environment APIs that the
-   workflow identity, any temporary bypass, and the Environment are absent;
-2. reconcile run `32769435970` and fixed version
-   `0.0.0-wdv3-acceptance.1`, whose post-state was exact but whose mutation
-   classification remained incomplete and whose terminal Governance evidence
-   failed admission;
-3. do not reuse the run, Environment review, or coordinate; no retry is
-   currently authorized, and any retry requires new explicit authorization, a
-   newly reviewed invocation, and a disposable coordinate/version; and
+1. preserve the Adapter distinction between pre-action, post-action, and
+   post-mutation-start runner failures while retaining incomplete
+   classification; do not promote the reconciled exact post-state to acceptance
+   success;
+2. retain run `32769435970`, fixed version
+   `0.0.0-wdv3-acceptance.1`, tag, tarball, and artifacts as failure and
+   reconciliation evidence;
+3. do not reuse the run, Environment review, or coordinate; retry-2
+   implementation PR #582 merged as `b031e5e0`, and the fresh Environment is
+   provisioned with required reviewer `hcoona` and only `main`; protected
+   finalization to the full implementation merge SHA remains pending before
+   the one authorized dispatch using disposable `.5`-`.8` coordinates; and
 4. keep `live_enabled: false` until successful acceptance and separate human
    activation authorization.

@@ -95,6 +95,23 @@ ACCEPTANCE_SCENARIO_SPECS = (
     ("differing-race", "0.0.0-wdv3-acceptance.3", "wdv3-acceptance-3"),
     ("lost-response", "0.0.0-wdv3-acceptance.4", "wdv3-acceptance-4"),
 )
+RETRY_2_ACCEPTANCE_PACKAGE_COORDINATE = (
+    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5"
+)
+RETRY_2_ACCEPTANCE_SCENARIO_SPECS = (
+    ("absent-create-readback", "0.0.0-wdv3-acceptance.5", "wdv3-acceptance-5"),
+    ("exact", "0.0.0-wdv3-acceptance.5", "wdv3-acceptance-5"),
+    ("identical-race", "0.0.0-wdv3-acceptance.6", "wdv3-acceptance-6"),
+    ("differing-race", "0.0.0-wdv3-acceptance.7", "wdv3-acceptance-7"),
+    ("lost-response", "0.0.0-wdv3-acceptance.8", "wdv3-acceptance-8"),
+)
+_ACCEPTANCE_SUITE_PROFILES = (
+    (ACCEPTANCE_PACKAGE_COORDINATE, ACCEPTANCE_SCENARIO_SPECS),
+    (
+        RETRY_2_ACCEPTANCE_PACKAGE_COORDINATE,
+        RETRY_2_ACCEPTANCE_SCENARIO_SPECS,
+    ),
+)
 ACCEPTANCE_COORDINATES = {
     scenario: f"{ACCEPTANCE_PACKAGE_NAME}@{version}"
     for scenario, version, _tag in ACCEPTANCE_SCENARIO_SPECS
@@ -111,6 +128,52 @@ ACCEPTANCE_SCENARIOS = frozenset(
         "lost-response",
     }
 )
+_ACCEPTANCE_COORDINATE_TAG_PAIRS = frozenset(
+    (f"{ACCEPTANCE_PACKAGE_NAME}@{version}", tag)
+    for _base_coordinate, specs in _ACCEPTANCE_SUITE_PROFILES
+    for _scenario, version, tag in specs
+)
+
+
+def fixed_acceptance_scenario_specs(
+    base_package_coordinate: str,
+) -> tuple[tuple[str, str, str], ...]:
+    """Return one closed reviewed acceptance suite by exact base coordinate."""
+    for fixed_coordinate, specs in _ACCEPTANCE_SUITE_PROFILES:
+        if base_package_coordinate == fixed_coordinate:
+            return specs
+    message = "acceptance package coordinate is not a reviewed fixed suite"
+    raise ValueError(message)
+
+
+def fixed_acceptance_coordinates(
+    base_package_coordinate: str,
+) -> dict[str, str]:
+    """Return exact scenario coordinates for one reviewed acceptance suite."""
+    return {
+        scenario: f"{ACCEPTANCE_PACKAGE_NAME}@{version}"
+        for scenario, version, _tag in fixed_acceptance_scenario_specs(
+            base_package_coordinate
+        )
+    }
+
+
+def _fixed_acceptance_coordinate(
+    *,
+    scenario: str,
+    tag: str,
+) -> str:
+    matches = {
+        f"{ACCEPTANCE_PACKAGE_NAME}@{version}"
+        for _base_coordinate, specs in _ACCEPTANCE_SUITE_PROFILES
+        for fixed_scenario, version, fixed_tag in specs
+        if scenario == fixed_scenario and tag == fixed_tag
+    }
+    if len(matches) != 1:
+        message = "acceptance scenario and tag are not one reviewed fixed pair"
+        raise ValueError(message)
+    return matches.pop()
+
 
 DEFAULT_TIMEOUT_SECONDS = 20
 DEFAULT_METADATA_LIMIT_BYTES = 1_000_000
@@ -427,9 +490,8 @@ class ValidatedAcceptanceRequestProof:
         if self.tarball_sha512 != expected_tarball:
             message = "validated tarball digest is not exact"
             raise ValueError(message)
-        if (
-            self.package_coordinate not in ACCEPTANCE_COORDINATES.values()
-            or self.tag not in ACCEPTANCE_TAGS
+        if (self.package_coordinate, self.tag) not in (
+            _ACCEPTANCE_COORDINATE_TAG_PAIRS
         ):
             message = "validated request coordinate or tag is not fixed"
             raise ValueError(message)
@@ -1106,7 +1168,10 @@ def _acceptance_result(  # noqa: PLR0913
 ) -> FixedCoordinateAcceptanceProbeResult:
     return FixedCoordinateAcceptanceProbeResult(
         scenario=scenario,
-        package_coordinate=ACCEPTANCE_COORDINATES[scenario],
+        package_coordinate=_fixed_acceptance_coordinate(
+            scenario=scenario,
+            tag=tag,
+        ),
         tag=tag,
         pre_state=pre_state,
         post_state=post_state,
@@ -1119,6 +1184,31 @@ def _acceptance_result(  # noqa: PLR0913
         diagnostics=diagnostics,
         validated_request_proof=validated_request_proof,
     )
+
+
+def _runner_failure_result(
+    *,
+    action_executed: bool,
+    mutation_started: bool,
+    malformed_outcome: bool = False,
+) -> str:
+    if mutation_started:
+        return "runner-failed-after-mutation-start"
+    if action_executed:
+        return "runner-failed-after-action-start"
+    if malformed_outcome:
+        return "runner-malformed-before-mutation"
+    return "runner-failed-before-mutation"
+
+
+def _runner_failure_diagnostics(
+    *,
+    action_executed: bool,
+    mutation_started: bool,
+) -> tuple[str, ...]:
+    if action_executed or mutation_started:
+        return ("runner-did-not-prove-controlled-outcome",)
+    return ("runner-did-not-prove-mutation-start",)
 
 
 def _remaining_acceptance_time(deadline: float) -> float:
@@ -1187,20 +1277,12 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
     deadline: float | None = None,
 ) -> FixedCoordinateAcceptanceProbeResult:
     """Run one bounded injected acceptance-only create/readback scenario."""
-    expected_coordinate = ACCEPTANCE_COORDINATES.get(scenario)
+    expected_coordinate = _fixed_acceptance_coordinate(
+        scenario=scenario,
+        tag=tag,
+    )
     if package_coordinate != expected_coordinate:
         message = "acceptance package coordinate is not the fixed coordinate"
-        raise ValueError(message)
-    expected_tag = next(
-        (
-            fixed_tag
-            for fixed_scenario, _version, fixed_tag in ACCEPTANCE_SCENARIO_SPECS
-            if fixed_scenario == scenario
-        ),
-        None,
-    )
-    if tag != expected_tag:
-        message = "acceptance tag is not one of the reviewed fixed tags"
         raise ValueError(message)
     if scenario not in ACCEPTANCE_SCENARIOS:
         message = "acceptance mutation scenario is unsupported"
@@ -1315,6 +1397,8 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
     runner_timed_out = False
     action_executed = False
     mutation_started = False
+    exception_startedness_admitted = False
+    returned_facts_malformed = False
     try:
         run_scenario = getattr(runner, "run_scenario", None)
         if callable(run_scenario):
@@ -1348,6 +1432,7 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
         ):
             action_executed = executed_fact
             mutation_started = started_fact
+            exception_startedness_admitted = True
     except (OSError, RuntimeError, ValueError) as error:
         runner_error = error
         executed_fact = getattr(error, "action_executed", None)
@@ -1359,6 +1444,7 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
         ):
             action_executed = executed_fact
             mutation_started = started_fact
+            exception_startedness_admitted = True
 
     if type(runner_result) is dict:
         executed_fact = runner_result.get("action-executed")
@@ -1368,6 +1454,7 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
             or type(started_fact) is not bool
             or (started_fact and not executed_fact)
         ):
+            returned_facts_malformed = True
             runner_error = ValueError(
                 "acceptance runner action facts are malformed"
             )
@@ -1391,10 +1478,28 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
         desired_sha512=actual_sha512,
     )
     if runner_error is not None:
-        malformed_facts = str(runner_error) == (
-            "acceptance runner action facts are malformed"
-        )
+        malformed_facts = returned_facts_malformed
         if runner_timed_out:
+            if exception_startedness_admitted and not mutation_started:
+                return _acceptance_result(
+                    scenario=scenario,
+                    tag=tag,
+                    pre_state="absent",
+                    post_state=post_state,
+                    result=_runner_failure_result(
+                        action_executed=action_executed,
+                        mutation_started=mutation_started,
+                    ),
+                    mutation_classification="incomplete",
+                    action_executed=action_executed,
+                    mutation_started=mutation_started,
+                    response_identity_digest=post_response,
+                    content_sha512=post_content,
+                    diagnostics=_runner_failure_diagnostics(
+                        action_executed=action_executed,
+                        mutation_started=mutation_started,
+                    ),
+                )
             return _acceptance_result(
                 scenario=scenario,
                 tag=tag,
@@ -1426,6 +1531,26 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
                 diagnostics=("runner-action-facts-not-fully-admitted",),
             )
         if scenario == "lost-response":
+            if exception_startedness_admitted and not mutation_started:
+                return _acceptance_result(
+                    scenario=scenario,
+                    tag=tag,
+                    pre_state="absent",
+                    post_state=post_state,
+                    result=_runner_failure_result(
+                        action_executed=action_executed,
+                        mutation_started=mutation_started,
+                    ),
+                    mutation_classification="incomplete",
+                    action_executed=action_executed,
+                    mutation_started=mutation_started,
+                    response_identity_digest=post_response,
+                    content_sha512=post_content,
+                    diagnostics=_runner_failure_diagnostics(
+                        action_executed=action_executed,
+                        mutation_started=mutation_started,
+                    ),
+                )
             return _acceptance_result(
                 scenario=scenario,
                 tag=tag,
@@ -1447,10 +1572,10 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
             tag=tag,
             pre_state="absent",
             post_state=post_state,
-            result=(
-                "runner-malformed-before-mutation"
-                if malformed_facts
-                else "runner-failed-before-mutation"
+            result=_runner_failure_result(
+                action_executed=action_executed,
+                mutation_started=mutation_started,
+                malformed_outcome=malformed_facts,
             ),
             mutation_classification="incomplete",
             action_executed=action_executed,
@@ -1460,7 +1585,10 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
             diagnostics=(
                 ("runner-action-facts-not-fully-admitted",)
                 if malformed_facts
-                else ("runner-did-not-prove-mutation-start",)
+                else _runner_failure_diagnostics(
+                    action_executed=action_executed,
+                    mutation_started=mutation_started,
+                )
             ),
         )
 
@@ -1500,6 +1628,27 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
                     runner_document["validated-request-proof"],
                 ),
             )
+        if not mutation_started:
+            return _acceptance_result(
+                scenario=scenario,
+                tag=tag,
+                pre_state="absent",
+                post_state=post_state,
+                result=_runner_failure_result(
+                    action_executed=action_executed,
+                    mutation_started=mutation_started,
+                    malformed_outcome=type(outcome) is not str,
+                ),
+                mutation_classification="incomplete",
+                action_executed=action_executed,
+                mutation_started=mutation_started,
+                response_identity_digest=post_response,
+                content_sha512=post_content,
+                diagnostics=_runner_failure_diagnostics(
+                    action_executed=action_executed,
+                    mutation_started=mutation_started,
+                ),
+            )
         return _acceptance_result(
             scenario=scenario,
             tag=tag,
@@ -1516,16 +1665,19 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
                 "human-reconciliation-required",
             ),
         )
-    if outcome not in {"created", "create-conflict"}:
+    if type(outcome) is not str or outcome not in {
+        "created",
+        "create-conflict",
+    }:
         return _acceptance_result(
             scenario=scenario,
             tag=tag,
             pre_state="absent",
             post_state=post_state,
-            result=(
-                "runner-malformed-before-mutation"
-                if outcome is None
-                else "runner-failed-before-mutation"
+            result=_runner_failure_result(
+                action_executed=action_executed,
+                mutation_started=mutation_started,
+                malformed_outcome=type(outcome) is not str,
             ),
             mutation_classification="incomplete",
             action_executed=action_executed,
@@ -1714,9 +1866,12 @@ def run_fixed_acceptance_suite(  # noqa: PLR0913
     timeout_seconds: float,
     max_response_bytes: int,
     max_output_bytes: int,
+    base_package_coordinate: str = ACCEPTANCE_PACKAGE_COORDINATE,
     deadline: float | None = None,
 ) -> FixedAcceptanceSuiteResult:
     """Run one reviewed fixed suite with no caller-selected coordinates."""
+    scenario_specs = fixed_acceptance_scenario_specs(base_package_coordinate)
+    coordinates = fixed_acceptance_coordinates(base_package_coordinate)
     inventories = {
         "absent-create-readback": ("absent-create-readback",),
         "exact-and-conflict": (
@@ -1738,10 +1893,10 @@ def run_fixed_acceptance_suite(  # noqa: PLR0913
     )
     results: list[FixedCoordinateAcceptanceProbeResult] = []
     for scenario in inventory:
-        coordinate = ACCEPTANCE_COORDINATES[scenario]
+        coordinate = coordinates[scenario]
         tag = next(
             fixed_tag
-            for fixed_scenario, _version, fixed_tag in ACCEPTANCE_SCENARIO_SPECS
+            for fixed_scenario, _version, fixed_tag in scenario_specs
             if fixed_scenario == scenario
         )
         tarball = tarballs[scenario]

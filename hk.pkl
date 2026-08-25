@@ -279,6 +279,7 @@ local workflow_delivery_v3_validation = new Mapping<String, Step> {
       "eng/scripts/hk_exec.py",
       "eng/scripts/workflow_delivery_v3_consumer_policy.py",
       "eng/scripts/workflow_delivery_v3_hk.py",
+      "eng/scripts/workflow_delivery_v3_run_created_epoch.py",
       "eng/workflow-delivery/v3/**",
       "hk.pkl",
       "mise.lock",

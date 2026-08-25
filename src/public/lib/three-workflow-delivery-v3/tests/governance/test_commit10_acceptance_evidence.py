@@ -1,6 +1,6 @@
 """Commit-10 Governance Acceptance Evidence contract scenarios."""
 
-# ruff: noqa: D103, E501, FBT001, PLR0913, PT011
+# ruff: noqa: D103, E501, FBT001, PLR0913, PLR0917, PT011
 
 from __future__ import annotations
 
@@ -29,6 +29,10 @@ SHA512_A = "sha512:" + ("3" * 128)
 SHA512_B = "sha512:" + ("4" * 128)
 ENVIRONMENT = "workflow-delivery-v3-buddy-smoke-acceptance"
 COORDINATE = "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.1"
+LEGACY_TARGET_SHA = "5a84bebd05407e1859fe76f400dcb4f4cbcd002e"
+LEGACY_CONFIRMATION_DIGEST = (
+    "sha256:6ab9696b51f21083802af68d80104f65ffb844bdcd449974c881e5a8cc96ad5e"
+)
 
 
 def _validated_request_proof() -> ValidatedAcceptanceRequestProof:
@@ -211,9 +215,9 @@ def _document() -> dict[str, Any]:
             "ref": "refs/heads/main",
             "sha": "b" * 40,
         },
-        "target-sha": "a" * 40,
+        "target-sha": LEGACY_TARGET_SHA,
         "package-coordinate": COORDINATE,
-        "confirmation-digest": SHA256_A,
+        "confirmation-digest": LEGACY_CONFIRMATION_DIGEST,
         "environment": ENVIRONMENT,
         "reviewer": {"login": None, "source": "unavailable-in-job-context"},
         "recovery": {
@@ -1371,6 +1375,128 @@ def _refresh_probe_record_digest(
     ).to_document()["record-digest"]
 
 
+def _retry_2_document() -> dict[str, Any]:
+    document = _document()
+    environment = "workflow-delivery-v3-buddy-smoke-acceptance-retry-2"
+    document["workflow"]["path"] = (
+        ".github/workflows/"
+        "workflow-delivery-v3-buddy-smoke-acceptance-retry-2.yml"
+    )
+    document["target-sha"] = "0" * 40
+    document["package-coordinate"] = (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5"
+    )
+    document["confirmation-digest"] = (
+        "sha256:"
+        "1215f9d01cd343462c3f826ba67ebee86b6f6142b7fcfe5630572a5a808314f8"
+    )
+    document["environment"] = environment
+    document["recovery"]["environment"] = environment
+    document["recovery"]["artifact-id"] = None
+    for index, dependency in enumerate(document["dependency-results"]):
+        dependency["result"] = "failure" if index == 0 else "skipped"
+    document["mutation-classification"] = "incomplete"
+    for fact in document["probe-facts"]:
+        fact["result"] = "incomplete"
+        fact["record-digest"] = None
+        fact["artifact-id"] = None
+        fact["artifact-digest"] = None
+        fact["scenarios"] = []
+    return document
+
+
+def test_retry_2_profile_admits_only_exact_rejected_dispatch_sentinel_evidence() -> (
+    None
+):
+    document = _retry_2_document()
+
+    admitted = _admit(document)
+
+    assert admitted.to_document() == document
+    assert admitted.target_sha == "0" * 40
+
+
+@pytest.mark.parametrize(
+    ("path", "value", "message"),
+    [
+        (
+            ("workflow", "path"),
+            ".github/workflows/workflow-delivery-v3-buddy-smoke-acceptance.yml",
+            "workflow.path",
+        ),
+        (
+            ("environment",),
+            ENVIRONMENT,
+            "environment",
+        ),
+        (
+            ("confirmation-digest",),
+            LEGACY_CONFIRMATION_DIGEST,
+            "confirmation-digest",
+        ),
+        (
+            ("target-sha",),
+            "c" * 40,
+            "target-sha",
+        ),
+    ],
+)
+def test_retry_2_profile_rejects_cross_profile_substitution(
+    path: tuple[str, ...],
+    value: object,
+    message: str,
+) -> None:
+    document = _retry_2_document()
+    _set_path(document, path, value)
+
+    with pytest.raises(ValueError, match=message):
+        _admit(document)
+
+
+def test_legacy_profile_rejects_unreviewed_target_and_confirmation() -> None:
+    document = _document()
+    document["target-sha"] = "c" * 40
+    with pytest.raises(ValueError, match="target-sha"):
+        _admit(document)
+
+    document = _document()
+    document["confirmation-digest"] = SHA256_A
+    with pytest.raises(ValueError, match="confirmation-digest"):
+        _admit(document)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "unknown-classification",
+        "successful-validation",
+        "review-artifact",
+        "reviewer-attribution",
+        "probe-record",
+    ],
+)
+def test_zero_target_rejects_non_rejected_dispatch_evidence(
+    mutation: str,
+) -> None:
+    document = _retry_2_document()
+    if mutation == "unknown-classification":
+        document["mutation-classification"] = "unknown"
+    elif mutation == "successful-validation":
+        document["dependency-results"][0]["result"] = "success"
+    elif mutation == "review-artifact":
+        document["recovery"]["artifact-id"] = 701
+    elif mutation == "reviewer-attribution":
+        document["reviewer"] = {
+            "login": "octocat",
+            "source": "on-demand-read-only-inspection",
+        }
+    else:
+        document["probe-facts"][0] = _probe_fact("probe-absent-create-readback")
+
+    with pytest.raises(ValueError):
+        _admit(document)
+
+
 @pytest.mark.parametrize(
     ("dependency_job", "terminal_result", "classification"),
     [
@@ -1562,6 +1688,133 @@ def test_pre_request_failure_rejects_startedness_contradictions(
 
 
 @pytest.mark.parametrize(
+    ("mutation_started", "response_result"),
+    [
+        (False, "runner-failed-after-action-start"),
+        (True, "runner-failed-after-mutation-start"),
+    ],
+)
+def test_post_start_runner_failure_is_admitted_as_incomplete(
+    mutation_started: bool,
+    response_result: str,
+) -> None:
+    document = _document()
+    fact = document["probe-facts"][0]
+    scenario = fact["scenarios"][0]
+    scenario["mutation-classification"] = "incomplete"
+    scenario["action"]["mutation-started"] = mutation_started
+    scenario["response"]["result"] = response_result
+    scenario["response"]["diagnostics"] = [
+        "runner-did-not-prove-controlled-outcome"
+    ]
+    fact["result"] = "incomplete"
+    _refresh_probe_record_digest(document, 0)
+    document["mutation-classification"] = "incomplete"
+
+    evidence = _admit(document)
+
+    assert evidence.mutation_classification == "incomplete"
+    admitted_scenario = evidence.to_document()["probe-facts"][0]["scenarios"][0]
+    assert admitted_scenario["response"]["result"] == response_result
+    assert admitted_scenario["action"] == {
+        "executed": True,
+        "mutation-started": mutation_started,
+        "operation": "npm-publish-create-only",
+    }
+
+
+@pytest.mark.parametrize(
+    ("response_result", "executed", "mutation_started"),
+    [
+        ("runner-failed-after-action-start", False, False),
+        ("runner-failed-after-action-start", False, True),
+        ("runner-failed-after-action-start", True, True),
+        ("runner-failed-after-mutation-start", False, False),
+        ("runner-failed-after-mutation-start", False, True),
+        ("runner-failed-after-mutation-start", True, False),
+    ],
+)
+def test_post_start_runner_failure_rejects_startedness_contradictions(
+    response_result: str,
+    executed: bool,
+    mutation_started: bool,
+) -> None:
+    document = _document()
+    fact = document["probe-facts"][0]
+    scenario = fact["scenarios"][0]
+    scenario["mutation-classification"] = "incomplete"
+    scenario["action"]["executed"] = executed
+    scenario["action"]["mutation-started"] = mutation_started
+    scenario["response"]["result"] = response_result
+    scenario["response"]["diagnostics"] = [
+        "runner-did-not-prove-controlled-outcome"
+    ]
+    fact["result"] = "incomplete"
+    _refresh_probe_record_digest(document, 0)
+    document["mutation-classification"] = "incomplete"
+
+    with pytest.raises(ValueError, match=r"startedness contradict"):
+        _admit(document)
+
+
+@pytest.mark.parametrize(
+    ("executed", "mutation_started", "admitted"),
+    [
+        (False, False, True),
+        (True, False, True),
+        (False, True, False),
+        (True, True, False),
+    ],
+)
+def test_malformed_pre_mutation_result_constrains_mutation_startedness(
+    executed: bool,
+    mutation_started: bool,
+    admitted: bool,
+) -> None:
+    document = _document()
+    fact = document["probe-facts"][0]
+    scenario = fact["scenarios"][0]
+    scenario["mutation-classification"] = "incomplete"
+    scenario["action"]["executed"] = executed
+    scenario["action"]["mutation-started"] = mutation_started
+    scenario["response"]["result"] = "runner-malformed-before-mutation"
+    scenario["response"]["diagnostics"] = [
+        "runner-action-facts-not-fully-admitted"
+    ]
+    fact["result"] = "incomplete"
+    _refresh_probe_record_digest(document, 0)
+    document["mutation-classification"] = "incomplete"
+
+    if admitted:
+        assert _admit(document).mutation_classification == "incomplete"
+    else:
+        with pytest.raises(ValueError, match=r"startedness contradict"):
+            _admit(document)
+
+
+def test_complete_scenario_rejects_runner_failure_when_artifact_is_missing() -> (
+    None
+):
+    document = _document()
+    fact = document["probe-facts"][0]
+    scenario = fact["scenarios"][0]
+    scenario["action"]["executed"] = True
+    scenario["action"]["mutation-started"] = True
+    scenario["response"]["result"] = "runner-failed-after-mutation-start"
+    scenario["response"]["diagnostics"] = [
+        "runner-did-not-prove-controlled-outcome"
+    ]
+    fact["result"] = "incomplete"
+    fact["artifact-id"] = None
+    fact["artifact-digest"] = None
+    _refresh_probe_record_digest(document, 0)
+    document["mutation-classification"] = "incomplete"
+
+    with pytest.raises(ValueError, match=r"complete scenario semantics"):
+        _admit(document)
+
+
+@pytest.mark.parametrize(
     ("executed", "mutation_started"),
     [(False, False), (True, False), (False, True)],
 )
@@ -1600,7 +1853,7 @@ def test_complete_acceptance_evidence_rejects_zero_target_sha() -> None:
     document = _document()
     document["target-sha"] = "0" * 40
 
-    with pytest.raises(ValueError, match="non-zero target-sha"):
+    with pytest.raises(ValueError, match="zero target-sha"):
         _admit(document)
 
 
@@ -1612,21 +1865,13 @@ def test_complete_acceptance_evidence_rejects_zero_workflow_sha() -> None:
         _admit(document)
 
 
-@pytest.mark.parametrize(
-    "sha_path",
-    [
-        ("target-sha",),
-        ("workflow", "sha"),
-    ],
-    ids=["target-sha", "workflow-sha"],
-)
-def test_incomplete_acceptance_evidence_preserves_permitted_zero_sha_sentinel(
-    sha_path: tuple[str, ...],
-) -> None:
+def test_incomplete_acceptance_evidence_preserves_zero_workflow_sha_sentinel() -> (
+    None
+):
     document = _document()
     document["recovery"]["artifact-id"] = None
     document["mutation-classification"] = "incomplete"
-    _set_path(document, sha_path, "0" * 40)
+    document["workflow"]["sha"] = "0" * 40
 
     evidence = _admit(document)
 

@@ -43,8 +43,14 @@ converted both deleted legacy Buddy workflow identities to
 `disabled_manually`, drained all nonterminal executions, and proved that real
 old refs now receive disabled-workflow rejection. Destination acceptance was
 separately authorized for one-time run `32769435970`; that authorization
-is consumed, no retry is currently authorized, and normal Live activation
-remains unauthorized.
+is consumed and the `.1`-`.4` suite cannot be reused. PR #579 merged the
+runner-startedness evidence repair as `06872f2b`. A separately authorized
+retry-2 implementation merged as `b031e5e0`. Its fresh Environment is
+provisioned with sole required reviewer `hcoona`, self-review permitted, and
+sole deployment branch `main`; workflow ID `341728447` has no runs. It uses
+fixed `.5`-`.8` coordinates and remains pending protected finalization to the
+full implementation merge SHA before the one authorized dispatch. Normal Live
+activation remains unauthorized.
 
 ## Confirmed v3 Shape
 
@@ -264,15 +270,22 @@ have changed.
    `0.0.0-wdv3-acceptance.1` package version, but retained an incomplete
    mutation classification. Terminal Governance evidence admission failed
    because the runner response contradicted the recorded mutation startedness,
-   and the second probe was skipped. The workflow is `disabled_manually`, the
-   acceptance Environment is removed, and the protected cleanup must remove
-   the workflow file and verify the workflow identity, bypass, and Environment
-   absent before reconciliation.
-4. Reconcile the fixed package version and failed evidence without reusing the
-   invocation, review, or coordinate. Keep `live_enabled: false`; any retry
-   requires new explicit authorization, a newly reviewed invocation, and a
-   disposable coordinate/version. Normal Live still requires successful
-   acceptance plus separate human activation approval.
+   and the second probe was skipped. Cleanup PR #575 merged as `274d81fd`.
+   Workflow ID `340952168` is `disabled_manually`; old-ref dispatch is rejected
+   with HTTP 422; the workflow file, transition ref, and acceptance Environment
+   are absent; and all related runs are terminal.
+4. Authenticated reconciliation confirmed the fixed version and tag remain
+   exact, including repository association, SHA-1, SHA-512, manifest, and
+   target witness. The Adapter distinguishes pre-action, post-action, and
+   post-mutation-start failures across returned and exception paths while
+   retaining incomplete classification; this does not retroactively make
+   acceptance successful. Do not reuse the invocation, review, or coordinate.
+5. Retry-2 implementation PR #582 merged as `b031e5e0`. The fresh Environment
+   is provisioned with sole required reviewer `hcoona`, self-review permitted,
+   and only `main`; workflow ID `341728447` has no runs. Protected finalization
+   must bind the full implementation merge SHA before the one authorized
+   attempt-1 dispatch using `.5`-`.8` coordinates. Keep `live_enabled: false`;
+   normal Live activation remains unauthorized.
 
 ## Related Pages
 
