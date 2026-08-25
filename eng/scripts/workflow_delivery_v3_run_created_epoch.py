@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import calendar
+import contextlib
 import email.utils
 import errno
 import http.client
@@ -28,7 +29,7 @@ if TYPE_CHECKING:
 
     class _Readable(Protocol):
         def read(self, n: int = -1) -> bytes:
-            """Read at most limit bytes."""
+            """Read at most n bytes."""
 
 
 _ATTEMPTS = 3
@@ -36,16 +37,7 @@ _REQUEST_TIMEOUT_SECONDS = 10.0
 _MAX_SLEEP_SECONDS = 30.0
 _MAX_RESPONSE_BYTES = 1024 * 1024
 _MAX_ERROR_BYTES = 4096
-_MAX_DIAGNOSTIC_VALUE_CHARS = 96
-_MAX_MESSAGE_CHARS = 240
-_MAX_TOKEN_CHARS = 4096
-_MAX_INTEGER_HEADER_CHARS = 12
 _TOKEN_ENVIRONMENT_VARIABLE = "WDV3_GITHUB_TOKEN"  # noqa: S105
-_SELECTED_DIAGNOSTIC_HEADERS = (
-    "Retry-After",
-    "X-RateLimit-Remaining",
-    "X-RateLimit-Reset",
-)
 _CREATED_AT_PATTERN = re.compile(
     r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z\Z",
     re.ASCII,
@@ -55,14 +47,6 @@ _REPOSITORY_PATTERN = re.compile(
     re.ASCII,
 )
 _RUN_ID_PATTERN = re.compile(r"[1-9]\d*\Z", re.ASCII)
-_BEARER_PATTERN = re.compile(
-    r"\bbearer\s+[A-Za-z0-9._~+/=-]+",
-    re.IGNORECASE,
-)
-_AUTHORIZATION_PATTERN = re.compile(
-    r"\bauthorization\b(?:\s*[:=]\s*\S+)?",
-    re.IGNORECASE,
-)
 _RETRYABLE_HTTP_STATUSES = frozenset(
     {
         HTTPStatus.REQUEST_TIMEOUT,
@@ -88,10 +72,6 @@ _RETRYABLE_ERRNOS = frozenset(
 
 class MetadataError(ValueError):
     """Indicate invalid run metadata or helper configuration."""
-
-
-class _InvalidResponseStatusError(MetadataError):
-    """Indicate a response without an integer HTTP status."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,7 +107,7 @@ class _RejectRedirects(urllib.request.HTTPRedirectHandler):
 
 def _required_environment(name: str) -> str:
     value = os.environ.get(name)
-    if value is None or not value:
+    if not value:
         message = f"required environment variable {name} is missing"
         raise MetadataError(message)
     return value
@@ -139,13 +119,9 @@ def _configuration() -> _Configuration:
     run_id = _required_environment("GITHUB_RUN_ID")
     token = _required_environment(_TOKEN_ENVIRONMENT_VARIABLE)
 
-    if (
-        not token.isascii()
-        or any(
-            character.isspace() or not character.isprintable()
-            for character in token
-        )
-        or len(token) > _MAX_TOKEN_CHARS
+    if not token.isascii() or any(
+        character.isspace() or not character.isprintable()
+        for character in token
     ):
         message = f"{_TOKEN_ENVIRONMENT_VARIABLE} is invalid"
         raise MetadataError(message)
@@ -157,51 +133,34 @@ def _configuration() -> _Configuration:
     if _RUN_ID_PATTERN.fullmatch(run_id) is None:
         message = "GITHUB_RUN_ID is invalid"
         raise MetadataError(message)
+    try:
+        parsed_run_id = int(run_id)
+    except ValueError as error:
+        message = "GITHUB_RUN_ID is invalid"
+        raise MetadataError(message) from error
 
     try:
         parsed_api_url = urllib.parse.urlsplit(api_url)
-        api_hostname = parsed_api_url.hostname
-        api_username = parsed_api_url.username
-        api_password = parsed_api_url.password
         _ = parsed_api_url.port
     except ValueError as error:
         message = "GITHUB_API_URL is malformed"
         raise MetadataError(message) from error
-
-    decoded_path_parts = tuple(
-        urllib.parse.unquote(part) for part in parsed_api_url.path.split("/")
-    )
     if (
         parsed_api_url.scheme.lower() != "https"
-        or api_hostname is None
-        or api_username is not None
-        or api_password is not None
+        or parsed_api_url.hostname is None
+        or parsed_api_url.username is not None
+        or parsed_api_url.password is not None
         or parsed_api_url.query
         or parsed_api_url.fragment
-        or any(
-            character.isspace() or not character.isprintable()
-            for character in api_url
-        )
-        or any(
-            part in {".", ".."}
-            or "/" in part
-            or "\\" in part
-            or any(
-                character.isspace() or not character.isprintable()
-                for character in part
-            )
-            for part in decoded_path_parts
-        )
     ):
         message = "GITHUB_API_URL is not a safe HTTPS API origin"
         raise MetadataError(message)
 
-    url = f"{api_url.rstrip('/')}/repos/{repository}/actions/runs/{run_id}"
     return _Configuration(
-        url=url,
+        url=(f"{api_url.rstrip('/')}/repos/{repository}/actions/runs/{run_id}"),
         token=token,
         repository=repository,
-        run_id=int(run_id),
+        run_id=parsed_run_id,
     )
 
 
@@ -225,52 +184,6 @@ def _copy_headers(
     }
 
 
-def _sanitize(value: str, token: str, limit: int) -> str:
-    sanitized = value
-    for secret in {
-        token,
-        urllib.parse.quote(token, safe=""),
-        urllib.parse.quote_plus(token),
-    }:
-        sanitized = sanitized.replace(secret, "[redacted]")
-    sanitized = _BEARER_PATTERN.sub("[redacted]", sanitized)
-    sanitized = _AUTHORIZATION_PATTERN.sub(
-        "[redacted-header]",
-        sanitized,
-    )
-    sanitized = " ".join(
-        "".join(
-            character if character.isprintable() else " "
-            for character in sanitized
-        ).split()
-    )
-    if len(sanitized) > limit:
-        return f"{sanitized[:limit]}..."
-    return sanitized
-
-
-def _error_summary(
-    body: bytes,
-    *,
-    truncated: bool,
-    token: str,
-) -> str | None:
-    if truncated or not body:
-        return None
-    try:
-        decoded = body.decode("utf-8", "strict")
-        document = json.loads(decoded)
-    except (UnicodeDecodeError, ValueError, RecursionError):
-        return None
-    if not isinstance(document, dict) or not isinstance(
-        document.get("message"),
-        str,
-    ):
-        return None
-    sanitized = _sanitize(document["message"], token, _MAX_MESSAGE_CHARS)
-    return sanitized or None
-
-
 def _header_value(headers: Mapping[str, str], name: str) -> str | None:
     value = headers.get(name.lower())
     return value if isinstance(value, str) else None
@@ -285,9 +198,10 @@ def _retry_after_seconds(value: str | None) -> float | None:
     if not candidate:
         return None
     if candidate.isascii() and candidate.isdecimal():
-        if len(candidate) > _MAX_INTEGER_HEADER_CHARS:
+        try:
+            return _bounded_seconds(float(int(candidate)))
+        except (OverflowError, ValueError):
             return _MAX_SLEEP_SECONDS
-        return _bounded_seconds(float(int(candidate)))
     try:
         retry_at = email.utils.parsedate_to_datetime(candidate)
     except (OverflowError, TypeError, ValueError):
@@ -298,14 +212,13 @@ def _retry_after_seconds(value: str | None) -> float | None:
 
 
 def _rate_limit_reset_seconds(value: str | None) -> float | None:
-    if value is None:
-        return None
-    candidate = value.strip()
+    candidate = "" if value is None else value.strip()
     if not candidate.isascii() or not candidate.isdecimal():
         return None
-    if len(candidate) > _MAX_INTEGER_HEADER_CHARS:
+    try:
+        return _bounded_seconds(float(int(candidate)) - time.time())
+    except (OverflowError, ValueError):
         return _MAX_SLEEP_SECONDS
-    return _bounded_seconds(float(int(candidate)) - time.time())
 
 
 def _retry_delay(
@@ -334,38 +247,6 @@ def _retry_delay(
     return None
 
 
-def _diagnose_http(
-    *,
-    attempt: int,
-    response: _HttpResponse,
-    token: str,
-    disposition: str,
-) -> None:
-    parts = [
-        "run metadata request",
-        f"attempt={attempt}/{_ATTEMPTS}",
-        f"status={response.status}",
-    ]
-    for name in _SELECTED_DIAGNOSTIC_HEADERS:
-        value = _header_value(response.headers, name)
-        if value is not None:
-            sanitized = _sanitize(
-                value,
-                token,
-                _MAX_DIAGNOSTIC_VALUE_CHARS,
-            )
-            parts.append(f"{name}={json.dumps(sanitized)}")
-    summary = _error_summary(
-        response.body,
-        truncated=response.truncated,
-        token=token,
-    )
-    if summary is not None:
-        parts.append(f"message={json.dumps(summary)}")
-    parts.append(disposition)
-    sys.stderr.write(" ".join(parts) + "\n")
-
-
 def _created_epoch(
     body: bytes,
     *,
@@ -380,11 +261,10 @@ def _created_epoch(
     if not isinstance(document, dict):
         message = "GitHub run metadata is not an object"
         raise MetadataError(message)
-
-    run_id = document.get("id")
-    if type(run_id) is not int or run_id != expected_run_id:
+    if type(document.get("id")) is not int or document["id"] != expected_run_id:
         message = "GitHub run metadata has mismatched run identity"
         raise MetadataError(message)
+
     repository = document.get("repository")
     if (
         not isinstance(repository, dict)
@@ -434,38 +314,22 @@ def _is_transient_transport(error: BaseException) -> bool:
     return isinstance(error, OSError) and error.errno in _RETRYABLE_ERRNOS
 
 
-def _diagnose_transport(
-    *,
+def _diagnose(
     attempt: int,
-    error: BaseException,
+    status: int | str,
     disposition: str,
+    *,
+    detail: str | None = None,
 ) -> None:
-    sys.stderr.write(
-        "run metadata request "
-        f"attempt={attempt}/{_ATTEMPTS} "
-        "status=transport-error "
-        f"detail={type(error).__name__} {disposition}\n",
-    )
-
-
-def _transport_retry_delay(
-    attempt: int,
-    error: BaseException,
-) -> float | None:
-    delay: float | None = None
-    if not _is_transient_transport(error):
-        disposition = "not-retryable"
-    elif attempt == _ATTEMPTS:
-        disposition = "retries-exhausted"
-    else:
-        delay = _bounded_seconds(float(2 ** (attempt - 1)))
-        disposition = f"retry-in={delay:.3f}s"
-    _diagnose_transport(
-        attempt=attempt,
-        error=error,
-        disposition=disposition,
-    )
-    return delay
+    parts = [
+        "run metadata request",
+        f"attempt={attempt}/{_ATTEMPTS}",
+        f"status={status}",
+    ]
+    if detail is not None:
+        parts.append(f"detail={json.dumps(detail)}")
+    parts.append(disposition)
+    sys.stderr.write(" ".join(parts) + "\n")
 
 
 def _open_once(
@@ -479,21 +343,21 @@ def _open_once(
         ) as response:
             status = response.getcode()
             headers = _copy_headers(response.headers)
-            body, truncated = _read_limited(
-                response,
-                _MAX_RESPONSE_BYTES,
-            )
+            body, truncated = _read_limited(response, _MAX_RESPONSE_BYTES)
     except urllib.error.HTTPError as error:
         status = error.code
         headers = _copy_headers(error.headers)
-        try:
-            body, truncated = _read_limited(error, _MAX_ERROR_BYTES)
-        except (MetadataError, OSError, http.client.HTTPException):
-            body, truncated = b"", False
+        with contextlib.suppress(
+            MetadataError,
+            OSError,
+            http.client.HTTPException,
+        ):
+            _read_limited(error, _MAX_ERROR_BYTES)
+        body, truncated = b"", False
 
     if not isinstance(status, int):
         message = "GitHub returned an invalid HTTP status"
-        raise _InvalidResponseStatusError(message)
+        raise MetadataError(message)
     return _HttpResponse(
         status=status,
         headers=headers,
@@ -508,12 +372,11 @@ def _created_epoch_from_response(
     attempt: int,
 ) -> int | None:
     if response.truncated:
-        message = "GitHub run metadata response exceeds the size limit"
-        sys.stderr.write(
-            "run metadata request "
-            f"attempt={attempt}/{_ATTEMPTS} "
-            f"status={response.status} "
-            f"response-error={json.dumps(message)}\n",
+        _diagnose(
+            attempt,
+            response.status,
+            "not-retryable",
+            detail="GitHub run metadata response exceeds the size limit",
         )
         return None
     try:
@@ -523,11 +386,11 @@ def _created_epoch_from_response(
             expected_run_id=configuration.run_id,
         )
     except MetadataError as error:
-        sys.stderr.write(
-            "run metadata request "
-            f"attempt={attempt}/{_ATTEMPTS} "
-            f"status={response.status} "
-            f"response-error={json.dumps(str(error))}\n",
+        _diagnose(
+            attempt,
+            response.status,
+            "not-retryable",
+            detail=str(error),
         )
         return None
 
@@ -548,26 +411,40 @@ def _fetch_created_epoch(configuration: _Configuration) -> int | None:
     for attempt in range(1, _ATTEMPTS + 1):
         try:
             response = _open_once(opener, request)
-        except _InvalidResponseStatusError:
-            sys.stderr.write(
-                "run metadata request "
-                f"attempt={attempt}/{_ATTEMPTS} "
-                "status=invalid-response not-retryable\n",
+        except (MetadataError, TypeError, ValueError) as error:
+            _diagnose(
+                attempt,
+                "invalid-response",
+                "not-retryable",
+                detail=type(error).__name__,
             )
             return None
         except (OSError, http.client.HTTPException) as error:
-            delay = _transport_retry_delay(attempt, error)
-            if delay is None:
+            if not _is_transient_transport(error):
+                _diagnose(
+                    attempt,
+                    "transport-error",
+                    "not-retryable",
+                    detail=type(error).__name__,
+                )
                 return None
+            if attempt == _ATTEMPTS:
+                _diagnose(
+                    attempt,
+                    "transport-error",
+                    "retries-exhausted",
+                    detail=type(error).__name__,
+                )
+                return None
+            delay = _bounded_seconds(float(2 ** (attempt - 1)))
+            _diagnose(
+                attempt,
+                "transport-error",
+                f"retry-in={delay:.3f}s",
+                detail=type(error).__name__,
+            )
             time.sleep(delay)
             continue
-        except (TypeError, ValueError) as error:
-            _diagnose_transport(
-                attempt=attempt,
-                error=error,
-                disposition="not-retryable",
-            )
-            return None
 
         if response.status == HTTPStatus.OK:
             return _created_epoch_from_response(
@@ -583,12 +460,7 @@ def _fetch_created_epoch(configuration: _Configuration) -> int | None:
             disposition = "retries-exhausted"
         else:
             disposition = f"retry-in={delay:.3f}s"
-        _diagnose_http(
-            attempt=attempt,
-            response=response,
-            token=configuration.token,
-            disposition=disposition,
-        )
+        _diagnose(attempt, response.status, disposition)
         if delay is None or attempt == _ATTEMPTS:
             return None
         time.sleep(delay)
@@ -599,17 +471,21 @@ def _fetch_created_epoch(configuration: _Configuration) -> int | None:
 def main() -> int:
     """Emit the current workflow run's validated creation epoch."""
     if len(sys.argv) != 1:
-        sys.stderr.write(
-            f"run metadata request attempt=0/{_ATTEMPTS} "
-            "status=configuration-error helper accepts no arguments\n",
+        _diagnose(
+            0,
+            "configuration-error",
+            "not-retryable",
+            detail="helper accepts no arguments",
         )
         return 1
     try:
         configuration = _configuration()
     except MetadataError as error:
-        sys.stderr.write(
-            f"run metadata request attempt=0/{_ATTEMPTS} "
-            f"status=configuration-error detail={json.dumps(str(error))}\n",
+        _diagnose(
+            0,
+            "configuration-error",
+            "not-retryable",
+            detail=str(error),
         )
         return 1
 

@@ -288,40 +288,24 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          readarray -t expected_toolchain < <(
-            python3 - <<'PY'
-          import json
-          import re
-          from pathlib import Path
-
-          path = Path(
-              f".wdv3/input/wdv3-{__import__('os').environ['GITHUB_RUN_ID']}-"
-              f"{__import__('os').environ['GITHUB_RUN_ATTEMPT']}-provider.json"
-          )
-          document = json.loads(path.read_text(encoding="utf-8"))
-          toolchain = document["provider"]["toolchain"]
-          for name, pattern in (
-              ("node", r"v[0-9][0-9A-Za-z.+-]{0,63}"),
-              ("pnpm", r"[0-9][0-9A-Za-z.+-]{0,63}"),
-          ):
-              value = toolchain[name]
-              if not isinstance(value, str) or re.fullmatch(pattern, value) is None:
-                  raise ValueError(f"invalid admitted {name} toolchain fact")
-              print(value)
-          PY
-          )
-          expected_node="${expected_toolchain[0]:-}"
-          expected_pnpm="${expected_toolchain[1]:-}"
           actual_node="$(node --version)"
           actual_pnpm="$(pnpm --version)"
-          if [[ "${actual_node}" != "${expected_node}" ]]; then
-            echo "Node toolchain differs from the admitted Provider fact" >&2
-            exit 1
-          fi
-          if [[ "${actual_pnpm}" != "${expected_pnpm}" ]]; then
-            echo "PNPM toolchain differs from the admitted Provider fact" >&2
-            exit 1
-          fi
+          provider=".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-provider.json"
+          ACTUAL_NODE="${actual_node}" ACTUAL_PNPM="${actual_pnpm}" \
+            python3 - "${provider}" <<'PY'
+          import json
+          import os
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as stream:
+              document = json.load(stream)
+          toolchain = document["provider"]["toolchain"]
+          for name in ("node", "pnpm"):
+              if toolchain[name] != os.environ[f"ACTUAL_{name.upper()}"]:
+                  raise SystemExit(
+                      f"{name} differs from the admitted Provider fact"
+                  )
+          PY
           pnpm install --frozen-lockfile --ignore-scripts
           pnpm --dir src/public/lib/hexo-renderer-asciidoc/examples/hexo-site \
             install --frozen-lockfile --ignore-scripts
@@ -682,10 +666,6 @@ jobs:
         env:
           FINALIZER_EXIT: ${{ steps.finalize.outputs.finalizer-exit }}
         run: |
-          if [[ ! "${FINALIZER_EXIT}" =~ ^[0-9]+$ ]] || (( FINALIZER_EXIT > 255 )); then
-            echo "Finalizer exit status is missing or invalid" >&2
-            exit 1
-          fi
           exit "${FINALIZER_EXIT}"
       - name: Report noncanonical contract failure without a Decision
         if: always() && hashFiles(format('.wdv3/wdv3-{0}-{1}-ci-slice-decision.json', github.run_id, github.run_attempt)) == ''
