@@ -60,6 +60,7 @@ GOVERNED_PATHS = (
     "hk.pkl",
     "src/private/lib/hk/AddedTriggerFixture.pkl",
     "eng/scripts/hk_exec.py",
+    "eng/scripts/workflow_delivery_v3_run_created_epoch.py",
     HK_RANGE_HELPER.as_posix(),
 )
 
@@ -1347,7 +1348,7 @@ def test_acceptance_fixture_gitignore_negations_are_exact_and_narrow() -> None:
         f"{fixture_root}/other/dist/index.js",
     )
 
-    result = subprocess.run(  # noqa: S603
+    result = _run(
         (
             "git",
             "check-ignore",
@@ -1356,9 +1357,6 @@ def test_acceptance_fixture_gitignore_negations_are_exact_and_narrow() -> None:
             *still_ignored_paths,
         ),
         cwd=REPO_ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
     )
     ignored_paths = tuple(result.stdout.splitlines())
 

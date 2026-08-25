@@ -20,6 +20,7 @@ STATIC_LANES = (
 CHECK_NAME = "Workflow Delivery v3 / hcoona-release-smoke-npm (shadow)"
 MAX_WORKFLOW_LINES = 700
 RETENTION_DAYS = 45
+FROZEN_INSTALL_COUNT = 2
 CHECKOUT = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
 UV = "astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d"
 MISE = "jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518"
@@ -76,7 +77,11 @@ def test_workflow_is_bounded_and_exposes_only_approved_events() -> None:
         "workflow_dispatch": None,
     }
     assert document["permissions"] == {"contents": "read"}
-    assert all("permissions" not in job for job in document["jobs"].values())
+    assert {
+        name: job["permissions"]
+        for name, job in document["jobs"].items()
+        if "permissions" in job
+    } == {"request": {"actions": "read"}}
 
 
 def test_concurrency_binds_pr_number_or_manual_target_sha() -> None:
@@ -117,22 +122,32 @@ def test_candidate_uses_exact_pr_range_and_tested_merge_target() -> None:
     """Bind paths to base/head while checkout and execution use github.sha."""
     jobs = _document()["jobs"]
     request = jobs["request"]
-    checkout = next(
-        step for step in _steps(request) if step.get("uses") == CHECKOUT
+    steps = _steps(request)
+    checkout = _run(
+        request,
+        "Check out tested merge candidate without credentials",
     )
     command = _run(request, "Form exact candidate and comparison")
     clock = _run(request, "Record platform workflow creation")
+    metadata = next(step for step in steps if step.get("id") == "clock")
+    setup_uv = next(step for step in steps if step.get("uses") == UV)
 
-    assert checkout["with"] == {
-        "fetch-depth": 0,
-        "persist-credentials": False,
-        "ref": "${{ github.sha }}",
-    }
-    assert "/actions/runs/${GITHUB_RUN_ID}" in clock
-    assert 'json.load(sys.stdin)["created_at"]' in clock
-    assert 'date --date="${created_at}" +%s' in clock
+    assert "git fetch --force --tags --no-recurse-submodules origin" in checkout
+    assert '"+${TARGET_SHA}:refs/remotes/origin/wdv3-target"' in checkout
+    assert "git checkout --detach refs/remotes/origin/wdv3-target" in checkout
+    assert 'test "$(git rev-parse HEAD)" = "${TARGET_SHA}"' in checkout
+    assert "eng/scripts/workflow_delivery_v3_run_created_epoch.py" in clock
+    assert "/actions/runs/" not in clock
+    assert "json.load" not in clock
+    assert "date --date=" not in clock
+    assert "curl" not in clock
     assert "ACTIONS_RUNTIME_TOKEN" not in clock
     assert "ACTIONS_RESULTS_URL" not in clock
+    assert (
+        WORKFLOW.read_text(encoding="utf-8").count("${{ github.token }}") == 1
+    )
+    assert metadata["env"] == {"WDV3_GITHUB_TOKEN": "${{ github.token }}"}
+    assert setup_uv["with"]["github-token"] == ""
     assert '--base-sha "${BASE_SHA}"' in command
     assert '--head-sha "${HEAD_SHA}"' in command
     assert '--target "${GITHUB_SHA}"' in command
@@ -156,6 +171,12 @@ def test_discovery_and_plan_reuse_same_revision_core_apis() -> None:
     assert "--request-artifact-digest" in plan
     assert "--provider-artifact-id" in plan
     assert "--provider-artifact-digest" in plan
+    assert jobs["plan"]["outputs"]["provider-artifact-id"] == (
+        "${{ needs.discover-node.outputs.provider-artifact-id }}"
+    )
+    assert jobs["plan"]["outputs"]["provider-artifact-digest"] == (
+        "${{ needs.discover-node.outputs.provider-artifact-digest }}"
+    )
 
 
 def test_actions_are_full_sha_pinned_with_current_version_comments() -> None:
@@ -377,17 +398,70 @@ def test_project_test_failure_is_carried_to_the_finalizer() -> None:
 
 
 def test_root_hk_preserves_incremental_and_manual_consumer_gate_modes() -> None:
-    """Use the exact PR comparison and force internal steps manually."""
-    root = _run(
-        _document()["jobs"]["root-hk"],
-        "Run permanent root HK and consumer policy",
+    """Materialize admitted toolchain dependencies inside the HK boundary."""
+    root = _document()["jobs"]["root-hk"]
+    steps = _steps(root)
+    provider_download = next(
+        step
+        for step in steps
+        if step["name"] == "Download Provider Result by artifact ID"
     )
+    admit = next(
+        step for step in steps if step["name"] == "Admit root-HK inputs"
+    )
+    execute = next(step for step in steps if step.get("id") == "execute")
+    lane_result = next(
+        step for step in steps if step["name"] == "Form root-hk lane result"
+    )
+    upload = next(
+        step for step in steps if step["name"] == "Upload root-hk lane result"
+    )
+    command = cast("str", execute["run"])
+    admission = cast("str", admit["run"])
     hk = HK_CONFIG.read_text(encoding="utf-8")
 
-    assert 'if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]' in root
-    assert '--from-ref "${BASE_SHA}" --to-ref "${HEAD_SHA}"' in root
-    assert "workflow_delivery_v3_hk.py" in root
-    assert "mise exec -- hk --no-progress check --all" in root
+    assert provider_download["with"]["artifact-ids"] == (
+        "${{ needs.plan.outputs.provider-artifact-id }}"
+    )
+    assert (
+        ".wdv3/input/wdv3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-provider.json"
+    ) in admission
+    assert (
+        '--expected-digest "${{ needs.plan.outputs.provider-artifact-digest }}"'
+    ) in admission
+    assert (
+        steps.index(provider_download)
+        < steps.index(admit)
+        < steps.index(execute)
+    )
+    assert execute["continue-on-error"] is True
+    assert (
+        command.count("--frozen-lockfile --ignore-scripts")
+        == FROZEN_INSTALL_COUNT
+    )
+    verification = command.index("if toolchain[name] != os.environ[")
+    root_install = command.index(
+        "pnpm install --frozen-lockfile --ignore-scripts"
+    )
+    hexo_install = command.index(
+        "pnpm --dir src/public/lib/hexo-renderer-asciidoc/examples/hexo-site"
+    )
+    incremental_hk = command.index("workflow_delivery_v3_hk.py")
+    manual_hk = command.index("mise exec -- hk --no-progress check --all")
+    assert (
+        command.index('actual_node="$(node --version)"')
+        < command.index('actual_pnpm="$(pnpm --version)"')
+        < verification
+        < root_install
+        < hexo_install
+        < incremental_hk
+        < manual_hk
+    )
+    assert 'if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]' in command
+    assert '--from-ref "${BASE_SHA}" --to-ref "${HEAD_SHA}"' in command
+    assert lane_result["if"] == "always()"
+    assert upload["if"].startswith("always() &&")
+    assert steps.index(execute) < steps.index(lane_result) < steps.index(upload)
     assert '["v3-control-pytest"]' in hk
     assert '["hcoona-release-smoke-npm-consumer-policy"]' in hk
 
@@ -420,8 +494,10 @@ def test_finalizer_detects_missing_lane_artifacts() -> None:
     assert '--summary-output "${summary}"' in command
 
 
-def test_finalizer_projects_only_precoexistence_pull_request_failure() -> None:
-    """Keep canonical finalization while projecting one bounded bootstrap."""
+def test_finalizer_removes_precoexistence_projection_from_active_workflow() -> (
+    None
+):
+    """Capture canonical finalization without the obsolete projection."""
     job = _document()["jobs"]["required-finalizer"]
     step = next(
         item
@@ -430,63 +506,18 @@ def test_finalizer_projects_only_precoexistence_pull_request_failure() -> None:
     )
     command = cast("str", step["run"])
 
+    assert step["id"] == "finalize"
     assert "continue-on-error" not in step
-    assert step["env"]["BASE_SHA"] == (
-        "${{ github.event.pull_request.base.sha }}"
-    )
-    assert step["env"]["HEAD_SHA"] == (
-        "${{ github.event.pull_request.head.sha }}"
-    )
-    assert step["env"]["TESTED_MERGE_SHA"] == "${{ github.sha }}"
-    success_gate = 'if [[ "${finalizer_exit}" -eq 0 ]]; then\n  exit 0\nfi'
-    event_gate = (
-        'if [[ "${GITHUB_EVENT_NAME}" != "pull_request" ]]; then\n'
-        '  exit "${finalizer_exit}"\n'
-        "fi"
-    )
-    set_plus_index = command.index("set +e")
+    assert {"BASE_SHA", "HEAD_SHA", "TESTED_MERGE_SHA"}.isdisjoint(step["env"])
+    assert "ci project-bootstrap-shadow" not in command
     finalize_index = command.index('"${cli[@]}" ci finalize')
     capture_index = command.index("finalizer_exit=$?")
-    set_minus_index = command.index("set -e", capture_index)
-    success_index = command.index(success_gate)
-    event_index = command.index(event_gate)
-    projection_index = command.index('"${cli[@]}" ci project-bootstrap-shadow')
-    assert (
-        set_plus_index
-        < finalize_index
-        < capture_index
-        < set_minus_index
-        < success_index
-        < event_index
-        < projection_index
+    output_index = command.index(
+        'echo "finalizer-exit=${finalizer_exit}" >> "${GITHUB_OUTPUT}"'
     )
-    finalizer_summary = '--github-step-summary "${GITHUB_STEP_SUMMARY}"'
-    finalizer_summary_end = command.index(
-        finalizer_summary, finalize_index
-    ) + len(finalizer_summary)
-    assert command[finalizer_summary_end:capture_index].strip() == ""
-
-    projection = command[projection_index:]
-    assert '--repo-root "${GITHUB_WORKSPACE}"' in projection
-    assert '--plan "${plan}"' in projection
-    assert '--plan-digest "${PLAN_DIGEST}"' in projection
-    assert '--decision "${decision}"' in projection
-    assert '--summary "${summary}"' in projection
-    assert (
-        '--pull-request-number "${{ github.event.pull_request.number }}"'
-        in projection
-    )
-    assert '--base-sha "${BASE_SHA}"' in projection
-    assert '--head-sha "${HEAD_SHA}"' in projection
-    assert '--tested-merge-sha "${TESTED_MERGE_SHA}"' in projection
-    assert finalizer_summary in projection
-    for forbidden in (
-        "pr-552",
-        "793c7255",
-        "191abc82",
-        "dev/shuaizhang/design-workflows",
-    ):
-        assert forbidden not in command
+    assert command.index("set +e") < finalize_index < capture_index
+    assert capture_index < command.index("set -e", capture_index) < output_index
+    assert 'exit "${finalizer_exit}"' not in command
 
 
 def test_finalizer_persists_canonical_decision_and_summary_before_guard() -> (
@@ -510,6 +541,11 @@ def test_finalizer_persists_canonical_decision_and_summary_before_guard() -> (
         for step in steps
         if step["name"] == "Upload canonical CI Slice Summary"
     )
+    propagation = next(
+        step
+        for step in steps
+        if step["name"] == "Propagate canonical CI Slice Decision"
+    )
     guard = next(
         step
         for step in steps
@@ -517,22 +553,31 @@ def test_finalizer_persists_canonical_decision_and_summary_before_guard() -> (
         == "Report noncanonical contract failure without a Decision"
     )
 
-    assert steps.index(finalize) < steps.index(decision) < steps.index(summary)
-    assert steps.index(summary) < steps.index(guard)
+    assert (
+        steps.index(finalize)
+        < steps.index(decision)
+        < steps.index(summary)
+        < steps.index(propagation)
+        < steps.index(guard)
+    )
     expected = (
         (
             decision,
             "ci-slice-decision",
-            "always() && hashFiles(format('.wdv3/wdv3-{0}-{1}-"
-            "ci-slice-decision.json', github.run_id, github.run_attempt)) "
-            "!= ''",
+            (
+                "always() && hashFiles(format('.wdv3/wdv3-{0}-{1}-"
+                "ci-slice-decision.json', github.run_id, "
+                "github.run_attempt)) != ''"
+            ),
         ),
         (
             summary,
             "ci-slice-summary",
-            "always() && hashFiles(format('.wdv3/wdv3-{0}-{1}-"
-            "ci-slice-summary.json', github.run_id, github.run_attempt)) "
-            "!= ''",
+            (
+                "always() && hashFiles(format('.wdv3/wdv3-{0}-{1}-"
+                "ci-slice-summary.json', github.run_id, "
+                "github.run_attempt)) != ''"
+            ),
         ),
     )
     for step, role, condition in expected:
@@ -554,6 +599,14 @@ def test_finalizer_persists_canonical_decision_and_summary_before_guard() -> (
             "archive": False,
             "include-hidden-files": True,
         }
+    assert propagation["if"] == (
+        "always() && hashFiles(format('.wdv3/wdv3-{0}-{1}-"
+        "ci-slice-decision.json', github.run_id, github.run_attempt)) != ''"
+    )
+    assert propagation["env"] == {
+        "FINALIZER_EXIT": "${{ steps.finalize.outputs.finalizer-exit }}"
+    }
+    assert propagation["run"] == 'exit "${FINALIZER_EXIT}"\n'
 
 
 def test_decision_absence_always_writes_noncanonical_contract_summary() -> None:
@@ -590,10 +643,8 @@ def test_workflow_has_no_transport_credentials_or_commit6_authority() -> None:
         "actions_results_url",
         "ci.transport",
         "admit_action_downloaded_artifact",
-        "github-token:",
         "packages:",
         "id-token:",
-        "actions:",
         "secrets.",
         "environment:",
         "ruleset",
