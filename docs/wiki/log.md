@@ -2163,3 +2163,24 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   Environment, and temporary-ref absence plus old-ref rejection are proved.
   The `.5`-`.8` block is consumed, and normal Live remains disabled and
   unauthorized.
+
+## [2026-08-25] query | Record acceptance-cleanup platform blocker
+
+- Merged protected cleanup PR #584 as
+  `fd2f056b756067bd759b7a6004fe5c2fdbebe47e`; the retry workflow,
+  Environment, and temporary transition ref are absent.
+- GitHub changed workflow ID `341728447` from `disabled_manually` to `deleted`
+  after source removal and rejected direct enable and disable requests with
+  HTTP 403.
+- The required old-ref rejection request unexpectedly returned HTTP 204 and
+  created cleanup probe run `32809578776`. The request used the non-`main`
+  transition ref, so fixed-input validation would fail before Environment
+  review or mutation. The accepted dispatch reactivated the workflow identity,
+  which was immediately returned to `disabled_manually`.
+- The cleanup probe remains queued with zero jobs and zero pending deployments.
+  Normal cancel and force-cancel return HTTP 500. User-authorized deletion
+  returns HTTP 403 while the run is queued. Its complete API metadata and
+  SHA-256 digests are retained outside the repository.
+- Do not dispatch, rerun, approve, or recreate a transition ref. Authenticated
+  package reconciliation remains blocked until GitHub terminalizes or removes
+  the stuck run. Normal Live remains disabled and unauthorized.

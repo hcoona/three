@@ -49,11 +49,13 @@ finalization merged as `b031e5e0` and `953c1db0`. Attempt-1 run `32805739095`
 observed `.5` absent, started mutation, and observed exact post-state, but the
 runner did not prove a controlled outcome; the first probe failed incomplete
 and the second was skipped. Workflow ID `341728447` is `disabled_manually`,
-the Environment is absent, and protected source cleanup is staged.
-Authenticated package reconciliation remains blocked until cleanup merges, the
-deleted workflow identity is re-disabled if necessary, and post-merge identity,
-absence, and old-ref rejection checks complete. The `.5`-`.8` block is
-consumed. Normal Live activation remains unauthorized.
+Environment ID `20531285468` was deleted through the API, and cleanup PR #584
+removed the retry workflow source. The expected old-ref rejection instead
+created cleanup probe run `32809578776`, which remains queued with zero jobs or
+deployments after GitHub rejected cancel, force-cancel, and authorized
+deletion. The transition ref is absent. Authenticated package reconciliation
+remains blocked until GitHub terminalizes or removes this run. The `.5`-`.8`
+block is consumed. Normal Live activation remains unauthorized.
 
 ## Confirmed v3 Shape
 
@@ -286,11 +288,13 @@ have changed.
 5. Retry-2 run `32805739095` is consumed and unsuccessful. It observed `.5`
    exact after mutation startedness but retained incomplete runner evidence;
    the second probe was skipped. Workflow ID `341728447` is disabled, the
-   Environment is absent, and protected source cleanup is staged. Authenticated
-   package reconciliation remains blocked until cleanup merges, the deleted
-   workflow identity is re-disabled if necessary, and post-merge identity,
-   absence, and old-ref rejection checks complete. Do not reuse `.5`-`.8`.
-   Keep `live_enabled: false`; normal Live activation remains unauthorized.
+   workflow and Environment are absent, and cleanup PR #584 is merged. Cleanup
+   probe run `32809578776` remains queued with zero jobs or deployments after
+   GitHub rejected cancel, force-cancel, and authorized deletion. Do not
+   dispatch or recreate a ref. Authenticated package reconciliation remains
+   blocked until GitHub terminalizes or removes this run. Do not reuse
+   `.5`-`.8`. Keep `live_enabled: false`; normal Live activation remains
+   unauthorized.
 
 ## Related Pages
 
