@@ -46,7 +46,10 @@ from three_workflow_delivery_v3.records import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
-ACTIVE_BYTES = (REPO_ROOT / PLATFORM_ORPHAN_AUTHORITY_PATH).read_bytes()
+ACTIVE_BYTES = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures/governance/platform-orphan-active-authority.json"
+).read_bytes()
 CONTROL_COMMIT = "c" * 40
 INVOCATION_ID = "12345678-1234-5678-9234-567812345678"
 VALID_TARBALL_PATH = (

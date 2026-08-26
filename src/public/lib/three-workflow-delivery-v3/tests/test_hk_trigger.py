@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict
 
 import pytest
+import yaml
 
 _COMMIT9_CONTRACT_SPEC = importlib.util.spec_from_file_location(
     "_commit9_codeowners_contract",
@@ -23,7 +24,23 @@ assert _COMMIT9_CONTRACT_SPEC.loader is not None
 _COMMIT9_CONTRACT = importlib.util.module_from_spec(_COMMIT9_CONTRACT_SPEC)
 sys.modules[_COMMIT9_CONTRACT_SPEC.name] = _COMMIT9_CONTRACT
 _COMMIT9_CONTRACT_SPEC.loader.exec_module(_COMMIT9_CONTRACT)
+_RANGE_HELPER_SPEC = importlib.util.spec_from_file_location(
+    "_workflow_delivery_v3_range_helper",
+    Path(__file__).resolve().parents[5]
+    / "eng/scripts/workflow_delivery_v3_hk.py",
+)
+assert _RANGE_HELPER_SPEC is not None
+assert _RANGE_HELPER_SPEC.loader is not None
+_RANGE_HELPER = importlib.util.module_from_spec(_RANGE_HELPER_SPEC)
+sys.modules[_RANGE_HELPER_SPEC.name] = _RANGE_HELPER
+_RANGE_HELPER_SPEC.loader.exec_module(_RANGE_HELPER)
 SYNTHETIC_FUTURE_SURFACES = _COMMIT9_CONTRACT.SYNTHETIC_FUTURE_SURFACES
+PLATFORM_ORPHAN_GOVERNANCE_PATHS = (
+    _COMMIT9_CONTRACT.PLATFORM_ORPHAN_GOVERNANCE_PATHS
+)
+PLATFORM_ORPHAN_GOVERNANCE_DESCENDANT_PATHS = (
+    _COMMIT9_CONTRACT.PLATFORM_ORPHAN_GOVERNANCE_DESCENDANT_PATHS
+)
 _governed_categories = _COMMIT9_CONTRACT._governed_categories  # noqa: SLF001
 _governed_surface_inventory = (
     _COMMIT9_CONTRACT._governed_surface_inventory  # noqa: SLF001
@@ -36,6 +53,7 @@ REPO_ROOT = Path(__file__).resolve().parents[5]
 HK_CONFIG = REPO_ROOT / "hk.pkl"
 HK_SUPPORT = REPO_ROOT / "src/private/lib/hk"
 HK_RANGE_HELPER = Path("eng/scripts/workflow_delivery_v3_hk.py")
+CI_WORKFLOW = REPO_ROOT / ".github/workflows/ci.yml"
 STEP_NAME = "v3-control-pytest"
 GOVERNED_PATHS = (
     ".gitattributes",
@@ -158,6 +176,78 @@ def _initialize_empty_repository(repo: Path) -> str:
     )
     _git(repo, "commit", "--quiet", "--allow-empty", "--message", "baseline")
     return _git(repo, "rev-parse", "HEAD").stdout.strip()
+
+
+def _workflow_events(document: dict[object, object]) -> dict[str, object]:
+    events = document.get("on", document.get(True))
+    assert isinstance(events, dict)
+    return events
+
+
+def test_root_ci_hk_is_event_authoritative_and_range_aware() -> None:
+    """Require authoritative event ranges and helper-mediated HK execution."""
+    document = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+    assert isinstance(document, dict)
+    events = _workflow_events(document)
+    assert events["merge_group"] == {
+        "types": ["checks_requested"],
+        "branches": ["main"],
+    }
+    validation = document["jobs"]["validation"]
+    checkout = validation["steps"][0]
+    assert checkout["uses"] == "actions/checkout@v7"
+    assert checkout["with"]["fetch-depth"] == 0
+    hk_step = next(
+        step
+        for step in validation["steps"]
+        if step.get("name") == "Validate with HK"
+    )
+    script = hk_step["run"]
+    lines = [line.strip() for line in script.splitlines()]
+
+    assert 'BASE="${{ github.event.pull_request.base.sha }}"' in script
+    assert 'HEAD="${{ github.event.pull_request.head.sha }}"' in script
+    assert 'BASE="${{ github.event.merge_group.base_sha }}"' in script
+    assert 'HEAD="${{ github.event.merge_group.head_sha }}"' in script
+    assert 'BASE="${{ github.event.before }}"' in script
+    assert 'HEAD="${{ github.sha }}"' in script
+    dispatch_index = lines.index("workflow_dispatch)")
+    assert lines[dispatch_index + 1] == "hk check --all"
+    assert lines[dispatch_index + 2] == "exit 0"
+    assert "Unsupported CI event" in script
+    assert (
+        "uv run --frozen --python 3.13 --package three-workflow-delivery-v3"
+    ) in script
+    assert "python eng/scripts/workflow_delivery_v3_hk.py" in script
+    assert '--from-ref "$BASE"' in script
+    assert '--to-ref "$HEAD"' in script
+    helper_index = lines.index(
+        "uv run --frozen --python 3.13 --package three-workflow-delivery-v3 \\",
+    )
+    assert lines[helper_index + 1 : helper_index + 9] == [
+        "python eng/scripts/workflow_delivery_v3_hk.py \\",
+        "--repository . \\",
+        '--from-ref "$BASE" \\',
+        '--to-ref "$HEAD" \\',
+        "-- \\",
+        "hk check \\",
+        "--no-progress \\",
+        "--no-fail-fast",
+    ]
+    assert "hk check --from-ref" not in script
+
+
+def test_root_ci_workflow_is_selected_by_actionlint() -> None:
+    """Keep the modified root workflow in the Actionlint HK surface."""
+    step = _named_step_plan(
+        REPO_ROOT,
+        "actionlint",
+        "--",
+        CI_WORKFLOW.relative_to(REPO_ROOT).as_posix(),
+    )
+
+    assert step["status"] == "included"
+    assert step["fileCount"] == 1
 
 
 @cache
@@ -292,7 +382,13 @@ def _restore_execution_copies(
 
 
 def _commit9_surfaces() -> tuple[str, ...]:
-    return tuple(sorted(_governed_surface_inventory()))
+    return tuple(
+        sorted(
+            set(_governed_surface_inventory())
+            - set(PLATFORM_ORPHAN_GOVERNANCE_PATHS)
+            - set(PLATFORM_ORPHAN_GOVERNANCE_DESCENDANT_PATHS),
+        ),
+    )
 
 
 def _assert_commit9_inventory(surfaces: tuple[str, ...]) -> None:
@@ -314,6 +410,94 @@ def _assert_commit9_inventory(surfaces: tuple[str, ...]) -> None:
         "/catalog" in path or path.endswith("/catalogs.py") for path in surfaces
     )
     assert any("/tests/" in path for path in surfaces)
+
+
+@pytest.mark.parametrize("path", PLATFORM_ORPHAN_GOVERNANCE_PATHS)
+@pytest.mark.parametrize(
+    "kind",
+    ["add", "modify", "delete", "rename-out", "rename-in"],
+)
+def test_real_hk_history_selects_each_platform_orphan_fixed_path(
+    tmp_path: Path,
+    path: str,
+    kind: str,
+) -> None:
+    """Select fixed paths from real add/modify/delete/rename history."""
+    repo = tmp_path / "repo"
+    archive = f"archive/{Path(path).name}"
+    baseline_paths = (
+        (archive,)
+        if kind == "rename-in"
+        else ((path,) if kind != "add" else ())
+    )
+    base = _initialize_repository(repo, baseline_paths=baseline_paths)
+    if kind == "add":
+        _write(repo, path, "added\n")
+    elif kind == "modify":
+        _write(repo, path, "modified\n")
+    elif kind == "delete":
+        (repo / path).unlink()
+    elif kind == "rename-out":
+        (repo / archive).parent.mkdir(parents=True, exist_ok=True)
+        _git(repo, "mv", path, archive)
+    else:
+        (repo / path).parent.mkdir(parents=True, exist_ok=True)
+        _git(repo, "mv", archive, path)
+    head = _commit(repo, kind)
+    resolved = _RANGE_HELPER.changed_range(repo, base, head)
+
+    step = _step_plan(repo, "--", *resolved.paths)
+
+    assert path in resolved.paths
+    assert step["status"] == "included"
+    assert step["fileCount"] == 1
+
+
+@pytest.mark.parametrize(
+    "path",
+    PLATFORM_ORPHAN_GOVERNANCE_DESCENDANT_PATHS,
+)
+def test_real_hk_history_selects_platform_orphan_descendant(
+    tmp_path: Path,
+    path: str,
+) -> None:
+    """Select only descendants of either protected singleton namespace."""
+    repo = tmp_path / "repo"
+    base = _initialize_repository(repo)
+    _write(repo, path, "descendant\n")
+    head = _commit(repo, "add protected descendant")
+    resolved = _RANGE_HELPER.changed_range(repo, base, head)
+
+    step = _step_plan(repo, "--", *resolved.paths)
+
+    assert resolved.paths == (path,)
+    assert step["status"] == "included"
+    assert step["fileCount"] == 1
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        f"{PLATFORM_ORPHAN_GOVERNANCE_PATHS[0]}-similar/child",
+        f"{PLATFORM_ORPHAN_GOVERNANCE_PATHS[1]}.backup/child",
+    ],
+)
+def test_real_hk_history_skips_similar_prefix(
+    tmp_path: Path,
+    path: str,
+) -> None:
+    """Do not broaden either singleton namespace to similar prefixes."""
+    repo = tmp_path / "repo"
+    base = _initialize_repository(repo)
+    _write(repo, path, "unrelated\n")
+    head = _commit(repo, "add similar prefix")
+    resolved = _RANGE_HELPER.changed_range(repo, base, head)
+
+    step = _step_plan(repo, "--", *resolved.paths)
+
+    assert resolved.paths == (path,)
+    assert step["status"] == "skipped"
+    assert step["fileCount"] == 0
 
 
 def _modify_history_path(repo: Path, path: str) -> None:

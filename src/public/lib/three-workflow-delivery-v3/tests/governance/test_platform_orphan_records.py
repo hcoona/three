@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import stat
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -28,7 +30,14 @@ from three_workflow_delivery_v3.records import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
-ACTIVE_PATH = REPO_ROOT / PLATFORM_ORPHAN_AUTHORITY_PATH
+ACTIVE_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures/governance/platform-orphan-active-authority.json"
+)
+ACTIVE_BLOB_OID = "d492d25111231e6c4f4d7c6bb6083e98001aa4fa"
+ACTIVE_RAW_SHA256 = (
+    "aecb66a29813c654d804c3fda95a2ba2c5149fbf2479223a1adbf51ba0e4419c"
+)
 SHA256_A = "sha256:" + ("a" * 64)
 EXPECTED_SHA512 = (
     "sha512:"
@@ -380,15 +389,113 @@ def _audit_document(candidate: dict[str, Any]) -> dict[str, Any]:
     return audit
 
 
-def test_active_singleton_is_canonical_exact_and_publicly_admitted() -> None:
+def _admit_repository_lifecycle(
+    authority_content: bytes,
+    result_content: bytes | None,
+) -> str:
+    if result_content is None:
+        admit_platform_orphan_active_authority(authority_content)
+        return "active"
+    result = admit_platform_orphan_reconciliation_result(result_content)
+    admit_platform_orphan_consumed_audit(authority_content, result=result)
+    return "consumed"
+
+
+def _read_regular_repository_file(
+    repository: Path,
+    relative_path: str,
+    *,
+    required: bool,
+) -> bytes | None:
+    path = repository / relative_path
+    try:
+        mode = path.lstat().st_mode
+    except FileNotFoundError:
+        assert not required, f"{relative_path} is absent"
+        return None
+    assert stat.S_ISREG(mode), f"{relative_path} is not a regular file"
+    return path.read_bytes()
+
+
+def _admit_repository_lifecycle_paths(repository: Path) -> str:
+    authority_content = _read_regular_repository_file(
+        repository,
+        PLATFORM_ORPHAN_AUTHORITY_PATH,
+        required=True,
+    )
+    assert authority_content is not None
+    result_content = _read_regular_repository_file(
+        repository,
+        PLATFORM_ORPHAN_RESULT_PATH,
+        required=False,
+    )
+    return _admit_repository_lifecycle(authority_content, result_content)
+
+
+def test_active_fixture_is_exact_pinned_authority() -> None:
     content = ACTIVE_PATH.read_bytes()
     authority = admit_platform_orphan_active_authority(content)
+    blob_oid = hashlib.sha1(
+        f"blob {len(content)}\0".encode() + content,
+        usedforsecurity=False,
+    ).hexdigest()
 
     assert isinstance(authority, PlatformOrphanActiveAuthority)
     assert canonicalize(authority.to_document()) == content
-    assert authority.authority_digest == (
-        PLATFORM_ORPHAN_ACTIVE_AUTHORITY_SHA256
-    )
+    assert blob_oid == ACTIVE_BLOB_OID
+    assert hashlib.sha256(content).hexdigest() == ACTIVE_RAW_SHA256
+    assert authority.authority_digest == f"sha256:{ACTIVE_RAW_SHA256}"
+    assert authority.authority_digest == PLATFORM_ORPHAN_ACTIVE_AUTHORITY_SHA256
+
+
+def test_repository_platform_orphan_lifecycle_is_admissible() -> None:
+    state = _admit_repository_lifecycle_paths(REPO_ROOT)
+
+    if state == "active":
+        assert state == "active"
+        assert (
+            REPO_ROOT / PLATFORM_ORPHAN_AUTHORITY_PATH
+        ).read_bytes() == ACTIVE_PATH.read_bytes()
+    else:
+        assert state == "consumed"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [PLATFORM_ORPHAN_AUTHORITY_PATH, PLATFORM_ORPHAN_RESULT_PATH],
+)
+@pytest.mark.parametrize("kind", ["directory", "symlink"])
+def test_repository_lifecycle_rejects_non_regular_fixed_path(
+    tmp_path: Path,
+    path: str,
+    kind: str,
+) -> None:
+    authority = tmp_path / PLATFORM_ORPHAN_AUTHORITY_PATH
+    authority.parent.mkdir(parents=True)
+    authority.write_bytes(ACTIVE_PATH.read_bytes())
+    fixed_path = tmp_path / path
+    if fixed_path.exists():
+        fixed_path.unlink()
+    if kind == "directory":
+        fixed_path.mkdir()
+    else:
+        target = tmp_path / "symlink-target"
+        target.write_bytes(ACTIVE_PATH.read_bytes())
+        fixed_path.symlink_to(target)
+
+    with pytest.raises(AssertionError, match="is not a regular file"):
+        _admit_repository_lifecycle_paths(tmp_path)
+
+
+def test_mixed_platform_orphan_lifecycle_states_are_rejected() -> None:
+    candidate = _candidate_document()
+    result_content = canonicalize(candidate)
+    audit_content = canonicalize(_audit_document(candidate))
+
+    with pytest.raises((TypeError, ValueError)):
+        _admit_repository_lifecycle(ACTIVE_PATH.read_bytes(), result_content)
+    with pytest.raises((TypeError, ValueError)):
+        _admit_repository_lifecycle(audit_content, None)
 
 
 def test_platform_orphan_public_exports_are_complete() -> None:

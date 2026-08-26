@@ -1164,13 +1164,83 @@ def test_ci_scenario_coexistence_emits_no_authoritative_decision() -> None:
           pnpm install --frozen-lockfile
           uv sync --frozen --all-packages
 """
+    merge_group_trigger = b"""\
+  merge_group:
+    types:
+      - checks_requested
+    branches:
+      - main
+"""
+    base_hk_validation = b"""\
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+            HEAD="${{ github.event.pull_request.head.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+            HEAD="${{ github.sha }}"
+          fi
+
+          echo "hk check from $BASE to $HEAD"
+          hk check \\
+            --no-progress \\
+            --no-fail-fast \\
+            --from-ref "$BASE" \\
+            --to-ref "$HEAD"
+"""
+    protected_hk_validation = b"""\
+          case "${GITHUB_EVENT_NAME}" in
+            pull_request)
+              BASE="${{ github.event.pull_request.base.sha }}"
+              HEAD="${{ github.event.pull_request.head.sha }}"
+              ;;
+            merge_group)
+              BASE="${{ github.event.merge_group.base_sha }}"
+              HEAD="${{ github.event.merge_group.head_sha }}"
+              ;;
+            push)
+              BASE="${{ github.event.before }}"
+              HEAD="${{ github.sha }}"
+              ;;
+            workflow_dispatch)
+              hk check --all
+              exit 0
+              ;;
+            *)
+              echo "::error::Unsupported CI event: ${GITHUB_EVENT_NAME}"
+              exit 1
+              ;;
+          esac
+
+          echo "hk check from $BASE to $HEAD"
+          uv run --frozen --python 3.13 --package three-workflow-delivery-v3 \\
+            python eng/scripts/workflow_delivery_v3_hk.py \\
+            --repository . \\
+            --from-ref "$BASE" \\
+            --to-ref "$HEAD" \\
+            -- \\
+            hk check \\
+            --no-progress \\
+            --no-fail-fast
+"""
     assert ci_bytes.count(pinned_validation_node) == 1
     assert ci_bytes.count(capture_step) == 1
     assert ci_bytes.count(forced_links) == 1
     assert ci_bytes.count(python_test_toolchain) == 1
     assert ci_bytes.count(python_dependencies) == 1
+    assert ci_bytes.count(merge_group_trigger) == 1
+    assert ci_bytes.count(protected_hk_validation) == 1
     reconstructed_base = (
         ci_bytes.replace(
+            merge_group_trigger,
+            b"",
+            1,
+        )
+        .replace(
+            protected_hk_validation,
+            base_hk_validation,
+            1,
+        )
+        .replace(
             pinned_validation_node,
             base_validation_node,
             1,

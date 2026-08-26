@@ -9,6 +9,10 @@
 /src/**/workflow-delivery.release-unit.yml @hcoona
 /src/**/workflow-delivery.quality.yml @hcoona
 /.github/workflow-delivery/governance/hcoona-release-smoke-npm.json @hcoona
+/.github/workflow-delivery/governance/platform-orphan-run-32809578776.json/** @hcoona
+/.github/workflow-delivery/governance/platform-orphan-run-32809578776.json @hcoona
+/.github/workflow-delivery/governance/platform-orphan-run-32809578776-result.json/** @hcoona
+/.github/workflow-delivery/governance/platform-orphan-run-32809578776-result.json @hcoona
 /src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py @hcoona
 /src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py @hcoona
 /src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_attestation.py @hcoona

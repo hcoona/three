@@ -24,6 +24,27 @@ REQUIRED_OWNER = "@hcoona"
 GOVERNANCE_PATH = (
     ".github/workflow-delivery/governance/hcoona-release-smoke-npm.json"
 )
+PLATFORM_ORPHAN_GOVERNANCE_PATHS = (
+    (
+        ".github/workflow-delivery/governance/"
+        "platform-orphan-run-32809578776.json"
+    ),
+    (
+        ".github/workflow-delivery/governance/"
+        "platform-orphan-run-32809578776-result.json"
+    ),
+)
+PLATFORM_ORPHAN_GOVERNANCE_DESCENDANT_PATHS = tuple(
+    f"{path}/narrow-descendant" for path in PLATFORM_ORPHAN_GOVERNANCE_PATHS
+)
+PLATFORM_ORPHAN_GOVERNANCE_SURFACES = (
+    *PLATFORM_ORPHAN_GOVERNANCE_PATHS,
+    *PLATFORM_ORPHAN_GOVERNANCE_DESCENDANT_PATHS,
+)
+PLATFORM_ORPHAN_SIMILAR_PREFIX_PATHS = (
+    f"{PLATFORM_ORPHAN_GOVERNANCE_PATHS[0]}-similar/child",
+    f"{PLATFORM_ORPHAN_GOVERNANCE_PATHS[1]}.backup/child",
+)
 ROOT_PYTHON_INPUTS = ("pyproject.toml", "uv.lock")
 SYNTHETIC_FUTURE_SURFACES = (
     "src/workflow-delivery.release-unit.yml",
@@ -36,6 +57,7 @@ SYNTHETIC_FUTURE_SURFACES = (
 )
 OVERRIDE_EXEMPLARS = (
     *SYNTHETIC_FUTURE_SURFACES,
+    *PLATFORM_ORPHAN_GOVERNANCE_SURFACES,
     "eng/scripts/workflow_delivery_v3_consumer_policy.py",
     "eng/scripts/workflow_delivery_v3_hk.py",
 )
@@ -122,7 +144,7 @@ def _coverage_failures(
 
 def _workspace_paths() -> set[str]:
     result = subprocess.run(
-        (
+        (  # noqa: S607
             "git",
             "ls-files",
             "--cached",
@@ -191,7 +213,10 @@ def _governed_categories(paths: set[str]) -> dict[str, set[str]]:
             if path.startswith("eng/scripts/workflow_delivery_v3")
         },
         "codeowners": {".github/CODEOWNERS"},
-        "protected-governance": {GOVERNANCE_PATH},
+        "protected-governance": {
+            GOVERNANCE_PATH,
+            *PLATFORM_ORPHAN_GOVERNANCE_SURFACES,
+        },
     }
 
 
@@ -225,10 +250,36 @@ def test_actual_codeowners_final_owner_is_exact_for_every_current_and_future_v3_
     assert set(SYNTHETIC_FUTURE_SURFACES) <= governed_paths
     assert GOVERNANCE_PATH in governed_paths
     assert GOVERNANCE_PATH in _workspace_paths()
+    assert set(PLATFORM_ORPHAN_GOVERNANCE_PATHS) <= governed_paths
+    assert PLATFORM_ORPHAN_GOVERNANCE_PATHS[0] in _workspace_paths()
+    assert PLATFORM_ORPHAN_GOVERNANCE_PATHS[1] not in _workspace_paths()
     assert _coverage_failures(ACTUAL_RULES, governed_paths) == {}
     assert {
         path: _final_owners(ACTUAL_RULES, path) for path in governed_paths
     } == dict.fromkeys(governed_paths, (REQUIRED_OWNER,))
+
+
+def test_platform_orphan_codeowners_are_narrow_and_ordered() -> None:
+    """Own descendants without broadening either singleton prefix."""
+    patterns = tuple(rule.pattern for rule in ACTUAL_RULES)
+
+    for path, descendant in zip(
+        PLATFORM_ORPHAN_GOVERNANCE_PATHS,
+        PLATFORM_ORPHAN_GOVERNANCE_DESCENDANT_PATHS,
+        strict=True,
+    ):
+        descendant_pattern = f"/{path}/**"
+        exact_pattern = f"/{path}"
+        assert patterns.index(descendant_pattern) < patterns.index(
+            exact_pattern,
+        )
+        assert _final_owners(ACTUAL_RULES, descendant) == (REQUIRED_OWNER,)
+        assert _final_owners(ACTUAL_RULES, path) == (REQUIRED_OWNER,)
+
+    assert {
+        path: _final_owners(ACTUAL_RULES, path)
+        for path in PLATFORM_ORPHAN_SIMILAR_PREFIX_PATHS
+    } == dict.fromkeys(PLATFORM_ORPHAN_SIMILAR_PREFIX_PATHS, ())
 
 
 @pytest.mark.parametrize(
@@ -255,8 +306,10 @@ def test_actual_codeowners_final_owner_is_exact_for_every_current_and_future_v3_
         (
             "/src/public/lib/three-workflow-delivery-v3/**",
             (
-                "src/public/lib/three-workflow-delivery-v3/"
-                "src/three_workflow_delivery_v3/cli.py",
+                (
+                    "src/public/lib/three-workflow-delivery-v3/"
+                    "src/three_workflow_delivery_v3/cli.py"
+                ),
             ),
         ),
         (
@@ -275,6 +328,15 @@ def test_actual_codeowners_final_owner_is_exact_for_every_current_and_future_v3_
             f"/{GOVERNANCE_PATH}",
             (GOVERNANCE_PATH,),
         ),
+        *(
+            (f"/{path}/**", (descendant,))
+            for path, descendant in zip(
+                PLATFORM_ORPHAN_GOVERNANCE_PATHS,
+                PLATFORM_ORPHAN_GOVERNANCE_DESCENDANT_PATHS,
+                strict=True,
+            )
+        ),
+        *((f"/{path}", (path,)) for path in PLATFORM_ORPHAN_GOVERNANCE_PATHS),
         ("/hk.pkl", ("hk.pkl",)),
         (
             "/src/private/lib/hk/**",
