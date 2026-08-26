@@ -2232,3 +2232,15 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   correction, and independent review reported no findings.
 - Preserved the repair-only boundary: no acceptance invocation, package
   operation, or Live activation was performed or authorized.
+
+## [2026-08-26] query | Merge acceptance protocol-proof repair
+
+- Merged repair-only PR #596 by squash as
+  `e69195eda71e7c8dd184bb29b28fd90102e71fa1` after resolving the independently
+  confirmed startedness finding.
+- Confirmed the final head passed the focused 543-test suite, complete
+  3,686-test v3 suite, staged gate, GitHub CI, CodeQL, v3 shadow CI, and Copilot
+  rereview without a new finding.
+- Kept both prior acceptance invocations unsuccessful. The merge does not
+  authorize a third acceptance workflow, invocation, Environment, coordinate
+  block, package operation, Release lineage, or Live activation.
