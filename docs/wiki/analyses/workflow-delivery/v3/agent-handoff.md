@@ -719,6 +719,92 @@ If it conflicts with the
 - Implementation must preserve the approved commit boundaries and keep live
   activation disabled until acceptance and the separate activation approval.
 
+## Platform-Orphan consumption procedure
+
+Use this procedure only for cleanup probe run `32809578776`. It implements the
+approved mechanically protected path; it is not a reusable recovery process.
+
+1. Merge the reviewed case-specific implementation before attempting
+   reconciliation. Start from a clean checkout whose `HEAD` is current
+   protected `main`. Do not run the candidate command from its implementation
+   branch.
+2. Wait until `2026-09-08T04:35:59Z`. If GitHub independently terminalizes or
+   removes the run first, stop. Do not generate or consume a candidate; unused
+   authority retirement requires a separate approved normative change.
+3. Obtain explicit human authorization for the query-only observation. Supply
+   only the retained review, probe, and Governance artifact files to:
+
+    ```text
+    three-workflow-delivery-v3 governance \
+      reconcile-platform-orphan-32809578776 \
+      --review-artifact <path> \
+      --probe-artifact <path> \
+      --governance-artifact <path>
+    ```
+
+    The command may read only the reviewed GitHub and exact `.5` surfaces. Its
+    stdout is a non-authoritative candidate. It must not write either fixed
+    governance path or perform any mutation.
+
+4. Strictly admit the candidate, then prepare one consumption commit from its
+   exact `parent_main_commit`. The commit must have only this governance state
+   transition:
+
+    ```text
+    M .github/workflow-delivery/governance/platform-orphan-run-32809578776.json
+    A .github/workflow-delivery/governance/platform-orphan-run-32809578776-result.json
+    ```
+
+    The result file contains the admitted candidate. The authority file becomes
+    the matching consumed audit. Do not hand-edit observed facts or recompute
+    them from a different invocation.
+
+5. Run the focused tests, the complete v3 suite, the staged HK gate, and
+   independent review with per-finding TP/FP adjudication. Required CI must
+   validate the actual pull-request or merge-group base and head. If protected
+   `main` advances or the candidate becomes stale, discard the proposed
+   transition and restart from step 1; do not patch the old candidate.
+6. Present a concise evidence summary to the human owner. It must state the
+   current run/workflow state, zero jobs/artifacts/pending deployments,
+   source/Environment/ref absence, initial and final exact `.5`
+   classifications, candidate base and authority blob, the proposed two-file
+   transition, and the fact that no mutation, Release lineage, or Live
+   activation occurred.
+7. Obtain separate human authorization before pushing or creating the
+   consumption pull request. An agent may perform those operations after
+   authorization; the human does not manually assemble the records.
+8. Immediately before the final governance decision and merge attempt,
+   query only exact run `32809578776` again. Proceed only if the read succeeds
+   and still returns HTTP 200, `status: queued`, and `conclusion: null`. Fail
+   closed on ambiguity or any unexpected drift. If the run is terminal or
+   authoritatively absent, stop without merging or changing either governance
+   record; use the natural-reconciliation path subject to all of its existing
+   prerequisites, and treat unused-authority retirement as a separate governed
+   change. Repeat this recheck after any material delay. This check narrows but
+   cannot eliminate the final query-to-merge race, and it must not update or
+   replace the historical candidate.
+9. Merge only after the fresh run check, required CI, CODEOWNERS review, and
+   the final human governance decision succeed. Consumption completes when the
+   protected commit lands on `main`, not when the candidate is generated,
+   locally written, reviewed, or approved.
+10. Independently read protected `main` and strictly admit the authoritative
+    result and matching consumed audit. Confirm that the blocker exclusion is
+    limited to run `32809578776` and that acceptance remains unsuccessful,
+    platform cleanup remains incomplete, Release lineage remains absent,
+    package mutation remains prohibited, and Live remains disabled.
+11. After that verification, use a separate reviewed retirement pull request
+    to remove case-specific executable observation, coordination, CLI,
+    active-transition history, and required-CI transition machinery that no
+    longer has an active role. Retain the immutable result and consumed audit,
+    their pinned raw-byte digests, strict consumed-pair admission, CODEOWNERS,
+    and the minimum repository-state contract needed to prevent later change.
+
+Human decisions are limited to authorizing the query-only observation,
+authorizing publication of the prepared consumption pull request, and
+approving its protected merge. The agent owns deterministic record
+materialization, validation, review coordination, and pull-request creation
+after authorization.
+
 The retained superseded v3 artifact inventory for run `32655841197`, attempt
 1, is:
 

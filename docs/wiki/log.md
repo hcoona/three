@@ -2210,3 +2210,15 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Clarified that the exact manifest supplies the safe initial `.5` tarball
   request path, both observation passes must use that identical path, and the
   path remains a request-ledger fact rather than destination state.
+
+## [2026-08-26] query | Select mechanically protected orphan consumption
+
+- Selected the mechanically protected Platform-Orphan path through the
+  protected consumption merge and independent post-merge verification.
+- Defined a single agent-operated procedure in the existing v3 handoff. Human
+  decisions are limited to query-only observation authorization, pull-request
+  publication authorization, and the final protected merge decision.
+- Required a separate retirement pull request after verified consumption to
+  remove one-shot executable and transition machinery while retaining the
+  immutable result, consumed audit, pinned digests, ownership, and minimum
+  repository-state protection.
