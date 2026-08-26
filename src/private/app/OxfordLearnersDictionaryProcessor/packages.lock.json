@@ -90,9 +90,9 @@
       },
       "RocksDB": {
         "type": "Direct",
-        "requested": "[11.1.2.3412, )",
-        "resolved": "11.1.2.3412",
-        "contentHash": "caju+YxgcLw4+MlTYDu5WqBer3vyJDv+OSwYrIXyEfkvFUvBWW38YTuP8ctVFYns5/UtV1aVAw+wza0T/Uf8vw==",
+        "requested": "[11.8.1.4423, )",
+        "resolved": "11.8.1.4423",
+        "contentHash": "UdNILTMQmnu7C/uA070u4xfzmzbSMFUgGEkxr6oobf1EdKYdeU4ReoNdvRgjWilzSCvrFXr2vIxYneeJNR/IQA==",
         "dependencies": {
           "ZstdSharp.Port": "0.8.7"
         }
@@ -523,9 +523,9 @@
     "net10.0/win-x64": {
       "RocksDB": {
         "type": "Direct",
-        "requested": "[11.1.2.3412, )",
-        "resolved": "11.1.2.3412",
-        "contentHash": "caju+YxgcLw4+MlTYDu5WqBer3vyJDv+OSwYrIXyEfkvFUvBWW38YTuP8ctVFYns5/UtV1aVAw+wza0T/Uf8vw==",
+        "requested": "[11.8.1.4423, )",
+        "resolved": "11.8.1.4423",
+        "contentHash": "UdNILTMQmnu7C/uA070u4xfzmzbSMFUgGEkxr6oobf1EdKYdeU4ReoNdvRgjWilzSCvrFXr2vIxYneeJNR/IQA==",
         "dependencies": {
           "ZstdSharp.Port": "0.8.7"
         }
