@@ -2218,3 +2218,17 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Did not create or authorize a third acceptance workflow, invocation,
   Environment, coordinate block, package operation, Release lineage, or Live
   activation. Both prior acceptance invocations remain unsuccessful.
+
+## [2026-08-26] lint | Close PR 596 startedness review
+
+- Independently adjudicated as true-positive the PR review finding that valid
+  protocol proof could retain authority despite missing admitted execution or
+  mutation startedness.
+- Required both admitted startedness facts before the Adapter retains protocol
+  authority. Other cases now use the existing fail-closed runner
+  classification without proof or protocol diagnostic, matching Governance
+  admission.
+- Passed the focused 543-test acceptance and Governance suite after the
+  correction, and independent review reported no findings.
+- Preserved the repair-only boundary: no acceptance invocation, package
+  operation, or Live activation was performed or authorized.

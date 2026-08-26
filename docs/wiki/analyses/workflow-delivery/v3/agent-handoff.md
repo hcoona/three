@@ -184,10 +184,15 @@ If it conflicts with the
   `created` and lost-response evidence remain replayable. The focused
   acceptance and Governance tests pass 543 cases, the complete v3 suite passes
   3,686 tests, and multi-reviewer review reports no findings after independent
-  adjudication and repair. PR #596 does not retroactively change either failed
-  acceptance invocation and does not authorize a third acceptance workflow,
-  invocation, review, Environment, coordinate block, package operation, or
-  normal Live activation.
+  adjudication and repair. A subsequent PR review found that protocol authority
+  could survive when admitted runner facts lacked execution or mutation
+  startedness; the Adapter now drops protocol authority and uses its existing
+  fail-closed runner classification in that case. Independent adjudication
+  classified the finding as true-positive and the focused 543-test suite plus
+  independent review pass after the correction. PR #596 does not retroactively
+  change either failed acceptance invocation and does not authorize a third
+  acceptance workflow, invocation, review, Environment, coordinate block,
+  package operation, or normal Live activation.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the

@@ -8948,6 +8948,7 @@ conclusion projection rather than a Decision rewrite.
 | Diagnostic remains non-authoritative | `test_protocol_confirmed_governance_does_not_require_runner_diagnostic`, `test_protocol_confirmed_governance_diagnostic_exit_is_non_authoritative` |
 | Historical evidence remains replayable | `test_historical_created_evidence_without_proof_remains_admissible` |
 | Proof and readback fail closed | `test_protocol_confirmed_rejects_substituted_exchange_facts`, `test_protocol_confirmed_result_requires_exact_complete_readback` |
+| Adapter/Governance startedness remains consistent | `test_normal_protocol_confirmed_requires_every_authoritative_condition`, `test_protocol_confirmed_readback_incomplete_requires_startedness` |
 
 Validation under the repository-locked Mise environment:
 
@@ -8963,6 +8964,14 @@ Assertion-quality analysis found 14 test functions with meaningful equality,
 Boolean, None, exception, negative, comparison, state/side-effect, collection,
 and structural assertions. There are no assertion-free, trivial-only,
 self-referential, or tautological tests.
+
+PR #596 review identified that a valid protocol proof could retain protocol
+authority when admitted runner facts reported that action execution or mutation
+had not started. The Adapter now requires both admitted startedness facts before
+retaining protocol authority; otherwise it emits the existing fail-closed
+runner classification without proof or protocol diagnostic. The focused
+543-test suite passed after this correction, and independent review reported no
+findings.
 
 No network, workflow, Environment, package, coordinate, or Live operation was
 performed.

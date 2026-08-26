@@ -410,9 +410,11 @@ def test_normal_protocol_confirmed_requires_every_authoritative_condition(
 
     assert result.mutation_classification == "incomplete"
     assert result.result != "protocol-confirmed"
-    proof_retained = action_executed
+    proof_retained = action_executed and mutation_started
     assert (result.validated_request_proof is proof) is proof_retained
-    assert ("validated-request-proof" in result.to_document()) is proof_retained
+    document = result.to_document()
+    assert ("validated-request-proof" in document) is proof_retained
+    assert ("runner-diagnostic" in document) is proof_retained
 
 
 def test_normal_create_without_http_exchange_proof_remains_incomplete(

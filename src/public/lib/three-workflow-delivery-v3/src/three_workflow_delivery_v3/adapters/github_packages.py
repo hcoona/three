@@ -1652,6 +1652,8 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
     )
     protocol_confirmed = (
         scenario == "absent-create-readback"
+        and action_executed
+        and mutation_started
         and _valid_protocol_confirmed_proof(
             runner_document,
             tarball=tarball.read_bytes(),
