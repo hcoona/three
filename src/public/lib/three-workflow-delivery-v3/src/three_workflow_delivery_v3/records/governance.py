@@ -250,6 +250,14 @@ _VALIDATED_REQUEST_PROOF_FIELDS = frozenset(
         "response-identity-digest",
     }
 )
+_RUNNER_DIAGNOSTIC_FIELDS = frozenset(
+    {
+        "exit-classification",
+        "upstream-status",
+        "exception-category",
+        "request-correlation-digest",
+    }
+)
 _REVIEWER_SOURCES = frozenset(
     {
         "unavailable-in-job-context",
@@ -263,12 +271,24 @@ _NPM_PUBLISH_CREATED_STATUS = 201
 _SHA_PATTERN = re.compile(r"[0-9a-f]{40}\Z")
 _SHA256_PATTERN = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _SHA512_PATTERN = re.compile(r"sha512:[0-9a-f]{128}\Z")
+_RUNNER_EXIT_CLASSIFICATIONS = frozenset(
+    {
+        "protocol-confirmed",
+        "runner-failed-before-mutation",
+        "runner-failed-after-action-start",
+        "runner-failed-after-mutation-start",
+        "runner-malformed-before-mutation",
+    }
+)
+_RUNNER_EXCEPTION_CATEGORIES = frozenset(
+    {"TimeoutError", "OSError", "RuntimeError", "ValueError"}
+)
 _COMPLETE_SCENARIO_SEMANTICS = {
     "absent-create-readback": (
         "absent",
         True,
         True,
-        "created",
+        frozenset({"created", "protocol-confirmed"}),
         "exact",
         (),
     ),
@@ -473,12 +493,13 @@ def _require_complete_scenario_semantics(  # noqa: PLR0913
             raise ValueError(message)
 
 
-def _admit_validated_request_proof(
+def _admit_validated_request_proof(  # noqa: PLR0913
     value: object,
     *,
     package_coordinate: str,
     tag: str,
     response_identity_digest: str,
+    content_sha512: str | None,
     field: str,
 ) -> dict[str, JsonValue]:
     proof = _object(value, field=field)
@@ -489,11 +510,14 @@ def _admit_validated_request_proof(
         field=f"{field}.schema",
     )
     _digest(proof["request-digest"], field=f"{field}.request-digest")
-    _digest(
+    proof_tarball_sha512 = _digest(
         proof["tarball-sha512"],
         field=f"{field}.tarball-sha512",
         sha512=True,
     )
+    if content_sha512 is not None and proof_tarball_sha512 != content_sha512:
+        message = f"{field}.tarball-sha512 does not match exact readback"
+        raise ValueError(message)
     _exact_string(
         proof["package-coordinate"],
         package_coordinate,
@@ -547,6 +571,53 @@ def _admit_validated_request_proof(
         message = f"{field}.response-identity-digest does not match response"
         raise ValueError(message)
     return proof
+
+
+def _admit_runner_diagnostic(
+    value: object,
+    *,
+    field: str,
+) -> dict[str, JsonValue]:
+    diagnostic = _object(value, field=field)
+    _closed(diagnostic, _RUNNER_DIAGNOSTIC_FIELDS, field=field)
+    exit_classification = _choice(
+        diagnostic["exit-classification"],
+        _RUNNER_EXIT_CLASSIFICATIONS,
+        field=f"{field}.exit-classification",
+    )
+    upstream_status = diagnostic["upstream-status"]
+    if upstream_status is not None:
+        _exact(upstream_status, int, field=f"{field}.upstream-status")
+        if upstream_status != _NPM_PUBLISH_CREATED_STATUS:
+            message = f"{field}.upstream-status is not exact"
+            raise ValueError(message)
+    exception_category = diagnostic["exception-category"]
+    if exception_category is not None:
+        _choice(
+            exception_category,
+            _RUNNER_EXCEPTION_CATEGORIES,
+            field=f"{field}.exception-category",
+        )
+    request_correlation = diagnostic["request-correlation-digest"]
+    if request_correlation is not None:
+        _digest(
+            request_correlation,
+            field=f"{field}.request-correlation-digest",
+        )
+    if exit_classification == "protocol-confirmed":
+        if (
+            upstream_status != _NPM_PUBLISH_CREATED_STATUS
+            or exception_category is not None
+            or request_correlation is None
+        ):
+            message = f"{field} contradicts protocol-confirmed semantics"
+            raise ValueError(message)
+    elif exception_category is not None and (
+        upstream_status is not None or request_correlation is not None
+    ):
+        message = f"{field} exception facts are not closed"
+        raise ValueError(message)
+    return diagnostic
 
 
 def _canonical_suite_digest(
@@ -918,7 +989,7 @@ def _admit_probe_facts(  # noqa: C901, PLR0912, PLR0915
             _closed_with_optional(
                 scenario_document,
                 _SCENARIO_FIELDS,
-                frozenset({"validated-request-proof"}),
+                frozenset({"validated-request-proof", "runner-diagnostic"}),
                 field=scenario_field,
             )
             _exact_string(
@@ -1001,32 +1072,130 @@ def _admit_probe_facts(  # noqa: C901, PLR0912, PLR0915
             post_state = _string(
                 post["state"], field=f"{scenario_field}.post.state"
             )
-            _digest(
+            post_content_sha512 = _digest(
                 post["content-sha512"],
                 field=f"{scenario_field}.post.content-sha512",
                 sha512=True,
             )
             proof = scenario_document.get("validated-request-proof")
+            admitted_proof: dict[str, JsonValue] | None = None
             if proof is not None:
-                if response_result != "lost-response-exact-after-start":
+                if response_result not in {
+                    "lost-response-exact-after-start",
+                    "protocol-confirmed",
+                    "protocol-confirmed-readback-incomplete",
+                }:
                     message = (
                         f"{scenario_field}.validated-request-proof is not "
                         "permitted for this response.result"
                     )
                     raise ValueError(message)
-                _admit_validated_request_proof(
+                admitted_proof = _admit_validated_request_proof(
                     proof,
                     package_coordinate=expected_coordinate,
                     tag=expected_tag,
                     response_identity_digest=response_identity_digest,
+                    content_sha512=(
+                        post_content_sha512
+                        if response_result == "protocol-confirmed"
+                        else None
+                    ),
                     field=f"{scenario_field}.validated-request-proof",
                 )
-            elif response_result == "lost-response-exact-after-start":
+            elif response_result in {
+                "lost-response-exact-after-start",
+                "protocol-confirmed",
+                "protocol-confirmed-readback-incomplete",
+            }:
                 message = (
                     f"{scenario_field}.validated-request-proof is required "
-                    "for lost-response completion"
+                    "for proof-bound completion"
                 )
                 raise ValueError(message)
+            if response_result == "protocol-confirmed" and (
+                post_state != "exact" or scenario_classification != "complete"
+            ):
+                message = (
+                    f"{scenario_field}.response.result requires an exact "
+                    "complete readback"
+                )
+                raise ValueError(message)
+            if (
+                response_result == "protocol-confirmed-readback-incomplete"
+                and scenario_classification != "incomplete"
+            ):
+                message = (
+                    f"{scenario_field}.response.result requires incomplete "
+                    "mutation classification"
+                )
+                raise ValueError(message)
+            if response_result == "protocol-confirmed-readback-incomplete" and (
+                not action_executed or not mutation_started
+            ):
+                message = (
+                    f"{scenario_field}.response.result requires admitted "
+                    "execution and mutation startedness"
+                )
+                raise ValueError(message)
+            admitted_runner_diagnostic = None
+            if "runner-diagnostic" in scenario_document:
+                admitted_runner_diagnostic = _admit_runner_diagnostic(
+                    scenario_document["runner-diagnostic"],
+                    field=f"{scenario_field}.runner-diagnostic",
+                )
+            if (
+                admitted_runner_diagnostic is not None
+                and (
+                    admitted_runner_diagnostic["upstream-status"] is not None
+                    or admitted_runner_diagnostic["request-correlation-digest"]
+                    is not None
+                )
+                and (
+                    admitted_proof is None
+                    or (
+                        admitted_runner_diagnostic["upstream-status"]
+                        is not None
+                        and admitted_runner_diagnostic["upstream-status"]
+                        != admitted_proof["upstream-status"]
+                    )
+                    or (
+                        admitted_runner_diagnostic["request-correlation-digest"]
+                        is not None
+                        and admitted_runner_diagnostic[
+                            "request-correlation-digest"
+                        ]
+                        != admitted_proof["request-digest"]
+                    )
+                )
+            ):
+                message = (
+                    f"{scenario_field}.runner-diagnostic does not bind "
+                    "the validated-request-proof"
+                )
+                raise ValueError(message)
+            if admitted_runner_diagnostic is not None:
+                diagnostic_startedness = {
+                    "protocol-confirmed": (True, True),
+                    "runner-failed-before-mutation": (False, False),
+                    "runner-failed-after-action-start": (True, False),
+                    "runner-failed-after-mutation-start": (True, True),
+                    "runner-malformed-before-mutation": (False, False),
+                }
+                expected_diagnostic_startedness = diagnostic_startedness[
+                    cast(
+                        "str",
+                        admitted_runner_diagnostic["exit-classification"],
+                    )
+                ]
+                if (
+                    action_executed,
+                    mutation_started,
+                ) != expected_diagnostic_startedness:
+                    message = (
+                        f"{scenario_field}.runner-diagnostic startedness "
+                        "contradicts action"
+                    )
+                    raise ValueError(message)
             if mutation_started and not action_executed:
                 message = (
                     f"{scenario_field}.action.executed and "

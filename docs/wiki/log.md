@@ -2203,3 +2203,32 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   candidate ran, and no exception authority or result entered `main`.
 - Preserved retry-2 acceptance as unsuccessful, prohibited reuse of the
   `.5`-`.8` block, and kept normal Live disabled and unauthorized.
+
+## [2026-08-26] query | Prepare acceptance protocol-proof repair
+
+- Prepared repair-only PR #596 at implementation commit `44b3915e`.
+- Changed normal acceptance completion to require the proxy-validated,
+  request-bound HTTP 201 proof, admitted execution and mutation startedness,
+  and exact post-readback. Proof-free create remains incomplete.
+- Kept optional closed runner diagnostics non-authoritative and preserved
+  historical proof-free `created` and lost-response evidence replay.
+- Passed 543 focused acceptance and Governance tests, 3,686 complete v3 tests,
+  Python quality gates, staged pre-commit under the repository-locked Mise
+  environment, and multi-reviewer review with independent adjudication.
+- Did not create or authorize a third acceptance workflow, invocation,
+  Environment, coordinate block, package operation, Release lineage, or Live
+  activation. Both prior acceptance invocations remain unsuccessful.
+
+## [2026-08-26] lint | Close PR 596 startedness review
+
+- Independently adjudicated as true-positive the PR review finding that valid
+  protocol proof could retain authority despite missing admitted execution or
+  mutation startedness.
+- Required both admitted startedness facts before the Adapter retains protocol
+  authority. Other cases now use the existing fail-closed runner
+  classification without proof or protocol diagnostic, matching Governance
+  admission.
+- Passed the focused 543-test acceptance and Governance suite after the
+  correction, and independent review reported no findings.
+- Preserved the repair-only boundary: no acceptance invocation, package
+  operation, or Live activation was performed or authorized.

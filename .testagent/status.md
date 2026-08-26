@@ -8933,3 +8933,47 @@ Decision remains failure. This proves the green check is the approved
 conclusion projection rather than a Decision rewrite.
 
 <!-- END APPEND: 2026-08-21T030000Z-pr552-ci-bootstrap-remote-proof -->
+
+<!-- BEGIN APPEND: 2026-08-26-wdv3-acceptance-proof-repair -->
+
+## Workflow Delivery v3 Acceptance Proof Repair Status
+
+| Requirement | Evidence |
+| --- | --- |
+| Normal HTTP 201 proof propagation | `test_normal_runner_propagates_proxy_http_201_exchange_proof` |
+| Proof-bound normal completion | `test_normal_create_propagates_request_bound_http_201_exchange_proof` |
+| Proof-free create remains incomplete | `test_normal_create_without_http_exchange_proof_remains_incomplete` |
+| Existing ambiguity reconciliation retained | `test_lost_response_with_complete_identity_reconciles_after_ambiguity` |
+| Optional diagnostic is bounded and credential-free | `test_runner_failure_diagnostics_are_structured_bounded_and_redacted` |
+| Diagnostic remains non-authoritative | `test_protocol_confirmed_governance_does_not_require_runner_diagnostic`, `test_protocol_confirmed_governance_diagnostic_exit_is_non_authoritative` |
+| Historical evidence remains replayable | `test_historical_created_evidence_without_proof_remains_admissible` |
+| Proof and readback fail closed | `test_protocol_confirmed_rejects_substituted_exchange_facts`, `test_protocol_confirmed_result_requires_exact_complete_readback` |
+| Adapter/Governance startedness remains consistent | `test_normal_protocol_confirmed_requires_every_authoritative_condition`, `test_protocol_confirmed_readback_incomplete_requires_startedness` |
+
+Validation under the repository-locked Mise environment:
+
+- focused acceptance and Governance tests: `543 passed`;
+- complete Workflow Delivery v3 suite: `3686 passed`;
+- no test was skipped or deselected.
+
+Pseudo-mutation analysis found no in-scope survivor: proof omission or
+substitution, proof-free success, startedness inversion, readback fail-open,
+diagnostic elevation, and diagnostic/proof cross-binding removal are killed.
+
+Assertion-quality analysis found 14 test functions with meaningful equality,
+Boolean, None, exception, negative, comparison, state/side-effect, collection,
+and structural assertions. There are no assertion-free, trivial-only,
+self-referential, or tautological tests.
+
+PR #596 review identified that a valid protocol proof could retain protocol
+authority when admitted runner facts reported that action execution or mutation
+had not started. The Adapter now requires both admitted startedness facts before
+retaining protocol authority; otherwise it emits the existing fail-closed
+runner classification without proof or protocol diagnostic. The focused
+543-test suite passed after this correction, and independent review reported no
+findings.
+
+No network, workflow, Environment, package, coordinate, or Live operation was
+performed.
+
+<!-- END APPEND: 2026-08-26-wdv3-acceptance-proof-repair -->

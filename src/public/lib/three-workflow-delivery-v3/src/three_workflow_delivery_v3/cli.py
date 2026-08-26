@@ -1229,7 +1229,7 @@ class _AcceptanceNpmRunner:
             deadline=deadline,
         )
 
-    def run_scenario(  # noqa: C901, PLR0913, PLR0915
+    def run_scenario(  # noqa: C901, PLR0912, PLR0913, PLR0915
         self,
         scenario: str,
         argv: tuple[str, ...],
@@ -1373,6 +1373,24 @@ class _AcceptanceNpmRunner:
                     proxy, "observed", threading.Event()
                 ).is_set()
                 raise
+            if (
+                scenario == "absent-create-readback"
+                and len(completed) == 1
+                and proxy.proof is not None
+            ):
+                return {
+                    "outcome": "protocol-confirmed",
+                    "validated-request-proof": proxy.proof,
+                    "request-digest": proxy.proof.request_digest,
+                    "upstream-status": proxy.proof.upstream_status,
+                    "selected-headers": dict(proxy.proof.selected_headers),
+                    "response-body-digest": (proxy.proof.response_body_digest),
+                    "response-identity-digest": (
+                        proxy.proof.response_identity_digest
+                    ),
+                    "action-executed": True,
+                    "mutation-started": True,
+                }
             if scenario == "lost-response" and proxy.proof is not None:
                 return {
                     "outcome": "lost-response-processed",
@@ -1389,17 +1407,20 @@ class _AcceptanceNpmRunner:
                         proxy, "observed", proxy.processed
                     ).is_set(),
                 }
-        try:
-            results = [
-                self._classify(result, max_output_bytes=max_output_bytes)
-                for result in completed
-            ]
-        except ValueError as error:
-            error.action_executed = bool(processes)  # type: ignore[attr-defined]
-            error.mutation_started = getattr(  # type: ignore[attr-defined]
-                proxy, "observed", threading.Event()
-            ).is_set()
-            raise
+            try:
+                results = [
+                    self._classify(
+                        result,
+                        max_output_bytes=max_output_bytes,
+                    )
+                    for result in completed
+                ]
+            except ValueError as error:
+                error.action_executed = bool(processes)  # type: ignore[attr-defined]
+                error.mutation_started = getattr(  # type: ignore[attr-defined]
+                    proxy, "observed", threading.Event()
+                ).is_set()
+                raise
         outcomes = [result["outcome"] for result in results]
         if (
             len(outcomes) == _PAIR_FIELD_COUNT

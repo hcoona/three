@@ -5799,3 +5799,23 @@ Add tests in `tests/contracts/test_ci_workflow.py` proving:
 6. Update `.testagent/status.md` with exact test names and results.
 
 <!-- END APPEND: 2026-08-21-wdv3-precoexistence-bootstrap-plan -->
+
+<!-- BEGIN APPEND: 2026-08-26-wdv3-acceptance-proof-repair -->
+
+## Workflow Delivery v3 Acceptance Proof Repair Plan
+
+1. Add failing offline regressions for normal proof propagation, proof-free
+   incompleteness, exact readback, and optional diagnostic closure.
+2. Propagate the validated 201 proof from the normal single-create runner path.
+3. Form `protocol-confirmed` only from proof, admitted execution and mutation
+   startedness, and exact post-readback.
+4. Add an optional closed runner diagnostic without making it completeness or
+   activation authority.
+5. Extend Governance admission compatibly: old proof-free `created` evidence
+   remains replayable; new proof-bound facts are cross-checked when present.
+6. Run focused and complete v3 tests, Python quality gates, HK, test-quality
+   analysis, and independent review.
+
+The plan excludes any third acceptance invocation or live operation.
+
+<!-- END APPEND: 2026-08-26-wdv3-acceptance-proof-repair -->

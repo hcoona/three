@@ -174,6 +174,25 @@ If it conflicts with the
   ref, or reuse the `.5`-`.8` invocation, review, or coordinate block. Both
   strict acceptance profiles remain evidence replay authority and cannot be
   mixed. Acceptance remains unsuccessful and `live_enabled` remains false.
+- Repair-only PR #596 is prepared at implementation commit `44b3915e`. It
+  propagates the proxy-validated, request-bound HTTP 201 proof before
+  non-authoritative npm output classification and requires that proof,
+  admitted execution and mutation startedness, and exact post-readback before
+  a new normal acceptance result can be complete. Proof-free create remains
+  incomplete. Optional closed runner diagnostics remain observability only;
+  they do not grant acceptance or activation authority. Historical proof-free
+  `created` and lost-response evidence remain replayable. The focused
+  acceptance and Governance tests pass 543 cases, the complete v3 suite passes
+  3,686 tests, and multi-reviewer review reports no findings after independent
+  adjudication and repair. A subsequent PR review found that protocol authority
+  could survive when admitted runner facts lacked execution or mutation
+  startedness; the Adapter now drops protocol authority and uses its existing
+  fail-closed runner classification in that case. Independent adjudication
+  classified the finding as true-positive and the focused 543-test suite plus
+  independent review pass after the correction. PR #596 does not retroactively
+  change either failed acceptance invocation and does not authorize a third
+  acceptance workflow, invocation, review, Environment, coordinate block,
+  package operation, or normal Live activation.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the

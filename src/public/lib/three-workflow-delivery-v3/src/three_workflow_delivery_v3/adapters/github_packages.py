@@ -750,6 +750,89 @@ class ValidatedAcceptanceRequestProof:
         )
 
 
+_ACCEPTANCE_RUNNER_EXIT_CLASSIFICATIONS = frozenset(
+    {
+        "protocol-confirmed",
+        "runner-failed-before-mutation",
+        "runner-failed-after-action-start",
+        "runner-failed-after-mutation-start",
+        "runner-malformed-before-mutation",
+    }
+)
+_ACCEPTANCE_RUNNER_EXCEPTION_CATEGORIES = frozenset(
+    {"TimeoutError", "OSError", "RuntimeError", "ValueError"}
+)
+_SHA256_DIGEST_PATTERN = re.compile(r"sha256:[0-9a-f]{64}\Z")
+
+
+@dataclass(frozen=True, slots=True)
+class AcceptanceRunnerDiagnostic:
+    """Closed credential-free facts about one acceptance runner exit."""
+
+    exit_classification: str
+    upstream_status: int | None
+    exception_category: str | None
+    request_correlation_digest: str | None
+
+    def __post_init__(self) -> None:
+        """Reject unbounded or contradictory diagnostic facts."""
+        if (
+            type(self.exit_classification) is not str
+            or self.exit_classification
+            not in _ACCEPTANCE_RUNNER_EXIT_CLASSIFICATIONS
+        ):
+            message = "acceptance runner exit classification is not closed"
+            raise ValueError(message)
+        if self.upstream_status is not None and (
+            type(self.upstream_status) is not int
+            or self.upstream_status != HTTP_CREATED
+        ):
+            message = "acceptance runner upstream status is not exact"
+            raise ValueError(message)
+        if self.exception_category is not None and (
+            type(self.exception_category) is not str
+            or self.exception_category
+            not in _ACCEPTANCE_RUNNER_EXCEPTION_CATEGORIES
+        ):
+            message = "acceptance runner exception category is not closed"
+            raise ValueError(message)
+        if self.request_correlation_digest is not None and (
+            type(self.request_correlation_digest) is not str
+            or _SHA256_DIGEST_PATTERN.fullmatch(self.request_correlation_digest)
+            is None
+        ):
+            message = "acceptance runner request correlation is malformed"
+            raise ValueError(message)
+        if self.exit_classification == "protocol-confirmed":
+            if (
+                self.upstream_status != HTTP_CREATED
+                or self.exception_category is not None
+                or self.request_correlation_digest is None
+            ):
+                message = (
+                    "protocol-confirmed runner diagnostic facts contradict"
+                )
+                raise ValueError(message)
+        elif self.exception_category is not None and (
+            self.upstream_status is not None
+            or self.request_correlation_digest is not None
+        ):
+            message = "exception runner diagnostic retains unrelated facts"
+            raise ValueError(message)
+
+    def to_document(self) -> dict[str, JsonValue]:
+        """Return the exact closed diagnostic document."""
+        return cast(
+            "dict[str, JsonValue]",
+            {
+                "exit-classification": self.exit_classification,
+                "upstream-status": self.upstream_status,
+                "exception-category": self.exception_category,
+                "request-correlation-digest": (self.request_correlation_digest),
+            },
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class FixedCoordinateAcceptanceProbeResult:
     """Closed diagnostic facts for one temporary acceptance probe."""
@@ -767,6 +850,7 @@ class FixedCoordinateAcceptanceProbeResult:
     content_sha512: str | None
     diagnostics: tuple[str, ...]
     validated_request_proof: ValidatedAcceptanceRequestProof | None = None
+    runner_diagnostic: AcceptanceRunnerDiagnostic | None = None
 
     def to_document(self) -> dict[str, JsonValue]:
         """Return the immutable acceptance-only probe document."""
@@ -794,6 +878,8 @@ class FixedCoordinateAcceptanceProbeResult:
             document["validated-request-proof"] = (
                 self.validated_request_proof.to_document()
             )
+        if self.runner_diagnostic is not None:
+            document["runner-diagnostic"] = self.runner_diagnostic.to_document()
         return document
 
 
@@ -864,6 +950,15 @@ class FixedAcceptanceSuiteResult:
                             )
                         }
                         if scenario.validated_request_proof is not None
+                        else {}
+                    ),
+                    **(
+                        {
+                            "runner-diagnostic": (
+                                scenario.runner_diagnostic.to_document()
+                            )
+                        }
+                        if scenario.runner_diagnostic is not None
                         else {}
                     ),
                 }
@@ -1165,6 +1260,7 @@ def _acceptance_result(  # noqa: PLR0913
     content_sha512: str | None,
     diagnostics: tuple[str, ...] = (),
     validated_request_proof: ValidatedAcceptanceRequestProof | None = None,
+    runner_diagnostic: AcceptanceRunnerDiagnostic | None = None,
 ) -> FixedCoordinateAcceptanceProbeResult:
     return FixedCoordinateAcceptanceProbeResult(
         scenario=scenario,
@@ -1183,6 +1279,7 @@ def _acceptance_result(  # noqa: PLR0913
         content_sha512=content_sha512,
         diagnostics=diagnostics,
         validated_request_proof=validated_request_proof,
+        runner_diagnostic=runner_diagnostic,
     )
 
 
@@ -1260,6 +1357,77 @@ def _valid_lost_response_proof(
         and proof.tag == tag
         and proof.upstream_status == HTTP_CREATED
     )
+
+
+def _valid_protocol_confirmed_proof(
+    document: dict[str, object],
+    *,
+    tarball: bytes,
+    package_coordinate: str,
+    tag: str,
+) -> bool:
+    proof = document.get("validated-request-proof")
+    return (
+        document.get("outcome") == "protocol-confirmed"
+        and type(proof) is ValidatedAcceptanceRequestProof
+        and proof.tarball_sha512
+        == "sha512:" + hashlib.sha512(tarball).hexdigest()
+        and proof.package_coordinate == package_coordinate
+        and proof.tag == tag
+        and proof.upstream_status == HTTP_CREATED
+        and document.get("request-digest") == proof.request_digest
+        and document.get("upstream-status") == proof.upstream_status
+        and document.get("selected-headers") == dict(proof.selected_headers)
+        and document.get("response-body-digest") == proof.response_body_digest
+        and document.get("response-identity-digest")
+        == proof.response_identity_digest
+    )
+
+
+def _acceptance_runner_diagnostic(  # noqa: PLR0913
+    document: dict[str, object],
+    *,
+    runner_error: Exception | None,
+    action_executed: bool,
+    mutation_started: bool,
+    exception_startedness_admitted: bool,
+    protocol_confirmed: bool,
+) -> AcceptanceRunnerDiagnostic | None:
+    if runner_error is not None:
+        if not exception_startedness_admitted:
+            return None
+        if isinstance(runner_error, TimeoutError):
+            exception_category = "TimeoutError"
+        elif isinstance(runner_error, OSError):
+            exception_category = "OSError"
+        elif isinstance(runner_error, RuntimeError):
+            exception_category = "RuntimeError"
+        else:
+            exception_category = "ValueError"
+        return AcceptanceRunnerDiagnostic(
+            exit_classification=_runner_failure_result(
+                action_executed=action_executed,
+                mutation_started=mutation_started,
+                malformed_outcome=(
+                    isinstance(runner_error, ValueError)
+                    and not action_executed
+                    and not mutation_started
+                ),
+            ),
+            upstream_status=None,
+            exception_category=exception_category,
+            request_correlation_digest=None,
+        )
+    proof = document.get("validated-request-proof")
+    if protocol_confirmed:
+        accepted_proof = cast("ValidatedAcceptanceRequestProof", proof)
+        return AcceptanceRunnerDiagnostic(
+            exit_classification="protocol-confirmed",
+            upstream_status=accepted_proof.upstream_status,
+            exception_category=None,
+            request_correlation_digest=accepted_proof.request_digest,
+        )
+    return None
 
 
 def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915
@@ -1477,6 +1645,30 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
         tag=tag,
         desired_sha512=actual_sha512,
     )
+    runner_document = (
+        cast("dict[str, object]", runner_result)
+        if type(runner_result) is dict
+        else {}
+    )
+    protocol_confirmed = (
+        scenario == "absent-create-readback"
+        and action_executed
+        and mutation_started
+        and _valid_protocol_confirmed_proof(
+            runner_document,
+            tarball=tarball.read_bytes(),
+            package_coordinate=package_coordinate,
+            tag=tag,
+        )
+    )
+    runner_diagnostic = _acceptance_runner_diagnostic(
+        runner_document,
+        runner_error=runner_error,
+        action_executed=action_executed,
+        mutation_started=mutation_started,
+        exception_startedness_admitted=exception_startedness_admitted,
+        protocol_confirmed=protocol_confirmed,
+    )
     if runner_error is not None:
         malformed_facts = returned_facts_malformed
         if runner_timed_out:
@@ -1499,6 +1691,7 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
                         action_executed=action_executed,
                         mutation_started=mutation_started,
                     ),
+                    runner_diagnostic=runner_diagnostic,
                 )
             return _acceptance_result(
                 scenario=scenario,
@@ -1515,6 +1708,7 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
                     "mutation-may-have-started",
                     "human-reconciliation-required",
                 ),
+                runner_diagnostic=runner_diagnostic,
             )
         if malformed_facts:
             return _acceptance_result(
@@ -1529,6 +1723,7 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
                 response_identity_digest=post_response,
                 content_sha512=post_content,
                 diagnostics=("runner-action-facts-not-fully-admitted",),
+                runner_diagnostic=runner_diagnostic,
             )
         if scenario == "lost-response":
             if exception_startedness_admitted and not mutation_started:
@@ -1550,6 +1745,7 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
                         action_executed=action_executed,
                         mutation_started=mutation_started,
                     ),
+                    runner_diagnostic=runner_diagnostic,
                 )
             return _acceptance_result(
                 scenario=scenario,
@@ -1566,6 +1762,7 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
                     "mutation-may-have-started",
                     "human-reconciliation-required",
                 ),
+                runner_diagnostic=runner_diagnostic,
             )
         return _acceptance_result(
             scenario=scenario,
@@ -1590,13 +1787,9 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
                     mutation_started=mutation_started,
                 )
             ),
+            runner_diagnostic=runner_diagnostic,
         )
 
-    runner_document = (
-        cast("dict[str, object]", runner_result)
-        if type(runner_result) is dict
-        else {}
-    )
     outcome = runner_document.get("outcome")
     if scenario == "lost-response":
         if (
@@ -1627,6 +1820,7 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
                     "ValidatedAcceptanceRequestProof",
                     runner_document["validated-request-proof"],
                 ),
+                runner_diagnostic=runner_diagnostic,
             )
         if not mutation_started:
             return _acceptance_result(
@@ -1648,6 +1842,7 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
                     action_executed=action_executed,
                     mutation_started=mutation_started,
                 ),
+                runner_diagnostic=runner_diagnostic,
             )
         return _acceptance_result(
             scenario=scenario,
@@ -1664,6 +1859,47 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
                 "mutation-may-have-started",
                 "human-reconciliation-required",
             ),
+            runner_diagnostic=runner_diagnostic,
+        )
+    if protocol_confirmed:
+        proof = cast(
+            "ValidatedAcceptanceRequestProof",
+            runner_document["validated-request-proof"],
+        )
+        if (
+            action_executed
+            and mutation_started
+            and post_state == "exact"
+            and post_content == actual_sha512
+        ):
+            return _acceptance_result(
+                scenario=scenario,
+                tag=tag,
+                pre_state="absent",
+                post_state="exact",
+                result="protocol-confirmed",
+                mutation_classification="complete",
+                action_executed=True,
+                mutation_started=True,
+                response_identity_digest=proof.response_identity_digest,
+                content_sha512=post_content,
+                validated_request_proof=proof,
+                runner_diagnostic=runner_diagnostic,
+            )
+        return _acceptance_result(
+            scenario=scenario,
+            tag=tag,
+            pre_state="absent",
+            post_state=post_state,
+            result="protocol-confirmed-readback-incomplete",
+            mutation_classification="incomplete",
+            action_executed=action_executed,
+            mutation_started=mutation_started,
+            response_identity_digest=proof.response_identity_digest,
+            content_sha512=post_content,
+            diagnostics=("exact-readback-not-observed",),
+            validated_request_proof=proof,
+            runner_diagnostic=runner_diagnostic,
         )
     if type(outcome) is not str or outcome not in {
         "created",
@@ -1685,6 +1921,7 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
             response_identity_digest=post_response,
             content_sha512=post_content,
             diagnostics=("runner-did-not-prove-controlled-outcome",),
+            runner_diagnostic=runner_diagnostic,
         )
     if not action_executed or not mutation_started:
         return _acceptance_result(
@@ -1699,6 +1936,22 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
             response_identity_digest=post_response,
             content_sha512=post_content,
             diagnostics=("runner-action-facts-not-fully-admitted",),
+            runner_diagnostic=runner_diagnostic,
+        )
+    if scenario == "absent-create-readback":
+        return _acceptance_result(
+            scenario=scenario,
+            tag=tag,
+            pre_state="absent",
+            post_state=post_state,
+            result="created-without-request-proof",
+            mutation_classification="incomplete",
+            action_executed=action_executed,
+            mutation_started=mutation_started,
+            response_identity_digest=post_response,
+            content_sha512=post_content,
+            diagnostics=("request-bound-created-proof-required",),
+            runner_diagnostic=runner_diagnostic,
         )
     if scenario == "differing-race":
         contender_outcomes = runner_document.get("contender-outcomes")
@@ -1740,6 +1993,7 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
                     "race-overlap-not-proven",
                     "human-reconciliation-required",
                 ),
+                runner_diagnostic=runner_diagnostic,
             )
         return _acceptance_result(
             scenario=scenario,
@@ -1753,6 +2007,7 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
             response_identity_digest=post_response,
             content_sha512=post_content,
             diagnostics=("conflicting-remote-bytes-or-tag",),
+            runner_diagnostic=runner_diagnostic,
         )
     if post_state == "exact" and post_content == actual_sha512:
         if outcome == "create-conflict":
@@ -1772,6 +2027,7 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
                         "required-conflicting-readback-not-observed",
                         "human-reconciliation-required",
                     ),
+                    runner_diagnostic=runner_diagnostic,
                 )
             result = "identical-race-exact"
             diagnostics = ("identical-race-exact",)
@@ -1790,6 +2046,7 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
             response_identity_digest=post_response,
             content_sha512=post_content,
             diagnostics=diagnostics,
+            runner_diagnostic=runner_diagnostic,
         )
     if post_state == "conflicting":
         if outcome == "create-conflict" and scenario == "identical-race":
@@ -1808,6 +2065,7 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
                     "conflicting-remote-bytes-or-tag",
                     "human-reconciliation-required",
                 ),
+                runner_diagnostic=runner_diagnostic,
             )
         if outcome == "create-conflict":
             return _acceptance_result(
@@ -1822,6 +2080,7 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
                 response_identity_digest=post_response,
                 content_sha512=post_content,
                 diagnostics=("conflicting-remote-bytes-or-tag",),
+                runner_diagnostic=runner_diagnostic,
             )
         return _acceptance_result(
             scenario=scenario,
@@ -1838,6 +2097,7 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
                 "conflicting-remote-bytes-or-tag",
                 "human-reconciliation-required",
             ),
+            runner_diagnostic=runner_diagnostic,
         )
     return _acceptance_result(
         scenario=scenario,
@@ -1854,6 +2114,7 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
             "mutation-may-have-started",
             "human-reconciliation-required",
         ),
+        runner_diagnostic=runner_diagnostic,
     )
 
 

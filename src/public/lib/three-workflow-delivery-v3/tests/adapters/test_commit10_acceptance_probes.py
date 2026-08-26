@@ -308,7 +308,7 @@ def test_retry_2_npm_runner_uses_retry_coordinate_for_lost_response(
     assert runner._coordinates["lost-response"].endswith("wdv3-acceptance.8")
 
 
-def test_absent_requires_observed_absent_create_and_exact_readback(
+def test_absent_proof_free_created_remains_incomplete(
     tmp_path: Path,
 ) -> None:
     runner = ControlledRunner()
@@ -330,10 +330,10 @@ def test_absent_requires_observed_absent_create_and_exact_readback(
         runner=runner,
     )
 
-    assert result.result == "created"
+    assert result.result == "created-without-request-proof"
     assert result.pre_state == "absent"
     assert result.post_state == "exact"
-    assert result.mutation_classification == "complete"
+    assert result.mutation_classification == "incomplete"
     assert runner.calls[0][0] == "absent-create-readback"
     command = runner.calls[0][1]
     assert command[:3] == ("npm", "publish", str(actual_tarball))
@@ -357,13 +357,13 @@ def test_absent_requires_observed_absent_create_and_exact_readback(
         "tag": TAGS["absent-create-readback"],
         "pre-state": "absent",
         "post-state": "exact",
-        "result": "created",
-        "mutation-classification": "complete",
+        "result": "created-without-request-proof",
+        "mutation-classification": "incomplete",
         "action-executed": True,
         "mutation-started": True,
         "response-identity-digest": RESPONSE_B,
         "content-sha512": content,
-        "diagnostics": [],
+        "diagnostics": ["request-bound-created-proof-required"],
     }
 
 
@@ -2589,10 +2589,10 @@ def test_acceptance_probe_rejects_tarball_sha512_mismatch_before_mutation(
     assert runner.calls == []
 
 
-def test_absent_create_readback_records_exact_complete_facts(
+def test_absent_create_readback_records_proof_free_incomplete_facts(
     tmp_path: Path,
 ) -> None:
-    test_absent_requires_observed_absent_create_and_exact_readback(tmp_path)
+    test_absent_proof_free_created_remains_incomplete(tmp_path)
 
 
 def test_exact_preexisting_state_never_invokes_the_mutation_runner(
@@ -4731,7 +4731,7 @@ def test_acceptance_operation_uses_one_monotonic_deadline(
 ) -> None:
     result, transport, runner = _run_deadline_probe(tmp_path, monkeypatch)
 
-    assert result.mutation_classification == "complete"
+    assert result.mutation_classification == "incomplete"
     assert transport.deadlines == [107.0, 107.0]
     assert runner.deadlines == [107.0]
 
@@ -4886,7 +4886,7 @@ def test_acceptance_cleanup_uses_only_remaining_deadline_budget(
             },
             True,
             True,
-            "complete",
+            "incomplete",
         ),
     ],
     ids=(
@@ -4898,7 +4898,7 @@ def test_acceptance_cleanup_uses_only_remaining_deadline_budget(
         "pre-start-failure",
         "local-post-spawn-failure",
         "proxy-observed-timeout",
-        "fully-validated-proof",
+        "proof-free-created",
     ),
 )
 def test_acceptance_runner_proof_fact_matrix(
@@ -4933,9 +4933,7 @@ def test_acceptance_runner_proof_fact_matrix(
     assert result.action_executed is expected_executed
     assert result.mutation_started is expected_started
     assert result.mutation_classification == expected_classification
-    assert (result.result == "created") is (
-        expected_classification == "complete"
-    )
+    assert result.result != "created"
 
 
 def test_missing_or_partial_runner_facts_never_default_to_mutation_started(
@@ -4993,11 +4991,22 @@ def test_only_fully_validated_runner_proof_can_form_complete_evidence(
         max_response_bytes=MAX_RESPONSE_BYTES,
         max_output_bytes=MAX_OUTPUT_BYTES,
     )
+    proof = _validated_proof(
+        tarball.read_bytes(),
+        package_coordinate=ACCEPTANCE_COORDINATES[scenario],
+        tag=TAGS[scenario],
+    )
     complete = DeadlineAwareRunner(
         {
-            "outcome": "created",
+            "outcome": "protocol-confirmed",
             "action-executed": True,
             "mutation-started": True,
+            "validated-request-proof": proof,
+            "request-digest": proof.request_digest,
+            "upstream-status": proof.upstream_status,
+            "selected-headers": dict(proof.selected_headers),
+            "response-body-digest": proof.response_body_digest,
+            "response-identity-digest": proof.response_identity_digest,
         }
     )
     complete_result = run_fixed_coordinate_acceptance_probe(
@@ -5016,7 +5025,7 @@ def test_only_fully_validated_runner_proof_can_form_complete_evidence(
     assert partial_result.mutation_classification == "incomplete"
     assert partial_result.result == "runner-malformed-before-mutation"
     assert complete_result.mutation_classification == "complete"
-    assert complete_result.result == "created"
+    assert complete_result.result == "protocol-confirmed"
 
 
 @pytest.mark.parametrize(
