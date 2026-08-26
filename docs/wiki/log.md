@@ -2184,3 +2184,22 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Do not dispatch, rerun, approve, or recreate a transition ref. Authenticated
   package reconciliation remains blocked until GitHub terminalizes or removes
   the stuck run. Normal Live remains disabled and unauthorized.
+
+## [2026-08-26] query | Close acceptance-cleanup platform blocker
+
+- Verified that GitHub Support terminalized cleanup probe run `32809578776` as
+  `completed` / `cancelled` at `2026-08-26T01:45:46Z`, with zero jobs and zero
+  pending deployments.
+- Reconfirmed workflow ID `341728447` as `disabled_manually` and the workflow
+  source, acceptance Environment, and transition ref as absent.
+- Authenticated exact-coordinate reconciliation confirmed version
+  `0.0.0-wdv3-acceptance.5`, tag `wdv3-acceptance-5`, repository association
+  `hcoona/three`, tarball SHA-1
+  `e2c5d9ffb5f94e3ae807d0a4022d99c3e5711050`, SHA-512
+  `080c3d828a30d73d1febc3b6773015fafb529cf3a2be81fe597e83a83a589d32c1be62e933fb38ac4a77f9cb561c6399d3b2e6fe9179b3e4aed93087007140f2`,
+  and target witness `b031e5e0bd98a95943a03a1529b64e856e1a8aa1`.
+- Closed Platform-Orphan implementation PR #590 unmerged because natural
+  terminalization removed the blocker before protected consumption. No
+  candidate ran, and no exception authority or result entered `main`.
+- Preserved retry-2 acceptance as unsuccessful, prohibited reuse of the
+  `.5`-`.8` block, and kept normal Live disabled and unauthorized.
