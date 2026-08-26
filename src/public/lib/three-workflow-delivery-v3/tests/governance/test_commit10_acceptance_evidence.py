@@ -10,11 +10,12 @@ from typing import Any
 
 import pytest
 from three_workflow_delivery_v3.adapters.github_packages import (
+    AcceptanceRunnerDiagnostic,
     FixedAcceptanceSuiteResult,
     FixedCoordinateAcceptanceProbeResult,
     ValidatedAcceptanceRequestProof,
 )
-from three_workflow_delivery_v3.canonical import canonicalize
+from three_workflow_delivery_v3.canonical import canonical_sha256, canonicalize
 from three_workflow_delivery_v3.records.governance import (
     GOVERNANCE_ACCEPTANCE_DEPENDENCIES,
     GOVERNANCE_ACCEPTANCE_PROBE_SCENARIOS,
@@ -27,6 +28,12 @@ SHA256_A = "sha256:" + ("1" * 64)
 SHA256_B = "sha256:" + ("2" * 64)
 SHA512_A = "sha512:" + ("3" * 128)
 SHA512_B = "sha512:" + ("4" * 128)
+HISTORICAL_ABSENT_CREATE_READBACK_RECORD_DIGEST = (
+    "sha256:c8035ad8ff0c3f29ad21a05c54dac6147d2adf2df6a5464467470cc7e2e8462d"
+)
+HISTORICAL_EXACT_AND_CONFLICT_RECORD_DIGEST = (
+    "sha256:a7380d429012883511f72c8540d6a97e876bd40ef3f231658616f4dd5865526a"
+)
 ENVIRONMENT = "workflow-delivery-v3-buddy-smoke-acceptance"
 COORDINATE = "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.1"
 LEGACY_TARGET_SHA = "5a84bebd05407e1859fe76f400dcb4f4cbcd002e"
@@ -49,8 +56,24 @@ def _validated_request_proof() -> ValidatedAcceptanceRequestProof:
     )
 
 
+def _normal_validated_request_proof() -> ValidatedAcceptanceRequestProof:
+    return ValidatedAcceptanceRequestProof.from_validated_exchange(
+        raw_request=b'{"_id":"@hcoona/hcoona-release-smoke-npm"}',
+        tarball=b"governance-normal-create-tarball",
+        package_coordinate=(
+            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.1"
+        ),
+        tag="wdv3-acceptance-1",
+        upstream_status=201,
+        selected_headers={"Content-Type": "application/json", "ETag": '"v1"'},
+        response_body=b'{"ok":true}',
+    )
+
+
 LOST_RESPONSE_PROOF = _validated_request_proof()
 LOST_RESPONSE_PROOF_DOCUMENT = LOST_RESPONSE_PROOF.to_document()
+NORMAL_CREATE_PROOF = _normal_validated_request_proof()
+NORMAL_CREATE_PROOF_DOCUMENT = NORMAL_CREATE_PROOF.to_document()
 CANONICAL_SCENARIOS: dict[str, dict[str, Any]] = {
     "absent-create-readback": {
         "scenario": "absent-create-readback",
@@ -150,7 +173,10 @@ CANONICAL_SCENARIOS: dict[str, dict[str, Any]] = {
             "identity-digest": LOST_RESPONSE_PROOF.response_identity_digest,
             "diagnostics": ["mutation-started-and-readback-exact"],
         },
-        "post": {"state": "exact", "content-sha512": SHA512_A},
+        "post": {
+            "state": "exact",
+            "content-sha512": SHA512_A,
+        },
         "validated-request-proof": LOST_RESPONSE_PROOF_DOCUMENT,
     },
 }
@@ -554,6 +580,392 @@ def test_complete_lost_response_evidence_preserves_validated_request_proof() -> 
     )
 
 
+def test_historical_created_evidence_without_proof_remains_admissible() -> None:
+    document = _document()
+    document["probe-facts"][0]["record-digest"] = (
+        HISTORICAL_ABSENT_CREATE_READBACK_RECORD_DIGEST
+    )
+    document["probe-facts"][1]["record-digest"] = (
+        HISTORICAL_EXACT_AND_CONFLICT_RECORD_DIGEST
+    )
+
+    evidence = _admit(document)
+    admitted = evidence.to_document()["probe-facts"][0]["scenarios"][0]
+
+    assert admitted["response"]["result"] == "created"
+    assert evidence.probe_facts[0].record_digest == (
+        HISTORICAL_ABSENT_CREATE_READBACK_RECORD_DIGEST
+    )
+    assert evidence.probe_facts[1].record_digest == (
+        HISTORICAL_EXACT_AND_CONFLICT_RECORD_DIGEST
+    )
+    assert "validated-request-proof" not in admitted
+    assert "runner-diagnostic" not in admitted
+
+
+def test_protocol_confirmed_governance_binds_proof_and_runner_diagnostic() -> (
+    None
+):
+    document = _document()
+    scenario = document["probe-facts"][0]["scenarios"][0]
+    scenario["response"]["result"] = "protocol-confirmed"
+    scenario["response"]["identity-digest"] = (
+        NORMAL_CREATE_PROOF.response_identity_digest
+    )
+    scenario["post"]["content-sha512"] = NORMAL_CREATE_PROOF.tarball_sha512
+    scenario["validated-request-proof"] = NORMAL_CREATE_PROOF_DOCUMENT
+    scenario["runner-diagnostic"] = {
+        "exit-classification": "protocol-confirmed",
+        "upstream-status": 201,
+        "exception-category": None,
+        "request-correlation-digest": NORMAL_CREATE_PROOF.request_digest,
+    }
+    _refresh_probe_record_digest(document, 0)
+
+    evidence = _admit(document)
+    admitted = evidence.to_document()["probe-facts"][0]["scenarios"][0]
+
+    assert admitted["validated-request-proof"] == NORMAL_CREATE_PROOF_DOCUMENT
+    assert admitted["runner-diagnostic"] == scenario["runner-diagnostic"]
+
+
+def test_protocol_confirmed_governance_does_not_require_runner_diagnostic() -> (
+    None
+):
+    document = _document()
+    scenario = document["probe-facts"][0]["scenarios"][0]
+    scenario["response"]["result"] = "protocol-confirmed"
+    scenario["response"]["identity-digest"] = (
+        NORMAL_CREATE_PROOF.response_identity_digest
+    )
+    scenario["post"]["content-sha512"] = NORMAL_CREATE_PROOF.tarball_sha512
+    scenario["validated-request-proof"] = NORMAL_CREATE_PROOF_DOCUMENT
+    _refresh_probe_record_digest(document, 0)
+
+    evidence = _admit(document)
+    admitted = evidence.to_document()["probe-facts"][0]["scenarios"][0]
+
+    assert admitted["response"]["result"] == "protocol-confirmed"
+    assert admitted["validated-request-proof"] == NORMAL_CREATE_PROOF_DOCUMENT
+    assert "runner-diagnostic" not in admitted
+
+
+def test_protocol_confirmed_governance_requires_validated_request_proof() -> (
+    None
+):
+    document = _document()
+    scenario = document["probe-facts"][0]["scenarios"][0]
+    scenario["response"]["result"] = "protocol-confirmed"
+    scenario["response"]["identity-digest"] = (
+        NORMAL_CREATE_PROOF.response_identity_digest
+    )
+    scenario["post"]["content-sha512"] = NORMAL_CREATE_PROOF.tarball_sha512
+    _refresh_probe_record_digest(document, 0)
+
+    with pytest.raises(ValueError, match="validated-request-proof"):
+        _admit(document)
+
+
+def test_protocol_confirmed_governance_diagnostic_exit_is_non_authoritative() -> (
+    None
+):
+    document = _document()
+    scenario = document["probe-facts"][0]["scenarios"][0]
+    scenario["response"]["result"] = "protocol-confirmed"
+    scenario["response"]["identity-digest"] = (
+        NORMAL_CREATE_PROOF.response_identity_digest
+    )
+    scenario["post"]["content-sha512"] = NORMAL_CREATE_PROOF.tarball_sha512
+    scenario["validated-request-proof"] = NORMAL_CREATE_PROOF_DOCUMENT
+    scenario["runner-diagnostic"] = {
+        "exit-classification": "runner-failed-after-mutation-start",
+        "upstream-status": 201,
+        "exception-category": None,
+        "request-correlation-digest": NORMAL_CREATE_PROOF.request_digest,
+    }
+    _refresh_probe_record_digest(document, 0)
+
+    evidence = _admit(document)
+    admitted = evidence.to_document()["probe-facts"][0]["scenarios"][0]
+
+    assert admitted["response"]["result"] == "protocol-confirmed"
+    assert admitted["runner-diagnostic"] == scenario["runner-diagnostic"]
+
+
+def test_runner_diagnostic_rejects_contradictory_action_startedness() -> None:
+    document = _document()
+    scenario = document["probe-facts"][0]["scenarios"][0]
+    scenario["response"]["result"] = "protocol-confirmed"
+    scenario["response"]["identity-digest"] = (
+        NORMAL_CREATE_PROOF.response_identity_digest
+    )
+    scenario["post"]["content-sha512"] = NORMAL_CREATE_PROOF.tarball_sha512
+    scenario["validated-request-proof"] = NORMAL_CREATE_PROOF_DOCUMENT
+    scenario["runner-diagnostic"] = {
+        "exit-classification": "runner-failed-before-mutation",
+        "upstream-status": None,
+        "exception-category": None,
+        "request-correlation-digest": None,
+    }
+    _refresh_probe_record_digest(document, 0)
+
+    with pytest.raises(ValueError, match="startedness contradicts action"):
+        _admit(document)
+
+
+def test_legacy_created_rejects_protocol_confirmed_runner_diagnostic() -> None:
+    document = _document()
+    scenario = document["probe-facts"][0]["scenarios"][0]
+    scenario["runner-diagnostic"] = {
+        "exit-classification": "protocol-confirmed",
+        "upstream-status": 201,
+        "exception-category": None,
+        "request-correlation-digest": NORMAL_CREATE_PROOF.request_digest,
+    }
+    _refresh_probe_record_digest_unchecked(document, 0)
+
+    with pytest.raises(ValueError, match="runner-diagnostic"):
+        _admit(document)
+
+
+def test_explicit_null_runner_diagnostic_is_rejected() -> None:
+    document = _document()
+    document["probe-facts"][0]["scenarios"][0]["runner-diagnostic"] = None
+    _refresh_probe_record_digest_unchecked(document, 0)
+
+    with pytest.raises(TypeError, match="runner-diagnostic"):
+        _admit(document)
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "exit-classification",
+        "upstream-status",
+        "exception-category",
+        "request-correlation-digest",
+        "unknown",
+    ],
+)
+def test_runner_diagnostic_is_a_closed_required_field_object(
+    field: str,
+) -> None:
+    document = _document()
+    scenario = document["probe-facts"][0]["scenarios"][0]
+    diagnostic = {
+        "exit-classification": "runner-failed-after-mutation-start",
+        "upstream-status": None,
+        "exception-category": None,
+        "request-correlation-digest": None,
+    }
+    if field == "unknown":
+        diagnostic["unknown"] = None
+    else:
+        del diagnostic[field]
+    scenario["runner-diagnostic"] = diagnostic
+    _refresh_probe_record_digest_unchecked(document, 0)
+
+    with pytest.raises((TypeError, ValueError), match="runner-diagnostic"):
+        _admit(document)
+
+
+def test_protocol_confirmed_readback_incomplete_diagnostic_is_admissible() -> (
+    None
+):
+    document = _document()
+    scenario = document["probe-facts"][0]["scenarios"][0]
+    scenario["mutation-classification"] = "incomplete"
+    scenario["response"]["result"] = "protocol-confirmed-readback-incomplete"
+    scenario["response"]["identity-digest"] = (
+        NORMAL_CREATE_PROOF.response_identity_digest
+    )
+    scenario["post"]["state"] = "unknown"
+    scenario["validated-request-proof"] = NORMAL_CREATE_PROOF_DOCUMENT
+    scenario["runner-diagnostic"] = {
+        "exit-classification": "protocol-confirmed",
+        "upstream-status": 201,
+        "exception-category": None,
+        "request-correlation-digest": NORMAL_CREATE_PROOF.request_digest,
+    }
+    document["probe-facts"][0]["result"] = "incomplete"
+    document["mutation-classification"] = "incomplete"
+    _refresh_probe_record_digest_unchecked(document, 0)
+
+    evidence = _admit(document)
+    admitted = evidence.to_document()["probe-facts"][0]["scenarios"][0]
+
+    assert (
+        admitted["response"]["result"]
+        == "protocol-confirmed-readback-incomplete"
+    )
+    assert admitted["validated-request-proof"] == NORMAL_CREATE_PROOF_DOCUMENT
+    assert admitted["runner-diagnostic"] == scenario["runner-diagnostic"]
+
+
+def test_protocol_confirmed_readback_incomplete_rejects_unknown_classification() -> (
+    None
+):
+    document = _document()
+    scenario = document["probe-facts"][0]["scenarios"][0]
+    scenario["mutation-classification"] = "unknown"
+    scenario["response"]["result"] = "protocol-confirmed-readback-incomplete"
+    scenario["response"]["identity-digest"] = (
+        NORMAL_CREATE_PROOF.response_identity_digest
+    )
+    scenario["post"]["state"] = "unknown"
+    scenario["validated-request-proof"] = NORMAL_CREATE_PROOF_DOCUMENT
+    scenario["runner-diagnostic"] = {
+        "exit-classification": "protocol-confirmed",
+        "upstream-status": 201,
+        "exception-category": None,
+        "request-correlation-digest": NORMAL_CREATE_PROOF.request_digest,
+    }
+    document["probe-facts"][0]["result"] = "unknown"
+    document["mutation-classification"] = "unknown"
+    _refresh_probe_record_digest_unchecked(document, 0)
+
+    with pytest.raises(ValueError, match="incomplete mutation classification"):
+        _admit(document)
+
+
+def test_protocol_confirmed_readback_incomplete_requires_proof() -> None:
+    document = _document()
+    scenario = document["probe-facts"][0]["scenarios"][0]
+    scenario["mutation-classification"] = "incomplete"
+    scenario["response"]["result"] = "protocol-confirmed-readback-incomplete"
+    scenario["post"]["state"] = "unknown"
+    document["probe-facts"][0]["result"] = "incomplete"
+    document["mutation-classification"] = "incomplete"
+    _refresh_probe_record_digest_unchecked(document, 0)
+
+    with pytest.raises(ValueError, match="validated-request-proof"):
+        _admit(document)
+
+
+@pytest.mark.parametrize(
+    ("action_executed", "mutation_started"),
+    [(False, True), (True, False)],
+    ids=["action-not-executed", "mutation-not-started"],
+)
+def test_protocol_confirmed_readback_incomplete_requires_startedness(
+    action_executed: bool,
+    mutation_started: bool,
+) -> None:
+    document = _document()
+    scenario = document["probe-facts"][0]["scenarios"][0]
+    scenario["mutation-classification"] = "incomplete"
+    scenario["action"]["executed"] = action_executed
+    scenario["action"]["mutation-started"] = mutation_started
+    scenario["response"]["result"] = "protocol-confirmed-readback-incomplete"
+    scenario["response"]["identity-digest"] = (
+        NORMAL_CREATE_PROOF.response_identity_digest
+    )
+    scenario["post"]["state"] = "unknown"
+    scenario["validated-request-proof"] = NORMAL_CREATE_PROOF_DOCUMENT
+    document["probe-facts"][0]["result"] = "incomplete"
+    document["mutation-classification"] = "incomplete"
+    _refresh_probe_record_digest_unchecked(document, 0)
+
+    with pytest.raises(
+        ValueError,
+        match="requires admitted execution and mutation startedness",
+    ):
+        _admit(document)
+
+
+def test_runner_diagnostic_cross_binds_each_present_fact_independently() -> (
+    None
+):
+    document = _document()
+    scenario = document["probe-facts"][1]["scenarios"][3]
+    scenario["runner-diagnostic"] = {
+        "exit-classification": "runner-failed-after-mutation-start",
+        "upstream-status": 201,
+        "exception-category": None,
+        "request-correlation-digest": None,
+    }
+    _refresh_probe_record_digest(document, 1)
+
+    evidence = _admit(document)
+    admitted = evidence.to_document()["probe-facts"][1]["scenarios"][3]
+
+    assert admitted["runner-diagnostic"] == scenario["runner-diagnostic"]
+
+
+def test_runner_diagnostic_status_and_correlation_require_bound_proof() -> None:
+    document = _document()
+    scenario = document["probe-facts"][0]["scenarios"][0]
+    scenario["runner-diagnostic"] = {
+        "exit-classification": "runner-failed-after-mutation-start",
+        "upstream-status": 201,
+        "exception-category": None,
+        "request-correlation-digest": NORMAL_CREATE_PROOF.request_digest,
+    }
+    _refresh_probe_record_digest_unchecked(document, 0)
+
+    with pytest.raises(ValueError, match="validated-request-proof"):
+        _admit(document)
+
+
+def test_protocol_confirmed_result_requires_exact_complete_readback() -> None:
+    document = _document()
+    scenario = document["probe-facts"][0]["scenarios"][0]
+    scenario["response"]["result"] = "protocol-confirmed"
+    scenario["response"]["identity-digest"] = (
+        NORMAL_CREATE_PROOF.response_identity_digest
+    )
+    scenario["post"]["content-sha512"] = NORMAL_CREATE_PROOF.tarball_sha512
+    scenario["validated-request-proof"] = NORMAL_CREATE_PROOF_DOCUMENT
+    scenario["runner-diagnostic"] = {
+        "exit-classification": "protocol-confirmed",
+        "upstream-status": 201,
+        "exception-category": None,
+        "request-correlation-digest": NORMAL_CREATE_PROOF.request_digest,
+    }
+    scenario["mutation-classification"] = "incomplete"
+    scenario["post"]["state"] = "unknown"
+    document["probe-facts"][0]["result"] = "incomplete"
+    document["mutation-classification"] = "incomplete"
+    _refresh_probe_record_digest_unchecked(document, 0)
+
+    with pytest.raises(ValueError, match="exact complete readback"):
+        _admit(document)
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    [
+        ("upstream-status", None),
+        ("exception-category", "RuntimeError"),
+        ("request-correlation-digest", SHA256_A),
+    ],
+)
+def test_protocol_confirmed_governance_rejects_unbound_runner_diagnostic(
+    field: str,
+    replacement: str | None,
+) -> None:
+    document = _document()
+    scenario = document["probe-facts"][0]["scenarios"][0]
+    scenario["response"]["result"] = "protocol-confirmed"
+    scenario["response"]["identity-digest"] = (
+        NORMAL_CREATE_PROOF.response_identity_digest
+    )
+    scenario["post"]["content-sha512"] = NORMAL_CREATE_PROOF.tarball_sha512
+    scenario["validated-request-proof"] = NORMAL_CREATE_PROOF_DOCUMENT
+    scenario["runner-diagnostic"] = {
+        "exit-classification": "protocol-confirmed",
+        "upstream-status": 201,
+        "exception-category": None,
+        "request-correlation-digest": NORMAL_CREATE_PROOF.request_digest,
+    }
+    _refresh_probe_record_digest(document, 0)
+    scenario["runner-diagnostic"][field] = replacement
+    _refresh_probe_record_digest_unchecked(document, 0)
+
+    with pytest.raises(ValueError, match="runner-diagnostic"):
+        _admit(document)
+
+
 @pytest.mark.parametrize(
     ("path", "replacement", "message"),
     [
@@ -596,6 +1008,21 @@ def test_complete_lost_response_evidence_requires_validated_request_proof() -> (
     _refresh_probe_record_digest(document, 1)
 
     with pytest.raises(ValueError, match="validated-request-proof"):
+        _admit(document)
+
+
+def test_protocol_confirmed_proof_tarball_must_match_exact_readback() -> None:
+    document = _document()
+    scenario = document["probe-facts"][0]["scenarios"][0]
+    scenario["response"]["result"] = "protocol-confirmed"
+    scenario["response"]["identity-digest"] = (
+        NORMAL_CREATE_PROOF.response_identity_digest
+    )
+    scenario["post"]["content-sha512"] = SHA512_A
+    scenario["validated-request-proof"] = NORMAL_CREATE_PROOF_DOCUMENT
+    _refresh_probe_record_digest(document, 0)
+
+    with pytest.raises(ValueError, match="tarball-sha512"):
         _admit(document)
 
 
@@ -1367,12 +1794,63 @@ def _refresh_probe_record_digest(
                     LOST_RESPONSE_PROOF
                     if scenario.get("validated-request-proof")
                     == LOST_RESPONSE_PROOF_DOCUMENT
+                    else NORMAL_CREATE_PROOF
+                    if scenario.get("validated-request-proof")
+                    == NORMAL_CREATE_PROOF_DOCUMENT
+                    else None
+                ),
+                runner_diagnostic=(
+                    AcceptanceRunnerDiagnostic(
+                        exit_classification=scenario["runner-diagnostic"][
+                            "exit-classification"
+                        ],
+                        upstream_status=scenario["runner-diagnostic"][
+                            "upstream-status"
+                        ],
+                        exception_category=scenario["runner-diagnostic"][
+                            "exception-category"
+                        ],
+                        request_correlation_digest=scenario[
+                            "runner-diagnostic"
+                        ]["request-correlation-digest"],
+                    )
+                    if scenario.get("runner-diagnostic") is not None
                     else None
                 ),
             )
             for scenario in fact["scenarios"]
         ),
     ).to_document()["record-digest"]
+
+
+def _refresh_probe_record_digest_unchecked(
+    document: dict[str, Any],
+    probe_index: int,
+) -> None:
+    fact = document["probe-facts"][probe_index]
+    classifications = {
+        scenario["mutation-classification"] for scenario in fact["scenarios"]
+    }
+    mutation_classification = (
+        "unknown"
+        if "unknown" in classifications
+        else "incomplete"
+        if "incomplete" in classifications
+        else "complete"
+    )
+    suite_document = {
+        "schema": "workflow-delivery/v3/fixed-acceptance-suite",
+        "suite": fact["probe"].removeprefix("probe-"),
+        "scenario-inventory": fact["scenario-inventory"],
+        "scenarios": fact["scenarios"],
+        "mutation-classification": mutation_classification,
+        "result": (
+            "success"
+            if mutation_classification == "complete"
+            else mutation_classification
+        ),
+    }
+    fact["record-digest"] = canonical_sha256(suite_document)
 
 
 def _retry_2_document() -> dict[str, Any]:

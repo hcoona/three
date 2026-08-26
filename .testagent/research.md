@@ -5011,3 +5011,33 @@ The projection command re-admits the Plan, Decision, and summary and performs
 the exact base-tree marker probe. It does not change Finalizer behavior.
 
 <!-- END APPEND: 2026-08-21-wdv3-precoexistence-bootstrap-research -->
+
+<!-- BEGIN APPEND: 2026-08-26-wdv3-acceptance-proof-repair -->
+
+## Workflow Delivery v3 Acceptance Proof Repair
+
+### Acceptance checklist
+
+1. Propagate the proxy-validated normal-path HTTP 201 proof.
+2. Require proof, admitted startedness, and exact post-readback for new normal
+   completion; package existence alone is insufficient.
+3. Keep proof-free create and mismatched or missing readback fail-closed.
+4. Preserve existing lost-response reconciliation and historical evidence.
+5. Retain only optional, bounded, credential-free runner diagnostics.
+6. Do not add a retry profile, coordinate, workflow, Environment, package
+   operation, or Live authority.
+
+### Bounded inventory
+
+- `cli.py`: the proxy formed a validated HTTP 201 proof, but the normal runner
+  path discarded it and reduced the result to npm process output.
+- `adapters/github_packages.py`: normal proof-free `created` plus exact
+  readback was complete; lost-response already required proof and exact
+  readback.
+- `records/governance.py`: historical proof-free evidence had to remain
+  replayable while admitting the new proof-bound outcome.
+- Existing transport and tarball inspection already validate the exact
+  manifest, repository, tag, bytes, and target witness. The Adapter must trust
+  that lower-level boundary rather than duplicate it.
+
+<!-- END APPEND: 2026-08-26-wdv3-acceptance-proof-repair -->
