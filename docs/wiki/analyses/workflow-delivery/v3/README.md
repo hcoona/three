@@ -228,9 +228,11 @@ Next:
    ID `341728447` is disabled. Environment ID `20531285468` was deleted through
    the API before cleanup PR #584 removed the retry workflow source. The
    expected old-ref rejection instead created stuck cleanup probe run
-   `32809578776`, which remains queued with zero jobs or deployments after
-   GitHub rejected cancel, force-cancel, and authorized deletion. Authenticated
-   package reconciliation remains blocked until GitHub terminalizes or removes
-   that run; and
+   `32809578776`. GitHub Support later terminalized it as `completed` /
+   `cancelled`, with zero jobs or pending deployments. Authenticated read-only
+   reconciliation confirms exact `.5` version, target tag, repository, SHA-1,
+   SHA-512, and acceptance target witness. Platform-Orphan implementation PR
+   #590 was closed unmerged, and no exception authority or result entered
+   `main`; and
 4. keep `live_enabled: false` until successful acceptance and separate human
    activation authorization.

@@ -157,15 +157,23 @@ If it conflicts with the
   `deleted` and rejected direct enable/disable with HTTP 403. The expected
   old-ref HTTP 422 proof instead returned HTTP 204 and created cleanup probe
   run `32809578776`; this reactivated the identity, which was immediately
-  returned to `disabled_manually`. The probe remains queued with zero jobs and
-  zero pending deployments. Normal cancel and force-cancel return HTTP 500;
-  user-authorized deletion returns HTTP 403 while the run is queued. Its API
-  metadata is retained outside the repository. Do not dispatch, rerun, approve,
-  recreate a transition ref, or attempt package reconciliation. Cleanup remains
-  blocked until GitHub terminalizes or otherwise removes the stuck run. The
-  `.5`-`.8` invocation, review, and coordinate block must not be reused. Both
+  returned to `disabled_manually`. The probe stayed queued with zero jobs and
+  zero pending deployments. Normal cancel and force-cancel returned HTTP 500,
+  and user-authorized deletion returned HTTP 403 while the run was queued.
+  GitHub Support then terminalized the run as `completed` / `cancelled` at
+  `2026-08-26T01:45:46Z`; it still has zero jobs and zero pending deployments.
+  Authenticated read-only reconciliation confirms exact version
+  `0.0.0-wdv3-acceptance.5`, tag `wdv3-acceptance-5`, repository association
+  `hcoona/three`, tarball SHA-1
+  `e2c5d9ffb5f94e3ae807d0a4022d99c3e5711050`, SHA-512
+  `080c3d828a30d73d1febc3b6773015fafb529cf3a2be81fe597e83a83a589d32c1be62e933fb38ac4a77f9cb561c6399d3b2e6fe9179b3e4aed93087007140f2`,
+  and acceptance target witness
+  `b031e5e0bd98a95943a03a1529b64e856e1a8aa1`. Platform-Orphan implementation
+  PR #590 was closed unmerged; no candidate ran and no exception authority or
+  result entered `main`. Do not dispatch, rerun, approve, recreate a transition
+  ref, or reuse the `.5`-`.8` invocation, review, or coordinate block. Both
   strict acceptance profiles remain evidence replay authority and cannot be
-  mixed. `live_enabled` remains false.
+  mixed. Acceptance remains unsuccessful and `live_enabled` remains false.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the
@@ -676,12 +684,17 @@ If it conflicts with the
   The second probe was skipped. Workflow ID `341728447` is
   `disabled_manually`, and the workflow, Environment, and transition ref are
   absent. Cleanup PR #584 merged as `fd2f056b`. The expected old-ref HTTP 422
-  check returned HTTP 204 and created stuck cleanup probe run `32809578776`,
-  which remains queued with zero jobs or deployments after cancel,
-  force-cancel, and authorized deletion were rejected by GitHub. Do not
-  dispatch or recreate a ref. Authenticated package reconciliation remains
-  blocked until GitHub terminalizes or removes this run. Do not reuse the
-  invocation, review, or `.5`-`.8` coordinate block.
+  check returned HTTP 204 and created cleanup probe run `32809578776`. GitHub
+  Support later terminalized it as `completed` / `cancelled`, with
+  `updated_at: 2026-08-26T01:45:46Z`, zero jobs, and zero pending deployments.
+  Do not dispatch or recreate a ref. Authenticated read-only reconciliation
+  confirms exact `.5` version, target tag, repository association, SHA-1,
+  SHA-512, and acceptance target witness
+  `b031e5e0bd98a95943a03a1529b64e856e1a8aa1`. Platform-Orphan implementation
+  PR #590 was closed unmerged because natural terminalization occurred before
+  protected consumption; no candidate ran and no exception authority or result
+  entered `main`. Do not reuse the invocation, review, or `.5`-`.8` coordinate
+  block.
   Do not activate normal Live or begin later scopes without a separate explicit
   user task.
 - Implementation must preserve the approved commit boundaries and keep live

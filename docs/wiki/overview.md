@@ -51,11 +51,17 @@ runner did not prove a controlled outcome; the first probe failed incomplete
 and the second was skipped. Workflow ID `341728447` is `disabled_manually`,
 Environment ID `20531285468` was deleted through the API, and cleanup PR #584
 removed the retry workflow source. The expected old-ref rejection instead
-created cleanup probe run `32809578776`, which remains queued with zero jobs or
-deployments after GitHub rejected cancel, force-cancel, and authorized
-deletion. The transition ref is absent. Authenticated package reconciliation
-remains blocked until GitHub terminalizes or removes this run. The `.5`-`.8`
-block is consumed. Normal Live activation remains unauthorized.
+created cleanup probe run `32809578776`. GitHub Support later terminalized it
+as `completed` / `cancelled` at `2026-08-26T01:45:46Z`; it has zero jobs and
+zero pending deployments. The transition ref is absent. Authenticated
+read-only reconciliation confirms exact version
+`0.0.0-wdv3-acceptance.5`, tag `wdv3-acceptance-5`, repository association,
+SHA-1, SHA-512, and acceptance target witness
+`b031e5e0bd98a95943a03a1529b64e856e1a8aa1`. The unnecessary
+Platform-Orphan implementation PR #590 was closed unmerged, so no exception
+authority or result entered `main`. The `.5`-`.8` block is consumed.
+Acceptance remains unsuccessful, and normal Live activation remains
+unauthorized.
 
 ## Confirmed v3 Shape
 
@@ -289,12 +295,13 @@ have changed.
    exact after mutation startedness but retained incomplete runner evidence;
    the second probe was skipped. Workflow ID `341728447` is disabled, the
    workflow and Environment are absent, and cleanup PR #584 is merged. Cleanup
-   probe run `32809578776` remains queued with zero jobs or deployments after
-   GitHub rejected cancel, force-cancel, and authorized deletion. Do not
-   dispatch or recreate a ref. Authenticated package reconciliation remains
-   blocked until GitHub terminalizes or removes this run. Do not reuse
-   `.5`-`.8`. Keep `live_enabled: false`; normal Live activation remains
-   unauthorized.
+   probe run `32809578776` is now terminal as `completed` / `cancelled`, with
+   zero jobs or pending deployments. Do not dispatch or recreate a ref.
+   Authenticated read-only reconciliation confirms exact `.5` version, tag,
+   repository, SHA-1, SHA-512, and target witness. PR #590 was closed unmerged;
+   no Platform-Orphan authority or result entered `main`. Do not reuse
+   `.5`-`.8`. Keep `live_enabled: false`; acceptance remains unsuccessful and
+   normal Live activation remains unauthorized.
 
 ## Related Pages
 
