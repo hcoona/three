@@ -40,6 +40,18 @@ def _arguments() -> list[str]:
     ]
 
 
+def _arguments_with_token(
+    placement: str,
+    token_argument: list[str],
+) -> list[str]:
+    arguments = _arguments()
+    if placement == "root":
+        return [*token_argument, *arguments]
+    if placement == "governance":
+        return [arguments[0], *token_argument, *arguments[1:]]
+    return [*arguments, *token_argument]
+
+
 @pytest.mark.parametrize(
     "extra",
     [
@@ -110,12 +122,16 @@ def test_platform_orphan_target_subparser_rejects_abbreviations(
         ["--token=super-secret-value"],
     ],
 )
+@pytest.mark.parametrize("placement", ["root", "governance", "leaf"])
 def test_platform_orphan_token_poison_pill_rejects_without_retaining_or_echoing(
+    placement: str,
     token_argument: list[str],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     with pytest.raises(SystemExit) as error:
-        cli_module._parser().parse_args([*_arguments(), *token_argument])
+        cli_module._parser().parse_args(
+            _arguments_with_token(placement, token_argument)
+        )
 
     captured = capsys.readouterr()
     assert error.value.code == ARGPARSE_ERROR
@@ -131,8 +147,10 @@ def test_platform_orphan_token_poison_pill_rejects_without_retaining_or_echoing(
         ["--token=super-secret-value"],
     ],
 )
+@pytest.mark.parametrize("placement", ["root", "governance", "leaf"])
 def test_platform_orphan_token_poison_pill_never_reaches_handler(
     monkeypatch: pytest.MonkeyPatch,
+    placement: str,
     token_argument: list[str],
 ) -> None:
     reached_handler = False
@@ -148,7 +166,7 @@ def test_platform_orphan_token_poison_pill_never_reaches_handler(
     )
 
     with pytest.raises(SystemExit) as error:
-        cli_module.main([*_arguments(), *token_argument])
+        cli_module.main(_arguments_with_token(placement, token_argument))
 
     assert error.value.code == ARGPARSE_ERROR
     assert reached_handler is False

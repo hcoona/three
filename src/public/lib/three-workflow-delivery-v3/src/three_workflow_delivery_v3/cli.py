@@ -286,6 +286,17 @@ class _RejectPlatformOrphanToken(argparse.Action):
         parser.error("explicit token input is prohibited")
 
 
+def _add_platform_orphan_token_poison_pill(
+    parser: argparse.ArgumentParser,
+) -> None:
+    parser.add_argument(
+        "--token",
+        action=_RejectPlatformOrphanToken,
+        default=argparse.SUPPRESS,
+        help=argparse.SUPPRESS,
+    )
+
+
 class _AcceptanceProbeArguments(Protocol):
     package_coordinate: str
     suite: str
@@ -5650,6 +5661,7 @@ def _add_optional_evidence_arguments(
 
 def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     parser = argparse.ArgumentParser(description=__doc__)
+    _add_platform_orphan_token_poison_pill(parser)
     commands = parser.add_subparsers(dest="context", required=True)
 
     catalog = commands.add_parser("catalog")
@@ -5681,6 +5693,7 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     compile_parser.set_defaults(handler=_compile_command)
 
     governance = commands.add_parser("governance")
+    _add_platform_orphan_token_poison_pill(governance)
     governance_commands = governance.add_subparsers(
         dest="governance_command",
         required=True,
@@ -5742,12 +5755,7 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "--governance-artifact",
         required=True,
     )
-    reconcile_platform_orphan.add_argument(
-        "--token",
-        action=_RejectPlatformOrphanToken,
-        default=argparse.SUPPRESS,
-        help=argparse.SUPPRESS,
-    )
+    _add_platform_orphan_token_poison_pill(reconcile_platform_orphan)
     reconcile_platform_orphan.set_defaults(
         handler=_governance_reconcile_platform_orphan_command
     )
