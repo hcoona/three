@@ -119,9 +119,9 @@ def build_request(witness: PackageTargetWitness) -> BuildRequest:
         npm_package_version=NPM_VERSION,
         witness=witness,
         source_date_epoch=1_700_000_000,
-        node_version="24.14.0",
+        node_version="24.19.0",
         pnpm_version="11.22.0",
-        npm_version="11.9.0",
+        npm_version="11.17.0",
     )
 
 
@@ -144,9 +144,9 @@ def built_result() -> node_adapter.BuildResult:
             npm_package_version=NPM_VERSION,
             witness=witness,
             source_date_epoch=1_700_000_000,
-            node_version="24.14.0",
+            node_version="24.19.0",
             pnpm_version="11.22.0",
-            npm_version="11.9.0",
+            npm_version="11.17.0",
         )
     )
 
@@ -550,11 +550,11 @@ def test_build_rejects_non_first_slice_package_identity_before_build(
     ) -> subprocess.CompletedProcess[str]:
         del cwd, environment
         if command == ("node", "--version"):
-            return subprocess.CompletedProcess(command, 0, "v24.14.0\n", "")
+            return subprocess.CompletedProcess(command, 0, "v24.19.0\n", "")
         if command == ("pnpm", "--version"):
             return subprocess.CompletedProcess(command, 0, "11.22.0\n", "")
         if command == ("npm", "--version"):
-            return subprocess.CompletedProcess(command, 0, "11.9.0\n", "")
+            return subprocess.CompletedProcess(command, 0, "11.17.0\n", "")
         pytest.fail(
             f"unexpected build command after identity rejection: {command}"
         )
@@ -770,9 +770,9 @@ def test_build_is_deterministic_and_preserves_source_checkout(
     )
     assert first.witness == build_request.witness.canonical_bytes
     assert first.toolchain == (
-        ("node", "24.14.0"),
+        ("node", "24.19.0"),
         ("pnpm", "11.22.0"),
-        ("npm", "11.9.0"),
+        ("npm", "11.17.0"),
         ("adapter", "node/npm-package-v1"),
     )
     assert tuple(path for path, _digest in first.source_input_manifest) == (
@@ -1014,11 +1014,11 @@ def test_failure_paths_preserve_complete_source_checkout(
         del cwd, environment
         observed_commands.append(command)
         if command == ("node", "--version"):
-            return subprocess.CompletedProcess(command, 0, "v24.14.0\n", "")
+            return subprocess.CompletedProcess(command, 0, "v24.19.0\n", "")
         if command == ("pnpm", "--version"):
             return subprocess.CompletedProcess(command, 0, "11.22.0\n", "")
         if command == ("npm", "--version"):
-            return subprocess.CompletedProcess(command, 0, "11.9.0\n", "")
+            return subprocess.CompletedProcess(command, 0, "11.17.0\n", "")
         is_selected = (
             (
                 failure == "build"
@@ -1123,8 +1123,8 @@ def test_project_test_adapter_uses_isolated_stage_and_minimal_environment(
         ]
     ] = []
     runtime_request = _make_runtime_request(
-        node_version="v24.14.0",
-        npm_version="11.9.0",
+        node_version="v24.19.0",
+        npm_version="11.17.0",
     )
 
     def record(
@@ -1164,9 +1164,9 @@ def test_project_test_adapter_uses_isolated_stage_and_minimal_environment(
             )
         )
         if command == ("node", "--version"):
-            return subprocess.CompletedProcess(command, 0, "v24.14.0\n", "")
+            return subprocess.CompletedProcess(command, 0, "v24.19.0\n", "")
         if command == ("npm", "--version"):
-            return subprocess.CompletedProcess(command, 0, "11.9.0\n", "")
+            return subprocess.CompletedProcess(command, 0, "11.17.0\n", "")
         assert command == ("npm", "test", "--ignore-scripts")
         return subprocess.CompletedProcess(command, 0, "passed", "")
 
@@ -1638,8 +1638,8 @@ def test_install_import_uses_tarball_and_verifies_export_and_witness(
 ) -> None:
     before = _source_snapshot()
     runtime_request = _make_runtime_request(
-        node_version="v24.14.0",
-        npm_version="11.9.0",
+        node_version="v24.19.0",
+        npm_version="11.17.0",
     )
     assert (
         "expected_smoke_message"
@@ -1663,8 +1663,8 @@ def test_install_import_rejects_mutated_artifact_export(
     built_result: node_adapter.BuildResult,
 ) -> None:
     runtime_request = _make_runtime_request(
-        node_version="v24.14.0",
-        npm_version="11.9.0",
+        node_version="v24.19.0",
+        npm_version="11.17.0",
     )
     entries = _tar_entries(built_result.tarball)
     entries["package/dist/index.js"] = (
@@ -1771,11 +1771,11 @@ def test_build_reads_declared_inputs_once_and_reuses_immutable_bytes(  # noqa: P
     ) -> subprocess.CompletedProcess[str]:
         del environment
         if command == ("node", "--version"):
-            return subprocess.CompletedProcess(command, 0, "v24.14.0\n", "")
+            return subprocess.CompletedProcess(command, 0, "v24.19.0\n", "")
         if command == ("pnpm", "--version"):
             return subprocess.CompletedProcess(command, 0, "11.22.0\n", "")
         if command == ("npm", "--version"):
-            return subprocess.CompletedProcess(command, 0, "11.9.0\n", "")
+            return subprocess.CompletedProcess(command, 0, "11.17.0\n", "")
         if command == ("node", "scripts/build.mjs"):
             runner_staging_roots.append(cwd.resolve())
             runner_staged_sources.append(

@@ -1,0 +1,37 @@
+{
+  "attachment-members": [
+    "package/README.md",
+    "package/dist/acceptance-witness.json",
+    "package/dist/index.js",
+    "package/package.json"
+  ],
+  "attachment-sha1": "32216da7026df33ec7b020fa8d4aad3cb491a3bb",
+  "attachment-sha512": "zNLIrPljT10GgdIjphgIdoFT5hi5FjefuiE7PP7imKQ8Z9TXoz1M/WdqS58evFGM+zLda3TgpqAl0D0eIhD60Q==",
+  "content-length": 2248,
+  "content-type": "application/json",
+  "metadata": {
+    "argv": [
+      "npm",
+      "publish",
+      "<package>",
+      "--tag",
+      "wdv3-acceptance-1",
+      "--registry",
+      "<loopback-registry>",
+      "--ignore-scripts"
+    ],
+    "node-version": "v24.19.0",
+    "npm-version": "11.17.0"
+  },
+  "method": "PUT",
+  "normalized-request-body-sha256": "afb72e2f74f00afe7881be63c0c1426ea529ed4bc1838d9c5e88680151e11f13",
+  "package-coordinate": "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.1",
+  "path": "/@hcoona%2fhcoona-release-smoke-npm",
+  "tag": "wdv3-acceptance-1",
+  "version": "0.0.0-wdv3-acceptance.1",
+  "witness": {
+    "package-coordinate": "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.1",
+    "target-sha": "cccccccccccccccccccccccccccccccccccccccc",
+    "version": "0.0.0-wdv3-acceptance.1"
+  }
+}
