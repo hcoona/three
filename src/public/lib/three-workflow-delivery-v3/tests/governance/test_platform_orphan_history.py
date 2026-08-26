@@ -176,15 +176,7 @@ def test_range_helper_admits_valid_atomic_consumption(tmp_path: Path) -> None:
 
     result = subprocess.run(  # noqa: S603
         (
-            "uv",
-            "run",
-            "--offline",
-            "--frozen",
-            "--python",
-            "3.13",
-            "--package",
-            "three-workflow-delivery-v3",
-            "python",
+            sys.executable,
             str(REPO_ROOT / "eng/scripts/workflow_delivery_v3_hk.py"),
             "--repository",
             str(repo),
@@ -351,15 +343,7 @@ def test_descendant_only_addition_is_rejected_by_range_helper(
 
     result = subprocess.run(  # noqa: S603
         (
-            "uv",
-            "run",
-            "--offline",
-            "--frozen",
-            "--python",
-            "3.13",
-            "--package",
-            "three-workflow-delivery-v3",
-            "python",
+            sys.executable,
             str(REPO_ROOT / "eng/scripts/workflow_delivery_v3_hk.py"),
             "--repository",
             str(repo),
