@@ -2031,8 +2031,12 @@ differs from `result_digest`, whose preimage omits that member. The result
 reciprocally binds the same invocation UUID and prior authority digest.
 
 The mandatory merge-time root-HK/v3 history check compares the pull request or
-merge-group base and head Git trees. It requires the base commit to equal
-`authority.parent_main_commit`, the base authority bytes to match
+merge-group base and head Git trees. For the implementation merge only, it
+allows the base authority and result paths to be absent and the head to add the
+exact admitted active-authority bytes while leaving the result path absent.
+That initialization is not consumption, creates no authoritative result, and
+excludes no blocker. Once initialized, the check requires the base commit to
+equal `authority.parent_main_commit`, the base authority bytes to match
 `authority.initial_content_sha256`, the fixed result path to be absent in the
 base, the head result bytes to be unchanged canonical candidate bytes with a
 valid `result_digest`, and the head authority bytes to be the matching consumed

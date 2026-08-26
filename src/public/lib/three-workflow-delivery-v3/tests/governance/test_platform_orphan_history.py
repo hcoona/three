@@ -70,6 +70,16 @@ def _active_repository(tmp_path: Path) -> tuple[Path, str]:
     return repo, _commit(repo, "active authority")
 
 
+def _empty_repository(tmp_path: Path) -> tuple[Path, str]:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "--quiet")
+    _git(repo, "config", "user.name", "Platform Orphan Test")
+    _git(repo, "config", "user.email", "platform-orphan@example.invalid")
+    _write(repo, "baseline", b"baseline\n")
+    return repo, _commit(repo, "baseline")
+
+
 def _candidate_and_audit(repo: Path, base_oid: str) -> tuple[bytes, bytes]:
     candidate = _RECORD_FIXTURES._candidate_document()  # noqa: SLF001
     active_blob_oid = _git(
@@ -110,6 +120,44 @@ def test_valid_atomic_consumption_uses_only_explicit_commit_trees(
     _write(repo, PLATFORM_ORPHAN_RESULT_PATH, b"dirty working tree\n")
 
     validate_platform_orphan_history(repo, base_oid, head_oid)
+
+
+def test_initial_active_authority_introduction_is_admitted(
+    tmp_path: Path,
+) -> None:
+    repo, base_oid = _empty_repository(tmp_path)
+    _write(repo, PLATFORM_ORPHAN_AUTHORITY_PATH, ACTIVE_BYTES)
+    head_oid = _commit(repo, "introduce active authority")
+
+    validate_platform_orphan_history(repo, base_oid, head_oid)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["invalid-authority", "result", "result-only", "authority-descendant"],
+)
+def test_invalid_initial_authority_introduction_is_rejected(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    repo, base_oid = _empty_repository(tmp_path)
+    if mutation == "invalid-authority":
+        _write(repo, PLATFORM_ORPHAN_AUTHORITY_PATH, b"{}\n")
+    elif mutation == "result-only":
+        _write(repo, PLATFORM_ORPHAN_RESULT_PATH, b"{}\n")
+    elif mutation == "authority-descendant":
+        _write(
+            repo,
+            f"{PLATFORM_ORPHAN_AUTHORITY_PATH}/descendant",
+            b"invalid\n",
+        )
+    else:
+        _write(repo, PLATFORM_ORPHAN_AUTHORITY_PATH, ACTIVE_BYTES)
+        _write(repo, PLATFORM_ORPHAN_RESULT_PATH, b"{}\n")
+    head_oid = _commit(repo, f"invalid initialization {mutation}")
+
+    with pytest.raises(PlatformOrphanHistoryError):
+        validate_platform_orphan_history(repo, base_oid, head_oid)
 
 
 def test_valid_consumption_allows_equal_bytes_at_pathspec_magic_path(

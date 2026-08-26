@@ -2222,3 +2222,13 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   remove one-shot executable and transition machinery while retaining the
   immutable result, consumed audit, pinned digests, ownership, and minimum
   repository-state protection.
+
+## [2026-08-26] query | Clarify active-authority initialization
+
+- Allowed the implementation merge to add the exact admitted active authority
+  when both fixed governance paths are absent in its base.
+- Kept the result path absent and defined initialization as non-consumption:
+  it creates no authoritative result and excludes no blocker.
+- Preserved the later active-to-consumed base binding and consumed-pair
+  immutability without adding repository-wide blob uniqueness or copy
+  provenance requirements.

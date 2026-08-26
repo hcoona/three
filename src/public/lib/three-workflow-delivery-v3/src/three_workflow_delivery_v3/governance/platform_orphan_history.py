@@ -184,6 +184,37 @@ def _validate_atomic_consumption(
     admit_platform_orphan_consumed_audit(audit_blob.content, result=result)
 
 
+def _validate_initialization(
+    *,
+    base_result: _TreeBlob | None,
+    head_authority: _TreeBlob | None,
+    head_result: _TreeBlob | None,
+    statuses: dict[str, list[str]],
+) -> None:
+    if base_result is not None:
+        raise PlatformOrphanHistoryError(
+            "base result exists without authority",
+        )
+    if statuses != {PLATFORM_ORPHAN_AUTHORITY_PATH: ["A"]}:
+        raise PlatformOrphanHistoryError(
+            "initialization must only add the active authority",
+        )
+    active_blob = _required_blob(
+        head_authority,
+        path=PLATFORM_ORPHAN_AUTHORITY_PATH,
+    )
+    if head_result is not None:
+        raise PlatformOrphanHistoryError(
+            "initialization must not add a result",
+        )
+    try:
+        admit_platform_orphan_active_authority(active_blob.content)
+    except (TypeError, ValueError) as error:
+        raise PlatformOrphanHistoryError(
+            "initial authority is not admissible",
+        ) from error
+
+
 def validate_platform_orphan_history(
     repository: Path,
     base_oid: str,
@@ -214,7 +245,13 @@ def validate_platform_orphan_history(
     )
 
     if base_authority is None:
-        raise PlatformOrphanHistoryError("base active authority is absent")
+        _validate_initialization(
+            base_result=base_result,
+            head_authority=head_authority,
+            head_result=head_result,
+            statuses=statuses,
+        )
+        return
 
     try:
         admit_platform_orphan_active_authority(base_authority.content)
