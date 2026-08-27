@@ -1,6 +1,6 @@
 """Commit-10 Governance Acceptance Evidence contract scenarios."""
 
-# ruff: noqa: D103, E501, FBT001, PLR0913, PLR0917, PT011
+# ruff: noqa: D103, E501, FBT001, PLR0913, PLR0917, PT011, SLF001
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from copy import deepcopy
 from typing import Any
 
 import pytest
+import three_workflow_delivery_v3.records.governance as governance_module
 from three_workflow_delivery_v3.adapters.github_packages import (
     AcceptanceRunnerDiagnostic,
     FixedAcceptanceSuiteResult,
@@ -21,6 +22,10 @@ from three_workflow_delivery_v3.records.governance import (
     GOVERNANCE_ACCEPTANCE_PROBE_SCENARIOS,
     GOVERNANCE_ACCEPTANCE_PROBES,
     GOVERNANCE_ACCEPTANCE_SCENARIOS,
+    GOVERNANCE_RETRY_3_ACCEPTANCE_ENVIRONMENT,
+    GOVERNANCE_RETRY_3_ACCEPTANCE_PACKAGE_COORDINATE,
+    GOVERNANCE_RETRY_3_ACCEPTANCE_SCENARIO_COORDINATES,
+    GOVERNANCE_RETRY_3_ACCEPTANCE_WORKFLOW_PATH,
     admit_governance_acceptance_evidence,
 )
 
@@ -2355,3 +2360,186 @@ def test_incomplete_acceptance_evidence_preserves_zero_workflow_sha_sentinel() -
 
     assert evidence.mutation_classification == "incomplete"
     assert evidence.to_document() == document
+
+
+def _retry_3_document() -> dict[str, Any]:
+    document = _retry_2_document()
+    environment = "workflow-delivery-v3-buddy-smoke-acceptance-retry-3"
+    document["workflow"]["path"] = (
+        ".github/workflows/"
+        "workflow-delivery-v3-buddy-smoke-acceptance-retry-3.yml"
+    )
+    document["package-coordinate"] = (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9"
+    )
+    document["confirmation-digest"] = (
+        "sha256:"
+        "33e59948941f5f1111d5017ab80dd33c90dd2ac8d1a17203e7f7382a8c5b2c72"
+    )
+    document["environment"] = environment
+    document["recovery"]["environment"] = environment
+    return document
+
+
+def test_retry_3_profile_admits_exact_zero_sentinel_rejected_dispatch() -> None:
+    document = _retry_3_document()
+    profile = next(
+        profile
+        for profile in governance_module._GOVERNANCE_ACCEPTANCE_PROFILES
+        if profile.package_coordinate
+        == GOVERNANCE_RETRY_3_ACCEPTANCE_PACKAGE_COORDINATE
+    )
+
+    admitted = _admit(document)
+
+    assert profile.workflow_path == GOVERNANCE_RETRY_3_ACCEPTANCE_WORKFLOW_PATH
+    assert profile.environment == GOVERNANCE_RETRY_3_ACCEPTANCE_ENVIRONMENT
+    assert profile.target_sha == "0" * 40
+    assert profile.confirmation_digest == document["confirmation-digest"]
+    assert (
+        profile.coordinates()
+        == GOVERNANCE_RETRY_3_ACCEPTANCE_SCENARIO_COORDINATES
+    )
+    assert admitted.target_sha == "0" * 40
+    assert (
+        admitted.package_coordinate
+        == GOVERNANCE_RETRY_3_ACCEPTANCE_PACKAGE_COORDINATE
+    )
+    assert GOVERNANCE_RETRY_3_ACCEPTANCE_PACKAGE_COORDINATE == (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9"
+    )
+    assert (
+        document["workflow"]["path"]
+        == GOVERNANCE_RETRY_3_ACCEPTANCE_WORKFLOW_PATH
+    )
+    assert GOVERNANCE_RETRY_3_ACCEPTANCE_WORKFLOW_PATH == (
+        ".github/workflows/"
+        "workflow-delivery-v3-buddy-smoke-acceptance-retry-3.yml"
+    )
+    assert (
+        document["environment"]
+        == document["recovery"]["environment"]
+        == GOVERNANCE_RETRY_3_ACCEPTANCE_ENVIRONMENT
+    )
+    assert GOVERNANCE_RETRY_3_ACCEPTANCE_ENVIRONMENT == (
+        "workflow-delivery-v3-buddy-smoke-acceptance-retry-3"
+    )
+    assert document["confirmation-digest"] == (
+        "sha256:"
+        "33e59948941f5f1111d5017ab80dd33c90dd2ac8d1a17203e7f7382a8c5b2c72"
+    )
+    assert GOVERNANCE_RETRY_3_ACCEPTANCE_SCENARIO_COORDINATES == {
+        "absent-create-readback": (
+            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9",
+            "wdv3-acceptance-9",
+        ),
+        "exact": (
+            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9",
+            "wdv3-acceptance-9",
+        ),
+        "identical-race": (
+            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.10",
+            "wdv3-acceptance-10",
+        ),
+        "differing-race": (
+            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.11",
+            "wdv3-acceptance-11",
+        ),
+        "lost-response": (
+            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.12",
+            "wdv3-acceptance-12",
+        ),
+    }
+    assert admitted.to_document() == document
+
+
+@pytest.mark.parametrize(
+    ("path", "value", "message"),
+    [
+        (
+            ("workflow", "path"),
+            (
+                ".github/workflows/"
+                "workflow-delivery-v3-buddy-smoke-acceptance-retry-2.yml"
+            ),
+            "workflow.path",
+        ),
+        (
+            ("environment",),
+            "workflow-delivery-v3-buddy-smoke-acceptance-retry-2",
+            "environment",
+        ),
+        (
+            ("recovery", "environment"),
+            "workflow-delivery-v3-buddy-smoke-acceptance-retry-2",
+            "recovery.environment",
+        ),
+        (
+            ("confirmation-digest",),
+            (
+                "sha256:"
+                "1215f9d01cd343462c3f826ba67ebee86b6f6142b7fcfe5630572a5a808314f8"
+            ),
+            "confirmation-digest",
+        ),
+        (("target-sha",), "c" * 40, "target-sha"),
+    ],
+)
+def test_retry_3_profile_rejects_cross_profile_substitution(
+    path: tuple[str, ...],
+    value: object,
+    message: str,
+) -> None:
+    document = _retry_3_document()
+    _set_path(document, path, value)
+
+    with pytest.raises(ValueError, match=message):
+        _admit(document)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        (
+            "package-coordinate",
+            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.10",
+        ),
+        ("tag", "wdv3-acceptance-10"),
+    ],
+)
+def test_retry_3_profile_rejects_scenario_coordinate_or_tag_mismatch(
+    field: str,
+    value: str,
+) -> None:
+    document = _retry_3_document()
+    fact = _probe_fact("probe-absent-create-readback")
+    scenario = fact["scenarios"][0]
+    scenario["package-coordinate"] = (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9"
+    )
+    scenario["tag"] = "wdv3-acceptance-9"
+    scenario[field] = value
+    document["probe-facts"][0] = fact
+    _refresh_probe_record_digest_unchecked(document, 0)
+
+    with pytest.raises(ValueError, match=field):
+        _admit(document)
+
+
+def test_retry_3_profile_preserves_retry_1_and_retry_2_admission() -> None:
+    retry_1 = _document()
+    retry_2 = _retry_2_document()
+
+    admitted_retry_1 = _admit(retry_1)
+    admitted_retry_2 = _admit(retry_2)
+
+    assert admitted_retry_1.to_document() == retry_1
+    assert admitted_retry_2.to_document() == retry_2
+    assert (
+        retry_1["probe-facts"][0]["record-digest"]
+        == HISTORICAL_ABSENT_CREATE_READBACK_RECORD_DIGEST
+    )
+    assert (
+        retry_1["probe-facts"][1]["record-digest"]
+        == HISTORICAL_EXACT_AND_CONFLICT_RECORD_DIGEST
+    )

@@ -196,6 +196,21 @@ If it conflicts with the
   does not authorize a third acceptance workflow, invocation, review,
   Environment, coordinate block, package operation, Release lineage, or normal
   Live activation.
+- The user has now explicitly authorized the full retry-3 destination-
+  acceptance sequence, but the current phase is preparation only. The closed
+  profile uses base `.9`: absent/exact `.9`, identical-race `.10`,
+  differing-race `.11`, and lost-response `.12`, with tags
+  `wdv3-acceptance-9` through `wdv3-acceptance-12`; workflow
+  `.github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-3.yml`;
+  and Environment
+  `workflow-delivery-v3-buddy-smoke-acceptance-retry-3`. Its target remains the
+  40-zero sentinel until protected finalization. Read-only preflight found all
+  `.9`-`.12` versions absent, no acceptance refs or Environments, and retired
+  retry-2 workflow ID `341728447` disabled with no nonterminal runs. No
+  Environment was provisioned and no dispatch, package mutation, or ref
+  creation was performed. Both historical attempts remain unsuccessful,
+  `live_enabled` remains false, and Live activation still requires separate
+  authorization.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the

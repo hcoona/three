@@ -29,6 +29,7 @@ from three_workflow_delivery_v3.adapters.github_packages import (
     FixedCoordinateAcceptanceProbeResult,
     GitHubPackagesHttpResponse,
     fixed_acceptance_coordinates,
+    fixed_acceptance_scenario_specs,
     inspect_fixed_acceptance_tarball,
     run_fixed_acceptance_suite,
     run_fixed_coordinate_acceptance_probe,
@@ -237,7 +238,7 @@ def test_retry_2_suite_resolves_only_the_reviewed_coordinate_block() -> None:
     }
     with pytest.raises(ValueError, match="not a reviewed fixed suite"):
         fixed_acceptance_coordinates(
-            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9"
+            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.13"
         )
 
 
@@ -2524,8 +2525,8 @@ def test_acceptance_symbols_are_deliberately_public_when_adapter_exports_them() 
         (ACCEPTANCE_COORDINATES["absent-create-readback"], "latest"),
         (ACCEPTANCE_COORDINATES["exact"], "wdv3-acceptance-9"),
         (
-            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9",
-            "wdv3-acceptance-9",
+            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.13",
+            "wdv3-acceptance-13",
         ),
     ],
 )
@@ -6142,3 +6143,195 @@ def test_acceptance_proxy_rejects_crlf_upstream_response_header(
     assert {"x-bad", "x-injected"}.isdisjoint(
         name.lower() for name, _value in headers
     )
+
+
+def test_retry_3_suite_resolves_exact_coordinates_and_preserves_history() -> (
+    None
+):
+    from three_workflow_delivery_v3.adapters.github_packages import (  # noqa: PLC0415
+        RETRY_3_ACCEPTANCE_PACKAGE_COORDINATE,
+    )
+
+    package = "@hcoona/hcoona-release-smoke-npm@"
+    expected_profiles = {
+        ACCEPTANCE_PACKAGE_COORDINATE: {
+            "absent-create-readback": (
+                package + "0.0.0-wdv3-acceptance.1",
+                "wdv3-acceptance-1",
+            ),
+            "exact": (
+                package + "0.0.0-wdv3-acceptance.1",
+                "wdv3-acceptance-1",
+            ),
+            "identical-race": (
+                package + "0.0.0-wdv3-acceptance.2",
+                "wdv3-acceptance-2",
+            ),
+            "differing-race": (
+                package + "0.0.0-wdv3-acceptance.3",
+                "wdv3-acceptance-3",
+            ),
+            "lost-response": (
+                package + "0.0.0-wdv3-acceptance.4",
+                "wdv3-acceptance-4",
+            ),
+        },
+        RETRY_2_ACCEPTANCE_PACKAGE_COORDINATE: {
+            "absent-create-readback": (
+                package + "0.0.0-wdv3-acceptance.5",
+                "wdv3-acceptance-5",
+            ),
+            "exact": (
+                package + "0.0.0-wdv3-acceptance.5",
+                "wdv3-acceptance-5",
+            ),
+            "identical-race": (
+                package + "0.0.0-wdv3-acceptance.6",
+                "wdv3-acceptance-6",
+            ),
+            "differing-race": (
+                package + "0.0.0-wdv3-acceptance.7",
+                "wdv3-acceptance-7",
+            ),
+            "lost-response": (
+                package + "0.0.0-wdv3-acceptance.8",
+                "wdv3-acceptance-8",
+            ),
+        },
+        RETRY_3_ACCEPTANCE_PACKAGE_COORDINATE: {
+            "absent-create-readback": (
+                package + "0.0.0-wdv3-acceptance.9",
+                "wdv3-acceptance-9",
+            ),
+            "exact": (
+                package + "0.0.0-wdv3-acceptance.9",
+                "wdv3-acceptance-9",
+            ),
+            "identical-race": (
+                package + "0.0.0-wdv3-acceptance.10",
+                "wdv3-acceptance-10",
+            ),
+            "differing-race": (
+                package + "0.0.0-wdv3-acceptance.11",
+                "wdv3-acceptance-11",
+            ),
+            "lost-response": (
+                package + "0.0.0-wdv3-acceptance.12",
+                "wdv3-acceptance-12",
+            ),
+        },
+    }
+    for base_coordinate, expected in expected_profiles.items():
+        coordinates = fixed_acceptance_coordinates(base_coordinate)
+        tags = {
+            scenario: tag
+            for scenario, _version, tag in fixed_acceptance_scenario_specs(
+                base_coordinate
+            )
+        }
+        assert {
+            scenario: (coordinate, tags[scenario])
+            for scenario, coordinate in coordinates.items()
+        } == expected
+
+
+def test_retry_3_suite_executes_with_exact_base_coordinate_and_tag(
+    tmp_path: Path,
+) -> None:
+    from three_workflow_delivery_v3.adapters.github_packages import (  # noqa: PLC0415
+        RETRY_3_ACCEPTANCE_PACKAGE_COORDINATE,
+    )
+
+    tarball = tmp_path / "retry-3.tgz"
+    tarball.write_bytes(b"retry-3-absent-create-readback")
+    content = f"sha512:{hashlib.sha512(tarball.read_bytes()).hexdigest()}"
+    transport = RecordingTransport(
+        [
+            _absent(),
+            {
+                "state": "exact",
+                "version": "0.0.0-wdv3-acceptance.9",
+                "tag": "wdv3-acceptance-9",
+                "content-sha512": content,
+                "response-identity-digest": RESPONSE_B,
+            },
+        ]
+    )
+
+    result = run_fixed_acceptance_suite(
+        suite="absent-create-readback",
+        tarballs={"absent-create-readback": tarball},
+        transport=transport,
+        runner=ControlledRunner(),
+        timeout_seconds=TIMEOUT_SECONDS,
+        max_response_bytes=MAX_RESPONSE_BYTES,
+        max_output_bytes=MAX_OUTPUT_BYTES,
+        base_package_coordinate=RETRY_3_ACCEPTANCE_PACKAGE_COORDINATE,
+    )
+
+    scenario = result.scenarios[0]
+    assert scenario.package_coordinate == (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9"
+    )
+    assert scenario.tag == "wdv3-acceptance-9"
+    assert transport.calls[0][:2] == (
+        scenario.package_coordinate,
+        scenario.tag,
+    )
+
+
+def test_retry_3_npm_runner_uses_exact_lost_response_coordinate() -> None:
+    from three_workflow_delivery_v3.adapters.github_packages import (  # noqa: PLC0415
+        RETRY_3_ACCEPTANCE_PACKAGE_COORDINATE,
+    )
+
+    runner = cli_module._AcceptanceNpmRunner(
+        Path(".npmrc"),
+        contender_tarballs={},
+        base_package_coordinate=RETRY_3_ACCEPTANCE_PACKAGE_COORDINATE,
+    )
+
+    assert runner._coordinates == {
+        "absent-create-readback": (
+            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9"
+        ),
+        "exact": "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9",
+        "identical-race": (
+            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.10"
+        ),
+        "differing-race": (
+            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.11"
+        ),
+        "lost-response": (
+            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.12"
+        ),
+    }
+
+
+@pytest.mark.parametrize(
+    ("coordinate", "tag"),
+    [
+        (
+            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9",
+            "wdv3-acceptance-5",
+        ),
+        (
+            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5",
+            "wdv3-acceptance-9",
+        ),
+    ],
+)
+def test_retry_3_proof_rejects_cross_profile_coordinate_and_tag(
+    coordinate: str,
+    tag: str,
+) -> None:
+    with pytest.raises(ValueError, match="coordinate or tag is not fixed"):
+        AcceptanceRequestProof.from_validated_exchange(
+            raw_request=b"retry-3-request",
+            tarball=b"retry-3-tarball",
+            package_coordinate=coordinate,
+            tag=tag,
+            upstream_status=201,
+            selected_headers={"Content-Type": "application/json"},
+            response_body=b'{"ok":true}',
+        )

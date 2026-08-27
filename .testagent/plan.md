@@ -5819,3 +5819,51 @@ Add tests in `tests/contracts/test_ci_workflow.py` proving:
 The plan excludes any third acceptance invocation or live operation.
 
 <!-- END APPEND: 2026-08-26-wdv3-acceptance-proof-repair -->
+
+<!-- BEGIN APPEND: 2026-08-26-wdv3-acceptance-retry-3-fallback -->
+
+## Retry-3 fallback test phase plan
+
+1. Update only obsolete “first unreviewed coordinate” negatives from `.9` to
+   `.13`; retain valid cross-coordinate substitution negatives.
+2. Add Adapter tests:
+   - exact profile/history:
+     `test_retry_3_suite_resolves_exact_coordinates_and_preserves_history`;
+   - suite execution:
+     `test_retry_3_suite_executes_with_exact_base_coordinate_and_tag`;
+   - npm runner:
+     `test_retry_3_npm_runner_uses_exact_lost_response_coordinate`;
+   - cross-profile proof:
+     `test_retry_3_proof_rejects_cross_profile_coordinate_and_tag`.
+3. Add Governance `_retry_3_document` and tests:
+   - exact rejected dispatch:
+     `test_retry_3_profile_admits_exact_zero_sentinel_rejected_dispatch`;
+   - profile closure:
+     `test_retry_3_profile_rejects_cross_profile_substitution`;
+   - coordinate/tag closure:
+     `test_retry_3_profile_rejects_scenario_coordinate_or_tag_mismatch`;
+   - historical admission/digests:
+     `test_retry_3_profile_preserves_retry_1_and_retry_2_admission`.
+4. Add the compact workflow contract:
+   - literals: `test_retry_3_dispatch_and_profile_literals_are_exact`;
+   - DAG/attempt/Environment:
+     `test_retry_3_has_exact_five_job_first_attempt_dag`;
+   - permissions: `test_retry_3_permissions_limit_packages_write_to_probe_jobs`;
+   - pins/toolchain:
+     `test_retry_3_toolchain_and_action_revisions_are_fully_pinned`;
+   - terminal diagnostic/digest structure:
+     `test_retry_3_terminal_capture_is_always_and_reconstructs_diagnostics`;
+   - zero fail-before:
+     `test_retry_3_zero_sentinel_fails_before_review_or_mutation`;
+   - controlled terminal execution:
+     `test_retry_3_terminal_script_emits_canonical_rejected_dispatch`;
+   - ownership/no route:
+     `test_retry_3_is_owned_and_contains_no_live_or_release_route`.
+5. Add retirement/topology tests:
+   `test_retry_3_is_the_only_temporary_acceptance_workflow_preserved` and
+   `test_retry_3_temporary_acceptance_coexists_with_disabled_normal_buddy`.
+6. Run the focused pytest selection, all five relevant files, targeted Ruff
+   check/format, and root/targeted discovery. Record environmental blockers
+   without weakening historical tests.
+
+<!-- END APPEND: 2026-08-26-wdv3-acceptance-retry-3-fallback -->

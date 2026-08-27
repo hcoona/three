@@ -105,11 +105,25 @@ RETRY_2_ACCEPTANCE_SCENARIO_SPECS = (
     ("differing-race", "0.0.0-wdv3-acceptance.7", "wdv3-acceptance-7"),
     ("lost-response", "0.0.0-wdv3-acceptance.8", "wdv3-acceptance-8"),
 )
+RETRY_3_ACCEPTANCE_PACKAGE_COORDINATE = (
+    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9"
+)
+RETRY_3_ACCEPTANCE_SCENARIO_SPECS = (
+    ("absent-create-readback", "0.0.0-wdv3-acceptance.9", "wdv3-acceptance-9"),
+    ("exact", "0.0.0-wdv3-acceptance.9", "wdv3-acceptance-9"),
+    ("identical-race", "0.0.0-wdv3-acceptance.10", "wdv3-acceptance-10"),
+    ("differing-race", "0.0.0-wdv3-acceptance.11", "wdv3-acceptance-11"),
+    ("lost-response", "0.0.0-wdv3-acceptance.12", "wdv3-acceptance-12"),
+)
 _ACCEPTANCE_SUITE_PROFILES = (
     (ACCEPTANCE_PACKAGE_COORDINATE, ACCEPTANCE_SCENARIO_SPECS),
     (
         RETRY_2_ACCEPTANCE_PACKAGE_COORDINATE,
         RETRY_2_ACCEPTANCE_SCENARIO_SPECS,
+    ),
+    (
+        RETRY_3_ACCEPTANCE_PACKAGE_COORDINATE,
+        RETRY_3_ACCEPTANCE_SCENARIO_SPECS,
     ),
 )
 ACCEPTANCE_COORDINATES = {

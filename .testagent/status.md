@@ -8977,3 +8977,148 @@ No network, workflow, Environment, package, coordinate, or Live operation was
 performed.
 
 <!-- END APPEND: 2026-08-26-wdv3-acceptance-proof-repair -->
+
+<!-- BEGIN APPEND: 2026-08-26-wdv3-acceptance-retry-3-fallback -->
+
+## Retry-3 fallback test phase status
+
+**Status: SUCCESS for the requested retry-3 phase; unrelated harness blockers
+recorded.**
+
+Created 23 collected test cases across five files. The focused command passed
+`25 passed, 679 deselected` (23 new cases plus two selected historical
+preservation cases). Targeted discovery increased from 681 to 704 tests
+(`+23`). Ruff format check reported `5 files already formatted`; Ruff check
+reported `All checks passed!`.
+
+The complete five-file run reached `702 passed, 2 failed`. Both failures are
+pre-existing environment/toolchain fixture checks:
+`test_acceptance_capture_records_nonsecret_toolchain_metadata` and
+`test_acceptance_request_fixture_is_reproducible` observed installed
+Node/npm `v24.14.0`/`11.9.0` instead of their fixed
+`v24.19.0`/`11.17.0` expectations. They are outside the retry-3 behavior and
+were not weakened. Root default collection saw 3737 tests but stopped with 13
+unrelated collection errors in other workspace projects; the targeted package
+collection discovered all 704 relevant tests.
+
+Requirement-to-test evidence:
+
+| Requirement | Evidence |
+| --- | --- |
+| `.9`/`.10`/`.11`/`.12`, tags 9-12; `.1`-.8 preserved | `test_retry_3_suite_resolves_exact_coordinates_and_preserves_history` |
+| Retry-3 suite execution and npm runner binding | `test_retry_3_suite_executes_with_exact_base_coordinate_and_tag`, `test_retry_3_npm_runner_uses_exact_lost_response_coordinate` |
+| Cross-profile Adapter proof rejection | `test_retry_3_proof_rejects_cross_profile_coordinate_and_tag` |
+| Exact retry-3 path, Environment, digest, zero rejected dispatch | `test_retry_3_profile_admits_exact_zero_sentinel_rejected_dispatch`, `test_retry_3_dispatch_and_profile_literals_are_exact` |
+| Governance cross-profile and coordinate/tag closure | `test_retry_3_profile_rejects_cross_profile_substitution`, `test_retry_3_profile_rejects_scenario_coordinate_or_tag_mismatch` |
+| Retry-1/retry-2 admission and literal historical digests | `test_retry_3_profile_preserves_retry_1_and_retry_2_admission` |
+| Five-job DAG and first-attempt guards | `test_retry_3_has_exact_five_job_first_attempt_dag` |
+| Zero target rejects before review/mutation | `test_retry_3_zero_sentinel_fails_before_review_or_mutation`, `test_retry_3_terminal_script_emits_canonical_rejected_dispatch` |
+| Packages-write only for probes | `test_retry_3_permissions_limit_packages_write_to_probe_jobs` |
+| Node/npm versions and full action pins | `test_retry_3_toolchain_and_action_revisions_are_fully_pinned` |
+| Terminal always capture and optional diagnostic reconstruction with canonical digest equality | `test_retry_3_terminal_capture_is_always_and_reconstructs_diagnostics` |
+| CODEOWNERS and no Live/Release route | `test_retry_3_is_owned_and_contains_no_live_or_release_route` |
+| Retry-3 sole temporary workflow with exact jobs | `test_retry_3_is_the_only_temporary_acceptance_workflow_preserved` |
+| Original/retry-2 absent; normal Buddy disabled | `test_retry_3_temporary_acceptance_coexists_with_disabled_normal_buddy` |
+
+Pseudo-mutation review found the requested omissions killed: profile suffix or
+tag drift, historical profile replacement, digest/path/Environment
+substitution, zero fail-open, job/guard removal, permissions expansion,
+unpinned toolchains/actions, terminal `always()` removal, omitted diagnostic
+reconstruction, canonical digest comparison removal, ownership removal, and
+temporary workflow coexistence all change asserted observables.
+
+Assertion-quality review found no assertion-free, trivial-only,
+self-referential, or tautological generated test. The set includes equality,
+collection/structural, exception/negative, ordering, subprocess side-effect,
+AST-binding, and canonical-byte assertions.
+
+No network/live operation, staging, commit, or push was performed.
+
+<!-- END APPEND: 2026-08-26-wdv3-acceptance-retry-3-fallback -->
+
+<!-- BEGIN APPEND: 2026-08-26-wdv3-acceptance-retry-3-audit-closure -->
+
+## Retry-3 high-confidence audit closure
+
+Closed all requested retry-3 gaps without network or live operations. The
+terminal workflow Python is now executed against canonical complete suite
+records and proves exact preservation of the proof, all four runner-diagnostic
+fields, canonical record digest, probe result, and mutation classification.
+Dispatch input objects, per-job guards, permissions, and ordered action uses
+are exact; fixed-input validation covers a nonzero finalized target and each
+independent mismatch, with the complete guard order asserted.
+
+Adapter and Governance assertions now pin every retry-3 coordinate/tag pair,
+the zero target profile, workflow, Environment, recovery Environment,
+confirmation digest, and historical `.1`-`.8` profiles and literal record
+digests. Pseudo-mutation review confirms the targeted `None`, wrong-key/value,
+omitted-diagnostic, guard-removal/reordering, permission/action multiplicity,
+and coordinate/tag/profile substitutions are killed. Assertion review found
+no assertion-free, trivial-only, or self-referential additions.
+
+Validation:
+
+- Focused five-file pytest: `712 passed in 30.49s` (`+8` collected cases over
+  the prior 704-test baseline).
+- Ruff check: `All checks passed!`.
+- Ruff format check: all five files already formatted.
+- No staging, commit, push, workflow dispatch, Environment, package, or remote
+  operation was performed.
+
+<!-- END APPEND: 2026-08-26-wdv3-acceptance-retry-3-audit-closure -->
+
+<!-- BEGIN APPEND: 2026-08-26-wdv3-acceptance-retry-3-final-gap-closure -->
+
+## Retry-3 final gap closure
+
+The final workflow contract pins exact concurrency, immutable checkout refs,
+credential persistence, complete probe step inventories, the sole
+token-bearing mutation commands, probe output wiring, terminal dependency
+bindings, and the terminal artifact identity and error-on-missing policy. The
+focused five-file suite passes `714 tests` under the repository-locked Mise
+environment.
+
+Independent adjudication classified the proposed self-contained fallback for a
+terminal job checkout or tool-bootstrap failure as false-positive and
+out-of-scope. The normative contract requires terminal fan-in across upstream
+dependency failures, not fabrication of canonical Governance evidence without
+the reviewed source and admission implementation. Missing evidence remains an
+explicit failed platform outcome and blocks acceptance.
+
+No network request, workflow dispatch, Environment operation, package
+mutation, staging, commit, or push was performed.
+
+<!-- END APPEND: 2026-08-26-wdv3-acceptance-retry-3-final-gap-closure -->
+
+<!-- BEGIN APPEND: 2026-08-26-wdv3-acceptance-retry-3-review-closure -->
+
+## Retry-3 preparation review closure
+
+The final tests/documentation review produced four findings. Independent
+adjudication classified three as true positives and one as false positive:
+
+- The zero-sentinel contract inspected the guard without executing it: true
+  positive. The test now executes the validation shell with the zero target
+  and proves failure before Environment review or either mutation job.
+- Trigger and per-job Environment assertions were incomplete: true positive.
+  The contract now pins the exact trigger allowlist and exact job-to-Environment
+  mapping.
+- The local CODEOWNERS assertion only checked line presence: false positive.
+  The existing commit-9 ownership contract already evaluates ordered,
+  last-match effective ownership for governed workflow surfaces.
+- The overview described Live activation as separately authorized: true
+  positive. It now states that Live remains unauthorized and requires separate
+  authorization.
+
+The same reviewer re-examined the repaired scope and reported no findings.
+Final validation under the repository-locked Mise environment:
+
+- focused five-file pytest: `715 passed in 31.34s`;
+- complete Workflow Delivery v3 pytest: `3720 passed in 490.61s`;
+- Prettier and markdownlint for the corrected overview: passed;
+- `git diff --check`: passed.
+
+No network request, workflow dispatch, Environment operation, package
+mutation, staging, commit, push, or PR operation was performed.
+
+<!-- END APPEND: 2026-08-26-wdv3-acceptance-retry-3-review-closure -->
