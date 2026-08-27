@@ -2271,3 +2271,18 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   24.19.0/npm 11.17.0 request.
 - Preserved the original capture as historical replay evidence and made no
   Environment, dispatch, package, ref, finalization, or Live operation.
+
+## [2026-08-27] query | Finalize destination acceptance retry 3
+
+- Merged preparation PR #598 as
+  `a61f9a4e44458bfd7bc7bfd96f6db848ce047c0c`.
+- Fresh authenticated preflight confirmed the `.9`-`.12` versions and
+  acceptance refs are absent.
+- Provisioned Environment
+  `workflow-delivery-v3-buddy-smoke-acceptance-retry-3` as ID `20680097388`
+  with sole required reviewer `hcoona`, self-review permitted, and sole
+  deployment branch `main`.
+- Bound the protected-finalization workflow, Governance profile, and contract
+  to the preparation merge SHA. Finalization must merge before the one
+  authorized attempt-1 dispatch. Normal Live remains disabled and
+  unauthorized.

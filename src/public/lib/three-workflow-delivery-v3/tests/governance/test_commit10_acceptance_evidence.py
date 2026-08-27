@@ -2381,7 +2381,9 @@ def _retry_3_document() -> dict[str, Any]:
     return document
 
 
-def test_retry_3_profile_admits_exact_zero_sentinel_rejected_dispatch() -> None:
+def test_retry_3_finalized_profile_preserves_zero_sentinel_rejected_dispatch() -> (
+    None
+):
     document = _retry_3_document()
     profile = next(
         profile
@@ -2394,7 +2396,7 @@ def test_retry_3_profile_admits_exact_zero_sentinel_rejected_dispatch() -> None:
 
     assert profile.workflow_path == GOVERNANCE_RETRY_3_ACCEPTANCE_WORKFLOW_PATH
     assert profile.environment == GOVERNANCE_RETRY_3_ACCEPTANCE_ENVIRONMENT
-    assert profile.target_sha == "0" * 40
+    assert profile.target_sha == "a61f9a4e44458bfd7bc7bfd96f6db848ce047c0c"
     assert profile.confirmation_digest == document["confirmation-digest"]
     assert (
         profile.coordinates()

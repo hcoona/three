@@ -1624,10 +1624,11 @@ Only probe jobs declare `packages: write`; no PAT or `id-token: write` exists.
 The workflow top-level permissions are `{}`. Validation and evidence-capture
 jobs declare only `contents: read`; each probe job declares `contents: read`
 plus `packages: write`. Unspecified permissions are none.
-The dedicated acceptance Environment and reviewer configuration are pending
-protected finalization; they are not asserted to exist at the commit-10
-boundary. Once configured, it is not either normal Buddy Environment. The
-workflow emits only Governance acceptance
+The dedicated retry-3 acceptance Environment is provisioned for protected
+finalization with sole required reviewer `hcoona`, self-review permitted for
+the single-operator topology, and sole deployment branch `main`. It is not
+either normal Buddy Environment. The finalization must merge before dispatch.
+The workflow emits only Governance acceptance
 evidence bound to workflow/run/target/fixed coordinate, dependency outcomes,
 available probe results, and complete/incomplete/unknown mutation
 classification. It cannot create Release Intent,

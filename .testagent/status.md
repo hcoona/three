@@ -9150,3 +9150,32 @@ No Environment, dispatch, package, ref, finalization, or Live operation was
 performed.
 
 <!-- END APPEND: 2026-08-27-wdv3-acceptance-retry-3-pr-review-closure -->
+
+<!-- BEGIN APPEND: 2026-08-27-wdv3-acceptance-retry-3-finalization -->
+
+## Retry-3 protected finalization
+
+Preparation PR #598 merged as
+`a61f9a4e44458bfd7bc7bfd96f6db848ce047c0c`. Fresh authenticated preflight
+confirmed the `.9`-`.12` package versions and acceptance refs are absent.
+Environment `workflow-delivery-v3-buddy-smoke-acceptance-retry-3` was
+provisioned as ID `20680097388` with sole required reviewer `hcoona`,
+self-review permitted, and sole deployment branch `main`.
+
+The finalization diff binds only the retry-3 workflow default and environment,
+Governance profile, contracts, and authoritative state documents to the exact
+preparation merge SHA. Zero-sentinel validation and historical
+rejected-dispatch admission remain intact.
+
+Validation:
+
+- focused five-file pytest: `715 passed in 31.59s`;
+- Ruff check and format, focused Pyrefly, Actionlint, Prettier, markdownlint,
+  and `git diff --check`: passed;
+- independent protected-finalization review: no findings.
+
+No workflow dispatch, package mutation, acceptance ref, or Live operation was
+performed. Finalization must merge before the one authorized attempt-1
+dispatch.
+
+<!-- END APPEND: 2026-08-27-wdv3-acceptance-retry-3-finalization -->
