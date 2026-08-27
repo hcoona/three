@@ -1595,15 +1595,19 @@ silently suppresses this first-attempt evidence. If a probe may have started but
 durable exact state or non-mutation cannot be proved, the evidence classifies
 the bootstrap incomplete/unknown and requires reconciliation.
 
-The local acceptance implementation is pinned to a disposable-package request
-captured from Node 24.14.0/npm 11.9.0 against a bounded loopback registry. The
-proxy admits only the exact validated CouchDB coordinate, version, routing tag,
-attachment bytes and hashes, witness, path, framing, and dummy authorization;
-only then may it replace authorization for the mocked upstream. Its immutable
-workflow installs and verifies Node 24.14.0 and npm 11.9.0 before either
-write-capable probe. The absent/create/readback suite receives one shared
-120-second deadline. The exact/race/lost-response suite receives one shared
-300-second deadline across all four scenarios; no scenario resets that budget.
+The original Commit 10 acceptance boundary was pinned to a disposable-package
+request captured from Node 24.14.0/npm 11.9.0 against a bounded loopback
+registry. Merged dependency update `d3114d77` (#568) advanced the current
+acceptance boundary to the separately captured Node 24.19.0/npm 11.17.0
+request. Retry 3 therefore installs and verifies Node 24.19.0 and npm 11.17.0
+before either write-capable probe; the original capture remains historical
+replay evidence rather than current execution authority. The proxy admits only
+the exact validated CouchDB coordinate, version, routing tag, attachment bytes
+and hashes, witness, path, framing, and dummy authorization; only then may it
+replace authorization for the mocked upstream. The absent/create/readback suite
+receives one shared 120-second deadline. The exact/race/lost-response suite
+receives one shared 300-second deadline across all four scenarios; no scenario
+resets that budget.
 proof binds the validated raw request and tarball digests to selected upstream
 response facts and response identity, with both credentials excluded. One
 monotonic deadline supplies decreasing remaining budgets to every observation,

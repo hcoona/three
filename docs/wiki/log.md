@@ -2260,3 +2260,14 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   create a ref. Both historical attempts remain unsuccessful,
   `live_enabled` remains false, and Live activation still requires separate
   authorization.
+
+## [2026-08-27] lint | Align retry-3 acceptance toolchain authority
+
+- Corrected the first-slice LLD after PR #598 review identified that its
+  acceptance-toolchain paragraph still described the historical Node
+  24.14.0/npm 11.9.0 capture as current execution authority.
+- Recorded merged dependency update `d3114d77` (#568) as advancing the current
+  acceptance boundary and retry-3 workflow to the separately captured Node
+  24.19.0/npm 11.17.0 request.
+- Preserved the original capture as historical replay evidence and made no
+  Environment, dispatch, package, ref, finalization, or Live operation.

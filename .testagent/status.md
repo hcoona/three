@@ -9122,3 +9122,31 @@ No network request, workflow dispatch, Environment operation, package
 mutation, staging, commit, push, or PR operation was performed.
 
 <!-- END APPEND: 2026-08-26-wdv3-acceptance-retry-3-review-closure -->
+
+<!-- BEGIN APPEND: 2026-08-27-wdv3-acceptance-retry-3-pr-review-closure -->
+
+## Retry-3 preparation PR review correction
+
+Copilot review on PR #598 identified that the active LLD still described the
+historical Node 24.14.0/npm 11.9.0 acceptance capture as current execution
+authority while the retry-3 workflow and merged dependency update `d3114d77`
+(#568) use the separately captured Node 24.19.0/npm 11.17.0 request.
+Independent adjudication classified the finding as a true positive.
+
+The LLD now distinguishes the retained historical capture from the current
+retry-3 toolchain, and the workflow contract pins that normative statement to
+the executable workflow pins. The append-only wiki log records the correction.
+The workflow and package profile were unchanged.
+
+Validation after the correction:
+
+- retry-3 workflow contract: `18 passed`;
+- Ruff check, format, and focused Pyrefly: passed;
+- Prettier and markdownlint for the changed wiki pages: passed;
+- independent correction review: no findings;
+- `git diff --check`: passed.
+
+No Environment, dispatch, package, ref, finalization, or Live operation was
+performed.
+
+<!-- END APPEND: 2026-08-27-wdv3-acceptance-retry-3-pr-review-closure -->

@@ -29,6 +29,10 @@ WORKFLOW_RELATIVE_PATH = (
     ".github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-3.yml"
 )
 WORKFLOW_PATH = REPO_ROOT / WORKFLOW_RELATIVE_PATH
+LLD_PATH = (
+    REPO_ROOT / "docs/wiki/analyses/workflow-delivery/v3/"
+    "hcoona-release-smoke-npm-lld.md"
+)
 ENVIRONMENT = "workflow-delivery-v3-buddy-smoke-acceptance-retry-3"
 ZERO_SHA = "0" * 40
 COORDINATE = "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9"
@@ -208,6 +212,7 @@ def test_retry_3_permissions_limit_packages_write_to_probe_jobs() -> None:
 
 def test_retry_3_toolchain_and_action_revisions_are_fully_pinned() -> None:
     document = _document()
+    lld = LLD_PATH.read_text(encoding="utf-8")
     uses_by_job = {
         name: [step["uses"] for step in _steps(job) if "uses" in step]
         for name, job in document["jobs"].items()
@@ -247,6 +252,14 @@ def test_retry_3_toolchain_and_action_revisions_are_fully_pinned() -> None:
         "24.19.0",
         "24.19.0",
     ]
+    assert (
+        "Retry 3 therefore installs and verifies Node 24.19.0 and npm 11.17.0"
+        in lld
+    )
+    assert (
+        "the original capture remains historical\n"
+        "replay evidence rather than current execution authority" in lld
+    )
 
 
 def test_retry_3_concurrency_and_checkouts_are_exact() -> None:
