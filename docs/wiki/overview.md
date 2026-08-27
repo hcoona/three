@@ -63,19 +63,21 @@ authority or result entered `main`. The `.5`-`.8` block is consumed.
 Acceptance remains unsuccessful, and normal Live activation remains
 unauthorized.
 The user has explicitly authorized the full retry-3 destination-acceptance
-sequence, but only preparation is underway. The fixed workflow and Environment
+sequence. Preparation PR #598 merged as
+`a61f9a4e44458bfd7bc7bfd96f6db848ce047c0c`. The fixed workflow and Environment
 identities are
 `.github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-3.yml`
 and `workflow-delivery-v3-buddy-smoke-acceptance-retry-3`; base `.9` binds
 absent/exact `.9`, identical-race `.10`, differing-race `.11`, and
 lost-response `.12` to tags `wdv3-acceptance-9` through
-`wdv3-acceptance-12`. The target remains the 40-zero sentinel. Read-only
-preflight found `.9`-`.12`, acceptance refs, and acceptance Environments
-absent, and retired retry-2 workflow ID `341728447` disabled with no
-nonterminal runs. No Environment was provisioned and no dispatch, package
-mutation, or ref creation occurred. Both historical attempts remain
-unsuccessful; `live_enabled` remains false and Live activation requires
-separate authorization.
+`wdv3-acceptance-12`. Fresh authenticated preflight found `.9`-`.12` and
+acceptance refs absent. Environment ID `20680097388` has sole required reviewer
+`hcoona`, self-review permitted, and sole deployment branch `main`. Protected
+finalization binds the workflow and Governance profile to the preparation
+merge SHA and must merge before the one authorized attempt-1 dispatch. No
+dispatch, package mutation, or ref creation has occurred. Both historical
+attempts remain unsuccessful; `live_enabled` remains false and Live activation
+requires separate authorization.
 
 ## Confirmed v3 Shape
 
@@ -316,11 +318,12 @@ have changed.
    no Platform-Orphan authority or result entered `main`. Do not reuse
    `.5`-`.8`. Keep `live_enabled: false`; acceptance remains unsuccessful and
    normal Live activation remains unauthorized.
-6. Retry-3 is explicitly authorized in full but remains preparation-only. Use
-   only the fixed `.9`-`.12` profile, retry-3 workflow and Environment
-   identities, and 40-zero target sentinel described above. Preflight was
-   read-only; do not claim an Environment, dispatch, package mutation, ref, or
-   successful acceptance yet. Live activation remains unauthorized and requires separate authorization.
+6. Retry-3 is explicitly authorized in full and is in protected finalization.
+   Use only the fixed `.9`-`.12` profile, retry-3 workflow and Environment
+   identities, and exact preparation merge SHA described above. Do not dispatch
+   until finalization merges; do not claim package mutation, a transition ref,
+   or successful acceptance yet. Live activation remains unauthorized and
+   requires separate authorization.
 
 ## Related Pages
 

@@ -6,7 +6,7 @@ on:
       target_sha:
         description: Reviewed protected-finalization target SHA
         required: true
-        default: '0000000000000000000000000000000000000000'
+        default: 'a61f9a4e44458bfd7bc7bfd96f6db848ce047c0c'
         type: string
       package_coordinate:
         description: Fixed disposable GitHub Packages base coordinate
@@ -26,7 +26,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  WDV3_ACCEPTANCE_TARGET_SHA: '0000000000000000000000000000000000000000'
+  WDV3_ACCEPTANCE_TARGET_SHA: 'a61f9a4e44458bfd7bc7bfd96f6db848ce047c0c'
   WDV3_ACCEPTANCE_PACKAGE_COORDINATE: '@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9'
   WDV3_ACCEPTANCE_CONFIRMATION: I_ACCEPT_DISPOSABLE_GITHUB_PACKAGES_PROBES_RETRY_3
   WDV3_ACCEPTANCE_REF: refs/heads/main

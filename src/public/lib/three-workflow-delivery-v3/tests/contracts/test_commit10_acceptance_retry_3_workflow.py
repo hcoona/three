@@ -35,6 +35,7 @@ LLD_PATH = (
 )
 ENVIRONMENT = "workflow-delivery-v3-buddy-smoke-acceptance-retry-3"
 ZERO_SHA = "0" * 40
+FINALIZED_TARGET_SHA = "a61f9a4e44458bfd7bc7bfd96f6db848ce047c0c"
 COORDINATE = "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9"
 CONFIRMATION = "I_ACCEPT_DISPOSABLE_GITHUB_PACKAGES_PROBES_RETRY_3"
 CONFIRMATION_DIGEST = (
@@ -104,7 +105,7 @@ def test_retry_3_dispatch_and_profile_literals_are_exact() -> None:
         "target_sha": {
             "description": "Reviewed protected-finalization target SHA",
             "required": True,
-            "default": ZERO_SHA,
+            "default": FINALIZED_TARGET_SHA,
             "type": "string",
         },
         "package_coordinate": {
@@ -121,7 +122,7 @@ def test_retry_3_dispatch_and_profile_literals_are_exact() -> None:
         },
     }
     assert document["env"] == {
-        "WDV3_ACCEPTANCE_TARGET_SHA": ZERO_SHA,
+        "WDV3_ACCEPTANCE_TARGET_SHA": FINALIZED_TARGET_SHA,
         "WDV3_ACCEPTANCE_PACKAGE_COORDINATE": COORDINATE,
         "WDV3_ACCEPTANCE_CONFIRMATION": CONFIRMATION,
         "WDV3_ACCEPTANCE_REF": "refs/heads/main",
@@ -537,7 +538,7 @@ def _run_fixed_input_validation(
         document["jobs"]["validate-fixed-inputs"],
         "Fail closed before review or mutation",
     )
-    target = "d" * 40
+    target = FINALIZED_TARGET_SHA
     environment: dict[str, str] = {
         **os.environ,
         "INPUT_TARGET_SHA": target,
