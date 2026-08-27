@@ -9227,9 +9227,11 @@ not retried.
 Artifacts `9630646147`, `9630653496`, and `9630658559` match their
 GitHub-recorded SHA-256 digests. Authenticated reconciliation confirms the
 exact `.9` tag, tarball SHA-1/SHA-512, and preparation-target witness;
-`.10`-`.12` remain absent. Workflow ID `343371046` is disabled, Environment ID
-`20680097388` and acceptance refs are absent, and protected source cleanup is
-staged.
+`.10`-`.12` remain absent. Cleanup PR #600 merged as
+`916ea33802dda17a24e3b4971aae74b55ed4c7f5`; the temporary workflow source and
+workflow-only contract are absent. Workflow ID `343371046` is `deleted`,
+Environment ID `20680097388` and acceptance refs are absent, and no
+post-deletion dispatch was attempted.
 
 Cleanup validation:
 

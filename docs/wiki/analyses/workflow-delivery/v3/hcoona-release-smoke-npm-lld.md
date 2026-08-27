@@ -1627,9 +1627,10 @@ plus `packages: write`. Unspecified permissions are none.
 The dedicated retry-3 acceptance Environment was provisioned for the consumed
 attempt with sole required reviewer `hcoona`, self-review permitted for the
 single-operator topology, and sole deployment branch `main`. It was not either
-normal Buddy Environment and was deleted after the unsuccessful run; the
-temporary workflow source is retired during protected cleanup. The workflow
-emits only Governance acceptance
+normal Buddy Environment and was deleted after the unsuccessful run. Cleanup
+PR #600 removed the temporary workflow source and workflow-only contract; the
+numeric workflow identity is `deleted`. The retained historical workflow
+evidence emits only Governance acceptance
 evidence bound to workflow/run/target/fixed coordinate, dependency outcomes,
 available probe results, and complete/incomplete/unknown mutation
 classification. It cannot create Release Intent,

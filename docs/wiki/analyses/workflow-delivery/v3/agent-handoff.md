@@ -210,11 +210,13 @@ If it conflicts with the
   `316c789500aed5fccf535b90c02d501b0e262755`, SHA-512
   `905b839a258d8b6171f2ad8b6e945d317ed03e68fc8efd11bc8a0e8e240c3ee16a5a54e28c743e55aa1f4ca36d0086ec824d696e72c0c30f5c16b7cae2d8bff1`,
   and target witness `a61f9a4e44458bfd7bc7bfd96f6db848ce047c0c`; `.10`-`.12`
-  remain absent. Workflow ID `343371046` is `disabled_manually`, Environment
-  ID `20680097388` and acceptance refs are absent, and protected source cleanup
-  is staged. Do not retry or reuse `.9`-`.12`. All three attempts remain
-  unsuccessful, `live_enabled` remains false, and Live activation remains
-  unauthorized.
+  remain absent. Cleanup PR #600 merged as
+  `916ea33802dda17a24e3b4971aae74b55ed4c7f5`; the workflow source and its
+  workflow-only contract are absent. Workflow ID `343371046` is `deleted`,
+  Environment ID `20680097388` and acceptance refs are absent, and no
+  post-deletion dispatch was attempted. Do not retry or reuse `.9`-`.12`. All
+  three attempts remain unsuccessful, `live_enabled` remains false, and Live
+  activation remains unauthorized.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the

@@ -2310,3 +2310,16 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   confirmed acceptance refs absent. Protected source cleanup is staged. The
   `.9`-`.12` block is consumed, and normal Live remains disabled and
   unauthorized.
+
+## [2026-08-27] query | Close destination acceptance retry 3
+
+- Merged protected cleanup PR #600 as
+  `916ea33802dda17a24e3b4971aae74b55ed4c7f5`.
+- Confirmed the temporary workflow source and workflow-only contract are
+  absent from `main`; numeric workflow ID `343371046` is `deleted`.
+- Reconfirmed Environment ID `20680097388` and acceptance refs absent, run
+  `33032171094` terminal at attempt 1, exact `.9` retained, and `.10`-`.12`
+  absent. No post-deletion dispatch was attempted.
+- Closed retry 3 as unsuccessful without retry. All three destination-
+  acceptance attempts remain unsuccessful, `live_enabled` remains false, and
+  Live activation remains unauthorized.
