@@ -2244,3 +2244,30 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Kept both prior acceptance invocations unsuccessful. The merge does not
   authorize a third acceptance workflow, invocation, Environment, coordinate
   block, package operation, Release lineage, or Live activation.
+
+## [2026-08-26] query | Prepare destination acceptance retry 3
+
+- Recorded explicit user authorization for the full retry-3 sequence while
+  limiting the current phase to preparation.
+- Added the fixed retry-3 workflow and Governance profile with the 40-zero
+  target sentinel, Environment
+  `workflow-delivery-v3-buddy-smoke-acceptance-retry-3`, and `.9`-`.12`
+  scenario/tag block (`wdv3-acceptance-9` through `wdv3-acceptance-12`).
+- Recorded read-only preflight: `.9`-`.12`, acceptance refs, and acceptance
+  Environments were absent; retired retry-2 workflow ID `341728447` was
+  disabled with no nonterminal runs.
+- Did not provision an Environment, dispatch a workflow, mutate a package, or
+  create a ref. Both historical attempts remain unsuccessful,
+  `live_enabled` remains false, and Live activation still requires separate
+  authorization.
+
+## [2026-08-27] lint | Align retry-3 acceptance toolchain authority
+
+- Corrected the first-slice LLD after PR #598 review identified that its
+  acceptance-toolchain paragraph still described the historical Node
+  24.14.0/npm 11.9.0 capture as current execution authority.
+- Recorded merged dependency update `d3114d77` (#568) as advancing the current
+  acceptance boundary and retry-3 workflow to the separately captured Node
+  24.19.0/npm 11.17.0 request.
+- Preserved the original capture as historical replay evidence and made no
+  Environment, dispatch, package, ref, finalization, or Live operation.

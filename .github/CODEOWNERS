@@ -1,6 +1,7 @@
 # Workflow Delivery v3 governance.
 /.github/CODEOWNERS @hcoona
 /.github/workflows/** @hcoona
+/.github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-3.yml @hcoona
 /.github/actions/** @hcoona
 /eng/scripts/** @hcoona
 
@@ -13,6 +14,7 @@
 /src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py @hcoona
 /src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_attestation.py @hcoona
 /src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_inspection.py @hcoona
+/src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_retry_3_workflow.py @hcoona
 /hk.pkl @hcoona
 /src/private/lib/hk/** @hcoona
 /pyproject.toml @hcoona

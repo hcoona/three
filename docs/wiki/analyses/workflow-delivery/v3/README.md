@@ -234,5 +234,16 @@ Next:
    SHA-512, and acceptance target witness. Platform-Orphan implementation PR
    #590 was closed unmerged, and no exception authority or result entered
    `main`; and
-4. keep `live_enabled: false` until successful acceptance and separate human
-   activation authorization.
+4. prepare the explicitly authorized retry-3 profile without operating it:
+   workflow
+   `.github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-3.yml`,
+   Environment `workflow-delivery-v3-buddy-smoke-acceptance-retry-3`, and base
+   `.9` binding absent/exact `.9`, identical-race `.10`, differing-race `.11`,
+   and lost-response `.12` to tags `wdv3-acceptance-9` through
+   `wdv3-acceptance-12`. The target is exactly 40 zeroes during preparation.
+   Read-only preflight found `.9`-`.12`, acceptance refs, and acceptance
+   Environments absent, and retry-2 workflow ID `341728447` disabled with no
+   nonterminal runs. No Environment, dispatch, package mutation, or ref was
+   created; and
+5. keep `live_enabled: false` until successful acceptance and separate human
+   activation authorization. Both historical attempts remain unsuccessful.

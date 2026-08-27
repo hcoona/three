@@ -5041,3 +5041,37 @@ the exact base-tree marker probe. It does not change Finalizer behavior.
   that lower-level boundary rather than duplicate it.
 
 <!-- END APPEND: 2026-08-26-wdv3-acceptance-proof-repair -->
+
+<!-- BEGIN APPEND: 2026-08-26-wdv3-acceptance-retry-3-fallback -->
+
+## Retry-3 fallback test phase research
+
+Bounded targets were the retry-profile additions in
+`adapters/github_packages.py` and `records/governance.py`, the new retry-3
+workflow, and the five requested test modules. Existing pytest/YAML contracts
+use exact deep equality, controlled subprocess environments, parsed workflow
+documents, and fail-closed exception assertions.
+
+Acceptance inventory:
+
+- Adapter profile: base/absent/exact `.9`, identical `.10`, differing `.11`,
+  lost `.12`, with tags 9-12; legacy `.1`-.8 must remain unchanged.
+- Governance profile: retry-3 workflow path and Environment, zero target,
+  confirmation digest
+  `sha256:33e59948941f5f1111d5017ab80dd33c90dd2ac8d1a17203e7f7382a8c5b2c72`,
+  rejected-dispatch-only admission, and cross-profile/coordinate closure.
+- Workflow: exact fixed inputs, five-job first-attempt DAG, fail-before-review
+  zero sentinel, packages-write only in probe jobs, Node 24.19.0/npm 11.17.0,
+  full action pins, terminal `always()` capture, optional
+  `AcceptanceRunnerDiagnostic` reconstruction with canonical suite-digest
+  equality, CODEOWNERS, and no Live/Release route.
+- Retirement/topology: retry-3 is the sole temporary acceptance workflow;
+  original/retry-2 remain absent and normal Buddy remains disabled.
+- Scope: tests and append-only `.testagent` history only. No production,
+  workflow, docs, CODEOWNERS, or `hk.pkl` edits were made by this phase.
+
+The targeted pre-change discovery baseline was 681 tests across the four
+existing requested files. Adding the new contract file and focused extensions
+produced 704 discovered tests, a delta of 23.
+
+<!-- END APPEND: 2026-08-26-wdv3-acceptance-retry-3-fallback -->
