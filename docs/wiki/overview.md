@@ -69,11 +69,12 @@ again did not prove a controlled outcome, so the first probe remained
 incomplete, the `.10`-`.12` probe was skipped, and terminal Governance evidence
 classified the run unknown. Authenticated reconciliation confirms the exact
 `.9` tag, tarball hashes, repository association, and target witness; `.10`-
-`.12` remain absent. Workflow ID `343371046` is disabled, Environment ID
-`20680097388` and acceptance refs are absent, and protected source cleanup is
-staged. The `.9`-`.12` block is consumed and must not be retried. All three
-attempts remain unsuccessful; `live_enabled` remains false and Live activation
-remains unauthorized.
+`.12` remain absent. Cleanup PR #600 merged as `916ea338`; the workflow source
+and workflow-only contract are absent, workflow ID `343371046` is `deleted`,
+and Environment ID `20680097388` and acceptance refs are absent. No
+post-deletion dispatch was attempted. The `.9`-`.12` block is consumed and must
+not be retried. All three attempts remain unsuccessful; `live_enabled` remains
+false and Live activation remains unauthorized.
 
 ## Confirmed v3 Shape
 
@@ -315,10 +316,10 @@ have changed.
    `.5`-`.8`. Keep `live_enabled: false`; acceptance remains unsuccessful and
    normal Live activation remains unauthorized.
 6. Retry-3 run `33032171094` is consumed and unsuccessful. Preserve its exact
-   artifacts and `.9` package reconciliation evidence. Workflow ID `343371046`
-   is disabled, the Environment and acceptance refs are absent, and protected
-   source cleanup is staged. Do not retry or reuse `.9`-`.12`. Live activation
-   remains unauthorized.
+   artifacts and `.9` package reconciliation evidence. Cleanup PR #600 removed
+   the temporary source and contract; workflow ID `343371046` is `deleted`,
+   and the Environment and acceptance refs are absent. Do not retry or reuse
+   `.9`-`.12`. Live activation remains unauthorized.
 
 ## Related Pages
 

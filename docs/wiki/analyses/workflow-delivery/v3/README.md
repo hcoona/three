@@ -240,8 +240,10 @@ Next:
    `.10`-`.12` probe was skipped, and terminal Governance evidence classified
    the run unknown. Authenticated reconciliation confirms exact `.9` tag,
    tarball hashes, repository association, and target witness; `.10`-`.12`
-   remain absent. Workflow ID `343371046` is disabled, Environment ID
-   `20680097388` and acceptance refs are absent, and protected source cleanup
-   is staged. Do not retry or reuse `.9`-`.12`; and
+   remain absent. Cleanup PR #600 merged as `916ea338`; the workflow source
+   and workflow-only contract are absent, workflow ID `343371046` is
+   `deleted`, and Environment ID `20680097388` and acceptance refs are absent.
+   No post-deletion dispatch was attempted. Do not retry or reuse `.9`-`.12`;
+   and
 5. keep `live_enabled: false` until successful acceptance and separate human
    activation authorization. All three attempts remain unsuccessful.
