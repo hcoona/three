@@ -196,23 +196,25 @@ If it conflicts with the
   does not authorize a third acceptance workflow, invocation, review,
   Environment, coordinate block, package operation, Release lineage, or normal
   Live activation.
-- The user has explicitly authorized the full retry-3 destination-acceptance
-  sequence. Preparation PR #598 merged as
-  `a61f9a4e44458bfd7bc7bfd96f6db848ce047c0c`. The closed profile uses base
-  `.9`: absent/exact `.9`, identical-race `.10`,
-  differing-race `.11`, and lost-response `.12`, with tags
-  `wdv3-acceptance-9` through `wdv3-acceptance-12`; workflow
-  `.github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-3.yml`;
-  and Environment
-  `workflow-delivery-v3-buddy-smoke-acceptance-retry-3`. Fresh authenticated
-  preflight found all `.9`-`.12` versions and acceptance refs absent. The
-  Environment is provisioned as ID `20680097388` with sole required reviewer
-  `hcoona`, self-review permitted, and sole deployment branch `main`.
-  Protected finalization binds the workflow and Governance profile to the
-  preparation merge SHA above; it must merge before the one authorized
-  attempt-1 dispatch. No dispatch, package mutation, or ref creation has been
-  performed. Both historical attempts remain unsuccessful, `live_enabled`
-  remains false, and Live activation still requires separate authorization.
+- Retry-3 destination acceptance is consumed and unsuccessful. Preparation PR
+  #598 merged as `a61f9a4e44458bfd7bc7bfd96f6db848ce047c0c`, and protected
+  finalization PR #599 merged as
+  `af9212288e83c3b792cfd9b3ab86f3b8e2b7f533`. Exactly one attempt-1 run,
+  `33032171094`, received Environment approval from `hcoona`, observed `.9`
+  absent, started mutation, and exactly read back `.9`. The runner again did
+  not prove a controlled outcome, so the first probe remained incomplete, the
+  `.10`-`.12` probe was skipped, and terminal Governance evidence classified
+  the run unknown. Artifact IDs `9630646147`, `9630653496`, and `9630658559`
+  match their GitHub-recorded SHA-256 digests. Authenticated reconciliation
+  confirms tag `wdv3-acceptance-9`, tarball SHA-1
+  `316c789500aed5fccf535b90c02d501b0e262755`, SHA-512
+  `905b839a258d8b6171f2ad8b6e945d317ed03e68fc8efd11bc8a0e8e240c3ee16a5a54e28c743e55aa1f4ca36d0086ec824d696e72c0c30f5c16b7cae2d8bff1`,
+  and target witness `a61f9a4e44458bfd7bc7bfd96f6db848ce047c0c`; `.10`-`.12`
+  remain absent. Workflow ID `343371046` is `disabled_manually`, Environment
+  ID `20680097388` and acceptance refs are absent, and protected source cleanup
+  is staged. Do not retry or reuse `.9`-`.12`. All three attempts remain
+  unsuccessful, `live_enabled` remains false, and Live activation remains
+  unauthorized.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the

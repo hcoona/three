@@ -62,22 +62,18 @@ Platform-Orphan implementation PR #590 was closed unmerged, so no exception
 authority or result entered `main`. The `.5`-`.8` block is consumed.
 Acceptance remains unsuccessful, and normal Live activation remains
 unauthorized.
-The user has explicitly authorized the full retry-3 destination-acceptance
-sequence. Preparation PR #598 merged as
-`a61f9a4e44458bfd7bc7bfd96f6db848ce047c0c`. The fixed workflow and Environment
-identities are
-`.github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-3.yml`
-and `workflow-delivery-v3-buddy-smoke-acceptance-retry-3`; base `.9` binds
-absent/exact `.9`, identical-race `.10`, differing-race `.11`, and
-lost-response `.12` to tags `wdv3-acceptance-9` through
-`wdv3-acceptance-12`. Fresh authenticated preflight found `.9`-`.12` and
-acceptance refs absent. Environment ID `20680097388` has sole required reviewer
-`hcoona`, self-review permitted, and sole deployment branch `main`. Protected
-finalization binds the workflow and Governance profile to the preparation
-merge SHA and must merge before the one authorized attempt-1 dispatch. No
-dispatch, package mutation, or ref creation has occurred. Both historical
+Retry-3 preparation and finalization merged as `a61f9a4e` and `af921228`.
+Exactly one attempt-1 run, `33032171094`, received Environment approval,
+observed `.9` absent, started mutation, and exactly read back `.9`. The runner
+again did not prove a controlled outcome, so the first probe remained
+incomplete, the `.10`-`.12` probe was skipped, and terminal Governance evidence
+classified the run unknown. Authenticated reconciliation confirms the exact
+`.9` tag, tarball hashes, repository association, and target witness; `.10`-
+`.12` remain absent. Workflow ID `343371046` is disabled, Environment ID
+`20680097388` and acceptance refs are absent, and protected source cleanup is
+staged. The `.9`-`.12` block is consumed and must not be retried. All three
 attempts remain unsuccessful; `live_enabled` remains false and Live activation
-requires separate authorization.
+remains unauthorized.
 
 ## Confirmed v3 Shape
 
@@ -318,12 +314,11 @@ have changed.
    no Platform-Orphan authority or result entered `main`. Do not reuse
    `.5`-`.8`. Keep `live_enabled: false`; acceptance remains unsuccessful and
    normal Live activation remains unauthorized.
-6. Retry-3 is explicitly authorized in full and is in protected finalization.
-   Use only the fixed `.9`-`.12` profile, retry-3 workflow and Environment
-   identities, and exact preparation merge SHA described above. Do not dispatch
-   until finalization merges; do not claim package mutation, a transition ref,
-   or successful acceptance yet. Live activation remains unauthorized and
-   requires separate authorization.
+6. Retry-3 run `33032171094` is consumed and unsuccessful. Preserve its exact
+   artifacts and `.9` package reconciliation evidence. Workflow ID `343371046`
+   is disabled, the Environment and acceptance refs are absent, and protected
+   source cleanup is staged. Do not retry or reuse `.9`-`.12`. Live activation
+   remains unauthorized.
 
 ## Related Pages
 

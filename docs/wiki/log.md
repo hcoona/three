@@ -2286,3 +2286,27 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   to the preparation merge SHA. Finalization must merge before the one
   authorized attempt-1 dispatch. Normal Live remains disabled and
   unauthorized.
+
+## [2026-08-27] query | Capture unsuccessful acceptance retry 3
+
+- Merged protected finalization PR #599 as
+  `af9212288e83c3b792cfd9b3ab86f3b8e2b7f533` and dispatched exactly one
+  attempt-1 run, `33032171094`, from `main`.
+- Environment reviewer `hcoona` approved the fixed target, `.9` base
+  coordinate, and retry-3 confirmation. The first probe observed absent
+  pre-state, started mutation, and exactly read back `.9`.
+- The runner again did not prove a controlled outcome. The first probe failed
+  its completeness guard, the `.10`-`.12` probe was skipped, and terminal
+  Governance evidence classified the run unknown. Acceptance was not
+  established and no retry is authorized.
+- Raw artifacts `9630646147`, `9630653496`, and `9630658559` match their
+  GitHub-recorded SHA-256 digests. Authenticated package reconciliation
+  confirms tag `wdv3-acceptance-9`, tarball SHA-1
+  `316c789500aed5fccf535b90c02d501b0e262755`, SHA-512
+  `905b839a258d8b6171f2ad8b6e945d317ed03e68fc8efd11bc8a0e8e240c3ee16a5a54e28c743e55aa1f4ca36d0086ec824d696e72c0c30f5c16b7cae2d8bff1`,
+  and target witness `a61f9a4e44458bfd7bc7bfd96f6db848ce047c0c`; `.10`-`.12`
+  remain absent.
+- Disabled workflow ID `343371046`, deleted Environment ID `20680097388`, and
+  confirmed acceptance refs absent. Protected source cleanup is staged. The
+  `.9`-`.12` block is consumed, and normal Live remains disabled and
+  unauthorized.

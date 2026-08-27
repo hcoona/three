@@ -689,24 +689,12 @@ def test_codeowners_covers_deleted_and_future_buddy_routes() -> None:
     } == dict.fromkeys(paths, ("@hcoona",))
 
 
-def test_retry_3_is_the_only_temporary_acceptance_workflow_preserved() -> None:
-    """Preserve only the bounded retry-3 acceptance workflow and its DAG."""
+def test_temporary_acceptance_workflows_are_retired() -> None:
+    """Retire every temporary destination-acceptance workflow source."""
     paths = tuple(
         sorted(
             WORKFLOWS.glob("workflow-delivery-v3-buddy-smoke-acceptance*.yml")
         )
     )
 
-    assert tuple(path.name for path in paths) == (
-        "workflow-delivery-v3-buddy-smoke-acceptance-retry-3.yml",
-    )
-    document = yaml.safe_load(paths[0].read_text(encoding="utf-8"))
-    assert frozenset(document["jobs"]) == frozenset(
-        {
-            "validate-fixed-inputs",
-            "acceptance-review",
-            "probe-absent-create-readback",
-            "probe-exact-and-conflict",
-            "capture-governance-evidence",
-        }
-    )
+    assert paths == ()

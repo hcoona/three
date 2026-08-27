@@ -9207,3 +9207,38 @@ No workflow dispatch, package mutation, acceptance ref, or Live operation was
 performed.
 
 <!-- END APPEND: 2026-08-27-wdv3-acceptance-retry-3-finalization-review -->
+
+<!-- BEGIN APPEND: 2026-08-27-wdv3-acceptance-retry-3-operation -->
+
+## Retry-3 operation and cleanup
+
+Protected finalization PR #599 merged as
+`af9212288e83c3b792cfd9b3ab86f3b8e2b7f533`. Fresh preflight confirmed
+`.9`-`.12` and acceptance refs absent, exact Environment protection, no prior
+retry-3 runs, and the finalized workflow target. Exactly one attempt-1 run,
+`33032171094`, was dispatched and approved.
+
+The absent/create/readback probe observed `.9` absent, started mutation, and
+exactly read back `.9`, but the runner did not prove a controlled outcome. Its
+suite remained incomplete, the `.10`-`.12` probe was skipped, and terminal
+Governance evidence classified the run unknown. The run failed closed and was
+not retried.
+
+Artifacts `9630646147`, `9630653496`, and `9630658559` match their
+GitHub-recorded SHA-256 digests. Authenticated reconciliation confirms the
+exact `.9` tag, tarball SHA-1/SHA-512, and preparation-target witness;
+`.10`-`.12` remain absent. Workflow ID `343371046` is disabled, Environment ID
+`20680097388` and acceptance refs are absent, and protected source cleanup is
+staged.
+
+Cleanup validation:
+
+- focused Adapter, Governance, retirement, and Buddy contracts:
+  `698 passed in 44.77s`;
+- Ruff check and format, focused Pyrefly, Prettier, markdownlint, and
+  `git diff --check`: passed;
+- independent cleanup review: no findings.
+
+No Live activation or Release lineage occurred.
+
+<!-- END APPEND: 2026-08-27-wdv3-acceptance-retry-3-operation -->
