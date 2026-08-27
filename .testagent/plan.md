@@ -5867,3 +5867,197 @@ The plan excludes any third acceptance invocation or live operation.
    without weakening historical tests.
 
 <!-- END APPEND: 2026-08-26-wdv3-acceptance-retry-3-fallback -->
+
+<!-- BEGIN APPEND: 2026-08-27-wdv3-acceptance-upstream-diagnostic-characterization-plan -->
+
+## Workflow Delivery v3 upstream-diagnostic tests-first plan
+
+### Single implementation phase
+
+Modify only the three allowlisted tests. Keep production unchanged and use
+offline loopback/fake seams only.
+
+1. **Proxy post-response facts (checklist 1).** Add
+   `test_proxy_retains_status_and_request_digest_when_201_response_validation_fails`
+   with ids `oversized-body`, `unsafe-response-header`, and
+   `response-read-os-error`. Assert the exact status/request diagnostic,
+   request digest equality, proof absence, processed-event absence, and no
+   fabricated proof or processed result in request facts.
+2. **Proxy transport closure/redaction (checklist 2).** Add
+   `test_proxy_pre_response_transport_failure_retains_redacted_category_and_request_digest_without_status`
+   with ids `timeout-error`, `os-error`, and `http-exception`. Assert one exact
+   category, no status, exact request binding, exact keys, and absence of raw
+   exception message, body, headers, token, stdout, and stderr from serialized
+   retained state.
+3. **Runner propagation and omission (checklist 3).** Add
+   `test_runner_propagates_closed_upstream_diagnostic_for_returned_and_raised_failures`
+   and
+   `test_runner_omits_upstream_diagnostic_when_proxy_supplies_no_admitted_fact`,
+   each with ids `returned-failure`, `raised-timeout`, `raised-os-error`, and
+   `raised-classification-error`. Assert exact returned field or raised
+   attribute and preserve concrete startedness; assert true omission when the
+   proxy supplies no admitted fact.
+4. **Adapter matrix and non-authority (checklist 4).** Add
+   `test_acceptance_probe_preserves_non_authoritative_upstream_diagnostic_matrix_with_incomplete_readback`
+   with ids `status-200`, `status-201`, `status-202`, `status-409`,
+   `status-500`, `transport-timeout`, `transport-os-error`, and
+   `transport-http-exception`. Assert the exact four-key mapped diagnostic
+   plus unchanged action/mutation startedness, failure result, incomplete
+   classification, exact post-readback/content reconciliation, concrete
+   diagnostics, and proof absence.
+5. **Authority controls (checklist 5).** Do not edit or replace the existing
+   tests. Rerun
+   `test_normal_create_propagates_request_bound_http_201_exchange_proof`,
+   `test_exact_preexisting_state_never_invokes_the_mutation_runner`,
+   `test_identical_conflict_race_is_exact_without_blind_repair`,
+   `test_differing_conflict_race_is_conflicting_without_overwrite`, and
+   `test_protocol_confirmed_governance_requires_validated_request_proof` as
+   part of both narrow commands.
+6. **Governance admission/closure (checklist 6).** Add
+   `test_governance_admits_and_round_trips_canonical_upstream_diagnostic`
+   with the eight Adapter matrix ids;
+   `test_governance_rejects_malformed_or_unbound_upstream_diagnostic` with ids
+   `status-below-range`, `status-above-range`, `status-bool`,
+   `status-without-request`, `transport-without-request`,
+   `status-and-transport`, `request-without-status-or-transport`,
+   `unknown-transport-category`, `malformed-request-digest`, and
+   `unknown-field`; and
+   `test_governance_proof_required_completion_rejects_diagnostic_only_authority`
+   with ids `protocol-confirmed-complete` and
+   `protocol-confirmed-readback-incomplete`. Use unchecked digest refresh for
+   the tests-first/malformed documents, exact admission round-trip assertions
+   for canonical forms, and explicit proof-required rejection assertions.
+7. **Request cardinality (checklist 7).** Add
+   `test_acceptance_proxy_one_request_retains_at_most_one_request_bound_diagnostic`
+   with ids `status-100`, `status-409`, `status-599`, and
+   `pre-response-transport`, and
+   `test_acceptance_proxy_two_request_race_never_exposes_a_singleton_upstream_diagnostic`.
+   Bind the one-request diagnostic to the sole request digest; on the
+   loopback-only two-request race assert two distinct request facts and no
+   aggregate singleton diagnostic.
+8. Run the exact offline collect-only command. Fix only collection, syntax,
+   import, or fixture defects within the allowlist.
+9. Run the exact offline narrow test command. Separate intended missing
+   production-behavior failures from any harness or assertion-construction
+   defects; fix only the latter.
+10. Run `test-gap-analysis` and `assertion-quality` on the final bounded test
+    additions, perform the prompt-scenario mapping review, inspect the diff,
+    prove only the six allowlisted files changed, and append exact counts and
+    classifications to `.testagent/status.md`.
+
+<!-- END APPEND: 2026-08-27-wdv3-acceptance-upstream-diagnostic-characterization-plan -->
+
+<!-- BEGIN APPEND: 2026-08-27-wdv3-acceptance-upstream-diagnostic-production-plan -->
+
+## Workflow Delivery v3 upstream-diagnostic production repair plan
+
+1. Correct the tests-first compatibility matrix before production changes:
+   preserve requestless historical local exceptions, use `HTTPException` for
+   the unbound transport negative, and add request-bound
+   `RuntimeError`/`ValueError` rejection plus historical Governance replay.
+2. In the proxy, retain the first request-bound status or transport fact,
+   expose only a copy, and never aggregate one singleton diagnostic across a
+   two-request race.
+3. In the runner, propagate the optional admitted proxy diagnostic on returned
+   failures and raised timeout, `OSError`, and classification failures. Wait
+   only for the remaining absolute deadline when a request was observed but
+   the handler has not yet reached its terminal diagnostic point.
+4. In the Adapter, admit only closed raw request-bound diagnostics, preserve
+   local historical fallback, bind protocol-confirmed diagnostics to proof,
+   and reject raw/proof conflicts in the lost-response complete path.
+5. In Governance, admit the closed compatibility union, reject empty and
+   contradictory arms, preserve historical replay, and keep both completion
+   and protocol-confirmed classification proof-gated.
+6. Add regressions before repairing independently reviewed findings:
+   delayed terminal publication, atomic first-fact retention, empty/unbound
+   raw rejection, lost-response proof/raw conflict, empty Governance
+   rejection, and proofless protocol-confirmed rejection.
+7. Validate the three bounded files together, run Ruff format/check and
+   Pyrefly on all six Python files, then run the complete v3 test suite.
+8. Run the repository HK gate, stage only the nine bounded files, run the
+   staged gate, and perform fresh independent split-scope review of:
+   - CLI proxy/runner concurrency and propagation;
+   - Adapter/Governance admission, replay, proof binding, and non-authority.
+9. Independently adjudicate every new finding and iterate until both review
+   scopes report no findings. Only then create the bounded commit and continue
+   the authorized push/PR/CI flow.
+
+The plan does not authorize Live activation, another destination acceptance
+attempt, or reuse of consumed retry-3 coordinates `.9` through `.12`.
+
+<!-- END APPEND: 2026-08-27-wdv3-acceptance-upstream-diagnostic-production-plan -->
+
+<!-- BEGIN APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-race-plan -->
+
+## Tests-first plan for expected-one proxy cardinality
+
+1. Append
+   `test_acceptance_proxy_expected_one_rejects_simultaneous_identical_qualified_request_before_upstream`
+   to the existing acceptance-probe test module.
+2. Build one canonical publish body and synchronize two loopback client
+   threads after strict body qualification.
+3. Install a list-compatible test barrier at the current cardinality snapshot
+   seam so both unsynchronized handlers deterministically observe zero
+   retained facts. Give the barrier a bounded broken-barrier path so a future
+   serialized check-and-append implementation can admit one handler and then
+   reject the other.
+4. Replace only the upstream HTTPS connection with an in-process fake
+   returning HTTP 201 and recording forwarded bodies.
+5. Assert one forwarded request, statuses `[201, 409]`, one request fact bound
+   to the shared request digest, and an absent or single exact request-bound
+   HTTP-201 diagnostic.
+6. Run only:
+   `PYTHONDONTWRITEBYTECODE=1 uv run --offline --python 3.13 --package three-workflow-delivery-v3 pytest -p no:cacheprovider -q src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py::test_acceptance_proxy_expected_one_rejects_simultaneous_identical_qualified_request_before_upstream`.
+7. Preserve the expected red result, append the exact evidence to
+   `.testagent/status.md`, and make no production repair.
+
+<!-- END APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-race-plan -->
+
+<!-- BEGIN APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-race-fix-plan -->
+
+## Production plan for expected-one proxy cardinality
+
+1. Add a dedicated request-reservation lock to
+   `AcceptanceMutationProxy`.
+2. Preserve immutable expected-tarball membership validation outside the
+   lock.
+3. Compute the request and tarball digests once, then hold the lock only
+   across matching reservation count and `request_facts.append`.
+4. Reject a consumed matching reservation with local HTTP 409 only after
+   releasing the lock.
+5. Keep the two-request barrier, upstream HTTPS request, response handling,
+   proof construction, and diagnostic publication outside the reservation
+   lock.
+6. Run the exact new regression, all acceptance-proxy tests, the three
+   upstream-diagnostic modules, Ruff check/format, focused Pyrefly over the
+   six bounded Python files, and the complete v3 package suite.
+7. Run the unstaged repository HK gate, then perform fresh independent review
+   and per-finding adjudication. Iterate tests-first if any true positive
+   remains.
+8. Stage only the five follow-up files, run the staged HK gate, commit, push,
+   request Copilot rereview, resolve the addressed thread, and merge only
+   after every required check and review thread is clear.
+
+No step authorizes Live activation, a destination acceptance invocation, or
+reuse of consumed acceptance coordinates.
+
+<!-- END APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-race-fix-plan -->
+
+<!-- BEGIN APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-test-refinement-plan -->
+
+## Review-driven atomicity test refinement
+
+1. Replace the cardinality-iteration barrier with an overridden
+   `request_facts.append` barrier.
+2. Keep the bounded broken-barrier fallback so the correct implementation
+   does not deadlock while holding the reservation lock.
+3. Re-run the exact regression, all acceptance-proxy tests, the three bounded
+   modules, Ruff, focused Pyrefly, and the complete v3 suite.
+4. Perform pseudo-mutation review for lock removal, count-only locking,
+   `>=` boundary weakening, duplicate append/forwarding, wrong local status,
+   and overbroad lock scope.
+5. Repeat independent production and test/evidence review. Independently
+   adjudicate and repair any new true positive before the final repository
+   gates.
+
+<!-- END APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-test-refinement-plan -->

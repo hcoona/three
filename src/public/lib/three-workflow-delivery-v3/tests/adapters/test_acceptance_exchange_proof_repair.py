@@ -14,6 +14,7 @@ from three_workflow_delivery_v3 import cli as cli_module
 from three_workflow_delivery_v3.adapters.github_packages import (
     ACCEPTANCE_COORDINATES,
     ACCEPTANCE_SCENARIO_SPECS,
+    AcceptanceRunnerDiagnostic,
     ValidatedAcceptanceRequestProof,
     run_fixed_coordinate_acceptance_probe,
 )
@@ -698,6 +699,129 @@ def test_unadmitted_exception_startedness_omits_runner_diagnostic(
 
 
 @pytest.mark.parametrize(
+    (
+        "error",
+        "exception_category",
+        "expected_result",
+        "expected_classification",
+    ),
+    [
+        (TimeoutError("timeout"), "TimeoutError", "timeout", "unknown"),
+        (
+            OSError("operating system"),
+            "OSError",
+            "runner-failed-after-mutation-start",
+            "incomplete",
+        ),
+        (
+            RuntimeError("runtime"),
+            "RuntimeError",
+            "runner-failed-after-mutation-start",
+            "incomplete",
+        ),
+        (
+            ValueError("value"),
+            "ValueError",
+            "runner-failed-after-mutation-start",
+            "incomplete",
+        ),
+    ],
+    ids=["timeout", "os-error", "runtime-error", "value-error"],
+)
+def test_invalid_raw_upstream_diagnostic_preserves_local_runner_error(
+    tmp_path: Path,
+    error: Exception,
+    exception_category: str,
+    expected_result: str,
+    expected_classification: str,
+) -> None:
+    scenario = "absent-create-readback"
+    tarball = f"{scenario}-artifact".encode()
+    error.action_executed = True  # type: ignore[attr-defined]
+    error.mutation_started = True  # type: ignore[attr-defined]
+    error.upstream_diagnostic = {  # type: ignore[attr-defined]
+        "upstream-status": 500,
+        "exception-category": None,
+        "request-correlation-digest": None,
+    }
+
+    result = _run_probe(
+        tmp_path,
+        scenario=scenario,
+        runner=ScriptedRunner(error=error),
+        observations=[_absent(), _exact_readback(tarball, scenario=scenario)],
+    )
+
+    assert result.result == expected_result
+    assert result.mutation_classification == expected_classification
+    assert result.action_executed is True
+    assert result.mutation_started is True
+    assert result.to_document()["runner-diagnostic"] == {
+        "exit-classification": "runner-failed-after-mutation-start",
+        "upstream-status": None,
+        "exception-category": exception_category,
+        "request-correlation-digest": None,
+    }
+
+
+@pytest.mark.parametrize(
+    (
+        "exit_classification",
+        "upstream_status",
+        "exception_category",
+        "request_correlation_digest",
+    ),
+    [
+        ("runner-failed-after-mutation-start", None, None, None),
+        ("runner-failed-before-mutation", 500, None, RESPONSE_DIGEST),
+        (
+            "runner-failed-after-action-start",
+            None,
+            "TimeoutError",
+            RESPONSE_DIGEST,
+        ),
+        ("runner-malformed-before-mutation", 500, None, RESPONSE_DIGEST),
+    ],
+    ids=[
+        "empty",
+        "status-before-mutation",
+        "transport-after-action-start",
+        "status-malformed-before-mutation",
+    ],
+)
+def test_runner_diagnostic_rejects_empty_or_pre_mutation_request_binding(
+    exit_classification: str,
+    upstream_status: int | None,
+    exception_category: str | None,
+    request_correlation_digest: str | None,
+) -> None:
+    with pytest.raises(ValueError, match="diagnostic"):
+        AcceptanceRunnerDiagnostic(
+            exit_classification=exit_classification,
+            upstream_status=upstream_status,
+            exception_category=exception_category,
+            request_correlation_digest=request_correlation_digest,
+        )
+
+
+@pytest.mark.parametrize(
+    "upstream_status",
+    [100, 200, 500, 599],
+    ids=["status-100", "status-200", "status-500", "status-599"],
+)
+def test_runner_diagnostic_rejects_unbound_noncreated_status(
+    upstream_status: int,
+) -> None:
+    with pytest.raises(ValueError, match="diagnostic"):
+        AcceptanceRunnerDiagnostic(
+            exit_classification="runner-failed-after-mutation-start",
+            upstream_status=upstream_status,
+            exception_category=None,
+            request_correlation_digest=None,
+        )
+
+
+@pytest.mark.parametrize(
     ("field", "replacement"),
     [
         ("request-digest", "sha256:" + ("0" * 64)),
@@ -747,3 +871,209 @@ def test_protocol_confirmed_rejects_malformed_proof(
     assert result.mutation_classification == "incomplete"
     assert result.result != "protocol-confirmed"
     assert result.validated_request_proof is None
+
+
+@pytest.mark.parametrize(
+    ("upstream_status", "exception_category"),
+    [
+        (200, None),
+        (201, None),
+        (202, None),
+        (409, None),
+        (500, None),
+        (None, "TimeoutError"),
+        (None, "OSError"),
+        (None, "HTTPException"),
+    ],
+    ids=[
+        "status-200",
+        "status-201",
+        "status-202",
+        "status-409",
+        "status-500",
+        "transport-timeout",
+        "transport-os-error",
+        "transport-http-exception",
+    ],
+)
+def test_acceptance_probe_preserves_non_authoritative_upstream_diagnostic_matrix_with_incomplete_readback(  # noqa: E501
+    tmp_path: Path,
+    upstream_status: int | None,
+    exception_category: str | None,
+) -> None:
+    scenario = "absent-create-readback"
+    tarball = f"{scenario}-artifact".encode()
+    request_digest = "sha256:" + ("d" * 64)
+    upstream_diagnostic = {
+        "upstream-status": upstream_status,
+        "exception-category": exception_category,
+        "request-correlation-digest": request_digest,
+    }
+
+    result = _run_probe(
+        tmp_path,
+        scenario=scenario,
+        runner=ScriptedRunner(
+            {
+                "outcome": "failed",
+                "action-executed": True,
+                "mutation-started": True,
+                "upstream-diagnostic": upstream_diagnostic,
+            }
+        ),
+        observations=[
+            _absent(),
+            _exact_readback(tarball, scenario=scenario),
+        ],
+    )
+    document = result.to_document()
+    expected_runner_diagnostic = {
+        "exit-classification": "runner-failed-after-mutation-start",
+        **upstream_diagnostic,
+    }
+
+    assert result.result == "runner-failed-after-mutation-start"
+    assert result.mutation_classification == "incomplete"
+    assert result.pre_state == "absent"
+    assert result.post_state == "exact"
+    assert result.action_executed is True
+    assert result.mutation_started is True
+    assert result.response_identity_digest == RESPONSE_DIGEST
+    assert result.content_sha512 == (
+        "sha512:" + hashlib.sha512(tarball).hexdigest()
+    )
+    assert result.diagnostics == ("runner-did-not-prove-controlled-outcome",)
+    assert result.validated_request_proof is None
+    assert "validated-request-proof" not in document
+    actual_runner_diagnostic = document.get("runner-diagnostic")
+    if actual_runner_diagnostic is None:
+        pytest.fail(
+            "Adapter omitted the expected non-authoritative runner-diagnostic",
+            pytrace=False,
+        )
+    assert actual_runner_diagnostic == expected_runner_diagnostic
+    assert set(actual_runner_diagnostic) == {
+        "exit-classification",
+        "upstream-status",
+        "exception-category",
+        "request-correlation-digest",
+    }
+    assert document["diagnostics"] == [
+        "runner-did-not-prove-controlled-outcome"
+    ]
+    assert "upstream-diagnostic" not in document
+
+
+@pytest.mark.parametrize(
+    "upstream_diagnostic",
+    [
+        {
+            "upstream-status": None,
+            "exception-category": None,
+            "request-correlation-digest": None,
+        },
+        {
+            "upstream-status": 500,
+            "exception-category": None,
+            "request-correlation-digest": None,
+        },
+    ],
+    ids=["empty", "status-without-request"],
+)
+def test_acceptance_probe_rejects_empty_or_unbound_raw_upstream_diagnostic(
+    tmp_path: Path,
+    upstream_diagnostic: dict[str, object],
+) -> None:
+    scenario = "absent-create-readback"
+    tarball = f"{scenario}-artifact".encode()
+
+    with pytest.raises(ValueError, match="upstream diagnostic"):
+        _run_probe(
+            tmp_path,
+            scenario=scenario,
+            runner=ScriptedRunner(
+                {
+                    "outcome": "failed",
+                    "action-executed": True,
+                    "mutation-started": True,
+                    "upstream-diagnostic": upstream_diagnostic,
+                }
+            ),
+            observations=[
+                _absent(),
+                _exact_readback(tarball, scenario=scenario),
+            ],
+        )
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    ["protocol-confirmed", "failed", "malformed-action-facts"],
+    ids=["protocol-confirmed", "failed", "malformed-action-facts"],
+)
+def test_returned_runner_document_rejects_explicit_null_upstream_diagnostic(
+    tmp_path: Path,
+    outcome: str,
+) -> None:
+    scenario = "absent-create-readback"
+    tarball = f"{scenario}-artifact".encode()
+    runner_document: dict[str, object]
+    if outcome == "protocol-confirmed":
+        runner_document = _protocol_confirmed_runner_document(
+            _proof(tarball, scenario=scenario)
+        )
+    elif outcome == "failed":
+        runner_document = {
+            "outcome": "failed",
+            "action-executed": True,
+            "mutation-started": True,
+        }
+    else:
+        runner_document = {
+            "outcome": "failed",
+            "action-executed": "not-a-bool",
+            "mutation-started": False,
+        }
+    runner_document["upstream-diagnostic"] = None
+
+    with pytest.raises(ValueError, match="upstream diagnostic"):
+        _run_probe(
+            tmp_path,
+            scenario=scenario,
+            runner=ScriptedRunner(runner_document),
+            observations=[
+                _absent(),
+                _exact_readback(tarball, scenario=scenario),
+            ],
+        )
+
+
+def test_lost_response_proof_rejects_conflicting_raw_upstream_diagnostic(
+    tmp_path: Path,
+) -> None:
+    scenario = "lost-response"
+    tarball = f"{scenario}-artifact".encode()
+    proof = _proof(tarball, scenario=scenario)
+
+    with pytest.raises(ValueError, match="does not bind"):
+        _run_probe(
+            tmp_path,
+            scenario=scenario,
+            runner=ScriptedRunner(
+                {
+                    "outcome": "lost-response-processed",
+                    "validated-request-proof": proof,
+                    "action-executed": True,
+                    "mutation-started": True,
+                    "upstream-diagnostic": {
+                        "upstream-status": 500,
+                        "exception-category": None,
+                        "request-correlation-digest": ("sha256:" + ("e" * 64)),
+                    },
+                }
+            ),
+            observations=[
+                _absent(),
+                _exact_readback(tarball, scenario=scenario),
+            ],
+        )
