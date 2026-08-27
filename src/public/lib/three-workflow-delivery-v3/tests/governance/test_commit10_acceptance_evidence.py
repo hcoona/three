@@ -45,6 +45,7 @@ LEGACY_TARGET_SHA = "5a84bebd05407e1859fe76f400dcb4f4cbcd002e"
 LEGACY_CONFIRMATION_DIGEST = (
     "sha256:6ab9696b51f21083802af68d80104f65ffb844bdcd449974c881e5a8cc96ad5e"
 )
+RETRY_3_TARGET_SHA = "a61f9a4e44458bfd7bc7bfd96f6db848ce047c0c"
 
 
 def _validated_request_proof() -> ValidatedAcceptanceRequestProof:
@@ -2396,7 +2397,7 @@ def test_retry_3_finalized_profile_preserves_zero_sentinel_rejected_dispatch() -
 
     assert profile.workflow_path == GOVERNANCE_RETRY_3_ACCEPTANCE_WORKFLOW_PATH
     assert profile.environment == GOVERNANCE_RETRY_3_ACCEPTANCE_ENVIRONMENT
-    assert profile.target_sha == "a61f9a4e44458bfd7bc7bfd96f6db848ce047c0c"
+    assert profile.target_sha == RETRY_3_TARGET_SHA
     assert profile.confirmation_digest == document["confirmation-digest"]
     assert (
         profile.coordinates()
@@ -2430,6 +2431,173 @@ def test_retry_3_finalized_profile_preserves_zero_sentinel_rejected_dispatch() -
         "sha256:"
         "33e59948941f5f1111d5017ab80dd33c90dd2ac8d1a17203e7f7382a8c5b2c72"
     )
+
+
+def test_retry_3_complete_evidence_admits_finalized_profile_round_trip() -> (
+    None
+):
+    absent_proof = ValidatedAcceptanceRequestProof.from_validated_exchange(
+        raw_request=b'{"_id":"retry-3-absent"}',
+        tarball=b"retry-3-absent-tarball",
+        package_coordinate=GOVERNANCE_RETRY_3_ACCEPTANCE_PACKAGE_COORDINATE,
+        tag="wdv3-acceptance-9",
+        upstream_status=201,
+        selected_headers={"Content-Type": "application/json", "ETag": '"r3a"'},
+        response_body=b'{"ok":true}',
+    )
+    lost_coordinate, lost_tag = (
+        GOVERNANCE_RETRY_3_ACCEPTANCE_SCENARIO_COORDINATES["lost-response"]
+    )
+    lost_proof = ValidatedAcceptanceRequestProof.from_validated_exchange(
+        raw_request=b'{"_id":"retry-3-lost"}',
+        tarball=b"retry-3-lost-tarball",
+        package_coordinate=lost_coordinate,
+        tag=lost_tag,
+        upstream_status=201,
+        selected_headers={"Content-Type": "application/json", "ETag": '"r3l"'},
+        response_body=b'{"ok":true}',
+    )
+    absent_suite = FixedAcceptanceSuiteResult(
+        suite="absent-create-readback",
+        scenarios=(
+            FixedCoordinateAcceptanceProbeResult(
+                scenario="absent-create-readback",
+                package_coordinate=(
+                    GOVERNANCE_RETRY_3_ACCEPTANCE_PACKAGE_COORDINATE
+                ),
+                tag="wdv3-acceptance-9",
+                pre_state="absent",
+                post_state="exact",
+                result="protocol-confirmed",
+                mutation_classification="complete",
+                action_executed=True,
+                mutation_started=True,
+                response_identity_digest=(
+                    absent_proof.response_identity_digest
+                ),
+                content_sha512=absent_proof.tarball_sha512,
+                diagnostics=(),
+                validated_request_proof=absent_proof,
+            ),
+        ),
+    )
+    scenario_facts = (
+        (
+            "exact",
+            "exact",
+            "exact",
+            "exact-no-mutation",
+            False,
+            False,
+            (),
+            None,
+        ),
+        (
+            "identical-race",
+            "absent",
+            "exact",
+            "identical-race-exact",
+            True,
+            True,
+            ("identical-race-exact",),
+            None,
+        ),
+        (
+            "differing-race",
+            "absent",
+            "conflicting",
+            "differing-race-conflict",
+            True,
+            True,
+            ("conflicting-remote-bytes-or-tag",),
+            None,
+        ),
+        (
+            "lost-response",
+            "absent",
+            "exact",
+            "lost-response-exact-after-start",
+            True,
+            True,
+            ("mutation-started-and-readback-exact",),
+            lost_proof,
+        ),
+    )
+    conflict_suite = FixedAcceptanceSuiteResult(
+        suite="exact-and-conflict",
+        scenarios=tuple(
+            FixedCoordinateAcceptanceProbeResult(
+                scenario=scenario,
+                package_coordinate=(
+                    GOVERNANCE_RETRY_3_ACCEPTANCE_SCENARIO_COORDINATES[
+                        scenario
+                    ][0]
+                ),
+                tag=GOVERNANCE_RETRY_3_ACCEPTANCE_SCENARIO_COORDINATES[
+                    scenario
+                ][1],
+                pre_state=pre_state,
+                post_state=post_state,
+                result=result,
+                mutation_classification="complete",
+                action_executed=action_executed,
+                mutation_started=mutation_started,
+                response_identity_digest=(
+                    proof.response_identity_digest if proof else SHA256_B
+                ),
+                content_sha512=(proof.tarball_sha512 if proof else SHA512_A),
+                diagnostics=diagnostics,
+                validated_request_proof=proof,
+            )
+            for (
+                scenario,
+                pre_state,
+                post_state,
+                result,
+                action_executed,
+                mutation_started,
+                diagnostics,
+                proof,
+            ) in scenario_facts
+        ),
+    )
+    document = _document()
+    document["workflow"]["path"] = GOVERNANCE_RETRY_3_ACCEPTANCE_WORKFLOW_PATH
+    document["target-sha"] = RETRY_3_TARGET_SHA
+    document["package-coordinate"] = (
+        GOVERNANCE_RETRY_3_ACCEPTANCE_PACKAGE_COORDINATE
+    )
+    document["confirmation-digest"] = (
+        "sha256:"
+        "33e59948941f5f1111d5017ab80dd33c90dd2ac8d1a17203e7f7382a8c5b2c72"
+    )
+    document["environment"] = GOVERNANCE_RETRY_3_ACCEPTANCE_ENVIRONMENT
+    document["recovery"]["environment"] = (
+        GOVERNANCE_RETRY_3_ACCEPTANCE_ENVIRONMENT
+    )
+    for fact, suite in zip(
+        document["probe-facts"],
+        (absent_suite, conflict_suite),
+        strict=True,
+    ):
+        suite_document = suite.to_document()
+        fact["record-digest"] = suite_document["record-digest"]
+        fact["scenarios"] = suite_document["scenarios"]
+
+    raw = canonicalize(document)
+    admitted = admit_governance_acceptance_evidence(raw)
+    admitted_document = admitted.to_document()
+
+    assert admitted.target_sha == RETRY_3_TARGET_SHA
+    assert raw == canonicalize(admitted_document)
+    assert [
+        (scenario["package-coordinate"], scenario["tag"])
+        for fact in admitted.probe_facts
+        for scenario in fact.scenarios
+    ] == [
+        GOVERNANCE_RETRY_3_ACCEPTANCE_SCENARIO_COORDINATES[scenario]
+        for scenario in GOVERNANCE_ACCEPTANCE_SCENARIOS
+    ]
     assert GOVERNANCE_RETRY_3_ACCEPTANCE_SCENARIO_COORDINATES == {
         "absent-create-readback": (
             "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9",

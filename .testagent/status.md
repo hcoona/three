@@ -9179,3 +9179,31 @@ performed. Finalization must merge before the one authorized attempt-1
 dispatch.
 
 <!-- END APPEND: 2026-08-27-wdv3-acceptance-retry-3-finalization -->
+
+<!-- BEGIN APPEND: 2026-08-27-wdv3-acceptance-retry-3-finalization-review -->
+
+## Retry-3 finalization PR review correction
+
+Copilot review on PR #599 identified that the finalized retry-3 profile lacked
+a complete-evidence test through real Governance admission. Independent
+adjudication classified the finding as a true positive.
+
+`test_retry_3_complete_evidence_admits_finalized_profile_round_trip` now forms
+complete absent/exact/identical-race/differing-race/lost-response records for
+the exact `.9`-`.12` coordinate/tag profile, binds preparation merge
+`a61f9a4e44458bfd7bc7bfd96f6db848ce047c0c`, admits canonical bytes through
+the real `admit_governance_acceptance_evidence`, and proves exact canonical
+round trip and flattened scenario bindings. The separate zero-sentinel test
+continues to protect historical rejected-dispatch admission.
+
+Validation after the correction:
+
+- focused five-file pytest: `716 passed in 43.62s`;
+- complete Workflow Delivery v3 pre-commit gate: `3721 passed in 495.14s`;
+- Ruff check and format, focused Pyrefly, and `git diff --check`: passed;
+- independent correction review: no findings.
+
+No workflow dispatch, package mutation, acceptance ref, or Live operation was
+performed.
+
+<!-- END APPEND: 2026-08-27-wdv3-acceptance-retry-3-finalization-review -->
