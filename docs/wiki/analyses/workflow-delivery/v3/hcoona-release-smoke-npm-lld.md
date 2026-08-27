@@ -1624,11 +1624,12 @@ Only probe jobs declare `packages: write`; no PAT or `id-token: write` exists.
 The workflow top-level permissions are `{}`. Validation and evidence-capture
 jobs declare only `contents: read`; each probe job declares `contents: read`
 plus `packages: write`. Unspecified permissions are none.
-The dedicated retry-3 acceptance Environment is provisioned for protected
-finalization with sole required reviewer `hcoona`, self-review permitted for
-the single-operator topology, and sole deployment branch `main`. It is not
-either normal Buddy Environment. The finalization must merge before dispatch.
-The workflow emits only Governance acceptance
+The dedicated retry-3 acceptance Environment was provisioned for the consumed
+attempt with sole required reviewer `hcoona`, self-review permitted for the
+single-operator topology, and sole deployment branch `main`. It was not either
+normal Buddy Environment and was deleted after the unsuccessful run; the
+temporary workflow source is retired during protected cleanup. The workflow
+emits only Governance acceptance
 evidence bound to workflow/run/target/fixed coordinate, dependency outcomes,
 available probe results, and complete/incomplete/unknown mutation
 classification. It cannot create Release Intent,

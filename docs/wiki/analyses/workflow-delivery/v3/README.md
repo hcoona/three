@@ -234,18 +234,14 @@ Next:
    SHA-512, and acceptance target witness. Platform-Orphan implementation PR
    #590 was closed unmerged, and no exception authority or result entered
    `main`; and
-4. finalize the explicitly authorized retry-3 profile without dispatching it:
-   preparation PR #598 merged as
-   `a61f9a4e44458bfd7bc7bfd96f6db848ce047c0c`; workflow
-   `.github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-3.yml`,
-   Environment `workflow-delivery-v3-buddy-smoke-acceptance-retry-3`, and base
-   `.9` binding absent/exact `.9`, identical-race `.10`, differing-race `.11`,
-   and lost-response `.12` to tags `wdv3-acceptance-9` through
-   `wdv3-acceptance-12`. Fresh authenticated preflight found `.9`-`.12` and
-   acceptance refs absent. Environment ID `20680097388` has sole required
-   reviewer `hcoona`, self-review permitted, and sole deployment branch
-   `main`. Protected finalization binds the workflow and Governance profile to
-   the preparation merge SHA and must merge before the one attempt-1 dispatch.
-   No dispatch, package mutation, or ref has occurred; and
+4. retain retry-3 run `33032171094` as unsuccessful evidence. It observed `.9`
+   absent, started mutation, and exactly read back `.9`, but the runner did not
+   prove a controlled outcome. The first probe remained incomplete, the
+   `.10`-`.12` probe was skipped, and terminal Governance evidence classified
+   the run unknown. Authenticated reconciliation confirms exact `.9` tag,
+   tarball hashes, repository association, and target witness; `.10`-`.12`
+   remain absent. Workflow ID `343371046` is disabled, Environment ID
+   `20680097388` and acceptance refs are absent, and protected source cleanup
+   is staged. Do not retry or reuse `.9`-`.12`; and
 5. keep `live_enabled: false` until successful acceptance and separate human
-   activation authorization. Both historical attempts remain unsuccessful.
+   activation authorization. All three attempts remain unsuccessful.

@@ -4562,7 +4562,7 @@ def test_live_eligibility_admission_receives_current_intent_and_model_before_his
         assert option in capability
 
 
-def test_retry_3_temporary_acceptance_coexists_with_disabled_normal_buddy() -> (
+def test_temporary_acceptance_workflows_are_absent_with_disabled_normal_buddy() -> (
     None
 ):
     original = (
@@ -4580,17 +4580,7 @@ def test_retry_3_temporary_acceptance_coexists_with_disabled_normal_buddy() -> (
 
     assert not original.exists()
     assert not retry_2.exists()
-    assert retry_3.is_file()
-    document = _document(retry_3)
-    triggers = document.get("on")
-    if triggers is None:
-        triggers = cast("dict[object, Any]", document).get(True)
-    assert isinstance(triggers, dict)
-    assert set(triggers) == {"workflow_dispatch"}
-    assert set(triggers["workflow_dispatch"]) == {"inputs"}
-    raw = retry_3.read_text(encoding="utf-8")
-    assert "schedule:" not in raw
-    assert "push:" not in raw
+    assert not retry_3.exists()
     if GOVERNANCE.exists():
         governance = json.loads(GOVERNANCE.read_text(encoding="utf-8"))
         assert governance["live_enabled"] is False
