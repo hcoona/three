@@ -9674,3 +9674,220 @@ repository checks also passed.
 The bounded change set is review-clean and ready for commit.
 
 <!-- END APPEND: 2026-08-27-wdv3-upstream-diagnostic-final-staged-gate -->
+
+<!-- BEGIN APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-race-red -->
+
+## Expected-one proxy cardinality tests-first red
+
+Starting identity was verified before edits:
+
+- branch:
+  `workflow-delivery-v3-acceptance-upstream-diagnostics`;
+- HEAD: `a52308c43c105b49f6a161325dbdf9f3d21086fa`;
+- working tree: clean.
+
+One regression was appended:
+
+`test_acceptance_proxy_expected_one_rejects_simultaneous_identical_qualified_request_before_upstream`
+
+The test uses two loopback client threads, strict canonical request validation,
+a qualification barrier, a cardinality-snapshot barrier, and a monkeypatched
+in-process HTTPS upstream. The bounded broken-barrier fallback keeps the test
+compatible with a future serialized check-and-append critical section rather
+than relying on an uncontrolled scheduler delay.
+
+Exact command:
+
+`PYTHONDONTWRITEBYTECODE=1 uv run --offline --python 3.13 --package three-workflow-delivery-v3 pytest -p no:cacheprovider -q src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py::test_acceptance_proxy_expected_one_rejects_simultaneous_identical_qualified_request_before_upstream`
+
+Required result: **tests-first red**, exit code `1`.
+
+- Pytest result: `1 failed in 0.63s`.
+- Failing assertion:
+  `assert len(upstream_requests) == 1`.
+- Actual result: `assert 2 == 1` at
+  `test_commit10_acceptance_probes.py:7389`.
+- Both client requests completed without harness errors and both reached the
+  local upstream fake, proving the unsynchronized qualification/cardinality
+  check-then-act rather than a timing timeout.
+
+### Pre-completion test-quality gate
+
+- Pseudo-mutation review found no remaining in-scope gap. The regression kills
+  removal or weakening of the expected-one cardinality guard, a `>=` to `>`
+  boundary flip after the production repair, forwarding of the duplicate,
+  loss or duplication of the retained request fact, mutation of local `409`,
+  and malformed or multiply shaped exposed request-bound diagnostics.
+- Assertion-depth review found no assertion-free, trivial-only,
+  self-referential, or tautological assertion. The test checks the primary
+  upstream-call side effect plus concrete response statuses, retained state,
+  exact request correlation, thread completion, and the diagnostic boundary.
+- Prompt-scenario review mapped every requested behavior to the new test:
+  both requests use the same validated body; two barriers make them
+  simultaneous at the named race; `expected_requests=1` is explicit; the
+  upstream is local and mocked; and all four requested result invariants have
+  dedicated assertions.
+
+### Changed files
+
+1. `.testagent/research.md` (append-only bounded inventory and checklist)
+2. `.testagent/plan.md` (append-only tests-first plan)
+3. `.testagent/status.md` (this append-only red evidence)
+4. `src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py`
+   (one appended regression)
+
+Production code was not modified. No Live activation, real destination
+contact, acceptance-coordinate operation, or external network service was
+used.
+
+<!-- END APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-race-red -->
+
+<!-- BEGIN APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-race-fix -->
+
+## Expected-one proxy cardinality production repair
+
+The PR review finding was independently adjudicated as a true positive with
+confidence 9/10. A dedicated `_request_reservation_lock` now makes the
+matching request count and `request_facts.append` one atomic reservation.
+The lock is released before local rejection, the intentional two-request
+barrier, upstream I/O, response processing, proof construction, and diagnostic
+publication.
+
+### Requirement-to-evidence mapping
+
+| Requirement | Exact evidence | Result |
+|---|---|---|
+| Two simultaneous identical qualified requests cannot both consume the one-request proxy boundary | `test_acceptance_proxy_expected_one_rejects_simultaneous_identical_qualified_request_before_upstream` | Passed |
+| Exactly one upstream write attempt is issued | The same test asserts `len(upstream_requests) == 1` and exact forwarded bytes | Passed |
+| The duplicate is rejected locally without entering the upstream fake | The same test asserts response statuses exactly `[201, 409]` | Passed |
+| Exactly one canonical request fact remains | The same test asserts one fact and its exact request digest | Passed |
+| Request-bound diagnostics remain singleton and non-authoritative | The same test admits only absent or one exact HTTP-201 diagnostic; retained diagnostic/proof authority rules are unchanged | Passed |
+| Existing one-request and intentional two-request behavior remains intact | All `acceptance_proxy` cases in the canonical module | 11 passed |
+
+### Validation
+
+| Command | Result |
+|---|---|
+| Exact new pytest node | `1 passed in 4.01s` |
+| Canonical module filtered by `acceptance_proxy` | `11 passed, 236 deselected in 4.50s` |
+| Three bounded upstream-diagnostic pytest modules | `637 passed in 14.76s` |
+| Ruff check and Ruff format check over `cli.py` and the changed pytest module | Passed; both files formatted |
+| Pyrefly over the prior six-file production/test scope | `0 errors` (`41` suppressed, `19` warnings not shown) |
+| Complete v3 package test suite | `3782 passed in 465.61s` |
+| `git diff --check` | Passed before production repair; final gates remain pending |
+
+A workspace-wide Pyrefly probe is not used as change evidence: it reports
+217 unrelated missing-import errors across other workspace projects. The
+same focused six-file command used by the upstream-diagnostic change remains
+green with zero errors.
+
+Pending closure is the unstaged HK gate, fresh independent review with
+per-finding adjudication, staged HK gate, follow-up commit/push, Copilot
+rereview and thread resolution, and final PR merge. No Live activation,
+destination request, or acceptance-coordinate operation occurred.
+
+<!-- END APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-race-fix -->
+
+<!-- BEGIN APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-race-unstaged-gate -->
+
+## Expected-one proxy cardinality unstaged gate
+
+`GIT_LFS_SKIP_SMUDGE=1 mise exec -- hk check --check --no-progress --unstaged`
+passed over the five-file follow-up. The managed `v3-control-pytest` step
+reported `3782 passed in 463.02s`; Ruff, Ruff format, typos, and EditorConfig
+checks also passed.
+
+Fresh independent review and the final staged gate remain pending.
+
+<!-- END APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-race-unstaged-gate -->
+
+<!-- BEGIN APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-review-iteration -->
+
+## Expected-one proxy review iteration
+
+The production concurrency reviewer reported `No findings.` The independent
+test/evidence reviewer reported one material test gap: the original
+iteration barrier could permit a count-only lock with outside-lock append to
+pass. A separate adjudicator classified the finding as a true positive with
+confidence 10/10 and demonstrated that mutant passing repeatedly.
+
+The regression now synchronizes `request_facts.append` instead. The correct
+implementation holds the reservation lock during the bounded append wait;
+the second handler cannot count until the first append is visible. Both the
+original unlocked implementation and a count-only-lock mutant allow both
+handlers to reach append and therefore fail the existing one-upstream,
+one-fact, and `[201, 409]` assertions.
+
+### Post-refinement validation
+
+| Command | Result |
+|---|---|
+| Exact refined pytest node | `1 passed in 3.96s` |
+| Canonical module filtered by `acceptance_proxy` | `11 passed, 236 deselected in 4.59s` |
+| Three bounded upstream-diagnostic modules | `637 passed in 14.77s` |
+| Ruff check and format check over the source/test pair | Passed; both files formatted |
+| Focused six-file Pyrefly | `0 errors` (`41` suppressed, `19` warnings not shown) |
+| Complete v3 package suite | `3782 passed in 461.99s` |
+
+### Final test-quality calibration
+
+`test-analysis-extensions` is unavailable, so established Python/pytest
+semantics were applied directly.
+
+- Pseudo-mutations removing the lock, locking only the count, weakening
+  `>=` to `>`, removing the duplicate rejection, forwarding or retaining a
+  duplicate, changing local `409`, or corrupting the retained request digest
+  are killed by this regression.
+- Extending the reservation lock through the intentional two-request barrier
+  is killed by the retained two-request race test.
+- The refined test contains 15 meaningful assertions across equality,
+  Boolean/null, collection/structural, negative, and state/side-effect
+  categories. It has no assertion-free, trivial-only, self-referential, or
+  tautological assertion.
+- No material in-scope pseudo-mutation remains unguarded.
+
+Fresh independent rereview and final unstaged/staged repository gates remain
+pending.
+
+<!-- END APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-review-iteration -->
+
+<!-- BEGIN APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-review-closure -->
+
+## Expected-one proxy cardinality review closure
+
+The production concurrency reviewer reported `No findings.` The only
+test/evidence finding was independently adjudicated as a true positive,
+repaired by moving the deterministic seam to `request_facts.append`, and
+returned to a fresh test/evidence reviewer. The rereviewer reported exactly
+`No findings.`
+
+The five-file follow-up is review-clean. Final unstaged and staged repository
+gates remain before commit and push.
+
+<!-- END APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-review-closure -->
+
+<!-- BEGIN APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-final-unstaged-gate -->
+
+## Expected-one proxy cardinality final unstaged gate
+
+After review closure,
+`GIT_LFS_SKIP_SMUDGE=1 mise exec -- hk check --check --no-progress --unstaged`
+passed over the final five-file workspace diff. The managed
+`v3-control-pytest` step reported `3782 passed in 462.99s`; all other selected
+checks passed.
+
+<!-- END APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-final-unstaged-gate -->
+
+<!-- BEGIN APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-staged-gate -->
+
+## Expected-one proxy cardinality staged gate
+
+`GIT_LFS_SKIP_SMUDGE=1 mise exec -- hk check --check --no-progress --staged`
+passed over the explicitly staged five-file follow-up. The managed
+`v3-control-pytest` step reported `3782 passed in 459.86s`; all other selected
+checks passed.
+
+The status update containing this result is staged and the same staged gate
+will be rerun over the final commit candidate.
+
+<!-- END APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-staged-gate -->

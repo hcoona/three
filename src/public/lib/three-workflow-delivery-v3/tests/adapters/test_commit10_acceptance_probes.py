@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import gzip
 import hashlib
 import http.client
@@ -7250,3 +7251,141 @@ def test_acceptance_proxy_two_request_race_never_exposes_a_singleton_upstream_di
     assert proxy.proof.request_digest == request_digests[0]
     assert proxy.proof.upstream_status == 201
     assert proxy.processed.is_set()
+
+
+def test_acceptance_proxy_expected_one_rejects_simultaneous_identical_qualified_request_before_upstream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    version = "0.0.0-wdv3-acceptance.4"
+    tag = "wdv3-acceptance-4"
+    tarball = _acceptance_tarball(
+        version=version,
+        repository_url="git+https://github.com/hcoona/three.git",
+        target_sha=TARGET,
+    )
+    request_body = _adversarial_publish_body(tarball)
+    request_digest = "sha256:" + hashlib.sha256(request_body).hexdigest()
+    qualified = cli_module.threading.Barrier(2)
+    append_started = cli_module.threading.Barrier(2)
+    original_validate = cli_module._validate_acceptance_publish_body
+    upstream_requests: list[bytes] = []
+    upstream_requests_lock = cli_module.threading.Lock()
+
+    def synchronize_qualified_requests(
+        *args: Any,
+        **kwargs: Any,
+    ) -> bytes:
+        validated_tarball = original_validate(*args, **kwargs)
+        qualified.wait(timeout=TIMEOUT_SECONDS)
+        return validated_tarball
+
+    class AppendBarrierFacts(list[dict[str, object]]):
+        def append(self, request_fact: dict[str, object]) -> None:
+            with contextlib.suppress(cli_module.threading.BrokenBarrierError):
+                append_started.wait(timeout=TIMEOUT_SECONDS / 2)
+            super().append(request_fact)
+
+    class Response:
+        status = 201
+
+        def read(self, _size: int) -> bytes:
+            return b'{"ok":true}'
+
+        def getheaders(self) -> list[tuple[str, str]]:
+            return [("Content-Type", "application/json")]
+
+    class Connection:
+        def __init__(self, host: str, *, timeout: float) -> None:
+            assert host == "npm.pkg.github.com"
+            assert timeout == TIMEOUT_SECONDS
+
+        def request(
+            self,
+            method: str,
+            path: str,
+            *,
+            body: bytes,
+            headers: dict[str, str],
+        ) -> None:
+            assert method == "PUT"
+            assert path == "/@hcoona%2fhcoona-release-smoke-npm"
+            assert body == request_body
+            assert headers["Authorization"] == "Bearer cardinality-token"
+            with upstream_requests_lock:
+                upstream_requests.append(body)
+
+        def getresponse(self) -> Response:
+            return Response()
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(
+        cli_module,
+        "_validate_acceptance_publish_body",
+        synchronize_qualified_requests,
+    )
+    monkeypatch.setattr(cli_module.http.client, "HTTPSConnection", Connection)
+    responses: list[tuple[int, list[tuple[str, str]], bytes] | None] = [
+        None,
+        None,
+    ]
+    errors: list[Exception | None] = [None, None]
+    start = cli_module.threading.Barrier(3)
+
+    with cli_module.AcceptanceMutationProxy(
+        timeout_seconds=TIMEOUT_SECONDS,
+        token="cardinality-token",
+        expected_method="PUT",
+        expected_path="/@hcoona%2fhcoona-release-smoke-npm",
+        expected_version=version,
+        expected_tag=tag,
+        expected_tarballs=(tarball,),
+        expected_target_sha=TARGET,
+        expected_requests=1,
+        drop_accepted_response=False,
+    ) as proxy:
+        proxy.request_facts = AppendBarrierFacts()
+
+        def publish(index: int) -> None:
+            try:
+                start.wait(timeout=TIMEOUT_SECONDS)
+                responses[index] = _request_proxy_publish(
+                    proxy,
+                    request_body,
+                )
+            except (
+                AssertionError,
+                OSError,
+                RuntimeError,
+                http.client.HTTPException,
+            ) as error:
+                errors[index] = error
+
+        threads = [
+            cli_module.threading.Thread(target=publish, args=(index,))
+            for index in range(2)
+        ]
+        for thread in threads:
+            thread.start()
+        start.wait(timeout=TIMEOUT_SECONDS)
+        for thread in threads:
+            thread.join(TIMEOUT_SECONDS)
+        assert all(not thread.is_alive() for thread in threads)
+
+    assert errors == [None, None]
+    assert all(response is not None for response in responses)
+    assert len(upstream_requests) == 1
+    assert upstream_requests[0] == request_body
+    assert sorted(
+        cast("tuple[int, list[tuple[str, str]], bytes]", response)[0]
+        for response in responses
+    ) == [201, 409]
+    assert len(proxy.request_facts) == 1
+    assert proxy.request_facts[0]["request-digest"] == request_digest
+    retained_diagnostic = getattr(proxy, "upstream_diagnostic", None)
+    assert retained_diagnostic is None or retained_diagnostic == {
+        "upstream-status": 201,
+        "exception-category": None,
+        "request-correlation-digest": request_digest,
+    }

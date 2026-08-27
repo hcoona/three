@@ -5986,3 +5986,78 @@ The plan does not authorize Live activation, another destination acceptance
 attempt, or reuse of consumed retry-3 coordinates `.9` through `.12`.
 
 <!-- END APPEND: 2026-08-27-wdv3-acceptance-upstream-diagnostic-production-plan -->
+
+<!-- BEGIN APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-race-plan -->
+
+## Tests-first plan for expected-one proxy cardinality
+
+1. Append
+   `test_acceptance_proxy_expected_one_rejects_simultaneous_identical_qualified_request_before_upstream`
+   to the existing acceptance-probe test module.
+2. Build one canonical publish body and synchronize two loopback client
+   threads after strict body qualification.
+3. Install a list-compatible test barrier at the current cardinality snapshot
+   seam so both unsynchronized handlers deterministically observe zero
+   retained facts. Give the barrier a bounded broken-barrier path so a future
+   serialized check-and-append implementation can admit one handler and then
+   reject the other.
+4. Replace only the upstream HTTPS connection with an in-process fake
+   returning HTTP 201 and recording forwarded bodies.
+5. Assert one forwarded request, statuses `[201, 409]`, one request fact bound
+   to the shared request digest, and an absent or single exact request-bound
+   HTTP-201 diagnostic.
+6. Run only:
+   `PYTHONDONTWRITEBYTECODE=1 uv run --offline --python 3.13 --package three-workflow-delivery-v3 pytest -p no:cacheprovider -q src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py::test_acceptance_proxy_expected_one_rejects_simultaneous_identical_qualified_request_before_upstream`.
+7. Preserve the expected red result, append the exact evidence to
+   `.testagent/status.md`, and make no production repair.
+
+<!-- END APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-race-plan -->
+
+<!-- BEGIN APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-race-fix-plan -->
+
+## Production plan for expected-one proxy cardinality
+
+1. Add a dedicated request-reservation lock to
+   `AcceptanceMutationProxy`.
+2. Preserve immutable expected-tarball membership validation outside the
+   lock.
+3. Compute the request and tarball digests once, then hold the lock only
+   across matching reservation count and `request_facts.append`.
+4. Reject a consumed matching reservation with local HTTP 409 only after
+   releasing the lock.
+5. Keep the two-request barrier, upstream HTTPS request, response handling,
+   proof construction, and diagnostic publication outside the reservation
+   lock.
+6. Run the exact new regression, all acceptance-proxy tests, the three
+   upstream-diagnostic modules, Ruff check/format, focused Pyrefly over the
+   six bounded Python files, and the complete v3 package suite.
+7. Run the unstaged repository HK gate, then perform fresh independent review
+   and per-finding adjudication. Iterate tests-first if any true positive
+   remains.
+8. Stage only the five follow-up files, run the staged HK gate, commit, push,
+   request Copilot rereview, resolve the addressed thread, and merge only
+   after every required check and review thread is clear.
+
+No step authorizes Live activation, a destination acceptance invocation, or
+reuse of consumed acceptance coordinates.
+
+<!-- END APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-race-fix-plan -->
+
+<!-- BEGIN APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-test-refinement-plan -->
+
+## Review-driven atomicity test refinement
+
+1. Replace the cardinality-iteration barrier with an overridden
+   `request_facts.append` barrier.
+2. Keep the bounded broken-barrier fallback so the correct implementation
+   does not deadlock while holding the reservation lock.
+3. Re-run the exact regression, all acceptance-proxy tests, the three bounded
+   modules, Ruff, focused Pyrefly, and the complete v3 suite.
+4. Perform pseudo-mutation review for lock removal, count-only locking,
+   `>=` boundary weakening, duplicate append/forwarding, wrong local status,
+   and overbroad lock scope.
+5. Repeat independent production and test/evidence review. Independently
+   adjudicate and repair any new true positive before the final repository
+   gates.
+
+<!-- END APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-test-refinement-plan -->

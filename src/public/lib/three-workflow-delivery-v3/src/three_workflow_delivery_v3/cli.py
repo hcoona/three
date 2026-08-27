@@ -890,6 +890,7 @@ class AcceptanceMutationProxy:
         self.proof: ValidatedAcceptanceRequestProof | None = None
         self.validation_error: str | None = None
         self.request_facts: list[dict[str, object]] = []
+        self._request_reservation_lock = threading.Lock()
         self._upstream_diagnostic: dict[str, object] | None = None
         self._upstream_diagnostic_lock = threading.Lock()
         self._upstream_terminal = threading.Event()
@@ -1031,25 +1032,28 @@ class AcceptanceMutationProxy:
                     owner.validation_error = str(error)
                     self._reject(422)
                     return
-                if expected_tarballs and (
-                    tarball not in expected_tarballs
-                    or sum(
-                        fact["tarball-sha512"]
-                        == "sha512:" + hashlib.sha512(tarball).hexdigest()
-                        for fact in owner.request_facts
-                    )
-                    >= expected_tarballs.count(tarball)
-                ):
+                tarball_digest = "sha512:" + hashlib.sha512(tarball).hexdigest()
+                if expected_tarballs and tarball not in expected_tarballs:
                     self._reject(409)
                     return
                 request_digest = "sha256:" + hashlib.sha256(body).hexdigest()
                 request_fact: dict[str, object] = {
                     "request-digest": request_digest,
-                    "tarball-sha512": (
-                        "sha512:" + hashlib.sha512(tarball).hexdigest()
-                    ),
+                    "tarball-sha512": tarball_digest,
                 }
-                owner.request_facts.append(request_fact)
+                with owner._request_reservation_lock:
+                    request_limit_reached = bool(expected_tarballs) and (
+                        sum(
+                            fact["tarball-sha512"] == tarball_digest
+                            for fact in owner.request_facts
+                        )
+                        >= expected_tarballs.count(tarball)
+                    )
+                    if not request_limit_reached:
+                        owner.request_facts.append(request_fact)
+                if request_limit_reached:
+                    self._reject(409)
+                    return
                 owner.observed.set()
                 if barrier is not None:
                     try:

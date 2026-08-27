@@ -5359,3 +5359,109 @@ returned-document admission, and Governance replay closed without converting
 diagnostics into proof.
 
 <!-- END APPEND: 2026-08-27-wdv3-upstream-diagnostic-final-closure-research -->
+
+<!-- BEGIN APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-race-research -->
+
+## Acceptance proxy expected-one cardinality race
+
+### Bounded target inventory
+
+- Branch and starting HEAD were verified as
+  `workflow-delivery-v3-acceptance-upstream-diagnostics` at
+  `a52308c43c105b49f6a161325dbdf9f3d21086fa`, with a clean working tree.
+- Production target:
+  `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py`,
+  `AcceptanceMutationProxy._forward`.
+- Sole test target:
+  `src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py`.
+- Required operating guidance was read from the applicable `AGENTS.md` files
+  and `docs/wiki/analyses/workflow-delivery/v3/agent-handoff.md`.
+
+### Existing convention and defect
+
+The module already uses `threading.Barrier`, two loopback HTTP client threads,
+`_request_proxy_publish`, `_acceptance_tarball`,
+`_adversarial_publish_body`, and a monkeypatched
+`http.client.HTTPSConnection` fake for deterministic proxy races without an
+external destination.
+
+For `expected_requests=1`, request qualification counts matching retained
+facts and then appends the new fact without one synchronization boundary.
+Two identical qualified handlers can therefore both observe cardinality zero,
+both append, and both reach the upstream fake.
+
+### Acceptance checklist
+
+1. Append one deterministic pytest regression to the existing canonical test
+   module; preserve all prior tests.
+2. Send two simultaneous identical, fully qualified requests to a proxy
+   configured with `expected_requests=1`.
+3. Use only the existing loopback proxy and a monkeypatched local upstream
+   fake; perform no Live activation, real destination request, coordinate
+   consumption/reuse, or external network access.
+4. Force both current unsynchronized checks to observe the same empty
+   snapshot with barriers, while allowing a future serialized critical
+   section to proceed through a bounded broken-barrier fallback.
+5. Assert exactly one upstream request, response statuses exactly `201` and
+   local `409`, exactly one retained request fact, and no more than one
+   correctly request-bound upstream diagnostic.
+6. Run only the new pytest node, offline and without pytest or bytecode cache,
+   and retain the intended race assertion failure as required tests-first red
+   evidence.
+7. Do not modify production code or repair the confirmed defect.
+
+<!-- END APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-race-research -->
+
+<!-- BEGIN APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-race-fix-research -->
+
+## Acceptance proxy expected-one cardinality repair
+
+An independent adjudicator classified the PR review finding as a true
+positive with confidence 9/10. `ThreadingHTTPServer` can run two handlers
+concurrently, while the prior matching-fact count and
+`request_facts.append` formed an unsynchronized check-then-act boundary. The
+GIL makes an individual list append safe but does not make that compound
+cardinality invariant atomic.
+
+The smallest compatible repair is a dedicated request-reservation lock held
+only while counting already reserved matching tarballs and appending the new
+request fact. Immutable tarball membership validation remains outside the
+lock, and local rejection, the intentional two-request barrier, upstream
+network I/O, response processing, proof construction, and diagnostic
+publication all remain outside it. This preserves the existing
+`expected_requests=2` race semantics while ensuring that a one-request proxy
+cannot forward two simultaneous identical qualified requests.
+
+The repair does not change diagnostic authority, historical replay, accepted
+proof shapes, or any acceptance coordinate. It performs no Live activation
+or destination operation.
+
+<!-- END APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-race-fix-research -->
+
+<!-- BEGIN APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-test-refinement-research -->
+
+## Expected-one regression atomicity refinement
+
+Fresh production review reported no findings. The independent test/evidence
+review found that synchronizing list iteration could allow a count-only lock
+with an outside-lock append to pass: the first handler could time out while
+holding the count lock, release it, append, and let the second handler observe
+the fact even though a preemption between release and append would retain the
+real race.
+
+An independent adjudicator classified this finding as a true positive with
+confidence 10/10. The deterministic seam therefore moves from list iteration
+to `request_facts.append`:
+
+- without a lock, both handlers count zero and meet at append;
+- with a count-only lock, the first releases the lock before waiting in
+  append, so the second also counts zero and releases both appends;
+- with the correct count-and-append critical section, the first waits while
+  holding the lock, times out boundedly, appends, and the second then observes
+  the consumed reservation.
+
+The existing assertions consequently kill both the original unlocked
+implementation and the count-only-lock mutant while retaining the correct
+implementation.
+
+<!-- END APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-test-refinement-research -->
