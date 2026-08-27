@@ -5075,3 +5075,287 @@ existing requested files. Adding the new contract file and focused extensions
 produced 704 discovered tests, a delta of 23.
 
 <!-- END APPEND: 2026-08-26-wdv3-acceptance-retry-3-fallback -->
+
+<!-- BEGIN APPEND: 2026-08-27-wdv3-acceptance-upstream-diagnostic-characterization-research -->
+
+## Workflow Delivery v3 acceptance upstream-diagnostic characterization
+
+### Boundary and strategy
+
+This is one bounded, tests-first Python/pytest characterization pass. Production
+behavior was read only from:
+
+- `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py`;
+- `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/adapters/github_packages.py`;
+- `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/records/governance.py`.
+
+The only test targets are:
+
+- `tests/adapters/test_acceptance_exchange_proof_repair.py`;
+- `tests/adapters/test_commit10_acceptance_probes.py`;
+- `tests/governance/test_commit10_acceptance_evidence.py`.
+
+The `code-testing-extensions` skill was requested once by the coordinator but
+is not installed in this workspace. The established pytest conventions in the
+three bounded test files therefore govern. No v1/v2 source, unrelated test,
+manifest, workflow, Environment, package, Release, Live path, network service,
+or dead-session event log is part of this research.
+
+### Seven-item requirement checklist
+
+1. [ ] The proxy captures the immutable, credential-free request digest and an
+   exact HTTP status in the inclusive range 100..599 immediately after
+   `getresponse()`. A 201 fact survives a later oversized-body, unsafe-header,
+   or `response.read()` failure without fabricating a validated proof or
+   processed authority.
+2. [ ] A pre-response transport failure retains the request digest and exactly
+   one closed transport category but no status. No exception message, request
+   body, request/response header, token, stdout, or stderr may survive.
+3. [ ] `_AcceptanceNpmRunner` propagates an optional closed upstream diagnostic
+   on a returned failure and on raised timeout, `OSError`, and classification
+   error paths; it omits the field/attribute when no admitted upstream fact is
+   available.
+4. [ ] The Adapter maps status diagnostics for 200, 201, 202, 409, and 500 plus
+   a transport diagnostic while preserving action executedness, mutation
+   startedness, result, mutation classification, and exact readback
+   reconciliation. Diagnostic-only evidence remains incomplete and
+   non-authoritative without a validated request proof.
+5. [ ] Existing authority controls are rerun unchanged: validated normal 201
+   completeness, exact preexisting no-mutation, identical-race exactness,
+   differing-race conflict without overwrite, and Governance proof-required
+   protocol confirmation.
+6. [ ] Governance admits and exactly round-trips only canonical
+   non-authoritative status/request and transport/request forms; it rejects
+   malformed, unbound, or contradictory forms, and diagnostic-only facts
+   cannot satisfy proof-required completion.
+7. [ ] A diagnostic is scoped to a single request in the
+   absent-create-readback/lost-response paths. One request retains at most one
+   request-bound diagnostic; a two-request race never exposes one aggregate
+   singleton diagnostic as authority for both requests.
+
+### Current bounded behavior
+
+- `AcceptanceMutationProxy` validates a request and appends a request fact
+  before forwarding. It computes the request digest before
+  `HTTPSConnection.request()`, but after `getresponse()` it reads and validates
+  the response before retaining any standalone status/category diagnostic.
+  Only a fully validated status-201 exchange creates
+  `ValidatedAcceptanceRequestProof`. Oversized response bodies, unsafe response
+  headers, `read()` errors, and pre-response transport exceptions therefore
+  lose the requested bounded upstream facts. The common
+  `OSError`/`TimeoutError`/`HTTPException` catch also loses their closed
+  distinction.
+- `_AcceptanceNpmRunner.run_scenario()` returns proof-derived facts only on the
+  two proof paths. Generic returned failures and the timeout, `OSError`, and
+  `_classify()` exception paths do not copy an optional proxy diagnostic into
+  the returned document or raised exception.
+- `AcceptanceRunnerDiagnostic` serializes exactly
+  `exit-classification`, `upstream-status`, `exception-category`, and
+  `request-correlation-digest`. Its present constraints allow status 201 only,
+  and disallow a request-bound transport category. `_acceptance_runner_diagnostic`
+  derives facts only from a validated proof or the local runner exception;
+  it does not map an optional upstream diagnostic.
+- Governance mirrors the proof-bound model: status is restricted to 201;
+  a request/status fact must bind a proof; and an exception category cannot be
+  request-bound. Proof-required completion already remains gated by proof,
+  admitted startedness, and exact readback and must not be weakened.
+
+### Existing conventions and reusable seams
+
+- Tests use `pytest.mark.parametrize` with explicit, descriptive `ids`.
+- Proxy tests replace `http.client.HTTPSConnection` with local fake
+  Response/Connection classes and send only to the loopback proxy through
+  `_request_proxy_publish`; no external URL is contacted.
+- `_acceptance_tarball` and `_adversarial_publish_body` create a valid fixed
+  package request, while fake Process/Proxy seams drive
+  `_AcceptanceNpmRunner` deterministically.
+- Adapter tests use `ScriptedTransport`, `ScriptedRunner`, `_absent`,
+  `_exact_readback`, `_proof`, and `_run_probe`.
+- Governance tests follow
+  `_document -> mutate -> refresh record digest -> _admit -> exact
+  to_document round-trip`. `_refresh_probe_record_digest_unchecked` is used
+  when intentionally malformed or not-yet-admitted diagnostic values cannot
+  be constructed through the current Adapter dataclass.
+- Assertions use exact dictionaries/key sets, concrete state/results,
+  startedness, proof absence, digest binding, and full serialized secret
+  absence rather than existence-only checks.
+
+### Source-to-test map and intended cases
+
+- `cli.py::AcceptanceMutationProxy`:
+  `test_proxy_retains_status_and_request_digest_when_201_response_validation_fails`
+  (`oversized-body`, `unsafe-response-header`, `response-read-os-error`);
+  `test_proxy_pre_response_transport_failure_retains_redacted_category_and_request_digest_without_status`
+  (`timeout-error`, `os-error`, `http-exception`);
+  `test_acceptance_proxy_one_request_retains_at_most_one_request_bound_diagnostic`
+  (`status-100`, `status-409`, `status-599`,
+  `pre-response-transport`);
+  `test_acceptance_proxy_two_request_race_never_exposes_a_singleton_upstream_diagnostic`.
+- `cli.py::_AcceptanceNpmRunner`:
+  `test_runner_propagates_closed_upstream_diagnostic_for_returned_and_raised_failures`
+  (`returned-failure`, `raised-timeout`, `raised-os-error`,
+  `raised-classification-error`) and
+  `test_runner_omits_upstream_diagnostic_when_proxy_supplies_no_admitted_fact`
+  with the same path ids.
+- `adapters/github_packages.py`:
+  `test_acceptance_probe_preserves_non_authoritative_upstream_diagnostic_matrix_with_incomplete_readback`
+  (`status-200`, `status-201`, `status-202`, `status-409`, `status-500`,
+  `transport-http-exception`).
+- `records/governance.py`:
+  `test_governance_admits_and_round_trips_canonical_upstream_diagnostic`
+  with the Adapter matrix ids;
+  `test_governance_rejects_malformed_or_unbound_upstream_diagnostic`
+  (`status-below-range`, `status-above-range`, `status-bool`,
+  `status-without-request`, `transport-without-request`,
+  `status-and-transport`, `request-without-status-or-transport`,
+  `unknown-transport-category`, `malformed-request-digest`,
+  `unknown-field`);
+  `test_governance_proof_required_completion_rejects_diagnostic_only_authority`
+  (`protocol-confirmed-complete`,
+  `protocol-confirmed-readback-incomplete`).
+
+The narrow run also reruns unchanged
+`test_normal_create_propagates_request_bound_http_201_exchange_proof`,
+`test_exact_preexisting_state_never_invokes_the_mutation_runner`,
+`test_identical_conflict_race_is_exact_without_blind_repair`,
+`test_differing_conflict_race_is_conflicting_without_overwrite`, and
+`test_protocol_confirmed_governance_requires_validated_request_proof`.
+
+### Validation contract
+
+From the repository root, and only offline:
+
+1. `uv run --offline --python 3.13 --package three-workflow-delivery-v3 pytest --collect-only -q src/public/lib/three-workflow-delivery-v3/tests/adapters/test_acceptance_exchange_proof_repair.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py`
+2. `uv run --offline --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/adapters/test_acceptance_exchange_proof_repair.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py`
+
+Collection/import/syntax/fixture defects are harness failures and must be fixed
+inside the three test files. Assertion failures or missing expected diagnostic
+attributes/fields caused by the unchanged production model are intended
+tests-first product-behavior reds and must not be skipped or repaired in
+production during this phase.
+
+<!-- END APPEND: 2026-08-27-wdv3-acceptance-upstream-diagnostic-characterization-research -->
+
+<!-- BEGIN APPEND: 2026-08-27-wdv3-acceptance-upstream-diagnostic-production-research -->
+
+## Workflow Delivery v3 upstream-diagnostic production repair research
+
+### Bounded production scope
+
+The tests-first characterization was followed by a production repair limited
+to:
+
+- `src/three_workflow_delivery_v3/cli.py`;
+- `src/three_workflow_delivery_v3/adapters/github_packages.py`;
+- `src/three_workflow_delivery_v3/records/governance.py`;
+- the same three characterization test modules.
+
+Paths above are relative to the v3 package root. No workflow, Environment,
+release route, Live activation, external network operation, or additional
+acceptance invocation is part of this repair.
+
+### Compatibility model
+
+The admitted diagnostic model is a closed compatibility union:
+
+| Arm | Upstream status | Exception category | Request correlation |
+|---|---:|---|---|
+| Historical local runner | `None` | `TimeoutError`, `OSError`, `RuntimeError`, or `ValueError` | `None` |
+| Request-bound transport | `None` | `TimeoutError`, `OSError`, or `HTTPException` | Required |
+| Request-bound response | `100..599` | `None` | Required |
+
+Additional closure rules:
+
+- an all-null diagnostic is invalid;
+- status and exception category cannot coexist;
+- request-only diagnostics are invalid;
+- unbound `HTTPException` is invalid;
+- request-bound `RuntimeError` and `ValueError` are invalid;
+- diagnostics are observability only and do not create completion authority;
+- `exit-classification == "protocol-confirmed"` independently requires an
+  admitted validated proof;
+- historical status-only replay remains possible only where an adjacent
+  admitted proof supplies the exact request/status binding.
+
+### False-positive adjudication
+
+The initial negative matrix treated requestless `TimeoutError` as invalid.
+That expectation was adjudicated false: historical local runner diagnostics
+already use requestless `TimeoutError` and `OSError`, and removing that arm
+would break stored evidence replay. The unbound transport negative now uses
+`HTTPException`, while request-bound `RuntimeError` and `ValueError` provide
+the complementary invalid-category cases.
+
+### Implementation findings
+
+- The proxy must publish the first retained diagnostic atomically. A plain
+  check-then-set can let concurrent handlers overwrite the singleton fact.
+- A runner timeout can race a qualified handler that has observed a request
+  but has not yet published its terminal status/transport fact. The runner
+  therefore needs a bounded wait on a terminal event using the existing
+  absolute operation deadline, not a new timeout.
+- Raw Adapter diagnostics must not suppress local fallback unless they form a
+  complete request-bound status or transport arm.
+- A protocol-confirmed raw diagnostic must bind the admitted proof exactly.
+  The lost-response complete path must reject any raw status/request facts
+  that contradict the proof.
+- Governance must reject the empty arm and require proof for a
+  protocol-confirmed diagnostic even when the surrounding response result is
+  not itself protocol-confirmed.
+
+These findings preserve the original non-authority boundary: retained upstream
+facts improve diagnosis but cannot prove package mutation completion.
+
+<!-- END APPEND: 2026-08-27-wdv3-acceptance-upstream-diagnostic-production-research -->
+
+<!-- BEGIN APPEND: 2026-08-27-wdv3-upstream-diagnostic-review-adjudication -->
+
+## Independent review adjudication addendum
+
+Fresh split-scope review produced four findings; four independent adjudicators
+classified all four as true positives.
+
+- A two-request proxy can never publish a meaningful aggregate singleton
+  diagnostic. Its terminal event must therefore be set without waiting for a
+  handler, or the runner can consume the shared deadline waiting for a fact
+  that is intentionally impossible.
+- A malformed raw upstream diagnostic remains fail-closed when it is the only
+  source. When an independently admitted local runner exception exists, the
+  malformed raw value must not suppress that historical local fallback.
+- A request-correlation digest proves that the proxy observed a qualified
+  request. Request-bound status or transport diagnostics therefore require
+  both `action.executed` and `mutation-started`, represented by
+  `runner-failed-after-mutation-start` for non-protocol failures.
+- The Adapter diagnostic constructor must reject the all-null arm so every
+  constructible serialized diagnostic remains within the Governance-admitted
+  union. Absence is represented by no diagnostic object, not an empty object.
+
+These refinements do not strengthen diagnostic facts into authority. They
+close contradictions and replay failures within the existing observability
+model.
+
+<!-- END APPEND: 2026-08-27-wdv3-upstream-diagnostic-review-adjudication -->
+
+<!-- BEGIN APPEND: 2026-08-27-wdv3-upstream-diagnostic-final-closure-research -->
+
+## Final diagnostic-closure refinements
+
+Later review iterations established four additional closure requirements:
+
+- a validated response proof cannot coexist with a transport exception
+  diagnostic for the same request;
+- retry-2 and retry-3 complete lost-response evidence must bind the proof's
+  request tarball SHA-512 to exact post-readback bytes, while retry-1 remains
+  an explicit historical replay exception;
+- the only constructible unbound status arm is historical status `201`;
+  unbound non-201 statuses cannot be admitted in any Governance context;
+- optional raw diagnostics use key omission, not explicit null. Every present
+  returned value is validated even when malformed action facts create a
+  synthetic runner error. Genuine raised exceptions with unadmitted
+  startedness retain their prior diagnostic-omission behavior.
+
+Together with the earlier union, these rules make Adapter construction,
+returned-document admission, and Governance replay closed without converting
+diagnostics into proof.
+
+<!-- END APPEND: 2026-08-27-wdv3-upstream-diagnostic-final-closure-research -->

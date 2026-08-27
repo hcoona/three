@@ -237,6 +237,8 @@ _PROJECT_PATH = "src/public/lib/hcoona-release-smoke-npm"
 _CI_REQUEST_SCHEMA = "workflow-delivery/v3/ci-request"
 _CI_ADAPTER_CONTEXT_SCHEMA = "workflow-delivery/v3/ci-node-adapter-context"
 _CI_ADAPTER_RESULT_SCHEMA = "workflow-delivery/v3/ci-node-adapter-result"
+_HTTP_STATUS_MIN = 100
+_HTTP_STATUS_MAX = 599
 _SHA256_HEX_LENGTH = 64
 _PAIR_FIELD_COUNT = 2
 _ACCEPTANCE_LOOPBACK_DUMMY_TOKEN = "wdv3-loopback-dummy-token"  # noqa: S105
@@ -839,6 +841,27 @@ def _validate_acceptance_publish_body(  # noqa: C901, PLR0912
     return tarball
 
 
+def _copy_acceptance_upstream_diagnostic(
+    proxy: object,
+    *,
+    deadline: float,
+) -> dict[str, object] | None:
+    diagnostic = getattr(proxy, "upstream_diagnostic", None)
+    terminal = getattr(proxy, "_upstream_terminal", None)
+    observed = getattr(proxy, "observed", None)
+    if (
+        type(diagnostic) is not dict
+        and isinstance(terminal, threading.Event)
+        and isinstance(observed, threading.Event)
+        and observed.is_set()
+    ):
+        terminal.wait(timeout=max(0.0, deadline - monotonic()))
+        diagnostic = getattr(proxy, "upstream_diagnostic", None)
+    if type(diagnostic) is not dict:
+        return None
+    return dict(diagnostic)
+
+
 class AcceptanceMutationProxy:
     """Bounded loopback mutation boundary with strict request qualification."""
 
@@ -867,6 +890,9 @@ class AcceptanceMutationProxy:
         self.proof: ValidatedAcceptanceRequestProof | None = None
         self.validation_error: str | None = None
         self.request_facts: list[dict[str, object]] = []
+        self._upstream_diagnostic: dict[str, object] | None = None
+        self._upstream_diagnostic_lock = threading.Lock()
+        self._upstream_terminal = threading.Event()
         self._legacy_timeout_seconds = timeout_seconds
         self._shared_deadline = deadline is not None
         self._deadline = (
@@ -885,11 +911,43 @@ class AcceptanceMutationProxy:
             raise ValueError("lost-response proxy path is not fixed")
         if expected_requests not in {1, 2}:
             raise ValueError("acceptance proxy request count is unsupported")
+        if expected_requests != 1:
+            self._upstream_terminal.set()
         barrier = (
             threading.Barrier(expected_requests)
             if expected_requests == _PAIR_FIELD_COUNT
             else None
         )
+
+        def retain_upstream_diagnostic(
+            *,
+            upstream_status: object,
+            exception_category: str | None,
+            request_digest: str,
+        ) -> None:
+            if upstream_status is not None and (
+                type(upstream_status) is not int
+                or not _HTTP_STATUS_MIN <= upstream_status <= _HTTP_STATUS_MAX
+                or exception_category is not None
+            ):
+                return
+            if upstream_status is None and exception_category not in {
+                "TimeoutError",
+                "OSError",
+                "HTTPException",
+            }:
+                return
+            with owner._upstream_diagnostic_lock:
+                if (
+                    expected_requests != 1
+                    or owner._upstream_diagnostic is not None
+                ):
+                    return
+                owner._upstream_diagnostic = {
+                    "upstream-status": upstream_status,
+                    "exception-category": exception_category,
+                    "request-correlation-digest": request_digest,
+                }
 
         class Handler(http.server.BaseHTTPRequestHandler):
             protocol_version = "HTTP/1.1"
@@ -1014,11 +1072,13 @@ class AcceptanceMutationProxy:
                 }
                 headers["Authorization"] = "Bearer " + token
                 headers["Content-Length"] = str(len(body))
-                connection = http.client.HTTPSConnection(
-                    "npm.pkg.github.com",
-                    timeout=owner._proxy_timeout(),
-                )
+                connection: http.client.HTTPSConnection | None = None
+                response_received = False
                 try:
+                    connection = http.client.HTTPSConnection(
+                        "npm.pkg.github.com",
+                        timeout=owner._proxy_timeout(),
+                    )
                     connection.request(
                         expected_method,
                         expected_path,
@@ -1026,6 +1086,12 @@ class AcceptanceMutationProxy:
                         headers=headers,
                     )
                     response = connection.getresponse()
+                    response_received = True
+                    retain_upstream_diagnostic(
+                        upstream_status=response.status,
+                        exception_category=None,
+                        request_digest=request_digest,
+                    )
                     response_body = response.read(max_response_bytes + 1)
                     if len(response_body) > max_response_bytes:
                         self._reject(502)
@@ -1095,10 +1161,30 @@ class AcceptanceMutationProxy:
                     self.send_header("Content-Length", str(len(response_body)))
                     self.end_headers()
                     self.wfile.write(response_body)
-                except (OSError, TimeoutError, http.client.HTTPException):
+                except (
+                    OSError,
+                    TimeoutError,
+                    http.client.HTTPException,
+                ) as error:
+                    if not response_received:
+                        exception_category = (
+                            "TimeoutError"
+                            if isinstance(error, TimeoutError)
+                            else "OSError"
+                            if isinstance(error, OSError)
+                            else "HTTPException"
+                        )
+                        retain_upstream_diagnostic(
+                            upstream_status=None,
+                            exception_category=exception_category,
+                            request_digest=request_digest,
+                        )
                     self._reject(502)
                 finally:
-                    connection.close()
+                    if connection is not None:
+                        connection.close()
+                    if expected_requests == 1:
+                        owner._upstream_terminal.set()
 
         self._server = http.server.ThreadingHTTPServer(
             ("127.0.0.1", 0),
@@ -1122,6 +1208,14 @@ class AcceptanceMutationProxy:
             if self._shared_deadline
             else self._legacy_timeout_seconds
         )
+
+    @property
+    def upstream_diagnostic(self) -> dict[str, object] | None:
+        """Return a copy of the retained request-bound upstream diagnostic."""
+        with self._upstream_diagnostic_lock:
+            if self._upstream_diagnostic is None:
+                return None
+            return dict(self._upstream_diagnostic)
 
     @property
     def registry(self) -> str:
@@ -1268,6 +1362,7 @@ class _AcceptanceNpmRunner:
         package_path = "/@hcoona%2fhcoona-release-smoke-npm"
         processes: list[subprocess.Popen[str]] = []
         completed: list[subprocess.CompletedProcess[str]] = []
+        upstream_diagnostic: dict[str, object] | None = None
         system_process_boundary = subprocess.Popen is _SYSTEM_POPEN
         with (
             _LostResponseProxy(
@@ -1362,6 +1457,14 @@ class _AcceptanceNpmRunner:
                 error.mutation_started = getattr(  # type: ignore[attr-defined]
                     proxy, "observed", threading.Event()
                 ).is_set()
+                upstream_diagnostic = _copy_acceptance_upstream_diagnostic(
+                    proxy,
+                    deadline=operation_deadline,
+                )
+                if upstream_diagnostic is not None:
+                    error.upstream_diagnostic = (  # type: ignore[attr-defined]
+                        upstream_diagnostic
+                    )
                 raise error from None
             except OSError as error:
                 self._cleanup_processes(
@@ -1372,7 +1475,19 @@ class _AcceptanceNpmRunner:
                 error.mutation_started = getattr(  # type: ignore[attr-defined]
                     proxy, "observed", threading.Event()
                 ).is_set()
+                upstream_diagnostic = _copy_acceptance_upstream_diagnostic(
+                    proxy,
+                    deadline=operation_deadline,
+                )
+                if upstream_diagnostic is not None:
+                    error.upstream_diagnostic = (  # type: ignore[attr-defined]
+                        upstream_diagnostic
+                    )
                 raise
+            upstream_diagnostic = _copy_acceptance_upstream_diagnostic(
+                proxy,
+                deadline=operation_deadline,
+            )
             if (
                 scenario == "absent-create-readback"
                 and len(completed) == 1
@@ -1420,6 +1535,10 @@ class _AcceptanceNpmRunner:
                 error.mutation_started = getattr(  # type: ignore[attr-defined]
                     proxy, "observed", threading.Event()
                 ).is_set()
+                if upstream_diagnostic is not None:
+                    error.upstream_diagnostic = (  # type: ignore[attr-defined]
+                        upstream_diagnostic
+                    )
                 raise
         outcomes = [result["outcome"] for result in results]
         if (
@@ -1470,7 +1589,7 @@ class _AcceptanceNpmRunner:
                     cast("JsonValue", results)
                 ),
             }
-        return {
+        failure = {
             "outcome": "failed",
             "action-executed": bool(processes),
             "mutation-started": getattr(
@@ -1481,6 +1600,9 @@ class _AcceptanceNpmRunner:
                 cast("JsonValue", results)
             ),
         }
+        if upstream_diagnostic is not None:
+            failure["upstream-diagnostic"] = upstream_diagnostic
+        return failure
 
     @staticmethod
     def _cleanup_processes(

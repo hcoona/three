@@ -710,7 +710,7 @@ def test_runner_diagnostic_rejects_contradictory_action_startedness() -> None:
     scenario["runner-diagnostic"] = {
         "exit-classification": "runner-failed-before-mutation",
         "upstream-status": None,
-        "exception-category": None,
+        "exception-category": "RuntimeError",
         "request-correlation-digest": None,
     }
     _refresh_probe_record_digest(document, 0)
@@ -898,7 +898,24 @@ def test_runner_diagnostic_cross_binds_each_present_fact_independently() -> (
     assert admitted["runner-diagnostic"] == scenario["runner-diagnostic"]
 
 
-def test_runner_diagnostic_status_and_correlation_require_bound_proof() -> None:
+def test_transport_diagnostic_cannot_bind_validated_response_proof() -> None:
+    document = _document()
+    scenario = document["probe-facts"][1]["scenarios"][3]
+    scenario["runner-diagnostic"] = {
+        "exit-classification": "runner-failed-after-mutation-start",
+        "upstream-status": None,
+        "exception-category": "TimeoutError",
+        "request-correlation-digest": LOST_RESPONSE_PROOF.request_digest,
+    }
+    _refresh_probe_record_digest_unchecked(document, 1)
+
+    with pytest.raises(ValueError, match="does not bind"):
+        _admit(document)
+
+
+def test_runner_diagnostic_request_facts_require_non_authoritative_result() -> (
+    None
+):
     document = _document()
     scenario = document["probe-facts"][0]["scenarios"][0]
     scenario["runner-diagnostic"] = {
@@ -909,8 +926,32 @@ def test_runner_diagnostic_status_and_correlation_require_bound_proof() -> None:
     }
     _refresh_probe_record_digest_unchecked(document, 0)
 
-    with pytest.raises(ValueError, match="validated-request-proof"):
+    with pytest.raises(ValueError, match="non-authoritative"):
         _admit(document)
+
+
+@pytest.mark.parametrize(
+    "exception_category",
+    ["TimeoutError", "OSError", "RuntimeError", "ValueError"],
+)
+def test_governance_preserves_historical_local_runner_diagnostic_without_request(
+    exception_category: str,
+) -> None:
+    diagnostic = {
+        "exit-classification": "runner-failed-after-mutation-start",
+        "upstream-status": None,
+        "exception-category": exception_category,
+        "request-correlation-digest": None,
+    }
+    document = _diagnostic_only_incomplete_document(diagnostic)
+
+    admitted = _admit(document).to_document()
+
+    assert admitted == document
+    assert (
+        admitted["probe-facts"][0]["scenarios"][0]["runner-diagnostic"]
+        == diagnostic
+    )
 
 
 def test_protocol_confirmed_result_requires_exact_complete_readback() -> None:
@@ -2621,6 +2662,19 @@ def test_retry_3_complete_evidence_admits_finalized_profile_round_trip() -> (
         ),
     }
     assert admitted.to_document() == document
+    lost_scenario = document["probe-facts"][1]["scenarios"][3]
+    lost_proof = lost_scenario["validated-request-proof"]
+    assert (
+        lost_scenario["post"]["content-sha512"] == lost_proof["tarball-sha512"]
+    )
+    lost_scenario["post"]["content-sha512"] = SHA512_A
+    assert (
+        lost_scenario["post"]["content-sha512"] != lost_proof["tarball-sha512"]
+    )
+    _refresh_probe_record_digest_unchecked(document, 1)
+
+    with pytest.raises(ValueError, match="tarball-sha512"):
+        _admit(document)
 
 
 @pytest.mark.parametrize(
@@ -2713,3 +2767,311 @@ def test_retry_3_profile_preserves_retry_1_and_retry_2_admission() -> None:
         retry_1["probe-facts"][1]["record-digest"]
         == HISTORICAL_EXACT_AND_CONFLICT_RECORD_DIGEST
     )
+
+
+def _diagnostic_only_incomplete_document(
+    diagnostic: dict[str, Any],
+) -> dict[str, Any]:
+    document = _document()
+    fact = document["probe-facts"][0]
+    scenario = fact["scenarios"][0]
+    scenario["mutation-classification"] = "incomplete"
+    scenario["response"]["result"] = "runner-failed-after-mutation-start"
+    scenario["response"]["diagnostics"] = [
+        "runner-did-not-prove-controlled-outcome"
+    ]
+    scenario["runner-diagnostic"] = deepcopy(diagnostic)
+    scenario.pop("validated-request-proof", None)
+    fact["result"] = "incomplete"
+    document["mutation-classification"] = "incomplete"
+    _refresh_probe_record_digest_unchecked(document, 0)
+    return document
+
+
+@pytest.mark.parametrize(
+    ("upstream_status", "exception_category"),
+    [
+        (200, None),
+        (201, None),
+        (202, None),
+        (409, None),
+        (500, None),
+        (None, "TimeoutError"),
+        (None, "OSError"),
+        (None, "HTTPException"),
+    ],
+    ids=[
+        "status-200",
+        "status-201",
+        "status-202",
+        "status-409",
+        "status-500",
+        "transport-timeout",
+        "transport-os-error",
+        "transport-http-exception",
+    ],
+)
+def test_governance_admits_and_round_trips_canonical_upstream_diagnostic(
+    upstream_status: int | None,
+    exception_category: str | None,
+) -> None:
+    diagnostic = {
+        "exit-classification": "runner-failed-after-mutation-start",
+        "upstream-status": upstream_status,
+        "exception-category": exception_category,
+        "request-correlation-digest": SHA256_A,
+    }
+    document = _diagnostic_only_incomplete_document(diagnostic)
+
+    evidence = None
+    rejection = None
+    try:
+        evidence = _admit(document)
+    except (TypeError, ValueError) as error:
+        rejection = str(error)
+    if rejection is not None:
+        pytest.fail(
+            f"canonical upstream diagnostic was rejected: {rejection}",
+            pytrace=False,
+        )
+    assert evidence is not None
+    admitted_document = evidence.to_document()
+    admitted_scenario = admitted_document["probe-facts"][0]["scenarios"][0]
+
+    assert admitted_document == document
+    assert evidence.mutation_classification == "incomplete"
+    assert admitted_scenario["runner-diagnostic"] == diagnostic
+    assert set(admitted_scenario["runner-diagnostic"]) == {
+        "exit-classification",
+        "upstream-status",
+        "exception-category",
+        "request-correlation-digest",
+    }
+    assert admitted_scenario["action"] == {
+        "operation": "npm-publish-create-only",
+        "executed": True,
+        "mutation-started": True,
+    }
+    assert admitted_scenario["mutation-classification"] == "incomplete"
+    assert admitted_scenario["response"] == {
+        "result": "runner-failed-after-mutation-start",
+        "identity-digest": SHA256_B,
+        "diagnostics": ["runner-did-not-prove-controlled-outcome"],
+    }
+    assert "validated-request-proof" not in admitted_scenario
+
+    boundary_probe_status = 200
+    if upstream_status == boundary_probe_status:
+        for boundary_status in (100, 599):
+            boundary_diagnostic = {
+                **diagnostic,
+                "upstream-status": boundary_status,
+            }
+            boundary_document = _diagnostic_only_incomplete_document(
+                boundary_diagnostic
+            )
+            boundary_admitted = _admit(boundary_document).to_document()
+            assert boundary_admitted == boundary_document
+            assert (
+                boundary_admitted["probe-facts"][0]["scenarios"][0][
+                    "runner-diagnostic"
+                ]
+                == boundary_diagnostic
+            )
+
+
+@pytest.mark.parametrize(
+    (
+        "exit_classification",
+        "executed",
+        "mutation_started",
+        "upstream_status",
+        "exception_category",
+    ),
+    [
+        ("runner-failed-before-mutation", False, False, 500, None),
+        (
+            "runner-failed-after-action-start",
+            True,
+            False,
+            None,
+            "TimeoutError",
+        ),
+        ("runner-malformed-before-mutation", False, False, 500, None),
+    ],
+    ids=[
+        "status-before-mutation",
+        "transport-after-action-start",
+        "status-malformed-before-mutation",
+    ],
+)
+def test_governance_rejects_request_bound_diagnostic_before_mutation_started(
+    exit_classification: str,
+    executed: bool,
+    mutation_started: bool,
+    upstream_status: int | None,
+    exception_category: str | None,
+) -> None:
+    diagnostic = {
+        "exit-classification": exit_classification,
+        "upstream-status": upstream_status,
+        "exception-category": exception_category,
+        "request-correlation-digest": SHA256_A,
+    }
+    document = _diagnostic_only_incomplete_document(diagnostic)
+    fact = document["probe-facts"][0]
+    scenario = fact["scenarios"][0]
+    scenario["action"]["executed"] = executed
+    scenario["action"]["mutation-started"] = mutation_started
+    scenario["response"]["result"] = exit_classification
+    if exit_classification == "runner-failed-before-mutation":
+        scenario["post"]["state"] = "absent"
+        scenario["response"]["diagnostics"] = [
+            "runner-did-not-prove-mutation-start"
+        ]
+        fact["artifact-id"] = None
+        fact["artifact-digest"] = None
+    elif exit_classification == "runner-malformed-before-mutation":
+        scenario["response"]["diagnostics"] = [
+            "runner-action-facts-not-fully-admitted"
+        ]
+    _refresh_probe_record_digest_unchecked(document, 0)
+
+    with pytest.raises(ValueError, match="runner-diagnostic"):
+        _admit(document)
+
+
+@pytest.mark.parametrize(
+    "malformation",
+    [
+        "status-below-range",
+        "status-above-range",
+        "status-bool",
+        "status-without-request",
+        "transport-without-request",
+        "local-runtime-error-with-request",
+        "local-value-error-with-request",
+        "empty-diagnostic",
+        "protocol-confirmed-without-proof",
+        "status-and-transport",
+        "request-without-status-or-transport",
+        "unknown-transport-category",
+        "malformed-request-digest",
+        "unknown-field",
+    ],
+    ids=[
+        "status-below-range",
+        "status-above-range",
+        "status-bool",
+        "status-without-request",
+        "transport-without-request",
+        "local-runtime-error-with-request",
+        "local-value-error-with-request",
+        "empty-diagnostic",
+        "protocol-confirmed-without-proof",
+        "status-and-transport",
+        "request-without-status-or-transport",
+        "unknown-transport-category",
+        "malformed-request-digest",
+        "unknown-field",
+    ],
+)
+def test_governance_rejects_malformed_or_unbound_upstream_diagnostic(  # noqa: C901, PLR0912
+    malformation: str,
+) -> None:
+    diagnostic: dict[str, Any] = {
+        "exit-classification": "runner-failed-after-mutation-start",
+        "upstream-status": 500,
+        "exception-category": None,
+        "request-correlation-digest": SHA256_A,
+    }
+    if malformation == "status-below-range":
+        diagnostic["upstream-status"] = 99
+    elif malformation == "status-above-range":
+        diagnostic["upstream-status"] = 600
+    elif malformation == "status-bool":
+        diagnostic["upstream-status"] = True
+    elif malformation == "status-without-request":
+        diagnostic["upstream-status"] = 201
+        diagnostic["request-correlation-digest"] = None
+    elif malformation == "transport-without-request":
+        diagnostic["upstream-status"] = None
+        diagnostic["exception-category"] = "HTTPException"
+        diagnostic["request-correlation-digest"] = None
+    elif malformation == "local-runtime-error-with-request":
+        diagnostic["upstream-status"] = None
+        diagnostic["exception-category"] = "RuntimeError"
+    elif malformation == "local-value-error-with-request":
+        diagnostic["upstream-status"] = None
+        diagnostic["exception-category"] = "ValueError"
+    elif malformation == "empty-diagnostic":
+        diagnostic["upstream-status"] = None
+        diagnostic["exception-category"] = None
+        diagnostic["request-correlation-digest"] = None
+    elif malformation == "protocol-confirmed-without-proof":
+        diagnostic["exit-classification"] = "protocol-confirmed"
+        diagnostic["upstream-status"] = 201
+    elif malformation == "status-and-transport":
+        diagnostic["upstream-status"] = 201
+        diagnostic["exception-category"] = "OSError"
+    elif malformation == "request-without-status-or-transport":
+        diagnostic["upstream-status"] = None
+        diagnostic["exception-category"] = None
+    elif malformation == "unknown-transport-category":
+        diagnostic["upstream-status"] = None
+        diagnostic["exception-category"] = "ConnectionError"
+    elif malformation == "malformed-request-digest":
+        diagnostic["request-correlation-digest"] = "sha256:not-a-digest"
+    else:
+        diagnostic["raw-message"] = "must-not-be-admitted"
+    document = _diagnostic_only_incomplete_document(diagnostic)
+
+    with pytest.raises(
+        (TypeError, ValueError),
+        match="runner-diagnostic",
+    ):
+        _admit(document)
+
+
+@pytest.mark.parametrize(
+    "completion",
+    [
+        "protocol-confirmed-complete",
+        "protocol-confirmed-readback-incomplete",
+    ],
+    ids=[
+        "protocol-confirmed-complete",
+        "protocol-confirmed-readback-incomplete",
+    ],
+)
+def test_governance_proof_required_completion_rejects_diagnostic_only_authority(
+    completion: str,
+) -> None:
+    document = _document()
+    fact = document["probe-facts"][0]
+    scenario = fact["scenarios"][0]
+    diagnostic = {
+        "exit-classification": "protocol-confirmed",
+        "upstream-status": 201,
+        "exception-category": None,
+        "request-correlation-digest": SHA256_A,
+    }
+    scenario["response"]["result"] = (
+        "protocol-confirmed"
+        if completion == "protocol-confirmed-complete"
+        else "protocol-confirmed-readback-incomplete"
+    )
+    scenario["runner-diagnostic"] = diagnostic
+    scenario.pop("validated-request-proof", None)
+    if completion == "protocol-confirmed-readback-incomplete":
+        scenario["mutation-classification"] = "incomplete"
+        scenario["post"]["state"] = "unknown"
+        scenario["response"]["diagnostics"] = ["exact-readback-not-observed"]
+        fact["result"] = "incomplete"
+        document["mutation-classification"] = "incomplete"
+    _refresh_probe_record_digest_unchecked(document, 0)
+
+    assert "validated-request-proof" not in scenario
+    assert scenario["runner-diagnostic"] == diagnostic
+    with pytest.raises(ValueError, match="validated-request-proof"):
+        _admit(document)

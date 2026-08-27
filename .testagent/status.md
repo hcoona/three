@@ -9244,3 +9244,433 @@ Cleanup validation:
 No Live activation or Release lineage occurred.
 
 <!-- END APPEND: 2026-08-27-wdv3-acceptance-retry-3-operation -->
+
+<!-- BEGIN APPEND: 2026-08-27-wdv3-acceptance-upstream-diagnostic-characterization-status -->
+
+## Workflow Delivery v3 upstream-diagnostic tests-first characterization
+
+**Phase status:** complete at the intended, harness-clean red state
+**Branch:** `workflow-delivery-v3-acceptance-upstream-diagnostics`
+**Strategy:** bounded Research -> single-phase Plan -> Implement
+**Production changes:** none
+
+### Files changed
+
+Only the six user-allowlisted existing files are modified:
+
+1. `.testagent/research.md`
+2. `.testagent/plan.md`
+3. `.testagent/status.md`
+4. `src/public/lib/three-workflow-delivery-v3/tests/adapters/test_acceptance_exchange_proof_repair.py`
+5. `src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py`
+6. `src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py`
+
+No production, workflow, Environment, package, Release, Live, dependency,
+lockfile, manifest, or unrelated test file was changed. No file was deleted and
+no VCS mutation, install, network access, or live operation was performed.
+
+### Tests added
+
+Ten test functions produce 47 new collected cases:
+
+- `test_proxy_retains_status_and_request_digest_when_201_response_validation_fails`
+  - `oversized-body`
+  - `unsafe-response-header`
+  - `response-read-os-error`
+- `test_proxy_pre_response_transport_failure_retains_redacted_category_and_request_digest_without_status`
+  - `timeout-error`
+  - `os-error`
+  - `http-exception`
+- `test_runner_propagates_closed_upstream_diagnostic_for_returned_and_raised_failures`
+  - `returned-failure`
+  - `raised-timeout`
+  - `raised-os-error`
+  - `raised-classification-error`
+- `test_runner_omits_upstream_diagnostic_when_proxy_supplies_no_admitted_fact`
+  - `returned-failure`
+  - `raised-timeout`
+  - `raised-os-error`
+  - `raised-classification-error`
+- `test_acceptance_probe_preserves_non_authoritative_upstream_diagnostic_matrix_with_incomplete_readback`
+  - `status-200`
+  - `status-201`
+  - `status-202`
+  - `status-409`
+  - `status-500`
+  - `transport-timeout`
+  - `transport-os-error`
+  - `transport-http-exception`
+- `test_governance_admits_and_round_trips_canonical_upstream_diagnostic`
+  - `status-200`
+  - `status-201`
+  - `status-202`
+  - `status-409`
+  - `status-500`
+  - `transport-timeout`
+  - `transport-os-error`
+  - `transport-http-exception`
+- `test_governance_rejects_malformed_or_unbound_upstream_diagnostic`
+  - `status-below-range`
+  - `status-above-range`
+  - `status-bool`
+  - `status-without-request`
+  - `transport-without-request`
+  - `status-and-transport`
+  - `request-without-status-or-transport`
+  - `unknown-transport-category`
+  - `malformed-request-digest`
+  - `unknown-field`
+- `test_governance_proof_required_completion_rejects_diagnostic_only_authority`
+  - `protocol-confirmed-complete`
+  - `protocol-confirmed-readback-incomplete`
+- `test_acceptance_proxy_one_request_retains_at_most_one_request_bound_diagnostic`
+  - `status-100`
+  - `status-409`
+  - `status-599`
+  - `pre-response-transport`
+- `test_acceptance_proxy_two_request_race_never_exposes_a_singleton_upstream_diagnostic`
+
+### Exact validation results
+
+Collect-only command:
+
+`uv run --offline --python 3.13 --package three-workflow-delivery-v3 pytest --collect-only -q src/public/lib/three-workflow-delivery-v3/tests/adapters/test_acceptance_exchange_proof_repair.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py`
+
+- exit code: `0`
+- collected: `605`
+- collection/import/syntax/fixture errors: `0`
+
+Narrow run command:
+
+`uv run --offline --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/adapters/test_acceptance_exchange_proof_repair.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py`
+
+- exit code: `1` (intended tests-first red)
+- result: `574 passed, 31 failed in 10.61s`
+- errors: `0`
+- skipped/xfail: `0`
+- harness/import/syntax/collection/fixture/test-construction failures: `0`
+- expected missing-production-behavior failures: `31`
+
+The 47 new cases divide into 16 already-satisfied contract cases and 31
+intentional product reds. All 558 pre-existing cases passed.
+
+### Named expected-red classification
+
+- Eight
+  `test_acceptance_probe_preserves_non_authoritative_upstream_diagnostic_matrix_with_incomplete_readback`
+  cases: the Adapter omits the expected mapped `runner-diagnostic`.
+- Three
+  `test_proxy_retains_status_and_request_digest_when_201_response_validation_fails`
+  cases: the proxy omits post-response `upstream_diagnostic`.
+- Three
+  `test_proxy_pre_response_transport_failure_retains_redacted_category_and_request_digest_without_status`
+  cases: the proxy omits transport/request `upstream_diagnostic`.
+- Four
+  `test_runner_propagates_closed_upstream_diagnostic_for_returned_and_raised_failures`
+  cases: the runner omits the returned field or raised exception attribute.
+- Four
+  `test_acceptance_proxy_one_request_retains_at_most_one_request_bound_diagnostic`
+  cases: the proxy has no optional diagnostic seam. The two-request race
+  passes because an omitted aggregate diagnostic is valid.
+- Eight
+  `test_governance_admits_and_round_trips_canonical_upstream_diagnostic`
+  cases: current Governance rejects diagnostic-only status/request facts,
+  non-201 statuses, or request-bound `TimeoutError`, `OSError`, and
+  `HTTPException` transport categories.
+- `test_governance_rejects_malformed_or_unbound_upstream_diagnostic[transport-without-request]`:
+  current Governance incorrectly admits an unbound transport category.
+
+These are assertion-level absences or admission-model differences in unchanged
+production behavior, not broken tests.
+
+### Static quality results
+
+- Ruff check over the three allowlisted tests: passed.
+- Ruff format check over the three allowlisted tests: passed after formatting
+  one modified test file.
+- Pyrefly over the three allowlisted tests: `0 errors` (`24` existing
+  suppressions reported).
+- `git diff --check`: passed.
+
+### Preserved authority controls
+
+All required unchanged controls passed:
+
+- `test_normal_create_propagates_request_bound_http_201_exchange_proof`
+- `test_exact_preexisting_state_never_invokes_the_mutation_runner`
+- `test_identical_conflict_race_is_exact_without_blind_repair`
+- `test_differing_conflict_race_is_conflicting_without_overwrite`
+- `test_protocol_confirmed_governance_requires_validated_request_proof`
+
+### Pre-completion quality gate
+
+`test-gap-analysis` and `assertion-quality` were invoked against the bounded
+production/test pairs. The optional `test-analysis-extensions` discovery skill
+was attempted but is not installed, so established pytest semantics were used.
+
+The pseudo-mutation review found and repaired two test-construction gaps before
+the final run:
+
+1. the Adapter matrix now uses an exact post-readback and still demands an
+   incomplete, proof-free result;
+2. one-request proxy status boundaries now cover exact 100 and 599, and the
+   two-request race uses the authoritative 201/409 create/conflict shape rather
+   than two generic failures.
+
+Independent split-scope review then found and independently adjudicated two
+additional true-positive test defects:
+
+1. the two-request race incorrectly required an aggregate diagnostic attribute
+   even though omission is explicitly valid; it now accepts absence or `None`
+   while still rejecting a singleton request attribution;
+2. the Adapter and Governance positive matrices covered only
+   `HTTPException`; they now also cover request-bound `TimeoutError` and
+   `OSError`.
+
+The same split scopes were independently re-reviewed after repair. Both
+reviewers reported no remaining findings.
+
+The final review kills plausible boundary flips, status loss after
+`getresponse()`, collapsed transport categories, dropped propagation/omission
+branches, diagnostic-to-proof authority promotion, malformed/unbound
+Governance admission, and singleton aggregation across two requests. No
+remaining pseudo-mutation gap is in the seven-item scope.
+
+Assertion-depth review found no assertion-free, trivial-only, or tautological
+new test. Each positive characterization uses concrete digest/status/category
+values and exact key sets; tests also assert relevant secondary observables
+such as request facts, proof/processed state, startedness, result,
+classification, exact readback/content, diagnostics, serialized secret
+absence, or canonical Governance round-trip.
+
+### Requirement coverage
+
+1. Proxy status/request retention and late-validation failures:
+   `test_proxy_retains_status_and_request_digest_when_201_response_validation_fails`
+   plus the `status-100`/`status-599` one-request cases.
+2. Closed pre-response transport facts and total redaction:
+   `test_proxy_pre_response_transport_failure_retains_redacted_category_and_request_digest_without_status`.
+3. Returned/raised propagation and absent-fact omission:
+   both `test_runner_*upstream_diagnostic*` groups.
+4. Non-authoritative Adapter matrix with exact readback:
+   `test_acceptance_probe_preserves_non_authoritative_upstream_diagnostic_matrix_with_incomplete_readback`.
+5. Existing authority semantics: the five passing controls listed above.
+6. Governance canonical admission, malformed closure, and proof gating:
+   the three new `test_governance_*` groups.
+7. One-request binding versus a real two-request 201/409 race:
+   both `test_acceptance_proxy_*request*diagnostic` groups.
+
+No scope expansion occurred.
+
+<!-- END APPEND: 2026-08-27-wdv3-acceptance-upstream-diagnostic-characterization-status -->
+
+<!-- BEGIN APPEND: 2026-08-27-wdv3-acceptance-upstream-diagnostic-production-status -->
+
+## Workflow Delivery v3 upstream-diagnostic production repair status
+
+Status: **implementation and package validation complete; repository gate and
+fresh independent re-review pending**.
+
+### Production changes
+
+- `cli.py`
+  - retains request-bound status immediately after `getresponse()`;
+  - retains closed pre-response transport categories;
+  - publishes the first diagnostic under a lock and returns defensive copies;
+  - records handler terminal state and lets runner failure paths wait only for
+    the remaining absolute deadline;
+  - propagates admitted diagnostics on returned and raised failure paths.
+- `adapters/github_packages.py`
+  - admits closed request-bound response/transport diagnostics;
+  - preserves requestless historical local runner diagnostics;
+  - rejects empty or unbound raw diagnostics before fallback selection;
+  - requires protocol-confirmed raw facts and lost-response complete facts to
+    match the admitted proof.
+- `records/governance.py`
+  - admits the closed compatibility union;
+  - rejects empty, mixed, request-only, and invalid bound/unbound arms;
+  - requires admitted proof whenever diagnostic classification is
+    protocol-confirmed;
+  - keeps diagnostic-only request facts non-authoritative.
+
+### Independent-review findings repaired
+
+The first production review reported four findings, each independently
+adjudicated as a true positive:
+
+1. runner timeout could snapshot before a qualified handler published its
+   terminal diagnostic;
+2. concurrent proxy handlers could overwrite the first singleton diagnostic;
+3. malformed raw Adapter diagnostics could suppress local fallback or conflict
+   with a lost-response proof;
+4. Governance admitted an empty diagnostic and could admit proofless
+   protocol-confirmed classification outside the response-result branch.
+
+Six regression cases were added first and produced the expected
+`611 passed, 6 failed`. The production repair then made the complete focused
+set green.
+
+### Validation results so far
+
+| Command | Result |
+|---|---|
+| Three bounded pytest modules | `617 passed in 10.53s` |
+| Ruff format/check and format check over 3 production + 3 test files | Passed; one test file was formatted during the first pass, and the final pass reported all 6 files unchanged |
+| Pyrefly over the same 6 files | Passed; `0 errors` |
+| Complete v3 package test suite | `3762 passed in 462.32s` |
+
+The earlier full-suite attempt was blocked by exhausted `/tmp` inodes from
+stale user-owned `pklr-pkg-*` directories. After bounded stale-temp cleanup,
+the standard repository paths and commands above completed; no alternate
+`TMPDIR` is being used as evidence.
+
+### Pending closure
+
+- repository unstaged HK/commit-hook gate;
+- staging of only the nine bounded files and staged HK gate;
+- fresh independent split-scope production re-review and per-finding
+  adjudication until zero findings;
+- bounded commit, push, PR, and CI/merge follow-through.
+
+No Live activation or new acceptance invocation has occurred. Retry-3
+coordinates `.9` through `.12` remain consumed and must not be reused.
+
+<!-- END APPEND: 2026-08-27-wdv3-acceptance-upstream-diagnostic-production-status -->
+
+<!-- BEGIN APPEND: 2026-08-27-wdv3-upstream-diagnostic-review-iteration-2 -->
+
+## Independent review iteration 2
+
+The fresh split-scope production review reported four findings. Four separate
+adjudicators classified each finding as a true positive:
+
+1. two-request races could wait for an aggregate diagnostic that can never be
+   published and consume the shared deadline;
+2. malformed raw upstream facts could suppress an admitted local exception
+   fallback;
+3. request-bound facts could contradict pre-mutation action startedness;
+4. the Adapter constructor could emit an all-null diagnostic rejected by
+   Governance.
+
+Tests were added before production repair. The first combined run produced
+`616 passed, 12 failed`; one Governance case initially failed for test-shape
+construction rather than the intended assertion and was corrected before the
+production patch. The calibrated three Governance cases then failed only
+because the contradictory records were admitted.
+
+The minimal repair:
+
+- marks multi-request diagnostic publication terminal immediately;
+- preserves a closed local exception diagnostic when a malformed raw value is
+  present, while standalone malformed raw values still fail closed;
+- rejects request-bound diagnostics before mutation startedness in both the
+  Adapter constructor and Governance admission;
+- rejects all-null Adapter diagnostics.
+
+Validation after the repair:
+
+| Command | Result |
+|---|---|
+| Three bounded pytest modules | `628 passed in 9.78s` |
+| Ruff format/check and format check over the 6 Python files | Passed; all 6 files unchanged |
+| Pyrefly over the same 6 files | Passed; `0 errors` |
+| Complete v3 package test suite | `3773 passed in 459.87s` |
+
+The prior status statement that malformed raw diagnostics are always rejected
+before fallback selection is superseded: they remain rejected when
+standalone, but cannot suppress an independently admitted historical local
+exception diagnostic.
+
+Fresh HK and independent zero-finding re-review remain pending at this point.
+
+<!-- END APPEND: 2026-08-27-wdv3-upstream-diagnostic-review-iteration-2 -->
+
+<!-- BEGIN APPEND: 2026-08-27-wdv3-upstream-diagnostic-final-review-closure -->
+
+## Final independent review closure
+
+Subsequent fresh evidence-scope reviews produced four more independently
+adjudicated true positives:
+
+1. complete lost-response proof did not bind request tarball bytes to exact
+   post-readback bytes;
+2. Governance could admit a proof together with a request-bound transport
+   exception diagnostic;
+3. the Adapter constructor could emit unbound non-201 statuses that Governance
+   can never admit;
+4. explicit-null returned diagnostics could be erased, including through the
+   malformed-action-facts synthetic-error path.
+
+The repairs:
+
+- bind retry-2/retry-3 lost-response proof tarball SHA-512 to exact readback,
+  with a narrow documented retry-1 historical replay exception;
+- reject every proof/transport-exception combination while preserving the
+  historical proof-adjacent status-201 form;
+- reject constructible unbound non-201 statuses;
+- distinguish omitted raw diagnostics from every explicitly present value and
+  validate returned values before malformed-action early return.
+
+The CLI proxy/runner reviewer reported no findings. After the final evidence
+repair, a fresh evidence reviewer also reported exactly `No findings.`
+
+### Final validation before repository gates
+
+| Command | Result |
+|---|---|
+| Three bounded pytest modules | `636 passed in 9.79s` |
+| Ruff format/check and format check over the 6 Python files | Passed; all 6 files unchanged |
+| Pyrefly over the same 6 files | Passed; `0 errors` |
+| Complete v3 package test suite | `3781 passed in 456.98s` |
+
+### Final test-quality review
+
+`test-gap-analysis` remained active for the generated regression work.
+`assertion-quality` was re-invoked; its required
+`test-analysis-extensions` helper is not installed, so established
+Python/pytest semantics were applied directly.
+
+The final regressions kill the reviewed pseudo-mutations: indefinite
+two-request terminal wait, malformed-raw precedence over local fallback,
+request-bound pre-mutation classification, all-null construction,
+proof/transport coexistence, lost-response proof/readback byte substitution,
+unbound non-201 construction, explicit-null erasure, and malformed-action
+early-return bypass. No remaining in-scope mutation gap was identified.
+
+Assertion review found no assertion-free, trivial-only, self-referential, or
+tautological new test. Exception-focused cases anchor exact rejection
+boundaries; positive cases also assert concrete result/classification,
+startedness, digest equality/inequality, historical round-trip, or terminal
+event state.
+
+No Live activation, external network operation, or new acceptance invocation
+occurred.
+
+<!-- END APPEND: 2026-08-27-wdv3-upstream-diagnostic-final-review-closure -->
+
+<!-- BEGIN APPEND: 2026-08-27-wdv3-upstream-diagnostic-final-unstaged-gate -->
+
+## Final unstaged repository gate
+
+`GIT_LFS_SKIP_SMUDGE=1 mise exec -- hk check --check --no-progress --unstaged`
+passed for the exact nine-file bounded change set. The managed
+`v3-control-pytest` step reported `3781 passed in 456.84s`; Ruff, Ruff format,
+typos, EditorConfig, and all other selected steps completed successfully.
+
+The next gate is the same repository policy over the explicitly staged
+nine-file change set.
+
+<!-- END APPEND: 2026-08-27-wdv3-upstream-diagnostic-final-unstaged-gate -->
+
+<!-- BEGIN APPEND: 2026-08-27-wdv3-upstream-diagnostic-final-staged-gate -->
+
+## Final staged repository gate
+
+`GIT_LFS_SKIP_SMUDGE=1 mise exec -- hk check --check --no-progress --staged`
+passed for the explicitly staged nine-file change set. The managed
+`v3-control-pytest` step reported `3781 passed in 459.00s`; all other selected
+repository checks also passed.
+
+The bounded change set is review-clean and ready for commit.
+
+<!-- END APPEND: 2026-08-27-wdv3-upstream-diagnostic-final-staged-gate -->

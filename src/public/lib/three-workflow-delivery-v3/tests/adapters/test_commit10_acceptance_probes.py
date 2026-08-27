@@ -6335,3 +6335,918 @@ def test_retry_3_proof_rejects_cross_profile_coordinate_and_tag(
             selected_headers={"Content-Type": "application/json"},
             response_body=b'{"ok":true}',
         )
+
+
+@pytest.mark.parametrize(
+    "failure_kind",
+    [
+        "oversized-body",
+        "unsafe-response-header",
+        "response-read-os-error",
+    ],
+    ids=[
+        "oversized-body",
+        "unsafe-response-header",
+        "response-read-os-error",
+    ],
+)
+def test_proxy_retains_status_and_request_digest_when_201_response_validation_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    failure_kind: str,
+) -> None:
+    version = "0.0.0-wdv3-acceptance.4"
+    tag = "wdv3-acceptance-4"
+    tarball = _acceptance_tarball(
+        version=version,
+        repository_url="git+https://github.com/hcoona/three.git",
+        target_sha=TARGET,
+    )
+    request_body = _adversarial_publish_body(tarball)
+    request_digest = "sha256:" + hashlib.sha256(request_body).hexdigest()
+    private_marker = "upstream-response-private-marker"
+    upstream_token = "upstream-token-must-not-survive"
+    read_error_message = f"{private_marker}; stdout=secret; stderr=secret"
+    forwarded: list[bytes] = []
+
+    class Response:
+        status = 201
+
+        def read(self, size: int) -> bytes:
+            assert (
+                size
+                == cli_module.AcceptanceMutationProxy._MAX_RESPONSE_BYTES + 1
+            )
+            if failure_kind == "response-read-os-error":
+                raise OSError(read_error_message)
+            if failure_kind == "oversized-body":
+                return private_marker.encode() + bytes(size)
+            return b'{"ok":true}'
+
+        def getheaders(self) -> list[tuple[str, str]]:
+            if failure_kind == "unsafe-response-header":
+                return [
+                    ("Content-Type", "application/json"),
+                    ("X-Upstream-Private\rInjected", private_marker),
+                ]
+            return [("Content-Type", "application/json")]
+
+    class Connection:
+        def __init__(self, host: str, *, timeout: float) -> None:
+            assert host == "npm.pkg.github.com"
+            assert timeout == TIMEOUT_SECONDS
+
+        def request(
+            self,
+            method: str,
+            path: str,
+            *,
+            body: bytes,
+            headers: dict[str, str],
+        ) -> None:
+            assert method == "PUT"
+            assert path == "/@hcoona%2fhcoona-release-smoke-npm"
+            assert headers["Authorization"] == f"Bearer {upstream_token}"
+            forwarded.append(body)
+
+        def getresponse(self) -> Response:
+            return Response()
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(cli_module.http.client, "HTTPSConnection", Connection)
+    with cli_module.AcceptanceMutationProxy(
+        timeout_seconds=TIMEOUT_SECONDS,
+        token=upstream_token,
+        expected_method="PUT",
+        expected_path="/@hcoona%2fhcoona-release-smoke-npm",
+        expected_version=version,
+        expected_tag=tag,
+        expected_tarballs=(tarball,),
+        expected_target_sha=TARGET,
+        drop_accepted_response=False,
+    ) as proxy:
+        response = _request_proxy_publish(proxy, request_body)
+
+    assert response is not None
+    assert response[0] == 502
+    assert response[2] == b""
+    assert forwarded == [request_body]
+    assert proxy.observed.is_set()
+    assert not proxy.processed.is_set()
+    assert proxy.proof is None
+    assert len(proxy.request_facts) == 1
+    request_fact = proxy.request_facts[0]
+    assert request_fact["request-digest"] == request_digest
+    assert request_fact["tarball-sha512"] == (
+        "sha512:" + hashlib.sha512(tarball).hexdigest()
+    )
+    assert "proof" not in request_fact
+    assert "upstream-result" not in request_fact
+
+    expected_diagnostic = {
+        "upstream-status": 201,
+        "exception-category": None,
+        "request-correlation-digest": request_digest,
+    }
+    if not hasattr(proxy, "upstream_diagnostic"):
+        pytest.fail(
+            "AcceptanceMutationProxy omitted post-response upstream_diagnostic",
+            pytrace=False,
+        )
+    diagnostic = getattr(proxy, "upstream_diagnostic", None)
+    assert diagnostic == expected_diagnostic
+    assert isinstance(diagnostic, dict)
+    assert set(diagnostic) == {
+        "upstream-status",
+        "exception-category",
+        "request-correlation-digest",
+    }
+    retained = json.dumps(
+        {
+            "request-facts": proxy.request_facts,
+            "upstream-diagnostic": diagnostic,
+        },
+        sort_keys=True,
+    )
+    assert private_marker not in retained
+    assert upstream_token not in retained
+    assert request_body.decode() not in retained
+    assert "stdout" not in retained.lower()
+    assert "stderr" not in retained.lower()
+
+
+@pytest.mark.parametrize(
+    ("failure_kind", "expected_category"),
+    [
+        ("timeout-error", "TimeoutError"),
+        ("os-error", "OSError"),
+        ("http-exception", "HTTPException"),
+    ],
+    ids=[
+        "timeout-error",
+        "os-error",
+        "http-exception",
+    ],
+)
+def test_proxy_pre_response_transport_failure_retains_redacted_category_and_request_digest_without_status(
+    monkeypatch: pytest.MonkeyPatch,
+    failure_kind: str,
+    expected_category: str,
+) -> None:
+    version = "0.0.0-wdv3-acceptance.4"
+    tag = "wdv3-acceptance-4"
+    tarball = _acceptance_tarball(
+        version=version,
+        repository_url="git+https://github.com/hcoona/three.git",
+        target_sha=TARGET,
+    )
+    request_body = _adversarial_publish_body(tarball)
+    request_digest = "sha256:" + hashlib.sha256(request_body).hexdigest()
+    secret = "transport-secret-must-not-survive"
+    upstream_token = "transport-token-must-not-survive"
+    raw_message = (
+        f"{secret}; request-body={request_body.decode()}; "
+        "Authorization=secret; X-Private=secret; stdout=secret; stderr=secret"
+    )
+    errors = {
+        "timeout-error": TimeoutError(raw_message),
+        "os-error": OSError(raw_message),
+        "http-exception": http.client.HTTPException(raw_message),
+    }
+    forwarded_headers: list[dict[str, str]] = []
+
+    class Connection:
+        def __init__(self, host: str, *, timeout: float) -> None:
+            assert host == "npm.pkg.github.com"
+            assert timeout == TIMEOUT_SECONDS
+
+        def request(
+            self,
+            method: str,
+            path: str,
+            *,
+            body: bytes,
+            headers: dict[str, str],
+        ) -> None:
+            assert method == "PUT"
+            assert path == "/@hcoona%2fhcoona-release-smoke-npm"
+            assert body == request_body
+            forwarded_headers.append(dict(headers))
+
+        def getresponse(self) -> object:
+            raise errors[failure_kind]
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(cli_module.http.client, "HTTPSConnection", Connection)
+    with cli_module.AcceptanceMutationProxy(
+        timeout_seconds=TIMEOUT_SECONDS,
+        token=upstream_token,
+        expected_method="PUT",
+        expected_path="/@hcoona%2fhcoona-release-smoke-npm",
+        expected_version=version,
+        expected_tag=tag,
+        expected_tarballs=(tarball,),
+        expected_target_sha=TARGET,
+        drop_accepted_response=False,
+    ) as proxy:
+        response = _request_proxy_publish(proxy, request_body)
+
+    assert response is not None
+    assert response[0] == 502
+    assert response[2] == b""
+    assert len(forwarded_headers) == 1
+    assert forwarded_headers[0]["Authorization"] == f"Bearer {upstream_token}"
+    assert proxy.observed.is_set()
+    assert not proxy.processed.is_set()
+    assert proxy.proof is None
+    assert len(proxy.request_facts) == 1
+    request_fact = proxy.request_facts[0]
+    assert request_fact["request-digest"] == request_digest
+    assert request_fact["tarball-sha512"] == (
+        "sha512:" + hashlib.sha512(tarball).hexdigest()
+    )
+    assert "proof" not in request_fact
+    assert "upstream-result" not in request_fact
+
+    expected_diagnostic = {
+        "upstream-status": None,
+        "exception-category": expected_category,
+        "request-correlation-digest": request_digest,
+    }
+    if not hasattr(proxy, "upstream_diagnostic"):
+        pytest.fail(
+            "AcceptanceMutationProxy omitted transport upstream_diagnostic",
+            pytrace=False,
+        )
+    diagnostic = getattr(proxy, "upstream_diagnostic", None)
+    assert diagnostic == expected_diagnostic
+    assert isinstance(diagnostic, dict)
+    assert set(diagnostic) == {
+        "upstream-status",
+        "exception-category",
+        "request-correlation-digest",
+    }
+    retained = json.dumps(
+        {
+            "request-facts": proxy.request_facts,
+            "upstream-diagnostic": diagnostic,
+        },
+        sort_keys=True,
+    )
+    for forbidden in (
+        secret,
+        raw_message,
+        request_body.decode(),
+        upstream_token,
+        "Authorization",
+        "Content-Type",
+        "X-Private",
+        "stdout",
+        "stderr",
+    ):
+        assert forbidden.lower() not in retained.lower()
+
+
+_NO_UPSTREAM_DIAGNOSTIC = object()
+
+
+def _exercise_runner_upstream_diagnostic_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    path: str,
+    upstream_diagnostic: object,
+) -> tuple[dict[str, object] | None, Exception | None]:
+    observed = cli_module.threading.Event()
+    observed.set()
+    os_error_message = "local process transport detail"
+
+    class Proxy:
+        registry = "http://127.0.0.1:4873"
+
+        def __init__(self, **_kwargs: object) -> None:
+            self.observed = observed
+            self.processed = cli_module.threading.Event()
+            self.proof = None
+            if upstream_diagnostic is not _NO_UPSTREAM_DIAGNOSTIC:
+                self.upstream_diagnostic = dict(
+                    cast("dict[str, object]", upstream_diagnostic)
+                )
+
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            pass
+
+    class Process:
+        def __init__(self) -> None:
+            self.returncode: int | None = 1 if path == "returned-failure" else 0
+
+        def communicate(
+            self,
+            timeout: float | None = None,
+        ) -> tuple[str, str]:
+            if timeout is None:
+                return "", ""
+            assert 0 < timeout <= TIMEOUT_SECONDS
+            if path == "raised-timeout":
+                raise subprocess.TimeoutExpired(("npm", "publish"), timeout)
+            if path == "raised-os-error":
+                raise OSError(os_error_message)
+            if path == "raised-classification-error":
+                return "oversized-classification-output", ""
+            return "", "npm returned failure"
+
+        def poll(self) -> int | None:
+            return self.returncode
+
+        def kill(self) -> None:
+            self.returncode = -9
+
+    monkeypatch.setattr(cli_module, "_LostResponseProxy", Proxy)
+    monkeypatch.setattr(
+        cli_module.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: Process(),
+    )
+    tarball = tmp_path / f"{path}.tgz"
+    tarball.write_bytes(path.encode())
+    runner = cli_module._AcceptanceNpmRunner(
+        tmp_path / f"{path}.npmrc",
+        contender_tarballs={},
+        token="runner-upstream-token",
+    )
+    try:
+        return (
+            runner.run_scenario(
+                "absent-create-readback",
+                (
+                    "npm",
+                    "publish",
+                    str(tarball),
+                    "--tag",
+                    TAGS["absent-create-readback"],
+                ),
+                env={"NPM_CONFIG_IGNORE_SCRIPTS": "true"},
+                timeout_seconds=TIMEOUT_SECONDS,
+                max_output_bytes=(
+                    1
+                    if path == "raised-classification-error"
+                    else MAX_OUTPUT_BYTES
+                ),
+            ),
+            None,
+        )
+    except (TimeoutError, OSError, ValueError) as error:
+        return None, error
+
+
+@pytest.mark.parametrize(
+    ("path", "upstream_diagnostic", "expected_exception"),
+    [
+        (
+            "returned-failure",
+            {
+                "upstream-status": 500,
+                "exception-category": None,
+                "request-correlation-digest": "sha256:" + ("5" * 64),
+            },
+            None,
+        ),
+        (
+            "raised-timeout",
+            {
+                "upstream-status": None,
+                "exception-category": "TimeoutError",
+                "request-correlation-digest": "sha256:" + ("6" * 64),
+            },
+            TimeoutError,
+        ),
+        (
+            "raised-os-error",
+            {
+                "upstream-status": None,
+                "exception-category": "OSError",
+                "request-correlation-digest": "sha256:" + ("7" * 64),
+            },
+            OSError,
+        ),
+        (
+            "raised-classification-error",
+            {
+                "upstream-status": None,
+                "exception-category": "HTTPException",
+                "request-correlation-digest": "sha256:" + ("8" * 64),
+            },
+            ValueError,
+        ),
+    ],
+    ids=[
+        "returned-failure",
+        "raised-timeout",
+        "raised-os-error",
+        "raised-classification-error",
+    ],
+)
+def test_runner_propagates_closed_upstream_diagnostic_for_returned_and_raised_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    path: str,
+    upstream_diagnostic: dict[str, object],
+    expected_exception: type[Exception] | None,
+) -> None:
+    result, error = _exercise_runner_upstream_diagnostic_path(
+        tmp_path,
+        monkeypatch,
+        path=path,
+        upstream_diagnostic=upstream_diagnostic,
+    )
+
+    if expected_exception is None:
+        output = b"\nnpm returned failure"
+        classified_result = {
+            "outcome": "failed",
+            "response-identity-digest": (
+                "sha256:" + hashlib.sha256(output).hexdigest()
+            ),
+        }
+        aggregate_digest = (
+            "sha256:"
+            + hashlib.sha256(
+                canonicalize(cast("JsonValue", [classified_result]))
+            ).hexdigest()
+        )
+        assert error is None
+        assert result is not None
+        if "upstream-diagnostic" not in result:
+            pytest.fail(
+                "_AcceptanceNpmRunner omitted returned upstream-diagnostic",
+                pytrace=False,
+            )
+        assert result == {
+            "outcome": "failed",
+            "action-executed": True,
+            "mutation-started": True,
+            "contender-outcomes": ["failed"],
+            "response-identity-digest": aggregate_digest,
+            "upstream-diagnostic": upstream_diagnostic,
+        }
+        retained_diagnostic = result["upstream-diagnostic"]
+        assert isinstance(retained_diagnostic, dict)
+        assert set(retained_diagnostic) == {
+            "upstream-status",
+            "exception-category",
+            "request-correlation-digest",
+        }
+        return
+
+    assert result is None
+    assert error is not None
+    assert type(error) is expected_exception
+    assert error.action_executed is True  # type: ignore[attr-defined]
+    assert error.mutation_started is True  # type: ignore[attr-defined]
+    if not hasattr(error, "upstream_diagnostic"):
+        pytest.fail(
+            "_AcceptanceNpmRunner omitted raised upstream_diagnostic",
+            pytrace=False,
+        )
+    retained_diagnostic = getattr(error, "upstream_diagnostic", None)
+    assert retained_diagnostic == upstream_diagnostic
+    assert isinstance(retained_diagnostic, dict)
+    assert set(retained_diagnostic) == {
+        "upstream-status",
+        "exception-category",
+        "request-correlation-digest",
+    }
+
+
+@pytest.mark.parametrize(
+    ("path", "expected_exception"),
+    [
+        ("returned-failure", None),
+        ("raised-timeout", TimeoutError),
+        ("raised-os-error", OSError),
+        ("raised-classification-error", ValueError),
+    ],
+    ids=[
+        "returned-failure",
+        "raised-timeout",
+        "raised-os-error",
+        "raised-classification-error",
+    ],
+)
+def test_runner_omits_upstream_diagnostic_when_proxy_supplies_no_admitted_fact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    path: str,
+    expected_exception: type[Exception] | None,
+) -> None:
+    result, error = _exercise_runner_upstream_diagnostic_path(
+        tmp_path,
+        monkeypatch,
+        path=path,
+        upstream_diagnostic=_NO_UPSTREAM_DIAGNOSTIC,
+    )
+
+    if expected_exception is None:
+        output = b"\nnpm returned failure"
+        classified_result = {
+            "outcome": "failed",
+            "response-identity-digest": (
+                "sha256:" + hashlib.sha256(output).hexdigest()
+            ),
+        }
+        aggregate_digest = (
+            "sha256:"
+            + hashlib.sha256(
+                canonicalize(cast("JsonValue", [classified_result]))
+            ).hexdigest()
+        )
+        assert error is None
+        assert result is not None
+        assert result == {
+            "outcome": "failed",
+            "action-executed": True,
+            "mutation-started": True,
+            "contender-outcomes": ["failed"],
+            "response-identity-digest": aggregate_digest,
+        }
+        assert "upstream-diagnostic" not in result
+        return
+
+    assert result is None
+    assert error is not None
+    assert type(error) is expected_exception
+    assert error.action_executed is True  # type: ignore[attr-defined]
+    assert error.mutation_started is True  # type: ignore[attr-defined]
+    assert not hasattr(error, "upstream_diagnostic")
+
+
+def test_runner_waits_for_terminal_proxy_diagnostic_before_raising_timeout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request_digest = "sha256:" + ("9" * 64)
+    upstream_diagnostic = {
+        "upstream-status": None,
+        "exception-category": "TimeoutError",
+        "request-correlation-digest": request_digest,
+    }
+    process_failed = cli_module.threading.Event()
+    first_snapshot = cli_module.threading.Event()
+
+    class Proxy:
+        registry = "http://127.0.0.1:4873"
+
+        def __init__(self, **_kwargs: object) -> None:
+            self.observed = cli_module.threading.Event()
+            self.observed.set()
+            self.processed = cli_module.threading.Event()
+            self.proof = None
+            self._upstream_terminal = cli_module.threading.Event()
+            self._diagnostic: dict[str, object] | None = None
+            self._publisher = cli_module.threading.Thread(
+                target=self._publish_terminal_diagnostic,
+            )
+
+        @property
+        def upstream_diagnostic(self) -> dict[str, object] | None:
+            if self._diagnostic is None:
+                first_snapshot.set()
+                return None
+            return dict(self._diagnostic)
+
+        def _publish_terminal_diagnostic(self) -> None:
+            assert process_failed.wait(TIMEOUT_SECONDS)
+            assert first_snapshot.wait(TIMEOUT_SECONDS)
+            self._diagnostic = dict(upstream_diagnostic)
+            self._upstream_terminal.set()
+
+        def __enter__(self) -> Self:
+            self._publisher.start()
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            self._publisher.join(TIMEOUT_SECONDS)
+            assert not self._publisher.is_alive()
+
+    class Process:
+        def __init__(self) -> None:
+            self.returncode: int | None = None
+
+        def communicate(
+            self,
+            timeout: float | None = None,
+        ) -> tuple[str, str]:
+            if timeout is None:
+                return "", ""
+            process_failed.set()
+            raise subprocess.TimeoutExpired(("npm", "publish"), timeout)
+
+        def poll(self) -> int | None:
+            return self.returncode
+
+        def kill(self) -> None:
+            self.returncode = -9
+
+    monkeypatch.setattr(cli_module, "_LostResponseProxy", Proxy)
+    monkeypatch.setattr(
+        cli_module.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: Process(),
+    )
+    tarball = tmp_path / "delayed-terminal-diagnostic.tgz"
+    tarball.write_bytes(b"delayed-terminal-diagnostic")
+    runner = cli_module._AcceptanceNpmRunner(
+        tmp_path / ".npmrc",
+        contender_tarballs={},
+        token="delayed-diagnostic-token",
+    )
+
+    with pytest.raises(TimeoutError) as captured:
+        runner.run_scenario(
+            "absent-create-readback",
+            (
+                "npm",
+                "publish",
+                str(tarball),
+                "--tag",
+                TAGS["absent-create-readback"],
+            ),
+            env={"NPM_CONFIG_IGNORE_SCRIPTS": "true"},
+            timeout_seconds=TIMEOUT_SECONDS,
+            max_output_bytes=MAX_OUTPUT_BYTES,
+        )
+
+    assert captured.value.action_executed is True  # type: ignore[attr-defined]
+    assert captured.value.mutation_started is True  # type: ignore[attr-defined]
+    assert captured.value.upstream_diagnostic == (  # type: ignore[attr-defined]
+        upstream_diagnostic
+    )
+
+
+@pytest.mark.parametrize(
+    ("observation_kind", "upstream_status"),
+    [
+        ("status-100", 100),
+        ("status-409", 409),
+        ("status-599", 599),
+        ("pre-response-transport", None),
+    ],
+    ids=[
+        "status-100",
+        "status-409",
+        "status-599",
+        "pre-response-transport",
+    ],
+)
+def test_acceptance_proxy_one_request_retains_at_most_one_request_bound_diagnostic(
+    monkeypatch: pytest.MonkeyPatch,
+    observation_kind: str,
+    upstream_status: int | None,
+) -> None:
+    version = "0.0.0-wdv3-acceptance.4"
+    tag = "wdv3-acceptance-4"
+    tarball = _acceptance_tarball(
+        version=version,
+        repository_url="git+https://github.com/hcoona/three.git",
+        target_sha=TARGET,
+    )
+    request_body = _adversarial_publish_body(tarball)
+    request_digest = "sha256:" + hashlib.sha256(request_body).hexdigest()
+    transport_error_message = "request-scoped transport failure"
+
+    class Response:
+        def __init__(self) -> None:
+            assert upstream_status is not None
+            self.status = upstream_status
+
+        def read(self, _size: int) -> bytes:
+            return b'{"error":"conflict"}'
+
+        def getheaders(self) -> list[tuple[str, str]]:
+            if self.status == 100:
+                return [("X-Unsafe\rInjected", "must-not-be-forwarded")]
+            return [("Content-Type", "application/json")]
+
+    class Connection:
+        def __init__(self, _host: str, *, timeout: float) -> None:
+            assert timeout == TIMEOUT_SECONDS
+
+        def request(
+            self,
+            _method: str,
+            _path: str,
+            *,
+            body: bytes,
+            headers: dict[str, str],
+        ) -> None:
+            assert body == request_body
+            assert headers["Authorization"] == "Bearer cardinality-token"
+
+        def getresponse(self) -> Response:
+            if observation_kind == "pre-response-transport":
+                raise OSError(transport_error_message)
+            return Response()
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(cli_module.http.client, "HTTPSConnection", Connection)
+    with cli_module.AcceptanceMutationProxy(
+        timeout_seconds=TIMEOUT_SECONDS,
+        token="cardinality-token",
+        expected_method="PUT",
+        expected_path="/@hcoona%2fhcoona-release-smoke-npm",
+        expected_version=version,
+        expected_tag=tag,
+        expected_tarballs=(tarball,),
+        expected_target_sha=TARGET,
+        expected_requests=1,
+        drop_accepted_response=False,
+    ) as proxy:
+        response = _request_proxy_publish(proxy, request_body)
+
+    expected_diagnostic = {
+        "upstream-status": upstream_status,
+        "exception-category": (
+            "OSError" if observation_kind == "pre-response-transport" else None
+        ),
+        "request-correlation-digest": request_digest,
+    }
+    if observation_kind == "pre-response-transport" or upstream_status == 100:
+        assert response is not None
+        assert response[0] == 502
+    else:
+        assert response is not None
+        assert response[0] == upstream_status
+    assert len(proxy.request_facts) == 1
+    assert proxy.request_facts[0]["request-digest"] == request_digest
+    if not hasattr(proxy, "upstream_diagnostic"):
+        pytest.fail(
+            "one-request proxy omitted its request-bound upstream_diagnostic",
+            pytrace=False,
+        )
+    retained_diagnostic = getattr(proxy, "upstream_diagnostic", None)
+    assert retained_diagnostic == expected_diagnostic
+    assert isinstance(retained_diagnostic, dict)
+    assert set(retained_diagnostic) == {
+        "upstream-status",
+        "exception-category",
+        "request-correlation-digest",
+    }
+    assert proxy.proof is None
+    assert not proxy.processed.is_set()
+
+
+def test_acceptance_proxy_two_request_race_never_exposes_a_singleton_upstream_diagnostic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    version = "0.0.0-wdv3-acceptance.4"
+    tag = "wdv3-acceptance-4"
+    tarballs = (
+        _acceptance_tarball(
+            version=version,
+            repository_url="git+https://github.com/hcoona/three.git",
+            target_sha=TARGET,
+        ),
+        _acceptance_tarball(
+            version=version,
+            repository_url="git+https://github.com/hcoona/three.git",
+            target_sha="d" * 40,
+        ),
+    )
+    request_bodies = tuple(
+        _adversarial_publish_body(tarball) for tarball in tarballs
+    )
+    request_digests = tuple(
+        "sha256:" + hashlib.sha256(body).hexdigest() for body in request_bodies
+    )
+    status_by_body = {
+        request_bodies[0]: 201,
+        request_bodies[1]: 409,
+    }
+
+    class Response:
+        def __init__(self, status: int) -> None:
+            self.status = status
+
+        def read(self, _size: int) -> bytes:
+            return f'{{"status":{self.status}}}'.encode()
+
+        def getheaders(self) -> list[tuple[str, str]]:
+            return [("Content-Type", "application/json")]
+
+    class Connection:
+        def __init__(self, _host: str, *, timeout: float) -> None:
+            assert timeout == TIMEOUT_SECONDS
+            self.status: int | None = None
+
+        def request(
+            self,
+            _method: str,
+            _path: str,
+            *,
+            body: bytes,
+            headers: dict[str, str],
+        ) -> None:
+            assert headers["Authorization"] == "Bearer race-token"
+            self.status = status_by_body[body]
+
+        def getresponse(self) -> Response:
+            assert self.status is not None
+            return Response(self.status)
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(cli_module.http.client, "HTTPSConnection", Connection)
+    responses: list[tuple[int, list[tuple[str, str]], bytes] | None] = [
+        None,
+        None,
+    ]
+    errors: list[Exception | None] = [None, None]
+    start = cli_module.threading.Barrier(3)
+
+    with cli_module.AcceptanceMutationProxy(
+        timeout_seconds=TIMEOUT_SECONDS,
+        token="race-token",
+        expected_method="PUT",
+        expected_path="/@hcoona%2fhcoona-release-smoke-npm",
+        expected_version=version,
+        expected_tag=tag,
+        expected_tarballs=tarballs,
+        expected_requests=2,
+        drop_accepted_response=False,
+    ) as proxy:
+
+        def publish(index: int) -> None:
+            try:
+                start.wait(timeout=TIMEOUT_SECONDS)
+                responses[index] = _request_proxy_publish(
+                    proxy,
+                    request_bodies[index],
+                )
+            except (
+                AssertionError,
+                KeyError,
+                OSError,
+                RuntimeError,
+                http.client.HTTPException,
+            ) as error:
+                errors[index] = error
+
+        threads = [
+            cli_module.threading.Thread(target=publish, args=(index,))
+            for index in range(2)
+        ]
+        for thread in threads:
+            thread.start()
+        start.wait(timeout=TIMEOUT_SECONDS)
+        for thread in threads:
+            thread.join(TIMEOUT_SECONDS)
+        assert all(not thread.is_alive() for thread in threads)
+
+    assert errors == [None, None]
+    assert all(response is not None for response in responses)
+    assert {
+        cast("tuple[int, list[tuple[str, str]], bytes]", response)[0]
+        for response in responses
+    } == {201, 409}
+    assert len(proxy.request_facts) == 2
+    facts_by_digest = {
+        cast("str", fact["request-digest"]): fact
+        for fact in proxy.request_facts
+    }
+    assert set(facts_by_digest) == set(request_digests)
+    assert request_digests[0] != request_digests[1]
+    assert {
+        digest: {
+            "tarball-sha512": fact["tarball-sha512"],
+            "upstream-result": fact["upstream-result"],
+        }
+        for digest, fact in facts_by_digest.items()
+    } == {
+        request_digests[0]: {
+            "tarball-sha512": (
+                "sha512:" + hashlib.sha512(tarballs[0]).hexdigest()
+            ),
+            "upstream-result": "created",
+        },
+        request_digests[1]: {
+            "tarball-sha512": (
+                "sha512:" + hashlib.sha512(tarballs[1]).hexdigest()
+            ),
+            "upstream-result": "create-conflict",
+        },
+    }
+    assert getattr(proxy, "upstream_diagnostic", None) is None
+    assert proxy._upstream_terminal.is_set()
+    assert proxy.proof is not None
+    assert proxy.proof.request_digest == request_digests[0]
+    assert proxy.proof.upstream_status == 201
+    assert proxy.processed.is_set()

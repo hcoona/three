@@ -199,6 +199,8 @@ PAIR_SIZE = 2
 MAX_REDIRECTS = 5
 HTTP_OK = 200
 HTTP_CREATED = 201
+_HTTP_STATUS_MIN = 100
+_HTTP_STATUS_MAX = 599
 HTTP_MULTIPLE_CHOICES = 300
 HTTP_PERMANENT_REDIRECT = 308
 HTTP_UNAUTHORIZED = 401
@@ -773,10 +775,79 @@ _ACCEPTANCE_RUNNER_EXIT_CLASSIFICATIONS = frozenset(
         "runner-malformed-before-mutation",
     }
 )
-_ACCEPTANCE_RUNNER_EXCEPTION_CATEGORIES = frozenset(
+_ACCEPTANCE_LOCAL_RUNNER_EXCEPTION_CATEGORIES = frozenset(
     {"TimeoutError", "OSError", "RuntimeError", "ValueError"}
 )
+_ACCEPTANCE_UPSTREAM_TRANSPORT_CATEGORIES = frozenset(
+    {"TimeoutError", "OSError", "HTTPException"}
+)
+_ACCEPTANCE_RUNNER_EXCEPTION_CATEGORIES = (
+    _ACCEPTANCE_LOCAL_RUNNER_EXCEPTION_CATEGORIES
+    | _ACCEPTANCE_UPSTREAM_TRANSPORT_CATEGORIES
+)
+_ACCEPTANCE_UPSTREAM_DIAGNOSTIC_FIELDS = frozenset(
+    {
+        "upstream-status",
+        "exception-category",
+        "request-correlation-digest",
+    }
+)
 _SHA256_DIGEST_PATTERN = re.compile(r"sha256:[0-9a-f]{64}\Z")
+
+
+def _validate_acceptance_runner_diagnostic_shape(
+    *,
+    exit_classification: str,
+    upstream_status: int | None,
+    exception_category: str | None,
+    request_correlation_digest: str | None,
+) -> None:
+    if (
+        upstream_status is None
+        and exception_category is None
+        and request_correlation_digest is None
+    ):
+        message = (
+            "acceptance runner diagnostic does not contain a diagnostic arm"
+        )
+        raise ValueError(message)
+    if exit_classification == "protocol-confirmed":
+        if (
+            upstream_status != HTTP_CREATED
+            or exception_category is not None
+            or request_correlation_digest is None
+        ):
+            message = "protocol-confirmed runner diagnostic facts contradict"
+            raise ValueError(message)
+        return
+    request_bound = request_correlation_digest is not None
+    if upstream_status is not None and exception_category is not None:
+        message = "acceptance runner diagnostic mixes status and exception"
+        raise ValueError(message)
+    if (
+        not request_bound
+        and upstream_status is not None
+        and upstream_status != HTTP_CREATED
+    ):
+        message = "unbound runner diagnostic status is not historical"
+        raise ValueError(message)
+    if (
+        request_bound
+        and upstream_status is None
+        and exception_category not in _ACCEPTANCE_UPSTREAM_TRANSPORT_CATEGORIES
+    ):
+        message = "request-bound runner diagnostic category is not transport"
+        raise ValueError(message)
+    if request_bound and exit_classification != (
+        "runner-failed-after-mutation-start"
+    ):
+        message = (
+            "request-bound runner diagnostic contradicts exit classification"
+        )
+        raise ValueError(message)
+    if not request_bound and exception_category == "HTTPException":
+        message = "upstream HTTPException diagnostic requires request binding"
+        raise ValueError(message)
 
 
 @dataclass(frozen=True, slots=True)
@@ -799,9 +870,9 @@ class AcceptanceRunnerDiagnostic:
             raise ValueError(message)
         if self.upstream_status is not None and (
             type(self.upstream_status) is not int
-            or self.upstream_status != HTTP_CREATED
+            or not _HTTP_STATUS_MIN <= self.upstream_status <= _HTTP_STATUS_MAX
         ):
-            message = "acceptance runner upstream status is not exact"
+            message = "acceptance runner upstream status is not closed"
             raise ValueError(message)
         if self.exception_category is not None and (
             type(self.exception_category) is not str
@@ -817,22 +888,12 @@ class AcceptanceRunnerDiagnostic:
         ):
             message = "acceptance runner request correlation is malformed"
             raise ValueError(message)
-        if self.exit_classification == "protocol-confirmed":
-            if (
-                self.upstream_status != HTTP_CREATED
-                or self.exception_category is not None
-                or self.request_correlation_digest is None
-            ):
-                message = (
-                    "protocol-confirmed runner diagnostic facts contradict"
-                )
-                raise ValueError(message)
-        elif self.exception_category is not None and (
-            self.upstream_status is not None
-            or self.request_correlation_digest is not None
-        ):
-            message = "exception runner diagnostic retains unrelated facts"
-            raise ValueError(message)
+        _validate_acceptance_runner_diagnostic_shape(
+            exit_classification=self.exit_classification,
+            upstream_status=self.upstream_status,
+            exception_category=self.exception_category,
+            request_correlation_digest=self.request_correlation_digest,
+        )
 
     def to_document(self) -> dict[str, JsonValue]:
         """Return the exact closed diagnostic document."""
@@ -1398,6 +1459,86 @@ def _valid_protocol_confirmed_proof(
     )
 
 
+def _admit_acceptance_upstream_diagnostic(
+    value: object,
+    *,
+    exit_classification: str,
+) -> AcceptanceRunnerDiagnostic:
+    if type(value) is not dict or set(value) != (
+        _ACCEPTANCE_UPSTREAM_DIAGNOSTIC_FIELDS
+    ):
+        message = "acceptance upstream diagnostic is not exact"
+        raise ValueError(message)
+    if value["request-correlation-digest"] is None:
+        message = "acceptance upstream diagnostic is not request-bound"
+        raise ValueError(message)
+    return AcceptanceRunnerDiagnostic(
+        exit_classification=exit_classification,
+        upstream_status=cast("int | None", value["upstream-status"]),
+        exception_category=cast("str | None", value["exception-category"]),
+        request_correlation_digest=cast(
+            "str | None",
+            value["request-correlation-digest"],
+        ),
+    )
+
+
+def _try_acceptance_upstream_diagnostic(
+    value: object,
+    *,
+    exit_classification: str,
+    local_fallback_available: bool,
+) -> AcceptanceRunnerDiagnostic | None:
+    try:
+        return _admit_acceptance_upstream_diagnostic(
+            value,
+            exit_classification=exit_classification,
+        )
+    except ValueError:
+        if not local_fallback_available:
+            raise
+        return None
+
+
+def _local_runner_exception_category(error: Exception) -> str:
+    if isinstance(error, TimeoutError):
+        return "TimeoutError"
+    if isinstance(error, OSError):
+        return "OSError"
+    if isinstance(error, RuntimeError):
+        return "RuntimeError"
+    return "ValueError"
+
+
+def _validate_unadmitted_returned_diagnostic(
+    document: dict[str, object],
+) -> None:
+    upstream_diagnostic = document.get("upstream-diagnostic", _MISSING)
+    if upstream_diagnostic is _MISSING:
+        return
+    _admit_acceptance_upstream_diagnostic(
+        upstream_diagnostic,
+        exit_classification="runner-malformed-before-mutation",
+    )
+
+
+def _require_runner_diagnostic_proof_binding(
+    diagnostic: AcceptanceRunnerDiagnostic | None,
+    proof: ValidatedAcceptanceRequestProof,
+) -> None:
+    if diagnostic is None:
+        return
+    if (
+        diagnostic.exception_category is not None
+        or diagnostic.upstream_status != proof.upstream_status
+        or diagnostic.request_correlation_digest != proof.request_digest
+    ):
+        message = (
+            "acceptance runner diagnostic does not bind validated request proof"
+        )
+        raise ValueError(message)
+
+
 def _acceptance_runner_diagnostic(  # noqa: PLR0913
     document: dict[str, object],
     *,
@@ -1407,39 +1548,59 @@ def _acceptance_runner_diagnostic(  # noqa: PLR0913
     exception_startedness_admitted: bool,
     protocol_confirmed: bool,
 ) -> AcceptanceRunnerDiagnostic | None:
-    if runner_error is not None:
-        if not exception_startedness_admitted:
-            return None
-        if isinstance(runner_error, TimeoutError):
-            exception_category = "TimeoutError"
-        elif isinstance(runner_error, OSError):
-            exception_category = "OSError"
-        elif isinstance(runner_error, RuntimeError):
-            exception_category = "RuntimeError"
-        else:
-            exception_category = "ValueError"
-        return AcceptanceRunnerDiagnostic(
-            exit_classification=_runner_failure_result(
-                action_executed=action_executed,
-                mutation_started=mutation_started,
-                malformed_outcome=(
-                    isinstance(runner_error, ValueError)
-                    and not action_executed
-                    and not mutation_started
-                ),
-            ),
-            upstream_status=None,
-            exception_category=exception_category,
-            request_correlation_digest=None,
-        )
-    proof = document.get("validated-request-proof")
+    if runner_error is not None and not exception_startedness_admitted:
+        _validate_unadmitted_returned_diagnostic(document)
+        return None
     if protocol_confirmed:
+        proof = document.get("validated-request-proof")
         accepted_proof = cast("ValidatedAcceptanceRequestProof", proof)
+        upstream_diagnostic = document.get("upstream-diagnostic", _MISSING)
+        if upstream_diagnostic is not _MISSING:
+            diagnostic = _admit_acceptance_upstream_diagnostic(
+                upstream_diagnostic,
+                exit_classification="protocol-confirmed",
+            )
+            _require_runner_diagnostic_proof_binding(
+                diagnostic,
+                accepted_proof,
+            )
+            return diagnostic
         return AcceptanceRunnerDiagnostic(
             exit_classification="protocol-confirmed",
             upstream_status=accepted_proof.upstream_status,
             exception_category=None,
             request_correlation_digest=accepted_proof.request_digest,
+        )
+    exit_classification = _runner_failure_result(
+        action_executed=action_executed,
+        mutation_started=mutation_started,
+        malformed_outcome=(
+            isinstance(runner_error, ValueError)
+            and not action_executed
+            and not mutation_started
+        ),
+    )
+    upstream_diagnostic = (
+        getattr(runner_error, "upstream_diagnostic", _MISSING)
+        if runner_error is not None
+        else _MISSING
+    )
+    if upstream_diagnostic is _MISSING:
+        upstream_diagnostic = document.get("upstream-diagnostic", _MISSING)
+    if upstream_diagnostic is not _MISSING:
+        diagnostic = _try_acceptance_upstream_diagnostic(
+            upstream_diagnostic,
+            exit_classification=exit_classification,
+            local_fallback_available=runner_error is not None,
+        )
+        if diagnostic is not None:
+            return diagnostic
+    if runner_error is not None:
+        return AcceptanceRunnerDiagnostic(
+            exit_classification=exit_classification,
+            upstream_status=None,
+            exception_category=_local_runner_exception_category(runner_error),
+            request_correlation_digest=None,
         )
     return None
 
@@ -1818,6 +1979,14 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
             and post_state == "exact"
             and post_content == actual_sha512
         ):
+            proof = cast(
+                "ValidatedAcceptanceRequestProof",
+                runner_document["validated-request-proof"],
+            )
+            _require_runner_diagnostic_proof_binding(
+                runner_diagnostic,
+                proof,
+            )
             return _acceptance_result(
                 scenario=scenario,
                 tag=tag,
@@ -1830,10 +1999,7 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
                 response_identity_digest=post_response,
                 content_sha512=post_content,
                 diagnostics=("mutation-started-and-readback-exact",),
-                validated_request_proof=cast(
-                    "ValidatedAcceptanceRequestProof",
-                    runner_document["validated-request-proof"],
-                ),
+                validated_request_proof=proof,
                 runner_diagnostic=runner_diagnostic,
             )
         if not mutation_started:
