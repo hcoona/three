@@ -5729,3 +5729,30 @@ implementation and the count-only-lock mutant while retaining the correct
 implementation.
 
 <!-- END APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-test-refinement-research -->
+
+<!-- BEGIN APPEND: 2026-08-28-pr608-retry-4-terminal-fixed-identity-research -->
+
+## PR #608 retry-4 terminal fixed-identity gap
+
+At authoritative HEAD `127131db0f1f06817ace20d0249cf7dffa0d84e9`, the
+retry-4 workflow contract statically inspects the embedded terminal Python but
+does not execute its rejected-dispatch branch. The bounded gap is one
+subprocess test in
+`tests/contracts/test_commit10_acceptance_retry_4_workflow.py`.
+
+Existing conventions provide `_terminal_python`, `sys.executable` subprocess
+execution, `tmp_path`, bare exact assertions, and strict canonical admission.
+The workflow/test constants fix the rejected identity to forty zeroes,
+`@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.13`,
+`I_ACCEPT_DISPOSABLE_GITHUB_PACKAGES_PROBES_RETRY_4`, and digest
+`sha256:b6f94d3c13c98b0714404959dd878230f8302ee849038a536f5a18cc3a85c7ec`.
+
+Acceptance checklist: execute the exact extracted program with failed
+validation, skipped downstream jobs, empty optional outputs, wrong dispatch
+inputs, and fixed `WDV3_ACCEPTANCE_*` values; require successful canonical
+write and admission; assert the complete rejected-dispatch identity and empty
+mutation surfaces. This kills substitution of `INPUT_TARGET_SHA` in the
+validation-failure branch. No production, workflow, or normative-document edit
+is in scope.
+
+<!-- END APPEND: 2026-08-28-pr608-retry-4-terminal-fixed-identity-research -->

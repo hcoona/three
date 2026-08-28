@@ -9921,3 +9921,84 @@ Validation at `2026-08-28T06:18:02Z`:
   none.
 
 <!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-4-preparation -->
+
+<!-- BEGIN APPEND: 2026-08-28-pr608-retry-4-terminal-fixed-identity-status -->
+
+## PR #608 retry-4 terminal fixed-identity closure
+
+Added exactly one test,
+`test_retry_4_terminal_program_preserves_fixed_identity_after_rejected_dispatch`,
+to the existing retry-4 workflow contract. It executes the exact
+`_terminal_python(document)` string with `sys.executable`, writes beneath
+`tmp_path`, admits the bytes, and pins the fixed rejected-dispatch identity
+despite deliberately wrong dispatch target/package values.
+
+Validation:
+
+- exact new node: `1 passed in 1.72s`;
+- whole retry-4 workflow contract module: `12 passed in 1.44s`;
+- Ruff check: `All checks passed!` (an initial `I001` was corrected);
+- Ruff format check: `1 file already formatted`;
+- Pyrefly: `0 errors` (`2 warnings not shown`);
+- complete v3 package suite: `3837 passed in 467.28s`.
+
+`test-gap-analysis` and `assertion-quality` were invoked for only the embedded
+failure branch and new test. Their optional `test-analysis-extensions`
+dependency was unavailable, so the scoped pytest review was completed inline.
+The wrong nonzero `INPUT_TARGET_SHA` kills substitution of that value after
+validation failure: the admitted target becomes the wrong nonzero value, so
+the exact zero-target assertion fails. Wrong package/conditional confirmation
+inputs, exact dependency/probe structures, canonical bytes,
+reviewer/artifact/scenario absence, workflow identity, and run coordinates are
+independently asserted.
+The 13 assertions span subprocess outcome, file side effect, canonical bytes,
+and deep concrete evidence; none is assertion-free, trivial-only,
+self-referential, or tautological.
+
+Only the named test module and append-only EOF notes in
+`.testagent/research.md`, `.testagent/plan.md`, and `.testagent/status.md`
+changed. No production, workflow, normative documentation, expected count, or
+external GitHub state was modified.
+
+<!-- END APPEND: 2026-08-28-pr608-retry-4-terminal-fixed-identity-status -->
+
+<!-- BEGIN APPEND: 2026-08-28-pr608-terminal-closure-workspace-correction -->
+
+## PR #608 terminal closure workspace correction
+
+The preceding "Only ... changed" statement applies only to the generated
+terminal-test subphase. The final follow-up workspace also updates
+`docs/wiki/analyses/workflow-delivery/v3/agent-handoff.md` and
+`docs/wiki/log.md` so their recorded complete-suite count is 3,837 rather than
+3,836. At final workspace scope, the follow-up therefore comprises the test
+module, the three append-only `.testagent` notes, and those two documentation
+count corrections.
+
+Independent adjudication also classified ambient subprocess-environment
+inheritance as a true positive and mandatory network sandboxing as a false
+positive. The executable test now uses Python isolated mode, an isolated home,
+and a minimal allowlisted environment rather than forwarding credentials,
+proxy configuration, `PYTHONPATH`, or other ambient process state. The tested
+terminal program contains no network operation, so no nonportable network
+namespace or generalized call sandbox was added.
+
+<!-- END APPEND: 2026-08-28-pr608-terminal-closure-workspace-correction -->
+
+<!-- BEGIN APPEND: 2026-08-28-pr608-terminal-closure-final-unstaged-gate -->
+
+## PR #608 terminal closure final unstaged gate
+
+After the subprocess-environment and workspace-scope adjudications:
+
+- the exact rejected-dispatch executable test passed;
+- the complete retry-4 workflow contract module passed all 12 tests;
+- scoped Ruff, Ruff format, and Pyrefly checks passed;
+- the complete v3 suite passed all 3,837 tests;
+- `GIT_LFS_SKIP_SMUDGE=1 mise exec -- hk check --check --no-progress
+  --unstaged` passed over the six-file workspace diff, including its managed
+  3,837-test v3 suite.
+
+No external GitHub Environment, acceptance ref, workflow dispatch, package,
+tag, or Live mutation occurred during this closure.
+
+<!-- END APPEND: 2026-08-28-pr608-terminal-closure-final-unstaged-gate -->

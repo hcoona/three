@@ -253,7 +253,7 @@ If it conflicts with the
   `I_ACCEPT_DISPOSABLE_GITHUB_PACKAGES_PROBES_RETRY_4`. The Governance and
   workflow target remains exactly 40 zeroes, so fixed-input validation fails
   before Environment review or either package-write probe. The complete v3
-  suite passes 3,836 tests, local HK gates pass, and multi-reviewer review
+  suite passes 3,837 tests, local HK gates pass, and multi-reviewer review
   converged to no findings after independent adjudication and repair. No
   Environment, acceptance dispatch, package or tag mutation, or acceptance
   ref was created. PR #608 is the preparation carrier; no later phase may

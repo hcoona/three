@@ -2366,3 +2366,20 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   preparation merge SHA.
 - Preserved all three historical attempts as unsuccessful, `.1`-`.12` as
   consumed, `live_enabled: false`, and normal Live activation as unauthorized.
+
+## [2026-08-28] query | Close retry-4 rejected-dispatch evidence gap
+
+- Added
+  `test_retry_4_terminal_program_preserves_fixed_identity_after_rejected_dispatch`
+  to execute the temporary workflow's exact terminal Python after fixed-input
+  validation rejects deliberately wrong dispatch values.
+- Proved that canonical terminal evidence remains bound to the fixed zero
+  target, `.13` package coordinate, retry-4 confirmation digest, workflow
+  identity, failed validation, skipped downstream jobs, and incomplete
+  mutation classification.
+- Isolated the subprocess from ambient credentials, proxies, `PYTHONPATH`, and
+  user startup state with Python isolated mode, an isolated home, and a minimal
+  allowlisted environment.
+- Recorded 3,837 passing v3 tests and a successful unstaged HK gate. The
+  follow-up remains preparation-only: no Environment, acceptance ref,
+  workflow dispatch, package, tag, or Live mutation occurred.

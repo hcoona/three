@@ -6294,3 +6294,27 @@ reuse of consumed acceptance coordinates.
    gates.
 
 <!-- END APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-test-refinement-plan -->
+
+<!-- BEGIN APPEND: 2026-08-28-pr608-retry-4-terminal-fixed-identity-plan -->
+
+## PR #608 retry-4 terminal fixed-identity plan
+
+1. Add exactly
+   `test_retry_4_terminal_program_preserves_fixed_identity_after_rejected_dispatch`
+   to the existing retry-4 workflow contract module.
+2. Extract `_terminal_python(document)`, run it with `sys.executable`, and
+   write `WDV3_FILE` beneath `tmp_path`. Supply failed validation, skipped
+   review/probe dependencies, empty optional outputs, wrong dispatch values,
+   fixed retry-4 constants, first attempt, positive run ID, exact repository
+   and ref, and a valid nonzero workflow SHA.
+3. Admit the written bytes with
+   `admit_governance_acceptance_evidence`; assert exact fixed identity,
+   dependency results, incomplete classification, absent reviewer/artifacts/
+   scenarios, and run attempt. The wrong target makes the test reject the
+   `INPUT_TARGET_SHA`-after-failure mutant.
+4. Run the exact new node, the whole retry-4 contract module, Ruff check, Ruff
+   format check, and focused Pyrefly. Then run scoped `test-gap-analysis` and
+   `assertion-quality`, re-run affected validation if strengthened, and audit
+   the four-file allowlist and append-only notes.
+
+<!-- END APPEND: 2026-08-28-pr608-retry-4-terminal-fixed-identity-plan -->
