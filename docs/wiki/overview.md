@@ -334,21 +334,24 @@ have changed.
    as `bf174897`. Diagnostics remain observability only and cannot establish
    execution, mutation completion, or Governance acceptance. No acceptance
    invocation followed the repair before this documentation update.
-8. Preparation PR #608 rebase-merged without bypass as `835b81be`. Its closed
-   fourth profile binds absent/exact `.13`, identical-race `.14`,
-   differing-race `.15`, and lost-response `.16`; the retry-4 workflow,
-   Environment identity, and confirmation remain fixed. Fresh authenticated
-   preflight confirmed exact `main`, active ruleset and workflow identity, no
-   nonterminal or retry-4 runs, deployments, acceptance refs, `.13`-`.16`
-   versions, or retry-4 npm tags. Environment ID `20772100445` has sole
-   required reviewer `hcoona`, self-review permitted, and sole deployment
-   branch `main`. Protected finalization binds the workflow and Governance
-   profile to the preparation merge SHA, not a finalization commit, and must
-   merge without bypass. A fresh exact preflight must then pass before any
-   acceptance ref is created or the single `run_attempt == 1` attempt is
-   dispatched. No workflow dispatch, deployment, acceptance ref, package, or
-   tag mutation has occurred. Subsequent explicit user authorization covers
-   the bounded acceptance-only repair/retry loop through genuine success,
+8. Retry-4 preparation and protected finalization rebase-merged without bypass
+   as `835b81be` and `f3d53177`. Fresh exact preflight passed before exactly one
+   attempt-1 run, `33165777024`, received Environment approval. The first probe
+   observed `.13` absent, started mutation, received a request-bound upstream
+   HTTP 200, and exactly read back `.13`. Because the proof contract required
+   HTTP 201, no validated request proof formed. The suite remained incomplete,
+   the `.14`-`.16` probe was skipped, and terminal Governance evidence
+   classified the run unknown. Authenticated reconciliation confirms exact
+   `.13` tag, tarball hashes, target witness, and all immutable artifact
+   digests; `.14`-`.16` remain absent. Workflow ID `344468231` is disabled,
+   Environment ID `20772100445` is deleted, acceptance refs are absent, and
+   protected source cleanup is staged. Do not rerun or reuse `.13`-`.16`.
+   Do not begin or merge another acceptance repair/profile until protected
+   cleanup merges into `main` and a fresh post-merge fetch confirms the
+   temporary workflow and workflow-only contract absent, the workflow
+   identity, Environment, and refs still retired, exact `.13` retained, and
+   `.14`-`.16` absent. Subsequent explicit user authorization covers the
+   bounded acceptance-only repair/retry loop through genuine success,
    reconciliation, cleanup, and closure. It does not authorize normal Live
    activation or `live_enabled: true`.
 

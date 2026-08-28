@@ -689,14 +689,9 @@ def test_codeowners_covers_deleted_and_future_buddy_routes() -> None:
     } == dict.fromkeys(paths, ("@hcoona",))
 
 
-def test_retry_4_is_the_only_temporary_workflow_allowed_by_legacy_buddy_retirement() -> (  # noqa: E501
-    None
-):
-    """Permit only the exact retry-4 preparation workflow."""
-    retry_4 = (
-        WORKFLOWS / "workflow-delivery-v3-buddy-smoke-acceptance-retry-4.yml"
-    )
-    temporary_workflows = tuple(
+def test_temporary_acceptance_workflows_are_retired() -> None:
+    """Retire every temporary destination-acceptance workflow source."""
+    paths = tuple(
         sorted(
             {
                 *WORKFLOWS.glob(
@@ -709,56 +704,4 @@ def test_retry_4_is_the_only_temporary_workflow_allowed_by_legacy_buddy_retireme
         )
     )
 
-    assert temporary_workflows == (retry_4,), (
-        "E-WORKFLOW-ABSENT: required retry-4 workflow is absent at "
-        ".github/workflows/"
-        "workflow-delivery-v3-buddy-smoke-acceptance-retry-4.yml"
-        if retry_4 not in temporary_workflows
-        else (
-            "legacy Buddy retirement permits only the exact retry-4 "
-            f"temporary workflow: {temporary_workflows!r}"
-        )
-    )
-
-
-def test_legacy_buddy_retirement_rejects_every_other_temporary_and_legacy_workflow() -> (  # noqa: E501
-    None
-):
-    """Reject legacy identities without broadening the retry-4 exception."""
-    retry_4 = (
-        WORKFLOWS / "workflow-delivery-v3-buddy-smoke-acceptance-retry-4.yml"
-    )
-    explicitly_retired = tuple(
-        sorted(
-            {
-                *(REPO_ROOT / path for path in LEGACY_ENTRY_PATHS),
-                *(
-                    WORKFLOWS / basename
-                    for basename in FORBIDDEN_COMPATIBILITY_BASENAMES
-                ),
-                WORKFLOWS / "workflow-delivery-v3-buddy-smoke-acceptance.yml",
-                WORKFLOWS
-                / "workflow-delivery-v3-buddy-smoke-acceptance-retry-2.yml",
-                WORKFLOWS
-                / "workflow-delivery-v3-buddy-smoke-acceptance-retry-3.yml",
-                WORKFLOWS
-                / "workflow-delivery-v3-buddy-smoke-acceptance-retry-5.yml",
-            }
-        )
-    )
-    temporary_workflows = tuple(
-        sorted(
-            {
-                *WORKFLOWS.glob(
-                    "workflow-delivery-v3-buddy-smoke-acceptance*.yml"
-                ),
-                *WORKFLOWS.glob(
-                    "workflow-delivery-v3-buddy-smoke-acceptance*.yaml"
-                ),
-            }
-        )
-    )
-
-    assert tuple(path for path in explicitly_retired if path.exists()) == ()
-    assert tuple(path for path in temporary_workflows if path != retry_4) == ()
-    assert _legacy_buddy_routes(WORKFLOWS) == ()
+    assert paths == ()

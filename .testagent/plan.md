@@ -6339,3 +6339,36 @@ reuse of consumed acceptance coordinates.
    PR.
 
 <!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-4-finalization-plan -->
+
+<!-- BEGIN APPEND: 2026-08-28-wdv3-acceptance-retry-4-cleanup-plan -->
+
+## Consumed retry-4 destination-acceptance cleanup plan
+
+### Phase 1: Restore post-consumption absence contracts
+
+1. Delete exactly
+   `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_retry_4_workflow.py`;
+   add no replacement workflow-only contract.
+2. In `test_buddy_workflows.py`, restore
+   `test_temporary_acceptance_workflows_are_absent_with_disabled_normal_buddy`
+   so the exact `.yml`/`.yaml` temporary acceptance inventory is empty,
+   including retry-4, while normal Buddy remains disabled and
+   `live_enabled is False`.
+3. In `test_commit11_legacy_buddy_retirement.py`, restore
+   `test_temporary_acceptance_workflows_are_retired` so every matching
+   temporary destination-acceptance workflow source is absent.
+4. Preserve append-only `.testagent` history and append exact validation
+   outcomes to status. Leave `docs/wiki/log.md`, workflow YAML, CODEOWNERS,
+   production code, Governance profiles/evidence tests, authoritative wiki
+   documents, `live_enabled`, and normal Live authority unchanged.
+5. Run:
+
+   `uv run pytest src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py::test_temporary_acceptance_workflows_are_absent_with_disabled_normal_buddy src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit11_legacy_buddy_retirement.py::test_temporary_acceptance_workflows_are_retired`
+
+   Because the parent-owned retry-4 YAML intentionally remains, focused
+   failures are expected only when they identify that source. Do not skip or
+   weaken the contracts and do not edit the workflow to make them pass. After
+   the parent deletes it, the same nodes must pass. Record exact results and
+   do not commit.
+
+<!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-4-cleanup-plan -->

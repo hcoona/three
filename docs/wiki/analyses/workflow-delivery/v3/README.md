@@ -226,29 +226,34 @@ remain unsuccessful and `.1`-`.12` remain consumed.
 
 Next:
 
-1. preserve all three attempts and their exact evidence as unsuccessful
+1. preserve all four attempts and their exact evidence as unsuccessful
    historical replay; do not infer acceptance from destination state or the
    new diagnostics;
-2. record preparation PR #608 as rebase-merged without bypass at
-   `835b81be1ff0ba7aa0ec23c9a7b518d4ade3dfaa`. It carries the closed
-   `.13`-`.16` profile, retry-4 workflow and Environment identity, and exact
-   confirmation. The work started from freshly fetched
-   `origin/main@bcf47e2d`; `bf174897` remains implementation provenance only;
-3. preserve the fresh authenticated preflight: principal `hcoona` / `712433`,
-   exact `main@835b81be`, active ruleset and workflow identity, green checks,
-   no nonterminal or retry-4 runs, no deployments or acceptance refs, and
-   absent `.13`-`.16` versions and tags. Environment ID `20772100445` has sole
-   required reviewer `hcoona`, self-review permitted, and sole deployment
-   branch `main`;
-4. keep the separate protected-finalization change limited to the workflow
-   target default and constant, Governance profile target, target-pinned
-   tests, and authoritative state documents. Every target binds the preparation
-   merge SHA above, not a finalization commit. The finalization PR must merge
-   without bypass before any dispatch;
-5. after finalization merges without bypass, run a fresh exact preflight. Only
-   if it passes may any acceptance ref be created or the single
-   `run_attempt == 1` package-mutation attempt be dispatched; stop for
-   reconciliation on any nonterminal or ambiguous result; and
+2. retain retry-4 preparation merge `835b81be` and protected finalization merge
+   `f3d53177` as provenance for the consumed profile. A fresh exact preflight
+   passed before exactly one attempt-1 dispatch, run `33165777024`, from
+   `main`;
+3. retain run `33165777024` as unsuccessful evidence. It observed `.13`
+   absent, started mutation, received a request-bound upstream HTTP 200, and
+   exactly read back `.13`. The proof contract required HTTP 201, so no
+   validated request proof formed. The first probe remained incomplete, the
+   `.14`-`.16` probe was skipped, and terminal Governance evidence classified
+   the run unknown. Authenticated reconciliation confirms exact tag
+   `wdv3-acceptance-13`, tarball SHA-1
+   `7f088ba1708310ef0dba5814da3ad4cf57d49062`, SHA-512
+   `aafe86f3b48a7affc6c160f81bd81d69692fc3789149a7a01e620acd05052d0c7c0e87b7f552b19fc2192a90b6af1201b265cc2475ac28288cc1ab70bfbe7c71`,
+   and target witness `835b81be`; `.14`-`.16` remain absent;
+4. preserve immutable artifacts `9683508663`, `9683519655`, and `9683526452`.
+   Their GitHub-recorded SHA-256 digests match the retained raw bytes, and the
+   terminal Governance artifact passes canonical admission;
+5. keep workflow ID `344468231` disabled, Environment ID `20772100445`
+   deleted, acceptance refs absent, and protected source cleanup staged. Do
+   not rerun or reuse `.13`-`.16`. Any further attempt requires a separately
+   reviewed acceptance-only repair and a fresh coordinate block. Do not begin
+   or merge that repair until protected cleanup merges into `main` and a fresh
+   post-merge fetch confirms the temporary workflow and workflow-only contract
+   absent, the workflow identity, Environment, and refs still retired, exact
+   `.13` retained, and `.14`-`.16` absent; and
 6. keep `live_enabled: false`. Subsequent explicit user authorization covers
    the bounded acceptance-only repair/retry loop through genuine success,
    cleanup, and closure, but normal Live activation remains a separate

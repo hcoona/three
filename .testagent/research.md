@@ -5790,3 +5790,63 @@ workflow/Environment identity, permissions, DAG, first-attempt guard, and
 normal Live exclusion remain unchanged.
 
 <!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-4-finalization-research -->
+
+<!-- BEGIN APPEND: 2026-08-28-wdv3-acceptance-retry-4-cleanup-research -->
+
+## Consumed retry-4 destination-acceptance cleanup research
+
+The bounded base is clean `main` at
+`f3d53177a75bec9952fe39ffa547533d1a0992ef`. This Python 3.13 package uses
+pytest through the repository `uv` workspace. Contract tests use module-level
+`test_*` functions, `pathlib`, direct YAML/filesystem inspection, and exact
+tuple/set assertions. The `.testagent` history is append-only.
+
+Commit `916ea33802dda17a24e3b4971aae74b55ed4c7f5` supplies the exact retry-3
+cleanup pattern: delete the workflow-only retry contract; collapse each pair
+of temporary-workflow preparation tests back to one absence/retirement test;
+retain disabled normal-Buddy and non-Live authority assertions.
+
+Bounded targets:
+
+- delete
+  `tests/contracts/test_commit10_acceptance_retry_4_workflow.py`, whose
+  contracts exist only for the temporary retry-4 workflow source;
+- in `tests/contracts/test_buddy_workflows.py`, replace the retry-4
+  coexistence exceptions with
+  `test_temporary_acceptance_workflows_are_absent_with_disabled_normal_buddy`,
+  requiring the complete `.yml`/`.yaml` temporary acceptance inventory to be
+  empty while retaining disabled normal Buddy and `live_enabled is False`;
+- in `tests/contracts/test_commit11_legacy_buddy_retirement.py`, replace the
+  retry-4 exception tests with
+  `test_temporary_acceptance_workflows_are_retired`, requiring every matching
+  temporary destination-acceptance source to be absent.
+
+Requirement checklist:
+
+1. Delete only the workflow-only retry-4 contract.
+2. Cover retry-4 in the all-temporary-workflows-absent Buddy contract while
+   preserving disabled normal Buddy and established naming/style.
+3. Require every temporary destination-acceptance source to be retired in the
+   commit-11 contract.
+4. Append compact research/plan/status entries without rewriting history or
+   touching `docs/wiki/log.md`.
+5. Leave workflow YAML, CODEOWNERS, production code, Governance
+   profiles/evidence tests, authoritative wiki documents, `live_enabled`, and
+   normal Live authority unchanged.
+6. Run the narrowest relevant tests and record exact results; do not commit.
+
+Run `33165777024` remains a lone terminal failure
+(`run_number=1`, `run_attempt=1`). Coordinate `.13` was exactly read back, but
+request-bound HTTP 200 formed no validated-request proof; `.14` through `.16`,
+acceptance refs, and reruns remain absent. The workflow is
+`disabled_manually`, and Environment `20772100445` is deleted. None of these
+facts establishes successful acceptance or changes Live authority.
+
+After the parent-owned workflow-source deletion, the narrow validation is:
+
+`uv run pytest src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py::test_temporary_acceptance_workflows_are_absent_with_disabled_normal_buddy src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit11_legacy_buddy_retirement.py::test_temporary_acceptance_workflows_are_retired`
+
+Before that deletion, both absence contracts are expected to expose the
+remaining retry-4 YAML rather than pass vacuously.
+
+<!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-4-cleanup-research -->

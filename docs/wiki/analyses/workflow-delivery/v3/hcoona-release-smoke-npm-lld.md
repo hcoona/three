@@ -1661,7 +1661,7 @@ These diagnostics are observability only. They can explain a failed or
 incomplete runner outcome, but cannot establish execution, mutation
 completion, exact readback, protocol confirmation, complete scenario
 cardinality, or Governance acceptance. No diagnostic changes the outcome of
-the three consumed unsuccessful acceptance attempts.
+the four consumed unsuccessful acceptance attempts.
 
 Therefore **Re-run failed jobs**, **Re-run all jobs**, or any other partial
 rerun cannot reuse the prior Environment review or coordinate.
@@ -1673,14 +1673,18 @@ plus `packages: write`. Unspecified permissions are none.
 The dedicated retry-3 acceptance Environment was deleted after its consumed
 unsuccessful attempt; cleanup PR #600 removed its temporary workflow source
 and workflow-only contract, and its numeric workflow identity is `deleted`.
-For retry 4, preparation PR #608 merged as
-`835b81be1ff0ba7aa0ec23c9a7b518d4ade3dfaa`. Environment ID `20772100445`
-has sole required reviewer `hcoona`, self-review permitted for the
-single-operator topology, and sole deployment branch `main`. It is not either
-normal Buddy Environment. Protected finalization binds the workflow and
-Governance profile to the preparation merge SHA and must merge without bypass.
-After that merge, a fresh exact preflight must pass before any acceptance ref
-is created or the single authorized attempt-1 dispatch occurs. The workflow
+Retry-4 preparation and protected finalization merged without bypass as
+`835b81be1ff0ba7aa0ec23c9a7b518d4ade3dfaa` and
+`f3d53177a75bec9952fe39ffa547533d1a0992ef`. Fresh exact preflight passed
+before the single attempt-1 run `33165777024`. Its first probe observed `.13`
+absent, started mutation, received a request-bound upstream HTTP 200, and
+exactly read back `.13`. The current proof contract required HTTP 201, so the
+probe retained incomplete evidence; `.14`-`.16` were not attempted, and
+terminal Governance evidence classified the run unknown. This destination
+fact is diagnostic input for a separately reviewed repair and does not
+retroactively establish acceptance. Workflow ID `344468231` is disabled,
+Environment ID `20772100445` is deleted, and protected cleanup retires the
+temporary source and workflow-only contract. The retained historical workflow
 emits only Governance acceptance evidence bound to
 workflow/run/target/fixed coordinate, dependency outcomes, available probe
 results, and complete/incomplete/unknown mutation classification. It cannot
@@ -1710,6 +1714,11 @@ This bootstrap is temporary repository configuration, not a reusable bypass.
 After evidence capture, Governance deletes the workflow, any temporary enable
 bypass, and the acceptance Environment, then verifies through workflow/API and
 Environment inspection that all are absent.
+No later acceptance repair or profile may start until that protected cleanup
+has merged and a fresh post-merge fetch plus authenticated reconciliation
+confirms the temporary source and workflow-only contract absent, the workflow
+identity, Environment, and refs still retired, exact consumed state retained,
+and every unused coordinate in the consumed block absent.
 
 ## Activation Gate
 

@@ -2401,3 +2401,29 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   must pass before any acceptance ref or dispatch.
 - No workflow dispatch, deployment, acceptance ref, package, tag, or Live
   mutation occurred.
+
+## [2026-08-28] query | Capture unsuccessful destination acceptance retry 4
+
+- Merged protected finalization PR #609 without bypass as
+  `f3d53177a75bec9952fe39ffa547533d1a0992ef`, then passed a fresh exact
+  preflight and dispatched exactly one attempt-1 run, `33165777024`, from
+  `main`.
+- Environment reviewer `hcoona` approved the fixed preparation target and
+  `.13` base coordinate. The first probe observed absent pre-state, recorded
+  action execution and mutation startedness, received request-bound upstream
+  HTTP 200, and exactly read back `.13`.
+- The proof contract required HTTP 201, so no validated request proof formed.
+  The first probe remained incomplete, the `.14`-`.16` probe was skipped, and
+  terminal Governance evidence classified the run unknown. Acceptance was not
+  established and the run was not retried.
+- Artifacts `9683508663`, `9683519655`, and `9683526452` match their
+  GitHub-recorded SHA-256 digests. Authenticated reconciliation confirms tag
+  `wdv3-acceptance-13`, tarball SHA-1
+  `7f088ba1708310ef0dba5814da3ad4cf57d49062`, SHA-512
+  `aafe86f3b48a7affc6c160f81bd81d69692fc3789149a7a01e620acd05052d0c7c0e87b7f552b19fc2192a90b6af1201b265cc2475ac28288cc1ab70bfbe7c71`,
+  and target witness `835b81be1ff0ba7aa0ec23c9a7b518d4ade3dfaa`;
+  `.14`-`.16` remain absent.
+- Disabled workflow ID `344468231`, deleted Environment ID `20772100445`,
+  and confirmed acceptance refs absent. Protected source cleanup is staged.
+  The `.13`-`.16` block is consumed, and normal Live remains disabled and
+  unauthorized.
