@@ -2323,3 +2323,26 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Closed retry 3 as unsuccessful without retry. All three destination-
   acceptance attempts remain unsuccessful, `live_enabled` remains false, and
   Live activation remains unauthorized.
+
+## [2026-08-28] query | Record acceptance upstream-diagnostic repair
+
+- Recorded retry-3 documentation closure PR #601 at
+  `ad70a879de36b750bff7793dde470b6712ea515e`.
+- Recorded repair PR #603 at
+  `bf1748971f2717a8877852590c5436b4160a4fbf`. The repair retains only closed,
+  credential-free, request-bound upstream status or transport diagnostics,
+  propagates them through the runner and Adapter, and admits them in Governance
+  without granting completion authority.
+- Recorded the expected-one concurrency repair: request cardinality and
+  request-fact append form one atomic reservation, so a simultaneous duplicate
+  is rejected locally before a second upstream write.
+- Recorded 3,782 passing v3 tests plus focused Pyrefly, unstaged and staged HK,
+  independent review/adjudication, required checks, and CodeQL.
+- Confirmed that no destination-acceptance invocation followed #603 before
+  this documentation update. The repair does not retroactively change any of
+  the three unsuccessful attempts; `.1`-`.12` and all associated identities
+  remain consumed.
+- Recorded the continuing acceptance-only authorization boundary: a fourth
+  profile may proceed tests-first with wholly new coordinates and identities,
+  one package-mutation attempt at a time, and mandatory reconciliation for
+  ambiguity. Normal Live activation and `live_enabled: true` remain excluded.

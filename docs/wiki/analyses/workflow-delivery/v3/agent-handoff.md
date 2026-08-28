@@ -171,9 +171,10 @@ If it conflicts with the
   `b031e5e0bd98a95943a03a1529b64e856e1a8aa1`. Platform-Orphan implementation
   PR #590 was closed unmerged; no candidate ran and no exception authority or
   result entered `main`. Do not dispatch, rerun, approve, recreate a transition
-  ref, or reuse the `.5`-`.8` invocation, review, or coordinate block. Both
-  strict acceptance profiles remain evidence replay authority and cannot be
-  mixed. Acceptance remains unsuccessful and `live_enabled` remains false.
+  ref, or reuse the `.5`-`.8` invocation, review, or coordinate block. All
+  three consumed strict acceptance profiles remain evidence replay authority
+  and cannot be mixed. Acceptance remains unsuccessful and `live_enabled`
+  remains false.
 - Repair-only PR #596 merged as
   `e69195eda71e7c8dd184bb29b28fd90102e71fa1`. It propagates the
   proxy-validated, request-bound HTTP 201 proof before non-authoritative npm
@@ -192,10 +193,9 @@ If it conflicts with the
   as true-positive; the focused and complete suites, staged gate, GitHub CI,
   CodeQL, and v3 shadow CI passed after the correction; Copilot rereview raised
   no new finding and retained its human-verification advisory. The merged
-  repair does not retroactively change either failed acceptance invocation and
-  does not authorize a third acceptance workflow, invocation, review,
-  Environment, coordinate block, package operation, Release lineage, or normal
-  Live activation.
+  repair does not retroactively change either failed acceptance invocation.
+  Retry 3 was later separately reviewed and executed as described below; normal
+  Live activation remained excluded.
 - Retry-3 destination acceptance is consumed and unsuccessful. Preparation PR
   #598 merged as `a61f9a4e44458bfd7bc7bfd96f6db848ce047c0c`, and protected
   finalization PR #599 merged as
@@ -217,6 +217,28 @@ If it conflicts with the
   post-deletion dispatch was attempted. Do not retry or reuse `.9`-`.12`. All
   three attempts remain unsuccessful, `live_enabled` remains false, and Live
   activation remains unauthorized.
+- Retry-3 documentation closure PR #601 merged as
+  `ad70a879de36b750bff7793dde470b6712ea515e`.
+- Repair PR #603 merged as
+  `bf1748971f2717a8877852590c5436b4160a4fbf`. The acceptance proxy now
+  retains only closed, credential-free, request-bound upstream status or
+  transport diagnostics; the runner propagates them without extending the
+  shared deadline; the Adapter and Governance reject malformed,
+  contradictory, unbound, or proof-conflicting forms; and diagnostic-only
+  facts remain non-authoritative. For an expected-one proxy, the matching
+  request count and request-fact append are one atomic reservation, so a
+  simultaneous duplicate is rejected locally before a second upstream write.
+  The complete v3 suite passed 3,782 tests; focused Pyrefly, unstaged and staged
+  HK gates, independent review/adjudication, required checks, and CodeQL all
+  passed. No destination-acceptance invocation followed the merge before this
+  documentation update. The repair does not retroactively make any of the
+  three consumed attempts successful and does not restore `.1`-`.12`.
+- Subsequent explicit user authorization covers the bounded acceptance-only
+  repair/retry loop through genuine success, reconciliation, cleanup, and
+  authoritative closure. A fourth attempt still requires a wholly new reviewed
+  four-coordinate profile, workflow, Environment, invocation, and identities.
+  Normal Live activation and `live_enabled: true` remain a separate production
+  decision and are not authorized.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the
@@ -676,7 +698,7 @@ If it conflicts with the
   holistic rereview report no findings. The prior RC-001 evidence reviewer
   could not be resumed; a fresh independent evidence and documentation reviewer
   reports no findings. Every PR review thread is resolved.
-- The current final behavior boundary is commit
+- The historical PR #552 final behavior boundary was commit
   `9f97ef091e8a831f73d81fe91b441aa6ee0520c3`, tree
   `69bec461fcb1047e7beb2ce13a9e9192e5cdf056`, with exact base
   `62ffb59bcfbe7845e580d7aea5337afafc88bdf8` and tested merge
@@ -704,7 +726,7 @@ If it conflicts with the
   3.14 workspace with 3,782 passing tests, the complete v3 suite with 3,632
   passing tests, Ruff, Ruff format, Pyrefly, Actionlint, diff checks, full HK,
   and the staged pre-commit gate.
-- RC-001 current closure records the exact final behavior identity and
+- The RC-001 closure recorded the exact final behavior identity and
   immutable evidence in a strict documentation-only child of `9f97ef09`. The
   child names the behavior commit and tree but not itself. Any behavior change
   or new base integration invalidates this evidence and restarts the cycle.
@@ -738,8 +760,15 @@ If it conflicts with the
   protected consumption; no candidate ran and no exception authority or result
   entered `main`. Do not reuse the invocation, review, or `.5`-`.8` coordinate
   block.
-  Do not activate normal Live or begin later scopes without a separate explicit
-  user task.
+  Retry-3 run `33032171094` and `.9`-`.12` are also consumed and unsuccessful;
+  cleanup PR #600 and documentation closure PR #601 are merged. PR #603 then
+  repaired non-authoritative upstream diagnostics and expected-one request
+  reservation without performing another acceptance invocation or changing
+  any historical result.
+  Subsequent explicit user authorization covers the bounded acceptance-only
+  repair/retry loop through genuine success, reconciliation, cleanup, and
+  closure. Do not activate normal Live or set `live_enabled: true`; that
+  remains a separate production decision.
 - Implementation must preserve the approved commit boundaries and keep live
   activation disabled until acceptance and the separate activation approval.
 

@@ -149,12 +149,12 @@ target; request and workflow-run identity remain Attempt transport but do not
 partition the concurrency group. The caller holds the group across the complete
 reusable live Attempt with `cancel-in-progress: false`.
 
-The published implementation baseline is `4fac140d`. After the initial PR
-head, bounded repairs skip Git LFS smudge only for Provider Git subprocesses,
-harden the acceptance proxy, make consumer-policy tokenization linear, bind
-live checkouts and admission to the caller revision, and remove the superseded
-release-build-variant workflow. Non-rewriting merge commit `4fac140d`
-integrates `origin/main` at `191abc82` and preserves upstream
+The historical PR #552 implementation baseline was `4fac140d`. After the
+initial PR head, bounded repairs skipped Git LFS smudge only for Provider Git
+subprocesses, hardened the acceptance proxy, made consumer-policy tokenization
+linear, bound live checkouts and admission to the caller revision, and removed
+the superseded release-build-variant workflow. Non-rewriting merge commit
+`4fac140d` integrated `origin/main` at `191abc82` and preserved upstream
 open-code-review 1.9.5 lock data exactly.
 
 The bounded pre-coexistence CI bootstrap design is committed at `7c457b7c`,
@@ -187,7 +187,7 @@ of `main` commit `62ffb59bcfbe7845e580d7aea5337afafc88bdf8`. The exact tested me
 boundary is retained as superseded evidence. The complete repair and
 supersession ledger is in the [AI Agent Handoff](./agent-handoff.md).
 
-The current behavior head passes General CI run
+That historical PR #552 behavior head passed General CI run
 [`32669623270`](https://github.com/hcoona/three/actions/runs/32669623270),
 CodeQL run
 [`32669623284`](https://github.com/hcoona/three/actions/runs/32669623284), and
@@ -203,9 +203,9 @@ admitted Evidence or artifact digests. The exact bootstrap projection exits
 `0` while explicitly retaining the canonical failure. Every review thread is
 resolved with either a published repair or recorded false-positive evidence.
 
-This current evidence update is a strict documentation-only child of the named
-behavior commit and does not name itself. Its checks are external closure
-evidence and are not recursively documented.
+That historical PR #552 RC-001 evidence update was a strict documentation-only
+child of the named behavior commit and did not name itself. Its checks were
+external closure evidence and were not recursively documented.
 
 [PR #552](https://github.com/hcoona/three/pull/552) merged as
 `5a84bebd05407e1859fe76f400dcb4f4cbcd002e` on 2026-08-24. Normal v3 Live
@@ -213,37 +213,31 @@ remains disabled. Governance converted both legacy Buddy workflow identities
 to `disabled_manually`, verified no nonterminal legacy executions, and proved
 that real old refs now receive disabled-workflow rejection.
 
+Retry-3 cleanup and documentation closure merged through PRs #600 and #601.
+Repair PR #603 then merged as
+`bf1748971f2717a8877852590c5436b4160a4fbf`. It retains closed request-bound
+upstream diagnostics across the acceptance proxy, runner, Adapter, and
+Governance while keeping those diagnostics non-authoritative. It also makes
+the expected-one request reservation atomic. The complete v3 suite passed
+3,782 tests, and focused Pyrefly, HK, independent review/adjudication, required
+checks, and CodeQL passed. No destination-acceptance invocation followed the
+merge before this documentation update, so all three historical attempts
+remain unsuccessful and `.1`-`.12` remain consumed.
+
 Next:
 
-1. preserve the Adapter distinction between pre-action, post-action, and
-   post-mutation-start runner failures while retaining incomplete
-   classification; do not promote the reconciled exact post-state to acceptance
-   success;
-2. retain run `32769435970`, fixed version
-   `0.0.0-wdv3-acceptance.1`, tag, tarball, and artifacts as failure and
-   reconciliation evidence;
-3. do not reuse either run, Environment review, or coordinate block; retry-2
-   run `32805739095` is consumed and unsuccessful after `.5` mutation
-   startedness and exact post-state but incomplete runner evidence. Workflow
-   ID `341728447` is disabled. Environment ID `20531285468` was deleted through
-   the API before cleanup PR #584 removed the retry workflow source. The
-   expected old-ref rejection instead created stuck cleanup probe run
-   `32809578776`. GitHub Support later terminalized it as `completed` /
-   `cancelled`, with zero jobs or pending deployments. Authenticated read-only
-   reconciliation confirms exact `.5` version, target tag, repository, SHA-1,
-   SHA-512, and acceptance target witness. Platform-Orphan implementation PR
-   #590 was closed unmerged, and no exception authority or result entered
-   `main`; and
-4. retain retry-3 run `33032171094` as unsuccessful evidence. It observed `.9`
-   absent, started mutation, and exactly read back `.9`, but the runner did not
-   prove a controlled outcome. The first probe remained incomplete, the
-   `.10`-`.12` probe was skipped, and terminal Governance evidence classified
-   the run unknown. Authenticated reconciliation confirms exact `.9` tag,
-   tarball hashes, repository association, and target witness; `.10`-`.12`
-   remain absent. Cleanup PR #600 merged as `916ea338`; the workflow source
-   and workflow-only contract are absent, workflow ID `343371046` is
-   `deleted`, and Environment ID `20680097388` and acceptance refs are absent.
-   No post-deletion dispatch was attempted. Do not retry or reuse `.9`-`.12`;
-   and
-5. keep `live_enabled: false` until successful acceptance and separate human
-   activation authorization. All three attempts remain unsuccessful.
+1. preserve all three attempts and their exact evidence as unsuccessful
+   historical replay; do not infer acceptance from destination state or the
+   new diagnostics;
+2. use `bf174897` as the implementation baseline for a tests-first fourth
+   profile with a wholly new four-coordinate block and new workflow,
+   Environment, review, invocation, tag, and ref identities;
+3. revalidate the current owner, `main`, ruleset, checks, open-PR drift, runs,
+   deployments, refs, workflow identities, package versions, and tags before
+   protected preparation or any external mutation;
+4. execute at most one new package-mutation attempt and stop for reconciliation
+   on any nonterminal or ambiguous result; and
+5. keep `live_enabled: false`. Subsequent explicit user authorization covers
+   the bounded acceptance-only repair/retry loop through genuine success,
+   cleanup, and closure, but normal Live activation remains a separate
+   production decision.
