@@ -276,6 +276,18 @@ If it conflicts with the
   cleanup, and authoritative closure. Normal Live activation and
   `live_enabled: true` remain a separate production decision and are not
   authorized.
+- The bounded post-retry-4 response-status repair admits proof authority only
+  for a strictly validated GitHub Packages npm publish response with exact
+  status HTTP 200 or HTTP 201. The proof retains the actual status in its
+  response identity. HTTP 202, HTTP 204, and every other status remain
+  diagnostic-only; diagnostics alone cannot establish completion. New HTTP
+  200 diagnostics must be request-bound, while the narrow historical unbound
+  HTTP 201-with-matching-proof arm remains replayable. The retained retry-4
+  Governance artifact is pinned as a regression fixture and remains unknown:
+  it has a request-bound HTTP 200 diagnostic and exact readback but no
+  validated request proof, and its second probe was skipped. Do not begin a
+  retry-5 profile until this repair has completed protected review and merge
+  without bypass.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import itertools
 from copy import deepcopy
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
@@ -62,7 +63,9 @@ def _validated_request_proof() -> ValidatedAcceptanceRequestProof:
     )
 
 
-def _normal_validated_request_proof() -> ValidatedAcceptanceRequestProof:
+def _normal_validated_request_proof(
+    upstream_status: int = 201,
+) -> ValidatedAcceptanceRequestProof:
     return ValidatedAcceptanceRequestProof.from_validated_exchange(
         raw_request=b'{"_id":"@hcoona/hcoona-release-smoke-npm"}',
         tarball=b"governance-normal-create-tarball",
@@ -70,7 +73,7 @@ def _normal_validated_request_proof() -> ValidatedAcceptanceRequestProof:
             "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.1"
         ),
         tag="wdv3-acceptance-1",
-        upstream_status=201,
+        upstream_status=upstream_status,
         selected_headers={"Content-Type": "application/json", "ETag": '"v1"'},
         response_body=b'{"ok":true}',
     )
@@ -609,30 +612,104 @@ def test_historical_created_evidence_without_proof_remains_admissible() -> None:
     assert "runner-diagnostic" not in admitted
 
 
-def test_protocol_confirmed_governance_binds_proof_and_runner_diagnostic() -> (
-    None
-):
+@pytest.mark.parametrize("upstream_status", [200, 201])
+def test_protocol_confirmed_governance_binds_proof_and_runner_diagnostic(
+    upstream_status: int,
+) -> None:
     document = _document()
+    proof = _normal_validated_request_proof(upstream_status)
+    proof_document = proof.to_document()
     scenario = document["probe-facts"][0]["scenarios"][0]
     scenario["response"]["result"] = "protocol-confirmed"
-    scenario["response"]["identity-digest"] = (
-        NORMAL_CREATE_PROOF.response_identity_digest
-    )
-    scenario["post"]["content-sha512"] = NORMAL_CREATE_PROOF.tarball_sha512
-    scenario["validated-request-proof"] = NORMAL_CREATE_PROOF_DOCUMENT
+    scenario["response"]["identity-digest"] = proof.response_identity_digest
+    scenario["post"]["content-sha512"] = proof.tarball_sha512
+    scenario["validated-request-proof"] = proof_document
     scenario["runner-diagnostic"] = {
         "exit-classification": "protocol-confirmed",
-        "upstream-status": 201,
+        "upstream-status": upstream_status,
         "exception-category": None,
-        "request-correlation-digest": NORMAL_CREATE_PROOF.request_digest,
+        "request-correlation-digest": proof.request_digest,
     }
-    _refresh_probe_record_digest(document, 0)
+    _refresh_probe_record_digest_unchecked(document, 0)
 
     evidence = _admit(document)
     admitted = evidence.to_document()["probe-facts"][0]["scenarios"][0]
 
-    assert admitted["validated-request-proof"] == NORMAL_CREATE_PROOF_DOCUMENT
+    assert admitted["validated-request-proof"] == proof_document
     assert admitted["runner-diagnostic"] == scenario["runner-diagnostic"]
+
+
+def test_protocol_confirmed_governance_rejects_proof_diagnostic_status_mismatch() -> (
+    None
+):
+    document = _document()
+    proof = _normal_validated_request_proof(200)
+    scenario = document["probe-facts"][0]["scenarios"][0]
+    scenario["response"]["result"] = "protocol-confirmed"
+    scenario["response"]["identity-digest"] = proof.response_identity_digest
+    scenario["post"]["content-sha512"] = proof.tarball_sha512
+    scenario["validated-request-proof"] = proof.to_document()
+    scenario["runner-diagnostic"] = {
+        "exit-classification": "protocol-confirmed",
+        "upstream-status": 201,
+        "exception-category": None,
+        "request-correlation-digest": proof.request_digest,
+    }
+    _refresh_probe_record_digest_unchecked(document, 0)
+
+    with pytest.raises(ValueError, match="does not bind"):
+        _admit(document)
+
+
+@pytest.mark.parametrize("upstream_status", [202, 204])
+def test_governance_rejects_coherent_other_two_xx_proof_status(
+    upstream_status: int,
+) -> None:
+    document = _document()
+    proof = _normal_validated_request_proof().to_document()
+    proof["upstream-status"] = upstream_status
+    proof["response-identity-digest"] = canonical_sha256(
+        {
+            "request-digest": proof["request-digest"],
+            "upstream-status": upstream_status,
+            "selected-headers": proof["selected-headers"],
+            "response-body-digest": proof["response-body-digest"],
+        }
+    )
+    scenario = document["probe-facts"][0]["scenarios"][0]
+    scenario["response"]["result"] = "protocol-confirmed"
+    scenario["response"]["identity-digest"] = proof["response-identity-digest"]
+    scenario["post"]["content-sha512"] = proof["tarball-sha512"]
+    scenario["validated-request-proof"] = proof
+    _refresh_probe_record_digest_unchecked(document, 0)
+
+    with pytest.raises(ValueError, match="upstream-status"):
+        _admit(document)
+
+
+def test_governance_rejects_unbound_http_200_diagnostic_with_matching_proof() -> (
+    None
+):
+    document = _document()
+    proof = _normal_validated_request_proof(200)
+    scenario = document["probe-facts"][0]["scenarios"][0]
+    scenario["response"]["result"] = "protocol-confirmed"
+    scenario["response"]["identity-digest"] = proof.response_identity_digest
+    scenario["post"]["content-sha512"] = proof.tarball_sha512
+    scenario["validated-request-proof"] = proof.to_document()
+    scenario["runner-diagnostic"] = {
+        "exit-classification": "runner-failed-after-mutation-start",
+        "upstream-status": 200,
+        "exception-category": None,
+        "request-correlation-digest": None,
+    }
+    _refresh_probe_record_digest_unchecked(document, 0)
+
+    with pytest.raises(
+        ValueError,
+        match=r"unbound status is not historically admissible$",
+    ):
+        _admit(document)
 
 
 def test_protocol_confirmed_governance_does_not_require_runner_diagnostic() -> (
@@ -3096,6 +3173,12 @@ TEST_LOCAL_RETRY_4_PREPARATION_TARGET = "0" * 40
 TEST_LOCAL_RETRY_4_FINALIZED_TARGET_SHA = (
     "835b81be1ff0ba7aa0ec23c9a7b518d4ade3dfaa"
 )
+TEST_LOCAL_RETRY_4_HTTP_200_FAILURE_FIXTURE = (
+    Path(__file__).parents[1]
+    / "fixtures"
+    / "acceptance"
+    / "retry-4-http-200-no-proof-governance.json"
+)
 TEST_LOCAL_RETRY_4_SCENARIO_COORDINATES = {
     "absent-create-readback": (
         "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.13",
@@ -3301,6 +3384,41 @@ def test_retry_4_governance_profiles_have_stable_historical_order_and_unique_bas
     )
     assert len(base_coordinates) == len(set(base_coordinates)) == len(profiles)
     assert profiles[-1] is retry_4_profile
+
+
+def test_retry_4_http_200_diagnostic_artifact_remains_unknown_without_proof() -> (
+    None
+):
+    raw_artifact = TEST_LOCAL_RETRY_4_HTTP_200_FAILURE_FIXTURE.read_bytes()
+    assert ValidatedAcceptanceRequestProof._sha256(raw_artifact) == (
+        "sha256:ba4ee4122850ff414cdbe9e6220d4e795af9a5a585d398007234e7fc984f0d94"
+    )
+
+    admitted = admit_governance_acceptance_evidence(raw_artifact).to_document()
+    first_probe, skipped_probe = cast(
+        "list[dict[str, Any]]",
+        admitted["probe-facts"],
+    )
+    first_scenario = first_probe["scenarios"][0]
+    expected_upstream_status = 200
+
+    assert admitted["mutation-classification"] == "unknown"
+    assert first_probe["result"] == "incomplete"
+    assert first_probe["record-digest"] == (
+        "sha256:285d6d96536a720e9d71cc14ff53032db307eae021d899fe418088a7039ecb8c"
+    )
+    assert first_scenario["post"]["state"] == "exact"
+    assert (
+        first_scenario["runner-diagnostic"]["upstream-status"]
+        == expected_upstream_status
+    )
+    assert "validated-request-proof" not in first_scenario
+    assert skipped_probe["result"] == "incomplete"
+    assert skipped_probe["scenarios"] == []
+    assert skipped_probe["record-digest"] is None
+    assert _registered_retry_4_governance_profile().target_sha == (
+        TEST_LOCAL_RETRY_4_FINALIZED_TARGET_SHA
+    )
 
 
 def test_retry_4_governance_profile_binds_exact_workflow_environment_confirmation_digest_and_scenarios() -> (

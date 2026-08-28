@@ -829,9 +829,11 @@ def test_lost_response_runner_does_not_trust_process_output_as_upstream_proof(
     assert events.index("forwarded-and-processed") < events.index("kill")
 
 
+@pytest.mark.parametrize("upstream_status", [200, 201])
 def test_lost_response_runner_proxies_scope_registry_and_real_upstream_auth_only(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    upstream_status: int,
 ) -> None:
     dedicated_token = "dedicated-token"
     tarball_bytes = _acceptance_tarball(
@@ -854,7 +856,7 @@ def test_lost_response_runner_proxies_scope_registry_and_real_upstream_auth_only
     npm_invocations: list[dict[str, object]] = []
 
     class FakeUpstreamResponse:
-        status = 201
+        status = upstream_status
 
         def read(self, _size: int | None = None) -> bytes:
             return b'{"ok":true}'
@@ -1000,7 +1002,7 @@ def test_lost_response_runner_proxies_scope_registry_and_real_upstream_auth_only
     )
     assert upstream_requests[0]["host"] == "npm.pkg.github.com"
     assert result["outcome"] == "lost-response-processed"
-    assert result["upstream-status"] == 201
+    assert result["upstream-status"] == upstream_status
     assert str(invocation["config-path"]) != str(npm_config)
     assert f"@hcoona:registry={registry}" in local_config
     assert f"//{registry_host}/:_authToken=" not in local_config
@@ -2310,7 +2312,7 @@ def test_ambiguous_npm_e404_maps_to_unknown_non_authoritative_absence(
 @pytest.mark.parametrize(
     ("upstream_status", "processed"),
     [
-        (200, False),
+        (200, True),
         (201, True),
         (202, False),
         (204, False),
@@ -2388,14 +2390,16 @@ def test_lost_response_proxy_injects_auth_and_only_processes_qualifying_upstream
             _adversarial_publish_body(tarball),
         )
         assert proxy.processed.is_set() is processed
+        proof = proxy.proof
 
-    if upstream_status == 201:
+    if upstream_status in {200, 201}:
         assert response is None
+        assert proof is not None
+        assert proof.upstream_status == upstream_status
     else:
         assert response is not None
         assert response[0] == upstream_status
-        if upstream_status == 200:
-            assert ("X-GitHub-Request-Id", "request-123") in response[1]
+        assert proof is None
     assert upstream_calls[0]["host"] == "npm.pkg.github.com"
     assert upstream_calls[0]["method"] == "PUT"
     assert upstream_calls[0]["path"] == "/@hcoona%2fhcoona-release-smoke-npm"
@@ -2849,8 +2853,10 @@ def _send_proxy_publish(
     return None if response is None else response[0]
 
 
+@pytest.mark.parametrize("upstream_status", [200, 201])
 def test_adversarial_lost_proxy_validates_exact_publish_and_binds_full_proof(
     monkeypatch: pytest.MonkeyPatch,
+    upstream_status: int,
 ) -> None:
     version = "0.0.0-wdv3-acceptance.4"
     tag = "wdv3-acceptance-4"
@@ -2869,7 +2875,7 @@ def test_adversarial_lost_proxy_validates_exact_publish_and_binds_full_proof(
     }
 
     class QualifiedResponse:
-        status = 201
+        status = upstream_status
 
         def read(self, _size: int) -> bytes:
             return response_body
@@ -2953,7 +2959,7 @@ def test_adversarial_lost_proxy_validates_exact_publish_and_binds_full_proof(
                     "JsonValue",
                     {
                         "request-digest": request_digest,
-                        "upstream-status": 201,
+                        "upstream-status": upstream_status,
                         "selected-headers": selected_headers,
                         "response-body-digest": response_body_digest,
                     },
@@ -2964,7 +2970,7 @@ def test_adversarial_lost_proxy_validates_exact_publish_and_binds_full_proof(
     assert proof == {
         "outcome": "lost-response-processed",
         "request-digest": request_digest,
-        "upstream-status": 201,
+        "upstream-status": upstream_status,
         "selected-headers": selected_headers,
         "response-body-digest": response_body_digest,
         "response-identity-digest": expected_identity,
@@ -3033,10 +3039,8 @@ def test_adversarial_lost_proxy_rejects_nonqualifying_body_before_forward(
         assert proxy.proof is None
 
 
-@pytest.mark.parametrize(
-    "upstream_status", [200, 202, 204, 409, 401, 403, 500, 503]
-)
-def test_adversarial_lost_proxy_non_created_never_proves_processed(
+@pytest.mark.parametrize("upstream_status", [202, 204, 409, 401, 403, 500, 503])
+def test_adversarial_lost_proxy_nonaccepted_never_proves_processed(
     monkeypatch: pytest.MonkeyPatch,
     upstream_status: int,
 ) -> None:
@@ -4097,11 +4101,23 @@ def _validated_proof(
     )
 
 
-@pytest.mark.parametrize("upstream_status", [200, 202, 204])
-def test_validated_request_proof_requires_exact_npm_publish_created_status(
+@pytest.mark.parametrize("upstream_status", [200, 201])
+def test_validated_request_proof_accepts_closed_publish_success_status(
     upstream_status: int,
 ) -> None:
     tarball = b"created-status-contract"
+
+    proof = _validated_proof(tarball, upstream_status=upstream_status)
+
+    assert proof.upstream_status == upstream_status
+    assert proof.to_document()["upstream-status"] == upstream_status
+
+
+@pytest.mark.parametrize("upstream_status", [202, 204])
+def test_validated_request_proof_rejects_other_two_xx_status(
+    upstream_status: int,
+) -> None:
+    tarball = b"unsupported-two-xx-status"
 
     with pytest.raises(ValueError, match="upstream status"):
         _validated_proof(tarball, upstream_status=upstream_status)
@@ -4136,9 +4152,11 @@ def _send_authorized_proxy_publish(
         connection.close()
 
 
+@pytest.mark.parametrize("upstream_status", [200, 201])
 def test_proxy_validates_captured_couchdb_publish_request(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    upstream_status: int,
 ) -> None:
     version = "0.0.0-wdv3-acceptance.4"
     tag = "wdv3-acceptance-4"
@@ -4152,7 +4170,7 @@ def test_proxy_validates_captured_couchdb_publish_request(
     upstream_bodies: list[bytes] = []
 
     class Response:
-        status = 201
+        status = upstream_status
 
         def read(self, _size: int) -> bytes:
             return b'{"ok":true}'
@@ -4247,6 +4265,7 @@ def test_proxy_validates_captured_couchdb_publish_request(
     assert proof.tarball_sha512 == (
         "sha512:" + hashlib.sha512(tarball).hexdigest()
     )
+    assert proof.upstream_status == upstream_status
 
 
 @pytest.mark.parametrize(
@@ -4503,12 +4522,15 @@ def test_validated_request_proof_binds_raw_request_and_tarball_digests() -> (
         replace(proof, request_digest="sha256:" + ("0" * 64))
 
 
-def test_validated_request_proof_binds_upstream_response_identity() -> None:
+@pytest.mark.parametrize("upstream_status", [200, 201])
+def test_validated_request_proof_binds_upstream_response_identity(
+    upstream_status: int,
+) -> None:
     tarball = b"proof-tarball"
-    proof = _validated_proof(tarball)
+    proof = _validated_proof(tarball, upstream_status=upstream_status)
     document = proof.to_document()
 
-    assert document["upstream-status"] == 201
+    assert document["upstream-status"] == upstream_status
     assert document["selected-headers"] == {
         "content-type": "application/json",
         "etag": '"v1"',
@@ -4521,6 +4543,19 @@ def test_validated_request_proof_binds_upstream_response_identity() -> None:
             proof,
             response_identity_digest="sha256:" + ("0" * 64),
         )
+
+
+def test_validated_request_proof_status_changes_response_identity() -> None:
+    tarball = b"status-bound-proof-tarball"
+
+    proof_200 = _validated_proof(tarball, upstream_status=200)
+    proof_201 = _validated_proof(tarball, upstream_status=201)
+
+    assert proof_200.request_digest == proof_201.request_digest
+    assert proof_200.response_body_digest == proof_201.response_body_digest
+    assert (
+        proof_200.response_identity_digest != proof_201.response_identity_digest
+    )
 
 
 @pytest.mark.parametrize("substitution", ["tarball", "coordinate", "tag"])

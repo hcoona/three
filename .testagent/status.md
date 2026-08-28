@@ -10235,3 +10235,173 @@ from a fresh fetch of this cleanup merge or a later reviewed successor. Normal
 Live remains disabled and unauthorized.
 
 <!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-4-closure -->
+
+<!-- BEGIN APPEND: 2026-08-28-wdv3-http-200-proof-repair-red -->
+
+## GitHub Packages npm HTTP 200 proof repair RED
+
+Research and design converged on a closed authoritative publish-status set of
+exactly HTTP 200 and HTTP 201. HTTP 202, HTTP 204, and all other statuses
+remain diagnostic-only; new HTTP 200 diagnostics must be request-bound, while
+the historical unbound HTTP 201-with-proof compatibility arm remains narrow.
+
+Tests-first changes cover proxy proof formation, normal and lost-response
+Adapter completion, proof serialization/rehydration, response identity,
+Governance cross-binding, CLI persistence, and the exact retained retry-4
+terminal Governance artifact. The retry-4 fixture admits unchanged as
+`unknown`: its first HTTP 200 scenario remains incomplete without a validated
+proof, and the skipped probe remains empty.
+
+The focused RED selection produced `16 failed, 38 passed`. Every failure was
+the intended HTTP 200 production gap:
+
+- the proxy did not form or retain a proof for HTTP 200;
+- `ValidatedAcceptanceRequestProof` rejected HTTP 200;
+- normal/lost-response Adapter tests could not construct or admit an HTTP 200
+  proof;
+- Governance HTTP 200 proof tests stopped at the existing 201-only proof
+  constructor; and
+- CLI persistence could not construct the HTTP 200 proof.
+
+All HTTP 201 compatibility cases, HTTP 202/204 rejection cases,
+diagnostic-only incomplete cases, historical unbound HTTP 201 replay, and the
+retry-4 non-retroactivity fixture passed. Production code was unchanged during
+RED.
+
+<!-- END APPEND: 2026-08-28-wdv3-http-200-proof-repair-red -->
+
+<!-- BEGIN APPEND: 2026-08-28-wdv3-http-200-proof-repair-green -->
+
+## GitHub Packages npm HTTP 200 proof repair GREEN
+
+The bounded implementation changes only the acceptance proxy, GitHub Packages
+Adapter proof boundary, and independent Governance admission:
+
+- proof authority accepts exactly HTTP 200 and HTTP 201 after every existing
+  publish-request validation;
+- proof rehydration retains the actual status instead of normalizing to 201;
+- normal and lost-response validation use the same closed status set;
+- HTTP 202, HTTP 204, and every other status remain diagnostic-only; and
+- Governance requires request binding for HTTP 200 while preserving only the
+  historical unbound HTTP 201-with-matching-proof form.
+
+The exact retry-4 terminal Governance artifact is retained as a fixture. It
+round-trips unchanged as `unknown`, with one incomplete HTTP 200 diagnostic
+scenario, no validated request proof, and an empty skipped second probe.
+
+Validation:
+
+- focused RED baseline: `16 failed, 38 passed`, all failures caused by the
+  existing HTTP 201-only production gates;
+- focused post-repair selection: `54 passed`;
+- affected Adapter/Governance/CLI modules after the initial repair:
+  `785 passed`;
+- affected modules after test-quality strengthening: `789 passed`;
+- complete Workflow Delivery v3 suite: `3842 passed`;
+- changed-file Ruff: passed;
+- changed-file Pyrefly: `0 errors`;
+- changed wiki/fixture Prettier check: passed; and
+- changed wiki Markdownlint: `0 issues`.
+
+Static pseudo-mutation analysis found two local gaps: coherent HTTP 204
+Governance proof admission and invalid 202/204 closed-proof rehydration. Both
+received status-identity-consistent rejection tests. Assertion-quality review
+found one weak exception match for unbound HTTP 200; it now matches the exact
+historical-compatibility rejection. Rerunning the affected modules after these
+fixes produced `789 passed`.
+
+<!-- END APPEND: 2026-08-28-wdv3-http-200-proof-repair-green -->
+
+<!-- BEGIN APPEND: 2026-08-28-wdv3-http-200-proof-repair-review -->
+
+## GitHub Packages npm HTTP 200 proof repair review
+
+Four independent OCR-backed reviewers examined the complete workspace diff
+with explicit Python paths because OCR preview omitted them.
+
+Initial review produced three findings, each independently adjudicated true:
+
+1. successful lost-response completion retained the post-readback identity
+   instead of the validated publish-proof identity, so Governance could reject
+   otherwise complete evidence;
+2. real normal-response proxy coverage remained HTTP 201-only; and
+3. the retained CLI command persistence suite lacked an HTTP 200 case despite
+   the test-agent and log coverage claims.
+
+Scoped fixes:
+
+- proof-bound lost-response completion now emits
+  `proof.response_identity_digest`; the 200/201 test proves the readback and
+  publish identities differ and the result retains the proof identity;
+- the real `drop_accepted_response=False` proxy test now covers both HTTP 200
+  and HTTP 201; and
+- a retained HTTP 200 CLI command test asserts the complete persisted proof,
+  status, and response identity.
+
+The first rereview produced one process observation and one true finding:
+
+- the new fixture was still untracked before the deliberate staging phase:
+  adjudicated false as a code finding, with a hard requirement to verify it in
+  the staged diff; and
+- two new assertions violated Ruff rules and made the earlier validation count
+  stale: adjudicated true and fixed without suppressions.
+
+Post-review validation:
+
+- reviewer regression selection: `5 passed`;
+- affected Adapter and Governance modules: `699 passed`;
+- complete Workflow Delivery v3 suite: `3844 passed`;
+- changed-file Ruff format/check: passed;
+- changed-file Pyrefly: `0 errors`;
+- changed wiki Prettier and Markdownlint: passed; and
+- fixture EditorConfig plus `git diff --check`: passed.
+
+The earlier append-only `3842 passed` entry remains a true pre-review result;
+this entry supersedes it for the final 3,844-test inventory.
+
+<!-- END APPEND: 2026-08-28-wdv3-http-200-proof-repair-review -->
+
+<!-- APPEND: 2026-08-28-wdv3-http-200-proof-repair-fixture-correction -->
+
+## Workflow Delivery v3 HTTP 200 proof repair: fixture validation correction
+
+The earlier "changed wiki/fixture Prettier check" entry overstated the check
+scope. Prettier passed for the changed wiki files only. The canonical raw
+one-line retry-4 fixture intentionally is not Prettier-formatted and was
+instead validated by EditorConfig, `git diff --check`, and SHA-256
+`ba4ee4122850ff414cdbe9e6220d4e795af9a5a585d398007234e7fc984f0d94`.
+
+<!-- END APPEND: 2026-08-28-wdv3-http-200-proof-repair-fixture-correction -->
+
+<!-- APPEND: 2026-08-28-wdv3-http-200-proof-repair-fixture-typecheck -->
+
+## Workflow Delivery v3 HTTP 200 proof repair: fixture replay typecheck
+
+The canonical raw fixture replay initially destructured the recursive
+`JsonValue` document without narrowing `probe-facts`, which introduced
+changed-line Pyrefly diagnostics after the earlier validation entry. The test
+now narrows the known Governance schema with the existing local cast pattern.
+Changed-file Ruff format/check passes, changed-file Pyrefly reports `0 errors`,
+the direct raw replay test passes, and the fixture remains byte-identical at
+SHA-256
+`ba4ee4122850ff414cdbe9e6220d4e795af9a5a585d398007234e7fc984f0d94`.
+
+<!-- END APPEND: 2026-08-28-wdv3-http-200-proof-repair-fixture-typecheck -->
+
+<!-- APPEND: 2026-08-28-wdv3-http-200-proof-repair-final-gate -->
+
+## Workflow Delivery v3 HTTP 200 proof repair: final gate
+
+The post-fix clean rereview completed with no findings across protocol,
+Governance/history, tests/documentation, and adversarial scope reviewers.
+Independent adjudication and remediation closed every earlier finding.
+
+The final unstaged HK small/medium gate passed for all 15 intended paths,
+including Ruff, Markdownlint, wiki Prettier, Biome fixture exclusion,
+EditorConfig validation of the canonical raw fixture, and the complete Workflow
+Delivery v3 suite: `3844 passed`. The changed Governance test also passes
+targeted Pyrefly with `0 errors`. The retry-4 fixture remains a canonical
+one-line document without a trailing newline at SHA-256
+`ba4ee4122850ff414cdbe9e6220d4e795af9a5a585d398007234e7fc984f0d94`.
+
+<!-- END APPEND: 2026-08-28-wdv3-http-200-proof-repair-final-gate -->

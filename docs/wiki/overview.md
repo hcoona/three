@@ -355,6 +355,15 @@ have changed.
    covers the bounded acceptance-only repair/retry loop through genuine
    success, reconciliation, cleanup, and closure. It does not authorize normal
    Live activation or `live_enabled: true`.
+9. The bounded post-retry-4 repair changes only the strictly validated GitHub
+   Packages npm publish response-status contract. A validated request proof may
+   retain exact HTTP 200 or HTTP 201; HTTP 202, HTTP 204, and every other
+   status remain diagnostic-only. New HTTP 200 diagnostics must be
+   request-bound, while historical unbound HTTP 201 adjacent to a matching
+   proof remains replayable. The exact retry-4 terminal artifact remains
+   unknown and unsuccessful because it contains no validated request proof and
+   its later probe was skipped. The repair must merge through protected review
+   without bypass before any retry-5 profile work.
 
 ## Related Pages
 

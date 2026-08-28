@@ -1125,7 +1125,10 @@ class AcceptanceMutationProxy:
                             "retry-after",
                         }
                     }
-                    if response.status == http.HTTPStatus.CREATED:
+                    if response.status in {
+                        http.HTTPStatus.OK,
+                        http.HTTPStatus.CREATED,
+                    }:
                         proof = ValidatedAcceptanceRequestProof.from_validated_exchange(  # noqa: E501
                             raw_request=body,
                             tarball=tarball,

@@ -2443,3 +2443,22 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Closed retry 4 as unsuccessful without rerun. The cleanup-before-repair gate
   is satisfied at `main@4e7e7ef6`; normal Live remains disabled and
   unauthorized.
+
+## [2026-08-28] query | Repair GitHub Packages HTTP 200 acceptance proof
+
+- Added tests-first coverage for exact HTTP 200 and HTTP 201 proof formation,
+  normal and lost-response completion, status-preserving proof round-trip,
+  response identity, Governance cross-binding, and CLI persistence. HTTP 202
+  and HTTP 204 remain rejected.
+- Changed the acceptance proxy, Adapter, and Governance admission boundary to
+  accept only the closed provider-specific status set `{200, 201}` after the
+  npm publish request has passed every existing coordinate, tag, tarball,
+  witness, path, framing, cardinality, and credential-redaction check.
+- Preserved the actual upstream status in proof serialization and response
+  identity. New HTTP 200 diagnostics must remain request-bound; the narrow
+  historical unbound HTTP 201-with-matching-proof form remains replayable.
+- Pinned the exact terminal retry-4 Governance artifact as a regression
+  fixture. It still admits as `unknown`: HTTP 200 plus exact `.13` readback
+  cannot replace the missing validated request proof, and the `.14`-`.16`
+  probe remains skipped. This repair does not rerun, reuse, or retroactively
+  upgrade retry 4 and does not change normal Live authority.

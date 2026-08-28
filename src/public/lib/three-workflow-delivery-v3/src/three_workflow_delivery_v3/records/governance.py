@@ -371,7 +371,11 @@ _PROBE_RESULTS = frozenset({"success", "incomplete", "unknown"})
 _MUTATION_CLASSIFICATIONS = frozenset({"complete", "incomplete", "unknown"})
 _HTTP_STATUS_MIN = 100
 _HTTP_STATUS_MAX = 599
+_NPM_PUBLISH_OK_STATUS = 200
 _NPM_PUBLISH_CREATED_STATUS = 201
+_NPM_PUBLISH_SUCCESS_STATUSES = frozenset(
+    {_NPM_PUBLISH_OK_STATUS, _NPM_PUBLISH_CREATED_STATUS}
+)
 _SHA_PATTERN = re.compile(r"[0-9a-f]{40}\Z")
 _SHA256_PATTERN = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _SHA512_PATTERN = re.compile(r"sha512:[0-9a-f]{128}\Z")
@@ -638,9 +642,9 @@ def _admit_validated_request_proof(  # noqa: PLR0913
         proof["upstream-status"],
         field=f"{field}.upstream-status",
     )
-    if status != _NPM_PUBLISH_CREATED_STATUS:
+    if status not in _NPM_PUBLISH_SUCCESS_STATUSES:
         message = (
-            f"{field}.upstream-status must be exact npm publish created status"
+            f"{field}.upstream-status must be an accepted npm publish status"
         )
         raise ValueError(message)
     selected_headers = _object(
@@ -700,7 +704,7 @@ def _validate_runner_diagnostic_shape(
         raise ValueError(message)
     if exit_classification == "protocol-confirmed":
         if (
-            upstream_status != _NPM_PUBLISH_CREATED_STATUS
+            upstream_status not in _NPM_PUBLISH_SUCCESS_STATUSES
             or exception_category is not None
             or request_correlation is None
         ):
@@ -720,6 +724,13 @@ def _validate_runner_diagnostic_shape(
         raise ValueError(message)
     if not request_bound and exception_category == "HTTPException":
         message = f"{field} HTTPException requires request binding"
+        raise ValueError(message)
+    if (
+        not request_bound
+        and upstream_status is not None
+        and upstream_status != _NPM_PUBLISH_CREATED_STATUS
+    ):
+        message = f"{field} unbound status is not historically admissible"
         raise ValueError(message)
 
 
