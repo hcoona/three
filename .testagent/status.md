@@ -10206,3 +10206,32 @@ review did not change package state, workflow state, Live authority, or the
 consumed no-rerun decision.
 
 <!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-4-cleanup-review -->
+
+<!-- BEGIN APPEND: 2026-08-28-wdv3-acceptance-retry-4-closure -->
+
+## Retry-4 cleanup closure
+
+Cleanup PR #610 rebase-merged without bypass as
+`4e7e7ef6ffe08de2695d51ec5c477d82da4ff226`. Post-merge Continuous
+Integration run `33170502138` and CodeQL run `33170502133` passed.
+
+Fresh authenticated reconciliation from exact `main@4e7e7ef6` confirms:
+
+- workflow ID `344468231` is `deleted` and still has exactly one historical
+  run, failed run `33165777024` at attempt 1;
+- the retry-4 workflow source and workflow-only contract are absent;
+- Environment ID `20772100445` and acceptance refs are absent;
+- exact `.13` and tag `wdv3-acceptance-13` retain the reconciled SHA-1 and
+  SHA-512, while `.14`-`.16` and their tags remain absent;
+- historical deployment `6140043006` retains its prior `success` state and
+  now has terminal `inactive` state after Environment deletion;
+- all 17 checks on the cleanup merge succeeded and no repository run is
+  nonterminal;
+- no post-deletion dispatch occurred.
+
+Retry-4 is closed as unsuccessful and `.13`-`.16` remain consumed. The
+cleanup-before-repair gate is satisfied; any acceptance-only repair must start
+from a fresh fetch of this cleanup merge or a later reviewed successor. Normal
+Live remains disabled and unauthorized.
+
+<!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-4-closure -->

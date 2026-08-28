@@ -261,18 +261,21 @@ If it conflicts with the
   SHA-1 `7f088ba1708310ef0dba5814da3ad4cf57d49062`, SHA-512
   `aafe86f3b48a7affc6c160f81bd81d69692fc3789149a7a01e620acd05052d0c7c0e87b7f552b19fc2192a90b6af1201b265cc2475ac28288cc1ab70bfbe7c71`,
   and target witness `835b81be1ff0ba7aa0ec23c9a7b518d4ade3dfaa`;
-  `.14`-`.16` remain absent. Workflow ID `344468231` is
-  `disabled_manually`, Environment ID `20772100445` is deleted, acceptance
-  refs are absent, and protected source cleanup is staged. Do not rerun or
-  reuse `.13`-`.16`. Do not begin or merge another acceptance repair/profile
-  until protected cleanup merges into `main` and a fresh post-merge fetch
-  confirms the temporary workflow and workflow-only contract absent, the
-  workflow identity, Environment, and refs still retired, exact `.13`
-  retained, and `.14`-`.16` absent. Subsequent explicit user authorization
-  covers the bounded acceptance-only repair/retry loop through genuine
-  success, reconciliation, cleanup, and authoritative closure. Normal Live
-  activation and `live_enabled: true` remain a separate production decision
-  and are not authorized.
+  `.14`-`.16` remain absent. Cleanup PR #610 rebase-merged without bypass as
+  `4e7e7ef6ffe08de2695d51ec5c477d82da4ff226`; post-merge CI and CodeQL
+  passed. Fresh authenticated reconciliation confirms the temporary workflow
+  source and workflow-only contract absent, workflow ID `344468231` `deleted`
+  with only failed attempt-1 run `33165777024`, Environment ID `20772100445`
+  and acceptance refs absent, exact `.13` retained, and `.14`-`.16` absent.
+  Historical deployment `6140043006` is `inactive` after Environment deletion,
+  and no post-deletion dispatch occurred. Do not rerun or reuse `.13`-`.16`.
+  The cleanup-before-repair gate is satisfied; any acceptance repair/profile
+  must start from a fresh fetch of this cleanup merge or a later reviewed
+  successor. Subsequent explicit user authorization covers the bounded
+  acceptance-only repair/retry loop through genuine success, reconciliation,
+  cleanup, and authoritative closure. Normal Live activation and
+  `live_enabled: true` remain a separate production decision and are not
+  authorized.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the

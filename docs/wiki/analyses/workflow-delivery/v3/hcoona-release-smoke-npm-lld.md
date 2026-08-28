@@ -1682,10 +1682,13 @@ exactly read back `.13`. The current proof contract required HTTP 201, so the
 probe retained incomplete evidence; `.14`-`.16` were not attempted, and
 terminal Governance evidence classified the run unknown. This destination
 fact is diagnostic input for a separately reviewed repair and does not
-retroactively establish acceptance. Workflow ID `344468231` is disabled,
-Environment ID `20772100445` is deleted, and protected cleanup retires the
-temporary source and workflow-only contract. The retained historical workflow
-emits only Governance acceptance evidence bound to
+retroactively establish acceptance. Cleanup PR #610 rebase-merged without
+bypass as `4e7e7ef6ffe08de2695d51ec5c477d82da4ff226`; post-merge CI and
+CodeQL passed. The temporary source and workflow-only contract are absent,
+workflow ID `344468231` is `deleted`, Environment ID `20772100445` and
+acceptance refs are absent, and no post-deletion dispatch occurred. Fresh
+authenticated reconciliation retains exact `.13` and absent `.14`-`.16`. The
+retained historical workflow emits only Governance acceptance evidence bound to
 workflow/run/target/fixed coordinate, dependency outcomes, available probe
 results, and complete/incomplete/unknown mutation classification. It cannot
 create Release Intent,
@@ -1719,6 +1722,8 @@ has merged and a fresh post-merge fetch plus authenticated reconciliation
 confirms the temporary source and workflow-only contract absent, the workflow
 identity, Environment, and refs still retired, exact consumed state retained,
 and every unused coordinate in the consumed block absent.
+Retry-4 satisfies that gate at cleanup merge `4e7e7ef6`; later work must start
+from a fresh fetch of that commit or a reviewed successor.
 
 ## Activation Gate
 

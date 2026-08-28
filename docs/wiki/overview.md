@@ -343,17 +343,18 @@ have changed.
    the `.14`-`.16` probe was skipped, and terminal Governance evidence
    classified the run unknown. Authenticated reconciliation confirms exact
    `.13` tag, tarball hashes, target witness, and all immutable artifact
-   digests; `.14`-`.16` remain absent. Workflow ID `344468231` is disabled,
-   Environment ID `20772100445` is deleted, acceptance refs are absent, and
-   protected source cleanup is staged. Do not rerun or reuse `.13`-`.16`.
-   Do not begin or merge another acceptance repair/profile until protected
-   cleanup merges into `main` and a fresh post-merge fetch confirms the
-   temporary workflow and workflow-only contract absent, the workflow
-   identity, Environment, and refs still retired, exact `.13` retained, and
-   `.14`-`.16` absent. Subsequent explicit user authorization covers the
-   bounded acceptance-only repair/retry loop through genuine success,
-   reconciliation, cleanup, and closure. It does not authorize normal Live
-   activation or `live_enabled: true`.
+   digests; `.14`-`.16` remain absent. Cleanup PR #610 rebase-merged without
+   bypass as `4e7e7ef6`; post-merge CI and CodeQL passed. Fresh authenticated
+   reconciliation confirms the temporary source and contract absent, workflow
+   ID `344468231` `deleted` with only the failed attempt-1 run, Environment ID
+   `20772100445` and acceptance refs absent, exact `.13` retained, and
+   `.14`-`.16` absent. No post-deletion dispatch occurred. Do not rerun or
+   reuse `.13`-`.16`. The cleanup-before-repair gate is satisfied; another
+   acceptance repair/profile must start from a fresh fetch of the cleanup merge
+   or a later reviewed successor. Subsequent explicit user authorization
+   covers the bounded acceptance-only repair/retry loop through genuine
+   success, reconciliation, cleanup, and closure. It does not authorize normal
+   Live activation or `live_enabled: true`.
 
 ## Related Pages
 
