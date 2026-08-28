@@ -243,33 +243,36 @@ If it conflicts with the
   later reviewed successor that contains it. Historical local branches and
   attempt refs are cleanup or reconciliation inputs only; do not dispatch,
   resume, or use them as work bases.
-- Preparation PR #608 rebase-merged without bypass as
-  `835b81be1ff0ba7aa0ec23c9a7b518d4ade3dfaa`. The closed fourth profile uses
-  base `.13`: absent/exact `.13`, identical-race `.14`, differing-race `.15`,
-  and lost-response `.16`, with tags `wdv3-acceptance-13` through
-  `wdv3-acceptance-16`; workflow
-  `.github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-4.yml`;
-  Environment `workflow-delivery-v3-buddy-smoke-acceptance-retry-4`; and
-  confirmation
-  `I_ACCEPT_DISPOSABLE_GITHUB_PACKAGES_PROBES_RETRY_4`. Preparation validation
-  passed all 3,837 v3 tests, local HK gates, independent review/adjudication,
-  required checks, post-merge CI, and CodeQL.
-  Fresh authenticated preflight then confirmed principal `hcoona` / `712433`,
-  exact `main@835b81be`, active ruleset and retry-4 workflow identity, no
-  nonterminal or retry-4 workflow runs, no deployments or acceptance refs,
-  and absent `.13`-`.16` versions and npm tags. The protected Environment is
-  provisioned as ID `20772100445` with sole required reviewer `hcoona`,
-  self-review permitted, and sole deployment branch `main`. The separate
-  finalization change binds the workflow and Governance profile to the exact
-  preparation merge SHA above, not a finalization commit. It must merge
-  without bypass and a fresh exact preflight must still pass before creating
-  any acceptance ref or dispatching the single `run_attempt == 1` attempt. No
-  workflow dispatch, deployment, acceptance ref, package, or tag mutation has
-  occurred. Subsequent explicit user authorization covers the bounded
-  acceptance-only repair/retry loop through genuine success, reconciliation,
-  cleanup, and authoritative closure. Normal Live activation and
-  `live_enabled: true` remain a separate production decision and are not
-  authorized.
+- Retry-4 destination acceptance is consumed and unsuccessful. Preparation PR
+  #608 rebase-merged without bypass as
+  `835b81be1ff0ba7aa0ec23c9a7b518d4ade3dfaa`, and protected finalization PR
+  #609 rebase-merged without bypass as
+  `f3d53177a75bec9952fe39ffa547533d1a0992ef`. A fresh exact post-finalization
+  preflight passed before exactly one attempt-1 dispatch, run `33165777024`,
+  received Environment approval from `hcoona`. The first probe observed `.13`
+  absent, recorded action execution and mutation startedness, received a
+  request-bound upstream HTTP 200, and exactly read back `.13`. Because the
+  proof contract required HTTP 201, no validated request proof formed; the
+  suite remained incomplete, the `.14`-`.16` probe was skipped, and terminal
+  Governance evidence classified the run unknown. Artifact IDs `9683508663`,
+  `9683519655`, and `9683526452` match their GitHub-recorded SHA-256 digests,
+  and the terminal artifact passes canonical Governance admission.
+  Authenticated reconciliation confirms tag `wdv3-acceptance-13`, tarball
+  SHA-1 `7f088ba1708310ef0dba5814da3ad4cf57d49062`, SHA-512
+  `aafe86f3b48a7affc6c160f81bd81d69692fc3789149a7a01e620acd05052d0c7c0e87b7f552b19fc2192a90b6af1201b265cc2475ac28288cc1ab70bfbe7c71`,
+  and target witness `835b81be1ff0ba7aa0ec23c9a7b518d4ade3dfaa`;
+  `.14`-`.16` remain absent. Workflow ID `344468231` is
+  `disabled_manually`, Environment ID `20772100445` is deleted, acceptance
+  refs are absent, and protected source cleanup is staged. Do not rerun or
+  reuse `.13`-`.16`. Do not begin or merge another acceptance repair/profile
+  until protected cleanup merges into `main` and a fresh post-merge fetch
+  confirms the temporary workflow and workflow-only contract absent, the
+  workflow identity, Environment, and refs still retired, exact `.13`
+  retained, and `.14`-`.16` absent. Subsequent explicit user authorization
+  covers the bounded acceptance-only repair/retry loop through genuine
+  success, reconciliation, cleanup, and authoritative closure. Normal Live
+  activation and `live_enabled: true` remain a separate production decision
+  and are not authorized.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the

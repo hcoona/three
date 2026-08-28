@@ -10100,3 +10100,109 @@ authority or system boundary. The corrected documentation scope returns to a
 fresh review, whose reviewer reported `No findings.`
 
 <!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-4-finalization-review -->
+
+<!-- BEGIN APPEND: 2026-08-28-wdv3-acceptance-retry-4-cleanup-phase-1 -->
+
+## Retry-4 cleanup Phase 1 result
+
+- Command:
+  `uv run pytest src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py::test_temporary_acceptance_workflows_are_absent_with_disabled_normal_buddy src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit11_legacy_buddy_retirement.py::test_temporary_acceptance_workflows_are_retired`
+- Result: expected RED; collected 2, passed 0, failed 2
+  (`2 failed in 0.52s`).
+- Both tests failed solely at their exact empty-inventory assertion. Each
+  inventory contained only the expected parent-owned offending path
+  `/workspace/three-workspaces/design-workflows/.github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-4.yml`
+  (name `workflow-delivery-v3-buddy-smoke-acceptance-retry-4.yml`).
+- Bounded pseudo-mutation and assertion review found no in-scope gap: both
+  extensions feed one exact structural inventory assertion, while the Buddy
+  contract retains its independent disabled/manual-reusable and non-Live
+  observables; neither test is assertion-free, trivial, or tautological.
+- Scope: deleted only the retry-4 workflow contract and changed only the two
+  relevant tail/coexistence contract sections plus this append-only status
+  entry. Workflow YAML, CODEOWNERS, production, Governance profiles/evidence,
+  docs/wiki/log.md, authoritative wiki, Live authority, `live_enabled`, and
+  the coordinator's appended research/plan entries remain untouched. No
+  commit was created.
+
+<!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-4-cleanup-phase-1 -->
+
+<!-- BEGIN APPEND: 2026-08-28-wdv3-acceptance-retry-4-operation -->
+
+## Retry-4 operation, reconciliation, and protected cleanup
+
+Protected finalization PR #609 rebase-merged without bypass as
+`f3d53177a75bec9952fe39ffa547533d1a0992ef`. A fresh exact preflight then
+confirmed the finalized source and fixed preparation target, exact Environment
+protection, zero prior retry-4 runs or deployments, no acceptance refs, and
+absent `.13`-`.16` versions and tags. Exactly one attempt-1 run,
+`33165777024`, was dispatched from `main` and approved by `hcoona`.
+
+The first probe observed `.13` absent, recorded action execution and mutation
+startedness, received a request-bound upstream HTTP 200, and exactly read back
+`.13`. The proof contract required HTTP 201, so no validated request proof
+formed. The suite remained incomplete, the `.14`-`.16` probe was skipped, and
+terminal Governance evidence classified the run unknown. The run failed
+closed and was not retried.
+
+Artifacts `9683508663`, `9683519655`, and `9683526452` match their
+GitHub-recorded SHA-256 digests. The terminal artifact passes canonical
+Governance admission. Authenticated reconciliation confirms exact tag
+`wdv3-acceptance-13`, tarball SHA-1
+`7f088ba1708310ef0dba5814da3ad4cf57d49062`, SHA-512
+`aafe86f3b48a7affc6c160f81bd81d69692fc3789149a7a01e620acd05052d0c7c0e87b7f552b19fc2192a90b6af1201b265cc2475ac28288cc1ab70bfbe7c71`,
+and preparation-target witness
+`835b81be1ff0ba7aa0ec23c9a7b518d4ade3dfaa`; `.14`-`.16` remain absent.
+
+Workflow ID `344468231` is `disabled_manually`, Environment ID `20772100445`
+is deleted, acceptance refs remain absent, and no repository run is
+nonterminal. Protected source cleanup deletes the temporary workflow and its
+workflow-only contract, and restores the generic all-temporary-workflows-
+absent contracts. The `.13`-`.16` block is consumed and must not be rerun or
+reused.
+
+Cleanup validation:
+
+- retirement RED before source deletion: `2 failed`;
+- exact retirement nodes after deletion: `2 passed in 0.19s`;
+- focused Adapter, Governance, Buddy, and retirement suite:
+  `844 passed in 34.62s`;
+- complete v3 suite: `3823 passed in 465.80s`;
+- Ruff check/format and focused Pyrefly: passed;
+- Prettier and markdownlint over the five authoritative wiki pages: passed;
+- unstaged HK over the cleanup diff: passed, including its managed
+  `3823 passed in 466.85s` v3 suite;
+- `git diff --check` and exact temporary-workflow absence: passed.
+
+Acceptance remains unsuccessful. No Release lineage or normal Live authority
+was created; `live_enabled` remains false.
+
+<!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-4-operation -->
+
+<!-- BEGIN APPEND: 2026-08-28-wdv3-acceptance-retry-4-cleanup-review -->
+
+## Retry-4 cleanup review and adjudication
+
+Three independent cleanup reviewers covered the retirement contracts,
+historical evidence documents, and complete diff. The contract reviewer
+reported no findings. Documentation and holistic review produced four
+candidate findings, each independently adjudicated:
+
+- stale LLD count of three consumed attempts: true positive; corrected to
+  four;
+- mutable pages allegedly contradicting their later retry-4 state: false
+  positive; the cited passages are explicitly bounded historical chronology,
+  unlike the current-state retry-4 passages;
+- omission of exact artifact digest mappings from committed prose: false
+  positive; artifact IDs plus verified platform metadata follow the established
+  retry-3 closure convention, while exact mappings remain in sealed
+  reconciliation evidence;
+- missing cleanup-before-repair gate: true positive; README, handoff, LLD, and
+  overview now require protected cleanup to merge and a fresh post-merge fetch
+  plus authenticated absence/reconciliation checks before another repair or
+  profile can start.
+
+Both documentation and holistic rereview then reported `No findings.` The
+review did not change package state, workflow state, Live authority, or the
+consumed no-rerun decision.
+
+<!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-4-cleanup-review -->
