@@ -3675,6 +3675,759 @@ def test_retry_4_complete_evidence_admits_finalized_profile_round_trip() -> (
         )
 
 
+TEST_LOCAL_RETRY_5_PACKAGE_COORDINATE = (
+    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.17"
+)
+TEST_LOCAL_RETRY_5_WORKFLOW_PATH = (
+    ".github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-5.yml"
+)
+TEST_LOCAL_RETRY_5_ENVIRONMENT = (
+    "workflow-delivery-v3-buddy-smoke-acceptance-retry-5"
+)
+TEST_LOCAL_RETRY_5_CONFIRMATION = (
+    "I_ACCEPT_DISPOSABLE_GITHUB_PACKAGES_PROBES_RETRY_5"
+)
+TEST_LOCAL_RETRY_5_CONFIRMATION_DIGEST = (
+    "sha256:71fdd8f8cbb3ab90dd94745a18337d89a893fbdaeea35fafa733bc13d75c308f"
+)
+TEST_LOCAL_RETRY_5_PREPARATION_TARGET = "0" * 40
+TEST_ONLY_HYPOTHETICAL_RETRY_5_REVIEWED_TARGET_SHA = (
+    "0123456789abcdef0123456789abcdef01234567"
+)
+TEST_LOCAL_RETRY_5_SCENARIO_ORDER = (
+    "absent-create-readback",
+    "exact",
+    "identical-race",
+    "differing-race",
+    "lost-response",
+)
+TEST_LOCAL_RETRY_5_SCENARIO_COORDINATES = {
+    "absent-create-readback": (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.17",
+        "wdv3-acceptance-17",
+    ),
+    "exact": (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.17",
+        "wdv3-acceptance-17",
+    ),
+    "identical-race": (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.18",
+        "wdv3-acceptance-18",
+    ),
+    "differing-race": (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.19",
+        "wdv3-acceptance-19",
+    ),
+    "lost-response": (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.20",
+        "wdv3-acceptance-20",
+    ),
+}
+
+
+def _registered_retry_5_governance_profile() -> Any:
+    matches = tuple(
+        profile
+        for profile in governance_module._GOVERNANCE_ACCEPTANCE_PROFILES
+        if profile.package_coordinate == TEST_LOCAL_RETRY_5_PACKAGE_COORDINATE
+    )
+    if not matches:
+        pytest.fail(
+            "E-GOVERNANCE-PROFILE-ABSENT: the fifth reviewed Governance "
+            "acceptance profile is not registered",
+            pytrace=False,
+        )
+    assert len(matches) == 1, (
+        "the fifth reviewed Governance acceptance profile must be unique"
+    )
+    return matches[0]
+
+
+def _retry_5_preparation_document() -> dict[str, Any]:
+    document = _retry_4_preparation_document()
+    document["workflow"]["path"] = TEST_LOCAL_RETRY_5_WORKFLOW_PATH
+    document["package-coordinate"] = TEST_LOCAL_RETRY_5_PACKAGE_COORDINATE
+    document["confirmation-digest"] = TEST_LOCAL_RETRY_5_CONFIRMATION_DIGEST
+    document["environment"] = TEST_LOCAL_RETRY_5_ENVIRONMENT
+    document["recovery"]["environment"] = TEST_LOCAL_RETRY_5_ENVIRONMENT
+    return document
+
+
+def _install_test_only_retry_5_finalization_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Any:
+    original_profiles = governance_module._GOVERNANCE_ACCEPTANCE_PROFILES
+    preparation_profile = _registered_retry_5_governance_profile()
+    finalized_profile = governance_module._GovernanceAcceptanceProfile(
+        package_coordinate=preparation_profile.package_coordinate,
+        workflow_path=preparation_profile.workflow_path,
+        environment=preparation_profile.environment,
+        target_sha=TEST_ONLY_HYPOTHETICAL_RETRY_5_REVIEWED_TARGET_SHA,
+        confirmation_digest=preparation_profile.confirmation_digest,
+        scenario_coordinates=preparation_profile.scenario_coordinates,
+    )
+    patched_profiles = tuple(
+        finalized_profile if profile is preparation_profile else profile
+        for profile in original_profiles
+    )
+    monkeypatch.setattr(
+        governance_module,
+        "_GOVERNANCE_ACCEPTANCE_PROFILES",
+        patched_profiles,
+    )
+
+    assert patched_profiles[:4] == original_profiles[:4]
+    assert patched_profiles[-1] is finalized_profile
+    assert (
+        sum(
+            profile is not original
+            for profile, original in zip(
+                patched_profiles,
+                original_profiles,
+                strict=True,
+            )
+        )
+        == 1
+    )
+    return finalized_profile
+
+
+def _retry_5_finalized_document(
+    *,
+    upstream_status: int,
+) -> dict[str, Any]:
+    document = _test_local_finalized_document(
+        workflow_path=TEST_LOCAL_RETRY_5_WORKFLOW_PATH,
+        target_sha=TEST_ONLY_HYPOTHETICAL_RETRY_5_REVIEWED_TARGET_SHA,
+        package_coordinate=TEST_LOCAL_RETRY_5_PACKAGE_COORDINATE,
+        confirmation_digest=TEST_LOCAL_RETRY_5_CONFIRMATION_DIGEST,
+        environment=TEST_LOCAL_RETRY_5_ENVIRONMENT,
+        scenario_coordinates=TEST_LOCAL_RETRY_5_SCENARIO_COORDINATES,
+        proof_namespace=f"retry-5-test-only-status-{upstream_status}",
+    )
+    for probe_index, fact in enumerate(document["probe-facts"]):
+        for scenario in fact["scenarios"]:
+            proof = scenario.get("validated-request-proof")
+            if proof is None:
+                continue
+            proof["upstream-status"] = upstream_status
+            proof["response-identity-digest"] = canonical_sha256(
+                {
+                    "request-digest": proof["request-digest"],
+                    "upstream-status": upstream_status,
+                    "selected-headers": proof["selected-headers"],
+                    "response-body-digest": proof["response-body-digest"],
+                }
+            )
+            scenario["response"]["identity-digest"] = proof[
+                "response-identity-digest"
+            ]
+        _refresh_probe_record_digest_unchecked(document, probe_index)
+    return document
+
+
+def _test_local_path_value(
+    document: dict[str, Any],
+    path: tuple[object, ...],
+) -> Any:
+    cursor: Any = document
+    for part in path:
+        cursor = cursor[part]
+    return cursor
+
+
+def test_governance_acceptance_profiles_are_exactly_five_with_retry_5_and_no_historical_drift() -> (
+    None
+):
+    retry_5_profile = _registered_retry_5_governance_profile()
+    profiles = governance_module._GOVERNANCE_ACCEPTANCE_PROFILES
+    package_prefix = "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance."
+    expected_rows = (
+        (
+            1,
+            ".github/workflows/workflow-delivery-v3-buddy-smoke-acceptance.yml",
+            "workflow-delivery-v3-buddy-smoke-acceptance",
+            "5a84bebd05407e1859fe76f400dcb4f4cbcd002e",
+            "sha256:6ab9696b51f21083802af68d80104f65ffb844bdcd449974c881e5a8cc96ad5e",
+            (1, 1, 2, 3, 4),
+        ),
+        (
+            5,
+            ".github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-2.yml",
+            "workflow-delivery-v3-buddy-smoke-acceptance-retry-2",
+            "b031e5e0bd98a95943a03a1529b64e856e1a8aa1",
+            "sha256:1215f9d01cd343462c3f826ba67ebee86b6f6142b7fcfe5630572a5a808314f8",
+            (5, 5, 6, 7, 8),
+        ),
+        (
+            9,
+            ".github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-3.yml",
+            "workflow-delivery-v3-buddy-smoke-acceptance-retry-3",
+            "a61f9a4e44458bfd7bc7bfd96f6db848ce047c0c",
+            "sha256:33e59948941f5f1111d5017ab80dd33c90dd2ac8d1a17203e7f7382a8c5b2c72",
+            (9, 9, 10, 11, 12),
+        ),
+        (
+            13,
+            ".github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-4.yml",
+            "workflow-delivery-v3-buddy-smoke-acceptance-retry-4",
+            "835b81be1ff0ba7aa0ec23c9a7b518d4ade3dfaa",
+            "sha256:b6f94d3c13c98b0714404959dd878230f8302ee849038a536f5a18cc3a85c7ec",
+            (13, 13, 14, 15, 16),
+        ),
+        (
+            17,
+            TEST_LOCAL_RETRY_5_WORKFLOW_PATH,
+            TEST_LOCAL_RETRY_5_ENVIRONMENT,
+            TEST_LOCAL_RETRY_5_PREPARATION_TARGET,
+            TEST_LOCAL_RETRY_5_CONFIRMATION_DIGEST,
+            (17, 17, 18, 19, 20),
+        ),
+    )
+    expected_profiles = tuple(
+        (
+            f"{package_prefix}{base_version}",
+            workflow_path,
+            environment,
+            target_sha,
+            confirmation_digest,
+            tuple(
+                (
+                    scenario,
+                    f"{package_prefix}{scenario_version}",
+                    f"wdv3-acceptance-{scenario_version}",
+                )
+                for scenario, scenario_version in zip(
+                    TEST_LOCAL_RETRY_5_SCENARIO_ORDER,
+                    scenario_versions,
+                    strict=True,
+                )
+            ),
+        )
+        for (
+            base_version,
+            workflow_path,
+            environment,
+            target_sha,
+            confirmation_digest,
+            scenario_versions,
+        ) in expected_rows
+    )
+    actual_profiles = tuple(
+        (
+            profile.package_coordinate,
+            profile.workflow_path,
+            profile.environment,
+            profile.target_sha,
+            profile.confirmation_digest,
+            profile.scenario_coordinates,
+        )
+        for profile in profiles
+    )
+    expected_profile_count = len(expected_profiles)
+
+    assert actual_profiles == expected_profiles
+    assert tuple(row[0] for row in actual_profiles) == tuple(
+        f"{package_prefix}{version}" for version in (1, 5, 9, 13, 17)
+    )
+    assert (
+        len({profile.package_coordinate for profile in profiles})
+        == expected_profile_count
+    )
+    assert (
+        len({profile.workflow_path for profile in profiles})
+        == expected_profile_count
+    )
+    assert (
+        len({profile.environment for profile in profiles})
+        == expected_profile_count
+    )
+    assert (
+        len({profile.confirmation_digest for profile in profiles})
+        == expected_profile_count
+    )
+    assert profiles[-1] is retry_5_profile
+
+
+def test_retry_5_governance_profile_binds_exact_preparation_identity_and_scenarios() -> (
+    None
+):
+    profile = _registered_retry_5_governance_profile()
+
+    assert profile.package_coordinate == TEST_LOCAL_RETRY_5_PACKAGE_COORDINATE
+    assert profile.workflow_path == TEST_LOCAL_RETRY_5_WORKFLOW_PATH
+    assert profile.environment == TEST_LOCAL_RETRY_5_ENVIRONMENT
+    assert profile.target_sha == TEST_LOCAL_RETRY_5_PREPARATION_TARGET
+    assert profile.target_sha.encode("ascii") == b"0" * 40
+    assert profile.confirmation_digest == TEST_LOCAL_RETRY_5_CONFIRMATION_DIGEST
+    assert (
+        ValidatedAcceptanceRequestProof._sha256(
+            TEST_LOCAL_RETRY_5_CONFIRMATION.encode("ascii")
+        )
+        == TEST_LOCAL_RETRY_5_CONFIRMATION_DIGEST
+    )
+    assert tuple(profile.coordinates()) == TEST_LOCAL_RETRY_5_SCENARIO_ORDER
+    assert tuple(profile.coordinates().items()) == tuple(
+        TEST_LOCAL_RETRY_5_SCENARIO_COORDINATES.items()
+    )
+    assert not any(
+        candidate.package_coordinate == TEST_LOCAL_RETRY_5_PACKAGE_COORDINATE
+        and candidate.target_sha != "0" * 40
+        for candidate in governance_module._GOVERNANCE_ACCEPTANCE_PROFILES
+    )
+
+
+def test_retry_5_governance_admits_exact_zero_target_rejected_dispatch_round_trip() -> (
+    None
+):
+    _registered_retry_5_governance_profile()
+    document = _retry_5_preparation_document()
+    raw = canonicalize(document)
+
+    admitted = admit_governance_acceptance_evidence(raw)
+    admitted_document = admitted.to_document()
+
+    assert admitted.target_sha.encode("ascii") == b"0" * 40
+    assert admitted.workflow.path == TEST_LOCAL_RETRY_5_WORKFLOW_PATH
+    assert admitted.environment == TEST_LOCAL_RETRY_5_ENVIRONMENT
+    assert admitted.recovery.environment == TEST_LOCAL_RETRY_5_ENVIRONMENT
+    assert tuple(
+        (result.job, result.result) for result in admitted.dependency_results
+    ) == (
+        ("validate-fixed-inputs", "failure"),
+        ("acceptance-review", "skipped"),
+        ("probe-absent-create-readback", "skipped"),
+        ("probe-exact-and-conflict", "skipped"),
+    )
+    assert admitted.mutation_classification == "incomplete"
+    assert admitted.recovery.artifact_id is None
+    assert (admitted.reviewer, admitted.reviewer_source) == (
+        None,
+        "unavailable-in-job-context",
+    )
+    assert tuple(
+        (
+            fact.result,
+            fact.record_digest,
+            fact.artifact_id,
+            fact.artifact_digest,
+            fact.scenarios,
+        )
+        for fact in admitted.probe_facts
+    ) == (
+        ("incomplete", None, None, None, ()),
+        ("incomplete", None, None, None, ()),
+    )
+    assert admitted_document == document
+    assert canonicalize(admitted_document) == raw
+    assert admitted.evidence_digest == canonical_sha256(document)
+
+
+@pytest.mark.parametrize(
+    ("path", "replacement", "message"),
+    [
+        pytest.param(
+            ("dependency-results", 0, "result"),
+            "success",
+            "zero target-sha requires exact rejected",
+            id="validation-succeeded",
+        ),
+        pytest.param(
+            ("dependency-results", 1, "result"),
+            "success",
+            "zero target-sha requires exact rejected",
+            id="review-ran",
+        ),
+        pytest.param(
+            ("dependency-results", 2, "result"),
+            "success",
+            "zero target-sha requires exact rejected",
+            id="probe-ran",
+        ),
+        pytest.param(
+            ("probe-facts", 0, "record-digest"),
+            SHA256_A,
+            "retain suite records",
+            id="record-present",
+        ),
+        pytest.param(
+            ("reviewer",),
+            {
+                "login": "test-only-reviewer",
+                "source": "on-demand-read-only-inspection",
+            },
+            "zero target-sha requires exact rejected",
+            id="reviewer-present",
+        ),
+        pytest.param(
+            ("recovery", "artifact-id"),
+            701,
+            "zero target-sha requires exact rejected",
+            id="artifact-present",
+        ),
+        pytest.param(
+            ("mutation-classification",),
+            "unknown",
+            "mutation-classification",
+            id="mutation-not-incomplete",
+        ),
+        pytest.param(
+            ("target-sha",),
+            "1" * 40,
+            "target-sha",
+            id="target-substitution",
+        ),
+        pytest.param(
+            ("workflow", "path"),
+            TEST_LOCAL_RETRY_4_WORKFLOW_PATH,
+            "workflow.path",
+            id="workflow-substitution",
+        ),
+        pytest.param(
+            ("environment",),
+            TEST_LOCAL_RETRY_4_ENVIRONMENT,
+            "environment",
+            id="top-level-environment-substitution",
+        ),
+        pytest.param(
+            ("recovery", "environment"),
+            TEST_LOCAL_RETRY_4_ENVIRONMENT,
+            "recovery environment",
+            id="recovery-environment-substitution",
+        ),
+    ],
+)
+def test_retry_5_zero_target_rejects_noncanonical_dispatch_or_identity(
+    path: tuple[object, ...],
+    replacement: object,
+    message: str,
+) -> None:
+    _registered_retry_5_governance_profile()
+    document = _retry_5_preparation_document()
+    _set_path(document, path, replacement)
+
+    with pytest.raises(ValueError, match=message):
+        _admit(document)
+
+
+@pytest.mark.parametrize("upstream_status", [200, 201])
+def test_retry_5_finalization_seam_admits_complete_status_and_preserves_bindings(
+    monkeypatch: pytest.MonkeyPatch,
+    upstream_status: int,
+) -> None:
+    profile = _install_test_only_retry_5_finalization_profile(monkeypatch)
+    document = _retry_5_finalized_document(upstream_status=upstream_status)
+    raw = canonicalize(document)
+
+    admitted = admit_governance_acceptance_evidence(raw)
+    admitted_document = admitted.to_document()
+    probe_facts = cast(
+        "list[dict[str, Any]]",
+        admitted_document["probe-facts"],
+    )
+    admitted_scenarios = tuple(
+        scenario
+        for fact in probe_facts
+        for scenario in cast("list[dict[str, Any]]", fact["scenarios"])
+    )
+    proof_scenarios = tuple(
+        scenario
+        for scenario in admitted_scenarios
+        if "validated-request-proof" in scenario
+    )
+
+    assert profile.target_sha == (
+        TEST_ONLY_HYPOTHETICAL_RETRY_5_REVIEWED_TARGET_SHA
+    )
+    assert admitted.target_sha == (
+        TEST_ONLY_HYPOTHETICAL_RETRY_5_REVIEWED_TARGET_SHA
+    )
+    assert (
+        admitted.workflow.path,
+        admitted.environment,
+        admitted.recovery.environment,
+        admitted.confirmation_digest,
+    ) == (
+        TEST_LOCAL_RETRY_5_WORKFLOW_PATH,
+        TEST_LOCAL_RETRY_5_ENVIRONMENT,
+        TEST_LOCAL_RETRY_5_ENVIRONMENT,
+        TEST_LOCAL_RETRY_5_CONFIRMATION_DIGEST,
+    )
+    assert admitted.mutation_classification == "complete"
+    assert tuple(
+        (result.job, result.result) for result in admitted.dependency_results
+    ) == tuple((job, "success") for job in GOVERNANCE_ACCEPTANCE_DEPENDENCIES)
+    assert tuple(
+        (fact.result, fact.artifact_id, fact.artifact_digest)
+        for fact in admitted.probe_facts
+    ) == (
+        ("success", 700, SHA256_B),
+        ("success", 701, SHA256_B),
+    )
+    assert tuple(
+        (
+            scenario["scenario"],
+            scenario["package-coordinate"],
+            scenario["tag"],
+        )
+        for scenario in admitted_scenarios
+    ) == tuple(
+        (
+            scenario,
+            *TEST_LOCAL_RETRY_5_SCENARIO_COORDINATES[scenario],
+        )
+        for scenario in TEST_LOCAL_RETRY_5_SCENARIO_ORDER
+    )
+    assert tuple(
+        (
+            scenario["scenario"],
+            scenario["validated-request-proof"]["upstream-status"],
+            scenario["validated-request-proof"]["request-digest"],
+            scenario["validated-request-proof"]["package-coordinate"],
+            scenario["validated-request-proof"]["tag"],
+            scenario["validated-request-proof"]["tarball-sha512"]
+            == scenario["post"]["content-sha512"],
+            scenario["validated-request-proof"]["response-identity-digest"]
+            == scenario["response"]["identity-digest"],
+        )
+        for scenario in proof_scenarios
+    ) == tuple(
+        (
+            scenario,
+            upstream_status,
+            ValidatedAcceptanceRequestProof._sha256(
+                (
+                    '{"_id":"retry-5-test-only-status-'
+                    f'{upstream_status}-{scenario}"}}'
+                ).encode()
+            ),
+            *TEST_LOCAL_RETRY_5_SCENARIO_COORDINATES[scenario],
+            True,
+            True,
+        )
+        for scenario in ("absent-create-readback", "lost-response")
+    )
+    assert admitted_document == document
+    assert canonicalize(admitted_document) == raw
+    assert admitted.evidence_digest == canonical_sha256(document)
+
+
+@pytest.mark.parametrize(
+    ("path", "replacement", "message"),
+    [
+        pytest.param(
+            ("run-attempt",),
+            2,
+            "run-attempt must be exactly 1",
+            id="non-first-attempt",
+        ),
+        pytest.param(
+            ("recovery", "workflow-run-id"),
+            102,
+            "recovery workflow-run-id must match workflow-run-id",
+            id="wrong-recovery-run",
+        ),
+        pytest.param(
+            ("recovery", "job"),
+            "other-review",
+            "recovery job must be acceptance-review",
+            id="wrong-review-job",
+        ),
+        pytest.param(
+            ("recovery", "deployment"),
+            "run:102/environment:acceptance",
+            "recovery deployment must match the acceptance run",
+            id="wrong-deployment",
+        ),
+    ],
+)
+def test_retry_5_governance_rejects_run_and_recovery_correlation_drift(
+    monkeypatch: pytest.MonkeyPatch,
+    path: tuple[object, ...],
+    replacement: object,
+    message: str,
+) -> None:
+    _install_test_only_retry_5_finalization_profile(monkeypatch)
+    document = _retry_5_finalized_document(upstream_status=200)
+    _set_path(document, path, replacement)
+
+    with pytest.raises(ValueError, match=message):
+        _admit(document)
+
+
+@pytest.mark.parametrize("upstream_status", [200, 201])
+def test_retry_5_lost_response_proof_must_bind_exact_readback_content(
+    monkeypatch: pytest.MonkeyPatch,
+    upstream_status: int,
+) -> None:
+    _install_test_only_retry_5_finalization_profile(monkeypatch)
+    document = _retry_5_finalized_document(upstream_status=upstream_status)
+    lost_response = document["probe-facts"][1]["scenarios"][3]
+    assert lost_response["scenario"] == "lost-response"
+    assert (
+        lost_response["validated-request-proof"]["tarball-sha512"]
+        == lost_response["post"]["content-sha512"]
+    )
+    assert (
+        lost_response["validated-request-proof"]["tarball-sha512"] != SHA512_A
+    )
+    lost_response["validated-request-proof"]["tarball-sha512"] = SHA512_A
+    _refresh_probe_record_digest_unchecked(document, 1)
+
+    with pytest.raises(ValueError, match="tarball-sha512"):
+        _admit(document)
+
+
+@pytest.mark.parametrize("upstream_status", [202, 204])
+def test_retry_5_finalization_seam_rejects_non_authoritative_status(
+    monkeypatch: pytest.MonkeyPatch,
+    upstream_status: int,
+) -> None:
+    _install_test_only_retry_5_finalization_profile(monkeypatch)
+    document = _retry_5_finalized_document(upstream_status=upstream_status)
+    proof_statuses = tuple(
+        scenario["validated-request-proof"]["upstream-status"]
+        for fact in document["probe-facts"]
+        for scenario in fact["scenarios"]
+        if "validated-request-proof" in scenario
+    )
+
+    assert proof_statuses == (upstream_status, upstream_status)
+    assert document["target-sha"] == (
+        TEST_ONLY_HYPOTHETICAL_RETRY_5_REVIEWED_TARGET_SHA
+    )
+    with pytest.raises(ValueError, match="accepted npm publish status"):
+        _admit(document)
+
+
+@pytest.mark.parametrize(
+    ("direction", "binding", "path", "message"),
+    [
+        pytest.param(
+            direction,
+            binding,
+            path,
+            message,
+            id=f"{direction}-{binding}",
+        )
+        for direction in (
+            "retry-5-receives-retry-4",
+            "retry-4-receives-retry-5",
+        )
+        for binding, path, message in (
+            ("workflow", ("workflow", "path"), "workflow.path"),
+            ("environment", ("environment",), "environment"),
+            (
+                "recovery-environment",
+                ("recovery", "environment"),
+                "recovery environment",
+            ),
+            (
+                "confirmation-digest",
+                ("confirmation-digest",),
+                "confirmation-digest",
+            ),
+            ("target", ("target-sha",), "target-sha"),
+            (
+                "coordinate",
+                (
+                    "probe-facts",
+                    0,
+                    "scenarios",
+                    0,
+                    "package-coordinate",
+                ),
+                "package-coordinate",
+            ),
+            (
+                "tag",
+                ("probe-facts", 0, "scenarios", 0, "tag"),
+                "tag",
+            ),
+            (
+                "request",
+                (
+                    "probe-facts",
+                    0,
+                    "scenarios",
+                    0,
+                    "validated-request-proof",
+                    "request-digest",
+                ),
+                "response-identity-digest",
+            ),
+            (
+                "tarball",
+                (
+                    "probe-facts",
+                    0,
+                    "scenarios",
+                    0,
+                    "validated-request-proof",
+                    "tarball-sha512",
+                ),
+                "tarball-sha512",
+            ),
+            (
+                "response",
+                (
+                    "probe-facts",
+                    0,
+                    "scenarios",
+                    0,
+                    "response",
+                    "identity-digest",
+                ),
+                "response-identity-digest",
+            ),
+        )
+    ],
+)
+def test_retry_5_governance_rejects_bidirectional_cross_profile_bindings(
+    monkeypatch: pytest.MonkeyPatch,
+    direction: str,
+    binding: str,
+    path: tuple[object, ...],
+    message: str,
+) -> None:
+    _install_test_only_retry_5_finalization_profile(monkeypatch)
+    retry_5_document = _retry_5_finalized_document(upstream_status=200)
+    retry_4_profile = _registered_retry_4_governance_profile()
+    retry_4_document = _test_local_finalized_document(
+        workflow_path=retry_4_profile.workflow_path,
+        target_sha=retry_4_profile.target_sha,
+        package_coordinate=retry_4_profile.package_coordinate,
+        confirmation_digest=retry_4_profile.confirmation_digest,
+        environment=retry_4_profile.environment,
+        scenario_coordinates=retry_4_profile.coordinates(),
+        proof_namespace="retry-4-historical-cross-profile-control",
+    )
+
+    retry_5_control = _admit(retry_5_document)
+    retry_4_control = _admit(retry_4_document)
+    assert retry_5_control.target_sha == (
+        TEST_ONLY_HYPOTHETICAL_RETRY_5_REVIEWED_TARGET_SHA
+    )
+    assert retry_4_control.target_sha == TEST_LOCAL_RETRY_4_FINALIZED_TARGET_SHA
+    if direction == "retry-5-receives-retry-4":
+        recipient, donor = retry_5_document, retry_4_document
+    else:
+        recipient, donor = retry_4_document, retry_5_document
+    mutated = deepcopy(recipient)
+    donor_value = deepcopy(_test_local_path_value(donor, path))
+    _set_path(mutated, path, donor_value)
+    if binding in {"coordinate", "tag", "request", "tarball", "response"}:
+        _refresh_probe_record_digest_unchecked(mutated, 0)
+
+    assert _test_local_path_value(mutated, path) == donor_value
+    assert _test_local_path_value(mutated, path) != _test_local_path_value(
+        recipient,
+        path,
+    )
+    with pytest.raises(ValueError, match=message):
+        _admit(mutated)
+
+
 @pytest.mark.parametrize(
     ("document_profile", "field"),
     [
@@ -4079,3 +4832,85 @@ def test_retry_4_governance_preserves_historical_profiles_digests_and_replay_evi
                 scenario_document["post"]["content-sha512"]
                 == proof["tarball-sha512"]
             )
+
+
+@pytest.fixture(autouse=True)
+def _preserve_retry_4_historical_registry_view(
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Preserve the append-only retry-4 contract's historical four-profile view;
+    # the exact-five test above independently checks the live registry.
+    if request.node.name != (
+        "test_retry_4_governance_profiles_have_stable_historical_order_"
+        "and_unique_base_coordinates"
+    ):
+        return
+    profiles = governance_module._GOVERNANCE_ACCEPTANCE_PROFILES
+    assert tuple(profile.package_coordinate for profile in profiles) == (
+        COORDINATE,
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5",
+        GOVERNANCE_RETRY_3_ACCEPTANCE_PACKAGE_COORDINATE,
+        TEST_LOCAL_RETRY_4_PACKAGE_COORDINATE,
+        TEST_LOCAL_RETRY_5_PACKAGE_COORDINATE,
+    )
+    assert profiles[3].package_coordinate == (
+        TEST_LOCAL_RETRY_4_PACKAGE_COORDINATE
+    )
+    assert profiles[4].package_coordinate == (
+        TEST_LOCAL_RETRY_5_PACKAGE_COORDINATE
+    )
+    monkeypatch.setattr(
+        governance_module,
+        "_GOVERNANCE_ACCEPTANCE_PROFILES",
+        profiles[:4],
+    )
+
+
+_RETRY_5_NON_AUTHORITATIVE_TWO_XX_STATUS_CASES = tuple(
+    pytest.param(status, id=f"http-{status}") for status in range(202, 300)
+)
+
+
+def test_retry_5_governance_authoritative_publish_status_set_is_exact() -> None:
+    profile = _registered_retry_5_governance_profile()
+    expected_statuses = frozenset({200, 201})
+    actual_statuses = governance_module._NPM_PUBLISH_SUCCESS_STATUSES
+
+    assert actual_statuses == expected_statuses
+    assert profile.package_coordinate == TEST_LOCAL_RETRY_5_PACKAGE_COORDINATE
+
+
+@pytest.mark.parametrize(
+    "upstream_status",
+    _RETRY_5_NON_AUTHORITATIVE_TWO_XX_STATUS_CASES,
+)
+def test_retry_5_finalization_seam_rejects_every_other_two_xx_status(
+    monkeypatch: pytest.MonkeyPatch,
+    upstream_status: int,
+) -> None:
+    profile = _install_test_only_retry_5_finalization_profile(monkeypatch)
+    document = _retry_5_finalized_document(upstream_status=upstream_status)
+    proof_statuses = tuple(
+        scenario["validated-request-proof"]["upstream-status"]
+        for fact in document["probe-facts"]
+        for scenario in fact["scenarios"]
+        if "validated-request-proof" in scenario
+    )
+
+    assert proof_statuses == (upstream_status, upstream_status)
+    assert profile.target_sha == (
+        TEST_ONLY_HYPOTHETICAL_RETRY_5_REVIEWED_TARGET_SHA
+    )
+    with pytest.raises(
+        ValueError,
+        match="accepted npm publish status",
+    ) as raised:
+        _admit(document)
+
+    assert str(raised.value).endswith(
+        ".upstream-status must be an accepted npm publish status"
+    )
+    assert upstream_status not in (
+        governance_module._NPM_PUBLISH_SUCCESS_STATUSES
+    )

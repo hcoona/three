@@ -4589,6 +4589,11 @@ def test_acceptance_probe_rejects_request_proof_substitutions(
         "action-executed": True,
         "mutation-started": True,
         "validated-request-proof": proof,
+        "request-digest": proof.request_digest,
+        "upstream-status": proof.upstream_status,
+        "selected-headers": dict(proof.selected_headers),
+        "response-body-digest": proof.response_body_digest,
+        "response-identity-digest": proof.response_identity_digest,
     }
     content = "sha512:" + hashlib.sha512(tarball.read_bytes()).hexdigest()
 
@@ -4627,6 +4632,11 @@ def test_acceptance_probe_uses_validated_proof_not_synthetic_body(
         "action-executed": True,
         "mutation-started": True,
         "validated-request-proof": proof,
+        "request-digest": proof.request_digest,
+        "upstream-status": proof.upstream_status,
+        "selected-headers": dict(proof.selected_headers),
+        "response-body-digest": proof.response_body_digest,
+        "response-identity-digest": proof.response_identity_digest,
     }
     content = "sha512:" + hashlib.sha512(b"lost-response").hexdigest()
 
@@ -7969,3 +7979,1196 @@ def test_retry_4_validated_proof_rejects_historical_substitutions_in_both_direct
         "validated request coordinate or tag is not fixed",
         "validated request coordinate or tag is not fixed",
     ]
+
+
+_RETRY_5_ACCEPTANCE_PACKAGE_NAME = "@hcoona/hcoona-release-smoke-npm"
+_RETRY_5_ACCEPTANCE_BASE_COORDINATE = (
+    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.17"
+)
+_RETRY_5_UNREGISTERED_BASE_COORDINATE = (
+    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.21"
+)
+_RETRY_5_ACCEPTANCE_BINDINGS = (
+    (
+        "absent-create-readback",
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.17",
+        "wdv3-acceptance-17",
+    ),
+    (
+        "exact",
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.17",
+        "wdv3-acceptance-17",
+    ),
+    (
+        "identical-race",
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.18",
+        "wdv3-acceptance-18",
+    ),
+    (
+        "differing-race",
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.19",
+        "wdv3-acceptance-19",
+    ),
+    (
+        "lost-response",
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.20",
+        "wdv3-acceptance-20",
+    ),
+)
+_HISTORICAL_ACCEPTANCE_BASE_COORDINATES = (
+    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.1",
+    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5",
+    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9",
+    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.13",
+)
+_ACCEPTANCE_PROFILE_STARTS = (1, 5, 9, 13, 17)
+_ACCEPTANCE_SCENARIO_ORDER = (
+    "absent-create-readback",
+    "exact",
+    "identical-race",
+    "differing-race",
+    "lost-response",
+)
+
+
+def _expected_acceptance_bindings(
+    first_coordinate: int,
+) -> tuple[tuple[str, str, str], ...]:
+    coordinate_numbers = (
+        first_coordinate,
+        first_coordinate,
+        first_coordinate + 1,
+        first_coordinate + 2,
+        first_coordinate + 3,
+    )
+    return tuple(
+        (
+            scenario,
+            (
+                f"{_RETRY_5_ACCEPTANCE_PACKAGE_NAME}@"
+                f"0.0.0-wdv3-acceptance.{coordinate_number}"
+            ),
+            f"wdv3-acceptance-{coordinate_number}",
+        )
+        for scenario, coordinate_number in zip(
+            _ACCEPTANCE_SCENARIO_ORDER,
+            coordinate_numbers,
+            strict=True,
+        )
+    )
+
+
+_EXPECTED_ACCEPTANCE_PROFILE_BINDINGS = tuple(
+    (
+        bindings[0][1],
+        bindings,
+    )
+    for bindings in (
+        _expected_acceptance_bindings(first_coordinate)
+        for first_coordinate in _ACCEPTANCE_PROFILE_STARTS
+    )
+)
+
+
+def _retry_5_adapter_module() -> Any:
+    from three_workflow_delivery_v3.adapters import (  # noqa: PLC0415
+        github_packages as module,
+    )
+
+    return module
+
+
+def _require_retry_5_adapter_profile() -> Any:
+    module = _retry_5_adapter_module()
+    matches = tuple(
+        scenario_specs
+        for base_coordinate, scenario_specs in module._ACCEPTANCE_SUITE_PROFILES
+        if base_coordinate == _RETRY_5_ACCEPTANCE_BASE_COORDINATE
+    )
+    assert matches, (
+        "E-ADAPTER-PROFILE-ABSENT: the reviewed retry-5 base coordinate is "
+        "not registered"
+    )
+    assert len(matches) == 1, (
+        "the reviewed retry-5 Adapter profile must be unique"
+    )
+    return module
+
+
+def _scenario_specs_from_bindings(
+    bindings: tuple[tuple[str, str, str], ...],
+) -> tuple[tuple[str, str, str], ...]:
+    return tuple(
+        (scenario, coordinate.rsplit("@", 1)[1], tag)
+        for scenario, coordinate, tag in bindings
+    )
+
+
+def _protocol_confirmed_document(
+    proof: AcceptanceRequestProof,
+) -> dict[str, object]:
+    return {
+        "outcome": "protocol-confirmed",
+        "action-executed": True,
+        "mutation-started": True,
+        "validated-request-proof": proof,
+        "request-digest": proof.request_digest,
+        "upstream-status": proof.upstream_status,
+        "selected-headers": dict(proof.selected_headers),
+        "response-body-digest": proof.response_body_digest,
+        "response-identity-digest": proof.response_identity_digest,
+    }
+
+
+class _Retry5ProtocolRunner:
+    def __init__(self, document: dict[str, object]) -> None:
+        self.document = document
+        self.calls: list[dict[str, object]] = []
+
+    def run(
+        self,
+        argv: tuple[str, ...],
+        *,
+        env: dict[str, str],
+        timeout_seconds: float,
+        max_output_bytes: int,
+        deadline: float | None = None,
+    ) -> dict[str, object]:
+        return self._record(
+            None,
+            argv,
+            env=env,
+            timeout_seconds=timeout_seconds,
+            max_output_bytes=max_output_bytes,
+            deadline=deadline,
+        )
+
+    def run_scenario(
+        self,
+        scenario: str,
+        argv: tuple[str, ...],
+        *,
+        env: dict[str, str],
+        timeout_seconds: float,
+        max_output_bytes: int,
+        deadline: float | None = None,
+    ) -> dict[str, object]:
+        return self._record(
+            scenario,
+            argv,
+            env=env,
+            timeout_seconds=timeout_seconds,
+            max_output_bytes=max_output_bytes,
+            deadline=deadline,
+        )
+
+    def _record(
+        self,
+        scenario: str | None,
+        argv: tuple[str, ...],
+        *,
+        env: dict[str, str],
+        timeout_seconds: float,
+        max_output_bytes: int,
+        deadline: float | None,
+    ) -> dict[str, object]:
+        self.calls.append(
+            {
+                "scenario": scenario,
+                "argv": argv,
+                "env": dict(env),
+                "timeout-seconds": timeout_seconds,
+                "max-output-bytes": max_output_bytes,
+                "deadline": deadline,
+            }
+        )
+        return dict(self.document)
+
+
+def _proof_for_binding(
+    binding: tuple[str, str, str],
+    *,
+    raw_request: bytes,
+    tarball: bytes,
+    response_body: bytes,
+    upstream_status: int = 201,
+) -> AcceptanceRequestProof:
+    _scenario, coordinate, tag = binding
+    return AcceptanceRequestProof.from_validated_exchange(
+        raw_request=raw_request,
+        tarball=tarball,
+        package_coordinate=coordinate,
+        tag=tag,
+        upstream_status=upstream_status,
+        selected_headers={
+            "Content-Type": "application/json",
+            "ETag": '"retry-5-request-bound"',
+        },
+        response_body=response_body,
+    )
+
+
+def test_acceptance_profiles_are_exactly_five_with_retry_5_and_no_historical_drift() -> (
+    None
+):
+    module = _require_retry_5_adapter_profile()
+    profiles = module._ACCEPTANCE_SUITE_PROFILES
+    actual_profiles = tuple(
+        (
+            base_coordinate,
+            tuple(
+                (
+                    scenario,
+                    f"{_RETRY_5_ACCEPTANCE_PACKAGE_NAME}@{version}",
+                    tag,
+                )
+                for scenario, version, tag in scenario_specs
+            ),
+        )
+        for base_coordinate, scenario_specs in profiles
+    )
+
+    assert actual_profiles == _EXPECTED_ACCEPTANCE_PROFILE_BINDINGS
+    assert actual_profiles[:4] == _EXPECTED_ACCEPTANCE_PROFILE_BINDINGS[:4]
+    assert tuple(base for base, _bindings in actual_profiles) == (
+        *_HISTORICAL_ACCEPTANCE_BASE_COORDINATES,
+        _RETRY_5_ACCEPTANCE_BASE_COORDINATE,
+    )
+    assert len({base for base, _bindings in actual_profiles}) == len(
+        _ACCEPTANCE_PROFILE_STARTS
+    )
+
+    pair_uses: dict[
+        tuple[str, str],
+        list[tuple[str, str]],
+    ] = {}
+    for base_coordinate, bindings in actual_profiles:
+        for scenario, coordinate, tag in bindings:
+            pair_uses.setdefault((coordinate, tag), []).append(
+                (base_coordinate, scenario)
+            )
+    repeated_pair_uses = tuple(
+        (pair, tuple(uses)) for pair, uses in pair_uses.items() if len(uses) > 1
+    )
+    expected_repeated_pair_uses = tuple(
+        (
+            (bindings[0][1], bindings[0][2]),
+            (
+                (base_coordinate, "absent-create-readback"),
+                (base_coordinate, "exact"),
+            ),
+        )
+        for base_coordinate, bindings in actual_profiles
+    )
+
+    assert len(pair_uses) == 20
+    assert frozenset(pair_uses) == module._ACCEPTANCE_COORDINATE_TAG_PAIRS
+    assert repeated_pair_uses == expected_repeated_pair_uses
+    assert all(
+        len(uses) == 1
+        for pair, uses in pair_uses.items()
+        if pair not in {repeated[0] for repeated in repeated_pair_uses}
+    )
+
+
+def test_retry_5_adapter_profile_has_exact_ordered_scenario_bindings() -> None:
+    module = _require_retry_5_adapter_profile()
+    retry_5_specs = next(
+        scenario_specs
+        for base_coordinate, scenario_specs in module._ACCEPTANCE_SUITE_PROFILES
+        if base_coordinate == _RETRY_5_ACCEPTANCE_BASE_COORDINATE
+    )
+
+    assert retry_5_specs == _scenario_specs_from_bindings(
+        _RETRY_5_ACCEPTANCE_BINDINGS
+    )
+    assert tuple(scenario for scenario, _version, _tag in retry_5_specs) == (
+        _ACCEPTANCE_SCENARIO_ORDER
+    )
+    assert tuple(
+        (
+            f"{_RETRY_5_ACCEPTANCE_PACKAGE_NAME}@{version}",
+            tag,
+        )
+        for _scenario, version, tag in retry_5_specs
+    ) == tuple(
+        (coordinate, tag)
+        for _scenario, coordinate, tag in _RETRY_5_ACCEPTANCE_BINDINGS
+    )
+
+
+@pytest.mark.parametrize(
+    ("base_coordinate", "expected_bindings"),
+    [
+        pytest.param(
+            base_coordinate,
+            bindings,
+            id=f"profile-{first_coordinate}",
+        )
+        for first_coordinate, (base_coordinate, bindings) in zip(
+            _ACCEPTANCE_PROFILE_STARTS,
+            _EXPECTED_ACCEPTANCE_PROFILE_BINDINGS,
+            strict=True,
+        )
+    ],
+)
+def test_retry_5_fixed_acceptance_resolvers_preserve_each_isolated_profile(
+    base_coordinate: str,
+    expected_bindings: tuple[tuple[str, str, str], ...],
+) -> None:
+    _require_retry_5_adapter_profile()
+
+    assert fixed_acceptance_scenario_specs(
+        base_coordinate
+    ) == _scenario_specs_from_bindings(expected_bindings)
+    assert tuple(
+        fixed_acceptance_coordinates(base_coordinate).items()
+    ) == tuple(
+        (scenario, coordinate)
+        for scenario, coordinate, _tag in expected_bindings
+    )
+    assert tuple(
+        tag
+        for _scenario, _version, tag in fixed_acceptance_scenario_specs(
+            base_coordinate
+        )
+    ) == tuple(tag for _scenario, _coordinate, tag in expected_bindings)
+
+
+@pytest.mark.parametrize(
+    ("scenario", "coordinate", "tag", "expected_process_count"),
+    [
+        pytest.param(
+            scenario,
+            coordinate,
+            tag,
+            2 if scenario in {"identical-race", "differing-race"} else 1,
+            id=scenario,
+        )
+        for scenario, coordinate, tag in _RETRY_5_ACCEPTANCE_BINDINGS
+    ],
+)
+def test_retry_5_npm_runner_routes_exact_profile_through_controlled_fakes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    scenario: str,
+    coordinate: str,
+    tag: str,
+    expected_process_count: int,
+) -> None:
+    _require_retry_5_adapter_profile()
+    proxy_calls: list[dict[str, Any]] = []
+    process_calls: list[tuple[tuple[str, ...], dict[str, Any]]] = []
+
+    class Proxy:
+        registry = "http://retry-5.invalid:4873"
+
+        def __init__(self, **kwargs: Any) -> None:
+            proxy_calls.append(dict(kwargs))
+            self.observed = cli_module.threading.Event()
+            self.processed = cli_module.threading.Event()
+            self.proof = None
+
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            pass
+
+    class Process:
+        returncode = 0
+
+        def communicate(self, timeout: float) -> tuple[str, str]:
+            assert 0 < timeout <= TIMEOUT_SECONDS
+            return "", ""
+
+        def poll(self) -> int:
+            return self.returncode
+
+        def kill(self) -> None:
+            pytest.fail("completed controlled process must not be killed")
+
+    def popen(
+        command: tuple[str, ...],
+        **kwargs: Any,
+    ) -> Process:
+        process_calls.append((tuple(command), dict(kwargs)))
+        return Process()
+
+    monkeypatch.setattr(cli_module, "_LostResponseProxy", Proxy)
+    monkeypatch.setattr(cli_module.subprocess, "Popen", popen)
+    primary = tmp_path / f"retry-5-{scenario}-primary.tgz"
+    contender = tmp_path / f"retry-5-{scenario}-contender.tgz"
+    primary.write_bytes(f"retry-5-primary-{scenario}".encode())
+    contender.write_bytes(f"retry-5-contender-{scenario}".encode())
+    runner = cli_module._AcceptanceNpmRunner(
+        tmp_path / "unused-original.npmrc",
+        contender_tarballs={"differing-race": contender},
+        token="controlled-retry-5-token",
+        base_package_coordinate=_RETRY_5_ACCEPTANCE_BASE_COORDINATE,
+    )
+
+    result = runner.run_scenario(
+        scenario,
+        ("npm", "publish", str(primary), "--tag", tag),
+        env={"NPM_CONFIG_IGNORE_SCRIPTS": "true"},
+        timeout_seconds=TIMEOUT_SECONDS,
+        max_output_bytes=MAX_OUTPUT_BYTES,
+    )
+
+    expected_tarballs = (
+        (primary.read_bytes(), primary.read_bytes())
+        if scenario == "identical-race"
+        else (
+            (primary.read_bytes(), contender.read_bytes())
+            if scenario == "differing-race"
+            else (primary.read_bytes(),)
+        )
+    )
+    assert runner._coordinates[scenario] == coordinate
+    assert len(proxy_calls) == 1
+    assert proxy_calls[0]["expected_version"] == coordinate.rsplit("@", 1)[1]
+    assert proxy_calls[0]["expected_tag"] == tag
+    assert proxy_calls[0]["expected_tarballs"] == expected_tarballs
+    assert proxy_calls[0]["expected_requests"] == expected_process_count
+    assert proxy_calls[0]["drop_accepted_response"] is (
+        scenario == "lost-response"
+    )
+    assert len(process_calls) == expected_process_count
+    assert (
+        tuple(
+            Path(command[2]).read_bytes() for command, _kwargs in process_calls
+        )
+        == expected_tarballs
+    )
+    assert all(
+        command[command.index("--tag") + 1] == tag
+        and command[command.index("--registry") + 1] == Proxy.registry
+        for command, _kwargs in process_calls
+    )
+    assert all(
+        kwargs["env"]["NPM_CONFIG_IGNORE_SCRIPTS"] == "true"
+        and "NPM_CONFIG_USERCONFIG" in kwargs["env"]
+        for _command, kwargs in process_calls
+    )
+    assert result["outcome"] == "failed"
+    assert result["action-executed"] is True
+    assert result["mutation-started"] is False
+    assert result["contender-outcomes"] == ["created"] * expected_process_count
+    assert str(result["response-identity-digest"]).startswith("sha256:")
+
+
+@pytest.mark.parametrize("upstream_status", [200, 201])
+def test_retry_5_fixed_suite_admits_exact_request_proof_and_readback_status(
+    tmp_path: Path,
+    upstream_status: int,
+) -> None:
+    _require_retry_5_adapter_profile()
+    binding = _RETRY_5_ACCEPTANCE_BINDINGS[0]
+    scenario, coordinate, tag = binding
+    tarball = tmp_path / f"retry-5-status-{upstream_status}.tgz"
+    tarball_bytes = f"retry-5-status-{upstream_status}-tarball".encode()
+    tarball.write_bytes(tarball_bytes)
+    raw_request = f'{{"request":"retry-5-status-{upstream_status}"}}'.encode()
+    response_body = f'{{"accepted":true,"status":{upstream_status}}}'.encode()
+    proof = _proof_for_binding(
+        binding,
+        raw_request=raw_request,
+        tarball=tarball_bytes,
+        response_body=response_body,
+        upstream_status=upstream_status,
+    )
+    runner = _Retry5ProtocolRunner(_protocol_confirmed_document(proof))
+    content_sha512 = "sha512:" + hashlib.sha512(tarball_bytes).hexdigest()
+    transport = RecordingTransport(
+        [
+            _absent(),
+            {
+                "state": "exact",
+                "version": coordinate.rsplit("@", 1)[1],
+                "tag": tag,
+                "content-sha512": content_sha512,
+                "response-identity-digest": RESPONSE_B,
+            },
+        ]
+    )
+
+    suite = run_fixed_acceptance_suite(
+        suite="absent-create-readback",
+        tarballs={scenario: tarball},
+        transport=transport,
+        runner=runner,
+        timeout_seconds=TIMEOUT_SECONDS,
+        max_response_bytes=MAX_RESPONSE_BYTES,
+        max_output_bytes=MAX_OUTPUT_BYTES,
+        base_package_coordinate=_RETRY_5_ACCEPTANCE_BASE_COORDINATE,
+    )
+
+    result = suite.scenarios[0]
+    document = suite.to_document()
+    scenario_document = cast(
+        "dict[str, Any]",
+        cast("list[Any]", document["scenarios"])[0],
+    )
+    digest_basis = dict(document)
+    record_digest = digest_basis.pop("record-digest")
+    expected_response_identity = (
+        "sha256:"
+        + hashlib.sha256(
+            canonicalize(
+                cast(
+                    "JsonValue",
+                    {
+                        "request-digest": proof.request_digest,
+                        "upstream-status": upstream_status,
+                        "selected-headers": dict(proof.selected_headers),
+                        "response-body-digest": proof.response_body_digest,
+                    },
+                )
+            )
+        ).hexdigest()
+    )
+
+    assert suite.scenario_inventory == ("absent-create-readback",)
+    assert suite.mutation_classification == "complete"
+    assert suite.result == "success"
+    assert result.package_coordinate == coordinate
+    assert result.tag == tag
+    assert result.pre_state == "absent"
+    assert result.post_state == "exact"
+    assert result.result == "protocol-confirmed"
+    assert result.action_executed is True
+    assert result.mutation_started is True
+    assert result.content_sha512 == content_sha512
+    assert result.response_identity_digest == proof.response_identity_digest
+    assert result.validated_request_proof is proof
+    assert result.runner_diagnostic is not None
+    assert result.runner_diagnostic.upstream_status == upstream_status
+    assert result.runner_diagnostic.request_correlation_digest == (
+        proof.request_digest
+    )
+    assert proof.request_digest == (
+        "sha256:" + hashlib.sha256(raw_request).hexdigest()
+    )
+    assert proof.tarball_sha512 == content_sha512
+    assert proof.response_body_digest == (
+        "sha256:" + hashlib.sha256(response_body).hexdigest()
+    )
+    assert proof.response_identity_digest == expected_response_identity
+    assert tuple((call[0], call[1]) for call in transport.calls) == (
+        (coordinate, tag),
+        (coordinate, tag),
+    )
+    assert len(runner.calls) == 1
+    assert runner.calls[0]["scenario"] == scenario
+    assert runner.calls[0]["argv"] == (
+        "npm",
+        "publish",
+        str(tarball),
+        "--tag",
+        tag,
+        "--registry",
+        "https://npm.pkg.github.com",
+        "--ignore-scripts",
+    )
+    assert runner.calls[0]["env"] == {"NPM_CONFIG_IGNORE_SCRIPTS": "true"}
+    assert scenario_document["package-coordinate"] == coordinate
+    assert scenario_document["tag"] == tag
+    assert scenario_document["action"] == {
+        "operation": "npm-publish-create-only",
+        "executed": True,
+        "mutation-started": True,
+    }
+    assert scenario_document["post"] == {
+        "state": "exact",
+        "content-sha512": content_sha512,
+    }
+    assert scenario_document["validated-request-proof"] == proof.to_document()
+    assert record_digest == (
+        "sha256:"
+        + hashlib.sha256(
+            canonicalize(cast("JsonValue", digest_basis))
+        ).hexdigest()
+    )
+
+
+@pytest.mark.parametrize("upstream_status", [200, 201])
+def test_retry_5_lost_response_admits_exact_request_proof_and_readback_status(
+    tmp_path: Path,
+    upstream_status: int,
+) -> None:
+    _require_retry_5_adapter_profile()
+    binding = _RETRY_5_ACCEPTANCE_BINDINGS[4]
+    scenario, coordinate, tag = binding
+    tarball = tmp_path / f"retry-5-lost-response-{upstream_status}.tgz"
+    tarball_bytes = f"retry-5-lost-response-{upstream_status}".encode()
+    tarball.write_bytes(tarball_bytes)
+    proof = _proof_for_binding(
+        binding,
+        raw_request=f"retry-5-lost-request-{upstream_status}".encode(),
+        tarball=tarball_bytes,
+        response_body=f"retry-5-lost-response-{upstream_status}".encode(),
+        upstream_status=upstream_status,
+    )
+    runner_document = _protocol_confirmed_document(proof)
+    runner_document["outcome"] = "lost-response-processed"
+    runner = _Retry5ProtocolRunner(runner_document)
+    content_sha512 = "sha512:" + hashlib.sha512(tarball_bytes).hexdigest()
+    transport = RecordingTransport(
+        [
+            _absent(),
+            {
+                "state": "exact",
+                "version": coordinate.rsplit("@", 1)[1],
+                "tag": tag,
+                "content-sha512": content_sha512,
+                "response-identity-digest": proof.response_identity_digest,
+            },
+        ]
+    )
+
+    result = run_fixed_coordinate_acceptance_probe(
+        scenario=scenario,
+        package_coordinate=coordinate,
+        tag=tag,
+        tarball=tarball,
+        tarball_sha512=content_sha512,
+        transport=transport,
+        runner=runner,
+        timeout_seconds=TIMEOUT_SECONDS,
+        max_response_bytes=MAX_RESPONSE_BYTES,
+        max_output_bytes=MAX_OUTPUT_BYTES,
+    )
+
+    assert (
+        result.result,
+        result.mutation_classification,
+        result.pre_state,
+        result.post_state,
+        result.action_executed,
+        result.mutation_started,
+    ) == (
+        "lost-response-exact-after-start",
+        "complete",
+        "absent",
+        "exact",
+        True,
+        True,
+    )
+    assert result.package_coordinate == coordinate
+    assert result.tag == tag
+    assert result.content_sha512 == proof.tarball_sha512 == content_sha512
+    assert result.response_identity_digest == proof.response_identity_digest
+    assert result.validated_request_proof is proof
+    assert result.runner_diagnostic is None
+    assert result.diagnostics == ("mutation-started-and-readback-exact",)
+    assert tuple((call[0], call[1]) for call in transport.calls) == (
+        (coordinate, tag),
+        (coordinate, tag),
+    )
+    assert len(runner.calls) == 1
+    assert runner.calls[0]["scenario"] == scenario
+
+
+_RETRY_5_CROSS_PROFILE_SUBSTITUTION_CASES = tuple(
+    pytest.param(
+        historical_start,
+        direction,
+        substitution,
+        scenario_index,
+        id=(
+            f"history-{historical_start}-{direction}-"
+            f"{_RETRY_5_ACCEPTANCE_BINDINGS[scenario_index][0]}-"
+            f"{substitution}"
+        ),
+    )
+    for historical_start in _ACCEPTANCE_PROFILE_STARTS[:4]
+    for direction in (
+        "retry-5-receives-historical",
+        "historical-receives-retry-5",
+    )
+    for scenario_index, substitutions in (
+        (
+            0,
+            (
+                "coordinate-only",
+                "tag-only",
+                "paired",
+                "request",
+                "tarball",
+                "response",
+            ),
+        ),
+        (
+            4,
+            (
+                "request",
+                "tarball",
+                "status",
+                "selected-headers",
+                "response-body",
+                "response-identity",
+            ),
+        ),
+    )
+    for substitution in substitutions
+)
+
+
+def _assert_cross_profile_mixed_pair_rejected(
+    module: Any,
+    *,
+    substitution: str,
+    control: AcceptanceRequestProof,
+    donor_coordinate: str,
+    donor_tag: str,
+    raw_request: bytes,
+    tarball: bytes,
+    response_body: bytes,
+) -> None:
+    substituted_coordinate = (
+        donor_coordinate
+        if substitution == "coordinate-only"
+        else control.package_coordinate
+    )
+    substituted_tag = donor_tag if substitution == "tag-only" else control.tag
+    with pytest.raises(
+        ValueError,
+        match="coordinate or tag is not fixed",
+    ) as raised:
+        AcceptanceRequestProof.from_validated_exchange(
+            raw_request=raw_request,
+            tarball=tarball,
+            package_coordinate=substituted_coordinate,
+            tag=substituted_tag,
+            upstream_status=201,
+            selected_headers={"Content-Type": "application/json"},
+            response_body=response_body,
+        )
+
+    assert str(raised.value) == (
+        "validated request coordinate or tag is not fixed"
+    )
+    assert (
+        control.package_coordinate,
+        control.tag,
+    ) in module._ACCEPTANCE_COORDINATE_TAG_PAIRS
+    assert (donor_coordinate, donor_tag) in (
+        module._ACCEPTANCE_COORDINATE_TAG_PAIRS
+    )
+    assert (substituted_coordinate, substituted_tag) not in (
+        module._ACCEPTANCE_COORDINATE_TAG_PAIRS
+    )
+
+
+def _cross_profile_runner_document(
+    *,
+    substitution: str,
+    recipient_binding: tuple[str, str, str],
+    donor_binding: tuple[str, str, str],
+    control: AcceptanceRequestProof,
+    raw_request: bytes,
+    tarball: bytes,
+    response_body: bytes,
+) -> dict[str, object]:
+    alternate_request = _proof_for_binding(
+        recipient_binding,
+        raw_request=b"cross-profile-alternate-request",
+        tarball=tarball,
+        response_body=response_body,
+    )
+    alternate_response = _proof_for_binding(
+        recipient_binding,
+        raw_request=raw_request,
+        tarball=tarball,
+        response_body=b"cross-profile-alternate-response",
+    )
+    if substitution == "paired":
+        substituted_proof = _proof_for_binding(
+            donor_binding,
+            raw_request=raw_request,
+            tarball=tarball,
+            response_body=response_body,
+        )
+    elif substitution == "tarball":
+        substituted_proof = _proof_for_binding(
+            recipient_binding,
+            raw_request=raw_request,
+            tarball=b"cross-profile-alternate-tarball",
+            response_body=response_body,
+        )
+    else:
+        substituted_proof = control
+    runner_document = _protocol_confirmed_document(substituted_proof)
+    if recipient_binding[0] == "lost-response":
+        runner_document["outcome"] = "lost-response-processed"
+    if substitution == "request":
+        runner_document["request-digest"] = alternate_request.request_digest
+    elif substitution == "status":
+        runner_document["upstream-status"] = (
+            200 if control.upstream_status == 201 else 201
+        )
+    elif substitution == "selected-headers":
+        runner_document["selected-headers"] = {
+            "etag": '"cross-profile-alternate"'
+        }
+    elif substitution == "response-body":
+        runner_document["response-body-digest"] = (
+            alternate_response.response_body_digest
+        )
+    elif substitution == "response-identity":
+        runner_document["response-identity-digest"] = (
+            alternate_response.response_identity_digest
+        )
+    elif substitution == "response":
+        runner_document["response-body-digest"] = (
+            alternate_response.response_body_digest
+        )
+        runner_document["response-identity-digest"] = (
+            alternate_response.response_identity_digest
+        )
+    return runner_document
+
+
+@pytest.mark.parametrize(
+    ("historical_start", "direction", "substitution", "scenario_index"),
+    _RETRY_5_CROSS_PROFILE_SUBSTITUTION_CASES,
+)
+def test_retry_5_proof_rejects_each_bidirectional_historical_substitution(
+    tmp_path: Path,
+    historical_start: int,
+    direction: str,
+    substitution: str,
+    scenario_index: int,
+) -> None:
+    module = _require_retry_5_adapter_profile()
+    historical_binding = _expected_acceptance_bindings(historical_start)[
+        scenario_index
+    ]
+    retry_5_binding = _RETRY_5_ACCEPTANCE_BINDINGS[scenario_index]
+    recipient_binding, donor_binding = (
+        (retry_5_binding, historical_binding)
+        if direction == "retry-5-receives-historical"
+        else (historical_binding, retry_5_binding)
+    )
+    scenario, recipient_coordinate, recipient_tag = recipient_binding
+    _donor_scenario, donor_coordinate, donor_tag = donor_binding
+    raw_request = f"recipient-request-{historical_start}-{direction}".encode()
+    response_body = (
+        f"recipient-response-{historical_start}-{direction}".encode()
+    )
+    tarball_bytes = f"recipient-tarball-{historical_start}-{direction}".encode()
+    control = _proof_for_binding(
+        recipient_binding,
+        raw_request=raw_request,
+        tarball=tarball_bytes,
+        response_body=response_body,
+    )
+
+    if substitution in {"coordinate-only", "tag-only"}:
+        _assert_cross_profile_mixed_pair_rejected(
+            module,
+            substitution=substitution,
+            control=control,
+            donor_coordinate=donor_coordinate,
+            donor_tag=donor_tag,
+            raw_request=raw_request,
+            tarball=tarball_bytes,
+            response_body=response_body,
+        )
+        assert control.package_coordinate == recipient_coordinate
+        assert control.tag == recipient_tag
+        return
+
+    runner_document = _cross_profile_runner_document(
+        substitution=substitution,
+        recipient_binding=recipient_binding,
+        donor_binding=donor_binding,
+        control=control,
+        raw_request=raw_request,
+        tarball=tarball_bytes,
+        response_body=response_body,
+    )
+
+    tarball = tmp_path / (f"{historical_start}-{direction}-{substitution}.tgz")
+    tarball.write_bytes(tarball_bytes)
+    content_sha512 = "sha512:" + hashlib.sha512(tarball_bytes).hexdigest()
+    transport = DeadlineAwareTransport(
+        [
+            _absent(),
+            {
+                "state": "exact",
+                "version": recipient_coordinate.rsplit("@", 1)[1],
+                "tag": recipient_tag,
+                "content-sha512": content_sha512,
+                "response-identity-digest": RESPONSE_B,
+            },
+        ]
+    )
+    runner = DeadlineAwareRunner(runner_document)
+
+    result = run_fixed_coordinate_acceptance_probe(
+        scenario=scenario,
+        package_coordinate=recipient_coordinate,
+        tag=recipient_tag,
+        tarball=tarball,
+        tarball_sha512=content_sha512,
+        transport=transport,
+        runner=runner,
+        timeout_seconds=TIMEOUT_SECONDS,
+        max_response_bytes=MAX_RESPONSE_BYTES,
+        max_output_bytes=MAX_OUTPUT_BYTES,
+    )
+
+    assert result.package_coordinate == recipient_coordinate
+    assert result.tag == recipient_tag
+    assert result.pre_state == "absent"
+    assert result.post_state == "exact"
+    assert result.action_executed is True
+    assert result.mutation_started is True
+    assert result.result == (
+        "lost-response"
+        if scenario == "lost-response"
+        else "runner-failed-after-mutation-start"
+    )
+    assert result.mutation_classification == (
+        "unknown" if scenario == "lost-response" else "incomplete"
+    )
+    assert result.validated_request_proof is None
+    assert result.runner_diagnostic is None
+    assert result.diagnostics == (
+        (
+            "mutation-may-have-started",
+            "human-reconciliation-required",
+        )
+        if scenario == "lost-response"
+        else ("runner-did-not-prove-controlled-outcome",)
+    )
+    assert tuple((call[0], call[1]) for call in transport.calls) == (
+        (recipient_coordinate, recipient_tag),
+        (recipient_coordinate, recipient_tag),
+    )
+    assert len(runner.deadlines) == 1
+
+
+@pytest.mark.parametrize(
+    "binding_kind",
+    [
+        pytest.param("base", id="base-21"),
+        pytest.param("coordinate", id="coordinate-21"),
+        pytest.param("tag", id="tag-21"),
+        pytest.param("pair", id="coordinate-tag-pair-21"),
+    ],
+)
+def test_unregistered_acceptance_bindings_reject_base_coordinate_and_tag(
+    tmp_path: Path,
+    binding_kind: str,
+) -> None:
+    module = _retry_5_adapter_module()
+    unregistered_coordinate = _RETRY_5_UNREGISTERED_BASE_COORDINATE
+    unregistered_tag = "wdv3-acceptance-21"
+    registered_coordinate = _RETRY_5_ACCEPTANCE_BASE_COORDINATE
+    registered_tag = "wdv3-acceptance-17"
+    registered_bases = tuple(
+        base_coordinate
+        for base_coordinate, _specs in module._ACCEPTANCE_SUITE_PROFILES
+    )
+
+    assert unregistered_coordinate not in registered_bases
+    assert (
+        unregistered_coordinate,
+        unregistered_tag,
+    ) not in module._ACCEPTANCE_COORDINATE_TAG_PAIRS
+    if binding_kind == "base":
+        with pytest.raises(ValueError, match="not a reviewed fixed suite"):
+            fixed_acceptance_scenario_specs(unregistered_coordinate)
+        with pytest.raises(ValueError, match="not a reviewed fixed suite"):
+            fixed_acceptance_coordinates(unregistered_coordinate)
+        return
+    if binding_kind == "pair":
+        with pytest.raises(
+            ValueError,
+            match="coordinate or tag is not fixed",
+        ):
+            AcceptanceRequestProof.from_validated_exchange(
+                raw_request=b"unregistered-retry-5-request",
+                tarball=b"unregistered-retry-5-tarball",
+                package_coordinate=unregistered_coordinate,
+                tag=unregistered_tag,
+                upstream_status=201,
+                selected_headers={"Content-Type": "application/json"},
+                response_body=b'{"ok":true}',
+            )
+        return
+
+    tarball = tmp_path / f"unregistered-{binding_kind}.tgz"
+    tarball.write_bytes(b"unregistered-retry-5")
+    transport = RecordingTransport([])
+    runner = ControlledRunner()
+    with pytest.raises(ValueError):
+        run_fixed_coordinate_acceptance_probe(
+            scenario="absent-create-readback",
+            package_coordinate=(
+                unregistered_coordinate
+                if binding_kind == "coordinate"
+                else registered_coordinate
+            ),
+            tag=(unregistered_tag if binding_kind == "tag" else registered_tag),
+            tarball=tarball,
+            tarball_sha512=(
+                "sha512:" + hashlib.sha512(tarball.read_bytes()).hexdigest()
+            ),
+            transport=transport,
+            runner=runner,
+            timeout_seconds=TIMEOUT_SECONDS,
+            max_response_bytes=MAX_RESPONSE_BYTES,
+            max_output_bytes=MAX_OUTPUT_BYTES,
+        )
+
+    assert transport.calls == []
+    assert runner.calls == []
+
+
+# Move the append-only retry-4 resolver's unregistered fixture to the next
+# unused block without rewriting its historical test body.
+_RETRY_4_UNREGISTERED_BASE_COORDINATE = _RETRY_5_UNREGISTERED_BASE_COORDINATE
+
+_RETRY_4_PROFILE_REGISTRY_TESTS = frozenset(
+    {
+        (
+            "test_retry_4_adapter_profiles_have_stable_historical_order_"
+            "and_unique_base_coordinates"
+        ),
+        (
+            "test_retry_4_adapter_profiles_preserve_scenario_order_and_"
+            "qualified_identity_uniqueness"
+        ),
+        (
+            "test_retry_4_adapter_coordinate_tag_pairs_are_exact_and_"
+            "globally_unique"
+        ),
+    }
+)
+
+
+@pytest.fixture(autouse=True)
+def _preserve_append_only_adapter_history_and_move_negative_fixtures(
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    test_name = getattr(request.node, "originalname", request.node.name)
+    if test_name in _RETRY_4_PROFILE_REGISTRY_TESTS:
+        module = _retry_5_adapter_module()
+        profiles = module._ACCEPTANCE_SUITE_PROFILES
+        assert tuple(base for base, _specs in profiles) == tuple(
+            base for base, _bindings in _EXPECTED_ACCEPTANCE_PROFILE_BINDINGS
+        )
+        historical_profiles = profiles[:4]
+        monkeypatch.setattr(
+            module,
+            "_ACCEPTANCE_SUITE_PROFILES",
+            historical_profiles,
+        )
+        monkeypatch.setattr(
+            module,
+            "_ACCEPTANCE_COORDINATE_TAG_PAIRS",
+            frozenset(
+                (
+                    f"{_RETRY_5_ACCEPTANCE_PACKAGE_NAME}@{version}",
+                    tag,
+                )
+                for _base_coordinate, specs in historical_profiles
+                for _scenario, version, tag in specs
+            ),
+        )
+        return
+
+    if test_name == (
+        "test_retry_2_suite_resolves_only_the_reviewed_coordinate_block"
+    ):
+        original_resolver = fixed_acceptance_coordinates
+
+        def relocated_resolver(base_coordinate: str) -> dict[str, str]:
+            return original_resolver(
+                _RETRY_5_UNREGISTERED_BASE_COORDINATE
+                if base_coordinate == _RETRY_5_ACCEPTANCE_BASE_COORDINATE
+                else base_coordinate
+            )
+
+        monkeypatch.setitem(
+            globals(),
+            "fixed_acceptance_coordinates",
+            relocated_resolver,
+        )
+        return
+
+    callspec = getattr(request.node, "callspec", None)
+    if (
+        test_name
+        == "test_acceptance_probe_requires_the_fixed_coordinate_and_explicit_tag"
+        and callspec is not None
+        and callspec.params.get("coordinate")
+        == _RETRY_5_ACCEPTANCE_BASE_COORDINATE
+        and callspec.params.get("tag") == "wdv3-acceptance-17"
+    ):
+        original_probe = run_fixed_coordinate_acceptance_probe
+
+        def relocated_probe(*args: Any, **kwargs: Any) -> Any:
+            kwargs["package_coordinate"] = _RETRY_5_UNREGISTERED_BASE_COORDINATE
+            kwargs["tag"] = "wdv3-acceptance-21"
+            return original_probe(*args, **kwargs)
+
+        monkeypatch.setitem(
+            globals(),
+            "run_fixed_coordinate_acceptance_probe",
+            relocated_probe,
+        )
+
+
+_RETRY_5_NON_AUTHORITATIVE_TWO_XX_STATUS_CASES = tuple(
+    pytest.param(status, id=f"http-{status}") for status in range(202, 300)
+)
+
+
+def test_retry_5_adapter_authoritative_publish_status_set_is_exact() -> None:
+    module = _require_retry_5_adapter_profile()
+    expected_statuses = frozenset({200, 201})
+    actual_statuses = module._ACCEPTANCE_PUBLISH_SUCCESS_STATUSES
+
+    assert actual_statuses == expected_statuses
+    assert (
+        _RETRY_5_ACCEPTANCE_BINDINGS[0][1:3]
+        in module._ACCEPTANCE_COORDINATE_TAG_PAIRS
+    )
+
+
+@pytest.mark.parametrize(
+    "upstream_status",
+    _RETRY_5_NON_AUTHORITATIVE_TWO_XX_STATUS_CASES,
+)
+def test_retry_5_validated_request_proof_rejects_every_other_two_xx_status(
+    upstream_status: int,
+) -> None:
+    module = _require_retry_5_adapter_profile()
+    binding = _RETRY_5_ACCEPTANCE_BINDINGS[0]
+    _scenario, coordinate, tag = binding
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"^validated upstream status is not an accepted npm publish status$"
+        ),
+    ) as raised:
+        _proof_for_binding(
+            binding,
+            raw_request=f"retry-5-http-{upstream_status}-request".encode(),
+            tarball=f"retry-5-http-{upstream_status}-tarball".encode(),
+            response_body=f"retry-5-http-{upstream_status}-response".encode(),
+            upstream_status=upstream_status,
+        )
+
+    assert str(raised.value) == (
+        "validated upstream status is not an accepted npm publish status"
+    )
+    assert upstream_status not in module._ACCEPTANCE_PUBLISH_SUCCESS_STATUSES
+    assert (coordinate, tag) in module._ACCEPTANCE_COORDINATE_TAG_PAIRS

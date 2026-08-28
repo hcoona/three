@@ -173,6 +173,37 @@ GOVERNANCE_RETRY_4_ACCEPTANCE_SCENARIO_COORDINATES = {
         "wdv3-acceptance-16",
     ),
 }
+GOVERNANCE_RETRY_5_ACCEPTANCE_WORKFLOW_PATH = (
+    ".github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-5.yml"
+)
+GOVERNANCE_RETRY_5_ACCEPTANCE_PACKAGE_COORDINATE = (
+    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.17"
+)
+GOVERNANCE_RETRY_5_ACCEPTANCE_ENVIRONMENT = (
+    "workflow-delivery-v3-buddy-smoke-acceptance-retry-5"
+)
+GOVERNANCE_RETRY_5_ACCEPTANCE_SCENARIO_COORDINATES = {
+    "absent-create-readback": (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.17",
+        "wdv3-acceptance-17",
+    ),
+    "exact": (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.17",
+        "wdv3-acceptance-17",
+    ),
+    "identical-race": (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.18",
+        "wdv3-acceptance-18",
+    ),
+    "differing-race": (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.19",
+        "wdv3-acceptance-19",
+    ),
+    "lost-response": (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.20",
+        "wdv3-acceptance-20",
+    ),
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -269,6 +300,26 @@ _GOVERNANCE_ACCEPTANCE_PROFILES = (
             )
             for scenario, (coordinate, tag) in (
                 GOVERNANCE_RETRY_4_ACCEPTANCE_SCENARIO_COORDINATES.items()
+            )
+        ),
+    ),
+    _GovernanceAcceptanceProfile(
+        package_coordinate=GOVERNANCE_RETRY_5_ACCEPTANCE_PACKAGE_COORDINATE,
+        workflow_path=GOVERNANCE_RETRY_5_ACCEPTANCE_WORKFLOW_PATH,
+        environment=GOVERNANCE_RETRY_5_ACCEPTANCE_ENVIRONMENT,
+        target_sha="0000000000000000000000000000000000000000",
+        confirmation_digest=(
+            "sha256:"
+            "71fdd8f8cbb3ab90dd94745a18337d89a893fbdaeea35fafa733bc13d75c308f"
+        ),
+        scenario_coordinates=tuple(
+            (
+                scenario,
+                coordinate,
+                tag,
+            )
+            for scenario, (coordinate, tag) in (
+                GOVERNANCE_RETRY_5_ACCEPTANCE_SCENARIO_COORDINATES.items()
             )
         ),
     ),

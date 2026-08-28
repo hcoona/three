@@ -129,6 +129,20 @@ RETRY_4_ACCEPTANCE_SCENARIO_SPECS = (
     ("differing-race", "0.0.0-wdv3-acceptance.15", "wdv3-acceptance-15"),
     ("lost-response", "0.0.0-wdv3-acceptance.16", "wdv3-acceptance-16"),
 )
+RETRY_5_ACCEPTANCE_PACKAGE_COORDINATE = (
+    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.17"
+)
+RETRY_5_ACCEPTANCE_SCENARIO_SPECS = (
+    (
+        "absent-create-readback",
+        "0.0.0-wdv3-acceptance.17",
+        "wdv3-acceptance-17",
+    ),
+    ("exact", "0.0.0-wdv3-acceptance.17", "wdv3-acceptance-17"),
+    ("identical-race", "0.0.0-wdv3-acceptance.18", "wdv3-acceptance-18"),
+    ("differing-race", "0.0.0-wdv3-acceptance.19", "wdv3-acceptance-19"),
+    ("lost-response", "0.0.0-wdv3-acceptance.20", "wdv3-acceptance-20"),
+)
 _ACCEPTANCE_SUITE_PROFILES = (
     (ACCEPTANCE_PACKAGE_COORDINATE, ACCEPTANCE_SCENARIO_SPECS),
     (
@@ -142,6 +156,10 @@ _ACCEPTANCE_SUITE_PROFILES = (
     (
         RETRY_4_ACCEPTANCE_PACKAGE_COORDINATE,
         RETRY_4_ACCEPTANCE_SCENARIO_SPECS,
+    ),
+    (
+        RETRY_5_ACCEPTANCE_PACKAGE_COORDINATE,
+        RETRY_5_ACCEPTANCE_SCENARIO_SPECS,
     ),
 )
 ACCEPTANCE_COORDINATES = {
@@ -1458,6 +1476,12 @@ def _valid_lost_response_proof(
         and proof.package_coordinate == f"{ACCEPTANCE_PACKAGE_NAME}@{version}"
         and proof.tag == tag
         and proof.upstream_status in _ACCEPTANCE_PUBLISH_SUCCESS_STATUSES
+        and document.get("request-digest") == proof.request_digest
+        and document.get("upstream-status") == proof.upstream_status
+        and document.get("selected-headers") == dict(proof.selected_headers)
+        and document.get("response-body-digest") == proof.response_body_digest
+        and document.get("response-identity-digest")
+        == proof.response_identity_digest
     )
 
 
