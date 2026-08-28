@@ -2427,3 +2427,19 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   and confirmed acceptance refs absent. Protected source cleanup is staged.
   The `.13`-`.16` block is consumed, and normal Live remains disabled and
   unauthorized.
+
+## [2026-08-28] query | Close destination acceptance retry 4
+
+- Merged protected cleanup PR #610 without bypass as
+  `4e7e7ef6ffe08de2695d51ec5c477d82da4ff226`; post-merge Continuous
+  Integration run `33170502138` and CodeQL run `33170502133` passed.
+- Confirmed the temporary workflow source and workflow-only contract are
+  absent from `main`; workflow ID `344468231` is `deleted` and still has only
+  failed attempt-1 run `33165777024`.
+- Reconfirmed Environment ID `20772100445` and acceptance refs absent, exact
+  `.13` and its tag retained, `.14`-`.16` and their tags absent, and historical
+  deployment `6140043006` terminal `inactive` after Environment deletion. No
+  post-deletion dispatch occurred.
+- Closed retry 4 as unsuccessful without rerun. The cleanup-before-repair gate
+  is satisfied at `main@4e7e7ef6`; normal Live remains disabled and
+  unauthorized.

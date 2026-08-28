@@ -246,14 +246,16 @@ Next:
 4. preserve immutable artifacts `9683508663`, `9683519655`, and `9683526452`.
    Their GitHub-recorded SHA-256 digests match the retained raw bytes, and the
    terminal Governance artifact passes canonical admission;
-5. keep workflow ID `344468231` disabled, Environment ID `20772100445`
-   deleted, acceptance refs absent, and protected source cleanup staged. Do
-   not rerun or reuse `.13`-`.16`. Any further attempt requires a separately
-   reviewed acceptance-only repair and a fresh coordinate block. Do not begin
-   or merge that repair until protected cleanup merges into `main` and a fresh
-   post-merge fetch confirms the temporary workflow and workflow-only contract
-   absent, the workflow identity, Environment, and refs still retired, exact
-   `.13` retained, and `.14`-`.16` absent; and
+5. retain cleanup PR #610 as rebase-merged without bypass at `4e7e7ef6`.
+   Post-merge CI and CodeQL passed. Fresh authenticated reconciliation
+   confirms the temporary workflow source and workflow-only contract absent,
+   workflow ID `344468231` `deleted`, Environment ID `20772100445` and
+   acceptance refs absent, exactly one historical attempt-1 run, exact `.13`
+   retained, and `.14`-`.16` absent. No post-deletion dispatch occurred. The
+   cleanup-before-repair gate is satisfied, but any further attempt still
+   requires a separately reviewed acceptance-only repair and fresh coordinate
+   block starting from a fresh fetch of this cleanup merge or a later reviewed
+   successor; and
 6. keep `live_enabled: false`. Subsequent explicit user authorization covers
    the bounded acceptance-only repair/retry loop through genuine success,
    cleanup, and closure, but normal Live activation remains a separate
