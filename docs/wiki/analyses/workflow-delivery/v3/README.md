@@ -229,20 +229,22 @@ Next:
 1. preserve all three attempts and their exact evidence as unsuccessful
    historical replay; do not infer acceptance from destination state or the
    new diagnostics;
-2. treat preparation PR #608 as a prerequisite: no later phase may begin
-   unless it has merged without bypass. It carries the closed `.13`-`.16`
-   profile, retry-4 workflow and Environment identity, and exact confirmation,
-   but keeps the target at 40 zeroes so validation stops before review or
-   mutation. The work started from freshly fetched `origin/main@bcf47e2d`;
-   `bf174897` remains implementation provenance only;
-3. after preparation merges, revalidate the current principal, owner, `main`,
-   ruleset, checks, open-PR drift, runs, deployments, refs, workflow identity,
-   Environment, package versions, and tags. Only then create the fresh
-   protected retry-4 Environment;
-4. open a separate finalization PR that changes the workflow target default and
-   constant, Governance profile target, and target-pinned tests to the
-   preparation merge SHA. The reviewed target is the preparation merge, not the
-   finalization commit;
+2. record preparation PR #608 as rebase-merged without bypass at
+   `835b81be1ff0ba7aa0ec23c9a7b518d4ade3dfaa`. It carries the closed
+   `.13`-`.16` profile, retry-4 workflow and Environment identity, and exact
+   confirmation. The work started from freshly fetched
+   `origin/main@bcf47e2d`; `bf174897` remains implementation provenance only;
+3. preserve the fresh authenticated preflight: principal `hcoona` / `712433`,
+   exact `main@835b81be`, active ruleset and workflow identity, green checks,
+   no nonterminal or retry-4 runs, no deployments or acceptance refs, and
+   absent `.13`-`.16` versions and tags. Environment ID `20772100445` has sole
+   required reviewer `hcoona`, self-review permitted, and sole deployment
+   branch `main`;
+4. keep the separate protected-finalization change limited to the workflow
+   target default and constant, Governance profile target, target-pinned
+   tests, and authoritative state documents. Every target binds the preparation
+   merge SHA above, not a finalization commit. The finalization PR must merge
+   without bypass before any dispatch;
 5. after finalization merges without bypass, run a fresh exact preflight. Only
    if it passes may any acceptance ref be created or the single
    `run_attempt == 1` package-mutation attempt be dispatched; stop for

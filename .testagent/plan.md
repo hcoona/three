@@ -6318,3 +6318,24 @@ reuse of consumed acceptance coordinates.
    the four-file allowlist and append-only notes.
 
 <!-- END APPEND: 2026-08-28-pr608-retry-4-terminal-fixed-identity-plan -->
+
+<!-- BEGIN APPEND: 2026-08-28-wdv3-acceptance-retry-4-finalization-plan -->
+
+## Retry-4 protected-finalization plan
+
+1. Change only target-pinned workflow and Governance contracts to require
+   preparation merge
+   `835b81be1ff0ba7aa0ec23c9a7b518d4ade3dfaa`.
+2. Preserve executable rejection of zero and wrong dispatch inputs, exact
+   rejected-dispatch terminal identity, complete real-registry Governance
+   admission, historical profile replay, and cross-profile rejection.
+3. Run the two focused contract modules and classify the intentional RED
+   failures. They must arise only because the workflow default/environment
+   and registered Governance target remain the preparation zero sentinel.
+4. Implement only those three production target bindings, update current
+   authoritative state documents, and run focused then complete validation.
+5. Run repository gates and multi-reviewer OCR review with atomic independent
+   TP/FP adjudication before commit, push, and the non-bypassed finalization
+   PR.
+
+<!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-4-finalization-plan -->

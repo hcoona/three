@@ -5756,3 +5756,37 @@ validation-failure branch. No production, workflow, or normative-document edit
 is in scope.
 
 <!-- END APPEND: 2026-08-28-pr608-retry-4-terminal-fixed-identity-research -->
+
+<!-- BEGIN APPEND: 2026-08-28-wdv3-acceptance-retry-4-finalization-research -->
+
+## Retry-4 protected-finalization target research
+
+Preparation PR #608 rebase-merged as
+`835b81be1ff0ba7aa0ec23c9a7b518d4ade3dfaa`. Fresh authenticated preflight
+confirmed that exact `main`, green post-merge checks, no nonterminal Actions
+runs, active retry-4 workflow identity with zero runs, absent acceptance refs,
+absent Environment, and absent `.13` through `.16` package versions and npm
+tags. Environment `workflow-delivery-v3-buddy-smoke-acceptance-retry-4` was
+then created as ID `20772100445` with sole reviewer `hcoona` / `712433`,
+`prevent_self_review: false`, and one custom branch policy for `main`; readback
+still showed zero workflow runs and deployments.
+
+The immutable reviewed target is the preparation merge SHA, not a finalization
+commit. The bounded tests-first scope is:
+
+- the retry-4 workflow contract, which must bind both workflow target
+  literals to the preparation merge, execute the fixed guard against the real
+  finalized constant, reject zero and wrong dispatch values, and retain fixed
+  terminal identity after rejected validation;
+- the Governance contract, which must bind the registered retry-4 profile to
+  the preparation merge, preserve zero-sentinel rejected-dispatch admission,
+  admit complete finalized evidence through the real registry, and keep
+  cross-profile substitutions closed.
+
+The only expected production gaps are the two zero workflow target literals
+and the zero retry-4 Governance profile target. Historical retry-1 through
+retry-3 profiles, `.13` through `.16` coordinates/tags, confirmation digest,
+workflow/Environment identity, permissions, DAG, first-attempt guard, and
+normal Live exclusion remain unchanged.
+
+<!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-4-finalization-research -->

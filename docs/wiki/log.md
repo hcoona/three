@@ -2383,3 +2383,21 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Recorded 3,837 passing v3 tests and a successful unstaged HK gate. The
   follow-up remains preparation-only: no Environment, acceptance ref,
   workflow dispatch, package, tag, or Live mutation occurred.
+
+## [2026-08-28] query | Finalize destination acceptance retry 4
+
+- Rebase-merged preparation PR #608 without bypass as
+  `835b81be1ff0ba7aa0ec23c9a7b518d4ade3dfaa`; post-merge CI and CodeQL passed.
+- Fresh authenticated preflight confirmed exact principal, owner, `main`,
+  ruleset, checks, open-PR drift, runs, deployments, refs, workflow identity,
+  and absent `.13`-`.16` package versions and retry-4 npm tags.
+- Provisioned Environment
+  `workflow-delivery-v3-buddy-smoke-acceptance-retry-4` as ID `20772100445`
+  with sole required reviewer `hcoona`, self-review permitted, and sole
+  deployment branch `main`.
+- Bound the protected-finalization workflow, Governance profile, and contracts
+  to the preparation merge SHA. Finalization must merge without bypass before
+  the single authorized attempt-1 dispatch, and another fresh exact preflight
+  must pass before any acceptance ref or dispatch.
+- No workflow dispatch, deployment, acceptance ref, package, tag, or Live
+  mutation occurred.

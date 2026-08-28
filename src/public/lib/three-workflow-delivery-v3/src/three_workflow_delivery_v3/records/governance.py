@@ -256,7 +256,7 @@ _GOVERNANCE_ACCEPTANCE_PROFILES = (
         package_coordinate=GOVERNANCE_RETRY_4_ACCEPTANCE_PACKAGE_COORDINATE,
         workflow_path=GOVERNANCE_RETRY_4_ACCEPTANCE_WORKFLOW_PATH,
         environment=GOVERNANCE_RETRY_4_ACCEPTANCE_ENVIRONMENT,
-        target_sha="0000000000000000000000000000000000000000",
+        target_sha="835b81be1ff0ba7aa0ec23c9a7b518d4ade3dfaa",
         confirmation_digest=(
             "sha256:"
             "b6f94d3c13c98b0714404959dd878230f8302ee849038a536f5a18cc3a85c7ec"
