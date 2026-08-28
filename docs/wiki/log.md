@@ -2486,3 +2486,37 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   `aed58191ce37defba8f7a7e44def03396c2c6824`, or at a later reviewed, merged
   successor that contains it. A fetched SHA, local branch, attempt ref, or
   reviewed-but-unmerged head is not a valid work base.
+
+## [2026-08-28] query | Prepare destination acceptance retry 5
+
+- Recorded work-base clarification PR #613 at
+  `8e6baf24ca476b449b5c97c21f14f3776e668b90` and successful post-merge
+  Continuous Integration run `33194078923`. Retry-5 preparation started from
+  a fresh fetch and revalidation of that exact `origin/main`.
+- Added the closed retry-5 Adapter and Governance profile plus temporary
+  manual workflow for absent/exact `.17`, identical-race `.18`,
+  differing-race `.19`, and lost-response `.20`, with exact corresponding tags
+  and a forty-zero preparation target. Fixed-input validation rejects before
+  Environment review or either package-write probe while that target remains.
+- Preserved canonical terminal suite records across monotone job/upload
+  downgrade, nullified incomplete artifact bindings, normalized native bare
+  upload digests, and retained request-bound runner diagnostics. Proof
+  authority remains exactly HTTP 200 or HTTP 201.
+- Kept the phase preparation-only. Read-only preflight found `.17`-`.20` and
+  their tags unused, but no retry-5 Environment, dispatch, deployment,
+  acceptance ref, package, tag, or Live mutation occurred; those coordinates
+  remain unexecuted and unconsumed.
+- Required a protected preparation merge before creating a new protected
+  Environment or opening a separate finalization PR bound to the exact
+  preparation merge SHA. Every later phase must freshly fetch and revalidate
+  `origin/main` containing the preceding protected merge. Normal Live and
+  `live_enabled: true` remain unauthorized.
+
+## [2026-08-28] query | Clarify retry-5 post-preparation sequencing
+
+- Clarified the preceding retry-5 preparation entry: after the protected
+  preparation merge, fresh external-state revalidation must pass before either
+  creating the retry-5 Environment or opening the separate protected
+  finalization PR bound to that merge SHA. This external-state gate is distinct
+  from the fresh `origin/main` work-base validation required for each later
+  phase, which must contain the immediately preceding protected merge.
