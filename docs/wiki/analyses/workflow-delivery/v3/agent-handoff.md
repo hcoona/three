@@ -299,9 +299,12 @@ If it conflicts with the
   contains it, and must use wholly new execution identities.
 - Work-base clarification PR #613 rebase-merged without bypass as
   `8e6baf24ca476b449b5c97c21f14f3776e668b90`; post-merge Continuous
-  Integration run `33194078923` passed. Retry-5 preparation starts from a fresh
-  fetch and revalidation of that exact `origin/main`. Its only new execution
-  surface is
+  Integration run `33194078923` passed. Retry-5 preparation initially started
+  from that exact `origin/main`. Before delivery, a fresh fetch found the later
+  dependency-only merges #614 and #615 at
+  `origin/main@c33ea9da5456ca0e915e39134ec111714ddc4ec8`; the preparation
+  commits were rebased onto that reviewed successor without file overlap or
+  conflict. Its only new execution surface is
   `.github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-5.yml`,
   paired with the closed Adapter/Governance profile for `.17`-`.20`, tags
   `wdv3-acceptance-17` through `wdv3-acceptance-20`, Environment identity
