@@ -233,6 +233,13 @@ If it conflicts with the
   passed. No destination-acceptance invocation followed the merge before this
   documentation update. The repair does not retroactively make any of the
   three consumed attempts successful and does not restore `.1`-`.12`.
+- Documentation closure PR #606 merged as
+  `0cb88f2972296f3acf874015165c1e88f50c595c`. Treat `bf174897` only as the
+  validated PR #603 implementation-provenance boundary. Start successor work
+  from a freshly fetched and revalidated `origin/main` containing `0cb88f29`
+  or a later reviewed successor. Historical local branches and attempt refs
+  are cleanup or reconciliation inputs only; do not dispatch, resume, or use
+  them as work bases.
 - Subsequent explicit user authorization covers the bounded acceptance-only
   repair/retry loop through genuine success, reconciliation, cleanup, and
   authoritative closure. A fourth attempt still requires a wholly new reviewed
