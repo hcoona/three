@@ -2520,3 +2520,17 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   finalization PR bound to that merge SHA. This external-state gate is distinct
   from the fresh `origin/main` work-base validation required for each later
   phase, which must contain the immediately preceding protected merge.
+
+## [2026-08-28] query | Refresh retry-5 preparation work base
+
+- A fresh pre-delivery fetch found dependency-only PRs #614 and #615 merged
+  after the initial retry-5 base, advancing `origin/main` to
+  `c33ea9da5456ca0e915e39134ec111714ddc4ec8`.
+- Their four changed paths do not overlap the retry-5 preparation. Rebased the
+  two preparation commits onto that reviewed successor without conflict.
+- Continuous Integration run `33202438870` and CodeQL run `33202438791`
+  passed on exact `main@c33ea9da5456ca0e915e39134ec111714ddc4ec8`.
+- The all-zero preparation target, `.17`-`.20` coordinates and tags, workflow,
+  Environment, and confirmation identities remain unchanged. No Environment,
+  dispatch, deployment, package, tag, retry-5 acceptance ref, or Live mutation
+  occurred.

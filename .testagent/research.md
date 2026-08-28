@@ -6022,3 +6022,22 @@ registration. Ruff check/format-check and Pyrefly are scoped to the two
 Phase-1 Python files.
 
 <!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-5-research -->
+
+<!-- BEGIN APPEND: 2026-08-28-wdv3-acceptance-retry-5-work-base-refresh -->
+
+## Retry-5 preparation work-base refresh
+
+- The initial research baseline remains
+  `8e6baf24ca476b449b5c97c21f14f3776e668b90`.
+- The delivery-time fresh fetch found `origin/main` advanced through
+  dependency-only PRs #614 and #615 to
+  `c33ea9da5456ca0e915e39134ec111714ddc4ec8`.
+- Those commits modify only `Directory.Packages.props`, one application
+  `packages.lock.json`, `mise.toml`, and `mise.lock`; they do not overlap any
+  retry-5 preparation path.
+- The two preparation commits were rebased onto that reviewed successor
+  without conflict. The current authoritative work base is
+  `origin/main@c33ea9da5456ca0e915e39134ec111714ddc4ec8`; the all-zero target
+  and all retry-5 execution identities remain unchanged.
+
+<!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-5-work-base-refresh -->

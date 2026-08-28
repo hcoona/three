@@ -11333,3 +11333,31 @@ remains the all-zero preparation sentinel; `.17`-`.20` remain unexecuted and
 unconsumed.
 
 <!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-5-final-review-correction -->
+
+<!-- APPEND: 2026-08-28-wdv3-acceptance-retry-5-work-base-reconciliation -->
+
+## 2026-08-28 Workflow Delivery v3 retry-5 work-base reconciliation
+
+Status: **COMPLETE** for pre-delivery work-base reconciliation.
+
+- A fresh fetch found `origin/main` advanced from the initial
+  `8e6baf24ca476b449b5c97c21f14f3776e668b90` baseline through dependency-only
+  PRs #614 and #615 to
+  `c33ea9da5456ca0e915e39134ec111714ddc4ec8`.
+- The upstream changes are limited to `Directory.Packages.props`, one
+  application `packages.lock.json`, `mise.toml`, and `mise.lock`; no retry-5
+  preparation path overlaps them.
+- Rebased the two preparation commits without conflict. The pre-rebase local
+  IDs `866821d4` and `51446ad5` are superseded by `ff4b2508` and `91b64848`
+  respectively.
+- GitHub reports #614 and #615 merged to `main`. Continuous Integration run
+  `33202438870` and CodeQL run `33202438791` both completed successfully on
+  exact `main@c33ea9da5456ca0e915e39134ec111714ddc4ec8`.
+- The post-rebase complete Workflow Delivery v3 suite passed
+  **4,445 / 4,445** cases in **483.90 seconds**.
+- The all-zero target and every retry-5 workflow, Environment, confirmation,
+  coordinate, tag, and scenario identity are unchanged. No Environment,
+  dispatch, deployment, publish, package, tag, retry-5 acceptance ref, or Live
+  mutation occurred.
+
+<!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-5-work-base-reconciliation -->

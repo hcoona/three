@@ -275,19 +275,22 @@ Next:
    it contains no validated request proof; and
 7. retain work-base clarification PR #613 as rebase-merged without bypass at
    `8e6baf24ca476b449b5c97c21f14f3776e668b90`; its post-merge Continuous
-   Integration run `33194078923` passed. The current retry-5 preparation starts
-   from a fresh fetch and revalidation of that exact `origin/main`. It adds only
-   the temporary manual workflow and closed Adapter/Governance profile for
-   absent/exact `.17`, identical-race `.18`, differing-race `.19`, and
-   lost-response `.20`, with the exact corresponding tags and confirmation
-   digest. The production target remains forty ASCII zeroes, so validation
-   rejects before Environment review or either package-write probe. The
-   terminal fan-in retains canonical suite records across monotone
-   failure/upload downgrade, treats missing artifact bindings as incomplete,
-   and admits proof authority only for exact HTTP 200 or HTTP 201. Read-only
-   preflight found `.17`-`.20` and their tags unused, but they remain
-   unexecuted and unconsumed at preparation. No retry-5 Environment, dispatch,
-   deployment, acceptance ref, package, tag, or Live mutation has occurred.
+   Integration run `33194078923` passed. The retry-5 preparation initially
+   started from that exact `origin/main`. Before delivery, a fresh fetch found
+   the later dependency-only merges #614 and #615 at
+   `origin/main@c33ea9da5456ca0e915e39134ec111714ddc4ec8`; the preparation
+   commits were rebased onto that reviewed successor without file overlap or
+   conflict. It adds only the temporary manual workflow and closed
+   Adapter/Governance profile for absent/exact `.17`, identical-race `.18`,
+   differing-race `.19`, and lost-response `.20`, with the exact corresponding
+   tags and confirmation digest. The production target remains forty ASCII
+   zeroes, so validation rejects before Environment review or either
+   package-write probe. The terminal fan-in retains canonical suite records
+   across monotone failure/upload downgrade, treats missing artifact bindings
+   as incomplete, and admits proof authority only for exact HTTP 200 or HTTP 201. Read-only preflight found `.17`-`.20` and their tags unused, but they
+   remain unexecuted and unconsumed at preparation. No retry-5 Environment,
+   dispatch, deployment, acceptance ref, package, tag, or Live mutation has
+   occurred.
    After protected preparation merges, fresh external-state revalidation must
    pass before creation of a new protected Environment and a separate
    protected finalization PR bound to that exact merge SHA. Finalization, the
