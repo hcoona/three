@@ -256,14 +256,23 @@ Next:
    requires a separately reviewed acceptance-only repair and fresh coordinate
    block starting from a fresh fetch of this cleanup merge or a later reviewed
    successor; and
-6. require the separately reviewed acceptance-only response-status repair
-   before any retry-5 profile. For a strictly validated GitHub Packages npm
-   publish exchange, proof authority may use exactly HTTP 200 or HTTP 201,
-   must retain the actual status in response identity, and must still reject
-   HTTP 202, HTTP 204, and every other status. New HTTP 200 diagnostics remain
-   request-bound; the only historical unbound status compatibility remains
-   HTTP 201 adjacent to a matching proof. The exact retry-4 terminal artifact
-   remains unknown because it contains no validated request proof; and
+6. retain response-status repair PR #612 as rebase-merged without bypass at
+   `aed58191ce37defba8f7a7e44def03396c2c6824`. All protected PR checks,
+   including Workflow Delivery v3 shadow CI, passed; post-merge Continuous
+   Integration run `33190125517` and CodeQL run `33190125529` passed on that
+   exact SHA. Fresh authenticated read-only reconciliation confirms no
+   post-merge acceptance invocation, workflow ID `344468231` still deleted
+   with exactly failed attempt-1 run `33165777024`, the temporary Environment
+   absent, and package versions still limited to `.1`, `.5`, `.9`, and `.13`.
+   Any retry-5 profile must start from freshly fetched and revalidated
+   `origin/main` at this merge, or at a later reviewed, merged successor that
+   contains it. For a strictly validated GitHub Packages npm publish exchange,
+   proof authority may use exactly HTTP 200 or HTTP 201, must retain the actual
+   status in response identity, and must still reject HTTP 202, HTTP 204, and
+   every other status. New HTTP 200 diagnostics remain request-bound; the only
+   historical unbound status compatibility remains HTTP 201 adjacent to a
+   matching proof. The exact retry-4 terminal artifact remains unknown because
+   it contains no validated request proof; and
 7. keep `live_enabled: false`. Subsequent explicit user authorization covers
    the bounded acceptance-only repair/retry loop through genuine success,
    cleanup, and closure, but normal Live activation remains a separate

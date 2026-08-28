@@ -1732,6 +1732,17 @@ identity, Environment, and refs still retired, exact consumed state retained,
 and every unused coordinate in the consumed block absent.
 Retry-4 satisfies that gate at cleanup merge `4e7e7ef6`; later work must start
 from a fresh fetch of that commit or a reviewed successor.
+The bounded response-status repair is that reviewed successor. PR #612
+rebase-merged without bypass as
+`aed58191ce37defba8f7a7e44def03396c2c6824`; all protected PR checks and
+post-merge Continuous Integration run `33190125517` plus CodeQL run
+`33190125529` passed. Fresh authenticated read-only reconciliation confirms no
+post-merge acceptance invocation, the deleted retry-4 workflow still has
+exactly its failed attempt-1 run, the temporary Environment remains absent,
+and package versions remain `.1`, `.5`, `.9`, and `.13`. A later profile must
+start from freshly fetched and revalidated `origin/main` at this merge, or at a
+later reviewed, merged successor that contains it, and use new coordinates,
+workflow, Environment, review, invocation, tag, and ref identities.
 
 ## Activation Gate
 

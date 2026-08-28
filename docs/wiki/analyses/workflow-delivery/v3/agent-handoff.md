@@ -285,9 +285,18 @@ If it conflicts with the
   HTTP 201-with-matching-proof arm remains replayable. The retained retry-4
   Governance artifact is pinned as a regression fixture and remains unknown:
   it has a request-bound HTTP 200 diagnostic and exact readback but no
-  validated request proof, and its second probe was skipped. Do not begin a
-  retry-5 profile until this repair has completed protected review and merge
-  without bypass.
+  validated request proof, and its second probe was skipped. Repair PR #612
+  rebase-merged without bypass as
+  `aed58191ce37defba8f7a7e44def03396c2c6824` after all protected checks,
+  including Workflow Delivery v3 shadow CI, passed. Post-merge Continuous
+  Integration run `33190125517` and CodeQL run `33190125529` passed on that
+  exact SHA. Fresh authenticated read-only reconciliation confirms no
+  post-merge acceptance invocation, workflow ID `344468231` still deleted
+  with exactly failed attempt-1 run `33165777024`, the temporary Environment
+  absent, and package versions still limited to `.1`, `.5`, `.9`, and `.13`.
+  Any retry-5 profile work must start from freshly fetched and revalidated
+  `origin/main` at this merge, or at a later reviewed, merged successor that
+  contains it, and must use wholly new execution identities.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the

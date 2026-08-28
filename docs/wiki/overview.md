@@ -362,8 +362,16 @@ have changed.
    request-bound, while historical unbound HTTP 201 adjacent to a matching
    proof remains replayable. The exact retry-4 terminal artifact remains
    unknown and unsuccessful because it contains no validated request proof and
-   its later probe was skipped. The repair must merge through protected review
-   without bypass before any retry-5 profile work.
+   its later probe was skipped. Repair PR #612 rebase-merged without bypass as
+   `aed58191`; all protected checks, including Workflow Delivery v3 shadow CI,
+   passed. Post-merge Continuous Integration run `33190125517` and CodeQL run
+   `33190125529` passed on the exact merge. Fresh authenticated read-only
+   reconciliation confirms no later acceptance invocation, the retry-4
+   workflow still deleted with its single failed attempt-1 run, the temporary
+   Environment absent, and package versions still `.1`, `.5`, `.9`, and
+   `.13`. Any retry-5 work must start from freshly fetched and revalidated
+   `origin/main` at this merge, or at a later reviewed, merged successor that
+   contains it, and use wholly new execution identities.
 
 ## Related Pages
 
