@@ -10002,3 +10002,101 @@ No external GitHub Environment, acceptance ref, workflow dispatch, package,
 tag, or Live mutation occurred during this closure.
 
 <!-- END APPEND: 2026-08-28-pr608-terminal-closure-final-unstaged-gate -->
+
+<!-- BEGIN APPEND: 2026-08-28-wdv3-acceptance-retry-4-finalization-red -->
+
+## Retry-4 protected-finalization tests-first RED
+
+Preparation PR #608 rebase-merged without bypass as
+`835b81be1ff0ba7aa0ec23c9a7b518d4ade3dfaa`; its post-merge CI and CodeQL
+passed. Fresh authenticated preflight passed and was sealed in the session
+handoff package. Environment
+`workflow-delivery-v3-buddy-smoke-acceptance-retry-4` now exists as ID
+`20772100445` with sole reviewer `hcoona` / `712433`, self-review permitted,
+and one custom branch policy for `main`. Readback showed zero workflow runs
+and deployments.
+
+The delegated Test Generator completed bounded research but could not write in
+its execution context, so the documented inline fallback performed the same
+Research -> Plan -> Implement sequence. Only the two target-pinned contract
+modules and append-only research/plan notes changed before RED execution.
+
+Focused retry-4 workflow and Governance contracts produced the intended
+`21 failed, 362 passed` state:
+
+- five workflow-contract failures bind the still-zero dispatch default and
+  workflow target, the finalized guard success path, rejected wrong-input
+  control, and terminal evidence through real Governance admission;
+- sixteen Governance failures bind the still-zero registered retry-4 target,
+  complete real-registry admission, and all fourteen cross-profile
+  substitutions.
+
+Every failure is caused by one of the three planned production gaps: the two
+zero workflow target literals or the zero retry-4 Governance profile target.
+No unrelated failure, workflow dispatch, deployment, acceptance ref, package,
+tag, or Live mutation occurred.
+
+<!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-4-finalization-red -->
+
+<!-- BEGIN APPEND: 2026-08-28-wdv3-acceptance-retry-4-finalization-green -->
+
+## Retry-4 protected-finalization implementation
+
+The production change is limited to the three planned target bindings:
+
+- workflow dispatch default:
+  `835b81be1ff0ba7aa0ec23c9a7b518d4ade3dfaa`;
+- workflow `WDV3_ACCEPTANCE_TARGET_SHA`: the same preparation merge;
+- registered retry-4 Governance profile target: the same preparation merge.
+
+Target-pinned contracts now execute the finalized fixed-input guard, reject
+zero and wrong dispatch values, retain the fixed finalized identity after
+rejected validation, admit complete `.13` through `.16` evidence through the
+real Governance registry, preserve zero-sentinel rejected-dispatch admission,
+and reject retry-3/retry-4 field substitution.
+
+Validation:
+
+- focused workflow and Governance contracts: `383 passed`;
+- focused Adapter, Buddy topology, workflow, retirement, and Governance suite:
+  `806 passed in 35.94s`;
+- complete v3 suite: `3837 passed in 463.57s`;
+- scoped Ruff, Ruff format, and Pyrefly: passed;
+- Actionlint: passed;
+- Prettier and markdownlint across the five authoritative wiki pages: passed;
+- unstaged HK over the 12-file finalization diff: passed, including its
+  managed `3837 passed` v3 suite;
+- exact target distribution: two workflow literals and one Governance
+  literal; the four workflow zero literals remain only the two validation
+  guards and two terminal fallback sentinels.
+
+Pseudo-mutation review found the exact-target assertions kill zero, wrong-SHA,
+default/environment disagreement, Governance-registry mismatch, finalization-
+commit substitution, retry-3 field substitution, and loss of rejected-dispatch
+identity mutations. Assertion-quality review found no assertion-free,
+trivial-only, or self-referential changed test; the contracts combine exact
+equality, negative, exception, subprocess outcome, canonical deep-structure,
+and mutation-surface assertions. No additional test gap was identified.
+
+The only external mutation remains authorized Environment creation. No
+workflow dispatch, deployment, acceptance ref, package, tag, or Live mutation
+has occurred.
+
+<!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-4-finalization-green -->
+
+<!-- BEGIN APPEND: 2026-08-28-wdv3-acceptance-retry-4-finalization-review -->
+
+## Retry-4 protected-finalization review correction
+
+Independent workflow/test and Governance/test reviewers reported
+`No findings.` The documentation/state reviewer found one authority gap: the
+current LLD required finalization to merge before dispatch but did not repeat
+that the merge must occur without bypass and that a fresh exact post-merge
+preflight must pass before either acceptance-ref creation or dispatch.
+
+An independent adjudicator classified the finding as a blocking true positive.
+The LLD now states both existing hard gates without changing any other
+authority or system boundary. The corrected documentation scope returns to a
+fresh review, whose reviewer reported `No findings.`
+
+<!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-4-finalization-review -->

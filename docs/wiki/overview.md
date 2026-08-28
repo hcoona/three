@@ -334,23 +334,23 @@ have changed.
    as `bf174897`. Diagnostics remain observability only and cannot establish
    execution, mutation completion, or Governance acceptance. No acceptance
    invocation followed the repair before this documentation update.
-8. Preparation PR #608 now contains the tests-first fourth profile without
-   operating it: base `.13` binds absent/exact `.13`, identical-race `.14`,
-   differing-race `.15`, and lost-response `.16`; the temporary retry-4
-   workflow and Environment identity are fixed; and the target remains exactly
-   40 zeroes. Validation therefore stops before protected Environment review or
-   either package-write probe. No Environment, acceptance dispatch, package or
-   tag mutation, or acceptance ref was created. PR #608 is the preparation
-   carrier; no later phase may begin unless it has merged without bypass. Once
-   that prerequisite is satisfied, revalidate external state, create the fresh
-   protected Environment, and use a separate finalization PR to pin the
-   reviewed target to the preparation merge SHA. The finalization PR must also
-   merge without bypass and a fresh exact preflight must still pass before any
+8. Preparation PR #608 rebase-merged without bypass as `835b81be`. Its closed
+   fourth profile binds absent/exact `.13`, identical-race `.14`,
+   differing-race `.15`, and lost-response `.16`; the retry-4 workflow,
+   Environment identity, and confirmation remain fixed. Fresh authenticated
+   preflight confirmed exact `main`, active ruleset and workflow identity, no
+   nonterminal or retry-4 runs, deployments, acceptance refs, `.13`-`.16`
+   versions, or retry-4 npm tags. Environment ID `20772100445` has sole
+   required reviewer `hcoona`, self-review permitted, and sole deployment
+   branch `main`. Protected finalization binds the workflow and Governance
+   profile to the preparation merge SHA, not a finalization commit, and must
+   merge without bypass. A fresh exact preflight must then pass before any
    acceptance ref is created or the single `run_attempt == 1` attempt is
-   dispatched. Subsequent explicit user authorization covers the bounded
-   acceptance-only repair/retry loop through genuine success, reconciliation,
-   cleanup, and closure. It does not authorize normal Live activation or
-   `live_enabled: true`.
+   dispatched. No workflow dispatch, deployment, acceptance ref, package, or
+   tag mutation has occurred. Subsequent explicit user authorization covers
+   the bounded acceptance-only repair/retry loop through genuine success,
+   reconciliation, cleanup, and closure. It does not authorize normal Live
+   activation or `live_enabled: true`.
 
 ## Related Pages
 

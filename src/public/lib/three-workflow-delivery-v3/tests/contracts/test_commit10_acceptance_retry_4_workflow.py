@@ -23,7 +23,7 @@ WORKFLOW_STEM = "workflow-delivery-v3-buddy-smoke-acceptance-retry-4"
 ENVIRONMENT = "workflow-delivery-v3-buddy-smoke-acceptance-retry-4"
 
 ZERO_SHA = "0" * 40
-TEST_ONLY_NONZERO_TARGET_SHA = "d" * 40
+FINALIZED_TARGET_SHA = "835b81be1ff0ba7aa0ec23c9a7b518d4ade3dfaa"
 PACKAGE_NAME = "@hcoona/hcoona-release-smoke-npm"
 BASE_COORDINATE = "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.13"
 CONFIRMATION = "I_ACCEPT_DISPOSABLE_GITHUB_PACKAGES_PROBES_RETRY_4"
@@ -135,12 +135,14 @@ def _run_fixed_input_guard(
     target_sha: str,
     overrides: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
+    fixed_target_sha = document["env"]["WDV3_ACCEPTANCE_TARGET_SHA"]
+    assert isinstance(fixed_target_sha, str)
     environment = {
         **os.environ,
         "INPUT_TARGET_SHA": target_sha,
         "INPUT_PACKAGE_COORDINATE": BASE_COORDINATE,
         "INPUT_CONFIRM": CONFIRMATION,
-        "WDV3_ACCEPTANCE_TARGET_SHA": target_sha,
+        "WDV3_ACCEPTANCE_TARGET_SHA": fixed_target_sha,
         "WDV3_ACCEPTANCE_PACKAGE_COORDINATE": BASE_COORDINATE,
         "WDV3_ACCEPTANCE_CONFIRMATION": CONFIRMATION,
         "WDV3_ACCEPTANCE_REF": "refs/heads/main",
@@ -336,8 +338,8 @@ def test_retry_4_workflow_zero_target_stops_before_review_and_write_capable_prob
     assert len(ZERO_SHA) == 40
     assert ZERO_SHA.isascii()
     assert set(ZERO_SHA) == {"0"}
-    assert inputs["target_sha"]["default"] == ZERO_SHA
-    assert document["env"]["WDV3_ACCEPTANCE_TARGET_SHA"] == ZERO_SHA
+    assert inputs["target_sha"]["default"] == FINALIZED_TARGET_SHA
+    assert document["env"]["WDV3_ACCEPTANCE_TARGET_SHA"] == FINALIZED_TARGET_SHA
     assert validation.get("continue-on-error", False) is False
     assert guard.get("continue-on-error", False) is False
     assert guard["env"] == {
@@ -372,22 +374,19 @@ def test_retry_4_workflow_zero_target_stops_before_review_and_write_capable_prob
     assert "packages" not in jobs["capture-governance-evidence"]["permissions"]
 
 
-def test_retry_4_workflow_test_only_nonzero_placeholder_satisfies_finalized_guard_shape() -> (
-    None
-):
+def test_retry_4_workflow_finalized_target_satisfies_fixed_guard() -> None:
     document, raw = _load_workflow()
     inputs = _triggers(document)["workflow_dispatch"]["inputs"]
 
-    assert TEST_ONLY_NONZERO_TARGET_SHA == "d" * 40
-    assert re.fullmatch(r"[0-9a-f]{40}", TEST_ONLY_NONZERO_TARGET_SHA)
-    assert TEST_ONLY_NONZERO_TARGET_SHA != ZERO_SHA
-    assert TEST_ONLY_NONZERO_TARGET_SHA not in raw
-    assert inputs["target_sha"]["default"] == ZERO_SHA
-    assert document["env"]["WDV3_ACCEPTANCE_TARGET_SHA"] == ZERO_SHA
+    assert re.fullmatch(r"[0-9a-f]{40}", FINALIZED_TARGET_SHA)
+    assert FINALIZED_TARGET_SHA != ZERO_SHA
+    assert raw.count(FINALIZED_TARGET_SHA) == 2
+    assert inputs["target_sha"]["default"] == FINALIZED_TARGET_SHA
+    assert document["env"]["WDV3_ACCEPTANCE_TARGET_SHA"] == FINALIZED_TARGET_SHA
 
     result = _run_fixed_input_guard(
         document,
-        target_sha=TEST_ONLY_NONZERO_TARGET_SHA,
+        target_sha=FINALIZED_TARGET_SHA,
     )
 
     assert (result.returncode, result.stdout, result.stderr) == (0, "", "")
@@ -410,7 +409,7 @@ def test_retry_4_workflow_dispatch_identity_confirmation_digest_and_concurrency_
         "target_sha": {
             "description": "Reviewed protected-finalization target SHA",
             "required": True,
-            "default": ZERO_SHA,
+            "default": FINALIZED_TARGET_SHA,
             "type": "string",
         },
         "package_coordinate": {
@@ -427,7 +426,7 @@ def test_retry_4_workflow_dispatch_identity_confirmation_digest_and_concurrency_
         },
     }
     assert document["env"] == {
-        "WDV3_ACCEPTANCE_TARGET_SHA": ZERO_SHA,
+        "WDV3_ACCEPTANCE_TARGET_SHA": FINALIZED_TARGET_SHA,
         "WDV3_ACCEPTANCE_PACKAGE_COORDINATE": BASE_COORDINATE,
         "WDV3_ACCEPTANCE_CONFIRMATION": CONFIRMATION,
         "WDV3_ACCEPTANCE_REF": "refs/heads/main",
@@ -828,12 +827,12 @@ def test_retry_4_workflow_rejects_wrong_dispatch_inputs() -> None:
 
     accepted = _run_fixed_input_guard(
         document,
-        target_sha=TEST_ONLY_NONZERO_TARGET_SHA,
+        target_sha=FINALIZED_TARGET_SHA,
     )
     rejected = {
         name: _run_fixed_input_guard(
             document,
-            target_sha=TEST_ONLY_NONZERO_TARGET_SHA,
+            target_sha=FINALIZED_TARGET_SHA,
             overrides=overrides,
         )
         for name, overrides in wrong_cases.items()
@@ -956,7 +955,7 @@ def test_retry_4_terminal_program_preserves_fixed_identity_after_rejected_dispat
         "INPUT_PACKAGE_COORDINATE": (
             f"{PACKAGE_NAME}@0.0.0-wdv3-acceptance.17"
         ),
-        "WDV3_ACCEPTANCE_TARGET_SHA": ZERO_SHA,
+        "WDV3_ACCEPTANCE_TARGET_SHA": FINALIZED_TARGET_SHA,
         "WDV3_ACCEPTANCE_PACKAGE_COORDINATE": BASE_COORDINATE,
         "WDV3_ACCEPTANCE_CONFIRMATION": CONFIRMATION,
         "VALIDATE_RESULT": "failure",
@@ -1009,7 +1008,7 @@ def test_retry_4_terminal_program_preserves_fixed_identity_after_rejected_dispat
         "sha": workflow_sha,
     }
     assert (admitted.target_sha, admitted.package_coordinate) == (
-        ZERO_SHA,
+        FINALIZED_TARGET_SHA,
         BASE_COORDINATE,
     )
     assert admitted.confirmation_digest == CONFIRMATION_DIGEST

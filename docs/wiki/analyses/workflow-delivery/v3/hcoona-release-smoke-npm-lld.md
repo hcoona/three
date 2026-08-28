@@ -1670,16 +1670,21 @@ Only probe jobs declare `packages: write`; no PAT or `id-token: write` exists.
 The workflow top-level permissions are `{}`. Validation and evidence-capture
 jobs declare only `contents: read`; each probe job declares `contents: read`
 plus `packages: write`. Unspecified permissions are none.
-The dedicated retry-3 acceptance Environment was provisioned for the consumed
-attempt with sole required reviewer `hcoona`, self-review permitted for the
-single-operator topology, and sole deployment branch `main`. It was not either
-normal Buddy Environment and was deleted after the unsuccessful run. Cleanup
-PR #600 removed the temporary workflow source and workflow-only contract; the
-numeric workflow identity is `deleted`. The retained historical workflow
-evidence emits only Governance acceptance
-evidence bound to workflow/run/target/fixed coordinate, dependency outcomes,
-available probe results, and complete/incomplete/unknown mutation
-classification. It cannot create Release Intent,
+The dedicated retry-3 acceptance Environment was deleted after its consumed
+unsuccessful attempt; cleanup PR #600 removed its temporary workflow source
+and workflow-only contract, and its numeric workflow identity is `deleted`.
+For retry 4, preparation PR #608 merged as
+`835b81be1ff0ba7aa0ec23c9a7b518d4ade3dfaa`. Environment ID `20772100445`
+has sole required reviewer `hcoona`, self-review permitted for the
+single-operator topology, and sole deployment branch `main`. It is not either
+normal Buddy Environment. Protected finalization binds the workflow and
+Governance profile to the preparation merge SHA and must merge without bypass.
+After that merge, a fresh exact preflight must pass before any acceptance ref
+is created or the single authorized attempt-1 dispatch occurs. The workflow
+emits only Governance acceptance evidence bound to
+workflow/run/target/fixed coordinate, dependency outcomes, available probe
+results, and complete/incomplete/unknown mutation classification. It cannot
+create Release Intent,
 Product/Execution/Attempt/Simulation identity, Authorization Record, Receipt,
 or live Release history.
 

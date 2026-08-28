@@ -3093,7 +3093,9 @@ TEST_LOCAL_RETRY_4_CONFIRMATION_DIGEST = (
     "sha256:b6f94d3c13c98b0714404959dd878230f8302ee849038a536f5a18cc3a85c7ec"
 )
 TEST_LOCAL_RETRY_4_PREPARATION_TARGET = "0" * 40
-TEST_ONLY_RETRY_4_FINALIZED_TARGET_SHA = "d" * 40
+TEST_LOCAL_RETRY_4_FINALIZED_TARGET_SHA = (
+    "835b81be1ff0ba7aa0ec23c9a7b518d4ade3dfaa"
+)
 TEST_LOCAL_RETRY_4_SCENARIO_COORDINATES = {
     "absent-create-readback": (
         "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.13",
@@ -3174,26 +3176,6 @@ TEST_LOCAL_HISTORICAL_FINALIZED_SUITE_DIGESTS = {
         "sha256:4756bbc634b750d62caf8f2edcec4a251dd0195ffbad4ec17ff379bed94ffc0f",
     ),
 }
-
-
-def _test_local_retry_4_governance_profile(
-    *,
-    target_sha: str,
-) -> Any:
-    return governance_module._GovernanceAcceptanceProfile(
-        package_coordinate=TEST_LOCAL_RETRY_4_PACKAGE_COORDINATE,
-        workflow_path=TEST_LOCAL_RETRY_4_WORKFLOW_PATH,
-        environment=TEST_LOCAL_RETRY_4_ENVIRONMENT,
-        target_sha=target_sha,
-        confirmation_digest=TEST_LOCAL_RETRY_4_CONFIRMATION_DIGEST,
-        scenario_coordinates=tuple(
-            (
-                scenario,
-                *TEST_LOCAL_RETRY_4_SCENARIO_COORDINATES[scenario],
-            )
-            for scenario in GOVERNANCE_ACCEPTANCE_SCENARIOS
-        ),
-    )
 
 
 def _registered_retry_4_governance_profile() -> Any:
@@ -3345,8 +3327,8 @@ def test_retry_4_governance_profile_binds_exact_workflow_environment_confirmatio
         TEST_LOCAL_RETRY_4_SCENARIO_COORDINATES.items()
     )
     assert tuple(profile.coordinates()) == GOVERNANCE_ACCEPTANCE_SCENARIOS
-    assert profile.target_sha == "0" * 40
-    assert profile.target_sha.encode("ascii") == b"0" * 40
+    assert profile.target_sha == TEST_LOCAL_RETRY_4_FINALIZED_TARGET_SHA
+    assert profile.target_sha != TEST_LOCAL_RETRY_4_PREPARATION_TARGET
 
 
 def test_retry_4_governance_admits_exact_zero_target_rejected_dispatch() -> (
@@ -3515,37 +3497,19 @@ def test_retry_4_zero_target_rejects_review_probe_record_artifact_reviewer_or_mu
         _admit(document)
 
 
-def test_retry_4_finalized_placeholder_round_trips_canonically_with_exact_bindings(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    profile = _test_local_retry_4_governance_profile(
-        target_sha=TEST_ONLY_RETRY_4_FINALIZED_TARGET_SHA
-    )
-    historical_profiles = tuple(
-        existing
-        for existing in governance_module._GOVERNANCE_ACCEPTANCE_PROFILES
-        if existing.package_coordinate != TEST_LOCAL_RETRY_4_PACKAGE_COORDINATE
-    )
-    assert tuple(
-        existing.package_coordinate for existing in historical_profiles
-    ) == (
-        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.1",
-        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5",
-        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9",
-    )
-    monkeypatch.setattr(
-        governance_module,
-        "_GOVERNANCE_ACCEPTANCE_PROFILES",
-        (*historical_profiles, profile),
-    )
+def test_retry_4_complete_evidence_admits_finalized_profile_round_trip() -> (
+    None
+):
+    profile = _registered_retry_4_governance_profile()
+    assert profile.target_sha == TEST_LOCAL_RETRY_4_FINALIZED_TARGET_SHA
     document = _test_local_finalized_document(
         workflow_path=TEST_LOCAL_RETRY_4_WORKFLOW_PATH,
-        target_sha=TEST_ONLY_RETRY_4_FINALIZED_TARGET_SHA,
+        target_sha=TEST_LOCAL_RETRY_4_FINALIZED_TARGET_SHA,
         package_coordinate=TEST_LOCAL_RETRY_4_PACKAGE_COORDINATE,
         confirmation_digest=TEST_LOCAL_RETRY_4_CONFIRMATION_DIGEST,
         environment=TEST_LOCAL_RETRY_4_ENVIRONMENT,
         scenario_coordinates=TEST_LOCAL_RETRY_4_SCENARIO_COORDINATES,
-        proof_namespace="test-only-retry-4-placeholder",
+        proof_namespace="retry-4-finalized",
     )
 
     raw = canonicalize(document)
@@ -3558,11 +3522,10 @@ def test_retry_4_finalized_placeholder_round_trips_canonically_with_exact_bindin
         for scenario in cast("list[dict[str, Any]]", fact["scenarios"])
     }
 
-    assert TEST_ONLY_RETRY_4_FINALIZED_TARGET_SHA == "d" * 40
-    assert TEST_ONLY_RETRY_4_FINALIZED_TARGET_SHA != (
+    assert TEST_LOCAL_RETRY_4_FINALIZED_TARGET_SHA != (
         TEST_LOCAL_RETRY_4_PREPARATION_TARGET
     )
-    assert admitted.target_sha == TEST_ONLY_RETRY_4_FINALIZED_TARGET_SHA
+    assert admitted.target_sha == TEST_LOCAL_RETRY_4_FINALIZED_TARGET_SHA
     assert raw == canonicalize(admitted_document)
     assert admitted_document == document
     assert admitted.evidence_digest == canonical_sha256(document)
@@ -3672,12 +3635,11 @@ def test_retry_4_finalized_placeholder_round_trips_canonically_with_exact_bindin
 def test_retry_4_governance_rejects_cross_profile_field_substitutions(
     document_profile: str,
     field: str,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     registered_retry_4_profile = _registered_retry_4_governance_profile()
     assert (
         registered_retry_4_profile.target_sha
-        == TEST_LOCAL_RETRY_4_PREPARATION_TARGET
+        == TEST_LOCAL_RETRY_4_FINALIZED_TARGET_SHA
     )
     paths = {
         "workflow": ("workflow", "path"),
@@ -3733,42 +3695,15 @@ def test_retry_4_governance_rejects_cross_profile_field_substitutions(
         ][1],
     }
     if document_profile == "retry-4":
-        if field in {"coordinate", "tag"}:
-            finalized_retry_4_profile = _test_local_retry_4_governance_profile(
-                target_sha=TEST_ONLY_RETRY_4_FINALIZED_TARGET_SHA
-            )
-            historical_profiles = tuple(
-                existing
-                for existing in governance_module._GOVERNANCE_ACCEPTANCE_PROFILES
-                if existing.package_coordinate
-                != TEST_LOCAL_RETRY_4_PACKAGE_COORDINATE
-            )
-            monkeypatch.setattr(
-                governance_module,
-                "_GOVERNANCE_ACCEPTANCE_PROFILES",
-                (*historical_profiles, finalized_retry_4_profile),
-            )
-            document = _test_local_finalized_document(
-                workflow_path=finalized_retry_4_profile.workflow_path,
-                target_sha=finalized_retry_4_profile.target_sha,
-                package_coordinate=finalized_retry_4_profile.package_coordinate,
-                confirmation_digest=(
-                    finalized_retry_4_profile.confirmation_digest
-                ),
-                environment=finalized_retry_4_profile.environment,
-                scenario_coordinates=finalized_retry_4_profile.coordinates(),
-                proof_namespace="test-only-retry-4-cross-profile",
-            )
-            assert (
-                finalized_retry_4_profile.target_sha
-                == TEST_ONLY_RETRY_4_FINALIZED_TARGET_SHA
-            )
-            assert (
-                finalized_retry_4_profile.target_sha
-                != registered_retry_4_profile.target_sha
-            )
-        else:
-            document = _retry_4_preparation_document()
+        document = _test_local_finalized_document(
+            workflow_path=registered_retry_4_profile.workflow_path,
+            target_sha=registered_retry_4_profile.target_sha,
+            package_coordinate=registered_retry_4_profile.package_coordinate,
+            confirmation_digest=registered_retry_4_profile.confirmation_digest,
+            environment=registered_retry_4_profile.environment,
+            scenario_coordinates=registered_retry_4_profile.coordinates(),
+            proof_namespace="retry-4-finalized-cross-profile",
+        )
         replacement = retry_3_values[field]
     else:
         document = _test_local_finalized_document(
@@ -3787,19 +3722,13 @@ def test_retry_4_governance_rejects_cross_profile_field_substitutions(
 
     admitted_control = _admit(document)
     assert admitted_control.to_document() == document
-    if document_profile == "retry-4" and field not in {"coordinate", "tag"}:
-        assert (
-            admitted_control.target_sha == TEST_LOCAL_RETRY_4_PREPARATION_TARGET
-        )
-        assert admitted_control.mutation_classification == "incomplete"
-    else:
-        expected_target = (
-            TEST_ONLY_RETRY_4_FINALIZED_TARGET_SHA
-            if document_profile == "retry-4"
-            else RETRY_3_TARGET_SHA
-        )
-        assert admitted_control.target_sha == expected_target
-        assert admitted_control.mutation_classification == "complete"
+    expected_target = (
+        TEST_LOCAL_RETRY_4_FINALIZED_TARGET_SHA
+        if document_profile == "retry-4"
+        else RETRY_3_TARGET_SHA
+    )
+    assert admitted_control.target_sha == expected_target
+    assert admitted_control.mutation_classification == "complete"
     mutated = deepcopy(document)
     _set_path(mutated, paths[field], replacement)
     assert mutated != document

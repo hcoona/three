@@ -243,27 +243,29 @@ If it conflicts with the
   later reviewed successor that contains it. Historical local branches and
   attempt refs are cleanup or reconciliation inputs only; do not dispatch,
   resume, or use them as work bases.
-- Preparation PR #608 now carries the tests-first fourth profile without
-  operating it. The closed profile uses base `.13`: absent/exact `.13`,
-  identical-race `.14`, differing-race `.15`, and lost-response `.16`, with
-  tags `wdv3-acceptance-13` through `wdv3-acceptance-16`; workflow
+- Preparation PR #608 rebase-merged without bypass as
+  `835b81be1ff0ba7aa0ec23c9a7b518d4ade3dfaa`. The closed fourth profile uses
+  base `.13`: absent/exact `.13`, identical-race `.14`, differing-race `.15`,
+  and lost-response `.16`, with tags `wdv3-acceptance-13` through
+  `wdv3-acceptance-16`; workflow
   `.github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-4.yml`;
   Environment `workflow-delivery-v3-buddy-smoke-acceptance-retry-4`; and
   confirmation
-  `I_ACCEPT_DISPOSABLE_GITHUB_PACKAGES_PROBES_RETRY_4`. The Governance and
-  workflow target remains exactly 40 zeroes, so fixed-input validation fails
-  before Environment review or either package-write probe. The complete v3
-  suite passes 3,837 tests, local HK gates pass, and multi-reviewer review
-  converged to no findings after independent adjudication and repair. No
-  Environment, acceptance dispatch, package or tag mutation, or acceptance
-  ref was created. PR #608 is the preparation carrier; no later phase may
-  begin unless it has merged without bypass. Once that prerequisite is
-  satisfied, revalidate external state and create the fresh protected
-  Environment before a separate finalization PR pins the workflow and
-  Governance profile to the preparation merge SHA. The finalization PR must
-  also merge without bypass and a fresh exact preflight must still pass before
-  creating any acceptance ref or dispatching the single `run_attempt == 1`
-  attempt. Subsequent explicit user authorization covers the bounded
+  `I_ACCEPT_DISPOSABLE_GITHUB_PACKAGES_PROBES_RETRY_4`. Preparation validation
+  passed all 3,837 v3 tests, local HK gates, independent review/adjudication,
+  required checks, post-merge CI, and CodeQL.
+  Fresh authenticated preflight then confirmed principal `hcoona` / `712433`,
+  exact `main@835b81be`, active ruleset and retry-4 workflow identity, no
+  nonterminal or retry-4 workflow runs, no deployments or acceptance refs,
+  and absent `.13`-`.16` versions and npm tags. The protected Environment is
+  provisioned as ID `20772100445` with sole required reviewer `hcoona`,
+  self-review permitted, and sole deployment branch `main`. The separate
+  finalization change binds the workflow and Governance profile to the exact
+  preparation merge SHA above, not a finalization commit. It must merge
+  without bypass and a fresh exact preflight must still pass before creating
+  any acceptance ref or dispatching the single `run_attempt == 1` attempt. No
+  workflow dispatch, deployment, acceptance ref, package, or tag mutation has
+  occurred. Subsequent explicit user authorization covers the bounded
   acceptance-only repair/retry loop through genuine success, reconciliation,
   cleanup, and authoritative closure. Normal Live activation and
   `live_enabled: true` remain a separate production decision and are not
