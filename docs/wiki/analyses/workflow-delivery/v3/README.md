@@ -229,9 +229,12 @@ Next:
 1. preserve all three attempts and their exact evidence as unsuccessful
    historical replay; do not infer acceptance from destination state or the
    new diagnostics;
-2. use `bf174897` as the implementation baseline for a tests-first fourth
-   profile with a wholly new four-coordinate block and new workflow,
-   Environment, review, invocation, tag, and ref identities;
+2. treat `bf174897` only as the validated PR #603 implementation-provenance
+   boundary; start successor work from a freshly fetched and revalidated
+   `origin/main` containing PR #606 merge `0cb88f29` or a later reviewed
+   successor, then build a tests-first fourth profile with a wholly new
+   four-coordinate block and new workflow, Environment, review, invocation,
+   tag, and ref identities;
 3. revalidate the current owner, `main`, ruleset, checks, open-PR drift, runs,
    deployments, refs, workflow identities, package versions, and tags before
    protected preparation or any external mutation;
