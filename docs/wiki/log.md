@@ -2346,3 +2346,23 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   profile may proceed tests-first with wholly new coordinates and identities,
   one package-mutation attempt at a time, and mandatory reconciliation for
   ambiguity. Normal Live activation and `live_enabled: true` remain excluded.
+
+## [2026-08-28] query | Prepare destination acceptance retry 4
+
+- Added the closed retry-4 Adapter and Governance profile using base `.13`,
+  absent/exact `.13`, identical-race `.14`, differing-race `.15`, and
+  lost-response `.16`, with tags `wdv3-acceptance-13` through
+  `wdv3-acceptance-16`.
+- Added the temporary retry-4 workflow and fixed Environment identity with the
+  40-zero target sentinel and confirmation
+  `I_ACCEPT_DISPOSABLE_GITHUB_PACKAGES_PROBES_RETRY_4`. Validation fails before
+  Environment review or either package-write probe while the sentinel remains.
+- Recorded 3,836 passing v3 tests, local HK gates, and multi-reviewer review
+  closure after independent TP/FP adjudication and repair.
+- Kept the phase preparation-only: no Environment, acceptance dispatch,
+  package or tag mutation, or acceptance ref was created. After preparation
+  merges without bypass, external state must be revalidated before Environment
+  creation and a separate finalization PR pins the reviewed target to the
+  preparation merge SHA.
+- Preserved all three historical attempts as unsuccessful, `.1`-`.12` as
+  consumed, `live_enabled: false`, and normal Live activation as unauthorized.

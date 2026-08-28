@@ -235,17 +235,39 @@ If it conflicts with the
   three consumed attempts successful and does not restore `.1`-`.12`.
 - Documentation closure PR #606 merged as
   `0cb88f2972296f3acf874015165c1e88f50c595c`. Treat `bf174897` only as the
-  validated PR #603 implementation-provenance boundary. Start successor work
-  from a freshly fetched and revalidated `origin/main` containing `0cb88f29`
-  or a later reviewed successor. Historical local branches and attempt refs
-  are cleanup or reconciliation inputs only; do not dispatch, resume, or use
-  them as work bases.
-- Subsequent explicit user authorization covers the bounded acceptance-only
-  repair/retry loop through genuine success, reconciliation, cleanup, and
-  authoritative closure. A fourth attempt still requires a wholly new reviewed
-  four-coordinate profile, workflow, Environment, invocation, and identities.
-  Normal Live activation and `live_enabled: true` remain a separate production
-  decision and are not authorized.
+  validated PR #603 implementation-provenance boundary. Work-base clarification
+  PR #607 merged as `bcf47e2d817b718adf96a67ef0506d220b74f2bf`, and PR #608
+  preparation started from freshly fetched and revalidated
+  `origin/main@bcf47e2d`. Every post-preparation phase must start from freshly
+  fetched and revalidated `origin/main` containing the PR #608 merge, or a
+  later reviewed successor that contains it. Historical local branches and
+  attempt refs are cleanup or reconciliation inputs only; do not dispatch,
+  resume, or use them as work bases.
+- Preparation PR #608 now carries the tests-first fourth profile without
+  operating it. The closed profile uses base `.13`: absent/exact `.13`,
+  identical-race `.14`, differing-race `.15`, and lost-response `.16`, with
+  tags `wdv3-acceptance-13` through `wdv3-acceptance-16`; workflow
+  `.github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-4.yml`;
+  Environment `workflow-delivery-v3-buddy-smoke-acceptance-retry-4`; and
+  confirmation
+  `I_ACCEPT_DISPOSABLE_GITHUB_PACKAGES_PROBES_RETRY_4`. The Governance and
+  workflow target remains exactly 40 zeroes, so fixed-input validation fails
+  before Environment review or either package-write probe. The complete v3
+  suite passes 3,836 tests, local HK gates pass, and multi-reviewer review
+  converged to no findings after independent adjudication and repair. No
+  Environment, acceptance dispatch, package or tag mutation, or acceptance
+  ref was created. PR #608 is the preparation carrier; no later phase may
+  begin unless it has merged without bypass. Once that prerequisite is
+  satisfied, revalidate external state and create the fresh protected
+  Environment before a separate finalization PR pins the workflow and
+  Governance profile to the preparation merge SHA. The finalization PR must
+  also merge without bypass and a fresh exact preflight must still pass before
+  creating any acceptance ref or dispatching the single `run_attempt == 1`
+  attempt. Subsequent explicit user authorization covers the bounded
+  acceptance-only repair/retry loop through genuine success, reconciliation,
+  cleanup, and authoritative closure. Normal Live activation and
+  `live_enabled: true` remain a separate production decision and are not
+  authorized.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the

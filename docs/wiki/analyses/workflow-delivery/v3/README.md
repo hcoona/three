@@ -229,18 +229,25 @@ Next:
 1. preserve all three attempts and their exact evidence as unsuccessful
    historical replay; do not infer acceptance from destination state or the
    new diagnostics;
-2. treat `bf174897` only as the validated PR #603 implementation-provenance
-   boundary; start successor work from a freshly fetched and revalidated
-   `origin/main` containing PR #606 merge `0cb88f29` or a later reviewed
-   successor, then build a tests-first fourth profile with a wholly new
-   four-coordinate block and new workflow, Environment, review, invocation,
-   tag, and ref identities;
-3. revalidate the current owner, `main`, ruleset, checks, open-PR drift, runs,
-   deployments, refs, workflow identities, package versions, and tags before
-   protected preparation or any external mutation;
-4. execute at most one new package-mutation attempt and stop for reconciliation
-   on any nonterminal or ambiguous result; and
-5. keep `live_enabled: false`. Subsequent explicit user authorization covers
+2. treat preparation PR #608 as a prerequisite: no later phase may begin
+   unless it has merged without bypass. It carries the closed `.13`-`.16`
+   profile, retry-4 workflow and Environment identity, and exact confirmation,
+   but keeps the target at 40 zeroes so validation stops before review or
+   mutation. The work started from freshly fetched `origin/main@bcf47e2d`;
+   `bf174897` remains implementation provenance only;
+3. after preparation merges, revalidate the current principal, owner, `main`,
+   ruleset, checks, open-PR drift, runs, deployments, refs, workflow identity,
+   Environment, package versions, and tags. Only then create the fresh
+   protected retry-4 Environment;
+4. open a separate finalization PR that changes the workflow target default and
+   constant, Governance profile target, and target-pinned tests to the
+   preparation merge SHA. The reviewed target is the preparation merge, not the
+   finalization commit;
+5. after finalization merges without bypass, run a fresh exact preflight. Only
+   if it passes may any acceptance ref be created or the single
+   `run_attempt == 1` package-mutation attempt be dispatched; stop for
+   reconciliation on any nonterminal or ambiguous result; and
+6. keep `live_enabled: false`. Subsequent explicit user authorization covers
    the bounded acceptance-only repair/retry loop through genuine success,
    cleanup, and closure, but normal Live activation remains a separate
    production decision.
