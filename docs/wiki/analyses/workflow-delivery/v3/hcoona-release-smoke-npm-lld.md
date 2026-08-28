@@ -1608,14 +1608,60 @@ replace authorization for the mocked upstream. The absent/create/readback suite
 receives one shared 120-second deadline. The exact/race/lost-response suite
 receives one shared 300-second deadline across all four scenarios; no scenario
 resets that budget.
-proof binds the validated raw request and tarball digests to selected upstream
-response facts and response identity, with both credentials excluded. One
+The proof binds the validated raw request and tarball digests to selected
+upstream response facts and response identity, with both credentials excluded. One
 monotonic deadline supplies decreasing remaining budgets to every observation,
 npm process, proxy, upstream, and cleanup boundary. Missing, partial,
 wrong-typed, contradictory, or pre-validation runner facts remain incomplete.
 Complete Governance Acceptance Evidence independently rejects zero target and
 workflow SHAs; incomplete rejected-dispatch evidence retains its sentinel
 semantics.
+
+### Acceptance Proxy Diagnostics and Cardinality
+
+The proxy may retain one optional request-bound `upstream-diagnostic` for an
+expected-one request. A response arm contains an HTTP status in `100..599` and
+the validated request digest. A pre-response transport arm contains exactly one
+of `TimeoutError`, `OSError`, or `HTTPException`, no status, and the same
+request digest. Neither arm retains exception messages, request or response
+bodies, headers, authorization, tokens, stdout, or stderr. The first admitted
+fact is published atomically and exposed only by defensive copy.
+
+Expected-one request cardinality is a reservation, not an observation after
+forwarding. Matching tarball cardinality and `request_facts.append` execute in
+one lock scope. A simultaneous duplicate is rejected locally with HTTP 409
+after the lock is released and before another upstream write. The intentional
+two-request race keeps its barrier and upstream operations outside that lock
+and exposes no aggregate singleton diagnostic.
+
+If a qualified request is observed while its handler is still completing, the
+runner waits for diagnostic terminality only within the remaining shared
+absolute deadline. Multi-request scenarios mark singleton diagnostic
+publication terminal immediately because no request-safe aggregate can exist.
+Returned failures and raised timeout, `OSError`, and classification paths copy
+an admitted diagnostic when present. Omission means no raw diagnostic;
+explicit `null` or another present malformed value is validated and cannot be
+silently erased. A malformed raw value may yield to an independently admitted
+historical local exception diagnostic, but cannot stand alone.
+
+The Adapter and Governance admit a closed compatibility union. Historical
+requestless local diagnostics may contain `TimeoutError`, `OSError`,
+`RuntimeError`, or `ValueError`; new request-bound diagnostics use only the
+response and transport arms above. The only unbound status arm retained for
+historical replay is HTTP 201 adjacent to an admitted proof. Request binding
+requires admitted action execution and mutation startedness. A
+protocol-confirmed diagnostic requires the validated request proof and must
+match its HTTP 201 status and request digest. A proof cannot coexist with a
+transport exception diagnostic.
+Retry-2 and retry-3 lost-response completion also bind the proof tarball
+SHA-512 to exact post-readback bytes; retry 1 remains a narrow historical
+replay exception because that older evidence predates the binding.
+
+These diagnostics are observability only. They can explain a failed or
+incomplete runner outcome, but cannot establish execution, mutation
+completion, exact readback, protocol confirmation, complete scenario
+cardinality, or Governance acceptance. No diagnostic changes the outcome of
+the three consumed unsuccessful acceptance attempts.
 
 Therefore **Re-run failed jobs**, **Re-run all jobs**, or any other partial
 rerun cannot reuse the prior Environment review or coordinate.

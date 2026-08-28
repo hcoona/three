@@ -75,6 +75,15 @@ and Environment ID `20680097388` and acceptance refs are absent. No
 post-deletion dispatch was attempted. The `.9`-`.12` block is consumed and must
 not be retried. All three attempts remain unsuccessful; `live_enabled` remains
 false and Live activation remains unauthorized.
+Retry-3 documentation closure PR #601 merged as `ad70a879`. Repair PR #603
+then merged as `bf174897`, retaining closed request-bound upstream diagnostics
+through the acceptance proxy, runner, Adapter, and Governance while keeping
+them non-authoritative. The expected-one proxy now reserves its sole qualified
+request atomically before upstream forwarding. The complete v3 suite passed
+3,782 tests, and focused Pyrefly, HK, independent review/adjudication, required
+checks, and CodeQL passed. No destination-acceptance invocation followed that
+merge before this documentation update. The repair therefore changes no
+historical acceptance result, and `.1`-`.12` remain consumed.
 
 ## Confirmed v3 Shape
 
@@ -320,6 +329,16 @@ have changed.
    the temporary source and contract; workflow ID `343371046` is `deleted`,
    and the Environment and acceptance refs are absent. Do not retry or reuse
    `.9`-`.12`. Live activation remains unauthorized.
+7. Retry-3 documentation closure PR #601 merged as `ad70a879`. PR #603 merged
+   the bounded upstream-diagnostic and expected-one request-reservation repair
+   as `bf174897`. Diagnostics remain observability only and cannot establish
+   execution, mutation completion, or Governance acceptance. No acceptance
+   invocation followed the repair before this documentation update.
+8. Continue with a tests-first fourth profile using wholly new coordinates and
+   identities. Subsequent explicit user authorization covers the bounded
+   acceptance-only repair/retry loop through genuine success, reconciliation,
+   cleanup, and closure. It does not authorize normal Live activation or
+   `live_enabled: true`.
 
 ## Related Pages
 
