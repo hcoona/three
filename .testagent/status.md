@@ -9891,3 +9891,33 @@ The status update containing this result is staged and the same staged gate
 will be rerun over the final commit candidate.
 
 <!-- END APPEND: 2026-08-27-wdv3-acceptance-proxy-cardinality-staged-gate -->
+
+<!-- BEGIN APPEND: 2026-08-28-wdv3-acceptance-retry-4-preparation -->
+
+## Retry-4 destination-acceptance preparation
+
+The tests-first phase established the expected missing-profile and
+missing-workflow failures before production implementation. The bounded
+implementation then added the closed `.13` through `.16` Adapter and
+Governance profile, the exact retry-4 temporary workflow, and no CLI schema
+or generalized registry abstraction.
+
+The preparation target remains exactly forty zeroes. Local execution proves
+that fixed-input validation fails before the protected Environment or either
+`packages: write` probe can run. Terminal evidence binds the fixed
+confirmation identity even when a dispatch input is rejected.
+
+Validation at `2026-08-28T06:18:02Z`:
+
+- focused retry-4 contract selection: `56 passed`;
+- complete v3 suite: `3836 passed`;
+- scoped Ruff, Ruff format, and Pyrefly: passed;
+- package build and Actionlint: passed;
+- unstaged HK before final review: passed;
+- multi-reviewer OCR review: three findings, each independently adjudicated
+  true positive and repaired;
+- second-round workflow, test/topology, and holistic reviews: `No findings.`;
+- external workflow, Environment, package, tag, and acceptance-ref mutations:
+  none.
+
+<!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-4-preparation -->

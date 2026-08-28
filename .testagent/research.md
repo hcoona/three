@@ -1,5 +1,269 @@
 # Workflow Delivery v3 Snapshot Admission Research
 
+## 2026-08-28 Workflow Delivery v3 Retry-4 Acceptance Preparation Research
+
+### Scope and authority
+
+- Strategy: **single-pass Research -> Plan -> Implement**, tests-first and
+  deliberately RED.
+- Workspace:
+  `/workspace/three-workspaces/design-workflows`.
+- Branch: `workflow-delivery-v3-acceptance-retry-4`.
+- Authoritative base and current HEAD:
+  `bcf47e2d817b718adf96a67ef0506d220b74f2bf`.
+- The current v3 handoff was read first:
+  `docs/wiki/analyses/workflow-delivery/v3/agent-handoff.md`.
+- The current workspace is authoritative. Historical retry-3 files may be
+  consulted only as mechanism references. They must not be restored.
+- `bf1748971f2717a8877852590c5436b4160a4fbf` is implementation provenance
+  only; neither it nor the work-base SHA is an acceptable reviewed target.
+- This phase may edit only tests, test-local fixtures/contracts, and these
+  `.testagent` records. It must not edit production Python registries or add
+  the workflow.
+
+### Language and repository conventions
+
+- Python 3.13, pytest 9.1.1, a UV workspace, and Hatchling.
+- Package manifest:
+  `src/public/lib/three-workflow-delivery-v3/pyproject.toml`.
+- Root pytest configuration uses importlib import mode and includes the v3
+  tests in `testpaths`.
+- Existing tests use plain `test_*` functions, bare concrete assertions,
+  descriptive parameter IDs, `pytest.raises(..., match=...)`, exact
+  tuple/dictionary equality, canonical JSON bytes, `tmp_path`,
+  `monkeypatch`, controlled fake transports/runners, and `yaml.safe_load`.
+- Missing retry-4 production symbols and the absent workflow must be accessed
+  from test bodies so collection remains green and execution is behaviorally
+  RED.
+- The `code-testing-extensions` entry point was unavailable; the local base
+  extension at
+  `.agents/skills/code-testing-extensions/extensions/python.md` was read.
+  Its normal green-suite rule is superseded here by the explicit tests-first
+  request to preserve expected RED failures.
+
+### Approved retry-4 identity and binding contract
+
+- Package: `@hcoona/hcoona-release-smoke-npm`.
+- Stable scenario order and exact bindings:
+  1. `absent-create-readback` ->
+     `0.0.0-wdv3-acceptance.13`, `wdv3-acceptance-13`;
+  2. `exact` -> `0.0.0-wdv3-acceptance.13`,
+     `wdv3-acceptance-13`;
+  3. `identical-race` -> `0.0.0-wdv3-acceptance.14`,
+     `wdv3-acceptance-14`;
+  4. `differing-race` -> `0.0.0-wdv3-acceptance.15`,
+     `wdv3-acceptance-15`;
+  5. `lost-response` -> `0.0.0-wdv3-acceptance.16`,
+     `wdv3-acceptance-16`.
+- Fourth base coordinate:
+  `@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.13`.
+- Workflow path:
+  `.github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-4.yml`.
+- Workflow stem and Environment:
+  `workflow-delivery-v3-buddy-smoke-acceptance-retry-4`.
+- Confirmation:
+  `I_ACCEPT_DISPOSABLE_GITHUB_PACKAGES_PROBES_RETRY_4`.
+- Confirmation digest:
+  `sha256:b6f94d3c13c98b0714404959dd878230f8302ee849038a536f5a18cc3a85c7ec`.
+- Preparation target:
+  `0000000000000000000000000000000000000000`, exactly forty ASCII
+  zeroes.
+- `.1` through `.12` and every historical identity remain consumed.
+- `live_enabled` remains `false`.
+
+### Bounded target inventory
+
+Test files to modify:
+
+1. `src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py`
+   - fourth Adapter profile order/uniqueness;
+   - resolution and exact coordinates;
+   - suite behavior using existing fakes;
+   - `_AcceptanceNpmRunner` coordinates;
+   - matched proof and bidirectional cross-profile rejection;
+   - move two `.13` negative fixtures to clearly unregistered `.17`.
+2. `src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py`
+   - fourth Governance profile order/uniqueness;
+   - exact zero-sentinel preparation admission;
+   - fail-closed zero shape;
+   - placeholder-only finalized target shape;
+   - exact workflow, Environment, confirmation, digest, coordinate, and tag
+     bindings;
+   - cross-profile rejection and historical evidence preservation.
+3. `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+   - permit and require exactly the retry-4 temporary workflow during
+     preparation while normal Buddy remains disabled.
+4. `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit11_legacy_buddy_retirement.py`
+   - permit exactly retry-4 and continue rejecting every other temporary or
+     legacy workflow.
+
+Test file to add:
+
+5. `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_retry_4_workflow.py`
+   - dedicated retry-4 workflow contract re-authored from current authority
+     and historical retry-3 mechanisms.
+
+Read-only behavior targets:
+
+- `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/adapters/github_packages.py`
+  (`_ACCEPTANCE_SUITE_PROFILES`,
+  `_ACCEPTANCE_COORDINATE_TAG_PAIRS`,
+  `fixed_acceptance_scenario_specs`, `fixed_acceptance_coordinates`,
+  `ValidatedAcceptanceRequestProof`, and `run_fixed_acceptance_suite`).
+- `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/records/governance.py`
+  (`_GovernanceAcceptanceProfile`,
+  `_GOVERNANCE_ACCEPTANCE_PROFILES`, `_acceptance_profile`,
+  `_require_zero_target_rejected_dispatch`, and
+  `admit_governance_acceptance_evidence`).
+- `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py`
+  (`_AcceptanceNpmRunner` and the existing fixed-suite CLI route); this is a
+  consumer only and requires no CLI change.
+- The absent retry-4 workflow path above; production workflow creation is
+  forbidden in this phase.
+- `.github/workflow-delivery/governance/hcoona-release-smoke-npm.json`;
+  `live_enabled: false` is read-only.
+
+### Existing fixture conflict
+
+The now-approved `.13` coordinate occurs in two current Adapter negative
+fixtures and must move without weakening their assertions:
+
+1. `test_retry_2_suite_resolves_only_the_reviewed_coordinate_block`, near
+   line 242: replace the unreviewed base `.13` with `.17`.
+2. `test_acceptance_probe_requires_the_fixed_coordinate_and_explicit_tag`,
+   near lines 2529-2530: replace coordinate/tag `.13` with
+   `.17`/`wdv3-acceptance-17`.
+
+`.17` is syntactically valid and clearly outside all four registered blocks.
+
+### Requirement checklist
+
+- [ ] A1: Adapter has exactly four profiles in stable historical order
+  `.1`, `.5`, `.9`, `.13`.
+- [ ] A2: Governance has exactly four profiles in the same stable order.
+- [ ] A3: All four base identities are unique.
+- [ ] A4: Every profile retains exact five-scenario order.
+- [ ] A5: Profile-qualified base/scenario/coordinate/tag identities are
+  unique, with only the intentional absent/exact reuse inside each profile.
+- [ ] A6: The four four-version blocks yield 16 unique accepted
+  coordinate/tag pairs.
+- [ ] A7: Retry-4 uses exactly `.13`/`.13`/`.14`/`.15`/`.16` and tags
+  `-13`/`-13`/`-14`/`-15`/`-16`.
+- [ ] A8: `fixed_acceptance_scenario_specs` and
+  `fixed_acceptance_coordinates` resolve the fourth profile.
+- [ ] A9: `_AcceptanceNpmRunner` uses all five exact retry-4 coordinates.
+- [ ] A10: `run_fixed_acceptance_suite` routes the exact retry-4
+  base/coordinate/tag values through controlled fakes.
+- [ ] A11: A matched retry-4 proof is accepted and retry-4/historical
+  coordinate-tag substitutions are rejected in both directions.
+- [ ] A12: Both formerly negative `.13` fixtures move to `.17` while their
+  negative assertions remain unchanged.
+- [ ] G1: Governance binds the exact retry-4 workflow path and Environment.
+- [ ] G2: Governance binds the exact confirmation literal and digest.
+- [ ] G3: Governance binds the exact `.13` through `.16` scenario
+  coordinates/tags.
+- [ ] G4: Preparation target is exactly forty ASCII zeroes.
+- [ ] G5: Only an exact zero-target rejected-dispatch shape is admitted:
+  validation failed; review and both probes skipped; no probe records,
+  artifact, or reviewer; mutation classification incomplete.
+- [ ] G6: Zero-target documents implying review, retained scenarios, or
+  possible mutation are rejected.
+- [ ] G7: Eventual finalized shape is represented only with a clearly named
+  test-local 40-hex placeholder reviewed target and temporary registry patch;
+  the placeholder is not authority.
+- [ ] G8: The placeholder finalized shape round-trips canonically with exact
+  retry-4 scenario/proof bindings where representable.
+- [ ] G9: Cross-profile workflow path, Environment, recovery Environment,
+  digest, target, coordinate, and tag substitutions are rejected.
+- [ ] G10: Retry-1 through retry-3 admission, profile tuples, suite digests,
+  and replay evidence remain unchanged.
+- [ ] W1: A dedicated retry-4 static workflow contract is modeled on
+  historical retry-3 mechanics but re-authored against current source.
+- [ ] W2: It requires exactly five jobs:
+  `validate-fixed-inputs`, `acceptance-review`,
+  `probe-absent-create-readback`, `probe-exact-and-conflict`, and
+  `capture-governance-evidence`.
+- [ ] W3: It requires first-attempt guards, terminal `always()` capture,
+  Environment only on review, and `packages: write` only on the two probe
+  jobs.
+- [ ] W4: The forty-zero target fails in validation before review or either
+  write-capable probe can run.
+- [ ] W5: A test-only nonzero placeholder demonstrates the finalized guard
+  shape without assigning an actual final target.
+- [ ] W6: Exact dispatch inputs, confirmation/digest, current pinned actions
+  and toolchains, concurrency, checkout, probe, and terminal evidence wiring
+  are fixed.
+- [ ] W7: Wrong inputs fail closed and Live, Release, bypass, force,
+  schedule, push, `workflow_call`, and generalized routes are absent.
+- [ ] T1: Topology and retirement permit exactly retry-4 during preparation;
+  original, retry-2, and retry-3 temporary workflow sources remain absent.
+- [ ] T2: Disabled normal Buddy and `live_enabled: false` remain required.
+- [ ] S1: No production registry, workflow, CLI schema, generalized profile
+  framework, generic architecture, manifest, lock, or external state change.
+- [ ] S2: No Live, bypass, external workflow/Environment/package/ref
+  mutation, or historical file restoration.
+- [ ] S3: Test collection stays green; execution is RED only because fourth
+  profiles and workflow behavior are absent.
+- [ ] S4: Narrow runs record exact node IDs and classify expected missing
+  production/workflow behavior separately from accidental test defects.
+
+### Exact commands
+
+Run from the repository root.
+
+Collection:
+
+```text
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest --collect-only -q \
+  src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py \
+  src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py \
+  src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_retry_4_workflow.py \
+  src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py \
+  src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit11_legacy_buddy_retirement.py
+```
+
+Narrow Adapter, Governance, and workflow/topology RED runs:
+
+```text
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q \
+  src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py \
+  -k retry_4
+
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q \
+  src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py \
+  -k retry_4
+
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q \
+  src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_retry_4_workflow.py \
+  src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py \
+  src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit11_legacy_buddy_retirement.py \
+  -k 'retry_4 or temporary_acceptance'
+```
+
+Combined RED run:
+
+```text
+uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q \
+  src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py \
+  src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py \
+  src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_retry_4_workflow.py \
+  src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py \
+  src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit11_legacy_buddy_retirement.py \
+  -k 'retry_4 or temporary_acceptance'
+```
+
+Quality checks:
+
+```text
+uv run --python 3.13 ruff check <the five bounded test paths>
+uv run --python 3.13 ruff format --check <the five bounded test paths>
+uv build --package three-workflow-delivery-v3
+git --no-pager diff --check
+```
+
+The final scoped execution must remain RED. Collection, lint, formatting,
+package build, and unrelated baseline behavior must not fail.
+
 ## 2026-08-13 Commit 8 Governance Observation Error Taxonomy Research
 
 ### Scope and strategy

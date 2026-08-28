@@ -239,7 +239,7 @@ def test_retry_2_suite_resolves_only_the_reviewed_coordinate_block() -> None:
     }
     with pytest.raises(ValueError, match="not a reviewed fixed suite"):
         fixed_acceptance_coordinates(
-            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.13"
+            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.17"
         )
 
 
@@ -2526,8 +2526,8 @@ def test_acceptance_symbols_are_deliberately_public_when_adapter_exports_them() 
         (ACCEPTANCE_COORDINATES["absent-create-readback"], "latest"),
         (ACCEPTANCE_COORDINATES["exact"], "wdv3-acceptance-9"),
         (
-            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.13",
-            "wdv3-acceptance-13",
+            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.17",
+            "wdv3-acceptance-17",
         ),
     ],
 )
@@ -7389,3 +7389,548 @@ def test_acceptance_proxy_expected_one_rejects_simultaneous_identical_qualified_
         "exception-category": None,
         "request-correlation-digest": request_digest,
     }
+
+
+_RETRY_4_ACCEPTANCE_PACKAGE_NAME = "@hcoona/hcoona-release-smoke-npm"
+_RETRY_4_ACCEPTANCE_BASE_COORDINATE = (
+    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.13"
+)
+_RETRY_4_UNREGISTERED_BASE_COORDINATE = (
+    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.17"
+)
+_RETRY_4_ACCEPTANCE_BINDINGS = (
+    (
+        "absent-create-readback",
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.13",
+        "wdv3-acceptance-13",
+    ),
+    (
+        "exact",
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.13",
+        "wdv3-acceptance-13",
+    ),
+    (
+        "identical-race",
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.14",
+        "wdv3-acceptance-14",
+    ),
+    (
+        "differing-race",
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.15",
+        "wdv3-acceptance-15",
+    ),
+    (
+        "lost-response",
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.16",
+        "wdv3-acceptance-16",
+    ),
+)
+
+
+def _require_retry_4_adapter_profile() -> Any:
+    from three_workflow_delivery_v3.adapters import (  # noqa: PLC0415
+        github_packages as module,
+    )
+
+    registered_base_coordinates = tuple(
+        base_coordinate
+        for base_coordinate, _scenario_specs in module._ACCEPTANCE_SUITE_PROFILES
+    )
+    assert _RETRY_4_ACCEPTANCE_BASE_COORDINATE in registered_base_coordinates, (
+        "E-ADAPTER-PROFILE-ABSENT: the reviewed retry-4 base coordinate is "
+        f"not registered; observed {registered_base_coordinates!r}"
+    )
+    return module
+
+
+def test_retry_4_adapter_profiles_have_stable_historical_order_and_unique_base_coordinates() -> (
+    None
+):
+    module = _require_retry_4_adapter_profile()
+
+    base_coordinates = tuple(
+        base_coordinate
+        for base_coordinate, _scenario_specs in module._ACCEPTANCE_SUITE_PROFILES
+    )
+
+    assert base_coordinates == (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.1",
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5",
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9",
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.13",
+    )
+    assert len(base_coordinates) == 4
+    assert len(set(base_coordinates)) == 4
+
+
+def test_retry_4_adapter_profiles_preserve_scenario_order_and_qualified_identity_uniqueness() -> (
+    None
+):
+    module = _require_retry_4_adapter_profile()
+    profiles = module._ACCEPTANCE_SUITE_PROFILES
+    expected_scenario_order = (
+        "absent-create-readback",
+        "exact",
+        "identical-race",
+        "differing-race",
+        "lost-response",
+    )
+
+    scenario_orders = tuple(
+        tuple(scenario for scenario, _version, _tag in scenario_specs)
+        for _base_coordinate, scenario_specs in profiles
+    )
+    qualified_identities = tuple(
+        (
+            base_coordinate,
+            scenario,
+            f"{_RETRY_4_ACCEPTANCE_PACKAGE_NAME}@{version}",
+            tag,
+        )
+        for base_coordinate, scenario_specs in profiles
+        for scenario, version, tag in scenario_specs
+    )
+    reuse_groups = []
+    for _base_coordinate, scenario_specs in profiles:
+        scenarios_by_pair: dict[tuple[str, str], list[str]] = {}
+        for scenario, version, tag in scenario_specs:
+            pair = (
+                f"{_RETRY_4_ACCEPTANCE_PACKAGE_NAME}@{version}",
+                tag,
+            )
+            scenarios_by_pair.setdefault(pair, []).append(scenario)
+        reuse_groups.append(
+            tuple(tuple(scenarios) for scenarios in scenarios_by_pair.values())
+        )
+
+    assert scenario_orders == (expected_scenario_order,) * 4
+    assert len(qualified_identities) == 20
+    assert len(set(qualified_identities)) == 20
+    assert (
+        tuple(reuse_groups)
+        == (
+            (
+                ("absent-create-readback", "exact"),
+                ("identical-race",),
+                ("differing-race",),
+                ("lost-response",),
+            ),
+        )
+        * 4
+    )
+
+
+def test_retry_4_adapter_coordinate_tag_pairs_are_exact_and_globally_unique() -> (
+    None
+):
+    module = _require_retry_4_adapter_profile()
+    expected_pair_blocks = (
+        frozenset(
+            {
+                (
+                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.1",
+                    "wdv3-acceptance-1",
+                ),
+                (
+                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.2",
+                    "wdv3-acceptance-2",
+                ),
+                (
+                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.3",
+                    "wdv3-acceptance-3",
+                ),
+                (
+                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.4",
+                    "wdv3-acceptance-4",
+                ),
+            }
+        ),
+        frozenset(
+            {
+                (
+                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5",
+                    "wdv3-acceptance-5",
+                ),
+                (
+                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.6",
+                    "wdv3-acceptance-6",
+                ),
+                (
+                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.7",
+                    "wdv3-acceptance-7",
+                ),
+                (
+                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.8",
+                    "wdv3-acceptance-8",
+                ),
+            }
+        ),
+        frozenset(
+            {
+                (
+                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9",
+                    "wdv3-acceptance-9",
+                ),
+                (
+                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.10",
+                    "wdv3-acceptance-10",
+                ),
+                (
+                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.11",
+                    "wdv3-acceptance-11",
+                ),
+                (
+                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.12",
+                    "wdv3-acceptance-12",
+                ),
+            }
+        ),
+        frozenset(
+            {
+                (
+                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.13",
+                    "wdv3-acceptance-13",
+                ),
+                (
+                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.14",
+                    "wdv3-acceptance-14",
+                ),
+                (
+                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.15",
+                    "wdv3-acceptance-15",
+                ),
+                (
+                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.16",
+                    "wdv3-acceptance-16",
+                ),
+            }
+        ),
+    )
+    actual_pair_blocks = tuple(
+        frozenset(
+            (
+                f"{_RETRY_4_ACCEPTANCE_PACKAGE_NAME}@{version}",
+                tag,
+            )
+            for _scenario, version, tag in scenario_specs
+        )
+        for _base_coordinate, scenario_specs in module._ACCEPTANCE_SUITE_PROFILES
+    )
+    all_pairs = frozenset(
+        pair for block in actual_pair_blocks for pair in block
+    )
+    retry_4_specs = next(
+        scenario_specs
+        for base_coordinate, scenario_specs in module._ACCEPTANCE_SUITE_PROFILES
+        if base_coordinate == _RETRY_4_ACCEPTANCE_BASE_COORDINATE
+    )
+    retry_4_bindings = tuple(
+        (
+            scenario,
+            f"{_RETRY_4_ACCEPTANCE_PACKAGE_NAME}@{version}",
+            tag,
+        )
+        for scenario, version, tag in retry_4_specs
+    )
+
+    assert actual_pair_blocks == expected_pair_blocks
+    assert tuple(len(block) for block in actual_pair_blocks) == (4, 4, 4, 4)
+    assert len(all_pairs) == 16
+    assert sum(len(block) for block in actual_pair_blocks) == len(all_pairs)
+    assert all_pairs == module._ACCEPTANCE_COORDINATE_TAG_PAIRS
+    assert retry_4_bindings == _RETRY_4_ACCEPTANCE_BINDINGS
+
+
+def test_retry_4_fixed_acceptance_resolvers_return_exact_scenarios_and_coordinates() -> (
+    None
+):
+    _require_retry_4_adapter_profile()
+    expected_specs = tuple(
+        (
+            scenario,
+            coordinate.rsplit("@", 1)[1],
+            tag,
+        )
+        for scenario, coordinate, tag in _RETRY_4_ACCEPTANCE_BINDINGS
+    )
+    expected_coordinates = tuple(
+        (scenario, coordinate)
+        for scenario, coordinate, _tag in _RETRY_4_ACCEPTANCE_BINDINGS
+    )
+
+    assert (
+        fixed_acceptance_scenario_specs(_RETRY_4_ACCEPTANCE_BASE_COORDINATE)
+        == expected_specs
+    )
+    assert (
+        tuple(
+            fixed_acceptance_coordinates(
+                _RETRY_4_ACCEPTANCE_BASE_COORDINATE
+            ).items()
+        )
+        == expected_coordinates
+    )
+    with pytest.raises(ValueError, match="not a reviewed fixed suite"):
+        fixed_acceptance_scenario_specs(_RETRY_4_UNREGISTERED_BASE_COORDINATE)
+    with pytest.raises(ValueError, match="not a reviewed fixed suite"):
+        fixed_acceptance_coordinates(_RETRY_4_UNREGISTERED_BASE_COORDINATE)
+
+
+def test_retry_4_npm_runner_invokes_all_five_exact_coordinates() -> None:
+    _require_retry_4_adapter_profile()
+    runner = cli_module._AcceptanceNpmRunner(
+        Path(".retry-4.npmrc"),
+        contender_tarballs={},
+        base_package_coordinate=_RETRY_4_ACCEPTANCE_BASE_COORDINATE,
+    )
+
+    assert tuple(runner._coordinates.items()) == tuple(
+        (scenario, coordinate)
+        for scenario, coordinate, _tag in _RETRY_4_ACCEPTANCE_BINDINGS
+    )
+    assert len(runner._coordinates) == 5
+    assert (
+        runner._coordinates["absent-create-readback"]
+        == runner._coordinates["exact"]
+        == _RETRY_4_ACCEPTANCE_BASE_COORDINATE
+    )
+
+
+def test_retry_4_fixed_acceptance_suite_routes_exact_bindings_through_controlled_fakes(
+    tmp_path: Path,
+) -> None:
+    _require_retry_4_adapter_profile()
+    coordinates = {
+        scenario: coordinate
+        for scenario, coordinate, _tag in _RETRY_4_ACCEPTANCE_BINDINGS
+    }
+    tags = {
+        scenario: tag
+        for scenario, _coordinate, tag in _RETRY_4_ACCEPTANCE_BINDINGS
+    }
+    tarballs = {}
+    for scenario, _coordinate, _tag in _RETRY_4_ACCEPTANCE_BINDINGS:
+        tarball = tmp_path / f"retry-4-{scenario}.tgz"
+        tarball.write_bytes(f"retry-4-{scenario}".encode())
+        tarballs[scenario] = tarball
+
+    def exact_observation(scenario: str) -> dict[str, Any]:
+        return {
+            "state": "exact",
+            "version": coordinates[scenario].rsplit("@", 1)[1],
+            "tag": tags[scenario],
+            "content-sha512": (
+                "sha512:"
+                + hashlib.sha512(tarballs[scenario].read_bytes()).hexdigest()
+            ),
+            "response-identity-digest": RESPONSE_B,
+        }
+
+    transport = RecordingTransport(
+        [
+            _absent(),
+            exact_observation("absent-create-readback"),
+            exact_observation("exact"),
+            _absent(),
+            exact_observation("identical-race"),
+            _absent(),
+            exact_observation("differing-race"),
+            _absent(),
+            exact_observation("lost-response"),
+        ]
+    )
+    runner = ControlledRunner()
+
+    absent_result = run_fixed_acceptance_suite(
+        suite="absent-create-readback",
+        tarballs={"absent-create-readback": tarballs["absent-create-readback"]},
+        transport=transport,
+        runner=runner,
+        timeout_seconds=TIMEOUT_SECONDS,
+        max_response_bytes=MAX_RESPONSE_BYTES,
+        max_output_bytes=MAX_OUTPUT_BYTES,
+        base_package_coordinate=_RETRY_4_ACCEPTANCE_BASE_COORDINATE,
+    )
+    conflict_result = run_fixed_acceptance_suite(
+        suite="exact-and-conflict",
+        tarballs={
+            scenario: tarballs[scenario]
+            for scenario in (
+                "exact",
+                "identical-race",
+                "differing-race",
+                "lost-response",
+            )
+        },
+        transport=transport,
+        runner=runner,
+        timeout_seconds=TIMEOUT_SECONDS,
+        max_response_bytes=MAX_RESPONSE_BYTES,
+        max_output_bytes=MAX_OUTPUT_BYTES,
+        base_package_coordinate=_RETRY_4_ACCEPTANCE_BASE_COORDINATE,
+    )
+
+    routed_results = (*absent_result.scenarios, *conflict_result.scenarios)
+    assert (
+        tuple(
+            (result.scenario, result.package_coordinate, result.tag)
+            for result in routed_results
+        )
+        == _RETRY_4_ACCEPTANCE_BINDINGS
+    )
+    assert tuple((call[0], call[1]) for call in transport.calls) == (
+        (coordinates["absent-create-readback"], tags["absent-create-readback"]),
+        (coordinates["absent-create-readback"], tags["absent-create-readback"]),
+        (coordinates["exact"], tags["exact"]),
+        (coordinates["identical-race"], tags["identical-race"]),
+        (coordinates["identical-race"], tags["identical-race"]),
+        (coordinates["differing-race"], tags["differing-race"]),
+        (coordinates["differing-race"], tags["differing-race"]),
+        (coordinates["lost-response"], tags["lost-response"]),
+        (coordinates["lost-response"], tags["lost-response"]),
+    )
+    assert all(
+        0 < timeout_seconds <= TIMEOUT_SECONDS
+        and max_response_bytes == MAX_RESPONSE_BYTES
+        for _coordinate, _tag, timeout_seconds, max_response_bytes in transport.calls
+    )
+    assert tuple(
+        (
+            scenario,
+            argv[2],
+            argv[argv.index("--tag") + 1],
+        )
+        for scenario, argv, _env in runner.calls
+    ) == (
+        (
+            "absent-create-readback",
+            str(tarballs["absent-create-readback"]),
+            "wdv3-acceptance-13",
+        ),
+        (
+            "identical-race",
+            str(tarballs["identical-race"]),
+            "wdv3-acceptance-14",
+        ),
+        (
+            "differing-race",
+            str(tarballs["differing-race"]),
+            "wdv3-acceptance-15",
+        ),
+        (
+            "lost-response",
+            str(tarballs["lost-response"]),
+            "wdv3-acceptance-16",
+        ),
+    )
+    assert (
+        absent_result.suite,
+        absent_result.scenario_inventory,
+        absent_result.mutation_classification,
+        absent_result.result,
+    ) == (
+        "absent-create-readback",
+        ("absent-create-readback",),
+        "incomplete",
+        "incomplete",
+    )
+    assert (
+        conflict_result.suite,
+        conflict_result.scenario_inventory,
+        conflict_result.mutation_classification,
+        conflict_result.result,
+    ) == (
+        "exact-and-conflict",
+        ("exact", "identical-race", "differing-race", "lost-response"),
+        "unknown",
+        "unknown",
+    )
+    assert tuple(result.result for result in routed_results) == (
+        "created-without-request-proof",
+        "exact-no-mutation",
+        "created",
+        "differing-race-winner-not-proven",
+        "lost-response",
+    )
+
+
+def test_retry_4_validated_proof_accepts_exact_coordinate_tag_bindings() -> (
+    None
+):
+    _require_retry_4_adapter_profile()
+    proofs = tuple(
+        AcceptanceRequestProof.from_validated_exchange(
+            raw_request=f"retry-4-request-{index}-{scenario}".encode(),
+            tarball=f"retry-4-tarball-{index}-{scenario}".encode(),
+            package_coordinate=coordinate,
+            tag=tag,
+            upstream_status=201,
+            selected_headers={
+                "Content-Type": "application/json",
+                "ETag": f'"retry-4-{index}"',
+            },
+            response_body=f'{{"retry":4,"scenario":"{scenario}"}}'.encode(),
+        )
+        for index, (scenario, coordinate, tag) in enumerate(
+            _RETRY_4_ACCEPTANCE_BINDINGS,
+            start=1,
+        )
+    )
+
+    assert tuple(
+        (proof.package_coordinate, proof.tag) for proof in proofs
+    ) == tuple(
+        (coordinate, tag)
+        for _scenario, coordinate, tag in _RETRY_4_ACCEPTANCE_BINDINGS
+    )
+    assert tuple(proof.upstream_status for proof in proofs) == (201,) * 5
+    assert tuple(proof.selected_headers for proof in proofs) == tuple(
+        (
+            ("content-type", "application/json"),
+            ("etag", f'"retry-4-{index}"'),
+        )
+        for index in range(1, 6)
+    )
+    assert len({proof.request_digest for proof in proofs}) == 5
+    assert len({proof.response_identity_digest for proof in proofs}) == 5
+    assert {proof.to_document()["schema"] for proof in proofs} == {
+        "workflow-delivery/v3/validated-acceptance-request-proof"
+    }
+
+
+def test_retry_4_validated_proof_rejects_historical_substitutions_in_both_directions() -> (
+    None
+):
+    _require_retry_4_adapter_profile()
+    substitutions = (
+        (
+            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.13",
+            "wdv3-acceptance-9",
+        ),
+        (
+            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9",
+            "wdv3-acceptance-13",
+        ),
+    )
+    observed_messages = []
+
+    for index, (coordinate, tag) in enumerate(substitutions, start=1):
+        with pytest.raises(
+            ValueError,
+            match="coordinate or tag is not fixed",
+        ) as raised:
+            AcceptanceRequestProof.from_validated_exchange(
+                raw_request=f"retry-4-substitution-request-{index}".encode(),
+                tarball=f"retry-4-substitution-tarball-{index}".encode(),
+                package_coordinate=coordinate,
+                tag=tag,
+                upstream_status=201,
+                selected_headers={"Content-Type": "application/json"},
+                response_body=b'{"ok":true}',
+            )
+        observed_messages.append(str(raised.value))
+
+    assert observed_messages == [
+        "validated request coordinate or tag is not fixed",
+        "validated request coordinate or tag is not fixed",
+    ]
