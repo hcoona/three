@@ -925,3 +925,138 @@ def test_retry_4_workflow_exposes_no_live_release_bypass_force_or_generalized_tr
     assert "--force" not in raw
     assert "live_enabled" not in raw
     assert document["env"]["WDV3_PURPOSE"] == "destination-acceptance"
+
+
+def test_retry_4_terminal_program_preserves_fixed_identity_after_rejected_dispatch(
+    tmp_path: Path,
+) -> None:
+    import sys  # noqa: PLC0415
+
+    from three_workflow_delivery_v3.canonical import (  # noqa: PLC0415
+        canonicalize,
+    )
+    from three_workflow_delivery_v3.records.governance import (  # noqa: PLC0415
+        admit_governance_acceptance_evidence,
+    )
+
+    document, _raw = _load_workflow()
+    program = _terminal_python(document)
+    evidence_path = tmp_path / "governance-acceptance.json"
+    empty_home = tmp_path / "empty-home"
+    empty_home.mkdir()
+    run_id = 608
+    workflow_sha = "a" * 40
+    environment = {
+        "HOME": str(empty_home),
+        "PATH": os.environ.get("PATH", os.defpath),
+        "PYTHONNOUSERSITE": "1",
+        "USERPROFILE": str(empty_home),
+        "WDV3_FILE": str(evidence_path),
+        "INPUT_TARGET_SHA": "e" * 40,
+        "INPUT_PACKAGE_COORDINATE": (
+            f"{PACKAGE_NAME}@0.0.0-wdv3-acceptance.17"
+        ),
+        "WDV3_ACCEPTANCE_TARGET_SHA": ZERO_SHA,
+        "WDV3_ACCEPTANCE_PACKAGE_COORDINATE": BASE_COORDINATE,
+        "WDV3_ACCEPTANCE_CONFIRMATION": CONFIRMATION,
+        "VALIDATE_RESULT": "failure",
+        "REVIEW_RESULT": "skipped",
+        "ABSENT_JOB_RESULT": "skipped",
+        "CONFLICT_JOB_RESULT": "skipped",
+        "REVIEW_ARTIFACT_ID": "",
+        "ABSENT_RESULT": "",
+        "ABSENT_MUTATION_CLASSIFICATION": "",
+        "ABSENT_SCENARIO_INVENTORY": "",
+        "ABSENT_RECORD_JSON": "",
+        "ABSENT_RECORD_DIGEST": "",
+        "ABSENT_ARTIFACT_ID": "",
+        "ABSENT_ARTIFACT_DIGEST": "",
+        "CONFLICT_RESULT": "",
+        "CONFLICT_MUTATION_CLASSIFICATION": "",
+        "CONFLICT_SCENARIO_INVENTORY": "",
+        "CONFLICT_RECORD_JSON": "",
+        "CONFLICT_RECORD_DIGEST": "",
+        "CONFLICT_ARTIFACT_ID": "",
+        "CONFLICT_ARTIFACT_DIGEST": "",
+        "GITHUB_RUN_ATTEMPT": "1",
+        "GITHUB_RUN_ID": str(run_id),
+        "GITHUB_REPOSITORY": "hcoona/three",
+        "GITHUB_REF": "refs/heads/main",
+        "GITHUB_WORKFLOW_SHA": workflow_sha,
+    }
+    if system_root := os.environ.get("SYSTEMROOT"):
+        environment["SYSTEMROOT"] = system_root
+    if "INPUT_CONFIRM" in program:
+        environment["INPUT_CONFIRM"] = "NOT_THE_RETRY_4_CONFIRMATION"
+
+    result = subprocess.run(
+        (sys.executable, "-I", "-c", program),
+        check=False,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+
+    assert (result.returncode, result.stdout, result.stderr) == (0, "", "")
+    assert evidence_path.is_file()
+    evidence = evidence_path.read_bytes()
+    admitted = admit_governance_acceptance_evidence(evidence)
+    assert evidence == canonicalize(admitted.to_document())
+    assert admitted.workflow.to_document() == {
+        "repository": "hcoona/three",
+        "path": WORKFLOW_RELATIVE_PATH,
+        "ref": "refs/heads/main",
+        "sha": workflow_sha,
+    }
+    assert (admitted.target_sha, admitted.package_coordinate) == (
+        ZERO_SHA,
+        BASE_COORDINATE,
+    )
+    assert admitted.confirmation_digest == CONFIRMATION_DIGEST
+    assert admitted.environment == ENVIRONMENT
+    assert admitted.reviewer_record.to_document() == {
+        "login": None,
+        "source": "unavailable-in-job-context",
+    }
+    assert admitted.recovery.to_document() == {
+        "workflow-run-id": run_id,
+        "environment": ENVIRONMENT,
+        "deployment": f"run:{run_id}/environment:acceptance",
+        "job": "acceptance-review",
+        "artifact-id": None,
+    }
+    assert tuple(
+        result.to_document() for result in admitted.dependency_results
+    ) == (
+        {"job": "validate-fixed-inputs", "result": "failure"},
+        {"job": "acceptance-review", "result": "skipped"},
+        {"job": "probe-absent-create-readback", "result": "skipped"},
+        {"job": "probe-exact-and-conflict", "result": "skipped"},
+    )
+    assert tuple(fact.to_document() for fact in admitted.probe_facts) == (
+        {
+            "probe": "probe-absent-create-readback",
+            "result": "incomplete",
+            "scenario-inventory": ["absent-create-readback"],
+            "record-digest": None,
+            "artifact-id": None,
+            "artifact-digest": None,
+            "scenarios": [],
+        },
+        {
+            "probe": "probe-exact-and-conflict",
+            "result": "incomplete",
+            "scenario-inventory": [
+                "exact",
+                "identical-race",
+                "differing-race",
+                "lost-response",
+            ],
+            "record-digest": None,
+            "artifact-id": None,
+            "artifact-digest": None,
+            "scenarios": [],
+        },
+    )
+    assert admitted.mutation_classification == "incomplete"
+    assert (admitted.workflow_run_id, admitted.run_attempt) == (run_id, 1)
