@@ -17,6 +17,7 @@ from three_workflow_delivery_v3.adapters.github_packages import (
     ACCEPTANCE_SCENARIO_SPECS,
     AcceptanceRunnerDiagnostic,
     FixedAcceptanceSuiteResult,
+    FixedCoordinateAcceptanceProbeResult,
     ValidatedAcceptanceRequestProof,
     run_fixed_coordinate_acceptance_probe,
 )
@@ -381,6 +382,31 @@ def test_runner_output_bound_is_non_authoritative_only_with_proxy_proof(
             else "lost-response-processed"
         )
         assert result["validated-request-proof"] is proof
+        assert result["request-digest"] == proof.request_digest
+        assert result["upstream-status"] == proof.upstream_status
+        assert result["selected-headers"] == dict(proof.selected_headers)
+        assert result["response-body-digest"] == proof.response_body_digest
+        assert (
+            result["response-identity-digest"] == proof.response_identity_digest
+        )
+        assert result["action-executed"] is True
+        assert result["mutation-started"] is True
+        admitted = _run_probe(
+            tmp_path,
+            scenario=scenario,
+            runner=ScriptedRunner(result),
+            observations=[
+                _absent(),
+                _exact_readback(tarball_bytes, scenario=scenario),
+            ],
+        )
+        assert admitted.mutation_classification == "complete"
+        assert admitted.result == (
+            "protocol-confirmed"
+            if scenario == "absent-create-readback"
+            else "lost-response-exact-after-start"
+        )
+        assert admitted.validated_request_proof is proof
     else:
         with pytest.raises(ValueError, match="bounded limit"):
             runner.run_scenario(
@@ -542,18 +568,13 @@ def test_lost_response_with_complete_identity_reconciles_after_ambiguity(
         scenario=scenario,
         upstream_status=upstream_status,
     )
+    runner_document = _protocol_confirmed_runner_document(proof)
+    runner_document["outcome"] = "lost-response-processed"
 
     result = _run_probe(
         tmp_path,
         scenario=scenario,
-        runner=ScriptedRunner(
-            {
-                "outcome": "lost-response-processed",
-                "action-executed": True,
-                "mutation-started": True,
-                "validated-request-proof": proof,
-            }
-        ),
+        runner=ScriptedRunner(runner_document),
         observations=[_absent(), _exact_readback(tarball, scenario=scenario)],
     )
 
@@ -572,28 +593,62 @@ def test_lost_response_with_complete_identity_reconciles_after_ambiguity(
     )
 
 
-def test_acceptance_cli_persists_http_200_validated_request_proof(
+def test_acceptance_cli_persists_retry_5_proof_outputs_and_routing(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     scenario = "absent-create-readback"
     upstream_status = 200
-    tarball = f"{scenario}-artifact".encode()
-    proof = _proof(
-        tarball,
-        scenario=scenario,
+    coordinate = "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.17"
+    tag = "wdv3-acceptance-17"
+    proof = ValidatedAcceptanceRequestProof.from_validated_exchange(
+        raw_request=b'{"request":"retry-5-cli-routing"}',
+        tarball=b"retry-5-cli-tarball",
+        package_coordinate=coordinate,
+        tag=tag,
         upstream_status=upstream_status,
+        selected_headers={"ETag": '"retry-5-cli"'},
+        response_body=b'{"ok":true}',
     )
-    probe = _run_probe(
-        tmp_path,
+    probe = FixedCoordinateAcceptanceProbeResult(
         scenario=scenario,
-        runner=ScriptedRunner(_protocol_confirmed_runner_document(proof)),
-        observations=[_absent(), _exact_readback(tarball, scenario=scenario)],
+        package_coordinate=coordinate,
+        tag=tag,
+        pre_state="absent",
+        post_state="exact",
+        result="protocol-confirmed",
+        mutation_classification="complete",
+        action_executed=True,
+        mutation_started=True,
+        response_identity_digest=proof.response_identity_digest,
+        content_sha512=proof.tarball_sha512,
+        diagnostics=(),
+        validated_request_proof=proof,
     )
     suite = FixedAcceptanceSuiteResult(
         suite=scenario,
         scenarios=(probe,),
     )
+    captured_coordinates: dict[str, str] = {}
+
+    class Runner:
+        def __init__(
+            self,
+            _npm_config: Path,
+            *,
+            base_package_coordinate: str,
+            **_kwargs: object,
+        ) -> None:
+            captured_coordinates["runner"] = base_package_coordinate
+
+    def run_suite(
+        *,
+        base_package_coordinate: str,
+        **_kwargs: object,
+    ) -> FixedAcceptanceSuiteResult:
+        captured_coordinates["suite"] = base_package_coordinate
+        return suite
+
     monkeypatch.setenv("WDV3_ACCEPTANCE_GITHUB_TOKEN", "upstream-secret")
     monkeypatch.setattr(
         cli_module,
@@ -603,20 +658,22 @@ def test_acceptance_cli_persists_http_200_validated_request_proof(
     monkeypatch.setattr(
         cli_module,
         "run_fixed_acceptance_suite",
-        lambda **_kwargs: suite,
+        run_suite,
     )
+    monkeypatch.setattr(cli_module, "_AcceptanceNpmRunner", Runner)
     output = tmp_path / "acceptance.json"
+    github_output = tmp_path / "github-output"
     arguments = cast(
         "cli_module._AcceptanceProbeArguments",
         SimpleNamespace(
-            package_coordinate=_coordinate(scenario),
+            package_coordinate=coordinate,
             suite=scenario,
             target_sha="c" * 40,
             timeout_seconds=TIMEOUT_SECONDS,
             max_response_bytes=MAX_RESPONSE_BYTES,
             max_output_bytes=MAX_OUTPUT_BYTES,
             output=str(output),
-            github_output=None,
+            github_output=str(github_output),
         ),
     )
 
@@ -625,8 +682,16 @@ def test_acceptance_cli_persists_http_200_validated_request_proof(
     )
     persisted = json.loads(output.read_bytes())
     persisted_scenario = persisted["scenarios"][0]
+    github_outputs = dict(
+        line.split("=", 1)
+        for line in github_output.read_text(encoding="utf-8").splitlines()
+    )
 
     assert status == 0
+    assert captured_coordinates == {
+        "runner": coordinate,
+        "suite": coordinate,
+    }
     assert persisted_scenario["validated-request-proof"] == proof.to_document()
     assert (
         persisted_scenario["validated-request-proof"]["upstream-status"]
@@ -636,6 +701,15 @@ def test_acceptance_cli_persists_http_200_validated_request_proof(
         persisted_scenario["response"]["identity-digest"]
         == proof.response_identity_digest
     )
+    assert set(github_outputs) == {
+        "result",
+        "scenario-inventory",
+        "record-digest",
+        "mutation-classification",
+        "record-json",
+    }
+    assert json.loads(github_outputs["record-json"]) == persisted
+    assert github_outputs["record-digest"] == persisted["record-digest"]
 
 
 def test_lost_response_without_mutation_startedness_cannot_reconcile(
@@ -1205,24 +1279,19 @@ def test_lost_response_proof_rejects_conflicting_raw_upstream_diagnostic(
     scenario = "lost-response"
     tarball = f"{scenario}-artifact".encode()
     proof = _proof(tarball, scenario=scenario)
+    runner_document = _protocol_confirmed_runner_document(proof)
+    runner_document["outcome"] = "lost-response-processed"
+    runner_document["upstream-diagnostic"] = {
+        "upstream-status": 500,
+        "exception-category": None,
+        "request-correlation-digest": "sha256:" + ("e" * 64),
+    }
 
     with pytest.raises(ValueError, match="does not bind"):
         _run_probe(
             tmp_path,
             scenario=scenario,
-            runner=ScriptedRunner(
-                {
-                    "outcome": "lost-response-processed",
-                    "validated-request-proof": proof,
-                    "action-executed": True,
-                    "mutation-started": True,
-                    "upstream-diagnostic": {
-                        "upstream-status": 500,
-                        "exception-category": None,
-                        "request-correlation-digest": ("sha256:" + ("e" * 64)),
-                    },
-                }
-            ),
+            runner=ScriptedRunner(runner_document),
             observations=[
                 _absent(),
                 _exact_readback(tarball, scenario=scenario),

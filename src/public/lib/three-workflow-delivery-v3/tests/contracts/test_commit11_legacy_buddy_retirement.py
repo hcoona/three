@@ -689,19 +689,95 @@ def test_codeowners_covers_deleted_and_future_buddy_routes() -> None:
     } == dict.fromkeys(paths, ("@hcoona",))
 
 
-def test_temporary_acceptance_workflows_are_retired() -> None:
-    """Retire every temporary destination-acceptance workflow source."""
-    paths = tuple(
+def _is_retry_5_temporary_exception(path: Path) -> bool:
+    return path == (
+        WORKFLOWS / "workflow-delivery-v3-buddy-smoke-acceptance-retry-5.yml"
+    )
+
+
+def test_retry_5_is_only_temporary_workflow_during_preparation() -> None:
+    """Permit only the exact retry-5 preparation workflow."""
+    retry_5 = (
+        WORKFLOWS / "workflow-delivery-v3-buddy-smoke-acceptance-retry-5.yml"
+    )
+    temporary_workflows = tuple(
         sorted(
-            {
+            (
                 *WORKFLOWS.glob(
                     "workflow-delivery-v3-buddy-smoke-acceptance*.yml"
                 ),
                 *WORKFLOWS.glob(
                     "workflow-delivery-v3-buddy-smoke-acceptance*.yaml"
                 ),
-            }
+            )
         )
     )
 
-    assert paths == ()
+    assert temporary_workflows == (retry_5,), (
+        "E-WORKFLOW-ABSENT: required retry-5 workflow is absent at "
+        ".github/workflows/"
+        "workflow-delivery-v3-buddy-smoke-acceptance-retry-5.yml"
+        if retry_5 not in temporary_workflows
+        else (
+            "legacy Buddy retirement permits only the exact retry-5 "
+            f"temporary workflow: {temporary_workflows!r}"
+        )
+    )
+    assert tuple(map(_is_retry_5_temporary_exception, temporary_workflows)) == (
+        True,
+    )
+    assert _legacy_buddy_routes(WORKFLOWS) == ()
+
+
+@pytest.mark.parametrize(
+    "basename",
+    [
+        pytest.param(
+            "workflow-delivery-v3-buddy-smoke-acceptance.yml",
+            id="original",
+        ),
+        pytest.param(
+            "workflow-delivery-v3-buddy-smoke-acceptance-retry-1.yml",
+            id="retry-1",
+        ),
+        pytest.param(
+            "workflow-delivery-v3-buddy-smoke-acceptance-retry-2.yml",
+            id="retry-2",
+        ),
+        pytest.param(
+            "workflow-delivery-v3-buddy-smoke-acceptance-retry-3.yml",
+            id="retry-3",
+        ),
+        pytest.param(
+            "workflow-delivery-v3-buddy-smoke-acceptance-retry-4.yml",
+            id="retry-4",
+        ),
+        pytest.param(
+            "workflow-delivery-v3-buddy-smoke-acceptance-retry-6.yml",
+            id="future-retry",
+        ),
+        pytest.param(
+            "workflow-delivery-v3-buddy-smoke-acceptance-retry-5.yaml",
+            id="exact-stem-wrong-yaml-suffix",
+        ),
+        pytest.param(
+            "workflow-delivery-v3-buddy-smoke-acceptance-retry-5-copy.yml",
+            id="suffix-lookalike",
+        ),
+        pytest.param(
+            "workflow-delivery-v3-buddy-smoke-acceptance-retry-05.yml",
+            id="numeric-lookalike",
+        ),
+        pytest.param("buddy.yml", id="legacy-buddy"),
+        pytest.param("release-buddy.yml", id="legacy-release-buddy"),
+        pytest.param("legacy-buddy.yml", id="renamed-legacy-buddy"),
+    ],
+)
+def test_legacy_buddy_retirement_rejects_original_prior_future_and_lookalikes(
+    basename: str,
+) -> None:
+    """Keep the retry-5 exception exact rather than pattern-based."""
+    candidate = WORKFLOWS / basename
+
+    assert not _is_retry_5_temporary_exception(candidate)
+    assert not candidate.exists()
