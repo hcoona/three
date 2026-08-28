@@ -1,5 +1,238 @@
 # Workflow Delivery v3 Snapshot Admission Test Plan
 
+## 2026-08-28 Workflow Delivery v3 Retry-4 Acceptance Preparation Plan
+
+### Strategy and edit boundary
+
+Use one sequential **Research -> Plan -> Implement** pass. The result is
+intentionally RED: test collection and test-side quality gates must pass, but
+execution must fail solely because the fourth production profiles and the
+retry-4 workflow do not yet exist.
+
+Allowed implementation paths:
+
+1. `src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py`
+2. `src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py`
+3. `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_retry_4_workflow.py`
+4. `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`
+5. `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit11_legacy_buddy_retirement.py`
+
+The `.testagent` artifacts are also allowed. Do not edit production Python,
+the CLI, manifests, locks, Governance configuration, or `.github/workflows`.
+Do not create, restore, or mutate a workflow. Add no skip, `xfail`,
+conditional escape, or weakened assertion.
+
+### Phase 1 - Adapter identity, resolution, runner, suite, and proof
+
+Modify only
+`tests/adapters/test_commit10_acceptance_probes.py`.
+
+Before adding retry-4 expectations, move the two valid-form unregistered
+negative fixtures from `.13` to `.17`:
+
+- keep
+  `test_retry_2_suite_resolves_only_the_reviewed_coordinate_block`;
+- keep
+  `test_acceptance_probe_requires_the_fixed_coordinate_and_explicit_tag`;
+- alter only fixture coordinates/tags and preserve the negative assertions.
+
+Add these collection-safe tests:
+
+1. `test_retry_4_adapter_profiles_have_stable_historical_order_and_unique_base_coordinates`
+   - exactly `.1`, `.5`, `.9`, `.13`, stable and unique.
+2. `test_retry_4_adapter_profiles_preserve_scenario_order_and_qualified_identity_uniqueness`
+   - exact five-scenario order for every profile;
+   - unique profile-qualified identity;
+   - only intentional absent/exact reuse inside a profile.
+3. `test_retry_4_adapter_coordinate_tag_pairs_are_exact_and_globally_unique`
+   - exactly 16 coordinate/tag pairs across four blocks;
+   - exact retry-4 `.13`, `.13`, `.14`, `.15`, `.16` mapping and tags.
+4. `test_retry_4_fixed_acceptance_resolvers_return_exact_scenarios_and_coordinates`
+   - direct fourth-profile resolution and `.17` rejection.
+5. `test_retry_4_npm_runner_invokes_all_five_exact_coordinates`
+   - record exact five runner coordinates in order using the existing fake.
+6. `test_retry_4_fixed_acceptance_suite_routes_exact_bindings_through_controlled_fakes`
+   - observe exact package/base/scenario/coordinate/tag routing and suite
+     result.
+7. `test_retry_4_validated_proof_accepts_exact_coordinate_tag_bindings`
+   - matched retry-4 proof.
+8. `test_retry_4_validated_proof_rejects_historical_substitutions_in_both_directions`
+   - retry-4/historical coordinate-tag substitutions both ways.
+
+Run Adapter collection first, then the two retained negative tests, then
+`-k retry_4`. Collection and the retained tests must pass. Retry-4 execution
+must fail only as `E-ADAPTER-PROFILE-ABSENT`; correct any collection,
+fixture, fake, or assertion-construction defect without touching source.
+
+Maps: A1, A3-A12.
+
+### Phase 2 - Governance preparation and placeholder-finalized shapes
+
+Modify only
+`tests/governance/test_commit10_acceptance_evidence.py`.
+
+Add test-local retry-4 document helpers and:
+
+1. `test_retry_4_governance_profiles_have_stable_historical_order_and_unique_base_coordinates`
+2. `test_retry_4_governance_profile_binds_exact_workflow_environment_confirmation_digest_and_scenarios`
+3. `test_retry_4_governance_admits_exact_zero_target_rejected_dispatch`
+4. `test_retry_4_governance_rejects_non_exact_zero_targets`
+   - 39 zeroes, 41 zeroes, non-ASCII zeroes, and nonzero hex.
+5. `test_retry_4_zero_target_rejects_review_probe_record_artifact_reviewer_or_mutation_claims`
+   - one precise forbidden observable per parameter case.
+6. `test_retry_4_finalized_placeholder_round_trips_canonically_with_exact_bindings`
+   - temporarily patch the expected fourth Governance profile with a clearly
+     named test-only nonzero 40-hex target;
+   - never use the work-base or provenance SHA as authority.
+7. `test_retry_4_governance_rejects_cross_profile_field_substitutions`
+   - workflow, Environment, recovery Environment, digest, target, coordinate,
+     and tag in both applicable directions.
+8. `test_retry_4_governance_preserves_historical_profiles_digests_and_replay_evidence`
+   - exact retry-1 through retry-3 tuples, admission, suite digests, and replay
+     evidence.
+
+The exact zero preparation case must assert validation failure; skipped
+review/probes; empty records; absent artifact and reviewer; and incomplete
+mutation classification. Run collection, historical-preservation selections,
+then `-k retry_4`. Classify only absence of the fourth profile as
+`E-GOVERNANCE-PROFILE-ABSENT`.
+
+Maps: A2-A3 and G1-G10.
+
+### Phase 3 - Dedicated retry-4 workflow contract
+
+Add
+`tests/contracts/test_commit10_acceptance_retry_4_workflow.py`.
+Re-author the assertions against current authority. Historical retry-3 tests
+may supply mechanisms only. Load the absent workflow lazily inside test
+bodies, making absence an ordinary assertion failure rather than a collection
+or fixture error.
+
+Add:
+
+1. `test_retry_4_workflow_uses_exact_temporary_path_stem_and_environment_identity`
+2. `test_retry_4_workflow_declares_exact_five_jobs_in_order`
+3. `test_retry_4_workflow_applies_first_attempt_guards_and_terminal_always_capture`
+4. `test_retry_4_workflow_scopes_environment_and_packages_write_permissions_to_exact_jobs`
+5. `test_retry_4_workflow_zero_target_stops_before_review_and_write_capable_probes`
+6. `test_retry_4_workflow_test_only_nonzero_placeholder_satisfies_finalized_guard_shape`
+7. `test_retry_4_workflow_dispatch_identity_confirmation_digest_and_concurrency_are_exact`
+8. `test_retry_4_workflow_pins_current_actions_toolchains_checkout_and_probe_wiring`
+9. `test_retry_4_workflow_wires_terminal_governance_evidence_exactly`
+10. `test_retry_4_workflow_rejects_wrong_dispatch_inputs`
+11. `test_retry_4_workflow_exposes_no_live_release_bypass_force_or_generalized_triggers`
+
+The tests must require exactly:
+
+- `validate-fixed-inputs`;
+- `acceptance-review`;
+- `probe-absent-create-readback`;
+- `probe-exact-and-conflict`;
+- `capture-governance-evidence`.
+
+Require first-attempt guards, terminal `always()` capture, Environment only on
+review, and `packages: write` only on the two probe jobs. Execute the bounded
+guard script in controlled test environments to prove that exactly forty
+zeroes fail before review or either mutation-capable probe, while a clearly
+test-only nonzero target demonstrates the eventual finalized shape.
+
+Run collection, then the file. Collection must pass; all execution failures
+must be `E-WORKFLOW-ABSENT`.
+
+Maps: W1-W7.
+
+### Phase 4 - Preparation topology and retirement exception
+
+Modify only the terminal bounded topology tests in:
+
+- `tests/contracts/test_buddy_workflows.py`;
+- `tests/contracts/test_commit11_legacy_buddy_retirement.py`.
+
+Use exact, non-generalized tests:
+
+1. `test_retry_4_is_the_only_required_temporary_acceptance_workflow_during_preparation`
+2. `test_retry_4_preparation_keeps_normal_buddy_disabled_and_live_enabled_false`
+3. `test_retry_4_is_the_only_temporary_workflow_allowed_by_legacy_buddy_retirement`
+4. `test_legacy_buddy_retirement_rejects_every_other_temporary_and_legacy_workflow`
+
+Require the retry-4 path, reject every additional temporary identity, and
+explicitly preserve absence of original, retry-2, and retry-3. Keep normal
+Buddy disabled and `live_enabled: false`.
+
+Run collection, then the three contract paths with
+`-k 'retry_4 or temporary_acceptance'`. Only workflow absence may fail, as
+`E-WORKFLOW-ABSENT`; all negative topology cases must pass.
+
+Maps: T1-T2.
+
+### Phase 5 - Quality and expected-RED validation
+
+After all test edits:
+
+1. Invoke `test-gap-analysis` against the two production targets and all five
+   bounded test files. Resolve only test-side gaps; production absence remains
+   intentionally out of scope.
+2. Invoke `assertion-quality` against all five test files. Replace any
+   truthiness-only, self-derived, tautological, broad-exception, or
+   single-observable assertion.
+3. Re-open the final tests and map every checklist item to concrete
+   assertions.
+4. Run five-file collection. It must pass.
+5. Run existing non-retry-4/non-temporary selections. They must pass.
+6. Run Ruff check and format check on all five paths.
+7. Run `uv build --package three-workflow-delivery-v3`.
+8. Run `git --no-pager diff --check`, scope audit, and explicitly verify the
+   retry-4 workflow remains absent.
+9. Run the combined five-file
+   `-k 'retry_4 or temporary_acceptance'` command last. It must exit nonzero
+   only with:
+   - `E-ADAPTER-PROFILE-ABSENT`;
+   - `E-GOVERNANCE-PROFILE-ABSENT`;
+   - `E-WORKFLOW-ABSENT`.
+10. Record exact commands, exit codes, failing node IDs, observed messages,
+    classifications, unexpected defects, and the no-production/no-external
+    mutation audit in `.testagent/status.md`.
+
+Maps: S1-S4.
+
+### Requirement traceability
+
+| Requirement | Planned evidence |
+|---|---|
+| A1 | Adapter stable-order/unique-base test |
+| A2 | Governance stable-order/unique-base test |
+| A3 | Both stable-order/unique-base tests |
+| A4-A5 | Adapter scenario-order/qualified-identity test |
+| A6-A7 | Adapter exact/global coordinate-tag test |
+| A8 | Adapter resolver test |
+| A9 | Adapter npm-runner test |
+| A10 | Adapter controlled-suite test |
+| A11 | Adapter exact-proof and bidirectional-substitution tests |
+| A12 | Two retained Adapter negative tests using `.17` |
+| G1-G3 | Governance exact binding test |
+| G4-G6 | Governance exact/non-exact zero and forbidden-observable tests |
+| G7-G8 | Governance placeholder-finalized round-trip test |
+| G9 | Governance cross-profile substitution test |
+| G10 | Governance historical-preservation test and non-retry-4 baseline |
+| W1-W7 | Dedicated workflow module, one exact test per mechanism above |
+| T1 | Exact Buddy topology and retirement exception tests |
+| T2 | Disabled-Buddy/`live_enabled: false` test |
+| S1-S2 | Diff/scope/no-workflow/no-external-mutation audit in status |
+| S3 | Collection, unrelated baseline, and final expected-RED records |
+| S4 | Per-phase failure ledger in status |
+
+### Completion criteria
+
+- Each allowed test path is owned by exactly one phase.
+- All A/G/W/T/S checklist items have concrete evidence.
+- Collection, retained historical behavior, lint, format, build, and diff
+  checks pass.
+- Mandatory test-gap and assertion-quality reviews have no unresolved
+  test-side findings.
+- The combined run is RED only for absent retry-4 profiles/workflow.
+- Zero skips/xfails, zero production edits, zero workflow edits, and zero
+  external mutations.
+
 ## 2026-08-13 Commit 8 Governance Observation Error Taxonomy Plan
 
 ### Strategy

@@ -4562,25 +4562,64 @@ def test_live_eligibility_admission_receives_current_intent_and_model_before_his
         assert option in capability
 
 
-def test_temporary_acceptance_workflows_are_absent_with_disabled_normal_buddy() -> (
+def test_retry_4_is_the_only_required_temporary_acceptance_workflow_during_preparation() -> (
     None
 ):
-    original = (
-        REPO_ROOT
-        / ".github/workflows/workflow-delivery-v3-buddy-smoke-acceptance.yml"
+    workflows = REPO_ROOT / ".github/workflows"
+    retry_4 = (
+        workflows / "workflow-delivery-v3-buddy-smoke-acceptance-retry-4.yml"
     )
-    retry_2 = (
-        REPO_ROOT
-        / ".github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-2.yml"
-    )
-    retry_3 = (
-        REPO_ROOT
-        / ".github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-3.yml"
+    temporary_workflows = tuple(
+        sorted(
+            {
+                *workflows.glob(
+                    "workflow-delivery-v3-buddy-smoke-acceptance*.yml"
+                ),
+                *workflows.glob(
+                    "workflow-delivery-v3-buddy-smoke-acceptance*.yaml"
+                ),
+            }
+        )
     )
 
-    assert not original.exists()
-    assert not retry_2.exists()
-    assert not retry_3.exists()
-    if GOVERNANCE.exists():
-        governance = json.loads(GOVERNANCE.read_text(encoding="utf-8"))
-        assert governance["live_enabled"] is False
+    assert temporary_workflows == (retry_4,), (
+        "E-WORKFLOW-ABSENT: required retry-4 workflow is absent at "
+        ".github/workflows/"
+        "workflow-delivery-v3-buddy-smoke-acceptance-retry-4.yml"
+        if retry_4 not in temporary_workflows
+        else (
+            "retry-4 must be the only temporary acceptance workflow during "
+            f"preparation: {temporary_workflows!r}"
+        )
+    )
+
+
+def test_retry_4_preparation_keeps_normal_buddy_disabled_and_live_enabled_false() -> (
+    None
+):
+    caller = _document(CALLER)
+    callee = _document(CALLEE)
+    caller_document = cast("dict[object, Any]", caller)
+    callee_document = cast("dict[object, Any]", callee)
+    caller_triggers = caller_document.get(
+        "on",
+        caller_document.get(True),
+    )
+    callee_triggers = callee_document.get(
+        "on",
+        callee_document.get(True),
+    )
+    raw = CALLER.read_text(encoding="utf-8") + CALLEE.read_text(
+        encoding="utf-8"
+    )
+
+    assert caller_triggers == {"workflow_dispatch": None}
+    assert isinstance(callee_triggers, dict)
+    assert set(callee_triggers) == {"workflow_call"}
+    assert "schedule:" not in raw
+    assert "push:" not in raw
+    assert "live_enabled: true" not in raw
+    assert "workflow-delivery-v3-buddy-smoke-acceptance-retry-4.yml" not in raw
+    assert GOVERNANCE.is_file()
+    governance = json.loads(GOVERNANCE.read_text(encoding="utf-8"))
+    assert governance["live_enabled"] is False

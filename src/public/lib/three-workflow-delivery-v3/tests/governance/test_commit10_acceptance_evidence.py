@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import itertools
 from copy import deepcopy
-from typing import Any
+from typing import Any, cast
 
 import pytest
 import three_workflow_delivery_v3.records.governance as governance_module
@@ -3075,3 +3075,960 @@ def test_governance_proof_required_completion_rejects_diagnostic_only_authority(
     assert scenario["runner-diagnostic"] == diagnostic
     with pytest.raises(ValueError, match="validated-request-proof"):
         _admit(document)
+
+
+TEST_LOCAL_RETRY_4_PACKAGE_COORDINATE = (
+    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.13"
+)
+TEST_LOCAL_RETRY_4_WORKFLOW_PATH = (
+    ".github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-4.yml"
+)
+TEST_LOCAL_RETRY_4_ENVIRONMENT = (
+    "workflow-delivery-v3-buddy-smoke-acceptance-retry-4"
+)
+TEST_LOCAL_RETRY_4_CONFIRMATION = (
+    "I_ACCEPT_DISPOSABLE_GITHUB_PACKAGES_PROBES_RETRY_4"
+)
+TEST_LOCAL_RETRY_4_CONFIRMATION_DIGEST = (
+    "sha256:b6f94d3c13c98b0714404959dd878230f8302ee849038a536f5a18cc3a85c7ec"
+)
+TEST_LOCAL_RETRY_4_PREPARATION_TARGET = "0" * 40
+TEST_ONLY_RETRY_4_FINALIZED_TARGET_SHA = "d" * 40
+TEST_LOCAL_RETRY_4_SCENARIO_COORDINATES = {
+    "absent-create-readback": (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.13",
+        "wdv3-acceptance-13",
+    ),
+    "exact": (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.13",
+        "wdv3-acceptance-13",
+    ),
+    "identical-race": (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.14",
+        "wdv3-acceptance-14",
+    ),
+    "differing-race": (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.15",
+        "wdv3-acceptance-15",
+    ),
+    "lost-response": (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.16",
+        "wdv3-acceptance-16",
+    ),
+}
+TEST_LOCAL_RETRY_2_SCENARIO_COORDINATES = {
+    "absent-create-readback": (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5",
+        "wdv3-acceptance-5",
+    ),
+    "exact": (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5",
+        "wdv3-acceptance-5",
+    ),
+    "identical-race": (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.6",
+        "wdv3-acceptance-6",
+    ),
+    "differing-race": (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.7",
+        "wdv3-acceptance-7",
+    ),
+    "lost-response": (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.8",
+        "wdv3-acceptance-8",
+    ),
+}
+TEST_LOCAL_RETRY_3_SCENARIO_COORDINATES = {
+    "absent-create-readback": (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9",
+        "wdv3-acceptance-9",
+    ),
+    "exact": (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9",
+        "wdv3-acceptance-9",
+    ),
+    "identical-race": (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.10",
+        "wdv3-acceptance-10",
+    ),
+    "differing-race": (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.11",
+        "wdv3-acceptance-11",
+    ),
+    "lost-response": (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.12",
+        "wdv3-acceptance-12",
+    ),
+}
+TEST_LOCAL_HISTORICAL_FINALIZED_SUITE_DIGESTS = {
+    "retry-1": (
+        HISTORICAL_ABSENT_CREATE_READBACK_RECORD_DIGEST,
+        HISTORICAL_EXACT_AND_CONFLICT_RECORD_DIGEST,
+    ),
+    "retry-2": (
+        "sha256:7c19112cbadf98ea9b0fa4b2fc936ac35974dbb87fe08910ff4e4fec0be35ed9",
+        "sha256:5f7c871d72a61e08550bca6c39d9821f9dd386439719bb0980f618fa2e77b732",
+    ),
+    "retry-3": (
+        "sha256:0ca1c4578e8102918cc2014a24d5a1510953ed7ece5afd5f575e3451c9fc40d7",
+        "sha256:4756bbc634b750d62caf8f2edcec4a251dd0195ffbad4ec17ff379bed94ffc0f",
+    ),
+}
+
+
+def _test_local_retry_4_governance_profile(
+    *,
+    target_sha: str,
+) -> Any:
+    return governance_module._GovernanceAcceptanceProfile(
+        package_coordinate=TEST_LOCAL_RETRY_4_PACKAGE_COORDINATE,
+        workflow_path=TEST_LOCAL_RETRY_4_WORKFLOW_PATH,
+        environment=TEST_LOCAL_RETRY_4_ENVIRONMENT,
+        target_sha=target_sha,
+        confirmation_digest=TEST_LOCAL_RETRY_4_CONFIRMATION_DIGEST,
+        scenario_coordinates=tuple(
+            (
+                scenario,
+                *TEST_LOCAL_RETRY_4_SCENARIO_COORDINATES[scenario],
+            )
+            for scenario in GOVERNANCE_ACCEPTANCE_SCENARIOS
+        ),
+    )
+
+
+def _registered_retry_4_governance_profile() -> Any:
+    matches = tuple(
+        profile
+        for profile in governance_module._GOVERNANCE_ACCEPTANCE_PROFILES
+        if profile.package_coordinate == TEST_LOCAL_RETRY_4_PACKAGE_COORDINATE
+    )
+    if not matches:
+        pytest.fail(
+            "E-GOVERNANCE-PROFILE-ABSENT: the fourth reviewed Governance "
+            "acceptance profile is not registered",
+            pytrace=False,
+        )
+    assert len(matches) == 1, (
+        "the fourth reviewed Governance acceptance profile must be unique"
+    )
+    return matches[0]
+
+
+def _retry_4_preparation_document() -> dict[str, Any]:
+    document = _retry_3_document()
+    document["workflow"]["path"] = TEST_LOCAL_RETRY_4_WORKFLOW_PATH
+    document["target-sha"] = TEST_LOCAL_RETRY_4_PREPARATION_TARGET
+    document["package-coordinate"] = TEST_LOCAL_RETRY_4_PACKAGE_COORDINATE
+    document["confirmation-digest"] = TEST_LOCAL_RETRY_4_CONFIRMATION_DIGEST
+    document["environment"] = TEST_LOCAL_RETRY_4_ENVIRONMENT
+    document["recovery"]["environment"] = TEST_LOCAL_RETRY_4_ENVIRONMENT
+    return document
+
+
+def _test_local_proof_document(
+    *,
+    package_coordinate: str,
+    tag: str,
+    label: str,
+) -> dict[str, Any]:
+    template = ValidatedAcceptanceRequestProof.from_validated_exchange(
+        raw_request=(f'{{"_id":"{label}"}}').encode(),
+        tarball=f"{label}-tarball".encode(),
+        package_coordinate=COORDINATE,
+        tag="wdv3-acceptance-1",
+        upstream_status=201,
+        selected_headers={
+            "Content-Type": "application/json",
+            "ETag": f'"{label}"',
+        },
+        response_body=(f'{{"ok":true,"proof":"{label}"}}').encode(),
+    ).to_document()
+    template["package-coordinate"] = package_coordinate
+    template["tag"] = tag
+    return template
+
+
+def _test_local_finalized_document(
+    *,
+    workflow_path: str,
+    target_sha: str,
+    package_coordinate: str,
+    confirmation_digest: str,
+    environment: str,
+    scenario_coordinates: dict[str, tuple[str, str]],
+    proof_namespace: str,
+) -> dict[str, Any]:
+    document = _document()
+    document["workflow"]["path"] = workflow_path
+    document["target-sha"] = target_sha
+    document["package-coordinate"] = package_coordinate
+    document["confirmation-digest"] = confirmation_digest
+    document["environment"] = environment
+    document["recovery"]["environment"] = environment
+    proof_documents = {
+        scenario: _test_local_proof_document(
+            package_coordinate=scenario_coordinates[scenario][0],
+            tag=scenario_coordinates[scenario][1],
+            label=f"{proof_namespace}-{scenario}",
+        )
+        for scenario in ("absent-create-readback", "lost-response")
+    }
+    for probe_index, fact in enumerate(document["probe-facts"]):
+        for scenario_document in fact["scenarios"]:
+            scenario = scenario_document["scenario"]
+            coordinate, tag = scenario_coordinates[scenario]
+            scenario_document["package-coordinate"] = coordinate
+            scenario_document["tag"] = tag
+            scenario_document.pop("validated-request-proof", None)
+            if scenario == "absent-create-readback":
+                proof = proof_documents[scenario]
+                scenario_document["response"]["result"] = "protocol-confirmed"
+                scenario_document["response"]["identity-digest"] = proof[
+                    "response-identity-digest"
+                ]
+                scenario_document["response"]["diagnostics"] = []
+                scenario_document["post"]["content-sha512"] = proof[
+                    "tarball-sha512"
+                ]
+                scenario_document["validated-request-proof"] = proof
+            elif scenario == "lost-response":
+                proof = proof_documents[scenario]
+                scenario_document["response"]["identity-digest"] = proof[
+                    "response-identity-digest"
+                ]
+                scenario_document["post"]["content-sha512"] = proof[
+                    "tarball-sha512"
+                ]
+                scenario_document["validated-request-proof"] = proof
+        _refresh_probe_record_digest_unchecked(document, probe_index)
+    return document
+
+
+def test_retry_4_governance_profiles_have_stable_historical_order_and_unique_base_coordinates() -> (
+    None
+):
+    retry_4_profile = _registered_retry_4_governance_profile()
+    profiles = governance_module._GOVERNANCE_ACCEPTANCE_PROFILES
+    base_coordinates = tuple(profile.package_coordinate for profile in profiles)
+
+    assert base_coordinates == (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.1",
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5",
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9",
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.13",
+    )
+    assert len(base_coordinates) == len(set(base_coordinates)) == len(profiles)
+    assert profiles[-1] is retry_4_profile
+
+
+def test_retry_4_governance_profile_binds_exact_workflow_environment_confirmation_digest_and_scenarios() -> (
+    None
+):
+    profile = _registered_retry_4_governance_profile()
+
+    assert profile.package_coordinate == TEST_LOCAL_RETRY_4_PACKAGE_COORDINATE
+    assert profile.workflow_path == TEST_LOCAL_RETRY_4_WORKFLOW_PATH
+    assert profile.environment == TEST_LOCAL_RETRY_4_ENVIRONMENT
+    assert profile.confirmation_digest == (
+        TEST_LOCAL_RETRY_4_CONFIRMATION_DIGEST
+    )
+    assert TEST_LOCAL_RETRY_4_CONFIRMATION == (
+        "I_ACCEPT_DISPOSABLE_GITHUB_PACKAGES_PROBES_RETRY_4"
+    )
+    assert (
+        ValidatedAcceptanceRequestProof._sha256(
+            TEST_LOCAL_RETRY_4_CONFIRMATION.encode("ascii")
+        )
+        == TEST_LOCAL_RETRY_4_CONFIRMATION_DIGEST
+    )
+    assert tuple(profile.coordinates().items()) == tuple(
+        TEST_LOCAL_RETRY_4_SCENARIO_COORDINATES.items()
+    )
+    assert tuple(profile.coordinates()) == GOVERNANCE_ACCEPTANCE_SCENARIOS
+    assert profile.target_sha == "0" * 40
+    assert profile.target_sha.encode("ascii") == b"0" * 40
+
+
+def test_retry_4_governance_admits_exact_zero_target_rejected_dispatch() -> (
+    None
+):
+    _registered_retry_4_governance_profile()
+    document = _retry_4_preparation_document()
+
+    admitted = _admit(document)
+    admitted_document = admitted.to_document()
+
+    assert document["target-sha"].encode("ascii") == b"0" * 40
+    assert admitted.target_sha == TEST_LOCAL_RETRY_4_PREPARATION_TARGET
+    assert [
+        (result.job, result.result) for result in admitted.dependency_results
+    ] == [
+        ("validate-fixed-inputs", "failure"),
+        ("acceptance-review", "skipped"),
+        ("probe-absent-create-readback", "skipped"),
+        ("probe-exact-and-conflict", "skipped"),
+    ]
+    assert admitted.mutation_classification == "incomplete"
+    assert admitted.recovery.artifact_id is None
+    assert admitted.reviewer is None
+    assert admitted.reviewer_source == "unavailable-in-job-context"
+    assert [
+        (
+            fact.result,
+            fact.record_digest,
+            fact.artifact_id,
+            fact.artifact_digest,
+            fact.scenarios,
+        )
+        for fact in admitted.probe_facts
+    ] == [
+        ("incomplete", None, None, None, ()),
+        ("incomplete", None, None, None, ()),
+    ]
+    assert admitted_document == document
+    assert canonicalize(admitted_document) == canonicalize(document)
+
+
+@pytest.mark.parametrize(
+    ("target_sha", "message"),
+    [
+        pytest.param(
+            "0" * 39,
+            "40 lowercase hexadecimal",
+            id="39-ascii-zeroes",
+        ),
+        pytest.param(
+            "0" * 41,
+            "40 lowercase hexadecimal",
+            id="41-ascii-zeroes",
+        ),
+        pytest.param(
+            "\uff10" * 40,
+            "40 lowercase hexadecimal",
+            id="40-non-ascii-zeroes",
+        ),
+        pytest.param(
+            ("0" * 39) + "1",
+            "reviewed acceptance profile",
+            id="40-hex-with-nonzero-nibble",
+        ),
+    ],
+)
+def test_retry_4_governance_rejects_non_exact_zero_targets(
+    target_sha: str,
+    message: str,
+) -> None:
+    profile = _registered_retry_4_governance_profile()
+    if target_sha == profile.target_sha:
+        target_sha = ("0" * 39) + "2"
+    document = _retry_4_preparation_document()
+    document["target-sha"] = target_sha
+
+    with pytest.raises(ValueError, match=message):
+        _admit(document)
+
+
+@pytest.mark.parametrize(
+    ("path", "value", "message"),
+    [
+        pytest.param(
+            ("dependency-results", 1, "result"),
+            "success",
+            "zero target-sha requires exact rejected",
+            id="environment-review-ran",
+        ),
+        pytest.param(
+            ("dependency-results", 2, "result"),
+            "success",
+            "zero target-sha requires exact rejected",
+            id="absent-create-probe-ran",
+        ),
+        pytest.param(
+            ("dependency-results", 3, "result"),
+            "success",
+            "zero target-sha requires exact rejected",
+            id="exact-and-conflict-probe-ran",
+        ),
+        pytest.param(
+            ("probe-facts", 0, "record-digest"),
+            SHA256_A,
+            "retain suite records",
+            id="probe-record-digest-retained",
+        ),
+        pytest.param(
+            ("probe-facts", 0, "scenarios"),
+            "test-local-retained-scenario",
+            "record-digest",
+            id="probe-scenario-retained",
+        ),
+        pytest.param(
+            ("probe-facts", 0, "artifact-id"),
+            799,
+            "zero target-sha requires exact rejected",
+            id="probe-artifact-id-retained",
+        ),
+        pytest.param(
+            ("probe-facts", 0, "artifact-digest"),
+            SHA256_A,
+            "zero target-sha requires exact rejected",
+            id="probe-artifact-digest-retained",
+        ),
+        pytest.param(
+            ("recovery", "artifact-id"),
+            701,
+            "zero target-sha requires exact rejected",
+            id="review-artifact-retained",
+        ),
+        pytest.param(
+            ("reviewer",),
+            {
+                "login": "octocat",
+                "source": "on-demand-read-only-inspection",
+            },
+            "zero target-sha requires exact rejected",
+            id="reviewer-attributed",
+        ),
+        pytest.param(
+            ("mutation-classification",),
+            "unknown",
+            "mutation-classification",
+            id="possible-mutation-claimed",
+        ),
+    ],
+)
+def test_retry_4_zero_target_rejects_review_probe_record_artifact_reviewer_or_mutation_claims(
+    path: tuple[object, ...],
+    value: object,
+    message: str,
+) -> None:
+    _registered_retry_4_governance_profile()
+    document = _retry_4_preparation_document()
+    if value == "test-local-retained-scenario":
+        retained_scenario = _scenario("absent-create-readback")
+        retained_scenario["package-coordinate"], retained_scenario["tag"] = (
+            TEST_LOCAL_RETRY_4_SCENARIO_COORDINATES["absent-create-readback"]
+        )
+        value = [retained_scenario]
+    _set_path(document, path, value)
+
+    with pytest.raises(ValueError, match=message):
+        _admit(document)
+
+
+def test_retry_4_finalized_placeholder_round_trips_canonically_with_exact_bindings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    profile = _test_local_retry_4_governance_profile(
+        target_sha=TEST_ONLY_RETRY_4_FINALIZED_TARGET_SHA
+    )
+    historical_profiles = tuple(
+        existing
+        for existing in governance_module._GOVERNANCE_ACCEPTANCE_PROFILES
+        if existing.package_coordinate != TEST_LOCAL_RETRY_4_PACKAGE_COORDINATE
+    )
+    assert tuple(
+        existing.package_coordinate for existing in historical_profiles
+    ) == (
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.1",
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5",
+        "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9",
+    )
+    monkeypatch.setattr(
+        governance_module,
+        "_GOVERNANCE_ACCEPTANCE_PROFILES",
+        (*historical_profiles, profile),
+    )
+    document = _test_local_finalized_document(
+        workflow_path=TEST_LOCAL_RETRY_4_WORKFLOW_PATH,
+        target_sha=TEST_ONLY_RETRY_4_FINALIZED_TARGET_SHA,
+        package_coordinate=TEST_LOCAL_RETRY_4_PACKAGE_COORDINATE,
+        confirmation_digest=TEST_LOCAL_RETRY_4_CONFIRMATION_DIGEST,
+        environment=TEST_LOCAL_RETRY_4_ENVIRONMENT,
+        scenario_coordinates=TEST_LOCAL_RETRY_4_SCENARIO_COORDINATES,
+        proof_namespace="test-only-retry-4-placeholder",
+    )
+
+    raw = canonicalize(document)
+    admitted = admit_governance_acceptance_evidence(raw)
+    admitted_document = admitted.to_document()
+    probe_facts = cast("list[dict[str, Any]]", admitted_document["probe-facts"])
+    scenarios = {
+        scenario["scenario"]: scenario
+        for fact in probe_facts
+        for scenario in cast("list[dict[str, Any]]", fact["scenarios"])
+    }
+
+    assert TEST_ONLY_RETRY_4_FINALIZED_TARGET_SHA == "d" * 40
+    assert TEST_ONLY_RETRY_4_FINALIZED_TARGET_SHA != (
+        TEST_LOCAL_RETRY_4_PREPARATION_TARGET
+    )
+    assert admitted.target_sha == TEST_ONLY_RETRY_4_FINALIZED_TARGET_SHA
+    assert raw == canonicalize(admitted_document)
+    assert admitted_document == document
+    assert admitted.evidence_digest == canonical_sha256(document)
+    assert [
+        (
+            scenario,
+            scenarios[scenario]["package-coordinate"],
+            scenarios[scenario]["tag"],
+        )
+        for scenario in GOVERNANCE_ACCEPTANCE_SCENARIOS
+    ] == [
+        (scenario, *TEST_LOCAL_RETRY_4_SCENARIO_COORDINATES[scenario])
+        for scenario in GOVERNANCE_ACCEPTANCE_SCENARIOS
+    ]
+    for scenario in ("absent-create-readback", "lost-response"):
+        scenario_document = scenarios[scenario]
+        proof = scenario_document["validated-request-proof"]
+        assert (
+            proof["package-coordinate"],
+            proof["tag"],
+        ) == TEST_LOCAL_RETRY_4_SCENARIO_COORDINATES[scenario]
+        assert (
+            scenario_document["response"]["identity-digest"]
+            == proof["response-identity-digest"]
+        )
+        assert (
+            scenario_document["post"]["content-sha512"]
+            == proof["tarball-sha512"]
+        )
+
+
+@pytest.mark.parametrize(
+    ("document_profile", "field"),
+    [
+        pytest.param(
+            "retry-4",
+            "workflow",
+            id="retry-4-document-with-retry-3-workflow",
+        ),
+        pytest.param(
+            "retry-4",
+            "environment",
+            id="retry-4-document-with-retry-3-environment",
+        ),
+        pytest.param(
+            "retry-4",
+            "recovery-environment",
+            id="retry-4-document-with-retry-3-recovery-environment",
+        ),
+        pytest.param(
+            "retry-4",
+            "confirmation-digest",
+            id="retry-4-document-with-retry-3-confirmation-digest",
+        ),
+        pytest.param(
+            "retry-4",
+            "target",
+            id="retry-4-document-with-retry-3-target",
+        ),
+        pytest.param(
+            "retry-4",
+            "coordinate",
+            id="retry-4-document-with-retry-3-coordinate",
+        ),
+        pytest.param(
+            "retry-4",
+            "tag",
+            id="retry-4-document-with-retry-3-tag",
+        ),
+        pytest.param(
+            "retry-3",
+            "workflow",
+            id="retry-3-document-with-retry-4-workflow",
+        ),
+        pytest.param(
+            "retry-3",
+            "environment",
+            id="retry-3-document-with-retry-4-environment",
+        ),
+        pytest.param(
+            "retry-3",
+            "recovery-environment",
+            id="retry-3-document-with-retry-4-recovery-environment",
+        ),
+        pytest.param(
+            "retry-3",
+            "confirmation-digest",
+            id="retry-3-document-with-retry-4-confirmation-digest",
+        ),
+        pytest.param(
+            "retry-3",
+            "target",
+            id="retry-3-document-with-retry-4-target",
+        ),
+        pytest.param(
+            "retry-3",
+            "coordinate",
+            id="retry-3-document-with-retry-4-coordinate",
+        ),
+        pytest.param(
+            "retry-3",
+            "tag",
+            id="retry-3-document-with-retry-4-tag",
+        ),
+    ],
+)
+def test_retry_4_governance_rejects_cross_profile_field_substitutions(
+    document_profile: str,
+    field: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registered_retry_4_profile = _registered_retry_4_governance_profile()
+    assert (
+        registered_retry_4_profile.target_sha
+        == TEST_LOCAL_RETRY_4_PREPARATION_TARGET
+    )
+    paths = {
+        "workflow": ("workflow", "path"),
+        "environment": ("environment",),
+        "recovery-environment": ("recovery", "environment"),
+        "confirmation-digest": ("confirmation-digest",),
+        "target": ("target-sha",),
+        "coordinate": (
+            "probe-facts",
+            0,
+            "scenarios",
+            0,
+            "package-coordinate",
+        ),
+        "tag": ("probe-facts", 0, "scenarios", 0, "tag"),
+    }
+    messages = {
+        "workflow": "workflow.path",
+        "environment": "environment",
+        "recovery-environment": "recovery environment",
+        "confirmation-digest": "confirmation-digest",
+        "target": "target-sha",
+        "coordinate": "package-coordinate",
+        "tag": "tag",
+    }
+    retry_3_values = {
+        "workflow": GOVERNANCE_RETRY_3_ACCEPTANCE_WORKFLOW_PATH,
+        "environment": GOVERNANCE_RETRY_3_ACCEPTANCE_ENVIRONMENT,
+        "recovery-environment": GOVERNANCE_RETRY_3_ACCEPTANCE_ENVIRONMENT,
+        "confirmation-digest": (
+            "sha256:"
+            "33e59948941f5f1111d5017ab80dd33c90dd2ac8d1a17203e7f7382a8c5b2c72"
+        ),
+        "target": RETRY_3_TARGET_SHA,
+        "coordinate": TEST_LOCAL_RETRY_3_SCENARIO_COORDINATES[
+            "absent-create-readback"
+        ][0],
+        "tag": TEST_LOCAL_RETRY_3_SCENARIO_COORDINATES[
+            "absent-create-readback"
+        ][1],
+    }
+    retry_4_values = {
+        "workflow": registered_retry_4_profile.workflow_path,
+        "environment": registered_retry_4_profile.environment,
+        "recovery-environment": registered_retry_4_profile.environment,
+        "confirmation-digest": registered_retry_4_profile.confirmation_digest,
+        "target": registered_retry_4_profile.target_sha,
+        "coordinate": registered_retry_4_profile.coordinates()[
+            "absent-create-readback"
+        ][0],
+        "tag": registered_retry_4_profile.coordinates()[
+            "absent-create-readback"
+        ][1],
+    }
+    if document_profile == "retry-4":
+        if field in {"coordinate", "tag"}:
+            finalized_retry_4_profile = _test_local_retry_4_governance_profile(
+                target_sha=TEST_ONLY_RETRY_4_FINALIZED_TARGET_SHA
+            )
+            historical_profiles = tuple(
+                existing
+                for existing in governance_module._GOVERNANCE_ACCEPTANCE_PROFILES
+                if existing.package_coordinate
+                != TEST_LOCAL_RETRY_4_PACKAGE_COORDINATE
+            )
+            monkeypatch.setattr(
+                governance_module,
+                "_GOVERNANCE_ACCEPTANCE_PROFILES",
+                (*historical_profiles, finalized_retry_4_profile),
+            )
+            document = _test_local_finalized_document(
+                workflow_path=finalized_retry_4_profile.workflow_path,
+                target_sha=finalized_retry_4_profile.target_sha,
+                package_coordinate=finalized_retry_4_profile.package_coordinate,
+                confirmation_digest=(
+                    finalized_retry_4_profile.confirmation_digest
+                ),
+                environment=finalized_retry_4_profile.environment,
+                scenario_coordinates=finalized_retry_4_profile.coordinates(),
+                proof_namespace="test-only-retry-4-cross-profile",
+            )
+            assert (
+                finalized_retry_4_profile.target_sha
+                == TEST_ONLY_RETRY_4_FINALIZED_TARGET_SHA
+            )
+            assert (
+                finalized_retry_4_profile.target_sha
+                != registered_retry_4_profile.target_sha
+            )
+        else:
+            document = _retry_4_preparation_document()
+        replacement = retry_3_values[field]
+    else:
+        document = _test_local_finalized_document(
+            workflow_path=GOVERNANCE_RETRY_3_ACCEPTANCE_WORKFLOW_PATH,
+            target_sha=RETRY_3_TARGET_SHA,
+            package_coordinate=GOVERNANCE_RETRY_3_ACCEPTANCE_PACKAGE_COORDINATE,
+            confirmation_digest=(
+                "sha256:"
+                "33e59948941f5f1111d5017ab80dd33c90dd2ac8d1a17203e7f7382a8c5b2c72"
+            ),
+            environment=GOVERNANCE_RETRY_3_ACCEPTANCE_ENVIRONMENT,
+            scenario_coordinates=TEST_LOCAL_RETRY_3_SCENARIO_COORDINATES,
+            proof_namespace="historical-retry-3-control",
+        )
+        replacement = retry_4_values[field]
+
+    admitted_control = _admit(document)
+    assert admitted_control.to_document() == document
+    if document_profile == "retry-4" and field not in {"coordinate", "tag"}:
+        assert (
+            admitted_control.target_sha == TEST_LOCAL_RETRY_4_PREPARATION_TARGET
+        )
+        assert admitted_control.mutation_classification == "incomplete"
+    else:
+        expected_target = (
+            TEST_ONLY_RETRY_4_FINALIZED_TARGET_SHA
+            if document_profile == "retry-4"
+            else RETRY_3_TARGET_SHA
+        )
+        assert admitted_control.target_sha == expected_target
+        assert admitted_control.mutation_classification == "complete"
+    mutated = deepcopy(document)
+    _set_path(mutated, paths[field], replacement)
+    assert mutated != document
+    with pytest.raises(ValueError, match=messages[field]):
+        _admit(mutated)
+
+
+def test_retry_4_governance_preserves_historical_profiles_digests_and_replay_evidence() -> (
+    None
+):
+    historical_profile_tuples = tuple(
+        (
+            profile.package_coordinate,
+            profile.workflow_path,
+            profile.environment,
+            profile.target_sha,
+            profile.confirmation_digest,
+            profile.scenario_coordinates,
+        )
+        for profile in governance_module._GOVERNANCE_ACCEPTANCE_PROFILES[:3]
+    )
+    assert historical_profile_tuples == (
+        (
+            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.1",
+            (
+                ".github/workflows/"
+                "workflow-delivery-v3-buddy-smoke-acceptance.yml"
+            ),
+            "workflow-delivery-v3-buddy-smoke-acceptance",
+            "5a84bebd05407e1859fe76f400dcb4f4cbcd002e",
+            (
+                "sha256:"
+                "6ab9696b51f21083802af68d80104f65ffb844bdcd449974c881e5a8cc96ad5e"
+            ),
+            (
+                (
+                    "absent-create-readback",
+                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.1",
+                    "wdv3-acceptance-1",
+                ),
+                (
+                    "exact",
+                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.1",
+                    "wdv3-acceptance-1",
+                ),
+                (
+                    "identical-race",
+                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.2",
+                    "wdv3-acceptance-2",
+                ),
+                (
+                    "differing-race",
+                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.3",
+                    "wdv3-acceptance-3",
+                ),
+                (
+                    "lost-response",
+                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.4",
+                    "wdv3-acceptance-4",
+                ),
+            ),
+        ),
+        (
+            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5",
+            (
+                ".github/workflows/"
+                "workflow-delivery-v3-buddy-smoke-acceptance-retry-2.yml"
+            ),
+            "workflow-delivery-v3-buddy-smoke-acceptance-retry-2",
+            "b031e5e0bd98a95943a03a1529b64e856e1a8aa1",
+            (
+                "sha256:"
+                "1215f9d01cd343462c3f826ba67ebee86b6f6142b7fcfe5630572a5a808314f8"
+            ),
+            (
+                (
+                    "absent-create-readback",
+                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5",
+                    "wdv3-acceptance-5",
+                ),
+                (
+                    "exact",
+                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5",
+                    "wdv3-acceptance-5",
+                ),
+                (
+                    "identical-race",
+                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.6",
+                    "wdv3-acceptance-6",
+                ),
+                (
+                    "differing-race",
+                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.7",
+                    "wdv3-acceptance-7",
+                ),
+                (
+                    "lost-response",
+                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.8",
+                    "wdv3-acceptance-8",
+                ),
+            ),
+        ),
+        (
+            "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9",
+            (
+                ".github/workflows/"
+                "workflow-delivery-v3-buddy-smoke-acceptance-retry-3.yml"
+            ),
+            "workflow-delivery-v3-buddy-smoke-acceptance-retry-3",
+            RETRY_3_TARGET_SHA,
+            (
+                "sha256:"
+                "33e59948941f5f1111d5017ab80dd33c90dd2ac8d1a17203e7f7382a8c5b2c72"
+            ),
+            (
+                (
+                    "absent-create-readback",
+                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9",
+                    "wdv3-acceptance-9",
+                ),
+                (
+                    "exact",
+                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.9",
+                    "wdv3-acceptance-9",
+                ),
+                (
+                    "identical-race",
+                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.10",
+                    "wdv3-acceptance-10",
+                ),
+                (
+                    "differing-race",
+                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.11",
+                    "wdv3-acceptance-11",
+                ),
+                (
+                    "lost-response",
+                    "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.12",
+                    "wdv3-acceptance-12",
+                ),
+            ),
+        ),
+    )
+    documents = {
+        "retry-1": _document(),
+        "retry-2": _test_local_finalized_document(
+            workflow_path=(
+                ".github/workflows/"
+                "workflow-delivery-v3-buddy-smoke-acceptance-retry-2.yml"
+            ),
+            target_sha="b031e5e0bd98a95943a03a1529b64e856e1a8aa1",
+            package_coordinate=(
+                "@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.5"
+            ),
+            confirmation_digest=(
+                "sha256:"
+                "1215f9d01cd343462c3f826ba67ebee86b6f6142b7fcfe5630572a5a808314f8"
+            ),
+            environment=("workflow-delivery-v3-buddy-smoke-acceptance-retry-2"),
+            scenario_coordinates=TEST_LOCAL_RETRY_2_SCENARIO_COORDINATES,
+            proof_namespace="historical-retry-2",
+        ),
+        "retry-3": _test_local_finalized_document(
+            workflow_path=GOVERNANCE_RETRY_3_ACCEPTANCE_WORKFLOW_PATH,
+            target_sha=RETRY_3_TARGET_SHA,
+            package_coordinate=GOVERNANCE_RETRY_3_ACCEPTANCE_PACKAGE_COORDINATE,
+            confirmation_digest=(
+                "sha256:"
+                "33e59948941f5f1111d5017ab80dd33c90dd2ac8d1a17203e7f7382a8c5b2c72"
+            ),
+            environment=GOVERNANCE_RETRY_3_ACCEPTANCE_ENVIRONMENT,
+            scenario_coordinates=TEST_LOCAL_RETRY_3_SCENARIO_COORDINATES,
+            proof_namespace="historical-retry-3",
+        ),
+    }
+
+    for profile_name, document in documents.items():
+        admitted = _admit(document)
+        admitted_document = admitted.to_document()
+        scenarios = {
+            scenario["scenario"]: scenario
+            for fact in admitted_document["probe-facts"]
+            for scenario in fact["scenarios"]
+        }
+
+        assert admitted_document == document
+        assert canonicalize(admitted_document) == canonicalize(document)
+        assert admitted.evidence_digest == canonical_sha256(document)
+        assert (
+            tuple(
+                fact["record-digest"]
+                for fact in admitted_document["probe-facts"]
+            )
+            == TEST_LOCAL_HISTORICAL_FINALIZED_SUITE_DIGESTS[profile_name]
+        )
+        assert tuple(scenarios) == GOVERNANCE_ACCEPTANCE_SCENARIOS
+        for scenario_name, scenario_document in scenarios.items():
+            expected = historical_profile_tuples[
+                ("retry-1", "retry-2", "retry-3").index(profile_name)
+            ][5][GOVERNANCE_ACCEPTANCE_SCENARIOS.index(scenario_name)]
+            assert (
+                scenario_document["scenario"],
+                scenario_document["package-coordinate"],
+                scenario_document["tag"],
+            ) == expected
+
+    retry_1_scenarios = {
+        scenario["scenario"]: scenario
+        for fact in documents["retry-1"]["probe-facts"]
+        for scenario in fact["scenarios"]
+    }
+    assert (
+        "validated-request-proof"
+        not in retry_1_scenarios["absent-create-readback"]
+    )
+    for profile_name in ("retry-2", "retry-3"):
+        scenarios = {
+            scenario["scenario"]: scenario
+            for fact in documents[profile_name]["probe-facts"]
+            for scenario in fact["scenarios"]
+        }
+        for scenario_name in ("absent-create-readback", "lost-response"):
+            scenario_document = scenarios[scenario_name]
+            proof = scenario_document["validated-request-proof"]
+            assert (
+                scenario_document["response"]["identity-digest"]
+                == proof["response-identity-digest"]
+            )
+            assert (
+                scenario_document["post"]["content-sha512"]
+                == proof["tarball-sha512"]
+            )
