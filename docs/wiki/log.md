@@ -2462,3 +2462,27 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   cannot replace the missing validated request proof, and the `.14`-`.16`
   probe remains skipped. This repair does not rerun, reuse, or retroactively
   upgrade retry 4 and does not change normal Live authority.
+
+## [2026-08-28] query | Close GitHub Packages HTTP 200 proof repair
+
+- Rebase-merged protected repair PR #612 without bypass as
+  `aed58191ce37defba8f7a7e44def03396c2c6824` after every required check,
+  CodeQL analysis, and Workflow Delivery v3 shadow lane passed.
+- Confirmed post-merge Continuous Integration run `33190125517` and CodeQL run
+  `33190125529` passed on the exact merge.
+- Fresh authenticated read-only reconciliation found no post-merge acceptance
+  invocation: deleted workflow ID `344468231` still has only failed attempt-1
+  run `33165777024`, the temporary Environment remains absent, and package
+  versions remain limited to `.1`, `.5`, `.9`, and `.13`.
+- Closed the response-status repair gate without changing retry-4's unknown
+  result or normal Live authority. Any retry-5 profile must begin from a fresh
+  fetch of `main@aed58191` or a later reviewed successor and use wholly new
+  execution identities.
+
+## [2026-08-28] query | Clarify retry-5 work-base authority
+
+- Corrected the preceding closure entry's abbreviated work-base wording.
+  Retry-5 must start from freshly fetched and revalidated `origin/main` at
+  `aed58191ce37defba8f7a7e44def03396c2c6824`, or at a later reviewed, merged
+  successor that contains it. A fetched SHA, local branch, attempt ref, or
+  reviewed-but-unmerged head is not a valid work base.

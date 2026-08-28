@@ -10405,3 +10405,86 @@ one-line document without a trailing newline at SHA-256
 `ba4ee4122850ff414cdbe9e6220d4e795af9a5a585d398007234e7fc984f0d94`.
 
 <!-- END APPEND: 2026-08-28-wdv3-http-200-proof-repair-final-gate -->
+
+<!-- APPEND: 2026-08-28-wdv3-http-200-proof-repair-closure -->
+
+## Workflow Delivery v3 HTTP 200 proof repair: merge closure
+
+Protected PR #612 rebase-merged without bypass as
+`aed58191ce37defba8f7a7e44def03396c2c6824`. Every PR check, including CodeQL
+and Workflow Delivery v3 shadow CI, passed. Post-merge Continuous Integration
+run `33190125517` and CodeQL run `33190125529` passed on the exact merge.
+
+Fresh authenticated read-only reconciliation found no post-merge acceptance
+invocation or mutation. Deleted workflow ID `344468231` still has exactly one
+historical run, failed run `33165777024` at attempt 1; the temporary Environment
+remains absent; and package versions remain `.1`, `.5`, `.9`, and `.13`, with
+`.14`-`.16` absent. Retry-4 remains unknown and unsuccessful. Any retry-5 work
+must start from a fresh fetch of this merge or a later reviewed successor and
+must not activate normal Live.
+
+<!-- END APPEND: 2026-08-28-wdv3-http-200-proof-repair-closure -->
+
+<!-- APPEND: 2026-08-28-wdv3-http-200-proof-repair-closure-work-base -->
+
+## Workflow Delivery v3 HTTP 200 proof repair: work-base correction
+
+The preceding closure entry's abbreviated "fresh fetch" wording is superseded.
+Retry-5 must start from freshly fetched and revalidated `origin/main` at
+`aed58191ce37defba8f7a7e44def03396c2c6824`, or at a later reviewed, merged
+successor that contains it. A fetched SHA, local branch, attempt ref, or
+reviewed-but-unmerged head is not a valid work base.
+
+Independent adjudication classified this work-base ambiguity as a blocking
+true positive. A separate finding that the README and status ledger had to
+repeat the LLD's complete new-identity inventory was false: the mandatory
+handoff and LLD already provide that normative detail, and the abbreviated
+records neither permit reuse nor claim to enumerate sufficient conditions.
+
+<!-- END APPEND: 2026-08-28-wdv3-http-200-proof-repair-closure-work-base -->
+
+<!-- APPEND: 2026-08-28-wdv3-http-200-proof-repair-closure-validation -->
+
+## Workflow Delivery v3 HTTP 200 proof repair: closure validation
+
+The six-file documentation closure passes Prettier, Markdownlint, Typos,
+EditorConfig, `git diff --check`, and the unstaged HK small/medium gate. The
+v3 control suite was not rerun for this documentation-only child; the exact
+merged behavior already passed 3,844 local tests, protected PR validation, v3
+shadow CI, post-merge Continuous Integration, and CodeQL.
+
+After the work-base correction, the evidence, historical-integrity, and
+authorization-boundary rereviewers all report no findings.
+
+<!-- END APPEND: 2026-08-28-wdv3-http-200-proof-repair-closure-validation -->
+
+<!-- APPEND: 2026-08-28-wdv3-http-200-proof-repair-closure-validation-scope-correction -->
+
+## Workflow Delivery v3 HTTP 200 proof repair: validation-scope correction
+
+The preceding closure-validation entry overstated Prettier and Markdownlint
+scope. Those checks passed the five changed wiki files only.
+`.testagent/status.md`, the sixth changed file, is excluded from both HK steps
+and does not pass standalone Prettier or Markdownlint checks. All six files
+still passed Typos, EditorConfig, `git diff --check`, and the overall unstaged
+HK small/medium gate.
+
+Independent adjudication classified the scope overstatement as a true
+positive.
+
+<!-- END APPEND: 2026-08-28-wdv3-http-200-proof-repair-closure-validation-scope-correction -->
+
+<!-- APPEND: 2026-08-28-wdv3-http-200-proof-repair-closure-typos-scope-correction -->
+
+## Workflow Delivery v3 HTTP 200 proof repair: Typos scope correction
+
+The preceding validation-scope correction also overstated Typos scope.
+`.testagent/status.md` is excluded by `.typos.toml`, and HK invokes Typos with
+`--force-exclude`, so Typos substantively checked only the five changed wiki
+files. EditorConfig, `git diff --check`, and the overall unstaged HK
+small/medium gate still covered all six changed files.
+
+Independent adjudication classified the Typos scope overstatement as a true
+positive.
+
+<!-- END APPEND: 2026-08-28-wdv3-http-200-proof-repair-closure-typos-scope-correction -->
