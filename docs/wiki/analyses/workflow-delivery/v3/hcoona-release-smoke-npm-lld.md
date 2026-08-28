@@ -1609,13 +1609,19 @@ receives one shared 120-second deadline. The exact/race/lost-response suite
 receives one shared 300-second deadline across all four scenarios; no scenario
 resets that budget.
 The proof binds the validated raw request and tarball digests to selected
-upstream response facts and response identity, with both credentials excluded. One
-monotonic deadline supplies decreasing remaining budgets to every observation,
-npm process, proxy, upstream, and cleanup boundary. Missing, partial,
-wrong-typed, contradictory, or pre-validation runner facts remain incomplete.
-Complete Governance Acceptance Evidence independently rejects zero target and
-workflow SHAs; incomplete rejected-dispatch evidence retains its sentinel
-semantics.
+upstream response facts and response identity, with both credentials excluded.
+For a strictly validated GitHub Packages npm publish request, the closed
+authoritative response-status set is exactly HTTP 200 or HTTP 201. The proof
+retains the actual status, and that status participates in response identity;
+otherwise identical 200 and 201 exchanges therefore have different identities.
+HTTP 202, HTTP 204, and every other status may remain request-bound diagnostic
+input but cannot form a proof. This is a provider-specific compatibility
+contract, not generic 2xx acceptance. One monotonic deadline supplies
+decreasing remaining budgets to every observation, npm process, proxy,
+upstream, and cleanup boundary. Missing, partial, wrong-typed, contradictory,
+or pre-validation runner facts remain incomplete. Complete Governance
+Acceptance Evidence independently rejects zero target and workflow SHAs;
+incomplete rejected-dispatch evidence retains its sentinel semantics.
 
 ### Acceptance Proxy Diagnostics and Cardinality
 
@@ -1649,10 +1655,11 @@ requestless local diagnostics may contain `TimeoutError`, `OSError`,
 `RuntimeError`, or `ValueError`; new request-bound diagnostics use only the
 response and transport arms above. The only unbound status arm retained for
 historical replay is HTTP 201 adjacent to an admitted proof. Request binding
-requires admitted action execution and mutation startedness. A
+requires admitted action execution and mutation startedness. New HTTP 200
+diagnostics are never eligible for the historical unbound arm. A
 protocol-confirmed diagnostic requires the validated request proof and must
-match its HTTP 201 status and request digest. A proof cannot coexist with a
-transport exception diagnostic.
+match its actual admitted HTTP 200 or HTTP 201 status and request digest. A
+proof cannot coexist with a transport exception diagnostic.
 Retry-2 and retry-3 lost-response completion also bind the proof tarball
 SHA-512 to exact post-readback bytes; retry 1 remains a narrow historical
 replay exception because that older evidence predates the binding.
@@ -1678,13 +1685,14 @@ Retry-4 preparation and protected finalization merged without bypass as
 `f3d53177a75bec9952fe39ffa547533d1a0992ef`. Fresh exact preflight passed
 before the single attempt-1 run `33165777024`. Its first probe observed `.13`
 absent, started mutation, received a request-bound upstream HTTP 200, and
-exactly read back `.13`. The current proof contract required HTTP 201, so the
-probe retained incomplete evidence; `.14`-`.16` were not attempted, and
-terminal Governance evidence classified the run unknown. This destination
-fact is diagnostic input for a separately reviewed repair and does not
-retroactively establish acceptance. Cleanup PR #610 rebase-merged without
-bypass as `4e7e7ef6ffe08de2695d51ec5c477d82da4ff226`; post-merge CI and
-CodeQL passed. The temporary source and workflow-only contract are absent,
+exactly read back `.13`. The proof contract active for that run required HTTP
+201, so the probe retained incomplete evidence; `.14`-`.16` were not
+attempted, and terminal Governance evidence classified the run unknown. The
+retained terminal artifact contains no validated request proof, so the later
+status-contract repair cannot retroactively establish acceptance. Cleanup PR #610
+rebase-merged without bypass as
+`4e7e7ef6ffe08de2695d51ec5c477d82da4ff226`; post-merge CI and CodeQL passed.
+The temporary source and workflow-only contract are absent,
 workflow ID `344468231` is `deleted`, Environment ID `20772100445` and
 acceptance refs are absent, and no post-deletion dispatch occurred. Fresh
 authenticated reconciliation retains exact `.13` and absent `.14`-`.16`. The

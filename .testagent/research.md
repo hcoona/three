@@ -5850,3 +5850,99 @@ Before that deletion, both absence contracts are expected to expose the
 remaining retry-4 YAML rather than pass vacuously.
 
 <!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-4-cleanup-research -->
+
+<!-- BEGIN APPEND: 2026-08-28-wdv3-http-200-proof-repair-research -->
+
+## GitHub Packages npm HTTP 200 proof repair research
+
+### Work base and observed gap
+
+- Fresh work base:
+  `main@1847defaa39c78faa87b9905556e1a48496081a4`.
+- Retry-4 run `33165777024` forwarded one strictly validated npm publish
+  request and retained a request-bound HTTP 200 upstream diagnostic.
+  Coordinate `.13` was read back with the exact expected tarball SHA-512, but
+  the proxy formed `ValidatedAcceptanceRequestProof` only for HTTP 201.
+- The retry-4 artifact therefore remains incomplete and unsuccessful. This
+  repair must not synthesize a missing proof, replay the consumed profile, or
+  reinterpret that historical evidence.
+
+### Bounded production inventory
+
+1. `cli.py`: the acceptance mutation proxy forms a proof only when the
+   upstream status is `201 Created`.
+2. `adapters/github_packages.py`: proof construction, closed-document
+   admission, proof rehydration, protocol-confirmed diagnostics, and normal
+   and lost-response proof validators require 201. Rehydration also
+   normalizes every admitted proof to 201.
+3. `records/governance.py`: Governance independently requires 201 for proof
+   and protocol-confirmed diagnostic admission. Its historical diagnostic
+   compatibility must be tightened so an unbound 200 cannot become admissible
+   merely by matching a newly admitted 200 proof.
+
+### Closed repair contract
+
+- A strictly validated GitHub Packages npm publish exchange may form an
+  authoritative proof only for exact status `200 OK` or `201 Created`.
+- The actual status remains in the proof, its hash/equality, serialized
+  document, response identity digest, runner result, and request-bound
+  diagnostic. It is never normalized.
+- `202 Accepted`, `204 No Content`, and every other status remain
+  non-authoritative. A request-bound diagnostic may be retained, but no proof
+  may form and exact readback alone cannot establish completion.
+- Normal and lost-response completion still require all existing request,
+  tarball SHA-512, coordinate, tag, response-fact, startedness, and exact
+  readback bindings.
+- Historical unbound status compatibility remains exactly HTTP 201 adjacent
+  to a matching admitted 201 proof. New HTTP 200 diagnostics must be
+  request-bound.
+- Existing proof-free historical records, canonical record digests, retry
+  profiles, package coordinates, workflow history, and normal Live authority
+  remain unchanged.
+
+The npm client accepts any response below 400 after registry-fetch response
+checking, while its canonical publish tests use 201. GitHub Packages does not
+publish a response-code contract, and independent operational evidence also
+shows successful `npm.pkg.github.com` publish PUT responses using 200. This
+repair intentionally models the narrower observed provider contract
+`{200, 201}`, not arbitrary HTTP 2xx success.
+
+### Acceptance checklist
+
+- [ ] H200-1: proof construction and closed-document admission accept exactly
+  integer 200 and 201 and reject 202/204.
+- [ ] H200-2: proof round-trip preserves the actual status, and otherwise
+  identical 200/201 exchanges have different response identity digests.
+- [ ] H200-3: the validated proxy forms and retains a proof for both 200 and
+  201 in normal and dropped-response operation.
+- [ ] H200-4: non-accepted statuses retain request-bound diagnostics but never
+  form a proof.
+- [ ] H200-5: normal protocol-confirmed and lost-response exact-readback
+  Adapter paths complete with a valid 200 or 201 proof.
+- [ ] H200-6: request-bound HTTP 200 diagnostic plus exact readback without a
+  proof remains incomplete and non-authoritative.
+- [ ] H200-7: Governance admits a request-bound 200 proof/diagnostic pair and
+  rejects proof/diagnostic status or request-digest substitution.
+- [ ] H200-8: Governance rejects an unbound 200 diagnostic adjacent to a 200
+  proof while preserving historical unbound 201-with-proof replay.
+- [ ] H200-9: retry-4-shaped HTTP 200 diagnostic evidence without proof
+  remains unsuccessful; no later scenario, profile, or history is upgraded.
+- [ ] H200-10: existing HTTP 201 fixtures, proof-free historical records,
+  canonical digests, and all profile-isolation tests remain green.
+
+### Test inventory
+
+- `tests/adapters/test_commit10_acceptance_probes.py`: proxy wire behavior,
+  proof construction, status identity, normal/lost-response orchestration,
+  and adversarial rejection.
+- `tests/adapters/test_acceptance_exchange_proof_repair.py`: focused proof,
+  runner-diagnostic, Adapter completion, round-trip, and non-authoritative
+  diagnostic regressions.
+- `tests/governance/test_commit10_acceptance_evidence.py`: canonical proof and
+  diagnostic admission, historical compatibility, retry-4 profile isolation,
+  and cross-binding.
+- `tests/test_cli.py`: retain existing 201 persistence coverage; add a 200
+  persistence assertion only if the focused proof/Adapter/Governance paths do
+  not exercise the same closed-document seam.
+
+<!-- END APPEND: 2026-08-28-wdv3-http-200-proof-repair-research -->

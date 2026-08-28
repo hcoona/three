@@ -1,13 +1,14 @@
 """Regression proof for request-bound GitHub Packages acceptance outcomes."""
 
-# ruff: noqa: D102, D103, D107, PLR2004, S105, S106, SLF001, TC003
+# ruff: noqa: D102, D103, D107, S105, S106, SLF001, TC003
 
 from __future__ import annotations
 
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Self
+from types import SimpleNamespace
+from typing import Any, Self, cast
 
 import pytest
 from three_workflow_delivery_v3 import cli as cli_module
@@ -15,9 +16,11 @@ from three_workflow_delivery_v3.adapters.github_packages import (
     ACCEPTANCE_COORDINATES,
     ACCEPTANCE_SCENARIO_SPECS,
     AcceptanceRunnerDiagnostic,
+    FixedAcceptanceSuiteResult,
     ValidatedAcceptanceRequestProof,
     run_fixed_coordinate_acceptance_probe,
 )
+from three_workflow_delivery_v3.canonical import canonical_sha256
 
 TIMEOUT_SECONDS = 7.0
 MAX_RESPONSE_BYTES = 8192
@@ -102,19 +105,70 @@ def _proof(
     tarball: bytes,
     *,
     scenario: str,
+    upstream_status: int = 201,
 ) -> ValidatedAcceptanceRequestProof:
     return ValidatedAcceptanceRequestProof.from_validated_exchange(
         raw_request=b'{"request":"exact-npm-couchdb-body"}',
         tarball=tarball,
         package_coordinate=_coordinate(scenario),
         tag=_tag(scenario),
-        upstream_status=201,
+        upstream_status=upstream_status,
         selected_headers={
             "Content-Type": "application/json",
             "ETag": '"request-bound"',
         },
         response_body=b'{"ok":true}',
     )
+
+
+@pytest.mark.parametrize("upstream_status", [200, 201])
+def test_validated_request_proof_closed_document_round_trip_preserves_status(
+    upstream_status: int,
+) -> None:
+    proof = _proof(
+        b"closed-proof-round-trip",
+        scenario="absent-create-readback",
+        upstream_status=upstream_status,
+    )
+
+    reopened = ValidatedAcceptanceRequestProof.from_closed_document(
+        proof.to_document(),
+        package_coordinate=proof.package_coordinate,
+        tag=proof.tag,
+        response_identity_digest=proof.response_identity_digest,
+    )
+
+    assert reopened == proof
+    assert reopened.upstream_status == upstream_status
+    assert reopened.response_identity_digest == proof.response_identity_digest
+
+
+@pytest.mark.parametrize("upstream_status", [202, 204])
+def test_validated_request_proof_closed_document_rejects_other_two_xx_status(
+    upstream_status: int,
+) -> None:
+    proof = _proof(
+        b"closed-proof-invalid-status",
+        scenario="absent-create-readback",
+    )
+    document = proof.to_document()
+    document["upstream-status"] = upstream_status
+    document["response-identity-digest"] = canonical_sha256(
+        {
+            "request-digest": document["request-digest"],
+            "upstream-status": upstream_status,
+            "selected-headers": document["selected-headers"],
+            "response-body-digest": document["response-body-digest"],
+        }
+    )
+
+    with pytest.raises(ValueError, match="upstream-status"):
+        ValidatedAcceptanceRequestProof.from_closed_document(
+            document,
+            package_coordinate=proof.package_coordinate,
+            tag=proof.tag,
+            response_identity_digest=document["response-identity-digest"],
+        )
 
 
 def _protocol_confirmed_runner_document(
@@ -171,15 +225,21 @@ def _run_probe(
     )
 
 
-def test_normal_runner_propagates_proxy_http_201_exchange_proof(
+@pytest.mark.parametrize("upstream_status", [200, 201])
+def test_normal_runner_propagates_proxy_accepted_exchange_proof(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    upstream_status: int,
 ) -> None:
     scenario = "absent-create-readback"
     tarball = tmp_path / f"{scenario}.tgz"
     tarball_bytes = f"{scenario}-artifact".encode()
     tarball.write_bytes(tarball_bytes)
-    proof = _proof(tarball_bytes, scenario=scenario)
+    proof = _proof(
+        tarball_bytes,
+        scenario=scenario,
+        upstream_status=upstream_status,
+    )
 
     class Proxy:
         registry = "http://127.0.0.1:4873"
@@ -233,7 +293,7 @@ def test_normal_runner_propagates_proxy_http_201_exchange_proof(
     assert result["outcome"] == "protocol-confirmed"
     assert result["validated-request-proof"] is proof
     assert result["request-digest"] == proof.request_digest
-    assert result["upstream-status"] == 201
+    assert result["upstream-status"] == upstream_status
     assert result["response-identity-digest"] == proof.response_identity_digest
     assert result["action-executed"] is True
     assert result["mutation-started"] is True
@@ -332,12 +392,18 @@ def test_runner_output_bound_is_non_authoritative_only_with_proxy_proof(
             )
 
 
-def test_normal_create_propagates_request_bound_http_201_exchange_proof(
+@pytest.mark.parametrize("upstream_status", [200, 201])
+def test_normal_create_propagates_request_bound_accepted_exchange_proof(
     tmp_path: Path,
+    upstream_status: int,
 ) -> None:
     scenario = "absent-create-readback"
     tarball = f"{scenario}-artifact".encode()
-    proof = _proof(tarball, scenario=scenario)
+    proof = _proof(
+        tarball,
+        scenario=scenario,
+        upstream_status=upstream_status,
+    )
 
     result = _run_probe(
         tmp_path,
@@ -352,12 +418,12 @@ def test_normal_create_propagates_request_bound_http_201_exchange_proof(
     assert (
         result.to_document()["validated-request-proof"] == proof.to_document()
     )
-    assert proof.upstream_status == 201
+    assert proof.upstream_status == upstream_status
     document = result.to_document()
     assert document["diagnostics"] == []
     assert document["runner-diagnostic"] == {
         "exit-classification": "protocol-confirmed",
-        "upstream-status": 201,
+        "upstream-status": upstream_status,
         "exception-category": None,
         "request-correlation-digest": proof.request_digest,
     }
@@ -464,12 +530,18 @@ def test_protocol_confirmed_without_proof_key_remains_incomplete(
     assert "validated-request-proof" not in result.to_document()
 
 
+@pytest.mark.parametrize("upstream_status", [200, 201])
 def test_lost_response_with_complete_identity_reconciles_after_ambiguity(
     tmp_path: Path,
+    upstream_status: int,
 ) -> None:
     scenario = "lost-response"
     tarball = f"{scenario}-artifact".encode()
-    proof = _proof(tarball, scenario=scenario)
+    proof = _proof(
+        tarball,
+        scenario=scenario,
+        upstream_status=upstream_status,
+    )
 
     result = _run_probe(
         tmp_path,
@@ -491,6 +563,79 @@ def test_lost_response_with_complete_identity_reconciles_after_ambiguity(
     assert result.post_state == "exact"
     assert result.mutation_started is True
     assert result.validated_request_proof is proof
+    assert proof.upstream_status == upstream_status
+    assert proof.response_identity_digest != RESPONSE_DIGEST
+    assert result.response_identity_digest == proof.response_identity_digest
+    assert (
+        result.to_document()["response-identity-digest"]
+        == proof.response_identity_digest
+    )
+
+
+def test_acceptance_cli_persists_http_200_validated_request_proof(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scenario = "absent-create-readback"
+    upstream_status = 200
+    tarball = f"{scenario}-artifact".encode()
+    proof = _proof(
+        tarball,
+        scenario=scenario,
+        upstream_status=upstream_status,
+    )
+    probe = _run_probe(
+        tmp_path,
+        scenario=scenario,
+        runner=ScriptedRunner(_protocol_confirmed_runner_document(proof)),
+        observations=[_absent(), _exact_readback(tarball, scenario=scenario)],
+    )
+    suite = FixedAcceptanceSuiteResult(
+        suite=scenario,
+        scenarios=(probe,),
+    )
+    monkeypatch.setenv("WDV3_ACCEPTANCE_GITHUB_TOKEN", "upstream-secret")
+    monkeypatch.setattr(
+        cli_module,
+        "_build_acceptance_tarball",
+        lambda root, **_kwargs: root / "unused.tgz",
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "run_fixed_acceptance_suite",
+        lambda **_kwargs: suite,
+    )
+    output = tmp_path / "acceptance.json"
+    arguments = cast(
+        "cli_module._AcceptanceProbeArguments",
+        SimpleNamespace(
+            package_coordinate=_coordinate(scenario),
+            suite=scenario,
+            target_sha="c" * 40,
+            timeout_seconds=TIMEOUT_SECONDS,
+            max_response_bytes=MAX_RESPONSE_BYTES,
+            max_output_bytes=MAX_OUTPUT_BYTES,
+            output=str(output),
+            github_output=None,
+        ),
+    )
+
+    status = cli_module._governance_run_fixed_acceptance_probe_command(
+        arguments
+    )
+    persisted = json.loads(output.read_bytes())
+    persisted_scenario = persisted["scenarios"][0]
+
+    assert status == 0
+    assert persisted_scenario["validated-request-proof"] == proof.to_document()
+    assert (
+        persisted_scenario["validated-request-proof"]["upstream-status"]
+        == upstream_status
+    )
+    assert (
+        persisted_scenario["response"]["identity-digest"]
+        == proof.response_identity_digest
+    )
 
 
 def test_lost_response_without_mutation_startedness_cannot_reconcile(
@@ -556,14 +701,20 @@ def test_nonfixed_coordinate_is_rejected_before_observation_or_mutation(
     assert runner.calls == 0
 
 
+@pytest.mark.parametrize("upstream_status", [200, 201])
 @pytest.mark.parametrize("post_state", ["unknown", "conflicting"])
 def test_missing_or_mismatched_readback_remains_fail_closed(
     tmp_path: Path,
     post_state: str,
+    upstream_status: int,
 ) -> None:
     scenario = "lost-response"
     tarball = f"{scenario}-artifact".encode()
-    proof = _proof(tarball, scenario=scenario)
+    proof = _proof(
+        tarball,
+        scenario=scenario,
+        upstream_status=upstream_status,
+    )
     readback = _exact_readback(tarball, scenario=scenario)
     readback["state"] = post_state
     if post_state == "conflicting":

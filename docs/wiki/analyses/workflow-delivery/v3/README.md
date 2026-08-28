@@ -256,7 +256,15 @@ Next:
    requires a separately reviewed acceptance-only repair and fresh coordinate
    block starting from a fresh fetch of this cleanup merge or a later reviewed
    successor; and
-6. keep `live_enabled: false`. Subsequent explicit user authorization covers
+6. require the separately reviewed acceptance-only response-status repair
+   before any retry-5 profile. For a strictly validated GitHub Packages npm
+   publish exchange, proof authority may use exactly HTTP 200 or HTTP 201,
+   must retain the actual status in response identity, and must still reject
+   HTTP 202, HTTP 204, and every other status. New HTTP 200 diagnostics remain
+   request-bound; the only historical unbound status compatibility remains
+   HTTP 201 adjacent to a matching proof. The exact retry-4 terminal artifact
+   remains unknown because it contains no validated request proof; and
+7. keep `live_enabled: false`. Subsequent explicit user authorization covers
    the bounded acceptance-only repair/retry loop through genuine success,
    cleanup, and closure, but normal Live activation remains a separate
    production decision.

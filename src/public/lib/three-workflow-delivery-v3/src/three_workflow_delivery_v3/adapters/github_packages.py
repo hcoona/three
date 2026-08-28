@@ -217,6 +217,7 @@ PAIR_SIZE = 2
 MAX_REDIRECTS = 5
 HTTP_OK = 200
 HTTP_CREATED = 201
+_ACCEPTANCE_PUBLISH_SUCCESS_STATUSES = frozenset({HTTP_OK, HTTP_CREATED})
 _HTTP_STATUS_MIN = 100
 _HTTP_STATUS_MAX = 599
 HTTP_MULTIPLE_CHOICES = 300
@@ -531,10 +532,10 @@ class ValidatedAcceptanceRequestProof:
             raise ValueError(message)
         if (
             type(self.upstream_status) is not int
-            or self.upstream_status != HTTP_CREATED
+            or self.upstream_status not in _ACCEPTANCE_PUBLISH_SUCCESS_STATUSES
         ):
             message = (
-                "validated upstream status is not the npm publish created "
+                "validated upstream status is not an accepted npm publish "
                 "status"
             )
             raise ValueError(message)
@@ -677,7 +678,11 @@ class ValidatedAcceptanceRequestProof:
         if document["tag"] != tag:
             message = "validated-request-proof tag is not exact"
             raise ValueError(message)
-        if document["upstream-status"] != HTTP_CREATED:
+        if (
+            type(document["upstream-status"]) is not int
+            or document["upstream-status"]
+            not in _ACCEPTANCE_PUBLISH_SUCCESS_STATUSES
+        ):
             message = "validated-request-proof upstream-status is not exact"
             raise ValueError(message)
         if type(selected_headers) is not dict or any(
@@ -713,7 +718,11 @@ class ValidatedAcceptanceRequestProof:
         object.__setattr__(proof, "tarball_sha512", document["tarball-sha512"])
         object.__setattr__(proof, "package_coordinate", package_coordinate)
         object.__setattr__(proof, "tag", tag)
-        object.__setattr__(proof, "upstream_status", HTTP_CREATED)
+        object.__setattr__(
+            proof,
+            "upstream_status",
+            document["upstream-status"],
+        )
         object.__setattr__(
             proof,
             "selected_headers",
@@ -831,7 +840,7 @@ def _validate_acceptance_runner_diagnostic_shape(
         raise ValueError(message)
     if exit_classification == "protocol-confirmed":
         if (
-            upstream_status != HTTP_CREATED
+            upstream_status not in _ACCEPTANCE_PUBLISH_SUCCESS_STATUSES
             or exception_category is not None
             or request_correlation_digest is None
         ):
@@ -1448,7 +1457,7 @@ def _valid_lost_response_proof(
         == "sha512:" + hashlib.sha512(tarball).hexdigest()
         and proof.package_coordinate == f"{ACCEPTANCE_PACKAGE_NAME}@{version}"
         and proof.tag == tag
-        and proof.upstream_status == HTTP_CREATED
+        and proof.upstream_status in _ACCEPTANCE_PUBLISH_SUCCESS_STATUSES
     )
 
 
@@ -1467,7 +1476,7 @@ def _valid_protocol_confirmed_proof(
         == "sha512:" + hashlib.sha512(tarball).hexdigest()
         and proof.package_coordinate == package_coordinate
         and proof.tag == tag
-        and proof.upstream_status == HTTP_CREATED
+        and proof.upstream_status in _ACCEPTANCE_PUBLISH_SUCCESS_STATUSES
         and document.get("request-digest") == proof.request_digest
         and document.get("upstream-status") == proof.upstream_status
         and document.get("selected-headers") == dict(proof.selected_headers)
@@ -2014,7 +2023,7 @@ def run_fixed_coordinate_acceptance_probe(  # noqa: C901, PLR0911, PLR0912, PLR0
                 mutation_classification="complete",
                 action_executed=action_executed,
                 mutation_started=mutation_started,
-                response_identity_digest=post_response,
+                response_identity_digest=proof.response_identity_digest,
                 content_sha512=post_content,
                 diagnostics=("mutation-started-and-readback-exact",),
                 validated_request_proof=proof,

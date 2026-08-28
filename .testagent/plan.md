@@ -6372,3 +6372,92 @@ reuse of consumed acceptance coordinates.
    do not commit.
 
 <!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-4-cleanup-plan -->
+
+<!-- BEGIN APPEND: 2026-08-28-wdv3-http-200-proof-repair-plan -->
+
+## GitHub Packages npm HTTP 200 proof repair plan
+
+### Phase 1: Add focused RED contracts
+
+1. In `test_commit10_acceptance_probes.py`:
+   - parameterize the exact proxy proof test over 200 and 201;
+   - change the qualifying upstream matrix so 200 and 201 both produce proof
+     and dropped-response processing;
+   - retain 202/204 and other non-accepted statuses in the no-proof matrix;
+   - replace the old 200 rejection contract with exact `{200, 201}`
+     construction coverage and explicit 202/204 rejection;
+   - assert 200/201 response identity differs and retains the actual status.
+2. In `test_acceptance_exchange_proof_repair.py`:
+   - parameterize normal runner propagation, normal protocol completion, and
+     lost-response reconciliation over 200 and 201;
+   - add closed-document round-trip coverage for both statuses;
+   - keep unbound 200 diagnostics rejected;
+   - add an exact-readback case proving a request-bound 200 diagnostic without
+     proof remains incomplete.
+3. In `test_commit10_acceptance_evidence.py`:
+   - admit a request-bound 200 proof with a matching 200 diagnostic;
+   - reject 200/201 status mismatch and unbound 200 adjacent to a 200 proof;
+   - retain the existing historical unbound 201-with-proof and proof-free
+     historical digest tests;
+   - add a retry-4-shaped first-scenario regression proving HTTP 200
+     diagnostic plus exact readback without proof remains incomplete and
+     cannot create complete suite evidence.
+4. Run only the changed nodes/modules. Confirm failures are limited to the
+   production 201 gates and 201 normalization; do not weaken assertions or
+   edit production during this phase.
+
+Checklist mapping:
+
+| Requirement | Planned evidence |
+| --- | --- |
+| H200-1 | proof accepted-status and rejected-status parameterized tests |
+| H200-2 | proof round-trip and response-identity distinction tests |
+| H200-3 | proxy exact-request 200/201 proof tests |
+| H200-4 | proxy 202/204 diagnostic-only tests |
+| H200-5 | normal and lost-response 200/201 Adapter completion tests |
+| H200-6 | diagnostic-only exact-readback incomplete test |
+| H200-7 | Governance matching and substitution tests |
+| H200-8 | Governance unbound-200 rejection plus existing unbound-201 replay |
+| H200-9 | retry-4-shaped no-proof non-retroactivity test |
+| H200-10 | existing historical digest/profile suites |
+
+### Phase 2: Implement the minimal production repair
+
+1. In `adapters/github_packages.py`, define the closed authoritative publish
+   status set `{200, 201}`. Use it for proof construction/admission,
+   protocol-confirmed diagnostics, and normal/lost-response proof validation.
+   Preserve the document status during rehydration.
+2. In `cli.py`, form a proof only when the strictly validated upstream
+   response status is in `{200, 201}`. Retain all existing size, header,
+   request-cardinality, credential-redaction, and diagnostic behavior.
+3. In `records/governance.py`, independently admit proof and
+   protocol-confirmed diagnostic statuses `{200, 201}`. Add an explicit
+   historical compatibility guard that permits an unbound status only when it
+   is 201; require request binding for 200.
+4. Make no schema, result-token, profile, workflow, coordinate, Live,
+   authorization, or retry-history changes.
+
+### Phase 3: Close documentation and test-agent state
+
+1. Update the LLD to define the exact `{200, 201}` proof-status contract,
+   actual-status retention, non-authoritative diagnostics, and 201-only
+   historical unbound compatibility.
+2. Update the v3 README, handoff, and overview with the bounded repair state
+   while retaining retry-4 as unsuccessful and consumed.
+3. Append a new `docs/wiki/log.md` entry; never rewrite prior HTTP 201 history.
+4. Append RED/GREEN/review results to `.testagent/status.md`.
+
+### Phase 4: Validate and review
+
+1. Run focused Adapter, proxy, Governance, and CLI selections.
+2. Run the complete Workflow Delivery v3 suite, Ruff check/format check,
+   Pyrefly, documentation lint, and repository HK gates.
+3. Run `test-gap-analysis` and `assertion-quality`; fix only findings inside
+   the bounded repair contract.
+4. Run multi-reviewer Open Code Review delegation, independently adjudicate
+   every finding as TP/FP, apply scoped fixes, and repeat until no findings.
+5. Commit and open a protected PR. Merge without bypass only after required
+   checks pass, then perform fresh post-merge reconciliation and documentation
+   closure before any retry-5 profile work.
+
+<!-- END APPEND: 2026-08-28-wdv3-http-200-proof-repair-plan -->
