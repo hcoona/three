@@ -372,6 +372,22 @@ have changed.
    `.13`. Any retry-5 work must start from freshly fetched and revalidated
    `origin/main` at this merge, or at a later reviewed, merged successor that
    contains it, and use wholly new execution identities.
+10. Work-base clarification PR #613 rebase-merged as `8e6baf24`, and its
+    post-merge Continuous Integration run `33194078923` passed. Retry-5
+    preparation starts from a fresh fetch and revalidation of that exact
+    `origin/main`. It adds only the temporary manual workflow and closed
+    Adapter/Governance profile for `.17`-`.20`; the target remains forty ASCII
+    zeroes, so validation stops before Environment review or package write.
+    Read-only preflight found the versions and tags unused, but no retry-5
+    Environment, dispatch, deployment, acceptance ref, package, tag, or Live
+    mutation has occurred, and `.17`-`.20` remain unexecuted and unconsumed.
+    After protected preparation merges, fresh external-state revalidation must
+    pass before a new protected Environment is created and a separate
+    protected finalization PR binds the exact preparation merge SHA.
+    Finalization, the sole `run_attempt == 1` dispatch and review,
+    reconciliation, cleanup, and closure must each freshly fetch and revalidate
+    `origin/main` containing the immediately preceding protected merge. Normal
+    Live and `live_enabled: true` remain unauthorized.
 
 ## Related Pages
 

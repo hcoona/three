@@ -5946,3 +5946,79 @@ repair intentionally models the narrower observed provider contract
   not exercise the same closed-document seam.
 
 <!-- END APPEND: 2026-08-28-wdv3-http-200-proof-repair-research -->
+
+<!-- BEGIN APPEND: 2026-08-28-wdv3-acceptance-retry-5-research -->
+
+## 2026-08-28 Workflow Delivery v3 retry-5 acceptance preparation research
+
+### Authority, safety, and exact identity
+
+- Authoritative work base is
+  `HEAD == origin/main == 8e6baf24ca476b449b5c97c21f14f3776e668b90`.
+  Retry-4 is mechanism reference only; its deleted identities must not be
+  restored. The supplied 41-character value
+  `835b81be1ff0ba7aa0ec23c9a7b518d4ade3dfaa0` is invalid and is not used.
+- This is offline preparation only: no GitHub, network, package,
+  Environment, workflow-dispatch, tag, ref, or publish mutation. Commands use
+  `UV_OFFLINE=1`. The CLI and
+  `.github/workflow-delivery/governance/hcoona-release-smoke-npm.json` are
+  read-only.
+- Retry-5 workflow path/stem/Environment:
+  `.github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-5.yml`
+  and `workflow-delivery-v3-buddy-smoke-acceptance-retry-5`.
+- Base coordinate:
+  `@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.17`.
+  Ordered scenario coordinate/tag pairs are
+  `.17`/`wdv3-acceptance-17` for `absent-create-readback`,
+  `.17`/`wdv3-acceptance-17` for `exact`,
+  `.18`/`wdv3-acceptance-18` for `identical-race`,
+  `.19`/`wdv3-acceptance-19` for `differing-race`, and
+  `.20`/`wdv3-acceptance-20` for `lost-response`.
+- Preparation target is exactly forty ASCII zeroes:
+  `0000000000000000000000000000000000000000`. Confirmation is
+  `I_ACCEPT_DISPOSABLE_GITHUB_PACKAGES_PROBES_RETRY_5`, whose required digest
+  is
+  `sha256:71fdd8f8cbb3ab90dd94745a18337d89a893fbdaeea35fafa733bc13d75c308f`.
+  Authoritative proof statuses remain exactly `{200, 201}`.
+
+### Bounded overall target inventory
+
+1. **Phase 1 - Governance:** modify only
+   `src/three_workflow_delivery_v3/records/governance.py` and
+   `tests/governance/test_commit10_acceptance_evidence.py` beneath
+   `src/public/lib/three-workflow-delivery-v3`.
+2. **Phase 2 - Adapter:** register and test the matching fifth profile in
+   `src/three_workflow_delivery_v3/adapters/github_packages.py` and
+   `tests/adapters/test_commit10_acceptance_probes.py`.
+3. **Phase 3 - workflow/topology:** add the exact retry-5 workflow and its
+   bounded contract, then update only the existing temporary-workflow topology
+   and retirement contracts. No generalized route or Live authority is in
+   scope.
+4. State is append-only in `.testagent/research.md`, `plan.md`, and
+   `status.md`; all other production, CLI, live-Governance JSON, historical
+   evidence, manifests, and locks are outside this phase.
+
+### R1-R8 acceptance mapping
+
+| ID | Requirement and concrete evidence target |
+| --- | --- |
+| R1 | Exact retry-5 path/stem/Environment, base, scenario coordinates/tags, confirmation/digest, and forty-zero target in Governance, Adapter, and workflow contracts. |
+| R2 | Governance and Adapter expose exactly five ordered bases `.1`, `.5`, `.9`, `.13`, `.17`; profile identities are unique and the first four are semantically unchanged. |
+| R3 | Exact zero-target rejected dispatch admits only failed validation, skipped review/probes, no facts/reviewer/artifact, and incomplete mutation; malformed variants reject. |
+| R4 | A clearly test-only monkeypatched retry-5 nonzero 40-hex finalization seam admits complete 200/201 documents, preserves exact bindings/canonical round-trip and secondary observables, and rejects 202/204. |
+| R5 | Bidirectional cross-profile workflow, top-level/recovery Environment, digest, target, coordinate, tag, request, tarball, and response substitutions reject while historical replay remains unchanged. |
+| R6 | Adapter registration/resolution, runner/suite routing, proof, scenario ordering, coordinate/tag uniqueness, and cross-profile tests use the same exact retry-5 authority. |
+| R7 | Workflow/topology phase fixes the five-job preparation-only shape, zero-target guard, exact identity/wiring, and sole temporary-workflow exception without Live or external mutation. |
+| R8 | Run narrow RED then bounded GREEN, scoped Ruff check/format and Pyrefly, later YAML/topology validation, read-only scope audit, and mandatory `test-gap-analysis` plus `assertion-quality`; record exact outcomes in status. |
+
+### Current conventions and harness
+
+Python 3.13 uses pytest from the root UV workspace. Existing Governance tests
+use module-level `test_*` functions, exact dictionaries/tuples, canonical JSON
+round-trips, `pytest.mark.parametrize`, and `monkeypatch`. The retry-5 narrow
+selection is intentionally run RED after tests but before registration; the
+whole bounded Governance file must be green after the minimal fifth-profile
+registration. Ruff check/format-check and Pyrefly are scoped to the two
+Phase-1 Python files.
+
+<!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-5-research -->

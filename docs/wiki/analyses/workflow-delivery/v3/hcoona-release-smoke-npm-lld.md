@@ -1744,6 +1744,41 @@ start from freshly fetched and revalidated `origin/main` at this merge, or at a
 later reviewed, merged successor that contains it, and use new coordinates,
 workflow, Environment, review, invocation, tag, and ref identities.
 
+Work-base clarification PR #613 rebase-merged without bypass as
+`8e6baf24ca476b449b5c97c21f14f3776e668b90`; post-merge Continuous
+Integration run `33194078923` passed. Retry-5 preparation starts from a fresh
+fetch and revalidation of that exact `origin/main`. It allocates the temporary
+manual-only workflow and closed profile identities for absent/exact `.17`,
+identical-race `.18`, differing-race `.19`, and lost-response `.20`, with tags
+`wdv3-acceptance-17` through `wdv3-acceptance-20`. Read-only preflight found
+those versions and tags unused, but the preparation phase does not execute or
+consume them. The workflow and Governance target are exactly forty ASCII
+zeroes, so the first job rejects before the protected review job or either
+`packages: write` probe can run. No retry-5 Environment, deployment, dispatch,
+acceptance ref, package, tag, or Live mutation occurs during preparation.
+
+The retry-5 terminal fan-in reconstructs canonical suite records independently
+from job conclusions. A later failed or canceled probe keeps its retained
+record while making aggregate Governance state unknown. A post-probe or
+post-upload downgrade cannot upgrade canonical uncertainty; missing artifact
+ID or digest outputs make both artifact bindings null and the retained fact
+incomplete. Valid bare upload-artifact SHA-256 output is normalized to the
+canonical `sha256:` form. Present request-bound runner diagnostics are
+reconstructed and re-admitted rather than discarded. These mechanics do not
+broaden proof authority: only exact HTTP 200 or HTTP 201 after every existing
+request/tarball/coordinate/tag/cardinality check can form a validated proof.
+
+After protected preparation merge, a fresh external-state revalidation must
+pass before either creating a new protected retry-5 Environment or opening the
+separate protected finalization PR. That PR must replace the zero target in
+both workflow and Governance profile with the exact preparation merge SHA.
+Finalization, the sole `run_attempt == 1` dispatch and review, reconciliation,
+cleanup, and closure must each start from freshly fetched and revalidated
+`origin/main` containing the immediately preceding protected merge. A local
+branch, attempt ref, arbitrary fetched SHA, or reviewed-but-unmerged head is
+never work-base authority. Normal Live and `live_enabled: true` remain outside
+the acceptance-only authorization.
+
 ## Activation Gate
 
 The live Buddy workflow remains disabled through the policy-fixed protected

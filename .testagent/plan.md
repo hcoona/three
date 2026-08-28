@@ -6461,3 +6461,62 @@ Checklist mapping:
    closure before any retry-5 profile work.
 
 <!-- END APPEND: 2026-08-28-wdv3-http-200-proof-repair-plan -->
+
+<!-- BEGIN APPEND: 2026-08-28-wdv3-acceptance-retry-5-plan -->
+
+## 2026-08-28 Workflow Delivery v3 retry-5 acceptance preparation plan
+
+### Phase 1 - Governance profile and admission (current)
+
+1. Preserve the current four-profile/historical baseline, then append tests in
+   `tests/governance/test_commit10_acceptance_evidence.py` for exactly five
+   ordered unique bases `.1`, `.5`, `.9`, `.13`, `.17` and exact retry-5
+   workflow, Environment, confirmation digest, target, and ordered scenario
+   bindings. Maps R1-R2.
+2. Reuse current document builders to pin the exact forty-zero
+   rejected-dispatch round-trip and reject validation/review/probe/fact/
+   reviewer/artifact/mutation and identity substitutions. Maps R3.
+3. Install only a clearly named hypothetical nonzero 40-hex retry-5 target
+   through `monkeypatch`; prove complete 200 and 201 documents preserve exact
+   bindings, canonical round-trip, and secondary observables, while 202 and
+   204 reject. Maps R4.
+4. Parameterize bidirectional retry-5/historical substitutions for every
+   supported workflow, Environment, recovery Environment, digest, target,
+   coordinate, tag, request, tarball, and response binding. Preserve the
+   existing historical replay matrix. Maps R5.
+5. Run the required narrow selection before source registration and record its
+   expected missing-profile failure. Then add only the fifth
+   `_GovernanceAcceptanceProfile` in
+   `src/three_workflow_delivery_v3/records/governance.py`; do not change
+   admission/status logic. Run the whole Governance file green. Maps R1-R5.
+6. Run scoped Ruff check, Ruff format-check, and Pyrefly on the two Phase-1
+   files, plus a read-only diff audit proving the CLI and live Governance JSON
+   are untouched. Append every command/count/result to status. Maps R8.
+
+### Phase 2 - Adapter registration and contracts (later)
+
+Add the exact fifth Adapter profile and focused tests for ordered/unique
+profiles, exact scenario resolution, runner and suite routing, proof identity,
+and bidirectional cross-profile substitutions. Preserve all four historical
+profiles and accepted statuses exactly `{200, 201}`. Maps R1-R2 and R5-R6.
+
+### Phase 3 - workflow and topology (later)
+
+Add only
+`.github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-5.yml`
+with exact retry-5 identity, forty-zero preparation target, five-job guarded
+topology, scoped Environment/package permissions, and terminal evidence.
+Update bounded workflow/topology and retirement contracts so retry-5 is the
+sole temporary preparation workflow; keep normal Live disabled and introduce
+no dispatch, ref, tag, package, or external mutation. Run narrow pytest plus
+YAML/static validation. Maps R1 and R7.
+
+### Required closure
+
+After all three phases, run the relevant narrow/full bounded tests, Ruff,
+Pyrefly, YAML/topology checks, and read-only scope checks. Invoke
+`test-gap-analysis` and `assertion-quality`, remediate in-scope findings, and
+record exact results. Maps R8. No phase may use the invalid 41-character SHA
+or place a nonzero reviewed target in production.
+
+<!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-5-plan -->

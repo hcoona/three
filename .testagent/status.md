@@ -10488,3 +10488,848 @@ Independent adjudication classified the Typos scope overstatement as a true
 positive.
 
 <!-- END APPEND: 2026-08-28-wdv3-http-200-proof-repair-closure-typos-scope-correction -->
+
+<!-- BEGIN APPEND: 2026-08-28-wdv3-acceptance-retry-5-phase-1-status -->
+
+## 2026-08-28 Workflow Delivery v3 retry-5 Phase 1 status
+
+- Phase: Governance Profile and Admission.
+- State: research and plan appended; implementation in progress.
+- Authority check:
+  `HEAD == origin/main == 8e6baf24ca476b449b5c97c21f14f3776e668b90`.
+- Scope: only the Phase-1 Governance source/test and append-only
+  `.testagent` ledgers may change. No external mutation is permitted.
+- Language guidance: `code-testing-agent` and
+  `unit-test-generation.prompt.md` were read. The
+  `code-testing-extensions` skill entry point was unavailable, so its local
+  Python extension was read directly.
+- RED, GREEN, lint, type, quality-review, and final scope-audit results will
+  be appended below as work proceeds.
+
+<!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-5-phase-1-status -->
+
+<!-- APPEND: 2026-08-28-wdv3-acceptance-retry-5-phase-1-baseline -->
+
+### Phase 1 baseline discovery
+
+From the repository root:
+
+`UV_OFFLINE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest --collect-only -q src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py`
+
+Result: exit 0; `377 tests collected in 0.18s`. This is the pre-generation
+harness-visible baseline for the bounded Governance file.
+
+<!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-5-phase-1-baseline -->
+
+<!-- APPEND: 2026-08-28-wdv3-acceptance-retry-5-phase-1-red -->
+
+### Phase 1 RED
+
+Required selection:
+
+`UV_OFFLINE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py -k 'retry_5 or governance_acceptance_profiles or finalization_seam'`
+
+- First execution exposed a test-only indentation defect during collection
+  (`IndentationError` at the new finalization helper; exit 2). No production
+  source had been edited. The helper indentation was corrected.
+- Corrected RED execution exited 1 with `38 failed, 377 deselected in 0.39s`.
+  Every selected case failed only with
+  `E-GOVERNANCE-PROFILE-ABSENT: the fifth reviewed Governance acceptance
+  profile is not registered`. This is the expected missing-profile failure
+  before source registration; there were no collection or assertion-
+  construction failures.
+
+<!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-5-phase-1-red -->
+
+<!-- APPEND: 2026-08-28-wdv3-acceptance-retry-5-phase-1-green -->
+
+### Phase 1 implementation and GREEN
+
+Minimal production change:
+
+- Added only the retry-5 Governance identity/scenario constants and fifth
+  `_GovernanceAcceptanceProfile` registration in `records/governance.py`.
+- Its production target is exactly
+  `0000000000000000000000000000000000000000`; no admission or accepted-status
+  logic changed and no nonzero retry-5 target exists in production.
+
+Generated Governance coverage comprises 7 test functions / 38 collected
+parameter cases:
+
+1. `test_governance_acceptance_profiles_are_exactly_five_with_retry_5_and_no_historical_drift`
+2. `test_retry_5_governance_profile_binds_exact_preparation_identity_and_scenarios`
+3. `test_retry_5_governance_admits_exact_zero_target_rejected_dispatch_round_trip`
+4. `test_retry_5_zero_target_rejects_noncanonical_dispatch_or_identity`
+   (11 cases)
+5. `test_retry_5_finalization_seam_admits_complete_status_and_preserves_bindings`
+   (HTTP 200 and 201)
+6. `test_retry_5_finalization_seam_rejects_non_authoritative_status`
+   (HTTP 202 and 204)
+7. `test_retry_5_governance_rejects_bidirectional_cross_profile_bindings`
+   (20 cases: 10 binding classes in both directions)
+
+The append-only historical retry-4 exact-four registry contract initially
+produced the sole whole-file failure (`414 passed, 1 failed`). A narrowly
+scoped test-only compatibility fixture now supplies that immutable test its
+historical first-four view, while the new exact-five test checks the actual
+live registry. No historical assertion or source profile was rewritten.
+
+Validation from the repository root:
+
+| Check | Exact result |
+| --- | --- |
+| `UV_OFFLINE=1 uv run --python 3.13 --package three-workflow-delivery-v3 python -m py_compile <the two Phase-1 Python files>` | exit 0 |
+| Required post-registration narrow selection | `38 passed, 377 deselected in 0.35s` |
+| Required whole Governance file, final run | `415 passed in 1.19s` |
+| Harness-equivalent collection | `415 tests collected in 0.18s`; baseline 377, delta **+38** |
+| Scoped `ruff check` | exit 0; `All checks passed!` |
+| Scoped `ruff format --check` | exit 0; `2 files already formatted` |
+| Scoped `pyrefly check` | exit 0; `INFO 0 errors` |
+| `git diff --check` | exit 0 |
+
+Ruff initially identified five new-test magic-number diagnostics and an
+unformatted new block; Pyrefly identified 11 recursive-JSON narrowing
+diagnostics. The tests now derive the expected profile count, narrow
+`probe-facts` with the existing cast convention, and are formatted. No rule
+was suppressed or weakened.
+
+### Mandatory gap and assertion review
+
+`test-gap-analysis` and `assertion-quality` were invoked. Their shared
+`test-analysis-extensions` skill entry point was unavailable, so the local
+Python/pytest extension was read and the bounded review was completed
+manually.
+
+- Pseudo-mutations removing/reordering the fifth profile, changing any
+  historical or retry-5 field, allowing a nonzero production target, relaxing
+  the rejected-dispatch shape, broadening success to arbitrary 2xx, or
+  dropping workflow/Environment/digest/coordinate/tag/request/tarball/
+  response binding checks are killed by the exact profile, malformed matrix,
+  200/201 versus 202/204 boundary, and bidirectional substitution tests.
+- No uncovered in-scope production branch or surviving high-value mutation
+  remains. Existing historical replay tests still execute in the 415-test
+  gate.
+- All 7 generated test functions contain meaningful concrete or exception
+  assertions; there are zero assertion-free and zero trivial-only tests.
+  Equality/deep structure, identity, Boolean/negative, `None`, exception, and
+  test-only state-seam assertions are represented. The proof assertion was
+  strengthened during review to recompute exact request digests and compare
+  cross-field tarball/response bindings rather than compare fields to
+  themselves. Required canonical round-trip checks remain paired with exact
+  non-degenerate identity and secondary-observable assertions.
+
+### Scope and safety audit
+
+Exactly these five paths are modified:
+
+1. `.testagent/research.md`
+2. `.testagent/plan.md`
+3. `.testagent/status.md`
+4. `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/records/governance.py`
+5. `src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py`
+
+`git diff --numstat` showed zero deletions on every path. A path-scoped
+read-only diff returned no changes for
+`src/three_workflow_delivery_v3/cli.py` and
+`.github/workflow-delivery/governance/hcoona-release-smoke-npm.json`. No
+workflow, GitHub, Environment, package, tag, ref, dispatch, publish, network,
+or other external mutation occurred. The invalid 41-character supplied value
+was not used. Phase 1 has no blockers.
+
+<!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-5-phase-1-green -->
+
+<!-- APPEND: 2026-08-28-wdv3-acceptance-retry-5-phase-1-final-verification -->
+
+### Phase 1 final verification
+
+After the assertion-quality strengthening and explanatory test-only
+compatibility comment:
+
+- whole bounded Governance gate: `415 passed in 1.32s` (exit 0);
+- harness discovery: `415 tests collected in 0.20s`, exactly **+38** from the
+  377-case baseline;
+- scoped Ruff check: `All checks passed!`;
+- scoped Ruff format-check: `2 files already formatted`;
+- scoped Pyrefly: `INFO 0 errors`;
+- `git diff --check`: exit 0;
+- changed-path audit: exactly the three append-only `.testagent` ledgers and
+  the two Phase-1 functional files;
+- forbidden-scope path audit returned empty for the exact paths
+  `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py`
+  and
+  `.github/workflow-delivery/governance/hcoona-release-smoke-npm.json`.
+
+This entry supersedes only the earlier abbreviated CLI path wording; all
+earlier append-only evidence remains intact.
+
+<!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-5-phase-1-final-verification -->
+
+<!-- APPEND: 2026-08-28-wdv3-acceptance-retry-5-phase-2-red -->
+
+## 2026-08-28 Workflow Delivery v3 retry-5 Phase 2 Adapter status
+
+### Baseline discovery
+
+All commands ran from the repository root with `UV_OFFLINE=1`:
+
+- root harness discovery: `4034 tests collected in 4.33s` (exit 0);
+- bounded Adapter test file:
+  `260 tests collected in 0.23s` (exit 0);
+- bounded Adapter gate (the owned test file plus the read-only proof-repair
+  file): `322 tests collected in 0.24s` (exit 0).
+
+The `code-testing-agent` skill and
+`.agents/skills/code-testing-agent/unit-test-generation.prompt.md` were read.
+The requested `code-testing-extensions` skill entry point was unavailable.
+Existing Python/pytest conventions and the retry-5 research/plan entries were
+used without duplicating either append-only ledger.
+
+### Required test-first RED
+
+Before any Adapter production registration, the exact required selection was
+run:
+
+`UV_OFFLINE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py -k 'retry_5 or acceptance_profiles or unregistered_acceptance_bindings'`
+
+Result: exit 1; `62 failed, 4 passed, 260 deselected in 7.19s`.
+
+All 62 failures stopped at the explicit guard with exactly
+`E-ADAPTER-PROFILE-ABSENT: the reviewed retry-5 base coordinate is not
+registered`. The four still-unregistered `.21` base/coordinate/tag/pair cases
+passed. There were no collection, fixture, syntax, or assertion-construction
+failures. No Adapter production source had been edited at this RED boundary.
+
+<!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-5-phase-2-red -->
+
+<!-- APPEND: 2026-08-28-wdv3-acceptance-retry-5-phase-2-green -->
+
+### Phase 2 implementation and GREEN
+
+Production registration was limited to 18 additive lines in
+`adapters/github_packages.py`:
+
+- `RETRY_5_ACCEPTANCE_PACKAGE_COORDINATE` is exactly
+  `@hcoona/hcoona-release-smoke-npm@0.0.0-wdv3-acceptance.17`;
+- `RETRY_5_ACCEPTANCE_SCENARIO_SPECS` has the ordered
+  absent `.17`/tag17, exact `.17`/tag17, identical-race `.18`/tag18,
+  differing-race `.19`/tag19, and lost-response `.20`/tag20 block;
+- the fifth entry was appended to `_ACCEPTANCE_SUITE_PROFILES`;
+- the existing `_ACCEPTANCE_COORDINATE_TAG_PAIRS` comprehension therefore
+  admits the four exact new coordinate/tag pairs. No status, matching,
+  resolver, suite, proof, or CLI logic changed.
+
+The owned Adapter test file received 7 test functions / 66 collected
+parameter cases:
+
+1. `test_acceptance_profiles_are_exactly_five_with_retry_5_and_no_historical_drift`
+2. `test_retry_5_adapter_profile_has_exact_ordered_scenario_bindings`
+3. `test_retry_5_fixed_acceptance_resolvers_preserve_each_isolated_profile`
+   (5 profile cases)
+4. `test_retry_5_npm_runner_routes_exact_profile_through_controlled_fakes`
+   (5 scenario cases)
+5. `test_retry_5_fixed_suite_admits_exact_request_proof_and_readback_status`
+   (HTTP 200 and 201)
+6. `test_retry_5_proof_rejects_each_bidirectional_historical_substitution`
+   (48 cases: each of four historical profiles in both directions for
+   coordinate-only, tag-only, paired, request, tarball, and response)
+7. `test_unregistered_acceptance_bindings_reject_base_coordinate_and_tag`
+   (unregistered `.21` base, coordinate, tag, and complete pair)
+
+Because the owned test file is append-only, the three older negative fixture
+call sites were not rewritten. A narrowly named test-only compatibility
+fixture relocates their executed `.17` negative inputs to `.21`/tag21, and
+the retry-4 resolver constant now resolves to the `.21` fixture. The same
+fixture supplies only the three immutable retry-4 registry-shape tests with
+their historical first-four view after first asserting that the live registry
+is the exact expected five. The new exact-five contract independently checks
+all live profiles, the 20 globally unique accepted coordinate/tag pairs, and
+the sole absent/exact reuse in each profile.
+
+Validation from the repository root:
+
+| Check | Exact result |
+| --- | --- |
+| Scoped Python compilation of the two modified Python files | exit 0; no diagnostics |
+| First post-registration narrow selection | `66 passed, 260 deselected in 0.30s` |
+| Required full bounded Adapter gate | `388 passed in 13.40s` |
+| Final post-review narrow selection | `66 passed, 260 deselected in 0.67s` |
+| Final required full bounded Adapter gate | `388 passed in 13.27s` |
+| Owned Adapter file discovery | `326 tests collected in 0.28s`; baseline 260, delta **+66** |
+| Bounded two-file discovery | `388 tests collected in 0.25s`; baseline 322, delta **+66** |
+| Root harness discovery | `4100 tests collected in 3.08s`; baseline 4034, delta **+66** |
+| Final scoped Ruff check | exit 0; `All checks passed!` |
+| Final scoped Ruff format-check | exit 0; `2 files already formatted` |
+| Final scoped Pyrefly | exit 0; `INFO 0 errors (23 suppressed, 14 warnings not shown)` |
+| `git diff --check` | exit 0 |
+
+The first lint/type pass found one 55-statement test, formatting differences,
+and five Pyrefly JSON-union indexing errors. The substitution setup was
+factored into focused helpers, JSON was explicitly narrowed, and formatting
+was corrected. A second pass found only one 51-statement test plus one
+formatting difference; the redundant statement was removed and formatting
+corrected. No lint/type rule was suppressed or weakened. The final three
+checks above are green.
+
+The unchanged regression tests
+`test_validated_request_proof_rejects_other_two_xx_status`,
+`test_adversarial_lost_proxy_nonaccepted_never_proves_processed`, and
+`test_validated_request_proof_closed_document_rejects_other_two_xx_status`
+remain in the 388-case gate. Together with the new 200/201 suite cases, they
+retain the exact authoritative status set `{200, 201}` and reject 202/204;
+the source still defines
+`_ACCEPTANCE_PUBLISH_SUCCESS_STATUSES = frozenset({HTTP_OK, HTTP_CREATED})`.
+
+### Mandatory gap and assertion review
+
+`test-gap-analysis` and `assertion-quality` were invoked. Their required
+`test-analysis-extensions` skill entry point was unavailable, so the local
+Python/pytest extension was read directly.
+
+- Pseudo-mutations that delete, duplicate, reorder, or alter the fifth
+  profile; drift any historical binding; change one retry-5 scenario,
+  coordinate, or tag; introduce cross-profile pair reuse; broaden exact
+  resolver matching; omit a pair from proof admission; misroute the existing
+  npm runner or suite; lose a request/tarball/readback/response/mutation
+  binding; or broaden 200/201 to arbitrary 2xx are killed by concrete exact,
+  controlled-fake, substitution, `.21`, and unchanged status regressions.
+- No uncovered in-scope production branch or high-value surviving mutation
+  remains. The fully matched retry-5 200/201 controls admit, while every
+  requested bidirectional substitution remains non-authoritative.
+- All 7 generated test functions contain meaningful assertions. There are
+  zero assertion-free, zero trivial-only, and zero self-referential-only
+  tests. Equality/deep structure, Boolean, negative membership, comparison,
+  exception, `None`, string/digest format, and state/side-effect observations
+  are represented. Every happy-path case checks secondary runner, transport,
+  suite, proof, or canonical-record observables.
+
+### Scope and safety audit
+
+`HEAD` remains the authoritative
+`8e6baf24ca476b449b5c97c21f14f3776e668b90`.
+
+Phase 2 changed only:
+
+1. `.testagent/status.md` (append-only);
+2. `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/adapters/github_packages.py`
+   (18 additions, zero deletions);
+3. `src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py`
+   (1013 additions, zero deletions).
+
+The complete worktree diff still contains exactly the three append-only
+`.testagent` ledgers and the two Phase-1 Governance plus two Phase-2 Adapter
+functional files. There are zero deletions on all seven paths.
+
+Read-only `git diff --exit-code` checks returned exit 0 for
+`tests/adapters/test_acceptance_exchange_proof_repair.py`,
+`src/three_workflow_delivery_v3/cli.py`, and `.github`. No workflow, GitHub,
+network, package, Environment, dispatch, tag, ref, publish, CLI, proof-repair,
+or other external mutation occurred. Phase 2 has no blockers.
+
+<!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-5-phase-2-green -->
+
+<!-- APPEND: 2026-08-28-wdv3-acceptance-retry-5-phase-2-final -->
+
+### Phase 2 final command and scope confirmation
+
+The final required GREEN command was exactly:
+
+`UV_OFFLINE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest -q src/public/lib/three-workflow-delivery-v3/tests/adapters/test_commit10_acceptance_probes.py src/public/lib/three-workflow-delivery-v3/tests/adapters/test_acceptance_exchange_proof_repair.py`
+
+It exited 0 with `388 passed in 13.27s`.
+
+Final read-only `git diff --exit-code` checks exited 0 for the exact protected
+paths:
+
+- `src/public/lib/three-workflow-delivery-v3/tests/adapters/test_acceptance_exchange_proof_repair.py`;
+- `src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/cli.py`;
+- `.github`.
+
+After this append, `git diff --check` was run again and exited 0.
+
+<!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-5-phase-2-final -->
+
+<!-- APPEND: 2026-08-28-wdv3-acceptance-retry-5-phase-3 -->
+
+## 2026-08-28 Workflow Delivery v3 retry-5 Phase 3 workflow/topology status
+
+```text
+PHASE: 3
+STATUS: SUCCESS
+TESTS_CREATED_OR_UPDATED: 47 parameter cases in 20 contract functions
+TESTS_PASSING: 211 in the complete three-contract-file gate
+HARNESS_DISCOVERY: +45 cases (166 baseline; 211 final)
+```
+
+### Scope and safety
+
+- The authoritative base remained
+  `8e6baf24ca476b449b5c97c21f14f3776e668b90`.
+- Historical commit
+  `634bcdac778cdf09eac5c1fbff9c4128b765ebe5` was read only with
+  `git show` for retry-4 mechanism extraction. No retry-4 workflow, reviewed
+  target, confirmation digest, or production identity was restored.
+- The invalid 41-character supplied value was absent from all four Phase-3
+  functional files.
+- No GitHub, network, package, Environment, workflow-dispatch, publish, tag,
+  ref, or Live activation command was run. Package commands used
+  `UV_OFFLINE=1`.
+- The production workflow contains only the forty-zero preparation target.
+  Its validation job therefore rejects before the protected review and both
+  `packages: write` probe jobs.
+- `code-testing-agent` and
+  `.agents/skills/code-testing-agent/unit-test-generation.prompt.md` were
+  used. The requested `code-testing-extensions` skill entry point was
+  unavailable.
+
+### Tests-first collection and RED
+
+Before writing the workflow, the existing two topology files established a
+baseline of `166 tests collected in 0.06s`.
+
+After adding the new workflow contract and updating both topology contracts,
+the exact requested collection command ran from the repository root:
+
+`UV_OFFLINE=1 uv run --python 3.13 --package three-workflow-delivery-v3 pytest --collect-only -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_retry_5_workflow.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit11_legacy_buddy_retirement.py`
+
+It exited 0 with `209 tests collected in 0.18s`. This proved collection did
+not load the absent YAML at module import time.
+
+The exact same three paths were then run with `pytest -q` before the YAML was
+created. The required RED exited 1 with:
+
+`32 failed, 177 passed in 20.50s`
+
+All failures were caused solely by the missing exact path
+`.github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-5.yml`:
+the 28 then-current workflow-contract cases reported the explicit
+`E-WORKFLOW-ABSENT` assertion, and the four temporary-inventory/cleanup
+contracts saw an empty inventory instead of the sole retry-5 path. There were
+no collection, import, syntax, fixture, Adapter, or Governance failures.
+
+### Minimum preparation workflow
+
+Added only
+`.github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-5.yml`.
+It has:
+
+- exact workflow name, stem, and sole protected Environment
+  `workflow-delivery-v3-buddy-smoke-acceptance-retry-5`;
+- `workflow_dispatch` only, exact ordered inputs
+  `target_sha`, `package_coordinate`, `confirm`, and no generalized route;
+- exact forty-zero target, `.17` base, retry-5 sentinel, and derived
+  `sha256:71fdd8f8cbb3ab90dd94745a18337d89a893fbdaeea35fafa733bc13d75c308f`;
+- the ordered five-job validation/review/two-probe/terminal DAG, first-Attempt
+  guards, and `always()` terminal capture;
+- top permissions `{}`, `contents: read` validation/capture, `{}` review,
+  and `contents: read` plus `packages: write` only on the two probes;
+- explicit `github.token` only at the two fixed probe boundaries, with no PAT,
+  secret, or OIDC route;
+- exact timeouts `5/30/10/15/10`, operation deadlines `120/300`, action pins,
+  uv `0.12.5`, Node `24.19.0`, and npm `11.17.0`;
+- exact fixed-suite CLI invocations and `.17/.18/.19/.20` scenario bindings;
+- immutable raw artifacts with 45-day retention, hidden files included,
+  `overwrite: false`, fixed names/paths, and `archive: false`;
+- a terminal Python program that independently parses optional suite records,
+  rejects malformed/orphaned/contradictory outputs, canonicalizes evidence,
+  and admits it through the actual Governance registry even after rejected
+  dispatch.
+
+### Generated and updated contract cases
+
+| Contract test | Cases | Primary evidence |
+| --- | ---: | --- |
+| `test_retry_5_workflow_identity_dispatch_and_preparation_defaults_are_exact` | 1 | Exact path/name/Environment/inputs/defaults/concurrency/sentinel digest and no production nonzero reviewed target. |
+| `test_retry_5_workflow_is_manual_only_with_exact_five_job_dag` | 1 | Sole trigger, forbidden-trigger absence, ordered jobs, direct and transitive needs. |
+| `test_retry_5_first_attempt_guards_and_terminal_always_capture_are_exact` | 1 | Every job is Attempt 1; terminal is `always()` fan-in. |
+| `test_retry_5_permissions_environment_and_token_boundaries_are_exact` | 1 | Least privilege, sole review Environment, exact two token boundaries, no secrets/PAT/OIDC. |
+| `test_retry_5_fixed_input_guard_executes_before_review_and_package_write` | 7 | Test-only finalized-shape control plus zero, target, package, sentinel, ref, and non-first-Attempt rejection. |
+| `test_retry_5_job_timeouts_and_operation_deadlines_are_exact` | 1 | Exact job and operation deadlines. |
+| `test_retry_5_scenarios_and_immutable_artifacts_are_exact` | 1 | Ordered expected-one/four scenario partition, exact coordinate/tag pairs, and all immutable upload options. |
+| `test_retry_5_probe_completion_rejects_missing_artifact_outputs` | 4 | Missing ID/digest in each probe becomes incomplete and fails the terminal probe guard. |
+| `test_retry_5_terminal_program_has_exact_expected_one_and_registry_boundary` | 1 | Exact terminal input wiring, AST shape, expected-one inventories, canonicalization, and Governance admission calls. |
+| `test_retry_5_terminal_program_executes_rejected_dispatch_with_fixed_identity` | 1 | Extracts and executes terminal Python; wrong dispatch target/package still produce exact fixed zero/base/workflow/Environment/digest and empty incomplete evidence admitted by Governance. |
+| `test_retry_5_terminal_program_fails_closed_on_optional_evidence` | 8 | Malformed JSON, non-object/skipped records, orphaned ID/digest/result/inventory, and malformed digest all fail without an artifact. |
+| `test_retry_5_actions_toolchains_and_closed_fixed_suite_route_are_exact` | 1 | Exact action/tool versions and only the two closed local Governance suite routes. |
+| `test_retry_5_probe_outputs_steps_and_completion_wiring_are_exact` | 1 | Exact step order, output transport, env expressions, CLI argv, classifier, and completion guards. |
+| `test_later_retry_5_cleanup_is_workflow_only_and_preserves_registered_replay_contracts` | 1 | Cleanup deletes only YAML/workflow contract, restores the two topology contracts, and retains exact Adapter/Governance retry-5 replay tests. |
+| `test_retry_5_is_the_only_temporary_acceptance_workflow_during_preparation` | 1 | Buddy topology contains exactly retry-5. |
+| `test_retry_5_preparation_keeps_normal_buddy_manual_only_and_live_disabled` | 1 | Normal caller remains manual, callee reusable-only, and live Governance remains false. |
+| `test_later_retry_5_cleanup_restores_strict_zero_temporary_workflow_topology` | 1 | Models the later exact removal while persistent registration tests remain. |
+| `test_retry_5_is_only_temporary_workflow_during_preparation` | 1 | Legacy retirement permits only exact retry-5. |
+| `test_legacy_buddy_retirement_rejects_original_prior_future_and_lookalikes` | 12 | Rejects original, retry-1 through retry-4, future, `.yaml`, suffix/numeric lookalikes, and legacy names. |
+| `test_later_cleanup_restores_strict_temporary_workflow_retirement` | 1 | Models strict post-cleanup retirement while retaining Adapter/Governance contracts. |
+
+The new workflow-only file contributes 30 cases. The two topology files
+contain 17 Phase-3 cases. Because their two former strict-retirement cases
+were updated for the preparation interval, the net harness increase is
+`47 - 2 = 45`.
+
+### GREEN and validation
+
+The first post-YAML gate found one test-only cleanup assertion with a stale
+Governance test name: `208 passed, 1 failed in 23.53s`. Correcting that exact
+name produced `209 passed in 23.66s`. The mandatory pseudo-mutation and
+assertion-depth review then added exact concurrency/guard/env/output wiring
+and one skipped-record contradiction case.
+
+Final results from the repository root:
+
+| Check | Exact result |
+| --- | --- |
+| Final three-file pytest gate, exact requested paths | exit 0; `211 passed in 24.18s` |
+| Final harness-equivalent collection | exit 0; `211 tests collected in 0.18s`; baseline 166, delta **+45** |
+| Scoped in-memory Python/package compile | exit 0; Python 3.13.12; 3 tests plus 29 imported package files compiled; no `.pyc` change |
+| `python eng/scripts/hk_actionlint.py .github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-5.yml` | exit 0; actionlint finished successfully |
+| `python eng/scripts/hk_exec.py pnpm exec -- prettier --check -- .github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-5.yml` | exit 0; all matched files use Prettier style |
+| Scoped Ruff check for the three Python contracts | exit 0; `All checks passed!` |
+| Scoped Ruff format-check for the three Python contracts | exit 0; `3 files already formatted` |
+| Scoped Pyrefly for the three Python contracts | exit 0; `INFO 0 errors (3 warnings not shown)`; the warnings are the existing missing PyYAML stubs in these YAML contract modules |
+| `git --no-pager diff --check` before this status append | exit 0 |
+
+No external or full-suite evidence is claimed.
+
+### Mandatory gap and assertion review
+
+`test-gap-analysis` and `assertion-quality` were invoked. Their shared
+`test-analysis-extensions` skill entry point was unavailable, so
+`.agents/skills/test-analysis-extensions/extensions/python.md` was read
+directly and the bounded Python/pytest review was completed.
+
+The first pseudo-mutation pass found four meaningful gaps in the new test
+contract: concurrency drift, deletion/reordering of an individual shell
+guard, terminal `needs` output miswiring, and probe output/classifier/argv
+miswiring. The final assertions listed above kill all four. A fifth
+structural record contradiction (`{}` retained by a skipped probe) was added
+to the terminal negative matrix.
+
+The final mutation review found no remaining in-scope high-value survivor:
+
+- trigger, input, name, Environment, target, sentinel, digest, scenario,
+  timeout, permission, token, action pin, and toolchain mutations are killed
+  by exact deep dictionaries/tuples and negative inventories;
+- removing or changing any guard branch is killed by the exact guard list and
+  executable seven-case matrix;
+- missing artifact IDs/digests and changing complete/incomplete precedence are
+  killed by executable classifier/terminal tests and file-side-effect checks;
+- bypassing canonicalization or Governance admission is killed by AST call
+  cardinality plus actual terminal-program execution and exact admitted
+  document/digest assertions;
+- broadening the retirement exception is killed across original, prior,
+  future, suffix, and legacy candidates.
+
+Across the 20 generated/updated functions there are zero assertion-free,
+zero trivial-only, and zero self-referential-only tests. Assertions cover
+exact/deep equality, Boolean and negative predicates, None handling, type and
+string shape, collection order/cardinality, comparisons, errors, and file/
+process side effects. Every executable test checks a secondary observable
+such as stdout/stderr, output-file absence/content, canonical digest,
+dependency lineage, or downstream guard status.
+
+### Changed files and preservation proof
+
+Phase 3 changed exactly:
+
+1. `.github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-5.yml`
+   (new);
+2. `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_retry_5_workflow.py`
+   (new);
+3. `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py`;
+4. `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit11_legacy_buddy_retirement.py`;
+5. `.testagent/status.md` (this append only).
+
+Initial and final SHA-256 values were identical for every protected prior
+phase file:
+
+- CLI:
+  `5f0b980ff3d8cc4f8048f717e6427cecbe9efcd9fccd216cd05af134aaa86cf7`;
+- live Governance JSON:
+  `6984ddb6e2386c82f5e7fe7cbc2b743b638be5982ee6e894c983fb6449ed0607`;
+- Phase-2 Adapter source/test:
+  `4c391692e681b5eaa181694118516d3ee17c784960d649c2535e4f6f920a63a8`
+  and
+  `3ac7373736e13ac19b00a9efa18e8ccc1d8ebe20c0264deea86c80d48d54c5ed`;
+- Phase-1 Governance source/test:
+  `5588b89c21104893d049566db08642483b0ab2c8b0e20c73f410fa0747aef465`
+  and
+  `9e1dcf7fc630a434d166a44a06b4d4aeaa482d0c76b420ece85adc3ea9dc3d8d`.
+
+No research or plan section was duplicated or edited during Phase 3.
+
+<!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-5-phase-3 -->
+
+<!-- APPEND: 2026-08-28-wdv3-acceptance-retry-5-step-8-gap-fixes -->
+
+## 2026-08-28 Workflow Delivery v3 retry-5 mandatory Step-8 gap fixes
+
+```text
+PHASE: retry-5 mandatory Step 8
+STATUS: SUCCESS
+TESTS_CREATED: 201 parameter cases in 5 appended test functions
+TESTS_PASSING: 206 focused cases; 972 cases in the three affected files
+HARNESS_DISCOVERY: +201 cases (771 baseline; 972 final)
+```
+
+### Static review finding and exact fixes
+
+The final read-only static pseudo-mutation/assertion review before these fixes
+classified 17 actionable modeled mutations: **14 killed and 3 survived**.
+The three survivors and their fixes were:
+
+1. **Adapter accepted-set broadening.** Appended
+   `test_retry_5_adapter_authoritative_publish_status_set_is_exact`, which
+   directly asserts the live Adapter private authority set is exactly
+   `frozenset({200, 201})`, plus
+   `test_retry_5_validated_request_proof_rejects_every_other_two_xx_status`,
+   with one parameter case for every integer status from 202 through 299.
+   Each of the 98 rejection rows uses the retry-5 fixed binding and the actual
+   `ValidatedAcceptanceRequestProof.from_validated_exchange` path, asserts the
+   exact rejection, and confirms the coordinate/tag remains registered.
+2. **Governance accepted-set broadening.** Appended
+   `test_retry_5_governance_authoritative_publish_status_set_is_exact`, which
+   directly asserts the live Governance private authority set is exactly
+   `frozenset({200, 201})`, plus
+   `test_retry_5_finalization_seam_rejects_every_other_two_xx_status`, with one
+   parameter case for every integer status from 202 through 299. Each of the
+   98 rows installs only the test-local finalized retry-5 profile, proves both
+   request proofs contain the selected status, and requires Governance
+   admission to reject it. The existing 200 and 201 successful finalization
+   rows remain unchanged and green.
+3. **Bracket-form secret-context evasion.** Appended a case-insensitive
+   secret-context detector and
+   `test_retry_5_secret_context_guard_rejects_dotted_and_bracket_references`.
+   Its three mutation fixtures replace one real `${{ github.token }}`
+   expression with `${{ secrets.PAT }}`, `${{ secrets['PAT'] }}`, and
+   `${{ secrets["PAT"] }}` respectively. Every fixture proves the mutated
+   workflow text is detected and rejected, while the actual retry-5 workflow
+   remains accepted by the same helper.
+
+The new case count is exact: 99 Adapter cases (one exact-set case plus 98
+status rows), 99 Governance cases (one exact-set case plus 98 status rows),
+and 3 workflow secret-context cases, for **201** new cases total. The bounded
+post-fix pseudo-mutation review reclassified all three survivors as killed:
+set broadening is caught by direct set equality, independent admission
+broadening is caught by exhaustive 202-299 rejection, and deleting either the
+dotted or bracket regex arm is caught by its corresponding synthetic mutation
+fixture. The five appended tests contain no assertion-free, trivial-only, or
+self-referential test. They combine exact/deep equality, exception, string,
+positive/negative membership, and mutated-text assertions with secondary
+profile/binding/status observables.
+
+### Narrow validation
+
+All commands ran from the repository root with `UV_OFFLINE=1`; pytest also
+used `PYTHONDONTWRITEBYTECODE=1` and `-p no:cacheprovider`.
+
+| Check | Exact result |
+| --- | --- |
+| In-memory compile of the three affected Python files | exit 0; `Compile-check succeeded for 3 files` |
+| Eight exact affected node names: the Adapter 200/201 success seam, Adapter exact set, Adapter 202-299 matrix, Governance 200/201 success seam, Governance exact set, Governance 202-299 matrix, existing workflow permission/token boundary, and new dotted/bracket secret matrix | exit 0; `206 passed in 1.30s` |
+| Three whole affected files only | exit 0; `972 passed in 17.75s` |
+| Harness-equivalent collection of the same three files | exit 0; `972 tests collected in 0.81s`; baseline `771 tests collected in 0.25s`; delta **+201** |
+| Scoped Ruff check | exit 0; `All checks passed!` |
+| Scoped Ruff format-check | exit 0; `3 files already formatted` |
+| Scoped Pyrefly | exit 0; `INFO 0 errors (23 suppressed, 1 warning not shown)` |
+| `git --no-pager diff --check` before this status append | exit 0 |
+
+No full suite was run or is claimed. No GitHub, network, package,
+workflow-dispatch, Environment, tag, ref, publish, or other external mutation
+was performed. No production, workflow YAML, profile registration, proof
+repair module, research, or plan file was changed by this Step-8 fix.
+
+<!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-5-step-8-gap-fixes -->
+
+<!-- APPEND: 2026-08-28-wdv3-acceptance-retry-5-final-completion-validation -->
+
+## 2026-08-28 Workflow Delivery v3 retry-5 final completion and validation
+
+Status: **COMPLETE** for the bounded retry-5 preparation scope; finalization
+remains later.
+
+### Final externally obtained results
+
+- **Bounded pytest, not the full suite:** the final six-module gate after all
+  gap fixes exited 0 with **1,215 passed, 0 failed, 0 skipped, 0 deselected in
+  39.18s**.
+- **Python-package build only:** `UV_OFFLINE=1 uv build --all-packages` exited
+  0 and built **11 packages / 22 artifacts**. No non-Python or non-package
+  validation is claimed.
+- **Changed-set check-only quality:** Ruff check passed; Ruff format check
+  passed with **7 files formatted**; Pyrefly reported **0 errors (23
+  suppressed, 17 warnings not shown in the all-file run)**; actionlint,
+  Prettier, and `git diff --check` passed. Python `py_compile` passed for all
+  **7 changed Python files**.
+- **Mandatory final quality re-gate:** this was static pseudo-mutation only.
+  All **17 meaningful mutation classes** were killed: **17 killed, 0
+  survived, 0 no-coverage, 0 equivalent**. Assertion review covered **39
+  functions / 352 cases**, with **284 bare `assert` sites + 10
+  `pytest.raises` in test bodies** and **0 zero-assertion, 0 trivial-only, 0
+  tautological-only, 0 single-category** tests; **11/12 applicable assertion
+  categories** were represented. Zero actionable gaps remain.
+- `test-analysis-extensions` and the Python extension files were unavailable,
+  so canonical pytest classification was performed directly.
+
+The former gaps are closed by the exact Adapter and Governance `{200, 201}`
+authority assertions, exhaustive rejection of every status from 202 through
+299, and dotted, single-bracket, and double-bracket secret-context mutation
+tests:
+
+- `test_retry_5_adapter_authoritative_publish_status_set_is_exact`
+- `test_retry_5_validated_request_proof_rejects_every_other_two_xx_status`
+- `test_retry_5_governance_authoritative_publish_status_set_is_exact`
+- `test_retry_5_finalization_seam_rejects_every_other_two_xx_status`
+- `test_retry_5_secret_context_guard_rejects_dotted_and_bracket_references`
+
+### R1-R8 completion mapping
+
+| ID | Final evidence |
+| --- | --- |
+| R1 | Exact identity/defaults and shared scenario binding: `test_retry_5_workflow_identity_dispatch_and_preparation_defaults_are_exact`; `test_retry_5_governance_profile_binds_exact_preparation_identity_and_scenarios`. |
+| R2 | Exact five-profile inventory with no historical drift: `test_acceptance_profiles_are_exactly_five_with_retry_5_and_no_historical_drift`; `test_governance_acceptance_profiles_are_exactly_five_with_retry_5_and_no_historical_drift`. |
+| R3 | Zero-target guard and rejected-dispatch evidence: `test_retry_5_fixed_input_guard_executes_before_review_and_package_write`; `test_retry_5_governance_admits_exact_zero_target_rejected_dispatch_round_trip`; `test_retry_5_terminal_program_executes_rejected_dispatch_with_fixed_identity`. |
+| R4 | Test-only finalization and exact status boundary: `test_retry_5_fixed_suite_admits_exact_request_proof_and_readback_status`; `test_retry_5_finalization_seam_admits_complete_status_and_preserves_bindings`; the four exact `{200, 201}` / every-202-through-299 tests listed above. |
+| R5 | Bidirectional historical isolation: `test_retry_5_proof_rejects_each_bidirectional_historical_substitution`; `test_retry_5_governance_rejects_bidirectional_cross_profile_bindings`. |
+| R6 | State evidence: the matching fifth Adapter/Governance authority, ordered scenario routing, exact `{200, 201}` boundary, and exhaustive 202-299 rejection all passed in the final bounded 1,215-case gate. |
+| R7 | State evidence: retry-5 remains the sole five-job, zero-target preparation workflow; normal Buddy remains manual-only and Live disabled. Exact topology/cleanup contracts: `test_retry_5_is_the_only_temporary_acceptance_workflow_during_preparation`; `test_retry_5_preparation_keeps_normal_buddy_manual_only_and_live_disabled`; `test_retry_5_is_only_temporary_workflow_during_preparation`; `test_later_retry_5_cleanup_is_workflow_only_and_preserves_registered_replay_contracts`; `test_later_retry_5_cleanup_restores_strict_zero_temporary_workflow_topology`; `test_later_cleanup_restores_strict_temporary_workflow_retirement`. |
+| R8 | Command/state evidence: the bounded six-module pytest gate, seven-file `py_compile`, check-only Ruff/Ruff-format/Pyrefly/actionlint/Prettier gates, `UV_OFFLINE=1 uv build --all-packages`, `git diff --check`, and mandatory gap/assertion re-gate all passed with the exact results above. |
+
+No external, GitHub, package, Environment, dispatch, publish, tag, or ref
+mutation occurred, and normal Live was not activated. No real nonzero target
+was added to production; finalization remains later.
+
+<!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-5-final-completion-validation -->
+
+<!-- APPEND: 2026-08-28-wdv3-acceptance-retry-5-post-audit-correction -->
+
+## 2026-08-28 Workflow Delivery v3 retry-5 post-audit correction
+
+This append supersedes the retry-5 counts and quality conclusions in the
+preceding final-completion block. That block remains immutable historical
+state, but its `39 functions / 352 cases`, `17 killed / 0 survived`, and
+zero-gap claims predate the mandatory adversarial audit iterations recorded
+here.
+
+Status: **COMPLETE** for the bounded retry-5 preparation scope; finalization,
+execution, reconciliation, and cleanup remain separate later phases.
+
+### Superseding test and quality results
+
+- The final changed-test scope is **43 functions / 444 parameter cases**:
+  10 Adapter functions / 191 cases, 2 Buddy contract functions / 2 cases,
+  2 retirement functions / 13 cases, 11 Governance functions / 143 cases,
+  and 18 retry-5 workflow functions / 95 cases.
+- The final assertion-quality audit counted **322 assertion constructs**
+  (309 `assert`, 12 `pytest.raises`, and 1 `pytest.fail`) across 11 applicable
+  assertion categories. It found **0 assertion-free, 0 trivial-only,
+  0 self-referential, and 0 single-category** functions or cases.
+- Iterative pseudo-mutation review found and closed the remaining classifier
+  truth-table, implicit-success step-condition, aggregate probe
+  failure/cancellation, and missing review-artifact downgrade survivors.
+  The final independent re-audit found **zero actionable high- or
+  medium-value code/test gaps**.
+- The classifier contract now executes, for each probe job, all 16
+  result/classification pairs, all 9 artifact-binding states, and all 3
+  probe/upload outcome states. The complete eight-step condition vector is
+  exact: five implicit-success setup/probe steps followed by three
+  `${{ always() }}` tail steps.
+- Terminal reconstruction now executes both probe jobs under both `failure`
+  and `cancelled`, requires written `unknown` evidence even when suite outputs
+  are absent, and executes missing review-artifact reconstruction under both
+  authoritative HTTP statuses while retaining both suite records and
+  downgrading the aggregate to `incomplete`.
+
+### Superseding validation ledger
+
+| Check | Exact result |
+| --- | --- |
+| Retry-5 workflow contract | `95 passed in 4.93s` |
+| Five affected modules | `1245 passed in 40.54s` |
+| Complete Workflow Delivery v3 test suite | `4286 passed in 448.96s` |
+| Final changed-test assertion audit | `444 passed, 801 deselected`; clean under the metrics above |
+| Final independent pseudo-mutation audit | zero actionable high- or medium-value gaps |
+
+### Cleanup evidence correction
+
+The following three tests cited by the preceding R7 mapping were
+model-internal projections of a future cleanup and have been deleted:
+
+- `test_later_retry_5_cleanup_is_workflow_only_and_preserves_registered_replay_contracts`
+- `test_later_retry_5_cleanup_restores_strict_zero_temporary_workflow_topology`
+- `test_later_cleanup_restores_strict_temporary_workflow_retirement`
+
+They are not evidence that cleanup has occurred. During the real cleanup
+phase, after the temporary retry-5 workflow is removed, the persistent
+topology contracts must directly assert zero temporary acceptance workflows.
+
+No GitHub, package, Environment, workflow-dispatch, deployment, publish, tag,
+ref, or other external mutation occurred during this correction. The
+production retry-5 target remains the all-zero preparation sentinel, and
+normal Live remains disabled and outside scope.
+
+<!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-5-post-audit-correction -->
+
+<!-- APPEND: 2026-08-28-wdv3-acceptance-retry-5-final-review-correction -->
+
+## 2026-08-28 Workflow Delivery v3 retry-5 final review correction
+
+This append supersedes the `43 functions / 444 cases`, 1,245-case bounded
+gate, and 4,286-case full-suite results in the preceding post-audit correction.
+Those values remain immutable evidence of their intermediate state.
+
+Status: **COMPLETE** for the bounded retry-5 preparation scope; finalization,
+execution, reconciliation, cleanup, and closure remain separate later phases.
+
+### Final test and quality results
+
+- The final changed-test scope is **52 functions / 615 cases**. It covers
+  8 acceptance-exchange cases, 219 Adapter cases, 2 Buddy cases, 13 retirement
+  cases, 143 Governance cases, and 230 retry-5 workflow cases.
+- The final assertion-quality audit counted **408 constructs** across the
+  changed test and helper definitions: 389 `assert`, 17 `pytest.raises`, and
+  2 explicit fail-fast guards. It found **0 assertion-free, 0 trivial-only,
+  0 self-referential, and 0 single-category** functions or cases.
+- The final six-module bounded gate passed **1,466 / 1,466** cases.
+- The complete Workflow Delivery v3 suite passed **4,445 / 4,445** cases in
+  **480.97 seconds**.
+- Final independent pseudo-mutation review found **zero actionable high- or
+  medium-value code/test gaps**. Final independent code and documentation
+  reviews likewise reported no findings.
+
+### Review-driven closure
+
+Every reviewer finding was independently adjudicated before change:
+
+- Lost-response admission now requires the top-level runner request digest,
+  upstream status, selected headers, response-body digest, and response
+  identity to match the validated proof. Correct-outcome substitution tests
+  isolate every binding, and the real CLI runner document is consumed through
+  the Adapter for both normal and lost-response paths.
+- Terminal reconstruction accepts classifier-only `unknown/unknown` without a
+  suite record only for failed or cancelled probe jobs. A 128-case truth table
+  covers both probes, four job results, and all 16 closed/empty classifier
+  pairs.
+- Canonical `incomplete` and `unknown` suite records survive both failed and
+  cancelled jobs. Present-record inventory, record-digest, and
+  result/classification correlations have branch-specific negative tests.
+- Malformed JSON, non-object records, and malformed artifact digests now reach
+  and assert their intended validation branches rather than an earlier
+  generic rejection.
+- The CLI handler contract requires the retry-5 base coordinate at both runner
+  and suite boundaries and requires exact GitHub outputs, including
+  `record-json` bytes equivalent to the persisted canonical document.
+- The mandatory handoff, README, LLD, overview, and append-only log now agree:
+  protected preparation merges first; fresh external-state revalidation must
+  pass before Environment creation or opening finalization; every later phase
+  uses freshly fetched and revalidated `origin/main` containing the
+  immediately preceding protected merge.
+
+The final workspace contains 17 intended preparation paths: the original 16
+preparation paths plus the directly coupled acceptance-exchange proof fixture
+contract. No CLI production source, normal Live surface, or unrelated test
+baseline was changed.
+
+No GitHub, package, Environment, workflow-dispatch, deployment, publish, tag,
+ref, or other external mutation occurred. The production retry-5 target
+remains the all-zero preparation sentinel; `.17`-`.20` remain unexecuted and
+unconsumed.
+
+<!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-5-final-review-correction -->

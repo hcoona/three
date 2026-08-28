@@ -297,6 +297,32 @@ If it conflicts with the
   Any retry-5 profile work must start from freshly fetched and revalidated
   `origin/main` at this merge, or at a later reviewed, merged successor that
   contains it, and must use wholly new execution identities.
+- Work-base clarification PR #613 rebase-merged without bypass as
+  `8e6baf24ca476b449b5c97c21f14f3776e668b90`; post-merge Continuous
+  Integration run `33194078923` passed. Retry-5 preparation starts from a fresh
+  fetch and revalidation of that exact `origin/main`. Its only new execution
+  surface is
+  `.github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-5.yml`,
+  paired with the closed Adapter/Governance profile for `.17`-`.20`, tags
+  `wdv3-acceptance-17` through `wdv3-acceptance-20`, Environment identity
+  `workflow-delivery-v3-buddy-smoke-acceptance-retry-5`, and confirmation
+  `I_ACCEPT_DISPOSABLE_GITHUB_PACKAGES_PROBES_RETRY_5`. The preparation target
+  is exactly forty ASCII zeroes in both the workflow and Governance profile;
+  fixed-input validation therefore fails before review or package write.
+  Terminal capture retains any canonical suite record across a monotone
+  post-probe downgrade, keeps missing artifact bindings null/incomplete, and
+  preserves failure/cancellation as aggregate unknown. Read-only preflight
+  found `.17`-`.20` and their tags unused, but preparation does not execute or
+  consume them. No retry-5 Environment, workflow dispatch, deployment,
+  acceptance ref, package, tag, or Live mutation exists in this phase.
+  Protected preparation must merge, then fresh external-state revalidation
+  must pass before creation of a new protected Environment and a separate
+  protected finalization PR that replaces the zero target with that exact
+  preparation merge SHA. Finalization, the sole `run_attempt == 1` dispatch
+  and review, reconciliation, cleanup, and closure must each begin from
+  freshly fetched and revalidated `origin/main` containing the immediately
+  preceding protected merge; no local branch, attempt ref, arbitrary fetched
+  SHA, or reviewed-but-unmerged head is a valid work base.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the
