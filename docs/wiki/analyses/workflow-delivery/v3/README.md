@@ -311,10 +311,15 @@ Next:
    `.20`. After evidence capture, workflow ID `345015706` was changed to
    `disabled_manually`, Environment ID `20815831035` was deleted, deployment
    `6158274629` became `inactive`, and pending deployments remained empty.
-   The cleanup candidate deletes only the temporary workflow source and its
-   workflow-only contract while restoring direct zero-temporary-workflow
-   topology assertions. Protected cleanup merge and fresh post-merge
-   reconciliation remain required; and
+   Cleanup PR #621 rebase-merged without bypass as
+   `791544371eb3d1aff7376dbd14ae05ed074ff927`; post-merge Continuous
+   Integration run `33268353682` and CodeQL run `33268353678` passed. Fresh
+   authenticated reconciliation confirms the temporary workflow source and
+   workflow-only contract absent, workflow ID `345015706` `deleted` with
+   exactly the one successful attempt-1 run, Environment ID `20815831035` and
+   acceptance refs absent, deployment `6158274629` `inactive`, and exact
+   `.17`-`.20` versions and tags retained. No post-deletion dispatch occurred.
+   The cleanup-before-closure gate is satisfied; and
 9. keep `live_enabled: false`. Destination acceptance is successful, but
    normal Live activation remains a separate production decision and is not
    authorized by this acceptance-only execution.

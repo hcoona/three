@@ -11720,3 +11720,30 @@ The exact 12-path cleanup diff is ready for the staged HK gate. Protected
 merge and fresh post-merge reconciliation remain required.
 
 <!-- END APPEND: 2026-08-29-wdv3-acceptance-retry-5-cleanup-review -->
+
+<!-- BEGIN APPEND: 2026-08-29-wdv3-acceptance-retry-5-closure -->
+
+## Workflow Delivery v3 retry-5 authoritative closure
+
+Status: **DESTINATION ACCEPTANCE AND CLEANUP COMPLETE.**
+
+- Cleanup commit `37e43cde19c16adeff6e313bf7929f06bb2d3a8b` passed every
+  protected PR check and received Copilot review with zero comments.
+- Cleanup PR #621 rebase-merged without bypass as
+  `791544371eb3d1aff7376dbd14ae05ed074ff927`.
+- Post-merge Continuous Integration run `33268353682` and CodeQL run
+  `33268353678` passed on that exact merge.
+- Fresh `origin/main` inspection confirms the temporary workflow source and
+  workflow-only contract absent.
+- Workflow ID `345015706` is `deleted` and retains exactly one run:
+  successful workflow-dispatch run `33265777858`, attempt 1, at
+  `main@73bf1ecf`. No post-deletion dispatch occurred.
+- Environment ID `20815831035` and acceptance refs remain absent. Deployment
+  `6158274629` remains terminal `inactive`.
+- Authenticated package reconciliation confirms repository association
+  `hcoona/three` and exact `.17`-`.20` versions and tags retained unchanged.
+- The retry-5 run and coordinate block are permanently consumed and must not
+  be rerun or reused. Historical Adapter/Governance replay authority remains.
+  Normal Live and `live_enabled: true` remain disabled and unauthorized.
+
+<!-- END APPEND: 2026-08-29-wdv3-acceptance-retry-5-closure -->
