@@ -1,0 +1,48 @@
+{
+  "skill_name": "scholarly-render-qa",
+  "version": "0.1.0",
+  "evals": [
+    {
+      "id": "clean-publication-release-evidence",
+      "prompt": "Run evals/files/make_qa_fixture.py --output fixture --mode clean. Use /scholarly-render-qa to audit fixture/publication into outputs/review, render twice, retain full-page rasters, and emit a release manifest only if mechanically eligible. Do not modify fixture/publication.",
+      "baseline_prompt": "Run evals/files/make_qa_fixture.py --output fixture --mode clean. Independently audit fixture/publication into outputs/review, render twice, retain full-page rasters, and emit a release manifest only if mechanically eligible. Do not modify fixture/publication.",
+      "expected_output": "Passing schema-valid QA evidence and a thin mechanical release index for an unchanged publication.",
+      "files": ["evals/files/make_qa_fixture.py"],
+      "expected_files": ["review/qa-evidence.json", "review/release-manifest.json"],
+      "assertions": [
+        "review/qa-evidence.json validates against assets/qa-evidence.schema.json, has mechanical_status pass, and contains each required core check exactly once with every blocking check passed.",
+        "The evidence binds the assembly manifest with path_base publication-root, both independent render PDFs and every raster with path_base evidence-root, and one retained full-page raster per page for the canonical PDF and both renders; render.repeatability evidence records passing normalized geometry and text comparisons.",
+        "review/release-manifest.json validates against assets/release-manifest.schema.json, has mechanical_status pass, hash-binds the assembly manifest with path_base publication-root, and hash-binds QA evidence with path_base release-root.",
+        "The before and after publication-tree fingerprints match, and human_review.status remains required."
+      ]
+    },
+    {
+      "id": "seeded-observable-failures",
+      "prompt": "Run evals/files/make_qa_fixture.py --output fixture --mode seeded. Use /scholarly-render-qa to audit fixture/publication into outputs/review, render twice, retain full-page rasters, and emit a release manifest only if eligible. Do not repair the publication.",
+      "baseline_prompt": "Run evals/files/make_qa_fixture.py --output fixture --mode seeded. Independently audit fixture/publication into outputs/review, render twice, retain full-page rasters, and emit a release manifest only if eligible. Do not repair the publication.",
+      "expected_output": "Schema-valid failing QA evidence that records the seeded PDF observations and blocks release.",
+      "files": ["evals/files/make_qa_fixture.py"],
+      "expected_files": ["review/qa-evidence.json"],
+      "assertions": [
+        "review/qa-evidence.json validates against assets/qa-evidence.schema.json, has mechanical_status fail, and contains at least one failed blocking core check.",
+        "The evidence observes that the canonical PDF uses A4 geometry instead of the declared Letter geometry, uses an undeclared or unembedded font, and sets unsafe_detected for a non-internal URI action with URI kind plus bounded page and target metadata when exposed.",
+        "Both independent render PDFs and complete raster sets are still bound relative to path_base evidence-root, the assembly manifest is bound relative to publication-root, detailed failures remain in the relevant checks, and the publication-tree before and after fingerprints match.",
+        "review/release-manifest.json is absent and the response does not claim release eligibility."
+      ]
+    },
+    {
+      "id": "immutable-publication-human-review",
+      "prompt": "Run evals/files/make_qa_fixture.py --output fixture --mode clean. Use /scholarly-render-qa to audit fixture/publication into outputs/review and report what remains after mechanical success. Keep every publication byte unchanged and do not claim that the audit completes human visual review.",
+      "baseline_prompt": "Run evals/files/make_qa_fixture.py --output fixture --mode clean. Independently audit fixture/publication into outputs/review and report what remains after mechanical success. Keep every publication byte unchanged and do not claim that the audit completes human visual review.",
+      "expected_output": "An immutable mechanical audit whose evidence explicitly leaves human review outstanding.",
+      "files": ["evals/files/make_qa_fixture.py"],
+      "expected_files": ["review/qa-evidence.json", "review/release-manifest.json"],
+      "assertions": [
+        "The QA evidence records matching before and after publication-tree fingerprints and passes publication.tree-unchanged.",
+        "The publication files and assembly manifest retain their original hashes and byte lengths after the audit.",
+        "The evidence has human_review.status required with a non-empty review scope even when mechanical_status is pass.",
+        "The release manifest remains a mechanical index and neither it nor the response claims completed human, editorial, or subject-matter approval."
+      ]
+    }
+  ]
+}

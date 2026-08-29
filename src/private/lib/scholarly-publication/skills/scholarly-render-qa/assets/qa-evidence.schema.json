@@ -1,0 +1,488 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hcoona.github.io/schemas/scholarly-publication/qa-evidence-1.0.json",
+  "title": "Scholarly publication QA evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "publication_id",
+    "auditor",
+    "inputs",
+    "checks",
+    "render_pdfs",
+    "rasters",
+    "publication_tree",
+    "human_review",
+    "mechanical_status"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "publication_id": {
+      "$ref": "#/$defs/id"
+    },
+    "auditor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "publication_profile"],
+      "properties": {
+        "name": {
+          "const": "audit_publication.py"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "publication_profile": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "schema_version", "sha256"],
+          "properties": {
+            "id": {
+              "const": "scholarly-fragment-and-stylesheet-v1"
+            },
+            "schema_version": {
+              "const": "1.0"
+            },
+            "sha256": {
+              "$ref": "#/$defs/sha256"
+            }
+          }
+        }
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assembly_manifest"],
+      "properties": {
+        "assembly_manifest": {
+          "$ref": "#/$defs/publicationRootAsset"
+        }
+      }
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 9,
+      "prefixItems": [
+        {
+          "allOf": [
+            { "$ref": "#/$defs/check" },
+            {
+              "properties": {
+                "id": { "const": "manifest.integrity" },
+                "severity": { "const": "blocking" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/check" },
+            {
+              "properties": {
+                "id": { "const": "html.offline-profile" },
+                "severity": { "const": "blocking" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/check" },
+            {
+              "properties": {
+                "id": { "const": "render.geometry-overflow" },
+                "severity": { "const": "blocking" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/check" },
+            {
+              "properties": {
+                "id": { "const": "pdf.fonts" },
+                "severity": { "const": "blocking" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/check" },
+            {
+              "properties": {
+                "id": { "const": "pdf.actions-type3-text" },
+                "severity": { "const": "blocking" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/check" },
+            {
+              "properties": {
+                "id": { "const": "figures.crop-bindings" },
+                "severity": { "const": "blocking" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/check" },
+            {
+              "properties": {
+                "id": { "const": "render.repeatability" },
+                "severity": { "const": "blocking" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/check" },
+            {
+              "properties": {
+                "id": { "const": "rasters.complete" },
+                "severity": { "const": "blocking" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/check" },
+            {
+              "properties": {
+                "id": { "const": "publication.tree-unchanged" },
+                "severity": { "const": "blocking" }
+              }
+            }
+          ]
+        }
+      ],
+      "items": {
+        "$ref": "#/$defs/check"
+      },
+      "contains": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "enum": [
+              "manifest.integrity",
+              "html.offline-profile",
+              "render.geometry-overflow",
+              "pdf.fonts",
+              "pdf.actions-type3-text",
+              "figures.crop-bindings",
+              "render.repeatability",
+              "rasters.complete",
+              "publication.tree-unchanged"
+            ]
+          }
+        },
+        "required": ["id"]
+      },
+      "minContains": 9,
+      "maxContains": 9
+    },
+    "render_pdfs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["render_1", "render_2"],
+      "properties": {
+        "render_1": {
+          "$ref": "#/$defs/evidenceRootAsset"
+        },
+        "render_2": {
+          "$ref": "#/$defs/evidenceRootAsset"
+        }
+      }
+    },
+    "rasters": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "$ref": "#/$defs/raster"
+      },
+      "allOf": [
+        {
+          "contains": {
+            "type": "object",
+            "properties": {
+              "source": { "const": "canonical" }
+            },
+            "required": ["source"]
+          },
+          "minContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "properties": {
+              "source": { "const": "render-1" }
+            },
+            "required": ["source"]
+          },
+          "minContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "properties": {
+              "source": { "const": "render-2" }
+            },
+            "required": ["source"]
+          },
+          "minContains": 1
+        }
+      ]
+    },
+    "publication_tree": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "scope", "before", "after", "unchanged"],
+      "properties": {
+        "algorithm": {
+          "const": "sha256-tree-json-v1"
+        },
+        "scope": {
+          "const": "manifest-declared-regular-files-no-symlinks"
+        },
+        "before": {
+          "$ref": "#/$defs/treeSide"
+        },
+        "after": {
+          "$ref": "#/$defs/treeSide"
+        },
+        "unchanged": {
+          "type": "boolean"
+        }
+      }
+    },
+    "human_review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "required_scope"],
+      "properties": {
+        "status": {
+          "const": "required"
+        },
+        "required_scope": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "mechanical_status": {
+      "enum": ["pass", "fail"]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "mechanical_status": { "const": "pass" }
+        },
+        "required": ["mechanical_status"]
+      },
+      "then": {
+        "properties": {
+          "checks": {
+            "not": {
+              "contains": {
+                "type": "object",
+                "properties": {
+                  "severity": { "const": "blocking" },
+                  "passed": { "const": false }
+                },
+                "required": ["severity", "passed"]
+              }
+            }
+          },
+          "publication_tree": {
+            "properties": {
+              "unchanged": { "const": true }
+            },
+            "required": ["unchanged"]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "checks": {
+            "contains": {
+              "type": "object",
+              "properties": {
+                "severity": { "const": "blocking" },
+                "passed": { "const": false }
+              },
+              "required": ["severity", "passed"]
+            },
+            "minContains": 1
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "checkId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "not": {
+        "anyOf": [
+          { "pattern": "\\\\" },
+          { "pattern": "^/" },
+          { "pattern": "^[A-Za-z]:" },
+          { "pattern": "(^|/)\\.(/|$)" },
+          { "pattern": "//" },
+          { "pattern": "/$" },
+          { "pattern": "(^|/)\\.\\.(/|$)" },
+          { "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:" }
+        ]
+      }
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path_base", "path", "sha256", "bytes"],
+      "properties": {
+        "path_base": {
+          "enum": ["publication-root", "evidence-root"]
+        },
+        "path": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "nonemptyAsset": {
+      "allOf": [
+        { "$ref": "#/$defs/asset" },
+        {
+          "properties": {
+            "bytes": { "minimum": 1 }
+          }
+        }
+      ]
+    },
+    "publicationRootAsset": {
+      "allOf": [
+        { "$ref": "#/$defs/nonemptyAsset" },
+        {
+          "properties": {
+            "path_base": { "const": "publication-root" }
+          }
+        }
+      ]
+    },
+    "evidenceRootAsset": {
+      "allOf": [
+        { "$ref": "#/$defs/nonemptyAsset" },
+        {
+          "properties": {
+            "path_base": { "const": "evidence-root" }
+          }
+        }
+      ]
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "severity", "passed", "message", "evidence"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/checkId"
+        },
+        "severity": {
+          "enum": ["blocking", "advisory"]
+        },
+        "passed": {
+          "type": "boolean"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence": true
+      }
+    },
+    "raster": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "page", "asset"],
+      "properties": {
+        "source": {
+          "enum": ["canonical", "render-1", "render-2"]
+        },
+        "page": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "asset": {
+          "$ref": "#/$defs/evidenceRootAsset"
+        }
+      }
+    },
+    "treeSide": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["files", "path_inventory_sha256", "fingerprint_sha256", "symlinks", "special_nodes"],
+      "properties": {
+        "files": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "path_inventory_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "fingerprint_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "symlinks": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/relativePath"
+          }
+        },
+        "special_nodes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/relativePath"
+          }
+        }
+      }
+    }
+  }
+}
