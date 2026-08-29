@@ -394,12 +394,16 @@ have changed.
     `100993530`. All four immutable artifacts match GitHub SHA-256 values, and
     terminal Governance evidence re-admits as `complete`. Authenticated
     reconciliation confirms exact `.17`-`.20` versions, tags, tarball hashes,
-    repository binding, and target witnesses. The workflow is now
-    `disabled_manually`, the temporary Environment is deleted, and deployment
-    `6158274629` is `inactive`. The cleanup candidate removes the temporary
-    workflow source and workflow-only contract; protected merge and
-    post-merge reconciliation remain. Destination acceptance is successful,
-    but normal Live and `live_enabled: true` remain unauthorized.
+    repository binding, and target witnesses. The workflow was changed to
+    `disabled_manually`, the temporary Environment was deleted, and deployment
+    `6158274629` became `inactive`. Cleanup PR #621 rebase-merged without
+    bypass as `79154437`; post-merge CI and CodeQL passed. Fresh authenticated
+    reconciliation confirms the temporary source and contract absent,
+    workflow ID `345015706` `deleted` with exactly the sole successful run,
+    Environment and acceptance refs absent, deployment still `inactive`, and
+    exact `.17`-`.20` versions and tags retained. No post-deletion dispatch
+    occurred. Destination acceptance and cleanup are complete, but normal Live
+    and `live_enabled: true` remain unauthorized.
 
 ## Related Pages
 

@@ -361,15 +361,24 @@ If it conflicts with the
   bytes match every retained probe post-state. Each package witness binds
   purpose `destination-acceptance`, target `66154d0b`, and repository
   `hcoona/three`, with no lifecycle scripts.
-- Evidence capture is complete. Workflow ID `345015706` is now
-  `disabled_manually`; Environment ID `20815831035` is deleted; deployment
-  `6158274629` is `inactive`; pending deployments are empty; and the workflow
-  retains exactly one terminal successful run. The cleanup candidate starts
-  from fresh `origin/main@73bf1ecf`, deletes the temporary workflow source and
-  workflow-only contract, and restores zero-temporary-workflow topology
-  contracts. It still requires protected merge and fresh post-merge
-  reconciliation before authoritative closure. Never rerun or reuse
-  `.17`-`.20`. Normal Live and `live_enabled: true` remain unauthorized.
+- Evidence capture completed before retirement. Workflow ID `345015706` was
+  changed to `disabled_manually`; Environment ID `20815831035` was deleted;
+  deployment `6158274629` became `inactive`; and pending deployments remained
+  empty.
+- Cleanup PR #621 rebase-merged without bypass as
+  `791544371eb3d1aff7376dbd14ae05ed074ff927`. Post-merge Continuous
+  Integration run `33268353682` and CodeQL run `33268353678` passed. Fresh
+  authenticated reconciliation confirms the temporary workflow source and
+  workflow-only contract absent, workflow ID `345015706` `deleted` with
+  exactly one terminal successful attempt-1 run, Environment ID `20815831035`
+  and acceptance refs absent, deployment `6158274629` `inactive`, package
+  repository association `hcoona/three`, and exact `.17`-`.20` versions and
+  tags retained. No post-deletion dispatch occurred.
+- Retry-5 destination acceptance and cleanup are complete. Never rerun
+  `33265777858` or reuse `.17`-`.20`. The historical retry-5 Adapter and
+  Governance profile remain replay authority. Normal Live and
+  `live_enabled: true` remain unauthorized and require a separate production
+  decision.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the

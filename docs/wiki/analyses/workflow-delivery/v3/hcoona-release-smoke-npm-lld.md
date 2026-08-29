@@ -1804,11 +1804,16 @@ every probe post-state, and each package witness binds
 
 After evidence capture, workflow ID `345015706` was changed to
 `disabled_manually`, Environment ID `20815831035` was deleted, deployment
-`6158274629` became `inactive`, and pending deployments remained empty. The
-cleanup candidate starts from fresh `origin/main@73bf1ecf`, deletes the
-temporary workflow source and workflow-only contract, and restores direct
-zero-temporary-workflow topology assertions. Protected merge and fresh
-post-merge reconciliation are still required before closure. The consumed
+`6158274629` became `inactive`, and pending deployments remained empty.
+Cleanup PR #621 rebase-merged without bypass as
+`791544371eb3d1aff7376dbd14ae05ed074ff927`; post-merge Continuous
+Integration run `33268353682` and CodeQL run `33268353678` passed. Fresh
+authenticated reconciliation confirms the temporary workflow source and
+workflow-only contract absent, workflow ID `345015706` `deleted` with exactly
+one successful attempt-1 run, Environment ID `20815831035` and acceptance
+refs absent, deployment `6158274629` `inactive`, repository association
+`hcoona/three`, and exact `.17`-`.20` versions and tags retained. No
+post-deletion dispatch occurred. The cleanup gate is satisfied. The consumed
 `.17`-`.20` block and run must never be retried or reused. Normal Live and
 `live_enabled: true` remain outside the acceptance-only authorization.
 

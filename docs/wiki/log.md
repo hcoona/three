@@ -2576,3 +2576,20 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   cleanup merge and post-merge reconciliation remain required.
 - Destination acceptance is successful. The run and `.17`-`.20` block must
   never be retried or reused. Normal Live remains disabled and unauthorized.
+
+## [2026-08-29] query | Close successful destination acceptance retry 5
+
+- Cleanup PR #621 rebase-merged without bypass as
+  `791544371eb3d1aff7376dbd14ae05ed074ff927`; post-merge Continuous
+  Integration run `33268353682` and CodeQL run `33268353678` passed.
+- Fresh `main` inspection confirms the retry-5 workflow source and
+  workflow-only contract absent. Workflow ID `345015706` is `deleted` and
+  retains exactly one successful attempt-1 run `33265777858`; no
+  post-deletion dispatch occurred.
+- Reconfirmed Environment ID `20815831035` and acceptance refs absent,
+  deployment `6158274629` `inactive`, package repository association
+  `hcoona/three`, and exact `.17`-`.20` versions and tags retained.
+- Closed retry-5 destination acceptance and cleanup as successful. The run and
+  consumed coordinate block must never be retried or reused. Historical
+  Adapter/Governance replay authority remains. Normal Live remains disabled
+  and requires a separate production decision.
