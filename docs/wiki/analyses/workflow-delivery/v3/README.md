@@ -283,22 +283,27 @@ Next:
    conflict. It adds only the temporary manual workflow and closed
    Adapter/Governance profile for absent/exact `.17`, identical-race `.18`,
    differing-race `.19`, and lost-response `.20`, with the exact corresponding
-   tags and confirmation digest. The production target remains forty ASCII
-   zeroes, so validation rejects before Environment review or either
+   tags and confirmation digest. The preparation target remained forty ASCII
+   zeroes, so validation rejected before Environment review or either
    package-write probe. The terminal fan-in retains canonical suite records
    across monotone failure/upload downgrade, treats missing artifact bindings
-   as incomplete, and admits proof authority only for exact HTTP 200 or HTTP 201. Read-only preflight found `.17`-`.20` and their tags unused, but they
-   remain unexecuted and unconsumed at preparation. No retry-5 Environment,
-   dispatch, deployment, acceptance ref, package, tag, or Live mutation has
-   occurred.
-   After protected preparation merges, fresh external-state revalidation must
-   pass before creation of a new protected Environment and a separate
-   protected finalization PR bound to that exact merge SHA. Finalization, the
-   sole `run_attempt == 1` dispatch and review, reconciliation, cleanup, and
-   closure must each start from freshly fetched and revalidated `origin/main`
-   containing the immediately preceding protected merge; the local branch, an
-   attempt ref, an arbitrary fetched SHA, or a reviewed-but-unmerged head is
-   not authority; and
+   as incomplete, and admits proof authority only for exact HTTP 200 or HTTP 201. Protected preparation PR #616 rebase-merged without bypass as
+   `66154d0bb351a0c9c13d16292ce003d7eee65077`; post-merge Continuous
+   Integration run `33223036097` and CodeQL run `33223036123` passed on that
+   exact SHA. Fresh authenticated revalidation again found `.17`-`.20`, their
+   tags, retry-5 runs, deployments, and acceptance refs absent. The dedicated
+   Environment now exists as ID `20815831035` with sole reviewer
+   `hcoona` / `712433`, self-review permitted, and sole custom branch policy
+   `main`. The bounded finalization candidate binds both workflow target
+   literals and the Governance retry-5 target to the preparation merge SHA.
+   No workflow dispatch, deployment, acceptance ref, package, tag, or Live
+   mutation has occurred; `.17`-`.20` remain unexecuted and unconsumed.
+   The protected finalization must merge without bypass, then a fresh exact
+   preflight must pass before the sole `run_attempt == 1` dispatch and review.
+   Reconciliation, cleanup, and closure must each start from freshly fetched
+   and revalidated `origin/main` containing the immediately preceding
+   protected merge; the local branch, an attempt ref, an arbitrary fetched
+   SHA, or a reviewed-but-unmerged head is not authority; and
 8. keep `live_enabled: false`. Subsequent explicit user authorization covers
    the bounded acceptance-only repair/retry loop through genuine success,
    cleanup, and closure, but normal Live activation remains a separate

@@ -11361,3 +11361,208 @@ Status: **COMPLETE** for pre-delivery work-base reconciliation.
   mutation occurred.
 
 <!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-5-work-base-reconciliation -->
+
+<!-- BEGIN APPEND: 2026-08-29-wdv3-acceptance-retry-5-finalization-status -->
+
+## 2026-08-29 Workflow Delivery v3 retry-5 finalization tests
+
+Status: **INTENTIONAL FOCUSED RED** pending the three separately owned
+production target bindings.
+
+### Preconditions and safety
+
+- Before the first edit, the branch was
+  `workflow-delivery-v3-acceptance-retry-5-finalization`,
+  `HEAD == origin/main == 66154d0bb351a0c9c13d16292ce003d7eee65077`,
+  and the working tree was clean.
+- Authenticated preflight supplied by the task was treated as authoritative
+  and was not repeated. No GitHub, Environment, workflow, package, tag, ref,
+  deployment, Live, or Git-ref mutation was performed.
+- No production source, workflow YAML, documentation, manifest, or lock file
+  was changed. No test was skipped or xfailed.
+
+### Exact focused validation
+
+Primary command, run from the repository root:
+
+`uv run --python 3.13 --package three-workflow-delivery-v3 python -m pytest src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_retry_5_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py`
+
+- Exit: 1 (expected focused RED; verbose output exceeded the tool display
+  limit).
+
+Narrow summary rerun over the same two modules:
+
+`uv run --python 3.13 --package three-workflow-delivery-v3 python -m pytest --tb=no -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_retry_5_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py`
+
+- Collected: 655
+- Passed: 599
+- Failed: 56
+- Duration: 9.25 seconds
+- Exit: 1
+
+No broad/full suite or generic workspace build was run. Validation stopped at
+the required intentional focused RED.
+
+### Failure identities and root causes
+
+Static tracing found no test-construction or assertion defect. All 56 failures
+are attributable solely to the three unchanged production zero bindings.
+
+- One workflow identity test checks all three bindings and stops first at the
+  zero workflow dispatch default:
+  `test_retry_5_workflow_identity_dispatch_and_finalized_defaults_are_exact`.
+- Twenty-seven contract terminal cases cascade because the real Governance
+  retry-5 profile still has a zero target:
+  - rejected dispatch `finalized-fixed-identity`: 1;
+  - finalized evidence, HTTP 200/201 by review artifact bound/missing: 4;
+  - probe failure, failure/cancelled by ABSENT/CONFLICT: 4;
+  - no-record classifier, empty outputs over four job results: 8;
+  - no-record classifier, both UNKNOWN over failure/cancelled: 4;
+  - noncomplete suite, failure/cancelled by incomplete/unknown: 4;
+  - missing artifact ID/digest: 2.
+- Twenty-eight Governance cases cascade because the retry-5 profile target is
+  still zero:
+  - exact-five profile registry: 1;
+  - finalized profile binding: 1;
+  - complete HTTP 200/201 admission: 2;
+  - run/recovery correlation drift: 4;
+  - bidirectional cross-profile substitution, two directions by ten binding
+    dimensions: 20.
+
+The expected closure is limited to the workflow dispatch target default,
+workflow `WDV3_ACCEPTANCE_TARGET_SHA`, and retry-5 Governance profile
+`target_sha`. Those bindings were not edited.
+
+### Mandatory quality gate
+
+- Invoked `test-gap-analysis`. Its requested
+  `test-analysis-extensions` entry point was unavailable, so the final Python
+  diffs and direct workflow/Governance paths received equivalent static
+  pseudo-mutation review.
+- No actionable gap survived for exact target substitution, zero/wrong/later
+  guard acceptance, guard ordering before review/mutation, fixed rejected
+  identity, accepted-status set expansion/removal, zero-sentinel shape
+  weakening, or cross-profile substitutions.
+- Invoked `assertion-quality`. With the same extension unavailable, an
+  equivalent pytest assertion review found no assertion-free, trivial-only,
+  tautological-only, or missing-secondary-observable changed test.
+- Assertions cover exact values, exception messages, canonical/deep
+  structures, digests, proof/readback correlation, filesystem output,
+  dependency state, and immutable identities.
+
+### Prompt-scenario mapping
+
+| Requirement | Test evidence |
+| --- | --- |
+| Immutable workflow and registry target | `test_retry_5_workflow_identity_dispatch_and_finalized_defaults_are_exact`; `test_governance_acceptance_profiles_are_exactly_five_with_retry_5_and_no_historical_drift`; `test_retry_5_governance_profile_binds_exact_finalized_identity_and_scenarios` |
+| Exact target accepted; zero/wrong/later rejected before downstream work | `test_retry_5_fixed_input_guard_executes_before_review_and_package_write` cases `exact-finalized-target`, `zero-target`, `wrong-target`, `hypothetical-later-finalization-target` |
+| Fixed rejected identity and zero sentinel | `test_retry_5_terminal_program_executes_rejected_dispatch_with_fixed_identity`; `test_retry_5_governance_admits_exact_zero_target_rejected_dispatch_round_trip` |
+| Real-registry HTTP 200/201 admission | `test_retry_5_terminal_program_executes_finalized_evidence`; `test_retry_5_real_registry_admits_complete_status_and_preserves_bindings` |
+| HTTP 202/204 rejected | `test_retry_5_real_registry_rejects_non_authoritative_status` |
+| Cross-profile substitutions rejected | `test_retry_5_governance_rejects_bidirectional_cross_profile_bindings` |
+| Hypothetical finalization commit rejected | `test_retry_5_governance_rejects_hypothetical_later_finalization_target` |
+
+Before this status append, `git diff --check` passed and changed paths were
+limited to the two tests plus append-only research and plan records. Final
+allowlist and prefix verification follows outside this record.
+
+<!-- END APPEND: 2026-08-29-wdv3-acceptance-retry-5-finalization-status -->
+
+<!-- BEGIN APPEND: 2026-08-29-wdv3-acceptance-retry-5-final-quality-closure -->
+
+## Final bounded quality closure
+
+A final diff review found that the first implementation had narrowed the
+existing behavioral rejection matrix from every HTTP status in `202..299` to
+only `202` and `204`. The Governance test was minimally corrected to retain
+that existing exhaustive coverage through the real registry while continuing
+to cover the explicitly required `202` and `204` cases.
+
+Final focused command, run from the repository root:
+
+`uv run --python 3.13 --package three-workflow-delivery-v3 python -m pytest --tb=no -q src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_retry_5_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py`
+
+- Collected: 751
+- Passed: 695
+- Failed: 56
+- Duration: 9.44 seconds
+- Exit: 1
+
+The same 56 intentional failures remained: one workflow identity failure,
+twenty-seven contract terminal failures, and twenty-eight Governance
+finalization/profile failures. The restored HTTP `202..299` rejection matrix
+passed in full, so it introduced no test defect and no additional failure.
+All remaining failures retain the production-root-cause classification above:
+workflow dispatch target default zero, workflow
+`WDV3_ACCEPTANCE_TARGET_SHA` zero, or retry-5 Governance profile
+`target_sha` zero.
+
+The final post-correction quality gate invoked `test-gap-analysis` and
+`assertion-quality`; their requested `test-analysis-extensions` entry point
+was unavailable, so the Python source/test pairs received the specified
+equivalent static review. Exact/zero/wrong/later target mutations, guard
+ordering, rejected-dispatch identity, 200/201 acceptance, every other 2xx
+status rejection, zero-sentinel weakening, and cross-profile substitutions
+are killed by concrete value, exception-message, structure, digest, state,
+and round-trip assertions. No actionable mutation gap, assertion-free test,
+trivial-only assertion, tautology, or missing secondary observable remains in
+the changed test set.
+
+<!-- END APPEND: 2026-08-29-wdv3-acceptance-retry-5-final-quality-closure -->
+
+<!-- BEGIN APPEND: 2026-08-29-wdv3-acceptance-retry-5-finalization-green -->
+
+## Retry-5 protected-finalization GREEN
+
+Status: **GREEN LOCALLY; protected finalization delivery pending.**
+
+- Production changed only the workflow dispatch target default, workflow
+  `WDV3_ACCEPTANCE_TARGET_SHA`, and registered retry-5 Governance
+  `target_sha`. All three equal protected preparation merge
+  `66154d0bb351a0c9c13d16292ce003d7eee65077`.
+- Focused workflow and Governance tests passed **751 / 751** in
+  **9.57 seconds**.
+- The bounded Adapter, CLI seam, workflow, topology, retirement, and
+  Governance gate passed **1,467 / 1,467** in **45.03 seconds**.
+- Ruff check passed. Ruff format found and corrected only the line wrapping of
+  the final target constant; its follow-up check passed. Actionlint and
+  workflow Prettier passed.
+- Static pseudo-mutation analysis found no surviving in-scope mutation: zero,
+  unrelated, later-finalization, one-of-two-workflow-literals, and
+  Governance-profile target substitutions are killed by exact identity,
+  executable guard, real-registry admission, and hypothetical-target
+  rejection tests.
+- Assertion analysis covered 19 changed test functions with 103 `assert`
+  statements and 7 `pytest.raises` contexts across equality, Boolean,
+  collection, exception, negative, null, string, and structural checks.
+  There are zero assertion-free, trivial-only, or self-referential changed
+  tests.
+- Independent production-design review found the Adapter/Governance boundary,
+  fresh identity allocation, per-job first-attempt guards, and terminal
+  reconstruction justified by the one-shot mutation contract. Independent
+  test-design review and TP/FP adjudication identified maintainability debt in
+  hidden compatibility fixtures, some exhaustive cross-profile/status
+  matrices, implementation-coupled AST checks, duplicate topology coverage,
+  historical replay duplication, and metric-heavy ledgers. Those items are
+  unrelated to the three-literal protected finalization and are deferred to a
+  separate post-cleanup maintenance change rather than widening this branch.
+- Environment `20815831035` is the only external mutation in this phase. No
+  workflow dispatch, deployment, package, tag, acceptance-ref, or Live
+  mutation occurred.
+
+<!-- END APPEND: 2026-08-29-wdv3-acceptance-retry-5-finalization-green -->
+
+<!-- BEGIN APPEND: 2026-08-29-wdv3-acceptance-retry-5-finalization-full-suite -->
+
+## Retry-5 finalization complete-suite validation
+
+- Command:
+  `uv run --python 3.13 --package three-workflow-delivery-v3 python -m pytest -q src/public/lib/three-workflow-delivery-v3/tests`
+- Result: **4,446 / 4,446 passed** in **478.45 seconds**.
+- The suite includes all five historical/current acceptance profiles and the
+  broader Workflow Delivery v3 control, evidence, release, and topology
+  contracts.
+- No workflow dispatch, deployment, package, tag, acceptance-ref, or Live
+  mutation occurred during validation.
+
+<!-- END APPEND: 2026-08-29-wdv3-acceptance-retry-5-finalization-full-suite -->

@@ -1772,16 +1772,28 @@ reconstructed and re-admitted rather than discarded. These mechanics do not
 broaden proof authority: only exact HTTP 200 or HTTP 201 after every existing
 request/tarball/coordinate/tag/cardinality check can form a validated proof.
 
-After protected preparation merge, a fresh external-state revalidation must
-pass before either creating a new protected retry-5 Environment or opening the
-separate protected finalization PR. That PR must replace the zero target in
-both workflow and Governance profile with the exact preparation merge SHA.
-Finalization, the sole `run_attempt == 1` dispatch and review, reconciliation,
-cleanup, and closure must each start from freshly fetched and revalidated
-`origin/main` containing the immediately preceding protected merge. A local
-branch, attempt ref, arbitrary fetched SHA, or reviewed-but-unmerged head is
-never work-base authority. Normal Live and `live_enabled: true` remain outside
-the acceptance-only authorization.
+Protected preparation PR #616 rebase-merged without bypass as
+`66154d0bb351a0c9c13d16292ce003d7eee65077`. Post-merge Continuous
+Integration run `33223036097` and CodeQL run `33223036123` passed on that exact
+SHA. Fresh authenticated external-state revalidation confirmed the active
+retry-5 workflow has zero runs, the Environment and deployments were absent,
+acceptance refs were absent, and `.17`-`.20` plus their tags remained unused.
+The dedicated Environment was then created as ID `20815831035`, with sole
+reviewer `hcoona` / `712433`, `prevent_self_review: false`, and sole custom
+branch policy `main`; immediate readback still showed zero runs and
+deployments.
+
+The bounded finalization candidate replaces the zero target in both workflow
+literals and the Governance profile with the exact preparation merge SHA. It
+must merge through the protected PR path without bypass. A fresh exact
+post-finalization preflight must then pass before the sole
+`run_attempt == 1` dispatch and review. Reconciliation, cleanup, and closure
+must each start from freshly fetched and revalidated `origin/main` containing
+the immediately preceding protected merge. A local branch, attempt ref,
+arbitrary fetched SHA, or reviewed-but-unmerged head is never work-base
+authority. No retry-5 dispatch, deployment, package, tag, acceptance-ref, or
+Live mutation has occurred. Normal Live and `live_enabled: true` remain
+outside the acceptance-only authorization.
 
 ## Activation Gate
 

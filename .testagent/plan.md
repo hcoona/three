@@ -6520,3 +6520,114 @@ record exact results. Maps R8. No phase may use the invalid 41-character SHA
 or place a nonzero reviewed target in production.
 
 <!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-5-plan -->
+
+<!-- BEGIN APPEND: 2026-08-29-wdv3-acceptance-retry-5-finalization-plan -->
+
+## 2026-08-29 Workflow Delivery v3 retry-5 finalization test plan
+
+### Phase 1 - Workflow contract finalization
+
+Minimally adapt
+`tests/contracts/test_commit10_acceptance_retry_5_workflow.py`:
+
+1. Replace the synthetic finalized target expectation with immutable PR #616
+   target `66154d0bb351a0c9c13d16292ce003d7eee65077`.
+2. Require both workflow target literals to equal that SHA, intentionally
+   exposing the two unchanged zero production bindings.
+3. Reuse the fixed-input guard cases to accept exact target and reject zero,
+   wrong, and hypothetical later-finalization targets before review/mutation.
+4. Preserve and assert the fixed target identity emitted for rejected
+   dispatches where the contract applies.
+5. Remove the local Governance profile-finalization monkeypatch from complete
+   terminal cases so HTTP 200/201 evidence reaches the real registry.
+6. Keep all broad workflow topology, artifact, permission, and security
+   coverage unchanged.
+
+### Phase 2 - Governance finalization
+
+Minimally adapt
+`tests/governance/test_commit10_acceptance_evidence.py`:
+
+1. Require the real retry-5 registry profile to bind the immutable target,
+   intentionally exposing the unchanged zero profile binding.
+2. Build finalized complete evidence with the exact target and delete the
+   test-local registry replacement seam.
+3. Reuse existing HTTP 200/201 round-trip tests through the real registry and
+   existing 202/204 rejection tests.
+4. Preserve the exact historical zero-sentinel rejected-dispatch admission.
+5. Preserve historical profile replay and bidirectional cross-profile
+   substitution rejection.
+6. Add or refine a narrow case rejecting a hypothetical later finalization
+   commit as the retry-5 target.
+
+### Phase 3 - Focused RED validation and quality gate
+
+1. Run only:
+   `uv run --python 3.13 --package three-workflow-delivery-v3 python -m pytest src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_retry_5_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py`
+2. Fix only test construction/assertion defects within the two test modules.
+   Stop when every remaining failure is caused solely by one or more of:
+   workflow dispatch default zero, workflow
+   `WDV3_ACCEPTANCE_TARGET_SHA` zero, or Governance retry-5 `target_sha`
+   zero. Do not skip/xfail and do not repair production.
+3. Run `test-gap-analysis`, `assertion-quality`, and explicit prompt-scenario
+   mapping against the final tests; strengthen only in-scope tests if needed.
+4. Append the exact command, collection/pass/fail counts, failure identities
+   and root causes, quality findings, and requirement mapping to
+   `.testagent/status.md`.
+5. Verify changed paths are limited to the five allowlisted files and that the
+   pre-run byte prefixes of all three `.testagent` files remain unchanged.
+
+### Requirement-to-evidence map
+
+| Requirement | Planned evidence |
+| --- | --- |
+| Immutable PR #616 target; later commit invalid | Workflow identity/guard tests and Governance hypothetical-target rejection |
+| Authoritative preflight; no repeated mutation | Read-only run record in status |
+| Exactly three zero production bindings untouched | Focused RED failure classification and final diff audit |
+| Both workflow literals and Governance target pinned | Existing identity/profile tests updated to exact SHA |
+| Exact guard accepted; zero/wrong rejected pre-mutation | Existing fixed-input guard parameter matrix |
+| Fixed rejected-dispatch identity | Existing terminal rejected-dispatch test |
+| Real-registry HTTP 200/201 admission | Existing complete terminal and Governance round-trip tests with monkeypatch seam removed |
+| HTTP 202/204 rejected | Existing proof-status parameterized rejection tests |
+| Zero-sentinel rejected dispatch retained | Existing Governance preparation/rejected-dispatch round trip |
+| Cross-profile and hypothetical substitutions rejected | Existing bidirectional profile matrix plus exact later-SHA case |
+| Minimal reuse | Diff limited to existing preparation tests; no duplicate module |
+| Quality and bounded RED closure | Exact command plus gap/assertion/scenario review in status |
+
+<!-- END APPEND: 2026-08-29-wdv3-acceptance-retry-5-finalization-plan -->
+
+<!-- BEGIN APPEND: 2026-08-29-wdv3-acceptance-retry-5-finalization-execution -->
+
+## Retry-5 finalization plan execution
+
+- [x] Establish the exact protected preparation merge and external-state
+  preconditions before Environment creation.
+- [x] Create and read back the single protected retry-5 Environment.
+- [x] Produce the bounded tests-first RED against exactly three zero target
+  bindings.
+- [x] Bind those three production literals to
+  `66154d0bb351a0c9c13d16292ce003d7eee65077`.
+- [x] Preserve zero-sentinel rejected-dispatch admission, exact `{200, 201}`
+  authority, cross-profile isolation, the existing DAG/permissions, and
+  disabled normal Live.
+- [x] Run focused and bounded GREEN validation plus test-gap,
+  assertion-quality, and overdesign review.
+- [ ] Complete full-suite and branch-range gates.
+- [ ] Deliver and merge the protected finalization PR without bypass.
+- [ ] Revalidate the exact finalization merge before the sole attempt-1
+  dispatch.
+
+<!-- END APPEND: 2026-08-29-wdv3-acceptance-retry-5-finalization-execution -->
+
+<!-- BEGIN APPEND: 2026-08-29-wdv3-acceptance-retry-5-finalization-validation -->
+
+## Retry-5 finalization validation progress
+
+- [x] Complete v3 suite: **4,446 / 4,446** passed.
+- [ ] Complete independent code/test and authority/document reviews.
+- [ ] Complete staged and branch-range HK gates.
+- [ ] Deliver and merge the protected finalization PR without bypass.
+- [ ] Revalidate exact finalization merge and unused execution identities
+  before the sole attempt-1 dispatch.
+
+<!-- END APPEND: 2026-08-29-wdv3-acceptance-retry-5-finalization-validation -->

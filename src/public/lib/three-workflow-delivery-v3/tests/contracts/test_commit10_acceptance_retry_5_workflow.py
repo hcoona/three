@@ -37,7 +37,9 @@ WORKFLOW_STEM = "workflow-delivery-v3-buddy-smoke-acceptance-retry-5"
 ENVIRONMENT = WORKFLOW_STEM
 
 ZERO_SHA = "0" * 40
-TEST_ONLY_NONZERO_TARGET_SHA = "d" * 40
+FINALIZED_TARGET_SHA = "66154d0bb351a0c9c13d16292ce003d7eee65077"
+UNRELATED_TARGET_SHA = "d" * 40
+HYPOTHETICAL_LATER_TARGET_SHA = "f" * 40
 PACKAGE_NAME = "@hcoona/hcoona-release-smoke-npm"
 BASE_COORDINATE = f"{PACKAGE_NAME}@0.0.0-wdv3-acceptance.17"
 CONFIRMATION = "I_ACCEPT_DISPOSABLE_GITHUB_PACKAGES_PROBES_RETRY_5"
@@ -244,7 +246,7 @@ def _terminal_environment(
     overrides: dict[str, str] | None = None,
 ) -> dict[str, str]:
     environment = {
-        "INPUT_TARGET_SHA": "f" * 40,
+        "INPUT_TARGET_SHA": HYPOTHETICAL_LATER_TARGET_SHA,
         "INPUT_PACKAGE_COORDINATE": (
             f"{PACKAGE_NAME}@0.0.0-wdv3-acceptance.999"
         ),
@@ -267,7 +269,7 @@ def _terminal_environment(
         "CONFLICT_RECORD_DIGEST": "",
         "CONFLICT_ARTIFACT_ID": "",
         "CONFLICT_ARTIFACT_DIGEST": "",
-        "WDV3_ACCEPTANCE_TARGET_SHA": ZERO_SHA,
+        "WDV3_ACCEPTANCE_TARGET_SHA": FINALIZED_TARGET_SHA,
         "WDV3_ACCEPTANCE_PACKAGE_COORDINATE": BASE_COORDINATE,
         "WDV3_ACCEPTANCE_CONFIRMATION": CONFIRMATION,
         "WDV3_FILE": str(evidence_path),
@@ -300,34 +302,6 @@ def _execute_terminal(
         timeout=10,
     )
     return completed, evidence_path
-
-
-def _install_test_only_finalized_profile(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    profiles = governance_module._GOVERNANCE_ACCEPTANCE_PROFILES
-    preparation = tuple(
-        profile
-        for profile in profiles
-        if profile.package_coordinate == BASE_COORDINATE
-    )
-    assert len(preparation) == 1
-    finalized = governance_module._GovernanceAcceptanceProfile(
-        package_coordinate=preparation[0].package_coordinate,
-        workflow_path=preparation[0].workflow_path,
-        environment=preparation[0].environment,
-        target_sha=TEST_ONLY_NONZERO_TARGET_SHA,
-        confirmation_digest=preparation[0].confirmation_digest,
-        scenario_coordinates=preparation[0].scenario_coordinates,
-    )
-    monkeypatch.setattr(
-        governance_module,
-        "_GOVERNANCE_ACCEPTANCE_PROFILES",
-        tuple(
-            finalized if profile is preparation[0] else profile
-            for profile in profiles
-        ),
-    )
 
 
 def _retry_5_terminal_proof(
@@ -525,7 +499,7 @@ def _complete_terminal_overrides(
     absent_document = absent.to_document()
     conflict_document = conflict.to_document()
     return {
-        "INPUT_TARGET_SHA": TEST_ONLY_NONZERO_TARGET_SHA,
+        "INPUT_TARGET_SHA": FINALIZED_TARGET_SHA,
         "VALIDATE_RESULT": "success",
         "REVIEW_RESULT": "success",
         "ABSENT_JOB_RESULT": "success",
@@ -555,7 +529,7 @@ def _complete_terminal_overrides(
         ),
         "CONFLICT_ARTIFACT_ID": "702",
         "CONFLICT_ARTIFACT_DIGEST": "sha256:" + ("b" * 64),
-        "WDV3_ACCEPTANCE_TARGET_SHA": TEST_ONLY_NONZERO_TARGET_SHA,
+        "WDV3_ACCEPTANCE_TARGET_SHA": FINALIZED_TARGET_SHA,
         "GITHUB_WORKFLOW_SHA": "e" * 40,
     }
 
@@ -608,7 +582,7 @@ def _dict_fields(node: ast.expr) -> dict[str, ast.expr]:
     return fields
 
 
-def test_retry_5_workflow_identity_dispatch_and_preparation_defaults_are_exact() -> (
+def test_retry_5_workflow_identity_dispatch_and_finalized_defaults_are_exact() -> (
     None
 ):
     document, raw = _load_workflow()
@@ -627,7 +601,7 @@ def test_retry_5_workflow_identity_dispatch_and_preparation_defaults_are_exact()
         "target_sha": {
             "description": "Reviewed protected-finalization target SHA",
             "required": True,
-            "default": ZERO_SHA,
+            "default": FINALIZED_TARGET_SHA,
             "type": "string",
         },
         "package_coordinate": {
@@ -644,7 +618,7 @@ def test_retry_5_workflow_identity_dispatch_and_preparation_defaults_are_exact()
         },
     }
     assert document["env"] == {
-        "WDV3_ACCEPTANCE_TARGET_SHA": ZERO_SHA,
+        "WDV3_ACCEPTANCE_TARGET_SHA": FINALIZED_TARGET_SHA,
         "WDV3_ACCEPTANCE_PACKAGE_COORDINATE": BASE_COORDINATE,
         "WDV3_ACCEPTANCE_CONFIRMATION": CONFIRMATION,
         "WDV3_ACCEPTANCE_REF": "refs/heads/main",
@@ -660,12 +634,15 @@ def test_retry_5_workflow_identity_dispatch_and_preparation_defaults_are_exact()
         ),
         "cancel-in-progress": False,
     }
-    assert TEST_ONLY_NONZERO_TARGET_SHA not in raw
+    assert raw.count(FINALIZED_TARGET_SHA) == 2
     action_shas = {action.rsplit("@", 1)[1] for action in ACTION_PINS}
     literal_sha_tokens = set(
         re.findall(r"(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])", raw)
     )
-    assert literal_sha_tokens == action_shas | {ZERO_SHA}
+    assert literal_sha_tokens == action_shas | {
+        ZERO_SHA,
+        FINALIZED_TARGET_SHA,
+    }
     retry_5_profiles = tuple(
         profile
         for profile in governance_module._GOVERNANCE_ACCEPTANCE_PROFILES
@@ -674,7 +651,7 @@ def test_retry_5_workflow_identity_dispatch_and_preparation_defaults_are_exact()
     assert tuple(
         (profile.workflow_path, profile.environment, profile.target_sha)
         for profile in retry_5_profiles
-    ) == ((WORKFLOW_RELATIVE_PATH, ENVIRONMENT, ZERO_SHA),)
+    ) == ((WORKFLOW_RELATIVE_PATH, ENVIRONMENT, FINALIZED_TARGET_SHA),)
 
 
 def test_retry_5_workflow_is_manual_only_with_exact_five_job_dag() -> None:
@@ -831,23 +808,36 @@ def test_retry_5_permissions_environment_and_token_boundaries_are_exact() -> (
     ("input_target", "fixed_target", "overrides", "expected_status"),
     [
         pytest.param(
-            TEST_ONLY_NONZERO_TARGET_SHA,
-            TEST_ONLY_NONZERO_TARGET_SHA,
+            FINALIZED_TARGET_SHA,
+            FINALIZED_TARGET_SHA,
             {},
             0,
-            id="test-only-finalized-shape-control",
+            id="exact-finalized-target",
         ),
-        pytest.param(ZERO_SHA, ZERO_SHA, {}, 1, id="preparation-zero-target"),
         pytest.param(
-            "e" * 40,
-            TEST_ONLY_NONZERO_TARGET_SHA,
+            ZERO_SHA,
+            FINALIZED_TARGET_SHA,
+            {},
+            1,
+            id="zero-target",
+        ),
+        pytest.param(
+            UNRELATED_TARGET_SHA,
+            FINALIZED_TARGET_SHA,
             {},
             1,
             id="wrong-target",
         ),
         pytest.param(
-            TEST_ONLY_NONZERO_TARGET_SHA,
-            TEST_ONLY_NONZERO_TARGET_SHA,
+            HYPOTHETICAL_LATER_TARGET_SHA,
+            FINALIZED_TARGET_SHA,
+            {},
+            1,
+            id="hypothetical-later-finalization-target",
+        ),
+        pytest.param(
+            FINALIZED_TARGET_SHA,
+            FINALIZED_TARGET_SHA,
             {
                 "INPUT_PACKAGE_COORDINATE": f"{PACKAGE_NAME}@0.0.0-wdv3-acceptance.18"
             },
@@ -855,22 +845,22 @@ def test_retry_5_permissions_environment_and_token_boundaries_are_exact() -> (
             id="wrong-package",
         ),
         pytest.param(
-            TEST_ONLY_NONZERO_TARGET_SHA,
-            TEST_ONLY_NONZERO_TARGET_SHA,
+            FINALIZED_TARGET_SHA,
+            FINALIZED_TARGET_SHA,
             {"INPUT_CONFIRM": "NOT_THE_RETRY_5_CONFIRMATION"},
             1,
             id="wrong-sentinel",
         ),
         pytest.param(
-            TEST_ONLY_NONZERO_TARGET_SHA,
-            TEST_ONLY_NONZERO_TARGET_SHA,
+            FINALIZED_TARGET_SHA,
+            FINALIZED_TARGET_SHA,
             {"GITHUB_REF": "refs/heads/not-main"},
             1,
             id="wrong-protected-ref",
         ),
         pytest.param(
-            TEST_ONLY_NONZERO_TARGET_SHA,
-            TEST_ONLY_NONZERO_TARGET_SHA,
+            FINALIZED_TARGET_SHA,
+            FINALIZED_TARGET_SHA,
             {"GITHUB_RUN_ATTEMPT": "2"},
             1,
             id="non-first-attempt",
@@ -883,13 +873,12 @@ def test_retry_5_fixed_input_guard_executes_before_review_and_package_write(
     overrides: dict[str, str],
     expected_status: int,
 ) -> None:
-    document, raw = _load_workflow()
+    document, _raw = _load_workflow()
     jobs = _jobs(document)
     validation = jobs["validate-fixed-inputs"]
     guard = _step(validation, "Fail closed before review or mutation")
     script = _validation_script(document)
 
-    assert TEST_ONLY_NONZERO_TARGET_SHA not in raw
     assert [step["name"] for step in _steps(validation)] == [guard["name"]]
     assert guard["env"] == {
         "INPUT_TARGET_SHA": "${{ inputs.target_sha }}",
@@ -1069,7 +1058,7 @@ def test_retry_5_review_artifact_materializes_exact_reviewer_visible_identity(
     run_attempt = "1"
     environment = {
         "WDV3_PURPOSE": "destination-acceptance",
-        "INPUT_TARGET_SHA": TEST_ONLY_NONZERO_TARGET_SHA,
+        "INPUT_TARGET_SHA": FINALIZED_TARGET_SHA,
         "INPUT_PACKAGE_COORDINATE": BASE_COORDINATE,
         "GITHUB_WORKFLOW_REF": (
             f"hcoona/three/{WORKFLOW_RELATIVE_PATH}@refs/heads/main"
@@ -1100,7 +1089,7 @@ def test_retry_5_review_artifact_materializes_exact_reviewer_visible_identity(
         artifact.read_bytes()
         == (
             "purpose=destination-acceptance\n"
-            f"target-sha={TEST_ONLY_NONZERO_TARGET_SHA}\n"
+            f"target-sha={FINALIZED_TARGET_SHA}\n"
             f"package-coordinate={BASE_COORDINATE}\n"
             "workflow=hcoona/three/"
             f"{WORKFLOW_RELATIVE_PATH}@refs/heads/main\n"
@@ -1403,12 +1392,30 @@ def test_retry_5_terminal_program_has_exact_expected_one_and_registry_boundary()
     assert "suite_document != record_json" in script
 
 
+@pytest.mark.parametrize(
+    "fixed_target_sha",
+    [
+        pytest.param(
+            FINALIZED_TARGET_SHA,
+            id="finalized-fixed-identity",
+        ),
+        pytest.param(
+            ZERO_SHA,
+            id="intentional-zero-sentinel",
+        ),
+    ],
+)
 def test_retry_5_terminal_program_executes_rejected_dispatch_with_fixed_identity(
     tmp_path: Path,
+    fixed_target_sha: str,
 ) -> None:
     document, _raw = _load_workflow()
 
-    completed, evidence_path = _execute_terminal(document, tmp_path)
+    completed, evidence_path = _execute_terminal(
+        document,
+        tmp_path,
+        {"WDV3_ACCEPTANCE_TARGET_SHA": fixed_target_sha},
+    )
 
     assert (completed.returncode, completed.stdout, completed.stderr) == (
         0,
@@ -1435,7 +1442,7 @@ def test_retry_5_terminal_program_executes_rejected_dispatch_with_fixed_identity
         "hcoona/three",
         "refs/heads/main",
         "a" * 40,
-        ZERO_SHA,
+        fixed_target_sha,
         BASE_COORDINATE,
         CONFIRMATION_DIGEST,
         ENVIRONMENT,
@@ -1510,7 +1517,6 @@ def test_retry_5_terminal_program_executes_finalized_evidence(
         review_binding
     )
     document, _raw = _load_workflow()
-    _install_test_only_finalized_profile(monkeypatch)
     absent, conflict = _retry_5_complete_terminal_suites(
         upstream_status=upstream_status
     )
@@ -1551,7 +1557,7 @@ def test_retry_5_terminal_program_executes_finalized_evidence(
         admitted.recovery.deployment,
         admitted.recovery.job,
     ) == (
-        TEST_ONLY_NONZERO_TARGET_SHA,
+        FINALIZED_TARGET_SHA,
         "e" * 40,
         expected_artifact_id,
         expected_classification,
@@ -1628,7 +1634,6 @@ def test_retry_5_terminal_program_writes_unknown_evidence_for_probe_failure(
     job_result: str,
 ) -> None:
     document, _raw = _load_workflow()
-    _install_test_only_finalized_profile(monkeypatch)
     absent, conflict = _retry_5_complete_terminal_suites(upstream_status=200)
     overrides = _complete_terminal_overrides(absent, conflict)
     overrides[f"{failed_probe}_JOB_RESULT"] = job_result
@@ -1705,7 +1710,6 @@ def test_retry_5_terminal_no_record_classifier_gate_is_exact(
     classifier_outputs: tuple[str, str],
 ) -> None:
     document, _raw = _load_workflow()
-    _install_test_only_finalized_profile(monkeypatch)
     absent, conflict = _retry_5_complete_terminal_suites(upstream_status=200)
     overrides = _complete_terminal_overrides(absent, conflict)
     output_suffixes = (
@@ -1785,7 +1789,6 @@ def test_retry_5_terminal_program_retains_noncomplete_canonical_suite(
     job_result: str,
 ) -> None:
     document, _raw = _load_workflow()
-    _install_test_only_finalized_profile(monkeypatch)
     absent, complete_conflict = _retry_5_complete_terminal_suites(
         upstream_status=200
     )
@@ -1833,7 +1836,6 @@ def test_retry_5_terminal_program_retains_suite_when_artifact_binding_is_missing
     missing_output: str,
 ) -> None:
     document, _raw = _load_workflow()
-    _install_test_only_finalized_profile(monkeypatch)
     absent, conflict = _retry_5_complete_terminal_suites(upstream_status=200)
     overrides = _complete_terminal_overrides(absent, conflict)
     overrides.update(
@@ -1959,7 +1961,6 @@ def test_retry_5_terminal_program_reaches_specific_record_validation(
     error_match: str,
 ) -> None:
     document, _raw = _load_workflow()
-    _install_test_only_finalized_profile(monkeypatch)
     absent, conflict = _retry_5_complete_terminal_suites(upstream_status=200)
     overrides = _complete_terminal_overrides(absent, conflict)
     overrides[output_name] = output_value
