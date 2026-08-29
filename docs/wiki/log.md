@@ -2551,3 +2551,28 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   literals and retry-5 Governance target with exact preparation merge
   `66154d0bb351a0c9c13d16292ce003d7eee65077`. No dispatch, deployment,
   acceptance ref, package, tag, or Live mutation occurred.
+
+## [2026-08-29] query | Capture successful destination acceptance retry 5
+
+- Protected finalization PR #618 rebase-merged without bypass as
+  `73bf1ecf395bc6d646d3e689e3c9e7fd580948ef`; post-merge Continuous
+  Integration run `33265013602` and CodeQL run `33265013646` passed.
+- Fresh exact preflight preceded the sole attempt-1 dispatch. Run
+  `33265777858` executed from `main@73bf1ecf` against preparation target
+  `66154d0b`. Deployment `6158274629` received approval from `hcoona`;
+  independent recovery identifies deployment-review ID `100993530`.
+- All five jobs succeeded. Artifacts `9718601879`, `9718607290`,
+  `9718615519`, and `9718619450` match their GitHub-recorded SHA-256 values,
+  and terminal Governance evidence independently re-admits as `complete`.
+- Authenticated package reconciliation confirms exact `.17`-`.20` versions,
+  tags, tarball SHA-1/SHA-512 values, repository association, and target
+  witnesses. The fixed scenarios prove absent/create/readback, exact
+  no-mutation, identical race, differing race, and lost-response behavior;
+  both real create exchanges retain request-bound HTTP 200 proof.
+- Disabled workflow ID `345015706`, deleted Environment ID `20815831035`, and
+  confirmed deployment `6158274629` `inactive` with no pending deployments.
+  The cleanup candidate removes the temporary source and workflow-only
+  contract and restores direct zero-temporary-workflow assertions. Protected
+  cleanup merge and post-merge reconciliation remain required.
+- Destination acceptance is successful. The run and `.17`-`.20` block must
+  never be retried or reused. Normal Live remains disabled and unauthorized.

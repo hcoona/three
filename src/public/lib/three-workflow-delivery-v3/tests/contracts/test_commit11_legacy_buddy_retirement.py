@@ -689,17 +689,8 @@ def test_codeowners_covers_deleted_and_future_buddy_routes() -> None:
     } == dict.fromkeys(paths, ("@hcoona",))
 
 
-def _is_retry_5_temporary_exception(path: Path) -> bool:
-    return path == (
-        WORKFLOWS / "workflow-delivery-v3-buddy-smoke-acceptance-retry-5.yml"
-    )
-
-
-def test_retry_5_is_only_temporary_workflow_during_preparation() -> None:
-    """Permit only the exact retry-5 preparation workflow."""
-    retry_5 = (
-        WORKFLOWS / "workflow-delivery-v3-buddy-smoke-acceptance-retry-5.yml"
-    )
+def test_temporary_acceptance_workflows_are_retired() -> None:
+    """Retire every temporary destination-acceptance workflow source."""
     temporary_workflows = tuple(
         sorted(
             (
@@ -713,19 +704,7 @@ def test_retry_5_is_only_temporary_workflow_during_preparation() -> None:
         )
     )
 
-    assert temporary_workflows == (retry_5,), (
-        "E-WORKFLOW-ABSENT: required retry-5 workflow is absent at "
-        ".github/workflows/"
-        "workflow-delivery-v3-buddy-smoke-acceptance-retry-5.yml"
-        if retry_5 not in temporary_workflows
-        else (
-            "legacy Buddy retirement permits only the exact retry-5 "
-            f"temporary workflow: {temporary_workflows!r}"
-        )
-    )
-    assert tuple(map(_is_retry_5_temporary_exception, temporary_workflows)) == (
-        True,
-    )
+    assert temporary_workflows == ()
     assert _legacy_buddy_routes(WORKFLOWS) == ()
 
 
@@ -753,6 +732,10 @@ def test_retry_5_is_only_temporary_workflow_during_preparation() -> None:
             id="retry-4",
         ),
         pytest.param(
+            "workflow-delivery-v3-buddy-smoke-acceptance-retry-5.yml",
+            id="retry-5",
+        ),
+        pytest.param(
             "workflow-delivery-v3-buddy-smoke-acceptance-retry-6.yml",
             id="future-retry",
         ),
@@ -776,8 +759,7 @@ def test_retry_5_is_only_temporary_workflow_during_preparation() -> None:
 def test_legacy_buddy_retirement_rejects_original_prior_future_and_lookalikes(
     basename: str,
 ) -> None:
-    """Keep the retry-5 exception exact rather than pattern-based."""
+    """Keep every retired Buddy and acceptance workflow identity absent."""
     candidate = WORKFLOWS / basename
 
-    assert not _is_retry_5_temporary_exception(candidate)
     assert not candidate.exists()

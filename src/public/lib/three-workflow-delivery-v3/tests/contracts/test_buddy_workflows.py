@@ -4562,13 +4562,10 @@ def test_live_eligibility_admission_receives_current_intent_and_model_before_his
         assert option in capability
 
 
-def test_retry_5_is_the_only_temporary_acceptance_workflow_during_preparation() -> (
+def test_temporary_acceptance_workflows_are_absent_with_disabled_normal_buddy() -> (
     None
 ):
     workflows = REPO_ROOT / ".github/workflows"
-    retry_5 = (
-        workflows / "workflow-delivery-v3-buddy-smoke-acceptance-retry-5.yml"
-    )
     temporary_workflows = tuple(
         sorted(
             {
@@ -4581,22 +4578,6 @@ def test_retry_5_is_the_only_temporary_acceptance_workflow_during_preparation() 
             }
         )
     )
-
-    assert temporary_workflows == (retry_5,), (
-        "E-WORKFLOW-ABSENT: required retry-5 workflow is absent at "
-        ".github/workflows/"
-        "workflow-delivery-v3-buddy-smoke-acceptance-retry-5.yml"
-        if retry_5 not in temporary_workflows
-        else (
-            "retry-5 must be the only temporary acceptance workflow during "
-            f"preparation: {temporary_workflows!r}"
-        )
-    )
-
-
-def test_retry_5_preparation_keeps_normal_buddy_manual_only_and_live_disabled() -> (
-    None
-):
     caller = _document(CALLER)
     callee = _document(CALLEE)
     caller_document = cast("dict[object, Any]", caller)
@@ -4613,6 +4594,7 @@ def test_retry_5_preparation_keeps_normal_buddy_manual_only_and_live_disabled() 
         encoding="utf-8"
     )
 
+    assert temporary_workflows == ()
     assert caller_triggers == {"workflow_dispatch": None}
     assert isinstance(callee_triggers, dict)
     assert set(callee_triggers) == {"workflow_call"}

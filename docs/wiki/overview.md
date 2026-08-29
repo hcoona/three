@@ -384,17 +384,22 @@ have changed.
     post-merge Continuous Integration run `33223036097` and CodeQL run
     `33223036123` passed. Fresh authenticated revalidation found `.17`-`.20`,
     their tags, retry-5 runs, deployments, and acceptance refs absent. The
-    dedicated Environment now exists as ID `20815831035`, with sole reviewer
-    `hcoona` / `712433`, self-review permitted, and sole custom branch policy
-    `main`. The bounded finalization candidate pins both workflow target
-    literals and the Governance profile to exact preparation merge
-    `66154d0b`; it has not been dispatched, and `.17`-`.20` remain unexecuted
-    and unconsumed.
-    The protected finalization must merge without bypass, then fresh exact
-    preflight must pass before the sole `run_attempt == 1` dispatch and review.
-    Reconciliation, cleanup, and closure must each freshly fetch and revalidate
-    `origin/main` containing the immediately preceding protected merge. Normal
-    Live and `live_enabled: true` remain unauthorized.
+    dedicated Environment was then created as ID `20815831035`, with sole
+    reviewer `hcoona` / `712433`, self-review permitted, and sole custom
+    branch policy `main`. Protected finalization PR #618 rebase-merged without
+    bypass as `73bf1ecf`; its post-merge CI and CodeQL passed. Fresh exact
+    preflight preceded the only dispatch. Attempt-1 run `33265777858`
+    succeeded from `main@73bf1ecf` against preparation target `66154d0b`;
+    reviewer recovery identifies `hcoona` and deployment-review ID
+    `100993530`. All four immutable artifacts match GitHub SHA-256 values, and
+    terminal Governance evidence re-admits as `complete`. Authenticated
+    reconciliation confirms exact `.17`-`.20` versions, tags, tarball hashes,
+    repository binding, and target witnesses. The workflow is now
+    `disabled_manually`, the temporary Environment is deleted, and deployment
+    `6158274629` is `inactive`. The cleanup candidate removes the temporary
+    workflow source and workflow-only contract; protected merge and
+    post-merge reconciliation remain. Destination acceptance is successful,
+    but normal Live and `live_enabled: true` remain unauthorized.
 
 ## Related Pages
 

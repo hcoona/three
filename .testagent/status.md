@@ -11566,3 +11566,157 @@ Status: **GREEN LOCALLY; protected finalization delivery pending.**
   mutation occurred during validation.
 
 <!-- END APPEND: 2026-08-29-wdv3-acceptance-retry-5-finalization-full-suite -->
+
+<!-- BEGIN APPEND: 2026-08-29-wdv3-acceptance-retry-5-cleanup-status -->
+
+## Workflow Delivery v3 retry-5 cleanup result
+
+Status: **GREEN for the two authorized topology nodes; no broad validation
+claimed.**
+
+Exact nodes:
+
+- `test_buddy_workflows.py::test_temporary_acceptance_workflows_are_absent_with_disabled_normal_buddy`
+- `test_commit11_legacy_buddy_retirement.py::test_temporary_acceptance_workflows_are_retired`
+
+Exact RED/GREEN command:
+
+`uv run pytest src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py::test_temporary_acceptance_workflows_are_absent_with_disabled_normal_buddy src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit11_legacy_buddy_retirement.py::test_temporary_acceptance_workflows_are_retired`
+
+- RED before deletion: collected 2, passed 0, failed 2
+  (`2 failed in 0.57s`). Both nodes failed only at the empty-inventory
+  assertion, and each inventory contained only
+  `/workspace/three-workspaces/design-workflows/.github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-5.yml`.
+- Deleted only
+  `.github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-5.yml`
+  and
+  `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_retry_5_workflow.py`.
+- GREEN after deletion: collected 2, passed 2, failed 0
+  (`2 passed in 0.59s`) with the identical command.
+
+Bounded static review found no in-scope gap: exact and wildcard workflow
+identities, both YAML extensions, original/retries 1-6, suffix and numeric
+lookalikes, legacy basenames, normal caller/callee trigger boundaries,
+schedule/push exclusion, Live disablement, retry-5 raw-text isolation, and
+legacy-route absence have direct assertions. Across the three changed test
+functions (15 collected cases including 13 parameters), there are no
+assertion-free, trivial-only, self-referential, skipped, or xfailed tests;
+single-assertion parameter cases intentionally pin one absent identity each.
+
+The changed-path scope is exactly two modified contracts, the two authorized
+deletions, and these three append-only `.testagent` files. No production
+Adapter/Governance code, historical retry-5 replay test, authoritative
+docs/wiki file (including `docs/wiki/log.md`), Git ref, or external resource
+was changed. No broad suite or build was run.
+
+<!-- END APPEND: 2026-08-29-wdv3-acceptance-retry-5-cleanup-status -->
+
+<!-- BEGIN APPEND: 2026-08-29-wdv3-acceptance-retry-5-operation -->
+
+## Workflow Delivery v3 retry-5 operation and reconciliation
+
+Status: **DESTINATION ACCEPTANCE COMPLETE; PROTECTED CLEANUP PENDING.**
+
+- Protected finalization PR #618 rebase-merged without bypass as
+  `73bf1ecf395bc6d646d3e689e3c9e7fd580948ef`. Post-merge Continuous
+  Integration run `33265013602` and CodeQL run `33265013646` passed.
+- Fresh exact preflight preceded the only dispatch. Run `33265777858` remained
+  attempt 1 and executed from `main@73bf1ecf` against exact preparation target
+  `66154d0bb351a0c9c13d16292ce003d7eee65077`.
+- Validation job `99135475403`, protected review job `99135487120`, probe jobs
+  `99135571048` and `99135627876`, and Governance job `99135703500` all
+  completed successfully. Deployment `6158274629` received approval from
+  `hcoona`; the bounded reviewer recovery returned `present`, reviewer
+  `hcoona`, deployment-review ID `100993530`, and `human-required: false`.
+- Review artifact `9718601879`, absent/create artifact `9718607290`, conflict
+  artifact `9718615519`, and Governance artifact `9718619450` match their
+  GitHub-recorded SHA-256 digests:
+  `39166f126e436a659b3bebdd644203058a40ef53bd3c1d16149f3ea9ea0fec14`,
+  `351bb7fca6c8341aabc3d4ce819f7a272d95785123926dba72823e668f3f8ed9`,
+  `204cf66e74ecb9bcdb40311b236539e6f2cc123079cf87e9fa3424760ab98b7a`,
+  and
+  `db323adcf2a83643a58e06436dca67b69f152d2c0703ea75f104b83d7fe8aa06`.
+  Local strict Governance readmission returned `complete`.
+- Authenticated registry reconciliation found package version IDs
+  `1186133405`, `1186134104`, `1186134170`, and `1186134228` for `.17`-`.20`.
+  Their tags are exact. Downloaded tarball SHA-1 values are
+  `82e25a2a89a839615d33a2fedf53ee5a4aed168d`,
+  `c7593b55692b210b538eff09534317f003284709`,
+  `86580fc95bdd0581e666f87d9863478b7fffd891`, and
+  `b0a304d78de7494295188785616b76f7066bf0ee`. Their SHA-512 values match the
+  probe post-state exactly. Every package witness binds
+  `destination-acceptance` to target `66154d0b` and repository
+  `hcoona/three`, with no lifecycle scripts.
+- The successful suite proves absent/create/readback `.17`, exact/no-mutation
+  `.17`, identical race `.18`, differing race `.19`, and lost response `.20`.
+  The absent/create and lost-response exchanges retain request-bound HTTP 200
+  proofs.
+- After evidence capture, workflow ID `345015706` was disabled manually,
+  Environment ID `20815831035` was deleted, deployment `6158274629` became
+  `inactive`, and pending deployments remained empty. This operation-level
+  retirement is separate from the preceding bounded test-generation subphase,
+  which performed no external mutation.
+- The cleanup candidate starts from fresh `origin/main@73bf1ecf`, deletes the
+  temporary workflow and workflow-only contract, and restores direct
+  zero-temporary-workflow topology assertions. Protected merge and fresh
+  post-merge reconciliation remain required. The run and `.17`-`.20` block
+  must never be retried or reused. Normal Live remains disabled and
+  unauthorized.
+
+<!-- END APPEND: 2026-08-29-wdv3-acceptance-retry-5-operation -->
+
+<!-- BEGIN APPEND: 2026-08-29-wdv3-acceptance-retry-5-cleanup-validation -->
+
+## Workflow Delivery v3 retry-5 cleanup validation
+
+- The exact tests-first retirement nodes passed `2 / 2` after the source and
+  workflow-only contract deletion.
+- The bounded Adapter, reviewer-recovery, Governance, Buddy topology, and
+  retirement suite passed `1,279 / 1,279` in 36.94 seconds.
+- The complete Workflow Delivery v3 suite passed `4,214 / 4,214` in
+  449.80 seconds.
+- Scoped Ruff check and Ruff format-check passed for both modified Python
+  contracts.
+- Scoped Pyrefly completed with zero errors.
+- Actionlint passed over the remaining GitHub workflows.
+- Prettier and markdownlint passed over all five modified authoritative wiki
+  pages.
+- `git diff --check` passed, and direct filesystem inspection found zero
+  temporary acceptance workflow sources.
+
+The unstaged and staged HK gates and independent review/adjudication follow
+after this append. Normal Live remains disabled and unauthorized.
+
+<!-- END APPEND: 2026-08-29-wdv3-acceptance-retry-5-cleanup-validation -->
+
+<!-- BEGIN APPEND: 2026-08-29-wdv3-acceptance-retry-5-cleanup-review -->
+
+## Workflow Delivery v3 retry-5 cleanup review
+
+- The unstaged HK gate passed over the cleanup diff, including its managed
+  complete v3 suite: `4,214 passed in 451.14s`.
+- An independent code/test reviewer examined only the two deletions and two
+  topology-contract edits and reported **No findings**.
+- An independent authority reviewer examined only the five modified wiki
+  pages against the run, approval, artifact, registry, and retirement facts
+  and reported **No findings**.
+- An independent ledger reviewer examined only the three append-only
+  `.testagent` files for chronology, exact results, subphase boundaries, and
+  external-state accuracy and reported **No findings**.
+- No review finding required TP/FP adjudication.
+- Static pseudo-mutation review confirmed that allowing any matching
+  `.yml`/`.yaml` workflow, removing legacy-route absence, changing the normal
+  Buddy trigger boundaries, permitting schedule/push, enabling Live, or
+  restoring any original/prior/current/future/lookalike identity would fail a
+  direct assertion.
+- Assertion review covered 15 collected cases across the three changed test
+  functions, with 25 effective assertions. It found zero assertion-free,
+  trivial-only, self-referential, skipped, or xfailed cases. Equality,
+  Boolean, type, collection/structure, and negative filesystem/content
+  assertions match the bounded retirement behavior; no extra assertion type
+  would catch an additional in-scope defect.
+
+The exact 12-path cleanup diff is ready for the staged HK gate. Protected
+merge and fresh post-merge reconciliation remain required.
+
+<!-- END APPEND: 2026-08-29-wdv3-acceptance-retry-5-cleanup-review -->

@@ -6631,3 +6631,37 @@ Minimally adapt
   before the sole attempt-1 dispatch.
 
 <!-- END APPEND: 2026-08-29-wdv3-acceptance-retry-5-finalization-validation -->
+
+<!-- BEGIN APPEND: 2026-08-29-wdv3-acceptance-retry-5-cleanup-plan -->
+
+## Workflow Delivery v3 retry-5 cleanup: single bounded phase
+
+1. [x] Replace the Buddy retry-5 preparation/allowance pair with
+   `test_temporary_acceptance_workflows_are_absent_with_disabled_normal_buddy`;
+   require no matching `.yml`/`.yaml`, exact manual/reusable triggers, no
+   schedule/push or `live_enabled: true`, no embedded retry-5 workflow name,
+   and Governance `live_enabled is False`.
+2. [x] Replace the retirement preparation exception with
+   `test_temporary_acceptance_workflows_are_retired`; require both an empty
+   inventory and `_legacy_buddy_routes(WORKFLOWS) == ()`. Add retry-5 itself
+   to the direct parametrized absence matrix and remove the exception helper.
+3. [x] Run both modified topology nodes together before source deletion.
+   Result: expected RED, `2 failed in 0.57s`; both failures named only
+   `.github/workflows/workflow-delivery-v3-buddy-smoke-acceptance-retry-5.yml`.
+4. [x] Only after that RED, delete exactly the retry-5 workflow source and
+   `tests/contracts/test_commit10_acceptance_retry_5_workflow.py`.
+5. [x] Rerun the identical two-node command. Result: GREEN,
+   `2 passed in 0.59s`.
+6. [x] Perform bounded static mutation/assertion review and inspect final
+   status/diff. Do not run a broad suite/build or mutate external resources.
+
+Exact RED/GREEN command:
+
+`uv run pytest src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py::test_temporary_acceptance_workflows_are_absent_with_disabled_normal_buddy src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit11_legacy_buddy_retirement.py::test_temporary_acceptance_workflows_are_retired`
+
+Scope is limited to the two contract edits, two authorized deletions, and
+append-only research/plan/status entries. Production Adapter/Governance code,
+historical retry-5 replay tests, authoritative docs/wiki files, Git refs, and
+external resources remain unchanged.
+
+<!-- END APPEND: 2026-08-29-wdv3-acceptance-retry-5-cleanup-plan -->

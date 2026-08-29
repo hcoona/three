@@ -6155,3 +6155,45 @@ Phase-1 Python files.
   retry-5 `target_sha`, all bound to the protected preparation merge.
 
 <!-- END APPEND: 2026-08-29-wdv3-acceptance-retry-5-finalization-authority -->
+
+<!-- BEGIN APPEND: 2026-08-29-wdv3-acceptance-retry-5-cleanup-research -->
+
+## Workflow Delivery v3 retry-5 cleanup research
+
+This one-phase cleanup consumes the user-supplied authoritative state:
+`HEAD == origin/main == 73bf1ecf395bc6d646d3e689e3c9e7fd580948ef`
+on `workflow-delivery-v3-acceptance-retry-5-cleanup`; workflow ID `345015706`
+is `disabled_manually`, Environment `20815831035` is deleted, and retry-5 run
+`33265777858` attempt 1 succeeded with terminal Governance evidence admitted
+complete. These external facts were inputs only; no external resource or Git
+reference was mutated.
+
+Bounded inventory and checklist:
+
+- Replace the two retry-5 preparation/allowance contracts in
+  `tests/contracts/test_buddy_workflows.py` with one direct empty-inventory,
+  manual-caller, reusable-callee, non-scheduled, non-push, non-Live contract.
+- Remove the retry-5 exception helper in
+  `tests/contracts/test_commit11_legacy_buddy_retirement.py`; require an empty
+  temporary-workflow inventory and no legacy route, and directly cover the
+  original, retries 1-6, lookalikes, and legacy basenames.
+- After a tests-first RED, delete only the retry-5 workflow source and its
+  workflow-only contract.
+- Preserve production Adapter/Governance code, historical replay tests,
+  authoritative docs/wiki files, and all pre-existing `.testagent` content.
+
+Pytest conventions remain module-level tests, exact tuple/dict assertions,
+`pytest.mark.parametrize`, `pathlib` inventory checks, and parsed YAML/JSON
+authority checks. Targeted pre-edit discovery collected the two predecessor
+topology nodes (`2 tests collected in 0.06s`); no broad discovery or suite was
+run.
+
+The exact RED/GREEN command was:
+
+`uv run pytest src/public/lib/three-workflow-delivery-v3/tests/contracts/test_buddy_workflows.py::test_temporary_acceptance_workflows_are_absent_with_disabled_normal_buddy src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit11_legacy_buddy_retirement.py::test_temporary_acceptance_workflows_are_retired`
+
+Before deletion it produced `2 failed in 0.57s`, solely because the retry-5
+workflow source was the one-item inventory in both nodes. After the two
+authorized deletions, the unchanged command produced `2 passed in 0.59s`.
+
+<!-- END APPEND: 2026-08-29-wdv3-acceptance-retry-5-cleanup-research -->
