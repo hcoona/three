@@ -1,0 +1,61 @@
+{
+  "skill_name": "scholarly-pdf-reconstruction",
+  "version": "0.1.0",
+  "evals": [
+    {
+      "id": "mixed-script-vector-extraction",
+      "prompt": "Run evals/files/make_reconstruction_fixture.py --output fixture --mode mixed. Use /scholarly-pdf-reconstruction to reconstruct pages 1-2 of fixture/source.pdf into outputs/source-package with the rights note 'Synthetic authorized evaluation fixture.' Do not translate or assemble the publication.",
+      "baseline_prompt": "Run evals/files/make_reconstruction_fixture.py --output fixture --mode mixed. Reconstruct pages 1-2 of fixture/source.pdf into outputs/source-package with the rights note 'Synthetic authorized evaluation fixture.' Do not translate or assemble the publication.",
+      "expected_output": "A passing, translation-neutral source package with ordered mixed-script blocks and canonical page SVGs.",
+      "files": ["evals/files/make_reconstruction_fixture.py"],
+      "expected_files": ["source-package/source-package.json"],
+      "assertions": [
+        "source-package/source-package.json validates against assets/source-package.schema.json and has status pass for selected PDF pages 1 and 2.",
+        "Each page record has hash- and length-bound blocks and SVG assets that exist at the recorded relative paths and validate against the applicable schemas.",
+        "The ordered block text preserves both the English and Chinese fixture content, and each page reports vector drawings with page geometry matching its SVG.",
+        "The package binds fixture/source.pdf and does not contain translation or final-publication outputs."
+      ]
+    },
+    {
+      "id": "sparse-blocks-require-review",
+      "prompt": "Run evals/files/make_reconstruction_fixture.py --output fixture --mode sparse. Use /scholarly-pdf-reconstruction to reconstruct pages 1-2 of fixture/source.pdf into outputs/source-package with the rights note 'Synthetic authorized sparse-text fixture.' Report the resulting status and do not perform OCR, translation, or assembly.",
+      "baseline_prompt": "Run evals/files/make_reconstruction_fixture.py --output fixture --mode sparse. Reconstruct pages 1-2 of fixture/source.pdf into outputs/source-package with the rights note 'Synthetic authorized sparse-text fixture.' Report the resulting status and do not perform OCR, translation, or assembly.",
+      "expected_output": "A schema-valid source package whose positive but sparse block text requires review before downstream use.",
+      "files": ["evals/files/make_reconstruction_fixture.py"],
+      "expected_files": ["source-package/source-package.json"],
+      "assertions": [
+        "source-package/source-package.json validates against assets/source-package.schema.json and has status review_required rather than pass or fail.",
+        "The package contains non-empty ordered block assets for both pages and a package-level review_required issue for sparse source text.",
+        "The page SVG assets remain available and hash-bound for inspection.",
+        "No translation, assembled publication, or release artifact is produced."
+      ]
+    },
+    {
+      "id": "unsafe-source-is-blocked",
+      "prompt": "Run evals/files/make_reconstruction_fixture.py --output fixture --mode unsafe. Use /scholarly-pdf-reconstruction to attempt reconstruction of pages 1-2 from fixture/source.pdf into outputs/source-package with the rights note 'Synthetic authorized unsafe-source fixture.' Do not extract embedded payloads or continue to downstream stages.",
+      "baseline_prompt": "Run evals/files/make_reconstruction_fixture.py --output fixture --mode unsafe. Attempt reconstruction of pages 1-2 from fixture/source.pdf into outputs/source-package with the rights note 'Synthetic authorized unsafe-source fixture.' Do not extract embedded payloads or continue to downstream stages.",
+      "expected_output": "The attached-file source is refused before a source package is published.",
+      "files": ["evals/files/make_reconstruction_fixture.py"],
+      "expected_files": [],
+      "assertions": [
+        "The attempt reports a failed or refused reconstruction because the PDF contains an unsupported attachment.",
+        "outputs/source-package/source-package.json is absent and no candidate package is presented as usable.",
+        "The attachment is not extracted and no translation, assembly, or release artifact is created."
+      ]
+    },
+    {
+      "id": "mapped-coordinate-handoff",
+      "prompt": "Run evals/files/make_reconstruction_fixture.py --output fixture --mode mapped. Use /scholarly-pdf-reconstruction to reconstruct pages 1-2 of fixture/source.pdf into outputs/source-package using fixture/sections.json and fixture/figures.json, declare the music-notation profile, and use the rights note 'Synthetic authorized mapped fixture.' Do not translate or compose final pages.",
+      "baseline_prompt": "Run evals/files/make_reconstruction_fixture.py --output fixture --mode mapped. Reconstruct pages 1-2 of fixture/source.pdf into outputs/source-package using fixture/sections.json and fixture/figures.json, declare the music-notation profile, and use the rights note 'Synthetic authorized mapped fixture.' Do not translate or compose final pages.",
+      "expected_output": "A passing source package that preserves supplied section and two-part figure maps in the declared coordinate system.",
+      "files": ["evals/files/make_reconstruction_fixture.py"],
+      "expected_files": ["source-package/source-package.json"],
+      "assertions": [
+        "The source package validates against assets/source-package.schema.json, has status pass, and declares the music-notation profile.",
+        "The bound section and figure-map files exist, match their recorded hashes and byte lengths, and validate against assets/section-map.schema.json and assets/figure-map.schema.json.",
+        "The section covers selected pages 1-2, and figure example-a retains two ordered parts on pages 1 and 2.",
+        "The package declares top-left PDF-point coordinates, and each supplied figure box is positive and contained by its referenced page geometry."
+      ]
+    }
+  ]
+}
