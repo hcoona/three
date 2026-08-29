@@ -11744,6 +11744,7 @@ Status: **DESTINATION ACCEPTANCE AND CLEANUP COMPLETE.**
   `hcoona/three` and exact `.17`-`.20` versions and tags retained unchanged.
 - The retry-5 run and coordinate block are permanently consumed and must not
   be rerun or reused. Historical Adapter/Governance replay authority remains.
-  Normal Live and `live_enabled: true` remain disabled and unauthorized.
+  Normal Live remains disabled (`live_enabled: false`); setting
+  `live_enabled: true` or activating normal Live remains unauthorized.
 
 <!-- END APPEND: 2026-08-29-wdv3-acceptance-retry-5-closure -->
