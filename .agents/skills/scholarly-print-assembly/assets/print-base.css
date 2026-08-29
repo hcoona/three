@@ -1,0 +1,153 @@
+:root {
+  --body-cjk: "Publication CJK", serif;
+  --body-latin: "Publication Latin", serif;
+  --ink: #111;
+  --muted-ink: #555;
+}
+
+@page {
+  size: Letter;
+  margin: 0.62in 0.68in 0.68in;
+}
+
+html {
+  color: var(--ink);
+  font-family: var(--body-latin);
+  font-size: 10.5pt;
+  font-style: normal;
+  font-synthesis: none;
+  font-weight: 400;
+  hyphenate-character: "-";
+  line-height: 1.52;
+  text-autospace: normal;
+  text-spacing-trim: trim-start;
+  hanging-punctuation: first allow-end last;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+body {
+  margin: 0;
+}
+
+body :where(*) {
+  font-family: inherit;
+  font-style: inherit;
+  font-weight: inherit;
+}
+
+[lang] {
+  font-family: var(--body-latin);
+}
+
+[lang|="zh" i],
+[lang|="ja" i],
+[lang|="ko" i],
+[lang$="-Hans" i],
+[lang*="-Hans-" i],
+[lang$="-Hant" i],
+[lang*="-Hant-" i],
+[lang$="-Hani" i],
+[lang*="-Hani-" i],
+[lang$="-Jpan" i],
+[lang*="-Jpan-" i],
+[lang$="-Kore" i],
+[lang*="-Kore-" i] {
+  font-family: var(--body-cjk);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  break-after: avoid-page;
+  font-weight: 700;
+  line-height: 1.24;
+  margin-block: 1.25em 0.48em;
+}
+
+b,
+strong,
+th {
+  font-weight: 700;
+}
+
+cite,
+em,
+i {
+  font-style: italic;
+}
+
+q {
+  quotes: "\201c" "\201d" "\2018" "\2019";
+}
+
+ul {
+  list-style-type: disc;
+}
+
+p {
+  margin-block: 0 0.58em;
+  orphans: 2;
+  widows: 2;
+}
+
+figure {
+  break-inside: avoid-page;
+  margin: 1em auto;
+}
+
+.figure-parts {
+  display: grid;
+  gap: 0.45em;
+}
+
+.figure-part {
+  display: block;
+  height: auto;
+  margin-inline: auto;
+  max-width: 100%;
+}
+
+figcaption {
+  color: var(--muted-ink);
+  font-size: 0.9em;
+  margin-block-start: 0.42em;
+  text-align: center;
+}
+
+.keep-with-next {
+  break-after: avoid-page;
+}
+
+.keep-together,
+.atomic,
+.bilingual-term,
+.music-token,
+.figure-label {
+  break-inside: avoid;
+  display: inline-block;
+  white-space: nowrap;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+@media screen {
+  html {
+    background: #ddd;
+  }
+
+  body {
+    background: white;
+    box-shadow: 0 0.08in 0.28in rgb(0 0 0 / 22%);
+    margin: 0.35in auto;
+    max-width: 7.14in;
+    min-height: 9.7in;
+    padding: 0.62in 0.68in 0.68in;
+  }
+}

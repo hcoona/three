@@ -1,0 +1,256 @@
+# Assembly Contract
+
+Assembly composes approved content into a retained publication tree. The
+normative schemas are in `assets/`, and the shared untrusted-content policy is
+`assets/publication-profile.json`.
+
+## Responsibility and authority
+
+The plugin has five handoff concepts: source package, translation bundle,
+assembly manifest, QA evidence, and release manifest.
+
+`assembly-spec.json` is a recipe, not another authority. It tells the
+assembler which approved fragments, figures, fonts, stylesheets, profiles,
+and geometry to use. After a successful build, `assembly-manifest.json`
+authoritatively describes the assembled tree. QA validates the manifest and
+observes that tree; it does not reinterpret the recipe.
+
+Assembly owns:
+
+- validation of the upstream manifests and the assets it consumes;
+- fragment and stylesheet policy enforcement;
+- semantic HTML/CSS composition;
+- declared figure/crop construction;
+- local font and asset copying;
+- rendering; and
+- the complete inventory of retained publication files.
+
+It does not own PDF extraction, translation approval, independent QA, or
+release certification.
+
+## Trust model
+
+Trust the caller/workspace owner, exclusive writes to declared paths, the
+operating system, standard library, and pinned mature JSON Schema, HTML, CSS,
+font, PDF, and browser tooling. Treat manifests, fragments, stylesheets,
+SVGs, fonts, and stale output as untrusted until validated.
+
+Hashes bind exact bytes and lengths for consistency. They do not authenticate
+the workspace owner or toolchain. Coherent owner rewrites, hostile concurrent
+writers, compromised tools, and nonrepudiation are outside scope.
+
+## Inputs
+
+### Source package
+
+Apply `assets/source-package.schema.json`, require effective `status: pass`,
+and verify the source-package snapshot hash. Resolve and validate only:
+
+- block files containing source block IDs used by selected fragments;
+- figure-map entries used by emitted figures; and
+- page SVGs used by emitted figure parts.
+
+Do not regenerate PDF extraction, recompute a painted-text model, or require
+the unconsumed package closure.
+
+### Translation bundle
+
+Apply `assets/translation-bundle.schema.json`, require its closed approved
+state, and verify its source-package binding. For each selected fragment,
+verify its path, hash, length, visible-text hash, and source block IDs.
+
+Translation approval is an upstream declaration. Assembly does not reproduce
+terminology, MQM, reviewer, or approval-evidence workflows. Approval-evidence
+files are not required in the publication tree.
+
+### Assembly recipe
+
+Apply `assets/assembly-spec.schema.json`. The recipe declares publication
+identity, title and language, source and translation manifest paths, fragment
+order, selected figures, local fonts and roles, additional stylesheets, page
+geometry, and profiles.
+
+The assembler snapshots the exact recipe as an input record. Recipe values
+become authoritative for the output only after the assembler validates and
+records their effective form in the assembly manifest.
+
+Font family and role strings are generated CSS string values. They must not
+contain Unicode control, format, or surrogate characters.
+
+## Shared publication profile
+
+`assets/publication-profile.json` is a compact closed allowlist shared
+byte-for-byte with QA. It carries only policy identity, HTML element and
+attribute allowlists, CSS property/at-rule/selector allowlists, and explicit
+global prohibitions. Attribute values, selector syntax, and CSS values are
+fixed runtime policy rather than an interpreted profile language. Assembly,
+QA, and package validation each carry the same fixed positive ceiling for
+element/local-attribute pairs, global attributes, and CSS properties. The JSON
+profile may narrow those sets but cannot add authority.
+
+### Fragment HTML
+
+The profile permits a bounded scholarly subset:
+
+- prose and headings;
+- quotations and inline semantics;
+- code/preformatted text;
+- ordered, unordered, and definition lists;
+- tables and captions;
+- ruby annotations without fallback `rp`;
+- internal anchors;
+- language and direction changes;
+- bounded IDs, classes, ARIA references, and table/list metadata.
+
+Elements and attributes not listed are rejected. In particular, the allowlist
+does not contain document wrappers, active content, media, forms, scripts,
+templates, browser-default-hidden elements, parser-changing elements, event
+attributes, inline `style`, external resources, or arbitrary `data-*`
+attributes. The only URL-bearing authored attribute is an internal
+same-document anchor.
+
+### Untrusted stylesheets
+
+Untrusted CSS is restricted to profile-listed selectors and properties, then
+checked by fixed value rules in both Assembly and QA. The policy permits
+practical typography, mixed-script line breaking, list/table styling,
+borders, opaque foreground/text-decoration colors, and break, widow/orphan,
+and keep properties.
+
+Fixed font-variant validation permits compatible keyword combinations but
+rejects mutually exclusive numeric figure/spacing/fraction choices and
+East-Asian variant/width choices.
+
+The profile has no at-rules, imports, custom properties, pseudo-elements,
+`!important`, or URL-bearing values. Its positive property allowlist omits
+generated content, visibility/display suppression, clipping/overflow,
+positioning, transforms, opacity, filters, masks, animation, transitions, and
+resource-producing properties. Values use bounded keywords, numbers,
+physical/relative lengths, opaque colors, or declared local font families.
+
+Everything outside the positive surface and fixed value rules is rejected;
+implementations must not grow an open-ended denylist or profile DSL.
+
+## Separate generated-output profile
+
+Assembler-generated markup and CSS are not authorized by the fragment
+profile. They use a separate closed profile:
+
+- one `html` root with declared language;
+- one `head` containing charset metadata, one plain-text title, and one local
+  stylesheet link;
+- one `body` whose only element child is one `main`;
+- ordered assembler-owned fragment sections;
+- assembler-owned `figure`/`figcaption` structures;
+- assembler-owned inline crop `svg`, `title`, and `image` nodes with exact
+  geometry and local used-page-SVG bindings;
+- generated CSS composed from the bundled base, declared local `@font-face`
+  rules, exactly declared page geometry, role rules, and validated untrusted
+  stylesheet content.
+
+Generated nodes and declarations have exact assembler-owned attribute and
+property sets. They are not a general exception that fragments may imitate.
+QA independently applies this generated-output profile.
+
+## Figure and text bindings
+
+Each selected fragment has one stable ID, copied asset, DOM selector,
+normalized visible-text SHA-256, and source block ID list. The final authored
+text for that section must match the manifest binding after the declared
+normalization. Assembler-generated figure subtrees are excluded from that
+authored-text digest.
+
+Each logical figure has one stable DOM identity, one caption, one accessible
+alternative, and ordered parts. Each part binds:
+
+- source PDF page and positive source box canonicalized to three decimals;
+- one generated crop selector;
+- one retained canonical page SVG asset; and
+- exact outer-SVG and image geometry derived from the source page and box.
+
+Figure DOM IDs and crop IDs are each unique within their own namespace. The
+namespaces need not be disjoint because crop identity is carried by
+`data-crop-id`, not the HTML `id` attribute. Manifest validation rejects source
+boxes that are not already in their canonical three-decimal form.
+
+The retained page SVG width and height must serialize to the same
+three-decimal values as the source-package page dimensions. Its `viewBox` must
+match its own width and height within the QA geometry tolerance.
+
+Only page SVGs actually used by emitted figure parts are retained by default.
+
+## Retained publication tree
+
+The publication tree contains only:
+
+- `assembly-manifest.json`;
+- source-package, translation-bundle, and assembly-spec snapshots;
+- copied approved fragments actually composed;
+- canonical page SVGs used by emitted figures;
+- declared local fonts;
+- retained validated stylesheets;
+- generated HTML and CSS; and
+- PDF when rendered.
+
+Source block files, unused page SVGs, complete section/figure map copies,
+approval-evidence files, and unrelated upstream files are not retained by
+default. The snapshots may therefore refer to upstream assets absent from the
+publication tree. This is intentional and must not be represented as archival
+closure.
+
+## Assembly manifest
+
+`assets/assembly-manifest.schema.json` is closed and records:
+
+- publication identity, language, title, profiles, and print geometry;
+- assembler/runtime and policy identifiers;
+- exact input-manifest snapshots;
+- copied fragment and visible-text bindings;
+- figure/caption/crop and used-page-SVG bindings;
+- font roles and copied font records;
+- copied stylesheet records;
+- HTML, CSS, and optional rendered PDF;
+- the exact retained-file inventory; and
+- assembled status.
+
+The manifest does not repeat full source-package or translation-bundle
+semantics. `tracked_files` covers every retained regular file except the
+self-referential assembly manifest. No unlisted file or special filesystem
+node is part of a valid publication tree.
+
+## Build, render, and validation
+
+Build in a fresh staging directory. Before publication, validate every
+retained byte binding, confined path, profile decision, manifest projection,
+and tree inventory. Publish using same-filesystem replacement within the
+trusted exclusive-write model. Resolve the output parent while preserving its
+lexical final component, so staging remains a sibling and a final symlink,
+junction, dangling link, or other reparse point is rejected. Trusted links in
+ancestor components retain ordinary filesystem semantics. On Windows, reject a
+requested output whose final component ends in a dot or space before any
+replacement work. An existing ordinary output directory is canonicalized
+before staging, replacement, and reporting so a short-name or other filesystem
+alias does not rename the publication. Without `--force`, any existing output
+is rejected. With `--force`, an empty output directory may be replaced; a
+non-empty directory must contain a regular, non-symlink
+`assembly-manifest.json` ownership marker. The marker is not otherwise
+validated, allowing damaged or older Assembly output to be recovered without
+granting replacement authority over an unrelated directory.
+
+Rendering uses JavaScript-disabled Chromium with one request route that permits
+only manifest-tracked local files and `about:blank`. It
+records the resulting PDF binding after validating that the PDF is non-empty
+and parseable. Validation may repeat assembly checks over retained content, but
+it does not require absent upstream assets or the original PDF.
+
+## Non-guarantees
+
+Assembly does not guarantee:
+
+- source authenticity;
+- correctness of translation approval;
+- full source semantic replay;
+- complete source or approval archival closure;
+- human visual approval;
+- accessibility conformance; or
+- safety against hostile concurrent writers or compromised tools.

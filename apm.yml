@@ -7,6 +7,7 @@ dependencies:
   apm:
     - path: ./src/private/lib/enterprise-translation-team
     - path: ./src/private/lib/scan-restoration
+    - path: ./src/private/lib/scholarly-publication
     - git: https://github.com/dotnet/skills.git
       path: plugins/dotnet-advanced
       ref: main

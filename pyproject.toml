@@ -151,6 +151,42 @@ convention = "google" # Match the Google Python Style Guide docstring structure.
   "TRY004",  # Contract violations are uniformly surfaced as validation errors.
   "TRY301",  # CLI boundaries convert validation failures to exit status.
 ]
+"src/private/lib/scholarly-publication/**/scripts/*.py" = [
+  "ANN401",  # Contract records intentionally use open JSON value types.
+  "C901",    # CLI contract validators keep related checks together.
+  "D100",    # The skills document the script entry points.
+  "D101",    # Small CLI exception classes are self-explanatory.
+  "D102",    # HTMLParser callbacks follow the standard library protocol.
+  "D103",    # Command helpers are named descriptively.
+  "D107",    # Parser constructors only initialize audit state.
+  "E501",    # Contract messages and selectors are more readable intact.
+  "EM101",   # CLI errors deliberately use direct actionable messages.
+  "EM102",   # CLI errors include the rejected value.
+  "FBT001",  # Internal validation helpers use explicit boolean state.
+  "PLC0415", # Heavy optional runtime dependencies are imported on demand.
+  "PLR0912", # Validators branch across independent contract fields.
+  "PLR0913", # Artifact helpers receive the complete binding context.
+  "PLR0915", # CLI stages keep one auditable transaction boundary.
+  "PLR0917", # Artifact helpers receive the complete binding context.
+  "PLR2004", # Numeric values encode documented format and safety limits.
+  "TRY003",  # Direct validation errors preserve precise failure context.
+]
+"src/private/lib/scholarly-publication/**/evals/files/*.py" = [
+  "D100",    # Synthetic fixtures are described by their eval manifests.
+  "D103",    # Fixture entry points and builders are named descriptively.
+  "PLR2004", # Fixture geometry uses explicit documented dimensions.
+  "RUF001",  # Mixed-script fixtures intentionally contain CJK punctuation.
+]
+"src/private/lib/scholarly-publication/**/tests/*.py" = [
+  "D100",    # Test modules are scoped by their filenames.
+  "D101",    # Test classes are scoped by descriptive names.
+  "D102",    # Test method names state the behavior under test.
+  "D107",    # Test setup is conventional.
+  "PLR2004", # Synthetic geometry and counts are test expectations.
+  "PT009",   # These standalone PEP 723 tests use unittest intentionally.
+  "PT018",   # Import-loader assertions are intentionally compact.
+  "RUF001",  # Mixed-script fixtures intentionally contain CJK punctuation.
+]
 
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib"
