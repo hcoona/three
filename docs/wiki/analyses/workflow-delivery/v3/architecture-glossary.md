@@ -206,10 +206,51 @@ The evidence job still rejects non-first attempts. A partial rerun cannot reuse
 an earlier Environment review or coordinate, and retry requires a new reviewed
 workflow invocation and new fixed disposable coordinate/version. Governance
 captures its evidence, removes the workflow, bypass, and Environment, verifies
-removal, and only then may an authorized protected commit set
+removal, and only then makes a separately authorized protected normal Live
+activation permissible. It does not itself authorize or set
 `live_enabled: true`. Failure leaves `live_enabled: false` and all Buddy
 publication disabled, removes the temporary path, and sends any probe state to
 reconciliation. The bootstrap is never retained as a reusable bypass.
+
+### First-Slice Normal Live Activation
+
+The separately authorized transition that follows successful destination
+acceptance and cleanup for the named disposable Buddy package. Readiness repair,
+permanent Environment creation, platform inspection, and a protected
+preparation attestation all complete while `live_enabled: false`. A later
+minimal protected change may set true only after explicit production approval.
+The first run remains bounded by a `main`/dispatch freeze, exact activation-SHA
+rollout preflight, one uniquely correlated attempt-1 dispatch, explicit
+Environment approval, canonical terminal evidence, and exact destination
+reconciliation.
+
+Normal Live activation is not a rollback boundary. A protected false change
+blocks future admission after fresh observation but cannot revoke a publisher
+already past its final Governance check or reverse package state.
+
+### Environment Configuration Sentinel
+
+A fixed non-secret Environment-scoped variable whose exact value is mapped
+through step `env` and checked by quoted case-sensitive shell comparison as the
+first executable step of an Environment job. The check disallows
+`continue-on-error`; later operational steps explicitly require marker success,
+while exceptional handlers remain non-mutating. It makes accidental GitHub
+implicit creation of a missing named Environment fail before Authorization or
+mutation when same-name repository and organization variables are absent. It
+does not prove reviewer, self-review, administrator-bypass, branch-policy,
+secret, credential, or Environment-identity settings and never replaces
+authenticated native configuration inspection.
+
+### Single-Maintainer Approval Exception
+
+The first-slice decision that permits sole accepted writer and reviewer
+`hcoona` to approve their own normal Buddy deployment with
+`prevent_self_review: false`. It applies only to repository `hcoona/three`,
+package `@hcoona/hcoona-release-smoke-npm`, and approval Environment
+`workflow-delivery-v3-buddy-smoke-approval`. Approval remains explicit operator
+self-confirmation against mistakes, not independent review or a security
+boundary. Any effective writer, reviewer, role, team, or relevant access change
+requires `live_enabled: false` and a new Governance decision.
 
 ### Official
 

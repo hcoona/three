@@ -4,8 +4,8 @@
 
 Architecture version: **v3**.
 
-Review state: **Identity and absent-coordinate decisions reopened and
-reconfirmed before LLD on 2026-08-05**.
+Review state: **Identity and absent-coordinate decisions reconfirmed before LLD;
+normal Live activation refined on 2026-08-29**.
 
 This middle-level design defines how Release Delivery accepts a manual Release
 Intent, derives channel-specific identity, independently builds and qualifies a
@@ -682,12 +682,17 @@ This bounded risk decision was reopened and reconfirmed before LLD on
 - the reviewer sees target SHA and ref, exact package coordinate, artifact
   digest and manifest, package lifecycle scripts, and exact action summary.
 
-Self-review prevention is required where available. Approval is an explicit
+Self-review prevention is required where available unless a separately
+confirmed slice-scoped exception applies. For this repository, package, and
+approval Environment, sole accepted writer and reviewer `hcoona` may
+self-approve with `prevent_self_review: false`. Approval remains an explicit
 workflow and Governance control against mistakes, accidental publication, and
-ordinary process violations, not cryptographic or independent semantic
-validation and not a non-bypassable permission ceiling against a malicious
-repository writer. The architecture does not claim that a protected independent
-publisher constrains malicious target control code after approval.
+ordinary process violations, but it is operator self-confirmation rather than
+independent review, cryptographic validation, independent semantic validation,
+or a non-bypassable permission ceiling. Any effective writer or reviewer set
+change requires false and a new Governance decision. The architecture does not
+claim that a protected independent publisher constrains malicious target
+control code after approval.
 
 Every repository actor with Write, Maintain, or Admin access is inside the Buddy
 trusted publisher TCB for this slice. External/fork contributors and actors
@@ -749,15 +754,67 @@ dependency failures, skipped or canceled probes, and ambiguous mutation
 evidence are retained and incomplete or unknown state enters reconciliation.
 The evidence job still rejects non-first attempts. Governance then removes the
 workflow, bypass, and Environment and verifies removal. Only successful
-acceptance with no unreconciled incomplete or unknown state permits an
-authorized protected commit to set `live_enabled` true. Failed acceptance
+acceptance with no unreconciled incomplete or unknown state makes a later
+activation decision permissible; it does not authorize true. Failed acceptance
 leaves all Buddy publication disabled and the temporary path removed while
 legacy Buddy remains retired. Former Buddy projects are unsupported until
 explicitly migrated. Restoring legacy Buddy requires a separate user-approved
 rollback PR. v1 Official and CI assets remain unchanged; legacy Buddy workflows,
 Buddy-specific tests and matrices, and Buddy documentation are excluded from
-that preservation and are retired or rewritten. An intentional brief Buddy
-outage is expected.
+that preservation and are retired or rewritten. An intentional Buddy outage is
+expected.
+
+### Normal Live Activation Control
+
+Readiness repair, Environment provisioning, and a fresh preparation attestation
+must complete while false. Both permanent Environment jobs begin with distinct
+Environment-scoped marker checks that map the value through step `env`, use
+quoted case-sensitive shell comparison, and disallow `continue-on-error`. Every
+later operational step explicitly requires marker success; exceptional handlers
+that can run after failure remain non-mutating and classify the failure. The
+markers detect missing or misconfigured named Environments only under the
+verified absence of same-name repository and organization variables; they
+neither validate native protection settings nor constrain historical target
+revisions. External Governance inspection remains authoritative.
+
+After the protected preparation change, operators freeze all other `main`
+writes and normal Buddy dispatch. A separate minimal protected activation
+change sets true. Read-only rollout preflight then binds the exact activation
+merge SHA and derives that SHA's exact NBGV coordinate and target tag. It
+validates Governance, Environments, writer/access inventory, no-consumer policy,
+workflow identity, zero nonterminal runs, destination pre-state, legacy
+retirement, acceptance cleanup, retention, and required checks. This rollout
+preflight is not the Attempt-bound publisher preflight, which remains after
+approval.
+
+The operator captures the pre-dispatch run set, dispatches `main` once, and
+requires one unique new `workflow_dispatch` run by `hcoona` whose head is the
+activation merge SHA and whose `run_attempt` is 1. Ambiguous response or correlation blocks approval without a second dispatch.
+Dispatch and unrelated `main` writes remain frozen while the run is
+nonterminal. `hcoona` inspects the immutable reviewer summary and explicitly
+self-approves only the correlated deployment.
+
+The launch is complete only when canonical finalization admits the exact
+Attempt Outcome with result `success`; every immutable identity and GitHub
+artifact digest is retained; Authorization is exact; and either action-bearing
+publication has an exact Capability Admission Decision, durable
+capability-group result, and Receipt, or the canonical exact-satisfied
+no-action disposition has no Capability Admission Decision, capability-group
+result, or Receipt. Destination ownership, bytes, embedded target witness, and
+target tag are exact, and no incomplete, unknown, conflicting, or
+possibly-mutated state remains. A green job or exact remote readback alone
+cannot retroactively upgrade an incomplete Attempt.
+
+For any lesser outcome, operators keep new dispatch and unrelated `main` writes
+frozen, inventory all runs and deployments, and permit only the minimal
+protected false change before terminal state. An unstarted pre-capability run
+may be canceled or drained with platform evidence; a run whose capability group
+may have started is allowed to reach terminal state where possible and remains
+possibly mutated until read-only reconciliation proves otherwise. Flag-off
+blocks future admission after fresh observation but does not undo package state
+or revoke a publisher already past its final check. A later whole-run replay or
+new dispatch requires explicit post-classification reactivation and a fresh
+Attempt; the original outcome stays append-only.
 
 ## Release Plan Lineage
 
@@ -1919,8 +1976,8 @@ After Attempt creation, planning or execution fails closed when:
   attestation, or fixed-source ref/commit/blob/content/schema/binding state that
   differs from the current-attempt Live Eligibility Decision;
 - first-slice Buddy approval uses the wrong Environment, omits required reviewer
-  context, or fails to enable self-review prevention where available and
-  document the human fallback otherwise;
+  context, or differs from the confirmed self-review prevention or
+  single-maintainer-exception policy;
 - the normal first-slice capability job requests write before approval, uses a
   PAT, includes `id-token: write`, exceeds minimum `packages: write`, or reaches
   an unrelated package or repository;

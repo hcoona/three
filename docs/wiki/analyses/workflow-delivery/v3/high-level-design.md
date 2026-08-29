@@ -4,7 +4,8 @@
 
 Architecture version: **v3**.
 
-Review state: **Confirmed; Release identity model reconfirmed on 2026-08-05**.
+Review state: **Confirmed; normal Live activation architecture refined on
+2026-08-29**.
 
 This page is the normative high-level design for the clean v3 implementation
 line. It realizes the confirmed
@@ -287,6 +288,14 @@ approval, and approval is not cryptographic or independent semantic validation.
 The reviewer must see target SHA and ref, exact package coordinate, artifact
 digest and manifest, lifecycle scripts, and exact action summary.
 
+The confirmed single-maintainer exception permits sole accepted writer and
+reviewer `hcoona` to approve their own dispatch for only this repository,
+package, and approval Environment. `prevent_self_review` is therefore false.
+The approval remains deliberate operator self-confirmation against mistakes; it
+is not separation of duties or an independent security boundary. Any change to
+the human-attested effective writer or required-reviewer set invalidates the
+exception, requires `live_enabled: false`, and reopens Governance review.
+
 Every repository actor with Write, Maintain, or Admin access is inside the
 first-slice Buddy trusted publisher TCB. External/fork contributors and actors
 without repository write are outside it and cannot manually dispatch the live
@@ -359,13 +368,65 @@ unknown state for reconciliation. It still rejects non-first attempts. Partial
 reruns therefore cannot reuse an earlier Environment review or coordinate. A
 retry is a new reviewed workflow invocation with a new fixed disposable
 coordinate/version. Governance captures the probes, removes the workflow,
-bypass, and Environment, verifies removal, and only then enables the protected
-attestation's boolean `live_enabled` field through a new protected commit.
-Failed acceptance leaves all Buddy publication disabled and the temporary path
-removed while legacy Buddy remains retired; recovery is reconciliation, not a
-retained bypass or compatibility rollback. Restoring legacy Buddy requires a
-separate user-approved rollback PR. The sequence therefore has an expected
-brief Buddy outage.
+bypass, and Environment, and verifies removal. Successful cleanup makes the
+slice eligible for a separate production activation decision; it does not
+enable the protected attestation automatically. Failed acceptance leaves all
+Buddy publication disabled and the temporary path removed while legacy Buddy
+remains retired; recovery is reconciliation, not a retained bypass or
+compatibility rollback. Restoring legacy Buddy requires a separate
+user-approved rollback PR. The sequence therefore has an expected brief Buddy
+outage.
+
+### Normal Live Activation Control
+
+Normal activation is a protected, evidence-driven transition rather than a
+workflow input:
+
+1. a readiness repair lands while `live_enabled` remains false, including
+   quoted case-sensitive first-step configuration-marker checks for both
+   permanent Environment jobs, explicit marker-success gating for every later
+   operational step, non-mutating exceptional handlers, and removal of any
+   misleading unused interface;
+2. Delivery Governance explicitly creates and reads back the approval and
+   capability Environments. The approval Environment has sole reviewer
+   `hcoona` under the confirmed self-review exception. The capability
+   Environment has no second reviewer. Neither stores a publication credential.
+   Both preserve the any-same-repository-ref contract, and administrator bypass
+   is disabled where the platform exposes that control. Where no documented
+   public API configures or authoritatively reads that control, authenticated
+   post-save UI evidence is retained and any undocumented API field is
+   corroborating evidence only;
+3. distinct Environment-scoped markers make accidental implicit Environment
+   creation fail before Authorization or mutation. They are not native-setting
+   proof, do not protect historical selected-ref code, and cannot replace
+   authenticated platform inspection or writer-TCB attestation;
+4. a protected preparation change records one-to-one evidence for every
+   activation-gate item and refreshes the attestation while keeping false;
+5. operators freeze every other `main` write and normal Buddy dispatch, then a
+   separate minimal protected activation change sets true;
+6. rollout preflight binds the exact activation merge SHA, current Governance
+   source, Environments, access inventory, no-consumer result, workflow/run
+   inventory, package coordinate/tag pre-state, legacy retirement, acceptance
+   cleanup, retention, and checks. It is distinct from the Attempt-bound
+   post-approval publisher preflight;
+7. the operator captures the existing run set, dispatches `main` once, requires
+   one uniquely correlated attempt-1 run at the activation SHA, inspects the
+   immutable reviewer summary, and explicitly approves that deployment; and
+8. only a canonical Attempt Outcome with result `success` plus exact
+   destination reconciliation releases the `main`/dispatch freeze and leaves
+   true. Any lesser outcome keeps dispatch and unrelated `main` writes frozen,
+   permits only the minimal protected false change before terminal state,
+   accounts for every nonterminal or capability-started run, and reconciles
+   read-only.
+
+Flag-off is future-admission control, not package rollback or instantaneous
+capability revocation. A publisher already past its final Governance check may
+finish. Ordinary operation never deletes or restores package state; whole-run
+retry follows only an explicit post-classification decision, and Break-Glass
+remains separately authorized. Existing Actions summaries, immutable artifacts,
+and synchronous operator monitoring are sufficient for this disposable slice;
+the design adds no dashboard, alerting service, lock service, credential, or
+legacy compatibility route.
 
 ## CI Qualification Design
 

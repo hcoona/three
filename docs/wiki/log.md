@@ -2593,3 +2593,26 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   consumed coordinate block must never be retried or reused. Historical
   Adapter/Governance replay authority remains. Normal Live remains disabled
   and requires a separate production decision.
+
+## [2026-08-29] query | Design normal Live activation
+
+- Confirmed design-only scope for normal Buddy publication of
+  `@hcoona/hcoona-release-smoke-npm`; no implementation, Environment,
+  Governance, workflow dispatch, approval, package, retry, or Break-Glass
+  mutation is authorized.
+- Read-only inventory at `main@7e04c5c2` found normal caller/callee workflow IDs
+  `340952169` and `340952170` active, both permanent normal Environments absent,
+  sole direct collaborator and accepted writer `hcoona`, and
+  `live_enabled: false`.
+- Recorded the user-selected single-maintainer exception: sole reviewer
+  `hcoona` may self-approve with `prevent_self_review: false`. This is explicit
+  operator self-confirmation, not independent review or a security boundary.
+- Defined future protected delivery as disabled readiness repair, explicit
+  Environment provisioning/readback, preparation evidence while false,
+  separate activation, frozen `main` and dispatch, exact-SHA rollout preflight,
+  one correlated attempt-1 run, explicit approval, and complete terminal
+  reconciliation.
+- Required Environment markers only as first-step configuration sentinels;
+  native settings remain externally inspected authority. Closed GitHub Packages
+  production behavior as create-only conflict semantics and preserved
+  append-only failure/reconciliation rules.

@@ -4,7 +4,8 @@
 
 Architecture version: **v3**.
 
-Review state: **Confirmed on 2026-07-30**.
+Review state: **Confirmed; normal Live activation governance refined on
+2026-08-29**.
 
 This middle-level design defines how CI Qualification and Release Delivery rely
 on GitHub and destination platforms for review, protected execution, identity,
@@ -301,10 +302,21 @@ disposable smoke package:
 - the approved target-revision side-effect job receives short-lived
   `GITHUB_TOKEN` with minimum `packages: write`;
 - the job receives no PAT fallback and no `id-token: write`; and
-- self-review prevention is enabled where GitHub supports it.
+- self-review prevention is enabled where GitHub supports it unless the
+  confirmed single-maintainer exception below applies.
 
 This bounded risk exception was reopened and reconfirmed before LLD on
 2026-08-06.
+
+For repository `hcoona/three`, package
+`@hcoona/hcoona-release-smoke-npm`, and approval Environment
+`workflow-delivery-v3-buddy-smoke-approval`, the accepted-writer and reviewer
+set is exactly `hcoona`. The confirmed single-maintainer exception therefore
+uses `prevent_self_review: false`. Approval is explicit operator
+self-confirmation, not independent review, semantic validation, or a security
+boundary. Any effective Write/Maintain/Admin, reviewer, role, team, or relevant
+access change invalidates the exception and requires `live_enabled: false`
+until human Governance re-inspects and explicitly reaccepts the slice.
 
 Environment approval is the explicit trust elevation for branch-controlled
 publisher code. It is not cryptographic or independent semantic validation.
@@ -342,6 +354,29 @@ ordinary delete, restore, permission, visibility, or admin actions. Package
 deletion or restore uses Break-Glass Governance. Rollout records latent
 repository/package admin authority as accepted trusted-writer misuse risk; it
 does not require proving that authority is absent.
+
+The permanent approval and capability Environments must be explicitly created
+and authenticated-read before activation. Native platform configuration is
+authoritative. Distinct exact Environment-scoped variables act only as
+configuration sentinels and must be the first executable checks in their jobs.
+The checks map the variables through step `env`, use quoted case-sensitive shell
+comparison, disallow `continue-on-error`, and explicitly gate every later
+operational step on marker success. Exceptional handlers that can run after
+failure remain non-mutating and classify the marker failure. The same variable
+names must be absent at repository and organization scope. Missing or
+mismatched sentinels stop Authorization or publication before any later
+operational step. They do not prove reviewer, self-review,
+administrator-bypass, branch-policy, secret, or credential settings. The
+approval Environment has sole reviewer `hcoona`, the documented self-review
+exception, no credentials, zero wait, and no branch restriction. The capability
+Environment has no reviewer, no stored credential, zero wait, and no branch
+restriction. Both disable administrator bypass where available. If the
+documented public API cannot configure or authoritatively read that control,
+the operator saves and reloads it through the authenticated Environment UI and
+retains durable evidence; any undocumented API response field is corroboration
+only, and omission cannot be treated as false. No branch restriction is
+intentional because the confirmed slice permits any selected same-repository
+ref.
 
 A permanent repository-wide HK dependency-policy gate scans dependency
 manifests, lockfiles, workflows, install scripts, and dependency configuration
@@ -463,6 +498,11 @@ The Agent inspects repository-controlled surfaces, including:
   first-slice Buddy eligibility;
 - exact first-slice Buddy package, GitHub Packages destination, Environment,
   `GITHUB_TOKEN` permissions, absence of PAT and OIDC, and consumer isolation;
+- exact quoted case-sensitive first-step approval and capability Environment
+  marker checks, no `continue-on-error`, no earlier executable steps, explicit
+  marker-success gating of all later operational steps, non-mutating
+  exceptional handlers, and absence of same-name repository or organization
+  variables;
 - actual token permissions and package/repository grants, Official and known
   production isolation, and the bounded set of unrelated assets safe to probe;
 - repository Write/Maintain/Admin membership and explicit trusted-publisher TCB
@@ -487,7 +527,9 @@ Using approved platform tools such as `gh` and destination APIs, the Agent
 collects the actual configuration that the operator is permitted to inspect:
 
 - relevant Rulesets and protected refs;
-- Environment configuration and reviewers;
+- exact Environment IDs, names, reviewers, self-review behavior,
+  administrator-bypass behavior, deployment branch/tag policy, wait timer,
+  secrets, credentials, and Environment-scoped marker values;
 - workflow identity and OIDC claim expectations;
 - trusted-publisher registrations;
 - destination identities and permissions; and
@@ -495,6 +537,10 @@ collects the actual configuration that the operator is permitted to inspect:
 
 The Agent reports mismatches and blocks rollout on unresolved required items.
 This inspection is rollout evidence, not a runtime authority mirror.
+Administrator-bypass evidence additionally includes the authenticated
+post-save Environment UI when no documented public API configures or
+authoritatively reads that control; an undocumented API response field may
+corroborate but never replace the UI evidence.
 
 ### Human Gates
 
@@ -502,6 +548,8 @@ A human performs actions that the platform intentionally reserves for human
 judgment, including:
 
 - protected Environment approval;
+- explicit single-maintainer self-confirmation by `hcoona` under the bounded
+  exception, without claiming independent review;
 - explicit acceptance of the first-slice branch-controlled publisher risk after
   inspecting target/ref, package coordinate, artifact manifest/digest,
   lifecycle scripts, and action summary;
@@ -571,17 +619,51 @@ Buddy dispatch; disable both legacy workflow identities; cancel or drain
 queued, waiting, approval-pending, and running executions; verify disabled
 state, removal, and old-ref dispatch rejection; run and capture acceptance
 probes; remove the acceptance workflow, temporary bypass, and Environment;
-verify their removal; then use an authorized protected commit to set
-`live_enabled` true for only the named smoke package. v1 Official and CI assets
+verify their removal. That cleanup makes a later activation decision
+permissible but does not itself authorize true. v1 Official and CI assets
 remain unchanged; legacy Buddy workflows, Buddy-specific tests and matrices,
 and Buddy documentation are excluded from that preservation and are retired or
-rewritten. The sequence has an intentional brief Buddy outage. If acceptance
-fails, all Buddy publication stays disabled, the temporary path is removed,
-legacy Buddy remains retired, and any probe state is handled through
-reconciliation or Break-Glass. A later retry requires a newly reviewed one-time
-bootstrap invocation and a new fixed disposable coordinate/version. No reusable
-bypass or compatibility rollback remains; restoring legacy Buddy requires a
-separate user-approved rollback PR.
+rewritten. The sequence has an intentional Buddy outage. If acceptance fails,
+all Buddy publication stays disabled, the temporary path is removed, legacy
+Buddy remains retired, and any probe state is handled through reconciliation or
+Break-Glass. A later retry requires a newly reviewed one-time bootstrap
+invocation and a new fixed disposable coordinate/version. No reusable bypass or
+compatibility rollback remains; restoring legacy Buddy requires a separate
+user-approved rollback PR.
+
+### Normal Live Activation
+
+After successful acceptance cleanup, activation follows a separate governed
+sequence:
+
+1. merge readiness repair while false;
+2. create and authenticated-read both permanent Environments and their markers;
+3. capture every existing activation-gate item, including contract and
+   permission-negative tests, permanent no-consumer policy, protected-source
+   provenance, effective writer/access inventory, actual token and package
+   reach, Official/production isolation, 45-day retention, legacy retirement,
+   and explicit residual-risk acceptance;
+4. merge a protected preparation change that refreshes the attestation but
+   remains false;
+5. freeze all other `main` writes and normal Buddy dispatch, then merge a
+   separate minimal protected true change;
+6. perform read-only rollout preflight at the exact activation merge SHA and
+   capture the pre-dispatch run set;
+7. dispatch `main` once, correlate exactly one new attempt-1 run, inspect the
+   immutable summary, and self-approve only that deployment; and
+8. retain true only after a canonical Attempt Outcome with result `success` and
+   exact destination reconciliation.
+
+An ambiguous dispatch response is reconciled read-only and never blindly
+resent. Dispatch and unrelated `main` writes remain frozen through the terminal
+Attempt because a Governance-source advance while approval is pending
+invalidates the admitted identity. The sole pre-terminal exception is the
+minimal protected false change required after any lesser or ambiguous outcome;
+it intentionally blocks future admission after fresh observation. Governance
+then inventories every run and pending deployment and waits for terminal state
+before read-only reconciliation. Runs whose capability group may have started
+remain possibly mutated until proved otherwise. Flag-off does not revoke an
+already-admitted publisher.
 
 ### Revalidation Triggers
 
@@ -711,8 +793,6 @@ Governance integration is not ready for activation when:
   required dependency or permission ceiling;
 - reviewer-visible Buddy approval summary and lifecycle-script inspection
   contract;
-- self-review prevention behavior and fallback when the platform cannot enforce
-  it;
 - Break-Glass package deletion and restore procedure;
 - exact OIDC audience and subject claims;
 - destination-specific trusted-publisher setup;

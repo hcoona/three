@@ -322,4 +322,16 @@ Next:
    The cleanup-before-closure gate is satisfied; and
 9. keep `live_enabled: false`. Destination acceptance is successful, but
    normal Live activation remains a separate production decision and is not
-   authorized by this acceptance-only execution.
+   authorized by this acceptance-only execution; and
+10. retain the normal Live design-only decision confirmed on 2026-08-29.
+    Current inventory at `main@7e04c5c2` finds the normal caller/callee active,
+    both permanent normal Environments absent, the direct collaborator and
+    accepted-writer set limited to `hcoona`, and Governance still false. The
+    confirmed single-maintainer exception permits explicit self-approval by
+    `hcoona` without claiming independent review. Future delivery must first
+    land the disabled readiness repair, pre-create and read back both permanent
+    Environments, refresh preparation evidence while false, then use a separate
+    protected activation change, exact-SHA rollout preflight, one correlated
+    attempt-1 `main` dispatch, and terminal reconciliation. This design does not
+    authorize implementation, Environment creation, activation, dispatch,
+    approval, package mutation, retry, or Break-Glass.

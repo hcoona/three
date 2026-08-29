@@ -109,8 +109,13 @@ Before v3 activation, inventory:
 - GitHub Packages permissions;
 - the exact dedicated `hcoona-release-smoke-npm` package and GitHub Packages
   destination;
-- the separate protected Buddy Environment, reviewers, and self-review
-  prevention behavior;
+- the permanent approval and capability Environments, their exact names and
+  IDs, reviewers, single-maintainer self-review exception,
+  administrator-bypass behavior, wait timers, branch/tag policies, absence of
+  stored credentials, and distinct Environment-scoped configuration markers;
+- absence of repository- or organization-scoped variables with the same marker
+  names, so implicit creation of a missing Environment cannot satisfy a marker
+  check;
 - maximum `GITHUB_TOKEN` package/repository reach, with proof of minimum
   `packages: write`, no PAT fallback, and no `id-token: write`;
 - actual package/repository grants, known Official and production assets, and
@@ -169,15 +174,20 @@ Activation requires explicit human Governance inspection and acceptance of the
 bounded branch-controlled publisher risk. This exception is recorded only for
 the first live Buddy GitHub Packages slice; Official and future Buddy
 destinations or production packages remain blocked until their own governance
-and threat decisions are confirmed. Any membership change that leaves an
-untrusted actor with Write, Maintain, or Admin access blocks the live slice
-until either that actor's repository access is reduced below
-Write/Maintain/Admin or package-write Capability and destination access are
-placed behind an independently enforced publisher boundary unavailable to
-writer-authored workflows. Ref narrowing, Environment branch restrictions,
-CODEOWNERS, and workflow-execution protections may remain defense in depth but
-are insufficient remediation by themselves while an untrusted writer can
-author alternate workflows with `packages: write`.
+and threat decisions are confirmed. The confirmed single-maintainer exception
+allows sole accepted writer and reviewer `hcoona` to approve their own
+dispatch with `prevent_self_review: false`. This is explicit operator
+self-confirmation, not independent review. Any effective writer, reviewer,
+role, team, or relevant access change blocks the live slice through
+`live_enabled: false` until human Governance makes a new decision. Any
+membership change that leaves an untrusted actor with Write, Maintain, or Admin
+access also blocks the slice until either that actor's repository access is
+reduced below Write/Maintain/Admin or package-write Capability and destination
+access are placed behind an independently enforced publisher boundary
+unavailable to writer-authored workflows. Ref narrowing, Environment branch
+restrictions, CODEOWNERS, and workflow-execution protections may remain defense
+in depth but are insufficient remediation by themselves while an untrusted
+writer can author alternate workflows with `packages: write`.
 
 After activation, human Governance re-attests the writer TCB and
 package/repository/Manage Actions access after relevant role, team, or
@@ -191,30 +201,62 @@ approval does not preserve stale Governance state: capability admission uses
 `contents: read` to freshly resolve and re-read the exact source, and any change
 requires a new Attempt after restoration.
 
-The implementation PR merge is the direct v1 Buddy-to-v3 Buddy cutover and
-preserves no compatibility route. It lands with `live_enabled: false` and
-removes both legacy Buddy workflow files. The ordered activation procedure
-freezes Buddy dispatch; disables both `buddy.yml` and `release-buddy.yml`
-repository-wide; cancels or drains queued, waiting, approval-pending, and
-running executions; verifies disabled state, removal, and old-ref dispatch
-rejection before acceptance; runs and captures the temporary protected
-acceptance probes only when every probe independently observes
-`github.run_attempt == 1`; runs terminal evidence capture with
-`always() && github.run_attempt == 1` so first-attempt dependency failures and
-ambiguous mutation state are retained and classified incomplete or unknown for
-reconciliation; rejects evidence capture on non-first attempts; removes the
-acceptance workflow, bypass, and Environment and verifies removal; and only
-then uses an authorized protected commit to set `live_enabled` true for the
-named smoke package. Partial reruns cannot reuse the earlier review or
-coordinate. A retry requires a new reviewed workflow invocation and a new fixed
-disposable coordinate/version. All other former Buddy projects are unsupported
-until explicitly migrated. Failed acceptance leaves all Buddy publication
-disabled, removes the temporary path, keeps legacy Buddy retired, and sends any
-probe state to reconciliation or Break-Glass. Restoring legacy Buddy requires a
-separate user-approved rollback PR. v1 Official and CI assets remain unchanged.
-That preservation explicitly excludes legacy Buddy workflows, Buddy-specific
-tests and matrices, and Buddy documentation, which the direct cutover retires
-or rewrites. The sequence has an intentional brief Buddy outage.
+The direct v1 Buddy-to-v3 Buddy cutover has completed without a compatibility
+route. Both legacy Buddy workflow files are absent, their repository workflow
+identities remain disabled, destination acceptance retry 5 succeeded, and its
+temporary workflow, bypass, Environment, refs, and deployment were retired.
+Those facts make the named slice eligible for a later production decision; they
+do not authorize normal Live or set `live_enabled` true.
+
+Normal Live activation uses this separate ordered procedure:
+
+1. merge a narrow readiness repair while false. Its Environment jobs validate
+   distinct Environment-scoped markers through quoted case-sensitive shell
+   comparisons as their first executable steps, use no `continue-on-error`,
+   explicitly gate every later operational step on marker success, leave
+   exceptional handlers non-mutating, and remove the unused misbound
+   approval-finalizer Attempt output;
+2. create both permanent Environments explicitly. The approval Environment has
+   sole reviewer `hcoona`, the documented self-review exception, no stored
+   credential, zero wait, no branch restriction, and administrator bypass
+   disabled where available. The capability Environment has no reviewer or
+   stored credential, zero wait, no branch restriction, and the same
+   administrator-bypass posture. Authenticated readback verifies both markers
+   and all native settings. Administrator bypass is configured and
+   authenticated-read through the saved Environment UI when no documented
+   public API supports that control; an undocumented API response field is
+   corroborating evidence only, and omission is not false;
+3. capture every activation-gate item, then merge a protected preparation
+   change that refreshes the attestation and evidence while keeping false;
+4. freeze every other `main` write and normal Buddy dispatch. Merge only the
+   minimal protected activation change that sets true, and retain the freeze
+   except for the minimal protected false change required by a lesser outcome;
+5. run read-only rollout preflight against the exact activation merge SHA. It
+   rechecks all gate evidence, derives that SHA's NBGV coordinate and target
+   tag, proves the expected destination pre-state, and captures the existing
+   normal-run set;
+6. dispatch `main` exactly once and correlate exactly one new
+   `workflow_dispatch` attempt-1 run by `hcoona` at that SHA. An ambiguous
+   response is reconciled read-only and is never blindly resent;
+7. inspect the immutable reviewer summary and self-approve only the correlated
+   deployment; and
+8. retain true and release the freeze only after a canonical Attempt Outcome
+   with result `success`, exact artifacts and disposition-specific bindings,
+   either action-bearing publication with Capability Admission, durable
+   capability-group result, and Receipt or canonical exact-satisfied no-action
+   with no capability or Receipt lineage, and exact destination reconciliation.
+
+Any lesser outcome keeps dispatch and unrelated `main` writes frozen,
+inventories all runs and pending deployments, permits only a minimal protected
+false change before terminal state, and waits for terminal platform state
+before read-only reconciliation.
+Pre-capability work may be canceled when platform evidence proves no
+side-effect path started. Capability-started work is drained where possible and
+remains possibly mutated until proved otherwise. Flag-off controls future
+admission; it is not package rollback or instantaneous capability revocation.
+A later whole-run replay or new dispatch requires a fresh explicit decision and
+Attempt. No legacy restoration, delete, restore, dashboard, alerting service,
+lock service, or new credential is part of this activation.
 
 The same cutover change removes both Buddy workflow files and removes or
 rewrites Buddy-only acceptance rows, node IDs, and tests. Mixed Buddy/Official

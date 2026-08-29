@@ -379,6 +379,39 @@ If it conflicts with the
   Governance profile remain replay authority. Normal Live and
   `live_enabled: true` remain unauthorized and require a separate production
   decision.
+- On 2026-08-29, the user authorized normal Live **requirements and design
+  only**. No implementation or external-state mutation was authorized. The
+  design inventory at `main@7e04c5c2` found normal caller workflow ID
+  `340952169` and callee workflow ID `340952170` active, both permanent normal
+  Environments absent, sole direct collaborator and accepted writer `hcoona`,
+  and the protected attestation still `live_enabled: false` with expiry
+  `2026-11-12T17:19:12Z`.
+- The confirmed normal Live governance choice is a narrowly scoped
+  single-maintainer exception: approval Environment
+  `workflow-delivery-v3-buddy-smoke-approval` has sole reviewer `hcoona` and
+  `prevent_self_review: false`. Approval is explicit operator
+  self-confirmation, not independent review or a security boundary. Any
+  effective writer, reviewer, role, team, or relevant access change requires
+  false and a new Governance decision.
+- Future delivery is ordered and remains unauthorized until separately
+  approved: disabled readiness repair; explicit creation and authenticated
+  readback of both permanent Environments; protected preparation evidence while
+  false; freeze of other `main` writes and normal dispatch; minimal protected
+  activation; exact activation-SHA rollout preflight; one uniquely correlated
+  attempt-1 `main` dispatch; immutable-summary review and self-approval; then
+  terminal reconciliation. A non-complete result retains the freeze, restores
+  false through protected review, accounts for all in-flight work, and
+  reconciles read-only. Flag-off is not package rollback or instantaneous
+  capability revocation.
+- The readiness repair must remove the unused misbound
+  `approval-finalizer.outputs.attempt-artifact-id` output and add distinct exact
+  Environment-scoped marker checks as the first executable steps in the
+  approval and publisher jobs. Markers only detect missing/misbound
+  configuration for the repaired revision and descendants; native Environment
+  settings remain externally inspected authority. Production Adapter semantics
+  remain create-only conflict: an identical conflict may become exact/no-op
+  only in a later whole Attempt, while a differing conflict remains
+  reconciliation-required.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the

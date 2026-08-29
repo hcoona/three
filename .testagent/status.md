@@ -11748,3 +11748,65 @@ Status: **DESTINATION ACCEPTANCE AND CLEANUP COMPLETE.**
   `live_enabled: true` or activating normal Live remains unauthorized.
 
 <!-- END APPEND: 2026-08-29-wdv3-acceptance-retry-5-closure -->
+
+<!-- BEGIN APPEND: 2026-08-29-wdv3-normal-live-design-status -->
+
+## Workflow Delivery v3 normal Live design status
+
+Status: **DESIGN COMPLETE; EXECUTION REMAINS UNAUTHORIZED.**
+
+- The user authorized requirements and design only for normal Buddy Live of
+  `@hcoona/hcoona-release-smoke-npm` to GitHub Packages. No Environment
+  creation, workflow/source/test implementation, Governance mutation, dispatch,
+  deployment approval, package mutation, legacy restoration, Official
+  activation, or Break-Glass action is included.
+- Read-only inventory found normal caller workflow ID `340952169` and callee
+  workflow ID `340952170` active; legacy workflow IDs `216311758` and
+  `269749708` disabled manually; both permanent normal Live Environments absent;
+  direct collaborator `hcoona`; and protected Governance still
+  `live_enabled: false`, expiring `2026-11-12T17:19:12Z`.
+- The confirmed single-maintainer exception permits sole accepted writer and
+  reviewer `hcoona` to use `prevent_self_review: false` only for the named
+  approval Environment and slice. Approval is explicit operator
+  self-confirmation, not independent review or a security boundary. Relevant
+  writer, reviewer, role, team, package, repository, Manage Actions, or access
+  change requires false and a new Governance decision.
+- The completed requirements, HLD, MLD, migration, glossary, and LLD define
+  readiness repair while false; explicit permanent Environment provisioning;
+  exact case-sensitive marker guards; authenticated native-setting evidence;
+  a protected preparation attestation; a separate minimal activation change;
+  `main`/dispatch freeze; exact activation-SHA rollout preflight; one uniquely
+  correlated attempt-1 dispatch; self-approval of only that deployment;
+  canonical result-success and destination reconciliation; and fail-closed
+  flag-off without claiming rollback.
+- The action-bearing completion branch requires exact Authorization, Capability
+  Admission, capability result, and Receipt lineage. The canonical
+  exact-satisfied no-action branch requires Authorization but no Capability
+  Admission, capability result, or Receipt. A green run or exact destination
+  state alone cannot upgrade an incomplete, failed, unknown, conflicting, or
+  possibly-mutated Attempt.
+- GitHub's documented Environment API does not expose a stable
+  administrator-bypass write/read contract. The design therefore requires
+  authenticated
+  post-save UI evidence, with any undocumented API response field used only as
+  corroboration. The marker guard uses a quoted case-sensitive shell
+  comparison, disallows `continue-on-error`, explicitly gates later operational
+  steps, and leaves exceptional handlers non-mutating.
+- First-pass independent normative, MLD, LLD, ledger, and platform reviews
+  produced four internal findings and three platform qualifications. Separate
+  adjudicators classified canonical-success, exact-no-op, freeze exception,
+  marker execution, and administrator-bypass evidence as true positives and
+  classified the alleged HLD access-trigger gap and job-token wording issue as
+  false positives. The true positives were corrected.
+- A fresh five-way review of the corrected normative, MLD, LLD/current-state,
+  ledger, and platform-feasibility scopes returned **No findings** in every
+  scope.
+- `git diff --check`, scoped Prettier, and scoped markdownlint passed. The
+  unstaged HK small/medium commit-hook gate passed over the 13-path design diff
+  before this append. The final gate must include this append before protected
+  delivery.
+- No external resource changed. Both permanent Environments remain absent,
+  `live_enabled` remains false, no normal Live run was dispatched, no deployment
+  was approved, and package state was not touched.
+
+<!-- END APPEND: 2026-08-29-wdv3-normal-live-design-status -->
