@@ -1,0 +1,68 @@
+{
+  "schema_version": "1.0",
+  "declared_font_families": ["Fixture Serif"],
+  "fragment_cases": [
+    {
+      "id": "bounded-semantic-markup",
+      "accepted": true,
+      "content": "<p id=\"term-1\" class=\"term\" lang=\"zh-Hans\" aria-describedby=\"note-1\">正文 <a href=\"#note-1\">note</a></p><p id=\"note-1\">Note</p>"
+    },
+    {
+      "id": "figure-marker",
+      "accepted": true,
+      "content": "<section><!-- figure: example-1 --></section>"
+    },
+    {
+      "id": "external-link",
+      "accepted": false,
+      "content": "<a href=\"https://example.invalid/\">external</a>"
+    },
+    {
+      "id": "event-handler",
+      "accepted": false,
+      "content": "<p onclick=\"alert(1)\">active</p>"
+    }
+  ],
+  "stylesheet_cases": [
+    {
+      "id": "bounded-typography",
+      "accepted": true,
+      "content": "p:lang(zh-Hans) > span.term { color: #111; font-family: \"Fixture Serif\", serif; font-size: 12pt; }"
+    },
+    {
+      "id": "compatible-font-variants",
+      "accepted": true,
+      "content": "p { font-variant-numeric: lining-nums tabular-nums diagonal-fractions; font-variant-east-asian: jis04 full-width ruby; }"
+    },
+    {
+      "id": "numeric-figure-conflict",
+      "accepted": false,
+      "content": "p { font-variant-numeric: lining-nums oldstyle-nums; }"
+    },
+    {
+      "id": "numeric-spacing-conflict",
+      "accepted": false,
+      "content": "p { font-variant-numeric: proportional-nums tabular-nums; }"
+    },
+    {
+      "id": "east-asian-variant-conflict",
+      "accepted": false,
+      "content": "p { font-variant-east-asian: jis78 jis90; }"
+    },
+    {
+      "id": "east-asian-width-conflict",
+      "accepted": false,
+      "content": "p { font-variant-east-asian: full-width proportional-width; }"
+    },
+    {
+      "id": "function-value",
+      "accepted": false,
+      "content": "p { font-size: calc(1em + 1px); }"
+    },
+    {
+      "id": "visibility-suppression",
+      "accepted": false,
+      "content": "p { display: none; }"
+    }
+  ]
+}
