@@ -3691,9 +3691,8 @@ TEST_LOCAL_RETRY_5_CONFIRMATION_DIGEST = (
     "sha256:71fdd8f8cbb3ab90dd94745a18337d89a893fbdaeea35fafa733bc13d75c308f"
 )
 TEST_LOCAL_RETRY_5_PREPARATION_TARGET = "0" * 40
-TEST_ONLY_HYPOTHETICAL_RETRY_5_REVIEWED_TARGET_SHA = (
-    "0123456789abcdef0123456789abcdef01234567"
-)
+RETRY_5_FINALIZED_TARGET_SHA = "66154d0bb351a0c9c13d16292ce003d7eee65077"
+HYPOTHETICAL_LATER_RETRY_5_FINALIZATION_TARGET_SHA = "f" * 40
 TEST_LOCAL_RETRY_5_SCENARIO_ORDER = (
     "absent-create-readback",
     "exact",
@@ -3753,57 +3752,18 @@ def _retry_5_preparation_document() -> dict[str, Any]:
     return document
 
 
-def _install_test_only_retry_5_finalization_profile(
-    monkeypatch: pytest.MonkeyPatch,
-) -> Any:
-    original_profiles = governance_module._GOVERNANCE_ACCEPTANCE_PROFILES
-    preparation_profile = _registered_retry_5_governance_profile()
-    finalized_profile = governance_module._GovernanceAcceptanceProfile(
-        package_coordinate=preparation_profile.package_coordinate,
-        workflow_path=preparation_profile.workflow_path,
-        environment=preparation_profile.environment,
-        target_sha=TEST_ONLY_HYPOTHETICAL_RETRY_5_REVIEWED_TARGET_SHA,
-        confirmation_digest=preparation_profile.confirmation_digest,
-        scenario_coordinates=preparation_profile.scenario_coordinates,
-    )
-    patched_profiles = tuple(
-        finalized_profile if profile is preparation_profile else profile
-        for profile in original_profiles
-    )
-    monkeypatch.setattr(
-        governance_module,
-        "_GOVERNANCE_ACCEPTANCE_PROFILES",
-        patched_profiles,
-    )
-
-    assert patched_profiles[:4] == original_profiles[:4]
-    assert patched_profiles[-1] is finalized_profile
-    assert (
-        sum(
-            profile is not original
-            for profile, original in zip(
-                patched_profiles,
-                original_profiles,
-                strict=True,
-            )
-        )
-        == 1
-    )
-    return finalized_profile
-
-
 def _retry_5_finalized_document(
     *,
     upstream_status: int,
 ) -> dict[str, Any]:
     document = _test_local_finalized_document(
         workflow_path=TEST_LOCAL_RETRY_5_WORKFLOW_PATH,
-        target_sha=TEST_ONLY_HYPOTHETICAL_RETRY_5_REVIEWED_TARGET_SHA,
+        target_sha=RETRY_5_FINALIZED_TARGET_SHA,
         package_coordinate=TEST_LOCAL_RETRY_5_PACKAGE_COORDINATE,
         confirmation_digest=TEST_LOCAL_RETRY_5_CONFIRMATION_DIGEST,
         environment=TEST_LOCAL_RETRY_5_ENVIRONMENT,
         scenario_coordinates=TEST_LOCAL_RETRY_5_SCENARIO_COORDINATES,
-        proof_namespace=f"retry-5-test-only-status-{upstream_status}",
+        proof_namespace=f"retry-5-finalized-status-{upstream_status}",
     )
     for probe_index, fact in enumerate(document["probe-facts"]):
         for scenario in fact["scenarios"]:
@@ -3879,7 +3839,7 @@ def test_governance_acceptance_profiles_are_exactly_five_with_retry_5_and_no_his
             17,
             TEST_LOCAL_RETRY_5_WORKFLOW_PATH,
             TEST_LOCAL_RETRY_5_ENVIRONMENT,
-            TEST_LOCAL_RETRY_5_PREPARATION_TARGET,
+            RETRY_5_FINALIZED_TARGET_SHA,
             TEST_LOCAL_RETRY_5_CONFIRMATION_DIGEST,
             (17, 17, 18, 19, 20),
         ),
@@ -3949,7 +3909,7 @@ def test_governance_acceptance_profiles_are_exactly_five_with_retry_5_and_no_his
     assert profiles[-1] is retry_5_profile
 
 
-def test_retry_5_governance_profile_binds_exact_preparation_identity_and_scenarios() -> (
+def test_retry_5_governance_profile_binds_exact_finalized_identity_and_scenarios() -> (
     None
 ):
     profile = _registered_retry_5_governance_profile()
@@ -3957,8 +3917,8 @@ def test_retry_5_governance_profile_binds_exact_preparation_identity_and_scenari
     assert profile.package_coordinate == TEST_LOCAL_RETRY_5_PACKAGE_COORDINATE
     assert profile.workflow_path == TEST_LOCAL_RETRY_5_WORKFLOW_PATH
     assert profile.environment == TEST_LOCAL_RETRY_5_ENVIRONMENT
-    assert profile.target_sha == TEST_LOCAL_RETRY_5_PREPARATION_TARGET
-    assert profile.target_sha.encode("ascii") == b"0" * 40
+    assert profile.target_sha == RETRY_5_FINALIZED_TARGET_SHA
+    assert profile.target_sha != TEST_LOCAL_RETRY_5_PREPARATION_TARGET
     assert profile.confirmation_digest == TEST_LOCAL_RETRY_5_CONFIRMATION_DIGEST
     assert (
         ValidatedAcceptanceRequestProof._sha256(
@@ -3969,11 +3929,6 @@ def test_retry_5_governance_profile_binds_exact_preparation_identity_and_scenari
     assert tuple(profile.coordinates()) == TEST_LOCAL_RETRY_5_SCENARIO_ORDER
     assert tuple(profile.coordinates().items()) == tuple(
         TEST_LOCAL_RETRY_5_SCENARIO_COORDINATES.items()
-    )
-    assert not any(
-        candidate.package_coordinate == TEST_LOCAL_RETRY_5_PACKAGE_COORDINATE
-        and candidate.target_sha != "0" * 40
-        for candidate in governance_module._GOVERNANCE_ACCEPTANCE_PROFILES
     )
 
 
@@ -4111,11 +4066,10 @@ def test_retry_5_zero_target_rejects_noncanonical_dispatch_or_identity(
 
 
 @pytest.mark.parametrize("upstream_status", [200, 201])
-def test_retry_5_finalization_seam_admits_complete_status_and_preserves_bindings(
-    monkeypatch: pytest.MonkeyPatch,
+def test_retry_5_real_registry_admits_complete_status_and_preserves_bindings(
     upstream_status: int,
 ) -> None:
-    profile = _install_test_only_retry_5_finalization_profile(monkeypatch)
+    profile = _registered_retry_5_governance_profile()
     document = _retry_5_finalized_document(upstream_status=upstream_status)
     raw = canonicalize(document)
 
@@ -4136,12 +4090,8 @@ def test_retry_5_finalization_seam_admits_complete_status_and_preserves_bindings
         if "validated-request-proof" in scenario
     )
 
-    assert profile.target_sha == (
-        TEST_ONLY_HYPOTHETICAL_RETRY_5_REVIEWED_TARGET_SHA
-    )
-    assert admitted.target_sha == (
-        TEST_ONLY_HYPOTHETICAL_RETRY_5_REVIEWED_TARGET_SHA
-    )
+    assert profile.target_sha == RETRY_5_FINALIZED_TARGET_SHA
+    assert admitted.target_sha == RETRY_5_FINALIZED_TARGET_SHA
     assert (
         admitted.workflow.path,
         admitted.environment,
@@ -4197,7 +4147,7 @@ def test_retry_5_finalization_seam_admits_complete_status_and_preserves_bindings
             upstream_status,
             ValidatedAcceptanceRequestProof._sha256(
                 (
-                    '{"_id":"retry-5-test-only-status-'
+                    '{"_id":"retry-5-finalized-status-'
                     f'{upstream_status}-{scenario}"}}'
                 ).encode()
             ),
@@ -4242,12 +4192,10 @@ def test_retry_5_finalization_seam_admits_complete_status_and_preserves_bindings
     ],
 )
 def test_retry_5_governance_rejects_run_and_recovery_correlation_drift(
-    monkeypatch: pytest.MonkeyPatch,
     path: tuple[object, ...],
     replacement: object,
     message: str,
 ) -> None:
-    _install_test_only_retry_5_finalization_profile(monkeypatch)
     document = _retry_5_finalized_document(upstream_status=200)
     _set_path(document, path, replacement)
 
@@ -4257,10 +4205,8 @@ def test_retry_5_governance_rejects_run_and_recovery_correlation_drift(
 
 @pytest.mark.parametrize("upstream_status", [200, 201])
 def test_retry_5_lost_response_proof_must_bind_exact_readback_content(
-    monkeypatch: pytest.MonkeyPatch,
     upstream_status: int,
 ) -> None:
-    _install_test_only_retry_5_finalization_profile(monkeypatch)
     document = _retry_5_finalized_document(upstream_status=upstream_status)
     lost_response = document["probe-facts"][1]["scenarios"][3]
     assert lost_response["scenario"] == "lost-response"
@@ -4278,12 +4224,18 @@ def test_retry_5_lost_response_proof_must_bind_exact_readback_content(
         _admit(document)
 
 
-@pytest.mark.parametrize("upstream_status", [202, 204])
-def test_retry_5_finalization_seam_rejects_non_authoritative_status(
-    monkeypatch: pytest.MonkeyPatch,
+_RETRY_5_NON_AUTHORITATIVE_TWO_XX_STATUS_CASES = tuple(
+    pytest.param(status, id=f"http-{status}") for status in range(202, 300)
+)
+
+
+@pytest.mark.parametrize(
+    "upstream_status",
+    _RETRY_5_NON_AUTHORITATIVE_TWO_XX_STATUS_CASES,
+)
+def test_retry_5_real_registry_rejects_non_authoritative_status(
     upstream_status: int,
 ) -> None:
-    _install_test_only_retry_5_finalization_profile(monkeypatch)
     document = _retry_5_finalized_document(upstream_status=upstream_status)
     proof_statuses = tuple(
         scenario["validated-request-proof"]["upstream-status"]
@@ -4293,10 +4245,33 @@ def test_retry_5_finalization_seam_rejects_non_authoritative_status(
     )
 
     assert proof_statuses == (upstream_status, upstream_status)
-    assert document["target-sha"] == (
-        TEST_ONLY_HYPOTHETICAL_RETRY_5_REVIEWED_TARGET_SHA
+    assert document["target-sha"] == RETRY_5_FINALIZED_TARGET_SHA
+    with pytest.raises(
+        ValueError,
+        match="accepted npm publish status",
+    ) as raised:
+        _admit(document)
+
+    assert str(raised.value).endswith(
+        ".upstream-status must be an accepted npm publish status"
     )
-    with pytest.raises(ValueError, match="accepted npm publish status"):
+    assert upstream_status not in (
+        governance_module._NPM_PUBLISH_SUCCESS_STATUSES
+    )
+
+
+def test_retry_5_governance_rejects_hypothetical_later_finalization_target() -> (
+    None
+):
+    profile = _registered_retry_5_governance_profile()
+    document = _retry_5_finalized_document(upstream_status=200)
+    document["target-sha"] = HYPOTHETICAL_LATER_RETRY_5_FINALIZATION_TARGET_SHA
+
+    assert profile.package_coordinate == TEST_LOCAL_RETRY_5_PACKAGE_COORDINATE
+    assert HYPOTHETICAL_LATER_RETRY_5_FINALIZATION_TARGET_SHA != (
+        RETRY_5_FINALIZED_TARGET_SHA
+    )
+    with pytest.raises(ValueError, match="target-sha"):
         _admit(document)
 
 
@@ -4384,13 +4359,11 @@ def test_retry_5_finalization_seam_rejects_non_authoritative_status(
     ],
 )
 def test_retry_5_governance_rejects_bidirectional_cross_profile_bindings(
-    monkeypatch: pytest.MonkeyPatch,
     direction: str,
     binding: str,
     path: tuple[object, ...],
     message: str,
 ) -> None:
-    _install_test_only_retry_5_finalization_profile(monkeypatch)
     retry_5_document = _retry_5_finalized_document(upstream_status=200)
     retry_4_profile = _registered_retry_4_governance_profile()
     retry_4_document = _test_local_finalized_document(
@@ -4405,9 +4378,7 @@ def test_retry_5_governance_rejects_bidirectional_cross_profile_bindings(
 
     retry_5_control = _admit(retry_5_document)
     retry_4_control = _admit(retry_4_document)
-    assert retry_5_control.target_sha == (
-        TEST_ONLY_HYPOTHETICAL_RETRY_5_REVIEWED_TARGET_SHA
-    )
+    assert retry_5_control.target_sha == RETRY_5_FINALIZED_TARGET_SHA
     assert retry_4_control.target_sha == TEST_LOCAL_RETRY_4_FINALIZED_TARGET_SHA
     if direction == "retry-5-receives-retry-4":
         recipient, donor = retry_5_document, retry_4_document
@@ -4867,11 +4838,6 @@ def _preserve_retry_4_historical_registry_view(
     )
 
 
-_RETRY_5_NON_AUTHORITATIVE_TWO_XX_STATUS_CASES = tuple(
-    pytest.param(status, id=f"http-{status}") for status in range(202, 300)
-)
-
-
 def test_retry_5_governance_authoritative_publish_status_set_is_exact() -> None:
     profile = _registered_retry_5_governance_profile()
     expected_statuses = frozenset({200, 201})
@@ -4879,38 +4845,3 @@ def test_retry_5_governance_authoritative_publish_status_set_is_exact() -> None:
 
     assert actual_statuses == expected_statuses
     assert profile.package_coordinate == TEST_LOCAL_RETRY_5_PACKAGE_COORDINATE
-
-
-@pytest.mark.parametrize(
-    "upstream_status",
-    _RETRY_5_NON_AUTHORITATIVE_TWO_XX_STATUS_CASES,
-)
-def test_retry_5_finalization_seam_rejects_every_other_two_xx_status(
-    monkeypatch: pytest.MonkeyPatch,
-    upstream_status: int,
-) -> None:
-    profile = _install_test_only_retry_5_finalization_profile(monkeypatch)
-    document = _retry_5_finalized_document(upstream_status=upstream_status)
-    proof_statuses = tuple(
-        scenario["validated-request-proof"]["upstream-status"]
-        for fact in document["probe-facts"]
-        for scenario in fact["scenarios"]
-        if "validated-request-proof" in scenario
-    )
-
-    assert proof_statuses == (upstream_status, upstream_status)
-    assert profile.target_sha == (
-        TEST_ONLY_HYPOTHETICAL_RETRY_5_REVIEWED_TARGET_SHA
-    )
-    with pytest.raises(
-        ValueError,
-        match="accepted npm publish status",
-    ) as raised:
-        _admit(document)
-
-    assert str(raised.value).endswith(
-        ".upstream-status must be an accepted npm publish status"
-    )
-    assert upstream_status not in (
-        governance_module._NPM_PUBLISH_SUCCESS_STATUSES
-    )

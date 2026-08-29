@@ -318,14 +318,24 @@ If it conflicts with the
   found `.17`-`.20` and their tags unused, but preparation does not execute or
   consume them. No retry-5 Environment, workflow dispatch, deployment,
   acceptance ref, package, tag, or Live mutation exists in this phase.
-  Protected preparation must merge, then fresh external-state revalidation
-  must pass before creation of a new protected Environment and a separate
-  protected finalization PR that replaces the zero target with that exact
-  preparation merge SHA. Finalization, the sole `run_attempt == 1` dispatch
-  and review, reconciliation, cleanup, and closure must each begin from
-  freshly fetched and revalidated `origin/main` containing the immediately
-  preceding protected merge; no local branch, attempt ref, arbitrary fetched
-  SHA, or reviewed-but-unmerged head is a valid work base.
+  Protected preparation PR #616 rebase-merged without bypass as
+  `66154d0bb351a0c9c13d16292ce003d7eee65077`. Post-merge Continuous
+  Integration run `33223036097` and CodeQL run `33223036123` passed on that
+  exact SHA. Fresh authenticated external-state revalidation confirmed the
+  workflow active with zero runs, zero retry-5 deployments, no acceptance
+  refs, and `.17`-`.20` plus their tags unused. Environment
+  `workflow-delivery-v3-buddy-smoke-acceptance-retry-5` now exists as ID
+  `20815831035`, with sole reviewer `hcoona` / `712433`,
+  `prevent_self_review: false`, and sole custom branch policy `main`.
+  The bounded finalization candidate replaces the zero target in both workflow
+  literals and the Governance profile with the exact preparation merge SHA.
+  It has not been dispatched. The protected finalization must merge without
+  bypass, then fresh exact preflight must pass before the sole
+  `run_attempt == 1` dispatch and review. Reconciliation, cleanup, and closure
+  must each begin from freshly fetched and revalidated `origin/main`
+  containing the immediately preceding protected merge; no local branch,
+  attempt ref, arbitrary fetched SHA, or reviewed-but-unmerged head is a valid
+  work base.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the

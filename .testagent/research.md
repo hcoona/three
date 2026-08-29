@@ -6041,3 +6041,117 @@ Phase-1 Python files.
   and all retry-5 execution identities remain unchanged.
 
 <!-- END APPEND: 2026-08-28-wdv3-acceptance-retry-5-work-base-refresh -->
+
+<!-- BEGIN APPEND: 2026-08-29-wdv3-acceptance-retry-5-finalization-research -->
+
+## 2026-08-29 Workflow Delivery v3 retry-5 finalization test research
+
+### Verified work base and boundaries
+
+- Repository: `/workspace/three-workspaces/design-workflows`.
+- Before this run's first edit, branch was
+  `workflow-delivery-v3-acceptance-retry-5-finalization`, and
+  `HEAD == origin/main == 66154d0bb351a0c9c13d16292ce003d7eee65077`.
+- The working tree was clean.
+- The preserved pre-run prefix of this file was exactly 356274 bytes with
+  SHA-256 `e93f5b00ace5fca7de6d383d633c38ab35cf25ed77ec5983d1b150f8da00db2b`.
+- Research remained bounded to the two requested test modules and their direct
+  workflow/Governance dependencies. No external mutation or Git ref mutation
+  was performed.
+
+### Bounded inventory and conventions
+
+- Contract target:
+  `src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_retry_5_workflow.py`.
+  It tests retry-5 YAML identity, fixed-input validation ordering, embedded
+  terminal evidence, artifacts, permissions, and real Governance admission.
+- Governance target:
+  `src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py`.
+  It tests the ordered real Governance profile registry, canonical evidence,
+  HTTP proof statuses, rejected-dispatch behavior, and profile isolation.
+- Direct dependencies are the retry-5 workflow YAML,
+  `records/governance.py`, `adapters/github_packages.py`, and `canonical.py`.
+- Existing conventions are pytest module-level tests, parametrization with
+  stable IDs, exact tuple/dict and canonical-byte assertions,
+  `pytest.raises(..., match=...)`, and subprocess/temp-path isolation without
+  network access.
+- Python guidance was read from
+  `.agents/skills/code-testing-extensions/extensions/python.md`; examples were
+  unnecessary because the repository has strong conventions.
+
+### Current state and minimal implementation direction
+
+- Production intentionally retains exactly three zero bindings: workflow
+  dispatch target default, workflow `WDV3_ACCEPTANCE_TARGET_SHA`, and retry-5
+  Governance profile `target_sha`.
+- Existing tests simulate finalization with synthetic target constants and
+  test-local replacement of the retry-5 Governance profile. Minimal changes
+  should replace those expectations with the immutable reviewed target
+  `66154d0bb351a0c9c13d16292ce003d7eee65077`, remove the local profile
+  finalization seam, and reuse the existing preparation matrices.
+- The fixed-input cases should accept the exact target and reject zero,
+  unrelated, and later-finalization SHAs before review/mutation. Rejected
+  dispatch should retain the fixed identity where applicable.
+- Complete HTTP 200/201 evidence should traverse the unmodified real registry;
+  202/204 must be rejected. The intentional zero-sentinel rejected-dispatch
+  shape remains admissible. Cross-profile substitutions remain rejected.
+- The expected focused RED is limited to assertions/admission blocked by the
+  three unchanged zero production bindings.
+
+### Authoritative requirement checklist
+
+- [ ] Bind tests to immutable PR #616 merge target
+  `66154d0bb351a0c9c13d16292ce003d7eee65077`; reject later finalization SHA.
+- [ ] Treat authenticated preflight as authoritative without repeating it:
+  CI `33223036097`, CodeQL `33223036123`, active zero-run workflow
+  `345015706`, Environment `20815831035`, sole reviewer `hcoona/712433`,
+  `prevent_self_review=false`, sole custom branch policy `main`, zero
+  deployments, no acceptance refs, only `.1/.5/.9/.13` present, with
+  `.17-.20` and `wdv3-acceptance-17..20` unused.
+- [ ] Leave exactly the three production zero bindings unchanged.
+- [ ] Bind both workflow target literals and the real retry-5 Governance target
+  expectation to the immutable target.
+- [ ] Accept exact finalized fixed input; reject zero/wrong inputs before
+  review/mutation and retain fixed rejected-dispatch identity.
+- [ ] Admit complete retry-5 HTTP 200/201 evidence through the real Governance
+  registry without a test-local profile-finalization monkeypatch.
+- [ ] Reject HTTP 202/204.
+- [ ] Preserve intentional zero-sentinel rejected-dispatch admission.
+- [ ] Reject cross-profile and hypothetical finalization-commit substitutions.
+- [ ] Minimally adapt preparation tests rather than duplicate broad coverage.
+- [ ] Run only the exact two-module pytest command and stop at intentional RED
+  attributable solely to the three zero bindings.
+- [ ] Run test-gap analysis, assertion-quality review, and prompt-scenario
+  mapping against the final test set.
+- [ ] Preserve all allowed-path boundaries and append-only `.testagent`
+  prefixes.
+
+### Exact bounded validation command
+
+`uv run --python 3.13 --package three-workflow-delivery-v3 python -m pytest src/public/lib/three-workflow-delivery-v3/tests/contracts/test_commit10_acceptance_retry_5_workflow.py src/public/lib/three-workflow-delivery-v3/tests/governance/test_commit10_acceptance_evidence.py`
+
+<!-- END APPEND: 2026-08-29-wdv3-acceptance-retry-5-finalization-research -->
+
+<!-- BEGIN APPEND: 2026-08-29-wdv3-acceptance-retry-5-finalization-authority -->
+
+## Retry-5 finalization authority closure
+
+- Protected preparation PR #616 rebase-merged without bypass as
+  `66154d0bb351a0c9c13d16292ce003d7eee65077`.
+- Post-merge Continuous Integration run `33223036097` and CodeQL run
+  `33223036123` completed successfully on that exact SHA.
+- Fresh authenticated read-only preflight confirmed workflow ID `345015706`
+  active with zero runs, zero retry-5 deployments, no acceptance refs, and
+  package versions and tags limited to `.1`, `.5`, `.9`, and `.13`.
+  Retry-5 `.17`-`.20` and `wdv3-acceptance-17` through
+  `wdv3-acceptance-20` remain unused.
+- Environment `workflow-delivery-v3-buddy-smoke-acceptance-retry-5` was
+  created as ID `20815831035`, with sole reviewer `hcoona` / `712433`,
+  `prevent_self_review: false`, and sole custom branch policy `main`
+  (policy ID `58522150`). Immediate readback retained zero workflow runs and
+  deployments.
+- The finalization implementation is intentionally limited to the workflow
+  dispatch default, workflow `WDV3_ACCEPTANCE_TARGET_SHA`, and Governance
+  retry-5 `target_sha`, all bound to the protected preparation merge.
+
+<!-- END APPEND: 2026-08-29-wdv3-acceptance-retry-5-finalization-authority -->

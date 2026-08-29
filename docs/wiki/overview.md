@@ -378,16 +378,21 @@ have changed.
     delivery, it was rebased without file overlap or conflict onto the later
     dependency-only merges #614 and #615 at `origin/main@c33ea9da`. It adds
     only the temporary manual workflow and closed Adapter/Governance profile
-    for `.17`-`.20`; the target remains forty ASCII zeroes, so validation stops
-    before Environment review or package write. Read-only preflight found the
-    versions and tags unused, but no retry-5 Environment, dispatch, deployment,
-    acceptance ref, package, tag, or Live mutation has occurred, and
-    `.17`-`.20` remain unexecuted and unconsumed.
-    After protected preparation merges, fresh external-state revalidation must
-    pass before a new protected Environment is created and a separate
-    protected finalization PR binds the exact preparation merge SHA.
-    Finalization, the sole `run_attempt == 1` dispatch and review,
-    reconciliation, cleanup, and closure must each freshly fetch and revalidate
+    for `.17`-`.20`; its preparation target remained forty ASCII zeroes, so
+    validation stopped before Environment review or package write. Protected
+    preparation PR #616 then rebase-merged without bypass as `66154d0b`;
+    post-merge Continuous Integration run `33223036097` and CodeQL run
+    `33223036123` passed. Fresh authenticated revalidation found `.17`-`.20`,
+    their tags, retry-5 runs, deployments, and acceptance refs absent. The
+    dedicated Environment now exists as ID `20815831035`, with sole reviewer
+    `hcoona` / `712433`, self-review permitted, and sole custom branch policy
+    `main`. The bounded finalization candidate pins both workflow target
+    literals and the Governance profile to exact preparation merge
+    `66154d0b`; it has not been dispatched, and `.17`-`.20` remain unexecuted
+    and unconsumed.
+    The protected finalization must merge without bypass, then fresh exact
+    preflight must pass before the sole `run_attempt == 1` dispatch and review.
+    Reconciliation, cleanup, and closure must each freshly fetch and revalidate
     `origin/main` containing the immediately preceding protected merge. Normal
     Live and `live_enabled: true` remain unauthorized.
 
