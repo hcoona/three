@@ -1783,17 +1783,34 @@ reviewer `hcoona` / `712433`, `prevent_self_review: false`, and sole custom
 branch policy `main`; immediate readback still showed zero runs and
 deployments.
 
-The bounded finalization candidate replaces the zero target in both workflow
-literals and the Governance profile with the exact preparation merge SHA. It
-must merge through the protected PR path without bypass. A fresh exact
-post-finalization preflight must then pass before the sole
-`run_attempt == 1` dispatch and review. Reconciliation, cleanup, and closure
-must each start from freshly fetched and revalidated `origin/main` containing
-the immediately preceding protected merge. A local branch, attempt ref,
-arbitrary fetched SHA, or reviewed-but-unmerged head is never work-base
-authority. No retry-5 dispatch, deployment, package, tag, acceptance-ref, or
-Live mutation has occurred. Normal Live and `live_enabled: true` remain
-outside the acceptance-only authorization.
+Protected finalization PR #618 rebase-merged without bypass as
+`73bf1ecf395bc6d646d3e689e3c9e7fd580948ef`; post-merge Continuous
+Integration run `33265013602` and CodeQL run `33265013646` passed. A fresh
+exact preflight then preceded the sole attempt-1 dispatch. Run `33265777858`
+executed from `main@73bf1ecf` against exact preparation target `66154d0b`.
+Deployment `6158274629` received the sole approval from `hcoona`; independent
+review recovery records deployment-review ID `100993530`. All five jobs
+succeeded and terminal Governance evidence independently re-admits as
+`complete`.
+
+The accepted suite proves absent/create/readback `.17`, exact/no-mutation
+`.17`, identical race `.18`, differing race `.19`, and lost response `.20`.
+Both real create exchanges retain request-bound HTTP 200 proof. Artifact IDs
+`9718601879`, `9718607290`, `9718615519`, and `9718619450` match their
+GitHub-recorded SHA-256 digests. Authenticated registry readback confirms
+exact versions and tags `.17`-`.20`; downloaded tarball SHA-512 values match
+every probe post-state, and each package witness binds
+`destination-acceptance` to `66154d0b` in `hcoona/three`.
+
+After evidence capture, workflow ID `345015706` was changed to
+`disabled_manually`, Environment ID `20815831035` was deleted, deployment
+`6158274629` became `inactive`, and pending deployments remained empty. The
+cleanup candidate starts from fresh `origin/main@73bf1ecf`, deletes the
+temporary workflow source and workflow-only contract, and restores direct
+zero-temporary-workflow topology assertions. Protected merge and fresh
+post-merge reconciliation are still required before closure. The consumed
+`.17`-`.20` block and run must never be retried or reused. Normal Live and
+`live_enabled: true` remain outside the acceptance-only authorization.
 
 ## Activation Gate
 

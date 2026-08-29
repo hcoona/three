@@ -327,15 +327,49 @@ If it conflicts with the
   `workflow-delivery-v3-buddy-smoke-acceptance-retry-5` now exists as ID
   `20815831035`, with sole reviewer `hcoona` / `712433`,
   `prevent_self_review: false`, and sole custom branch policy `main`.
-  The bounded finalization candidate replaces the zero target in both workflow
-  literals and the Governance profile with the exact preparation merge SHA.
-  It has not been dispatched. The protected finalization must merge without
-  bypass, then fresh exact preflight must pass before the sole
-  `run_attempt == 1` dispatch and review. Reconciliation, cleanup, and closure
-  must each begin from freshly fetched and revalidated `origin/main`
-  containing the immediately preceding protected merge; no local branch,
-  attempt ref, arbitrary fetched SHA, or reviewed-but-unmerged head is a valid
-  work base.
+  Protected finalization PR #618 rebase-merged without bypass as
+  `73bf1ecf395bc6d646d3e689e3c9e7fd580948ef`, after non-overlapping PRs
+  #620 and #619. Post-merge Continuous Integration run `33265013602` and
+  CodeQL run `33265013646` passed on that exact SHA. Fresh exact preflight
+  then passed before the only dispatch.
+- Retry-5 destination acceptance succeeded. Run `33265777858` is the sole
+  workflow-dispatch run and remained `run_attempt == 1`; it executed from
+  `main@73bf1ecf` against exact target `66154d0b`. Validation, protected
+  review, both probe jobs, and terminal Governance capture all succeeded.
+  Deployment `6158274629` received approval from `hcoona`; REST approval
+  history and the bounded GraphQL recovery independently identify reviewer
+  `hcoona` / `712433`, with deployment-review ID `100993530`. The workflow
+  artifact keeps reviewer login unavailable in job context and never
+  substitutes `github.actor`.
+- Immutable artifacts `9718601879`, `9718607290`, `9718615519`, and
+  `9718619450` match GitHub SHA-256 values
+  `39166f126e436a659b3bebdd644203058a40ef53bd3c1d16149f3ea9ea0fec14`,
+  `351bb7fca6c8341aabc3d4ce819f7a272d95785123926dba72823e668f3f8ed9`,
+  `204cf66e74ecb9bcdb40311b236539e6f2cc123079cf87e9fa3424760ab98b7a`,
+  and
+  `db323adcf2a83643a58e06436dca67b69f152d2c0703ea75f104b83d7fe8aa06`.
+  Local strict readmission reproduces terminal classification `complete`.
+  The accepted suite proves absent/create/readback `.17`, exact/no-mutation
+  `.17`, identical race `.18`, differing race `.19`, and lost response `.20`;
+  the two real create exchanges retain request-bound upstream HTTP 200 proof.
+- Authenticated registry reconciliation confirms all four exact versions and
+  tags. Tarball SHA-1 values are
+  `82e25a2a89a839615d33a2fedf53ee5a4aed168d`,
+  `c7593b55692b210b538eff09534317f003284709`,
+  `86580fc95bdd0581e666f87d9863478b7fffd891`, and
+  `b0a304d78de7494295188785616b76f7066bf0ee`; downloaded tarball SHA-512
+  bytes match every retained probe post-state. Each package witness binds
+  purpose `destination-acceptance`, target `66154d0b`, and repository
+  `hcoona/three`, with no lifecycle scripts.
+- Evidence capture is complete. Workflow ID `345015706` is now
+  `disabled_manually`; Environment ID `20815831035` is deleted; deployment
+  `6158274629` is `inactive`; pending deployments are empty; and the workflow
+  retains exactly one terminal successful run. The cleanup candidate starts
+  from fresh `origin/main@73bf1ecf`, deletes the temporary workflow source and
+  workflow-only contract, and restores zero-temporary-workflow topology
+  contracts. It still requires protected merge and fresh post-merge
+  reconciliation before authoritative closure. Never rerun or reuse
+  `.17`-`.20`. Normal Live and `live_enabled: true` remain unauthorized.
 - Requirements, HLD, and all five MLDs are confirmed.
 - Implementation commits 1 through 11 of the approved first-slice LLD are
   delivered. Commit 10 was pushed at `e69675be`, and commit 11 retired the

@@ -292,19 +292,29 @@ Next:
    Integration run `33223036097` and CodeQL run `33223036123` passed on that
    exact SHA. Fresh authenticated revalidation again found `.17`-`.20`, their
    tags, retry-5 runs, deployments, and acceptance refs absent. The dedicated
-   Environment now exists as ID `20815831035` with sole reviewer
+   Environment was created as ID `20815831035` with sole reviewer
    `hcoona` / `712433`, self-review permitted, and sole custom branch policy
-   `main`. The bounded finalization candidate binds both workflow target
-   literals and the Governance retry-5 target to the preparation merge SHA.
-   No workflow dispatch, deployment, acceptance ref, package, tag, or Live
-   mutation has occurred; `.17`-`.20` remain unexecuted and unconsumed.
-   The protected finalization must merge without bypass, then a fresh exact
-   preflight must pass before the sole `run_attempt == 1` dispatch and review.
-   Reconciliation, cleanup, and closure must each start from freshly fetched
-   and revalidated `origin/main` containing the immediately preceding
-   protected merge; the local branch, an attempt ref, an arbitrary fetched
-   SHA, or a reviewed-but-unmerged head is not authority; and
-8. keep `live_enabled: false`. Subsequent explicit user authorization covers
-   the bounded acceptance-only repair/retry loop through genuine success,
-   cleanup, and closure, but normal Live activation remains a separate
-   production decision.
+   `main`; and
+8. retain protected finalization PR #618 as rebase-merged without bypass at
+   `73bf1ecf395bc6d646d3e689e3c9e7fd580948ef`. Its post-merge Continuous
+   Integration run `33265013602` and CodeQL run `33265013646` passed. Fresh
+   exact preflight preceded the sole attempt-1 dispatch, run `33265777858`,
+   which targeted preparation merge `66154d0b` from `main@73bf1ecf`.
+   Deployment `6158274629` received the sole approval from `hcoona`; the
+   bounded reviewer recovery reports deployment-review ID `100993530`.
+   All five jobs succeeded. Artifacts `9718601879`, `9718607290`,
+   `9718615519`, and `9718619450` match their GitHub-recorded SHA-256
+   digests, and the terminal Governance artifact independently re-admits as
+   `complete`. Authenticated reconciliation confirms exact versions and tags
+   `.17`-`.20`, exact tarball bytes and target witnesses, including
+   request-bound HTTP 200 proofs for absent/create `.17` and lost-response
+   `.20`. After evidence capture, workflow ID `345015706` was changed to
+   `disabled_manually`, Environment ID `20815831035` was deleted, deployment
+   `6158274629` became `inactive`, and pending deployments remained empty.
+   The cleanup candidate deletes only the temporary workflow source and its
+   workflow-only contract while restoring direct zero-temporary-workflow
+   topology assertions. Protected cleanup merge and fresh post-merge
+   reconciliation remain required; and
+9. keep `live_enabled: false`. Destination acceptance is successful, but
+   normal Live activation remains a separate production decision and is not
+   authorized by this acceptance-only execution.
